@@ -18,11 +18,16 @@
 //   - Every processor named below is one actually in use.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useSyncExternalStore, type ReactElement } from "react";
 import { CONTRACT_CONSENT_STATEMENT, DIETARY_MEMORY_CONSENT, DIETARY_MEMORY_MONTHS_UNUSED, DIETARY_NOTE_RETENTION } from "@omnitwin/types";
 import { REMEMBERED_NOTES_PATH } from "../lib/dietary-memory.js";
 import { ROUTE_DOCUMENTS } from "../lib/route-documents.js";
-import { measurementDeclined, setMeasurementDeclined } from "../observability/measurement-choice.js";
+import {
+  measurementChoiceState,
+  setMeasurementDeclined,
+  subscribeMeasurementChoice,
+  type MeasurementChoiceState,
+} from "../observability/measurement-choice.js";
 import "./LegalPage.css";
 
 interface LegalPageProps {
@@ -1101,28 +1106,29 @@ function storedTheme(): "dark" | "light" | undefined {
 // Rendering
 // ---------------------------------------------------------------------------
 
-/** "Don't measure my visits" (observability/measurement-choice.ts). */
+/** The switch's status line for each state of the choice. */
+const MEASUREMENT_CHOICE_STATUS: Readonly<Record<MeasurementChoiceState, string>> = {
+  measured: "Your visits may be measured, as described above.",
+  declined: "Your visits in this browser are not measured.",
+  "declined-this-visit": "This browser would not let us keep your choice, so it holds only until you leave this page.",
+  "storage-refused": "Your visits in this browser are not measured.",
+};
+
+/** "Don't measure my visits" (observability/measurement-choice.ts). It shows
+ *  the choice as it stands, read from the choice itself: on a return to this
+ *  page, and when another tab of this browser changes it. */
 function MeasurementChoice(): ReactElement {
-  const [declined, setDeclined] = useState(measurementDeclined);
-  // Whether the choice in force holds on later visits too
-  // (setMeasurementDeclined): where it does not, the status says so.
-  const [kept, setKept] = useState(true);
-  const toggle = (): void => {
-    setKept(setMeasurementDeclined(!declined));
-    // Read back: a browser that refuses its storage altogether stays declined.
-    setDeclined(measurementDeclined());
-  };
-  const status = !declined
-    ? "Your visits may be measured, as described above."
-    : kept
-      ? "Your visits in this browser are not measured."
-      : "This browser would not let us keep your choice, so it holds only until you leave this page.";
+  const state = useSyncExternalStore(subscribeMeasurementChoice, measurementChoiceState);
+  const declined = state !== "measured";
+  // Where the browser refuses its storage the press changes nothing: the
+  // visitor stays declined, and the status says what holds.
+  const toggle = (): void => { setMeasurementDeclined(!declined); };
   return (
     <p className="lg-p lg-choice">
       <button type="button" className="lg-choice-button" aria-pressed={declined} onClick={toggle}>
         {"Don't measure my visits"}
       </button>
-      <span className="lg-choice-state" role="status">{status}</span>
+      <span className="lg-choice-state" role="status">{MEASUREMENT_CHOICE_STATUS[state]}</span>
     </p>
   );
 }

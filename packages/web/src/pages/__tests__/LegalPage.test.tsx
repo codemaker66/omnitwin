@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { measurementDeclined, setMeasurementDeclined } from "../../observability/measurement-choice.js";
+import { MEASUREMENT_DECLINED_KEY, measurementDeclined, setMeasurementDeclined } from "../../observability/measurement-choice.js";
 import {
   DIETARY_MEMORY_CONSENT,
   DIETARY_MEMORY_MONTHS_UNUSED,
@@ -58,6 +58,32 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
 });
+
+/** The switch's status lines: measured, and declined where the browser would not keep it. */
+const MEASURED = "Your visits may be measured, as described above.";
+const NOT_KEPT = "This browser would not let us keep your choice, so it holds only until you leave this page.";
+
+/** Runs with a storage that reads but will not write (storage full), and puts
+ *  the real one back after: a spy on happy-dom's localStorage is not restored
+ *  and leaks into later tests. */
+function withFullStorage(run: () => void): void {
+  const real = window.localStorage;
+  const kept = new Map<string, string>();
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => kept.get(key) ?? null,
+      setItem: () => { throw new Error("QuotaExceededError"); },
+      removeItem: (key: string) => { kept.delete(key); },
+    },
+  });
+  try {
+    run();
+  } finally {
+    Object.defineProperty(window, "localStorage", { configurable: true, value: real });
+    setMeasurementDeclined(false);
+  }
+}
 
 describe("every document", () => {
   it.each(TYPES)("renders its own heading — %s", (type) => {
@@ -161,36 +187,53 @@ describe("the privacy policy", () => {
     expect(page).toContain("Your page-speed choice");
     const button = screen.getByRole("button", { name: "Don't measure my visits" });
     expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("status").textContent).toBe(MEASURED);
     fireEvent.click(button);
     expect(button.getAttribute("aria-pressed")).toBe("true");
     expect(measurementDeclined()).toBe(true);
     expect(screen.getByRole("status").textContent).toBe("Your visits in this browser are not measured.");
+    // And back: the switch and its status say so too (#355's code review).
     fireEvent.click(button);
     expect(measurementDeclined()).toBe(false);
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("status").textContent).toBe(MEASURED);
   });
 
   it("says plainly when the browser would not keep the choice, rather than claiming it was kept", () => {
-    // A stand-in that reads but will not write (storage full), put back after:
-    // a spy on happy-dom's localStorage is not restored and leaks into later tests.
-    const real = window.localStorage;
-    const kept = new Map<string, string>();
-    Object.defineProperty(window, "localStorage", {
-      configurable: true,
-      value: {
-        getItem: (key: string) => kept.get(key) ?? null,
-        setItem: () => { throw new Error("QuotaExceededError"); },
-        removeItem: (key: string) => { kept.delete(key); },
-      },
-    });
-    try {
+    withFullStorage(() => {
       render(<LegalPage type="privacy" />);
       fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
-      expect(screen.getByRole("status").textContent)
-        .toBe("This browser would not let us keep your choice, so it holds only until you leave this page.");
-    } finally {
-      Object.defineProperty(window, "localStorage", { configurable: true, value: real });
-      setMeasurementDeclined(false);
-    }
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT);
+    });
+  });
+
+  // #355's reviews (13 November 2026): the switch read once, when shown, so a
+  // return to the page said the choice was kept when the browser had not kept it.
+  it("still says so when the visitor comes back to the page", () => {
+    withFullStorage(() => {
+      const first = render(<LegalPage type="privacy" />);
+      fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT);
+      first.unmount();
+      render(<LegalPage type="privacy" />);
+      expect(screen.getByRole("button", { name: "Don't measure my visits" }).getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT);
+    });
+  });
+
+  // #355's code review: a press in another tab of this browser shows here too.
+  it("shows a choice made in another tab of this browser", () => {
+    render(<LegalPage type="privacy" />);
+    const button = screen.getByRole("button", { name: "Don't measure my visits" });
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    window.localStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
+    fireEvent(window, new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: null, newValue: "1" }));
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("status").textContent).toBe("Your visits in this browser are not measured.");
+    window.localStorage.removeItem(MEASUREMENT_DECLINED_KEY);
+    fireEvent(window, new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: "1", newValue: null }));
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("status").textContent).toBe(MEASURED);
   });
 
   // #355's review (13 November 2026): where the browser refuses its storage

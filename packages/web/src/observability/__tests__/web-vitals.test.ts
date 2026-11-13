@@ -439,8 +439,8 @@ describe("starting on a page load", () => {
       setMeasurementDeclined(true);
       setVisibility("hidden");
       expect(send).not.toHaveBeenCalled();
-      // It stops following the route and stops listening: a later hide sends
-      // nothing, even once the choice is undone, as this load is over.
+      // It stops following the route and listening for hides: a later hide
+      // sends nothing, even once the choice is undone, as this load is over.
       expect(router.listeners).toBe(0);
       setMeasurementDeclined(false);
       setVisibility("visible");

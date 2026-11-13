@@ -235,11 +235,15 @@ privacy page therefore carries a "Don't measure my visits" switch
 kept in the browser under `venviewer.measurement.declined`, and
 `shouldReportWebVitals` refuses while it is set. A browser that will not let the site
 read its storage at all counts as declined and is never measured; one that will not
-keep the choice (storage full) keeps it for the visit, and the switch says so rather
-than claiming it was kept (`setMeasurementDeclined` writes, then reads back). The
-reporter reads it again at every send, so pressing the switch also stops the page
-load in progress (the privacy page is itself measured), and so does a press in
-another tab before this one is hidden. Safari's tracking prevention clears script
+keep the choice (storage full) keeps it in memory until the site is next loaded afresh
+(a reload, or a return from another site), and the switch says so rather than
+claiming it was kept. The switch reads what holds from the choice itself
+(`measurementChoiceState`, through `useSyncExternalStore`), so a return to the page
+cannot reset what it says, and a press in another tab of the same browser shows there
+too (the `storage` event; the latest press holds). The reporter reads the choice again
+before every send, so pressing the switch also stops the page load in progress (the
+privacy page is itself measured), and so does a press in another tab before this one
+is hidden. Safari's tracking prevention clears script
 storage after about seven days without a visit, so there the choice can lapse; the
 paragraph says so, and the page's storage list names the choice ("Your page-speed
 choice"). Blake chose the switch's place: on the privacy page, which every public
