@@ -267,8 +267,9 @@ describe("a surveyed room's floor", () => {
       expect(Math.abs(normal[2])).toBe(0);
     }
     expect(facingArea(floor, [0, 1, 0])).toBeCloseTo(SALOON_FRAME.area, 4);
-    // Its bounding rectangle, 12.191 m by 7.473 m, less the four corners the bays and the
-    // chimney breast leave out: 2.16 x 0.24, 2.261 x 0.194, 2.199 x 0.178 and 2.209 x 0.225 m.
+    // Its bounding rectangle, 12.191 m by 7.473 m, less its four corners, where the end stretches
+    // of the two long walls stand in from their middles: 2.16 x 0.24, 2.261 x 0.194, 2.199 x 0.178
+    // and 2.209 x 0.225 m.
     const corners = 2.16 * 0.24 + 2.261 * 0.194 + 2.199 * 0.178 + 2.209 * 0.225;
     expect(SALOON_FRAME.area).toBeCloseTo(12.191 * 7.473 - corners, 9);
     expect(SALOON_FRAME.area).toBeCloseTo(89.257862, 6);

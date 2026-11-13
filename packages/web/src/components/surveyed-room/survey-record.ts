@@ -3,13 +3,14 @@
 //
 // tools/surveyed-rooms publishes survey.json beside a room's photographs and
 // reliefs (roombuild/publish.py). Version 2 is version 1 with a `room` block
-// (the room's name, venue, ceiling height and measured outline), the wall
-// atlas's images (`atlas.files`) and the floor photograph's extent
-// (`floor.extent`). Everything a room-driven renderer needs to place the
-// published files comes from here, so the record is checked as a whole before
-// anything is drawn from it: the outline frames a room, each wall matches its
-// segment, the atlas strips fit and do not overlap, the relief order names
-// exactly the walls, and every file the record points at is one it lists.
+// (the room's name, venue, ceiling height and measured outline), each wall's
+// `height` and `kind`, the wall atlas's images (`atlas.files`) and a `floor`
+// block (its photograph's `extent` and `files`). Everything a room-driven
+// renderer needs to place the published files comes from here, so the record
+// is checked as a whole before anything is drawn from it: the outline frames
+// a room, each wall matches its segment, the atlas strips fit and do not
+// overlap, the relief order names exactly the walls, and every file the
+// record points at is one it lists.
 //
 // Each list of images (`atlas.files`, `ceiling.files`, `floor.files`) is the
 // same photograph at several sizes, largest first: a device takes the first
