@@ -83,11 +83,10 @@ export function filmCurve(colour: readonly [number, number, number], exposure: n
 }
 
 /**
- * The curve as shader nodes. The renderer calls it with the scene colour and
- * the exposure, as it calls its own curves. Both branches are computed and one
- * is chosen, so the guards below only keep the unchosen branch finite.
+ * The curve as shader nodes. Both branches are computed and one is chosen, so
+ * the guards below only keep the unchosen branch finite.
  */
-export function photographToneMapping(colour: Node<"vec3">, exposure: Node<"float">): Node<"vec3"> {
+function curveNodes(colour: Node<"vec3">, exposure: Node<"float">): Node<"vec3"> {
   const exposed = colour.mul(exposure);
   const least = max(min(exposed.r, min(exposed.g, exposed.b)), 0);
   const curved = least.sub(least.mul(least).div(max(filmToe, 1e-6).mul(4)));
@@ -100,6 +99,14 @@ export function photographToneMapping(colour: Node<"vec3">, exposure: Node<"floa
   const rolled = lifted.mul(newPeak.div(max(peak, 1e-4)));
   const grey = float(1).sub(float(1).div(float(DESATURATION).mul(peak.sub(newPeak)).add(1)));
   return select(peak.lessThan(start), lifted, mix(rolled, vec3(newPeak), grey));
+}
+
+/**
+ * The curve in the shape a renderer's node library keeps: it is called with
+ * the scene colour's rgb and the exposure, as the renderer calls its own curves.
+ */
+export function photographToneMapping(colour: Node, exposure: Node): Node {
+  return curveNodes(vec3(colour), float(exposure));
 }
 
 /**
