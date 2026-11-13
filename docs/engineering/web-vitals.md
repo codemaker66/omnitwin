@@ -156,9 +156,9 @@ it is not in this change (#355 adds it).
 1. check the database first: `web_vital_samples` has no `navigation_type` column,
    `recorded_at` defaults to `date_trunc('day', now(), 'UTC')`, and its index beside
    the primary key is `web_vital_samples_recorded_idx` on `recorded_at`. The migration
-   was edited before landing under the same `when`, so a database that ran an earlier
-   copy of #309 (or its October 0106) keeps the old table. Production never ran any
-   of them;
+   was edited before landing and renumbered (0106 in October, 0108, then
+   `0109_web_vital_samples` on 13 November), so a database that ran an earlier copy
+   of #309 keeps the old table. Production never ran any of them;
 2. merge #355, which adds the privacy page's paragraph ("How fast our pages are", the
    wording approved on 12 November 2026) and the "Don't measure my visits" switch, a
    way to object that works on an iPhone (above);
