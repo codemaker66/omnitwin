@@ -1,7 +1,8 @@
 # The planner asks what the event is (T-674)
 
 Design, 26 Oct 2026. Owner: planner-qol (local_aac7112a). The chair that follows the event is lane E's (E12).
-Blake judges the look from frames in the product before it ships.
+Blake judges the look from frames in the product before it ships. Revised 13 Nov 2026 to match what was built after
+the release lead's review of 072bf704: when it asks, the claimed draft's write, retries, the mount, and the keys.
 
 ## Why
 
@@ -29,15 +30,17 @@ you want to play, never like a form.
 - The answer is kept with the layout and never asked for again. A signed-in layout keeps it in
   `configurations.metadata.eventKind`. A guest's draft keeps it on this device, because there is no public metadata
   route.
-- The answer can be seen and changed. The room header names it, and its menu changes it. Straight after a pick, a
-  receipt line offers "Change", so undo is one action away on every width.
+- The answer can be seen and changed. The room header (and the phone's top bar) names it, and pressing the name opens
+  the picker to change it. Straight after a pick, a receipt line offers "Change", so undo is one action away on every
+  width.
 - The answer has real effects, and each one is true when it ships:
   - **The chair.** New seats get the gold Chiavari at a wedding and the pink chair (Burgess Turini 18/3) otherwise.
     This comes from lane E's E12 core on master. Seats already placed keep their chairs.
   - **Lay out's shape.** Lay out starts with round tables for a wedding or something else, and with theatre rows
     for a corporate event. The other shape stays one tap away, through the prompt's Back.
   - **The empty floor.** The empty floor's sentence names the event.
-- It works in v1 at every width, which is production today. v2 mounts it with lane C's one line.
+- It works in v1 at every width, which is production today, in the 3D view and the 2D plan alike: it is mounted once
+  in EditorPage's comms layer, beside both views, not inside either. v2 mounts it with lane C's one line.
 
 ## Non-goals
 
@@ -53,6 +56,8 @@ you want to play, never like a form.
 
 - Interrupting work. That means asking on:
   - a layout with anything on the floor;
+  - a layout that was not new as it opened, however empty its floor later becomes (a restart of the room, the last
+    table deleted, a co-editor clearing it, a reload of an empty server copy);
   - a layout opened from an event;
   - a layout locked for review or frozen in a phase preview;
   - a layout someone is only viewing.
@@ -63,16 +68,25 @@ you want to play, never like a form.
 
 ## When it asks: one pure rule, `shouldAskEventKind`
 
-It asks only when all four of these hold:
+It asks only when all of these hold:
 
 1. **The layout is open for editing.** The editor's `lockReason` is null (no review lock, no phase preview), and no
    timeline preview is showing.
-2. **Nothing is on the floor.**
-3. **The layout was not opened from an event** (`?eventId=`).
-4. **Nothing answers the question already.** That means none of:
+2. **The layout was new as it opened.** Nothing stood on its floor, neither in the copy it opened with nor in the
+   server's, and nothing has stood on it since. The load latches this (`floorEmptyAtOpen`); a reload of the same
+   layout can clear it but never set it again, and once anything stands on the floor the picker clears it for good.
+3. **Nothing is on the floor** now.
+4. **The layout was not opened from an event** (`?eventId=`).
+5. **The layout's answer has been read** (from its load), so the question never flashes over an answer on its way.
+6. **Nothing answers the question already.** That means none of:
    - a stored `eventKind` key (absent means never asked; `null` means asked and skipped);
    - this device's record for a guest's draft;
-   - a valid `?event=wedding|corporate|other` parameter on a guest's new draft.
+   - a valid `?event=wedding|corporate|other` parameter on a guest's new draft;
+   - an answer this tab gave and has not seen kept.
+7. **This device asks.** `?event-question=off` tells a device not to ask and `?event-question=on` tells it to ask
+   again; either is remembered on the device (`quiet` in its record), as `?assembly=off` is. It is for the venue's
+   demo laptop and automated runs (the e2e suite runs quiet). Because any planner address carrying `off` silences the
+   device that opens it, it belongs in no link given to a customer.
 
 A known answer is applied silently. The address's answer applies only to a guest's draft that has no answer yet: the
 link it came by started the plan. It is kept on this device. The address never overrides an answer, and it never
@@ -85,26 +99,33 @@ share) is never made to try.
 ## The answer's record: `lib/event-kind-record.ts` (new)
 
 - **The seam.** It reads and writes E12's `usePlannerEventStore` (`eventKind: "wedding" | "corporate" | "other" | null`).
-- **Signed-in layout.** It calls `patchConfigMetadata(id, { eventKind })`, one write at a time in a tab. The answer's
-  save state is one of three:
+- **Signed-in layout.** It calls `patchConfigMetadata(id, { eventKind })`, one write at a time in a tab. Each layout's
+  newest answer is kept until it is seen written, whichever layout is open by then, and only the newest settles it.
+  The answer's save state is one of three:
   - **kept:** written.
-  - **retrying:** no network or a server error. The receipt says "Not saved yet". It is written again when the
-    browser comes back online (`lib/online-status.ts`). If the same layout loads again meanwhile, the tab's answer
-    stands and is written again.
-  - **this-visit:** the server refused it (4xx, no permission). The receipt says "Kept for this visit only". It is
-    not tried again, and the layout's own answer wins on the next load.
+  - **retrying:** a failure that passes: no network, a server error, a timeout (408), too many requests (429), an
+    expired session (401; the client asks for a fresh token on every request), or the route's own "try again" (409
+    `RETRY`, a save holding the row at that moment). The receipt says "Not saved yet". It is tried again after 2, 5,
+    15, 30 and 60 seconds while the browser is online, and at once when it comes back online
+    (`lib/online-status.ts`). If the layout opens again meanwhile, the tab's answer stands and is written again.
+  - **this-visit:** a refusal no new try changes: a refused value (400), no permission (403), a layout that is gone
+    (404) or locked for review (409 `CONFIG_LOCKED`). The receipt says "Kept for this visit only". It is not tried
+    again, and the layout's own answer wins on the next load.
 
   A dropped connection never makes the planner ask twice.
 - **A guest's draft.** It is kept in localStorage `venviewer.planner.eventKind` as
-  `{ version: 1, entries: [{ configId, kind }] }`, newest first, with the latest 200 kept. It is validated on read,
-  and a damaged record reads as empty. If storage is unavailable, the answer holds for this tab only.
+  `{ version: 1, entries: [{ configId, kind }], quiet }`, newest first, with the latest 200 kept. It is validated on
+  read, and a damaged record reads as empty. If storage is unavailable, the answer holds for this tab only.
 - **When a layout opens.** The store is set from metadata (signed-in) or the device record (guest). It is reset when
   the layout changes. As built, `editor-store`'s `loadConfiguration` and `createPublicConfig` (lane E's file) hand
   the layout to `openLayoutEventKind`, with the metadata the load already holds. That is the only place an answer is
   read. A second read would leave a moment after a signed-in layout opens when a new seat still gets the unasked
   chair, and in unit tests it would be an unstubbed request.
-- **A guest's draft that is claimed** into an account keeps its device answer, and the answer is written to the
-  layout's metadata the next time the layout opens signed in.
+- **A guest's draft that is claimed** into an account has its answer written to the layout's metadata the moment
+  the claim lands: `layoutClaimedEventKind` runs beside both places that make a draft the person's (EditorPage's new
+  plan, and `use-planner-draft-claim` for a guest who signs in), so another device or the venue's coordinator sees the
+  event at once. Should that write not land before the tab closes, the next signed-in open on this device writes the
+  device's answer.
 
 ## The look (Blake chose it from frames)
 
@@ -128,8 +149,9 @@ share) is never made to try.
 - **The receipt.** It sits at the top centre, under the tool pill. It never covers the deck, where the next tap (Lay
   out) goes.
 - **Tests.** The e2e suite runs on a device told not to ask, through the default `storageState` in
-  `playwright.config.ts`. The picker's own cases use `?event-question=on`. The config edit puts the PR in the GPU
-  benchmark scope; that is cheaper than editing thirteen specs owned by other lanes.
+  `playwright.config.ts`. The picker's own cases use `?event-question=on`. One config edit is cheaper than editing
+  thirteen specs owned by other lanes. (The PR is in the GPU benchmark scope either way: it also changes
+  `editor-store.ts`.)
 - **Art.** Each panel's art is its own set as the planner places it, seen from above in copper ink
   (`EventKindInk.tsx`): the table first, then its chairs, then the room, drawn in on one spring. No art shows
   furniture the planner will not set. The brief first offered the venue's photographs or the planner's furniture as
@@ -139,9 +161,19 @@ share) is never made to try.
 
 - It is a `role="dialog"` with `aria-modal`, labelled by its heading.
 - The panels are buttons with full names, such as "Wedding: round tables and gold Chiavari chairs".
-- Focus starts on the first panel, and Tab stays inside the dialog. Escape skips. Focus returns to the planner.
+- Focus starts on the first panel, and Tab stays inside the dialog. Escape skips. Focus returns to the planner; after
+  a change opened from the receipt, whose button went as the picker opened, it returns to the event's name.
+- None of its keys reach the planner's keymap, and while it is the dialog on top it registers a "modal" Escape layer,
+  so no shortcut runs beneath it wherever focus has gone, and an Escape that reaches the page still skips.
+- One press of Escape (or a phone's back gesture) can reach every dialog opened together, and on a page nobody has
+  touched none may refuse it. A press that reached the Grand Hall's welcome above the question first was meant for the
+  welcome: the question does not skip, and shows itself again if the browser closed it too.
+- The receipt is a polite live region that speaks only once no dialog holds the page (everything outside a modal is
+  inert), and it stays while a pointer is over it or focus is in it.
+- Unanswered, the name's accessible name is its visible words, "Add the event". On the phone's ivory top bar it is
+  copper text (`--house-copper-text`, about 5.8:1).
 - Number keys work only while it is open.
-- Touch targets are far above 44 px.
+- Touch targets are far above 44 px, and the sheet keeps clear of a landscape phone's notch (safe-area insets).
 
 ## Coordination
 
@@ -154,15 +186,16 @@ share) is never made to try.
 - **C.** One line in `PlannerChromeV2`; later, the dock's card set by kind.
 - **L1.**
   - The enquiry prefill after #227.
-  - The API's metadata merge is a read and then a write, with no lock (`routes/configurations.ts:236-279`). Two
-    near-simultaneous PATCHes can therefore lose one key. The fix is an atomic `metadata = coalesce(metadata, '{}') ||
-    $patch`.
+  - The API's metadata merge was a read and then a write, with no lock, so two near-simultaneous PATCHes could lose
+    one key. #254 (merged 13 November 2026) moved the merge into the UPDATE itself. `eventKind` stays nullable through
+    it (the release lead's call, 13 November): `null` is an answer, a skip, and route-atomicity-postgres proves a skip
+    saved over a kind keeps the key as `null` beside the layout's other metadata.
 - **L3.** The Assembly's first open is for saved layouts (#232), and the picker is for new ones, so they never
   overlap.
 - **Orchestration-2.**
   - The gate.
-  - An e2e admission for the new case.
-  - Existing cases that open a fresh draft seed the device record in shared support, so their behaviour is unchanged.
+  - An e2e admission for the new cases.
+  - Existing cases run on a device told not to ask (the default `storageState`), so their behaviour is unchanged.
 
 ## Proof
 
@@ -179,7 +212,9 @@ share) is never made to try.
   - 2 picks Corporate, and Lay out offers Theatre;
   - a reload keeps the answer and does not ask;
   - after the Grand Hall's welcome, the first panel is in hand and the keys answer;
-  - (a layout with furniture never asks: unit-tested.)
+  - an Escape that dismisses the Grand Hall's welcome leaves the question asking, and Enter answers it;
+  - a signed-in planner's own layout writes its answer into the layout's metadata (the PATCH body is asserted);
+  - (a layout with furniture, or furnished as it opened, never asks: unit-tested.)
 - **Frames for Blake,** on the product host, so the founder hold applies as on venviewer.com (the drawn hall, no
   capture notice):
   - 1366 × 768;
