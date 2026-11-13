@@ -4,7 +4,8 @@
 //
 // Surface rows are absorption coefficients (alpha, ISO 354 convention). Object
 // rows are equivalent absorption area in m2 per piece. Bands run 125 Hz to
-// 8 kHz; where a source has no 8 kHz value the 4 kHz value stands in. Each row
+// 8 kHz. Where a source has no 8 kHz value, 8 kHz repeats 4 kHz, or is 4 kHz
+// + 0.01 (EST) where the row rises (ruling R65); each row says which. Each row
 // ends with its label and its primary source:
 //   LAB      measured in a reverberation room, report seen
 //   FIELD    measured in a real room

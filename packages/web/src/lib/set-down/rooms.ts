@@ -291,8 +291,13 @@ function saloon(): RoomAcoustics {
  *   survey mesh's ceiling (upward rays on a 0.2 m grid): 57-59 % of the plan
  *   is domed bays at 3.18 m, the rest under beams and arches at 2.81 m, where
  *   the survey reads 3.20 and 2.80 m.
- * - Upper section: 9.8 x 5.6 m measured; its ceiling measures 2.15-2.29 m,
- *   which takes in the published 2.18 m and the 2.2 m used here.
+ * - Upper section: 9.8 x 5.6 m measured. Its ceiling is kept at 2.2 m (ruling
+ *   R66): the survey measures its flat ceiling at 2.15-2.29 m, which takes in
+ *   the published 2.18 m. The survey mesh's area mean over the section's
+ *   outline is 2.303 m (upward rays on a 0.2 m grid), but its 95th percentile
+ *   is 2.98 m: some higher parts inside the outline, which the survey does not
+ *   identify, pull the mean up. Taking 2.303 m instead would add about 5.7 m3,
+ *   1.5 % of the room's 379 m3.
  * - Both ceilings are plaster on lath (EST: no source gives their
  *   construction). The survey puts the lower section under the south end of
  *   the Grand Hall and the upper under the Saloon. Their floors are at Z -3.57
@@ -309,7 +314,7 @@ function saloon(): RoomAcoustics {
  */
 function robertAdamRoom(): RoomAcoustics {
   const lower = { length: 11.2, width: 7.6, height: 3.03 };
-  const upper = { length: 9.8, width: 5.6, height: 2.2 };
+  const upper = { length: 9.8, width: 5.6, height: 2.2 }; // the measured flat ceiling (R66), not the mesh's 2.303 m mean
   const opening = upper.width * upper.height;
   const lowerWall = 2 * (lower.length + lower.width) * lower.height - opening;
   const upperWall = (2 * upper.length + upper.width) * upper.height;
@@ -329,7 +334,7 @@ function robertAdamRoom(): RoomAcoustics {
     ],
     calibration: TRACER_CALIBRATION["robert-adam-room"],
     source:
-      "survey: lower 11.2 m (measured) x 7.6 m (published) under a 3.03 m mean ceiling (measured, the mesh's area mean), open to an upper 9.8 x 5.6 m (measured) x 2.2 m (in the measured 2.15-2.29 m); ceilings plaster on lath under the timber floors above (EST); EST: three 1.6 x 2.0 m windows, a 2 x 2.2 m velour curtain at the arch, two doors of 1.6 x 2.6 m",
+      "survey: lower 11.2 m (measured) x 7.6 m (published) under a 3.03 m mean ceiling (measured, the mesh's area mean), open to an upper 9.8 x 5.6 m (measured) x 2.2 m (the measured 2.15-2.29 m flat ceiling; the mesh's area mean is 2.303 m, R66); ceilings plaster on lath under the timber floors above (EST); EST: three 1.6 x 2.0 m windows, a 2 x 2.2 m velour curtain at the arch, two doors of 1.6 x 2.6 m",
   };
 }
 

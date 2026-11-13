@@ -182,9 +182,8 @@ describe("Trades Hall rooms", () => {
       (surface) => surface.material === "hardwood-panelling" && Math.abs(surface.areaM2 - expected) < 1e-6,
     );
     expect(dado).toHaveLength(1);
-    // The panelling under the sills that a full-width subtraction left out: about 10 m2.
-    const fullWidth = (2 * (21.135 + 10.59) - 15.62) * 1.95;
-    expect(expected - fullWidth).toBeCloseTo(10.1, 1);
+    // The old rule, (perimeter - the openings' 15.62 m of width) x 1.95 m, left
+    // out the 10.1 m2 of panelling under the sills (#416 review A12).
   });
 });
 

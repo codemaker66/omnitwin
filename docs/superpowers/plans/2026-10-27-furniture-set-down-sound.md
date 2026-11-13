@@ -28,7 +28,7 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
 
 - **Web Audio only in the registry.** Only `lib/sound-registry.ts` may contain the patterns `AudioContext`, `webkitAudioContext`, `createOscillator`, `createBufferSource`, `HTMLAudioElement`, `new Audio(` and `<audio` (`lib/__tests__/sound-registry.test.ts` scans `src/`).
 - **Strict TypeScript.** No `any`, no new runtime dependency, and `.js` suffixes on relative imports, as the repo does.
-- **Bands.** Octave bands are 125, 250, 500, 1000, 2000, 4000 and 8000 Hz. Wherever a material has no 8 kHz value, use its 4 kHz value.
+- **Bands.** Octave bands are 125, 250, 500, 1000, 2000, 4000 and 8000 Hz. Wherever a material has no 8 kHz value, use its 4 kHz value, or 4 kHz + 0.01 (EST) where the row rises with frequency (ruling R65).
 - **Sample rate.** 48000 Hz unless the context says otherwise. Every render is seeded and deterministic, using `seededRandom` from `lib/planner-sound-render.ts`.
 - **Timing.** A set-down is heard no earlier than the contact frame is shown, and within 20 ms of it where the device's output latency allows.
 - **Levels:**
@@ -112,7 +112,7 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
   - `OBJECT_ABSORPTION: Readonly<Record<Exclude<AbsorberKind, "fabric-face" | "none">, BandValues>>`;
   - `FABRIC_FACE_PER_M2: BandValues`.
 
-These values are as planned, for 125 Hz to 4 kHz; 8 kHz repeats 4 kHz except for air. Each row carries a comment naming its primary source and label (LAB, FIELD, TEXTBOOK or EST). Ruling R49 (13 Nov) replaced `plaster-lath` with James's "plaster on lath, deep air space", 0.20 / 0.15 / 0.10 / 0.05 / 0.05 / 0.05 (TEXTBOOK), as the planned row sat below both rows it cited; `acoustic-data.ts` holds the shipped values.
+These values are as planned, for 125 Hz to 4 kHz; 8 kHz repeats 4 kHz, or 4 kHz + 0.01 (EST) where the row rises (ruling R65), except for air. Each row carries a comment naming its primary source and label (LAB, FIELD, TEXTBOOK or EST). Ruling R49 (13 Nov) replaced `plaster-lath` with James's "plaster on lath, deep air space", 0.20 / 0.15 / 0.10 / 0.05 / 0.05 / 0.05 (TEXTBOOK), as the planned row sat below both rows it cited; `acoustic-data.ts` holds the shipped values.
 
 | Id | α at 125 / 250 / 500 / 1k / 2k / 4k Hz |
 |---|---|

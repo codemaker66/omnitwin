@@ -60,9 +60,12 @@ const LA_REDOUTE_EMPTY_MID_S = 3.2;
  * curves give them as the 500 Hz-2 kHz mean (about 2.37 and 2.53 s, read off
  * the figure), and so they are compared here. The volume is not stated; the
  * paper's 1 kHz strength G and T30 put it near 400 m3 by the diffuse-field
- * relation (inferred), against the Saloon's 469 m3. The tolerance: about 5 %
- * for the volumes (T grows as V^(1/3) in rooms of one shape and finish), the
- * rest for finishes neither paper nor survey pins down (the halls' ceilings,
+ * relation (inferred), against the Saloon's 469 m3. The states match on
+ * occupancy only: both unoccupied, while the paper does not state what
+ * furniture the halls held, and the model is empty. The 20 % tolerance is
+ * about 5 % derived, for the volumes (T grows as V^(1/3) in rooms of one shape
+ * and finish: (469 / 400)^(1/3) is 1.05), plus 15 % allowed for finishes and
+ * furnishing neither the paper nor the survey pins down (the halls' ceilings,
  * the Saloon's stained glass and marble). The model's figure was known from
  * the first trace (2.49 s) when it was set.
  */
@@ -123,6 +126,11 @@ function model(slug: TracedRoom, dressing: Dressing): ReturnType<typeof reverber
 /** The mean of the 500 Hz, 1 kHz and 2 kHz times, as ISO 3382-1 papers report a room's mid band. */
 function mid500To2k(rt: ReturnType<typeof reverberationTimes>): number {
   return (rt[2] + rt[3] + rt[4]) / 3;
+}
+
+/** The mean of the 500 Hz and 1 kHz times, the mid band the Grand Hall's plausibility band is set on. */
+function mid500And1k(rt: ReturnType<typeof reverberationTimes>): number {
+  return (rt[2] + rt[3]) / 2;
 }
 
 /** Whether a factor sits at its clamp, where the empty model no longer meets the tracer by construction. */
@@ -267,8 +275,7 @@ describe("the room model against the ray tracer", () => {
   });
 
   it("puts the empty Grand Hall's mid band in 2.0-3.8 s, unless it is a listed range exception", () => {
-    const rt = model("grand-hall", "empty");
-    const mid = (rt[2] + rt[3]) / 2;
+    const mid = mid500And1k(model("grand-hall", "empty"));
     const inRange = mid >= GRAND_HALL_EMPTY_MID.min && mid <= GRAND_HALL_EMPTY_MID.max;
     expect(inRange || RANGE_EXCEPTIONS.includes("grand-hall"), `empty mid band ${mid.toFixed(2)} s`).toBe(true);
   });

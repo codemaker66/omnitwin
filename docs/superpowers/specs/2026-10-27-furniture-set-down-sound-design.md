@@ -323,7 +323,7 @@ The policy's limits (eight a second, collapse at four within 250 ms) still bound
    - the synthesised tail's measured time per band (Schroeder backward integration, T20) is within ±10 % of its target;
    - the tail level follows the diffuse-field relation.
 3. **The independent check** (each room traced as a box with the model's volume and surface areas; it tests Eyring's diffuse-field assumption, not the data or the outlines):
-   - fitted on empty; within 15 % of the offline ray tracer half and fully laid, from 250 Hz to 8 kHz, and its change with fullness within 15 % of the tracer's (the galleries' named non-diffuse bands excepted);
+   - fitted on empty; within 15 % of the offline ray tracer half and fully laid, from 250 Hz to 8 kHz (the galleries' named non-diffuse bands excepted), and its change with fullness within 15 % of the tracer's in every room and band, the galleries' included;
    - each room's plausibility row in the tracer's README: a measured comparable room with its source and state, the model in the matching state, a stated tolerance and a verdict; the rows whose states match are tested, and an exception to a range check is a named list in the test, never a README heading (R50, R51).
 4. **Policy tests:**
    - silent on load, undo, redo and a remote change;
