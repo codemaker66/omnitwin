@@ -265,7 +265,7 @@ export async function calendarRoutes(
       lt(bookings.startsAt, contestedHorizon),
     );
 
-    // The reads are independent — one round-trip of latency, not seven
+    // The reads are independent — one round-trip of latency, not six
     // (review finding: this is the endpoint every calendar view polls).
     const [bookingRows, phaseRows, ruleRows, decisionRows, nextActionRows, liveRows] = await Promise.all([
       db

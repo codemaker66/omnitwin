@@ -548,8 +548,9 @@ function compileSnapshotDiff(
   // With pieces on both sides, the rows of seated tables are compared too:
   // they name the chairs set at each table ("Round Table with 4 chairs"), so
   // a re-seating that keeps every count still shows (T-695 review C7). Their
-  // names never match a placed count's, so no change is listed twice and no
-  // name carries two counts (review I3, I4).
+  // names never match a placed count's, so no name carries two counts (review
+  // I3, I4). One change can still show on two lines: a table added with its
+  // chairs is listed as a placed table and as a seated row (review Z3).
   const piecesOnBoth = (snapshot.payload.floorPlan ?? null) !== null && (previousSnapshot.payload.floorPlan ?? null) !== null;
   const lines = piecesOnBoth
     ? [
