@@ -38,8 +38,10 @@ the list (plan 3). Stages 2 to 4 of the spec. Each gets its own plan when this o
   each hour. `JOBS_MAX_SLEEP_MINUTES` (default 60) is the only setting for that.
 - **Nothing the worker waits for is unbounded:** each handler and each of the worker's own database calls is
   raced against a limit, and whatever the loser does later is caught and logged.
-- **No personal data in a log or an alert:** the kind, the job's id and the venue's id only. Every error passes
-  through `scrubErrorMessage` (`packages/api/src/observability/redact.ts`).
+- **No personal data in a log or an alert:** the kind, the job's id and the venue's id only. Every error's text
+  passes through `jobErrorText` (Task 2), which removes query parameters and any email address, as a send's
+  error already has them removed (`packages/api/src/services/email.ts:204-212`). `scrubErrorMessage` alone removes
+  the parameters only.
 - **Tests run on real PostgreSQL, on an explicit throwaway target:** `VENVIEWER_JOBS_TEST_DATABASE_URL`, database
   `venviewer_jobs_test` on `127.0.0.1`. Never `DATABASE_URL`, never `.env`. The suites are named in
   `REQUIRED_POSTGRES_TEST_FILES`, so CI fails if one is skipped.
@@ -96,21 +98,30 @@ the code.
 ### Task 1: The table
 
 **Files:**
-- Create: `packages/api/drizzle/<next>_job_list.sql` (next free number on the branch; see Task 11)
-- Modify: `packages/api/drizzle/meta/_journal.json` (one entry: `idx` the previous plus 1, `version` "7",
-  `when` later than the previous entry's, `tag` the file's name, `breakpoints` true)
+- Create: `packages/api/drizzle/<next>_job_list.sql` (hand-written, as every recent migration is; the next free
+  number on the branch; see Task 11)
+- Modify: `packages/api/drizzle/meta/_journal.json` (one entry, added by hand: `idx` is its position in the
+  array, which is not the file's number; `version` "7"; `when` strictly later than the previous entry's; `tag`
+  the file's name without `.sql`, matching `^\d{4}_[a-z0-9_]+$`; `breakpoints` true. The existing test
+  `migration-tail-readiness.test.ts`, "keeps every SQL migration journaled once with contiguous order and an
+  increasing timestamp", checks all of it)
 - Modify: `packages/api/src/db/schema.ts` (add `jobs`; add columns to `emailSends`, lines 1300-1315)
 - Create: `packages/api/src/__tests__/helpers/jobs-db.ts`
 - Test: `packages/api/src/__tests__/jobs-schema-postgres.test.ts`
-- Modify: `.github/workflows/ci.yml` (create `venviewer_jobs_test`; set the variable beside lines 404-419)
-- Modify: `packages/api/src/scripts/check-required-postgres-suites.ts` (name this suite)
+- Modify: `.github/workflows/ci.yml` (one more `CREATE DATABASE` command in the step that makes the throwaway
+  databases, near line 388; one more variable in the API test step's list, lines 404-430)
+- Modify: `packages/api/src/scripts/check-required-postgres-suites.ts` (a comment naming the variable and the
+  database, then this file's path, as lines 133-136 do for the newest suite)
 
 **Interfaces:**
 - Produces: the Drizzle table `jobs` and these `emailSends` columns: `venueId`, `eventId`, `enquiryId`,
   `fromHeader`, `replyTo`, `html`, `firstTriedAt`, `deliveredAt`, `expiresAt`, `attemptEpoch`.
 - Produces: `openJobsDatabase(name: string): Promise<{ readonly pool: Pool; readonly db: Database }>`,
   `jobsTestUrl: string | undefined`, and `resetJobs(pool: Pool): Promise<void>` (truncates `jobs`), modelled on
-  `helpers/payments-db.ts` including its check that the target is the loopback `venviewer_jobs_test`.
+  `helpers/payments-db.ts` including its check that the target is the loopback `venviewer_jobs_test`. The pool
+  carries `options: "-c statement_timeout=10000 -c lock_timeout=8000"`, as the newest suite's does, so a test that
+  would hang fails instead. Every suite's `beforeAll` that opens it has a timeout of `180_000`: migrating takes
+  longer than the default ten seconds.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -147,6 +158,12 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the rules in the database", ()
   it("refuses a send that names another venue's event, or an event with no venue", async () => {
     await expect(insertSend({ venue_id: venueB, event_id: eventOfVenueA })).rejects.toThrow(/email_sends_event_venue_fk/);
     await expect(insertSend({ venue_id: null, event_id: eventOfVenueA })).rejects.toThrow(/email_sends_link_needs_venue/);
+  });
+  it("the Drizzle tables agree with the migration: every column is written and read back", async () => {
+    const [job] = await db.insert(jobs).values(everyJobColumn).returning();
+    expect(job).toMatchObject(everyJobColumn);
+    const [send] = await db.insert(emailSends).values(everySendColumn).returning();
+    expect(send).toMatchObject(everySendColumn);
   });
 });
 ```
@@ -228,7 +245,7 @@ ALTER TABLE "email_sends" VALIDATE CONSTRAINT "email_sends_status";
 CREATE INDEX "email_sends_venue_created_idx" ON "email_sends" ("venue_id", "created_at");
 ```
 
-Separate the statements the way the newest migrations do. The two foreign keys to the pair (id, venue) rely on
+Put `--> statement-breakpoint` between the statements, as `0108_decisions.sql` does. The two foreign keys to the pair (id, venue) rely on
 `events_id_venue_unique` (`schema.ts:1693`) and `enquiries_id_venue_unique` (`schema.ts:821`). The columns on
 `email_sends` are unused until plan 2; the status rule is live at once and allows everything today's code writes
 (`pending`, `sent`, `failed`, `suppressed`, `dev_mode`).
@@ -246,7 +263,7 @@ groups do. Every later `-postgres.test.ts` file in this plan is added to that sa
 - [ ] **Step 5: Run it and see it pass**
 
 Run: `pnpm --filter @omnitwin/api exec vitest run src/__tests__/jobs-schema-postgres.test.ts`
-Expected: PASS, 9 tests.
+Expected: PASS, 10 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -328,6 +345,10 @@ export function defineJobKind<P>(definition: {
 export type JobRegistry = ReadonlyMap<string, JobKind<unknown>>;
 /** Throws if two definitions share a kind. */
 export function buildJobRegistry(kinds: readonly JobKind<unknown>[]): JobRegistry;
+
+/** An error's text, safe to store, log and report: query parameters removed by scrubErrorMessage, any email
+ *  address replaced with "[email address]", and at most 500 characters. Never throws. */
+export function jobErrorText(error: unknown): string;
 ```
 
 - Produces, in `store.ts`:
@@ -396,6 +417,12 @@ it("refuses a kind with a time limit over 15 seconds, and two kinds of one name"
   expect(() => defineJobKind({ ...effectDefinition, timeoutMs: 15_001 })).toThrow();
   expect(() => buildJobRegistry([effect, effect])).toThrow();
 });
+it("an error's text loses its query parameters and any address, and is never over 500 characters", () => {
+  expect(jobErrorText(new Error("Resend refused ada@example.org"))).toBe("Resend refused [email address]");
+  expect(jobErrorText(new Error("Failed query: insert\nparams: ada@example.org,Ada"))).not.toContain("Ada");
+  expect(jobErrorText(new Error("x".repeat(900))).length).toBeLessThanOrEqual(500);
+  expect(jobErrorText(undefined)).toBe("unknown error");
+});
 ```
 
 - [ ] **Step 2: Run them and see them fail**
@@ -412,7 +439,7 @@ issue paths only, never the values).
 
 - [ ] **Step 4: Run them and see them pass**
 
-Run: the same command. Expected: PASS, 7 tests.
+Run: the same command. Expected: PASS, 8 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -836,7 +863,7 @@ Three things the signatures do not settle:
 A handler's outcome maps so: it returns, `finishJob` (unless it already called `completeIn`); `PermanentJobError`,
 `failJob` permanent and `jobDead`; `RetryJobIn`, `failJob` with its seconds; `ClaimLostError`, nothing; any other
 throw, `failJob` not permanent, and `jobDead` if the answer is `"dead"`. The message is always
-`scrubErrorMessage(error)`.
+`jobErrorText(error)`.
 
 - [ ] **Step 4: Run them and see them pass**
 
@@ -980,9 +1007,11 @@ export interface RepeatingJob {
 export function ensureNextRuns(db: Database, repeating: readonly RepeatingJob[], now: Date): Promise<void>;
 ```
 
-Before writing `nextLocalTime`, read `packages/api/src/services/escalation-clock.ts`: `quietHoursEndAfter` already
-turns a venue's local time into an instant. Reuse its conversion if it fits these tests; do not add a date
-library.
+Before writing `nextLocalTime`, read `packages/api/src/services/escalation-clock.ts`. Its `wallClockAt` reads a
+zone's wall clock through `Intl.DateTimeFormat`, and its `nextWallClockReading` steps forward to the next time the
+clock shows a given reading. Reuse `wallClockAt`. Do not reuse `nextWallClockReading` as it is: on a day whose
+clock never shows the time, it runs on to the next day, and a daily job would then miss a day. These tests ask
+for the first instant after the gap instead. Do not add a date library; the repository has none.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1058,8 +1087,8 @@ git commit -m "feat(jobs): work that repeats, on the venue's own clock (T-702)"
 - Create: `packages/api/src/services/jobs/wake.ts`, `packages/api/src/services/jobs/runtime.ts`
 - Create: `packages/api/src/scripts/check-job-list-invariant.ts`
 - Modify: `packages/api/src/env.ts` (two variables), `packages/api/src/index.ts` (install; one health route),
-  `packages/api/package.json` (one script), `.github/workflows/production-receipt.yml` (note `/health/worker`
-  beside `/health/ready`, lines 134-135)
+  `packages/api/src/observability/sentry.ts` (its header comment), `.github/workflows/production-receipt.yml`
+  (note `/health/worker` beside `/health/ready`, lines 134-135)
 - Test: `packages/api/src/__tests__/jobs-alerts.test.ts` (no database)
 - Test: `packages/api/src/__tests__/jobs-runtime-postgres.test.ts`
 
@@ -1117,9 +1146,16 @@ database. It answers 200 with `{ worker: "off" }` when none is installed; 200 wi
 and 503 with the status when the worker has a fault, when `nextWakeAt` passed more than two minutes ago with no
 pass running, or when `currentJob.since` is more than 60 seconds old.
 
-In `index.ts`, `startJobs` is called after the database connection is made, and its `stop(20_000)` is registered
-so that it runs before the hook that closes the database pool. Check the order in which Fastify runs `onClose`
-hooks against the installed version before choosing where to register it, and prove it with the test below.
+In `index.ts`, `startJobs` is called after the database connection is made. Fastify runs `onClose` hooks in the
+reverse of the order they were registered, and the hook that closes the database pool is the first one registered
+(`index.ts:386`), so a hook registered after it runs before the pool closes. Register the worker's `stop(18_000)`
+there, and prove it with the test below. Eighteen seconds leaves room inside the server's own 25 (`index.ts:672`).
+If the installed Fastify offers a `preClose` hook, begin the stop there as well, so the worker stops taking work
+while requests are still draining.
+
+`observability/sentry.ts` says in its header that there is one capture path, the failed request. This task adds
+the second, for work that has no request. Change that comment to say so; the scrubbing set up by `initSentry`
+applies to both.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1127,7 +1163,7 @@ hooks against the installed version before choosing where to register it, and pr
 // jobs-alerts.test.ts
 it("an alert carries the kind, the job and the venue, and no address", () => {
   const sent = captureSentry();                                   // a stand-in for the Sentry client
-  alerts.jobDead({ id: "j1", kind: "email.send", venueId: "v1", reason: scrubErrorMessage("refused ada@example.org") });
+  alerts.jobDead({ id: "j1", kind: "email.send", venueId: "v1", reason: jobErrorText(new Error("refused ada@example.org")) });
   expect(sent[0]).toMatchObject({ level: "error", tags: { "job.kind": "email.send", "job.id": "j1", "venue.id": "v1" } });
   expect(JSON.stringify(sent[0])).not.toContain("@");
 });
@@ -1178,9 +1214,11 @@ Expected: FAIL, the modules do not exist.
 
 - [ ] **Step 3: Implement.** The Sentry reporter uses `captureMessage` with tags `job.kind`, `job.id` and
   `venue.id`, a fingerprint of the alert's name and the job's id, and `captureCheckIn` for `checkIn`, creating the
-  monitor on first use with a daily schedule. `check-job-list-invariant.ts` opens the database from
-  `DATABASE_URL`, prints the four counts and nothing else, and exits 1 unless `isHealthy`. Its package script is
-  `"db:check-job-list": "tsx src/scripts/check-job-list-invariant.ts"`.
+  monitor on first use with a daily schedule. `check-job-list-invariant.ts` is modelled on
+  `scripts/check-booking-event-bind.ts`: a read-only transaction with a statement timeout, one line of JSON with
+  the four counts and nothing else, and exit 0 when healthy, 1 when not, 2 when it could not run. Like that
+  script it has no package script; it is run as
+  `pnpm --filter @omnitwin/api exec tsx src/scripts/check-job-list-invariant.ts`.
 
 - [ ] **Step 4: Run them and see them pass**
 
@@ -1190,8 +1228,9 @@ Run: the same command. Expected: PASS, 10 tests.
 
 ```bash
 git add packages/api/src/services/jobs packages/api/src/scripts/check-job-list-invariant.ts packages/api/src/env.ts \
-  packages/api/src/index.ts packages/api/package.json packages/api/src/__tests__/jobs-alerts.test.ts \
-  packages/api/src/__tests__/jobs-runtime-postgres.test.ts packages/api/src/scripts/check-required-postgres-suites.ts
+  packages/api/src/index.ts packages/api/src/observability/sentry.ts .github/workflows/production-receipt.yml \
+  packages/api/src/__tests__/jobs-alerts.test.ts packages/api/src/__tests__/jobs-runtime-postgres.test.ts \
+  packages/api/src/scripts/check-required-postgres-suites.ts
 git commit -m "feat(jobs): alerts, the release check, and the worker inside the API behind a switch (T-702)"
 ```
 
@@ -1240,9 +1279,14 @@ export function retryDeadJob(db: Database, registry: JobRegistry, id: string, by
 export function abandonDeadJob(db: Database, id: string, byUserId: string, note: string): Promise<boolean>;
 ```
 
-- Routes, all behind `authenticate` and `authorizePlatformAdmin()` as `routes/admin.ts` does:
-  `GET /admin/jobs/stuck`; `POST /admin/jobs/:id/retry`; `POST /admin/jobs/:id/close`; `POST /admin/jobs/selftest`.
-  A retry or close of a job that is not dead answers 409 with the code `JOB_NOT_STUCK`.
+- Routes, each with `preHandler: [authenticate, authorizePlatformAdmin()]` as `routes/admin.ts` has
+  (`routes/admin.ts:5` and `:91`): `GET /admin/jobs/stuck`; `POST /admin/jobs/:id/retry`;
+  `POST /admin/jobs/:id/close`; `POST /admin/jobs/selftest`. The plugin is
+  `adminJobsRoutes(server: FastifyInstance, opts: { db: Database; registry: JobRegistry }): Promise<void>`,
+  registered beside the admin routes (`index.ts:519`) with the prefix `/admin/jobs`. Success is `{ data: … }`. A
+  body that fails its schema answers 400 with `{ error, code: "VALIDATION_ERROR", details }`, written inline as
+  `routes/admin.ts` writes it. A retry or close of a job that is not dead answers 409 with
+  `{ error: "This job is already back on the list.", code: "JOB_NOT_STUCK" }`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1364,7 +1408,7 @@ it("Try again calls the route, reads the list again, and the row is gone", async
   expect(await screen.findByText("Nothing is stuck.")).toBeDefined();
 });
 it("a job someone else already put back says so", async () => {
-  mocks.retryStuckJob.mockRejectedValue(new ApiError(409, "JOB_NOT_STUCK", "This job is already back on the list."));
+  mocks.retryStuckJob.mockRejectedValue(apiError(409, "JOB_NOT_STUCK", "This job is already back on the list."));  // built as api/client.ts builds an ApiError
   /* click Try again → the text "This job is already back on the list." is shown, and the list is read again */
 });
 it("Close asks for a note and will not send an empty one", async () => {
@@ -1377,8 +1421,13 @@ it("shows its loading state through ActivityStatus, and the server's words when 
 });
 ```
 
-  And in the header's own tests: a platform admin is offered "Stuck work"; a venue admin, a manager and a
-  hallkeeper are not; `canOpenDashboardView("stuckWork", role, "none")` is false for every venue role.
+  And in the tests that already pin the platform admin's entries (`packages/web/src/__tests__/dashboard.test.ts`
+  near lines 302-304, and `role-capabilities.test.ts`): a platform admin is offered "Stuck work"; a venue admin,
+  a manager and a hallkeeper are not; `canOpenDashboardView("stuckWork", role, "none")` is false for every venue
+  role.
+
+  Two traps. The relaxed lint rules for tests cover `.ts` files only, so this `.tsx` test is linted in full.
+  And `packages/web/src/__tests__/activity-convention.test.ts` fails any bare "Loading…" outside `ActivityStatus`.
 
 - [ ] **Step 2: Run them and see them fail**
 
@@ -1409,7 +1458,9 @@ Add to that commit any existing test file changed for the new entry, by name.
 
 **Files:**
 - Create: `docs/engineering/the-job-list.md`
-- Modify: `docs/engineering/README.md` (one entry)
+- Modify: `docs/engineering/README.md` (one row in each of its two tables: in the first, the area "Work that
+  runs later (the job list)", starting at the new note and `services/jobs/`, with its boundaries in a sentence;
+  in the second, "Adding a kind of work that runs later, or reading Stuck work", linking the note)
 - Modify: `docs/operations/diary-first-week-operations.md:171`
 - Modify: `docs/state/tasks.md` (row T-702) and the day's `docs/sessions/` file
 
@@ -1448,8 +1499,9 @@ No product code. Each step has a result to record in the pull request.
   highest number plus one; set the journal entry's `idx` to the previous plus one and its `when` later than both
   the previous entry's and production's newest; run Task 1's suite again; run the whole check again.
 - [ ] **Step 4: Send the tested head** to orchestration and the release lead. Do not push again. Do not merge.
-- [ ] **Step 5: After the deploy, with the switch still off:** `/health/ready` is 200, `/health/worker` says
-  `{ "worker": "off" }`, and `pnpm --filter @omnitwin/api db:check-job-list` exits 0.
+- [ ] **Step 5: After the deploy, with the switch still off:** `/health/ready` is 200 and `/health/worker` says
+  `{ "worker": "off" }`. Then, with Blake's yes (running a check script against production has needed his
+  approval before), run `check-job-list-invariant.ts` once, read-only, and record its line of JSON.
 - [ ] **Step 6: Switch on,** with the release lead: set `JOBS_WORKER=on` on the API service. After the restart:
   `/health/worker` shows `started: true` and `fault: null`; press Run the self-test and see "The self-test ran.";
   the next morning, the daily job has run once and Sentry shows its check-in.
@@ -1464,16 +1516,18 @@ changes. The table and the new columns are harmless left in place; dropping them
 
 ---
 
-## Two things to read from the code before the task that needs them
+## Where the check that nothing is stuck runs
 
-1. **Task 7, the order of shutdown.** Which way the installed Fastify runs `onClose` hooks decides where the
-   worker's stop is registered. Read it from the installed version; Task 7's fourth runtime test proves the
-   choice.
-2. **Task 7 and Task 11, where the release check runs.** The existing database check of this kind is
-   `packages/api/src/scripts/check-booking-event-bind.ts`. Search the workflows and `package.json` for its name
-   and wire `check-job-list-invariant.ts` the same way. The production receipt holds no database address
-   (`.github/workflows/production-receipt.yml`), so there the check is the health route: add `/health/worker`
-   beside its `/health/ready` line (`:134-135`). Inside production, the daily job reads the invariant itself.
+Three places, none of them a workflow that holds the database's address.
+
+1. **In CI,** as Task 7's test on the throwaway database.
+2. **Inside production, every day,** from the list's own daily job, which raises the alert and writes the counts
+   to the log.
+3. **By hand, once after the first deploy,** with the script, as the bind's own check was run
+   (`packages/api/src/scripts/check-booking-event-bind.ts`; no workflow calls it).
+
+The production receipt (`.github/workflows/production-receipt.yml`) holds no database address, so there the check
+is the health route: Task 7 adds `/health/worker` beside its `/health/ready` line (`:134-135`).
 
 ## What comes after this plan
 
