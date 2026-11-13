@@ -770,6 +770,12 @@ div.rota-shift {
   color: var(--reg-attention);
 }
 
+/* Last week's overnight drafts: a way to the week that publishes them. */
+.rota-publish__carried {
+  justify-self: start;
+  text-align: left;
+}
+
 .rota-publish .rota-confirm {
   margin-top: 4px;
 }

@@ -175,19 +175,28 @@ describe.skipIf(target === undefined)("a setup sheet's ticks belong to the event
 
   // The Day Board can offer a layout for an event that reaches it only through
   // a frozen phase plan, with no link row: that event's ticks are its own.
-  it("keeps ticks for a venue event the layout is not linked to as that event's own", async () => {
+  // Any other event of the venue is not the layout's (T-695 api-eventday-sheet-6).
+  it("keeps ticks for an event the layout reaches only through a frozen phase plan as that event's own", async () => {
     const f = await layout(1);
     const [linked] = f.eventIds as [string];
-    const [{ venueId }] = await db.select({ venueId: schema.configurations.venueId }).from(schema.configurations)
-      .where(eq(schema.configurations.id, f.configId)) as [{ venueId: string }];
-    const frozenOnly = randomUUID();
+    const [{ venueId, spaceId }] = await db.select({ venueId: schema.configurations.venueId, spaceId: schema.configurations.spaceId })
+      .from(schema.configurations).where(eq(schema.configurations.id, f.configId)) as [{ venueId: string; spaceId: string }];
+    const frozenOnly = randomUUID(); const phaseId = randomUUID();
     await db.insert(schema.events).values({ id: frozenOnly, venueId, createdBy: f.userId, name: "DEMO ONLY frozen-plan event" });
+    await db.insert(schema.eventPhases).values({ id: phaseId, eventId: frozenOnly, spaceId, name: "Dinner", sortOrder: 0, durationMinutes: 180 });
+    const frozenAt = new Date("2026-11-20T10:00:00.000Z");
+    await db.insert(schema.phaseLayoutSnapshots).values({ eventPhaseId: phaseId, configurationId: f.configId, status: "frozen", frozenBy: f.userId, createdAt: frozenAt, frozenAt });
 
     await tick(f, frozenOnly, true);
     expect(await storedEvents(f)).toEqual([frozenOnly]);
     expect(await summary(f, frozenOnly)).toMatchObject({ checked: 1 });
     expect(await summary(f, linked)).toMatchObject({ checked: 0 });
-    expect(await progress(f, frozenOnly)).toMatchObject({ eventId: frozenOnly, linkedEvents: 1 });
+    expect(await progress(f, frozenOnly)).toMatchObject({ eventId: frozenOnly, linkedEvents: 2 });
+
+    // An event of the same venue the layout does not serve is a stale link.
+    const unrelated = randomUUID();
+    await db.insert(schema.events).values({ id: unrelated, venueId, createdBy: f.userId, name: "DEMO ONLY unrelated event" });
+    expect(await progress(f, unrelated)).toMatchObject({ eventId: null, linkedEvents: 2 });
   });
 
   it("ignores another venue's event, keeping to the layout's own", async () => {

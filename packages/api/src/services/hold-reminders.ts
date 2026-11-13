@@ -1,7 +1,8 @@
-import { and, asc, eq, isNull, isNotNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, isNotNull } from "drizzle-orm";
 import { bookings, spaces, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { userDisplayName } from "../utils/user-display-name.js";
+import { HOLD_OWNER_ROLES } from "./booking-mutations.js";
 import { computeHoldReminderInstants, type HoldReminderInstant } from "./hold-hygiene.js";
 import { sendEmail, type EmailLogger, type EmailPayload, type SendOptions } from "./email.js";
 import { holdDecisionReminder } from "./email-templates.js";
@@ -318,8 +319,16 @@ export async function runHoldReminderPass(
     // ownerless hold must still appear in `scanned` so the summary is an
     // honest count; selectDueHoldReminders then skips it as unreachable and
     // the summary lists its due reminder as "no_owner" (the
-    // configuration-reviews.ts changed_by precedent).
-    .leftJoin(users, eq(bookings.ownerUserId, users.id))
+    // configuration-reviews.ts changed_by precedent). The owner counts only
+    // while they still hold a hold-owner role at the booking's venue, the rule
+    // that admitted them as owner (booking-mutations.ts ownerWorksAtVenue): one
+    // who has moved venue or role is no longer told, and the hold reads as
+    // nobody's until someone takes it on (T-695 api-diary-bookings-5).
+    .leftJoin(users, and(
+      eq(bookings.ownerUserId, users.id),
+      eq(users.venueId, bookings.venueId),
+      inArray(users.role, [...HOLD_OWNER_ROLES]),
+    ))
     .where(
       and(
         eq(bookings.kind, "hold"),

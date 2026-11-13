@@ -106,6 +106,10 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/pricing-rule-dates-postgres.test.ts",
   // Migration 0107: a venue manager's Ops review is stored as venue_manager; other roles and venues stay refused.
   "src/__tests__/event-architect-ops-review-postgres.test.ts",
+  // A second compile of the same plan returns the event's pack: the floor keeps its ticks, suppliers hear of no change.
+  "src/__tests__/ops-handoff-recompile-postgres.test.ts",
+  // A layout reached through a frozen phase plan: its event's ticks and times agree; an unrelated event gets neither.
+  "src/__tests__/hallkeeper-phase-plan-postgres.test.ts",
   // A 200-character account name on the floor: taps, requests and their steps, the handover picker and the request's thread keep 160, never refuse.
   "src/__tests__/floor-long-names-postgres.test.ts",
 ] as const;

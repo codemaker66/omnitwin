@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DecisionSchema, DecisionWithHistorySchema, type Decision } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
+import { calendarRoutes } from "../routes/calendar.js";
 import { decisionRoutes } from "../routes/decisions.js";
 import { updateBookingCore, transitionBookingCore, type MutationActor } from "../services/booking-mutations.js";
 import { decideDecision, listDecisions, prepareBookingTimeMove, readDecision, withdrawDecision } from "../services/decisions.js";
@@ -59,6 +60,8 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     db = drizzle(pool, { schema });
     app = Fastify();
     await app.register(decisionRoutes, { db, prefix: "/decisions" });
+    // The Diary's own read, to compare a decision with what the Diary shows.
+    await app.register(calendarRoutes, { db, prefix: "/calendar" });
     await app.ready();
   }, 300_000);
 
@@ -76,10 +79,11 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     readonly hallkeeper: MutationActor;
   }
 
-  async function venue(): Promise<Venue> {
+  async function venue(timezone?: string): Promise<Venue> {
     const venueId = randomUUID();
     const spaceId = randomUUID();
-    await db.insert(schema.venues).values({ id: venueId, name: "TEST ONLY decisions", slug: `decisions-${venueId}`, address: "Disposable fixture" });
+    await db.insert(schema.venues).values({ id: venueId, name: "TEST ONLY decisions", slug: `decisions-${venueId}`, address: "Disposable fixture",
+      ...(timezone === undefined ? {} : { timezone }) });
     await db.insert(schema.spaces).values({ id: spaceId, venueId, name: "Grand Hall", slug: "grand-hall", widthM: "21", lengthM: "10.5", heightM: "7",
       floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }] });
     const person = async (role: string): Promise<MutationActor> => {
@@ -809,6 +813,88 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
       const asked = await app.inject({ method: "GET", url: `/decisions/${broken.id}`, headers: as(v.staff) });
       expect(asked.statusCode).toBe(409);
       expect(asked.json()).toMatchObject({ code: "DECISION_UNREADABLE" });
+    });
+
+    it("prepares no turnaround for a ceremony moved onto its own event's set-up, which the room already holds after lunch", async () => {
+      // T-695 review of #400, Y1: the decision weighed the ceremony from the
+      // lunch, 60 minutes, while the Diary has the wedding 30 minutes after
+      // lunch before the move and after it.
+      const v = await venue();
+      await turnaround(v, 120);
+      await ink(v, "Lunch", at(12, 12, 30), at(13, 12, 30));
+      const ceremony = await entry(v, "ink", "Crawford ceremony", at(10, 12), at(12, 12));
+      if (ceremony.eventId === null) throw new Error("the ceremony has no event");
+      // The reception's set-up starts after the ceremony ends, so it stays where it is.
+      await phase(ceremony.eventId, v.spaceId, at(14, 12), 120);
+      const made = await app.inject({ method: "POST", url: "/decisions/booking-time-moves", headers: as(v.staff),
+        payload: { bookingId: ceremony.id, startsAt: at(14, 12, 30).toISOString(), endsAt: at(16, 12, 30).toISOString() } });
+      expect(made.statusCode).toBe(201);
+      const decision = DecisionSchema.parse(made.json<{ data: unknown }>().data);
+      expect(move(decision)?.consequences).toEqual([]);
+      expect(decision).toMatchObject({ recommendedOptionId: "move", question: null });
+    });
+
+    /** What the test reads of the Diary's own conflict view. */
+    interface DiaryRead {
+      readonly data: {
+        readonly conflicts: {
+          readonly conflicts: readonly { readonly type: string; readonly explanation: string }[];
+          readonly checks: { readonly turnaround: { readonly status: string; readonly uncoveredPairCount: number } };
+        };
+      };
+    }
+
+    it("splits a New York venue's days as the Diary does: a set-up that evening and the wedding next morning", async () => {
+      // T-695 review of #400, Y3: the decision reads the venue's zone. New
+      // York is four hours behind London in late March, so a set-up from 20:30
+      // and the wedding from 10:00 the next morning fall on one London day
+      // but two New York days. On two days, the wedding is measured from the
+      // dinner the set-up began during, and no rule covers that gap; held as
+      // one stay, which London's days would do, nothing would be measured.
+      const ny = (date: number, hours: number, minutes = 0): Date => new Date(Date.UTC(2030, 2, date, hours + 4, minutes));
+      const v = await venue("America/New_York");
+      await ink(v, "Dinner", ny(20, 18), ny(20, 21));
+      const wedding = await entry(v, "ink", "Crawford wedding", ny(27, 10), ny(27, 16));
+      if (wedding.eventId === null) throw new Error("the wedding has no event");
+      await phase(wedding.eventId, v.spaceId, ny(26, 20, 30), 120);
+      const made = await app.inject({ method: "POST", url: "/decisions/booking-time-moves", headers: as(v.staff),
+        payload: { bookingId: wedding.id, startsAt: ny(21, 10).toISOString(), endsAt: ny(21, 16).toISOString() } });
+      expect(made.statusCode).toBe(201);
+      const decision = DecisionSchema.parse(made.json<{ data: unknown }>().data);
+      expect(move(decision)?.consequences).toEqual([expect.objectContaining({ kind: "not_checked" })]);
+      expect(decision.missingFacts).toContain("No turnaround rule covers every booking next to it, so some gaps are not checked.");
+      // Carried out, the Diary's own view of the room says the same.
+      const done = await app.inject({ method: "POST", url: `/decisions/${decision.id}/decide`, headers: as(v.admin), payload: choose(decision, "move") });
+      expect(done.statusCode).toBe(200);
+      const read = await app.inject({ method: "GET", headers: as(v.staff),
+        url: `/calendar?venueId=${v.venueId}&from=${ny(20, 0).toISOString()}&to=${ny(22, 0).toISOString()}` });
+      expect(read.statusCode).toBe(200);
+      expect(read.json<DiaryRead>().data.conflicts.checks.turnaround).toMatchObject({ status: "not_checked", uncoveredPairCount: 1 });
+    });
+
+    it("finds the 30 minutes after breakfast when a wedding with a set-up the evening before moves earlier, as the Diary does", async () => {
+      // T-695 review of #400, Y3, case C3: the set-up the evening before is on
+      // another venue day and breakfast is between them, so the wedding is
+      // measured from breakfast; one stay for the whole event would swallow it.
+      const v = await venue();
+      await turnaround(v, 60);
+      await ink(v, "Breakfast meeting", at(7, 11), at(8, 11, 30));
+      const wedding = await entry(v, "ink", "Crawford wedding", at(10, 11), at(16, 11));
+      if (wedding.eventId === null) throw new Error("the wedding has no event");
+      await phase(wedding.eventId, v.spaceId, at(19, 10), 120);
+      const made = await app.inject({ method: "POST", url: "/decisions/booking-time-moves", headers: as(v.staff),
+        payload: { bookingId: wedding.id, startsAt: at(9, 11).toISOString(), endsAt: at(15, 11).toISOString() } });
+      expect(made.statusCode).toBe(201);
+      const decision = DecisionSchema.parse(made.json<{ data: unknown }>().data);
+      expect(move(decision)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 30 minutes /u) })]);
+      expect(decision).toMatchObject({ recommendedOptionId: "keep", question: "Is the shorter turnaround workable for the team?" });
+      const done = await app.inject({ method: "POST", url: `/decisions/${decision.id}/decide`, headers: as(v.admin), payload: choose(decision, "move") });
+      expect(done.statusCode).toBe(200);
+      const read = await app.inject({ method: "GET", headers: as(v.staff),
+        url: `/calendar?venueId=${v.venueId}&from=${at(0, 10).toISOString()}&to=${at(0, 12).toISOString()}` });
+      expect(read.statusCode).toBe(200);
+      expect(read.json<DiaryRead>().data.conflicts.conflicts.filter((conflict) => conflict.type === "insufficient_turnaround")
+        .map((conflict) => /^Only (\d+) minutes/u.exec(conflict.explanation)?.[1])).toEqual(["30"]);
     });
 
     it("answers a failed decision's retry as the first time, refusal and all", async () => {

@@ -186,6 +186,22 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
     return Number(rows.rows[0]?.count ?? "0");
   }
 
+  /**
+   * A compiled handoff pack for the event, from the layout `configId`. The
+   * tables here carry no NOT NULL or defaults, so the layout and the status
+   * are written as every real pack has them: the event's pack is read by
+   * joining its layout and keeping only standing statuses
+   * (services/newest-handoff-pack.ts), and a pack without them is never found.
+   */
+  async function seedHandoffPack(configId = CONFIG): Promise<string> {
+    const id = randomUUID();
+    await pool.query(
+      "INSERT INTO handoff_packs (id, event_id, config_id, status, compiled_at) VALUES ($1, $2, $3, 'compiled', now())",
+      [id, EVENT, configId],
+    );
+    return id;
+  }
+
   it("announces normally when the audience is inside the deployed CHECK", async () => {
     const res = await createVersion();
     expect(res.statusCode).toBe(201);
@@ -203,7 +219,7 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
 
     // A new layout on an event with a handoff pack reaches the hallkeeper too.
     await pool.query("TRUNCATE event_plan_notifications");
-    await pool.query("INSERT INTO handoff_packs (id, event_id, compiled_at) VALUES ($1, $2, now())", [randomUUID(), EVENT]);
+    await seedHandoffPack();
     const relaid = await server.inject({ method: "PATCH", url: `/proposals/${PROPOSAL}`, headers: headers(), payload: { configurationId: CONFIG } });
     expect(relaid.statusCode, relaid.body).toBe(200);
     expect(await paths()).toEqual([`/ops/events/${EVENT}`]);
@@ -215,7 +231,7 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
     await pool.query("INSERT INTO enquiries (id, venue_id, name, email, configuration_id) VALUES ($1, $2, 'Ailsa Henderson', 'ailsa@example.test', $3)",
       [enquiry, VENUE, CONFIG]);
     await pool.query("INSERT INTO opportunities (id, venue_id, title, source_enquiry_id) VALUES ($1, $2, 'Autumn gala', $3)", [deal, VENUE, enquiry]);
-    await pool.query("INSERT INTO handoff_packs (id, event_id, compiled_at) VALUES ($1, $2, now())", [randomUUID(), EVENT]);
+    await seedHandoffPack();
     await pool.query("TRUNCATE event_plan_notifications");
     try {
       // Only the deal is sent; the layout comes with it, and is a change the floor must see.
@@ -308,7 +324,7 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
   });
 
   it("takes the hallkeeper to the event and sales to the proposal when changes are asked for with a handoff pack", async () => {
-    await pool.query("INSERT INTO handoff_packs (id, event_id, compiled_at) VALUES ($1, $2, now())", [randomUUID(), EVENT]);
+    const pack = await seedHandoffPack();
     const token = await sentWithLink();
     const asked = await server.inject({
       method: "POST", url: `/proposal-share/${token}/comment`, payload: { kind: "request_changes", body: "Could we start at seven?", version: 1 },
@@ -318,6 +334,33 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
     expect(await shown("hallkeeper")).toEqual([{ title, actionPath: `/ops/events/${EVENT}` }]);
     expect(await shown("staff")).toEqual([{ title, actionPath: `/ops/events/${EVENT}` }]);
     expect(await shown("sales")).toEqual([{ title, actionPath: `/dashboard?view=proposals&proposal=${PROPOSAL}` }]);
+    // Recorded against the pack the hallkeeper is asked to acknowledge.
+    const changes = await pool.query<{ handoff_pack_id: string | null }>("SELECT handoff_pack_id FROM event_plan_changes");
+    expect(changes.rows).toEqual([{ handoff_pack_id: pack }]);
+  });
+
+  it("does not ask the hallkeeper when the event's only handoff pack is from a deleted layout", async () => {
+    // Compiled from a layout of the event's that has since been deleted: the
+    // Event Day board shows no pack for the event, so nothing on the floor is
+    // disturbed and there is nothing for the hallkeeper to acknowledge.
+    const deletedLayout = randomUUID();
+    await pool.query(
+      "INSERT INTO configurations (id, venue_id, space_id, is_public_preview, visibility, deleted_at) VALUES ($1, $2, $3, false, 'private', now())",
+      [deletedLayout, VENUE, SPACE],
+    );
+    await seedHandoffPack(deletedLayout);
+    const token = await sentWithLink();
+    const asked = await server.inject({
+      method: "POST", url: `/proposal-share/${token}/comment`, payload: { kind: "request_changes", body: "Could we start at seven?", version: 1 },
+    });
+    expect(asked.statusCode, asked.body).toBe(201);
+    const notice = { title: "The client asked for changes to Autumn gala — Grand Hall", actionPath: `/dashboard?view=proposals&proposal=${PROPOSAL}` };
+    expect(await shown("hallkeeper")).toEqual([]);
+    expect(await shown("staff")).toEqual([notice]);
+    const changes = await pool.query<{ handoff_pack_id: string | null; requires_hallkeeper_acknowledgement: boolean }>(
+      "SELECT handoff_pack_id, requires_hallkeeper_acknowledgement FROM event_plan_changes",
+    );
+    expect(changes.rows).toEqual([{ handoff_pack_id: null, requires_hallkeeper_acknowledgement: false }]);
   });
 
   it("still saves the version when the announcement violates the CHECK", async () => {

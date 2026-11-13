@@ -79,9 +79,32 @@ const SMALL_HOURS: RotaIssue = {
 
 const PEOPLE = [person(MORAG, "Morag Sinclair", true), person(JAMIE, "Jamie Kerr", false), person(CALLUM, "Callum Reid", false), person(PRIYA, "Priya Raman", true)];
 
+/** The week of Monday 5 October 2026, as the API reads it: Monday 00:00 to
+ *  the next Monday 00:00 on the venue's clock (BST). */
+const WEEK = { from: "2026-10-04T23:00:00.000Z", to: "2026-10-11T23:00:00.000Z" } as const;
+
 describe("publishPlan", () => {
+  // T-695 api-requests-suppliers-rota-2. The week is read by overlap, so last
+  // week's overnight shift shows on this week's Monday; but a week publishes
+  // only the shifts that start in it (services/rota.ts publishRotaWeek), and
+  // sending the other refused the whole week as changed, every time.
+  it("offers only the week's own drafts, not last week's overnight draft that runs into Monday", () => {
+    const overnight = shift({ staffMemberId: MORAG, startsAt: "2026-10-04T21:00:00.000Z", endsAt: "2026-10-05T01:00:00.000Z" });
+    const tuesday = shift({ staffMemberId: MORAG, startsAt: "2026-10-06T07:00:00.000Z", endsAt: "2026-10-06T15:00:00.000Z" });
+    const blockedOvernight = shift({ staffMemberId: CALLUM, issues: [NO_CHECK], startsAt: "2026-10-04T22:00:00.000Z", endsAt: "2026-10-05T02:00:00.000Z" });
+    const plan = publishPlan({ ...WEEK, people: PEOPLE, shifts: [overnight, blockedOvernight, tuesday] });
+    expect(plan.publishable.map((one) => one.id)).toEqual([tuesday.id]);
+    expect(plan.blocked).toEqual([]);
+    expect(plan.consequence).toBe("Publishes 1 shift and tells Morag Sinclair in the app.");
+    expect(plan.heldBack).toBeNull();
+    // Next Monday's first shift belongs to next week.
+    const nextMonday = shift({ startsAt: "2026-10-11T23:00:00.000Z", endsAt: "2026-10-12T03:00:00.000Z" });
+    expect(publishPlan({ ...WEEK, people: PEOPLE, shifts: [nextMonday] }).publishable).toEqual([]);
+  });
+
   it("names what publishing does: the shifts, who is told in the app, who to tell yourself, and what stays back", () => {
     const week = {
+      ...WEEK,
       people: PEOPLE,
       shifts: [
         shift({ staffMemberId: MORAG, issues: [SHORT_REST] }),
@@ -103,52 +126,52 @@ describe("publishPlan", () => {
   it("counts people once there are more than three, and tells each person once however many shifts they have", () => {
     const ids = Array.from({ length: 5 }, (_, index) => `00000000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`);
     const people = ids.map((id, index) => person(id, `Person ${String(index + 1)}`, index < 4));
-    const week = { people, shifts: [...ids.map((id) => shift({ staffMemberId: id })), shift({ staffMemberId: ids[0] ?? null })] };
+    const week = { ...WEEK, people, shifts: [...ids.map((id) => shift({ staffMemberId: id })), shift({ staffMemberId: ids[0] ?? null })] };
     const plan = publishPlan(week);
     expect(plan.told).toHaveLength(4);
     expect(plan.consequence).toBe("Publishes 6 shifts and tells 4 people in the app; tell Person 5 yourself.");
     expect(plan.buttonLabel).toBe("Publish and tell 4 people");
-    const three = publishPlan({ people, shifts: ids.slice(0, 3).map((id) => shift({ staffMemberId: id })) });
+    const three = publishPlan({ ...WEEK, people, shifts: ids.slice(0, 3).map((id) => shift({ staffMemberId: id })) });
     expect(three.consequence).toBe("Publishes 3 shifts and tells Person 1, Person 2 and Person 3 in the app.");
   });
 
   it("says who has no account when nobody on the shifts can be told in the app", () => {
-    const plan = publishPlan({ people: PEOPLE, shifts: [shift({ staffMemberId: JAMIE })] });
+    const plan = publishPlan({ ...WEEK, people: PEOPLE, shifts: [shift({ staffMemberId: JAMIE })] });
     expect(plan.consequence).toBe("Publishes 1 shift. Jamie Kerr has no account, so tell them yourself.");
     expect(plan.buttonLabel).toBe("Publish 1 shift");
   });
 
   it("describes a week of unfilled needs without promising to tell anyone", () => {
-    const plan = publishPlan({ people: PEOPLE, shifts: [shift(), shift({ issues: [SHORT_REST] })] });
+    const plan = publishPlan({ ...WEEK, people: PEOPLE, shifts: [shift(), shift({ issues: [SHORT_REST] })] });
     expect(plan.consequence).toBe("Publishes 2 shifts, all unfilled. One of the shifts carries a warning.");
     expect(plan.buttonLabel).toBe("Publish 2 shifts");
   });
 
   it("says plainly when there is nothing left to publish", () => {
-    expect(publishPlan({ people: PEOPLE, shifts: [] }).consequence).toBe("Nothing to publish yet.");
-    const published = publishPlan({ people: PEOPLE, shifts: [shift({ status: "published", publishedAt: "2026-10-01T09:00:00.000Z" })] });
+    expect(publishPlan({ ...WEEK, people: PEOPLE, shifts: [] }).consequence).toBe("Nothing to publish yet.");
+    const published = publishPlan({ ...WEEK, people: PEOPLE, shifts: [shift({ status: "published", publishedAt: "2026-10-01T09:00:00.000Z" })] });
     expect(published.publishable).toHaveLength(0);
     expect(published.consequence).toBe("Every shift this week is published.");
     expect(published.heldBack).toBeNull();
   });
 
   it("gives the reason as the whole story when only held-back drafts remain", () => {
-    const plan = publishPlan({ people: PEOPLE, shifts: [shift({ staffMemberId: CALLUM, issues: [NO_CHECK] })] });
+    const plan = publishPlan({ ...WEEK, people: PEOPLE, shifts: [shift({ staffMemberId: CALLUM, issues: [NO_CHECK] })] });
     expect(plan.publishable).toHaveLength(0);
     expect(plan.consequence).toBe("Callum Reid has no right-to-work check recorded, so 1 shift stays in draft until one is.");
     expect(plan.heldBack).toBeNull();
   });
 
   it("gives each kind of legal block its own reason", () => {
-    const young = publishPlan({ people: PEOPLE, shifts: [shift({ staffMemberId: MORAG }), shift({ staffMemberId: PRIYA, issues: [SMALL_HOURS] })] });
+    const young = publishPlan({ ...WEEK, people: PEOPLE, shifts: [shift({ staffMemberId: MORAG }), shift({ staffMemberId: PRIYA, issues: [SMALL_HOURS] })] });
     expect(young.heldBack).toBe("1 shift stays in draft: nobody under 18 may work between midnight and 04:00.");
-    const mixed = publishPlan({ people: PEOPLE, shifts: [shift({ staffMemberId: MORAG }), shift({ staffMemberId: PRIYA, issues: [SMALL_HOURS] }), shift({ staffMemberId: CALLUM, issues: [NO_CHECK] })] });
+    const mixed = publishPlan({ ...WEEK, people: PEOPLE, shifts: [shift({ staffMemberId: MORAG }), shift({ staffMemberId: PRIYA, issues: [SMALL_HOURS] }), shift({ staffMemberId: CALLUM, issues: [NO_CHECK] })] });
     expect(mixed.heldBack).toBe("2 shifts stay in draft until what the law needs is in place. Open each to see what.");
   });
 
   it("no longer counts a warning once it has been kept with a reason", () => {
     const kept: RotaIssue = { ...SHORT_REST, kept: { code: "short_rest", reason: "Asked for it", byUserId: null, byName: "Elaine", at: "2026-10-02T09:00:00.000Z" } };
-    const plan = publishPlan({ people: PEOPLE, shifts: [shift({ staffMemberId: MORAG, issues: [kept] })] });
+    const plan = publishPlan({ ...WEEK, people: PEOPLE, shifts: [shift({ staffMemberId: MORAG, issues: [kept] })] });
     expect(plan.withWarnings).toBe(0);
     expect(plan.consequence).toBe("Publishes 1 shift and tells Morag Sinclair in the app.");
   });
@@ -157,6 +180,7 @@ describe("publishPlan", () => {
 describe("the week in numbers", () => {
   it("counts live shifts, distinct people, unfilled needs and working hours, leaving cancelled shifts out", () => {
     const summary = weekSummary({
+      ...WEEK,
       shifts: [
         shift({ staffMemberId: MORAG, issues: [SHORT_REST] }),
         shift({ staffMemberId: MORAG, startsAt: "2026-10-11T07:00:00.000Z", endsAt: "2026-10-11T11:00:00.000Z", breakMinutes: 0 }),

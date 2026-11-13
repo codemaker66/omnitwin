@@ -8,6 +8,7 @@ import {
   EVENT_ENDED_STATUSES,
   PREPARABLE_DECISION_CLASSES,
   canApproveDecision,
+  resolveRotaTimeZone,
   sha256Hex,
   stableCanonicalJson,
   type CalendarConflict,
@@ -24,7 +25,7 @@ import {
   type PrepareBookingTimeMove,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
-import { bookings, decisionEvents, decisions, eventPhases, events, turnaroundRules } from "../db/schema.js";
+import { bookings, decisionEvents, decisions, eventPhases, events, turnaroundRules, venues } from "../db/schema.js";
 import { canReadDiary } from "../utils/query.js";
 import {
   bookingMutationStateDigest,
@@ -40,6 +41,7 @@ import {
   type ConflictBookingInput,
   type ConflictPhaseInput,
   type ConflictTurnaroundRuleInput,
+  type ShortTurnaround,
 } from "./calendar-conflicts.js";
 import { realDiaryCommandDeps } from "./diary-commands.js";
 import { phaseMovesWithBooking } from "./event-binding.js";
@@ -203,6 +205,9 @@ export interface Neighbourhood {
    *  move carries them, and its conflict view does not weigh them. */
   readonly endedEventPhases: readonly ConflictPhaseInput[];
   readonly rules: readonly ConflictTurnaroundRuleInput[];
+  /** The venue's IANA zone, as the Diary's conflict view reads it: the engine
+   *  holds a room for an event on each venue day it uses it. */
+  readonly timeZone: string;
 }
 
 interface Move {
@@ -266,7 +271,9 @@ async function neighbourhood(conn: BookingDbConn, booking: BookingRow, to: Move)
     minutes: turnaroundRules.minutes,
     isActive: turnaroundRules.isActive,
   }).from(turnaroundRules).where(and(eq(turnaroundRules.venueId, booking.venueId), isNull(turnaroundRules.deletedAt)));
+  const [venue] = await conn.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, booking.venueId)).limit(1);
   return {
+    timeZone: resolveRotaTimeZone(venue?.timeZone),
     bookings: bookingRows.map((row) => ({
       id: row.id, spaceId: row.spaceId, kind: row.kind, status: row.status, title: row.title, eventType: row.eventType,
       startsAt: row.startsAt, endsAt: row.endsAt, rank: row.rank, jointFlag: row.jointFlag, eventId: row.eventId, deletedAt: row.deletedAt,
@@ -372,21 +379,33 @@ function listed(found: readonly DecisionConsequence[], limit: number): DecisionC
 /** Which conflicts are the same before and after the move. A turnaround is
  *  the arrival's, after the gap: its guideline is that booking's, so the same
  *  arrival with a shorter gap is worse whatever comes before it, and an
- *  arrival on the other side of its neighbour is a new one. Every other
- *  conflict is its pair's, in either order. */
-function conflictKey(conflict: CalendarConflict): string {
+ *  arrival on the other side of its neighbour is a new one. An arrival is
+ *  known by the first of its pieces into the room (`firstIn`, by conflict
+ *  id), not by the name the engine gives it: the engine holds an event's
+ *  pieces as one stay or several, by the venue's days and by who is between
+ *  them, and names each by its last booking, so a move can rename an arrival
+ *  that is still the same (T-695 review of #400, Y2). Every other conflict is
+ *  its pair's, in either order. */
+function conflictKey(conflict: CalendarConflict, firstIn: ReadonlyMap<string, string>): string {
   return conflict.type === "insufficient_turnaround"
-    ? `${conflict.type}|${conflict.entryIds[1]}`
+    ? `${conflict.type}|${firstIn.get(conflict.id) ?? conflict.entryIds[1]}`
     : `${conflict.type}|${[...conflict.entryIds].sort().join(",")}`;
+}
+
+/** The first piece into the room of each short turnaround's arrival, by conflict id. */
+function firstInOf(found: { readonly shortTurnarounds: readonly ShortTurnaround[] }): ReadonlyMap<string, string> {
+  return new Map(found.shortTurnarounds.flatMap((turnaround) =>
+    turnaround.after[0] === undefined ? [] : [[turnaround.conflictId, turnaround.after[0]] as const]));
 }
 
 /**
  * Which block of time each other entry of the moved booking's event is
- * weighed in: the conflict engine merges all of an event's entries in a room
- * into one block, so another day's booking of the same event, or a phase the
- * Diary leaves where it is (a rehearsal two days before, a clear-down at the
- * old date), would stretch the moved booking over its neighbours and hide
- * their gaps. A phase goes with the booking of the event that carries it, by
+ * weighed in: the conflict engine holds a room for an event as one block
+ * wherever its entries overlap or touch, or share a venue day with nobody
+ * else's between them, so another booking of the same event that day, or a
+ * phase the Diary leaves where it is (a rehearsal that morning, a clear-down
+ * at the old time), would stretch the moved booking over its neighbours and
+ * hide their gaps. A phase goes with the booking of the event that carries it, by
  * the Diary's rule as it stands, or alone; another booking alone.
  */
 function apartKeysOf(world: Neighbourhood, booking: BookingRow, carried: readonly ConflictPhaseInput[]): ReadonlyMap<string, string> {
@@ -410,8 +429,10 @@ function apartKeysOf(world: Neighbourhood, booking: BookingRow, carried: readonl
 }
 
 /** The room with the moved booking's block of time as only the booking and
- *  the phases it carries; the rest of its event apart, the same way before
- *  and after the move, so a block is named by the same entries in both. */
+ *  the phases it carries; the rest of its event apart, under the same keys
+ *  before and after the move. The engine may still hold the block as one
+ *  stay or several, by the venue's days, and name them differently before
+ *  and after, so conflictKey knows an arrival by its first piece. */
 function weighedApart(world: Neighbourhood, booking: BookingRow, carried: readonly ConflictPhaseInput[], keys: ReadonlyMap<string, string>): Neighbourhood {
   if (keys.size === 0) return world;
   const carriedIds = new Set(carried.map((phase) => phase.id));
@@ -421,9 +442,11 @@ function weighedApart(world: Neighbourhood, booking: BookingRow, carried: readon
   ];
   const from = Math.min(...block.map((entry) => entry.startsAt.getTime()));
   const until = Math.max(...block.map((entry) => entry.endsAt.getTime()));
-  // A phase of the event wholly inside the block adds no time to it, and
-  // apart it would end the block early for the engine, which reads each
-  // block against the next to start.
+  // A phase of the event wholly inside the block adds no time to it, so it
+  // is left out. Kept apart it would be an arrival of its own: one that
+  // begins with the block would be measured from whoever left before, beside
+  // the block's own arrival (measuredChangeovers passes over one that begins
+  // later, as the block is then in the room).
   const inside = (phase: ConflictPhaseInput): boolean =>
     block.length > 0 && keys.has(phase.id) && phase.startsAt.getTime() >= from && phase.endsAt.getTime() <= until;
   const apart = <T extends { readonly id: string; readonly eventId: string | null }>(entry: T): T => {
@@ -451,8 +474,15 @@ export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: 
   const keys = apartKeysOf(world, booking, carried);
   const now = weighedApart(world, booking, carried, keys);
   const then = weighedApart(next, booking, carried, keys);
-  const before = detectCalendarConflictsInDetail({ bookings: now.bookings, phases: now.phases, turnaroundRules: now.rules }).report;
-  const after = detectCalendarConflictsInDetail({ bookings: then.bookings, phases: then.phases, turnaroundRules: then.rules });
+  // Kept apart, the rest of the event is still the event's: where a piece of
+  // it is already in the room, the moved block is no new arrival, as the
+  // Diary has it (T-695 review of #400, Y1).
+  const eventOfKey = new Map<string, string>();
+  if (booking.eventId !== null) for (const key of keys.values()) eventOfKey.set(key, booking.eventId);
+  const before = detectCalendarConflictsInDetail({ bookings: now.bookings, phases: now.phases, turnaroundRules: now.rules, timeZone: now.timeZone, eventOfKey });
+  const after = detectCalendarConflictsInDetail({ bookings: then.bookings, phases: then.phases, turnaroundRules: then.rules, timeZone: then.timeZone, eventOfKey });
+  const firstInBefore = firstInOf(before);
+  const firstInAfter = firstInOf(after);
   // The event's own entries need no turnaround between them: the engine never weighs that gap.
   const ownEvent = new Set(booking.eventId === null ? [booking.id] : [
     ...world.bookings.filter((entry) => entry.eventId === booking.eventId).map((entry) => entry.id),
@@ -460,12 +490,12 @@ export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: 
   ]);
   const withinEvent = (ids: readonly string[]): boolean => ids.every((id) => ownEvent.has(id));
   const weighed = (conflict: CalendarConflict): boolean => conflict.type !== "insufficient_turnaround" || !withinEvent(conflict.entryIds);
-  const had = new Map(before.conflicts.filter(weighed).map((conflict) => [conflictKey(conflict), conflict]));
+  const had = new Map(before.report.conflicts.filter(weighed).map((conflict) => [conflictKey(conflict, firstInBefore), conflict]));
   const ours = new Set([booking.id, ...carried.map((phase) => phase.id)]);
   const found: DecisionConsequence[] = [];
   for (const conflict of after.report.conflicts) {
     if (!weighed(conflict)) continue;
-    const prior = had.get(conflictKey(conflict));
+    const prior = had.get(conflictKey(conflict, firstInAfter));
     let wasMinutes: number | null = null;
     if (prior !== undefined) {
       const was = gapMinutes(prior);
@@ -477,7 +507,8 @@ export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: 
       kind: conflict.type,
       severity: conflict.severity,
       summary: clip(consequenceSummary(conflict, next, ours, wasMinutes)),
-      concerns: conflict.entryIds.filter((id) => id !== booking.id).slice(0, 20),
+      // The others it concerns: neither the booking nor a phase moving with it.
+      concerns: conflict.entryIds.filter((id) => !ours.has(id)).slice(0, 20),
     });
   }
   // A room closed then. The conflict engine does not weigh a closure against a

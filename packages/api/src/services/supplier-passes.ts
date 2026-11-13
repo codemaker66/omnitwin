@@ -15,7 +15,6 @@ import {
 import type { Database } from "../db/client.js";
 import {
   bookings,
-  configurations,
   events,
   generalAuditLog,
   handoffPacks,
@@ -29,6 +28,7 @@ import {
   users,
   venues,
 } from "../db/schema.js";
+import { newestHandoffPack } from "./newest-handoff-pack.js";
 
 // ---------------------------------------------------------------------------
 // Supplier passes (A Door for Everyone Outside, stage 1).
@@ -124,25 +124,16 @@ export function effectivePassExpiry(
   return { expiresAt: fallback, assumed: fallback !== null };
 }
 
-/** The newest compiled plan for the event, from a configuration of the same
- *  venue that has not been deleted. */
+/** The compiled plan that stands for the event, by the one rule the Event
+ *  Day board and the compiler share (newest-handoff-pack.ts): the newest
+ *  standing pack from a live configuration of the same venue. */
 export async function latestEventHandoff(
   db: Database,
   eventId: string,
   venueId: string,
 ): Promise<{ readonly id: string; readonly compiledAt: Date } | null> {
-  const [row] = await db.select({ id: handoffPacks.id, compiledAt: handoffPacks.compiledAt })
-    .from(handoffPacks)
-    .innerJoin(configurations, eq(handoffPacks.configId, configurations.id))
-    .where(and(
-      eq(handoffPacks.eventId, eventId),
-      eq(configurations.venueId, venueId),
-      isNull(configurations.deletedAt),
-      inArray(handoffPacks.status, ["compiled", "exported"]),
-    ))
-    .orderBy(desc(handoffPacks.compiledAt))
-    .limit(1);
-  return row ?? null;
+  const pack = await newestHandoffPack(db, { eventId, venueId });
+  return pack === null ? null : { id: pack.id, compiledAt: pack.compiledAt };
 }
 
 /** When the plan changed after a pass was made from an earlier one. */
