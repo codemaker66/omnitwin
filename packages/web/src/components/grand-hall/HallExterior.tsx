@@ -86,7 +86,9 @@ export function HallExterior({ sun, lightMaps, onFailed }: HallExteriorProps): R
   if (geometry === null) return null;
   // The outside, then the cut (hall-exterior-material.ts) after the scene's own
   // opaque pieces (render order 0), so the depth test can turn its hidden faces
-  // away before they are shaded. Its ties are its own whatever the order.
+  // away before they are shaded. Near, the cut's pull wins its ties; far off,
+  // where the pull comes to a depth step, a tie that rounds equal is its own
+  // only because it draws after the outside.
   return (
     <group name="grand-hall-front">
       <mesh geometry={geometry} material={materials.outside} frustumCulled={false} raycast={() => undefined} />

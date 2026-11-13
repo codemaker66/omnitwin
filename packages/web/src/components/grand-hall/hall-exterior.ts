@@ -705,8 +705,9 @@ function groundFloor(front: FrontBuilder, bay: FrontBay, face: number, openings:
   const { plinthTop, plinthProud, channelDepth, stringBottom } = FRONT_LEVELS;
   const holes = openings.map((opening) => openingOutline(opening.u, opening.width / 2, opening.bottom, opening.top, opening.head === "flat" ? 0 : opening.rise));
   front.as("stone");
-  // The wall behind the channelled courses: its full depth to the hall's floor (every opening lies below it),
-  // and from there to the string course only as deep as the window wall's body leaves it.
+  // The wall behind the channelled courses: its full depth to the hall's floor (every opening lies below it, the
+  // pavilion doorways' crowns by 4 mm as surveyed: hall-exterior-skin.test.ts), and from there to the string
+  // course only as deep as the window wall's body leaves it.
   const split = Math.min(FLOOR_Z, stringBottom);
   front.slab([[bay.uMin, 0], [bay.uMax, 0], [bay.uMax, split], [bay.uMin, split]], holes, wallBack(bay, 0), face - channelDepth);
   front.slab([[bay.uMin, split], [bay.uMax, split], [bay.uMax, stringBottom], [bay.uMin, stringBottom]], [], wallBack(bay, split), face - channelDepth);

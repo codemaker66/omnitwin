@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { BufferGeometry } from "three";
-import { buildHallFront, FRONT_DETAIL_FULL, FRONT_DETAIL_LIGHT, LET_IN } from "../hall-exterior.js";
+import { BoxGeometry, Float32BufferAttribute, type BufferGeometry } from "three";
+import { buildHallFront, FRONT_DETAIL_FULL, FRONT_DETAIL_LIGHT, FRONT_PART, frontPoint, LET_IN } from "../hall-exterior.js";
+import { GROUND_OPENINGS } from "../hall-exterior-spec.js";
 import { CUT_EYEWARD, CUT_EYEWARD_MAX } from "../hall-exterior-material.js";
 import { buildWallBody } from "../hall-wall-body.js";
 
@@ -48,18 +49,21 @@ function triangles(geometry: BufferGeometry): Triangle[] {
   return out;
 }
 
-/** The area two triangles on one plane share (Sutherland-Hodgman, in the plane's own axes). */
-function sharedArea(a: Triangle, b: Triangle): number {
-  const n = a.normal;
+const signedArea = (q: readonly (readonly [number, number])[]): number => q.reduce((sum, p, i) => {
+  const r = q[(i + 1) % q.length] ?? p;
+  return sum + p[0] * r[1] - r[0] * p[1];
+}, 0) / 2;
+
+/**
+ * Where two triangles overlap seen along the unit direction `n`: a polygon in two unit directions `u` and `v`
+ * across it (Sutherland-Hodgman).
+ */
+function overlapAlong(n: V3, a: Triangle, b: Triangle): { readonly poly: readonly (readonly [number, number])[]; readonly u: V3; readonly v: V3 } {
   const u0 = Math.abs(n[0]) < 0.9 ? cross(n, [1, 0, 0]) : cross(n, [0, 1, 0]);
   const ul = Math.hypot(...u0);
   const u: V3 = [u0[0] / ul, u0[1] / ul, u0[2] / ul];
   const v = cross(n, u);
   const flat = (p: V3): [number, number] => [dot(p, u), dot(p, v)];
-  const signedArea = (q: readonly (readonly [number, number])[]): number => q.reduce((sum, p, i) => {
-    const r = q[(i + 1) % q.length] ?? p;
-    return sum + p[0] * r[1] - r[0] * p[1];
-  }, 0) / 2;
   let poly: (readonly [number, number])[] = a.corners.map(flat);
   const clip = b.corners.map(flat);
   const turn = Math.sign(signedArea(clip)) || 1;
@@ -81,6 +85,12 @@ function sharedArea(a: Triangle, b: Triangle): number {
     }
     poly = kept;
   }
+  return { poly, u, v };
+}
+
+/** The area two triangles on one plane share. */
+function sharedArea(a: Triangle, b: Triangle): number {
+  const { poly } = overlapAlong(a.normal, a, b);
   return poly.length < 3 ? 0 : Math.abs(signedArea(poly));
 }
 
@@ -189,55 +199,138 @@ function solidsOf(list: readonly Triangle[]): number[] {
   return list.map((_, i) => find(i));
 }
 
+/** Two faces of one solid within this of looking opposite ways are its two sides: 10°, under the front's sharpest edge (16°). */
+const OPPOSED = Math.cos((10 * Math.PI) / 180);
+
+interface ThinPlace {
+  readonly mm: number;
+  readonly at: readonly number[];
+  readonly part: number;
+}
+
 /**
- * Where one of the front's solids is thinner than `least`: two of its faces, parallel and overlapping, facing
- * away from each other with the solid between them, closer than that. Faces on one plane are left out: those
- * are two solids touching (frontOnItself).
+ * How far behind a's plane b's lies, along a's normal, at each corner of the area the two share seen along it:
+ * the least, where, and the mean (null where they share none). Taken from a's own plane, the gap between faces a
+ * fraction of a degree out of parallel reads true however far they stand from the origin; the difference of the
+ * two planes' offsets from the origin does not (it read the dome's ribs, 49.5 mm across, as 8.4 mm).
  */
-function thinSolids(front: BufferGeometry, least: number): { readonly mm: number; readonly at: readonly number[]; readonly part: number }[] {
+function gapBehind(a: Triangle, b: Triangle): { readonly least: number; readonly mean: number; readonly at: V3 } | null {
+  const n = a.facing;
+  const { poly, u, v } = overlapAlong(n, a, b);
+  if (poly.length < 3 || Math.abs(signedArea(poly)) <= 1e-6) return null;
+  const h = dot(n, a.corners[0]);
+  const across = dot(n, b.facing);
+  let least = Infinity;
+  let sum = 0;
+  let at: V3 = a.corners[0];
+  for (const [s, t] of poly) {
+    const q: V3 = [u[0] * s + v[0] * t + n[0] * h, u[1] * s + v[1] * t + n[1] * h, u[2] * s + v[2] * t + n[2] * h];
+    const gap = dot(sub(q, b.corners[0]), b.facing) / across;
+    sum += gap;
+    if (gap < least) {
+      least = gap;
+      at = q;
+    }
+  }
+  return { least, mean: sum / poly.length, at };
+}
+
+/**
+ * Where one of the front's solids is thinner than `least`: two of its faces looking opposite ways (OPPOSED),
+ * the solid between them and one over the other, closer than that. Faces on one plane are left out (two solids
+ * touching: frontOnItself), and so are faces looking at each other across air. Only faces near each other are
+ * compared, through a grid of quarter-metre cells over their bounds.
+ */
+function thinPlaces(front: BufferGeometry, least: number): ThinPlace[] {
   const part = front.getAttribute("aPart");
   const list = triangles(front);
   const solid = solidsOf(list);
-  const byNormal = new Map<string, number[]>();
-  list.forEach((t, i) => {
-    const key = t.normal.map((x) => Math.round(x * 200)).join(",");
-    const bucket = byNormal.get(key);
-    if (bucket === undefined) byNormal.set(key, [i]); else bucket.push(i);
-  });
-  const found: { mm: number; at: readonly number[]; part: number }[] = [];
-  for (const bucket of byNormal.values()) {
-    const sorted = [...bucket].sort((i, j) => (list[i]?.offset ?? 0) - (list[j]?.offset ?? 0));
-    for (let x = 0; x < sorted.length; x++) {
-      const i = sorted[x] ?? 0;
-      const a = list[i];
-      if (a === undefined || dot(a.facing, a.normal) > 0) continue;
-      for (let y = x + 1; y < sorted.length; y++) {
-        const j = sorted[y] ?? 0;
-        const b = list[j];
-        if (b === undefined) continue;
-        const gap = b.offset - a.offset;
-        // Positions are single precision: a hundredth of a millimetre either way is the same thickness.
-        if (gap >= least - 1e-5) break;
-        if (gap < 1e-4 || solid[i] !== solid[j] || dot(b.facing, b.normal) < 0 || dot(a.normal, b.normal) < 0.99995 || sharedArea(a, b) <= 1e-6) continue;
-        const [p, q, r] = a.corners;
-        found.push({
-          mm: Math.round(gap * 1e4) / 10,
-          at: [p[0] + q[0] + r[0], p[1] + q[1] + r[1], p[2] + q[2] + r[2]].map((v) => Math.round((v / 3) * 1000) / 1000),
-          part: Math.round(part.getX(a.vertex)),
-        });
+  const cellOf = (x: number): number => Math.floor(x / 0.25);
+  const boxes = list.map(({ corners: [p, q, r] }): { readonly lo: V3; readonly hi: V3 } => ({
+    lo: [Math.min(p[0], q[0], r[0]) - least, Math.min(p[1], q[1], r[1]) - least, Math.min(p[2], q[2], r[2]) - least],
+    hi: [Math.max(p[0], q[0], r[0]) + least, Math.max(p[1], q[1], r[1]) + least, Math.max(p[2], q[2], r[2]) + least],
+  }));
+  const cells = (box: { readonly lo: V3; readonly hi: V3 }, visit: (key: number) => void): void => {
+    for (let x = cellOf(box.lo[0]); x <= cellOf(box.hi[0]); x++) {
+      for (let y = cellOf(box.lo[1]); y <= cellOf(box.hi[1]); y++) {
+        for (let z = cellOf(box.lo[2]); z <= cellOf(box.hi[2]); z++) visit(((x + 512) * 1024 + (y + 512)) * 1024 + (z + 512));
       }
     }
-  }
+  };
+  const grid = new Map<number, number[]>();
+  boxes.forEach((box, i) => {
+    cells(box, (key) => {
+      const bucket = grid.get(key);
+      if (bucket === undefined) grid.set(key, [i]); else bucket.push(i);
+    });
+  });
+  const met = new Int32Array(list.length).fill(-1);
+  const found: ThinPlace[] = [];
+  list.forEach((a, i) => {
+    const box = boxes[i];
+    if (box === undefined) return;
+    cells(box, (key) => {
+      for (const j of grid.get(key) ?? []) {
+        if (j <= i || met[j] === i) continue;
+        met[j] = i;
+        const b = list[j];
+        const other = boxes[j];
+        if (b === undefined || other === undefined || solid[i] !== solid[j] || dot(a.facing, b.facing) > -OPPOSED) continue;
+        if (other.lo[0] > box.hi[0] || other.lo[1] > box.hi[1] || other.lo[2] > box.hi[2]) continue;
+        if (other.hi[0] < box.lo[0] || other.hi[1] < box.lo[1] || other.hi[2] < box.lo[2]) continue;
+        // Read from each face's plane in turn. Positions are single precision: a hundredth of a millimetre
+        // either way is the same thickness.
+        for (const [from, to] of [[a, b], [b, a]] as const) {
+          const gap = gapBehind(from, to);
+          if (gap === null || gap.mean <= 1e-4 || gap.least >= least - 1e-5) continue;
+          found.push({
+            mm: Math.round(gap.least * 1e5) / 100,
+            at: gap.at.map((x) => Math.round(x * 1000) / 1000),
+            part: Math.round(part.getX(from.vertex)),
+          });
+        }
+      }
+    });
+  });
   return found;
 }
 
+/** The pavilion doorways' crowns, in the planner's frame. */
+const DOORWAY_CROWNS = GROUND_OPENINGS.filter((opening) => opening.fill === "doorway").map((opening) => frontPoint(opening.u, opening.top + opening.rise, 0));
+const atADoorwayCrown = (place: ThinPlace): boolean =>
+  DOORWAY_CROWNS.some(([x, y]) => Math.abs((place.at[0] ?? 0) - x) < 0.05 && Math.abs((place.at[1] ?? 0) - y) < 0.01);
+
 describe("the measured front's solids against the cut's pull", () => {
-  it.each(DETAILS)("are each at least twice as thick as the cut is drawn toward the eye ($name)", ({ detail }) => {
+  it.each(DETAILS)("keep twice the pull between any two faces looking opposite ways across them, and more than the pull over the pavilion doorways' crowns ($name)", ({ detail }) => {
     // The cut pass draws each solid's far side up to CUT_EYEWARD_MAX toward the eye (hall-exterior-material.ts).
     // A solid thinner than that would show its far side, in the cut's colour, over its own near side. At twice
     // the pull it keeps half its thickness in hand against the depth buffer's rounding far off. (The pediment's
     // raking cornice, cut as one ring round the tympanum, had a millimetre's sliver along its foot.)
-    expect(thinSolids(buildHallFront(detail).geometry, 2 * CUT_EYEWARD_MAX).slice(0, 5)).toEqual([]);
+    const thin = thinPlaces(buildHallFront(detail).geometry, 2 * CUT_EYEWARD_MAX);
+    expect(thin.filter((place) => !atADoorwayCrown(place)).slice(0, 5)).toEqual([]);
+    // The ground floor's wall stops at the hall's floor, as surveyed 4 mm over each pavilion doorway's crown,
+    // between the arch's two facets there, 3.5° off level. That stone shows only from below, through the arch's
+    // soffit, where a ray from anywhere at or above the pavement crosses more than four times the pull of it:
+    // more than a depth step beyond the pull out to the far plane.
+    const crowns = thin.filter(atADoorwayCrown);
+    expect(crowns.length).toBeGreaterThan(0);
+    expect(Math.min(...crowns.map((place) => place.mm)) / 1000).toBeGreaterThan(CUT_EYEWARD_MAX);
+  });
+
+  it("measures each gap from one face's own plane, so faces a fraction of a degree out of parallel read true far from the origin", () => {
+    // A copper slab 49.5 mm thick, a dome rib's width, 17 m up, one side turned 0.2° out of parallel. The
+    // difference of its two sides' plane offsets from the origin comes to about -10 mm.
+    const slab = new BoxGeometry(0.0495, 1, 1);
+    const position = slab.getAttribute("position");
+    const turn = Math.tan((0.2 * Math.PI) / 180);
+    for (let i = 0; i < position.count; i++) {
+      const x = position.getX(i);
+      const y = position.getY(i);
+      position.setXYZ(i, x > 0 ? x + turn * y : x, y + 17, position.getZ(i));
+    }
+    slab.setAttribute("aPart", new Float32BufferAttribute(new Array<number>(position.count).fill(FRONT_PART.copper), 1));
+    // Thinnest along the turned side's lower edge: 49.5 mm less half a metre's turn.
+    expect(Math.min(...thinPlaces(slab, 0.06).map((place) => place.mm))).toBeCloseTo(49.5 - 500 * turn, 1);
   });
 });
 

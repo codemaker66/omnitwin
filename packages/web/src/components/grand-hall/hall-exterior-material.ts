@@ -100,17 +100,18 @@ export const CUT_EYEWARD = 2.5e-4;
 
 /**
  * The most the cut is drawn toward the eye, metres: half the let-in
- * (LET_IN), and at most half the thinnest of the front's solids
- * (hall-exterior-skin.test.ts). Farther off, a share of the distance would
- * reach a face let into its holder, and past about 48 m, face-on, the far face
- * of the thinnest glass (12 mm), drawing a solid's inside in front of its own
+ * (LET_IN), and under half the gap between any two faces of one of the
+ * front's solids that look opposite ways (hall-exterior-skin.test.ts, which
+ * also says why the 4 mm of stone over the pavilion doorways' crowns is
+ * enough). Uncapped, the share of the distance would reach a face let into
+ * its holder from 20 m, and past about 48 m, face-on, the far face of the
+ * thinnest glass (12 mm), drawing a solid's inside in front of its own
  * outside. The cap holds from 10 m: about ten depth steps at 20 m, five at
- * 30 m and one at about 60 m, the farthest the cut is seen from (the front's
- * far end, along the street from beyond the orbit's far corner), where the
- * front's touching faces are a pixel or two across. One is enough: the cut
- * draws after the outside and the depth test passes equal depths (three's
- * LessEqualDepth), so an exact tie is the cut's whatever its pull, which only
- * has to outlast the rounding.
+ * 30 m and one at 65 m, about as far as the orbit sees the cut from while
+ * its target is held (CameraRig holds it for the keyboard's pan, not the
+ * mouse's or two fingers'). Past that, a tie whose depths round equal is
+ * still the cut's: it draws after the outside (HallExterior) and the depth
+ * test passes equal depths (three's LessEqualDepth).
  */
 export const CUT_EYEWARD_MAX = LET_IN / 2;
 
