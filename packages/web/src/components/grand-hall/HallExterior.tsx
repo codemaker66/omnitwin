@@ -6,11 +6,12 @@
 // and cut wherever the cutaway cuts the window wall (hall-exterior-material.ts,
 // hall-exterior-cut.ts). The whole front also stands, uncut, as a caster on
 // the sun's shadow layer, so its columns, cornices and the pediment shade the
-// hall's windows and the street as the building does. If the build fails or
-// is cut short by leaving the page, the city stands without it.
+// hall's windows and the street as the building does. If the build fails it
+// says so (`onFailed`), and the city takes back its own front (HallContext);
+// cut short by leaving the page, it says nothing.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useThree } from "@react-three/fiber";
 import type { BufferGeometry } from "three";
 import { useHallFinish } from "./hall-finish.js";
@@ -18,7 +19,7 @@ import { HALL_SUN_CASTER_LAYER, requestHallSunRedraw, type HallSun } from "./hal
 import { runSliced } from "./hall-slices.js";
 import { parseSectionPreset } from "./hall-section.js";
 import { FRONT_DETAIL_FULL, FRONT_DETAIL_LIGHT, hallFrontSteps } from "./hall-exterior.js";
-import { createFrontCasterMaterial, createFrontMaterial } from "./hall-exterior-material.js";
+import { createFrontCasterMaterial, createFrontMaterials } from "./hall-exterior-material.js";
 import type { StreetLightMaps } from "./hall-street-light.js";
 
 export interface HallExteriorProps {
@@ -26,14 +27,18 @@ export interface HallExteriorProps {
   readonly sun: HallSun;
   /** The city's street-light maps, whose lamps light the front after dusk. */
   readonly lightMaps: StreetLightMaps;
+  /** Called once if the front cannot be built (never when the build is cut short by leaving). */
+  readonly onFailed?: () => void;
 }
 
-export function HallExterior({ sun, lightMaps }: HallExteriorProps): ReactElement | null {
+export function HallExterior({ sun, lightMaps, onFailed }: HallExteriorProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
+  const failed = useRef(onFailed);
+  failed.current = onFailed;
   const finish = useHallFinish();
   const preset = useMemo(() => parseSectionPreset(typeof window === "undefined" ? null : window.location.search), []);
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
-  const material = useMemo(() => createFrontMaterial(sun, lightMaps, preset), [lightMaps, preset, sun]);
+  const materials = useMemo(() => createFrontMaterials(sun, lightMaps, preset), [lightMaps, preset, sun]);
   const caster = useMemo(createFrontCasterMaterial, []);
   // A phone's finish draws the round things with fewer segments. The build
   // depends on that alone: a new renderer (a lost device, restored) keeps it.
@@ -47,7 +52,9 @@ export function HallExterior({ sun, lightMaps }: HallExteriorProps): ReactElemen
         else front.geometry.dispose();
       })
       .catch(() => {
-        // Cut short by leaving the page, or failed: the city stands without its front.
+        // Cut short by leaving the page (no longer live): nothing to say. Still
+        // live, the build failed: the city takes back its own front.
+        if (live) failed.current?.();
       });
     return () => {
       live = false;
@@ -71,14 +78,21 @@ export function HallExterior({ sun, lightMaps }: HallExteriorProps): ReactElemen
   }, [geometry, invalidate, sun]);
 
   useEffect(() => () => {
-    material.dispose();
+    materials.outside.dispose();
+    materials.cut.dispose();
     caster.dispose();
-  }, [caster, material]);
+  }, [caster, materials]);
 
   if (geometry === null) return null;
+  // The outside, then the cut (hall-exterior-material.ts) after the scene's own
+  // opaque pieces (render order 0), so the depth test can turn its hidden faces
+  // away before they are shaded. Near, the cut's pull wins its ties; far off,
+  // where the pull comes to a depth step, a tie that rounds equal is its own
+  // only because it draws after the outside.
   return (
     <group name="grand-hall-front">
-      <mesh geometry={geometry} material={material} frustumCulled={false} raycast={() => undefined} />
+      <mesh geometry={geometry} material={materials.outside} frustumCulled={false} raycast={() => undefined} />
+      <mesh geometry={geometry} material={materials.cut} renderOrder={1} frustumCulled={false} raycast={() => undefined} />
       <mesh geometry={geometry} material={caster} layers={HALL_SUN_CASTER_LAYER} castShadow frustumCulled={false} raycast={() => undefined} />
     </group>
   );

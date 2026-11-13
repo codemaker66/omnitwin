@@ -15,14 +15,16 @@
 // The lit openings across Glassford Street (hall-facade-lights.ts) load
 // beside them, and either can fail without the other.
 //
-// With the modelled front asked for (`?facade=1`, hall-facade-access.ts) the
-// city comes from the model whose Trades Hall front is cut away, with the
-// lamps baked against it, and the measured front (HallExterior, whose code is
-// fetched only then) stands in its place, in the city's light and lamps and
-// casting into its shadow map.
+// With the modelled front (on unless this device chose `?facade=0`,
+// hall-facade-access.ts) the city comes from the model whose Trades Hall
+// front is cut away, with the lamps baked against it, and the measured front
+// (HallExterior, whose code is fetched only then) stands in its place, in the
+// city's light and lamps and casting into its shadow map. If the front cannot
+// be drawn (its code will not load, or its build fails), the city fetches v2's
+// model and lamps again, so the street keeps a front.
 // ---------------------------------------------------------------------------
 
-import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ComponentType, type ReactElement } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { BufferGeometry, Texture } from "three";
 import { useHallFinish } from "./hall-finish.js";
@@ -39,15 +41,28 @@ import { HallStreetLights } from "./HallStreetLights.js";
 import { FACADE_LIGHTS_FRONT_URL, FACADE_LIGHTS_URL, parseFacadeLights, type FacadeLight } from "./hall-facade-lights.js";
 import { HallFacadeLights } from "./HallFacadeLights.js";
 
+/** What stands for the front when its code cannot be fetched: it hands the city its own front back. */
+function FrontUnavailable({ onFailed }: HallExteriorProps): null {
+  useEffect(() => { onFailed?.(); }, [onFailed]);
+  return null;
+}
+
+/** Where the front's code comes from: a seam for tests, its own chunk otherwise. */
+export const frontChunk = {
+  load(): Promise<typeof import("./HallExterior.js") | undefined> { return import("./HallExterior.js"); },
+};
+
 /**
  * The measured front's code, fetched only when the front is asked for. If it
- * cannot be fetched (a stale deploy, the network), the city stands without
- * its front rather than the planner losing its scene to the error.
+ * cannot be fetched (a stale deploy, the network), the city takes back its
+ * own front rather than the planner losing its scene to the error. A build
+ * fetches it through Vite's preload helper, which resolves to nothing instead
+ * of rejecting once the page has claimed its one stale-chunk reload
+ * (route-error-boundary.tsx): that counts as a failure too.
  */
-const HallExterior = lazy<ComponentType<HallExteriorProps>>(() => import("./HallExterior.js").then(
-  (module) => ({ default: module.HallExterior }),
-  () => ({ default: () => null }),
-));
+const HallExterior = lazy<ComponentType<HallExteriorProps>>(() => frontChunk.load()
+  .then((module) => ({ default: module?.HallExterior ?? FrontUnavailable }))
+  .catch(() => ({ default: FrontUnavailable })));
 
 async function fetchOk(url: string): Promise<Response> {
   const response = await fetch(url);
@@ -82,29 +97,41 @@ export function HallContext(): ReactElement | null {
   const material = useMemo(() => createContextMaterial(sun, lightMaps), [lightMaps, sun]);
   const caster = useMemo(createContextCasterMaterial, []);
   const aimed = useRef<[number, number, number] | null>(null);
-  const [lamps, setLamps] = useState<readonly StreetLamp[] | null>(null);
-  const [facades, setFacades] = useState<readonly FacadeLight[] | null>(null);
+  // Each with the file it came from: only the current source's are drawn, so the front's lamps never stand
+  // against the city's own front while that front's are on their way, or if they fail.
+  const [lamps, setLamps] = useState<{ readonly source: string; readonly table: readonly StreetLamp[] } | null>(null);
+  const [facades, setFacades] = useState<{ readonly source: string; readonly lights: readonly FacadeLight[] } | null>(null);
   // Asked once per mount, as the sky is: the URL, else this device's last choice.
-  const front = useMemo(() => typeof window !== "undefined" && hallFacadeRequested(window.location.search), []);
+  const asked = useMemo(() => typeof window !== "undefined" && hallFacadeRequested(window.location.search), []);
+  // A front that cannot be drawn (its code would not load, or its build
+  // failed) gives the city back its own: v2's model and lamps, fetched again.
+  const [frontFailed, setFrontFailed] = useState(false);
+  const front = asked && !frontFailed;
+  const failFront = useCallback(() => { setFrontFailed(true); }, []);
+  const lightSource = front ? STREET_LIGHT_FRONT_URL : STREET_LIGHT_URL;
+  const lampSource = front ? STREET_LAMPS_FRONT_URL : STREET_LAMPS_URL;
+  const facadeSource = front ? FACADE_LIGHTS_FRONT_URL : FACADE_LIGHTS_URL;
 
   useEffect(() => {
     let live = true;
-    let loaded: BufferGeometry | null = null;
     fetchOk(front ? CONTEXT_MODEL_FRONT_URL : CONTEXT_MODEL_URL)
       .then((response) => response.arrayBuffer())
       .then((buffer) => {
-        if (!live) return;
-        loaded = parseContextModel(buffer);
-        setGeometry(loaded);
+        if (live) setGeometry(parseContextModel(buffer));
       })
       .catch(() => {
         // Without the city the hall stands under the sky alone.
       });
     return () => {
       live = false;
-      loaded?.dispose();
     };
   }, [front, sun]);
+
+  // Each model is disposed once another replaces it (the city's own front
+  // back after a failed one) or the city leaves.
+  useEffect(() => () => {
+    geometry?.dispose();
+  }, [geometry]);
 
   // The street lamps, beside the model and independent of it.
   useEffect(() => {
@@ -112,8 +139,8 @@ export function HallContext(): ReactElement | null {
     const placeholders: readonly [Texture, Texture] = [lightMaps.pool.value, lightMaps.head.value];
     let loaded: { pool: Texture; head: Texture } | null = null;
     Promise.all([
-      fetchOk(front ? STREET_LIGHT_FRONT_URL : STREET_LIGHT_URL).then((response) => response.arrayBuffer()),
-      fetchJson(front ? STREET_LAMPS_FRONT_URL : STREET_LAMPS_URL),
+      fetchOk(lightSource).then((response) => response.arrayBuffer()),
+      fetchJson(lampSource),
     ])
       .then(([buffer, json]) => {
         if (!live) return;
@@ -123,7 +150,7 @@ export function HallContext(): ReactElement | null {
         applyStreetLightField(field);
         lightMaps.pool.value = loaded.pool;
         lightMaps.head.value = loaded.head;
-        setLamps(table);
+        setLamps({ source: lampSource, table });
         invalidate();
       })
       .catch(() => {
@@ -136,15 +163,15 @@ export function HallContext(): ReactElement | null {
       loaded?.pool.dispose();
       loaded?.head.dispose();
     };
-  }, [front, invalidate, lightMaps]);
+  }, [invalidate, lampSource, lightMaps, lightSource]);
 
   // The lit openings across the street, beside the lamps and independent of them.
   useEffect(() => {
     let live = true;
-    fetchJson(front ? FACADE_LIGHTS_FRONT_URL : FACADE_LIGHTS_URL)
+    fetchJson(facadeSource)
       .then((json) => {
         if (!live) return;
-        setFacades(parseFacadeLights(json));
+        setFacades({ source: facadeSource, lights: parseFacadeLights(json) });
         invalidate();
       })
       .catch(() => {
@@ -153,7 +180,7 @@ export function HallContext(): ReactElement | null {
     return () => {
       live = false;
     };
-  }, [front, invalidate]);
+  }, [facadeSource, invalidate]);
 
   useEffect(() => {
     const placeholders: readonly Texture[] = [lightMaps.pool.value, lightMaps.head.value];
@@ -195,11 +222,11 @@ export function HallContext(): ReactElement | null {
     <group name="grand-hall-city">
       <mesh geometry={geometry} material={material} frustumCulled={false} raycast={() => undefined} />
       <mesh geometry={geometry} material={caster} layers={HALL_SUN_CASTER_LAYER} castShadow frustumCulled={false} raycast={() => undefined} />
-      {lamps !== null && <HallStreetLights lamps={lamps} sun={sun} />}
-      {facades !== null && <HallFacadeLights lights={facades} />}
+      {lamps?.source === lampSource && <HallStreetLights lamps={lamps.table} sun={sun} />}
+      {facades?.source === facadeSource && <HallFacadeLights lights={facades.lights} />}
       {front && (
         <Suspense fallback={null}>
-          <HallExterior sun={sun} lightMaps={lightMaps} />
+          <HallExterior sun={sun} lightMaps={lightMaps} onFailed={failFront} />
         </Suspense>
       )}
     </group>
