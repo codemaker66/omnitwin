@@ -3,10 +3,12 @@ import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
-import type { ChangeFeedItem, EventDayIssue, EventDayOpsBoard, OpsTask } from "@omnitwin/types";
+import type { ChangeFeedItem, EventDayIssue, EventDayOpsBoard, OpsTask, UpdateOpsTaskStatusInput } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
 import { EventDayOpsPage } from "../pages/EventDayOpsPage.js";
 import { getVenue } from "../api/spaces.js";
+import { memoryBackend, withBackend } from "../lib/idb-cache.js";
+import type { QueuedEventDayOp, createEventDayQueue } from "../lib/event-day-offline-queue.js";
 
 // These pages now wear the app shell (DashboardLayout), which renders a Clerk
 // sign-out and fetches the venue name for its topbar. In production every one
@@ -1225,6 +1227,119 @@ describe("EventDayOpsPage", () => {
         TASK_ID,
         expect.objectContaining({ status: "done" }),
       );
+    });
+  });
+
+  // hallkeeper-web-6: a status queued after a failure is an older word on the
+  // task than any status pressed after it. The device's real queue stands
+  // behind the module's mocks here, so what the page queues, lists, replays
+  // and acks is what it would keep.
+  describe("a queued task status and a later one", () => {
+    async function realQueue(): Promise<ReturnType<typeof createEventDayQueue>> {
+      const actual = await vi.importActual<typeof import("../lib/event-day-offline-queue.js")>("../lib/event-day-offline-queue.js");
+      const queue = actual.createEventDayQueue(withBackend<QueuedEventDayOp>(memoryBackend()));
+      mockEnqueueEventDayTaskStatus.mockImplementation((opsTaskId: string, input: UpdateOpsTaskStatusInput) => queue.enqueueTaskStatus(opsTaskId, input));
+      mockListPendingEventDayOps.mockImplementation(queue.list);
+      mockAckEventDayOp.mockImplementation(queue.ack);
+      return queue;
+    }
+
+    /** The statuses sent to the server, in the order sent. */
+    function statusesSent(): readonly string[] {
+      return mockUpdateOpsTaskStatus.mock.calls.map(([, input]) => (input as { readonly status: string }).status);
+    }
+
+    /** Comes back online, and waits for the replay to finish (it reads the board last). */
+    async function replayQueue(): Promise<void> {
+      const readsBefore = mockGetEventDayOpsBoard.mock.calls.length;
+      act(() => { window.dispatchEvent(new Event("online")); });
+      await waitFor(() => { expect(mockGetEventDayOpsBoard.mock.calls.length).toBeGreaterThan(readsBefore); });
+      await waitFor(() => { expect(screen.getByRole("button", { name: "Sync pending event-day changes" }).getAttribute("aria-busy")).toBe("false"); });
+    }
+
+    it("never replays it over a later status that reached the server", async () => {
+      const queue = await realQueue();
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      mockUpdateOpsTaskStatus
+        .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
+        .mockResolvedValueOnce(task("done"));
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+
+      fireEvent.click(screen.getByText("Start"));
+      await screen.findByText("Task saved on this device and will sync when the connection returns.");
+      fireEvent.click(screen.getByText("Done"));
+      await screen.findByText("Task status updated.");
+
+      await replayQueue();
+      expect(statusesSent()).toEqual(["in_progress", "done"]);
+      expect(await queue.list()).toEqual([]);
+      expect(screen.getByText("Synced")).toBeTruthy();
+    });
+
+    it("does not queue a failed status the person has changed since", async () => {
+      const queue = await realQueue();
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      let failStart: ((reason: ApiError) => void) | undefined;
+      mockUpdateOpsTaskStatus
+        .mockImplementationOnce(() => new Promise<never>((_resolve, reject) => { failStart = reject; }))
+        .mockResolvedValueOnce(task("done"));
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+
+      fireEvent.click(screen.getByText("Start"));
+      fireEvent.click(screen.getByText("Done"));
+      await screen.findByText("Task status updated.");
+      // Start's answer arrives last: the connection dropped on it.
+      await act(async () => { failStart?.(new ApiError(0, "Network error", "NETWORK_ERROR")); await Promise.resolve(); });
+      await waitFor(() => { expect(screen.queryByText("Saving event-day changes…")).toBeNull(); });
+      expect(await queue.list()).toEqual([]);
+
+      await replayQueue();
+      expect(statusesSent()).toEqual(["in_progress", "done"]);
+    });
+
+    it("does not replay it while a later status is still on its way", async () => {
+      await realQueue();
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      let landDone: ((updated: OpsTask) => void) | undefined;
+      mockUpdateOpsTaskStatus
+        .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
+        .mockImplementationOnce(() => new Promise<OpsTask>((resolve) => { landDone = resolve; }));
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+
+      fireEvent.click(screen.getByText("Start"));
+      await screen.findByText("Task saved on this device and will sync when the connection returns.");
+      fireEvent.click(screen.getByText("Done"));
+      await replayQueue();
+      await act(async () => { landDone?.(task("done")); await Promise.resolve(); });
+      await screen.findByText("Task status updated.");
+
+      expect(statusesSent()).toEqual(["in_progress", "done"]);
+    });
+
+    it("keeps a later status that was queued when an earlier one lands", async () => {
+      const queue = await realQueue();
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      let landStart: ((updated: OpsTask) => void) | undefined;
+      mockUpdateOpsTaskStatus
+        .mockImplementationOnce(() => new Promise<OpsTask>((resolve) => { landStart = resolve; }))
+        .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
+        .mockResolvedValueOnce(task("done"));
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+
+      fireEvent.click(screen.getByText("Start"));
+      fireEvent.click(screen.getByText("Done"));
+      await screen.findByText("Task saved on this device and will sync when the connection returns.");
+      await act(async () => { landStart?.(task("in_progress")); await Promise.resolve(); });
+      await waitFor(() => { expect(screen.queryByText("Saving event-day changes…")).toBeNull(); });
+      expect((await queue.list()).map((op) => op.kind === "task_status" ? op.input.status : op.kind)).toEqual(["done"]);
+
+      await replayQueue();
+      expect(statusesSent()).toEqual(["in_progress", "done", "done"]);
+      expect(await queue.list()).toEqual([]);
     });
   });
 

@@ -213,6 +213,16 @@ function makeIdempotencyKey(taskId: string, status: OpsTaskStatus): string {
   return `event-day:${taskId}:${status}:${suffix}`;
 }
 
+/** Acks the statuses this device queued for a task once a later one has
+ *  reached the server, unless the task has been pressed again meanwhile. */
+async function ackQueuedTaskStatuses(opsTaskId: string, stillLatest: () => boolean): Promise<void> {
+  const queued = await listPendingEventDayOps();
+  if (!stillLatest()) return;
+  await Promise.all(queued
+    .filter((op) => op.kind === "task_status" && op.opsTaskId === opsTaskId)
+    .map((op) => ackEventDayOp(op.queueKey)));
+}
+
 function updateTaskInBoard(board: EventDayOpsBoard, updated: OpsTask): EventDayOpsBoard {
   if (board.handoffPack === null) return board;
   return {
@@ -325,6 +335,12 @@ export function EventDayOpsPage(): ReactElement {
   // API turns a 10s tick into a queue of overlapping reads that each
   // overwrite the last; a Try again joins the read already out.
   const refreshInFlight = useRef<{ readonly eventId: string; readonly read: Promise<BoardRead> } | null>(null);
+  // The status each task was last pressed to on this page, by the press's
+  // idempotency key. A status queued after a failure is an older word on its
+  // task than any pressed after it, and the server applies whichever arrives
+  // last: so it is never queued, kept or replayed over a later press (audit
+  // hallkeeper-web-6).
+  const latestTaskPress = useRef(new Map<string, string>());
 
   // The room's acknowledgements are read beside the board, never in front of
   // it: a slow read must not hold the board on its loading state. They are
@@ -473,7 +489,13 @@ export function EventDayOpsPage(): ReactElement {
         if (op.kind !== "task_status" && op.kind !== "issue_create") continue;
         try {
           if (op.kind === "task_status") {
-            await updateOpsTaskStatus(op.opsTaskId, op.input);
+            // A status pressed on this page since has the last word, whether
+            // it has landed or is still on its way: this one is only acked.
+            // (One that failed in turn was queued in this one's place.)
+            const latest = latestTaskPress.current.get(op.opsTaskId);
+            if (latest === undefined || latest === op.input.idempotencyKey) {
+              await updateOpsTaskStatus(op.opsTaskId, op.input);
+            }
           } else {
             await createEventDayIssue(op.eventId, op.input);
           }
@@ -626,15 +648,24 @@ export function EventDayOpsPage(): ReactElement {
     const optimistic = { ...task, status, updatedAt: new Date().toISOString() };
     setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, optimistic) } : prev);
     const input = { status, idempotencyKey: makeIdempotencyKey(task.id, status) };
+    latestTaskPress.current.set(task.id, input.idempotencyKey);
+    const isLatestPress = (): boolean => latestTaskPress.current.get(task.id) === input.idempotencyKey;
     setPendingWrites((count) => count + 1);
     void updateOpsTaskStatus(task.id, input)
       .then((updated) => {
         setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, updated) } : prev);
         setNotice("Task status updated.");
         void refreshBoard();
+        // This status reached the server after any this device queued for
+        // the task before it was pressed: those are stale now.
+        if (isLatestPress()) {
+          void ackQueuedTaskStatuses(task.id, isLatestPress).catch(() => undefined).then(refreshPendingCount);
+        }
       })
       .catch((err: unknown) => {
         if (isRetriableError(err)) {
+          // A status pressed since has the last word, whatever becomes of it.
+          if (!isLatestPress()) return;
           return enqueueEventDayTaskStatus(task.id, input)
             .then(() => {
               refreshPendingCount();
