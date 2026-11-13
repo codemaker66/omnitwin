@@ -1644,7 +1644,7 @@ describe("EventDayOpsPage", () => {
         expect(server.keys()).toBe(order.fates.length);
 
         const standing = order.fates.map((fate, at) => (fate === "refused" ? null : PRESSES[at]?.status ?? null))
-          .filter((status): status is OpsTask["status"] => status !== null)
+          .filter((status): status is NonNullable<typeof status> => status !== null)
           .at(-1) ?? "todo";
         expect(server.waiting()).toBe(0);
         expect(server.status()).toBe(standing);
