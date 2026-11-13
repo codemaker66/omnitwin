@@ -168,6 +168,27 @@ describe("ProtectedRoute", () => {
     expect(screen.getByRole("alert").textContent).toContain("Platform access needed");
     expect(screen.queryByText("Platform surface")).toBeNull();
   });
+
+  // The Diary's route admits by the rule its header link and Find offer it by
+  // (opensDiary), so a platform admin offered the Diary is never refused it.
+  it.each([
+    ["a platform admin holding a customer's role", { role: "planner", platformRole: "admin" as const }, true],
+    ["the venue's hallkeeper", { role: "hallkeeper", platformRole: "none" as const }, true],
+    ["the venue's sales", { role: "sales", platformRole: "none" as const }, true],
+    ["a planner", { role: "planner", platformRole: "none" as const }, false],
+    ["a platform operator holding a customer's role", { role: "client", platformRole: "operator" as const }, false],
+  ])("opens the Diary for %s only where its link is offered", async (_who, person, opens) => {
+    mockAuthState.isAuthenticated = true;
+    mockAuthState.user = { id: "u3", email: "diary@test.com", venueId: "v1", name: "Diary Reader", ...person };
+    const { ProtectedRoute } = await import("../components/auth/ProtectedRoute.js");
+    const { opensDiary } = await import("../lib/role-capabilities.js");
+    expect(opensDiary(mockAuthState.user)).toBe(opens);
+
+    render(createElement(ProtectedRoute, { admits: opensDiary, children: "The Diary" }));
+
+    expect(screen.queryByText("The Diary") !== null).toBe(opens);
+    expect(screen.queryByRole("alert") !== null).toBe(!opens);
+  });
 });
 
 afterEach(() => {
