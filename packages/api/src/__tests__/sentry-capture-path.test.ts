@@ -340,11 +340,12 @@ describe("the API's errors in Sentry", () => {
       expect(headers["x-real-ip"]).toBe(SECOND_ADDRESS);
     }
     // Not vacuous: the header beside them, which nothing scrubs from an error
-    // event, reached each event's request headers. The SDK put it on each of
-    // the API's transactions too, in their request headers and as their
-    // trace's header attribute, before the scrubber ran; the scrubber then
-    // left a transaction no request header at all, credential or not (Blake,
-    // 13 November 2026: "Strip browser details, say so").
+    // event, reached each event's request headers. Before the scrubber ran,
+    // the SDK had put it, in the request headers and as the trace's header
+    // attribute, on at least as many transactions as the API sent (counted
+    // from the client's hook); every one it sent then carries no request
+    // header and no request-header attribute at all, credential or not
+    // (Blake, 13 November 2026: "Strip browser details, say so").
     expect(events.length).toBeGreaterThanOrEqual(3);
     expect(transactions.length).toBeGreaterThanOrEqual(4);
     const name = (event: SentEvent): string => event.transaction ?? event.exception?.values?.[0]?.value ?? "?";

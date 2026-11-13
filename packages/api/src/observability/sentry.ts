@@ -2,7 +2,7 @@ import type { FastifyRequest } from "fastify";
 import type { NodeOptions, fastifyIntegration } from "@sentry/node";
 import type { Env } from "../env.js";
 import { scrubApiSentryEvent } from "./health-redaction.js";
-import { scrubBreadcrumb, scrubErrorEvent, scrubTransaction } from "./redact.js";
+import { scrubBreadcrumb, scrubErrorEvent, scrubTransaction, type ScrubbableTransaction } from "./redact.js";
 
 // ---------------------------------------------------------------------------
 // Sentry — error tracking + tracing for Fastify
@@ -31,6 +31,19 @@ export const WEB_VITALS_TRANSACTION = "/public/web-vitals";
 export type SentryOptionsEnv = Pick<Env, "SENTRY_DSN" | "SENTRY_ENVIRONMENT" | "NODE_ENV" | "SENTRY_TRACES_SAMPLE_RATE">;
 
 /**
+ * Whether a timing record times a request that arrived carrying a trace of
+ * its own (sentry-trace and baggage headers): its parent is a span elsewhere.
+ * The web app sends no such headers, so only a caller does, and the baggage
+ * can set the sampling draw (sample_rand), which would let a caller make
+ * every one of its requests a timing record. Such a record is never sent, so
+ * the rate alone decides which requests are timed, and the privacy page's
+ * "about one request in ten" holds (#355's verification, 13 November 2026).
+ */
+export function continuesIncomingTrace(event: ScrubbableTransaction): boolean {
+  return event.contexts?.trace?.parent_span_id !== undefined;
+}
+
+/**
  * The options `initSentry` hands to `Sentry.init`. Pure, so a test can
  * assert the redaction hooks without initialising the SDK.
  *
@@ -40,9 +53,10 @@ export type SentryOptionsEnv = Pick<Env, "SENTRY_DSN" | "SENTRY_ENVIRONMENT" | "
  *     query parameters in exception values (`./redact.ts`), then any guest
  *     allergy note left in a message or breadcrumb (`./health-redaction.ts`);
  *   - beforeSendTransaction: the timing records carry no address, identifier
- *     or browser details (`scrubTransaction`: no request header, no query,
- *     body or token, and record ids in URLs replaced), as the privacy page
- *     says;
+ *     or browser details (`scrubTransaction`: no request header, breadcrumb,
+ *     query, body or token, and no record's id in any URL), as the privacy
+ *     page says, and one that continues a caller's trace is not sent
+ *     (`continuesIncomingTrace`);
  *   - beforeBreadcrumb: the query in http breadcrumbs.
  */
 export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
@@ -50,11 +64,6 @@ export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
     dsn: env.SENTRY_DSN,
     environment: env.SENTRY_ENVIRONMENT ?? env.NODE_ENV,
     tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
-    // The rate decides alone: a request that arrives with a sampled
-    // sentry-trace header is not traced for that, so a caller cannot make
-    // every one of its requests a timing record, and the privacy page's
-    // "about one request in ten" holds (#355's verification, 13 November 2026).
-    tracesSampler: () => env.SENTRY_TRACES_SAMPLE_RATE,
     // A page-speed report is traced by no one: the privacy page says the
     // server keeps only the timings and logs nothing for them (T-685,
     // 12 November 2026); before #355 a trace also carried the visitor's user
@@ -62,7 +71,7 @@ export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
     // failure still reaches Sentry through the error normaliser's capture.
     ignoreTransactions: [WEB_VITALS_TRANSACTION],
     beforeSend: (event) => scrubApiSentryEvent(scrubErrorEvent(event)),
-    beforeSendTransaction: scrubTransaction,
+    beforeSendTransaction: (event) => (continuesIncomingTrace(event) ? null : scrubTransaction(event)),
     beforeBreadcrumb: scrubBreadcrumb,
   };
 }

@@ -14,11 +14,14 @@
 // which outlasts the site's own links and reloads until the tab is closed
 // (Blake, 13 November 2026: "Keep it for the tab"); where the browser refuses
 // that too, it is held in this page's memory only, until the next page load.
-// Neither reaches another tab, and the switch says how long it holds. When
-// another tab presses the switch, every other tab follows at once, whether or
-// not it shows the switch (the storage event, heard once for the module); a
-// script there clearing all the site's storage changes what the browser
-// keeps, but leaves this tab's own objection standing. The reporter reads the
+// Neither reaches a tab already open, and the switch says how long it holds;
+// a browser does copy the tab's copy into a duplicate of the tab or one its
+// script opens, and keeps it in a tab it reopens, which can only measure
+// less. When another tab presses the switch while this one has the site
+// open, every other tab follows at once, whether or not it shows the switch
+// (the storage event, heard once for the module); a script there clearing
+// all the site's storage changes what the browser keeps, but leaves this
+// tab's own objection standing. The reporter reads the
 // choice before every send, so a press stops the page load in progress too.
 // The switch shows the choice as it stands (measurementChoiceState, read
 // through useSyncExternalStore).
@@ -94,8 +97,12 @@ function isSessionStorageEvent(event: StorageEvent): boolean {
  * all when its own settings clear the site's data (the next read sees that).
  */
 function onStorage(event: StorageEvent): void {
-  if (isSessionStorageEvent(event)) return;
   if (event.key !== null && event.key !== MEASUREMENT_DECLINED_KEY) return;
+  // A frame of this tab changed the tab's own copy: read it again, no more.
+  if (isSessionStorageEvent(event)) {
+    notify();
+    return;
+  }
   if (event.key === MEASUREMENT_DECLINED_KEY) {
     declinedThisPage = false;
     writeTabChoice(false);

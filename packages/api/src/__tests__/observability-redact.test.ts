@@ -585,50 +585,84 @@ describe("scrubTransaction", () => {
 
   // #355's verification (13 November 2026): the page says a timing record
   // carries no identifier, so no URL in one names a record.
-  it("names no record in any URL: the request's own on its route, every other with each record's segment replaced", () => {
+  it("names no record in any URL under any key: the request's own on its route, every other with each record's segment replaced", () => {
     const VENUE = "0f0f0f0f-0000-4000-8000-000000000001";
     const CLERK_USER = "user_2NNEqL2nrIRdJ194ndJqAHwEfxC";
+    // Clerk's ids are 27 letters and digits: about one in a hundred has no digit.
+    const CLERK_USER_NO_DIGIT = "user_AbCdEfGhIjKlMnOpQrStUvWxYzA";
+    // A code spelled only in letters: no pattern of segments could tell it
+    // from a word, so only the route's pattern takes it out.
+    const CODE = "qwertyzx";
     const out = scrubTransaction({
       type: "transaction",
       transaction: "GET /bookings/:bookingId",
-      request: { url: `https://api.example.test/bookings/BKG7Q2?view=full`, method: "GET" },
+      request: { url: `https://api.example.test/bookings/${CODE}?view=full`, method: "GET" },
       contexts: {
         trace: {
           trace_id: "00000000000000000000000000000001",
           span_id: "0000000000000001",
           data: {
             "http.route": "/bookings/:bookingId",
-            "url.full": "https://api.example.test/bookings/BKG7Q2",
-            "http.target": "/bookings/BKG7Q2?view=full",
-            "url.path": "/bookings/BKG7Q2",
+            // The SDK's own plain key beside the conventional ones.
+            url: `https://api.example.test/bookings/${CODE}`,
+            "url.full": `https://api.example.test/bookings/${CODE}`,
+            "http.target": `/bookings/${CODE}?view=full`,
+            "url.path": `/bookings/${CODE}`,
             "http.method": "GET",
           },
         },
       },
-      spans: [{
-        trace_id: "00000000000000000000000000000001",
-        span_id: "0000000000000002",
-        start_timestamp: 1,
-        description: `GET https://api.clerk.example/v1/users/${CLERK_USER}`,
-        data: { "http.url": `https://api.clerk.example/v1/users/${CLERK_USER}`, "url.path": `/v1/venues/${VENUE}/rooms` },
-      }],
+      spans: [
+        {
+          // Fastify's own span for the request, which writes its path again.
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000002",
+          start_timestamp: 1,
+          description: "request",
+          data: { "url.path": `/bookings/${CODE}?view=full`, "http.route": "/bookings/:bookingId" },
+        },
+        {
+          // An outgoing call.
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000003",
+          start_timestamp: 2,
+          description: `GET https://api.clerk.example/v1/users/${CLERK_USER}`,
+          data: { url: `https://api.clerk.example/v1/users/${CLERK_USER}`, "http.url": `https://api.clerk.example/v1/users/${CLERK_USER}`, "url.path": `/v1/venues/${VENUE}/rooms` },
+        },
+        {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000004",
+          start_timestamp: 3,
+          description: `GET https://api.clerk.example/v1/users/${CLERK_USER_NO_DIGIT}`,
+          data: { url: `https://api.clerk.example/v1/users/${CLERK_USER_NO_DIGIT}` },
+        },
+      ],
+      breadcrumbs: [{ category: "http", data: { url: "https://api.stripe.example/v1/checkout/sessions/cs_live_a1B2c3D4e5F6" } }],
     });
-    // The request this times: its route's pattern, so even a code spelled
-    // only in letters, which no pattern of segments could tell from a word, goes.
+    // The request this times: its route's pattern, wherever its path appears.
     expect(out.request?.url).toBe("https://api.example.test/bookings/:bookingId?[redacted]");
     expect(out.contexts?.trace?.data).toEqual({
       "http.route": "/bookings/:bookingId",
+      url: "https://api.example.test/bookings/:bookingId",
       "url.full": "https://api.example.test/bookings/:bookingId",
       "http.target": "/bookings/:bookingId?[redacted]",
       "url.path": "/bookings/:bookingId",
       "http.method": "GET",
     });
+    expect(out.spans?.[0]?.data).toEqual({ "url.path": "/bookings/:bookingId?[redacted]", "http.route": "/bookings/:bookingId" });
     // An outgoing call: each segment that names a record, kept words beside it.
-    expect(out.spans?.[0]?.data).toEqual({ "http.url": "https://api.clerk.example/v1/users/:id", "url.path": "/v1/venues/:id/rooms" });
-    expect(out.spans?.[0]?.description).toBe("GET https://api.clerk.example/v1/users/:id");
+    expect(out.spans?.[1]?.data).toEqual({
+      url: "https://api.clerk.example/v1/users/:id",
+      "http.url": "https://api.clerk.example/v1/users/:id",
+      "url.path": "/v1/venues/:id/rooms",
+    });
+    expect(out.spans?.[1]?.description).toBe("GET https://api.clerk.example/v1/users/:id");
+    expect(out.spans?.[2]?.data).toEqual({ url: "https://api.clerk.example/v1/users/:id" });
+    // A timing record needs no breadcrumbs, which carry outgoing calls' URLs.
+    expect(out.breadcrumbs).toBeUndefined();
     expect(out.transaction).toBe("GET /bookings/:bookingId");
     const text = JSON.stringify(out);
-    for (const id of ["BKG7Q2", VENUE, CLERK_USER]) expect(text).not.toContain(id);
+    for (const id of [CODE, VENUE, CLERK_USER, CLERK_USER_NO_DIGIT, "cs_live_a1B2c3D4e5F6"]) expect(text).not.toContain(id);
   });
 
   it("names no record in the name of a transaction no route matched, nor in a short code with a digit", () => {
@@ -641,9 +675,20 @@ describe("scrubTransaction", () => {
     expect(out.transaction).toBe("GET /p/:id/print");
     expect(out.request?.url).toBe("https://api.example.test/p/:id/print");
     expect(out.contexts?.trace?.data).toEqual({ "url.path": "/p/:id/print" });
-    // The route's own words and its versions stay.
+    // A route that is not a path ("*", Fastify's catch-all) is no pattern to put a path on.
+    const caught = scrubTransaction({
+      type: "transaction",
+      transaction: "GET *",
+      request: { url: "https://api.example.test/p/AB12CD", method: "GET" },
+      contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", data: { "http.route": "*" } } },
+    });
+    expect(caught.request?.url).toBe("https://api.example.test/p/:id");
+    expect(caught.contexts?.trace?.data).toEqual({ "http.route": "*" });
+    // The route's own words, long ones included, its versions and short tokens stay.
     expect(withoutIdentifiers("https://api.example.test/v1/health/version")).toBe("https://api.example.test/v1/health/version");
     expect(withoutIdentifiers("/venues/:id/rooms?[redacted]")).toBe("/venues/:id/rooms?[redacted]");
+    expect(withoutIdentifiers("/events/:id/changes-awaiting-acknowledgement")).toBe("/events/:id/changes-awaiting-acknowledgement");
+    expect(withoutIdentifiers("/v1/h2645/x")).toBe("/v1/h2645/x");
   });
 
   it("drops the request body, the caller's address and credentials, and the query in url.path", () => {

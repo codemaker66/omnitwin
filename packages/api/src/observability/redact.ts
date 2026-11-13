@@ -394,13 +394,14 @@ function dropBrowserDetails(data: Record<string, unknown> | undefined): void {
 const URL_PARTS = /^([a-z][a-z\d+.-]*:\/\/[^/?#]*)?([^?#]*)([\s\S]*)$/iu;
 
 /**
- * A path segment that names one record rather than a kind of thing: a UUID,
+ * A path segment that names one record rather than a kind of thing: a UUID;
  * a token of six or more characters with a digit in it (a share code, a
- * provider's id such as Clerk's `user_…` or Stripe's `pi_…`, a date), or one
- * of twenty or more letters, digits, dashes and underscores. The route's own
- * words ("venues", "payment_intents", "v1") and placeholders (":id") stay.
+ * provider's id such as Stripe's `cs_live_…`, a date); or one of twenty or
+ * more letters, digits, dashes and underscores in both cases (an id such as
+ * Clerk's `user_…`, digit or not). A route's own words ("venues",
+ * "changes-since-last-handoff", "v1") and placeholders (":id") stay.
  */
-const RECORD_SEGMENT = /^(?:[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}|(?=[^/]*\d)[\w.~%-]{6,}|[\w-]{20,})$/iu;
+const RECORD_SEGMENT = /^(?:[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}|(?=[^/]*\d)[\w.~%-]{6,}|(?=[^/]*[A-Z])(?=[^/]*[a-z])[\w-]{20,})$/u;
 
 /** Replaces each path segment that names one record with `:id`, keeping the
  *  origin, the route's words, and anything after the path. */
@@ -411,6 +412,11 @@ export function withoutIdentifiers(url: string): string {
   return `${origin}${path.split("/").map((segment) => (RECORD_SEGMENT.test(segment) ? ":id" : segment)).join("/")}${rest}`;
 }
 
+/** The path of a URL or path, without its origin, query or fragment. */
+function pathOf(url: string): string | undefined {
+  return URL_PARTS.exec(withoutQuery(url))?.[2];
+}
+
 /** The URL or path with its path replaced by the route's pattern. */
 function onRoute(url: string, route: string): string {
   const parts = URL_PARTS.exec(url);
@@ -419,45 +425,61 @@ function onRoute(url: string, route: string): string {
   return `${origin}${route}${rest}`;
 }
 
-/** Every URL or path in a span's description or a transaction's name: a
- *  token that starts with "/" or holds "://". */
-function withoutIdentifiersIn(text: string): string {
-  return text.replace(/\S*:\/\/\S+|(?<=^|\s)\/\S*/gu, (url) => withoutIdentifiers(url));
-}
+/** A URL ("…://…") or a path (at the start or after a space, from "/") in text. */
+const URL_TOKEN = /[a-z][a-z\d+.-]*:\/\/\S+|(?<=^|\s)\/\S*/giu;
 
-/** The URL-bearing attributes, on the route's pattern where it is known (the
- *  request this transaction times), and otherwise with each record's segment
- *  replaced (an outgoing call, say to Clerk's users/<id>). */
-function templateUrlAttributes(data: Record<string, unknown> | undefined, route: string | undefined): void {
-  if (data === undefined) return;
-  for (const key of URL_ATTRIBUTE_KEYS) {
-    const value = data[key];
-    if (typeof value === "string") data[key] = route === undefined ? withoutIdentifiers(value) : onRoute(value, route);
-  }
+/**
+ * A copy of plain data with every URL and path in every string, at any depth
+ * and under any key, put through `template`. Class instances (the SDK's
+ * scopes in its processing metadata) are left as they are; cycles are safe;
+ * the input is not changed (as templateCapabilityPathsDeep).
+ */
+function templateUrlsDeep<T>(value: T, template: (url: string) => string): T {
+  const seen = new WeakMap<object, unknown>();
+  const visit = (item: unknown): unknown => {
+    if (typeof item === "string") return item.replace(URL_TOKEN, (url) => template(url));
+    if (typeof item !== "object" || item === null) return item;
+    const known = seen.get(item);
+    if (known !== undefined) return known;
+    if (Array.isArray(item)) {
+      const copy: unknown[] = [];
+      seen.set(item, copy);
+      for (const child of item) copy.push(visit(child));
+      return copy;
+    }
+    const proto: unknown = Object.getPrototypeOf(item);
+    if (proto !== Object.prototype && proto !== null) return item;
+    const copy: Record<string, unknown> = {};
+    seen.set(item, copy);
+    for (const [key, child] of Object.entries(item)) copy[key] = visit(child);
+    return copy;
+  };
+  return visit(value) as T;
 }
 
 /**
- * `beforeSendTransaction`: strips the query from `request.url`, removes
- * `request.query_string`, the body, the cookies and every request header, and
- * cleans the URL-bearing, address and credential attributes and every
- * attribute that describes the browser on every span and on the trace
- * context. A transaction is the timing record the API sends for a sample of
- * requests whether or not anything failed, and the privacy page says it
- * carries no address, identifier or browser details (Blake, 13 November
- * 2026: "Strip browser details, say so"): none of a request's headers is
- * kept, the user agent included, and no URL names a record: the request's
- * own URL shows its route's pattern (`http.route`, as Fastify matched it),
- * and every other URL, a span's description and the name of a transaction
- * no route matched lose each segment that names one record.
+ * `beforeSendTransaction`: removes `request.query_string`, the body, the
+ * cookies, every request header and the breadcrumbs, drops the address,
+ * credential and browser attributes from the trace context and every span,
+ * and then puts every URL and path left anywhere in the record, whatever its
+ * key, through one rule: the request's own path (a string whose path is the
+ * request's, as `url`, `url.path` on Fastify's own span and the rest carry it)
+ * on its route's pattern (`http.route`, as Fastify matched it), and every
+ * other with its query cut and each segment that names a record replaced.
+ * A transaction is the timing record the API sends for a sample of requests
+ * whether or not anything failed, and the privacy page says it carries no
+ * address, identifier or browser details (Blake, 13 November 2026: "Strip
+ * browser details, say so"); its breadcrumbs, which hold the URLs of
+ * outgoing calls, it does not need.
  */
 export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransaction {
-  const routeAttribute = event.contexts?.trace?.data?.["http.route"];
+  const traceData = event.contexts?.trace?.data;
+  const routeAttribute = traceData?.["http.route"];
   const route = typeof routeAttribute === "string" && routeAttribute.startsWith("/") ? routeAttribute : undefined;
+  const requestUrl = [event.request?.url, traceData?.["url.full"], traceData?.["http.target"], traceData?.["url.path"]]
+    .find((value): value is string => typeof value === "string");
+  const requestPath = requestUrl === undefined ? undefined : pathOf(requestUrl);
   if (event.request !== undefined) {
-    if (event.request.url !== undefined) {
-      const url = withoutQuery(event.request.url);
-      event.request.url = route === undefined ? withoutIdentifiers(url) : onRoute(url, route);
-    }
     delete event.request.query_string;
     // The SDK keeps an incoming request's body on its transaction (the
     // http integration's maxIncomingRequestBodySize, "medium" by default):
@@ -466,15 +488,15 @@ export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransa
     dropRequestCredentials(event.request, DROPPED_REQUEST_HEADERS);
     delete event.request.headers;
   }
-  scrubAttributes(event.contexts?.trace?.data);
-  dropBrowserDetails(event.contexts?.trace?.data);
-  templateUrlAttributes(event.contexts?.trace?.data, route);
-  for (const span of event.spans ?? []) {
-    scrubAttributes(span.data);
-    dropBrowserDetails(span.data);
-    templateUrlAttributes(span.data, undefined);
-    if (span.description !== undefined) span.description = withoutIdentifiersIn(span.description);
+  delete event.breadcrumbs;
+  for (const data of [traceData, ...(event.spans ?? []).map((span) => span.data)]) {
+    scrubAttributes(data);
+    dropBrowserDetails(data);
   }
-  if (event.transaction !== undefined) event.transaction = withoutIdentifiersIn(event.transaction);
-  return templateCapabilityPathsDeep(event);
+  const template = (url: string): string => {
+    const cut = withoutQuery(url);
+    if (route !== undefined && requestPath !== undefined && pathOf(cut) === requestPath) return onRoute(cut, route);
+    return withoutIdentifiers(cut);
+  };
+  return templateCapabilityPathsDeep(templateUrlsDeep(event, template));
 }

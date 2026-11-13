@@ -9,8 +9,9 @@ import {
   requestLogSerializer,
   scrubBreadcrumb,
   scrubTransaction,
+  type ScrubbableTransaction,
 } from "../observability/redact.js";
-import { WEB_VITALS_TRANSACTION, buildSentryOptions } from "../observability/sentry.js";
+import { WEB_VITALS_TRANSACTION, buildSentryOptions, continuesIncomingTrace } from "../observability/sentry.js";
 
 // ---------------------------------------------------------------------------
 // The wiring: the redaction in observability/redact.ts reaches the server only
@@ -80,22 +81,26 @@ describe("the API's Sentry options", () => {
     expect(options.environment).toBe("production");
     expect(options.tracesSampleRate).toBe(0.1);
     expect(options.beforeSend).toBeTypeOf("function");
-    expect(options.beforeSendTransaction).toBe(scrubTransaction);
+    // The transaction scrubber, behind the drop of a caller's trace (below).
+    const own: ScrubbableTransaction = { type: "transaction", request: { url: "https://api.example.test/people/search?q=someone" } };
+    expect(options.beforeSendTransaction?.(structuredClone(own), {})).toEqual(scrubTransaction(structuredClone(own)));
     expect(options.beforeBreadcrumb).toBe(scrubBreadcrumb);
     // The page-speed reports' route is left out of tracing; the real SDK,
     // route and server show it in web-vitals-tracing.test.ts.
     expect(options.ignoreTransactions).toEqual([WEB_VITALS_TRANSACTION]);
   });
 
-  // #355's verification (13 November 2026): a caller's sampled sentry-trace
-  // header must not make its requests timing records; the rate decides alone,
-  // so the privacy page's "about one request in ten" holds.
-  it("sample at the configured rate whatever an incoming trace decided", () => {
-    type SamplingContext = Parameters<NonNullable<typeof options.tracesSampler>>[0];
-    const sampled: SamplingContext = { name: "GET /venues/:id", parentSampled: true, inheritOrSampleWith: () => 1 };
-    const notSampled: SamplingContext = { name: "GET /venues/:id", parentSampled: false, inheritOrSampleWith: () => 0 };
-    expect(options.tracesSampler?.(sampled)).toBe(0.1);
-    expect(options.tracesSampler?.(notSampled)).toBe(0.1);
+  // #355's verifications (13 November 2026): a caller's trace headers can set
+  // the sampling draw, so a timing record of a request that continued one is
+  // never sent; the rate alone decides, and "about one request in ten" holds.
+  it("send no timing record of a request that continued a caller's trace", () => {
+    const trace = { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001" };
+    const continued: ScrubbableTransaction = { type: "transaction", contexts: { trace: { ...trace, parent_span_id: "00000000000000aa" } } };
+    const own: ScrubbableTransaction = { type: "transaction", contexts: { trace } };
+    expect(continuesIncomingTrace(continued)).toBe(true);
+    expect(continuesIncomingTrace(own)).toBe(false);
+    expect(options.beforeSendTransaction?.(continued, {})).toBeNull();
+    expect(options.beforeSendTransaction?.(own, {})).not.toBeNull();
   });
 
   it("name SENTRY_ENVIRONMENT over NODE_ENV when it is set", () => {

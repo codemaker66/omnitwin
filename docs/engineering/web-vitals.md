@@ -247,11 +247,13 @@ send. A press to decline that the browser will not keep (storage full) is kept f
 tab instead, in its session storage, which outlasts the site's own links (plain links,
 each a fresh page load) and reloads until the tab is closed (Blake, 13 November 2026:
 "Keep it for the tab (Recommended)"); where the browser refuses that too, it is held in
-that page's memory only, until the next page load. Neither reaches another tab, and
-the switch says how long it holds ("only in this tab, until you close it"; "only
-until you leave this page"). Another tab's press replaces it; a script there clearing
-all of the site's storage does not. A page restored from the back/forward cache reads
-the choice again. The switch reads what holds from the choice itself
+that page's memory only, until the next page load. Neither reaches a tab already open,
+and the switch says how long it holds ("only in this tab, until you close it"; "only
+until you leave this page"); a browser does copy session storage into a duplicate of
+the tab or one its script opens, and keeps it in a tab it reopens, which can only
+measure less. A press in another tab while this one has the site open replaces it; a
+script there clearing all of the site's storage does not. A page restored from the
+back/forward cache reads the choice again. The switch reads what holds from the choice itself
 (`measurementChoiceState`, through `useSyncExternalStore`), so a return to the page
 cannot reset what it says. The reporter reads the choice again before every send, so
 pressing the switch also stops the page load in progress (the privacy page is itself
@@ -319,10 +321,15 @@ cookies section names each of paragraph 5's conditions, not a part of them. A se
 verification that night (five lenses, three skeptics a finding) found three more
 things. Record ids in the timing records' URLs (user, event and booking ids in the
 request's path, provider ids in outgoing calls): the record "with no address,
-identifier or browser details" Blake approved needs none, so the request's own URL now
-shows its route's pattern and every other URL loses each segment that names a record;
-and the rate alone decides what is sampled, whatever an incoming trace header says,
-so "about one request in ten" holds. A press held only in memory was lost at the next
+identifier or browser details" Blake approved needs none, so every URL and path left
+anywhere in a record, under any key (the SDK's plain `url` and Fastify's own span
+among them), is put on the route's pattern where it is the request's own path, and
+otherwise loses each segment that names a record, and a record carries no breadcrumbs
+(they hold outgoing calls' URLs). And a caller's trace headers can set the sampling
+draw (the baggage's sample_rand), so a record of a request that continues a caller's
+trace is never sent (the web app sends none): the rate alone decides, and "about one
+request in ten" holds. A third verification (four lenses) found both of those holes
+in the first fixes, which only covered named keys and the sampler. A press held only in memory was lost at the next
 page load, which the page's own links are, though the line said it held until a reload
 or leaving the site: Blake chose "Keep it for the tab (Recommended)", with the lines
 "…holds only in this tab, until you close it." and, where the tab will not keep it

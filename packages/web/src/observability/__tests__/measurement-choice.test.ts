@@ -241,15 +241,43 @@ describe("the measurement choice", () => {
     });
   });
 
-  it("ignores a change to this tab's own session storage, which a frame of the tab could make", () => {
+  it("reads the choice again when a frame of this tab changes the tab's own copy, and takes it for no other tab's press", () => {
+    withStorage({ local: fullStorage(new Map()) }, () => {
+      // Kept for the tab only, so another tab's press would take it away.
+      setMeasurementDeclined(true);
+      const seen: string[] = [];
+      const stop = subscribeMeasurementChoice(() => { seen.push(measurementChoiceState()); });
+      try {
+        window.dispatchEvent(new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, newValue: "1", storageArea: window.sessionStorage }));
+        expect(seen).toEqual(["declined-this-tab"]);
+      } finally {
+        stop();
+      }
+    });
+  });
+
+  it("holds a press for the page where the tab's own storage cannot even be read", () => {
+    withStorage({ local: fullStorage(new Map()), session: { getItem: refuse, setItem: refuse, removeItem: refuse } }, () => {
+      setMeasurementDeclined(true);
+      expect(measurementChoiceState()).toBe("declined-this-page");
+      expect(measurementDeclined()).toBe(true);
+    });
+  });
+
+  it("takes an event for another tab's press as one where the tab's own storage cannot be asked", () => {
     setMeasurementDeclined(true);
+    const realSession = window.sessionStorage;
     const seen: string[] = [];
     const stop = subscribeMeasurementChoice(() => { seen.push(measurementChoiceState()); });
+    const browserStorage = window.localStorage;
+    Object.defineProperty(window, "sessionStorage", { configurable: true, get: () => { throw new Error("blocked"); } });
     try {
-      window.dispatchEvent(new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, newValue: null, storageArea: window.sessionStorage }));
-      expect(seen).toEqual([]);
-      expect(measurementChoiceState()).toBe("declined");
+      browserStorage.removeItem(MEASUREMENT_DECLINED_KEY);
+      // With its storage area named, the check has to ask for the tab's own.
+      window.dispatchEvent(new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, newValue: null, storageArea: browserStorage }));
+      expect(seen).toEqual(["measured"]);
     } finally {
+      Object.defineProperty(window, "sessionStorage", { configurable: true, value: realSession });
       stop();
     }
   });

@@ -6,23 +6,33 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { initSentry } from "../observability/sentry.js";
 
 // ---------------------------------------------------------------------------
-// The API's timing records carry no browser details. Production samples one
-// request in ten as a Sentry transaction whether or not anything failed, and
-// the privacy page says such a record carries no address, identifier or
-// browser details (Blake, 13 November 2026: "Strip browser details, say
-// so"). The real SDK is started as the API starts it (initSentry, every
-// request traced here) against a local stand-in for Sentry's ingest, as
-// sentry-capture-path.test.ts and web-vitals-tracing.test.ts do. A request
-// with a marked user agent and language is traced; the transaction as the SDK
-// built it, just before the API's own scrubber, is read from the client's
+// The API's timing records carry no address, identifier or browser details.
+// Production samples one request in ten as a Sentry transaction whether or
+// not anything failed, and the privacy page says so (Blake, 13 November 2026:
+// "Strip browser details, say so"). The real SDK is started as the API starts
+// it (initSentry, every request traced here) against a local stand-in for
+// Sentry's ingest, as sentry-capture-path.test.ts and
+// web-vitals-tracing.test.ts do. A request with a marked user agent and
+// language, and a record's code in its path, is traced, and its route calls
+// out to a stand-in provider with an id in the URL. Each transaction as the
+// SDK built it, just before the API's own scrubber, is read from the client's
 // postprocessEvent hook (so the test cannot pass for want of the details),
-// and what the SDK sent is read from the stand-in.
+// and what the SDK sent is read from the stand-in ingest.
 // ---------------------------------------------------------------------------
 
 const MARKED_AGENT = "ProbeBrowser/9.9 (timing-record-marker-5ad1)";
 const MARKED_LANGUAGE = "gd-GB";
-/** A record's id in the request's path. */
-const VENUE = "0f0f0f0f-0000-4000-8000-000000000001";
+/** A record's code in the request's path, spelled only in letters: no rule
+ *  for path segments could tell it from a word, so only the route's pattern
+ *  takes it out. */
+const CODE = "qwertyzx";
+/** A provider's id in the URL of the call the route makes (as Clerk's users/<id>). */
+const PROVIDER_ID = "user_2NNEqL2nrIRdJ194ndJqAHwEfxC";
+/** A caller's trace, whose baggage sets the sampling draw to its lowest. */
+const CALLER_TRACE = {
+  "sentry-trace": "0123456789abcdef0123456789abcdef-0123456789abcdef-1",
+  baggage: "sentry-trace_id=0123456789abcdef0123456789abcdef,sentry-sample_rand=0,sentry-sample_rate=1,sentry-sampled=true",
+};
 
 interface SentTransaction {
   readonly transaction?: unknown;
@@ -41,12 +51,22 @@ function transactionsIn(envelope: string): SentTransaction[] {
   return found;
 }
 
+const listen = (server: Server): Promise<string> => new Promise((resolve) => {
+  server.listen(0, "127.0.0.1", () => { resolve(`http://127.0.0.1:${String((server.address() as AddressInfo).port)}`); });
+});
+
+const close = (server: Server | undefined): Promise<void> => new Promise((resolve) => {
+  if (server === undefined) resolve();
+  else server.close(() => { resolve(); });
+});
+
 describe("the API's timing records (the real SDK and server)", () => {
   const envelopes: string[] = [];
   /** Each transaction as the SDK built it, before beforeSendTransaction ran. */
   const built: string[] = [];
-  let ingest: Server;
-  let server: FastifyInstance;
+  let ingest: Server | undefined;
+  let provider: Server | undefined;
+  let server: FastifyInstance | undefined;
   let base = "";
   let flush: (timeout: number) => Promise<boolean>;
 
@@ -61,31 +81,48 @@ describe("the API's timing records (the real SDK and server)", () => {
         response.end("{}");
       });
     });
-    await new Promise<void>((resolve) => { ingest.listen(0, "127.0.0.1", resolve); });
-    const { port } = ingest.address() as AddressInfo;
+    const ingestBase = await listen(ingest);
+    // A stand-in for a provider the route calls out to.
+    provider = createServer((request, response) => {
+      request.resume();
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("{}");
+    });
+    const providerBase = await listen(provider);
 
-    // The SDK's transport honours http_proxy; the stand-in ingest is local.
+    // The SDK's transport honours http_proxy; the stand-ins are local.
     vi.stubEnv("http_proxy", "");
     vi.stubEnv("HTTP_PROXY", "");
     // As index.ts: Sentry before Fastify, so its instrumentation sees the server.
-    await initSentry({ SENTRY_DSN: `http://public@127.0.0.1:${String(port)}/1`, NODE_ENV: "production", SENTRY_TRACES_SAMPLE_RATE: 1 });
+    await initSentry({ SENTRY_DSN: `${ingestBase.replace("http://", "http://public@")}/1`, NODE_ENV: "production", SENTRY_TRACES_SAMPLE_RATE: 1 });
     const Sentry = await import("@sentry/node");
     flush = Sentry.flush;
     // After the SDK's own processors (its request data among them), before
-    // the API's beforeSendTransaction, which then changes the same object.
+    // the API's beforeSendTransaction, which then works on the same object.
     // Only the plain parts are copied: the event still holds the SDK's scopes
     // then, and a hook that threw would drop the event.
     Sentry.getClient()?.on("postprocessEvent", (event) => {
       if (event.type !== "transaction") return;
       try {
-        built.push(JSON.stringify({ request: event.request, trace: event.contexts?.trace?.data, spans: event.spans?.map((span) => span.data) }));
+        built.push(JSON.stringify({
+          transaction: event.transaction,
+          request: event.request,
+          trace: event.contexts?.trace,
+          spans: event.spans?.map((span) => ({ description: span.description, data: span.data })),
+          breadcrumbs: event.breadcrumbs,
+        }));
       } catch {
         built.push("{}");
       }
     });
 
     server = Fastify();
-    server.get("/venues/:id", (_request, reply) => reply.send({ id: "a-venue" }));
+    server.get("/venues/:venueId", async () => {
+      const call = await fetch(`${providerBase}/v1/users/${PROVIDER_ID}`);
+      await call.arrayBuffer();
+      return { id: "a-venue" };
+    });
+    server.get("/forced/:code", () => ({ ok: true }));
     await server.listen({ port: 0, host: "127.0.0.1" });
     base = `http://127.0.0.1:${String((server.server.address() as AddressInfo).port)}`;
   }, 60_000);
@@ -93,11 +130,12 @@ describe("the API's timing records (the real SDK and server)", () => {
   afterAll(async () => {
     vi.unstubAllEnvs();
     await server?.close();
-    await new Promise<void>((resolve) => { ingest?.close(() => { resolve(); }); });
+    await close(provider);
+    await close(ingest);
   });
 
-  it("sends a sampled request's timing with no request header, no user agent, no language and no record's id", async () => {
-    const response = await fetch(`${base}/venues/${VENUE}`, {
+  it("sends a sampled request's timing with no request header, user agent, language or record's id, nor its outgoing call's id", async () => {
+    const response = await fetch(`${base}/venues/${CODE}`, {
       headers: { "user-agent": MARKED_AGENT, "accept-language": MARKED_LANGUAGE },
     });
     await response.arrayBuffer();
@@ -105,22 +143,33 @@ describe("the API's timing records (the real SDK and server)", () => {
     let sent: SentTransaction[] = [];
     await vi.waitFor(async () => {
       await flush(2_000);
-      sent = envelopes.flatMap(transactionsIn).filter((event) => event.transaction === "GET /venues/:id");
+      sent = envelopes.flatMap(transactionsIn).filter((event) => event.transaction === "GET /venues/:venueId");
       expect(sent).toHaveLength(1);
     }, { timeout: 10_000 });
-    // The SDK did record the browser's details and the record's id: without
-    // the scrubber they would be sent.
-    const builtVenue = built.filter((event) => event.includes(VENUE));
-    expect(builtVenue).not.toEqual([]);
-    expect(builtVenue.some((event) => event.includes("timing-record-marker-5ad1"))).toBe(true);
-    expect(builtVenue.some((event) => event.includes(MARKED_LANGUAGE))).toBe(true);
-    // None of them was sent: no header, the route's pattern in place of the
+    // The SDK did record all of it: without the scrubber it would be sent.
+    const builtVenue = built.filter((event) => event.includes("\"GET /venues/:venueId\"")).join("\n");
+    for (const marker of ["timing-record-marker-5ad1", MARKED_LANGUAGE, CODE, PROVIDER_ID]) expect(builtVenue).toContain(marker);
+    // None of it was sent: no header, the route's pattern in place of the
     // path, and no marker or id anywhere in what reached the ingest.
     expect(sent[0]?.request?.headers).toBeUndefined();
-    expect(sent[0]?.request?.url).toBe(`${base}/venues/:id`);
+    expect(sent[0]?.request?.url).toBe(`${base}/venues/:venueId`);
     const everything = envelopes.join("\n");
-    expect(everything).not.toContain("timing-record-marker-5ad1");
-    expect(everything).not.toContain(MARKED_LANGUAGE);
-    expect(everything).not.toContain(VENUE);
+    for (const marker of ["timing-record-marker-5ad1", MARKED_LANGUAGE, CODE, PROVIDER_ID]) expect(everything).not.toContain(marker);
+  }, 30_000);
+
+  // #355's verification (13 November 2026): a caller's baggage can set the
+  // sampling draw (sample_rand), so a request that continues a caller's trace
+  // is never sent as a timing record; the rate alone decides.
+  it("sends no timing record of a request that carries a caller's trace, however its baggage set the draw", async () => {
+    const response = await fetch(`${base}/forced/abcdef`, { headers: CALLER_TRACE });
+    await response.arrayBuffer();
+    expect(response.status).toBe(200);
+    // Traced: the SDK built its record...
+    await vi.waitFor(() => {
+      expect(built.some((event) => event.includes("\"GET /forced/:code\""))).toBe(true);
+    }, { timeout: 10_000 });
+    await flush(2_000);
+    // ...and none was sent.
+    expect(envelopes.flatMap(transactionsIn).filter((event) => event.transaction === "GET /forced/:code")).toEqual([]);
   }, 30_000);
 });

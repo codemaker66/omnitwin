@@ -241,7 +241,7 @@ export async function startWebVitals(options: StartWebVitalsOptions): Promise<bo
   // later hide sends what arrived since). The visitor may have pressed "Don't
   // measure my visits" while this load was measured (on the privacy page
   // itself) or in another tab (a press the browser kept: one it would not
-  // keep reaches no other tab): the choice is read again here, before every
+  // keep reaches no tab already open): the choice is read again here, before every
   // send. At the first hide after it is set, nothing is sent, this load's
   // values included, and this listener and the route's following stop. The
   // library's own observers cannot be stopped (web-vitals 6 returns no way
