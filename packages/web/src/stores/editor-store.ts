@@ -34,6 +34,7 @@ import {
   namingReplacedNotes,
   noteStillSavingLine,
   notesRefusedOnLeaving,
+  notesSentIn,
   nothingRedoneLine,
   nothingRemovedLine,
   nothingUndoneLine,
@@ -44,6 +45,7 @@ import {
   registerHeldNotes,
   signedInRoutesSuit,
   stayedForNotesLine,
+  takingNotesKeptUnsent,
 } from "../lib/guest-plan-notes.js";
 import { holdPlannerPageLock, isPlannerPageOpen, plannerPageId } from "../lib/planner-page-lock.js";
 import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
@@ -2288,7 +2290,11 @@ async function saveDocument(
       if (cleared !== null) {
         if (session !== configurationSession || get().configId !== configId) return false;
         revision = cleared.revision;
-        set({ configRevision: revision, baseObjects: keepingConfirmedNotes(cleared.objects.map(placedObjectToEditor), confirmed) });
+        // A note its answer holds that it did not send is one this browser
+        // has not shown, and the working document is not touched here: it is
+        // held, never named by the save that follows (delta review X1).
+        const answered = takingNotesKeptUnsent(objects, cleared.objects.map(placedObjectToEditor), notesSentIn(clearing), null).confirmed;
+        set({ configRevision: revision, baseObjects: keepingConfirmedNotes(answered, confirmed) });
       }
       // That answer can say a piece this document has lost holds a note this
       // browser is not shown (one written since by the single-piece route):
@@ -2397,14 +2403,24 @@ async function saveDocument(
     // A note left to the server is never named by a later save unless this
     // browser shows it (delta review of #388 at 33a8e0ad, S2).
     const confirmedAnswer = confirmedAfterLeaving(serverObjects, objectsAfter, outOfDate, unsettled);
-    const base = unsettled.size === 0
+    const answeredBase = unsettled.size === 0
       ? confirmedAnswer
       : keepingConfirmedNotes(confirmedAnswer, sentBase.filter((object) => unsettled.has(object.id)), true);
+    // Nor, after any save that lands, a note the server kept that this save
+    // did not send: the piece shows it if the person has not touched its note
+    // since the save went, and holds it otherwise (delta review of #388 at
+    // 7a51b6e4, X1). No save from this browser ever names, as the note a
+    // piece's note replaces, words this browser has not shown on that piece.
+    const theirNotes = new Map(latest.objects.map((object) => [idMap.get(object.id) ?? object.id, object.notes]));
+    const leftToTheServer = new Set([...outOfDate.keys(), ...unsettled.keys()]);
+    const { objects: shownAfter, confirmed: base } = takingNotesKeptUnsent(
+      objectsAfter, answeredBase, notesSentIn(batch, leftToTheServer), theirNotes,
+    );
     // The API's sentence is for words over a held note; a refused clear has its
     // own (ruling C3 on #388), and both stand in one notice when both are refused.
-    const refusal = { objects: objectsAfter, noteClearsRefused: noteRefused ? clearsRefused : get().noteClearsRefused };
+    const refusal = { objects: shownAfter, noteClearsRefused: noteRefused ? clearsRefused : get().noteClearsRefused };
     set({
-      objects: objectsAfter,
+      objects: shownAfter,
       baseObjects: base,
       history: aligned ? remapHistoryIds(latest.history, idMap) : emptyHistory<EditorObject>(),
       selectedObjectId: latest.selectedObjectId === null

@@ -349,6 +349,71 @@ export function confirmedAfterLeaving(
 }
 
 /**
+ * The note a save sent on each piece, by id, as the person had it: what its
+ * answer is read against (takingNotesKeptUnsent). A piece the save places is
+ * not in it: it holds what was sent. Nor is a piece in `left`, whose note the
+ * save left to the server (afterLeavingOutOfDateNotes, confirmedAfterLeaving).
+ */
+export function notesSentIn(batch: readonly BatchObjectInput[], left: ReadonlySet<string> = NONE): ReadonlyMap<string, string> {
+  const sent = new Map<string, string>();
+  for (const piece of batch) {
+    if (piece.id !== undefined && !left.has(piece.id)) sent.set(piece.id, piece.metadata?.notes ?? "");
+  }
+  return sent;
+}
+
+/**
+ * A landed save's answer, read against what that save sent (delta review of
+ * #388 at 7a51b6e4, X1), so that no save from this browser ever sends
+ * replacesNote with words this browser has not shown the person on that
+ * piece, whatever the order of edits, saves and answers.
+ *
+ * The plan's maker is answered with the rows as stored (#389, `madeHere`).
+ * A piece the save sent with no note therefore comes back holding the note
+ * the server kept on it: one written since with no new revision (the
+ * single-piece route), which this browser has never shown. Taken as the
+ * confirmed document while the working piece stayed bare (an edit landed
+ * while the save was out), that note was named by the next save and cleared.
+ * For each piece whose answer holds a note the save did not send (`sent`,
+ * from notesSentIn):
+ *
+ *   - when the person's note on it (`theirs`) is still the one the save sent,
+ *     they have not touched it since: the working piece takes the answer's
+ *     note, which they now see, and it is theirs to change or clear;
+ *   - otherwise (they wrote on it meanwhile, or it is gone) their words stay,
+ *     and the confirmed piece is marked as holding a note this browser is not
+ *     shown, as the answer to any other browser marks it: no save names that
+ *     note, and none puts the person's words over it.
+ *
+ * `theirs` null: the working document does not change here (the save that
+ * first clears removed pieces' own notes), so every such piece is marked.
+ * The same arrays when no piece is either.
+ */
+export function takingNotesKeptUnsent(
+  working: readonly EditorObject[],
+  answer: readonly EditorObject[],
+  sent: ReadonlyMap<string, string>,
+  theirs: ReadonlyMap<string, string> | null,
+): { readonly objects: readonly EditorObject[]; readonly confirmed: readonly EditorObject[] } {
+  const taken = new Map<string, string>();
+  const unshown = new Set<string>();
+  for (const object of answer) {
+    const given = noteGiven(object);
+    const sentNote = sent.get(object.id);
+    if (given === "" || sentNote === undefined || given === sentNote) continue;
+    if (theirs?.get(object.id) === sentNote) taken.set(object.id, given);
+    else unshown.add(object.id);
+  }
+  return {
+    objects: taken.size === 0 ? working : working.map((object) => {
+      const given = taken.get(object.id);
+      return given === undefined || object.notes === given ? object : { ...object, notes: given };
+    }),
+    confirmed: unshown.size === 0 ? answer : answer.map((object) => (unshown.has(object.id) ? { ...object, notes: "", noteHeld: true } : object)),
+  };
+}
+
+/**
  * Of the person's pieces (`theirs`), the ones whose note a save left to the
  * server as out of date (`outOfDate`, as for afterLeavingOutOfDateNotes) and
  * which they had changed or cleared: someone else had rewritten that note, so
