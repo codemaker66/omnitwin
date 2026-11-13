@@ -990,13 +990,17 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
   // wall clock moved an hour on as the server closes (a time sync, say)
   // neither cuts the close short nor stretches it.
   it("measures a close's bound on a clock that a change of the wall clock cannot move", async () => {
-    const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
-    const narrowDb: Database = drizzle(narrowPool, { schema });
-    const steady = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 2_000, ceiling: createDailyCeiling(2) });
-    const taken = await narrowPool.connect();
-    let released = false;
+    // The spy is in place before the batch is made: a batch whose bound read
+    // the wall clock would hold the spy itself (as Date.now) and see the hour
+    // move, so it could not pass here. Calls go through until it is moved.
     const wallClock = vi.spyOn(Date, "now");
+    const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
+    let taken: PoolClient | undefined;
+    let released = false;
     try {
+      const narrowDb: Database = drizzle(narrowPool, { schema });
+      const steady = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 2_000, ceiling: createDailyCeiling(2) });
+      taken = await narrowPool.connect();
       expect(steady.hold({ ...REPORT, metrics: [REPORT.metrics[1]] })).toBe(true);
       await expect(steady.flush()).rejects.toThrow(/unfinished after 2000 ms/u);
       expect(steady.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true);
@@ -1012,7 +1016,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       expect(written).toEqual([{ metric: "CLS" }, { metric: "INP" }]);
     } finally {
       wallClock.mockRestore();
-      if (!released) taken.release();
+      if (taken !== undefined && !released) taken.release();
       await narrowPool.end();
     }
   }, 15_000);
