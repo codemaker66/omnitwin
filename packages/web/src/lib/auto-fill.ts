@@ -1031,20 +1031,7 @@ export function gangwayReview(
     }));
 }
 
-/** Who reads a gangway flag: a signed-in layout keeps its review (lib/gangway-review-record); a guest's preview does not. */
-export type GangwayFlagReader = "signed-in" | "guest";
-
-/**
- * The flag the ghost and the caption show, saying what happens to the
- * pinch: "Gangway 0.95 m · under the 1.1 m guidance · goes to the venue with
- * this layout"; to a guest, whose preview stores nothing, "… · the venue
- * sees this with your layout". The width is cut, never rounded, to the
- * centimetre, so a gangway under the guidance never reads as meeting it.
- */
-export function gangwayFlag(widthM: number, rule: AisleRule = FILL_AISLE_RULE, reader: GangwayFlagReader = "signed-in"): string {
-  const what = reader === "guest" ? "the venue sees this with your layout" : "goes to the venue with this layout";
-  return `Gangway ${(Math.floor(widthM * 100 + 1e-6) / 100).toFixed(2)} m · under the ${String(rule.gangwayM)} m guidance · ${what}`;
-}
+// The gangway flag the live aisles show (gangwayFlag) is in lib/live-aisles.ts, which only the new chrome loads (T-671).
 
 // ---------------------------------------------------------------------------
 // Merge, never replace (Q-10): Fill sets anew only the round groups of the

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { cardStoreFigure, loadUsableStock, placedCounts, registerStoreStock, storeRefuses, type UsableStock } from "../../lib/card-stock.js";
+import { placedCounts, registerStoreStock, storeRefuses, type UsableStock } from "../../lib/card-stock.js";
+import { cardStoreFigure, loadUsableStock } from "../../lib/card-store-figures.js";
 import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 import { cardParamsFor, type CardId, type CardParams } from "../../lib/setup-cards.js";
 import { useAuthStore } from "../../stores/auth-store.js";

@@ -2,13 +2,12 @@ import { AlignCenterHorizontal, Copy, Move, PackageMinus, Replace, RotateCw } fr
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { captionAisles, captionModel, type CaptionModel, type CaptionVerb } from "../../lib/caption-model.js";
 import { placeCaption } from "../../lib/caption-placement.js";
+import { lineUpSelection, moveSelectionTo } from "../../lib/planner-edit-commands.js";
 import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 import {
   QUARTER_TURN_RAD,
   changeSeatsAtSelectedTables,
   duplicateSelection,
-  lineUpSelection,
-  moveSelectionTo,
   removeSelection,
   toggleClothOnSelection,
   turnSelection,

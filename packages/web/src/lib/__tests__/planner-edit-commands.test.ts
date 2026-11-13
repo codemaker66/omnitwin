@@ -1,4 +1,4 @@
-// Line up, Move and Replace as commands (lib/planner-keymap.ts): the plan, every
+// Line up, Move and Replace as commands (lib/planner-edit-commands.ts): the plan, every
 // piece settled where it stands, set down as one write through placement-store
 // applyEdit (so one undo step), the result selected; a refusal says why and
 // changes nothing (card-dock spec §8.2, §18; Q-16, Q-18, law 11).
@@ -7,7 +7,8 @@ import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../catalogue.js";
 import { resetPlacedIdCounter, settleOnSurfaces, type PlacedItem } from "../placement.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
-import { duplicateSelection, lineUpSelection, moveSelectionTo, replaceSelection, resetEditingMemoryForTesting } from "../planner-keymap.js";
+import { lineUpSelection, moveSelectionTo, replaceSelection } from "../planner-edit-commands.js";
+import { duplicateSelection, resetEditingMemoryForTesting } from "../planner-keymap.js";
 import { cardParamsFor, stampSetup, type CardId, type CardParams, type CardParamsRequest } from "../setup-cards.js";
 import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
