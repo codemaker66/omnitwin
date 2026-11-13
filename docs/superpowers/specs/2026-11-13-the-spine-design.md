@@ -1,6 +1,7 @@
 # The spine: design
 
-Design, 13 November 2026. Status: **draft for Blake's approval. No product code is written until he approves.**
+Design, 13 November 2026. Status: **approved by Blake on 13 November 2026** (his answers are in section 2).
+Next comes the build plan, then the build with tests first.
 A builder's check was done on 13 November by a fresh reader with the code open; its nine questions and four
 corrections are answered in the text.
 Piece B of the platform plan (`docs/superpowers/specs/2026-11-13-platform-plan-design.md`, section 5.2), ledger row
@@ -33,13 +34,14 @@ what every later screen stands on: the event page, People and Money.
 Decided on 13 November: the spine is one of the first three pieces, to be designed first and approved before any
 code. Design approvals never proceed by default. Real money moves only on his explicit yes.
 
-Only he decides, in this design:
+What only he decides in this design, and his answers of 13 November, by button, verbatim:
 
-1. **When an enquiry becomes an event.** Recommended: when someone first works it (section 5.2).
-2. **Whether Trades Hall takes deposits into its own payment account.** Recommended: yes, the Hall's own account,
-   connected to Venviewer, with the Hall as the merchant (section 8.3). Nothing goes live on this answer; it
-   settles the design.
-3. **The design itself.**
+1. **When an enquiry becomes an event:** "When first worked (Recommended)" (section 5.2).
+2. **Whether Trades Hall takes card deposits into its own payment account, with the Hall as the merchant:** "Yes,
+   the Hall's own account (Recommended)" (section 8.3). Nothing goes live on this answer; it settles the design.
+3. **A read-only count on the live database:** "Yes, read-only count (Recommended)". It was run the same evening
+   (sections 3 and 7).
+4. **The design itself:** "Approve it (Recommended)".
 
 Not asked here: the stage words. They go to the first-click test with venue people (plan, section 3.6).
 
@@ -115,11 +117,17 @@ All paths are under `packages/`. "schema" is `api/src/db/schema.ts`.
   (`deposit_payments_test_mode_only`, 0104:135), for one venue named in the server's settings. It cannot hold a
   payment by bank or by hand (schema:2788-2816).
 
-**Not measured.** How many live proposals, deals, worked enquiries, agreements and deposit requests production
-holds, and how many reach exactly one event by each path, is not in this draft. The counting script is written
-(counts only, one read-only transaction, nothing personal). Reading production needs Blake's yes, which is asked
-with this design. The numbers go in section 7 before the build plan is written. They change how long the review
-list is, not the design.
+**Measured in production** on 13 November 2026, with Blake's yes: one read-only transaction, counts only, nothing
+personal read and nothing written. The exact figures are kept with the lane's notes, outside the repository.
+
+- Production holds very few records of these kinds. Every record that must have an event and has none belongs
+  to one chain: an enquiry that has been worked, its one deal and its one sent proposal. No path reaches an
+  event for them, because no date has been held and no plan is linked to a live event.
+- Nothing is doubtful. No record reaches more than one event; no two paths disagree; no enquiry has two deals;
+  no link crosses venues.
+- There is no agreement, no deposit request and no card payment.
+- Nobody can see an event through a plan they own. There are no client or planner accounts.
+- The event's `client_account_id` and `opportunity_id` are empty on every row. The October review list is empty.
 
 ## 4. Approaches considered
 
@@ -192,9 +200,9 @@ record the plan is folding away.
   Diary import (piece A), where a booking arrives with a client and no enquiry. Section 5.8 says what happens to
   hold promotion when it is first written.
 
-### 5.2 When an enquiry becomes an event (Blake decides)
+### 5.2 When an enquiry becomes an event (decided by Blake, 13 November)
 
-Recommended: **when someone first works it.** Until then it is only an enquiry, and opens as the Enquiries panel.
+**When someone first works it.** Until then it is only an enquiry, and opens as the Enquiries panel.
 Working it means the first of:
 
 - a reply is recorded (by email, phone, in person, a proposal sent, or a decision that says yes). A decision
@@ -204,7 +212,7 @@ Working it means the first of:
 - a price is made for it: a deal, a quote or a proposal;
 - a person chooses "open as an event".
 
-The other two choices, for comparison:
+The two choices he was offered beside it, and did not take:
 
 - *When it arrives.* Simplest to explain. But every spam and duplicate enquiry becomes an event, the Events list
   fills with things nobody has looked at, and merging is needed from the first day.
@@ -249,7 +257,7 @@ event.
   decides what a client can open.
 - **Nobody loses a door.** The backfill gives a row to everyone who passes the loosest of today's three rules.
   Someone who today passes the loose rule and fails the strict one would gain the schedule page for an event
-  they can already message about. Few or none are expected: no route can make the link today.
+  they can already message about. In production today that is nobody (section 3): no route can make the link.
 - Lane L4 (planners) will use the same table when a planner invites a venue onto an event. This design leaves
   room for it and builds nothing for it.
 
@@ -454,9 +462,14 @@ guessing:
    It goes on the list of joins to check. So do two open deals that would land on one event: neither is joined
    until a person closes one or gives it its own event.
 
-Then it gives a row of sight to anyone who can see an event today by the strictest of the three rules, so nobody
-loses access on the day. Few or none are expected, since no route can grant it today.
+Then it gives a row of sight to anyone who can reach an event today by the loosest of the three rules
+(section 5.3), so nobody loses a door on the day.
 
+- **What the step will meet in production, as measured on 13 November (section 3):** it makes one new event, for
+  the one worked chain; it puts nothing on the list of joins to check; it gives no rows of sight. So the second
+  migration can follow the first as soon as the writers are live and the count has read zero. The step is still
+  built and tested for every path and every kind of doubt: the Diary import (piece A) will bring old records of
+  all these kinds, and a second venue will bring its own.
 - **The mapping table** records every join the step made: the record, the event, which path, and whether the
   event was made by the step. Migration 0090 kept none; this is what makes the step reversible.
 - **The step is one repeatable database function.** It runs in the migration. Until the second migration, the
@@ -508,7 +521,7 @@ One ledger, `payments`, for money in and money back, by card, bank transfer, cas
   has the venue's rule about money been met? The count gains one line: no agreement may name a booking in a
   different event.
 
-### 8.3 A payment account for each venue (Blake decides for Trades Hall)
+### 8.3 A payment account for each venue (decided for Trades Hall by Blake, 13 November: option 1)
 
 Compared on Stripe's own UK documentation and price pages, read 13 November 2026:
 
