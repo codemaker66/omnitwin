@@ -364,6 +364,16 @@ jobs:
           --no-psqlrc --set=ON_ERROR_STOP=1
           --command="CREATE DATABASE venviewer_pricing_guard_test"
 
+      - name: Create dedicated web vitals test database
+        # web-vitals-postgres builds the whole API on its own migrated
+        # database and skips without its URL.
+        env:
+          PGPASSWORD: postgres
+        run: >-
+          psql --host=127.0.0.1 --port=55476 --username=postgres --dbname=postgres
+          --no-psqlrc --set=ON_ERROR_STOP=1
+          --command="CREATE DATABASE venviewer_web_vitals_test"
+
       - name: Create dedicated test databases for the suites that once skipped
         # These suites skipped on every run until their databases were made
         # here (audit api-schema-db-2, 11 November 2026). Each names its
@@ -415,6 +425,7 @@ jobs:
           # Plan 19 L5: deposits and contract signatures (helpers/payments-db.ts).
           VENVIEWER_PAYMENTS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_payments_test
           VENVIEWER_PRICING_GUARD_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_pricing_guard_test
+          VENVIEWER_WEB_VITALS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_web_vitals_test
           # The suites that skipped on every run before 11 November 2026.
           VENVIEWER_READINESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_readiness_test
           VENVIEWER_PHASE_LAYOUT_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/omnitwin_timeline_0060_ci

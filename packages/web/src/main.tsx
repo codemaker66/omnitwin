@@ -8,6 +8,9 @@ import { useAuthStore, type AuthUser } from "./stores/auth-store.js";
 import { setTokenGetter } from "./api/auth-bridge.js";
 import { AppErrorBoundary } from "./error-boundary.js";
 import { initBrowserSentry } from "./observability/sentry.js";
+import { recordLandingRoute } from "./observability/landing-route.js";
+import { webVitalsSampleRate } from "./observability/web-vitals-rate.js";
+import { loadOptional } from "./route-error-boundary.js";
 import { isE2EAuthBypassEnabled } from "./lib/e2e-auth-bypass.js";
 import { registerPushWorker } from "./lib/push-worker.js";
 import { appendFontBuildStyle, fontBuildFor } from "./lib/self-hosted-fonts.js";
@@ -88,6 +91,25 @@ createRoot(rootElement).render(
 // after React owns the root so a slow import can never hold the first screen
 // blank. The error boundary shares the same idempotent initializer.
 void initBrowserSentry();
+
+// Field web vitals (goal 07). The condition is a build-time constant: Vite
+// writes an unset VITE_ variable as `undefined`, so a build without the
+// variable has none of this, not even the two small modules it uses. (Set at
+// all, even to "0", the code stays in; webVitalsSampleRate then reads it as
+// off.) A sampling build records the route this page load landed on and
+// fetches the reporter, which draws the sample. The reporter is optional
+// code: a chunk that fails to load (offline, a deploy in between, a blocker)
+// costs only the measurement, and never reloads the page.
+if (import.meta.env.VITE_WEB_VITALS_SAMPLE_RATE !== undefined) {
+  const env = { MODE: import.meta.env.MODE, VITE_WEB_VITALS_SAMPLE_RATE: import.meta.env.VITE_WEB_VITALS_SAMPLE_RATE };
+  if (webVitalsSampleRate(env) > 0) {
+    const landing = recordLandingRoute(router);
+    void loadOptional(async () => {
+      const { startWebVitals } = await import("./observability/web-vitals.js");
+      return startWebVitals({ env, landing });
+    }).catch(() => { landing.stop(); });
+  }
+}
 
 // The push worker (goal 19 S7): registered after the root is up, harmless
 // where the browser has no push. It caches nothing and answers no fetch.
