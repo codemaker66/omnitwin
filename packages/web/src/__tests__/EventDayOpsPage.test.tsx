@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import type { ChangeFeedItem, EventDayIssue, EventDayOpsBoard, OpsTask, UpdateOpsTaskStatusInput } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
@@ -38,6 +38,7 @@ const {
   mockAcknowledgeEventPlanChange,
   mockListEventChangeAcknowledgements,
   mockAckEventDayOp,
+  mockAckEventDayOpIf,
   mockEnqueueEventDayIssueCreate,
   mockEnqueueEventDayTaskStatus,
   mockListPendingEventDayOps,
@@ -53,6 +54,7 @@ const {
   mockAcknowledgeEventPlanChange: vi.fn(),
   mockListEventChangeAcknowledgements: vi.fn(),
   mockAckEventDayOp: vi.fn(),
+  mockAckEventDayOpIf: vi.fn(),
   mockEnqueueEventDayIssueCreate: vi.fn(),
   mockEnqueueEventDayTaskStatus: vi.fn(),
   mockListPendingEventDayOps: vi.fn(),
@@ -82,6 +84,7 @@ vi.mock("../api/notifications.js", () => ({
 
 vi.mock("../lib/event-day-offline-queue.js", () => ({
   ackEventDayOp: mockAckEventDayOp,
+  ackEventDayOpIf: mockAckEventDayOpIf,
   enqueueEventDayIssueCreate: mockEnqueueEventDayIssueCreate,
   enqueueEventDayTaskStatus: mockEnqueueEventDayTaskStatus,
   listPendingEventDayOps: mockListPendingEventDayOps,
@@ -353,6 +356,8 @@ beforeEach(() => {
   mockListEventChangeAcknowledgements.mockReset();
   mockListEventChangeAcknowledgements.mockResolvedValue([]);
   mockAckEventDayOp.mockReset();
+  mockAckEventDayOpIf.mockReset();
+  mockAckEventDayOpIf.mockResolvedValue(true);
   mockEnqueueEventDayIssueCreate.mockReset();
   mockEnqueueEventDayTaskStatus.mockReset();
   mockListPendingEventDayOps.mockReset();
@@ -1241,7 +1246,13 @@ describe("EventDayOpsPage", () => {
       mockEnqueueEventDayTaskStatus.mockImplementation((opsTaskId: string, input: UpdateOpsTaskStatusInput) => queue.enqueueTaskStatus(opsTaskId, input));
       mockListPendingEventDayOps.mockImplementation(queue.list);
       mockAckEventDayOp.mockImplementation(queue.ack);
+      mockAckEventDayOpIf.mockImplementation(queue.ackIf);
       return queue;
+    }
+
+    /** The statuses the queue holds, oldest first. */
+    async function queuedStatuses(queue: ReturnType<typeof createEventDayQueue>): Promise<readonly string[]> {
+      return (await queue.list()).map((op) => (op.kind === "task_status" ? op.input.status : op.kind));
     }
 
     /** The statuses sent to the server, in the order sent. */
@@ -1340,6 +1351,269 @@ describe("EventDayOpsPage", () => {
       await replayQueue();
       expect(statusesSent()).toEqual(["in_progress", "done", "done"]);
       expect(await queue.list()).toEqual([]);
+    });
+
+    // #418 B2: the replay of an older status is on its way when a later press
+    // fails and is queued in the same row. The replay's ack must leave it.
+    it("keeps a later status that failed while an older one was being replayed", async () => {
+      const queue = await realQueue();
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      let landReplay: ((updated: OpsTask) => void) | undefined;
+      mockUpdateOpsTaskStatus
+        .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
+        .mockImplementationOnce(() => new Promise<OpsTask>((resolve) => { landReplay = resolve; }))
+        .mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"))
+        .mockResolvedValueOnce(task("done"));
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+
+      fireEvent.click(screen.getByText("Start"));
+      await screen.findByText("Task saved on this device and will sync when the connection returns.");
+      act(() => { window.dispatchEvent(new Event("online")); });
+      await waitFor(() => { expect(statusesSent()).toEqual(["in_progress", "in_progress"]); });
+      fireEvent.click(screen.getByText("Done"));
+      await waitFor(() => { expect(statusesSent()).toEqual(["in_progress", "in_progress", "done"]); });
+      await waitFor(async () => { expect(await queuedStatuses(queue)).toEqual(["done"]); });
+      await act(async () => { landReplay?.(task("in_progress")); await Promise.resolve(); });
+      await waitFor(() => { expect(screen.getByRole("button", { name: "Sync pending event-day changes" }).getAttribute("aria-busy")).toBe("false"); });
+      expect(await queuedStatuses(queue)).toEqual(["done"]);
+
+      await replayQueue();
+      expect(statusesSent()).toEqual(["in_progress", "in_progress", "done", "done"]);
+      expect(await queue.list()).toEqual([]);
+    });
+
+    // #418 B1: two pages (two tabs on one device) over one queue. A page
+    // supersedes only what it pressed itself; the other page's row is sent
+    // as it was written.
+    describe("on two pages over one queue", () => {
+      function renderPages(): readonly [HTMLElement, HTMLElement] {
+        const page = (): HTMLElement => render(
+          <MemoryRouter initialEntries={[`/ops/events/${EVENT_ID}`]}>
+            <Routes>
+              <Route path="/ops/events/:eventId" element={<EventDayOpsPage />} />
+            </Routes>
+          </MemoryRouter>,
+        ).container;
+        return [page(), page()];
+      }
+
+      it("keeps the other page's later status queued when this page's earlier one lands", async () => {
+        const queue = await realQueue();
+        mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+        let landStart: ((updated: OpsTask) => void) | undefined;
+        mockUpdateOpsTaskStatus
+          .mockImplementationOnce(() => new Promise<OpsTask>((resolve) => { landStart = resolve; }))
+          .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+        const [first, second] = renderPages();
+        await within(first).findByText("Set 12 x Round Table");
+        await within(second).findByText("Set 12 x Round Table");
+
+        fireEvent.click(within(first).getByText("Start"));
+        fireEvent.click(within(second).getByText("Done"));
+        await within(second).findByText("Task saved on this device and will sync when the connection returns.");
+        expect(await queuedStatuses(queue)).toEqual(["done"]);
+        await act(async () => { landStart?.(task("in_progress")); await Promise.resolve(); });
+        await within(first).findByText("Task status updated.");
+        await waitFor(() => { expect(within(first).queryByText("Saving event-day changes…")).toBeNull(); });
+
+        expect(await queuedStatuses(queue)).toEqual(["done"]);
+      });
+
+      it("replays the other page's later status from this page's Sync", async () => {
+        const queue = await realQueue();
+        mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+        mockUpdateOpsTaskStatus
+          .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
+          .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
+          .mockResolvedValue(task("done"));
+        const [first, second] = renderPages();
+        await within(first).findByText("Set 12 x Round Table");
+        await within(second).findByText("Set 12 x Round Table");
+
+        fireEvent.click(within(first).getByText("Start"));
+        await within(first).findByText("Task saved on this device and will sync when the connection returns.");
+        fireEvent.click(within(second).getByText("Done"));
+        await within(second).findByText("Task saved on this device and will sync when the connection returns.");
+        expect(await queuedStatuses(queue)).toEqual(["done"]);
+
+        const reads = mockGetEventDayOpsBoard.mock.calls.length;
+        fireEvent.click(within(first).getByRole("button", { name: "Sync pending event-day changes" }));
+        await waitFor(() => { expect(mockGetEventDayOpsBoard.mock.calls.length).toBeGreaterThan(reads); });
+        expect(statusesSent()).toEqual(["in_progress", "done", "done"]);
+        expect(await queue.list()).toEqual([]);
+      });
+    });
+
+    // Every order of two presses on one page, and of three on the two
+    // schedules that strain the rule most. Each press lands, fails and is
+    // queued, or is refused. A schedule is the order of events: a press
+    // ("p0"), the answer to its first send ("a0", which may come before or
+    // after a later press, or its answer), the device coming back online
+    // ("d", which replays what is queued), and the answer to that replay
+    // ("r"). Requests reach the server in the order they are sent; only the
+    // answers may come back in another order. At the end the connection is
+    // back for good. In every order the server must hold the latest status
+    // pressed that it did not refuse, and nothing may be left in the queue.
+    describe("every order of presses, answers and a replay", () => {
+      type Fate = "lands" | "fails" | "refused";
+      interface Order {
+        readonly fates: readonly Fate[];
+        readonly schedule: readonly string[];
+      }
+      const PRESSES = [
+        { label: "Start", status: "in_progress" },
+        { label: "Done", status: "done" },
+        { label: "Block", status: "blocked" },
+      ] as const;
+      const FATES: readonly Fate[] = ["lands", "fails", "refused"];
+
+      function product<T>(lists: readonly (readonly T[])[]): T[][] {
+        return lists.reduce<T[][]>((acc, list) => acc.flatMap((prefix) => list.map((item) => [...prefix, item])), [[]]);
+      }
+
+      /** Every order of the events for this many presses: presses in turn,
+       *  each answer after its press, the replay's answer after the device
+       *  comes online, which it does once something has been answered (with
+       *  nothing answered the queue is empty and there is nothing to replay). */
+      function schedules(presses: number): string[][] {
+        const all: string[][] = [];
+        const visit = (done: readonly string[], left: readonly string[]): void => {
+          if (left.length === 0) all.push([...done]);
+          for (const event of left) {
+            const index = Number(event.slice(1));
+            const ready = event === "d" ? done.some((seen) => seen.startsWith("a"))
+              : event === "r" ? done.includes("d")
+                : event.startsWith("a") ? done.includes(`p${String(index)}`)
+                  : index === 0 || done.includes(`p${String(index - 1)}`);
+            if (ready) visit([...done, event], left.filter((other) => other !== event));
+          }
+        };
+        visit([], [...Array.from({ length: presses }, (_, index) => [`p${String(index)}`, `a${String(index)}`]).flat(), "d", "r"]);
+        return all;
+      }
+
+      const ORDERS: readonly Order[] = [
+        ...product([FATES, FATES]).flatMap((fates) => schedules(2).map((schedule): Order => ({ fates, schedule }))),
+        ...product([FATES, FATES, FATES]).flatMap((fates) => [
+          // A replay on its way while both later presses are made and answered.
+          ["p0", "a0", "d", "p1", "a1", "p2", "a2", "r"],
+          // Three presses on their way, answered newest first.
+          ["p0", "p1", "p2", "a2", "a1", "a0", "d", "r"],
+        ].map((schedule): Order => ({ fates, schedule }))),
+      ];
+
+      function nameOf(order: Order): string {
+        const words = (event: string): string => {
+          const label = PRESSES[Number(event.slice(1))]?.label ?? "?";
+          if (event === "d") return "online";
+          if (event === "r") return "replay answered";
+          return event.startsWith("p") ? label : `${label} answered`;
+        };
+        const fates = order.fates.map((fate, index) => `${PRESSES[index]?.label ?? "?"} ${fate}`).join(", ");
+        return `${fates}: ${order.schedule.map(words).join(", ")}`;
+      }
+
+      function boardAt(status: OpsTask["status"]): EventDayOpsBoard {
+        const board = boardFixture();
+        return board.handoffPack === null ? board : { ...board, handoffPack: { ...board.handoffPack, opsTasks: [task(status)] } };
+      }
+
+      /** The API, as services/event-day-ops.ts answers it: a press meets its
+       *  own fate on its first send and lands on a replay (the connection is
+       *  back); a key already recorded changes nothing, and neither does the
+       *  status the task already holds. What lands is applied as it is sent,
+       *  so the server takes requests in the order they were sent. */
+      function fakeServer(fateOf: (status: string) => Fate) {
+        let status: OpsTask["status"] = "todo";
+        const recorded = new Set<string>();
+        const sentOnce = new Set<string>();
+        interface Sent { readonly status: string; readonly replay: boolean; readonly answer: () => void }
+        const onTheirWay: Sent[] = [];
+        mockUpdateOpsTaskStatus.mockImplementation((_taskId: string, input: UpdateOpsTaskStatusInput) =>
+          new Promise<OpsTask>((resolve, reject) => {
+            const key = input.idempotencyKey ?? "";
+            const replay = sentOnce.has(key);
+            sentOnce.add(key);
+            const fate = replay ? "lands" : fateOf(input.status);
+            let answer: () => void;
+            if (fate === "fails") {
+              answer = () => { reject(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE")); };
+            } else if (fate === "refused") {
+              answer = () => { reject(new ApiError(403, "Forbidden", "FORBIDDEN")); };
+            } else {
+              if (!recorded.has(key) && input.status !== status) {
+                status = input.status;
+                recorded.add(key);
+              }
+              const updated = task(status);
+              answer = () => { resolve(updated); };
+            }
+            onTheirWay.push({ status: input.status, replay, answer });
+          }));
+        mockGetEventDayOpsBoard.mockImplementation(() => Promise.resolve(boardAt(status)));
+        const answerWhere = (matches: (sent: Sent) => boolean): void => {
+          const index = onTheirWay.findIndex(matches);
+          if (index >= 0) onTheirWay.splice(index, 1)[0]?.answer();
+        };
+        return {
+          status: () => status,
+          waiting: () => onTheirWay.length,
+          /** The first send of the press with this status, if it is on its way. */
+          answerPress: (pressed: string): void => { answerWhere((sent) => !sent.replay && sent.status === pressed); },
+          answerReplay: (): void => { answerWhere((sent) => sent.replay); },
+          answerAll: (): void => { while (onTheirWay.length > 0) answerWhere(() => true); },
+        };
+      }
+
+      async function settle(): Promise<void> {
+        for (let round = 0; round < 2; round += 1) {
+          await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+        }
+      }
+
+      it("runs every order", () => {
+        expect(schedules(2)).toHaveLength(12);
+        expect(ORDERS).toHaveLength(9 * 12 + 27 * 2);
+      });
+
+      it.each(ORDERS.map((order) => [nameOf(order), order] as const))("%s", async (_name, order) => {
+        const queue = await realQueue();
+        const fateByStatus = new Map<string, Fate>(order.fates.map((fate, index) => [PRESSES[index]?.status ?? "", fate]));
+        const server = fakeServer((status) => fateByStatus.get(status) ?? "lands");
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+
+        const online = async (): Promise<void> => {
+          act(() => { window.dispatchEvent(new Event("online")); });
+          await settle();
+        };
+        const answer = async (respond: () => void): Promise<void> => {
+          act(respond);
+          await settle();
+        };
+        for (const event of order.schedule) {
+          const press = PRESSES[Number(event.slice(1))];
+          if (event === "d") await online();
+          else if (event === "r") await answer(server.answerReplay);
+          else if (event.startsWith("a")) await answer(() => { server.answerPress(press?.status ?? ""); });
+          else {
+            fireEvent.click(screen.getByText(press?.label ?? ""));
+            await settle();
+          }
+        }
+        // The connection is back for good.
+        await answer(server.answerAll);
+        await online();
+        await answer(server.answerAll);
+
+        const standing = order.fates.map((fate, index) => (fate === "refused" ? null : PRESSES[index]?.status ?? null))
+          .filter((status): status is OpsTask["status"] => status !== null)
+          .at(-1) ?? "todo";
+        expect(server.waiting()).toBe(0);
+        expect(server.status()).toBe(standing);
+        expect(await queue.list()).toEqual([]);
+      });
     });
   });
 
