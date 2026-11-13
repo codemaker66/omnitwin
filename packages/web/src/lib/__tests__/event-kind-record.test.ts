@@ -203,6 +203,15 @@ describe("a signed-in layout as it opens", () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it("opens a layout skipped elsewhere without asking: answered, with no kind, writing nothing", () => {
+    const write = vi.fn(() => Promise.resolve());
+    openOwn("skipped", { eventKind: null, instructions: {} }, write);
+    expect(question()).toMatchObject({ guest: false, known: true, answer: null });
+    expect(shouldAskEventKind({ editable: true, floorEmpty: true, eventLinked: false, known: true, answer: question().answer, deviceAsks: true })).toBe(false);
+    expect(plannerKind()).toBeNull();
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it("is set before the load returns: no seat can take another event's chair in between", () => {
     rememberDeviceEventKind("before", "wedding");
     openDraft("before");

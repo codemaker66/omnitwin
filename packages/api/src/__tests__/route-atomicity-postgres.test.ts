@@ -213,6 +213,28 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
     }
   });
 
+  it("keeps an event kind of null as an answer: a skip saved over a kind leaves the key, as null, beside the rest", async () => {
+    // #253: an absent eventKind means the planner never asked, and null that the
+    // person skipped. The schema takes null for eventKind alone, and the merge in
+    // the UPDATE keeps the key with a JSON null, so the layout opens answered and
+    // is never asked again (web lib/event-kind-record, shouldAskEventKind).
+    await pool.query(`UPDATE configurations SET review_status = 'draft', metadata = '{"fixtureKept":"Kept"}'::jsonb WHERE id = $1`, [CONFIG]);
+    const save = (metadata: Record<string, unknown>) => server.inject({
+      method: "PATCH", url: `/configurations/${CONFIG}`, headers: headers(), payload: { metadata },
+    }).then((r) => r);
+    const stored = async (): Promise<{ metadata: unknown; held: boolean; kind: string | null }> => {
+      const result = await pool.query<{ metadata: unknown; held: boolean; kind: string | null }>(
+        "SELECT metadata, metadata ? 'eventKind' AS held, jsonb_typeof(metadata -> 'eventKind') AS kind FROM configurations WHERE id = $1", [CONFIG]);
+      const row = result.rows[0];
+      if (row === undefined) throw new Error("fixture layout missing");
+      return row;
+    };
+    expect((await save({ eventKind: "wedding" })).statusCode).toBe(200);
+    expect(await stored()).toEqual({ metadata: { fixtureKept: "Kept", eventKind: "wedding" }, held: true, kind: "string" });
+    expect((await save({ eventKind: null })).statusCode).toBe(200);
+    expect(await stored()).toEqual({ metadata: { fixtureKept: "Kept", eventKind: null }, held: true, kind: "null" });
+  });
+
   function appendLine(amount: number): Promise<{ statusCode: number; body: string }> {
     return server.inject({ method: "POST", url: `/quotes/${QUOTE}/line-items`, headers: headers(), payload: { description: "Additional", quantity: 1, unitAmountMinor: amount } }).then((r) => r);
   }
