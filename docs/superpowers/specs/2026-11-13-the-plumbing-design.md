@@ -393,6 +393,9 @@ reports going to an address of the venue's own. Google and Yahoo ask every sende
 is tightening; a DMARC record costs nothing. It is the administrator's choice, because it covers their whole
 domain.
 
+The administrator is asked for all four in one conversation, but adds the fourth only when mail in is switched on
+for that venue. Before then it would do nothing but collect junk against the allowance.
+
 **How it is set up.** For the first venue, by us: a command makes the domain at Resend in its European region and
 prints the one-page note. A daily job asks Resend whether the records are in place, and a try that Resend refuses
 as unverified asks again at once. A screen where a venue's own administrator does this belongs to the Venue place
