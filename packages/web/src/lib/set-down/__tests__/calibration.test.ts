@@ -12,6 +12,7 @@ import {
   TRACED_ROOMS,
   TRACER_DIR,
   TRACER_RAYS,
+  committedRaytraceSha256,
   committedRoomsSha256,
   dressingContents,
   fittedCalibration,
@@ -28,8 +29,55 @@ const MODEL_TOLERANCE = 0.15;
 const FULLNESS_TOLERANCE = 0.15;
 /** Two seeds of the tracer must agree to this share of the first. */
 const SEED_TOLERANCE = 0.03;
-/** The research's comparable-room range for the empty hall, widened by the curtain uncertainty. */
+/**
+ * Fitted on empty, the model meets the tracer to the factor's 3-decimal
+ * rounding (about 0.05 % of a factor near 1) and the trace's 0.1 ms rounding,
+ * together under 0.1 %. So the empty check holds by construction except where
+ * the clamp binds (ruling R50).
+ */
+const FIT_ROUNDING = 0.001;
+/**
+ * A plausibility band for the empty hall's (500 Hz + 1 kHz) / 2: the first
+ * hand estimate's 2.14 s with the curtains drawn and about 3.5 s with them
+ * open, widened, which takes in La Redoute's measured 3.2 s. Not a measured
+ * range: the measured rooms are checked below (ruling R51).
+ */
 const GRAND_HALL_EMPTY_MID = { min: 2.0, max: 3.8 } as const;
+/**
+ * La Redoute, Bad Godesberg (1790-92): 1,450 m3, a polished stone floor,
+ * plastered masonry walls and a gypsum plaster ceiling, measured empty and
+ * unseated: T30 3.2 s, the mean of 500 Hz-2 kHz (Lorenz-Kierakiewitz, DAGA
+ * 2020, Table 1). The Grand Hall, of about its volume, has oak boards on
+ * joists, a mahogany dado, half-panelled walls and velour curtains, all more
+ * absorbent than stone and plaster, so its empty mid band must lie below it.
+ */
+const LA_REDOUTE_EMPTY_MID_S = 3.2;
+/**
+ * Schloss Benrath's western and eastern Gartensaal (mid-18th century): parquet
+ * floors and wood-panelled walls, measured unoccupied to ISO 3382-1, T30 2.4
+ * and 2.5 s (Graef, Lorenz-Kierakiewitz, Pfaendner and Wagner, DAGA 2018,
+ * Table 1). The table calls its figures the 125 Hz-4 kHz mean, but its Fig. 4
+ * curves give them as the 500 Hz-2 kHz mean (about 2.37 and 2.53 s, read off
+ * the figure), and so they are compared here. The volume is not stated; the
+ * paper's 1 kHz strength G and T30 put it near 400 m3 by the diffuse-field
+ * relation (inferred), against the Saloon's 469 m3. The states match on
+ * occupancy only: both unoccupied, while the paper does not state what
+ * furniture the halls held, and the model is empty. The 20 % tolerance is
+ * about 5 % derived, for the volumes (T grows as V^(1/3) in rooms of one shape
+ * and finish: (469 / 400)^(1/3) is 1.05), plus 15 % allowed for finishes and
+ * furnishing neither the paper nor the survey pins down (the halls' ceilings,
+ * the Saloon's stained glass and marble). The model's figure was known from
+ * the first trace (2.49 s) when it was set.
+ */
+const BENRATH_GARDEN_HALLS_MID_S = (2.4 + 2.5) / 2;
+const BENRATH_TOLERANCE = 0.2;
+/**
+ * Rooms allowed to miss a comparable-room check above, each with its reason
+ * under a "Difference explained" heading in tools/set-down-acoustics/README.md.
+ * None today. Adding one is a reviewed change to this list, as
+ * GALLERY_NON_DIFFUSE is: a README heading alone excuses nothing (ruling R50).
+ */
+const RANGE_EXCEPTIONS: readonly TracedRoom[] = [];
 
 type CheckedBand = (typeof CHECKED_BANDS)[number];
 const GALLERIES: readonly TracedRoom[] = ["north-gallery", "south-gallery"];
@@ -75,10 +123,26 @@ function model(slug: TracedRoom, dressing: Dressing): ReturnType<typeof reverber
   return reverberationTimes(ROOM_ACOUSTICS[slug], dressingContents(slug, dressing));
 }
 
+/** The mean of the 500 Hz, 1 kHz and 2 kHz times, as ISO 3382-1 papers report a room's mid band. */
+function mid500To2k(rt: ReturnType<typeof reverberationTimes>): number {
+  return (rt[2] + rt[3] + rt[4]) / 3;
+}
+
+/** The mean of the 500 Hz and 1 kHz times, the mid band the Grand Hall's plausibility band is set on. */
+function mid500And1k(rt: ReturnType<typeof reverberationTimes>): number {
+  return (rt[2] + rt[3]) / 2;
+}
+
+/** Whether a factor sits at its clamp, where the empty model no longer meets the tracer by construction. */
+function clamped(factor: number): boolean {
+  return factor === CALIBRATION_RANGE.min || factor === CALIBRATION_RANGE.max;
+}
+
 describe("the room model against the ray tracer", () => {
-  it("was traced from the committed rooms.json, as results.json records (R38)", () => {
+  it("was traced by the committed raytrace.py from the committed rooms.json, as results.json records (R38, R50)", () => {
     const { trace } = tracerResults();
     expect(trace.roomsSha256).toBe(committedRoomsSha256());
+    expect(trace.raytraceSha256).toBe(committedRaytraceSha256());
     expect(trace.batch).toBeGreaterThan(0);
     expect(trace.numpy.length).toBeGreaterThan(0);
   });
@@ -122,7 +186,25 @@ describe("the room model against the ray tracer", () => {
     expect(schroederFrequencyHz("grand-hall")).toBeLessThan(70);
   });
 
-  it("holds every room's calibrated echo within 15 % of the tracer, empty, half and fully dressed, 250 Hz to 8 kHz", () => {
+  it("is fitted on empty: there it meets the tracer to the factor's rounding, 250 Hz to 8 kHz, unless the clamp binds (R50)", () => {
+    // Not evidence of agreement, but the fit itself: each factor is tracer
+    // empty / Eyring empty. The checks of the model are the half and fully
+    // laid states, and the change with fullness, below.
+    const results = tracerResults();
+    const misses: string[] = [];
+    for (const slug of TRACED_ROOMS) {
+      const times = model(slug, "empty");
+      const traced = results[slug].empty;
+      for (const band of CHECKED_BANDS) {
+        if (clamped(ROOM_ACOUSTICS[slug].calibration[band])) continue;
+        const error = Math.abs(times[band] - traced[band]) / traced[band];
+        if (!(error <= FIT_ROUNDING)) misses.push(`${label(slug, "empty", band)}: ${percent(error)}`);
+      }
+    }
+    expect(misses).toEqual([]);
+  });
+
+  it("holds every room within 15 % of the tracer half and fully laid (and empty where the clamp binds), 250 Hz to 8 kHz", () => {
     const results = tracerResults();
     const misses: string[] = [];
     for (const slug of TRACED_ROOMS) {
@@ -192,12 +274,35 @@ describe("the room model against the ray tracer", () => {
     expect(readme()).toMatch(/^#+ .*difference explained.*GALLERY_NON_DIFFUSE/im);
   });
 
-  it("puts the empty Grand Hall's mid band in 2.0-3.8 s, or the README explains the difference", () => {
-    const rt = model("grand-hall", "empty");
-    const mid = (rt[2] + rt[3]) / 2;
+  it("puts the empty Grand Hall's mid band in 2.0-3.8 s, unless it is a listed range exception", () => {
+    const mid = mid500And1k(model("grand-hall", "empty"));
     const inRange = mid >= GRAND_HALL_EMPTY_MID.min && mid <= GRAND_HALL_EMPTY_MID.max;
-    const explained = /^#+ .*difference explained.*grand hall/im.test(readme());
-    expect(inRange || explained, `empty mid band ${mid.toFixed(2)} s`).toBe(true);
+    expect(inRange || RANGE_EXCEPTIONS.includes("grand-hall"), `empty mid band ${mid.toFixed(2)} s`).toBe(true);
+  });
+
+  it("keeps the empty Grand Hall below La Redoute's measured 3.2 s, the empty unseated stone-floored hall of its size (R51)", () => {
+    const mid = mid500To2k(model("grand-hall", "empty"));
+    expect(mid < LA_REDOUTE_EMPTY_MID_S || RANGE_EXCEPTIONS.includes("grand-hall"), `${mid.toFixed(2)} s`).toBe(true);
+  });
+
+  it("puts the empty Saloon within 20 % of Schloss Benrath's panelled, parquet-floored garden halls, measured unoccupied (R51)", () => {
+    const mid = mid500To2k(model("saloon", "empty"));
+    const error = Math.abs(mid - BENRATH_GARDEN_HALLS_MID_S) / BENRATH_GARDEN_HALLS_MID_S;
+    expect(error <= BENRATH_TOLERANCE || RANGE_EXCEPTIONS.includes("saloon"), `${mid.toFixed(2)} s`).toBe(true);
+  });
+
+  it("gives a README 'difference explained' section to exactly the listed exceptions, so no heading can switch a check off (R50)", () => {
+    const headings = readme()
+      .split("\n")
+      .filter((line) => /^#+ .*difference explained/i.test(line));
+    const named = (heading: string): boolean =>
+      heading.includes("GALLERY_NON_DIFFUSE") ||
+      RANGE_EXCEPTIONS.some((slug) => heading.toLowerCase().includes(slug.replace(/-/g, " ")));
+    expect(headings.filter((heading) => !named(heading))).toEqual([]);
+    expect(headings.some((heading) => heading.includes("GALLERY_NON_DIFFUSE"))).toBe(true);
+    for (const slug of RANGE_EXCEPTIONS) {
+      expect(headings.some((heading) => heading.toLowerCase().includes(slug.replace(/-/g, " "))), slug).toBe(true);
+    }
   });
 
   it("agrees with a second seed within 3 %, empty and fully dressed, 250 Hz to 8 kHz", () => {

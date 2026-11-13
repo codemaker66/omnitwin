@@ -1,6 +1,8 @@
-# Furniture set-down sound: each piece, its surface, its room (T-677)
+# Furniture set-down sound: each piece, its surface, its room (T-700)
 
 27 October 2026. Asked for by Blake, decided with him in chat the same day. Builds on the planner's sound palette (T-671 slice 3, `lib/sound-registry.ts`, `lib/planner-sound-recipes.ts`, `lib/planner-sound-render.ts`) and the crafted furniture (T-675).
+
+Renumbered T-700 on 13 November 2026: the repository's T-677 is the foundry's shared-lock migration. Commits before that date, and the branch names, say T-677. Amended on 13 November by the #416 review's rulings R46–R50 (`docs/sessions/2026-11-13.md`).
 
 ## Intent
 
@@ -34,7 +36,7 @@ Why it matters. The planner shows Trades Hall as it is: measured rooms, the real
    - the room's real floor;
    - a stage, platform or dance-floor panel;
    - for the AV pieces that can stand on a table (`TABLE_MOUNTABLE_AV_SLUGS`), the table top.
-3. Each room's echo is computed from its measured shape and real surfaces. It depends on what is in the room now (pieces and their dressing), and it updates as pieces are placed, moved, removed or re-dressed.
+3. Each room's echo is computed from its measured volume and real surfaces. It depends on what is in the room now (pieces and their dressing), and it updates as pieces are placed, moved, removed or re-dressed.
 4. A set-down is heard where the piece lands: left or right relative to the view, and nearer or further.
 5. The sound lands with the visual touchdown: heard 0–20 ms after the contact frame is shown, and never before it (section 1).
 6. Large placements (Lay out, a table group with its chairs, the chair brush, a multi-piece drop) sound like a room being set, never like 180 simultaneous knocks.
@@ -90,7 +92,7 @@ Why it matters. The planner shows Trades Hall as it is: measured rooms, the real
 | Undo, redo, loading a layout, a remote co-editor's change, an autosave | Not announced | Silent |
 | Preview ghosts (Lay out preview, the placement ghost) | Never placed | Silent |
 
-**Touchdown.** `lib/furniture-motion.ts` `stepFurnitureSettles` ends a drop on the first frame where `lift < LANDED`. That frame is the contact. It needs a small listener seam, with no allocation per frame, so the sound engine knows which ids touched down on which frame.
+**Touchdown.** `lib/furniture-motion.ts` `stepFurnitureSettles` ends a drop on the first frame whose step leaves the lift at or below the floor (`touchDown`, on master since #288). That frame is the contact; section 9 gives how long after the drop's start it comes. It needs a small listener seam, with no allocation per frame, so the sound engine knows which ids touched down on which frame.
 
 **The timing requirement, measured where it is heard.** The reference is the moment the contact frame (the first frame drawn with the piece on its support) reaches the screen. The set-down must be heard no earlier than that, and no more than 20 ms after it wherever the device's audio output latency allows. "Heard" means the scheduled start plus `AudioContext.outputLatency`, or `baseLatency` where that is missing.
 
@@ -132,7 +134,7 @@ Each placeable slug gets a physical description, which I'll call its **body**:
 
 Pieces without a crafted body use a family fallback by catalogue category and shape (chair, round table, rectangular table, stage, AV, cabinet). They are never silent and never generic beyond their family.
 
-**Synthesis (modal).** Each foot's contact is a short force pulse, with a length from Hertz contact at the foot (research file, section 4.2; calculated, then tuned by ear):
+**Synthesis (modal).** Each foot's contact is a short force pulse, with a length from Hertz contact at the foot: t = 2.87 (m*² / (R E*² v))^(1/5) for a hard cap (Hertz's contact time for an elastic sphere on a flat, as in arXiv:1611.04826, eq. 5), and π √(m / k) for a soft foot as a linear spring. Calculated, then tuned by ear:
 - about 1–3 ms for a metal or nylon glide on timber;
 - about 3 ms for a rubber foot;
 - 9–18 ms for felt;
@@ -156,7 +158,7 @@ No two set-downs are identical, and every one is still that piece.
 
 At each foot, the support is either the room's floor or the placed piece under it. Today `computeSurfaceHeight` (`lib/placement.ts`) returns only a height, so a companion that returns the supporting piece is needed. It uses the same rules (`canRestOnFurnitureSurface`).
 
-**Floors, by room** (from the 17–18 October survey, `D:/claude/rooms-survey-20261017/research/research-room-facts.md`, and `hall-floor.ts`):
+**Floors, by room** (from the 17–18 October 2026 survey of the building's Matterport twin, T-662, and `hall-floor.ts`):
 
 | Room (space slug) | Floor | What it adds |
 |---|---|---|
@@ -166,11 +168,13 @@ At each foot, the support is either the room's floor or the placed piece under i
 | `reception-room` | Glossy dark timber, probably on a concrete slab | A hard click with almost no low body |
 | `north-gallery`, `south-gallery` | Blue-grey carpet, attic | A soft, short, muffled set-down |
 
-**How a suspended floor sounds** (research file, section 4.3). It has two parts:
-- one or two heavily damped modes at 8–20 Hz: a thump that earbuds carry and laptop speakers do not;
-- a dense set of board and plate modes at 100–500 Hz, with a loss factor of about 0.05–0.1, which gives the knock. Oak boards between joists sit at about 150–300 Hz.
+**How a suspended floor sounds.** It has two parts:
+- one or two heavily damped modes at 8–20 Hz: a thump that earbuds carry and laptop speakers do not. A joist's fundamental, (π / 2L²) √(EI / m′), is 6–17 Hz for 4–6 m spans; 13 measured timber floors had fundamentals of 10.0–18.7 Hz and about 5 % damping (Journal of Asian Architecture and Building Engineering 10(2), p. 407);
+- a dense set of board and plate modes at 100–500 Hz, with a loss factor of about 0.05–0.1, which gives the knock. Oak boards between joists sit at about 150–300 Hz (a simply supported 22 mm oak board over a 0.40 m span is about 250 Hz).
 
 A slab under timber has only the second part, higher and drier. Carpet damps both.
+
+**The contact on a slab is still the timber's** (ruling R47). A glide's Hertz contact is about 1.8 mm across, so its stress lies within about 5 mm of a board 20 mm or more thick: the slab cannot enter the contact's stiffness. The contact modulus on timber over a slab is therefore the timber face's across the grain, as on the oak boards, not the slab's. The slab is heard where it physically acts: in the missing joist-and-void thump, and in its stiffer boards (a bank at 400–900 Hz with a loss factor of 0.12). The Reception Room's "hard click with almost no low body" comes from those two. The moduli and their primary source are cited in `modes.ts` and `surfaces.ts`.
 
 **Placed surfaces:**
 - a staging deck or platform: a phenolic deck on a frame, hollow, with a boom underneath and a clank from the frame;
@@ -198,13 +202,14 @@ When T-662 lands, the drawn room becomes the surveyed room and the two agree wit
 - **Shape.**
   - The Grand Hall comes from `hall-spec.ts`: 21.135 × 10.59 m, coffered ceiling at 6.7 m, the dome, the openings, the mahogany dado and the elevations.
   - The other rooms come from `data/room-geometries.ts` and the measured survey facts: the Saloon is 11.8 × 6.8–7.4 m with a 5.5–5.9 m ceiling; the Reception Room is an L-shape of about 100 m² with a 2.4–3.1 m ceiling; the galleries are 11.5 × 4.1 × 2.8 m.
+  - `rooms.ts` uses the survey's measured figure wherever it measured one and says so, and labels every other figure EST with its basis (ruling R49). Each room's mean ceiling height is the area mean of the survey mesh's ceiling: the Saloon 5.60 m, the Robert Adam Room's lower section 3.03 m, the Reception Room 2.89 m.
 - **Surfaces, as areas by material:**
   - **Grand Hall:** oak boards; a mahogany dado; panelled and plastered walls; the lettered frieze; five tall windows of glass with curtains; a coffered plaster ceiling and the dome; doors.
   - **Saloon:** a Spanish mahogany panelled room; a coffered plaster ceiling; three stained-glass windows; a marble chimneypiece.
-  - **Robert Adam Room:** white plaster walls; plaster medallion ceiling bays.
+  - **Robert Adam Room:** white plaster walls; plaster medallion ceiling bays. Both its ceilings are the undersides of the timber floors above (the Grand Hall's and the Saloon's), so they take the plaster-on-lath row (R49).
   - **Reception Room:** grey walls; a coved ceiling; windows with sheer curtains and heavy drapes.
   - **Galleries:** plaster walls; carpet; sash windows.
-- **Absorption coefficients** per octave band (125 Hz–4 kHz, and 8 kHz where known), plus air absorption. These come from published measurements, with citations, collected in `D:/claude/furniture-sound-20261027/research/acoustic-data.md`.
+- **Absorption coefficients** per octave band (125 Hz–4 kHz, and 8 kHz where known), plus air absorption (ISO 9613-1). These come from published measurements and compilations; `acoustic-data.ts` names each row's primary source (Adrian James's compilation by page and row, laboratory reports by number) and its label, and says EST, and why, where a row is an estimate.
 
 **Contents.** Each placed piece adds an equivalent absorption area per band, by what it is and how it is dressed:
 - a bare beech Chiavari with an ivory pad adds little;
@@ -214,23 +219,23 @@ When T-662 lands, the drawn room becomes the surveyed room and the two agree wit
 - a fabric room divider adds a lot;
 - a dance-floor panel adds nothing, or slightly less than the floor it covers.
 
-The source is the same research file.
+Each piece's row in `acoustic-data.ts` names its source.
 
 **Three parts of the echo, all from the same data:**
 - **Reverberation time per band.** Eyring's formula is the baseline, plus air absorption, which matters in a room this size (about 45 m² of absorption at 4 kHz, and dominant at 8 kHz). It is recomputed whenever the contents change, which is cheap enough to do on every change.
 
-  A first estimate with the research figures (`D:/claude/furniture-sound-20261027/analysis/grand_hall_estimate.py`, before the real areas):
+  A first hand estimate (27 October, Eyring with the cited rows, before the real areas):
   - **Empty Grand Hall:** 2.3–3.6 s mid-band. The range depends on how much curtain fabric the five windows carry, so the real fabric area must come from the survey's window relief.
-  - **Comparison:** La Redoute in Bad Godesberg (1790–92, 1,450 m³) measures 3.2–3.5 s empty.
+  - **Comparison:** La Redoute in Bad Godesberg (1790–92, 1,450 m³) measures 3.2–3.5 s empty (T30; Lorenz-Kierakiewitz, DAGA 2020).
   - **Dressed for dinner with furniture only:** about 22–30 % shorter with 180 cushioned Chiavaris and 18 clothed rounds, and 30–40 % shorter with padded banquet chairs. That is far above the roughly 5 % a listener notices.
-  - **Hard, bare pieces** barely change it. A hard chair absorbs only 0.02–0.04 m² in laboratory tests (ISO 354), which is the realistic answer: cloths and upholstery do the work.
+  - **Hard, bare pieces** barely change it. A hard chair absorbs only 0.02–0.04 m² in laboratory tests (ISO 354; SP/RISE report 6P10120, 2017), which is the realistic answer: cloths and upholstery do the work.
   - **Guests** would deaden the room much further, to about 1.1–1.3 s, but they are not counted (Blake's decision).
 
   Dense rows of seats use Beranek's area method with a cap (block area plus a 0.5 m edge) rather than adding chairs one by one.
 - **Early reflections.** These are image sources from the source (the landing point) and the listener (below) off the room's walls, floor and ceiling. First order is required, and second order is used where it is affordable. Each reflection's delay, level and colour come from the surface it bounces off. This is what makes the hall sound 21 m long and the gallery 4 m wide. They are rendered into each set-down, so they move with the piece.
-- **The late tail.** This is a stereo impulse response synthesised per room state: decorrelated noise decaying per band at that band's reverberation time, with an onset suited to the room's size. It plays through a ConvolverNode on a room bus. When the contents change, a new response is made off the frame and cross-faded in over about 100 ms, with any burst of changes coalesced. Its send level follows diffuse-field theory: the reverberant level depends on the room's total absorption, and the direct level on distance. An empty room is both longer and louder in the tail, and a full one is shorter and quieter. Neither is a preset.
+- **The late tail.** This is a stereo impulse response synthesised per room state: decorrelated noise decaying per band at that band's reverberation time, with an onset suited to the room's size. Its decay is shaped in short-time spectra whose frame scales with the sample rate, 2048 × 2^round(log2(rate ÷ 48 kHz)) samples, so each bin stays about 23 Hz wide and the 125 and 250 Hz bands decay at their own rates at any rate (ruling R46). It plays through a ConvolverNode on a room bus. When the contents change, a new response is made off the frame and cross-faded in over about 100 ms, with any burst of changes coalesced. Its send level follows diffuse-field theory: the reverberant level depends on the room's total absorption, and the direct level on distance. An empty room is both longer and louder in the tail, and a full one is shorter and quieter. Neither is a preset.
 
-**Calibration and the independent check** (my call on the method). A small offline geometric simulation runs on the real room shapes and their per-material absorption: a Python ray tracer, run once and kept as a script, plus the data it outputs. For each room, empty and dressed for a reference layout, it gives the reverberation time per band. The browser model's per-room correction factors are fitted to it, and both results are compared against published reverberation times of comparable historic rooms in the research file. The data file records where every number came from.
+**Calibration and the independent check** (my call on the method; wording amended by ruling R50). A small offline geometric simulation, a Python ray tracer kept as a script with the data it outputs (`tools/set-down-acoustics`), traces each room as a box with the model's volume and surface areas (the Grand Hall with a spherical cap of the scanned dome's volume), with the model's own per-material absorption. It does not trace the rooms' real outlines. For each room, empty, half and fully laid for a reference dinner, it gives the reverberation time per band. So it tests Eyring's diffuse-field assumption, not the absorption data or the outlines. The browser model's per-room correction factors are fitted to the empty traces, and the model is held within 15 % of the tracer half and fully laid. Each room is also given a plausibility row in the tracer's README: a measured comparable room with its source and state, the model in the matching state, a stated tolerance and the verdict (ruling R51). `acoustic-data.ts` and `rooms.ts` record where every number came from.
 
 ### 5. Where the listener is
 
@@ -285,12 +290,25 @@ The policy's limits (eight a second, collapse at four within 250 ms) still bound
 
 | Work | Budget |
 |---|---|
-| Rendering one set-down (modes, extras, early reflections), main thread | ≤ 2 ms; otherwise render ahead on idle into a few variants per piece and surface |
+| Rendering one set-down (modes, extras, early reflections) | In a Worker, started as the drop starts; never on the main thread. The exact render plays if it is ready by contact, or within the 20 ms heard window after it; otherwise a variant rendered ahead plays (below) |
 | Touchdown watcher inside the furniture frame loop | No allocation per frame; ≤ 0.05 ms at 180 settling pieces |
 | Recomputing reverberation times on a content change | ≤ 0.5 ms |
-| Synthesising the late tail | Off the frame (a worker, or idle chunks of ≤ 4 ms each); ≤ 150 ms in total; ≤ 2 MB per response |
+| Synthesising the late tail | Off the frame (a worker, or idle chunks of ≤ 4 ms each); ≤ 150 ms in total; long enough for 1.2 × the longest band's reverberation time of any room state, a length in seconds at any sample rate (R46), with its memory per rate stated in `tail.ts` |
 | Voices at once | ≤ 8 (the policy) |
 | Bundle | Lazy-loaded with the planner; no recorded audio; under 25 KB gzipped for the engine and data |
+
+**Rendering at the drop, in a Worker** (ruling R48, amending R30; replaces the earlier "≤ 2 ms on the main thread"):
+- **When the drop starts, a Worker renders the set-down, then transfers its Float32 channels back.** Nothing renders on the main thread.
+- **The time before contact.** On master, the set-down spring (`springs.ts` `furnitureSetDown`, stiffness 420 and damping 28, stepped at 1/240 s) aims 3 cm below the floor and stops at contact (`furniture-motion.ts`). So the contact frame comes:
+  - 50 ms after the drop starts for a carried heavy piece (stage, AV and lighting, held 0.015 m up);
+  - 67–69 ms for light and table pieces (held 0.03 m up);
+  - 83 ms for a drop-in (from `DROP_HEIGHT`, 0.05 m).
+
+  These are at 60 fps; a continuous clock gives 51, 69 and 83 ms.
+- **What a render costs, with reflections, as part 3 renders it.** The #416 review measured medians of 7.5–23.9 ms on the build desktop with the Grand Hall's 18 early reflections (a staging deck, a room divider, a television, a 6 ft round), against 4.2–5.4 ms dry after warm-up. A phone runs at about 3–5 times a desktop's time, so about 23–120 ms (EST).
+- **Heavy pieces need a fallback, so it is part of the design.** Light pieces and drop-ins have 67–83 ms: a Chiavari (about 5.5 ms with the reflections on the desktop, the review's measurement) fits even at 5x, but a 6 ft round's slowest medians might not. A carried heavy piece has 50 ms, which a phone misses. So when a heavy piece is picked up, the Worker renders on idle its variants for the surfaces under it: a few seeds per piece, surface and room state, cached. At contact the exact render plays if it is ready within the 20 ms heard window, and otherwise the variant does.
+- **Render-at-drop is confirmed only by part 2's phone timings.** The listening page times each render on the device it runs on and keeps the figures. Part 3 (Tasks 12–14 of the plan) waits for them; if they show phones missing contact for light pieces as well, the design comes back for a ruling before part 3 is built.
+- Each play allocates 1.5–7.2 MB of typed arrays (the review's count). In a Worker that garbage is off the main thread; part 3 measures the Worker's garbage collection, and reuses scratch buffers only if that shows a cost.
 
 ## Proof
 
@@ -304,9 +322,9 @@ The policy's limits (eight a second, collapse at four within 250 ms) still bound
    - every added piece shortens the time and none lengthens it, while a dance-floor panel changes it by under 1 %;
    - the synthesised tail's measured time per band (Schroeder backward integration, T20) is within ±10 % of its target;
    - the tail level follows the diffuse-field relation.
-3. **The independent check:**
-   - the browser model is within ±15 % of the offline ray tracer from 250 Hz to 4 kHz, for each room empty and dressed;
-   - both sit inside the published range for comparable rooms, or the difference is explained in the data file.
+3. **The independent check** (each room traced as a box with the model's volume and surface areas; it tests Eyring's diffuse-field assumption, not the data or the outlines):
+   - fitted on empty; within 15 % of the offline ray tracer half and fully laid, from 250 Hz to 8 kHz (the galleries' named non-diffuse bands excepted), and its change with fullness within 15 % of the tracer's in every room and band, the galleries' included;
+   - each room's plausibility row in the tracer's README: a measured comparable room with its source and state, the model in the matching state, a stated tolerance and a verdict; the rows whose states match are tested, and an exception to a range check is a named list in the test, never a README heading (R50, R51).
 4. **Policy tests:**
    - silent on load, undo, redo and a remote change;
    - sounding under reduced motion;
@@ -343,7 +361,7 @@ Each of these is its own PR, merged through Session orchestration:
 
 - The module layout. Pure renderers sit beside `planner-sound-render.ts`, and only `sound-registry.ts` touches Web Audio.
 - The registry id or ids for set-downs and how the variation is passed.
-- Exact numbers: masses, modes, contact times, absorption values (from the research file, cited) and the cascade's shape.
+- Exact numbers: masses, modes, contact times, absorption values (each cited to its primary source in the code) and the cascade's shape.
 - How the feet test reads each factory's contact geometry.
 - Worker or idle chunks for the tail.
 - The ray tracer's details.
@@ -363,4 +381,4 @@ Each of these is its own PR, merged through Session orchestration:
 - Lay out plays a cascade of six to eight real set-downs rather than one per piece.
 - Set-downs may reach 12 kHz, against the palette's 5 kHz rule.
 - Grand Assembly stays silent.
-- The echo's model is checked against my own geometric simulation rather than a measurement at the venue.
+- The echo's model is checked against my own geometric simulation (boxes of each room's volume and areas) and measured comparable rooms, rather than a measurement at the venue.
