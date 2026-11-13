@@ -205,12 +205,25 @@ const RATTLE_RING_S = 0.005;
 const RATTLE_TICK_S = 0.004;
 const RATTLE_Q = 3;
 /**
- * The rattle draws from a stream of its own, a quarter of the generator's
- * period along from the play's (as the tail's right channel is half of it):
- * its noise is drawn sample by sample, so on the play's own stream it moved
- * every mode's draw with the sample rate (ruling R53).
+ * The rattle draws from a stream of its own: its noise is drawn sample by
+ * sample, so on the play's own stream it moved every mode's draw with the
+ * sample rate (ruling R53). The stream is the play's seed mixed with the
+ * piece's (rattleSeed), so two pieces at one seed rattle differently (ruling
+ * R68), then moved a quarter of the generator's period along, as the tail's
+ * right channel is moved half of it.
  */
 const RATTLE_SEED_OFFSET = 0x40000000;
+
+/** The rattle's seed for a play of `slug` at `seed`: the seed's state mixed with the slug's FNV-1a hash, plus the offset. */
+function rattleSeed(seed: number, slug: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < slug.length; i += 1) {
+    hash ^= slug.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (((seed >>> 0) ^ (hash >>> 0)) + RATTLE_SEED_OFFSET) >>> 0;
+}
+
 const PUFF_S = 0.04;
 const PUFF_HZ = 600;
 const PUFF_DB = -24;
@@ -1075,7 +1088,7 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
   let rattle: Float64Array | null = null;
   if (piece.body.legRattle) {
     rattle = new Float64Array(drive);
-    addRattle(rattle, landings, sampleRate, seededRandom(((input.seed >>> 0) + RATTLE_SEED_OFFSET) >>> 0));
+    addRattle(rattle, landings, sampleRate, seededRandom(rattleSeed(input.seed, piece.body.slug)));
   }
 
   // The voices: the piece's parts, driven by every foot (and its frames by the rattle too), and each surface's
