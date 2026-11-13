@@ -224,11 +224,10 @@ export async function startWebVitals(options: StartWebVitalsOptions): Promise<bo
     return false;
   }
   const coarse = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
-  const send = options.send ?? ((body: string) => { sendWebVitals(body); });
   const reporter = createWebVitalsReporter(
     routePattern(options.landing.paths),
     deviceClass(Math.min(window.screen.width, window.screen.height), coarse),
-    send,
+    options.send ?? ((body) => { sendWebVitals(body); }),
   );
   followLandingPage(options.landing, reporter);
   const { onCLS, onINP, onLCP, onTTFB } = await import("web-vitals");
@@ -238,11 +237,12 @@ export async function startWebVitals(options: StartWebVitalsOptions): Promise<bo
   onCLS(reporter.add, { reportAllChanges: true });
   onTTFB(reporter.add);
   // The library settles its vitals when the page is hidden, which is also the
-  // last moment a phone reliably runs anything; send then, and only then. The
-  // visitor may have pressed "Don't measure my visits" while this load was
-  // measured (on the privacy page itself) or in another tab: the choice is
-  // read again here, before the only send, and from then on nothing is sent,
-  // this load's values included, and the route is no longer followed.
+  // last moment a phone reliably runs anything; send then, and only then (a
+  // later hide sends what arrived since). The visitor may have pressed "Don't
+  // measure my visits" while this load was measured (on the privacy page
+  // itself) or in another tab: the choice is read again here, before every
+  // send, and once it is set nothing more is sent, this load's values
+  // included, and the route is no longer followed.
   const onHidden = (): void => {
     if (document.visibilityState !== "hidden") return;
     if (measurementDeclined()) {

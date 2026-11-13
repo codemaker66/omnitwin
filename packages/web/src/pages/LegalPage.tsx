@@ -107,8 +107,10 @@ const ACCESSIBILITY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as 
  *  venue staff, that the site serves its own typefaces, and that Resend also
  *  carries the acknowledgement sent to the guest (v1.0 final review); and on
  *  13 November, when it described the page-speed measurements, their lawful
- *  basis and the "Don't measure my visits" switch (T-685). This is the day
- *  that goes live: re-date it if the merge slips to another day. */
+ *  basis, how long they are kept and why they need no consent, added the
+ *  "Don't measure my visits" switch, and narrowed "What we do not do" to
+ *  third-party analytics (T-685). This is the day that goes live: re-date it,
+ *  and the sitemap's /privacy date, if the merge slips to another day. */
 const PRIVACY_UPDATED = { text: "13 November 2026", iso: "2026-11-13" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's

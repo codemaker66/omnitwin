@@ -210,7 +210,9 @@ branch, the reporter's import and the two small modules it uses. (Set at all, ev
 with a rate records every page load's landing route and fetches the reporter (a small
 chunk), which draws the sample; only a sampled load fetches the library and measures,
 except in tests (`MODE=test`), under automation (`navigator.webdriver`, so e2e runs
-are never counted), or where the browser sends Global Privacy Control or Do Not Track.
+are never counted), where the browser sends Global Privacy Control or Do Not Track,
+or where the visitor chose "Don't measure my visits" or the browser will not let the
+site read its storage ("The way to object", below).
 Both chunks load as optional code (`loadOptional` in `route-error-boundary.tsx`): one
 that fails to load (a blocker, offline, a deploy in between) stops the measurement
 and never reloads the page, as a failed page chunk would. While they load, any
@@ -260,30 +262,43 @@ The privacy page's paragraph. Blake approved the first wording on 6 November 202
 the solicitor approved it (Blake, 12 November). On 12 November a check of every claim
 against the code found sentences untrue of the real system (the hosting provider's
 request logs record every request's address; Safari clears the stored choice; one of
-the four is a layout-shift score, not a time), and Blake approved the corrected
-wording the same day ("everything is approved and have full permissions"). On
-13 November the release lead's review found three more places to make exact, and
-Blake approved all three ("Apply all three (Recommended)"): the Global Privacy
-Control and Do Not Track sentence (the server also discards a report whose signal the
-page could not see), a lawful basis under "Why we use it, and our lawful basis"
-(Article 6(1)(f), with "We run no third-party analytics product" under "What we do
-not do"), and the rating and the day kept beside each measurement:
+the four is a layout-shift score, not a time) and corrected the switch's status line
+("in this browser"; a plain line when the browser will not keep the choice), and
+Blake approved the corrected wording the same day ("everything is approved and have
+full permissions"). On 13 November the release lead's review found three more places
+to make exact, and Blake approved all three ("Apply all three (Recommended)"): the
+Global Privacy Control and Do Not Track sentence (the server also discards a report
+whose signal the page could not see), a lawful basis under "Why we use it, and our
+lawful basis" (Article 6(1)(f)), with "What we do not do" narrowed to "We run no
+third-party analytics product", and the rating and the day kept beside each
+measurement. A review of #355 later that day found three more, and Blake approved
+them too ("Apply all three (Recommended)"): a row keeps the kind of page and the kind
+of device as well as the day (not the time), not the day alone; the layout shift is
+measured "while it was open", since CLS is reported until the page is hidden, not
+only while it loads; and "How long we keep it" lists the measurements (90 days). He
+also approved naming the Regulations' statistics exemption in the cookies section
+("Add the sentence (Recommended)") and turning off the error monitor's sessions
+("Turn sessions off (Recommended)"): browser Sentry sent a session for every page
+load and navigation, which neither "no third-party analytics product" nor the switch's
+"not measured" would have survived (`observability/sentry.ts` now drops its
+`BrowserSession` integration). The paragraph now reads:
 
 > **How fast our pages are.** When you open one of our pages, your browser may measure
-> how quickly it loaded and responded, and how much its content shifted as it loaded
-> (four measurements, each rated good, needs improvement or poor), and send them to us
-> with the kind of page (for example "a proposal") and whether it was opened on a
-> phone, tablet or computer. It does not send the address of the page you opened,
+> how quickly it loaded and responded, and how much its content shifted while it was
+> open (four measurements, each rated good, needs improvement or poor), and send them
+> to us with the kind of page (for example "a proposal") and whether it was opened on
+> a phone, tablet or computer. It does not send the address of the page you opened,
 > anything you typed, or any identifier, and nothing is stored on your device for it.
 > Like any request, it reaches us from your internet address. We do not keep that with
 > the measurements, and our own server does not log it; our hosting provider's standard
 > request logs record it, as they do for every request (see "Server and request
-> logs"). We keep each measurement with only the day it arrived, use them only to make
-> the site faster, and delete them after 90 days. If your browser sends Global Privacy
-> Control or Do Not Track, your visit is not measured, and anything that arrives with
-> either signal is discarded. On any browser you can also turn it off with the "Don't
-> measure my visits" switch on this page. That choice is kept in this browser on this
-> device until the browser clears our site's data (Safari does this after about a week
+> logs"). We keep each measurement with only the kind of page, the kind of device and
+> the day it arrived (not the time). We use them only to make the site faster, and
+> delete them after 90 days. If your browser sends Global Privacy Control or Do Not
+> Track, your visit is not measured, and anything that arrives with either signal is
+> discarded. On any browser you can also turn it off with the "Don't measure my
+> visits" switch on this page. That choice is kept in this browser on this device
+> until the browser clears our site's data (Safari does this after about a week
 > without a visit), so you may need to set it again.
 
 **Limits.** Anyone can post a report, so the limiter bounds an address to 60 a minute
