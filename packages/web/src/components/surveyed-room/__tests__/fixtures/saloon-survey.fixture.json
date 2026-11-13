@@ -1,0 +1,79 @@
+{
+  "note": "Hand-built survey.json (schema version 2) for the Saloon, for tests only. The outline, wall ids, lengths and relief ids follow tools/surveyed-rooms/saloon.room.json; the atlas strips follow the tools' atlas plan. Every bytes and sha256 value is a PLACEHOLDER: no file has been published yet.",
+  "schemaVersion": 2,
+  "slug": "saloon",
+  "revision": 1,
+  "captured": "2026-07-11",
+  "methodRevision": 2,
+  "configSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "room": {
+    "name": "Saloon",
+    "venue": "trades-hall",
+    "ceilingHeight": 5.515,
+    "outline": [
+      [6.095, 3.514],
+      [6.095, -3.494],
+      [3.935, -3.494],
+      [3.935, -3.734],
+      [-3.835, -3.734],
+      [-3.835, -3.54],
+      [-6.096, -3.54],
+      [-6.096, 3.561],
+      [-3.897, 3.561],
+      [-3.897, 3.739],
+      [3.886, 3.739],
+      [3.886, 3.514]
+    ]
+  },
+  "atlas": {
+    "size": [4096, 2304],
+    "ppm": 200,
+    "vRange": [-0.02, 5.535],
+    "row": 1111,
+    "alpha": "255 - 127 * glass"
+  },
+  "walls": [
+    { "id": "front", "reliefId": "front", "length": 7.008, "height": 5.515, "kind": "solid", "atlas": [0, 0, 1402, 1111] },
+    { "id": "window-front-end", "reliefId": "win-f-end", "length": 2.16, "height": 5.515, "kind": "solid", "atlas": [1410, 0, 432, 1111] },
+    { "id": "window-front-return", "reliefId": "win-f-ret", "length": 0.24, "height": 5.515, "kind": "solid", "atlas": [1850, 0, 48, 1111] },
+    { "id": "window", "reliefId": "window", "length": 7.77, "height": 5.515, "kind": "solid", "atlas": [1906, 0, 1554, 1111] },
+    { "id": "window-rear-return", "reliefId": "win-r-ret", "length": 0.194, "height": 5.515, "kind": "solid", "atlas": [3468, 0, 39, 1111] },
+    { "id": "window-rear-end", "reliefId": "win-r-end", "length": 2.261, "height": 5.515, "kind": "solid", "atlas": [3515, 0, 453, 1111] },
+    { "id": "rear", "reliefId": "rear", "length": 7.101, "height": 5.515, "kind": "solid", "atlas": [0, 1119, 1421, 1111] },
+    { "id": "fireplace-rear-end", "reliefId": "fire-r-end", "length": 2.199, "height": 5.515, "kind": "solid", "atlas": [1429, 1119, 440, 1111] },
+    { "id": "fireplace-rear-return", "reliefId": "fire-r-ret", "length": 0.178, "height": 5.515, "kind": "solid", "atlas": [1877, 1119, 36, 1111] },
+    { "id": "fireplace", "reliefId": "fireplace", "length": 7.783, "height": 5.515, "kind": "solid", "atlas": [1921, 1119, 1557, 1111] },
+    { "id": "fireplace-front-return", "reliefId": "fire-f-ret", "length": 0.225, "height": 5.515, "kind": "solid", "atlas": [3486, 1119, 46, 1111] },
+    { "id": "fireplace-front-end", "reliefId": "fire-f-end", "length": 2.209, "height": 5.515, "kind": "solid", "atlas": [3540, 1119, 442, 1111] }
+  ],
+  "relief": {
+    "container": "GHR1",
+    "file": "walls-relief.bin",
+    "ppm": 100,
+    "order": ["front", "win-f-end", "win-f-ret", "window", "win-r-ret", "win-r-end", "rear", "fire-r-end", "fire-r-ret", "fireplace", "fire-f-ret", "fire-f-end"]
+  },
+  "ceiling": {
+    "extent": { "x": [-6.096, 6.095], "z": [-3.734, 3.739] },
+    "orientation": "columns planner +x, rows from planner +z",
+    "files": ["ceiling-1829.webp", "ceiling-915.webp"],
+    "relief": {
+      "file": "ceiling-relief.bin",
+      "id": "ceiling",
+      "reference": 5.515,
+      "heightRange": [5.4, 5.9]
+    }
+  },
+  "floor": {
+    "files": ["floor-1463.webp", "floor-732.webp"]
+  },
+  "files": {
+    "walls-4096.webp": { "bytes": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+    "walls-2048.webp": { "bytes": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+    "walls-relief.bin": { "bytes": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+    "ceiling-1829.webp": { "bytes": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+    "ceiling-915.webp": { "bytes": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+    "floor-1463.webp": { "bytes": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+    "floor-732.webp": { "bytes": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+    "ceiling-relief.bin": { "bytes": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000" }
+  }
+}
