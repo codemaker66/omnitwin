@@ -6,6 +6,7 @@ import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { createPlacedItem, type PlacedItem } from "../../lib/placement.js";
 import { PLANNER_CHROME_STORAGE_KEY } from "../../lib/planner-chrome-flag.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
+import { useCaptionPresenceStore } from "../../stores/caption-presence-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
@@ -142,15 +143,23 @@ afterEach(() => {
 });
 
 describe("the selection nameplate", () => {
-  it("shows no plate over the item in hand under the new chrome, whose caption says it (T-671 slice 11′)", () => {
+  // Under the new chrome the caption names the piece in hand, so the plate steps aside, but only while
+  // the caption is on screen: a card in hand, Walk and a view-only layout put the caption away (#357 V8).
+  it("steps aside for the new chrome's caption only while the caption shows (T-671 slice 11′)", () => {
     window.history.replaceState(null, "", "/plan?chrome=v2");
     try {
       const tables = [labelledTable("Table 1", -5), labelledTable("Table 2", 5)];
       usePlacementStore.setState({ placedItems: tables });
       mounted = mountInStubRoot(<PlacedFurniture />);
       act(() => { useSelectionStore.getState().select(tables[1]?.id ?? ""); });
+      // No caption on screen (a view-only layout, say): the plate names the table.
+      expect(onlyPlate(mounted.scene).group.position.x).toBe(5);
+      act(() => { useCaptionPresenceStore.getState().setShown(true); });
       expect(plateTextures(mounted.scene)).toEqual([]);
+      act(() => { useCaptionPresenceStore.getState().setShown(false); });
+      expect(onlyPlate(mounted.scene).group.position.x).toBe(5);
     } finally {
+      useCaptionPresenceStore.getState().setShown(false);
       window.history.replaceState(null, "", "/");
       window.localStorage.removeItem(PLANNER_CHROME_STORAGE_KEY);
     }

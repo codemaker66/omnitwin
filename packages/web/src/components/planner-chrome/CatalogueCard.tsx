@@ -7,7 +7,6 @@ import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import {
   CARD_COLOURWAYS,
   cardMainItem,
-  cardMainSlug,
   cardParamsFor,
   describeCard,
   pieceCardId,
@@ -110,24 +109,6 @@ export function cardChoices(card: CatalogueCard): readonly CardChoiceOption[] {
     });
   }
   return [];
-}
-
-/** The pieces a card puts in the room: its variants, or a setup's main piece in each of its cloths. */
-export function cardSlugs(card: CatalogueCard): readonly string[] {
-  if (card.variants.length > 0) return card.variants.map((variant) => variant.slug);
-  const colourways = setupColourways(card.id);
-  const asks = colourways.length === 0 ? [{}] : colourways.map((colourway) => ({ colourway }));
-  const slugs = new Set<string>();
-  for (const ask of asks) {
-    const params = cardParamsFor(card.id, ask, {});
-    if (params !== null) slugs.add(cardMainSlug(params));
-  }
-  return [...slugs];
-}
-
-/** How many of this card's pieces the room holds, from a count by slug. */
-export function placedCount(card: CatalogueCard, placedBySlug: ReadonlyMap<string, number>): number {
-  return cardSlugs(card).reduce((sum, slug) => sum + (placedBySlug.get(slug) ?? 0), 0);
 }
 
 /** The variant of this card in hand, when the card in hand is one of its pieces. */

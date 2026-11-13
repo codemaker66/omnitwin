@@ -1,17 +1,27 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent, type ReactElement } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+} from "react";
 import { LayoutGrid } from "lucide-react";
 import { placedCounts } from "../../lib/card-stock.js";
-import { getCatalogueItem } from "../../lib/catalogue.js";
-import { CATALOGUE_CARDS, RAIL_SLOTS, railName } from "../../lib/card-defaults.js";
-import { cardMainSlug, cardParamsFor, pieceCardSlug, type CardId } from "../../lib/setup-cards.js";
+import { railName } from "../../lib/card-defaults.js";
+import { cardParamsFor, type CardId } from "../../lib/setup-cards.js";
 import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRailDropStore } from "../../stores/rail-drop-store.js";
-import { useEscapeLayer } from "../../lib/planner-keys.js";
-import { armOrCancel, useCardKeys } from "./card-keys.js";
+import { useSelectionStore } from "../../stores/selection-store.js";
+import { focusOwnsArrows, useEscapeLayer } from "../../lib/planner-keys.js";
+import { placedCount, roomCounts } from "./card-counts.js";
+import { armOrCancel, useCardKeys, useRailSlots } from "./card-keys.js";
 import { Key } from "./Keys.js";
 import { RailCard } from "./RailCard.js";
 import { replacePreview } from "./replace-with.js";
@@ -53,28 +63,29 @@ function liftsCard(drag: PendingDrag, x: number, y: number): boolean {
   return Math.hypot(dx, dy) >= 8 && Math.abs(dy) > Math.abs(dx);
 }
 
-/** Every catalogue slug a card stands for: its variants, or a setup's main piece. */
-function slugsOf(card: CardId): readonly string[] {
-  const slug = pieceCardSlug(card);
-  if (slug === null) {
-    const params = cardParamsFor(card, {}, {});
-    return params === null ? [] : [cardMainSlug(params)];
-  }
-  const group = CATALOGUE_CARDS.find((entry) => entry.variants.some((variant) => variant.slug === slug));
-  return group === undefined ? [slug] : group.variants.map((variant) => variant.slug);
-}
-
 /** While replacing, notes which rail card the pointer or focus is on. */
-function pointAt(target: EventTarget): void {
+function pointAt(target: EventTarget, slots: readonly CardId[]): void {
   if (useCardsStore.getState().replacing === null || !(target instanceof Element)) return;
   const named = target.closest<HTMLElement>("[data-card]")?.dataset["card"];
   // The rail's own slot, so only a card it holds is ever pointed at.
-  const card = RAIL_SLOTS[useCardsStore.getState().style].find((slot) => slot === named);
+  const card = slots.find((slot) => slot === named);
   if (card !== undefined && card !== useCardsStore.getState().pointedCard) useCardsStore.getState().setPointedCard(card);
+}
+
+function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
+}
+
+/** The rail's keys in order, its eight cards then More: one Tab stop between them. */
+function railStops(rail: HTMLElement | null): HTMLElement[] {
+  return rail === null ? [] : Array.from(rail.querySelectorAll<HTMLElement>(".pc-rail__cards > button, .pc-rail__more"));
 }
 
 export function Rail(): ReactElement | null {
   useCardKeys();
+  const slots = useRailSlots();
   const style = useCardsStore((state) => state.style);
   const catalogueOpen = useCardsStore((state) => state.catalogueOpen);
   const inFlight = useCardsStore((state) => state.inFlight);
@@ -92,17 +103,12 @@ export function Rail(): ReactElement | null {
   const tokenRef = useRef<HTMLSpanElement>(null);
   const drag = useRef<PendingDrag | null>(null);
   const swallowClick = useRef(false);
-  const slots = RAIL_SLOTS[style];
+  // The one Tab stop among the eight cards and More (index; More is the last).
+  const [stop, setStop] = useState(0);
   const hidden = walking || viewOnly;
 
-  const placed = useMemo(() => {
-    const bySlug = new Map<string, number>();
-    for (const item of placedItems) {
-      const slug = getCatalogueItem(item.catalogueItemId)?.slug;
-      if (slug !== undefined) bySlug.set(slug, (bySlug.get(slug) ?? 0) + 1);
-    }
-    return new Map(slots.map((card) => [card, slugsOf(card).reduce((sum, slug) => sum + (bySlug.get(slug) ?? 0), 0)] as const));
-  }, [placedItems, slots]);
+  // The catalogue's own count (card-counts.ts), so a card says the same "×N" on the rail and in the catalogue.
+  const inRoom = useMemo(() => roomCounts(placedItems), [placedItems]);
 
   const store = useMemo(() => {
     const counts = placedCounts(placedItems);
@@ -111,6 +117,10 @@ export function Rail(): ReactElement | null {
 
   // Replace mode: Esc steps out of it before anything else it would close.
   useEscapeLayer("operation", { open: replacing !== null, onEscape: () => { useCardsStore.getState().stopReplacing(); } });
+  // Replace mode is for the selection it was asked on: another selection, or none, ends it.
+  useEffect(() => useSelectionStore.subscribe((state, previous) => {
+    if (useCardsStore.getState().replacing !== null && !sameIds(state.selectedIds, previous.selectedIds)) useCardsStore.getState().stopReplacing();
+  }), []);
   // What the pointed card would do, said before it does it (lane E's sentence, or why not).
   const preview = useMemo(
     () => (replacing !== null && pointedCard !== null ? replacePreview(pointedCard) : null),
@@ -202,28 +212,51 @@ export function Rail(): ReactElement | null {
     armOrCancel(card);
   };
 
+  // One Tab stop: ← → Home End move between the keys, as in the catalogue's row. A key pressed
+  // with the pointer gives the arrows back to the room (focusOwnsArrows), as the dock's do.
+  const tabStop = Math.min(stop, slots.length);
+  const onRailKeys = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (!focusOwnsArrows(event.target)) return;
+    const stops = railStops(railRef.current);
+    const index = stops.findIndex((element) => element === event.target);
+    if (index < 0) return;
+    const next = event.key === "ArrowRight" ? Math.min(stops.length - 1, index + 1)
+      : event.key === "ArrowLeft" ? Math.max(0, index - 1)
+        : event.key === "Home" ? 0
+          : event.key === "End" ? stops.length - 1
+            : null;
+    if (next === null) return;
+    event.preventDefault();
+    stops[next]?.focus();
+  };
+
+  // One voice for the rail, there before its words, so whatever arrives in it is spoken.
+  const line = refusal !== null ? (
+    <><b>{refusal.text}</b><span> · {railName(refusal.card, style)}</span></>
+  ) : replacing !== null ? (
+    <>
+      {preview === null ? <b>{replacing}</b> : preview.ok ? <span>{preview.text}</span> : <b>{preview.text}</b>}
+      <span> · </span><b>Esc</b><span> cancels</span>
+    </>
+  ) : armed !== null && hintFor === armed ? (
+    HINT_WORDS.map((words, index) => (index % 2 === 0 ? <b key={words}>{words}</b> : <span key={words}>{words}</span>))
+  ) : null;
+  const refusing = refusal !== null || (replacing !== null && preview?.ok === false);
+
   return (
     <div className="pc-rail-wrap">
-      {refusal !== null ? (
-        <p className="pc-rail__hint is-refusal" role="status">
-          <b>{refusal.text}</b><span> · {railName(refusal.card)}</span>
-        </p>
-      ) : replacing !== null ? (
-        <p className={`pc-rail__hint${preview?.ok === false ? " is-refusal" : ""}`} role="status">
-          {preview === null ? <b>{replacing}</b> : preview.ok ? <span>{preview.text}</span> : <b>{preview.text}</b>}
-          <span> · </span><b>Esc</b><span> cancels</span>
-        </p>
-      ) : armed !== null && hintFor === armed ? (
-        <p className="pc-rail__hint" role="status">
-          {HINT_WORDS.map((words, index) => (index % 2 === 0 ? <b key={words}>{words}</b> : <span key={words}>{words}</span>))}
-        </p>
-      ) : null}
+      <p className={`pc-rail__hint${refusing ? " is-refusal" : ""}`} role="status">{line}</p>
       <div
         ref={railRef}
         className="pc-lacquer pc-rail"
         role="toolbar"
         aria-label="Furniture cards"
         data-testid="planner-rail"
+        onKeyDown={onRailKeys}
+        onFocus={(event) => {
+          const index = railStops(railRef.current).findIndex((element) => element === event.target);
+          if (index >= 0) setStop(index);
+        }}
         onPointerUp={() => {
           // Released over the rail: a card in flight is put back, silently, before the floor can take it.
           if (drag.current?.started === true) useCatalogueStore.getState().endCardDrag();
@@ -232,8 +265,8 @@ export function Rail(): ReactElement | null {
         <div
           className="pc-rail__cards"
           // Replace mode: the card under the pointer or focus is the one the hint speaks of.
-          onPointerOver={(event) => { pointAt(event.target); }}
-          onFocus={(event) => { pointAt(event.target); }}
+          onPointerOver={(event) => { pointAt(event.target, slots); }}
+          onFocus={(event) => { pointAt(event.target, slots); }}
           onPointerLeave={() => { if (useCardsStore.getState().replacing !== null) useCardsStore.getState().setPointedCard(null); }}
         >
           {slots.map((card, index) => (
@@ -243,8 +276,9 @@ export function Rail(): ReactElement | null {
               slot={index + 1}
               armed={armed === card}
               inFlight={inFlight === card}
-              placed={placed.get(card) ?? 0}
+              placed={placedCount(card, inRoom)}
               store={store.get(card) ?? null}
+              tabIndex={index === tabStop ? 0 : -1}
               onPress={onCardPress}
               onPointerDown={onCardPointerDown}
             />
@@ -257,6 +291,7 @@ export function Rail(): ReactElement | null {
           expanded={catalogueOpen}
           shortcut={["A"]}
           className="pc-rail__more"
+          tabIndex={tabStop === slots.length ? 0 : -1}
           onPress={() => { useCardsStore.getState().toggleCatalogue(); }}
         />
         <span ref={tokenRef} className="pc-rail__token" aria-hidden="true" />

@@ -72,4 +72,19 @@ describe("replacing", () => {
     expect(usePlacementStore.getState().placedItems.some((piece) => piece.id === "t1")).toBe(true);
     expect(useCardsStore.getState().replacing).not.toBeNull();
   });
+
+  // #357 V5: Replace… is offered for dining tables alone; a selection that is no longer that is never replaced.
+  it("refuses, and leaves replace mode, once the selection is not all dining tables", () => {
+    const bar: PlacedItem = { id: "bar", catalogueItemId: idOf("bar-counter"), x: 6, y: 0, z: 0, rotationY: 0, clothed: false, clothStyle: null, tableSetting: null, groupId: null };
+    usePlacementStore.setState({ placedItems: [...usePlacementStore.getState().placedItems, bar] });
+    useCardsStore.getState().startReplacing("Replace 2 Round 6 ft with…");
+    useSelectionStore.getState().select("bar");
+    expect(replaceWith("long-table")).toBe(false);
+    expect(usePlacementStore.getState().placedItems.some((piece) => piece.id === "bar")).toBe(true);
+    expect(useCardsStore.getState().replacing).toBeNull();
+    useCardsStore.getState().startReplacing("Replace 2 Round 6 ft with…");
+    useSelectionStore.getState().clearSelection();
+    expect(replaceWith("long-table")).toBe(false);
+    expect(useCardsStore.getState().replacing).toBeNull();
+  });
 });

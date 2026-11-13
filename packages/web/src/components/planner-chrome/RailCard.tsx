@@ -3,6 +3,7 @@ import { catalogueIcon } from "../../lib/catalogue.js";
 import { setupCardPreviewUrl } from "../../lib/crafted-furniture.js";
 import { railName } from "../../lib/card-defaults.js";
 import { cardMainItem, cardParamsFor, describeCard, type CardId } from "../../lib/setup-cards.js";
+import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import type { StoreFace } from "./store-figures.js";
 import { useTooltip } from "./Tooltip.js";
@@ -25,6 +26,8 @@ export interface RailCardProps {
   readonly placed: number;
   /** What the store says, for staff; null for everyone else. */
   readonly store: StoreFace | null;
+  /** The rail's one Tab stop is 0; the arrows reach the rest. */
+  readonly tabIndex: 0 | -1;
   readonly onPress: (card: CardId) => void;
   readonly onPointerDown: (card: CardId, event: ReactPointerEvent<HTMLButtonElement>) => void;
 }
@@ -33,13 +36,14 @@ function iconSource(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-export function RailCard({ card, slot, armed, inFlight, placed, store, onPress, onPointerDown }: RailCardProps): ReactElement {
+export function RailCard({ card, slot, armed, inFlight, placed, store, tabIndex, onPress, onPointerDown }: RailCardProps): ReactElement {
   const remembered = useCatalogueStore((state) => state.rememberedSeats);
   const inHand = useCatalogueStore((state) => (armed ? state.cardParams : null));
+  const style = useCardsStore((state) => state.style);
   const params = cardParamsFor(card, {}, remembered);
   const face = params === null ? null : describeCard(params);
   const item = params === null ? undefined : cardMainItem(params);
-  const name = card === "round" && face !== null ? face.name : railName(card);
+  const name = card === "round" && face !== null ? face.name : railName(card, style);
   const meta = face === null ? "Not in the catalogue" : face.seats > 0 ? `${String(face.seats)} seats` : face.size;
   const tooltip = useTooltip({ text: [name, face?.size ?? meta, String(slot)].filter((part) => part !== "").join(" · "), side: "above" });
   // A setup card shows its look (Q-21): the one in hand while armed, so a colourway change shows; a piece card shows its piece.
@@ -48,7 +52,7 @@ export function RailCard({ card, slot, armed, inFlight, placed, store, onPress, 
   if (face === null) {
     // A card that names nothing the catalogue holds stays in its slot, dimmed, and says why.
     return (
-      <button {...tooltip} type="button" className="pc-railcard is-missing" aria-disabled="true" aria-label={`${name}: ${meta}`}>
+      <button {...tooltip} type="button" className="pc-railcard is-missing" tabIndex={tabIndex} aria-disabled="true" aria-label={`${name}: ${meta}`}>
         <span className="pc-railcard__mat" aria-hidden="true" />
         <span className="pc-railcard__words">
           <span className="pc-railcard__name">{name}</span>
@@ -62,6 +66,7 @@ export function RailCard({ card, slot, armed, inFlight, placed, store, onPress, 
       {...tooltip}
       type="button"
       className={["pc-railcard", armed ? "is-armed" : "", inFlight ? "is-in-flight" : "", store?.refused === true ? "is-empty" : ""].filter(Boolean).join(" ")}
+      tabIndex={tabIndex}
       aria-pressed={armed}
       aria-disabled={store?.refused === true ? true : undefined}
       aria-label={[name, meta, placed > 0 ? `${String(placed)} in the room` : "", store?.spoken ?? ""].filter((part) => part !== "").join(", ")}

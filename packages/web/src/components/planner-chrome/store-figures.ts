@@ -61,6 +61,24 @@ export function storeRefusalFor(card: CardId): string | null {
   return face?.refused === true ? NONE_LEFT_IN_STORE : null;
 }
 
+/**
+ * B2 hard, however a card is asked for (the rail, its digit, the catalogue):
+ * a card the store has none left of does not arm, and the rail's line says
+ * why. True when it refused; otherwise an earlier refusal is cleared. The
+ * card already in hand can always be put down.
+ */
+export function refuseFromStore(card: CardId): boolean {
+  const cards = useCardsStore.getState();
+  const refusal = useCatalogueStore.getState().armedCardId === card ? null : storeRefusalFor(card);
+  if (refusal === null) {
+    cards.setRefusal(null);
+    return false;
+  }
+  cards.setHintFor(null);
+  cards.setRefusal({ card, text: refusal });
+  return true;
+}
+
 /** Fetches the venue's usable stock once for staff, and forgets it for everyone else. */
 export function useStoreStock(): void {
   const user = useAuthStore((state) => state.user);

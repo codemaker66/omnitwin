@@ -137,6 +137,8 @@ export function Dock(): ReactElement {
       <KeySeparator />
       <div className="pc-dock__group" role="group" aria-label="Undo and redo">
         <Key
+          // Where a receipt that goes while it holds focus hands focus (Receipt.tsx).
+          data-dock-undo=""
           label="Undo"
           iconOnly
           icon={<Undo2 className="pc-icon" aria-hidden="true" />}

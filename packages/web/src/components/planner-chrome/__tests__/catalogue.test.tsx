@@ -2,16 +2,20 @@ import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Catalogue, nothingFoundLine } from "../Catalogue.js";
-import { cardChoices, placedCount } from "../CatalogueCard.js";
+import { placedCount, roomCounts } from "../card-counts.js";
+import { cardChoices } from "../CatalogueCard.js";
 import { CARD_TABS, CATALOGUE_CARDS, searchCatalogue } from "../../../lib/card-defaults.js";
 import { cardNeeds } from "../../../lib/card-stock.js";
 import { SETUP_PREVIEW_VERSION } from "../../../lib/crafted-furniture.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { useEscapeLayer } from "../../../lib/planner-keys.js";
-import { cardMainItem, cardParamsFor, pieceCardId } from "../../../lib/setup-cards.js";
+import { createPlacedItem, type PlacedItem } from "../../../lib/placement.js";
+import { cardMainItem, cardParamsFor, pieceCardId, stampSetup } from "../../../lib/setup-cards.js";
 import { useCardsStore } from "../../../stores/cards-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
+import { usePlannerChromeStore } from "../../../stores/planner-chrome-store.js";
+import { useSelectionStore } from "../../../stores/selection-store.js";
 
 // ---------------------------------------------------------------------------
 // The catalogue, "More" (T-671 slice 12′; card-dock spec §3, §4, §5, §12,
@@ -126,6 +130,21 @@ describe("search", () => {
     expect(nothingFoundLine(" zzzz ")).toBe("Nothing called “zzzz” in the catalogue");
   });
 
+  // #357 V7: a status region inserted already holding its words is often not spoken.
+  it("says what a search found in one voice, there and empty from the moment it opens", () => {
+    render(<Catalogue />);
+    openCatalogue();
+    const voice = within(catalogue()).getByRole("status");
+    expect(voice.textContent).toBe("");
+    const search = within(catalogue()).getByRole("searchbox", { name: "Search the catalogue" });
+    fireEvent.change(search, { target: { value: "zzzz" } });
+    expect(within(catalogue()).getByRole("status")).toBe(voice);
+    expect(voice.textContent).toBe("Nothing called “zzzz” in the catalogue");
+    fireEvent.change(search, { target: { value: "mic" } });
+    expect(within(catalogue()).getByRole("status")).toBe(voice);
+    expect(voice.textContent).toBe(`${String(searchCatalogue("mic").length)} in the catalogue`);
+  });
+
   it("opens and searches on /, and a / typed in the search is only typing", () => {
     render(<Catalogue />);
     fireEvent.keyDown(window, { key: "/", code: "Slash" });
@@ -220,10 +239,25 @@ describe("what a card says", () => {
   });
 
   it("counts a setup by its main piece in any of its cloths", () => {
-    const round = CATALOGUE_CARDS.find((card) => card.id === "round");
-    if (round === undefined) throw new Error("no Round of 10 card");
-    const counts = new Map([["round-table-6ft-white", 2], ["round-table-6ft-black", 1], ["trestle-6ft", 5]]);
-    expect(placedCount(round, counts)).toBe(3);
+    const placed = [
+      ...["round-table-6ft-white", "round-table-6ft-white", "round-table-6ft-black"].map((slug, n) => createPlacedItem(idOf(slug), n * 3, 0, 0, null)),
+      ...Array.from({ length: 5 }, (_, n) => createPlacedItem(idOf("trestle-6ft"), n * 3, 6, 0, null)),
+    ];
+    expect(placedCount("round", roomCounts(placed))).toBe(3);
+  });
+
+  // #357 V4: a setup's pip counts sets; a 5 × 5 floor read ×25.
+  it("counts a dance floor as one floor, not its panels", () => {
+    const params = cardParamsFor("dance-floor", {});
+    if (params === null) throw new Error("no dance floor card");
+    const placed = stampSetup(params, { x: 0, z: 0 }, 0);
+    expect(placed.length).toBe(25);
+    usePlacementStore.setState({ placedItems: [...placed] });
+    render(<Catalogue />);
+    openCatalogue();
+    fireEvent.click(within(catalogue()).getByRole("tab", { name: "Staging" }));
+    expect(cardNamed("Dance floor").querySelector(".pc-ccard__pip")?.textContent).toBe("×1");
+    expect(placedCount("dance-floor", roomCounts(placed))).toBe(1);
   });
 
   it("carries a seat chip on seating pieces only", () => {
@@ -316,6 +350,44 @@ describe("the store (staff; Blake's B2, hard)", () => {
     expect(round.getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(round);
     expect(useCatalogueStore.getState().armedCardId).toBeNull();
+  });
+
+  // #357 V6: Enter in the search armed a card the store has none left of.
+  it("will not arm it from the search's Enter either, and the rail's line says why", () => {
+    useCardsStore.getState().setStock(roundStock(0));
+    openCatalogue();
+    render(<Catalogue />);
+    const search = within(catalogue()).getByRole("searchbox", { name: "Search the catalogue" });
+    fireEvent.change(search, { target: { value: "round" } });
+    expect(searchCatalogue("round")[0]?.id).toBe("round");
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(useCatalogueStore.getState().armedCardId).toBeNull();
+    expect(useCardsStore.getState().refusal).toEqual({ card: "round", text: "None left in store" });
+  });
+
+  // #357 V6: replacing a white Round of 10 with a round gives back what it takes, so the store
+  // alone does not refuse it; the replacement's own plan judges it, as on the rail.
+  it("judges a card by the replacement while replacing, not by the store alone", () => {
+    const params = cardParamsFor("round", { colourway: "white" });
+    if (params === null) throw new Error("no round card");
+    const set: readonly PlacedItem[] = stampSetup(params, { x: 0, z: 0 }, 0);
+    const table = set[0];
+    if (table === undefined) throw new Error("no table stamped");
+    usePlacementStore.setState({ placedItems: [...set] });
+    // A Round of 11 remembered from an earlier case would need one chair more than the store has.
+    useCatalogueStore.setState({ rememberedSeats: {} });
+    usePlannerChromeStore.getState().clearReceipt();
+    useSelectionStore.getState().select(table.id);
+    useCardsStore.getState().setStock(roundStock(1));
+    useCardsStore.getState().startReplacing("Replace Table 1 with…");
+    openCatalogue();
+    render(<Catalogue />);
+    const round = cardNamed("Round of 10");
+    expect(round.querySelector(".pc-ccard__store")?.textContent).toBe("None left");
+    expect(round.getAttribute("aria-disabled"), round.getAttribute("aria-label") ?? "").toBeNull();
+    fireEvent.click(round);
+    expect(usePlannerChromeStore.getState().receipt?.text).toMatch(/^Replaced /u);
+    useSelectionStore.getState().clearSelection();
   });
 
   it("shows no figure to anyone without stock", () => {

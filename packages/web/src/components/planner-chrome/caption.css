@@ -139,3 +139,6 @@
 }
 
 .pc-caption__hint b { color: var(--house-forest-ink-1); font-weight: 600; }
+
+/* Empty, the line keeps its voice in the accessibility tree and takes no room in the caption. */
+.pc-caption__hint:empty { margin: 0; }

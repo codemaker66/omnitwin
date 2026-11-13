@@ -4,8 +4,11 @@ import { Caption } from "../Caption.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import type { PlacedItem } from "../../../lib/placement.js";
 import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
+import { selectionKeyBindings } from "../../../lib/planner-keymap.js";
+import { usePlannerKeyBindings } from "../../../lib/planner-keys.js";
 import { stampSetup } from "../../../lib/setup-cards.js";
 import { projectScreenAnchors, screenAnchorCount, setScreenFloorPicker } from "../../../lib/screen-anchors.js";
+import { useCaptionPresenceStore } from "../../../stores/caption-presence-store.js";
 import { useCardsStore } from "../../../stores/cards-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -125,6 +128,47 @@ describe("where it is", () => {
     expect(screen.queryByRole("group", { name: /^Table 8/u })).toBeNull();
     expect(screenAnchorCount()).toBe(0);
   });
+
+  // #357 V8: the room's nameplate steps aside for the caption only while the caption is there to name the piece.
+  it("tells the room when it is on screen, and when it steps aside", () => {
+    render(<Caption />);
+    expect(useCaptionPresenceStore.getState().shown).toBe(false);
+    act(() => { useSelectionStore.getState().select("t8"); });
+    expect(useCaptionPresenceStore.getState().shown).toBe(true);
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    expect(useCaptionPresenceStore.getState().shown).toBe(false);
+    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    expect(useCaptionPresenceStore.getState().shown).toBe(true);
+    cleanup();
+    expect(useCaptionPresenceStore.getState().shown).toBe(false);
+  });
+});
+
+// #357 V10: the caption's Remove posted its receipt; Delete, the same command, posted none.
+describe("Delete, the same command as Remove", () => {
+  function SceneKeys(): null {
+    usePlannerKeyBindings(selectionKeyBindings({ invalidate: () => undefined, cancelGesture: () => undefined, screenUp: () => ({ x: 0, z: -1 }) }));
+    return null;
+  }
+
+  it("removes the table and says so, with Undo, as Remove does", async () => {
+    usePlannerChromeStore.getState().clearReceipt();
+    render(<><SceneKeys /><Caption /></>);
+    act(() => { useSelectionStore.getState().select("t8"); });
+    await act(async () => { fireEvent.keyDown(window, { key: "Delete", code: "Delete" }); await Promise.resolve(); });
+    expect(usePlacementStore.getState().placedItems).toEqual([]);
+    expect(usePlannerChromeStore.getState().receipt).toMatchObject({ text: "Table 8 put back in store", undo: true });
+  });
+
+  it("says nothing when nothing went", async () => {
+    usePlannerChromeStore.getState().clearReceipt();
+    // The caption alone: no planner Delete to hand the key to, so nothing is removed.
+    render(<Caption />);
+    act(() => { useSelectionStore.getState().select("t8"); });
+    await act(async () => { fireEvent.keyDown(window, { key: "Delete", code: "Delete" }); await Promise.resolve(); });
+    expect(usePlacementStore.getState().placedItems).toHaveLength(11);
+    expect(usePlannerChromeStore.getState().receipt).toBeNull();
+  });
 });
 
 describe("lane E's verbs, behind their switches", () => {
@@ -197,8 +241,12 @@ describe("Move, then tap where it goes (law 11), behind its switch", () => {
     const unset = setScreenFloorPicker(() => ({ x: -4, z: 1 }));
     render(<Caption />);
     act(() => { useSelectionStore.getState().select("t8"); });
+    // #357 V7: the line is there, empty, before Move fills it, so its words are spoken.
+    const line = within(caption()).getByRole("status");
+    expect(line.textContent).toBe("");
     fireEvent.click(within(caption()).getByRole("button", { name: /^Move/u }));
-    expect(screen.getByRole("status").textContent).toContain("Tap where it goes");
+    expect(within(caption()).getByRole("status")).toBe(line);
+    expect(line.textContent).toContain("Tap where it goes");
     fireEvent.click(screen.getByTestId("planner-caption-catcher"), { clientX: 200, clientY: 200 });
     const table = usePlacementStore.getState().placedItems.find((item) => item.id === "t8");
     expect(table?.x).toBeCloseTo(-4, 0);

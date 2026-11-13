@@ -20,13 +20,14 @@ import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
-import { usePlannerChromeStore } from "../../stores/planner-chrome-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { Stepper } from "./Controls.js";
 import { ClothGlyph } from "./glyphs.js";
 import { Key } from "./Keys.js";
+import { postPutBack, usePutBackKeys } from "./put-back.js";
+import { useCaptionPresenceStore } from "../../stores/caption-presence-store.js";
 import "./chrome.css";
 import "./caption.css";
 
@@ -134,6 +135,13 @@ export function Caption(): ReactElement | null {
   const viewOnly = useEditorStore((state) => state.lockReason !== null);
   const model = useMemo(() => captionModel(selectedIds, placedItems, plannerFeatureEnabled), [selectedIds, placedItems]);
   const shown = model !== null && armed === null && !walking && !viewOnly;
+  // While it shows, it names the piece, so the room's nameplate over it steps aside (PlacedFurniture).
+  useEffect(() => {
+    useCaptionPresenceStore.getState().setShown(shown);
+    return () => { useCaptionPresenceStore.getState().setShown(false); };
+  }, [shown]);
+  // Delete says what Remove says.
+  usePutBackKeys();
   // Move, then tap where it goes (law 11): the next tap on the room is the destination.
   const [moving, setMoving] = useState(false);
   const moveKeyRef = useRef<HTMLButtonElement>(null);
@@ -211,9 +219,8 @@ export function Caption(): ReactElement | null {
       </svg>
       <div ref={rootRef} className="pc-lacquer pc-caption" role="group" aria-label={name} data-side="right">
         <span className="pc-caption__arrow" aria-hidden="true" />
-        {moving ? (
-          <p className="pc-caption__hint" role="status"><b>Tap where it goes</b> · <b>Esc</b> cancels</p>
-        ) : null}
+        {/* There, empty, before Move fills it, so the words are spoken. */}
+        <p className="pc-caption__hint" role="status">{moving ? <><b>Tap where it goes</b> · <b>Esc</b> cancels</> : null}</p>
         {model.eyebrow !== null ? <p className="pc-caps pc-caption__eyebrow">{model.eyebrow}</p> : null}
         <p className="pc-title pc-caption__name">{model.name}</p>
         {model.size !== null || aisles.length > 0 ? (
@@ -279,8 +286,8 @@ export function Caption(): ReactElement | null {
             <VerbButton
               key={verb}
               verb={verb}
-              // Remove puts the piece back in store (card-dock spec §8): the receipt says so, with Undo.
-              after={verb === "remove" ? () => { usePlannerChromeStore.getState().postReceipt(`${model.label ?? model.name} put back in store`, { undo: true }); } : undefined}
+              // Remove puts the piece back in store (card-dock spec §8): the receipt says so, with Undo, as Delete's does.
+              after={verb === "remove" ? () => { postPutBack(model); } : undefined}
             />
           )))}
         </div>

@@ -42,12 +42,16 @@ export function LayOutPanel(): ReactElement {
   return (
     <section className="pc-lacquer pc-lacquer--raised pc-layout-panel" aria-label="Lay out" data-testid="lay-out-panel">
       <h2 className="pc-caps pc-layout-panel__heading">Lay out</h2>
-      {placed !== null ? (
-        <div className="pc-layout-panel__result" role="status">
-          <p className="pc-meta">{autoFillPlacedLine(placed)}</p>
-          {short !== null ? <p className="pc-meta">{short}</p> : null}
-        </div>
-      ) : !empty ? (
+      {/* One voice for what was placed, there from the start, so the words are spoken when they come. */}
+      <div className={placed === null ? "vv-sr-only" : "pc-layout-panel__result"} role="status">
+        {placed !== null ? (
+          <>
+            <p className="pc-meta">{autoFillPlacedLine(placed)}</p>
+            {short !== null ? <p className="pc-meta">{short}</p> : null}
+          </>
+        ) : null}
+      </div>
+      {placed !== null ? null : !empty ? (
         <p className="pc-meta pc-layout-panel__line">Clear the floor to lay out a fresh room.</p>
       ) : choosing !== null ? (
         <AutoFillPrompt

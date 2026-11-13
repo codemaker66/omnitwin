@@ -211,6 +211,9 @@
 
 .pc-rail__hint b { color: var(--house-forest-ink-1); font-weight: 600; }
 
+/* Empty, the line keeps its voice in the accessibility tree and takes nothing on screen. */
+.pc-rail__hint:empty { padding: 0; }
+
 @media (max-width: 767px) {
   .pc-rail-wrap { display: none; }
 }

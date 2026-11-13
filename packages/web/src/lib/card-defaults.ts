@@ -1,4 +1,5 @@
-import { pieceCardId, type CardId } from "./setup-cards.js";
+import { plannerChairFor, plannerChairOrder, plannerChairSlug } from "./furniture-defaults.js";
+import { pieceCardId, pieceCardSlug, type CardId } from "./setup-cards.js";
 
 // ---------------------------------------------------------------------------
 // Which cards the planner shows (card-dock spec §5; Q-13).
@@ -24,14 +25,28 @@ const LECTERN = pieceCardId("lectern");
 const SCREEN = pieceCardId("projector-screen");
 // Theatre rows arm a single chair with the line brush until Q-23 builds them (spec §5).
 const THEATRE_ROWS = pieceCardId("burgess-turini-18-3");
-const CHAIRS = pieceCardId("banquet-chair");
+const DINNER: readonly CardId[] = [ROUND, TOP, LONG, DANCE, STAGE, BAR, POSEUR, CAKE];
 
-/** The eight by style, in slot order (keys 1–8). */
-export const RAIL_SLOTS: Readonly<Record<RailStyle, readonly CardId[]>> = {
-  dinner: [ROUND, TOP, LONG, DANCE, STAGE, BAR, POSEUR, CAKE],
-  theatre: [THEATRE_ROWS, STAGE, LECTERN, SCREEN, TOP, CHAIRS, POSEUR, BAR],
-  reception: [POSEUR, BAR, STAGE, LECTERN, SCREEN, CAKE, DANCE, CHAIRS],
-};
+/**
+ * The rail's Chairs: the chair the event is set with (plannerChairSlug), one
+ * the hall owns; when another slot already arms that chair (Theatre rows),
+ * the next in the hall's own order, so no chair takes two slots.
+ */
+function chairsCard(chairSlug: string, taken: CardId | null): CardId {
+  const chairs = pieceCardId(chairSlug);
+  if (chairs !== taken) return chairs;
+  const next = plannerChairOrder(chairSlug).find((slug) => pieceCardId(slug) !== taken);
+  return next === undefined ? chairs : pieceCardId(next);
+}
+
+/** The eight by style, in slot order (keys 1–8). Chairs follows the event's chair. */
+export function railSlots(style: RailStyle, chairSlug: string = plannerChairSlug()): readonly CardId[] {
+  switch (style) {
+    case "dinner": return DINNER;
+    case "theatre": return [THEATRE_ROWS, STAGE, LECTERN, SCREEN, TOP, chairsCard(chairSlug, THEATRE_ROWS), POSEUR, BAR];
+    case "reception": return [POSEUR, BAR, STAGE, LECTERN, SCREEN, CAKE, DANCE, chairsCard(chairSlug, null)];
+  }
+}
 
 /** The rail's short names (a 14 px name fits about 12 characters, spec §4.1). */
 const RAIL_NAMES: Readonly<Record<string, string>> = {
@@ -45,11 +60,13 @@ const RAIL_NAMES: Readonly<Record<string, string>> = {
   [CAKE]: "Cake table",
   [LECTERN]: "Lectern",
   [SCREEN]: "Screen",
-  [THEATRE_ROWS]: "Theatre rows",
-  [CHAIRS]: "Chairs",
 };
 
-export function railName(id: CardId): string {
+/** A card's short name on the rail. The Turini is Theatre rows in theatre; any chair of the hall's is otherwise Chairs. */
+export function railName(id: CardId, style: RailStyle = "dinner"): string {
+  if (style === "theatre" && id === THEATRE_ROWS) return "Theatre rows";
+  const slug = pieceCardSlug(id);
+  if (slug !== null && plannerChairFor(slug) !== null) return "Chairs";
   return RAIL_NAMES[id] ?? id;
 }
 
@@ -101,13 +118,15 @@ export const CATALOGUE_CARDS: readonly CatalogueCard[] = [
   piece("Café square", "Tables", [v("square-cafe-table-white", "white")], ["cafe square"]),
   piece("Cake table", "Tables", [v("cake-cutting-table")], ["cake"]),
   piece("Ceremony table", "Tables", [v("ceremony-table")], ["signing table"]),
-  piece("Burgess Turini", "Chairs", [v("burgess-turini-18-3")], ["burgess", "turini"]),
-  piece("Checked banquet", "Chairs", [v("checked-banquet-chair")]),
-  piece("Chiavari", "Chairs", [v("chiavari-chair")], ["tiffany chair"]),
-  piece("Gallery red and gold", "Chairs", [v("gallery-chair-red-gold")], ["gallery chair"]),
-  piece("Pink chair", "Chairs", [v("pink-chair")]),
+  // "Chair" and "chairs" find the hall's own chairs (Blake, 28 Oct 2026: Chiavari, the pink
+  // Turini, red and gold, checked); the generic banquet chair is not one the hall has.
+  piece("Burgess Turini", "Chairs", [v("burgess-turini-18-3")], ["burgess", "turini", "chair", "chairs"]),
+  piece("Checked banquet", "Chairs", [v("checked-banquet-chair")], ["chair", "chairs"]),
+  piece("Chiavari", "Chairs", [v("chiavari-chair")], ["tiffany chair", "chair", "chairs"]),
+  piece("Gallery red and gold", "Chairs", [v("gallery-chair-red-gold")], ["gallery chair", "chair", "chairs"]),
+  piece("Pink chair", "Chairs", [v("pink-chair")], ["chair", "chairs"]),
   piece("High chair", "Chairs", [v("highchair-white", "white"), v("highchair-green", "green"), v("highchair-blue", "blue"), v("highchair-wooden", "wood")], ["baby chair"]),
-  piece("Banquet chair", "Chairs", [v("banquet-chair")], ["chair", "chairs"]),
+  piece("Banquet chair", "Chairs", [v("banquet-chair")]),
   piece("Stage deck", "Staging", [v("platform", null, "8 × 4 ft"), v("staging-deck-6x4", null, "6 × 4 ft"), v("staging-deck-6x3", null, "6 × 3 ft"), v("platform-narrow", null, "Narrow")], ["stage", "platform", "riser"]),
   setup(DANCE, "Dance floor", "Staging", ["dance", "dancefloor", "parquet"]),
   piece("Screen", "AV", [v("projector-screen")], ["projector screen"]),
