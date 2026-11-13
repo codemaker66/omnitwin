@@ -52,6 +52,8 @@ const RING_REACH_M = 0.7;
 const BESIDE_STYLE: TextStyle = { face: "Inter-SemiBold", size: 7, color: INK.primary };
 /** The space between a piece and a name set beside it. */
 const BESIDE_GAP = 1.5;
+/** The least floor a name set beside its piece keeps from every other piece, number and name: twice its gap to its own, so it reads as its own piece's. */
+const BESIDE_CLEAR = 3;
 /** A note's copper number on the plan. */
 const MARKER_R = 4.8;
 
@@ -63,6 +65,10 @@ const NONE: ReadonlySet<PlanPiece> = new Set();
 
 /** A planner's name as it prints: its words, style and place, and the backing under it. */
 interface PlanName { readonly text: string; readonly style: TextStyle; readonly x: number; readonly y: number; readonly backing: string; readonly rect: Rect }
+
+function grown(rect: Rect, by: number): Rect {
+  return { left: rect.left - by, top: rect.top - by, right: rect.right + by, bottom: rect.bottom + by };
+}
 
 function overlaps(a: Rect, b: Rect): boolean {
   return a.left < b.right - 0.1 && b.left < a.right - 0.1 && a.top < b.bottom - 0.1 && b.top < a.bottom - 0.1;
@@ -115,10 +121,11 @@ function rowAround(piece: PlanPiece, pieces: readonly PlanPiece[]): { readonly e
  * Where each planner's name prints. A name sits on its piece when it fits
  * there, else along the row its piece stands in (rowAround), still centred
  * over its own piece and clear of the copper numbers. With `beside`, a name
- * with neither sits just below, above,
- * right or left of its piece, on floor clear of every piece, number and name,
- * as a map sets a name beside a narrow street. A name with no such place is
- * left off and returned (once, as the planner wrote it), for the caption.
+ * with neither sits just below, above, right or left of its piece, as a map
+ * sets a name beside a narrow street: on floor clear of every other piece,
+ * number and name by twice its gap to its own piece, so it never reads as a
+ * neighbour's. A name with no such place is left off and returned (once, as
+ * the planner wrote it), for the caption.
  */
 function placeNames(doc: Doc, drawing: PlanDrawing, markers: ReadonlyMap<string, number>, beside: boolean): { readonly placed: readonly PlanName[]; readonly leftOff: readonly string[] } {
   const xs = drawing.outline.map((point) => point.x);
@@ -183,8 +190,10 @@ function placeNames(doc: Doc, drawing: PlanDrawing, markers: ReadonlyMap<string,
       { left: own.right + BESIDE_GAP, top: level - h / 2, right: own.right + BESIDE_GAP + w, bottom: level + h / 2 },
       { left: own.left - BESIDE_GAP - w, top: level - h / 2, right: own.left - BESIDE_GAP, bottom: level + h / 2 },
     ];
+    // Touching nothing, and with clear floor round it but for its own piece and the row it stands in.
+    const ownRow: ReadonlySet<PlanPiece> = row?.members ?? new Set([piece]);
     const spot = spots.find((rect) => rect.left >= floor.left && rect.right <= floor.right && rect.top >= floor.top && rect.bottom <= floor.bottom
-      && clear(rect, NONE));
+      && clear(rect, NONE) && clear(grown(rect, BESIDE_CLEAR), ownRow));
     if (spot === undefined) {
       leftOff.add(label);
       continue;
