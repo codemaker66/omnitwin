@@ -36,6 +36,60 @@ export const WEB_VITAL_P75_TARGETS: Readonly<Record<WebVitalName, number>> = {
  *  of a release, then gone (the nightly cleanup). */
 export const WEB_VITAL_RETENTION_DAYS = 90;
 
+export type WebVitalRating = (typeof WEB_VITAL_RATINGS)[number];
+
+/**
+ * The step each vital is kept to, in the browser before it is sent and on the
+ * server before it is held (the release lead's B1, 13 November 2026). A
+ * value's precision is its browser's clock: Chromium's is a tenth of a
+ * millisecond, WebKit's and Gecko's a millisecond, and a browser resisting
+ * fingerprinting (Firefox and Tor Browser since Firefox 103) clocks to 1/60 s.
+ * Kept as sent, a fractional TTFB among whole ones would be the one Chromium
+ * report of its batch. On a 10 ms step every engine's values share one grid,
+ * and a 1/60 s clock's land on steps that most ordinary values share too.
+ * Event timing is already rounded to 8 ms in every engine. CLS comes only from
+ * Chromium; 0.001 keeps no trace of the screen's own fractions. Each step is
+ * far finer than goal 07's targets.
+ */
+export const WEB_VITAL_STEPS: Readonly<Record<WebVitalName, number>> = {
+  LCP: 10,
+  INP: 10,
+  CLS: 0.001,
+  TTFB: 10,
+};
+
+/** web-vitals' own rating bounds (6.2.3): "good" up to the first,
+ *  "needs-improvement" up to the second, "poor" above it. */
+export const WEB_VITAL_RATING_BOUNDS: Readonly<Record<WebVitalName, readonly [number, number]>> = {
+  LCP: [2_500, 4_000],
+  INP: [200, 500],
+  CLS: [0.1, 0.25],
+  TTFB: [800, 1_800],
+};
+
+/** A value on its vital's step (WEB_VITAL_STEPS). CLS is counted in
+ *  thousandths, so equal steps are the same number exactly. */
+export function stepWebVitalValue(name: WebVitalName, value: number): number {
+  if (name === "CLS") return Math.round(value * 1_000) / 1_000;
+  return Math.round(value / WEB_VITAL_STEPS[name]) * WEB_VITAL_STEPS[name];
+}
+
+/** The rating a value earns, as web-vitals rates it. */
+export function rateWebVital(name: WebVitalName, value: number): WebVitalRating {
+  const [good, poor] = WEB_VITAL_RATING_BOUNDS[name];
+  if (value > poor) return "poor";
+  return value > good ? "needs-improvement" : "good";
+}
+
+/** A sample as it may be sent and kept: its value on the vital's step, and
+ *  the rating that value earns, so neither says more than the step does. */
+export function stepWebVitalSample<Name extends WebVitalName>(
+  sample: { readonly name: Name; readonly value: number },
+): { readonly name: Name; readonly value: number; readonly rating: WebVitalRating } {
+  const value = stepWebVitalValue(sample.name, sample.value);
+  return { name: sample.name, value, rating: rateWebVital(sample.name, value) };
+}
+
 /**
  * The pages a report may name: the pattern of every route src/router.tsx
  * serves in production, and "/*" for any other (a dev fixture, the 404). A

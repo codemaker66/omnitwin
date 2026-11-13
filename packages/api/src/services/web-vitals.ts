@@ -3,8 +3,10 @@ import { sql, type SQL } from "drizzle-orm";
 import {
   WEB_VITAL_P75_TARGETS,
   WEB_VITAL_RETENTION_DAYS,
+  stepWebVitalSample,
   type WebVitalDeviceClass,
   type WebVitalName,
+  type WebVitalRating,
   type WebVitalsReport,
 } from "@omnitwin/types";
 import { webVitalSamples } from "../db/schema.js";
@@ -43,8 +45,9 @@ export interface DailyCeiling {
   /** Takes one of today's places for a report: the place, or null once they
    *  are all taken. */
   readonly admit: () => CeilingPlace | null;
-  /** Gives back the place of a report that was not kept (its insert failed).
-   *  A place taken on an earlier day went with that day's count. */
+  /** Gives back the place of a report none of whose samples was kept (its
+   *  batch was refused, or every group it joined fell short). A place taken
+   *  on an earlier day went with that day's count. */
   readonly release: (place: CeilingPlace) => void;
 }
 
@@ -53,7 +56,8 @@ export interface DailyCeiling {
  * counts for itself and from nothing: a restart (every deploy) starts the
  * day's count again, and each replica keeps its own, so a day can keep up to
  * the ceiling once for every process that ran that day. A report holds its
- * place only if it is kept: a failed insert gives it back.
+ * place only if something of it is kept: once none of its samples was written
+ * and none still can be, the place is given back.
  */
 export function createDailyCeiling(limit: number, now: () => number = Date.now): DailyCeiling {
   let day = Number.NaN;
@@ -109,26 +113,29 @@ export function createAddressKey(secret: () => Buffer = () => randomBytes(32)): 
 }
 
 /**
- * The fewest reports of one group a batch is written with (Blake, 13 November
- * 2026: shuffled hourly batches). A group is everything a stored row and the
- * host's request log can both tell apart: the page (a share page's own API
- * call, logged with its token just before the report, names it), the device
- * class (a user agent says roughly which), the UTC day it arrived (a row keeps
- * it), and which vitals it carries (a browser engine's own: CLS comes only
- * from Chromium, so a lone Android phone among iPhones would hold the batch's
- * only CLS row). With at least this many in every group written, a row can be
- * narrowed only to that many reports, never to one. Reports, not people: one
- * visitor's repeated loads, or reports posted on purpose to fill a group,
- * count as many.
+ * The fewest samples of one group a batch is written with (Blake, 13 November
+ * 2026: shuffled hourly batches). A group is one vital of one page, one device
+ * class and one UTC day: everything a stored row and the host's request log
+ * can both tell apart. The page: a share page's own API call, logged with its
+ * token just before the report, names it. The device class: a user agent says
+ * roughly which. The day: each row keeps it. The vital: CLS comes only from
+ * Chromium, so a lone Android phone's CLS among iPhones' samples would be its
+ * batch's only CLS row. Below its vital's step a value says nothing
+ * (WEB_VITAL_STEPS: a clock's precision names its engine). With at least this
+ * many in every group written, a row can be narrowed only to that many
+ * samples, never to one. A row carries nothing that joins it to the other
+ * vitals of its report, so a report's samples may be written apart. Samples,
+ * not people: one visitor's repeated loads, or reports posted on purpose to
+ * fill a group, count as many.
  */
-export const WEB_VITALS_BATCH_MIN_REPORTS = 10;
+export const WEB_VITALS_BATCH_MIN_SAMPLES = 10;
 
-/** How often the route writes the held reports (and once more as it closes). */
+/** How often the route writes the held samples (and once more as it closes). */
 export const WEB_VITALS_BATCH_EVERY_MS = 60 * 60_000;
 
-/** The longest one batch's write may take before it counts as failed, well
- *  inside the API's 25-second shutdown grace: a stalled database must not
- *  hold back every later write, or the server's close, for good. */
+/** How long a flush waits for one batch's write, and the database's bound on
+ *  each statement and on a transaction whose client has gone quiet: well
+ *  inside the API's 25-second shutdown grace. */
 export const WEB_VITALS_BATCH_WRITE_TIMEOUT_MS = 15_000;
 
 /** Rows per insert statement: PostgreSQL takes at most 65,535 bind
@@ -137,28 +144,42 @@ const BATCH_INSERT_ROWS = 5_000;
 
 const DAY_MS = 86_400_000;
 
-interface HeldReport {
-  readonly report: WebVitalsReport;
-  /** Its place under the day's ceiling, which is the UTC day it arrived. */
+/** A report taken in: its place under the day's ceiling (the UTC day it
+ *  arrived), and how its samples have fared. */
+interface Admitted {
   readonly place: CeilingPlace;
+  /** Its samples not yet written, dropped or refused. */
+  open: number;
+  /** Whether one of its samples was written. */
+  kept: boolean;
+}
+
+interface HeldSample {
+  readonly from: Admitted;
+  readonly page: WebVitalsReport["page"];
+  readonly device: WebVitalDeviceClass;
+  readonly name: WebVitalName;
+  /** On its vital's step, with the rating that value earns (stepWebVitalSample). */
+  readonly value: number;
+  readonly rating: WebVitalRating;
 }
 
 interface HeldGroup {
-  /** The UTC day its reports arrived (a day number). */
+  /** The UTC day its samples arrived (a day number). */
   readonly day: CeilingPlace;
-  readonly reports: HeldReport[];
+  readonly samples: HeldSample[];
 }
 
-/** One page, one device class, one arrival day and one set of vitals
- *  (WEB_VITALS_BATCH_MIN_REPORTS). */
-function groupOf(report: WebVitalsReport, place: CeilingPlace): string {
-  const vitals = report.metrics.map((metric) => metric.name).sort().join("+");
-  return `${report.page}|${report.device}|${String(place)}|${vitals}`;
+/** One vital of one page, one device class and one arrival day
+ *  (WEB_VITALS_BATCH_MIN_SAMPLES). */
+function groupOf(page: string, device: WebVitalDeviceClass, day: CeilingPlace, name: WebVitalName): string {
+  return `${page}|${device}|${String(day)}|${name}`;
 }
 
 export interface WebVitalsBatch {
-  /** Holds a report, without anything about who sent it, until its batch is
-   *  written. False once the day's ceiling is reached: nothing is held. */
+  /** Holds a report's samples, each on its vital's step and without anything
+   *  about who sent it, until their batches are written. False once the
+   *  day's ceiling is reached: nothing is held. */
   readonly hold: (report: WebVitalsReport) => boolean;
   /**
    * Writes every group that holds at least the minimum, all its rows in
@@ -166,16 +187,19 @@ export interface WebVitalsBatch {
    * inserting transaction's id (xmin) follows arrival. A group of today with
    * fewer waits for a later write; one of an earlier day can no longer grow
    * and is dropped, as is every group short of the minimum when closing.
-   * Resolves to how many reports were written; rejects when the write fails,
-   * after dropping that batch and giving back its places.
+   * One write at a time: a flush first waits for the write under way (a
+   * closing one only within its bound, then drops what is held). Resolves to
+   * how many samples were written. Rejects when the database refuses the
+   * batch, which is then dropped, or when the write is unfinished after its
+   * bound: it may still be stored, and is never tried again.
    */
   readonly flush: (options?: { readonly closing?: boolean }) => Promise<number>;
-  /** How many reports are held now. */
+  /** How many samples are held now. */
   readonly held: () => number;
 }
 
 export interface WebVitalsBatchOptions {
-  readonly minReports?: number;
+  readonly minSamples?: number;
   /** The clock for the day; the default ceiling counts on it too. */
   readonly now?: () => number;
   readonly ceiling?: DailyCeiling;
@@ -198,96 +222,147 @@ export function shuffleInPlace(items: unknown[], randomInt: (bound: number) => n
   }
 }
 
+/** Whether a promise settles, either way, within the time: false when the
+ *  time runs out first. The timer never keeps the process alive. */
+async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<false>((resolve) => {
+    timer = setTimeout(() => { resolve(false); }, Math.max(0, ms));
+    timer.unref();
+  });
+  try {
+    return await Promise.race([promise.then(() => true, () => true), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
- * The field web vitals' one writer. Reports wait in memory (never with the
- * address, which the route does not hand over) and are written in shuffled
- * batches, so a stored row cannot be paired with the request that brought it
- * by its position, its transaction or its time: it keeps only the UTC day it
- * arrived. A group short of the minimum waits, for the rest of its day if it
- * must, and a restart (every deploy) drops what is held, so a page opened only
- * a few times a day may never be written.
+ * The field web vitals' one writer. Samples wait in memory (never with the
+ * address, which the route does not hand over), each on its vital's step,
+ * and are written in shuffled batches, so a stored row cannot be paired with
+ * the request that brought it by its position, its transaction, its time or
+ * its precision: it keeps only the UTC day it arrived. A group short of the
+ * minimum waits, for the rest of its day if it must, and a restart (every
+ * deploy) drops what is held, so a page opened only a few times a day may
+ * never be written. At most the day's ceiling of reports is held per process,
+ * up to four samples each.
  */
 export function createWebVitalsBatch(db: Database, options: WebVitalsBatchOptions = {}): WebVitalsBatch {
-  const minReports = options.minReports ?? WEB_VITALS_BATCH_MIN_REPORTS;
+  const minSamples = options.minSamples ?? WEB_VITALS_BATCH_MIN_SAMPLES;
   const now = options.now ?? Date.now;
   const ceiling = options.ceiling ?? createDailyCeiling(WEB_VITALS_DAILY_REPORT_CEILING, now);
   const randomInt = options.randomInt ?? ((bound: number) => cryptoRandomInt(bound));
   const rowsPerInsert = options.rowsPerInsert ?? BATCH_INSERT_ROWS;
   const writeTimeoutMs = options.writeTimeoutMs ?? WEB_VITALS_BATCH_WRITE_TIMEOUT_MS;
   const held = new Map<string, HeldGroup>();
-  let writing: Promise<number> | null = null;
+  /** The write under way, until its transaction settles, either way. */
+  let inFlight: Promise<void> | null = null;
 
-  async function write(batch: readonly HeldReport[]): Promise<number> {
-    const rows = batch.flatMap(({ report, place }) => report.metrics.map((metric) => ({
-      page: report.page,
-      device: report.device,
-      metric: metric.name,
-      value: metric.value,
-      rating: metric.rating,
-      recordedAt: new Date(place * DAY_MS),
-    })));
+  /** One of a report's samples is written, dropped or refused. A report
+   *  counts against its day only once one of its samples is written: when
+   *  none is and none still can be, its place is given back. */
+  function settle(from: Admitted, written: boolean): void {
+    from.open -= 1;
+    if (written) from.kept = true;
+    else if (from.open === 0 && !from.kept) ceiling.release(from.place);
+  }
+
+  function drop(group: HeldGroup): void {
+    for (const sample of group.samples) settle(sample.from, false);
+  }
+
+  /** Starts one batch's transaction. Its samples are settled when the
+   *  transaction itself settles, never on a timer: a write a flush stopped
+   *  waiting for may still commit, and its places stay counted until then. */
+  function write(batch: readonly HeldSample[], boundMs: number): Promise<number> {
+    const rows = batch.map((sample) => ({
+      page: sample.page,
+      device: sample.device,
+      metric: sample.name,
+      value: sample.value,
+      rating: sample.rating,
+      recordedAt: new Date(sample.from.place * DAY_MS),
+    }));
     shuffleInPlace(rows, randomInt);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timedOut = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => { reject(new Error(`Web vitals batch write took over ${String(writeTimeoutMs)} ms`)); }, writeTimeoutMs);
-    });
-    try {
-      // The database bounds its own statements too; a stalled connection is
-      // bounded by the timer. A write that commits after the timer is not
-      // tried again, so nothing is stored twice.
-      await Promise.race([
-        db.transaction(async (tx) => {
-          await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${String(Math.trunc(writeTimeoutMs))}`));
+    const bound = String(Math.max(1, Math.trunc(boundMs)));
+    async function run(): Promise<number> {
+      try {
+        await db.transaction(async (tx) => {
+          // The database ends a statement, or a transaction whose client has
+          // gone quiet, past the bound, and rolls the whole batch back.
+          await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${bound}`));
+          await tx.execute(sql.raw(`SET LOCAL idle_in_transaction_session_timeout = ${bound}`));
           for (let start = 0; start < rows.length; start += rowsPerInsert) {
             await tx.insert(webVitalSamples).values(rows.slice(start, start + rowsPerInsert));
           }
-        }),
-        timedOut,
-      ]);
+        });
+      } catch (error) {
+        // Rolled back: nothing of it was kept.
+        for (const sample of batch) settle(sample.from, false);
+        throw error;
+      }
+      for (const sample of batch) settle(sample.from, true);
       return batch.length;
-    } catch (error) {
-      // Not kept, so it leaves the day's allowance as it was.
-      for (const { place } of batch) ceiling.release(place);
-      throw error;
-    } finally {
-      clearTimeout(timer);
     }
+    const written = run();
+    const tracked: Promise<void> = written.then(() => undefined, () => undefined).then(() => {
+      if (inFlight === tracked) inFlight = null;
+    });
+    inFlight = tracked;
+    return written;
   }
 
   return {
     hold: (report) => {
       const place = ceiling.admit();
       if (place === null) return false;
-      const key = groupOf(report, place);
-      const group = held.get(key) ?? { day: place, reports: [] };
-      group.reports.push({ report, place });
-      held.set(key, group);
+      const from: Admitted = { place, open: report.metrics.length, kept: false };
+      for (const metric of report.metrics) {
+        const { name, value, rating } = stepWebVitalSample(metric);
+        const key = groupOf(report.page, report.device, place, name);
+        const group = held.get(key) ?? { day: place, samples: [] };
+        group.samples.push({ from, page: report.page, device: report.device, name, value, rating });
+        held.set(key, group);
+      }
       return true;
     },
     flush: async (flushOptions = {}) => {
-      // One write at a time: a later flush takes what is held after it.
-      while (writing !== null) await writing.catch(() => undefined);
+      const closing = flushOptions.closing === true;
+      const started = Date.now();
+      // A closing flush has one bound for its waiting and its write together.
+      const left = (): number => (closing ? writeTimeoutMs - (Date.now() - started) : writeTimeoutMs);
+      // One write at a time: a later flush takes what is held once the write
+      // under way has settled. Closing waits only within its bound: a write
+      // stuck on a stalled connection must not hold the server's close.
+      while (inFlight !== null) {
+        if (!closing) {
+          await inFlight;
+        } else if (!(await settlesWithin(inFlight, left()))) {
+          for (const group of held.values()) drop(group);
+          held.clear();
+          throw new Error(`A web vitals batch was still being written ${String(writeTimeoutMs)} ms into closing: what is held is dropped`);
+        }
+      }
       const today = Math.floor(now() / DAY_MS);
-      const batch: HeldReport[] = [];
+      const batch: HeldSample[] = [];
       for (const [key, group] of held) {
-        if (group.reports.length >= minReports) {
-          batch.push(...group.reports);
+        if (group.samples.length >= minSamples) {
+          batch.push(...group.samples);
           held.delete(key);
-        } else if (flushOptions.closing === true || group.day < today) {
+        } else if (closing || group.day < today) {
           // Short of the minimum and unable to grow: never written.
+          drop(group);
           held.delete(key);
         }
       }
       if (batch.length === 0) return 0;
-      const pending = write(batch);
-      writing = pending;
-      try {
-        return await pending;
-      } finally {
-        writing = null;
-      }
+      const boundMs = left();
+      const written = write(batch, boundMs);
+      if (await settlesWithin(written, boundMs)) return await written;
+      throw new Error(`A web vitals batch was unfinished after ${String(Math.trunc(boundMs))} ms: it may still be stored, and is never tried again`);
     },
-    held: () => [...held.values()].reduce((total, group) => total + group.reports.length, 0),
+    held: () => [...held.values()].reduce((total, group) => total + group.samples.length, 0),
   };
 }
 

@@ -29,11 +29,12 @@ import {
 // minutes (createAddressKey), so it never holds the address itself, and API
 // tracing leaves this route out (observability/sentry.ts).
 //
-// A report is not written when it arrives: it is held, without anything
-// about who sent it, and written on the hour once its group (page, device
-// class, day and set of vitals) holds ten, in a shuffled batch
-// (createWebVitalsBatch), so a stored row can be narrowed only to the ten or
-// more reports of its group, never to the one request that brought it.
+// A report is not written when it arrives: its samples are held, each on its
+// vital's step and without anything about who sent it, and written on the
+// hour once their group (one vital of one page, device class and day) holds
+// ten, in a shuffled batch (createWebVitalsBatch), so a stored row can be
+// narrowed only to the ten or more samples of its group, never to the one
+// request that brought it.
 // ---------------------------------------------------------------------------
 
 /** A report is a few hundred bytes; anything far larger is not one. */
@@ -53,9 +54,9 @@ export interface PublicWebVitalsOptions {
   dailyReportCeiling?: number;
   /** The limiter's key for an address; tests pass one to see it is used. */
   addressKey?: AddressKey;
-  /** Where reports wait to be written; tests pass one to write on demand. */
+  /** Where samples wait to be written; tests pass one to write on demand. */
   batch?: WebVitalsBatch;
-  /** How often the held reports are written (hourly). */
+  /** How often the held samples are written (hourly). */
   flushEveryMs?: number;
 }
 
@@ -71,8 +72,10 @@ export async function publicWebVitalsRoutes(server: FastifyInstance, opts: Publi
     try {
       await batch.flush({ closing });
     } catch (error) {
-      // Nothing of any visitor is in this line: the batch never holds one.
-      server.log.error({ err: error }, "Web vitals: a batch could not be written and is dropped");
+      // Nothing of any visitor is in this line: the batch never holds one. The
+      // error says whether the database refused the batch (dropped) or the
+      // write was unfinished at its bound (it may still be stored).
+      server.log.error({ err: error }, "Web vitals: a batch was not written");
     }
   };
   const writing = setInterval(() => { void write(false); }, opts.flushEveryMs ?? WEB_VITALS_BATCH_EVERY_MS);

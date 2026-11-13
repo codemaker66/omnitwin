@@ -3,6 +3,7 @@ import {
   WEB_VITAL_NAMES,
   WebVitalsReportSchema,
   isWebVitalPage,
+  stepWebVitalSample,
   type WebVitalDeviceClass,
   type WebVitalName,
   type WebVitalSample,
@@ -110,8 +111,10 @@ export function createWebVitalsReporter(landingPage: string, device: WebVitalDev
       if (left && metric.name !== "TTFB") return;
       held.set(metric.name, {
         id: metric.id,
-        // Only what the privacy page names: the vital, its value and rating.
-        sample: { name: metric.name, value: metric.value, rating: metric.rating },
+        // Only what the privacy page names: the vital, its value and rating,
+        // on the vital's step (the server steps it again), so the value's
+        // precision says nothing of the browser's clock.
+        sample: stepWebVitalSample({ name: metric.name, value: metric.value }),
       });
     },
     relabel: (target) => { page = target; },

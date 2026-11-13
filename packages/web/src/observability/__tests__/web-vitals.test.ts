@@ -153,15 +153,34 @@ describe("the reporter", () => {
       v: 1,
       page: "/plan/:code",
       device: "phone",
+      // Each on its vital's step: 10 ms, CLS in thousandths.
       metrics: [
-        { name: "TTFB", value: 412.25, rating: "good" },
-        { name: "LCP", value: 5_234.5, rating: "poor" },
+        { name: "TTFB", value: 410, rating: "good" },
+        { name: "LCP", value: 5_230, rating: "poor" },
         { name: "CLS", value: 0.04, rating: "good" },
       ],
     });
     // The library's metric id, its entries, the address and how the page was
     // reached never travel: the privacy page names none of them.
     expect(send.mock.calls[0]?.[0]).not.toMatch(/v6-|entries|http|tok_SECRET123|navigationURL|navigationType/u);
+  });
+
+  // The release lead's B1 (13 November 2026): a value's precision is its
+  // browser's clock, so the request carries none of it.
+  it("sends each value on its vital's step, rated from that value, whatever the browser's clock", () => {
+    const send = vi.fn<(body: string) => void>();
+    const reporter = createWebVitalsReporter("/", "phone", send);
+    // Chromium's clock (a tenth of a millisecond), and a browser's own rating
+    // of a value the step moves across a bound.
+    reporter.add(metric("TTFB", 312.30000001192093));
+    reporter.add(metric("LCP", 2_504.9, "needs-improvement"));
+    reporter.add(metric("CLS", 0.0384615));
+    reporter.flush();
+    expect(sentReports(send)[0]?.metrics).toEqual([
+      { name: "TTFB", value: 310, rating: "good" },
+      { name: "LCP", value: 2_500, rating: "good" },
+      { name: "CLS", value: 0.038, rating: "good" },
+    ]);
   });
 
   it("sends each measurement once: a page shown and hidden again adds no second row", () => {
@@ -181,7 +200,7 @@ describe("the reporter", () => {
     // INP first measured after the first hide is still that load's only INP.
     reporter.add(metric("INP", 96));
     reporter.flush();
-    expect(sentReports(send)[1]?.metrics).toEqual([{ name: "INP", value: 96, rating: "good" }]);
+    expect(sentReports(send)[1]?.metrics).toEqual([{ name: "INP", value: 100, rating: "good" }]);
   });
 
   it("measures a page restored from the back/forward cache as a new page load", () => {

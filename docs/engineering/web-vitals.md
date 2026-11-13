@@ -20,7 +20,7 @@ back/forward cache is measured again:
 
 ```json
 { "v": 1, "page": "/proposal-share/:token", "device": "phone",
-  "metrics": [{ "name": "LCP", "value": 2968, "rating": "needs-improvement" }, …] }
+  "metrics": [{ "name": "LCP", "value": 2970, "rating": "needs-improvement" }, …] }
 ```
 
 - **The page is the route's pattern**, read from the router's matched routes when the
@@ -51,6 +51,18 @@ back/forward cache is measured again:
   (`pointer: coarse`) is a phone when the screen's shorter side is under 600 CSS px
   and a tablet otherwise, however it is held or split; mouse-first is a desktop,
   however narrow its window.
+- **Each value on its vital's step** (`WEB_VITAL_STEPS`: 10 ms, CLS in thousandths),
+  with the rating that value earns by the library's own bounds. The browser steps it
+  before sending and the API steps and rates it again, whatever arrives (the release
+  lead's B1, 13 November 2026). A value's precision is its browser's clock: Chromium's
+  is a tenth of a millisecond, WebKit's and Gecko's a millisecond, and a browser
+  resisting fingerprinting (Firefox and Tor Browser since Firefox 103) clocks to
+  1/60 s. Kept as sent, a fractional TTFB among whole ones would name its engine, and
+  so its request in the host's log. On a 10 ms step every engine's values share one
+  grid, and a 1/60 s clock's land on the 0, 20 and 30 ms of each 50 that most ordinary
+  values land on too. Only a clock made coarser still, by hand or in an outdated
+  browser (100 ms), stands apart: its values are whole hundreds, as about one ordinary
+  value in ten is. Event timing is rounded to 8 ms in every engine already.
 - **The four vitals** are measured by Google's `web-vitals` library (6.2.3): LCP,
   INP, CLS and TTFB, each with its rating. LCP, INP and CLS are taken at every
   change, so the values held are current when the visitor moves on. The library's
@@ -69,46 +81,76 @@ back/forward cache is measured again:
   carries no cookie, token or `Referer` (the page's address names a share token or a
   plan's code), whatever the site's Referrer-Policy.
 - **What is stored:** the API stores one row per vital: page, device, metric, value
-  and rating, with only the UTC day it arrived, not the moment (the column's default
-  is `date_trunc('day', now(), 'UTC')`, whatever the session's time zone). It stores
-  no address, user agent, identifier or session, and nothing is stored on the device.
+  and rating, with only the UTC day it arrived, not the moment. The API stamps the
+  arrival's UTC midnight itself; the column's default (`date_trunc('day', now(),
+  'UTC')`, whatever the session's time zone) serves only rows written by hand. It
+  stores no address, user agent, identifier or session, and nothing about the
+  measurement is stored on the device.
 - **Written in shuffled batches** (Blake, 13 November 2026), so no stored row can be
   paired with the one request that brought it. The day alone would not do that:
   rows written as they arrive sit in arrival order, each carries the id of the
   transaction that inserted it (`xmin`, which anyone who can read the table can see,
   rising with time), and the database's restore history follows arrival. Instead:
-  - the route holds each checked report in memory, with nothing about who sent it,
-    and its UTC day (`createWebVitalsBatch`);
-  - it groups them by everything a row and the host's request log can both tell
-    apart: the page (a share page's own API call, logged with its token seconds
-    before the report, names it), the device class (the log's user agent says
-    roughly which), the UTC day (each row keeps it), and which vitals the report
-    carries (a browser engine's own: CLS comes only from Chromium, so a lone
-    Android phone among iPhones would hold the batch's only CLS row);
-  - once an hour it writes every group that holds at least ten reports
-    (`WEB_VITALS_BATCH_MIN_REPORTS`), every row in random order and all in one
-    transaction (bounded to 15 seconds), so the batch shares one `xmin` and its
-    rows' positions say nothing of their order of arrival;
+  - the route holds each checked report's samples in memory, each on its vital's
+    step, with nothing about who sent it, and their UTC day (`createWebVitalsBatch`);
+  - it groups the samples by everything a row and the host's request log can both
+    tell apart: the vital (CLS comes only from Chromium, so a lone Android phone's
+    CLS among iPhones' samples would be its batch's only CLS row), the page (a share
+    page's own API call, logged with its token seconds before the report, names it),
+    the device class (the log's user agent says roughly which) and the UTC day (each
+    row keeps it). The step keeps the browser's clock out (above);
+  - once an hour it writes every group that holds at least ten samples
+    (`WEB_VITALS_BATCH_MIN_SAMPLES`), every row in random order and all in one
+    transaction, so the batch shares one `xmin` and its rows' positions say nothing
+    of their order of arrival;
   - with the host's request log (below), a row can then be narrowed only to the ten
-    or more reports of its group, never to one. Ten reports, not ten people: one
-    visitor's repeated loads of a page count as many, and someone who posts reports
-    on purpose to fill a group around another visitor's could single that one out.
+    or more samples of its group, never to one. A row carries nothing that joins it
+    to its report's other vitals, so a report's samples may be written apart: an
+    Android phone's TTFB with nine iPhones' today, its CLS once nine more Android
+    phones have come. One shuffle spans the whole batch, across its groups, so a
+    report's rows are not kept together in the table's order either. What still
+    joins them, weakly, is which values go together: an LCP is never below its own
+    TTFB, so within one page, device class and day a row's likely partners in the
+    other vitals narrow by value, though never to one row by that alone. Ten
+    samples, not ten people: one visitor's repeated loads of a page count as many,
+    and someone who posts reports on purpose to fill a group around another
+    visitor's could single that one out.
   - A group of today holding fewer than ten waits for a later hour; one of an
-    earlier day can no longer grow and is dropped. When the API stops (every deploy:
-    Railway's SIGTERM closes the server, within its 25-second grace), what reaches
-    ten is written and the rest is dropped, and a crash loses all that is held. A
-    batch the database refuses, or that takes over 15 seconds, is dropped, and its
-    places under the daily ceiling are given back. So a page opened fewer than ten
-    times a day by one kind of device and browser (most share pages, a tablet) is
-    never measured: its p75 needs a busier page.
+    earlier day can no longer grow and is dropped. When the API stops, what reaches
+    ten is written and the rest is dropped; a crash loses all that is held. At each
+    deploy Railway sends the old deployment SIGTERM, then SIGKILL `drainingSeconds`
+    later: 30 seconds, set in `railway.json` (#420), which covers the API's own
+    25-second close, so the write on close has time even with a slow request in
+    flight. A drain that long has not yet been watched under load: that needs a
+    deploy during a slow request.
+  - Each write is bounded. The database ends a statement, or a transaction whose
+    client has gone quiet, after 15 seconds (`statement_timeout`,
+    `idle_in_transaction_session_timeout`) and rolls the batch back whole: it is
+    dropped, and the places of reports none of whose samples was kept are given back
+    under the daily ceiling. A flush stops waiting after 15 seconds too, but a write
+    it stopped waiting for may still commit later (a connection slow to come, a
+    stalled socket): it is never tried again, and its places stay counted until it
+    settles. Writes never overlap: each hourly write waits for the one before, and
+    the closing one waits only within its own 15 seconds, then drops what is held.
+  - So a page's vital is measured only once ten sampled loads of it, from one device
+    class, arrive within one server process's life inside one UTC day: about twenty
+    loads at a rate of 0.5, between deploys, which come several times a day. Most
+    share pages and tablets are never measured. A device class's p75 across every
+    page leans towards the busy pages, whose groups fill. Within a page, a vital's
+    samples group with every load that measured it, whatever the visitor did, so
+    LCP and TTFB do not lean towards visitors who never tapped; INP, by its nature,
+    comes only from those who did.
   Rows go after `WEB_VITAL_RETENTION_DAYS` (90) in the nightly cleanup.
 - **What the server sees:** like any request, the report reaches the API from the
   visitor's internet address. The route writes no access line (`logLevel: "warn"`,
   as `POST /public/quiz-runs`); its rate limiter keys the address by an HMAC under a
   secret held in memory and replaced every ten minutes (`createAddressKey`), so it
-  never holds the address itself (about 60 reports a minute per address, and up to
-  about twice that in the minute a rotation falls in); and API tracing leaves the
-  route out (`ignoreTransactions` in `observability/sentry.ts`). A report carrying a
+  never holds the address itself (about 60 reports a minute per address in each
+  server process, and up to about twice that in the minute a rotation falls in; a
+  restart starts the count and the secret again, and each replica keeps its own);
+  and API tracing leaves the route out (`ignoreTransactions` in
+  `observability/sentry.ts`; `web-vitals-tracing.test.ts` runs the real SDK, route
+  and server and sees the route traced and not sent). A report carrying a
   Global Privacy Control or Do Not Track header is answered and not stored, whatever
   the page did. An error on the route still reaches the error log and Sentry, and a
   Sentry error event carries the request's URL, method and headers (the user agent
@@ -173,11 +215,12 @@ here said the address was not logged, which is untrue: the host's request logs
 record it (above).
 
 **Limits.** Anyone can post a report, so the limiter bounds an address to 60 a minute
-and a daily ceiling (`WEB_VITALS_DAILY_REPORT_CEILING`, 5,000 reports from everyone)
-bounds the table; the p75 is read as a measure, not a guarantee. The ceiling is each
-server process's own count from midnight UTC: a restart (every deploy) starts it
-again and each replica keeps its own, so a day keeps up to 5,000 reports for every
-process that ran that day. A report that fails to store gives its place back. Pages
+in each server process and a daily ceiling (`WEB_VITALS_DAILY_REPORT_CEILING`, 5,000
+reports from everyone) bounds the table; the p75 is read as a measure, not a
+guarantee. The ceiling is each server process's own count from midnight UTC: a
+restart (every deploy) starts it again and each replica keeps its own, so a day keeps
+up to 5,000 reports for every process that ran that day. A report none of whose
+samples is stored gives its place back; one stored in part keeps it. Pages
 reached by moving inside the app are not measured; each figure belongs to the page a
 load landed on. The limiter keys IPv6 per address, as the whole API does; keying it
 by /64 is an app-wide change, not this one's. What the figures leave out (CLS and INP
@@ -194,8 +237,10 @@ The command prints each vital's p75 over the last 28 days: today and the 27 whol
 days before it (a row keeps only its day). It gives one line per device class across
 every page, then one line per page, each beside goal 07's target, with the sample
 count (`n=`). Read the count before the figure: a phone's CLS line holds Android
-phones only, and its LCP and INP lines leave out older iPhones (above). TTFB is
-judged against web.dev's 800 ms "good" bound. It only reads.
+phones only, and its LCP and INP lines leave out older iPhones (above). The count is
+of stored samples, after the groups that never reached ten were dropped, so a device
+class's line across every page leans towards the busy pages (above). TTFB is judged
+against web.dev's 800 ms "good" bound. It only reads.
 
 ## The two-minute phone enquiry
 
