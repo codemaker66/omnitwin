@@ -1,7 +1,8 @@
 import { act } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BackSide, BoxGeometry, FrontSide, Mesh } from "three";
-import { MeshBasicNodeMaterial } from "three/webgpu";
+import { ConstNode, MathNode, MeshBasicNodeMaterial, OperatorNode, VarNode } from "three/webgpu";
+import { CUT_EYEWARD, CUT_EYEWARD_MAX } from "../hall-exterior-material.js";
 import { mountInStubRoot, type StubRoot } from "../../__tests__/stub-r3f-root.js";
 import { createSunCaster, HALL_SUN_CASTER_LAYER } from "../hall-sun.js";
 import { createStreetLightMaps } from "../hall-street-light.js";
@@ -80,11 +81,33 @@ describe("the measured front as drawn", () => {
     expect(cut?.renderOrder).toBe(1);
     // The whole front, uncut, on the sun's shadow layer only.
     expect(caster?.castShadow).toBe(true);
-    expect(caster?.layers.isEnabled(HALL_SUN_CASTER_LAYER)).toBe(true);
+    expect(caster?.layers.mask).toBe(1 << HALL_SUN_CASTER_LAYER);
     expect(nodeMaterial(caster).side).toBe(FrontSide);
     const disposed = [vi.spyOn(outsideMaterial, "dispose"), vi.spyOn(cutMaterial, "dispose")];
     mounted.unmount();
     mounted = null;
     for (const dispose of disposed) expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps the cut's pull in its vertex stage: a share of the eye's distance, never more than CUT_EYEWARD_MAX", async () => {
+    mounted = mountInStubRoot(<HallExterior sun={sun} lightMaps={lightMaps} />);
+    await act(async () => { build.done({ geometry: new BoxGeometry(1, 1, 1) }); await Promise.resolve(); });
+    const meshes = (mounted.scene.getObjectByName("grand-hall-front")?.children ?? []).filter((child): child is Mesh => child instanceof Mesh);
+    // TSL wraps each operand in a VarNode.
+    const unwrap = (node: unknown): unknown => (node instanceof VarNode ? unwrap(node.node) : node);
+    const isConst = (node: unknown, value: number): boolean => { const inner = unwrap(node); return inner instanceof ConstNode && inner.value === value; };
+    const isMath = (node: unknown, method: string): boolean => { const inner = unwrap(node); return inner instanceof MathNode && inner.method === method; };
+    // The eye's position scaled by 1 - min(CUT_EYEWARD, CUT_EYEWARD_MAX / length(positionView)): uncapped (a
+    // flat share), or added rather than taken away, the cut would reach past the glass far off, or behind it.
+    let capped = 0;
+    nodeMaterial(meshes[1]).vertexNode?.traverse((node) => {
+      if (!(node instanceof OperatorNode) || node.op !== "-" || !isConst(node.aNode, 1)) return;
+      const share = unwrap(node.bNode);
+      if (!(share instanceof MathNode) || share.method !== "min") return;
+      const inputs = [unwrap(share.aNode), unwrap(share.bNode)];
+      const cap = inputs.some((input) => input instanceof OperatorNode && input.op === "/" && isConst(input.aNode, CUT_EYEWARD_MAX) && isMath(input.bNode, "length"));
+      if (cap && inputs.some((input) => isConst(input, CUT_EYEWARD))) capped += 1;
+    });
+    expect(capped).toBe(1);
   });
 });

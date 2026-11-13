@@ -237,9 +237,10 @@ function gapBehind(a: Triangle, b: Triangle): { readonly least: number; readonly
 
 /**
  * Where one of the front's solids is thinner than `least`: two of its faces looking opposite ways (OPPOSED),
- * the solid between them and one over the other, closer than that. Faces on one plane are left out (two solids
- * touching: frontOnItself), and so are faces looking at each other across air. Only faces near each other are
- * compared, through a grid of quarter-metre cells over their bounds.
+ * the solid between them and one over the other, closer than that. A pair whose mean gap is under 1e-5 m (float
+ * noise) is two solids touching (frontOnItself), and a pair whose mean gap is negative is two faces looking at
+ * each other across air: both are left out. Only faces near each other are compared, through a grid of
+ * quarter-metre cells over their bounds.
  */
 function thinPlaces(front: BufferGeometry, least: number): ThinPlace[] {
   const part = front.getAttribute("aPart");
@@ -282,7 +283,7 @@ function thinPlaces(front: BufferGeometry, least: number): ThinPlace[] {
         // either way is the same thickness.
         for (const [from, to] of [[a, b], [b, a]] as const) {
           const gap = gapBehind(from, to);
-          if (gap === null || gap.mean <= 1e-4 || gap.least >= least - 1e-5) continue;
+          if (gap === null || gap.mean <= 1e-5 || gap.least >= least - 1e-5) continue;
           found.push({
             mm: Math.round(gap.least * 1e5) / 100,
             at: gap.at.map((x) => Math.round(x * 1000) / 1000),
@@ -301,17 +302,20 @@ const atADoorwayCrown = (place: ThinPlace): boolean =>
   DOORWAY_CROWNS.some(([x, y]) => Math.abs((place.at[0] ?? 0) - x) < 0.05 && Math.abs((place.at[1] ?? 0) - y) < 0.01);
 
 describe("the measured front's solids against the cut's pull", () => {
-  it.each(DETAILS)("keep twice the pull between any two faces looking opposite ways across them, and more than the pull over the pavilion doorways' crowns ($name)", ({ detail }) => {
+  it.each(DETAILS)("keep twice the pull between faces looking opposite ways across them, and over the pavilion doorways' crowns, the one exception, more than the pull ($name)", ({ detail }) => {
     // The cut pass draws each solid's far side up to CUT_EYEWARD_MAX toward the eye (hall-exterior-material.ts).
     // A solid thinner than that would show its far side, in the cut's colour, over its own near side. At twice
     // the pull it keeps half its thickness in hand against the depth buffer's rounding far off. (The pediment's
     // raking cornice, cut as one ring round the tympanum, had a millimetre's sliver along its foot.)
     const thin = thinPlaces(buildHallFront(detail).geometry, 2 * CUT_EYEWARD_MAX);
     expect(thin.filter((place) => !atADoorwayCrown(place)).slice(0, 5)).toEqual([]);
-    // The ground floor's wall stops at the hall's floor, as surveyed 4 mm over each pavilion doorway's crown,
-    // between the arch's two facets there, 3.5° off level. That stone shows only from below, through the arch's
-    // soffit, where a ray from anywhere at or above the pavement crosses more than four times the pull of it:
-    // more than a depth step beyond the pull out to the far plane.
+    // The ground floor's wall stops at the hall's floor, as surveyed 4 mm over each pavilion doorway's crown: the
+    // stone between the wall's level top and the arch's facets either side of the crown, each 3.5° off level. It
+    // shows only from below, through the arch's soffit. The orbit always looks at least 3.6° down and its frame
+    // reaches 27.5° above its centre, so no ray it draws rises more than about 24°, and each crosses at least
+    // 9.9 mm of that stone, about four times the pull. From at or above the pavement it is more than four times,
+    // and more than a depth step beyond the pull out past the far plane; from below the pavement, which only the
+    // mouse's and two fingers' pans reach, it is a depth step beyond the pull to about 110 m.
     const crowns = thin.filter(atADoorwayCrown);
     expect(crowns.length).toBeGreaterThan(0);
     expect(Math.min(...crowns.map((place) => place.mm)) / 1000).toBeGreaterThan(CUT_EYEWARD_MAX);

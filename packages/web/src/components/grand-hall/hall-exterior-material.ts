@@ -99,19 +99,24 @@ function partColour(part: Node<"float">, palette: Palette): Node<"vec3"> {
 export const CUT_EYEWARD = 2.5e-4;
 
 /**
- * The most the cut is drawn toward the eye, metres: half the let-in
- * (LET_IN), and under half the gap between any two faces of one of the
- * front's solids that look opposite ways (hall-exterior-skin.test.ts, which
- * also says why the 4 mm of stone over the pavilion doorways' crowns is
- * enough). Uncapped, the share of the distance would reach a face let into
+ * The most a corner of the cut is drawn toward the eye, metres: half the
+ * let-in (LET_IN), and at most half the gap between any two faces of one of
+ * the front's solids within 10° of looking opposite ways, except the 4 mm of
+ * stone over the pavilion doorways' crowns, which keeps more than the pull
+ * (hall-exterior-skin.test.ts says why that is enough). Across a face's own
+ * plane no point is drawn farther; along a pixel's ray, inside a long
+ * triangle seen nearly edge-on beyond 10 m, a fraction of a millimetre
+ * farther. Uncapped, the share of the distance would reach a face let into
  * its holder from 20 m, and past about 48 m, face-on, the far face of the
  * thinnest glass (12 mm), drawing a solid's inside in front of its own
  * outside. The cap holds from 10 m: about ten depth steps at 20 m, five at
  * 30 m and one at 65 m, about as far as the orbit sees the cut from while
  * its target is held (CameraRig holds it for the keyboard's pan, not the
- * mouse's or two fingers'). Past that, a tie whose depths round equal is
- * still the cut's: it draws after the outside (HallExterior) and the depth
- * test passes equal depths (three's LessEqualDepth).
+ * mouse's or two fingers', which reach the far plane, 900 m under the sky).
+ * Past that a tie whose depths round equal is still the cut's: it draws
+ * after the outside (HallExterior) and the depth test passes equal depths
+ * (three's LessEqualDepth). From about 140 m some of the thinnest glass
+ * below the cut is drawn in the cut's colour.
  */
 export const CUT_EYEWARD_MAX = LET_IN / 2;
 
