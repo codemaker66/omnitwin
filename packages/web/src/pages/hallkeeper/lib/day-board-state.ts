@@ -18,6 +18,7 @@ import {
   observationMeansOver,
 } from "@omnitwin/types";
 import { VENUE_TIME_ZONE, formatWallDay, formatWallTime, msToWallInput } from "../../diary/lib/board-time.js";
+import { boardDate } from "./board-day-date.js";
 import { bookingStateLabel } from "../../diary/lib/board-overview.js";
 
 // ---------------------------------------------------------------------------
@@ -491,20 +492,23 @@ function daysBetween(from: string, to: string): number {
 }
 
 /** Which day of a multi-day booking `nowMs` falls on, venue-local: "day 3
- *  of 5". Null for a booking of a day or less. An end at midnight belongs to
- *  the day before it. */
+ *  of 5". Null for a booking of a day or less. Days are the board's own,
+ *  rolling at the venue's boundary hour (04:00 at Trades Hall) as the board's
+ *  heading does: at 01:00 on Sunday the board still shows Saturday, and so
+ *  does the count. An end at the boundary belongs to the day before it. */
 export function runningDays(
   doorsAtMs: number,
   endsAtMs: number,
   nowMs: number,
   timeZone: string = VENUE_TIME_ZONE,
+  dayBoundaryHour = 0,
 ): { readonly day: number; readonly of: number } | null {
   if (!runsForDays(doorsAtMs, endsAtMs)) return null;
-  const first = wallDate(doorsAtMs, timeZone);
-  const of = daysBetween(first, wallDate(endsAtMs - 1, timeZone)) + 1;
-  // A long booking inside one calendar day is counted in hours, not days.
+  const first = boardDate(doorsAtMs, dayBoundaryHour, timeZone);
+  const of = daysBetween(first, boardDate(endsAtMs - 1, dayBoundaryHour, timeZone)) + 1;
+  // A long booking inside one of the board's days is counted in hours, not days.
   if (of < 2) return null;
-  const day = Math.min(of, Math.max(1, daysBetween(first, wallDate(nowMs, timeZone)) + 1));
+  const day = Math.min(of, Math.max(1, daysBetween(first, boardDate(nowMs, dayBoundaryHour, timeZone)) + 1));
   return { day, of };
 }
 
@@ -526,7 +530,7 @@ interface TimedState {
   readonly nextBoundaryMs: number | null;
 }
 
-function deriveTimedState(segments: SlotSegments, nowMs: number, timeZone: string): TimedState {
+function deriveTimedState(segments: SlotSegments, nowMs: number, timeZone: string, dayBoundaryHour: number): TimedState {
   const { setupStartsAtMs, doorsAtMs, endsAtMs, clearDownEndsAtMs } = segments;
   const organisersAtMs = setupStartsAtMs - ORGANISERS_WINDOW_MIN * MIN_MS;
   const guestsAtMs = doorsAtMs - GUESTS_WINDOW_MIN * MIN_MS;
@@ -547,7 +551,7 @@ function deriveTimedState(segments: SlotSegments, nowMs: number, timeZone: strin
   if (nowMs >= doorsAtMs) {
     // A booking that runs for days (an exhibition) is counted in its days:
     // "52 h 20 elapsed" says nothing a hallkeeper can use.
-    const days = runningDays(doorsAtMs, endsAtMs, nowMs, timeZone);
+    const days = runningDays(doorsAtMs, endsAtMs, nowMs, timeZone, dayBoundaryHour);
     const elapsed = Math.floor((nowMs - doorsAtMs) / MIN_MS);
     return {
       state: "live", stateLabel: "Live", tone: "live", motion: "live-breath", icon: "radio",
@@ -652,6 +656,9 @@ export function deriveDayBoard(
   /** What hallkeepers have seen in the rooms (S5). Optional for the same
    *  reason: without facts the board is the schedule alone. */
   observations: readonly DayBoardSlotObservation[] = [],
+  /** The venue's day boundary hour (S8): a booking that runs for days counts
+   *  its days on the board's day, as the heading does. Midnight by default. */
+  dayBoundaryHour = 0,
 ): DayBoard {
   const requestsByBooking = groupRequestsByBooking(requests);
   const observationsByBooking = groupObservationsByBooking(observations);
@@ -728,7 +735,7 @@ export function deriveDayBoard(
       );
       const segments: SlotSegments = { setupStartsAtMs, doorsAtMs: startsAtMs, endsAtMs, clearDownEndsAtMs, turnaroundMinutes };
 
-      const timed = deriveTimedState(segments, nowMs, timeZone);
+      const timed = deriveTimedState(segments, nowMs, timeZone, dayBoundaryHour);
       const slotRequests = (requestsByBooking.get(entry.id) ?? []).filter(isOpenRequest);
       const requestSignal = deriveSlotRequestSignal(slotRequests, nowMs);
       const attention = deriveSlotAttention(slotRequests, nowMs);

@@ -30,6 +30,10 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/calendar-untitled-booking-postgres.test.ts",
   // ...and its client's schedule and the room's day, which the When ribbon reads.
   "src/__tests__/client-schedule-untitled-booking-postgres.test.ts",
+  // An event made for an untitled booking is named by its occasion and day, never "" or an email.
+  "src/__tests__/event-name-at-creation-postgres.test.ts",
+  // ...and one stored with no name is read everywhere its name is read, and staff can rename it.
+  "src/__tests__/untitled-event-reads-postgres.test.ts",
   "src/__tests__/event-mutations-postgres.test.ts",
   // The event-day board: a change needing acknowledgement stays listed however many follow it.
   "src/__tests__/event-day-awaiting-acknowledgement-postgres.test.ts",
@@ -82,6 +86,10 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/deal-stage-race-postgres.test.ts",
   // POST /public/enquiries against real constraints, on its own database (below).
   "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
+  // ...and on the platform database: a deleted venue takes no enquiry (audit public-surface-7).
+  "src/__tests__/public-enquiry-intake-postgres.test.ts",
+  // Sixty guest plans and ten enquiries an hour from one address, through the whole app's limiter.
+  "src/__tests__/public-intake-limits-postgres.test.ts",
   // The reference loadouts list: photo count and cover subqueries name their loadout (VENVIEWER-API-1).
   "src/__tests__/reference-loadouts-postgres.test.ts",
   // The chair sizes migration (0103): rewrites only from 0074's sizes, stops named, never blocks a layout save.

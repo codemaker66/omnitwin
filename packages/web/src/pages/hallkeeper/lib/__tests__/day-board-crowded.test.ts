@@ -168,9 +168,11 @@ describe("the rooms board on a crowded day, at its busiest moment (14:20)", () =
   });
 
   it("counts the day on the plane, and each count finds the rooms it names", () => {
-    const stages = planeStages(busiest.lanes);
-    expect(stages.map((stage) => [stage.label, stage.count])).toEqual([
-      ["At risk", 2], ["Requests waiting", busiest.unowned.length], ["Live", 3], ["Setting up", 1], ["Still to come", 7], ["Bookings", 21],
+    // Today's board: the requests count is every one nobody has, as the list
+    // beside the rooms counts them; each is on one of today's bookings.
+    const stages = planeStages(busiest.lanes, busiest.unowned.length);
+    expect(stages.map((stage) => [stage.label, stage.count, stage.note])).toEqual([
+      ["At risk", 2, null], ["Requests waiting", busiest.unowned.length, null], ["Live", 3, null], ["Setting up", 1, null], ["Still to come", 7, null], ["Bookings", 21, null],
     ]);
     expect(rooms.filter((day) => roomInFocus(day, "risk")).map((day) => day.room.name)).toEqual(["Grand Hall", "South Gallery"]);
     expect(rooms.filter((day) => roomInFocus(day, "live")).map((day) => day.room.name))

@@ -396,6 +396,49 @@ function seatOnFloor(floor: RoomFloor, kinds: readonly ChairSupply[], seat: Thea
 }
 
 /**
+ * A chair's depth front to back, metres. Theatre rows face the stage with the
+ * chair's own front, so this is its depth whatever way the room runs.
+ */
+function seatDepthM(chair: CatalogueItem): number {
+  return 2 * toRealWorld(computeRotatedFootprint(chair, 0).halfD);
+}
+
+/** Depths within this are the same chair depth (float error from the render-space round trip). */
+const SEAT_DEPTH_EPSILON_M = 1e-9;
+
+/**
+ * The depth of the chair set in the last row of `seats` (front first), metres;
+ * 0 when none are set.
+ */
+function lastRowSeatDepthM(seats: readonly TheatreFillSeat[], supply: readonly ChairSupply[]): number {
+  const id = seats[seats.length - 1]?.chairItemId;
+  const item = supply.find((kind) => kind.item.id === id)?.item;
+  return item === undefined ? 0 : seatDepthM(item);
+}
+
+/**
+ * Plans rows with the rear walkway held behind whichever chair ends up in the
+ * last row. Rows are planned before each is given its chair, so `attempt` plans
+ * and seats them for a chair depth; when the last row got a deeper chair than
+ * the depth planned for (the first chair's stock ran out), plan again for that
+ * depth. The depth only grows, over a finite set of chairs, so this ends, in
+ * one pass unless stock forces a deeper chair.
+ */
+function planWithRearWalkway<T extends { readonly set: { readonly seats: readonly TheatreFillSeat[] } }>(
+  chair: CatalogueItem,
+  supply: readonly ChairSupply[],
+  attempt: (seatDepthM: number) => T,
+): T {
+  let planned = seatDepthM(chair);
+  for (;;) {
+    const result = attempt(planned);
+    const last = lastRowSeatDepthM(result.set.seats, supply);
+    if (last <= planned + SEAT_DEPTH_EPSILON_M) return result;
+    planned = last;
+  }
+}
+
+/**
  * Plan theatre rows for `guests` (0 fills the room): of `chair`, or of the
  * chairs in `options.chairSupply`, each row one kind in the hall's order, as
  * many as the hall has. A seat in a door's clear space (`options.doorSpaces`)
@@ -414,11 +457,17 @@ export function planTheatreFill(
   const supply = options.chairSupply ?? [{ item: chair, inStore: null }];
   const target = requested(guests);
   const { floor } = options;
+  // The rear walkway is held behind the chair in the last row, so the rows are planned for the
+  // first chair's depth and planned again, deeper, if stock gives the last row a deeper chair.
   if (doorSpaces.length === 0 && floor === undefined) {
-    const plan = planTheatreLayout(roomWidthM, roomLengthM, { targetGuests: target ?? undefined });
-    const set = seatRowsFromSupply(rowsOf(plan.seats, plan.seatsPerRow), supply, null);
+    const { set, room } = planWithRearWalkway(chair, supply, (chairDepthM) => {
+      const plan = planTheatreLayout(roomWidthM, roomLengthM, { targetGuests: target ?? undefined, seatDepthM: chairDepthM });
+      return {
+        set: seatRowsFromSupply(rowsOf(plan.seats, plan.seatsPerRow), supply, null),
+        room: target === null ? plan : planTheatreLayout(roomWidthM, roomLengthM, { seatDepthM: chairDepthM }),
+      };
+    });
     if (set.seats.length === 0) return null;
-    const room = target === null ? plan : planTheatreLayout(roomWidthM, roomLengthM);
     return {
       style: "theatre",
       chairItemId: set.seats[0]?.chairItemId ?? chair.id,
@@ -434,21 +483,23 @@ export function planTheatreFill(
       chairsRanOut: set.ranOut,
     };
   }
-  const room = planTheatreLayout(roomWidthM, roomLengthM);
   // On a room's own floor the rows stand on the floor's bounds, and a seat outside its walls is left out as one in a door's space is.
   const origin = layoutOrigin(floor);
-  const laid = rowsOf(room.seats, room.seatsPerRow);
-  const standing = floor === undefined
-    ? laid
-    : laid
-      .map((row) => row
-        .map((seat) => ({ ...seat, xM: seat.xM + origin.xM, zM: seat.zM + origin.zM }))
-        .filter((seat) => seatOnFloor(floor, supply, seat)))
-      .filter((row) => row.length >= FLOOR_ROW_MIN_SEATS);
-  const rows = standing
-    .map((row) => row.filter((seat) => !supply.some((kind) => seatInSpaces(kind.item, seat, doorSpaces))))
-    .filter((row) => row.length > 0);
-  const set = seatRowsFromSupply(rows, supply, target);
+  const { set, room, rows, standing } = planWithRearWalkway(chair, supply, (chairDepthM) => {
+    const planned = planTheatreLayout(roomWidthM, roomLengthM, { seatDepthM: chairDepthM });
+    const laid = rowsOf(planned.seats, planned.seatsPerRow);
+    const onFloor = floor === undefined
+      ? laid
+      : laid
+        .map((row) => row
+          .map((seat) => ({ ...seat, xM: seat.xM + origin.xM, zM: seat.zM + origin.zM }))
+          .filter((seat) => seatOnFloor(floor, supply, seat)))
+        .filter((row) => row.length >= FLOOR_ROW_MIN_SEATS);
+    const clearRows = onFloor
+      .map((row) => row.filter((seat) => !supply.some((kind) => seatInSpaces(kind.item, seat, doorSpaces))))
+      .filter((row) => row.length > 0);
+    return { set: seatRowsFromSupply(clearRows, supply, target), room: planned, rows: clearRows, standing: onFloor };
+  });
   if (set.seats.length === 0) return null;
   return {
     style: "theatre",
@@ -2333,7 +2384,8 @@ export function autoFillBasis(plan: AutoFillPlan): string {
   if (plan.style === "theatre") {
     const rows = `Rows ${metres(THEATRE_SPACING.rowPitchM)} apart, a ${metres(THEATRE_SPACING.aisleM)} centre aisle`;
     const front = `${metres(THEATRE_SPACING.stageDepthM)} clear at the front`;
-    const spacing = plan.doorsKeptClear ? `${rows}, ${front} and the doors kept clear.` : `${rows} and ${front}.`;
+    const behind = `${metres(THEATRE_SPACING.rearWalkwayM)} behind the last row`;
+    const spacing = plan.doorsKeptClear ? `${rows}, ${front}, ${behind} and the doors kept clear.` : `${rows}, ${front} and ${behind}.`;
     return `${spacing}${theatreChairWords(plan)}`;
   }
   const kind = plan.round ? "Rounds" : "Tables";
