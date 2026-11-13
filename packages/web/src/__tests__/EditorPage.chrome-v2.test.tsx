@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -32,6 +32,9 @@ const { useEditorStore } = await import("../stores/editor-store.js");
 const { useCockpitStore } = await import("../stores/cockpit-store.js");
 const { PLANNER_CHROME_STORAGE_KEY } = await import("../lib/planner-chrome-flag.js");
 const originalLoadConfiguration = useEditorStore.getState().loadConfiguration;
+// The new chrome is a lazy chunk; its first import under a loaded suite runs
+// past waitFor's 1 s default (the dock, rail, catalogue and caption grew it).
+const CHUNK_MS = 10_000;
 
 function openPlanner(search = ""): void {
   render(
@@ -61,7 +64,7 @@ afterEach(() => {
 describe("EditorPage with the new chrome", () => {
   it("renders the room under the new chrome's zones, and none of today's surfaces", async () => {
     openPlanner("?chrome=v2");
-    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); });
+    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); }, { timeout: CHUNK_MS });
     expect(screen.getByTestId("mock-room-stage")).toBeTruthy();
     for (const zone of ["slate", "top-centre", "utilities", "left", "right", "above-dock", "dock", "next-step"]) {
       expect(document.querySelector(`[data-pc-zone="${zone}"]`), zone).not.toBeNull();
@@ -79,14 +82,39 @@ describe("EditorPage with the new chrome", () => {
 
   it("keeps the new chrome on this device until v1 is asked for", async () => {
     openPlanner("?chrome=v2");
-    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); });
+    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); }, { timeout: CHUNK_MS });
     cleanup();
     openPlanner();
-    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); });
+    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); }, { timeout: CHUNK_MS });
     cleanup();
     openPlanner("?chrome=v1");
     await waitFor(() => { expect(screen.getByTestId("planner-cockpit")).toBeTruthy(); });
     expect(screen.queryByTestId("planner-chrome-v2")).toBeNull();
+  });
+
+  it("clears the new chrome away with the slate's crest or \\, and brings it back, as today's planner does (T-680)", async () => {
+    openPlanner("?chrome=v2");
+    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); }, { timeout: CHUNK_MS });
+    const root = document.documentElement;
+    const crest = (): HTMLElement => screen.getByRole("button", { name: /the tools$/u });
+    expect(crest().getAttribute("aria-label")).toBe("Hide the tools");
+
+    act(() => { fireEvent.click(crest()); });
+    expect(root.getAttribute("data-planner-chrome")).toBe("cleared");
+    expect(crest().getAttribute("aria-label")).toBe("Show the tools");
+
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "\\", bubbles: true, cancelable: true })); });
+    expect(root.getAttribute("data-planner-chrome")).not.toBe("cleared");
+
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "\\", bubbles: true, cancelable: true })); });
+    expect(root.getAttribute("data-planner-chrome")).toBe("cleared");
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+    expect(root.getAttribute("data-planner-chrome")).not.toBe("cleared");
+
+    // Leaving the planner takes every mark off the page and ends a clear-all.
+    act(() => { fireEvent.click(crest()); });
+    cleanup();
+    expect(root.hasAttribute("data-planner-chrome")).toBe(false);
   });
 
   it("is today's chrome without the flag", async () => {

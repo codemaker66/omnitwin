@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement, type ReactNode } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
@@ -272,7 +272,14 @@ const WHEEL_INTERACTION_SETTLE_MS = 450;
  * system (room geometry, furniture, selection, markup, circulation, camera).
  * Extracted from App so the planner cockpit can host it in its stage cell.
  */
-export function PlannerScene(): ReactElement {
+export function PlannerScene({ inCanvas }: {
+  /**
+   * Mounted inside the canvas beside the editing systems: the new chrome's
+   * screen anchors (its caption follows its piece), handed in by its
+   * RoomStage so today's planner never loads them (T-671 slice 11′).
+   */
+  readonly inCanvas?: ReactNode;
+}): ReactElement {
   const space = useEditorStore((s) => s.space);
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const previewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
@@ -720,6 +727,7 @@ export function PlannerScene(): ReactElement {
             <SelectionSystem />
             <FurnitureMotion />
             <CockpitSceneOverlays renderGeometry={renderSceneOverlays} />
+            {inCanvas}
             <PlannerMotionOverlayLayers />
           </>}
           <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>

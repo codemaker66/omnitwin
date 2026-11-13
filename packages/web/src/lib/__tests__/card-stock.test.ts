@@ -3,15 +3,14 @@ import type { VenueInventoryData } from "../../api/venue-inventory.js";
 import { getCatalogueItemBySlug } from "../catalogue.js";
 import {
   cardNeeds,
-  cardStoreFigure,
   placedCounts,
   stockIdentity,
   storeRefuses,
   storeShortfall,
   storeShortfallWords,
-  usableStock,
   type UsableStock,
 } from "../card-stock.js";
+import { cardStoreFigure, usableStock } from "../card-store-figures.js";
 import type { PlacedItem } from "../placement.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
 import { cardParamsFor, stampSetup, type CardId, type CardParams, type CardParamsRequest } from "../setup-cards.js";

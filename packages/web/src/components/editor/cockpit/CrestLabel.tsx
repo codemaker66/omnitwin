@@ -32,6 +32,14 @@ function focusIsVisible(element: Element): boolean {
 let quietFocus = false;
 
 /**
+ * Whether the crest is taking focus from the chrome itself, not the person:
+ * its name then waits. The new chrome's crest reads this too (T-671).
+ */
+export function crestFocusIsQuiet(): boolean {
+  return quietFocus;
+}
+
+/**
  * Puts focus on the crest without its name, when the chrome moves focus there
  * itself: the person has just pressed the key the name would teach, and their
  * next Esc should bring the tools back, not put a name away.

@@ -33,7 +33,7 @@ const { GRAND_HALL_RENDER_DIMENSIONS } = await import("../constants/scale.js");
 const { getCatalogueItem } = await import("../lib/catalogue.js");
 const { resetPlacedIdCounter } = await import("../lib/placement.js");
 const { setPlannerFeaturesForTesting } = await import("../lib/planner-features.js");
-const { replaceSelection } = await import("../lib/planner-keymap.js");
+const { replaceSelection } = await import("../lib/planner-edit-commands.js");
 const { seededNote } = await import("../lib/note-seeds.js");
 const { cardParamsFor, stampSetup } = await import("../lib/setup-cards.js");
 

@@ -1,9 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { SETUP_PREVIEW_VERSION, setupCardLook, setupCardPreviewUrl } from "../crafted-furniture.js";
+import { SETUP_PREVIEW_VERSION } from "../crafted-furniture.js";
 import { PLANNER_CHAIR_SLUGS } from "../furniture-defaults.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
+import { setupCardLook, setupCardPreviewUrl } from "../setup-card-previews.js";
 import { usePlannerEventStore, type PlannerEventKind } from "../../stores/planner-event-store.js";
 import {
   CARD_COLOURWAYS,
