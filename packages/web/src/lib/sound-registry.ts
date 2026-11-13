@@ -581,15 +581,17 @@ export function useRoomTone(): RoomTone {
   return { supported, playing, toggle };
 }
 
-// --- The planner's palette (T-671, spec section 9; opt-in, per device) -------
+// --- The planner's palette (T-671, spec section 9; per device) ---------------
 //
 // Thirteen short sounds for the planner, in two sets (lib/planner-sound-recipes.ts):
 // Quiet plays the set-downs, the refusal, the cue and the four rare moments
 // (the horizon, Send, Present, an act); Full adds the small sounds of the hand.
 // The speaker in the chrome's utilities chooses Off, Quiet or Full and a level,
 // kept on this device; Shift M mutes and unmutes, the master falling away over
-// 30 ms. Off until chosen, as every sound here is: Blake's decision D1 may make
-// Quiet the default, and it is PLANNER_SOUND_DEFAULT_MODE alone.
+// 30 ms. Quiet by default (Blake's decision D1, 25 Oct 2026, held in
+// PLANNER_SOUND_DEFAULT_MODE alone), armed only by the first deliberate gesture,
+// and Off once someone chooses it. No production surface mounts the speaker
+// yet, so nothing arms the engine and the planner stays silent until one does.
 //
 // Each sound is rendered from its recipe by lib/planner-sound-render.ts and
 // played as exactly those samples (the bus's 6 kHz low-pass is in the render):

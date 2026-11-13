@@ -123,7 +123,10 @@ test("the crest and \\ clear the new chrome to the hall, and \\, Esc or the cres
   const crestAtRest = await boxOf(hide);
   const slateAtRest = await boxOf(page.locator(".pc-slate"));
   const doorCard = page.getByTestId("door-clear-notice");
-  const doorAtRest = await doorCard.isVisible() ? await boxOf(doorCard) : null;
+  // The seed sets a table in a door's way, so the door's card is up: assert it,
+  // or the check below that the room takes its place would never run.
+  await expect(doorCard).toBeVisible();
+  const doorAtRest = await boxOf(doorCard);
   const atRest = await chromeShare(page);
   await frame(page, "01-at-rest");
 
@@ -147,7 +150,7 @@ test("the crest and \\ clear the new chrome to the hall, and \\, Esc or the cres
   }, [x, y]);
   expect(await under(slateAtRest.x + slateAtRest.width * 0.7, slateAtRest.y + 40)).toBe("room");
   expect(await under(slateAtRest.x + slateAtRest.width * 0.5, slateAtRest.y + slateAtRest.height - 20)).toBe("room");
-  if (doorAtRest !== null) expect(await under(doorAtRest.x + doorAtRest.width / 2, doorAtRest.y + doorAtRest.height / 2)).toBe("room");
+  expect(await under(doorAtRest.x + doorAtRest.width / 2, doorAtRest.y + doorAtRest.height / 2)).toBe("room");
   // The crest still takes it.
   expect(await under(crestAtRest.x + crestAtRest.width / 2, crestAtRest.y + crestAtRest.height / 2)).toBe("slate");
 
