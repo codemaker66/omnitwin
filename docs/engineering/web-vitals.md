@@ -72,10 +72,11 @@ trailing spaces to the same 512 bytes (`WEB_VITALS_REPORT_BYTES`, below):
   a clock's reading but a score of how far things moved, and one shift's score
   follows the screen's size. Chrome's own user agent no longer names the phone, but
   an in-app browser's (Android's WebView) does. In hundredths, ten times finer than
-  goal 07's 0.1 target, a shift gives about half as many distinct values across
-  screens as in thousandths, but one whose score sits near a step's edge still
-  splits ordinary screens: a CLS row whose screen the log's user agent names can
-  stand alone in its group (a residual, below).
+  goal 07's 0.1 target, a shift's score takes fewer distinct values across screens
+  than in thousandths (how many fewer depends on how far the screens' scores
+  spread), but one whose score sits near a step's edge still splits ordinary
+  screens: a CLS row whose screen the log's user agent names can stand alone in its
+  group (a residual, below).
 - **One size on the wire.** The host's request log records each request's size, and
   a report's length would otherwise follow what it carries: how many vitals, their
   digits and ratings ("needs-improvement" is longer than "good"), its page and device
@@ -161,10 +162,12 @@ trailing spaces to the same 512 bytes (`WEB_VITALS_REPORT_BYTES`, below):
     its places stay counted until it settles. Writes never overlap. A flush waits for
     the write before it within its own 15 seconds; if that is still unfinished, an
     hourly flush writes nothing that hour but still drops an earlier day's groups, so
-    what is held stays within one day's ceiling, and the closing flush drops all it
-    holds (and drops rather than start a write in the last tenth of its bound). A
-    write stuck on the server's own pool still holds its connection, so the pool's
-    close then waits until the API's 25-second stop ends the process.
+    what is held stays within one day's ceiling (beside the stuck write's own batch),
+    and the closing flush drops all it holds (and drops rather than start a write in
+    the last tenth of its bound). The close's one bound is measured on a monotonic
+    clock (`performance.now`), which a change of the wall clock cannot stretch or
+    cut. A write stuck on the server's own pool still holds its connection, so the
+    pool's close then waits until the API's 25-second stop ends the process.
   - So a page's vital is measured only once ten sampled loads of it, from one device
     class, arrive within one server process's life inside one UTC day: about twenty
     loads at a rate of 0.5, between deploys, which come several times a day. Most

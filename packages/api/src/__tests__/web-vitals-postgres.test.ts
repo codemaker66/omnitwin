@@ -954,7 +954,11 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
   it("closes with what little of its bound is left by dropping what it holds, rather than starting a write it could not wait for", async () => {
     const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
     const narrowDb: Database = drizzle(narrowPool, { schema });
-    const late = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 2_000, ceiling: createDailyCeiling(2) });
+    // The close's bound is read on this clock, so the test, not the runner's
+    // speed, decides how much of it is left (a fourth review's point: on real
+    // time a slow commit reached the bound itself, not its last tenth).
+    let clock = 0;
+    const late = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 2_000, ceiling: createDailyCeiling(2), monotonicNow: () => clock });
     const taken = await narrowPool.connect();
     let released = false;
     try {
@@ -962,12 +966,13 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       await expect(late.flush()).rejects.toThrow(/unfinished after 2000 ms/u);
       expect(late.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true);
       const closing = late.flush({ closing: true });
-      // The first write gets its connection with under a tenth of the close's
-      // bound left, and the close then starts no write of its own.
-      await new Promise((resolve) => { setTimeout(resolve, 1_820); });
+      // The first write gets its connection once 1,850 ms of the close's
+      // 2,000 have passed: 150 ms is under the tenth a write needs, so the
+      // close starts no write of its own.
+      clock += 1_850;
       taken.release();
       released = true;
-      await expect(closing).rejects.toThrow(/of its bound left: what it held is dropped|into closing: what is held is dropped/u);
+      await expect(closing).rejects.toThrow(/had 150 ms of its bound left: what it held is dropped/u);
       expect(late.held()).toBe(0);
       // The first write commits; the dropped CLS never is, and its place comes back.
       await vi.waitFor(async () => {
@@ -976,6 +981,37 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       }, { timeout: 5_000 });
       expect([late.hold({ ...REPORT, metrics: [REPORT.metrics[3]] }), late.hold({ ...REPORT, metrics: [REPORT.metrics[0]] })]).toEqual([true, false]);
     } finally {
+      if (!released) taken.release();
+      await narrowPool.end();
+    }
+  }, 15_000);
+
+  // A close's bound is measured on a monotonic clock (performance.now): the
+  // wall clock moved an hour on as the server closes (a time sync, say)
+  // neither cuts the close short nor stretches it.
+  it("measures a close's bound on a clock that a change of the wall clock cannot move", async () => {
+    const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
+    const narrowDb: Database = drizzle(narrowPool, { schema });
+    const steady = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 2_000, ceiling: createDailyCeiling(2) });
+    const taken = await narrowPool.connect();
+    let released = false;
+    const wallClock = vi.spyOn(Date, "now");
+    try {
+      expect(steady.hold({ ...REPORT, metrics: [REPORT.metrics[1]] })).toBe(true);
+      await expect(steady.flush()).rejects.toThrow(/unfinished after 2000 ms/u);
+      expect(steady.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true);
+      const closing = steady.flush({ closing: true });
+      const hourOn = Date.now() + 3_600_000;
+      wallClock.mockImplementation(() => hourOn);
+      taken.release();
+      released = true;
+      // By the wall clock the close would be an hour past its bound and drop
+      // the CLS; by the monotonic one nearly all of it is left, and it writes.
+      await expect(closing).resolves.toBe(1);
+      const { rows: written } = await pool.query<{ metric: string }>("SELECT metric FROM web_vital_samples ORDER BY metric");
+      expect(written).toEqual([{ metric: "CLS" }, { metric: "INP" }]);
+    } finally {
+      wallClock.mockRestore();
       if (!released) taken.release();
       await narrowPool.end();
     }

@@ -137,8 +137,11 @@ describe("a report on the wire", () => {
   it("is always the same number of bytes, whatever it carries, and reads back as itself", () => {
     const longestPage = [...WEB_VITAL_PAGES].sort((a, b) => b.length - a.length)[0] ?? "/";
     // The longest the schema accepts: the longest page and device, and numbers
-    // in their longest written form (the browser's own run to about 320 bytes).
-    const longest = 1.2345678901234567e-7;
+    // in their longest written form, 24 characters, which only a value of at
+    // least a millionth and under a hundred-thousandth takes (the browser's
+    // own reports run to about 320 bytes).
+    const longest = 1.2345678901234567e-6;
+    expect(JSON.stringify(longest)).toBe("0.0000012345678901234567");
     const largest = { v: 1, page: longestPage, device: "desktop", metrics: [
       { name: "LCP", value: longest, rating: "needs-improvement" },
       { name: "INP", value: longest, rating: "needs-improvement" },
