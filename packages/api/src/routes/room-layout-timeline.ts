@@ -4,6 +4,7 @@ import {
   EVENT_ENDED_STATUSES,
   RoomLayoutTimelineQuerySchema,
   RoomLayoutTimelineResponseSchema,
+  eventDisplayName,
   type RoomLayoutTimelineQuery,
   type RoomLayoutTimelineRange,
   type RoomLayoutTimelineResponse,
@@ -209,6 +210,7 @@ export async function roomLayoutTimelineRoutes(
         eventId: events.id,
         eventName: events.name,
         eventType: events.eventType,
+        eventStartsAt: events.startsAt,
         eventStatus: events.status,
         eventGuestCount: events.guestCount,
       })
@@ -346,7 +348,10 @@ export async function roomLayoutTimelineRoutes(
         id: row.phaseId,
         kind: isRoomFlip ? "room_flip" : "phase",
         eventId: row.eventId,
-        eventName: row.eventName,
+        // An event stored without a name (made before eventNameFor named
+        // every new one) is named by its occasion and the venue's day, for
+        // display only: the frame does not carry the event's start.
+        eventName: eventDisplayName({ name: row.eventName, eventType: row.eventType, startsAt: row.eventStartsAt }, room.timeZone),
         eventType: row.eventType,
         eventStatus: row.eventStatus,
         eventGuestCount: row.eventGuestCount,
