@@ -106,7 +106,25 @@ function curveNodes(colour: Node<"vec3">, exposure: Node<"float">): Node<"vec3">
  * the scene colour's rgb and the exposure, as the renderer calls its own curves.
  */
 export function photographToneMapping(colour: Node, exposure: Node): Node {
-  return curveNodes(vec3(colour), float(exposure));
+  if (!isColourNode(colour) || !isExposureNode(exposure)) return colour;
+  return curveNodes(colour, exposure);
+}
+
+/** Whether a value is a shader node at all, read as three marks every node. */
+function isShaderNode(node: object): boolean {
+  const flag: unknown = Reflect.get(node, "isNode");
+  return flag === true;
+}
+
+// The node library declares its curves on untyped nodes, while the renderer
+// always calls one with the scene colour's rgb and its exposure
+// (ToneMappingNode.setup): these two predicates state that for the compiler.
+function isColourNode(node: Node): node is Node<"vec3"> {
+  return isShaderNode(node);
+}
+
+function isExposureNode(node: Node): node is Node<"float"> {
+  return isShaderNode(node);
 }
 
 /**
