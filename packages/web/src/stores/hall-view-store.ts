@@ -20,6 +20,13 @@ export interface HallViewRequest {
   readonly nonce: number;
 }
 
+export interface HallStageRequest {
+  /** CSS px at the canvas's top that stay dark, above the hall's walls. */
+  readonly skyPx: number;
+}
+
+export type HallStagePhase = "off" | "arriving" | "held";
+
 interface HallViewState {
   readonly mood: HallMoodName;
   readonly viewRequest: HallViewRequest | null;
@@ -27,6 +34,16 @@ interface HallViewState {
   readonly activePreset: HallViewPreset | null;
   /** The drawn hall's surveyed surfaces arriving, while it is mounted. */
   readonly surfaces: HallSurfacesProgress | null;
+  /**
+   * Set by a planner screen that shows the hall as a stage (hall-stage.ts):
+   * its Room view is that one picture, and `skyPx` at the canvas's top are
+   * kept dark for the screen's own words. Null for every other screen.
+   */
+  readonly stage: HallStageRequest | null;
+  /** Where the stage is: not in use, the camera on its way to it, or held. */
+  readonly stagePhase: HallStagePhase;
+  readonly setStage: (stage: HallStageRequest | null) => void;
+  readonly setStagePhase: (phase: HallStagePhase) => void;
   readonly setMood: (mood: HallMoodName) => void;
   readonly requestView: (preset: HallViewPreset) => void;
   readonly clearViewRequest: (nonce: number) => void;
@@ -53,6 +70,14 @@ export const useHallViewStore = create<HallViewState>()((set, get) => ({
   viewRequest: null,
   activePreset: "room",
   surfaces: null,
+  stage: null,
+  stagePhase: "off",
+  setStage: (stage) => {
+    if (get().stage?.skyPx !== stage?.skyPx) set(stage === null ? { stage, stagePhase: "off" } : { stage });
+  },
+  setStagePhase: (stagePhase) => {
+    if (get().stagePhase !== stagePhase) set({ stagePhase });
+  },
   setMood: (mood) => {
     try { window.localStorage.setItem(MOOD_STORAGE_KEY, mood); } catch { /* storage is a convenience */ }
     set({ mood });

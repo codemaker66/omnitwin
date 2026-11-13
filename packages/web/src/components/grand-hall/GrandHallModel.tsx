@@ -57,6 +57,7 @@ import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { nativeFramePrecompile } from "../../lib/native-frame-composer.js";
 import { requestNativePrecompile } from "../../lib/native-precompile.js";
 import { HALL_CAPTURE_POINT, HallEnvironmentCapture } from "./hall-capture.js";
+import { STAGE_CHANDELIER_CEILING_M, STAGE_NEAR_CUT_M } from "./hall-stage.js";
 import { createHallSection, parseSectionPreset, SECTION_PRESETS, sectionRoomLine, type HallSection, type SectionPreset } from "./hall-section.js";
 import { hallFrontCut } from "./hall-exterior-cut.js";
 import { sectionCapGeometry } from "./hall-relief-section.js";
@@ -115,6 +116,12 @@ export interface GrandHallModelProps {
    * coverage.
    */
   readonly multisampled?: boolean;
+  /**
+   * The hall is shown as a stage (hall-stage.ts): the walls the camera stands
+   * behind are lowered to the floor, the missing fourth wall, and the
+   * chandeliers hang in the picture from the stage's height.
+   */
+  readonly stage?: boolean;
 }
 
 /** Heights the cutaway uses. */
@@ -141,22 +148,24 @@ const EYE_CLEARANCE = 0.6;
 
 /**
  * The cut height for one wall seen from `camera` in `view`. In the overview,
- * walls the camera stands behind drop to the dado rail and the far walls keep
+ * walls the camera stands behind drop to `near` (the dado rail, or the floor
+ * where the hall is shown as a stage) and the far walls keep
  * their full height, so the room reads tall while the floor stays open. A wall
  * the camera stands behind also stays below its eye: a phone orbiting at eye
  * height crosses the long walls a metre or two out, where the eased cut alone
  * still stood above the camera and its dark body filled the view.
  */
-export function wallCutHeight(view: Exclude<HallView, "auto">, wall: HallWall, camera: readonly [number, number, number]): number {
+export function wallCutHeight(view: Exclude<HallView, "auto">, wall: HallWall, camera: readonly [number, number, number], near: number = HALL_CUTS.near): number {
   if (view === "walk") return HALL_CUTS.none;
   if (view === "plan") return HALL_CUTS.plan;
   // Distance of the camera behind the wall's plane (positive outside the room).
   const behind = -((camera[0] - wall.origin[0]) * wall.normal[0] + (camera[2] - wall.origin[2]) * wall.normal[2]);
   const t = Math.max(0, Math.min(1, (behind + 1.5) / 4));
   const eased = t * t * (3 - 2 * t);
-  const cut = HALL_HEIGHT + 0.2 + (HALL_CUTS.near - HALL_HEIGHT - 0.2) * eased;
+  const cut = HALL_HEIGHT + 0.2 + (near - HALL_HEIGHT - 0.2) * eased;
   if (behind <= 0) return cut;
-  return Math.max(0.05, Math.min(cut, camera[1] - EYE_CLEARANCE));
+  // Never lower than a kerb, unless `near` itself asks for the wall to be gone.
+  return Math.max(Math.min(0.05, near), Math.min(cut, camera[1] - EYE_CLEARANCE));
 }
 
 /**
@@ -365,7 +374,7 @@ function glazingPanes(): ReturnType<typeof buildGlazingPanes> {
   return paneGeometry;
 }
 
-export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6, sunlit = false, multisampled = false }: GrandHallModelProps): ReactElement {
+export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6, sunlit = false, multisampled = false, stage = false }: GrandHallModelProps): ReactElement {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const invalidate = useThree((state) => state.invalidate);
@@ -430,6 +439,8 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     raycastDoorLeaves(this, raycaster, intersects, (door) => doorSwing.current.angle(door), (wall) => cutState.current[wall] ?? HALL_CUTS.none);
   }, []);
   const cutsEasing = useRef(false);
+  // The cuts ease in the frame loop, which draws on demand: the stage coming or going asks for a frame.
+  useEffect(() => { invalidate(); }, [invalidate, stage]);
   const resolvedView = useRef<Exclude<HallView, "auto">>(view === "auto" ? "overview" : view);
   const chandelierGroup = useRef<import("three").Group | null>(null);
   const chandeliersShown = useRef(false);
@@ -708,15 +719,16 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     state.camera.getWorldDirection(lookDirection);
     const effective = view === "auto" ? resolveHallView(camera, -lookDirection.y, resolvedView.current) : view;
     resolvedView.current = effective;
-    const targets = HALL_WALLS.map((wall) => wallCutHeight(effective, wall, camera));
+    const targets = HALL_WALLS.map((wall) => wallCutHeight(effective, wall, camera, stage ? STAGE_NEAR_CUT_M : HALL_CUTS.near));
     targets.push(effective === "walk" ? HALL_CUTS.none : HALL_CUTS.hidden);
     // Chandeliers: always on a walk, never in plan, and in the overview only
     // once the camera comes down toward the room (with hysteresis).
     const group = chandelierGroup.current;
     if (group !== null) {
       const shown = chandeliersShown.current;
+      const chandelierCeiling = stage ? STAGE_CHANDELIER_CEILING_M : 10.5;
       const show = effective === "walk" || (effective === "overview" && overviewChandeliers
-        && (shown ? camera[1] < 11.5 : camera[1] < 10.5));
+        && (shown ? camera[1] < chandelierCeiling + 1 : camera[1] < chandelierCeiling));
       if (shown !== show) { chandeliersShown.current = show; moving = true; }
       const warming = !show && chandelierWarmFrames.current > 0;
       if (warming) { chandelierWarmFrames.current -= 1; moving = true; }

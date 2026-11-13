@@ -80,6 +80,7 @@ import { CockpitPlanningCamera } from "./CockpitPlanningCamera.js";
 import { readNativePlannerPixelRatio, serverPlannerPixelRatio, subscribeNativePlannerPixelRatio } from "../../lib/planner-resolution-policy.js";
 import { GrandHallModel } from "../grand-hall/GrandHallModel.js";
 import { HallViewDirector, HALL_VIEW_POSES, HALL_WALK } from "../grand-hall/HallViewDirector.js";
+import { HallStage } from "../grand-hall/HallStage.js";
 import { HALL_HEIGHT } from "../grand-hall/hall-spec.js";
 import { HallLightRig } from "../grand-hall/HallLightRig.js";
 import { HallSky } from "../grand-hall/HallSky.js";
@@ -324,6 +325,8 @@ export function PlannerScene(): ReactElement {
   // Its capture, where one may be shown, appears only when asked for.
   const realHall = useModelledGrandHall();
   const hallMood = useHallViewStore((state) => state.mood);
+  // A planner screen that shows the hall as a stage says so (hall-stage.ts).
+  const hallStageAsked = useHallViewStore((state) => state.stage !== null);
   // The opening framing is the hall's Room view on landscape screens; on
   // portrait ones it is no named view.
   const markHallOpeningPose = useCallback((framed: boolean) => {
@@ -507,6 +510,8 @@ export function PlannerScene(): ReactElement {
   // (The drawn hall is never shown under the timeline's frozen preview.)
   const assemblyStage = assemblyAsked && hallDrawn && !walkMode;
   const [assemblyCamera, setAssemblyCamera] = useState(false);
+  // The stage holds the live camera of the drawn hall (never drawn under the frozen preview), and not an assembling one.
+  const hallStage = hallStageAsked && hallDrawn && !assemblyCamera;
   // A room known not to be the drawn Grand Hall lets a held layout go at once.
   const assemblyElsewhere = space !== null && !realHall;
   // The Assembly's code is fetched as soon as it may play here (the Grand Hall,
@@ -662,7 +667,7 @@ export function PlannerScene(): ReactElement {
             <RoomLighting variant={!timelinePreviewActive && roomGeometry === null ? "grand-hall" : "polygon"} />
           )}
           {meshVisible && (realHall ? (
-            <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} sunlit={skyLit} multisampled={governed.profile.sceneSamples > 0} />
+            <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} sunlit={skyLit} multisampled={governed.profile.sceneSamples > 0} stage={hallStage} />
           ) : roomGeometry !== null ? (
             <RoomMesh geometry={roomGeometry} variant={roomVariant} includeLighting={false} />
           ) : (
@@ -727,12 +732,14 @@ export function PlannerScene(): ReactElement {
             {!timelinePreviewActive && hallDrawn && <TableCandles />}
             <PlacedFurniture />
           </group>
-          {realHall && !timelinePreviewActive && <HallViewDirector />}
+          {realHall && !timelinePreviewActive && <HallViewDirector stage={hallStage} />}
           <CockpitPlanningCamera suspended={timelinePreviewActive || assemblyCamera} />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive || assemblyCamera}
             defaultPose={realHall ? HALL_VIEW_POSES.room : null}
             onOpeningPose={realHall ? markHallOpeningPose : undefined}
             captureUnavailableKey={captureFailed && captureInUse ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
+          {/* After the rig: it sets the lens and squares the camera up once the rig has moved it. */}
+          {hallStage && <HallStage />}
           {walkMode && interiorWalk !== null && !walkCameraDisabled && (!captureFailed || !captureInUse) && (
             <InteriorCamera
               key={`${roomSlug ?? "walk"}:${interiorWalk === hallWalkData ? "model" : "capture"}`}
