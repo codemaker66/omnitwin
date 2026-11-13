@@ -262,11 +262,20 @@ export function HallStage(): null {
     const bookmarks = useBookmarkStore.getState();
     if (stage === null) {
       // No stage on this canvas (held upright, say): an ordinary orbit through the plain lens.
+      const stood = holding(own.mode) || own.mode === "arriving";
       if (own.mode !== "walk") letGo(own, camera, orbit);
       own.framing = null;
       // A glide still under way lands through the plain lens too.
       own.trip = null;
       if (!walking) setLens(camera, PLAIN_LENS);
+      // The camera stood in a picture this canvas cannot hold (a tablet turned upright, a window drawn narrow). Left
+      // where the stage had put it, it would show the hall through the wrong lens from too far back. It stands in the
+      // rig's own Room view instead, which is made for any canvas; and from there the frame loop takes the stage
+      // again, as for any arrival in the room, once the canvas can hold one.
+      if (stood && !walking) {
+        if (bookmarks.transition !== null) useBookmarkStore.setState({ transition: null });
+        setPose(camera, orbit, HALL_VIEW_POSES.room.position, HALL_VIEW_POSES.room.target);
+      }
     } else {
       const standing = holding(own.mode) || own.mode === "arriving";
       own.framing = stage;

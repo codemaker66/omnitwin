@@ -29,10 +29,11 @@
   --hud-reach: 8px;              /* a word's hit area past its letters, each side */
   --hud-hit: 44px;               /* the smallest hit area */
   --hud-bar-h: 48px;
+  --hud-bar-row: 40px;           /* the steps' own line, where the bar stands in two */
   --hud-shelf-h: 152px;
   --hud-shelf-pad-top: 12px;
   --hud-shelf-pad-bottom: 8px;
-  --hud-shelf-side: 176px;       /* the shelf's side columns never narrower */
+  --hud-shelf-side: 192px;       /* the shelf's side columns never narrower: the quiet words in one line */
   /*
    * The shelf's arrangement. 152 px will not hold a full-width status line
    * above a row of 2:3 photographs with two-line captions, so by default the
@@ -111,6 +112,11 @@
 .hud-root :focus-visible {
   outline: var(--hud-chosen) solid var(--hud-ink);
   outline-offset: var(--hud-chosen);
+}
+
+/* The top bar's keys reach the screen's edges, which would cut a ring drawn outside them: theirs is drawn inside. */
+.hud-root .hud-bar :focus-visible {
+  outline-offset: calc(-1 * var(--hud-chosen));
 }
 
 .hud-root :is(button, input):disabled,
@@ -333,6 +339,7 @@
   z-index: 20;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas: "plaque steps view";
   column-gap: var(--hud-gap-group);
   align-items: center;
   height: var(--hud-bar-h);
@@ -345,6 +352,7 @@
 }
 
 .hud-bar__plaque {
+  grid-area: plaque;
   display: flex;
   align-items: center;
   justify-self: start;
@@ -353,6 +361,7 @@
 }
 
 .hud-steps {
+  grid-area: steps;
   justify-self: center;
 }
 
@@ -375,6 +384,7 @@
 }
 
 .hud-view {
+  grid-area: view;
   display: flex;
   align-items: center;
   justify-self: end;
@@ -492,7 +502,6 @@
   display: flex;
   grid-area: cards;
   align-items: flex-end;
-  justify-content: center;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -506,6 +515,15 @@
 .hud-cards__slot {
   flex: none;
   width: var(--hud-card-col);
+}
+
+/* Centred where the hand fits, and from its first card where it slides: a centred row that overflows cannot be slid back to its start. */
+.hud-cards__slot:first-child {
+  margin-inline-start: auto;
+}
+
+.hud-cards__slot:last-child {
+  margin-inline-end: auto;
 }
 
 .hud-card {
@@ -567,9 +585,9 @@
   pointer-events: none;
 }
 
+/* One line each. A caption wider than its column (a long count) runs past it evenly on both sides, never into the next card's alone. */
 .hud-card__name,
 .hud-card__detail {
-  max-width: 100%;
   font-size: var(--hud-s);
   line-height: var(--hud-s-lh);
   white-space: nowrap;
@@ -865,7 +883,9 @@ body.hud-dragging-card * {
 }
 
 .hud-number::-webkit-inner-spin-button,
-.hud-number::-webkit-outer-spin-button {
+.hud-number::-webkit-outer-spin-button,
+.hud-sheet .auto-fill__input::-webkit-inner-spin-button,
+.hud-sheet .auto-fill__input::-webkit-outer-spin-button {
   margin: 0;
   appearance: none;
 }
@@ -924,6 +944,8 @@ body.hud-dragging-card * {
   font-size: var(--hud-xl);
   font-weight: var(--hud-regular);
   line-height: var(--hud-xl-lh);
+  /* A count is typed here: the browser's own little arrows are put away, as on the sheets' other number. */
+  appearance: textfield;
 }
 
 .hud-sheet :is(.auto-fill__hint, .auto-fill__note, .auto-fill__placed) {
@@ -981,24 +1003,80 @@ body.hud-dragging-card * {
 @media (max-width: 1366px) {
   .hud-root {
     --hud-card-col: 88px;
-    --hud-shelf-side: 152px;
   }
 }
 
-/* Narrow desktops and tablets: smaller photographs, and the hand slides when it must. */
-@media (max-width: 1199px) {
+/*
+ * Narrower than the one row needs: nine columns of 88 px between side columns
+ * of 192 px want 1272 px. A column is never narrower than its caption and a
+ * side column never narrower than its words, so the hand slides between them.
+ * A short window keeps that; one with height to spare stands the shelf in two
+ * rows, below.
+ */
+@media (max-width: 1279px) {
   .hud-root {
-    --hud-card-col: 72px;
     --hud-card-w: 56px;
-    --hud-shelf-side: 144px;
   }
 
   .hud-cards {
-    justify-content: flex-start;
     overflow-x: auto;
     overscroll-behavior-x: contain;
-    padding-top: var(--hud-gap);
+    padding-top: var(--hud-gap);   /* a card in hand rises inside the sliding row */
     scrollbar-width: none;
+  }
+}
+
+/* -- Tablets and narrow windows -------------------------------------------------
+ * The shelf in two rows: what the room needs and the keys above, and below
+ * them the hand with the whole width, where nine cards fit and none slides.
+ */
+
+@media (min-width: 768px) and (max-width: 1279px) and (min-height: 600px) {
+  .hud-root {
+    --hud-shelf-h: 196px;
+    --hud-shelf-columns: minmax(0, 1fr) auto auto;
+    --hud-shelf-rows: var(--hud-act-h) minmax(0, 1fr);
+    --hud-shelf-areas: "status words act" "cards cards cards";
+  }
+
+  .hud-shelf {
+    row-gap: var(--hud-gap);
+  }
+
+  .hud-shelf__status,
+  .hud-shelf__words,
+  .hud-shelf__act {
+    align-self: center;
+  }
+
+  .hud-cards {
+    overflow: visible;
+    padding-top: 0;
+  }
+}
+
+/* An upright tablet at its narrowest: the hand takes the gutters too. */
+@media (min-width: 768px) and (max-width: 823px) and (min-height: 600px) {
+  .hud-root {
+    --hud-card-col: 84px;
+  }
+
+  .hud-cards {
+    margin-inline: calc(-1 * var(--hud-gutter));
+  }
+}
+
+/*
+ * Under 1024 px the name, the four steps and the view will not stand in one
+ * line, so the steps take a line of their own under the other two. The stage
+ * keeps the bar's whole height dark, whatever it comes to (HudFrame.tsx).
+ */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .hud-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: var(--hud-bar-h) var(--hud-bar-row);
+    grid-template-areas: "plaque view" "steps steps";
+    height: auto;
   }
 }
 
@@ -1073,7 +1151,6 @@ body.hud-dragging-card * {
   }
 
   .hud-cards {
-    justify-content: flex-start;
     margin-inline: calc(-1 * var(--hud-gutter));
     padding: var(--hud-u) var(--hud-gutter) 0;
     overflow-x: auto;

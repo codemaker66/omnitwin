@@ -360,7 +360,7 @@ export function PlannerLabPage(): ReactElement {
         ) : (
           <div className="hud-lab-plaque">
             <span className="hud-lab-plaque__title">The Morrison Wedding</span>
-            <span className="hud-lab-plaque__line">Sat 13 Feb 2027 · Grand Hall · Sample</span>
+            <span className="hud-lab-plaque__line"><span>Sat 13 Feb 2027</span><span>Grand Hall</span><span>Sample</span></span>
           </div>
         )}
         eventGuests={null}

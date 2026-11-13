@@ -518,7 +518,7 @@ describe("GuestEnquiryModal keeps the guest's work", () => {
     expect(await screen.findByText("Keep Rooms will reply to")).toBeTruthy();
   });
 
-  // The planner HUD says a plan is sent from this alone (T-721): putting the form away is not sending it.
+  // The planner HUD says a plan is sent from this alone (T-723): putting the form away is not sending it.
   it("tells its opener when the enquiry has arrived, and not for a form put away or a send that failed", async () => {
     const onSubmitted = vi.fn();
     const onClose = vi.fn();

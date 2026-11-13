@@ -411,6 +411,49 @@ describe("the stage's hold on the camera", () => {
     expect(useHallViewStore.getState().stagePoses).toBeNull();
   });
 
+  it("stands in the rig's own Room view when the canvas can no longer hold the stage, and takes the stage again when it can", () => {
+    const view = render(<HallStage />);
+    const { camera, controls } = scene();
+    expect(useHallViewStore.getState().stagePhase).toBe("held");
+    // A tablet turned upright.
+    scene().size = { width: 820, height: 984 };
+    view.rerender(<HallStage />);
+    expect(useHallViewStore.getState().stagePhase).toBe("off");
+    expectAt(camera.position, HALL_VIEW_POSES.room.position);
+    expectAt(controls.target, HALL_VIEW_POSES.room.target);
+    expect(camera.fov).toBe(55);
+    expect(lensShift(camera)).toEqual({ x: 0, y: 0 });
+    expect(controls.maxPolarAngle).toBe(MAX_POLAR_ANGLE);
+    // Room is still the view: nobody took hold of the camera.
+    expect(useHallViewStore.getState().activePreset).toBe("room");
+    // And turned back: the stage, level, at the next frame.
+    scene().size = { width: WIDTH, height: HEIGHT };
+    view.rerender(<HallStage />);
+    frame();
+    expect(useHallViewStore.getState().stagePhase).toBe("held");
+    expectAt(camera.position, stage().position);
+    expect(pitch(camera)).toBeCloseTo(0, 6);
+  });
+
+  it("leaves a camera a hand has moved where it is when the canvas can hold a stage again", () => {
+    const view = render(<HallStage />);
+    const { camera, controls, gl } = scene();
+    scene().size = { width: 820, height: 984 };
+    view.rerender(<HallStage />);
+    // On the upright canvas a hand takes the camera somewhere of its own.
+    act(() => { gl.domElement.dispatchEvent(new WheelEvent("wheel", { bubbles: true })); });
+    camera.position.set(3, 9, 14);
+    controls.target.set(1, 0, -2);
+    controls.update();
+    const left = camera.position.clone();
+    scene().size = { width: WIDTH, height: HEIGHT };
+    view.rerender(<HallStage />);
+    frame();
+    expect(useHallViewStore.getState().stagePhase).toBe("off");
+    expect(useHallViewStore.getState().activePreset).toBeNull();
+    expectAt(camera.position, [left.x, left.y, left.z]);
+  });
+
   it("hands back an ordinary orbit and the plain lens when the screen that asked for it leaves", () => {
     const view = render(<HallStage />);
     const { camera, controls } = scene();

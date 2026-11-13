@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { setPlannerChromeFeatures, type PlannerFeatureOverrides } from "../../lib/planner-features.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { usePlannerHudStore } from "../../stores/planner-hud-store.js";
@@ -53,7 +53,8 @@ export interface HudFrameProps {
 /**
  * The hall is shown as a stage under the HUD (grand-hall/hall-stage.ts), and
  * keeps the top bar's height of the canvas dark above its walls for the bar's
- * words: --hud-bar-h in hud.css.
+ * words. This is the bar's one line (--hud-bar-h in hud.css), asked for before
+ * anything is on the page; once it is, the bar says its own height (HudRoot).
  */
 const HUD_STAGE = { skyPx: 48 } as const;
 
@@ -68,7 +69,9 @@ export function HudFrame({ room, plaque, eventGuests, sheets }: HudFrameProps): 
   });
   useEffect(() => {
     setPlannerChromeFeatures(HUD_FEATURES);
-    useHallViewStore.getState().setStage(HUD_STAGE);
+    // Only where none is asked for (after this effect's own clean-up, which React runs once in development): the bar has
+    // measured itself by now, and its own height stands.
+    if (useHallViewStore.getState().stage === null) useHallViewStore.getState().setStage(HUD_STAGE);
     return () => {
       setPlannerChromeFeatures({});
       useHallViewStore.getState().setStage(null);
@@ -89,10 +92,27 @@ function HudRoot({ room, plaque, sheets }: Omit<HudFrameProps, "eventGuests">): 
   const firstOpen = useFirstOpenShowing();
   // Held on the stage, the top bar's words stand on the night above the walls; otherwise on a scrim (hud.css).
   const stagePhase = useHallViewStore((state) => state.stagePhase);
+  // The stage keeps as much of the canvas dark as the bar is tall, and the bar is as tall as the stylesheet makes it:
+  // one line on a wide screen, two where the steps take a line of their own, more under a phone's notch. So the bar
+  // says its height here, and no second copy of it is kept.
+  const barRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (bar === null) return undefined;
+    const say = (): void => {
+      const height = Math.round(bar.getBoundingClientRect().height);
+      if (height > 0) useHallViewStore.getState().setStage({ skyPx: height });
+    };
+    say();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const watch = new ResizeObserver(say);
+    watch.observe(bar);
+    return () => { watch.disconnect(); };
+  }, []);
   return (
     <div className="hud-root" data-stage={stagePhase} data-first-open={firstOpen ? "true" : undefined} data-testid="planner-hud">
       <main id="main-content" className="hud-room" aria-label="The room">{room}</main>
-      <div className="hud-bar">
+      <div ref={barRef} className="hud-bar">
         <div className="hud-bar__plaque">{plaque}</div>
         <Journey />
         <ViewStation />

@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { StrictMode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCatalogueItem } from "../../../lib/catalogue.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../../lib/door-clear-spaces.js";
 import { doorBlockers } from "../../../lib/keep-doors-clear.js";
@@ -10,6 +11,7 @@ import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useDoorClearSpaceStore } from "../../../stores/door-clear-space-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
+import { useHallViewStore } from "../../../stores/hall-view-store.js";
 import { usePlacementNoticeStore } from "../../../stores/placement-notice-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
@@ -164,7 +166,43 @@ afterEach(() => {
   setPlannerChromeFeatures({});
 });
 
+/** The test page lays nothing out, so every measure is nought: stand in the top bar's height, and leave the rest. */
+function measureBarAs(height: number): () => void {
+  const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function measured(this: HTMLElement): DOMRect {
+    const tall = this.classList.contains("hud-bar") ? height : 0;
+    return { x: 0, y: 0, width: 0, height: tall, top: 0, right: 0, bottom: tall, left: 0, toJSON: () => ({}) };
+  });
+  return () => { measure.mockRestore(); };
+}
+
 describe("the frame", () => {
+  it("asks for the hall as a stage with the bar's one line kept dark, and takes the request back as it leaves", () => {
+    renderHud();
+    expect(useHallViewStore.getState().stage).toEqual({ skyPx: 48 });
+    cleanup();
+    expect(useHallViewStore.getState().stage).toBeNull();
+  });
+
+  it("tells the stage how tall the top bar is, where its steps have a line of their own", () => {
+    const restore = measureBarAs(88);
+    try {
+      renderHud();
+      expect(useHallViewStore.getState().stage).toEqual({ skyPx: 88 });
+    } finally {
+      restore();
+    }
+  });
+
+  it("keeps the bar's own height where React runs every effect twice (development's strict mode)", () => {
+    const restore = measureBarAs(88);
+    try {
+      render(<StrictMode><HudFrame room={null} plaque={<p>The plaque</p>} eventGuests={null} sheets={<HudSheets />} /></StrictMode>);
+      expect(useHallViewStore.getState().stage).toEqual({ skyPx: 88 });
+    } finally {
+      restore();
+    }
+  });
+
   it("turns the card switches on while it is on screen and off again when it leaves", () => {
     const names = ["setupCards", "seatsOnTheCard", "tableSets", "tableNumbers", "editingKeys", "fillKeepOuts"] as const;
     for (const name of names) expect(plannerFeatureEnabled(name), `${name} before`).toBe(false);
@@ -590,6 +628,31 @@ describe("the journey and its sheets", () => {
     expect(document.activeElement).toBe(within(sheet).getByRole("heading", { name: "Your event" }));
     press("Escape");
     await waitFor(() => { expect(document.activeElement).toBe(step); });
+  });
+
+  it("hands the keyboard in and back the same way where React runs every effect twice (development's strict mode)", async () => {
+    render(<StrictMode><HudFrame room={null} plaque={<p>The plaque</p>} eventGuests={null} sheets={<HudSheets />} /></StrictMode>);
+    const step = stepKey("event");
+    step.focus();
+    fireEvent.click(step);
+    const title = within(screen.getByRole("dialog", { name: "Your event" })).getByRole("heading", { name: "Your event" });
+    // The first run's clean-up asks for focus to go back a moment later: let that moment pass before looking.
+    await act(async () => { await Promise.resolve(); });
+    expect(document.activeElement).toBe(title);
+    press("Escape");
+    await waitFor(() => { expect(document.activeElement).toBe(step); });
+  });
+
+  it("leaves the keyboard on the new sheet's title when a sheet is replaced from inside itself", async () => {
+    renderHud();
+    const step = stepKey("event");
+    step.focus();
+    fireEvent.click(step);
+    // Focus is inside the first sheet (on its title) when another takes its place.
+    act(() => { usePlannerHudStore.getState().openSheet("finishing"); });
+    const title = within(screen.getByRole("dialog", { name: "Finishing touches" })).getByRole("heading", { name: "Finishing touches" });
+    await act(async () => { await Promise.resolve(); });
+    expect(document.activeElement).toBe(title);
   });
 
   it("leaves focus where it is when a sheet is shut from outside it", () => {

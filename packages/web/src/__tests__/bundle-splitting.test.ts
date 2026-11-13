@@ -358,7 +358,7 @@ describe("the planner's device drafts stay off the app root (T-671)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The planner HUD stays behind its flag (T-721)
+// The planner HUD stays behind its flag (T-723)
 //
 // The HUD is one of three chromes, shown only for `?chrome=hud` until it is
 // made the default. A planner that does not ask for it must download none of
@@ -369,7 +369,7 @@ describe("the planner's device drafts stay off the app root (T-671)", () => {
 // PlannerScene. A static import of any of them from anywhere else fails here.
 // ---------------------------------------------------------------------------
 
-describe("the planner HUD stays behind its flag (T-721)", () => {
+describe("the planner HUD stays behind its flag (T-723)", () => {
   /** The HUD's own modules, as paths from src/ with their .js ending. */
   const HUD_ONLY: readonly RegExp[] = [
     /^components\/planner-hud\//,

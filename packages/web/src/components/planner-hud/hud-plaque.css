@@ -52,6 +52,11 @@ body:has(.hud-root) .pc-tooltip {
   --vv-focus-ring-offset: 2px;
 }
 
+/* In the top bar a ring is drawn inside its key (hud.css): the screen's edge would cut one drawn outside. */
+.hud-root .hud-bar :is(.pc-root, .pc-lacquer) {
+  --vv-focus-ring-offset: -2px;
+}
+
 /* -- The plaque in the bar ----------------------------------------------------- */
 
 .hud-root .hud-plaque {
@@ -129,21 +134,44 @@ body:has(.hud-root) .pc-tooltip {
   text-overflow: ellipsis;
 }
 
+/*
+ * The line gives way a whole item at a time from its end, never part of a
+ * word: it is one line high and wraps, so what does not fit falls to a second
+ * line that is not shown, and each item brings its own dot with it. The empty
+ * first item lets even the first real one go that way.
+ */
 .hud-root .pc-slate__line {
   flex: 0 100 auto;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 0 var(--hud-gap);
   min-width: 0;
+  height: var(--hud-m-lh);
   margin: 0;
   overflow: hidden;
 }
 
+/* A space of no width, not nothing: the line's baseline is its first item's, and an empty box has none of its own. */
 .hud-root .pc-slate__line::before {
+  margin-inline-end: calc(-1 * var(--hud-gap));
+  content: "\200B";
+}
+
+.hud-root .pc-slate__line > ::before {
+  display: inline-block;
+  margin-inline-end: var(--hud-gap);
+  color: var(--hud-ink-2);
+  font-weight: var(--hud-regular);
+  text-decoration: none;
   content: "·";
 }
 
 .hud-root .pc-slate__save {
   gap: var(--hud-u);
+}
+
+/* Its dot stands as far from its words as any other item's: the gap above is already between them. */
+.hud-root .pc-slate__save::before {
+  margin-inline-end: calc(var(--hud-gap) - var(--hud-u));
 }
 
 .hud-root .pc-slate__status {
@@ -269,11 +297,23 @@ body:has(.hud-root) .pc-slate-menu .pc-meta {
   line-height: var(--hud-xl-lh);
 }
 
+/* As the plaque's own line: whole items from its end, never part of a word. */
 .hud-lab-plaque__line {
+  display: flex;
+  flex-wrap: wrap;
   min-width: 0;
+  height: var(--hud-m-lh);
   overflow: hidden;
   color: var(--hud-ink-2);
-  text-overflow: ellipsis;
+}
+
+.hud-lab-plaque__line::before {
+  content: "\200B";
+}
+
+.hud-lab-plaque__line > span + span::before {
+  margin-inline: var(--hud-gap);
+  content: "·";
 }
 
 /* -- Phones: the name alone ------------------------------------------------------- */

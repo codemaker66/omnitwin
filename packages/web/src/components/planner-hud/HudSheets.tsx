@@ -49,16 +49,27 @@ function close(): void {
  */
 function SheetTitle({ children }: { readonly children: ReactNode }): ReactElement {
   const titleRef = useRef<HTMLHeadingElement>(null);
+  // What had the keyboard when the sheet opened. Kept in a ref: where React runs this effect twice (development's strict
+  // mode), the second run finds focus already on the title, and must not take the title for what opened the sheet.
+  const openerRef = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
     const title = titleRef.current;
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const sheet = title?.closest(".hud-sheet") ?? null;
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && focused !== document.body && sheet?.contains(focused) !== true) openerRef.current = focused;
     title?.focus({ preventScroll: true });
     return () => {
       // Read before the sheet leaves the page: this runs while its title is still in it.
-      const sheet = title?.closest(".hud-sheet") ?? null;
+      const opener = openerRef.current;
       if (sheet === null || opener === null || !sheet.contains(document.activeElement)) return;
       // Given back once the screen has settled: the opener may be the primary key, which stands aside while its own sheet is open.
-      queueMicrotask(() => { if (opener.isConnected) opener.focus({ preventScroll: true }); });
+      queueMicrotask(() => {
+        // Only where shutting the sheet left the keyboard nowhere. Not where the sheet is still up (the effect's second
+        // run, above) or where another sheet has opened in its place and taken the keyboard to its own title.
+        const now = document.activeElement;
+        if (now instanceof HTMLElement && now !== document.body && now.isConnected) return;
+        if (opener.isConnected) opener.focus({ preventScroll: true });
+      });
     };
   }, []);
   return <h2 ref={titleRef} className="hud-sheet__title" id={TITLE_ID} tabIndex={-1}>{children}</h2>;

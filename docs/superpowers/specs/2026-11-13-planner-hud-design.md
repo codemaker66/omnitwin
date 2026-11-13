@@ -48,10 +48,13 @@ touching it answers at once and in proportion; and it could not be taken away wi
   camera tilts at the middle of the floor through the lens that keeps the picture's top and bottom). Room glides
   back and the camera squares itself up over a third of a second. Plan fills the same picture from above through
   a long lens. Walk is seen through the planner's plain lens.
-- A canvas that is not wide (a phone held upright) gets no stage yet: the ordinary orbit.
+- A canvas that is not wide (a phone or a tablet held upright) gets no stage yet: the ordinary orbit. A canvas
+  that stops being wide while the stage is held hands the camera to the planner's own opening view, which is made
+  for any canvas; when it can hold a stage again the stage is taken back, unless a hand has moved the camera.
 
 A screen asks for the stage through `hall-view-store` (`setStage({ skyPx })`); nothing changes for one that does
-not.
+not. `skyPx` is how much of the canvas's top stays dark for the screen's words. The HUD's bar measures itself and
+says so (`HudFrame.tsx`), so its height is written in one place, the stylesheet.
 
 ## The interface: words on the night, and one shelf
 
@@ -70,6 +73,21 @@ not.
 - A step's sheet and the first screen ("What are you planning?") are the shelf grown upward, at most 60 % of the
   height.
 - Each fact is said once. There is no seals column and no side panel.
+
+Widths (the media rules at the foot of `hud.css`). Two things never give: a card's column is never narrower than
+its caption (84 px), and the shelf's side columns are never narrower than their words (192 px). What gives is the
+arrangement:
+
+- **1280 px and wider:** the shelf is one row, the hand between the status and the primary key; the bar is one
+  line with the steps at its centre.
+- **768 to 1279 px:** nine columns will not fit between the side columns, so the shelf stands in two rows (the
+  status, the quiet words and the primary key above; the hand below, across the whole width) where the window is
+  at least 600 px high. In a shorter window it stays one row and the hand slides.
+- **Under 1024 px:** the name, the four steps and the view will not stand in one line, so the steps take a line of
+  their own under the other two.
+- **Under 768 px:** a phone's two bars: the name, the step you are on and the "more" glyph above; the status, a
+  sliding hand and a full-width primary key below.
+- The plaque's line (the day, the room, the save state) gives way a whole item at a time, never part of a word.
 
 Measures (tokens at the top of `hud.css`): a 4 px grid; one sans in two weights at 11, 13, 16 and 20 px; square
 corners, circles only for round glyph keys; 1 px lines and a 2 px chosen outline; no shadow, glow, blur or
@@ -119,7 +137,10 @@ door with something standing in its space. See `docs/engineering/planner-honest-
 
 ## Not built yet
 
-- The stage on an upright phone (down the hall's length, facing the fireplace).
+- The stage on an upright phone or tablet (down the hall's length, facing the fireplace). Today an upright canvas
+  opens on the planner's ordinary upright view, inside the hall.
+- A short wide window (a phone on its side): it keeps the one-row shelf with a sliding hand under a two-line bar,
+  and has not been designed.
 - Where the doors are: the door wall is the missing one, so the door spaces should show on the floor while a card
   is in hand.
 - The card photographs as one matching set in 2:3 (today's are the square studio renders).

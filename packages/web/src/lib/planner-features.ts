@@ -86,9 +86,9 @@ export const PLANNER_FEATURE_SPECS = {
    * its nearest neighbour and the reason a clearance fails. The planner HUD turns
    * them off, because its shelf says each of them once.
    */
-  roomCallouts: { lane: "hud", item: "T-721", on: true },
+  roomCallouts: { lane: "hud", item: "T-723", on: true },
   /** A thin line on the floor round what is chosen (lib/chosen-mark.ts): the planner HUD's mark, in the plate's place. */
-  chosenMark: { lane: "hud", item: "T-721", on: false },
+  chosenMark: { lane: "hud", item: "T-723", on: false },
 } as const satisfies Readonly<Record<string, PlannerFeatureSpec>>;
 
 export type PlannerFeature = keyof typeof PLANNER_FEATURE_SPECS;
