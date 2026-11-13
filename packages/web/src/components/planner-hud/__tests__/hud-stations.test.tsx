@@ -1,11 +1,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getCatalogueItem } from "../../../lib/catalogue.js";
+import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../../lib/door-clear-spaces.js";
+import { doorBlockers } from "../../../lib/keep-doors-clear.js";
 import { resetPlacedIdCounter, type PlacedItem } from "../../../lib/placement.js";
 import { plannerFeatureEnabled, setPlannerChromeFeatures, setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 import { cardParamsFor, stampSetup, type CardId, type CardParamsRequest } from "../../../lib/setup-cards.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useDoorClearSpaceStore } from "../../../stores/door-clear-space-store.js";
+import { usePlacementNoticeStore } from "../../../stores/placement-notice-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { usePlannerHudStore } from "../../../stores/planner-hud-store.js";
@@ -14,10 +18,11 @@ import { HudFrame } from "../HudFrame.js";
 import { HudSheets } from "../HudSheets.js";
 
 // ---------------------------------------------------------------------------
-// The HUD's stations over the real stores (design spec, "The stations"): the
-// hand, the seat line, the seals, the journey and its sheets, and the piece
-// card. Nothing here mocks a store; the keys are pressed as a browser sends
-// them, to the one listener on the window (lib/planner-keys.ts).
+// The HUD over the real stores (DOCTRINE.md, "letterbox"): the top bar's
+// steps, the shelf's seat line and status line, the hand, the one primary
+// key, the chosen piece's verbs, the sheets and the first screen. Nothing here
+// mocks a store; the keys are pressed as a browser sends them, to the one
+// listener on the window (lib/planner-keys.ts).
 // ---------------------------------------------------------------------------
 
 let sequence = 0;
@@ -45,12 +50,28 @@ function rounds(count: number, seats = 10, colourway: "white" | "bare" = "white"
   return pieces;
 }
 
+/** A round of ten standing in the middle of the Grand Hall's first recorded door. */
+function roundInADoor(): readonly PlacedItem[] {
+  const door = GRAND_HALL_DOOR_CLEAR_SPACES[0];
+  if (door === undefined) throw new Error("the Grand Hall has recorded doors");
+  return stamp("round", (door.rect.minX + door.rect.maxX) / 2, (door.rect.minZ + door.rect.maxZ) / 2);
+}
+
+/** Two rounds a hand's breadth apart: the narrowest aisle wants a look. */
+function twoRoundsClose(): readonly PlacedItem[] {
+  return [...stamp("round", 0, 0), ...stamp("round", 2.3, 0)];
+}
+
 function setPlaced(items: readonly PlacedItem[]): void {
   act(() => { usePlacementStore.setState({ placedItems: items }); });
 }
 
 function setGuests(count: number | null): void {
   act(() => { useCockpitStore.getState().setPlannedGuestCount(count); });
+}
+
+function recordDoors(): void {
+  act(() => { useDoorClearSpaceStore.getState().setRoomSpaces(GRAND_HALL_DOOR_CLEAR_SPACES); });
 }
 
 function placed(): readonly PlacedItem[] {
@@ -88,31 +109,43 @@ function handIds(): readonly string[] {
   return Array.from(document.querySelectorAll<HTMLElement>("[data-card]"), (card) => card.dataset["card"] ?? "");
 }
 
-function sealKey(id: string): HTMLElement {
-  const found = document.querySelector<HTMLElement>(`[data-seal="${id}"]`);
-  if (found === null) throw new Error(`no ${id} seal`);
-  return found;
-}
-
 function stepKey(id: string): HTMLElement {
   const found = document.querySelector<HTMLElement>(`[data-step="${id}"]`);
   if (found === null) throw new Error(`no ${id} step`);
   return found;
 }
 
-/** The seat line, the hand's one status line. */
-function seatLine(): HTMLElement {
-  return within(screen.getByRole("region", { name: "Furniture and the next steps" })).getByRole("status");
+/** The shelf: the one surface under the room. */
+function shelf(): HTMLElement {
+  return screen.getByRole("region", { name: "Furniture and the next steps" });
+}
+
+/** The shelf's one status line. */
+function statusLine(): HTMLElement {
+  return within(shelf()).getByRole("status", { name: "The room as it stands" });
+}
+
+/** The one primary key, whatever it says now. */
+function primaryKey(): HTMLElement {
+  const found = shelf().querySelector<HTMLElement>(".hud-shelf__act .hud-act");
+  if (found === null) throw new Error("no primary key on the shelf");
+  return found;
 }
 
 function armed(): string | null {
   return useCatalogueStore.getState().armedCardId;
 }
 
+function chosenIds(): readonly string[] {
+  return [...useSelectionStore.getState().selectedIds];
+}
+
 beforeEach(() => {
   sequence = 0;
   resetPlacedIdCounter();
   usePlacementStore.setState({ placedItems: [], ghostPosition: null });
+  // The first screen is asked for in its own tests below; elsewhere it has been answered.
+  usePlannerHudStore.setState({ firstOpenDone: true });
 });
 
 afterEach(() => {
@@ -121,6 +154,8 @@ afterEach(() => {
   useCatalogueStore.getState().clearSelection();
   useSelectionStore.getState().clearSelection();
   useCockpitStore.getState().setPlannedGuestCount(null);
+  useDoorClearSpaceStore.getState().setRoomSpaces(null);
+  usePlacementNoticeStore.getState().dismiss();
   usePlannerHudStore.getState().reset();
   usePlannerEventStore.getState().setEventKind(null);
   setPlannerFeaturesForTesting(null);
@@ -137,22 +172,32 @@ describe("the frame", () => {
     for (const name of names) expect(plannerFeatureEnabled(name), `${name} after`).toBe(false);
   });
 
-  it("holds the room as its main landmark and the plaque in its own place", () => {
+  it("holds the room as its main landmark, and the plaque at the top bar's left", () => {
     render(<HudFrame room={<div data-testid="the-room" />} plaque={<p>The plaque</p>} eventGuests={null} />);
     expect(screen.getByRole("main").contains(screen.getByTestId("the-room"))).toBe(true);
-    expect(document.querySelector(".hud-station--plaque")?.textContent).toBe("The plaque");
+    expect(document.querySelector(".hud-bar .hud-bar__plaque")?.textContent).toBe("The plaque");
+  });
+
+  it("is two bars over the room: no column of seals and no side panel", () => {
+    renderHud();
+    const layers = Array.from(screen.getByTestId("planner-hud").children, (child) => child.className);
+    expect(layers).toEqual(["hud-room", "hud-bar", "hud-shelf"]);
+    expect(document.querySelector("[data-seal]")).toBeNull();
+    expect(screen.queryByRole("complementary", { name: "Your room" })).toBeNull();
   });
 });
 
 describe("the hand's cards", () => {
-  it("deals eight cards, then More and Send to Events Team, with Lay out, Undo and Redo beside them", () => {
+  it("deals eight cards and More, with Lay out for me, Undo and Redo beside them, and one primary key", () => {
     renderHud();
     expect(handIds()).toHaveLength(8);
     expect(screen.getByRole("button", { name: "More furniture" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Send to Events Team" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Lay out for me" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Redo" })).toBeTruthy();
+    // The separate Send key is gone: the one primary key says the next move, whatever it is.
+    expect(screen.queryByRole("button", { name: "Send to Events Team" })).toBeNull();
+    expect(shelf().querySelectorAll(".hud-act:not([hidden])")).toHaveLength(1);
   });
 
   it("takes a card on a click, and puts it back on a second click", () => {
@@ -163,12 +208,12 @@ describe("the hand's cards", () => {
     fireEvent.click(round);
     expect(armed()).toBe("round");
     expect(round.getAttribute("aria-pressed")).toBe("true");
-    expect(document.querySelector(".hud-hand")?.getAttribute("data-in-hand")).toBe("true");
+    expect(shelf().getAttribute("data-in-hand")).toBe("true");
 
     fireEvent.click(round);
     expect(armed()).toBeNull();
     expect(round.getAttribute("aria-pressed")).toBe("false");
-    expect(document.querySelector(".hud-hand")?.getAttribute("data-in-hand")).toBeNull();
+    expect(shelf().getAttribute("data-in-hand")).toBeNull();
   });
 
   it("hands over to another card when a second is taken, one in hand at a time", () => {
@@ -201,10 +246,11 @@ describe("the hand's cards", () => {
     expect(usePlannerHudStore.getState().sheet).toBeNull();
   });
 
-  it("counts what is in the room on the card that sets it down", () => {
+  it("counts what is in the room beside the name on the card that sets it down", () => {
     renderHud();
     setPlaced(rounds(2));
-    expect(within(cardKey("round")).getByText("×2")).toBeTruthy();
+    const count = within(cardKey("round")).getByText("×2");
+    expect(count.closest(".hud-card__name")?.textContent).toBe("Round of 10 ×2");
     expect(cardKey("round").getAttribute("aria-label")).toMatch(/, 2 in the room$/u);
   });
 });
@@ -276,138 +322,172 @@ describe("the digit keys", () => {
   });
 });
 
-describe("the seat line", () => {
+describe("the status line", () => {
   it("counts the seats placed when no guest count is known", () => {
     renderHud();
     setPlaced(rounds(1));
-    expect(seatLine().textContent).toContain("10 seats placed");
+    expect(statusLine().textContent).toContain("10 seats placed");
   });
 
-  it('reads "N of M seated" once a guest count is set and a round is stamped', () => {
+  it('reads "N of M seated" once a guest count is set and a round is stamped, and says it once', () => {
     renderHud();
     setGuests(120);
     setPlaced(rounds(3));
-    const line = seatLine();
+    const line = statusLine();
     expect(line.textContent).toContain("30 of 120 seated");
-    expect(line.textContent).toContain("90 to go");
+    // Derived restatements are gone: the shelf's edge carries how far there is to go.
+    expect(line.textContent).not.toContain("to go");
     expect(line.textContent).not.toContain("seats placed");
   });
 
-  it("says every guest is seated when the seats cover the count", () => {
+  it("reads N of N when every guest has a seat", () => {
     renderHud();
     setGuests(30);
     setPlaced(rounds(3));
-    const line = seatLine();
-    expect(line.textContent).toContain("30 of 30 seated");
-    expect(line.textContent).toContain("Every guest seated");
+    expect(statusLine().textContent).toContain("30 of 30 seated");
   });
 
   it("takes the linked event's guest count, and a count given in the planner comes first", () => {
     renderHud({ eventGuests: 40 });
     setPlaced(rounds(2));
-    expect(seatLine().textContent).toContain("20 of 40 seated");
+    expect(statusLine().textContent).toContain("20 of 40 seated");
     setGuests(60);
-    expect(seatLine().textContent).toContain("20 of 60 seated");
+    expect(statusLine().textContent).toContain("20 of 60 seated");
   });
 
   it("updates as seats are added and taken away", () => {
     renderHud();
     setGuests(120);
     setPlaced(rounds(1));
-    expect(seatLine().textContent).toContain("10 of 120 seated");
+    expect(statusLine().textContent).toContain("10 of 120 seated");
     setPlaced(rounds(2));
-    expect(seatLine().textContent).toContain("20 of 120 seated");
+    expect(statusLine().textContent).toContain("20 of 120 seated");
     setPlaced([]);
-    expect(seatLine().textContent).toContain("0 of 120 seated");
+    expect(statusLine().textContent).toContain("0 of 120 seated");
+  });
+
+  it("says the doors are clear once the room's doors are recorded, and nothing of them before", () => {
+    renderHud();
+    setPlaced(rounds(1));
+    expect(statusLine().textContent).not.toContain("Doors");
+    recordDoors();
+    expect(statusLine().textContent).toContain("Doors clear");
+    expect(within(statusLine()).queryByRole("button")).toBeNull();
+  });
+
+  it("makes a blocked door something to look at, and a press chooses the table in front of it", () => {
+    renderHud();
+    recordDoors();
+    setGuests(10);
+    setPlaced(roundInADoor());
+    const door = within(statusLine()).getByRole("button", { name: /^1 door blocked\. .+ is in front of/u });
+    expect(door.textContent).toBe("1 door blocked");
+    fireEvent.click(door);
+    const table = tables()[0];
+    expect(table).toBeDefined();
+    expect(chosenIds()).toContain(table?.id);
+    // The cards give way to its verbs, and its name takes the seats' place.
+    expect(document.querySelector(".hud-piece")).not.toBeNull();
+    expect(within(statusLine()).getByRole("heading", { name: /Round of 10/u })).toBeTruthy();
+  });
+
+  it("makes a tight aisle something to look at, and a press chooses the two pieces", () => {
+    renderHud();
+    setGuests(20);
+    setPlaced(twoRoundsClose());
+    const aisle = within(statusLine()).getByRole("button", { name: /^Narrowest aisle \d+\.\d m\. The narrowest gap is/u });
+    fireEvent.click(aisle);
+    expect(chosenIds()).toHaveLength(2);
+    expect(tables().every((table) => chosenIds().includes(table.id))).toBe(true);
+  });
+
+  it("gives a receipt its place while it shows, with Undo, and takes the place back when it clears", () => {
+    renderHud();
+    setGuests(120);
+    act(() => { usePlacementNoticeStore.getState().post("Laid 12 tables of ten", { undo: true }); });
+    const region = screen.getByTestId("hud-notice-region");
+    expect(shelf().contains(region)).toBe(true);
+    expect(within(region).getByText("Laid 12 tables of ten")).toBeTruthy();
+    expect(within(region).getByRole("button", { name: "Undo" })).toBeTruthy();
+    expect(within(shelf()).queryByRole("status", { name: "The room as it stands" })).toBeNull();
+
+    act(() => { usePlacementNoticeStore.getState().dismiss(); });
+    expect(within(region).queryByText("Laid 12 tables of ten")).toBeNull();
+    expect(statusLine().textContent).toContain("0 of 120 seated");
   });
 });
 
-describe("the seals", () => {
-  it("lists the wedding's three seals after the room's own", () => {
+describe("the one primary key", () => {
+  it("asks how many guests while no count is known, opens Your event, and steps aside while it is open", () => {
     renderHud();
-    const ids = Array.from(document.querySelectorAll<HTMLElement>("[data-seal]"), (seal) => seal.dataset["seal"]);
-    expect(ids).toContain("seats");
-    expect(ids).toContain("aisles");
-    expect(ids.slice(-3)).toEqual(["top-table", "dance-floor", "bar"]);
-  });
-
-  it("lists the conference's own three for a corporate event", () => {
-    renderHud();
-    act(() => { usePlannerEventStore.getState().setEventKind("corporate"); });
-    const ids = Array.from(document.querySelectorAll<HTMLElement>("[data-seal]"), (seal) => seal.dataset["seal"]);
-    expect(ids.slice(-3)).toEqual(["stage", "lectern", "screen"]);
-  });
-
-  it.each([
-    ["top-table", "top-table"],
-    ["dance-floor", "dance-floor"],
-    ["bar", "piece:bar-counter"],
-  ] as const)("gives a waiting %s seal's card to the hand when it is pressed", (seal, card) => {
-    renderHud();
-    expect(sealKey(seal).getAttribute("data-state")).toBe("waiting");
-    fireEvent.click(sealKey(seal));
-    expect(armed()).toBe(card);
-    expect(cardKey(card).getAttribute("aria-pressed")).toBe("true");
-  });
-
-  it("gives a conference's waiting stage seal its stage card", () => {
-    renderHud();
-    act(() => { usePlannerEventStore.getState().setEventKind("corporate"); });
-    fireEvent.click(sealKey("stage"));
-    expect(armed()).toBe("piece:platform");
-  });
-
-  it("closes a sheet when it takes a card", () => {
-    renderHud();
-    act(() => { usePlannerHudStore.getState().openSheet("finishing"); });
-    fireEvent.click(sealKey("dance-floor"));
-    expect(usePlannerHudStore.getState().sheet).toBeNull();
-    expect(armed()).toBe("dance-floor");
-  });
-
-  it("lights a seal once its piece is on the floor, and a lit seal takes no card", () => {
-    renderHud();
-    setPlaced(stamp("top-table", 0, 0));
-    const top = sealKey("top-table");
-    expect(top.getAttribute("data-state")).toBe("lit");
-    fireEvent.click(top);
-    expect(armed()).toBeNull();
-  });
-
-  it("says in a sentence what a seal reads when it is pressed, and again hides it", () => {
-    renderHud();
-    const bar = sealKey("bar");
-    expect(bar.getAttribute("aria-expanded")).toBe("false");
-    fireEvent.click(bar);
-    expect(bar.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText(/Not placed\. Press to take the Bar card\./u)).toBeTruthy();
-    fireEvent.click(sealKey("dance-floor"));
-    expect(bar.getAttribute("aria-expanded")).toBe("false");
-  });
-
-  it("shows the seats ring as N / M and opens Your event while no count is given", () => {
-    renderHud();
-    const seats = sealKey("seats");
-    expect(seats.getAttribute("data-state")).toBe("waiting");
-    fireEvent.click(seats);
+    expect(primaryKey().textContent).toBe("Say how many guests");
+    fireEvent.click(screen.getByRole("button", { name: "Say how many guests" }));
     expect(usePlannerHudStore.getState().sheet).toBe("event");
+    expect(screen.queryByRole("button", { name: "Say how many guests" })).toBeNull();
+  });
 
-    act(() => { usePlannerHudStore.getState().closeSheet(); });
+  it("lays the room out for the guests on an empty floor, through Lay out", () => {
+    renderHud();
     setGuests(120);
-    setPlaced(rounds(3));
-    expect(sealKey("seats").textContent).toContain("30 / 120");
-    expect(sealKey("seats").getAttribute("data-state")).toBe("progress");
-    fireEvent.click(sealKey("seats"));
+    fireEvent.click(screen.getByRole("button", { name: "Lay out the room for 120 guests" }));
     expect(usePlannerHudStore.getState().sheet).toBe("layout");
+  });
+
+  it("asks to seat the guests still without a seat", () => {
+    renderHud();
+    setGuests(50);
+    setPlaced(rounds(2));
+    fireEvent.click(screen.getByRole("button", { name: "Seat 30 more guests" }));
+    expect(usePlannerHudStore.getState().sheet).toBe("layout");
+  });
+
+  it("moves a table clear of the door it stands in front of, in one press", () => {
+    renderHud();
+    recordDoors();
+    setGuests(10);
+    setPlaced(roundInADoor());
+    expect(primaryKey().textContent).toMatch(/^Move .+ clear of the door$/u);
+    fireEvent.click(primaryKey());
+    expect(doorBlockers(placed(), GRAND_HALL_DOOR_CLEAR_SPACES)).toEqual([]);
+    expect(usePlannerHudStore.getState().sheet).toBeNull();
+  });
+
+  it("opens up the narrowest gap by choosing the two pieces either side of it", () => {
+    renderHud();
+    setGuests(20);
+    setPlaced(twoRoundsClose());
+    fireEvent.click(screen.getByRole("button", { name: "Open up the narrowest gap" }));
+    expect(chosenIds()).toHaveLength(2);
+    expect(usePlannerHudStore.getState().sheet).toBeNull();
+  });
+
+  it("sends to the events team once every guest has a seat", () => {
+    renderHud();
+    setGuests(30);
+    setPlaced(rounds(3));
+    expect(primaryKey().getAttribute("data-move")).toBe("send");
+    fireEvent.click(screen.getByRole("button", { name: "Send to the events team" }));
+    expect(screen.getByRole("dialog", { name: "Send to the events team" })).toBeTruthy();
+  });
+
+  it("says, quietly, that the plan has gone, and opens Send again on a press", () => {
+    renderHud();
+    setGuests(30);
+    setPlaced(rounds(3));
+    act(() => { usePlannerHudStore.getState().markSent(); });
+    expect(primaryKey().textContent).toBe("Sent to the events team");
+    expect(primaryKey().getAttribute("data-move")).toBe("sent");
+    fireEvent.click(primaryKey());
+    expect(usePlannerHudStore.getState().sheet).toBe("send");
   });
 });
 
 describe("the journey and its sheets", () => {
-  it("shows four steps with the first current, and names the next move", () => {
+  it("shows four steps with the first current", () => {
     renderHud();
     const steps = Array.from(document.querySelectorAll<HTMLElement>("[data-step]"), (step) => [step.dataset["step"], step.dataset["state"]]);
     expect(steps).toEqual([["event", "current"], ["layout", "ahead"], ["finishing", "ahead"], ["send", "ahead"]]);
-    expect(screen.getByRole("button", { name: /^Next:\s*say how many guests are coming/u })).toBeTruthy();
+    expect(stepKey("event").getAttribute("aria-current")).toBe("step");
   });
 
   it("moves its current step on as the room fills and the tables are dressed", async () => {
@@ -420,20 +500,13 @@ describe("the journey and its sheets", () => {
     expect(stepKey("layout").getAttribute("data-state")).toBe("done");
     expect(stepKey("finishing").getAttribute("data-state")).toBe("current");
     expect(stepKey("send").getAttribute("data-state")).toBe("ahead");
-    // The same tables in their own white cloth. The pieces are the same in number, so the stations
-    // read their new places once the hand rests (hud-facts.tsx), not on the instant.
+    // The same tables in their own white cloth. The pieces are the same in number, so the HUD
+    // reads their new places once the hand rests (hud-facts.tsx), not on the instant.
     setPlaced(rounds(3));
     expect(stepKey("finishing").getAttribute("data-state")).toBe("current");
     await waitFor(() => { expect(stepKey("finishing").getAttribute("data-state")).toBe("done"); });
     expect(stepKey("send").getAttribute("data-state")).toBe("current");
-    expect(screen.getByRole("button", { name: /^Next:\s*send it to the events team/u })).toBeTruthy();
-  });
-
-  it("asks to seat the guests still without a seat", () => {
-    renderHud();
-    setGuests(50);
-    setPlaced(rounds(2));
-    expect(screen.getByRole("button", { name: /^Next:\s*seat 30 more guests/u })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Send to the events team" })).toBeTruthy();
   });
 
   it("opens a step's sheet when it is pressed, and Escape closes it", () => {
@@ -449,6 +522,14 @@ describe("the journey and its sheets", () => {
     expect(usePlannerHudStore.getState().sheet).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(stepKey("event").getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("raises the sheet from the shelf, with the shelf still under it", () => {
+    renderHud();
+    fireEvent.click(stepKey("finishing"));
+    const sheet = screen.getByRole("dialog", { name: "Finishing touches" });
+    expect(shelf().contains(sheet)).toBe(true);
+    expect(handIds()).toHaveLength(8);
   });
 
   it("closes the sheet when the same step is pressed again", () => {
@@ -480,18 +561,14 @@ describe("the journey and its sheets", () => {
     expect(press("Escape").defaultPrevented).toBe(false);
   });
 
-  it("opens Your event from the next-move line while no guest count is known", () => {
-    renderHud();
-    fireEvent.click(screen.getByRole("button", { name: /^Next:/u }));
-    expect(usePlannerHudStore.getState().sheet).toBe("event");
-  });
-
-  it("takes a guest count from the Your event sheet, which the seat line then reads", () => {
+  it("takes a guest count from the Your event sheet, which the status line then reads", () => {
     renderHud();
     fireEvent.click(stepKey("event"));
     fireEvent.change(screen.getByRole("spinbutton", { name: "Guests" }), { target: { value: "80" } });
     expect(useCockpitStore.getState().plannedGuestCount).toBe(80);
-    expect(seatLine().textContent).toContain("0 of 80 seated");
+    expect(statusLine().textContent).toContain("0 of 80 seated");
+    // The count given, the next move is the next step's, and the primary key says it.
+    expect(screen.getByRole("button", { name: "Lay out the room for 80 guests" })).toBeTruthy();
   });
 
   it("sends Lay out for me to Your event until there is a guest count, then to Lay out", () => {
@@ -505,7 +582,7 @@ describe("the journey and its sheets", () => {
   });
 });
 
-describe("the piece card", () => {
+describe("the piece's verbs", () => {
   function chooseTable(): string {
     const table = tables()[0];
     if (table === undefined) throw new Error("no table placed");
@@ -513,26 +590,34 @@ describe("the piece card", () => {
     return table.id;
   }
 
-  it("is not on screen until something is chosen, and leaves when it is let go", () => {
+  it("take the cards' place while something is chosen, and give it back when it is let go", () => {
     renderHud();
     setPlaced(rounds(1, 8));
+    const cards = shelf().querySelector<HTMLElement>(".hud-cards");
     expect(document.querySelector(".hud-piece")).toBeNull();
+    expect(cards?.hidden).toBe(false);
     chooseTable();
     expect(document.querySelector(".hud-piece")).not.toBeNull();
+    expect(cards?.hidden).toBe(true);
     act(() => { useSelectionStore.getState().clearSelection(); });
     expect(document.querySelector(".hud-piece")).toBeNull();
+    expect(cards?.hidden).toBe(false);
   });
 
-  it("names a chosen round by its seats and says how many it has", () => {
+  it("name a chosen round by its seats where the status line's first words were", () => {
     renderHud();
+    setGuests(40);
     setPlaced(rounds(1, 8));
+    expect(statusLine().textContent).toContain("8 of 40 seated");
     chooseTable();
-    expect(screen.getByRole("heading", { name: /Round of 8/u })).toBeTruthy();
+    expect(within(statusLine()).getByRole("heading", { name: /Round of 8/u })).toBeTruthy();
+    expect(statusLine().textContent).not.toContain("seated");
     const stepper = screen.getByRole("group", { name: "Seats at this table" });
     expect(within(stepper).getByText("8 seats")).toBeTruthy();
+    expect(screen.getByRole("region", { name: /Round of 8/u }).contains(stepper)).toBe(true);
   });
 
-  it("adds a seat with its plus key and takes one away with its minus key", () => {
+  it("add a seat with the plus key and take one away with the minus key", () => {
     renderHud();
     setPlaced(rounds(1, 8));
     chooseTable();
@@ -549,18 +634,19 @@ describe("the piece card", () => {
     expect(within(screen.getByRole("group", { name: "Seats at this table" })).getByText("7 seats")).toBeTruthy();
   });
 
-  it("offers no swatches for a table whose cloth is its own", () => {
+  it("offer no cloths for a table whose cloth is its own", () => {
     renderHud();
     setPlaced(rounds(1, 8));
     chooseTable();
     expect(screen.queryByRole("radiogroup", { name: "The cloth on this table" })).toBeNull();
   });
 
-  it("dresses the chosen table from its swatches", () => {
+  it("dress the chosen table from its three cloths", () => {
     renderHud();
     setPlaced(rounds(1, 8, "bare"));
     chooseTable();
     const cloths = screen.getByRole("radiogroup", { name: "The cloth on this table" });
+    expect(within(cloths).getAllByRole("radio")).toHaveLength(3);
     expect(within(cloths).getByRole("radio", { name: "No cloth" }).getAttribute("aria-checked")).toBe("true");
 
     fireEvent.click(within(cloths).getByRole("radio", { name: "Black cloth" }));
@@ -572,7 +658,7 @@ describe("the piece card", () => {
     expect(tables()[0]?.clothed).toBe(false);
   });
 
-  it("puts the chosen table and its chairs back, and goes", () => {
+  it("put the chosen table and its chairs back, and bring the cards back", () => {
     renderHud();
     setPlaced(rounds(2, 8));
     chooseTable();
@@ -580,9 +666,10 @@ describe("the piece card", () => {
     expect(tables()).toHaveLength(1);
     expect(chairs()).toHaveLength(8);
     expect(document.querySelector(".hud-piece")).toBeNull();
+    expect(shelf().querySelector<HTMLElement>(".hud-cards")?.hidden).toBe(false);
   });
 
-  it("copies the chosen table with its chairs and chooses the copy", () => {
+  it("copy the chosen table with its chairs and choose the copy", () => {
     renderHud();
     setPlaced(rounds(1, 8));
     const original = chooseTable();
@@ -590,5 +677,65 @@ describe("the piece card", () => {
     expect(tables()).toHaveLength(2);
     expect(chairs()).toHaveLength(16);
     expect(useSelectionStore.getState().selectedIds.has(original)).toBe(false);
+  });
+
+  it("keep the cards on the shelf while a card is in hand, so the card can be seen", () => {
+    renderHud();
+    setPlaced(rounds(1, 8));
+    chooseTable();
+    press("Digit1");
+    expect(armed()).not.toBeNull();
+    expect(document.querySelector(".hud-piece")).toBeNull();
+    expect(shelf().querySelector<HTMLElement>(".hud-cards")?.hidden).toBe(false);
+  });
+});
+
+describe("the first screen", () => {
+  function ask(): void {
+    act(() => { usePlannerHudStore.setState({ firstOpenDone: false }); });
+  }
+
+  it("asks what you are planning on an empty floor, on the shelf risen, with three photographs", () => {
+    ask();
+    renderHud();
+    const root = screen.getByTestId("planner-hud");
+    expect(root.getAttribute("data-first-open")).toBe("true");
+    const first = screen.getByTestId("hud-first-open");
+    expect(shelf().contains(first)).toBe(true);
+    expect(within(first).getByRole("heading", { name: "What are you planning?" })).toBeTruthy();
+    const answers = within(first).getAllByRole("radio");
+    expect(answers.map((answer) => answer.querySelector(".hud-first-open__name")?.textContent)).toEqual(["Wedding", "Corporate", "Something else"]);
+    expect(answers.every((answer) => answer.querySelector("img") !== null)).toBe(true);
+  });
+
+  it("takes an answer as the kind of day, and opens Your event for the guest count", () => {
+    ask();
+    renderHud();
+    fireEvent.click(screen.getByRole("radio", { name: /Corporate/u }));
+    expect(usePlannerEventStore.getState().eventKind).toBe("corporate");
+    expect(usePlannerHudStore.getState().sheet).toBe("event");
+    expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    expect(screen.getByTestId("planner-hud").getAttribute("data-first-open")).toBeNull();
+  });
+
+  it("is put aside by Start with an empty hall, and is not asked again on this page", () => {
+    ask();
+    renderHud();
+    fireEvent.click(screen.getByRole("button", { name: "Start with an empty hall" }));
+    expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    expect(usePlannerHudStore.getState().firstOpenDone).toBe(true);
+  });
+
+  it("is put aside by Escape", () => {
+    ask();
+    renderHud();
+    expect(press("Escape").defaultPrevented).toBe(true);
+    expect(screen.queryByTestId("hud-first-open")).toBeNull();
+  });
+
+  it("is not asked once the guest count is known", () => {
+    ask();
+    renderHud({ eventGuests: 80 });
+    expect(screen.queryByTestId("hud-first-open")).toBeNull();
   });
 });

@@ -8,13 +8,13 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { usePlannerEventStore } from "../../stores/planner-event-store.js";
 
 // ---------------------------------------------------------------------------
-// The room's facts, read once for every station (the seals, the journey, the
-// hand's seat line).
+// The room's facts, read once for the whole screen (the steps, the shelf's
+// status line and its edge, the cards' counts and the one primary key).
 //
-// A drag replaces the placed pieces on every frame. The stations must not
-// work the doors and the gaps out sixty times a second, so the pieces are
-// taken at once when their number changes (something was set down or put
-// back, and its seal should answer now) and otherwise once the hand rests.
+// A drag replaces the placed pieces on every frame. The HUD must not work the
+// doors and the gaps out sixty times a second, so the pieces are taken at once
+// when their number changes (something was set down or put back, and the line
+// should answer now) and otherwise once the hand rests.
 // ---------------------------------------------------------------------------
 
 /** How long the pieces must rest before the stations read their new places. */

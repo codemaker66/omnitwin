@@ -14,15 +14,16 @@ import "./hud-first-open.css";
 //
 // An empty hall and a full hand ask a newcomer to know where to begin. So the
 // first thing shown, while the floor is empty and nothing is known of the
-// event, is one question with three large answers, each a picture of what it
-// leads to. An answer says what the day is and opens Your event, so the guest
-// count is the next thing asked; the quiet line under them leaves the hall
-// empty for someone who would rather begin with their own hands. Either
+// event, is one question with three large answers, each a photograph of what
+// it leads to. An answer says what the day is and opens Your event, so the
+// guest count is the next thing asked; the quiet words under them leave the
+// hall empty for someone who would rather begin with their own hands. Either
 // way it is not asked again on this page.
 //
-// While it shows, the hand, the seals and the piece card stand aside (the
-// frame's data-first-open, hud-first-open.css): the plaque, the journey and
-// the view stay, so the screen still says where you are and what follows.
+// It is the shelf, risen (DOCTRINE.md, "Sheets are the shelf, grown"): the
+// same surface over the shelf's own contents, which stand aside while it
+// shows (the frame's data-first-open, hud-first-open.css). The top bar stays,
+// so the screen still says where you are and what follows.
 // ---------------------------------------------------------------------------
 
 const TITLE_ID = "hud-first-open-title";
@@ -31,7 +32,7 @@ interface FirstAnswer {
   readonly kind: PlannerEventKind;
   readonly name: string;
   readonly line: string;
-  /** A rendered preview of what this kind of day is built from, on the skin's mat. */
+  /** A rendered photograph of what this kind of day is built from, on its seamless ground. */
   readonly art: string;
 }
 
@@ -102,7 +103,7 @@ export function FirstOpen(): ReactElement {
             </button>
           ))}
         </div>
-        <button type="button" className="hud-first-open__aside" onClick={putAside}>
+        <button type="button" className="hud-word hud-first-open__aside" onClick={putAside}>
           Start with an empty hall
         </button>
       </section>

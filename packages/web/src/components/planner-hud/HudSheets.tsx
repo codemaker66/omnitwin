@@ -27,10 +27,11 @@ import { useHudFacts } from "./hud-facts.js";
 import { CloseGlyph, MinusGlyph, PlusGlyph } from "./glyphs.js";
 
 // ---------------------------------------------------------------------------
-// The sheets: what each step of the journey opens (design spec, "Sheets").
-// One is open at a time, under the journey, over the room's far wall, so the
-// floor and the hand stay in reach. Escape, the step again or the close key
-// shuts it.
+// The sheets: what each step of the journey opens (DOCTRINE.md, "Sheets are
+// the shelf, grown"). A sheet is the shelf rising, to at most 60 % of the
+// screen: the same surface, with the status line, the cards and the one
+// primary key still under it, so the hand stays in reach. One is open at a
+// time. Escape, the step again or the close glyph shuts it.
 // ---------------------------------------------------------------------------
 
 const TITLE_ID = "hud-sheet-title";
@@ -76,9 +77,9 @@ function EventSheet(): ReactElement {
         ))}
       </div>
       <div className="hud-sheet__section">
-        <h3 className="hud-sheet__heading">How many guests?</h3>
+        <h3 className="hud-sheet__heading">Guests</h3>
         <div className="hud-sheet__row">
-          <button type="button" className="hud-stepper__key" aria-label={`${String(GUEST_STEP)} fewer guests`} onClick={() => { setGuests((guests ?? 0) - GUEST_STEP); }}>
+          <button type="button" className="hud-round" aria-label={`${String(GUEST_STEP)} fewer guests`} onClick={() => { setGuests((guests ?? 0) - GUEST_STEP); }}>
             <MinusGlyph />
           </button>
           <input
@@ -96,11 +97,8 @@ function EventSheet(): ReactElement {
               setGuests(/^\d+$/u.test(typed) ? Number.parseInt(typed, 10) : null);
             }}
           />
-          <button type="button" className="hud-stepper__key" aria-label={`${String(GUEST_STEP)} more guests`} onClick={() => { setGuests((guests ?? 0) + GUEST_STEP); }}>
+          <button type="button" className="hud-round" aria-label={`${String(GUEST_STEP)} more guests`} onClick={() => { setGuests((guests ?? 0) + GUEST_STEP); }}>
             <PlusGlyph />
-          </button>
-          <button type="button" className="hud-key hud-key--make" disabled={guests === null} onClick={() => { usePlannerHudStore.getState().openSheet("layout"); }}>
-            Lay out the room
           </button>
         </div>
       </div>
@@ -209,14 +207,14 @@ function FinishingSheet(): ReactElement {
         <div className="hud-sheet__row">
           <button type="button" className="hud-key" disabled={none || locked} onClick={() => { dressEveryTable("white"); }}>Ivory on every table</button>
           <button type="button" className="hud-key" disabled={none || locked} onClick={() => { dressEveryTable("black"); }}>Black on every table</button>
-          <button type="button" className="hud-key hud-key--quiet" disabled={none || locked} onClick={() => { dressEveryTable("bare"); }}>No cloths</button>
+          <button type="button" className="hud-word" disabled={none || locked} onClick={() => { dressEveryTable("bare"); }}>No cloths</button>
         </div>
       </div>
       <div className="hud-sheet__section">
         <h3 className="hud-sheet__heading">Place settings</h3>
         <div className="hud-sheet__row">
           <button type="button" className="hud-key" disabled={none || locked} onClick={() => { setEveryTable(true); }}>Set every table for dinner</button>
-          <button type="button" className="hud-key hud-key--quiet" disabled={none || locked} onClick={() => { setEveryTable(false); }}>Clear the settings</button>
+          <button type="button" className="hud-word" disabled={none || locked} onClick={() => { setEveryTable(false); }}>Clear the settings</button>
         </div>
       </div>
     </>
@@ -255,8 +253,8 @@ function SendSheet(): ReactElement {
         <>
           <p className="hud-sheet__lede">The events team receives this layout with your contact details, and replies with what happens next. Nothing is booked by sending it.</p>
           <div className="hud-sheet__row">
-            <button type="button" className="hud-key hud-key--make" disabled={preparing || previewing} aria-busy={preparing} onClick={send}>
-              {preparing ? <ActivityIndicator size={18} /> : null}
+            <button type="button" className="hud-act" disabled={preparing || previewing} aria-busy={preparing} onClick={send}>
+              {preparing ? <ActivityIndicator size={16} /> : null}
               {preparing ? "Preparing the layout" : previewing ? "Leave the preview to send" : sent ? "Send it again" : "Continue"}
             </button>
           </div>
@@ -284,7 +282,7 @@ function CataloguePiece({ item }: { readonly item: CatalogueItem }): ReactElemen
     close();
   };
   return (
-    <li className="hud-card-slot">
+    <li className="hud-cards__slot">
       <button type="button" className="hud-card" onClick={take} title={item.subtitle} aria-label={item.name}>
         <span className="hud-card__art">
           {item.thumbnailUrl !== null && item.thumbnailUrl !== undefined ? <img src={item.thumbnailUrl} alt="" draggable={false} loading="lazy" decoding="async" /> : null}
@@ -363,7 +361,7 @@ function ToolsSheet(): ReactElement {
                 key={option.mode}
                 type="button"
                 role="radio"
-                className="hud-view__key"
+                className="hud-option"
                 aria-checked={sound === option.mode}
                 onClick={() => { chooseSound(option.mode); }}
               >
@@ -385,18 +383,16 @@ export function HudSheets(): ReactElement | null {
   useEscapeLayer("panel", { open: sheet !== null, onEscape: close });
   if (sheet === null) return null;
   return (
-    <div className="hud-sheet-layer">
-      <section className="hud-sheet" data-sheet={sheet} data-wide={WIDE.has(sheet) ? "true" : undefined} role="dialog" aria-modal="false" aria-labelledby={TITLE_ID}>
-        <button type="button" className="hud-key hud-key--round hud-sheet__close" aria-label="Close" onClick={close}>
-          <CloseGlyph />
-        </button>
-        {sheet === "event" ? <EventSheet />
-          : sheet === "layout" ? <LayoutSheet />
-            : sheet === "finishing" ? <FinishingSheet />
-              : sheet === "send" ? <SendSheet />
-                : sheet === "more" ? <MoreSheet />
-                  : <ToolsSheet />}
-      </section>
-    </div>
+    <section className="hud-sheet" data-sheet={sheet} data-wide={WIDE.has(sheet) ? "true" : undefined} role="dialog" aria-modal="false" aria-labelledby={TITLE_ID}>
+      <button type="button" className="hud-glyph-key hud-sheet__close" aria-label="Close" onClick={close}>
+        <CloseGlyph />
+      </button>
+      {sheet === "event" ? <EventSheet />
+        : sheet === "layout" ? <LayoutSheet />
+          : sheet === "finishing" ? <FinishingSheet />
+            : sheet === "send" ? <SendSheet />
+              : sheet === "more" ? <MoreSheet />
+                : <ToolsSheet />}
+    </section>
   );
 }

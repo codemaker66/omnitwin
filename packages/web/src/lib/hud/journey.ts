@@ -2,13 +2,14 @@ import { countLabel, countNoun } from "../count-label.js";
 import type { RoomFacts } from "./room-seals.js";
 
 // ---------------------------------------------------------------------------
-// The journey: four steps across the top of the planner, and one line that
-// always names the next best move (13 Nov 2026).
+// The journey: four steps across the top of the planner, and the one primary
+// key at the right of the shelf, which always names the next best move
+// (13 Nov 2026).
 //
 // The steps are places, not a wizard: any of them opens at any time. What the
 // journey adds is a "you are here" and a single suggestion, so nobody has to
-// decide what to do next from a blank screen. The line is worked out from the
-// room as it stands, most useful move first.
+// decide what to do next from a blank screen. The move is worked out from the
+// room as it stands, most useful first.
 // ---------------------------------------------------------------------------
 
 export type JourneyStepId = "event" | "layout" | "finishing" | "send";
@@ -61,7 +62,7 @@ export type NextMoveId = "ask-guests" | "lay-out" | "seat-more" | "clear-door" |
 
 export interface NextMove {
   readonly id: NextMoveId;
-  /** The move in a few words, to follow "Next:". */
+  /** The move as the one primary key says it: an imperative, capitalised ("Seat 40 more guests"). */
   readonly text: string;
   /** The step whose sheet carries the move out. */
   readonly step: JourneyStepId;
@@ -70,26 +71,26 @@ export interface NextMove {
 /** The single most useful thing to do now, from the room as it stands. */
 export function nextMove(facts: RoomFacts, sent: boolean): NextMove {
   const { plane } = facts;
-  if (sent) return { id: "sent", text: "it is with the events team", step: "send" };
+  if (sent) return { id: "sent", text: "Sent to the events team", step: "send" };
   if (plane.guests === null || plane.guests === 0) {
-    return { id: "ask-guests", text: "say how many guests are coming", step: "event" };
+    return { id: "ask-guests", text: "Say how many guests", step: "event" };
   }
   if (plane.seats === 0 && plane.tables === 0) {
-    return { id: "lay-out", text: `lay out the room for ${countLabel(plane.guests, "guest")}`, step: "layout" };
+    return { id: "lay-out", text: `Lay out the room for ${countLabel(plane.guests, "guest")}`, step: "layout" };
   }
   if (facts.doors !== null && facts.doors.blockers.length > 0) {
     const first = facts.doors.blockers[0];
     const name = first === undefined ? "a piece" : first.name;
-    return { id: "clear-door", text: `move ${name} clear of the door`, step: "layout" };
+    return { id: "clear-door", text: `Move ${name} clear of the door`, step: "layout" };
   }
   if (plane.standing === "over" && plane.limit !== null) {
-    return { id: "ask-venue", text: `ask the events team about more than ${String(plane.limit)}`, step: "send" };
+    return { id: "ask-venue", text: `Ask the events team about more than ${String(plane.limit)}`, step: "send" };
   }
   if (plane.short > 0) {
-    return { id: "seat-more", text: `seat ${String(plane.short)} more ${countNoun(plane.short, "guest")}`, step: "layout" };
+    return { id: "seat-more", text: `Seat ${String(plane.short)} more ${countNoun(plane.short, "guest")}`, step: "layout" };
   }
   if (facts.aisles.band === "tight" || facts.aisles.band === "blocked") {
-    return { id: "open-gap", text: "open up the narrowest gap", step: "layout" };
+    return { id: "open-gap", text: "Open up the narrowest gap", step: "layout" };
   }
-  return { id: "send", text: "send it to the events team", step: "send" };
+  return { id: "send", text: "Send to the events team", step: "send" };
 }

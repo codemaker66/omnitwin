@@ -1,0 +1,289 @@
+/* ---------------------------------------------------------------------------
+ * THE PLAQUE, LYING FLAT IN THE TOP BAR (DOCTRINE.md, "letterbox": "the
+ * event's name, the one serif line, and after it in the sans the day, the
+ * room and the save state").
+ *
+ * In the planner the plaque is the second chrome's slate
+ * (components/planner-chrome/Slate.tsx), reused whole for its menu, its save
+ * state and every notice a save can need. Nothing under planner-chrome/
+ * changes: the slate is dressed from here, under .hud-root, by re-pointing the
+ * house tokens it reads at the ground and by setting its parts in the HUD's
+ * type. Its plate, crest, status dots and copper plane (the seats, said once
+ * on the shelf) are put away. Its menu and tooltips are drawn on the page
+ * itself (portals), so the same tokens are given to them while the HUD is up.
+ *
+ * The lab has no backend and stands in a plain name and line (PlannerLabPage).
+ *
+ * The few `box-shadow: none` below remove the slate's own shadows and inset
+ * rings; this sheet draws none.
+ * ------------------------------------------------------------------------- */
+
+/* Given again on the top bar, whose ink is the night's (hud.css): a token is worked out where it is set. */
+.hud-root,
+.hud-root .hud-bar,
+body:has(.hud-root) .pc-popover[data-pc-chrome="slate-menu"],
+body:has(.hud-root) .pc-tooltip {
+  --house-forest-ink-1: var(--hud-ink);
+  --house-forest-ink-2: var(--hud-ink-2);
+  --house-forest-ink-3: var(--hud-ink-2);
+  --house-forest-edge: var(--hud-line);
+  --house-hairline: var(--hud-line);
+  --house-hairline-hover: var(--hud-line);
+  --house-lacquer-top: var(--hud-ground);
+  --house-lacquer-bottom: var(--hud-ground);
+  --house-bg-0: var(--hud-ground);
+  --house-shadow-e1: none;
+  --house-shadow-e2: none;
+  --house-radius-key: 0;
+  --house-radius-surface: 0;
+  --house-cream: var(--hud-accent);
+  --house-cream-hover: var(--hud-accent);
+  --house-ink-1: var(--hud-on-accent);
+  --house-accent-copper: var(--hud-ink);
+  --house-accent-copper-bright: var(--hud-ink);
+  --house-copper-lit: var(--hud-accent);
+  --house-brick-lit: var(--hud-accent);
+}
+
+.hud-root :is(.pc-root, .pc-lacquer),
+body:has(.hud-root) .pc-popover[data-pc-chrome="slate-menu"],
+body:has(.hud-root) .pc-tooltip {
+  --vv-focus-ring: 2px solid var(--hud-ink);
+  --vv-focus-ring-offset: 2px;
+}
+
+/* -- The plaque in the bar ----------------------------------------------------- */
+
+.hud-root .hud-plaque {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--hud-m);
+  line-height: var(--hud-m-lh);
+}
+
+.hud-root .pc-slate {
+  flex-direction: row;
+  align-items: center;
+  min-width: 0;
+}
+
+.hud-root .pc-slate__plate {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+}
+
+.hud-root :is(.pc-slate__crest, .pc-plane, .pc-slate .pc-dot) {
+  display: none;
+}
+
+/* The name first, in the serif; then the day and the room; then the save state. */
+.hud-root .pc-slate__words {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0 var(--hud-gap-wide);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.hud-root .pc-slate__title {
+  flex: 0 1 auto;
+  order: -1;
+  min-width: 0;
+  min-height: var(--hud-hit);
+  gap: var(--hud-u);
+  color: var(--hud-ink);
+  font-family: var(--hud-serif);
+  font-size: var(--hud-xl);
+  font-weight: var(--hud-regular);
+  line-height: var(--hud-xl-lh);
+  letter-spacing: 0;
+}
+
+.hud-root .pc-slate__chevron {
+  align-self: center;
+  width: var(--hud-glyph-size);
+  height: var(--hud-glyph-size);
+  color: var(--hud-ink-2);
+}
+
+.hud-root .pc-slate__eyebrow,
+.hud-root .pc-slate__line {
+  color: var(--hud-ink-2);
+  font-size: var(--hud-m);
+  font-weight: var(--hud-regular);
+  line-height: var(--hud-m-lh);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Short of room, the save state gives way first, then the day and the room, the name last. */
+.hud-root .pc-slate__eyebrow {
+  flex: 0 10 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-root .pc-slate__line {
+  flex: 0 100 auto;
+  flex-wrap: nowrap;
+  gap: 0 var(--hud-gap);
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+.hud-root .pc-slate__line::before {
+  content: "·";
+}
+
+.hud-root .pc-slate__save {
+  gap: var(--hud-u);
+}
+
+.hud-root .pc-slate__status {
+  color: var(--hud-ink-2);
+  font-weight: var(--hud-regular);
+}
+
+/* A save that did not arrive, or a layout changed elsewhere: in the way, so in the accent. */
+.hud-root .pc-slate:is([data-save="not-saved"], [data-save="changed-elsewhere"], [data-save="offline"]) .pc-slate__status {
+  color: var(--hud-accent);
+  font-weight: var(--hud-medium);
+}
+
+.hud-root .pc-slate .pc-chip {
+  height: auto;
+  padding: 0;
+  border-radius: var(--hud-radius);
+  box-shadow: none;
+  color: var(--hud-ink-2);
+  font: inherit;
+  letter-spacing: 0;
+}
+
+.hud-root .pc-slate__line-action {
+  color: var(--hud-ink);
+  text-decoration-thickness: var(--hud-hair);
+  text-underline-offset: var(--hud-u);
+}
+
+/* A save's notice: the bar grown down at its left, flush under it, on the same ground. */
+.hud-root .pc-slate__notice {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: min(392px, 100%);
+  margin: 0;
+  padding: var(--hud-gap-wide);
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: var(--hud-ground);
+}
+
+.hud-root .pc-notice__lead,
+.hud-root .pc-notice__body {
+  font-size: var(--hud-m);
+  line-height: var(--hud-m-lh);
+}
+
+.hud-root .pc-notice__lead {
+  font-weight: var(--hud-medium);
+}
+
+.hud-root :is(.pc-cream, .pc-quiet) {
+  height: var(--hud-hit);
+  padding: 0 var(--hud-gap-wide);
+  box-shadow: none;
+  font-size: var(--hud-m);
+  font-weight: var(--hud-medium);
+}
+
+.hud-root .pc-quiet {
+  border-color: var(--hud-line);
+  background: none;
+}
+
+/* -- Its menu and tooltips, on the page itself ---------------------------------- */
+
+body:has(.hud-root) .pc-popover[data-pc-chrome="slate-menu"],
+body:has(.hud-root) .pc-tooltip {
+  border: 1px solid var(--hud-line);
+  background: var(--hud-ground);
+  color: var(--hud-ink);
+}
+
+body:has(.hud-root) .pc-tooltip {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+body:has(.hud-root) .pc-slate-menu .pc-caps {
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+body:has(.hud-root) .pc-slate-menu :is(.pc-slate-menu__room, .pc-slate-menu__layout, .pc-slate-menu__act, .pc-slate-menu__item) {
+  border-radius: 0;
+}
+
+body:has(.hud-root) .pc-slate-menu :is(.pc-slate-menu__room, .pc-slate-menu__layout-name) {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+body:has(.hud-root) .pc-slate-menu .pc-slate-menu__capacity {
+  font-family: var(--house-sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+body:has(.hud-root) .pc-slate-menu .pc-meta {
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* -- The lab's stand-in ------------------------------------------------------------ */
+
+.hud-lab-plaque {
+  display: flex;
+  align-items: baseline;
+  gap: 0 var(--hud-gap-wide);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.hud-lab-plaque__title {
+  flex: none;
+  color: var(--hud-ink);
+  font-family: var(--hud-serif);
+  font-size: var(--hud-xl);
+  line-height: var(--hud-xl-lh);
+}
+
+.hud-lab-plaque__line {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--hud-ink-2);
+  text-overflow: ellipsis;
+}
+
+/* -- Phones: the name alone ------------------------------------------------------- */
+
+@media (max-width: 767px) {
+  .hud-root :is(.pc-slate__eyebrow, .pc-slate__line, .hud-lab-plaque__line) {
+    display: none;
+  }
+
+  .hud-root .pc-slate__notice {
+    width: calc(100vw - var(--hud-gutter) * 2);
+  }
+}

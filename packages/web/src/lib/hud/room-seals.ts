@@ -1,50 +1,27 @@
 import { getCatalogueItem } from "../catalogue.js";
 import type { CirculationReport } from "../circulation.js";
 import { placedItemsCirculation } from "../circulation-scene.js";
-import { effectiveTableLinenStyle, isDiningTableItem } from "../furniture-semantics.js";
-import { isSceneFurniturePlacement } from "../table-dressing.js";
 import { countLabel } from "../count-label.js";
 import type { DoorClearSpace } from "../door-clear-spaces.js";
+import { effectiveTableLinenStyle, isDiningTableItem } from "../furniture-semantics.js";
 import { doorBlockedLine, doorBlockers, type DoorBlocker } from "../keep-doors-clear.js";
 import type { PlacedItem } from "../placement.js";
-import { pieceCardId, type CardId } from "../setup-cards.js";
 import { planeFacts, type PlaneFacts } from "../slate-facts.js";
+import { isSceneFurniturePlacement } from "../table-dressing.js";
 import type { PlannerEventKind } from "../../stores/planner-event-store.js";
 import { floorCounts, type FloorCounts } from "./hand-cards.js";
 
 // ---------------------------------------------------------------------------
-// "Your room": the six seals down the left of the planner (13 Nov 2026).
+// The room as it stands: the facts the shelf's one status line reads
+// (13 Nov 2026; D:/claude/planner-hud-20261113/DOCTRINE.md, "letterbox").
 //
-// Each seal is one fact about the room as it stands, lit when there is nothing
-// left to do about it, so the room's state is read at a glance instead of
-// worked out from panels. Every seal states something the planner measured or
-// counted (seats placed, what stands in a door's space, the narrowest gap,
-// what is on the floor). None is a safety verdict: the figures are the
-// planner's own measurements and the venue's published guide, worded as such
-// (docs/engineering/planner-honest-numbers.md).
+// The line says how many are seated, and then only what needs saying: whether
+// the doors are clear and the narrowest aisle. Something to look at is marked
+// as such, with the sentence that explains it. Every figure is one the
+// planner measured or counted, or the venue's published guide, worded as
+// such; none is a safety verdict (docs/engineering/planner-honest-numbers.md).
+// The pieces on the floor are told by the counts on their own cards.
 // ---------------------------------------------------------------------------
-
-export type SealId = "seats" | "doors" | "aisles" | "top-table" | "dance-floor" | "bar" | "stage" | "lectern" | "screen";
-
-/**
- * lit: nothing left to do. progress: on the way (carries `progress`).
- * waiting: not started, and that is fine. attention: something to look at.
- */
-export type SealState = "lit" | "progress" | "waiting" | "attention";
-
-export interface RoomSeal {
-  readonly id: SealId;
-  readonly label: string;
-  /** A short figure beside the label: "80 / 120", "1.4 m", "1 blocked". */
-  readonly value: string | null;
-  readonly state: SealState;
-  /** 0 to 1, for the seats ring; null on every other seal. */
-  readonly progress: number | null;
-  /** One plain sentence saying what the seal is reading. */
-  readonly detail: string;
-  /** The card that would light a waiting seal, for a one-press start. */
-  readonly card: CardId | null;
-}
 
 export interface RoomFacts {
   readonly plane: PlaneFacts;
@@ -69,7 +46,7 @@ function everyTableDressed(items: readonly PlacedItem[]): boolean {
   return tables > 0;
 }
 
-/** Everything the seals and the next-move line read, from the room as it stands. */
+/** Everything the status line, the steps and the next move read, from the room as it stands. */
 export function roomFacts(input: {
   readonly items: readonly PlacedItem[];
   readonly guests: number | null;
@@ -93,83 +70,71 @@ function metres(value: number): string {
   return `${(Math.floor(value * 10) / 10).toFixed(1)} m`;
 }
 
-function seatsSeal(plane: PlaneFacts): RoomSeal {
-  const base = { id: "seats", label: "Seats", card: null } as const;
+/** The status line's first words: the seats against the guests. */
+export interface SeatLine {
+  /** "80 of 120 seated", or "10 seats placed" while no guest count is known. */
+  readonly text: string;
+  /** More seats are placed than the venue publishes for this room. */
+  readonly attention: boolean;
+  /** The sentence behind an attention, or null. */
+  readonly detail: string | null;
+}
+
+export function seatLine(plane: PlaneFacts): SeatLine {
   if (plane.guests === null || plane.guests === 0) {
-    return {
-      ...base,
-      value: plane.seats > 0 ? String(plane.seats) : null,
-      state: "waiting",
-      progress: null,
-      detail: "Say how many guests are coming and this ring fills as you seat them.",
-    };
+    return { text: `${countLabel(plane.seats, "seat")} placed`, attention: false, detail: null };
   }
-  const value = `${String(plane.seats)} / ${String(plane.guests)}`;
-  const progress = Math.min(1, plane.seats / plane.guests);
+  const text = `${String(plane.seats)} of ${String(plane.guests)} seated`;
   if (plane.standing === "over" && plane.limit !== null) {
     return {
-      ...base,
-      value,
-      state: "attention",
-      progress,
+      text,
+      attention: true,
       detail: `The venue publishes ${String(plane.limit)} for a ${plane.format} in this room, and ${String(plane.seats)} seats are placed. Ask the events team about a larger number.`,
     };
   }
-  if (plane.short > 0) {
-    return { ...base, value, state: "progress", progress, detail: `${countLabel(plane.short, "guest")} still to seat.` };
-  }
-  return { ...base, value, state: "lit", progress: 1, detail: "Every guest has a seat." };
+  return { text, attention: false, detail: null };
 }
 
-function doorsSeal(doors: NonNullable<RoomFacts["doors"]>): RoomSeal {
-  const blocked = doors.blockers.length;
-  if (blocked === 0) {
-    return { id: "doors", label: "Doors clear", value: null, state: "lit", progress: null, detail: "Nothing stands in front of a door.", card: null };
-  }
-  return { id: "doors", label: "Doors", value: `${String(blocked)} blocked`, state: "attention", progress: null, detail: doors.line, card: null };
+export type RoomStatusId = "doors" | "aisles";
+
+/** One fact after the seats on the status line. */
+export interface RoomStatus {
+  readonly id: RoomStatusId;
+  /** The words on the line: "Doors clear", "1 door blocked", "Narrowest aisle 1.4 m". */
+  readonly text: string;
+  /** Something to look at: said in the accent, and a press chooses the pieces concerned. */
+  readonly attention: boolean;
+  /** One plain sentence saying what it is reading. */
+  readonly detail: string;
 }
 
-function aislesSeal(aisles: RoomFacts["aisles"]): RoomSeal {
-  const base = { id: "aisles", label: "Aisles", progress: null, card: null } as const;
-  if (aisles.tightestGapM === null) {
-    return { ...base, value: null, state: "waiting", detail: "Shows the narrowest gap between pieces once two are placed." };
+function doorsStatus(doors: NonNullable<RoomFacts["doors"]>): RoomStatus {
+  if (doors.blockers.length === 0) {
+    return { id: "doors", text: "Doors clear", attention: false, detail: "Nothing stands in front of a door." };
   }
+  const blocked = new Set(doors.blockers.flatMap((blocker) => blocker.doors)).size;
+  return { id: "doors", text: `${countLabel(Math.max(1, blocked), "door")} blocked`, attention: true, detail: doors.line };
+}
+
+function aislesStatus(aisles: RoomFacts["aisles"]): RoomStatus | null {
+  if (aisles.tightestGapM === null) return null;
   const gap = metres(aisles.tightestGapM);
   if (aisles.band === "tight" || aisles.band === "blocked") {
     const pair = aisles.tightestPair;
     const where = pair === null ? "" : `, between ${pair.aLabel} and ${pair.bLabel}`;
-    return { ...base, value: gap, state: "attention", detail: `The narrowest gap is ${gap}${where}.` };
+    return { id: "aisles", text: `Narrowest aisle ${gap}`, attention: true, detail: `The narrowest gap is ${gap}${where}.` };
   }
-  return { ...base, value: gap, state: "lit", detail: `The narrowest gap between pieces is ${gap}.` };
+  return { id: "aisles", text: `Narrowest aisle ${gap}`, attention: false, detail: `The narrowest gap between pieces is ${gap}.` };
 }
 
-function presenceSeal(id: SealId, label: string, placed: number, card: CardId): RoomSeal {
-  return placed > 0
-    ? { id, label, value: placed > 1 ? `×${String(placed)}` : null, state: "lit", progress: null, detail: `${label} is on the floor.`, card: null }
-    : { id, label, value: null, state: "waiting", progress: null, detail: `Not placed. Press to take the ${label} card.`, card };
-}
-
-function slugCount(counts: FloorCounts, ...slugs: readonly string[]): number {
-  return slugs.reduce((sum, slug) => sum + (counts.bySlug.get(slug) ?? 0), 0);
-}
-
-/** The seals in their fixed order: the three every room has, then three for this kind of event. */
-export function roomSeals(facts: RoomFacts): readonly RoomSeal[] {
-  const seals: RoomSeal[] = [seatsSeal(facts.plane)];
-  if (facts.doors !== null) seals.push(doorsSeal(facts.doors));
-  seals.push(aislesSeal(facts.aisles));
-  if (facts.kind === "corporate") {
-    seals.push(
-      presenceSeal("stage", "Stage", slugCount(facts.counts, "platform", "platform-narrow", "staging-deck-6x4", "staging-deck-6x3"), pieceCardId("platform")),
-      presenceSeal("lectern", "Lectern", slugCount(facts.counts, "lectern"), pieceCardId("lectern")),
-      presenceSeal("screen", "Screen", slugCount(facts.counts, "projector-screen", "hisense-television"), pieceCardId("projector-screen")),
-    );
-  } else {
-    seals.push(
-      presenceSeal("top-table", "Top table", facts.counts.topTables, "top-table"),
-      presenceSeal("dance-floor", "Dance floor", facts.counts.danceFloors, "dance-floor"),
-      presenceSeal("bar", "Bar", slugCount(facts.counts, "bar-counter"), pieceCardId("bar-counter")),
-    );
-  }
-  return seals;
+/**
+ * What the status line says after the seats, in its fixed order: the doors,
+ * where the room's are recorded, and the narrowest aisle once two pieces stand.
+ */
+export function roomStatus(facts: RoomFacts): readonly RoomStatus[] {
+  const said: RoomStatus[] = [];
+  if (facts.doors !== null) said.push(doorsStatus(facts.doors));
+  const aisles = aislesStatus(facts.aisles);
+  if (aisles !== null) said.push(aisles);
+  return said;
 }

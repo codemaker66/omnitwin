@@ -3,13 +3,13 @@ import { HALL_MOOD_NAMES, type HallMoodName } from "../grand-hall/hall-mood.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
 import { useHallViewStore, type HallViewPreset } from "../../stores/hall-view-store.js";
 import { usePlannerHudStore } from "../../stores/planner-hud-store.js";
-import { CandleGlyph, DuskGlyph, MoreGlyph, SunGlyph } from "./glyphs.js";
+import { MoreGlyph } from "./glyphs.js";
 
 // ---------------------------------------------------------------------------
-// The view, top right: how the room is looked at (Plan, Room, Walk) and lit
-// (Daylight, Evening, Candlelight), and one key for everything used less
-// often (design spec, "The stations"). The views and the light are the drawn
-// Grand Hall's; another room shows the further key alone.
+// The view, at the right of the top bar: how the room is looked at (Plan,
+// Room, Walk) and lit (Daylight, Evening, Candlelight), as words in the steps'
+// own style, then one "more" glyph for everything used less often. The views
+// and the light are the drawn Grand Hall's; another room shows the glyph alone.
 // ---------------------------------------------------------------------------
 
 const VIEWS: readonly { readonly preset: HallViewPreset; readonly label: string; readonly tip: string }[] = [
@@ -23,11 +23,6 @@ const MOOD_WORDS: Readonly<Record<HallMoodName, string>> = {
   evening: "Evening",
   candlelight: "Candlelight",
 };
-
-function MoodGlyph({ mood }: { readonly mood: HallMoodName }): ReactElement {
-  if (mood === "daylight") return <SunGlyph />;
-  return mood === "evening" ? <DuskGlyph /> : <CandleGlyph />;
-}
 
 export function ViewStation(): ReactElement {
   const hall = useModelledGrandHall();
@@ -45,7 +40,7 @@ export function ViewStation(): ReactElement {
                 key={view.preset}
                 type="button"
                 role="radio"
-                className="hud-view__key"
+                className="hud-option"
                 aria-checked={activePreset === view.preset}
                 title={view.tip}
                 onClick={() => { useHallViewStore.getState().requestView(view.preset); }}
@@ -56,19 +51,18 @@ export function ViewStation(): ReactElement {
           </div>
           <button
             type="button"
-            className="hud-key hud-key--chip"
+            className="hud-option"
             aria-label={`The light: ${MOOD_WORDS[mood]}. Press for ${MOOD_WORDS[nextMood]}`}
             title={`Press for ${MOOD_WORDS[nextMood]}`}
             onClick={() => { useHallViewStore.getState().setMood(nextMood); }}
           >
-            <MoodGlyph mood={mood} />
-            <span>{MOOD_WORDS[mood]}</span>
+            {MOOD_WORDS[mood]}
           </button>
         </>
       ) : null}
       <button
         type="button"
-        className="hud-key hud-key--round"
+        className="hud-glyph-key"
         aria-label="More tools"
         aria-expanded={toolsOpen}
         title="Measure, draw, walls, sound and your account"

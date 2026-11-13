@@ -6,7 +6,7 @@ import { cardParamsFor, pieceCardId, stampSetup, type CardId, type CardParamsReq
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { floorCounts, handCardIds, handCards } from "../hand-cards.js";
 import { journeySteps, nextMove } from "../journey.js";
-import { roomFacts, roomSeals, type RoomSeal, type SealId } from "../room-seals.js";
+import { roomFacts, roomStatus, seatLine, type RoomStatus, type RoomStatusId } from "../room-seals.js";
 
 const TURINI = "burgess-turini-18-3";
 
@@ -41,9 +41,9 @@ function facts(items: readonly PlacedItem[], guests: number | null, kind: "weddi
   return roomFacts({ items, guests, roomSlug: "grand-hall", doorSpaces: GRAND_HALL_DOOR_CLEAR_SPACES, kind });
 }
 
-function seal(seals: readonly RoomSeal[], id: SealId): RoomSeal {
-  const found = seals.find((entry) => entry.id === id);
-  if (found === undefined) throw new Error(`no ${id} seal`);
+function said(facts: ReturnType<typeof roomFacts>, id: RoomStatusId): RoomStatus {
+  const found = roomStatus(facts).find((entry) => entry.id === id);
+  if (found === undefined) throw new Error(`nothing said about ${id}`);
   return found;
 }
 
@@ -101,71 +101,62 @@ describe("the hand", () => {
   });
 });
 
-describe("the seals", () => {
-  it("waits quietly on an empty floor with no guest count", () => {
-    const seals = roomSeals(facts([], null));
-    expect(seals.map((entry) => entry.id)).toEqual(["seats", "doors", "aisles", "top-table", "dance-floor", "bar"]);
-    expect(seal(seals, "seats").state).toBe("waiting");
-    expect(seal(seals, "doors")).toMatchObject({ state: "lit", label: "Doors clear" });
-    expect(seal(seals, "aisles").state).toBe("waiting");
-    expect(seal(seals, "top-table")).toMatchObject({ state: "waiting", card: "top-table" });
-  });
-
-  it("fills the seats ring as guests are seated, and lights it when all are", () => {
-    const short = seal(roomSeals(facts(rounds(8), 120)), "seats");
-    expect(short).toMatchObject({ state: "progress", value: "80 / 120", detail: "40 guests still to seat." });
-    expect(short.progress).toBeCloseTo(80 / 120, 5);
-
-    const seated = seal(roomSeals(facts(rounds(8), 80)), "seats");
-    expect(seated).toMatchObject({ state: "lit", value: "80 / 80", progress: 1 });
+describe("the status line", () => {
+  it("counts the seats placed while no guest count is known, and seats against guests once one is", () => {
+    expect(seatLine(facts(rounds(1), null).plane)).toMatchObject({ text: "10 seats placed", attention: false });
+    expect(seatLine(facts([], null).plane).text).toBe("0 seats placed");
+    expect(seatLine(facts(rounds(8), 120).plane)).toMatchObject({ text: "80 of 120 seated", attention: false, detail: null });
+    expect(seatLine(facts(rounds(8), 80).plane).text).toBe("80 of 80 seated");
   });
 
   it("names the venue's published figure when more seats are placed than it", () => {
-    const over = seal(roomSeals(facts(rounds(19), 190)), "seats");
-    expect(over.state).toBe("attention");
+    const over = seatLine(facts(rounds(19), 190).plane);
+    expect(over.attention).toBe(true);
     expect(over.detail).toContain("The venue publishes 180");
   });
 
-  it("says which table stands in front of a door", () => {
+  it("says the doors are clear on an empty floor, and nothing of aisles until two pieces stand", () => {
+    expect(roomStatus(facts([], null)).map((entry) => entry.id)).toEqual(["doors"]);
+    expect(said(facts([], null), "doors")).toMatchObject({ text: "Doors clear", attention: false });
+    expect(roomStatus(facts(rounds(2), 20)).map((entry) => entry.id)).toEqual(["doors", "aisles"]);
+  });
+
+  it("says a door is blocked, and which table stands in front of it", () => {
     const door = GRAND_HALL_DOOR_CLEAR_SPACES[0];
     if (door === undefined) throw new Error("the Grand Hall has recorded doors");
     const blocking = stamp("round", (door.rect.minX + door.rect.maxX) / 2, (door.rect.minZ + door.rect.maxZ) / 2);
-    const seals = roomSeals(facts(blocking, 10));
-    expect(seal(seals, "doors")).toMatchObject({ state: "attention", value: "1 blocked" });
-    expect(seal(seals, "doors").detail).toContain("is in front of");
+    const doors = said(facts(blocking, 10), "doors");
+    expect(doors).toMatchObject({ attention: true });
+    expect(doors.text).toMatch(/^\d+ doors? blocked$/u);
+    expect(doors.detail).toContain("is in front of");
   });
 
   it("says nothing about doors in a room with none recorded", () => {
-    const seals = roomSeals(roomFacts({ items: rounds(2), guests: 20, roomSlug: "saloon", doorSpaces: null, kind: null }));
-    expect(seals.some((entry) => entry.id === "doors")).toBe(false);
+    const status = roomStatus(roomFacts({ items: rounds(2), guests: 20, roomSlug: "saloon", doorSpaces: null, kind: null }));
+    expect(status.some((entry) => entry.id === "doors")).toBe(false);
   });
 
-  it("reads the narrowest gap in metres, and asks for a look when it is tight", () => {
-    const apart = seal(roomSeals(facts(rounds(2, 6), 20)), "aisles");
-    expect(apart.state).toBe("lit");
-    expect(apart.value).toMatch(/^\d+\.\d m$/u);
+  it("reads the narrowest aisle in metres, and asks for a look when it is tight", () => {
+    const apart = said(facts(rounds(2, 6), 20), "aisles");
+    expect(apart.attention).toBe(false);
+    expect(apart.text).toMatch(/^Narrowest aisle \d+\.\d m$/u);
 
-    const close = seal(roomSeals(facts([...stamp("round", 0, 0), ...stamp("round", 2.3, 0)], 20)), "aisles");
-    expect(close.state).toBe("attention");
+    const close = said(facts([...stamp("round", 0, 0), ...stamp("round", 2.3, 0)], 20), "aisles");
+    expect(close.attention).toBe(true);
     expect(close.detail).toContain("The narrowest gap is");
   });
 
-  it("shows a conference its stage, lectern and screen", () => {
-    const seals = roomSeals(facts(stamp(pieceCardId("lectern"), 0, 0), 80, "corporate"));
-    expect(seals.map((entry) => entry.id).slice(-3)).toEqual(["stage", "lectern", "screen"]);
-    expect(seal(seals, "lectern").state).toBe("lit");
-    expect(seal(seals, "stage")).toMatchObject({ state: "waiting", card: pieceCardId("platform") });
-  });
-
-  it("never words a seal as a verdict on safety", () => {
-    const every = [
-      ...roomSeals(facts([], null)),
-      ...roomSeals(facts(rounds(8), 120)),
-      ...roomSeals(facts(rounds(19), 190)),
-      ...roomSeals(facts([...stamp("round", 0, 0), ...stamp("round", 2.3, 0)], 20, "corporate")),
+  it("never words the line as a verdict on safety", () => {
+    const rooms = [
+      facts([], null),
+      facts(rounds(8), 120),
+      facts(rounds(19), 190),
+      facts([...stamp("round", 0, 0), ...stamp("round", 2.3, 0)], 20, "corporate"),
     ];
-    for (const entry of every) {
-      expect(`${entry.label} ${entry.value ?? ""} ${entry.detail}`).not.toMatch(/\b(within|fits?|pass(es|ed)?|valid|compliant|safe)\b/iu);
+    for (const room of rooms) {
+      const seats = seatLine(room.plane);
+      const words = [`${seats.text} ${seats.detail ?? ""}`, ...roomStatus(room).map((entry) => `${entry.text} ${entry.detail}`)];
+      for (const line of words) expect(line).not.toMatch(/\b(within|fits?|pass(es|ed)?|valid|compliant|safe)\b/iu);
     }
   });
 });
@@ -180,20 +171,23 @@ describe("the journey", () => {
     expect(states({ eventKnown: true, seated: true, dressed: true, sent: true })).toEqual(["done", "done", "done", "done"]);
   });
 
-  it("always names one next move, the most useful first", () => {
+  it("always names one next move, the most useful first, in the primary key's own words", () => {
     expect(nextMove(facts([], null), false)).toMatchObject({ id: "ask-guests", step: "event" });
-    expect(nextMove(facts([], 120), false)).toMatchObject({ id: "lay-out", text: "lay out the room for 120 guests" });
-    expect(nextMove(facts(rounds(8), 120), false)).toMatchObject({ id: "seat-more", text: "seat 40 more guests" });
-    expect(nextMove(facts(rounds(1), 11), false).text).toBe("seat 1 more guest");
-    expect(nextMove(facts(rounds(8), 80), false)).toMatchObject({ id: "send", step: "send" });
-    expect(nextMove(facts(rounds(8), 80), true).id).toBe("sent");
+    expect(nextMove(facts([], null), false).text).toBe("Say how many guests");
+    expect(nextMove(facts([], 120), false)).toMatchObject({ id: "lay-out", text: "Lay out the room for 120 guests" });
+    expect(nextMove(facts(rounds(8), 120), false)).toMatchObject({ id: "seat-more", text: "Seat 40 more guests" });
+    expect(nextMove(facts(rounds(1), 11), false).text).toBe("Seat 1 more guest");
+    expect(nextMove(facts(rounds(8), 80), false)).toMatchObject({ id: "send", step: "send", text: "Send to the events team" });
+    expect(nextMove(facts(rounds(8), 80), true)).toMatchObject({ id: "sent", text: "Sent to the events team" });
+    expect(nextMove(facts(rounds(19), 190), false)).toMatchObject({ id: "ask-venue", step: "send", text: "Ask the events team about more than 180" });
   });
 
   it("puts a blocked door ahead of seating, and a tight gap ahead of sending", () => {
     const door = GRAND_HALL_DOOR_CLEAR_SPACES[0];
     if (door === undefined) throw new Error("the Grand Hall has recorded doors");
     const blocking = stamp("round", (door.rect.minX + door.rect.maxX) / 2, (door.rect.minZ + door.rect.maxZ) / 2);
-    expect(nextMove(facts(blocking, 60), false).id).toBe("clear-door");
-    expect(nextMove(facts([...stamp("round", 0, 0), ...stamp("round", 2.3, 0)], 20), false).id).toBe("open-gap");
+    expect(nextMove(facts(blocking, 60), false)).toMatchObject({ id: "clear-door", step: "layout" });
+    expect(nextMove(facts(blocking, 60), false).text).toMatch(/^Move .+ clear of the door$/u);
+    expect(nextMove(facts([...stamp("round", 0, 0), ...stamp("round", 2.3, 0)], 20), false)).toMatchObject({ id: "open-gap", text: "Open up the narrowest gap" });
   });
 });

@@ -1,5 +1,4 @@
 import { type ReactElement } from "react";
-import { DoorClearNotice } from "../editor/DoorClearNotice.js";
 import { EditorBridge } from "../editor/EditorBridge.js";
 import { useLayoutLiveRoom } from "../editor/LayoutLiveLayer.js";
 import { RoomStage } from "../planner-chrome/RoomStage.js";
@@ -11,14 +10,17 @@ import { HudFrame } from "./HudFrame.js";
 import { HudSheets } from "./HudSheets.js";
 
 // ---------------------------------------------------------------------------
-// The planner in the HUD (docs/superpowers/specs/2026-11-13-planner-hud-design.md),
-// loaded only behind `?chrome=hud` until it becomes the default.
+// The planner in the HUD (docs/superpowers/specs/2026-11-13-planner-hud-design.md;
+// its look, D:/claude/planner-hud-20261113/DOCTRINE.md), loaded only behind
+// `?chrome=hud` until it becomes the default.
 //
 // The layout keeps syncing, saving and its live room exactly as before. The
 // plaque is the slate the second chrome already built, whole: the event's name
 // and its menu of rooms and layouts, the save state and every notice a save
-// can need (a conflict, a dropped connection, sign-in). It wears the HUD's
-// skin through the house tokens the skin re-points.
+// can need (a conflict, a dropped connection, sign-in). It lies flat in the
+// top bar, restyled from outside (hud-plaque.css) through the house tokens the
+// HUD's ground re-points. A table in front of a door is said once, on the
+// shelf's status line, and moved clear by the one primary key.
 // ---------------------------------------------------------------------------
 
 export function PlannerHud(): ReactElement {
@@ -37,8 +39,6 @@ export function PlannerHud(): ReactElement {
           </div>
         )}
         eventGuests={event?.guestCount ?? null}
-        // A table in front of a door, said calmly in the line above the hand, with its one-press way clear.
-        notices={<DoorClearNotice zoned />}
         sheets={<HudSheets />}
       />
     </>

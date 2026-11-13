@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode, type RefObject } from "react";
 import { canRedo, canUndo, redoLabel, undoLabel } from "../../lib/editor-history.js";
 import { plannerChairSlug } from "../../lib/furniture-defaults.js";
 import { handCardsFromCounts, type HandCard } from "../../lib/hud/hand-cards.js";
+import { roomStatus, seatLine, type RoomStatus } from "../../lib/hud/room-seals.js";
 import { KEY_PRIORITY, usePlannerKeyBindings, type KeyBinding } from "../../lib/planner-keys.js";
 import { SPRING_PRESETS } from "../../lib/springs.js";
 import { useSpringCssVariable } from "../../lib/use-spring-value.js";
@@ -14,16 +15,27 @@ import { usePlannerHudStore } from "../../stores/planner-hud-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useToolStore } from "../../stores/tool-store.js";
 import { useHudFacts } from "./hud-facts.js";
-import { MoreGlyph, RedoGlyph, SunburstGlyph, UndoGlyph } from "./glyphs.js";
+import { HudNotices, useReceiptShowing } from "./HudNotices.js";
+import { NextMoveKey } from "./Journey.js";
+import { PIECE_TITLE_ID, PieceVerbs, useChosenPiece, type Chosen } from "./PieceCard.js";
 
 // ---------------------------------------------------------------------------
-// The hand: the cards along the bottom (design spec, "The stations").
+// The shelf: the one surface under the hall (DOCTRINE.md, "letterbox").
 //
-// One verb: take a card and set it down. A click takes the card (the card
-// again, or Escape, puts it back) and a click on the floor sets it down; or
-// the card is dragged straight into the room. Either way the planner's own
-// ghost shows the whole set where it will stand and refuses, with its reason,
-// before anything lands (components/GhostSet.tsx, lib/place-in-hand.ts).
+// Its top edge is the seat line, a hairline that fills left to right as
+// guests are seated. Under it one status line: the seats, then only what needs
+// saying (the doors, the narrowest aisle); something to look at is pressable.
+// Then the quiet words (Lay out for me, Undo, Redo), the hand of eight cards
+// and More, and the one primary key, whose words are the next best move.
+// When a piece is chosen the cards give way to its verbs. A sheet, or the
+// first screen, is this surface grown upward.
+//
+// The hand's one verb: take a card and set it down. A click takes the card
+// (the card again, or Escape, puts it back) and a click on the floor sets it
+// down; or the card is dragged straight into the room. Either way the
+// planner's own ghost shows the whole set where it will stand and refuses,
+// with its reason, before anything lands (components/GhostSet.tsx,
+// lib/place-in-hand.ts).
 // ---------------------------------------------------------------------------
 
 /** How far a press must travel before it is a drag and not a click. */
@@ -126,7 +138,7 @@ function CardKey({ card, index, armed, locked, previewRef, onDragChange }: CardK
 
   const inRoom = card.placed > 0 ? `, ${String(card.placed)} in the room` : "";
   return (
-    <li className="hud-card-slot">
+    <li className="hud-cards__slot">
       <button
         type="button"
         className="hud-card"
@@ -143,34 +155,86 @@ function CardKey({ card, index, armed, locked, previewRef, onDragChange }: CardK
         <span className="hud-card__art">
           {card.art !== null ? <img src={card.art} alt="" draggable={false} decoding="async" /> : null}
         </span>
-        {card.placed > 0 ? <span className="hud-card__count" aria-hidden="true">×{card.placed}</span> : null}
-        <span className="hud-card__name">{card.name}</span>
+        <span className="hud-card__name">
+          {card.name}
+          {card.placed > 0 ? <>{" "}<span className="hud-card__count" aria-hidden="true">×{card.placed}</span></> : null}
+        </span>
         <span className="hud-card__detail">{card.detail}</span>
       </button>
     </li>
   );
 }
 
-function SeatLine(): ReactElement {
+/** The shelf's top edge: one hairline, filled as far as the guests are seated. */
+function SeatEdge(): ReactElement {
   const { plane } = useHudFacts();
   const fillRef = useRef<HTMLSpanElement>(null);
   const guests = plane.guests !== null && plane.guests > 0 ? plane.guests : null;
   const fraction = guests === null ? 0 : Math.min(1, plane.seats / guests);
   useSpringCssVariable(fillRef, "--hud-seat-fill", fraction, SPRING_PRESETS.dialGlide, { unit: "" });
-  const lead = guests === null
-    ? plane.seats === 1 ? "1 seat placed" : `${String(plane.seats)} seats placed`
-    : `${String(plane.seats)} of ${String(guests)} seated`;
-  const tail = guests === null ? "" : plane.short > 0 ? `${String(plane.short)} to go` : "Every guest seated";
   return (
-    <div className="hud-seatline" data-standing={plane.standing} role="status">
-      <span className="hud-seatline__lead">{lead}</span>
-      <span className="hud-seatline__track" aria-hidden="true"><span ref={fillRef} className="hud-seatline__fill" /></span>
-      <span className="hud-seatline__tail">{tail}</span>
+    <span className="hud-shelf__edge" aria-hidden="true">
+      <span ref={fillRef} className="hud-shelf__fill" />
+    </span>
+  );
+}
+
+/** Something on the status line to look at: the pieces concerned are chosen. */
+function lookAt(status: RoomStatus, facts: ReturnType<typeof useHudFacts>): void {
+  if (status.id === "doors") {
+    const first = facts.doors?.blockers[0];
+    if (first !== undefined) useSelectionStore.getState().selectMultiple([...first.ids]);
+    return;
+  }
+  const pair = facts.aisles.tightestPair;
+  if (pair !== null) useSelectionStore.getState().selectMultiple([pair.aId, pair.bId]);
+}
+
+/**
+ * The one status line: the seats (or the chosen piece's name in their place),
+ * then the doors and the narrowest aisle. A receipt takes its place while it shows.
+ */
+function StatusLine({ chosen, hidden }: { readonly chosen: Chosen | null; readonly hidden: boolean }): ReactElement {
+  const facts = useHudFacts();
+  const seats = seatLine(facts.plane);
+  const said = useMemo(() => roomStatus(facts), [facts]);
+  return (
+    <div className="hud-status" role="status" aria-label="The room as it stands" hidden={hidden}>
+      {chosen !== null ? (
+        <h2 className="hud-status__lead" id={PIECE_TITLE_ID}>{chosen.title}</h2>
+      ) : seats.attention && seats.detail !== null ? (
+        <button
+          type="button"
+          className="hud-status__lead hud-status__look"
+          aria-label={`${seats.text}. ${seats.detail}`}
+          title={seats.detail}
+          onClick={() => { usePlannerHudStore.getState().openSheet("send"); }}
+        >
+          {seats.text}
+        </button>
+      ) : (
+        <span className="hud-status__lead">{seats.text}</span>
+      )}
+      {said.map((status) => (status.attention ? (
+        <button
+          key={status.id}
+          type="button"
+          className="hud-status__item hud-status__look"
+          data-status={status.id}
+          aria-label={`${status.text}. ${status.detail}`}
+          title={status.detail}
+          onClick={() => { lookAt(status, facts); }}
+        >
+          {status.text}
+        </button>
+      ) : (
+        <span key={status.id} className="hud-status__item" data-status={status.id} title={status.detail}>{status.text}</span>
+      )))}
     </div>
   );
 }
 
-export function Hand(): ReactElement {
+export function Hand({ children }: { readonly children?: ReactNode }): ReactElement {
   const facts = useHudFacts();
   const kind = usePlannerEventStore((state) => state.eventKind);
   const armedCardId = useCatalogueStore((state) => state.armedCardId);
@@ -179,10 +243,14 @@ export function Hand(): ReactElement {
   const redoable = useEditorStore((state) => canRedo(state.history));
   const undoWords = useEditorStore((state) => undoLabel(state.history));
   const redoWords = useEditorStore((state) => redoLabel(state.history));
+  const chosen = useChosenPiece();
+  const receipt = useReceiptShowing();
   const previewRef = useRef<HTMLDivElement>(null);
   const [dragged, setDragged] = useState<HandCard | null>(null);
 
   const cards = useMemo(() => handCardsFromCounts(kind, facts.counts, plannerChairSlug(kind)), [kind, facts.counts]);
+  // A card in hand keeps the cards on the shelf, so the card can be seen in hand.
+  const verbs = chosen.count > 0 && armedCardId === null;
 
   // The digits take the cards, as they sit: 1 is the first.
   const digitBindings = useMemo((): KeyBinding[] => cards.map((card, index) => ({
@@ -197,82 +265,80 @@ export function Hand(): ReactElement {
   const layOut = (): void => { usePlannerHudStore.getState().openSheet(guestsKnown ? "layout" : "event"); };
 
   return (
-    <section className="hud-hand" aria-label="Furniture and the next steps" data-in-hand={armedCardId !== null ? "true" : undefined}>
-      <SeatLine />
-      <div className="hud-hand__row">
-        <div className="hud-hand__make">
-          <button type="button" className="hud-key hud-key--make" onClick={layOut} disabled={locked}>
-            <SunburstGlyph />
-            <span>Lay out for me</span>
-          </button>
-          <div className="hud-hand__history">
-            <button
-              type="button"
-              className="hud-key hud-key--quiet"
-              onClick={() => { useEditorStore.getState().undo(); }}
-              disabled={!undoable || locked}
-              aria-label={undoWords === null ? "Undo" : `Undo ${undoWords}`}
-              title={undoWords === null ? "Nothing to undo" : `Undo ${undoWords} (Ctrl Z)`}
-            >
-              <UndoGlyph />
-              <span>Undo</span>
-            </button>
-            <button
-              type="button"
-              className="hud-key hud-key--quiet"
-              onClick={() => { useEditorStore.getState().redo(); }}
-              disabled={!redoable || locked}
-              aria-label={redoWords === null ? "Redo" : `Redo ${redoWords}`}
-              title={redoWords === null ? "Nothing to redo" : `Redo ${redoWords} (Ctrl Shift Z)`}
-            >
-              <RedoGlyph />
-              <span>Redo</span>
-            </button>
-          </div>
-        </div>
+    <section
+      className="hud-shelf"
+      aria-label="Furniture and the next steps"
+      data-in-hand={armedCardId !== null ? "true" : undefined}
+      data-chosen={verbs ? "true" : undefined}
+    >
+      <SeatEdge />
 
-        <ul className="hud-hand__cards" role="list">
-          {cards.map((card, index) => (
-            <CardKey
-              key={card.id}
-              card={card}
-              index={index}
-              armed={armedCardId === card.id}
-              locked={locked}
-              previewRef={previewRef}
-              onDragChange={setDragged}
-            />
-          ))}
-          <li className="hud-card-slot hud-card-slot--more">
-            <button
-              type="button"
-              className="hud-card hud-card--more"
-              onClick={() => { usePlannerHudStore.getState().toggleSheet("more"); }}
-              aria-label="More furniture"
-              title="Everything the hall has, by kind"
-            >
-              <MoreGlyph />
-              <span className="hud-card__name">More</span>
-            </button>
-          </li>
-        </ul>
-
-        <div className="hud-hand__finish">
-          <button type="button" className="hud-key hud-key--primary" onClick={() => { usePlannerHudStore.getState().toggleSheet("send"); }}>
-            Send to Events Team
-          </button>
-        </div>
+      <div className="hud-shelf__status">
+        <HudNotices />
+        <StatusLine chosen={verbs ? chosen : null} hidden={receipt} />
       </div>
+
+      <div className="hud-shelf__words">
+        <button type="button" className="hud-word hud-shelf__lay-out" onClick={layOut} disabled={locked}>Lay out for me</button>
+        <button
+          type="button"
+          className="hud-word"
+          onClick={() => { useEditorStore.getState().undo(); }}
+          disabled={!undoable || locked}
+          aria-label={undoWords === null ? "Undo" : `Undo ${undoWords}`}
+          title={undoWords === null ? "Nothing to undo" : `Undo ${undoWords} (Ctrl Z)`}
+        >
+          Undo
+        </button>
+        <button
+          type="button"
+          className="hud-word"
+          onClick={() => { useEditorStore.getState().redo(); }}
+          disabled={!redoable || locked}
+          aria-label={redoWords === null ? "Redo" : `Redo ${redoWords}`}
+          title={redoWords === null ? "Nothing to redo" : `Redo ${redoWords} (Ctrl Shift Z)`}
+        >
+          Redo
+        </button>
+      </div>
+
+      <ul className="hud-cards" role="list" hidden={verbs}>
+        {cards.map((card, index) => (
+          <CardKey
+            key={card.id}
+            card={card}
+            index={index}
+            armed={armedCardId === card.id}
+            locked={locked}
+            previewRef={previewRef}
+            onDragChange={setDragged}
+          />
+        ))}
+        <li className="hud-cards__slot">
+          <button
+            type="button"
+            className="hud-card hud-card--more"
+            onClick={() => { usePlannerHudStore.getState().toggleSheet("more"); }}
+            aria-label="More furniture"
+            title="Everything the hall has, by kind"
+          >
+            <span className="hud-card__art" aria-hidden="true" />
+            <span className="hud-card__name">More</span>
+          </button>
+        </li>
+      </ul>
+      {verbs ? <PieceVerbs chosen={chosen} /> : null}
+
+      <div className="hud-shelf__act"><NextMoveKey /></div>
 
       {/* What is carried from the hand until the pointer is over the floor, where the room's own ghost takes over. */}
       <div ref={previewRef} className="hud-card-carry" hidden={dragged === null} aria-hidden="true">
-        {dragged !== null ? (
-          <span className="hud-card-carry__card">
-            {dragged.art !== null ? <img src={dragged.art} alt="" draggable={false} /> : null}
-            <span>{dragged.name}</span>
-          </span>
+        {dragged !== null && dragged.art !== null ? (
+          <span className="hud-card-carry__art"><img src={dragged.art} alt="" draggable={false} /></span>
         ) : null}
       </div>
+
+      {children}
     </section>
   );
 }

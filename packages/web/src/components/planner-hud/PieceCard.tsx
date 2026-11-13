@@ -8,22 +8,26 @@ import { asOneUndoStep, changeSeatsAtSelectedTables, duplicateSelection, removeS
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
-import { CopyGlyph, MinusGlyph, PlusGlyph, PutBackGlyph, TurnGlyph } from "./glyphs.js";
+import { MinusGlyph, PlusGlyph } from "./glyphs.js";
 
 // ---------------------------------------------------------------------------
-// The piece card: what is chosen, and the few things to do with it (design
-// spec, "The stations"). It stands in for the inspector of coordinates: a
-// table's seats, its cloth, a turn, a copy, and back to the hand. It keeps
-// one place on screen, so the hand that chose a table finds its card without
-// looking for it.
+// The chosen piece's verbs (DOCTRINE.md, "letterbox"). When something is
+// chosen the cards give way, in the same shelf, to the few things to do with
+// it: a table's seats, its cloth, a turn, a copy, and back off the floor. The
+// piece's name stands where the status line's first words were (Hand.tsx);
+// letting it go brings the cards back. The piece itself is marked in the hall,
+// not here.
 // ---------------------------------------------------------------------------
 
 /** One press of Turn: the planner's own step, a twelfth of a half turn. */
 const TURN_STEP = Math.PI / 12;
 
+/** The name's element: the verbs are labelled by it, from the status line. */
+export const PIECE_TITLE_ID = "hud-piece-title";
+
 type Linen = "bare" | "white" | "black";
 
-interface Chosen {
+export interface Chosen {
   readonly count: number;
   /** The one dining table chosen (with or without its chairs), or null. */
   readonly tableId: string | null;
@@ -55,6 +59,12 @@ function chosenFrom(items: readonly PlacedItem[], selected: ReadonlySet<string>)
   return { count: pieces.length, tableId: table.id, title: label === "" ? kind : `${label} · ${kind}`, seats, linen };
 }
 
+/** What is chosen in the room now, named the way the shelf names it. */
+export function useChosenPiece(): Chosen {
+  const selected = useSelectionStore((state) => state.selectedIds);
+  return usePlacementStore(useShallow((state) => chosenFrom(state.placedItems, selected)));
+}
+
 function wearLinen(tableId: string, current: Linen, next: Linen): void {
   if (current === next) return;
   const placement = usePlacementStore.getState();
@@ -70,22 +80,20 @@ const LINENS: readonly { readonly id: Linen; readonly label: string }[] = [
   { id: "bare", label: "No cloth" },
 ];
 
-export function PieceCard(): ReactElement | null {
-  const selected = useSelectionStore((state) => state.selectedIds);
-  const chosen = usePlacementStore(useShallow((state) => chosenFrom(state.placedItems, selected)));
+/** The verbs for what is chosen, in the cards' place; nothing while nothing is. */
+export function PieceVerbs({ chosen }: { readonly chosen: Chosen }): ReactElement | null {
   const locked = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   if (chosen.count === 0) return null;
   const { tableId, linen } = chosen;
   return (
-    <section className="hud-piece" aria-label={chosen.title}>
-      <h2 className="hud-piece__title">{chosen.title}</h2>
+    <section className="hud-piece" aria-labelledby={PIECE_TITLE_ID}>
       {tableId !== null && chosen.seats > 0 ? (
         <div className="hud-stepper" role="group" aria-label="Seats at this table">
-          <button type="button" className="hud-stepper__key" aria-label="One seat fewer" disabled={locked} onClick={() => { changeSeatsAtSelectedTables(-1); }}>
+          <button type="button" className="hud-round" aria-label="One seat fewer" disabled={locked} onClick={() => { changeSeatsAtSelectedTables(-1); }}>
             <MinusGlyph />
           </button>
           <span className="hud-stepper__value" aria-live="polite">{chosen.seats === 1 ? "1 seat" : `${String(chosen.seats)} seats`}</span>
-          <button type="button" className="hud-stepper__key" aria-label="One seat more" disabled={locked} onClick={() => { changeSeatsAtSelectedTables(1); }}>
+          <button type="button" className="hud-round" aria-label="One seat more" disabled={locked} onClick={() => { changeSeatsAtSelectedTables(1); }}>
             <PlusGlyph />
           </button>
         </div>
@@ -109,18 +117,9 @@ export function PieceCard(): ReactElement | null {
         </div>
       ) : null}
       <div className="hud-piece__keys">
-        <button type="button" className="hud-key hud-key--quiet" disabled={locked} title="Turn it (Q and E)" onClick={() => { turnSelection(TURN_STEP); }}>
-          <TurnGlyph />
-          <span>Turn</span>
-        </button>
-        <button type="button" className="hud-key hud-key--quiet" disabled={locked} title="Another like it, beside it (Ctrl D)" onClick={() => { duplicateSelection(); }}>
-          <CopyGlyph />
-          <span>Copy</span>
-        </button>
-        <button type="button" className="hud-key hud-key--quiet" disabled={locked} title="Take it off the floor (Delete)" onClick={() => { removeSelection(); }}>
-          <PutBackGlyph />
-          <span>Put back</span>
-        </button>
+        <button type="button" className="hud-word" disabled={locked} title="Turn it (Q and E)" onClick={() => { turnSelection(TURN_STEP); }}>Turn</button>
+        <button type="button" className="hud-word" disabled={locked} title="Another like it, beside it (Ctrl D)" onClick={() => { duplicateSelection(); }}>Copy</button>
+        <button type="button" className="hud-word" disabled={locked} title="Take it off the floor (Delete)" onClick={() => { removeSelection(); }}>Put back</button>
       </div>
     </section>
   );

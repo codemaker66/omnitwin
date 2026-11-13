@@ -4,12 +4,13 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
-// The HUD behind its flag (docs/superpowers/specs/2026-11-13-planner-hud-design.md).
-// With `?chrome=hud` the planner is the room, full bleed, under the HUD's five
-// stations, and none of v1's surfaces (the cockpit and its docks, the 3D/2D
-// switch, the Event details button, the floating panels). The layout still
-// syncs and saves through one EditorBridge. Without the flag v1 is still the
-// default, and `?chrome=v2` still gives the second chrome.
+// The HUD behind its flag (docs/superpowers/specs/2026-11-13-planner-hud-design.md;
+// its look, D:/claude/planner-hud-20261113/DOCTRINE.md). With `?chrome=hud` the
+// planner is the room, full bleed, between the HUD's two bars (the top bar
+// and the shelf), and none of v1's surfaces (the cockpit and its docks, the
+// 3D/2D switch, the Event details button, the floating panels). The layout
+// still syncs and saves through one EditorBridge. Without the flag v1 is still
+// the default, and `?chrome=v2` still gives the second chrome.
 // ---------------------------------------------------------------------------
 
 vi.mock("../App.js", () => ({ App: () => <div data-testid="mock-editor-3d" /> }));
@@ -124,32 +125,30 @@ describe("EditorPage with the HUD", () => {
     const journey = screen.getByRole("navigation", { name: "Your plan, step by step" });
     const steps = within(journey).getAllByRole("listitem").map((item) => item.textContent);
     expect(steps).toEqual(["Your event", "Lay out", "Finishing touches", "Send"]);
-    expect(within(journey).getByRole("button", { name: /^Next:/u })).toBeTruthy();
   });
 
-  it("lists the seals down the left, and the wedding's three among them", async () => {
+  it("says the room's facts once, on the shelf's status line, with no column of seals", async () => {
     openPlanner("?chrome=hud");
     await hudOnScreen();
-    const seals = screen.getByRole("complementary", { name: "Your room" });
-    const labels = within(seals).getAllByRole("listitem").map((item) => item.querySelector(".hud-seal__label")?.textContent);
-    expect(labels).toContain("Seats");
-    expect(labels).toContain("Aisles");
-    expect(labels.slice(-3)).toEqual(["Top table", "Dance floor", "Bar"]);
+    const shelf = screen.getByRole("region", { name: "Furniture and the next steps" });
+    expect(within(shelf).getByRole("status", { name: "The room as it stands" }).textContent).toContain("0 seats placed");
+    expect(screen.queryByRole("complementary", { name: "Your room" })).toBeNull();
   });
 
-  it("deals the hand: eight cards, More, Send to Events Team, and the keys beside them", async () => {
+  it("deals the hand: eight cards, More, the keys beside them, and the one primary key", async () => {
     openPlanner("?chrome=hud");
     await hudOnScreen();
     const hand = screen.getByRole("region", { name: "Furniture and the next steps" });
     expect(hand.querySelectorAll("[data-card]")).toHaveLength(8);
     expect(within(hand).getByRole("button", { name: "More furniture" })).toBeTruthy();
-    expect(within(hand).getByRole("button", { name: "Send to Events Team" })).toBeTruthy();
     expect(within(hand).getByRole("button", { name: "Lay out for me" })).toBeTruthy();
     expect(within(hand).getByRole("button", { name: "Undo" })).toBeTruthy();
     expect(within(hand).getByRole("button", { name: "Redo" })).toBeTruthy();
+    expect(within(hand).getByRole("button", { name: "Say how many guests" })).toBeTruthy();
+    expect(within(hand).queryByRole("button", { name: "Send to Events Team" })).toBeNull();
   });
 
-  it("has the view station's more-tools key, and no piece card until something is chosen", async () => {
+  it("has the view's more-tools key, and no piece verbs until something is chosen", async () => {
     openPlanner("?chrome=hud");
     await hudOnScreen();
     expect(screen.getByRole("button", { name: "More tools" })).toBeTruthy();

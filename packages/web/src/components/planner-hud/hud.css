@@ -1,39 +1,121 @@
 /* ---------------------------------------------------------------------------
- * THE PLANNER HUD: one room, five stations
- * (docs/superpowers/specs/2026-11-13-planner-hud-design.md).
+ * THE PLANNER HUD: two bars and the hall
+ * (D:/claude/planner-hud-20261113/DOCTRINE.md, "letterbox").
  *
- * This sheet is the layout and the parts, drawn only from the --hud-* values a
- * skin sets (hud-skins.css). Rules that hold in every skin:
- *   - the room fills the screen; stations hug its edges and take no pointer
- *     themselves, so an empty place never blocks the floor;
- *   - every key is at least 44 px tall and answers a press by scaling to 0.97;
- *   - a hover changes light only, never position (calm-hover.test.ts);
- *   - nothing blurs or filters the room behind it.
+ * The hall fills the screen. Two opaque bars of one ground sit over it, like
+ * the bars of a wide film frame: the top bar (the plaque, the four steps, the
+ * view) and the shelf (the seat line, the status line, the quiet words, the
+ * hand of cards and the one primary key). A sheet and the first screen are the
+ * shelf grown upward; nothing else is a surface.
+ *
+ * Every measure is a token in the first block below, so it can be tuned in
+ * one place; the colours are the grounds' (hud-skins.css). The rules that hold
+ * everywhere: a 4 px grid and an 8 px unit; radius 0, circles only for round
+ * glyph keys; lines 1 px and the chosen outline 2 px; no shadow, glow, blur,
+ * filter or gradient; one sans in two weights at four sizes, the event's name
+ * alone in the serif; motion only in answer to a press, ease-out, and under
+ * reduced motion nothing travels. A hover only takes a line or a word to full
+ * ink (calm-hover.test.ts).
  * ------------------------------------------------------------------------- */
 
 .hud-root {
-  --hud-gutter: 16px;
-  --hud-card-w: clamp(92px, 7.3vw, 136px);
-  --hud-press: 120ms;
-  --hud-ease: var(--house-ease-out);
+  /* -- Measure: a 4 px grid, an 8 px unit -------------------------------- */
+  --hud-u: 4px;
+  --hud-gutter: 16px;            /* screen edge to the first mark */
+  --hud-gap: 8px;                /* between marks in one group */
+  --hud-gap-wide: 16px;          /* between words in one group */
+  --hud-gap-group: 32px;         /* between groups: twice the widest gap within */
+  --hud-reach: 8px;              /* a word's hit area past its letters, each side */
+  --hud-hit: 44px;               /* the smallest hit area */
+  --hud-bar-h: 48px;
+  --hud-shelf-h: 152px;
+  --hud-shelf-pad-top: 12px;
+  --hud-shelf-pad-bottom: 8px;
+  --hud-shelf-side: 176px;       /* the shelf's side columns never narrower */
+  /*
+   * The shelf's arrangement. 152 px will not hold a full-width status line
+   * above a row of 2:3 photographs with two-line captions, so by default the
+   * status line stands at the top of the left column, over the quiet words,
+   * and the cards take the shelf's full height. For the doctrine's stacked
+   * reading set the areas to "status status status" "words cards act" and
+   * raise --hud-shelf-h to 188px.
+   */
+  --hud-shelf-columns: minmax(var(--hud-shelf-side), 1fr) minmax(0, max-content) minmax(var(--hud-shelf-side), 1fr);
+  --hud-shelf-rows: auto 1fr;
+  --hud-shelf-areas: "status cards act" "words cards act";
+  --hud-rise: 60dvh;             /* the shelf with a sheet or the first screen risen, at most */
+  --hud-sheet-pad: 24px;
+  --hud-sheet-measure: 720px;
+  --hud-sheet-measure-wide: 1040px;
+  --hud-act-h: 48px;             /* the one primary key */
+  --hud-stepper-value: 64px;
+
+  /* -- Cards: photographs, 2:3 ------------------------------------------- */
+  --hud-card-col: 96px;          /* a card's column: its caption's width */
+  --hud-card-w: 64px;            /* the photograph's width; its height is half again */
+  --hud-card-rise: 4px;          /* a card in hand */
+  --hud-photo-zoom: 1.16;        /* the square render, enlarged from its foot, so its margin falls outside the frame */
+  --hud-answer-w: 144px;         /* the first screen's photographs */
+  --hud-round: 32px;             /* a round glyph key's circle */
+  --hud-swatch: 24px;            /* a cloth */
+
+  /* -- Lines and states --------------------------------------------------- */
+  --hud-hair: 1px;
+  --hud-chosen: 2px;
+  --hud-radius: 0;
+  --hud-underline: 6px;          /* from the baseline to a current step's line */
+  --hud-glyph-size: 16px;
+  --hud-dim: 0.6;                /* steps ahead, the other cards while one is in hand */
+  --hud-off: 0.36;               /* nothing to do now */
+
+  /* -- Type: one sans, two weights, four sizes on 1.25 -------------------- */
+  --hud-sans: var(--house-sans);
+  --hud-serif: var(--house-serif);
+  --hud-regular: 400;
+  --hud-medium: 500;
+  --hud-s: 11px;
+  --hud-s-lh: 16px;
+  --hud-m: 13px;
+  --hud-m-lh: 20px;
+  --hud-l: 16px;
+  --hud-l-lh: 24px;
+  --hud-xl: 20px;
+  --hud-xl-lh: 28px;
+  --hud-label-track: 0.08em;     /* the one label style, for the sheets' section heads */
+
+  /* -- Motion: in answer to a press only --------------------------------- */
+  --hud-ease: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --hud-press-ms: 160ms;
+  --hud-move-ms: 240ms;
+  --hud-pressed: 0.97;
+
   position: fixed;
   inset: 0;
   overflow: hidden;
   color: var(--hud-ink);
-  font-family: var(--hud-font-text);
-  font-size: 15px;
-  line-height: 1.3;
+  font-family: var(--hud-sans);
+  font-size: var(--hud-m);
+  font-weight: var(--hud-regular);
+  line-height: var(--hud-m-lh);
+  font-variant-numeric: tabular-nums lining-nums;
   -webkit-font-smoothing: antialiased;
 }
 
-.hud-root button {
+/* No more specific than a class, so each key's own colour below is the one it wears. */
+.hud-root :where(button, input) {
   font: inherit;
   color: inherit;
 }
 
 .hud-root :focus-visible {
-  outline: 2px solid var(--hud-accent-bright);
-  outline-offset: 2px;
+  outline: var(--hud-chosen) solid var(--hud-ink);
+  outline-offset: var(--hud-chosen);
+}
+
+.hud-root :is(button, input):disabled,
+.hud-root [aria-disabled="true"] {
+  opacity: var(--hud-off);
+  cursor: default;
 }
 
 .hud-room {
@@ -41,376 +123,511 @@
   inset: 0;
 }
 
-.hud-stations {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  pointer-events: none;
+/* The room's canvas ends where the shelf begins: the shelf is the picture's foot, and nothing is drawn under it. */
+.hud-room .venviewer-planner-shell {
+  bottom: var(--hud-shelf-h);
 }
 
-.hud-station {
-  position: absolute;
-  display: flex;
-  pointer-events: none;
+@keyframes hud-rise {
+  from { clip-path: inset(100% 0 0 0); }
+  to { clip-path: inset(0); }
 }
 
-.hud-station > * {
-  pointer-events: auto;
+@keyframes hud-arrive {
+  from { opacity: 0; }
 }
 
-.hud-station--plaque {
-  top: var(--hud-gutter);
-  left: var(--hud-gutter);
-  width: 320px;
-  flex-direction: column;
+/* -- The marks every part is made of --------------------------------------- */
+
+.hud-glyph {
+  flex: none;
+  width: var(--hud-glyph-size);
+  height: var(--hud-glyph-size);
 }
 
-.hud-station--journey {
-  top: var(--hud-gutter);
-  left: 50%;
-  translate: -50% 0;
-}
-
-.hud-station--view {
-  top: var(--hud-gutter);
-  right: var(--hud-gutter);
-}
-
-.hud-station--seals {
-  top: 176px;
-  left: var(--hud-gutter);
-}
-
-.hud-station--piece {
-  top: 132px;
-  right: var(--hud-gutter);
-}
-
-.hud-station--notices {
-  bottom: calc(var(--hud-gutter) + var(--hud-card-w) * 1.36 + 96px);
-  left: 50%;
-  translate: -50% 0;
-  flex-direction: column;
+/* A word that does something: secondary ink until pointed at or pressed. */
+.hud-word {
+  display: inline-flex;
   align-items: center;
+  min-height: var(--hud-hit);
+  margin-inline: calc(-1 * var(--hud-reach));
+  padding: 0 var(--hud-reach);
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink-2);
+  font-weight: var(--hud-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--hud-press-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
 }
 
-.hud-station--hand {
-  right: var(--hud-gutter);
-  bottom: var(--hud-gutter);
-  left: var(--hud-gutter);
+/* A choice among words (the view, the light, the sound): the one chosen at full ink and underlined. */
+.hud-option,
+.hud-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hud-u);
+  min-height: var(--hud-hit);
+  margin-inline: calc(-1 * var(--hud-reach));
+  padding: 0 var(--hud-reach);
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  font-weight: var(--hud-medium);
+  white-space: nowrap;
+  opacity: var(--hud-dim);
+  text-decoration-line: underline;
+  text-decoration-color: transparent;
+  text-decoration-thickness: var(--hud-hair);
+  text-underline-offset: var(--hud-underline);
+  cursor: pointer;
+  transition: opacity var(--hud-press-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
 }
 
-/* -- The surface every station is made of ---------------------------------- */
-
-.hud-hand,
-.hud-seals,
-.hud-piece,
-.hud-journey__steps,
-.hud-view__switch,
-.hud-sheet,
-.hud-lab-plaque,
-.hud-card-carry__card {
-  background: linear-gradient(var(--hud-ground-top), var(--hud-ground-bottom));
-  border: 1px solid var(--hud-edge);
-  border-radius: var(--hud-radius-panel);
-  box-shadow: inset 0 1px 0 var(--hud-edge-lit), var(--hud-shadow);
-  outline: var(--hud-moulding);
-  outline-offset: -5px;
+.hud-option[aria-checked="true"] {
+  opacity: 1;
+  text-decoration-color: currentColor;
 }
 
-/* -- Keys ------------------------------------------------------------------ */
-
+/* A key with an edge: the sheets' secondary acts. */
 .hud-key {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--hud-edge);
-  border-radius: var(--hud-radius-key);
-  background: var(--hud-key-ground);
-  font-family: var(--hud-font-display);
-  font-size: 15px;
-  font-weight: 500;
-  font-variant-caps: var(--hud-caps);
-  letter-spacing: var(--hud-caps-spacing);
-  line-height: 1.1;
+  gap: var(--hud-gap);
+  min-height: var(--hud-hit);
+  padding: 0 var(--hud-gap-wide);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  font-weight: var(--hud-medium);
+  white-space: nowrap;
   cursor: pointer;
-  transition: scale var(--hud-press) var(--hud-ease), background-color var(--hud-press) var(--hud-ease), border-color var(--hud-press) var(--hud-ease);
+  transition: border-color var(--hud-press-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
 }
 
-.hud-key:active:not(:disabled) {
-  scale: 0.97;
+.hud-key[aria-pressed="true"] {
+  outline: var(--hud-chosen) solid var(--hud-ink);
+  outline-offset: calc(-1 * var(--hud-chosen));
 }
 
-.hud-key:disabled {
-  opacity: 0.42;
-  cursor: default;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .hud-key:hover:not(:disabled) {
-    background: var(--hud-key-ground-hover);
-    border-color: var(--hud-accent);
-  }
-}
-
-.hud-key--quiet {
-  padding: 0 10px;
-  font-size: 14px;
-}
-
-.hud-key--chip {
-  background: linear-gradient(var(--hud-ground-top), var(--hud-ground-bottom));
-  box-shadow: var(--hud-shadow);
-}
-
-.hud-key--round {
-  width: 44px;
-  padding: 0;
-  border-radius: 999px;
-  background: linear-gradient(var(--hud-ground-top), var(--hud-ground-bottom));
-  box-shadow: var(--hud-shadow);
-}
-
-.hud-key--make {
-  flex: 1 1 auto;
-  min-height: 60px;
-  background: var(--hud-make-ground);
-  border-color: var(--hud-accent);
-  color: var(--hud-make-ink);
-  font-size: 18px;
-}
-
-.hud-key--primary {
-  width: clamp(156px, 13.5vw, 228px);
-  min-height: 100%;
-  padding: 0 14px;
-  background: linear-gradient(160deg, var(--hud-accent-bright), var(--hud-accent) 55%, var(--hud-accent-deep));
-  border-color: var(--hud-accent-bright);
-  color: var(--hud-on-accent);
-  font-size: 20px;
-  font-weight: 600;
-  text-wrap: balance;
-  box-shadow: inset 0 1px 0 var(--hud-edge-lit), 0 10px 26px -12px var(--hud-lit);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .hud-key--primary:hover:not(:disabled) {
-    background: linear-gradient(160deg, var(--hud-accent-bright), var(--hud-accent-bright) 45%, var(--hud-accent));
-  }
-}
-
-.hud-glyph {
-  flex: none;
-  width: 20px;
-  height: 20px;
-}
-
-/* -- The hand -------------------------------------------------------------- */
-
-.hud-hand {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 16px 14px;
-}
-
-.hud-seatline {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 16px;
+/* The one primary act: a solid rectangle of the accent. */
+.hud-act {
+  display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  font-family: var(--hud-font-display);
-  font-size: 17px;
-  font-variant-numeric: tabular-nums lining-nums;
+  justify-content: center;
+  gap: var(--hud-gap);
+  min-height: var(--hud-act-h);
+  padding: 0 var(--hud-gap-wide);
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: var(--hud-accent);
+  color: var(--hud-on-accent);
+  font-weight: var(--hud-medium);
+  text-align: center;
+  text-wrap: balance;
+  cursor: pointer;
+  transition: scale var(--hud-press-ms) var(--hud-ease);
 }
 
-.hud-seatline__lead {
-  color: var(--hud-accent-bright);
+.hud-act[hidden] {
+  display: none;
 }
 
-.hud-seatline__tail {
-  color: var(--hud-ink-quiet);
+/* Sent: the move is done, so the key steps back to words. */
+.hud-act[data-move="sent"] {
+  background: none;
+  color: var(--hud-ink);
 }
 
-.hud-seatline__track {
+/* A glyph alone: "more", close. The glyph keeps its line; the hit area reaches past it. */
+.hud-glyph-key {
+  display: inline-grid;
+  place-items: center;
+  width: var(--hud-hit);
+  height: var(--hud-hit);
+  margin-inline: calc((var(--hud-glyph-size) - var(--hud-hit)) / 2);
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  cursor: pointer;
+  transition: scale var(--hud-press-ms) var(--hud-ease);
+}
+
+/* A round glyph key: the one place a circle is drawn, a 1 px line round minus or plus. */
+.hud-round {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: var(--hud-hit);
+  height: var(--hud-hit);
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  cursor: pointer;
+  transition: scale var(--hud-press-ms) var(--hud-ease);
+}
+
+.hud-round::before {
+  position: absolute;
+  inset: calc((var(--hud-hit) - var(--hud-round)) / 2);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: 50%;
+  content: "";
+}
+
+.hud-word:active:not(:disabled),
+.hud-option:active,
+.hud-step:active,
+.hud-key:active:not(:disabled),
+.hud-act:active,
+.hud-glyph-key:active,
+.hud-round:active:not(:disabled) {
+  scale: var(--hud-pressed);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hud-word:hover:not(:disabled) {
+    color: var(--hud-ink);
+  }
+
+  .hud-option:hover,
+  .hud-step:hover {
+    opacity: 1;
+  }
+
+  .hud-key:hover:not(:disabled) {
+    border-color: var(--hud-ink);
+  }
+
+  .hud-round:hover:not(:disabled)::before {
+    border-color: var(--hud-ink);
+  }
+}
+
+/* -- The top bar ------------------------------------------------------------
+ * Not a surface: its words stand on the night above the hall's walls, which
+ * the stage keeps --hud-bar-h of the canvas dark for (hall-stage.ts), in the
+ * night's own light ink whatever the ground. Away from the stage the hall may
+ * pass behind them, so the bar takes one flat scrim of the night.
+ */
+
+.hud-bar {
+  --hud-ink: var(--hud-night-ink);
+  --hud-ink-2: var(--hud-night-ink-2);
+  --hud-line: var(--hud-night-line);
+  color: var(--hud-ink);
+  transition: background-color var(--hud-move-ms) var(--hud-ease);
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  column-gap: var(--hud-gap-group);
+  align-items: center;
+  height: var(--hud-bar-h);
+  padding: 0 var(--hud-gutter);
+  background-color: color-mix(in srgb, var(--hud-night) 76%, transparent);
+}
+
+.hud-root[data-stage="held"] .hud-bar {
+  background-color: transparent;
+}
+
+.hud-bar__plaque {
+  display: flex;
+  align-items: center;
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.hud-steps {
+  justify-self: center;
+}
+
+.hud-steps__list {
+  display: flex;
+  gap: var(--hud-gap-wide);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hud-step[data-state="done"],
+.hud-step[data-state="current"],
+.hud-step[data-open="true"] {
+  opacity: 1;
+}
+
+.hud-step[data-state="current"] {
+  text-decoration-color: currentColor;
+}
+
+.hud-view {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: var(--hud-gap-group);
+}
+
+.hud-view__switch {
+  display: flex;
+  gap: var(--hud-gap-wide);
+}
+
+/* -- The shelf -------------------------------------------------------------- */
+
+.hud-shelf {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: var(--hud-shelf-columns);
+  grid-template-rows: var(--hud-shelf-rows);
+  grid-template-areas: var(--hud-shelf-areas);
+  column-gap: var(--hud-gap-group);
+  height: var(--hud-shelf-h);
+  padding: var(--hud-shelf-pad-top) var(--hud-gutter) var(--hud-shelf-pad-bottom);
+  background: var(--hud-ground);
+}
+
+/* The top edge is the seat line: a hairline, filled in ink as far as the guests are seated. */
+.hud-shelf__edge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--hud-hair);
+  background: var(--hud-line);
+  pointer-events: none;
+}
+
+.hud-shelf__fill {
   display: block;
-  height: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--hud-track);
-}
-
-.hud-seatline__fill {
-  display: block;
-  width: 100%;
   height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--hud-accent-deep), var(--hud-accent-bright));
+  background: var(--hud-ink);
   transform: scaleX(var(--hud-seat-fill, 0));
   transform-origin: left center;
 }
 
-.hud-hand__row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: stretch;
+.hud-shelf__status {
+  grid-area: status;
+  align-self: start;
+  min-width: 0;
 }
 
-.hud-hand__make {
+.hud-status {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: clamp(152px, 13vw, 220px);
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--hud-gap-wide);
+  margin: 0;
 }
 
-.hud-hand__history {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+.hud-status[hidden] {
+  display: none;
 }
 
-.hud-hand__cards {
+.hud-status__lead {
+  margin: 0;
+  color: var(--hud-ink);
+  font-size: var(--hud-l);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-l-lh);
+}
+
+.hud-status__item {
+  color: var(--hud-ink-2);
+}
+
+/* Something to look at: in the accent, underlined, and a press chooses it. Its hit area reaches past its line. */
+.hud-status__look {
+  min-height: var(--hud-hit);
+  margin: calc((var(--hud-m-lh) - var(--hud-hit)) / 2) calc(-1 * var(--hud-reach));
+  padding: 0 var(--hud-reach);
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-accent);
+  font-weight: var(--hud-medium);
+  text-decoration: underline;
+  text-decoration-thickness: var(--hud-hair);
+  text-underline-offset: var(--hud-u);
+  cursor: pointer;
+  transition: scale var(--hud-press-ms) var(--hud-ease);
+}
+
+.hud-status__look:active {
+  scale: var(--hud-pressed);
+}
+
+.hud-status__lead.hud-status__look {
+  margin-block: calc((var(--hud-l-lh) - var(--hud-hit)) / 2);
+}
+
+.hud-shelf__words {
   display: flex;
+  flex-wrap: wrap;
+  grid-area: words;
+  align-self: end;
+  column-gap: var(--hud-gap-wide);
+  min-width: 0;
+}
+
+/* The hand: eight cards and More, on one rhythm of columns, standing on the shelf. */
+.hud-cards {
+  display: flex;
+  grid-area: cards;
+  align-items: flex-end;
   justify-content: center;
-  gap: 10px;
   min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.hud-card-slot {
-  flex: 0 1 var(--hud-card-w);
-  min-width: 0;
+.hud-cards[hidden] {
+  display: none;
 }
 
-.hud-card-slot--more {
-  flex-basis: calc(var(--hud-card-w) * 0.56);
+.hud-cards__slot {
+  flex: none;
+  width: var(--hud-card-col);
 }
 
 .hud-card {
-  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   width: 100%;
-  height: 100%;
-  padding: 6px 6px 8px;
-  border: 1px solid var(--hud-edge);
-  border-radius: var(--hud-radius-card);
-  background: var(--hud-card-ground);
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
   text-align: center;
   cursor: grab;
   touch-action: manipulation;
   user-select: none;
-  transition: translate 160ms var(--hud-ease), scale var(--hud-press) var(--hud-ease), opacity 160ms var(--hud-ease),
-    border-color var(--hud-press) var(--hud-ease), box-shadow 160ms var(--hud-ease);
+  transition: translate var(--hud-move-ms) var(--hud-ease), opacity var(--hud-move-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
 }
 
 .hud-card:active {
-  scale: 0.97;
+  scale: var(--hud-pressed);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .hud-card:hover {
-    border-color: var(--hud-accent);
-    box-shadow: 0 0 22px -8px var(--hud-lit);
-  }
-}
-
-/* In hand: the card rises and keeps its light; the others stand back. */
-.hud-card[data-armed="true"] {
-  translate: 0 -12px;
-  border-color: var(--hud-accent-bright);
-  box-shadow: 0 0 0 1px var(--hud-accent-bright), 0 20px 30px -14px rgb(0 0 0 / 0.75), 0 0 30px -6px var(--hud-lit);
-  cursor: default;
-}
-
-.hud-hand[data-in-hand="true"] .hud-card:not([data-armed="true"]) {
-  opacity: 0.66;
-}
-
-.hud-card[aria-disabled="true"] {
-  opacity: 0.42;
-  cursor: default;
+/*
+ * The photograph: the square render on its seamless ground, standing on the
+ * frame's foot. The frame's own ground is the tile (the shelf's ground on the
+ * light grounds), and the render darkens onto it, so the render's pale ground
+ * is the shelf exactly and only the furniture shows. That holds while the card
+ * rises or fades, when the card becomes its own isolated group.
+ */
+.hud-card__art,
+.hud-card-carry__art,
+.hud-first-open__art {
+  position: relative;
+  display: block;
+  flex: none;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  background: var(--hud-tile);
 }
 
 .hud-card__art {
-  display: block;
-  aspect-ratio: 1;
-  overflow: hidden;
-  border-radius: calc(var(--hud-radius-card) - 2px);
-  background: var(--hud-mat);
-  box-shadow: inset 0 0 0 1px var(--hud-mat-edge);
+  width: var(--hud-card-w);
 }
 
-.hud-card__art img {
+.hud-card__art img,
+.hud-card-carry__art img,
+.hud-first-open__art img {
+  position: absolute;
+  bottom: 0;
+  left: 0;
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  scale: 1.32;
-  mix-blend-mode: multiply;
+  aspect-ratio: 1;
+  object-fit: contain;
+  transform-origin: 50% 100%;
+  scale: var(--hud-photo-zoom);
+  mix-blend-mode: var(--hud-photo-blend);
   pointer-events: none;
 }
 
-.hud-card__name {
-  margin-top: 6px;
-  font-family: var(--hud-font-display);
-  font-size: 15px;
-  font-weight: 500;
-  font-variant-caps: var(--hud-caps);
-  letter-spacing: var(--hud-caps-spacing);
-  line-height: 1.12;
-  text-wrap: balance;
-}
-
+.hud-card__name,
 .hud-card__detail {
-  margin-top: 2px;
-  color: var(--hud-ink-quiet);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  font-size: var(--hud-s);
+  line-height: var(--hud-s-lh);
+  white-space: nowrap;
 }
 
-.hud-card__count {
-  position: absolute;
-  top: -9px;
-  right: -7px;
-  display: grid;
-  place-items: center;
-  min-width: 30px;
-  height: 30px;
-  padding: 0 6px;
-  border: 1px solid var(--hud-accent-bright);
-  border-radius: 999px;
-  background: var(--hud-accent);
-  color: var(--hud-on-accent);
-  font-size: 13px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+.hud-card__name {
+  margin-top: var(--hud-u);
+  font-weight: var(--hud-medium);
 }
 
+.hud-card__count,
+.hud-card__detail {
+  color: var(--hud-ink-2);
+}
+
+/* In hand: a 2 px ink outline and a rise; the others stand back. */
+.hud-card[data-armed="true"] {
+  translate: 0 calc(-1 * var(--hud-card-rise));
+  cursor: default;
+}
+
+.hud-card[data-armed="true"] .hud-card__art {
+  outline: var(--hud-chosen) solid var(--hud-ink);
+}
+
+.hud-shelf[data-in-hand="true"] .hud-card:not([data-armed="true"]) {
+  opacity: var(--hud-dim);
+}
+
+/* More: a word on the captions' line, with no photograph above it. */
 .hud-card--more {
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
   cursor: pointer;
 }
 
+.hud-card--more .hud-card__art {
+  background: none;
+}
+
 .hud-card--more .hud-card__name {
-  margin-top: 0;
+  color: var(--hud-ink-2);
 }
 
-.hud-hand__finish {
+@media (hover: hover) and (pointer: fine) {
+  .hud-card:hover .hud-card__detail,
+  .hud-card:hover .hud-card__count,
+  .hud-card--more:hover .hud-card__name {
+    color: var(--hud-ink);
+  }
+}
+
+.hud-shelf__act {
   display: flex;
+  grid-area: act;
+  align-self: end;
+  justify-self: end;
+  min-width: 0;
 }
 
+/* What is carried from the hand until the floor's own ghost takes over. */
 .hud-card-carry {
   position: fixed;
   top: 0;
@@ -419,27 +636,15 @@
   pointer-events: none;
 }
 
-.hud-card-carry__card {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  display: grid;
-  gap: 4px;
-  width: 104px;
-  padding: 6px 6px 8px;
-  rotate: -3deg;
-  font-family: var(--hud-font-display);
-  font-size: 13px;
-  text-align: center;
+.hud-card-carry[hidden] {
+  display: none;
 }
 
-.hud-card-carry__card img {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: 3px;
-  background: var(--hud-mat);
+.hud-card-carry__art {
+  position: absolute;
+  top: var(--hud-gap-wide);
+  left: var(--hud-gap-wide);
+  width: var(--hud-card-w);
 }
 
 body.hud-dragging-card,
@@ -448,791 +653,436 @@ body.hud-dragging-card * {
   user-select: none;
 }
 
-/* -- Your room: the seals --------------------------------------------------- */
-
-.hud-seals {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 220px;
-  padding: 12px 12px 10px;
-}
-
-.hud-seals__title {
-  margin: 0;
-  padding: 0 4px 8px;
-  border-bottom: 1px solid var(--hud-rule);
-  color: var(--hud-accent-bright);
-  font-family: var(--hud-font-display);
-  font-size: 16px;
-  font-weight: 500;
-  font-variant-caps: var(--hud-caps);
-  letter-spacing: 0.08em;
-}
-
-.hud-seals__list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.hud-seal {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  width: 100%;
-  min-height: 52px;
-  padding: 4px;
-  border: 0;
-  border-radius: var(--hud-radius-key);
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color var(--hud-press) var(--hud-ease), scale var(--hud-press) var(--hud-ease);
-}
-
-.hud-seal:active {
-  scale: 0.98;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .hud-seal:hover {
-    background: var(--hud-wash);
-  }
-}
-
-.hud-seal__mark {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  clip-path: var(--hud-seal-shape);
-  background: var(--hud-seal-rim);
-  color: var(--hud-ink-quiet);
-  transition: background-color 320ms var(--hud-ease), color 320ms var(--hud-ease);
-}
-
-.hud-seal__mark::before {
-  position: absolute;
-  inset: 2px;
-  clip-path: var(--hud-seal-shape);
-  background: var(--hud-seal-face);
-  content: "";
-  transition: background-color 320ms var(--hud-ease);
-}
-
-.hud-seal__mark > * {
-  position: relative;
-}
-
-.hud-glyph--seal {
-  width: 22px;
-  height: 22px;
-}
-
-.hud-seal[data-state="lit"] .hud-seal__mark {
-  background: var(--hud-accent-bright);
-  color: var(--hud-on-accent);
-}
-
-.hud-seal[data-state="lit"] .hud-seal__mark::before {
-  background: linear-gradient(160deg, var(--hud-accent-bright), var(--hud-accent));
-}
-
-.hud-seal[data-state="attention"] .hud-seal__mark {
-  background: var(--hud-attention);
-  color: var(--hud-attention);
-}
-
-.hud-seal[data-seal="seats"] .hud-seal__mark {
-  clip-path: none;
-  background: none;
-}
-
-.hud-seal[data-seal="seats"] .hud-seal__mark::before {
-  content: none;
-}
-
-.hud-seal__ring {
-  display: block;
-  width: 44px;
-  height: 44px;
-}
-
-.hud-seal__ring svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  rotate: -90deg;
-}
-
-.hud-seal__ring-track,
-.hud-seal__ring-fill {
-  fill: none;
-  stroke-width: 3.5;
-}
-
-.hud-seal__ring-track {
-  stroke: var(--hud-track);
-}
-
-.hud-seal__ring-fill {
-  stroke: var(--hud-accent-bright);
-  stroke-linecap: round;
-  stroke-dasharray: var(--hud-ring, 0) 400;
-}
-
-.hud-seal[data-state="attention"] .hud-seal__ring-fill {
-  stroke: var(--hud-attention);
-}
-
-.hud-seal__words {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.hud-seal__label {
-  font-family: var(--hud-font-display);
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 1.15;
-}
-
-.hud-seal[data-state="waiting"] .hud-seal__label {
-  color: var(--hud-ink-quiet);
-}
-
-.hud-seal__value {
-  color: var(--hud-ink-quiet);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums lining-nums;
-}
-
-.hud-seal[data-state="attention"] .hud-seal__value {
-  color: var(--hud-attention);
-}
-
-.hud-seal__detail {
-  margin: 0 4px 6px 60px;
-  color: var(--hud-ink-quiet);
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-/* -- The journey ----------------------------------------------------------- */
-
-.hud-journey {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.hud-journey__steps {
-  display: flex;
-  align-items: center;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
-}
-
-.hud-journey__slot {
-  display: flex;
-  align-items: center;
-}
-
-.hud-journey__slot + .hud-journey__slot::before {
-  width: 14px;
-  height: 1px;
-  background: var(--hud-edge);
-  content: "";
-}
-
-.hud-step {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: calc(var(--hud-radius-key) - 1px);
-  background: none;
-  color: var(--hud-ink-quiet);
-  font-family: var(--hud-font-display);
-  font-size: 15px;
-  font-weight: 500;
-  font-variant-caps: var(--hud-caps);
-  letter-spacing: var(--hud-caps-spacing);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: scale var(--hud-press) var(--hud-ease), background-color var(--hud-press) var(--hud-ease), color var(--hud-press) var(--hud-ease);
-}
-
-.hud-step:active {
-  scale: 0.97;
-}
-
-.hud-step[data-state="done"] {
-  color: var(--hud-ink);
-}
-
-.hud-step[data-state="done"] .hud-glyph {
-  width: 16px;
-  height: 16px;
-  color: var(--hud-accent-bright);
-}
-
-.hud-step[data-state="current"] {
-  background: linear-gradient(160deg, var(--hud-accent-bright), var(--hud-accent));
-  color: var(--hud-on-accent);
-}
-
-.hud-step[data-open="true"]:not([data-state="current"]) {
-  background: var(--hud-wash);
-  color: var(--hud-ink);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .hud-step:hover:not([data-state="current"]) {
-    background: var(--hud-wash);
-    color: var(--hud-ink);
-  }
-}
-
-.hud-next {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 0;
-  background: none;
-  color: var(--hud-on-room);
-  font-family: var(--hud-font-display);
-  font-size: 17px;
-  font-style: italic;
-  text-shadow: 0 1px 12px rgb(0 0 0 / 0.9), 0 0 2px rgb(0 0 0 / 0.7);
-  cursor: pointer;
-  transition: scale var(--hud-press) var(--hud-ease);
-}
-
-.hud-next:active {
-  scale: 0.98;
-}
-
-.hud-next__lead {
-  color: var(--hud-on-room-accent);
-  font-style: normal;
-  font-variant-caps: var(--hud-caps);
-  letter-spacing: var(--hud-caps-spacing);
-}
-
-.hud-next .hud-glyph {
-  width: 16px;
-  height: 16px;
-  opacity: 0.8;
-}
-
-/* -- The view -------------------------------------------------------------- */
-
-.hud-view {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hud-view__switch {
-  display: flex;
-  padding: 4px;
-}
-
-.hud-view__key {
-  min-width: 62px;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: calc(var(--hud-radius-key) - 1px);
-  background: none;
-  color: var(--hud-ink-quiet);
-  font-family: var(--hud-font-display);
-  font-size: 15px;
-  font-weight: 500;
-  font-variant-caps: var(--hud-caps);
-  letter-spacing: var(--hud-caps-spacing);
-  cursor: pointer;
-  transition: scale var(--hud-press) var(--hud-ease), background-color var(--hud-press) var(--hud-ease), color var(--hud-press) var(--hud-ease);
-}
-
-.hud-view__key:active {
-  scale: 0.97;
-}
-
-.hud-view__key[aria-checked="true"] {
-  background: linear-gradient(160deg, var(--hud-accent-bright), var(--hud-accent));
-  color: var(--hud-on-accent);
-}
-
-/* -- The piece card -------------------------------------------------------- */
+/* -- The chosen piece's verbs, in the cards' place -------------------------- */
 
 .hud-piece {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 268px;
-  padding: 14px;
-  transition: opacity 180ms var(--hud-ease), scale 180ms var(--hud-ease);
-  transform-origin: right center;
+  grid-area: cards;
+  align-items: center;
+  align-self: end;
+  justify-content: center;
+  gap: var(--hud-gap-group);
+  min-height: var(--hud-act-h);
+  transition: opacity var(--hud-move-ms) var(--hud-ease);
 }
 
 @starting-style {
   .hud-piece {
     opacity: 0;
-    scale: 0.97;
   }
 }
 
-.hud-piece__title {
-  margin: 0;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--hud-rule);
-  color: var(--hud-accent-bright);
-  font-family: var(--hud-font-display);
-  font-size: 17px;
-  font-weight: 500;
-  font-variant-caps: var(--hud-caps);
-  letter-spacing: var(--hud-caps-spacing);
-  text-align: center;
-  text-wrap: balance;
-}
-
-.hud-stepper {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
-  gap: 8px;
+.hud-stepper,
+.hud-swatches {
+  display: flex;
   align-items: center;
 }
 
-.hud-stepper__key {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--hud-edge);
-  border-radius: var(--hud-radius-key);
-  background: var(--hud-key-ground);
-  cursor: pointer;
-  transition: scale var(--hud-press) var(--hud-ease), border-color var(--hud-press) var(--hud-ease);
-}
-
-.hud-stepper__key:active:not(:disabled) {
-  scale: 0.94;
-}
-
-.hud-stepper__key:disabled {
-  opacity: 0.42;
-  cursor: default;
-}
-
 .hud-stepper__value {
-  font-family: var(--hud-font-display);
-  font-size: 18px;
-  font-variant-numeric: tabular-nums lining-nums;
+  min-width: var(--hud-stepper-value);
+  font-size: var(--hud-l);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-l-lh);
   text-align: center;
 }
 
-.hud-swatches {
-  display: flex;
-  justify-content: center;
-  gap: 14px;
+.hud-swatch {
+  position: relative;
+  width: var(--hud-hit);
+  height: var(--hud-hit);
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  cursor: pointer;
+  transition: scale var(--hud-press-ms) var(--hud-ease);
 }
 
-.hud-swatch {
-  width: 44px;
-  height: 44px;
-  border: 2px solid var(--hud-edge);
-  border-radius: 999px;
-  cursor: pointer;
-  transition: scale var(--hud-press) var(--hud-ease), box-shadow var(--hud-press) var(--hud-ease);
+.hud-swatch::before {
+  position: absolute;
+  inset: calc((var(--hud-hit) - var(--hud-swatch)) / 2);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: 50%;
+  background: var(--hud-linen);
+  content: "";
+}
+
+.hud-swatch[data-linen="white"] { --hud-linen: var(--hud-linen-ivory); }
+.hud-swatch[data-linen="black"] { --hud-linen: var(--hud-linen-black); }
+.hud-swatch[data-linen="bare"] { --hud-linen: var(--hud-linen-bare); }
+
+.hud-swatch[aria-checked="true"]::before {
+  outline: var(--hud-chosen) solid var(--hud-ink);
+  outline-offset: var(--hud-chosen);
 }
 
 .hud-swatch:active:not(:disabled) {
-  scale: 0.94;
-}
-
-.hud-swatch[data-linen="white"] { background: var(--hud-linen-ivory); }
-.hud-swatch[data-linen="black"] { background: var(--hud-linen-black); }
-.hud-swatch[data-linen="bare"] { background: var(--hud-linen-bare); }
-
-.hud-swatch[aria-checked="true"] {
-  border-color: var(--hud-accent-bright);
-  box-shadow: 0 0 0 2px var(--hud-ground-bottom), 0 0 0 4px var(--hud-accent-bright);
+  scale: var(--hud-pressed);
 }
 
 .hud-piece__keys {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.hud-piece__keys .hud-key {
-  flex-direction: column;
-  gap: 4px;
-  min-height: 56px;
-  padding: 6px 4px;
-  font-size: 13px;
-}
-
-/* -- Sheets ---------------------------------------------------------------- */
-
-.hud-sheet-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
   display: flex;
-  justify-content: center;
-  pointer-events: none;
+  gap: var(--hud-gap-wide);
 }
+
+/* -- Sheets: the shelf, grown ------------------------------------------------ */
 
 .hud-sheet {
-  position: relative;
-  align-self: flex-start;
-  width: min(720px, calc(100vw - var(--hud-gutter) * 2));
-  max-height: calc(100% - 136px - var(--hud-card-w) * 1.36 - 120px);
-  margin-top: 132px;
-  padding: 24px 28px 26px;
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  max-height: calc(var(--hud-rise) - var(--hud-shelf-h));
   overflow: auto;
-  pointer-events: auto;
-  transform-origin: top center;
-  transition: opacity 180ms var(--hud-ease), scale 180ms var(--hud-ease);
+  overscroll-behavior: contain;
+  padding: var(--hud-sheet-pad) max(var(--hud-gutter), calc((100% - var(--hud-sheet-measure)) / 2));
+  background: var(--hud-ground);
+  animation: hud-rise var(--hud-move-ms) var(--hud-ease);
 }
 
 .hud-sheet[data-wide="true"] {
-  width: min(1040px, calc(100vw - var(--hud-gutter) * 2));
-}
-
-@starting-style {
-  .hud-sheet {
-    opacity: 0;
-    scale: 0.97;
-  }
+  padding-inline: max(var(--hud-gutter), calc((100% - var(--hud-sheet-measure-wide)) / 2));
 }
 
 .hud-sheet__close {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: calc(var(--hud-sheet-pad) + (var(--hud-xl-lh) - var(--hud-hit)) / 2);
+  right: var(--hud-gutter);
 }
 
 .hud-sheet__title {
-  margin: 0 48px 6px 0;
-  font-family: var(--hud-font-display);
-  font-size: 28px;
-  font-weight: 400;
-  line-height: 1.1;
-  text-wrap: balance;
+  margin: 0 var(--hud-gap-group) var(--hud-gap) 0;
+  font-size: var(--hud-xl);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-xl-lh);
 }
 
 .hud-sheet__lede {
-  max-width: 56ch;
-  margin: 0 0 18px;
-  color: var(--hud-ink-quiet);
-  font-size: 16px;
-  line-height: 1.45;
+  max-width: 60ch;
+  margin: 0;
+  color: var(--hud-ink-2);
+  font-size: var(--hud-l);
+  line-height: var(--hud-l-lh);
 }
 
 .hud-sheet__section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 18px;
+  gap: var(--hud-gap);
+  margin-top: var(--hud-sheet-pad);
 }
 
+/* The one label style: 11 px capitals, tracked, for a section's head. */
 .hud-sheet__heading {
   margin: 0;
-  color: var(--hud-accent-bright);
-  font-family: var(--hud-font-display);
-  font-size: 16px;
-  font-weight: 500;
-  font-variant-caps: var(--hud-caps);
-  letter-spacing: 0.08em;
+  color: var(--hud-ink-2);
+  font-size: var(--hud-s);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-s-lh);
+  letter-spacing: var(--hud-label-track);
+  text-transform: uppercase;
 }
 
 .hud-sheet__row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
   align-items: center;
+  gap: var(--hud-gap) var(--hud-gap-wide);
 }
 
 .hud-sheet__note {
   margin: 0;
-  color: var(--hud-ink-quiet);
-  font-size: 14px;
-  line-height: 1.45;
+  color: var(--hud-ink-2);
 }
 
-/* Three large answers to one question. */
+/* Three answers to one question. */
 .hud-choices {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--hud-gap);
+  margin-top: var(--hud-sheet-pad);
 }
 
 .hud-choice {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-height: 96px;
-  padding: 14px 16px;
-  border: 1px solid var(--hud-edge);
-  border-radius: var(--hud-radius-card);
-  background: var(--hud-card-ground);
+  align-items: flex-start;
+  gap: var(--hud-u);
+  min-height: var(--hud-hit);
+  padding: var(--hud-gap-wide);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
   text-align: left;
   cursor: pointer;
-  transition: scale var(--hud-press) var(--hud-ease), border-color var(--hud-press) var(--hud-ease), box-shadow 160ms var(--hud-ease);
+  transition: border-color var(--hud-press-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
 }
 
-.hud-choice:active {
-  scale: 0.98;
+.hud-choice[aria-checked="true"] {
+  outline: var(--hud-chosen) solid var(--hud-ink);
+  outline-offset: calc(-1 * var(--hud-chosen));
 }
 
-.hud-choice[aria-checked="true"],
-.hud-choice[aria-pressed="true"] {
-  border-color: var(--hud-accent-bright);
-  box-shadow: 0 0 0 1px var(--hud-accent-bright), 0 0 26px -8px var(--hud-lit);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .hud-choice:hover {
-    border-color: var(--hud-accent);
-  }
+.hud-choice:active:not([aria-disabled="true"]) {
+  scale: var(--hud-pressed);
 }
 
 .hud-choice__name {
-  font-family: var(--hud-font-display);
-  font-size: 22px;
-  line-height: 1.1;
+  font-size: var(--hud-l);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-l-lh);
 }
 
 .hud-choice__line {
-  color: var(--hud-ink-quiet);
-  font-size: 14px;
+  color: var(--hud-ink-2);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hud-choice:hover:not([aria-disabled="true"]) {
+    border-color: var(--hud-ink);
+  }
 }
 
 .hud-number {
-  width: 132px;
-  min-height: 56px;
-  padding: 0 14px;
-  border: 1px solid var(--hud-edge);
-  border-radius: var(--hud-radius-key);
-  background: var(--hud-key-ground);
+  width: calc(var(--hud-stepper-value) + var(--hud-gap-group));
+  min-height: var(--hud-hit);
+  padding: 0 var(--hud-gap);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: var(--hud-radius);
+  background: none;
   color: var(--hud-ink);
-  font-family: var(--hud-font-display);
-  font-size: 28px;
-  font-variant-numeric: tabular-nums lining-nums;
+  font-size: var(--hud-xl);
+  line-height: var(--hud-xl-lh);
   text-align: center;
+  appearance: textfield;
 }
 
-/* The whole catalogue, as cards by kind. */
+.hud-number::-webkit-inner-spin-button,
+.hud-number::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+/* The whole catalogue, as the hand's own cards, by kind. */
 .hud-catalogue {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, var(--hud-card-col));
+  gap: var(--hud-gap-wide) 0;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.hud-catalogue .hud-card-slot {
-  flex: none;
+.hud-catalogue .hud-card {
+  cursor: pointer;
 }
 
-/* -- The lab's stand-in plaque (no backend behind it) ----------------------- */
-
-.hud-lab-plaque {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 12px 16px;
+.hud-catalogue .hud-card__name {
+  white-space: normal;
 }
 
-.hud-lab-plaque__title {
-  font-family: var(--hud-font-display);
-  font-size: 22px;
-  font-variant-caps: var(--hud-caps);
-  letter-spacing: var(--hud-caps-spacing);
-  color: var(--hud-accent-bright);
+/*
+ * Lay out's own prompt (components/editor/cockpit/AutoFillPrompt.tsx), reused
+ * whole and set in the sheet's type: its submit is the sheet's one primary
+ * (the shelf's primary steps aside while its own sheet is open), Back a word.
+ */
+.hud-sheet .auto-fill {
+  gap: var(--hud-gap-wide);
 }
 
-.hud-lab-plaque__line {
-  color: var(--hud-ink-quiet);
-  font-size: 14px;
+.hud-sheet .auto-fill__style {
+  color: var(--hud-ink-2);
+  font-size: var(--hud-s);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-s-lh);
+  letter-spacing: var(--hud-label-track);
 }
 
-/* -- Laptops --------------------------------------------------------------- */
+.hud-sheet .auto-fill__question {
+  color: var(--hud-ink);
+  font-family: var(--hud-sans);
+  font-size: var(--hud-l);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-l-lh);
+}
 
-@media (max-width: 1366px), (max-height: 800px) {
+.hud-sheet .auto-fill__input {
+  min-height: var(--hud-hit);
+  padding: 0 var(--hud-gap);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: var(--hud-radius);
+  background: none;
+  box-shadow: none;
+  color: var(--hud-ink);
+  font-size: var(--hud-xl);
+  font-weight: var(--hud-regular);
+  line-height: var(--hud-xl-lh);
+}
+
+.hud-sheet :is(.auto-fill__hint, .auto-fill__note, .auto-fill__placed) {
+  color: var(--hud-ink);
+  font-size: var(--hud-m);
+  font-weight: var(--hud-regular);
+  line-height: var(--hud-m-lh);
+}
+
+.hud-sheet :is(.auto-fill__basis, .auto-fill__stated) {
+  color: var(--hud-ink-2);
+  font-size: var(--hud-m);
+  font-weight: var(--hud-regular);
+  line-height: var(--hud-m-lh);
+  letter-spacing: 0;
+}
+
+.hud-sheet .auto-fill__short {
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  color: var(--hud-accent);
+  font-size: var(--hud-m);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-m-lh);
+}
+
+.hud-sheet .lens-panel__button {
+  min-height: var(--hud-act-h);
+  padding: 0 var(--hud-gap-wide);
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: var(--hud-accent);
+  box-shadow: none;
+  color: var(--hud-on-accent);
+  font-size: var(--hud-m);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-m-lh);
+  letter-spacing: 0;
+}
+
+.hud-sheet .lens-panel__button--ghost {
+  background: none;
+  color: var(--hud-ink-2);
+}
+
+/* The prompt's own hover brightens and its press casts a glow: both are taken back. */
+.hud-sheet .lens-panel__button:is(:hover, :active):not(:disabled) {
+  filter: none;
+  box-shadow: none;
+}
+
+/* -- Laptops ------------------------------------------------------------------ */
+
+@media (max-width: 1366px) {
   .hud-root {
-    --hud-gutter: 12px;
-    --hud-card-w: clamp(84px, 7vw, 112px);
-  }
-
-  .hud-seals {
-    width: 196px;
-  }
-
-  .hud-seal {
-    min-height: 46px;
-  }
-
-  .hud-station--seals {
-    top: 164px;
-  }
-
-  .hud-key--primary {
-    font-size: 18px;
+    --hud-card-col: 88px;
+    --hud-shelf-side: 152px;
   }
 }
 
-/* -- Phones: the same stations, composed for a thumb ----------------------- */
-
-@media (max-width: 767px) {
+/* Narrow desktops and tablets: smaller photographs, and the hand slides when it must. */
+@media (max-width: 1199px) {
   .hud-root {
-    --hud-gutter: 10px;
-    --hud-card-w: 104px;
+    --hud-card-col: 72px;
+    --hud-card-w: 56px;
+    --hud-shelf-side: 144px;
   }
 
-  .hud-station--plaque {
-    top: calc(var(--hud-gutter) + env(safe-area-inset-top, 0px));
-    right: var(--hud-gutter);
-    width: auto;
-  }
-
-  .hud-station--journey {
-    top: calc(96px + env(safe-area-inset-top, 0px));
-    right: var(--hud-gutter);
-    left: var(--hud-gutter);
-    translate: none;
-    justify-content: center;
-  }
-
-  .hud-step {
-    min-height: 44px;
-    padding: 0 10px;
-    font-size: 14px;
-  }
-
-  .hud-step:not([data-state="current"]) > span {
-    display: none;
-  }
-
-  .hud-step:not([data-state="current"]) {
-    min-width: 44px;
-    justify-content: center;
-  }
-
-  .hud-station--view {
-    display: none;
-  }
-
-  .hud-station--seals {
-    top: auto;
-    right: var(--hud-gutter);
-    bottom: calc(var(--hud-gutter) + env(safe-area-inset-bottom, 0px) + 232px);
-    left: var(--hud-gutter);
-  }
-
-  .hud-seals {
-    flex-direction: row;
-    align-items: center;
-    width: 100%;
-    padding: 6px 8px;
-  }
-
-  .hud-seals__title,
-  .hud-seal__detail,
-  .hud-seal:not([data-seal="seats"]) .hud-seal__words {
-    display: none;
-  }
-
-  .hud-seals__list {
-    flex: 1;
-    flex-direction: row;
-    justify-content: space-between;
-  }
-
-  .hud-seal {
-    grid-template-columns: 44px;
-    width: auto;
-  }
-
-  .hud-seal[data-seal="seats"] {
-    grid-template-columns: 44px auto;
-  }
-
-  .hud-station--piece {
-    top: auto;
-    right: var(--hud-gutter);
-    bottom: calc(var(--hud-gutter) + env(safe-area-inset-bottom, 0px));
-    left: var(--hud-gutter);
-    z-index: 2;
-  }
-
-  .hud-piece {
-    width: 100%;
-  }
-
-  .hud-station--hand {
-    bottom: calc(var(--hud-gutter) + env(safe-area-inset-bottom, 0px));
-  }
-
-  .hud-hand {
-    padding: 8px 10px 10px;
-  }
-
-  .hud-hand__row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-  }
-
-  .hud-hand__make {
-    flex-direction: row;
-    width: auto;
-  }
-
-  .hud-key--make {
-    min-height: 48px;
-    font-size: 16px;
-  }
-
-  .hud-hand__cards {
+  .hud-cards {
     justify-content: flex-start;
     overflow-x: auto;
     overscroll-behavior-x: contain;
-    padding: 12px 2px 2px;
+    padding-top: var(--hud-gap);
+    scrollbar-width: none;
+  }
+}
+
+@media (max-height: 800px) {
+  .hud-root {
+    --hud-answer-w: 120px;
+  }
+}
+
+/* -- Phones: the same two bars ------------------------------------------------- */
+
+@media (max-width: 767px) {
+  .hud-root {
+    --hud-card-col: 72px;
+    --hud-card-w: 48px;
+    --hud-shelf-h: 236px;        /* as laid out below, for the risen sheet's measure */
+    --hud-shelf-columns: minmax(0, 1fr) auto;
+    --hud-shelf-rows: auto auto auto;
+    --hud-shelf-areas: "status words" "cards cards" "act act";
+  }
+
+  /* The top bar: the name, and the step you are on. */
+  .hud-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    height: calc(var(--hud-bar-h) + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) max(var(--hud-gutter), env(safe-area-inset-right, 0px)) 0 max(var(--hud-gutter), env(safe-area-inset-left, 0px));
+  }
+
+  .hud-steps {
+    justify-self: end;
+  }
+
+  .hud-steps__slot:not([data-state="current"]) {
+    display: none;
+  }
+
+  .hud-view {
+    display: none;
+  }
+
+  /* The shelf: the status line, a sliding row of cards, the primary key full width. */
+  .hud-shelf {
+    row-gap: var(--hud-gap);
+    height: auto;
+    padding:
+      var(--hud-shelf-pad-top)
+      max(var(--hud-gutter), env(safe-area-inset-right, 0px))
+      calc(var(--hud-shelf-pad-bottom) + env(safe-area-inset-bottom, 0px))
+      max(var(--hud-gutter), env(safe-area-inset-left, 0px));
+  }
+
+  .hud-shelf__words {
+    align-self: start;
+    justify-self: end;
+    margin-block: calc((var(--hud-l-lh) - var(--hud-hit)) / 2);
+  }
+
+  .hud-shelf__lay-out {
+    display: none;
+  }
+
+  .hud-cards {
+    justify-content: flex-start;
+    margin-inline: calc(-1 * var(--hud-gutter));
+    padding: var(--hud-u) var(--hud-gutter) 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
     scrollbar-width: none;
   }
 
-  .hud-card-slot {
-    flex: 0 0 var(--hud-card-w);
+  .hud-card__detail {
+    display: none;
   }
 
-  .hud-key--primary {
+  .hud-piece {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: var(--hud-gap) var(--hud-gap-wide);
+  }
+
+  .hud-shelf__act {
+    justify-self: stretch;
+  }
+
+  .hud-act {
     width: 100%;
-    min-height: 56px;
   }
 
   .hud-sheet {
-    width: calc(100vw - var(--hud-gutter) * 2);
-    max-height: calc(100% - 120px);
-    margin-top: calc(72px + env(safe-area-inset-top, 0px));
-    padding: 20px 18px;
+    padding-inline: var(--hud-gutter);
   }
 
   .hud-choices {
@@ -1240,10 +1090,14 @@ body.hud-dragging-card * {
   }
 }
 
+/* -- Reduced motion: nothing travels or shrinks; a state shows by its line alone -- */
+
 @media (prefers-reduced-motion: reduce) {
-  .hud-card,
-  .hud-piece,
-  .hud-sheet {
-    transition-property: opacity, border-color, box-shadow;
+  .hud-root :is(.hud-word, .hud-option, .hud-step, .hud-key, .hud-act, .hud-glyph-key, .hud-round, .hud-card, .hud-swatch, .hud-choice, .hud-status__look, .hud-first-open__answer):active {
+    scale: none;
+  }
+
+  .hud-card[data-armed="true"] {
+    translate: none;
   }
 }

@@ -4,19 +4,24 @@ import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
-import { CloseGlyph, UndoGlyph } from "./glyphs.js";
 import "./hud-notices.css";
 
 // ---------------------------------------------------------------------------
 // Receipts: the planner's one plain line about what was just refused or done
-// (stores/placement-notice-store.ts), shown above the hand in the HUD's own
-// look. It is the line the earlier screen shows (components/editor/
-// PlacementNotice.tsx), with the same rules: the status region is always
-// mounted so a screen reader hears each new line, politely; the line clears
-// itself after a few seconds, or as soon as the piece it was about is set
-// down or another is taken. A receipt one Undo takes back carries Undo beside
-// it, because nothing should be frightening to try.
+// (stores/placement-notice-store.ts). While one shows it takes the status
+// line's place on the shelf (Hand.tsx), in the same type, and gives the line
+// back when it clears. The rules are the earlier screen's (components/editor/
+// PlacementNotice.tsx): the status region is always mounted so a screen reader
+// hears each new line, politely; the line clears itself after a few seconds,
+// or as soon as the piece it was about is set down or another is taken. A
+// receipt one Undo takes back carries Undo beside it, because nothing should
+// be frightening to try.
 // ---------------------------------------------------------------------------
+
+/** Whether a receipt is showing, and so has the status line's place. */
+export function useReceiptShowing(): boolean {
+  return usePlacementNoticeStore((state) => state.notice !== null);
+}
 
 export function HudNotices(): ReactElement {
   const notice = usePlacementNoticeStore((state) => state.notice);
@@ -35,31 +40,22 @@ export function HudNotices(): ReactElement {
   return (
     <div className="hud-notices" role="status" aria-live="polite" data-testid="hud-notice-region">
       {notice !== null ? (
-        <div key={notice.id} className="hud-notice" data-testid="hud-notice">
-          <p className="hud-notice__line">{notice.text}</p>
+        <p key={notice.id} className="hud-notice" data-testid="hud-notice">
+          <span className="hud-notice__line">{notice.text}</span>
           {notice.undo === true ? (
             <button
               type="button"
-              className="hud-key hud-key--quiet hud-notice__undo"
+              className="hud-word hud-notice__undo"
               disabled={!undoable || previewing}
               onClick={() => {
                 useEditorStore.getState().undo();
                 usePlacementNoticeStore.getState().dismiss(notice.id);
               }}
             >
-              <UndoGlyph />
-              <span>Undo</span>
+              Undo
             </button>
           ) : null}
-          <button
-            type="button"
-            className="hud-key hud-key--quiet hud-notice__close"
-            aria-label="Close this note"
-            onClick={() => { usePlacementNoticeStore.getState().dismiss(notice.id); }}
-          >
-            <CloseGlyph />
-          </button>
-        </div>
+        </p>
       ) : null}
     </div>
   );
