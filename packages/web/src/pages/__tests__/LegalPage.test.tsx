@@ -82,12 +82,13 @@ describe("every document", () => {
     const time = document.querySelector("time");
     // Each document carries its own date: the accessibility statement changed
     // in the v1.0 final review; the terms on 11 November, when the Grand Hall's
-    // dimensions became measured; the privacy policy on 12 November, when it
-    // described the page-speed timings and their switch (T-685).
+    // dimensions became measured; the privacy policy on 13 November, when it
+    // described the page-speed measurements, their lawful basis and their
+    // switch (T-685).
     const expected = type === "terms"
       ? { iso: "2026-11-11", text: "11 November 2026" }
       : type === "privacy"
-        ? { iso: "2026-11-12", text: "12 November 2026" }
+        ? { iso: "2026-11-13", text: "13 November 2026" }
         : { iso: "2026-11-08", text: "8 November 2026" };
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
@@ -131,11 +132,21 @@ describe("the privacy policy", () => {
     // Only what is true of the real system (12 November 2026): one of the four
     // is a layout score, not a time; the host's own request logs record the
     // address; and Safari clears the stored choice.
-    expect(page).toContain("how much its content shifted as it loaded (four measurements)");
+    expect(page).toContain("how much its content shifted as it loaded (four measurements, each rated good, needs improvement or poor)");
     expect(page).not.toContain("four timings");
     expect(page).toContain("our own server does not log it; our hosting provider's standard request logs record it");
     expect(page).not.toContain("we do not keep that with the timings or log it");
     expect(page).toContain("until the browser clears our site's data (Safari does this after about a week without a visit)");
+    // 13 November (Blake: "Apply all three"): what is kept, the GPC and DNT
+    // sentence as the code keeps it (a signal only the server sees discards
+    // the report), and a lawful basis, with no claim of running no analytics.
+    expect(page).toContain("We keep each measurement with only the day it arrived");
+    expect(page).toContain("your visit is not measured, and anything that arrives with either signal is discarded");
+    expect(page).not.toContain("nothing is measured or sent");
+    expect(page).toContain("Measuring how fast our pages are");
+    expect(page).toContain("Article 6(1)(f): our legitimate interest in a fast, working site.");
+    expect(page).toContain("We run no third-party analytics product");
+    expect(page).not.toContain("We run no analytics product");
     // The storage list names what the switch keeps.
     expect(page).toContain("Your page-speed choice");
     const button = screen.getByRole("button", { name: "Don't measure my visits" });

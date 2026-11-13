@@ -362,7 +362,7 @@ describe("starting on a page load", () => {
     setMeasurementDeclined(true);
     try {
       const router = fakeRouter(["/"]);
-      expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "1" }, landing: recordLandingRoute(router, new EventTarget()), random: () => 0, send })).toBe(false);
+      expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "0.5" }, landing: recordLandingRoute(router, new EventTarget()), random: () => 0, send })).toBe(false);
       expect(vitals.callbacks.size).toBe(0);
       expect(router.listeners).toBe(0);
       expect(send).not.toHaveBeenCalled();
@@ -379,7 +379,7 @@ describe("starting on a page load", () => {
     ordinaryBrowser();
     const router = fakeRouter(["/privacy"]);
     try {
-      expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "1" }, landing: recordLandingRoute(router, new EventTarget()), random: () => 0, send })).toBe(true);
+      expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "0.5" }, landing: recordLandingRoute(router, new EventTarget()), random: () => 0, send })).toBe(true);
       for (const [name, entry] of vitals.callbacks) entry.callback(metric(name as Metric["name"], name === "CLS" ? 0.02 : 300));
       setMeasurementDeclined(true);
       setVisibility("hidden");
@@ -401,7 +401,7 @@ describe("starting on a page load", () => {
     ordinaryBrowser();
     const router = fakeRouter(["/"]);
     try {
-      expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "1" }, landing: recordLandingRoute(router, new EventTarget()), random: () => 0, send })).toBe(true);
+      expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "0.5" }, landing: recordLandingRoute(router, new EventTarget()), random: () => 0, send })).toBe(true);
       for (const [name, entry] of vitals.callbacks) entry.callback(metric(name as Metric["name"], name === "CLS" ? 0.02 : 300));
       // Another tab writes the choice; this module's own flag never changes.
       window.localStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
