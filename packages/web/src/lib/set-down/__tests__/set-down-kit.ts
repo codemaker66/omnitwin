@@ -87,10 +87,25 @@ const READER_HOPS_PER_FRAME = 8;
 const T20_FROM_DB = -5;
 const T20_TO_DB = -25;
 
-/** One octave's decay as read: its T20 in seconds (0 if the decay never spans -5 to -25 dB), and how many bins it was read from. */
+/**
+ * One octave's decay as read: its T20 in seconds (0 if the decay never spans -5 to -25 dB), how many bins it was
+ * read from, and the bandwidth those bins span in hertz (bins x bin width), the B of a reading's expected scatter.
+ */
 export interface BandDecay {
   readonly t20: number;
   readonly bins: number;
+  readonly bandwidthHz: number;
+}
+
+/**
+ * The scatter of one T20 reading of a decay of noise, as a fraction of its time T:
+ * sigma_D / T = 0.88 root((1 + 1.90 / n) / (N B T)), for a bandwidth B in hertz, n = 10 for an integrated impulse
+ * response and N = 1 decay averaged (ISO 3382-2:2008, after Davy, Dunn and Dubout, Acustica, 1979; ruling R67).
+ */
+export function decayScatter(bandwidthHz: number, seconds: number): number {
+  const n = 10;
+  const decays = 1;
+  return 0.88 * Math.sqrt((1 + 1.9 / n) / (decays * bandwidthHz * seconds));
 }
 
 /** The T20 of an energy series, one value per frame `step` seconds apart: Schroeder's backward integral, a line fitted from -5 to -25 dB. */
@@ -186,7 +201,8 @@ export function octaveDecays(left: Float32Array, right: Float32Array, sampleRate
   const read = (perBand: readonly Float64Array[]): readonly BandDecay[] =>
     perBand.map((series, band) => {
       const range = ranges[band];
-      return { t20: framesT20(series, hop / sampleRate), bins: range === undefined ? 0 : Math.max(0, range.last - range.first + 1) };
+      const bins = range === undefined ? 0 : Math.max(0, range.last - range.first + 1);
+      return { t20: framesT20(series, hop / sampleRate), bins, bandwidthHz: bins * binHz };
     });
   return [read(leftEnergy), read(rightEnergy)];
 }

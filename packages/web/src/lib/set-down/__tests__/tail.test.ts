@@ -11,7 +11,7 @@ import {
   timeAtFrequency,
   type Stereo,
 } from "../tail.js";
-import { octaveDecays, sameSamples, type BandDecay } from "./set-down-kit.js";
+import { decayScatter, octaveDecays, sameSamples, type BandDecay } from "./set-down-kit.js";
 
 const RATE = 48000;
 /** The rates every room's decay is held at (ruling R46): a laptop's, the default, and a 96 kHz interface's. */
@@ -21,7 +21,6 @@ const RT: BandValues = [1.8, 2.2, 2.6, 2.9, 2.7, 2.0, 1.2];
 const OPTIONS = { sampleRate: RATE, seed: 7, onsetSeconds: 0.03 } as const;
 /** Seeds per room at each rate; each seed is read in both channels. */
 const SEEDS: Readonly<Record<Rate, number>> = { 44100: 10, 48000: 10, 96000: 10 };
-const MID_BANDS = [1, 2, 3, 4, 5] as const; // 250 Hz to 4 kHz
 /**
  * Bands alternating 0.4 s and 3 s, in both phases: each octave's neighbours ring 7.5 times longer or shorter, and
  * between them every octave is once a short one between long ones (ruling R53).
@@ -32,13 +31,16 @@ const ALTERNATIONS: readonly BandValues[] = [
 ];
 const TEN_SEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 /**
- * How far the reader's mean over 20 readings of synthetic noise may stray from the known time. Measured: within
- * 1.4 % in every octave of both alternations at 48 kHz, and the same readings at 96 kHz, where the frame and the
- * noise both double (the proof runs at 48 kHz only: at 96 kHz it costs 30 s). One reading alone scatters far more
- * where an octave holds few time-frequency cells (a 0.4 s decay reads -38..+36 % at 125 Hz, -15..+11 % at 500 Hz,
- * -9..+9 % at 2 kHz): the scatter of any measurement of noise, not a fault of the reader.
+ * One reading of a decay of noise scatters by sigma_D (decayScatter: ISO 3382-2's form, from the octave's
+ * bandwidth as read and its time), far more where an octave holds few time-frequency cells: sigma_D is 24 % for a
+ * 0.4 s decay read from the 125 Hz octave's seven bins and 2 % for the same decay at 8 kHz. Every reading stays within
+ * four of it (ruling R67), whatever the room.
  */
-const READER_MEAN_BOUND = 0.03;
+const READING_SIGMAS = 4;
+/** The readings of one band scatter no more than this many sigma_D over their realisations: frame, modulation or decorrelation faults would widen it. */
+const SCATTER_SIGMAS = 1.5;
+/** The reader's mean over 20 readings of synthetic noise stays within this many standard errors, sigma_D / root 20, of the known time. */
+const READER_MEAN_STANDARD_ERRORS = 3;
 /**
  * How far a band's mean over its realisations may stray from its target (ruling R52): from 250 Hz to 8 kHz the
  * measured bias (2.9 % at most) plus a margin, 5 %; the 125 Hz octave, read from about seven bins, within 10 %.
@@ -93,9 +95,31 @@ function mean(values: readonly number[]): number {
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-/** Each band's T20 error (read ÷ target − 1), one per channel read. */
-function errorsOf(decays: readonly (readonly BandDecay[])[], rt: BandValues): readonly (readonly number[])[] {
-  return OCTAVE_BANDS_HZ.map((_, band) => decays.map((channel) => (channel[band]?.t20 ?? 0) / (rt[band] ?? 1) - 1));
+function standardDeviation(values: readonly number[]): number {
+  const centre = mean(values);
+  return Math.sqrt(values.reduce((sum, v) => sum + (v - centre) ** 2, 0) / Math.max(1, values.length - 1));
+}
+
+/** One band's readings: each T20's error (read ÷ target − 1), one per channel read, and sigma_D for that band, time and rate. */
+interface BandReadings {
+  readonly errors: readonly number[];
+  readonly sigma: number;
+}
+
+function readingsOf(decays: readonly (readonly BandDecay[])[], rt: BandValues): readonly BandReadings[] {
+  return OCTAVE_BANDS_HZ.map((_, band) => ({
+    errors: decays.map((channel) => (channel[band]?.t20 ?? 0) / (rt[band] ?? 1) - 1),
+    sigma: decayScatter(decays[0]?.[band]?.bandwidthHz ?? 0, rt[band] ?? 1),
+  }));
+}
+
+/** Every reading within READING_SIGMAS sigma_D of its target, labelled with its band. */
+function expectEachWithin(readings: readonly BandReadings[], label: string): void {
+  readings.forEach(({ errors, sigma }, band) => {
+    for (const error of errors) {
+      expect(Math.abs(error) / sigma, `${String(OCTAVE_BANDS_HZ[band])} Hz${label}: ${(100 * error).toFixed(1)} % against sigma_D ${(100 * sigma).toFixed(1)} %`).toBeLessThan(READING_SIGMAS);
+    }
+  });
 }
 
 /**
@@ -135,9 +159,11 @@ function decayingNoise(times: BandValues, sampleRate: number, seed: number): Flo
   return Float32Array.from(out);
 }
 
-describe("the octave reader (ruling R53)", () => {
+describe("the octave reader (rulings R53, R67)", () => {
+  // At 96 kHz the reader's frame and this noise both double, and it reads the same values (measured); the proof runs
+  // at 48 kHz only, as at 96 kHz it costs 30 s.
   it.each([48000] as const)(
-    "reads a known decay in every octave of synthetic noise at %i Hz, 0.4 s octaves between 3 s ones and 3 s between 0.4 s, its mean over 20 readings within 3 %",
+    "reads a known decay in every octave of synthetic noise at %i Hz, 0.4 s between 3 s and 3 s between 0.4 s: its mean over 20 readings within three standard errors (sigma_D / root 20), each reading within four sigma_D",
     (rate) => {
       for (const times of ALTERNATIONS) {
         const decays: (readonly BandDecay[])[] = [];
@@ -149,43 +175,17 @@ describe("the octave reader (ruling R53)", () => {
             expect(decay.t20, `${String(OCTAVE_BANDS_HZ[band])} Hz`).toBeGreaterThan(0);
           });
         }
-        errorsOf(decays, times).forEach((each, band) => {
-          expect(Math.abs(mean(each)), `${String(OCTAVE_BANDS_HZ[band])} Hz of ${times.join("/")}`).toBeLessThan(READER_MEAN_BOUND);
+        const readings = readingsOf(decays, times);
+        readings.forEach(({ errors, sigma }, band) => {
+          const standardError = sigma / Math.sqrt(errors.length);
+          expect(Math.abs(mean(errors)) / standardError, `${String(OCTAVE_BANDS_HZ[band])} Hz of ${times.join("/")}`).toBeLessThan(READER_MEAN_STANDARD_ERRORS);
         });
+        expectEachWithin(readings, ` of ${times.join("/")}`);
       }
     },
     120_000,
   );
 });
-
-/**
- * The rooms whose 125 Hz and 250 Hz are held on their mean over the
- * realisations, not per seed; their per-seed bound is not met, their mean is.
- * - The Reception Room and the galleries (R22): their lowest two bands ring
- *   under about a second, so those octaves hold only a few dozen
- *   time-frequency cells over the T20 fit, and one noise realisation scatters
- *   there well beyond ±10 % (±20 % at 125 Hz), as any noise-based measurement
- *   would. See Task 4's report, round 2.
- * - The Robert Adam Room (R41): its T(f) steps steeply from 125 Hz up to
- *   250 Hz, and under that step one realisation's T20 at 250 Hz spreads like
- *   a single ISO 3382 measurement (Task 7's report, fix round 1).
- * - The Saloon (T-700): read from inside the octave, its 125 Hz (1.04 s
- *   empty, 0.99 s laid) holds about seven bins, and one realisation reads
- *   -28..+22 % (the reader's own scatter: a 1.8 s octave there reads -20..+19 %
- *   on synthetic noise of a known decay); its 250 Hz (1.37 s) sits on a step
- *   from 1.04 s to 2.12 s at 500 Hz and reads down to -14 % in one realisation
- *   at 96 kHz. Its means are within 2.1 % at 250 Hz and 5.7 % at 125 Hz.
- */
-const LOW_BAND_SPREAD_ROOMS: readonly RoomSlug[] = ["reception-room", "north-gallery", "south-gallery", "robert-adam-room", "saloon"];
-
-/**
- * The room states whose 500 Hz is held on its mean, not per seed (T-700): laid
- * for dinner, the Reception Room and the galleries ring 0.81-0.85 s there, and
- * read from the octave's inner bins one realisation strays to 11-12 % at 48 kHz,
- * the reader's own scatter for so short a decay in that octave (a 0.4 s decay
- * at 500 Hz reads -15..+11 % on synthetic noise, its mean within 1.5 %).
- */
-const MID_SPREAD_STATES: readonly string[] = ["reception-room, laid for dinner", "north-gallery, laid for dinner", "south-gallery, laid for dinner"];
 
 interface Profile {
   readonly name: string;
@@ -203,7 +203,7 @@ const PROFILES: readonly Profile[] = [
 
 const CASES = RATES.flatMap((rate) => PROFILES.map((profile) => ({ ...profile, rate })));
 
-const measured = new Map<string, readonly (readonly number[])[]>();
+const measured = new Map<string, readonly BandReadings[]>();
 const keyOf = (rt: BandValues, rate: Rate): string => `${String(rate)}|${rt.join(",")}`;
 
 describe("renderRoomTail's decay in every band, read from inside each octave", () => {
@@ -217,44 +217,33 @@ describe("renderRoomTail's decay in every band, read from inside each octave", (
         const rendered = renderRoomTail(rt, { ...OPTIONS, sampleRate: rate, seed });
         decays.push(...octaveDecays(rendered.left, rendered.right, rate));
       }
-      measured.set(key, errorsOf(decays, rt));
+      measured.set(key, readingsOf(decays, rt));
     }
   }, 600_000);
 
-  const errors = (c: { readonly rt: BandValues; readonly rate: Rate }): readonly (readonly number[])[] => measured.get(keyOf(c.rt, c.rate)) ?? [];
+  const readings = (c: { readonly rt: BandValues; readonly rate: Rate }): readonly BandReadings[] => measured.get(keyOf(c.rt, c.rate)) ?? [];
 
-  it.each(CASES)("holds 500 Hz to 4 kHz within ten percent for every seed and channel at $rate Hz (500 Hz on its mean where it rings under 0.9 s): $name", (c) => {
-    for (const band of MID_BANDS) {
-      if (band === 1 || (band === 2 && MID_SPREAD_STATES.includes(c.name))) continue;
-      const each = errors(c)[band] ?? [];
-      expect(each).toHaveLength(2 * SEEDS[c.rate]);
-      for (const error of each) expect(Math.abs(error), `${String(OCTAVE_BANDS_HZ[band])} Hz`).toBeLessThan(0.1);
-    }
+  it.each(CASES)("holds every reading of every band within four sigma_D of its target, the scatter ISO 3382-2 expects of one decay of noise, at $rate Hz: $name", (c) => {
+    const each = readings(c);
+    expect(each).toHaveLength(OCTAVE_BANDS_HZ.length);
+    for (const band of each) expect(band.errors).toHaveLength(2 * SEEDS[c.rate]);
+    expectEachWithin(each, "");
   });
 
-  it.each(CASES)("holds 8 kHz within twenty percent for every seed and channel at $rate Hz: $name", (c) => {
-    const each = errors(c)[6] ?? [];
-    expect(each).toHaveLength(2 * SEEDS[c.rate]);
-    for (const error of each) expect(Math.abs(error)).toBeLessThan(0.2);
+  it.each(CASES)("scatters no more than 1.5 sigma_D in any band over its realisations (no frame, modulation or decorrelation fault) at $rate Hz: $name", (c) => {
+    readings(c).forEach(({ errors, sigma }, band) => {
+      expect(standardDeviation(errors) / sigma, `${String(OCTAVE_BANDS_HZ[band])} Hz`).toBeLessThanOrEqual(SCATTER_SIGMAS);
+    });
   });
-
-  it.each(CASES.filter((c) => c.slug === null || !LOW_BAND_SPREAD_ROOMS.includes(c.slug)))(
-    "holds 250 Hz within ten percent and 125 Hz within twenty for every seed and channel at $rate Hz: $name",
-    (c) => {
-      for (const error of errors(c)[1] ?? []) expect(Math.abs(error), "250 Hz").toBeLessThan(0.1);
-      for (const error of errors(c)[0] ?? []) expect(Math.abs(error), "125 Hz").toBeLessThan(0.2);
-    },
-  );
 
   it.each(CASES)("holds each band's mean over its realisations on target, 250 Hz to 8 kHz within five percent and 125 Hz within ten, at $rate Hz: $name", (c) => {
-    const each = errors(c);
-    OCTAVE_BANDS_HZ.forEach((hz, band) => {
-      expect(Math.abs(mean(each[band] ?? [Number.NaN])), `${String(hz)} Hz`).toBeLessThan(band === 0 ? MEAN_BOUND_125_HZ : MEAN_BOUND);
+    readings(c).forEach(({ errors }, band) => {
+      expect(Math.abs(mean(errors.length > 0 ? errors : [Number.NaN])), `${String(OCTAVE_BANDS_HZ[band])} Hz`).toBeLessThan(band === 0 ? MEAN_BOUND_125_HZ : MEAN_BOUND);
     });
   });
 
   it.each([48000, 96000] as const)(
-    "holds alternating 0.4 s and 3 s octaves, both phases, each within ten percent on its mean over 20 readings at %i Hz: no octave's decay leaks into its neighbours' (ruling R53)",
+    "holds alternating 0.4 s and 3 s octaves, both phases, each within ten percent on its mean over 20 readings and every reading within four sigma_D at %i Hz: no octave's decay leaks into its neighbours' (ruling R53)",
     (rate) => {
       for (const times of ALTERNATIONS) {
         const decays: (readonly BandDecay[])[] = [];
@@ -262,9 +251,11 @@ describe("renderRoomTail's decay in every band, read from inside each octave", (
           const rendered = renderRoomTail(times, { ...OPTIONS, sampleRate: rate, seed });
           decays.push(...octaveDecays(rendered.left, rendered.right, rate));
         }
-        errorsOf(decays, times).forEach((each, band) => {
-          expect(Math.abs(mean(each)), `${String(OCTAVE_BANDS_HZ[band])} Hz of ${times.join("/")}`).toBeLessThan(0.1);
+        const each = readingsOf(decays, times);
+        each.forEach(({ errors }, band) => {
+          expect(Math.abs(mean(errors)), `${String(OCTAVE_BANDS_HZ[band])} Hz of ${times.join("/")}`).toBeLessThan(0.1);
         });
+        expectEachWithin(each, ` of ${times.join("/")}`);
       }
     },
     120_000,
