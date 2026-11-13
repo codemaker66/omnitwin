@@ -113,8 +113,9 @@ function rowAround(piece: PlanPiece, pieces: readonly PlanPiece[]): { readonly e
 
 /**
  * Where each planner's name prints. A name sits on its piece when it fits
- * there, else along the row its piece stands in (rowAround), clear of the
- * copper numbers. With `beside`, a name with neither sits just below, above,
+ * there, else along the row its piece stands in (rowAround), still centred
+ * over its own piece and clear of the copper numbers. With `beside`, a name
+ * with neither sits just below, above,
  * right or left of its piece, on floor clear of every piece, number and name,
  * as a map sets a name beside a narrow street. A name with no such place is
  * left off and returned (once, as the planner wrote it), for the caption.
@@ -148,14 +149,22 @@ function placeNames(doc: Doc, drawing: PlanDrawing, markers: ReadonlyMap<string,
       placed.push(onPiece(cx));
       continue;
     }
-    // Along its row, sliding from the row's middle until it clears the copper numbers.
+    // Along its row: from its own piece's middle, kept inside the row, sliding
+    // clear of the copper numbers but never off its own piece, so a name at a
+    // row's end names the end piece and not its neighbour.
     const row = rowAround(piece, drawing.objects);
     if (row !== null && across >= style.size) {
+      const own = extentOf(piece);
       const middle = (row.extent.left + row.extent.right) / 2;
       const room = (row.extent.right - row.extent.left) * 0.92;
+      const reach = room / 2 - width / 2 - 1.5;
+      const start = Math.min(Math.max(cx, middle - reach), middle + reach);
       const shifts = Array.from({ length: 41 }, (_, step) => (step % 2 === 0 ? -1 : 1) * Math.ceil(step / 2) * 2);
-      const name = shifts.map((shift) => onPiece(middle + shift)).find((candidate) =>
-        candidate.rect.left >= middle - room / 2 && candidate.rect.right <= middle + room / 2 && clear(candidate.rect, row.members));
+      const name = shifts.map((shift) => onPiece(start + shift)).find((candidate) => {
+        const centre = (candidate.rect.left + candidate.rect.right) / 2;
+        return centre > own.left + 1 && centre < own.right - 1
+          && candidate.rect.left >= middle - room / 2 && candidate.rect.right <= middle + room / 2 && clear(candidate.rect, row.members);
+      });
       if (name !== undefined) {
         taken.push(name.rect);
         placed.push(name);

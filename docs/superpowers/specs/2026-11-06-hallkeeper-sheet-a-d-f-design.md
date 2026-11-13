@@ -87,7 +87,8 @@ planner's words. The build keeps every fact and changes the arrangement:
 ### As built: the review of #415 (12 to 13 November)
 
 The release lead's review (three lenses, about 90 rendered variants, three skeptics per finding) held one blocker and
-five majors. Each fix has a test that failed first:
+five majors; its delta review of the fixes held five minors, folded in below. Each fix has a test that fails without
+it:
 
 - **A care fact's place** is set apart only at a colon a space follows ("Table 5, seat 4: …"). A clock time
   ("desserts go out at 21:15") or a link stays whole; before, it split at the time's colon and lost it.
@@ -97,12 +98,19 @@ five majors. Each fix has a test that failed first:
   and above its rail, so they are the next words after page 1 and the setup page keeps its head. With nothing
   placed there is no setup page to open, so they run on full width below the columns.
 - **The progress rail** gives a time on another day its weekday ("Fri 16:00") and marks a step due after the room's
-  ready-by time in brick with the word "late", which a mono print keeps.
+  ready-by time in brick, with the word "late" on its own line under the time. The word is never cut ("Sun 08:00" on
+  a rail of five steps left no room beside it) and a mono print keeps it; the rail stands a line taller only when a
+  step is late.
 - **The plan's names:** a name sits on its piece when it fits; else along the row of pieces it stands in, end to end
-  (the top table's three trestles), clear of the copper numbers; else just beside its piece on clear floor; else the
-  caption names it ("Too small to name here: …"). The 60% plan had dropped "Top table".
+  (the top table's three trestles), starting from its own piece's middle and never set off that piece, so a name at
+  a row's end names the end piece; else just beside its piece on clear floor; else the caption names it ("Too small
+  to name here: …"). The 60% plan had dropped "Top table". The setup page's small plan sets names the same way and
+  names under itself any it has no room for, so the crew handed that page alone can match names to pieces.
 - **Rings** come from the planner's own access and allergy notes, never the sheet's counts ("1 wheelchair space").
-  A label of digits or one character rings only after "table" or "tables".
+  A label of digits or one character rings only after "table" or "tables". A run of tables rings every one it gives,
+  written as the setup's own lines write runs ("Tables 1–3, 5, 7–8") or as people do ("tables 4 and 5", "table
+  4 & 5", "4 or 5"), for "Table 4" labels too. After "table", "and 2 guests" counts people and "and a guest" names
+  no table A; after "tables" the run is meant ("Tables 4 and 6 guests are vegan").
 - **Balanced panel lines** never break a word that plain wrapping kept whole ("dairy-fr / ee meals").
 - With nothing set out in steps, the plan's numbered notes print under "Nothing is placed in this layout yet.".
 - The ready-by caption reads "60 min before guests come in", matching Guests in beside it.

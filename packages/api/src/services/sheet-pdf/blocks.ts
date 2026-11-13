@@ -668,8 +668,13 @@ function planCaption(notes: boolean, rings: boolean, leftOff: readonly string[])
     "Drawn from the saved layout, looking down.",
     notes ? "Copper numbers: notes, with the setup." : null,
     rings ? "Brick rings: keep in view." : null,
-    leftOff.length > 0 ? `Too small to name here: ${leftOff.join(", ")}.` : null,
+    namesLeftOff(leftOff),
   ].filter((part): part is string => part !== null).join(" ");
+}
+
+/** The planner's names a plan had no room for, in words for under it, or null when it named them all. */
+function namesLeftOff(leftOff: readonly string[]): string | null {
+  return leftOff.length > 0 ? `Too small to name here: ${leftOff.join(", ")}.` : null;
 }
 
 /** The room as one unit for a lane: its heading, the plan (or the picture), the scale bar and the caption. */
@@ -913,10 +918,18 @@ function railStations(sheet: HallkeeperSheetV2, steps: readonly SetupStep[]): St
   ];
 }
 
-/** A step due after the room's ready-by time: its rail time in brick, and the word, which a mono print keeps. */
+/** A step due after the room's ready-by time: its rail time in brick, and under it the word, which a mono print keeps. */
 const RAIL_TIME_LATE: TextStyle = { ...TYPE.railTime, color: INK.alert };
+const RAIL_LATE: TextStyle = { ...TYPE.railLabel, face: "Inter-SemiBold", color: INK.alert };
 
 const RAIL_H = 80;
+/** The line "late" takes under the times, whole however long the time beside it ("Sun 08:00"). */
+const RAIL_LATE_H = 13;
+
+/** How tall the rail stands: a line more when any step is late. */
+function railHeight(sheet: HallkeeperSheetV2, steps: readonly SetupStep[]): number {
+  return RAIL_H + (railStations(sheet, steps).some((station) => station.late) ? RAIL_LATE_H : 0);
+}
 
 /** The setup at a glance: a ring per step, then the room ready and the guests in. The rings are empty; nothing is done when the sheet prints. */
 function progressRail(flow: Flow, sheet: HallkeeperSheetV2, steps: readonly SetupStep[]): void {
@@ -938,22 +951,32 @@ function progressRail(flow: Flow, sheet: HallkeeperSheetV2, steps: readonly Setu
     drawLine(doc, labelStyle, oneLine(doc, labelStyle, station.label, span - 6), cx - span / 2, lineY + 17, { width: span, to: "center" });
     if (station.time.length > 0) {
       const style = station.late ? RAIL_TIME_LATE : station.kind === "guests" ? TYPE.railTimeQuiet : TYPE.railTime;
-      const time = oneLine(doc, style, station.late ? `${station.time} late` : station.time, span - 4);
-      drawLine(doc, style, time, cx - span / 2, lineY + 29, { width: span, to: "center" });
+      drawLine(doc, style, oneLine(doc, style, station.time, span - 4), cx - span / 2, lineY + 29, { width: span, to: "center" });
+      if (station.late) drawLine(doc, RAIL_LATE, "late", cx - span / 2, lineY + 43, { width: span, to: "center" });
     }
   }
-  hairline(doc, X, top + RAIL_H - 8, X + W, INK.rule, 0.5);
-  flow.y = top + RAIL_H;
+  const height = railHeight(sheet, steps);
+  hairline(doc, X, top + height - 8, X + W, INK.rule, 0.5);
+  flow.y = top + height;
 }
 
-/** The small plan at the foot of the rail: the room with the care tables ringed. */
+/**
+ * The small plan at the foot of the rail, for the crew handed the setup page
+ * alone: the room with the care tables ringed and the planner's names set as
+ * page 1 sets them, on a piece or beside it, and any it has no room for named
+ * under it.
+ */
 function railPlanUnit(doc: Doc, sheet: HallkeeperSheetV2, x: number, width: number): Unit | null {
   const plan = sheet.floorPlan ?? null;
   if (plan === null) return null;
   const inner = width - PANEL_PAD * 2;
   const height = planHeight(sheet, inner, 200);
-  return panelUnit(doc, RAIL_PANEL, x, width, height + 10, (y) => {
-    drawSheetPlan(doc, plan, { x: x + PANEL_PAD, y: y + 6, width: inner, height }, new Map(), careTables(sheet));
+  const markers = new Map<string, number>();
+  const caption = namesLeftOff(planNamesLeftOff(doc, plan, inner, height, markers));
+  const captionH = caption === null ? 0 : blockHeight(doc, TYPE.small, caption, inner) + 4;
+  return panelUnit(doc, RAIL_PANEL, x, width, height + 10 + captionH, (y) => {
+    drawSheetPlan(doc, plan, { x: x + PANEL_PAD, y: y + 6, width: inner, height }, markers, careTables(sheet), true);
+    if (caption !== null) drawBlock(doc, TYPE.small, caption, x + PANEL_PAD, y + 10 + height, inner);
   });
 }
 
@@ -1007,7 +1030,7 @@ export function setupPage(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string
     return;
   }
   const whole = stepUnits(doc, sheet, steps, X, W);
-  if (plannerNotes === "none" && doc.bufferedPageRange().count === 1 && flow.y + RAIL_H + unitsHeight(whole) <= flow.bottom) {
+  if (plannerNotes === "none" && doc.bufferedPageRange().count === 1 && flow.y + railHeight(sheet, steps) + unitsHeight(whole) <= flow.bottom) {
     ruleAbove(flow);
     progressRail(flow, sheet, steps);
     flow.lanes([whole]);
@@ -1030,7 +1053,7 @@ export function setupPage(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string
     // Page 1 had no room to say where the planner's notes went, so they come
     // first here, under the head; the rail then keeps with the first step.
     notesFlowing(flow, briefParts(sheet), false);
-    flow.ensure(RAIL_H + (stepsLane[0]?.need ?? stepsLane[0]?.height ?? 0));
+    flow.ensure(railHeight(sheet, steps) + (stepsLane[0]?.need ?? stepsLane[0]?.height ?? 0));
     ruleAbove(flow);
   }
   progressRail(flow, sheet, steps);

@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import PDFDocument from "pdfkit";
-import type { EventInstructions, HallkeeperSheetV2 } from "@omnitwin/types";
+import type { EventInstructions, HallkeeperFloorPlan, HallkeeperSheetV2 } from "@omnitwin/types";
 import { generateSheetPdfV2, sheetCopyLine, sheetQrTarget } from "../services/hallkeeper-pdf-v2.js";
 import { brief, martynsLaw, setupPage } from "../services/sheet-pdf/blocks.js";
 import { Flow, PAGE_OPTIONS } from "../services/sheet-pdf/flow.js";
 import { registerSheetFonts } from "../services/sheet-pdf/fonts.js";
-import { PAGE } from "../services/sheet-pdf/style.js";
+import { INK, PAGE } from "../services/sheet-pdf/style.js";
 import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
 import { renderMetrics, __resetMetricsForTests } from "../observability/metrics.js";
 import { boardMeetingSheet, emptyDraftSheet, longTextSheet, weddingSheet } from "./fixtures/hallkeeper-sheet-fixtures.js";
@@ -807,6 +807,128 @@ function weddingWithAllergies(count: number): HallkeeperSheetV2 {
   });
 }
 
+/** The wedding with its plan's pieces changed. */
+function weddingWithPlan(change: (objects: HallkeeperFloorPlan["objects"]) => HallkeeperFloorPlan["objects"]): HallkeeperSheetV2 {
+  const base = weddingSheet();
+  const plan = base.floorPlan;
+  if (plan === null || plan === undefined) throw new Error("the wedding has a plan");
+  return { ...base, floorPlan: { ...plan, objects: change(plan.objects) } };
+}
+
+/** Whether a piece stands at (x, z) metres on the plan. */
+function standsAt(object: { readonly x: number; readonly z: number }, x: number, z: number): boolean {
+  return Math.abs(object.x - x) < 0.01 && Math.abs(object.z - z) < 0.01;
+}
+
+// The plan as it prints (plan-drawing.ts). pdfkit writes a box piece as its
+// four corners and a round piece as four curves, top-down on the page, each
+// followed by its fill and stroke. A copper number is a round with a copper
+// stroke, and the room's outline is the closed path stroked at 1.1 pt.
+
+/** A box on the page, y growing down the page as pdfkit draws. */
+interface Box { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
+interface PlanShape extends Box { readonly fill: string; readonly stroke: string; readonly round: boolean }
+/** A name on the plan: its line, the box its letters take, and the middle of its capitals. */
+interface PlanName { readonly line: PdfLine; readonly box: Box; readonly x: number; readonly y: number }
+interface PlanReading { readonly floor: Box; readonly pieces: readonly PlanShape[]; readonly markers: readonly PlanShape[]; readonly names: readonly PlanName[] }
+
+const NUM = String.raw`(-?[\d.]+)`;
+const BOX_PIECE = new RegExp(String.raw`${NUM} ${NUM} m\n${NUM} ${NUM} l\n${NUM} ${NUM} l\n${NUM} ${NUM} l\nh\n\/DeviceRGB cs\n([\d.]+ [\d.]+ [\d.]+) scn\n\/DeviceRGB CS\n([\d.]+ [\d.]+ [\d.]+) SCN\nB\n`, "gu");
+const ROUND_PIECE = new RegExp(String.raw`${NUM} -?[\d.]+ m\n(?:-?[\d.]+ ){5}${NUM} c\n(?:-?[\d.]+ ){4}${NUM} -?[\d.]+ c\n(?:-?[\d.]+ ){5}${NUM} c\n(?:-?[\d.]+ ){5}-?[\d.]+ c\nh\n(?:[\d.]+ w\n)?\/DeviceRGB cs\n([\d.]+ [\d.]+ [\d.]+) scn\n\/DeviceRGB CS\n([\d.]+ [\d.]+ [\d.]+) SCN\nB\n`, "gu");
+const ROOM_OUTLINE = /((?:-?[\d.]+ -?[\d.]+ [ml]\n)+)h\n1\.1 w\n/u;
+
+const hexOf = (rgb: string): string => `#${rgb.split(" ").map((part) => Math.round(Number(part) * 255).toString(16).padStart(2, "0")).join("")}`;
+const boxesMeet = (a: Box, b: Box): boolean => a.left < b.right - 0.1 && b.left < a.right - 0.1 && a.top < b.bottom - 0.1 && b.top < a.bottom - 0.1;
+
+/** Whether a box shares any ground with a shape: a round one by its circle, not its corners. */
+function touches(box: Box, shape: PlanShape): boolean {
+  if (!shape.round) return boxesMeet(box, shape);
+  const cx = (shape.left + shape.right) / 2;
+  const cy = (shape.top + shape.bottom) / 2;
+  return Math.hypot(Math.max(box.left - cx, 0, cx - box.right), Math.max(box.top - cy, 0, cy - box.bottom)) < (shape.right - shape.left) / 2 - 0.1;
+}
+
+function holds(shape: PlanShape, x: number, y: number): boolean {
+  if (shape.round) return Math.hypot(x - (shape.left + shape.right) / 2, y - (shape.top + shape.bottom) / 2) <= (shape.right - shape.left) / 2;
+  return x >= shape.left && x <= shape.right && y >= shape.top && y <= shape.bottom;
+}
+
+/** How far a box is from a shape's box: 0 where they meet. */
+function gapBetween(box: Box, shape: Box): number {
+  return Math.hypot(Math.max(shape.left - box.right, 0, box.left - shape.right), Math.max(shape.top - box.bottom, 0, box.top - shape.bottom));
+}
+
+/** Each page's plan as it prints, or null on a page that draws none. */
+function plansOn(buf: Buffer): (PlanReading | null)[] {
+  const pages = pdfPages(buf);
+  return pdfPageContents(buf).map((content, index): PlanReading | null => {
+    const outline = ROOM_OUTLINE.exec(content);
+    if (outline === null) return null;
+    const points = [...(outline[1] ?? "").matchAll(/(-?[\d.]+) (-?[\d.]+) [ml]/gu)].map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
+    const floor: Box = {
+      left: Math.min(...points.map((point) => point.x)), top: Math.min(...points.map((point) => point.y)),
+      right: Math.max(...points.map((point) => point.x)), bottom: Math.max(...points.map((point) => point.y)),
+    };
+    const shapes = [
+      ...[...content.matchAll(BOX_PIECE)].map((match): PlanShape => {
+        const xs = [match[1], match[3], match[5], match[7]].map(Number);
+        const ys = [match[2], match[4], match[6], match[8]].map(Number);
+        return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys), fill: hexOf(match[9] ?? ""), stroke: hexOf(match[10] ?? ""), round: false };
+      }),
+      ...[...content.matchAll(ROUND_PIECE)].map((match): PlanShape => ({
+        left: Number(match[1]), top: Number(match[2]), right: Number(match[3]), bottom: Number(match[4]), fill: hexOf(match[5] ?? ""), stroke: hexOf(match[6] ?? ""), round: true,
+      })),
+    ].filter((shape) => shape.left >= floor.left - 1 && shape.right <= floor.right + 1 && shape.top >= floor.top - 1 && shape.bottom <= floor.bottom + 1);
+    const markers = shapes.filter((shape) => shape.stroke === INK.accent);
+    const names = (pages[index] ?? []).map((line): PlanName => {
+      const baseline = PAGE_H - line.y;
+      return { line, box: { left: line.x, top: baseline - line.size * 0.73, right: line.x2, bottom: baseline + line.size * 0.21 }, x: (line.x + line.x2) / 2, y: baseline - line.size * 0.36 };
+    }).filter((name) => name.x > floor.left && name.x < floor.right && name.y > floor.top && name.y < floor.bottom
+      && !markers.some((marker) => holds(marker, name.x, name.y)));
+    return { floor, pieces: shapes.filter((shape) => shape.stroke !== INK.accent), markers, names };
+  });
+}
+
+/** The piece a name sits on: the uppermost one under its middle, never a chair. */
+function pieceUnder(plan: PlanReading, name: PlanName): PlanShape | undefined {
+  return plan.pieces.filter((piece) => piece.stroke !== INK.chairLine && holds(piece, name.x, name.y)).at(-1);
+}
+
+/** The pieces of `piece`'s kind standing end to end with it in its line (a run of trestles), west to east. */
+function rowOf(plan: PlanReading, piece: PlanShape): PlanShape[] {
+  const row = new Set([piece]);
+  for (let grown = true; grown;) {
+    grown = false;
+    for (const other of plan.pieces) {
+      if (row.has(other) || other.round || other.fill !== piece.fill || Math.abs(other.top - piece.top) > 1 || Math.abs(other.bottom - piece.bottom) > 1) continue;
+      if (![...row].some((member) => other.left <= member.right + 2 && other.right >= member.left - 2)) continue;
+      row.add(other);
+      grown = true;
+    }
+  }
+  return [...row].sort((a, b) => a.left - b.left);
+}
+
+/** Every name sits on its piece (or along the row its piece stands in) or beside it on clear floor, and meets no copper number and no other name. */
+function expectNamesClear(plan: PlanReading, what: string): void {
+  expect(plan.names.length, what).toBeGreaterThan(0);
+  for (const name of plan.names) {
+    const label = `${what}: "${name.line.text}"`;
+    for (const other of plan.names) if (other !== name) expect(boxesMeet(name.box, other.box), `${label} meets "${other.line.text}"`).toBe(false);
+    for (const marker of plan.markers) expect(touches(name.box, marker), `${label} meets a copper number`).toBe(false);
+    const own = pieceUnder(plan, name);
+    const met = plan.pieces.filter((piece) => touches(name.box, piece));
+    if (own === undefined) {
+      expect(met, `${label}, set beside its piece, meets a piece`).toEqual([]);
+      const inside = name.box.left >= plan.floor.left && name.box.right <= plan.floor.right && name.box.top >= plan.floor.top && name.box.bottom <= plan.floor.bottom;
+      expect(inside, `${label} stays inside the room`).toBe(true);
+    } else {
+      const row = rowOf(plan, own);
+      for (const piece of met) expect(row.includes(piece), `${label} meets a piece outside its own row`).toBe(true);
+    }
+  }
+}
+
 describe("what #415's review found (T-696)", () => {
   /** A care ring as pdfkit writes it: a move to its left edge, four curves, then a brick stroke. */
   const BRICK_RING = /(-?[\d.]+) (-?[\d.]+) m\n(?:-?[\d.]+ ){5}-?[\d.]+ c\n(?:-?[\d.]+ ){4}(-?[\d.]+) -?[\d.]+ c\n(?:[-\d. ]+ c\n){2}h\n[\d.]+ w\n\/DeviceRGB CS\n0\.5411764705882353 0\.20784313725490197 0\.13333333333333333 SCN\nS/gu;
@@ -898,37 +1020,92 @@ describe("what #415's review found (T-696)", () => {
     }
   });
 
-  it("names the top table on page 1's plan, beside its piece when the name is wider than the piece", async () => {
-    const first = (await pagesOf(weddingSheet()))[0] ?? [];
-    const at = (text: string): PdfLine => {
-      const line = first.find((candidate) => candidate.text === text);
-      if (line === undefined) throw new Error(`page 1 should carry "${text}"`);
-      return line;
-    };
-    const name = at("Top table");
-    expect(name.y).toBeLessThan(at("NORTH WALL").y);
-    expect(name.y).toBeGreaterThan(at("SOUTH WALL").y);
-    expect(name.x).toBeGreaterThanOrEqual(MARGIN);
-    expect(name.x2).toBeLessThanOrEqual(MARGIN + LEFT_W);
+  it("names the top table on page 1's plan along its row of trestles, centred on its own", async () => {
+    const plan = plansOn(await generateSheetPdfV2(await withPaperCheck(weddingSheet(), true)))[0];
+    if (plan === null || plan === undefined) throw new Error("page 1 draws the room");
+    const name = plan.names.find((candidate) => candidate.line.text === "Top table");
+    const own = name === undefined ? undefined : pieceUnder(plan, name);
+    if (name === undefined || own === undefined) throw new Error("page 1's plan names the top table on its trestles");
+    // The planner named the middle trestle of three; the name is wider than that trestle alone.
+    const row = rowOf(plan, own);
+    expect(row).toHaveLength(3);
+    expect(row.indexOf(own)).toBe(1);
+    expect(name.box.right - name.box.left).toBeGreaterThan(own.right - own.left);
+    expect(name.box.left).toBeGreaterThanOrEqual(MARGIN);
+    expect(name.box.right).toBeLessThanOrEqual(MARGIN + LEFT_W);
+    expectNamesClear(plan, "the wedding's page 1");
   });
 
-  it("sets a name too wide for its piece beside it, on clear floor inside the plan", async () => {
-    const base = weddingSheet();
-    const plan = base.floorPlan;
-    if (plan === null || plan === undefined) throw new Error("wedding fixture has a plan");
-    const objects = plan.objects.map((object) => (Math.abs(object.x - 3) < 0.01 && Math.abs(object.z - 4.2) < 0.01 ? { ...object, label: "Cake" } : object));
-    const first = (await pagesOf({ ...base, floorPlan: { ...plan, objects } }))[0] ?? [];
-    const at = (text: string): PdfLine => {
-      const line = first.find((candidate) => candidate.text === text);
-      if (line === undefined) throw new Error(`page 1 should carry "${text}"`);
-      return line;
-    };
-    const name = at("Cake");
-    expect(name.y).toBeLessThan(at("NORTH WALL").y);
-    expect(name.y).toBeGreaterThan(at("SOUTH WALL").y);
-    expect(name.x).toBeGreaterThanOrEqual(MARGIN);
-    expect(name.x2).toBeLessThanOrEqual(MARGIN + LEFT_W);
-    expect(textOf(first)).not.toContain("Too small to name here");
+  it("sets a name too wide for its piece beside it, squared to it on clear floor, touching nothing", async () => {
+    const sheet = weddingWithPlan((objects) => objects.map((object) => (standsAt(object, 3, 4.2) ? { ...object, label: "Cake" } : object)));
+    const buf = await generateSheetPdfV2(await withPaperCheck(sheet, true));
+    const plan = plansOn(buf)[0];
+    const name = plan?.names.find((candidate) => candidate.line.text === "Cake");
+    if (plan === null || plan === undefined || name === undefined) throw new Error("page 1's plan names the cake's poseur");
+    expect(pieceUnder(plan, name)).toBeUndefined();
+    // The poseur is the piece nearest the name, a hair away, and the name lines up with it.
+    const [poseur] = plan.pieces.filter((piece) => piece.stroke !== INK.chairLine)
+      .sort((a, b) => gapBetween(name.box, a) - gapBetween(name.box, b));
+    if (poseur === undefined) throw new Error("the plan has pieces");
+    expect(poseur.round).toBe(true);
+    expect(gapBetween(name.box, poseur)).toBeLessThan(4.5);
+    expect((name.x >= poseur.left && name.x <= poseur.right) || (name.y >= poseur.top && name.y <= poseur.bottom)).toBe(true);
+    expectNamesClear(plan, "the cake's poseur");
+    expect(textOf(pdfPages(buf)[0] ?? [])).not.toContain("Too small to name here");
+  });
+
+  it("sets a name along its row over its own piece, at the row's end too", async () => {
+    // Five trestles end to end on the north wall, and only the east end one named.
+    const sheet = weddingWithPlan((objects) => {
+      const template = objects.find((object) => standsAt(object, 0, -4.2));
+      if (template === undefined) throw new Error("the wedding's top table stands at x = 0");
+      const more = [-3.7, -5.55].map((x, n) => ({ ...template, objectId: `00000000-0000-4000-8000-00000000aa0${String(n)}`, x, label: undefined, note: undefined }));
+      return [...objects.map((object) => (standsAt(object, 0, -4.2) ? { ...object, label: undefined }
+        : standsAt(object, 1.85, -4.2) ? { ...object, label: "Gift table" } : object)), ...more];
+    });
+    const plan = plansOn(await generateSheetPdfV2(await withPaperCheck(sheet, true)))[0];
+    const name = plan?.names.find((candidate) => candidate.line.text === "Gift table");
+    const own = plan === null || plan === undefined || name === undefined ? undefined : pieceUnder(plan, name);
+    if (plan === null || plan === undefined || own === undefined) throw new Error("page 1's plan names the gift table on a trestle");
+    const row = rowOf(plan, own);
+    expect(row).toHaveLength(5);
+    expect(row.indexOf(own)).toBe(4);
+    expectNamesClear(plan, "the row's east end");
+  });
+
+  it("keeps every name on a plan on its piece or beside it, clear of the copper numbers and of each other", async () => {
+    const sheets: readonly (readonly [string, HallkeeperSheetV2, boolean])[] = [
+      ["the wedding", weddingSheet(), true],
+      ["a cake stand by the bar", weddingWithPlan((objects) => objects.map((object) => (standsAt(object, 3, 4.2) ? { ...object, label: "Cake stand" } : object))), true],
+      ["long names", weddingWithPlan((objects) => objects.map((object) => (object.label === "Table 7" ? { ...object, label: "The Fraser–Lindqvist family table" }
+        : object.label === "Top table" ? { ...object, label: "Top table for the wedding party" } : object))), true],
+      ["the board meeting", boardMeetingSheet(), false],
+    ];
+    for (const [what, sheet, issued] of sheets) {
+      const plans = plansOn(await generateSheetPdfV2(await withPaperCheck(sheet, issued))).filter((plan): plan is PlanReading => plan !== null);
+      expect(plans.length, what).toBeGreaterThan(0);
+      for (const [index, plan] of plans.entries()) expectNamesClear(plan, `${what}, plan ${String(index + 1)}`);
+    }
+  });
+
+  it("names the top table on the setup page's small plan too, beside its own trestle", async () => {
+    const plans = plansOn(await generateSheetPdfV2(await withPaperCheck(weddingSheet(), true)));
+    const small = plans[1];
+    const name = small?.names.find((candidate) => candidate.line.text === "Top table");
+    if (small === null || small === undefined || name === undefined) throw new Error("the setup page's small plan names the top table");
+    expect(pieceUnder(small, name)).toBeUndefined();
+    const [trestle] = small.pieces.filter((piece) => piece.stroke !== INK.chairLine).sort((a, b) => gapBetween(name.box, a) - gapBetween(name.box, b));
+    if (trestle === undefined) throw new Error("the small plan has pieces");
+    expect(rowOf(small, trestle).indexOf(trestle)).toBe(1);
+    expect(name.x).toBeGreaterThanOrEqual(trestle.left);
+    expect(name.x).toBeLessThanOrEqual(trestle.right);
+    expectNamesClear(small, "the setup page's small plan");
+  });
+
+  it("names under the setup page's small plan a name it has no room for", async () => {
+    const sheet = weddingWithPlan((objects) => objects.map((object) => (standsAt(object, 3, 4.2) ? { ...object, label: "Gift table for the cards and presents" } : object)));
+    const second = textOf((await pagesOf(sheet))[1] ?? []);
+    expect(second).toContain("Too small to name here: Gift table for the cards and presents.");
   });
 
   it("names under the plan's caption a piece it has no room to name on the drawing", async () => {
@@ -953,6 +1130,55 @@ describe("what #415's review found (T-696)", () => {
     });
     expect(ringed).toHaveLength(3);
     expect(new Set(ringed)).toEqual(new Set(["3", "5", "9"]));
+  });
+
+  it("rings every table a run in the care words names, with the tables labelled by bare numbers", async () => {
+    const numbered = weddingWithPlan((objects) => objects.map((object) => (object.label !== undefined && /^Table \d+$/u.test(object.label)
+      ? { ...object, label: object.label.replace("Table ", "") } : object)));
+    const dietary = numbered.instructions?.dietary ?? null;
+    if (numbered.instructions === null || dietary === null) throw new Error("the wedding records its dietary needs");
+    const sheet: HallkeeperSheetV2 = { ...numbered, instructions: { ...numbered.instructions,
+      dietary: { ...dietary, otherAllergies: "Tables 4 and 5 are nut-free. Table 9: two guests coeliac." } } };
+    const buf = await generateSheetPdfV2(await withPaperCheck(sheet, true));
+    const [content] = pdfPageContents(buf);
+    const first = pdfPages(buf)[0] ?? [];
+    const ringed = [...(content ?? "").matchAll(BRICK_RING)].map((match) => {
+      const cx = (Number(match[1]) + Number(match[3])) / 2;
+      const cy = Number(match[2]);
+      return first.find((line) => Math.abs((line.x + line.x2) / 2 - cx) < 1 && Math.abs(PAGE_H - line.y - cy) < 9)?.text;
+    });
+    // Table 3 from the access words ("go on table 3"), then the run and table 9.
+    expect(new Set(ringed)).toEqual(new Set(["3", "4", "5", "9"]));
+    expect(ringed).toHaveLength(4);
+  });
+
+  it("sets 'late' whole under its time, in brick, for a step on another day too, on rails of five and of three steps", async () => {
+    // Technical and final touches both fall on the Sunday, after Saturday's ready-by time.
+    const late = weddingWith((instructions) => ({ ...instructions, phaseDeadlines: instructions.phaseDeadlines.map((deadline) =>
+      deadline.phase === "technical" ? { ...deadline, deadline: bst(9, 0, 1) } : deadline.phase === "final" ? { ...deadline, deadline: bst(0, 10, 1) } : deadline) }));
+    const three: HallkeeperSheetV2 = { ...late, phases: late.phases.filter((phase) => phase.phase !== "structure" && phase.phase !== "dress") };
+    for (const [what, sheet, steps] of [["five steps", late, 5], ["three steps", three, 3]] as const) {
+      const buf = await generateSheetPdfV2(await withPaperCheck(sheet, true));
+      const pages = pdfPages(buf);
+      const at = pages.findIndex((lines) => lines.some((line) => line.text === "SETUP, IN ORDER"));
+      const lines = pages[at] ?? [];
+      const head = lines.find((line) => line.text === "SETUP, IN ORDER");
+      // The rail ends at its own hairline: the first half-point rule under its heading.
+      const end = (pdfRules(buf)[at] ?? []).filter((rule) => rule.weight === 0.5 && rule.y < (head?.y ?? 0)).sort((a, b) => b.y - a.y)[0];
+      if (head === undefined || end === undefined) throw new Error(`${what}: the setup's rail`);
+      const rail = lines.filter((line) => line.y < head.y && line.y > end.y);
+      expect(rail.filter((line) => /^\d$/u.test(line.text)).map((line) => line.text), what).toEqual(Array.from({ length: steps }, (_, n) => String(n + 1)));
+      expect(textOf(rail), what).not.toContain("…");
+      const words = rail.filter((line) => line.text === "late");
+      expect(words, what).toHaveLength(2);
+      for (const word of words) {
+        const time = rail.find((line) => line.size === 12 && Math.abs((line.x + line.x2) / 2 - (word.x + word.x2) / 2) < 1);
+        expect(time?.text, what).toMatch(/^Sun \d\d:\d\d$/u);
+        expect((time?.y ?? 0) - word.y, what).toBeGreaterThan(8);
+        expect((time?.y ?? 0) - word.y, what).toBeLessThan(18);
+        expect([time?.color, word.color], what).toEqual([INK.alert, INK.alert]);
+      }
+    }
   });
 
   it("keeps the contact's email with page 1 and off the setup's rail", async () => {

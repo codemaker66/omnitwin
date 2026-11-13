@@ -383,10 +383,39 @@ describe("careTables: the tables the care words name, for the plan to ring", () 
   });
 
   it("counts a bare number or a single letter as a table only after the word table", () => {
-    const labels = ["1", "2", "4", "10", "12", "A"];
+    const labels = ["1", "2", "4", "5", "10", "12", "A"];
     expect([...careTables(careSheet("A wheelchair user sits near the door.", "Seat 4 at table 12 is coeliac. 2 guests with nut allergy; cake at 10:30.", labels))]).toEqual(["12"]);
-    expect([...careTables(careSheet("", "Tables 4 and 5 are nut-free.", labels))]).toEqual(["4"]);
+    expect([...careTables(careSheet("", "Tables 4 and 5 are nut-free.", labels))]).toEqual(["4", "5"]);
     expect([...careTables(careSheet("", "Table A: one guest avoids sesame.", labels))]).toEqual(["A"]);
+  });
+
+  it("rings every table a run of names gives, written as the sheet writes such runs", () => {
+    const labels = ["1", "2", "3", "4", "5", "6", "7", "9", "A", "B"];
+    const ringed = (words: string): string[] => [...careTables(careSheet("", words, labels))].sort();
+    expect(ringed("Tables 4 and 5 are nut-free.")).toEqual(["4", "5"]);
+    expect(ringed("A guest at Tables 4 and 2 avoids sesame.")).toEqual(["2", "4"]);
+    expect(ringed("Nut-free at tables 3, 5 and 9.")).toEqual(["3", "5", "9"]);
+    expect(ringed("Table 4 & 5: no sesame.")).toEqual(["4", "5"]);
+    expect(ringed("Table 4 or 5, whichever is nearer the door.")).toEqual(["4", "5"]);
+    // The setup's own lines run tables together this way (formatTableLabels); 8 is not a table here.
+    expect(ringed("Tables 1–3, 5, 7–8: gluten-free bread.")).toEqual(["1", "2", "3", "5", "7"]);
+    expect(ringed("Tables A and B face the stage, where the loop works.")).toEqual(["A", "B"]);
+  });
+
+  it("reads a run the same way for tables labelled as the planner numbers them", () => {
+    const labels = ["Table 4", "Table 5", "Table 12", "Top table"];
+    expect([...careTables(careSheet("", "Tables 4 and 5 are nut-free.", labels))].sort()).toEqual(["Table 4", "Table 5"]);
+    expect([...careTables(careSheet("", "Tables 4, 5 & 12, and the top table: no sesame.", labels))].sort()).toEqual(["Table 12", "Table 4", "Table 5", "Top table"]);
+  });
+
+  it("never takes a count or a word after a table for another table", () => {
+    const labels = ["2", "4", "6", "A"];
+    const ringed = (words: string): string[] => [...careTables(careSheet("", words, labels))].sort();
+    expect(ringed("Table 4 and 2 guests at table 6 avoid nuts.")).toEqual(["4", "6"]);
+    expect(ringed("Table A and a guest at the bar are vegan.")).toEqual(["A"]);
+    expect(ringed("Table 4 and A guest list goes to the bar.")).toEqual(["4"]);
+    // After "tables" the run is meant: the guests at tables 4 and 6.
+    expect(ringed("Tables 4 and 6 guests are vegan.")).toEqual(["4", "6"]);
   });
 
   it("reads only the planner's own words, never the counts the sheet adds", () => {

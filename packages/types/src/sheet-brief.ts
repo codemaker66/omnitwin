@@ -390,21 +390,78 @@ export function otherMeals(dietary: DietarySummary | null): string | null {
   return parts.length === 0 ? null : parts.join(" · ");
 }
 
-/** A label as a pattern that matches it only as a whole phrase, in any case.
- *  A label of digits or of one character ("12", "A") counts only after
- *  "table" or "tables", so "2 guests" or "a wheelchair" never names one. */
+/** "Table 5": the number (or letter) a planner's label gives a table, as care words call it. */
+const NUMBERED_LABEL = /^table\s+(\S+)$/iu;
+
+/** A label of digits or of one character ("12", "A"): a table only where the words call it one. */
+function bareLabel(label: string): boolean {
+  return /^\p{N}+$/u.test(label) || label.length < 2;
+}
+
+/** A label as a pattern that matches it only as a whole phrase, in any case. */
 function wholePhrase(label: string): RegExp {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const bare = /^\p{N}+$/u.test(label) || label.length < 2;
-  return new RegExp(`(?<![\\p{L}\\p{N}])${bare ? "tables?\\s+" : ""}${escaped}(?![\\p{L}\\p{N}])`, "iu");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu");
+}
+
+// A run of tables' names after "table" or "tables", as the setup's own lines
+// write one ("Tables 1–3, 5, 7–8") or as people do ("tables 4 and 5", "table
+// A & B"). A name is a range of numbers, a number or a code with one ("12",
+// "4b", "A1"), or one letter. The names after the first are joined by a comma,
+// "and", "or" or "&", and are of the first one's kind.
+const TABLE_WORD = /(?<![\p{L}\p{N}])(tables?)\s+/giu;
+const FIRST_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{L}))(?![\p{L}\p{N}])/yu;
+/** A further name in the run; a letter only as a capital, so "and a guest" adds no table A. */
+const NEXT_NAME = /(?:\s*,\s*(?:(?:and|or|AND|OR)\s+|&\s*)?|\s*&\s*|\s+(?:and|or|AND|OR)\s+)(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{Lu}))(?![\p{L}\p{N}])/yu;
+/** What a number after "table 4 and" counts when it is not a table: "and 2 guests". */
+const COUNTED = /\s+(?:guests?|people|persons?|diners?|adults?|children|child|kids?|bab(?:y|ies)|seats?|places?|covers?|chairs?|pax)(?![\p{L}\p{N}])/iyu;
+
+/** Every name such runs give, in lower case, each range spelled out. */
+function namesInRuns(words: string): ReadonlySet<string> {
+  const names = new Set<string>();
+  const add = ([, from, to, code, letter]: RegExpExecArray): void => {
+    if (from !== undefined && to !== undefined) {
+      const start = Number(from);
+      const end = Number(to);
+      if (end >= start && end - start <= 200) {
+        for (let n = start; n <= end; n++) names.add(String(n));
+      } else {
+        names.add(from);
+        names.add(to);
+      }
+      return;
+    }
+    names.add((code ?? letter ?? "").toLowerCase());
+  };
+  for (const head of words.matchAll(TABLE_WORD)) {
+    FIRST_NAME.lastIndex = head.index + head[0].length;
+    const first = FIRST_NAME.exec(words);
+    if (first === null) continue;
+    add(first);
+    const letters = first[4] !== undefined;
+    // "Tables" opens a run; after "table", "and 2 guests" counts people.
+    const run = (head[1] ?? "").toLowerCase() === "tables";
+    for (let at = FIRST_NAME.lastIndex; ;) {
+      NEXT_NAME.lastIndex = at;
+      const next = NEXT_NAME.exec(words);
+      if (next === null || (next[4] !== undefined) !== letters) break;
+      COUNTED.lastIndex = NEXT_NAME.lastIndex;
+      if (!run && !letters && COUNTED.test(words)) break;
+      add(next);
+      at = NEXT_NAME.lastIndex;
+    }
+  }
+  return names;
 }
 
 /** The plan's tables the care words name ("Table 5, seat 4: …", "go on table
- *  3"), by the planner's own labels, so the plan can ring where care is needed.
- *  The care words are the planner's own access and allergy notes, not the
- *  counts Keep in view adds to them. A label matches only as a whole phrase in
- *  any case, so "Table 1" never rings because of "Table 10"; only tables are
- *  ringed. */
+ *  3", "Tables 4 and 5 are nut-free"), by the planner's own labels, so the plan
+ *  can ring where care is needed. The care words are the planner's own access
+ *  and allergy notes, not the counts Keep in view adds to them. A table counts
+ *  when the words give its number or letter after "table" or "tables", alone or
+ *  in a run ("Tables 1–3, 5 and 7"), or name it in full as a whole phrase in
+ *  any case ("the top table"). So "Table 1" never rings because of "Table 10",
+ *  and "2 guests" or "a wheelchair" names no table; only tables are ringed. */
 export function careTables(sheet: HallkeeperSheetV2): ReadonlySet<string> {
   const ringed = new Set<string>();
   const plan = sheet.floorPlan ?? null;
@@ -412,10 +469,13 @@ export function careTables(sheet: HallkeeperSheetV2): ReadonlySet<string> {
   // The planner's own words only: "1 wheelchair space" is the sheet's count, not a table.
   const words = [instructions?.accessibility?.notes ?? "", allergyFacts(instructions?.dietary ?? null)?.notes ?? ""].join("\n");
   if (plan === null || words.trim().length === 0) return ringed;
+  const named = namesInRuns(words);
   for (const object of plan.objects) {
     const label = object.label?.trim() ?? "";
     if (object.category !== "table" || label.length === 0) continue;
-    if (wholePhrase(label).test(words)) ringed.add(label);
+    const bare = bareLabel(label);
+    const name = bare ? label : NUMBERED_LABEL.exec(label)?.[1];
+    if ((name !== undefined && named.has(name.toLowerCase())) || (!bare && wholePhrase(label).test(words))) ringed.add(label);
   }
   return ringed;
 }

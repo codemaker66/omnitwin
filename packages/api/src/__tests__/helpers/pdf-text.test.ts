@@ -64,6 +64,19 @@ describe("pdf text helper", () => {
     expect((line?.y2 ?? 0) - (line?.y ?? 0)).toBeCloseTo(line?.width ?? 0, 0);
   });
 
+  it("reports the fill colour each run is shown in, as the graphics state saves and restores it", async () => {
+    const buf = await render((doc) => {
+      doc.font("Inter-Regular").fontSize(9);
+      doc.text("plain", 40, 80, { lineBreak: false });
+      doc.fillColor("#8a3522").text("late", 40, 100, { lineBreak: false });
+      doc.save().fillColor("#2b3a33").text("inside", 40, 120, { lineBreak: false }).restore();
+      doc.text("after", 40, 140, { lineBreak: false });
+    });
+    expect(pdfPages(buf)[0]?.map((line) => [line.text, line.color])).toEqual([
+      ["plain", null], ["late", "#8a3522"], ["inside", "#2b3a33"], ["after", "#8a3522"],
+    ]);
+  });
+
   it("counts embedded images", async () => {
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/RZkAAAAASUVORK5CYII=", "base64");
     expect(pdfImageCount(await render((doc) => { doc.image(png, 10, 10, { width: 20 }); }))).toBe(1);
