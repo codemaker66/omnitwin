@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { useThree, type RootState } from "@react-three/fiber";
 import { act } from "@testing-library/react";
 import { StrictMode, useEffect, useState, type ReactElement } from "react";
 import { Color, Mesh, Raycaster, Texture, Vector3, type BufferGeometry, type Object3D } from "three";
@@ -36,6 +37,40 @@ vi.mock("three", async (importOriginal) => {
   }
   return { ...actual, ImageBitmapLoader: FakeImageBitmapLoader };
 });
+
+// The planner's native renderer and its precompile queue, stood in for: off unless a test turns
+// them on, as under the stub root, whose renderer is not the planner's.
+const native = vi.hoisted(() => ({
+  on: false,
+  /** The native renderer behind each view's renderer: one stand-in apiece, with a backend to be asked about. */
+  behind: new Map<object, { readonly backend: object }>(),
+  jobs: [] as { renderer: object; job: (signal: AbortSignal) => Promise<void> }[],
+  compiled: [] as object[],
+}));
+
+vi.mock("../../../lib/native-renderer.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/native-renderer.js")>()),
+  getNativeRenderer: (renderer: object) => {
+    if (!native.on) return null;
+    const known = native.behind.get(renderer) ?? { backend: {} };
+    native.behind.set(renderer, known);
+    return known;
+  },
+}));
+vi.mock("../../../lib/native-precompile.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/native-precompile.js")>()),
+  requestNativePrecompile: (renderer: object, job: (signal: AbortSignal) => Promise<void>) => {
+    native.jobs.push({ renderer, job });
+    return Promise.resolve();
+  },
+}));
+vi.mock("../../../lib/native-frame-composer.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/native-frame-composer.js")>()),
+  nativeFramePrecompile: (renderer: object) => () => {
+    native.compiled.push(renderer);
+    return Promise.resolve();
+  },
+}));
 
 const FIXTURE_TEXT = readFileSync(path.resolve("src/components/surveyed-room/__tests__/fixtures/saloon-survey.fixture.json"), "utf-8");
 
@@ -166,6 +201,10 @@ afterEach(() => {
   unmount();
   recorded.loads.length = 0;
   recorded.aborts = 0;
+  native.on = false;
+  native.behind.clear();
+  native.jobs.length = 0;
+  native.compiled.length = 0;
 });
 
 describe("SurveyedRoomModel", () => {
@@ -313,6 +352,47 @@ describe("SurveyedRoomModel", () => {
     expect(walls.close).not.toHaveBeenCalled();
     expect(sampled(scene, "walls").image).toBe(walls.image);
     expect(progress.at(-1)).toEqual({ expected: 3, settled: 1, failed: [] });
+  });
+
+  it("has its pipelines compiled ahead for the planner's scene pass, and again for a renderer that replaces the first", async () => {
+    const view: { set: RootState["set"] | null; gl: object | null } = { set: null, gl: null };
+    function Probe(): null {
+      view.set = useThree((state) => state.set);
+      view.gl = useThree((state) => state.gl);
+      return null;
+    }
+    native.on = true;
+    mounted = mountInStubRoot(<><Probe /><SurveyedRoomModel room={saloon()} photoQuality={1} /></>);
+    // One job, queued for the view's renderer; run, it compiles that renderer's scene pass.
+    const first = view.gl === null ? undefined : native.behind.get(view.gl);
+    expect(first).toBeDefined();
+    expect(native.jobs.map((entry) => entry.renderer)).toEqual([first]);
+    await native.jobs[0]?.job(new AbortController().signal);
+    expect(native.compiled).toEqual([first]);
+
+    // The device is lost and a fresh renderer takes the canvas (NativeCanvas hands it to the store): compiled for again.
+    const replacement = { domElement: document.createElement("canvas"), render: () => undefined };
+    act(() => { view.set?.({ gl: replacement as unknown as RootState["gl"] }); });
+    const second = native.behind.get(replacement);
+    expect(second).toBeDefined();
+    expect(second).not.toBe(first);
+    expect(native.jobs.map((entry) => entry.renderer)).toEqual([first, second]);
+    // The first renderer's job, were it still waiting, would now do nothing: its effect has gone.
+    await native.jobs[0]?.job(new AbortController().signal);
+    expect(native.compiled).toEqual([first]);
+    await native.jobs[1]?.job(new AbortController().signal);
+    expect(native.compiled).toEqual([first, second]);
+
+    // A job still queued when the room unmounts compiles nothing, and one whose signal has aborted neither.
+    native.compiled.length = 0;
+    unmount();
+    await native.jobs[1]?.job(new AbortController().signal);
+    expect(native.compiled).toEqual([]);
+  });
+
+  it("queues no compile where the view's renderer is not the planner's native one", () => {
+    mount({ room: saloon(), photoQuality: 1 });
+    expect(native.jobs).toEqual([]);
   });
 
   it("frees one room's resources and loads the next room's when the room changes", () => {
