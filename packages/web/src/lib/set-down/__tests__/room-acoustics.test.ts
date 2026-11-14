@@ -10,6 +10,7 @@ import {
   reverberationTimes,
   roomAcousticsFor,
   roomConstant,
+  roomSend,
   roomState,
 } from "../room-acoustics.js";
 import { ROOM_ACOUSTICS, ROOM_PLANS, UNCALIBRATED, domeGeometry, type RoomAcoustics, type RoomSlug } from "../rooms.js";
@@ -423,6 +424,71 @@ describe("room state", () => {
     }
     expect(roomState(GRAND_HALL, [piece("dancefloor-panel")]).key).toBe(state.key);
     expect(roomState(GRAND_HALL, referenceDinner("grand-hall")).key).not.toBe(state.key);
+  });
+});
+
+describe("the room send, and a space with no survey (T-700 Task 12)", () => {
+  /** The six surveyed rooms empty, calibrated: each band's time, the reverberant gain and the send. */
+  function surveyedEmpties(): { readonly rt: readonly BandValues[]; readonly gain: readonly number[]; readonly send: readonly number[] } {
+    const rooms = ROOM_SLUGS.map((slug) => ROOM_ACOUSTICS[slug]);
+    return {
+      rt: rooms.map((room) => reverberationTimes(room, NO_CONTENTS)),
+      gain: rooms.map((room) => reverberantGain(room, NO_CONTENTS)),
+      send: rooms.map((room) => roomSend(room, NO_CONTENTS)),
+    };
+  }
+
+  it("sends the Grand Hall at 0.9793057 empty and 0.8288978 laid for dinner, as the listening page's probe read", () => {
+    expect(Math.abs(roomSend(GRAND_HALL, NO_CONTENTS) - 0.9793057)).toBeLessThan(1e-6);
+    const dinner = contentsAbsorption(referenceDinner("grand-hall").map(absorberFor));
+    expect(Math.abs(roomSend(GRAND_HALL, dinner) - 0.8288978)).toBeLessThan(1e-6);
+  });
+
+  it("puts the send on the room state", () => {
+    for (const slug of ROOM_SLUGS) {
+      const room = ROOM_ACOUSTICS[slug];
+      for (const items of [[], referenceDinner(slug)]) {
+        expect(roomState(room, items).send).toBe(roomSend(room, contentsAbsorption(items.map(absorberFor))));
+      }
+    }
+  });
+
+  it("holds a space with no survey inside the six rooms' empty range, no longer a 6.52 s bare box", () => {
+    const empties = surveyedEmpties();
+    const unsurveyed = [
+      { room: roomAcousticsFor(null), items: [] },
+      { room: roomAcousticsFor({ slug: "lady-convenors-room", widthM: "6", lengthM: "9", heightM: "3.5" }), items: [] },
+      { room: roomAcousticsFor({ slug: "lady-convenors-room", widthM: "6", lengthM: "9", heightM: "3.5" }), items: referenceDinner("saloon") },
+    ];
+    // The bare default box, as Eyring gives it, rings past every surveyed room.
+    const bare = reverberationTimes(roomAcousticsFor(null), NO_CONTENTS);
+    expect(Math.max(...bare)).toBeCloseTo(6.52, 2);
+    for (const { room, items } of unsurveyed) {
+      const state = roomState(room, items);
+      for (const band of BANDS) {
+        const times = empties.rt.map((rt) => rt[band]);
+        expect(state.rt[band]).toBeGreaterThanOrEqual(Math.min(...times));
+        expect(state.rt[band]).toBeLessThanOrEqual(Math.max(...times));
+      }
+      expect(state.reverberantGain).toBeGreaterThanOrEqual(Math.min(...empties.gain));
+      expect(state.reverberantGain).toBeLessThanOrEqual(Math.max(...empties.gain));
+      expect(state.send).toBeGreaterThanOrEqual(Math.min(...empties.send));
+      expect(state.send).toBeLessThanOrEqual(Math.max(...empties.send));
+      expect(Math.max(...state.rt)).toBeLessThan(6.5);
+    }
+  });
+
+  it("leaves the six surveyed rooms' times, gain and send as their surfaces and calibration give them", () => {
+    for (const slug of ROOM_SLUGS) {
+      const room = ROOM_ACOUSTICS[slug];
+      for (const items of [[], referenceDinner(slug)]) {
+        const contents = contentsAbsorption(items.map(absorberFor));
+        const state = roomState(room, items);
+        expect(state.rt).toEqual(reverberationTimes(room, contents));
+        expect(state.reverberantGain).toBe(reverberantGain(room, contents));
+        expect(state.send).toBe(roomSend(room, contents));
+      }
+    }
   });
 });
 
