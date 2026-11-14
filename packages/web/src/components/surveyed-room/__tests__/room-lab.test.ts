@@ -137,4 +137,13 @@ describe("the surveyed-room lab's poses", () => {
     expect(resolveRoomPose(FRAME, HEIGHT, IDS, 40)).toBeNull();
     expect(resolveRoomPose(FRAME, HEIGHT, IDS, 2.5)).toBeNull();
   });
+
+  it("lets a wall's exact id win over a pose's name or an index, so any wall can be faced by its id", () => {
+    const awkward = ["floor", "3", ...IDS.slice(2)];
+    expect(resolveRoomPose(FRAME, HEIGHT, awkward, "floor")).toEqual(wallPose(FRAME, 0, HEIGHT));
+    expect(resolveRoomPose(FRAME, HEIGHT, awkward, "3")).toEqual(wallPose(FRAME, 1, HEIGHT));
+    // Its index still reaches the wall the digits would have, and the other names are poses as before.
+    expect(resolveRoomPose(FRAME, HEIGHT, awkward, 3)).toEqual(wallPose(FRAME, 3, HEIGHT));
+    expect(resolveRoomPose(FRAME, HEIGHT, awkward, "plan")).toEqual(poses.plan);
+  });
 });

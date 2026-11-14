@@ -105,16 +105,18 @@ export function wallPose(frame: Pick<RoomFrame, "walls">, index: number, ceiling
 }
 
 /**
- * The pose asked for: one of ROOM_POSE_NAMES, a wall's index (a number, or
- * digits) or a wall's id. Null when it is none of them.
+ * The pose asked for: a wall's id, one of ROOM_POSE_NAMES, or a wall's index
+ * (a number, or digits). Null when it is none of them. A wall's exact id wins
+ * over a pose's name and over digits, so a wall a record calls "floor" or "3"
+ * can still be faced by its id (its index always works too).
  */
 export function resolveRoomPose(
   frame: Pick<RoomFrame, "bounds" | "walls">, ceilingHeight: number, wallIds: readonly string[], asked: string | number,
 ): RoomPose | null {
   if (typeof asked === "number") return Number.isInteger(asked) ? wallPose(frame, asked, ceilingHeight) : null;
+  const byId = wallIds.indexOf(asked);
+  if (byId !== -1) return wallPose(frame, byId, ceilingHeight);
   const named = ROOM_POSE_NAMES.find((name) => name === asked);
   if (named !== undefined) return roomPoses(frame, ceilingHeight)[named];
-  if (/^[0-9]+$/.test(asked)) return wallPose(frame, Number(asked), ceilingHeight);
-  const byId = wallIds.indexOf(asked);
-  return byId === -1 ? null : wallPose(frame, byId, ceilingHeight);
+  return /^[0-9]+$/.test(asked) ? wallPose(frame, Number(asked), ceilingHeight) : null;
 }
