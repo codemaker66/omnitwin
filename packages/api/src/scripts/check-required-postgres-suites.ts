@@ -136,6 +136,7 @@ export const REQUIRED_POSTGRES_TEST_FILES = [
   // VENVIEWER_JOBS_TEST_DATABASE_URL (venviewer_jobs_test)
   "src/__tests__/jobs-schema-postgres.test.ts",
   "src/__tests__/jobs-enqueue-postgres.test.ts",
+  "src/__tests__/jobs-claim-postgres.test.ts",
 ] as const;
 
 const apiRoot = resolve(import.meta.dirname, "../..");
