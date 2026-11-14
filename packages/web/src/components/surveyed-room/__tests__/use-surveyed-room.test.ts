@@ -320,11 +320,12 @@ describe("useSurveyedRoom", () => {
   /** The hook under an entry and attempt a test can change, with the status of every render kept. */
   function renderLoad(initial: SurveyedRoomEntry | null) {
     const seen: SurveyedRoomState["status"][] = [];
+    const initialProps: { entry: SurveyedRoomEntry | null; attempt?: number } = { entry: initial };
     const hook = renderHook(({ entry, attempt }: { entry: SurveyedRoomEntry | null; attempt?: number }) => {
       const state = useSurveyedRoom(entry, attempt);
       seen.push(state.status);
       return state;
-    }, { initialProps: { entry: initial } });
+    }, { initialProps });
     return { ...hook, seen };
   }
 
