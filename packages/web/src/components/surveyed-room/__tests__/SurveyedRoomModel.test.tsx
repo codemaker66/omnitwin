@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { useThree, type RootState } from "@react-three/fiber";
+import { advance, useFrame, useThree, type RootState } from "@react-three/fiber";
 import { act } from "@testing-library/react";
 import { StrictMode, useEffect, useState, type ReactElement } from "react";
-import { Color, Mesh, Raycaster, Texture, Vector3, type BufferGeometry, type Object3D } from "three";
+import { Color, Mesh, Raycaster, Texture, Vector3, type BufferGeometry, type Camera, type Object3D } from "three";
 import { MeshBasicNodeMaterial, type WebGPURenderer } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { replaceStoreRenderer } from "../../../lib/native-renderer.js";
@@ -353,6 +353,74 @@ describe("SurveyedRoomModel", () => {
     expect(walls.close).not.toHaveBeenCalled();
     expect(sampled(scene, "walls").image).toBe(walls.image);
     expect(progress.at(-1)).toEqual({ expected: 3, settled: 1, failed: [] });
+  });
+
+  /** The view's camera and store setter, for a test that moves the camera and draws frames. */
+  interface ViewHandle { camera: Camera | null; set: RootState["set"] | null }
+  function View({ into }: { readonly into: ViewHandle }): null {
+    into.camera = useThree((state) => state.camera);
+    into.set = useThree((state) => state.set);
+    return null;
+  }
+
+  it("takes away the walls the camera is behind and the ceiling from above, each frame before it is drawn", () => {
+    const view: ViewHandle = { camera: null, set: null };
+    mounted = mountInStubRoot(<><View into={view} /><SurveyedRoomModel room={saloon()} photoQuality={1} /></>);
+    const scene = mounted.scene;
+    const walls = drawn(scene, "walls").geometry;
+    const ceiling = drawn(scene, "ceiling").geometry;
+    // Twelve flat walls of two triangles each.
+    expect(walls.drawRange.count).toBe(72);
+    // Inside, under the ceiling: all of it.
+    view.camera?.position.set(0, 1.6, 0);
+    act(() => { advance(1); });
+    expect(walls.drawRange.count).toBe(72);
+    expect(ceiling.drawRange.count).toBe(Infinity);
+    // Outside the fireplace side and above: that side's five walls and the ceiling are not drawn.
+    view.camera?.position.set(0, 9, 15);
+    act(() => { advance(2); });
+    expect(walls.drawRange.count).toBe(7 * 6);
+    expect(ceiling.drawRange.count).toBe(0);
+    // A ray from out there looking in passes where the fireplace wall stood and meets the window wall across the room.
+    scene.updateMatrixWorld(true);
+    const lookingIn = new Raycaster(new Vector3(0, 1.5, 9), new Vector3(0, 0, -1));
+    expect(lookingIn.intersectObject(scene, true)[0]?.distance).toBeCloseTo(9 + 3.734, 3);
+    // Back inside: every wall and the ceiling again.
+    view.camera?.position.set(0, 1.6, 0);
+    act(() => { advance(3); });
+    expect(walls.drawRange.count).toBe(72);
+    expect(ceiling.drawRange.count).toBe(Infinity);
+  });
+
+  it("asks for one more frame when the camera is moved after the room's turn in a frame, and then rests", () => {
+    const view: ViewHandle = { camera: null, set: null };
+    const moves: (readonly [number, number, number])[] = [];
+    // Mounted after the room, so its turn in each frame comes after the room's: a camera owner that moves late.
+    function LateMover(): null {
+      useFrame(({ camera }) => {
+        const next = moves.shift();
+        if (next !== undefined) camera.position.set(...next);
+      });
+      return null;
+    }
+    mounted = mountInStubRoot(<><View into={view} /><SurveyedRoomModel room={saloon()} photoQuality={1} /><LateMover /></>);
+    const walls = drawn(mounted.scene, "walls").geometry;
+    const invalidate = vi.fn();
+    act(() => { view.set?.({ invalidate }); });
+    view.camera?.position.set(0, 1.6, 0);
+    act(() => { advance(1); });
+    invalidate.mockClear();
+    // The mover takes the camera out beyond the +x end once the room has had its turn: this frame is drawn with every wall.
+    moves.push([15, 1.6, 0]);
+    act(() => { advance(2); });
+    expect(walls.drawRange.count).toBe(72);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    // The frame it asked for: the camera is where it was left, the room catches up (three walls turned from it go), and it rests.
+    act(() => { advance(3); });
+    expect(walls.drawRange.count).toBe(9 * 6);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    act(() => { advance(4); });
+    expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
   it("has its pipelines compiled ahead for the planner's scene pass, and again for a renderer that replaces the first", async () => {
