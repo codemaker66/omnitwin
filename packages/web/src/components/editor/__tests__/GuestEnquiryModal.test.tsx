@@ -341,6 +341,50 @@ describe("GuestEnquiryModal takes no more than the API accepts", () => {
     expect(message.value).toBe(brief);
   });
 
+  // Review of #405, Q1 and Q2. The sentence was said in the alert above the
+  // form while focus went to the message at its foot, out of view on a
+  // phone, and it kept the first count while the guest cut the message. It
+  // is now said beside the message, which names it as its problem, where
+  // focus lands; and it follows the message as the guest cuts it, quietly,
+  // until it fits.
+  it("says the message's length beside it, where focus lands, and follows the guest's cuts until it fits", async () => {
+    mocks.submit.mockResolvedValue({});
+    await open();
+    const form = screen.getByTestId("guest-enquiry-form");
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    const message = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" });
+    fireEvent.change(message, { target: { value: "b".repeat(3214) } });
+    const send = screen.getByRole("button", { name: "Send to Events Team" });
+    fireEvent.click(send);
+
+    const held = "Messages can be up to 2,000 characters. Yours is 3,214.";
+    expect(screen.getByRole("textbox", { name: "Anything else?", description: held })).toBe(message);
+    expect(message.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement, "focus after Send").toBe(message);
+    const sentence = screen.getByRole("alert");
+    expect(sentence.textContent).toBe(held);
+    // Beside the field: inside the form, directly above the message, not in the box above the form.
+    expect(form.contains(sentence)).toBe(true);
+    expect(sentence.nextElementSibling).toBe(message);
+
+    // Cut, and the number follows, without an alert at each keystroke.
+    fireEvent.change(message, { target: { value: "b".repeat(2950) } });
+    expect(screen.queryByRole("alert"), "no alert while the guest edits").toBeNull();
+    expect(screen.getByRole("textbox", {
+      name: "Anything else?", description: "Messages can be up to 2,000 characters. Yours is 2,950.",
+    })).toBe(message);
+
+    // Short enough: the sentence goes, and Send sends.
+    fireEvent.change(message, { target: { value: "b".repeat(1950) } });
+    expect(message.getAttribute("aria-invalid")).toBe("false");
+    expect(message.hasAttribute("aria-describedby")).toBe(false);
+    expect(screen.queryByText(/^Messages can be up to/u)).toBeNull();
+    fireEvent.click(send);
+    await waitFor(() => {
+      expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ message: "b".repeat(1950) }));
+    });
+  });
+
   // Counted as the API counts, or a message one past the limit is sent and
   // refused, or one at it is held for nothing: what is posted (trimmed), in
   // Unicode code points, as zod 4 reads a string's length. An emoji outside

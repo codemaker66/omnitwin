@@ -275,6 +275,13 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
   const [emailTouched, setEmailTouched] = useState(false);
   /** Counts Sends; the alert below is a new one each Send (review of #405, F1). */
   const [sends, setSends] = useState(0);
+  /** Whether a Send has held the message for its length; from then on the
+   *  sentence beside it follows the message as the guest edits it. */
+  const [messageChecked, setMessageChecked] = useState(false);
+  /** Counts the Sends that held the message since the guest last edited it:
+   *  each says the sentence again and takes focus there. */
+  const [messageHolds, setMessageHolds] = useState(0);
+  const messageProblemRef = useRef<HTMLParagraphElement>(null);
   // A view-only link, never the planner address (planner-qol E-10): /plan/<id>
   // is an anonymous plan's edit capability, so whoever was sent it could
   // change the layout the venue is reading.
@@ -303,8 +310,19 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
     return () => { clearTimeout(timer); };
   }, []);
 
+  // A held message: focus goes to it once its sentence is drawn beside it,
+  // and the sentence is brought into view with it (review of #405, Q1).
+  useEffect(() => {
+    if (messageHolds === 0) return;
+    messageRef.current?.focus();
+    messageProblemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [messageHolds]);
+
   const emailValid = isValidEmail(email);
   const showEmailHint = emailTouched && email.trim().length > 0 && !emailValid;
+  // Recomputed as the guest edits, so the number is never one they have
+  // already cut (review of #405, Q2).
+  const messageProblem = messageChecked ? messageLengthProblem(message) : null;
 
   // The venue's published capacity for this room, keyed to the typed guest
   // count and read against the layout on the floor (standing poseurs are a
@@ -336,11 +354,10 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
     }
 
     // A message longer than the API takes is kept, never cut, and held here
-    // with the reason (review of #405, F5).
-    const messageProblem = messageLengthProblem(message);
-    if (messageProblem !== null) {
-      setError(messageProblem);
-      messageRef.current?.focus();
+    // with the reason beside it (review of #405, F5, Q1).
+    if (messageLengthProblem(message) !== null) {
+      setMessageChecked(true);
+      setMessageHolds((count) => count + 1);
       return;
     }
 
@@ -731,13 +748,34 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             }}>
               Anything else?
             </label>
+            {/* Beside the message, where focus lands, never only above the
+                form, which a phone has scrolled out of view (review of #405,
+                Q1). An alert at each Send that holds it; a plain line, its
+                number following the message, once the guest edits (Q2). */}
+            {messageProblem !== null && (
+              <p
+                key={messageHolds}
+                ref={messageProblemRef}
+                id="ge-message-problem"
+                role={messageHolds > 0 ? "alert" : undefined}
+                style={{
+                  padding: "10px 14px", borderRadius: 10, margin: "0 0 8px",
+                  background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+                  fontSize: 13, color: "#f87171", lineHeight: 1.4,
+                }}
+              >
+                {messageProblem}
+              </p>
+            )}
             <textarea
               ref={messageRef}
               id="ge-message"
               className="omni-enq-input"
               style={{ minHeight: 72, resize: "vertical" }}
               value={message}
-              onChange={(e) => { setMessage(e.target.value); }}
+              aria-invalid={messageProblem !== null}
+              aria-describedby={messageProblem !== null ? "ge-message-problem" : undefined}
+              onChange={(e) => { setMessage(e.target.value); setMessageHolds(0); }}
               placeholder="Event details"
             />
           </div>
