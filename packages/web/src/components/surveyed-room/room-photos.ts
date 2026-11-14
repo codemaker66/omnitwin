@@ -102,14 +102,19 @@ export class RoomPhotos {
   private readonly current: Record<RoomPhotoKind, Texture>;
   private readonly placeholders: Texture[];
   private readonly nodes: Record<RoomPhotoKind, RoomPhotoNode[]> = { walls: [], ceiling: [], floor: [] };
-  private readonly loaded: Texture[] = [];
-  private readonly bitmaps: ImageBitmap[] = [];
-  private disposed = false;
+  private readonly resting: Readonly<Record<RoomPhotoKind, Texture>>;
+  private loaded: Texture[] = [];
+  private bitmaps: ImageBitmap[] = [];
+  /** The load under way; its requests are stopped when the photographs are let go. */
+  private loader: ImageBitmapLoader | null = null;
+  /** Raised by each load and each dispose: an image that lands for an earlier one is closed, not shown. */
+  private generation = 0;
 
   constructor() {
     const walls = placeholder();
     const ceiling = placeholder();
     const floor = placeholder();
+    this.resting = { walls, ceiling, floor };
     this.current = { walls, ceiling, floor };
     this.placeholders = [walls, ceiling, floor];
   }
@@ -121,17 +126,24 @@ export class RoomPhotos {
     return node;
   }
 
-  /** Loads each photograph; `onSettled` runs as each arrives or fails, never after dispose. */
+  /**
+   * Loads each photograph; `onSettled` runs as each arrives or fails, never
+   * after dispose, nor after a later load has replaced this one.
+   */
   load(sources: readonly RoomPhotoSource[], onSettled: (source: RoomPhotoSource, loaded: boolean) => void): void {
+    this.release();
+    const generation = this.generation;
+    const wanted = (): boolean => this.generation === generation;
     // Decoded off the main thread: an image element is decoded on it at its
     // first upload, hundreds of milliseconds for a 4096 px atlas. The bitmap
     // is flipped as it decodes, so either backend uploads it unflipped and
     // sees the same orientation; its alpha is kept as stored, since the wall
     // atlas's alpha is a mask (glass), not a coverage to premultiply by.
     const loader = new ImageBitmapLoader().setOptions({ imageOrientation: "flipY", premultiplyAlpha: "none" });
+    this.loader = loader;
     for (const source of sources) {
       loader.load(source.url, (bitmap) => {
-        if (this.disposed) { bitmap.close(); return; }
+        if (!wanted()) { bitmap.close(); return; }
         this.bitmaps.push(bitmap);
         const image = new Texture(bitmap);
         image.flipY = false;
@@ -149,14 +161,43 @@ export class RoomPhotos {
         onSettled(source, true);
       }, undefined, () => {
         // A missing photograph leaves its surface in the placeholder's tone.
-        if (!this.disposed) onSettled(source, false);
+        // (A request stopped by release() ends here too, and is no longer wanted.)
+        if (wanted()) onSettled(source, false);
       });
     }
   }
 
-  dispose(): void {
-    this.disposed = true;
-    for (const texture of [...this.placeholders, ...this.loaded]) texture.dispose();
+  /**
+   * Lets go of what a load brought and of what it is still fetching: the
+   * requests in flight are stopped (a change of room or of quality would
+   * otherwise download and decode up to three images only to close them),
+   * every surface goes back to its placeholder, and the photographs' textures
+   * and bitmaps are freed.
+   */
+  private release(): void {
+    this.generation += 1;
+    this.loader?.abort();
+    this.loader = null;
+    for (const kind of ROOM_PHOTO_KINDS) {
+      const resting = this.resting[kind];
+      this.current[kind] = resting;
+      for (const node of this.nodes[kind]) node.value = resting;
+    }
+    for (const texture of this.loaded) texture.dispose();
     for (const bitmap of this.bitmaps) bitmap.close();
+    this.loaded = [];
+    this.bitmaps = [];
+  }
+
+  /**
+   * Frees everything on the GPU and stops the load under way. Nothing is
+   * latched: the photographs are left as they were made, on their
+   * placeholders, so an instance whose owner's cleanup was only rehearsed
+   * (React's StrictMode runs an effect's cleanup and then the effect again
+   * with the same memoised values) loads again as if new.
+   */
+  dispose(): void {
+    this.release();
+    for (const texture of this.placeholders) texture.dispose();
   }
 }

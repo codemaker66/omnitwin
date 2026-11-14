@@ -9,6 +9,7 @@ import { parseSurveyRecord } from "../survey-record.js";
 // fake loader stands in for it here and records what it was asked to do.
 const recorded = vi.hoisted(() => ({
   options: [] as unknown[],
+  aborts: 0,
   loads: [] as { url: string; onLoad: (bitmap: ImageBitmap) => void; onError: () => void }[],
 }));
 
@@ -21,6 +22,10 @@ vi.mock("three", async (importOriginal) => {
     }
     load(url: string, onLoad: (bitmap: ImageBitmap) => void, _onProgress: unknown, onError: () => void): void {
       recorded.loads.push({ url, onLoad, onError });
+    }
+    abort(): this {
+      recorded.aborts += 1;
+      return this;
     }
   }
   return { ...actual, ImageBitmapLoader: FakeImageBitmapLoader };
@@ -48,6 +53,7 @@ function loadFor(name: string): { onLoad: (bitmap: ImageBitmap) => void; onError
 
 afterEach(() => {
   recorded.options.length = 0;
+  recorded.aborts = 0;
   recorded.loads.length = 0;
 });
 
@@ -175,5 +181,47 @@ describe("RoomPhotos", () => {
     expect(late.close).toHaveBeenCalledTimes(1);
     loadFor("floor-1463").onError();
     expect(settled).toEqual(["walls-4096.webp"]);
+  });
+
+  it("stops the requests still in flight when it is disposed, and when another load replaces them", () => {
+    const photos = new RoomPhotos();
+    photos.load(roomPhotoSources(SALOON, ENTRY, 1), () => undefined);
+    expect(recorded.aborts).toBe(0);
+    // The other size of the same photographs: the first size's requests are not left to finish.
+    photos.load(roomPhotoSources(SALOON, ENTRY, 0.5), () => undefined);
+    expect(recorded.aborts).toBe(1);
+    photos.dispose();
+    expect(recorded.aborts).toBe(2);
+  });
+
+  it("is not spent by dispose: it goes back to its placeholders and loads again as if new", () => {
+    const photos = new RoomPhotos();
+    const walls = photos.sample("walls", uv());
+    const placeholder = walls.value;
+    const first: string[] = [];
+    photos.load(roomPhotoSources(SALOON, ENTRY, 1), (source) => { first.push(source.file); });
+    const early = loadFor("walls-4096");
+    const shown = bitmap();
+    loadFor("floor-1463").onLoad(shown.image);
+    // A cleanup that was only rehearsed: the same instance is used again.
+    photos.dispose();
+    expect(shown.close).toHaveBeenCalledTimes(1);
+    expect(walls.value).toBe(placeholder);
+    recorded.loads.length = 0;
+    const second: [string, boolean][] = [];
+    photos.load(roomPhotoSources(SALOON, ENTRY, 1), (source, loaded) => { second.push([source.file, loaded]); });
+    // What the first load asked for is closed as it lands and told to nobody.
+    const stale = bitmap();
+    early.onLoad(stale.image);
+    expect(stale.close).toHaveBeenCalledTimes(1);
+    expect(walls.value).toBe(placeholder);
+    const fresh = bitmap();
+    loadFor("walls-4096").onLoad(fresh.image);
+    expect(walls.value.image).toBe(fresh.image);
+    expect(fresh.close).not.toHaveBeenCalled();
+    expect(first).toEqual(["floor-1463.webp"]);
+    expect(second).toEqual([["walls-4096.webp", true]]);
+    photos.dispose();
+    expect(fresh.close).toHaveBeenCalledTimes(1);
   });
 });

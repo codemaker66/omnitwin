@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { act } from "@testing-library/react";
-import { useEffect, useState, type ReactElement } from "react";
+import { StrictMode, useEffect, useState, type ReactElement } from "react";
 import { Color, Mesh, Raycaster, Texture, Vector3, type BufferGeometry, type Object3D } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +17,7 @@ import type { SurveyedRoom } from "../use-surveyed-room.js";
 // fake loader stands in for it here and records what it was asked to do.
 const recorded = vi.hoisted(() => ({
   loads: [] as { url: string; onLoad: (bitmap: ImageBitmap) => void; onError: () => void }[],
+  aborts: 0,
 }));
 
 vi.mock("three", async (importOriginal) => {
@@ -27,6 +28,10 @@ vi.mock("three", async (importOriginal) => {
     }
     load(url: string, onLoad: (bitmap: ImageBitmap) => void, _onProgress: unknown, onError: () => void): void {
       recorded.loads.push({ url, onLoad, onError });
+    }
+    abort(): this {
+      recorded.aborts += 1;
+      return this;
     }
   }
   return { ...actual, ImageBitmapLoader: FakeImageBitmapLoader };
@@ -160,6 +165,7 @@ function unmount(): void {
 afterEach(() => {
   unmount();
   recorded.loads.length = 0;
+  recorded.aborts = 0;
 });
 
 describe("SurveyedRoomModel", () => {
@@ -286,6 +292,27 @@ describe("SurveyedRoomModel", () => {
     expect(late.close).toHaveBeenCalledTimes(1);
     loadFor("floor-1463").onError();
     expect(progress).toHaveLength(told);
+  });
+
+  it("still takes its photographs when React rehearses its effects' cleanup (StrictMode)", () => {
+    const progress: SurveyedRoomPhotoProgress[] = [];
+    mounted = mountInStubRoot(
+      <StrictMode><SurveyedRoomModel room={saloon()} photoQuality={1} onPhotoProgress={(step) => { progress.push(step); }} /></StrictMode>,
+    );
+    const scene = mounted.scene;
+    // The effects ran, were cleaned up and ran again on the same memoised photographs: asked for twice, the first asking stopped.
+    expect(recorded.loads).toHaveLength(6);
+    expect(recorded.aborts).toBeGreaterThanOrEqual(1);
+    const [rehearsed, kept] = recorded.loads.filter((load) => load.url.includes("walls-4096"));
+    if (rehearsed === undefined || kept === undefined) throw new Error("the walls were not asked for twice");
+    const stale = bitmap();
+    act(() => { rehearsed.onLoad(stale.image); });
+    expect(stale.close).toHaveBeenCalledTimes(1);
+    const walls = bitmap();
+    act(() => { kept.onLoad(walls.image); });
+    expect(walls.close).not.toHaveBeenCalled();
+    expect(sampled(scene, "walls").image).toBe(walls.image);
+    expect(progress.at(-1)).toEqual({ expected: 3, settled: 1, failed: [] });
   });
 
   it("frees one room's resources and loads the next room's when the room changes", () => {
