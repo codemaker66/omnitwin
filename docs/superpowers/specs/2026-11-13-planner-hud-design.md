@@ -40,8 +40,14 @@ touching it answers at once and in proportion; and it could not be taken away wi
   every upright in the room is upright on the screen, and the room's lines run with the screen's own edges.
 - The floor's near corners stand on the picture's foot corners: the whole floor is in view, the screen's sides
   cut the end walls, and the door wall is the missing fourth wall (lowered under the floor on this screen).
-- The picture is one proportion, 2.39:1. A taller canvas keeps the rest as night above the walls. That puts the
-  camera about 11 m up on an ordinary screen, which keeps the chandeliers in the picture.
+- The picture is 2.39:1 wherever the canvas has the height for it, and a taller canvas keeps the rest as night
+  above the walls. That puts the camera about 11 m up, which keeps the chandeliers in the picture.
+- A flatter canvas is filled, and the camera comes closer and lower to do it, as far as 2.7:1: a maximised
+  full-HD browser window is 2.55:1, and 2.67:1 under a bookmarks bar. No further. Past that the lens is over a
+  hundred degrees across, the end walls balloon and the far wall shrinks, and at 3.1:1 the camera would stand
+  below the walls' tops. So on a canvas flatter still (a 768-line laptop, full HD at 125 %, a 21:9 monitor) the
+  camera stays where 2.7:1 puts it, and the hall stands whole in the middle of the canvas with its end walls' cut
+  stone ends and the night beside it. Only a picture under 240 px high gets no stage (a phone on its side).
 - The shift lives where the camera builds its projection, because temporal anti-aliasing sets and clears a view
   offset on every frame.
 - A wheel, a drag or an arrow-key pan lets go in one frame, to an ordinary orbit that shows the same picture (the
@@ -71,7 +77,13 @@ says so (`HudFrame.tsx`), so its height is written in one place, the stylesheet.
   next move** ("Say how many guests", "Seat 40 more guests", "Send to the events team").
 - A chosen piece's verbs (seats, cloth, Turn, Copy, Put back) take the cards' place in the same shelf.
 - A step's sheet and the first screen ("What are you planning?") are the shelf grown upward, at most 60 % of the
-  height.
+  height, so the hall stays in sight above them. A short window has not that to spare (in a 768-line laptop's
+  641 px it left a sheet 233 px, its own act under a scroll), so there the shelf rises as far as the tallest
+  sheet that is not a list needs (Lay out, `--hud-sheet-need`), never over the top bar. Under 620 px of height
+  sheets are set closer and Lay out goes without its opening lines; no other sheet does, because elsewhere those
+  lines can be all the sheet has to say. Lay out alone may rise as far as the top bar: once a count is typed its
+  prompt says what pressing will do, and its act comes last. Where a window cannot show all of that, the sheet is
+  slid to its end, so the count, the consequences and the act are in sight together.
 - Each fact is said once. There is no seals column and no side panel.
 
 Widths (the media rules at the foot of `hud.css`). Two things never give: a card's column is never narrower than
@@ -82,7 +94,8 @@ arrangement:
   line with the steps at its centre.
 - **768 to 1279 px:** nine columns will not fit between the side columns, so the shelf stands in two rows (the
   status, the quiet words and the primary key above; the hand below, across the whole width) where the window is
-  at least 600 px high. In a shorter window it stays one row and the hand slides.
+  at least 600 px high. In a shorter window it stays one row and the hand slides. The upper row is one key high
+  and grows if the status line wraps past that, the shelf growing upward with it.
 - **Under 1024 px:** the name, the four steps and the view will not stand in one line, so the steps take a line of
   their own under the other two.
 - **Under 768 px:** a phone's two bars: the name, the step you are on and the "more" glyph above; the status, a

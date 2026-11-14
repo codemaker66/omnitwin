@@ -114,6 +114,12 @@ interface StageState {
   walkEnded: boolean;
   /** The camera and orbit the stage last set, so leaving restores exactly those. */
   rig: { readonly camera: PerspectiveCamera; readonly orbit: Orbit } | null;
+  /**
+   * Where the stage's camera stood, when the canvas lost its stage during a walk. The walk hands that place back as it
+   * ends (the rig keeps where a walk began), and it is no view for a canvas that holds no stage. Forgotten once
+   * mended, or when a canvas holds a stage again.
+   */
+  lostFrom: Vec3 | null;
 }
 
 /** The camera stands on the stage, level, at once. */
@@ -156,7 +162,7 @@ export function HallStage(): null {
   const skyPx = useHallViewStore((state) => state.stage?.skyPx ?? null);
 
   const stageState = useRef<StageState>({
-    mode: "free", framing: null, trip: null, squared: { value: 0, velocity: 0 }, opened: false, walkEnded: false, rig: null,
+    mode: "free", framing: null, trip: null, squared: { value: 0, velocity: 0 }, opened: false, walkEnded: false, rig: null, lostFrom: null,
   });
   const own = stageState.current;
 
@@ -263,15 +269,19 @@ export function HallStage(): null {
     if (stage === null) {
       // No stage on this canvas (held upright, say): an ordinary orbit through the plain lens.
       const stood = holding(own.mode) || own.mode === "arriving";
+      // A walk is left alone; the place it will hand back is remembered, for the frame loop to mend as the walk ends.
+      if (own.mode === "walk" && own.framing !== null) own.lostFrom = own.framing.position;
       if (own.mode !== "walk") letGo(own, camera, orbit);
       own.framing = null;
       // A glide still under way lands through the plain lens too.
       own.trip = null;
       if (!walking) setLens(camera, PLAIN_LENS);
       // The camera stood in a picture this canvas cannot hold (a tablet turned upright, a window drawn narrow). Left
-      // where the stage had put it, it would show the hall through the wrong lens from too far back. It stands in the
-      // rig's own Room view instead, which is made for any canvas; and from there the frame loop takes the stage
-      // again, as for any arrival in the room, once the canvas can hold one.
+      // where the stage had put it, it would show the hall through the wrong lens from too far back. It is put back
+      // where the rig opened the room: the whole hall, on any canvas. Where the rig takes the canvas's new shape for an
+      // arrival, it opens on the view it keeps for one instead (CameraRig's opening pose: inside the hall, on a tablet
+      // turned upright). Either way the rig's Room view is where a wide canvas next finds the camera, and from there
+      // the frame loop takes the stage again, as for any arrival in the room.
       if (stood && !walking) {
         if (bookmarks.transition !== null) useBookmarkStore.setState({ transition: null });
         setPose(camera, orbit, HALL_VIEW_POSES.room.position, HALL_VIEW_POSES.room.target);
@@ -279,6 +289,7 @@ export function HallStage(): null {
     } else {
       const standing = holding(own.mode) || own.mode === "arriving";
       own.framing = stage;
+      own.lostFrom = null;
       if (standing) {
         // A new canvas size is a new picture: the camera stands in it at once.
         if (bookmarks.transition !== null) useBookmarkStore.setState({ transition: null });
@@ -334,7 +345,20 @@ export function HallStage(): null {
       own.trip = null;
       if (near(camera.position, carried.toPosition)) setLens(camera, carried.to);
     }
-    if (glide !== null || stage === null) return;
+    if (glide !== null) return;
+    if (stage === null) {
+      // A walk that began on the stage has ended on a canvas that holds none, and the rig has handed back the stage's
+      // own place: through the plain lens, a level look over the walls at the night. The rig's Room view instead, as
+      // when a canvas loses its stage outside a walk (above). Looked for on every frame, not only the first after the
+      // walk: the rig hands the place back in its own time.
+      const from = own.lostFrom;
+      if (from !== null && own.mode === "free" && near(camera.position, from)) {
+        own.lostFrom = null;
+        setPose(camera, controls, HALL_VIEW_POSES.room.position, HALL_VIEW_POSES.room.target);
+        invalidate();
+      }
+      return;
+    }
 
     // The director calls the stage "arriving" before its glide begins, and leaves Room alone until the stage is "off"
     // again. With no glide under way and nothing held or arriving here, nobody is on the way: say so, or Room is dead.

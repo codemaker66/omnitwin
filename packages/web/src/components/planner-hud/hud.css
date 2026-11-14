@@ -30,6 +30,7 @@
   --hud-hit: 44px;               /* the smallest hit area */
   --hud-bar-h: 48px;
   --hud-bar-row: 40px;           /* the steps' own line, where the bar stands in two */
+  --hud-bar-all: var(--hud-bar-h); /* the bar's whole height, however many lines it stands in */
   --hud-shelf-h: 152px;
   --hud-shelf-pad-top: 12px;
   --hud-shelf-pad-bottom: 8px;
@@ -45,7 +46,17 @@
   --hud-shelf-columns: minmax(var(--hud-shelf-side), 1fr) minmax(0, max-content) minmax(var(--hud-shelf-side), 1fr);
   --hud-shelf-rows: auto 1fr;
   --hud-shelf-areas: "status cards act" "words cards act";
-  --hud-rise: 60dvh;             /* the shelf with a sheet or the first screen risen, at most */
+  /*
+   * How high the shelf rises with a sheet or the first screen on it, at most:
+   * six tenths of the screen, so the hall stays in sight above it. A short
+   * window has not six tenths to spare (a 768-line laptop leaves a browser
+   * about 640 px, and six tenths of that less the shelf is 233 px: a sheet
+   * with its own act out of sight). There it rises as far as a sheet needs
+   * (--hud-sheet-need over the shelf), and never over the top bar. Where six
+   * tenths is already enough, six tenths it stays.
+   */
+  --hud-sheet-need: 420px;       /* the tallest sheet that is not a list, as it opens: Lay out, 418 px */
+  --hud-rise: max(60dvh, min(100dvh - var(--hud-bar-all), var(--hud-shelf-h) + var(--hud-sheet-need)));
   --hud-sheet-pad: 24px;
   --hud-sheet-measure: 720px;
   --hud-sheet-measure-wide: 1040px;
@@ -763,6 +774,16 @@ body.hud-dragging-card * {
   padding-inline: max(var(--hud-gutter), calc((100% - var(--hud-sheet-measure-wide)) / 2));
 }
 
+/*
+ * Lay out says more once a count is typed: what it will move, what will not
+ * fit, and then its act, last. So this sheet may rise as far as the top bar
+ * to show all of it. Where even that is too little, it is slid to its end as
+ * the prompt grows (HudSheets.tsx).
+ */
+.hud-sheet[data-sheet="layout"] {
+  max-height: calc(100dvh - var(--hud-bar-all) - var(--hud-shelf-h));
+}
+
 .hud-sheet__close {
   position: absolute;
   top: calc(var(--hud-sheet-pad) + (var(--hud-xl-lh) - var(--hud-hit)) / 2);
@@ -1035,12 +1056,20 @@ body.hud-dragging-card * {
   .hud-root {
     --hud-shelf-h: 196px;
     --hud-shelf-columns: minmax(0, 1fr) auto auto;
-    --hud-shelf-rows: var(--hud-act-h) minmax(0, 1fr);
+    --hud-shelf-rows: minmax(var(--hud-act-h), auto) minmax(0, 1fr);
     --hud-shelf-areas: "status words act" "cards cards cards";
   }
 
+  /*
+   * As tall as --hud-shelf-h says while its first row is one key high, which
+   * is nearly always. A status line or a receipt that wraps past that makes
+   * the row taller, and the shelf grows upward over the room's foot for as
+   * long as it does: nothing is written across the hand or off the shelf.
+   */
   .hud-shelf {
     row-gap: var(--hud-gap);
+    height: auto;
+    min-height: var(--hud-shelf-h);
   }
 
   .hud-shelf__status,
@@ -1052,6 +1081,13 @@ body.hud-dragging-card * {
   .hud-cards {
     overflow: visible;
     padding-top: 0;
+  }
+}
+
+/* An upright tablet: the primary key's longer labels take two lines, and leave the status line room for its own. */
+@media (min-width: 768px) and (max-width: 899px) and (min-height: 600px) {
+  .hud-shelf__act .hud-act {
+    max-width: 216px;
   }
 }
 
@@ -1072,6 +1108,10 @@ body.hud-dragging-card * {
  * keeps the bar's whole height dark, whatever it comes to (HudFrame.tsx).
  */
 @media (min-width: 768px) and (max-width: 1023px) {
+  .hud-root {
+    --hud-bar-all: calc(var(--hud-bar-h) + var(--hud-bar-row));
+  }
+
   .hud-bar {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: var(--hud-bar-h) var(--hud-bar-row);
@@ -1086,10 +1126,28 @@ body.hud-dragging-card * {
   }
 }
 
+/*
+ * A window too short for the tallest sheet as it is written (Lay out): sheets
+ * are set closer, and that one goes without its opening lines. Only that one.
+ * Elsewhere a sheet's first lines can be all it has to say: why its keys are
+ * off, or that there is nothing to send yet.
+ */
+@media (max-height: 620px) {
+  .hud-root {
+    --hud-sheet-pad: 16px;
+  }
+
+  .hud-sheet__lede--spare {
+    display: none;
+  }
+}
+
 /* -- Phones: the same two bars ------------------------------------------------- */
 
 @media (max-width: 767px) {
   .hud-root {
+    --hud-bar-all: calc(var(--hud-bar-h) + env(safe-area-inset-top, 0px));
+    --hud-answer-w: 96px;       /* the first screen's three answers in one row */
     --hud-card-col: 96px;       /* a name and its count on one line; the row slides */
     --hud-card-w: 48px;
     --hud-shelf-h: 236px;        /* as laid out below, for the risen sheet's measure */

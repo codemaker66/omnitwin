@@ -38,7 +38,7 @@ interface FirstAnswer {
 
 const ANSWERS: readonly FirstAnswer[] = [
   { kind: "wedding", name: "Wedding", line: "Ceremony, dinner and dancing", art: "/models/furniture/setup-round/setup-v2/white-chiavari.webp" },
-  { kind: "corporate", name: "Corporate", line: "Conference, dinner or awards", art: "/models/furniture/platform/crafted-v4/preview.webp" },
+  { kind: "corporate", name: "Corporate", line: "Conference, dinner or awards", art: "/models/furniture/lectern/crafted-v4/preview.webp" },
   { kind: "other", name: "Something else", line: "Tell us what you have in mind", art: "/models/furniture/setup-dance-floor/setup-v2/floor.webp" },
 ];
 

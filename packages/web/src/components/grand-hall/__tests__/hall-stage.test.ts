@@ -3,13 +3,23 @@ import { PerspectiveCamera, Vector3 } from "three";
 import { computeDistanceLimits } from "../../../lib/camera-rig.js";
 import { setLensShift } from "../../../lib/lens-shift.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_LENGTH, HALL_WIDTH } from "../hall-spec.js";
-import { hallStageFraming, mixLens, PLAN_MAX_HEIGHT_M, STAGE_PICTURE_RATIO, stageLens, stagePoseAt, type HallStageFraming, type StageLens } from "../hall-stage.js";
+import { hallStageFraming, mixLens, PLAN_MAX_HEIGHT_M, STAGE_MIN_PICTURE_PX, STAGE_PICTURE_RATIO, STAGE_WIDEST_PICTURE, stageLens, stagePoseAt, type HallStageFraming, type StageLens } from "../hall-stage.js";
 import { STAGE_CHANDELIER_CEILING_M, STAGE_NEAR_CUT_M } from "../hall-stage-cuts.js";
 
 type Vec3 = readonly [number, number, number];
 
-/** Canvases the planner's stage is drawn on: laptops, desktops and a wide one, with the shelf's height already off. */
-const CANVASES: readonly (readonly [number, number])[] = [[1440, 748], [1920, 928], [1366, 616], [2560, 1288], [3440, 1288], [1180, 668]];
+/**
+ * Canvases the hall's picture fills from side to side, with the shelf's height already off: laptops and desktops,
+ * and full HD as a maximised browser leaves it (953 px of the screen's 1080, and 920 px under a bookmarks bar).
+ */
+const CANVASES: readonly (readonly [number, number])[] = [[1440, 748], [1920, 928], [1366, 616], [2560, 1288], [1180, 668], [1920, 801], [1920, 768]];
+/**
+ * Canvases flatter than the hall's widest picture, as real windows leave them: a 768-line laptop (a 1366 x 641
+ * window, less the shelf) and the same under a bookmarks bar, full HD at 125 % under a bookmarks bar, a 720-line
+ * laptop, and a 21:9 and a 32:9 monitor.
+ */
+const FLAT_CANVASES: readonly (readonly [number, number])[] = [[1366, 489], [1366, 456], [1536, 552], [1280, 408], [3440, 1288], [5120, 1288]];
+const EVERY_CANVAS: readonly (readonly [number, number])[] = [...CANVASES, ...FLAT_CANVASES];
 /**
  * Squarer windows (a 5:4 or 4:3 monitor, a browser kept narrow): the picture is a smaller share of a taller canvas,
  * and Plan's long lens would stand its camera beyond the orbit's reach.
@@ -63,7 +73,34 @@ describe("the hall as a stage", () => {
     }
   });
 
-  it.each(CANVASES)("meets the far wall's top with the night, and keeps the sky asked for (%i x %i)", (width, height) => {
+  it.each(FLAT_CANVASES)("stands the hall's picture in the middle of a flatter canvas, with the night beside it (%i x %i)", (width, height) => {
+    const { framing, camera } = held(width, height);
+    // The picture's own width: the widest the hall is drawn, for this height.
+    const beside = (width - STAGE_WIDEST_PICTURE * framing.picture.height) / 2;
+    expect(beside).toBeGreaterThan(0);
+    const left = drawn(camera, width, height, [-HALL_HALF_LENGTH, 0, HALL_HALF_WIDTH]);
+    const right = drawn(camera, width, height, [HALL_HALF_LENGTH, 0, HALL_HALF_WIDTH]);
+    expect(left.x).toBeCloseTo(beside, 0);
+    expect(right.x).toBeCloseTo(width - beside, 0);
+    for (const corner of [left, right]) {
+      expect(corner.y).toBeGreaterThan(height - 0.5);
+      expect(corner.y).toBeLessThan(height * 1.005);
+    }
+    // The camera stays where the widest picture puts it, however wide the canvas: clear of the walls' tops.
+    expect(framed(width + 600, height)).toEqual(framing);
+    expect(framing.position[1]).toBeGreaterThan(HALL_HEIGHT + 1.5);
+  });
+
+  it("brings the camera no closer than the widest picture needs: the same camera for every flatter canvas of one height", () => {
+    const widest = framed(Math.ceil(STAGE_WIDEST_PICTURE * (616 - SKY)), 616);
+    const flatter = framed(2400, 616);
+    flatter.position.forEach((value, axis) => { expect(value).toBeCloseTo(widest.position[axis] ?? NaN, 2); });
+    // And a canvas the picture still fills brings it closer than a squarer one does.
+    expect(framed(1920, 768).position[1]).toBeLessThan(framed(1920, 928).position[1]);
+    expect(framed(1920, 768).position[1]).toBeGreaterThan(flatter.position[1]);
+  });
+
+  it.each(EVERY_CANVAS)("meets the far wall's top with the night, and keeps the sky asked for (%i x %i)", (width, height) => {
     const { framing, camera } = held(width, height);
     const top = drawn(camera, width, height, [0, HALL_HEIGHT, -HALL_HALF_WIDTH]);
     expect(top.y).toBeGreaterThanOrEqual(framing.picture.top);
@@ -76,7 +113,7 @@ describe("the hall as a stage", () => {
     }
   });
 
-  it.each(CANVASES)("keeps every upright upright (%i x %i)", (width, height) => {
+  it.each(EVERY_CANVAS)("keeps every upright upright (%i x %i)", (width, height) => {
     const { camera } = held(width, height);
     for (const [x, z] of [[-HALL_HALF_LENGTH, 0], [HALL_HALF_LENGTH, HALL_HALF_WIDTH], [3, -HALL_HALF_WIDTH], [0, 2]] as const) {
       const foot = drawn(camera, width, height, [x, 0, z]);
@@ -100,7 +137,7 @@ describe("the hall as a stage", () => {
   });
 
   it("looks at the floor's near edge at 45 degrees, from above the walls and under the chandeliers' ceiling", () => {
-    for (const [width, height] of CANVASES) {
+    for (const [width, height] of EVERY_CANVAS) {
       const { position } = framed(width, height);
       expect(position[0]).toBe(0);
       expect(position[1] / (position[2] - HALL_HALF_WIDTH)).toBeCloseTo(1, 9);
@@ -109,7 +146,7 @@ describe("the hall as a stage", () => {
     }
   });
 
-  it.each(CANVASES)("shows the same picture when let go, top and bottom (%i x %i)", (width, height) => {
+  it.each(EVERY_CANVAS)("shows the same picture when let go, top and bottom (%i x %i)", (width, height) => {
     const framing = framed(width, height);
     const free = cameraAt(width, height, framing.position, framing.freeTarget, stageLens(framing, framing.freePitch));
     const { camera } = held(width, height);
@@ -142,7 +179,7 @@ describe("the hall as a stage", () => {
     expect(stagePoseAt(framing, 2)).toEqual(levelled);
   });
 
-  it.each([...CANVASES, ...TALL_CANVASES])("fits the plan's cut walls in the picture, under the night (%i x %i)", (width, height) => {
+  it.each([...EVERY_CANVAS, ...TALL_CANVASES])("fits the plan's cut walls in the picture, under the night (%i x %i)", (width, height) => {
     const framing = framed(width, height);
     const camera = cameraAt(width, height, framing.plan.position, framing.plan.target, framing.plan.lens);
     // HALL_CUTS.plan, and the walls' thickness beyond the floor on each long side.
@@ -156,7 +193,7 @@ describe("the hall as a stage", () => {
     expect(Math.abs(drawn(camera, width, height, [0, 0, 0]).y - middle)).toBeLessThan(1);
   });
 
-  it.each([...CANVASES, ...TALL_CANVASES])("stands Plan's camera inside the orbit's reach (%i x %i)", (width, height) => {
+  it.each([...EVERY_CANVAS, ...TALL_CANVASES])("stands Plan's camera inside the orbit's reach (%i x %i)", (width, height) => {
     const { plan } = framed(width, height);
     // The reach the rig gives the orbit for a room of the hall's size: the orbit pulls a farther camera in to it.
     const reach = computeDistanceLimits({ width: HALL_WIDTH, length: HALL_LENGTH, height: HALL_HEIGHT }).maxDistance;
@@ -179,6 +216,14 @@ describe("the hall as a stage", () => {
     expect(hallStageFraming(844, 154, SKY)).toBeNull();
     expect(hallStageFraming(1440, 40, SKY)).toBeNull();
     expect(hallStageFraming(0, 0, SKY)).toBeNull();
+    // A phone on its side, under the bar's two lines: 150 px of picture is not worth holding.
+    expect(hallStageFraming(844, 238, 88)).toBeNull();
+    expect(hallStageFraming(1280, SKY + STAGE_MIN_PICTURE_PX - 1, SKY)).toBeNull();
+    expect(hallStageFraming(1280, SKY + STAGE_MIN_PICTURE_PX, SKY)).not.toBeNull();
+  });
+
+  it("holds a stage however wide the canvas: no window is too flat for one while its picture is tall enough", () => {
+    for (const width of [1280, 1920, 3440, 5120, 7680]) expect(hallStageFraming(width, 408, SKY)).not.toBeNull();
   });
 
   it("lowers the fourth wall under the floor", () => {

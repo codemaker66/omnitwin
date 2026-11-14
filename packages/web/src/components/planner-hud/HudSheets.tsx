@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { GuestEnquiryModal } from "../editor/GuestEnquiryModal.js";
 import { AutoFillPrompt } from "../editor/cockpit/AutoFillPrompt.js";
 import { prepareLayoutForGuestEnquiry } from "../editor/send-layout-flow.js";
@@ -147,10 +147,32 @@ function LayoutSheet(): ReactElement {
   const { published } = usePlannerTruth();
   const floorEmpty = usePlacementStore((state) => state.placedItems.length === 0);
   const [style, setStyle] = useState<AutoFillStyle>("dinner-rounds");
+  // The prompt says more once a count is typed (what it will move, what will not fit), and its act comes last. In a
+  // window too short for all of it the sheet is slid to its end, as it opens and whenever the prompt grows: the
+  // count, what pressing will do and the act are in sight together, and the title's lines go up out of the way.
+  const promptRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const prompt = promptRef.current;
+    const sheet = prompt?.closest<HTMLElement>(".hud-sheet") ?? null;
+    if (prompt === null || sheet === null) return undefined;
+    const toItsEnd = (): void => {
+      if (sheet.scrollHeight > sheet.clientHeight) sheet.scrollTop = sheet.scrollHeight;
+    };
+    toItsEnd();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    let height = prompt.getBoundingClientRect().height;
+    const watch = new ResizeObserver(() => {
+      const now = prompt.getBoundingClientRect().height;
+      if (now > height + 0.5) toItsEnd();
+      height = now;
+    });
+    watch.observe(prompt);
+    return () => { watch.disconnect(); };
+  }, []);
   return (
     <>
       <SheetTitle>{JOURNEY_LABELS.layout}</SheetTitle>
-      <p className="hud-sheet__lede">Say how many, and the room is laid for you, clear of the doors. Nothing moves until you press, and Undo takes it all back.</p>
+      <p className="hud-sheet__lede hud-sheet__lede--spare">Say how many, and the room is laid for you, clear of the doors. Nothing moves until you press, and Undo takes it all back.</p>
       <div className="hud-choices" role="radiogroup" aria-label="How to lay the room">
         {AUTO_FILL_STYLES.map((option) => {
           // Rows of chairs need a clear floor; rounds are laid round what is already placed.
@@ -173,7 +195,7 @@ function LayoutSheet(): ReactElement {
           );
         })}
       </div>
-      <div className="hud-sheet__section">
+      <div ref={promptRef} className="hud-sheet__section">
         <AutoFillPrompt key={style} style={style} published={published} onPlaced={close} onCancel={close} />
       </div>
     </>

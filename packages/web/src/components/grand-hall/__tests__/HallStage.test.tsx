@@ -454,6 +454,46 @@ describe("the stage's hold on the camera", () => {
     expectAt(camera.position, [left.x, left.y, left.z]);
   });
 
+  it("stands in the rig's Room view when a walk that began on the stage ends on a canvas that holds none", () => {
+    const view = render(<HallStage />);
+    const { camera, controls } = scene();
+    const framing = stage();
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    // The tablet is turned upright during the walk.
+    scene().size = { width: 820, height: 984 };
+    view.rerender(<HallStage />);
+    // The rig restores the orbit as the walk began: the stage's own place, which is no view for this canvas.
+    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    camera.position.set(...framing.position);
+    controls.target.set(...framing.freeTarget);
+    frame();
+    expectAt(camera.position, HALL_VIEW_POSES.room.position);
+    expectAt(controls.target, HALL_VIEW_POSES.room.target);
+    expect(camera.fov).toBe(55);
+    expect(useHallViewStore.getState().stagePhase).toBe("off");
+    // Turned back, the stage is taken again from there.
+    scene().size = { width: WIDTH, height: HEIGHT };
+    view.rerender(<HallStage />);
+    frame();
+    expect(useHallViewStore.getState().stagePhase).toBe("held");
+    expectAt(camera.position, framing.position);
+  });
+
+  it("leaves the camera where such a walk hands it back when that is not the stage's old place", () => {
+    const view = render(<HallStage />);
+    const { camera, controls } = scene();
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    scene().size = { width: 820, height: 984 };
+    view.rerender(<HallStage />);
+    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    // A place of the rig's own choosing.
+    camera.position.set(4, 3, 6);
+    controls.target.set(0, 1.2, 0);
+    frame();
+    expectAt(camera.position, [4, 3, 6]);
+    expectAt(controls.target, [0, 1.2, 0]);
+  });
+
   it("hands back an ordinary orbit and the plain lens when the screen that asked for it leaves", () => {
     const view = render(<HallStage />);
     const { camera, controls } = scene();

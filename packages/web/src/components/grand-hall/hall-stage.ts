@@ -27,8 +27,18 @@ type Vec3 = readonly [number, number, number];
 export const STAGE_PICTURE_RATIO = 2.39;
 /** A canvas narrower than this for its height is not a wide one: no stage (a phone held upright). */
 export const STAGE_MIN_CANVAS_ASPECT = 1.25;
-/** A picture wider than this would put the camera below the walls' tops: no stage. */
-export const STAGE_MAX_PICTURE_ASPECT = 3;
+/**
+ * The widest the hall's own picture is drawn. A wider picture needs the camera
+ * closer and lower: by 2.7:1 the lens is a hundred degrees across, the end
+ * walls balloon and the far wall shrinks, and at 3.1:1 the camera would stand
+ * below the walls' tops. So on a flatter canvas (a short laptop window, a very
+ * wide monitor) the camera stays where 2.7:1 puts it, the picture keeps its
+ * top and its foot, and the canvas shows what stands beside the hall: the end
+ * walls' cut ends, and the night.
+ */
+export const STAGE_WIDEST_PICTURE = 2.7;
+/** A picture shorter than this is not worth holding (a phone on its side): no stage. */
+export const STAGE_MIN_PICTURE_PX = 240;
 /**
  * The slope of the camera's sight to the floor's near edge: 1 is 45°, where a
  * round table at the picture's foot is drawn as deep as it is wide. Steeper,
@@ -89,8 +99,8 @@ export interface HallStageFraming {
 export function hallStageFraming(widthPx: number, heightPx: number, skyPx: number): HallStageFraming | null {
   if (!(widthPx > 0) || !(heightPx > skyPx) || widthPx / heightPx < STAGE_MIN_CANVAS_ASPECT) return null;
   const pictureHeight = Math.min(widthPx / STAGE_PICTURE_RATIO, heightPx - skyPx);
-  const aspect = widthPx / pictureHeight;
-  if (aspect > STAGE_MAX_PICTURE_ASPECT) return null;
+  if (pictureHeight < STAGE_MIN_PICTURE_PX) return null;
+  const aspect = Math.min(widthPx / pictureHeight, STAGE_WIDEST_PICTURE);
 
   // The camera stands `back` metres outside the floor's near edge and
   // NEAR_EDGE_SLOPE times as high. With the picture's foot on that edge and

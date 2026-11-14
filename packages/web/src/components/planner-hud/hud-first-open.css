@@ -5,7 +5,7 @@
  *
  * The same surface as the shelf, grown upward over it to at most --hud-rise,
  * with the shelf's own contents standing aside beneath it. Three answers as
- * three 2:3 photographs, each with a name and one line, and one quiet way
+ * three square photographs, each with a name and one line, and one quiet way
  * past them. Its measures are hud.css's tokens; it rises as a sheet does.
  * ------------------------------------------------------------------------- */
 
@@ -74,8 +74,15 @@
   scale: var(--hud-pressed);
 }
 
-.hud-first-open__art {
+/*
+ * The renders are square, and the question stands close over them: no empty
+ * head of a taller frame between. Said with the screen's own class as well,
+ * because this sheet reaches the page before hud.css, whose 2:3 for every
+ * photograph would otherwise be the later word.
+ */
+.hud-first-open .hud-first-open__art {
   width: 100%;
+  aspect-ratio: 1;
 }
 
 .hud-first-open__words {
@@ -102,16 +109,19 @@
 
 /* -- Phones: the three answers stay in one row, smaller --------------------------- */
 
+/* Their width on a phone (--hud-answer-w) is set with the phone's other measures in hud.css, which is the later sheet. */
 @media (max-width: 767px) {
-  .hud-root {
-    --hud-answer-w: 96px;
-  }
-
   .hud-first-open {
     padding-bottom: calc(var(--hud-sheet-pad) + env(safe-area-inset-bottom, 0px));
   }
 
   .hud-first-open__answers {
     gap: var(--hud-gap-wide);
+  }
+
+  /* A size down, so "Something else" keeps to one line as the other two names do, and the three stand level. */
+  .hud-first-open__name {
+    font-size: var(--hud-m);
+    line-height: var(--hud-m-lh);
   }
 }
