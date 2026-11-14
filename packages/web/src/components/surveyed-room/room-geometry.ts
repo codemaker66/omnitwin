@@ -110,6 +110,39 @@ export class RoomGeometryError extends Error {
 const UP: Vec3 = [0, 1, 0];
 const DOWN: Vec3 = [0, -1, 0];
 
+/**
+ * How far a relief may reach outside what its record says it covers, metres.
+ * The tools simplify a relief to within 5 mm of the scan, so a vertex may
+ * stand that far past an edge; the Saloon's and the Grand Hall's real reliefs
+ * stay exactly inside theirs.
+ */
+export const RELIEF_BOUNDS_TOLERANCE = 0.005;
+
+/** The lowest and highest value of one of a relief's axes (0 u, 1 v, 2 depth). */
+function reliefSpan(positions: Float32Array, axis: 0 | 1 | 2): readonly [number, number] {
+  let low = Infinity;
+  let high = -Infinity;
+  for (let i = axis; i < positions.length; i += 3) {
+    const value = positions[i] ?? 0;
+    if (value < low) low = value;
+    if (value > high) high = value;
+  }
+  return [low, high];
+}
+
+/**
+ * Refuses a relief that reaches outside the range its record gives it. Past a
+ * wall's ends or its strip's heights it would wear a neighbour's strip of the
+ * atlas; past a ceiling's extent it would smear its photograph's edge; and a
+ * ceiling outside its recorded heights was measured from another reference.
+ */
+function holdWithin(label: string, along: string, [low, high]: readonly [number, number], [least, most]: readonly [number, number]): void {
+  if (low >= least - RELIEF_BOUNDS_TOLERANCE && high <= most + RELIEF_BOUNDS_TOLERANCE) return;
+  throw new RoomGeometryError(
+    `${label} runs from ${low.toFixed(3)} m to ${high.toFixed(3)} m ${along}, more than ${String(RELIEF_BOUNDS_TOLERANCE * 1000)} mm outside the ${String(least)} m to ${String(most)} m its record gives it`,
+  );
+}
+
 /** Where a relief's (u, v, depth) lies in the planner frame: origin + u·U + v·V + depth·D. */
 interface ReliefPlacement {
   readonly origin: Vec3;
@@ -120,7 +153,8 @@ interface ReliefPlacement {
 
 /**
  * A relief placed in the planner frame, with area-weighted vertex normals.
- * Refuses one whose triangles, taken together, face away from the room.
+ * Refuses one with no triangles, or whose triangles, taken together, face
+ * away from the room.
  */
 function placeRelief(mesh: ReliefMesh, place: ReliefPlacement, uvOf: (u: number, v: number) => readonly [number, number], label: string): SurfaceGeometry {
   const local = mesh.positions;
@@ -168,7 +202,10 @@ function placeRelief(mesh: ReliefMesh, place: ReliefPlacement, uvOf: (u: number,
       sums[k + 2] = (sums[k + 2] ?? 0) + nD;
     }
   }
-  if (indices.length > 0 && !(facing > 0)) {
+  if (indices.length === 0) {
+    throw new RoomGeometryError(`${label} has no triangles, so nothing of it would be drawn`);
+  }
+  if (!(facing > 0)) {
     throw new RoomGeometryError(`${label} is wound clockwise seen from the room, so none of it would be drawn; the tools wind a relief counter-clockwise seen from the room`);
   }
   const normals = new Float32Array(count * 3);
@@ -213,8 +250,12 @@ export function buildWallGeometry(
     });
     return { positions, normals, uvs, indices: Uint32Array.from([0, 1, 2, 0, 2, 3]), wall: frame.index, id: wall.id, measured: false };
   }
+  const label = `wall "${wall.id}"'s relief`;
+  // The wall's strip of the atlas covers its length and the atlas's heights, and no more.
+  holdWithin(label, "along the wall", reliefSpan(relief.positions, 0), [0, frame.length]);
+  holdWithin(label, "in height", reliefSpan(relief.positions, 1), atlas.vRange);
   const place: ReliefPlacement = { origin: frame.origin, u: frame.tangent, v: UP, depth: frame.normal };
-  return { ...placeRelief(relief, place, uvOf, `wall "${wall.id}"'s relief`), wall: frame.index, id: wall.id, measured: true };
+  return { ...placeRelief(relief, place, uvOf, label), wall: frame.index, id: wall.id, measured: true };
 }
 
 /** Every wall of the record, in one set of arrays. */
@@ -376,8 +417,14 @@ export function buildCeilingGeometry(
     return { ...outlineSurface(frame.outline, record.room.ceilingHeight, "down", extent), measured: false };
   }
   // u = planner x, v = planner z, and depth is measured down from the reference height.
+  const label = "the ceiling's relief";
+  holdWithin(label, "along x", reliefSpan(relief.positions, 0), extent.x);
+  holdWithin(label, "along z", reliefSpan(relief.positions, 1), extent.z);
+  // The recorded heights hold the reference to the file: a relief measured from another height lands outside them.
+  const [shallowest, deepest] = reliefSpan(relief.positions, 2);
+  holdWithin(label, "in height", [described.reference - deepest, described.reference - shallowest], described.heightRange);
   const place: ReliefPlacement = { origin: [0, described.reference, 0], u: [1, 0, 0], v: [0, 0, 1], depth: DOWN };
-  return { ...placeRelief(relief, place, (x, z) => overheadUv(extent, x, z), "the ceiling's relief"), measured: true };
+  return { ...placeRelief(relief, place, (x, z) => overheadUv(extent, x, z), label), measured: true };
 }
 
 /** Every surface of a room. */

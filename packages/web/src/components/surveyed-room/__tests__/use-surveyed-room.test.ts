@@ -175,6 +175,13 @@ describe("loading a surveyed room", () => {
     if (front === undefined) throw new Error("no wall");
     return encodeReliefFile([{ ...front, indices: [0, 2, 1, 0, 3, 2] }, ...rest]);
   };
+  /** The front wall's relief half a metre longer than its wall. */
+  const overlong = (): ArrayBuffer => {
+    const record = saloonFiles().record;
+    const [front, ...rest] = record.walls;
+    if (front === undefined) throw new Error("no wall");
+    return encodeReliefFile([flatWallEntry(front.reliefId, front.length + 0.5, front.height), ...rest.map((wall) => flatWallEntry(wall.reliefId, wall.length, wall.height))]);
+  };
   const withoutAWall = (): ArrayBuffer => encodeReliefFile(saloonWalls(saloonFiles().record).slice(0, 11));
 
   it.each<[string, () => SaloonFiles, Answer | null, Partial<SurveyedRoomFailure>, RegExp]>([
@@ -184,6 +191,7 @@ describe("loading a surveyed room", () => {
     ["it leaves a wall out", () => saloonFiles(undefined, withoutAWall()), null, { reason: "format" }, /missing "fire-f-end"/],
     ["it is not the size the record lists", () => saloonFiles((record) => { record.files["walls-relief.bin"] = { bytes: 12, sha256: "0".repeat(64) }; }), null, { reason: "integrity" }, /but the record lists 12/],
     ["a wall in it is wound inside out", () => saloonFiles(undefined, insideOut()), null, { reason: "geometry" }, /wall "front"'s relief is wound clockwise/],
+    ["a wall in it reaches past its wall's end", () => saloonFiles(undefined, overlong()), null, { reason: "geometry" }, /wall "front"'s relief runs from 0.000 m to 7.508 m along the wall/],
   ])("fails, naming the walls' relief, when %s", async (_name, files, answer, expected, detail) => {
     serveSaloon(files(), answer === null ? {} : { "walls-relief.bin": answer });
     const failure = await failureOf(loadSurveyedRoom(SALOON));

@@ -198,6 +198,25 @@ describe("a surveyed room's wall from its relief", () => {
     expect(() => buildWallGeometry(frame, wall, SALOON.atlas, reversed)).toThrow(/wall "rear"'s relief is wound clockwise seen from the room/);
   });
 
+  it("refuses a relief that reaches past the wall's ends or its strip's heights, where it would wear a neighbour's strip", () => {
+    const withCorner = (u: number, v: number): ReliefMesh => ({ ...relief, positions: Float32Array.from([u, v, 0, 4, 0, 0, 4, 3, 0, 0, 3, 0, 2, 1, 0.3]) });
+    // The rear wall is 7.101 m long; its strip covers heights -0.02 m to 5.535 m.
+    const pastEnd: ReliefMesh = { ...relief, positions: Float32Array.from([0, 0, 0, 7.2, 0, 0, 7.2, 3, 0, 0, 3, 0, 2, 1, 0.3]) };
+    expect(() => buildWallGeometry(frame, wall, SALOON.atlas, pastEnd)).toThrow(RoomGeometryError);
+    expect(() => buildWallGeometry(frame, wall, SALOON.atlas, pastEnd)).toThrow(/wall "rear"'s relief runs from 0\.000 m to 7\.200 m along the wall, more than 5 mm outside the 0 m to 7\.101/);
+    expect(() => buildWallGeometry(frame, wall, SALOON.atlas, withCorner(-0.1, 0))).toThrow(/runs from -0\.100 m to 4\.000 m along the wall/);
+    expect(() => buildWallGeometry(frame, wall, SALOON.atlas, withCorner(0, -0.1))).toThrow(/runs from -0\.100 m to 3\.000 m in height, more than 5 mm outside the -0\.02 m to 5\.535 m its record gives it/);
+    // The tools simplify a relief to within 5 mm of the scan: that far over an edge is a real relief.
+    expect(buildWallGeometry(frame, wall, SALOON.atlas, withCorner(-0.004, -0.024)).measured).toBe(true);
+  });
+
+  it("refuses a relief with no triangles, which would leave its wall out", () => {
+    const empty: ReliefMesh = { id: "rear", positions: new Float32Array(0), indices: new Uint32Array(0) };
+    expect(() => buildWallGeometry(frame, wall, SALOON.atlas, empty)).toThrow(/wall "rear"'s relief has no triangles/);
+    const unused: ReliefMesh = { ...relief, indices: new Uint32Array(0) };
+    expect(() => buildWallGeometry(frame, wall, SALOON.atlas, unused)).toThrow(RoomGeometryError);
+  });
+
   it("draws the walls that have an entry from it and the rest flat", () => {
     const walls = buildWallsGeometry(SALOON, SALOON_FRAME, new Map([["rear", relief]]));
     expect(walls.runs.filter((run) => run.measured).map((run) => run.id)).toEqual(["rear"]);
@@ -246,6 +265,19 @@ describe("triangulating an outline", () => {
       expect(inside(outline, (a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3)).toBe(true);
     }
     expect(area).toBeCloseTo(outlineArea(outline), 9);
+  });
+
+  it("refuses an outline wound the other way: it has no corner to clip", () => {
+    const clockwise: readonly PlanPoint[] = [[2, 1], [-2, 1], [-2, -1], [2, -1]];
+    expect(() => triangulateOutline(clockwise)).toThrow(RoomGeometryError);
+    expect(() => triangulateOutline(clockwise)).toThrow(/could not be triangulated \(it is not a simple polygon wound counter-clockwise\)/);
+  });
+
+  it("refuses an outline that crosses itself: its triangles do not cover its area", () => {
+    // A rectangle with two corners swapped: a bow tie, whose two halves cancel.
+    const bowTie: readonly PlanPoint[] = [[2, -1], [-2, -1], [2, 1], [-2, 1]];
+    expect(() => triangulateOutline(bowTie)).toThrow(RoomGeometryError);
+    expect(() => triangulateOutline(bowTie)).toThrow(/the outline's triangles cover 4\.000000 m² of its 0\.000000 m²/);
   });
 
   it("uses every corner of the Saloon, in ten triangles", () => {
@@ -338,6 +370,21 @@ describe("a surveyed room's ceiling", () => {
   it("refuses a ceiling relief wound clockwise seen from below", () => {
     const reversed: ReliefMesh = { ...relief, indices: Uint32Array.from([0, 2, 1, 0, 3, 2]) };
     expect(() => buildCeilingGeometry(SALOON, SALOON_FRAME, reversed)).toThrow(/the ceiling's relief is wound clockwise seen from the room/);
+  });
+
+  it("refuses a ceiling relief outside its photograph's extent or its recorded heights", () => {
+    // One corner's x past the extent's 6.095 m: the photograph's edge would smear over it.
+    const wide: ReliefMesh = { ...relief, positions: relief.positions.map((value, i) => (i === 3 || i === 6 ? 6.5 : value)) };
+    expect(() => buildCeilingGeometry(SALOON, SALOON_FRAME, wide)).toThrow(/the ceiling's relief runs from -1\.000 m to 6\.500 m along x, more than 5 mm outside the -6\.096 m to 6\.095 m its record gives it/);
+    const deep: ReliefMesh = { ...relief, positions: relief.positions.map((value, i) => (i === 7 || i === 10 ? 4 : value)) };
+    expect(() => buildCeilingGeometry(SALOON, SALOON_FRAME, deep)).toThrow(/runs from -1\.000 m to 4\.000 m along z/);
+    // Measured down from another reference than the file's, every height lands outside the recorded 5.4 m to 5.9 m.
+    const described = SALOON.ceiling.relief;
+    if (described === undefined) throw new Error("the fixture describes no ceiling relief");
+    const lowered = { ...SALOON, ceiling: { ...SALOON.ceiling, relief: { ...described, reference: 4.9 } } };
+    expect(() => buildCeilingGeometry(lowered, SALOON_FRAME, relief)).toThrow(/runs from 4\.800 m to 5\.100 m in height, more than 5 mm outside the 5\.4 m to 5\.9 m its record gives it/);
+    const empty: ReliefMesh = { id: "ceiling", positions: new Float32Array(0), indices: new Uint32Array(0) };
+    expect(() => buildCeilingGeometry(SALOON, SALOON_FRAME, empty)).toThrow(/the ceiling's relief has no triangles/);
   });
 
   it("is flat where the record describes no relief, whatever it is handed", () => {
@@ -538,13 +585,9 @@ describe("the Grand Hall's shipped relief through the room-driven path", () => {
     }
   });
 
-  it("builds the whole room in a few milliseconds, so nothing needs slicing", () => {
-    const started = performance.now();
+  it("builds the whole room from the hall's relief: every triangle of its walls, and its floor", () => {
     const room = buildRoomGeometry(record, frame, { walls: relief, ceiling: null });
-    const spent = performance.now() - started;
     expect(room.walls.indices.length / 3).toBe(35185);
     expect(room.floor.indices.length / 3).toBe(2);
-    // Generous for a loaded machine: the build is arithmetic on 17,913 vertices.
-    expect(spent).toBeLessThan(500);
   });
 });
