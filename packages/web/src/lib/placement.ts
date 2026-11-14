@@ -280,6 +280,75 @@ export function snapToWallEdge(
 // Surface height — find what an item would sit on at a given XZ position
 // ---------------------------------------------------------------------------
 
+/** A placed piece another rests on, with the height of its visible top. */
+interface Support {
+  readonly placed: PlacedItem;
+  readonly top: number;
+}
+
+/**
+ * The one support rule behind `findSupportingItem` and `computeSurfaceHeight`:
+ * the highest compatible surface whose rotated, scaled footprint contains
+ * (x, z). A surface no higher than the floor counts as the floor, and on a tie
+ * the first in `placedItems` order is kept.
+ */
+function supportUnder(
+  x: number,
+  z: number,
+  candidate: CatalogueItem,
+  placedItems: readonly PlacedItem[],
+  excludeIds: ReadonlySet<string>,
+): Support | null {
+  if (isTableDressingApplicatorSlug(candidate.slug)) return null;
+  let support: PlacedItem | null = null;
+  let top = 0;
+
+  for (const other of placedItems) {
+    if (excludeIds.has(other.id)) continue;
+    if (!isSceneFurniturePlacement(other)) continue;
+    const otherItem = getCatalogueItem(other.catalogueItemId);
+    if (otherItem === undefined) continue;
+    if (!canRestOnFurnitureSurface(candidate, otherItem)) continue;
+
+    const { halfW, halfD } = computeRotatedFootprint(otherItem, other.rotationY, other.scale);
+
+    // Check if the point (x, z) is within this surface's XZ footprint
+    if (
+      Math.abs(x - other.x) <= halfW &&
+      Math.abs(z - other.z) <= halfD
+    ) {
+      const surfaceY = other.y + scaledFurnitureHeight(otherItem, other.scale);
+      if (surfaceY > top) {
+        support = other;
+        top = surfaceY;
+      }
+    }
+  }
+
+  return support === null ? null : { placed: support, top };
+}
+
+/**
+ * Returns the placed piece an item would stand on at (x, z), or null for the
+ * floor. Same rule as `computeSurfaceHeight`, which returns that piece's top.
+ *
+ * @param x         - Candidate X position (render-space).
+ * @param z         - Candidate Z position (render-space).
+ * @param candidate - Catalogue item being placed or moved.
+ * @param placedItems - All currently placed items.
+ * @param excludeIds - IDs to skip (e.g. the item being placed/moved).
+ * @returns The highest compatible support under (x, z), or null.
+ */
+export function findSupportingItem(
+  x: number,
+  z: number,
+  candidate: CatalogueItem,
+  placedItems: readonly PlacedItem[],
+  excludeIds: ReadonlySet<string>,
+): PlacedItem | null {
+  return supportUnder(x, z, candidate, placedItems, excludeIds)?.placed ?? null;
+}
+
 /**
  * Returns the Y coordinate an item should be placed at, given its XZ position.
  * Checks candidate-compatible support surfaces under the candidate's centre.
@@ -300,31 +369,7 @@ export function computeSurfaceHeight(
   placedItems: readonly PlacedItem[],
   excludeIds: ReadonlySet<string>,
 ): number {
-  if (isTableDressingApplicatorSlug(candidate.slug)) return 0;
-  let maxSurface = 0;
-
-  for (const other of placedItems) {
-    if (excludeIds.has(other.id)) continue;
-    if (!isSceneFurniturePlacement(other)) continue;
-    const otherItem = getCatalogueItem(other.catalogueItemId);
-    if (otherItem === undefined) continue;
-    if (!canRestOnFurnitureSurface(candidate, otherItem)) continue;
-
-    const { halfW, halfD } = computeRotatedFootprint(otherItem, other.rotationY, other.scale);
-
-    // Check if the point (x, z) is within this surface's XZ footprint
-    if (
-      Math.abs(x - other.x) <= halfW &&
-      Math.abs(z - other.z) <= halfD
-    ) {
-      const surfaceY = other.y + scaledFurnitureHeight(otherItem, other.scale);
-      if (surfaceY > maxSurface) {
-        maxSurface = surfaceY;
-      }
-    }
-  }
-
-  return maxSurface;
+  return supportUnder(x, z, candidate, placedItems, excludeIds)?.top ?? 0;
 }
 
 // ---------------------------------------------------------------------------
