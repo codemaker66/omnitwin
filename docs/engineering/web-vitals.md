@@ -365,10 +365,14 @@ Verification workflows that night (each finding put to three skeptics) found mor
   18 characters), so a segment that starts with a colon is now never one; that the
   tests did not cover a token whose digit or capitals come only after its colon; that
   the capture-path test showed only its /boom records sent (it now shows every record
-  built for the API sent); and that "a 404" above was wrong. The check runs found two
-  more: a lint error, an `any` read from Sentry's attribute bag (latent since the
-  second's fixes, as no run had finished since), and a test whose second round could
-  not fail, as its CLS of 500 is one the report schema refuses.
+  built for the API sent); that "a 404" above was wrong; and that the fifth's bullet
+  above counted capture-path's node:http request as a check of trace headers, though
+  it writes its headers raw and could carry none (corrected there). The check runs
+  found two more: a lint error, an `any` read from a trace context's attribute bag
+  (latent since the second's fixes, as no run had finished since), and a test whose
+  second round could not fail, as its CLS of 500 is one the report schema refuses. A
+  last review, of the delta to 3475d20a, found only wording. At 3475d20a every check
+  passed and every one of 38 mutations was caught by a test.
 
 The paragraph now reads:
 
