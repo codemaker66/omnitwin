@@ -15,7 +15,8 @@ import { PLAN_CLAIM_SECRET_HEADER } from "../services/configuration-claim-secret
 //   3. Sentry transactions: any string anywhere in one (the request's URL,
 //      span attributes under any key, `url` and `url.full` among them, span
 //      descriptions, the name). scrubTransaction walks them all, and also
-//      replaces each record's id in them (the privacy page's "no identifier").
+//      replaces each segment that looks like a record's id in them (the
+//      privacy page's "no identifier").
 //
 // The same three places, and anything else an event, breadcrumb or
 // transaction quotes, also lose the segment after a capability path
@@ -402,10 +403,14 @@ const URL_PARTS = /^([a-z][a-z\d+.-]*:\/\/[^/?#]*)?([^?#]*)([\s\S]*)$/iu;
  * a token of six or more characters with a digit in it (a share code, a
  * provider's id such as Stripe's `cs_live_…`, a date); or one of twenty or
  * more letters, digits, dashes and underscores in both cases (an id such as
- * Clerk's `user_…`, digit or not). A route's own words ("venues",
- * "changes-since-last-handoff", "v1") and placeholders (":id") stay.
+ * Clerk's `user_…`, digit or not). Colons count in both, as in the device
+ * token of a push endpoint at FCM (Chrome's `fcm/send/<token>`), which a
+ * push that ends before its route's reply puts in that request's record
+ * (#355's last verification, 14 November 2026). The words of a route or an
+ * API ("venues", "changes-since-last-handoff", "v1", "messages:send") and
+ * placeholders (":id") stay.
  */
-const RECORD_SEGMENT = /^(?:[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}|(?=[^/]*\d)[\w.~%-]{6,}|(?=[^/]*[A-Z])(?=[^/]*[a-z])[\w-]{20,})$/u;
+const RECORD_SEGMENT = /^(?:[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}|(?=[^/]*\d)[\w.~%:-]{6,}|(?=[^/]*[A-Z])(?=[^/]*[a-z])[\w:-]{20,})$/u;
 
 /** Replaces each path segment that names one record with `:id`, keeping the
  *  origin, the route's words, and anything after the path. */

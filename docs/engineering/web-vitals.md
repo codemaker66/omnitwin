@@ -339,13 +339,25 @@ Verification workflows that night (each finding put to three skeptics) found mor
   a record carries no breadcrumbs; and no record with a parent span is sent.
 - The fourth (three lenses) found that that rule drops every record with a parent, the
   late parts of a request already sent included (work a route started that ended
-  after its reply, which has no route and so only the segment rules), which is kept on
-  purpose and now said and tested; and that the API's own calls carried Sentry's trace
-  headers, so the tests' requests, made in the same process, were dropped too. The API
-  now sends trace headers to no one (`tracePropagationTargets: []`), which also stops
-  telling Clerk, Stripe, Resend and R2 our trace ids and route names. A record no route
-  matched (a 404, a 503 while draining, a malformed URL) has no pattern, so its own
-  path has the segment rules alone, a code spelled only in letters being the gap.
+  after its reply, whose record repeats the request's own URL without its route),
+  which is kept on purpose and now said and tested; and that the API's own calls
+  carried Sentry's trace headers, so the tests' requests, made in the same process,
+  were dropped too. The API now sends trace headers to no one
+  (`tracePropagationTargets: []`), which also stops telling Clerk, Stripe, Resend and
+  R2 our trace ids and route names. A record no route matched (a 404, a 503 while
+  draining, a malformed URL) has no pattern, so its own path has the segment rules
+  alone, a code spelled only in letters being the gap.
+- The fifth (two lenses, 14 November) found that the late-part test could not fail if
+  such a record were sent, since the segment rules replaced its call's id anyway (it
+  now looks for the record's own span id and the request's own path, and checks that
+  no record sent has a parent); that the other two real-SDK tests did not check that
+  their plain requests continued no trace (they now do, a request over node:http
+  included); and that an aborted or timed-out request's route work goes with the late
+  parts, which is kept (nothing in such a record tells it from the late part of a
+  request that continued a caller's trace) and now said. Checking it turned up one
+  more: a push endpoint's device token at FCM has a colon in it, which the segment
+  rules did not take for an id, so a push that ended before its route's reply would
+  have named the device in that request's record. Colons now count.
 
 The paragraph now reads:
 

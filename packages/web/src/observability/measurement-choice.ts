@@ -90,13 +90,14 @@ function isSessionStorageEvent(event: StorageEvent): boolean {
 
 /**
  * The storage event. For what the browser keeps (localStorage), a browser
- * fires it only in its other tabs, and not at all when its own settings clear
- * the site's data (the next read sees that): a press there (this key) is the
- * visitor's latest choice, so this tab follows it and forgets its own
- * objection; a script there clearing all of the site's storage (key null)
- * changes what the browser keeps, but this tab's own objection stands. For
- * this tab's own copy (sessionStorage), it can come from a frame of this tab:
- * the choice is read again, and nothing is forgotten.
+ * fires it only in the site's other documents (other tabs, or a frame of
+ * this one), and not at all when its own settings clear the site's data (the
+ * next read sees that): a press there (this key) is the visitor's latest
+ * choice, so this tab follows it and forgets its own objection; a script
+ * there clearing all of the site's storage (key null) changes what the
+ * browser keeps, but this tab's own objection stands. For this tab's own copy
+ * (sessionStorage), it can come only from a frame of this tab: the choice is
+ * read again, and nothing is forgotten.
  */
 function onStorage(event: StorageEvent): void {
   if (event.key !== null && event.key !== MEASUREMENT_DECLINED_KEY) return;

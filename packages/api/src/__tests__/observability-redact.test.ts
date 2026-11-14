@@ -694,6 +694,38 @@ describe("scrubTransaction", () => {
     expect(withoutIdentifiers("/v1/users/AbCdEfGhIjKlMnOpQrSt")).toBe("/v1/users/:id");
   });
 
+  // #355's last verification (14 November 2026): a push endpoint at FCM
+  // (Chrome's) ends in the device's token, which has a colon in it, and a push
+  // that ends before its route's reply puts that URL in the request's record.
+  it("names no device in a push endpoint's URL, colon and all", () => {
+    const TOKEN = "fakeDev1ceTok:APA91bFAKE-push-0123456789-abcdefABCDEF";
+    const endpoint = `https://fcm.googleapis.com/fcm/send/${TOKEN}`;
+    const out = scrubTransaction({
+      type: "transaction",
+      transaction: "POST /venues/:venueId/requests",
+      contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", data: { "http.route": "/venues/:venueId/requests" } } },
+      spans: [{
+        trace_id: "00000000000000000000000000000001",
+        span_id: "0000000000000002",
+        start_timestamp: 1,
+        description: `POST ${endpoint}`,
+        data: { "url.full": endpoint, "url.path": `/fcm/send/${TOKEN}`, "http.url": endpoint },
+      }],
+    });
+    expect(out.spans?.[0]?.description).toBe("POST https://fcm.googleapis.com/fcm/send/:id");
+    expect(out.spans?.[0]?.data).toEqual({
+      "url.full": "https://fcm.googleapis.com/fcm/send/:id",
+      "url.path": "/fcm/send/:id",
+      "http.url": "https://fcm.googleapis.com/fcm/send/:id",
+    });
+    expect(JSON.stringify(out)).not.toContain("APA91b");
+    // Each rule on its own: a short token with a digit, and a long one in both cases with none.
+    expect(withoutIdentifiers("/fcm/send/ab1:cd")).toBe("/fcm/send/:id");
+    expect(withoutIdentifiers("/fcm/send/AbCdEfGhIj:KlMnOpQrSt")).toBe("/fcm/send/:id");
+    // An API's own words with a colon in them stay.
+    expect(withoutIdentifiers("/v1/projects/venviewer/messages:send")).toBe("/v1/projects/venviewer/messages:send");
+  });
+
   it("finds the request's own path in its trace where the record has no request, and cuts fragments", () => {
     const out = scrubTransaction({
       type: "transaction",
@@ -709,7 +741,9 @@ describe("scrubTransaction", () => {
           },
         },
       },
-      spans: [{ trace_id: "00000000000000000000000000000001", span_id: "0000000000000002", start_timestamp: 1, data: { "http.url": "https://cdn.example.test/p/AB12CD/print#section-2" } }],
+      // An outgoing call's span, with the fragment also as its own attribute
+      // (@sentry/opentelemetry and @sentry/core's fetch write it from the URL's hash, 10.60).
+      spans: [{ trace_id: "00000000000000000000000000000001", span_id: "0000000000000002", start_timestamp: 1, data: { "http.url": "https://cdn.example.test/p/AB12CD/print#section-2", "http.fragment": "#section-2" } }],
     });
     expect(out.contexts?.trace?.data).toEqual({
       "http.route": "/bookings/:bookingId",

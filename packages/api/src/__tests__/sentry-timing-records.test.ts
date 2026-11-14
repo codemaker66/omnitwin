@@ -43,12 +43,13 @@ const CALLER_TRACE = {
 interface SentTransaction {
   readonly transaction?: unknown;
   readonly request?: { readonly headers?: unknown; readonly url?: unknown };
+  readonly contexts?: { readonly trace?: { readonly parent_span_id?: unknown } };
 }
 
 /** A transaction as the SDK built it, from the client's hook. */
 interface BuiltTransaction {
   readonly transaction?: unknown;
-  readonly trace?: { readonly trace_id?: unknown; readonly parent_span_id?: unknown };
+  readonly trace?: { readonly trace_id?: unknown; readonly span_id?: unknown; readonly parent_span_id?: unknown };
 }
 
 /** The transactions in one envelope (newline-delimited JSON: the envelope's
@@ -202,15 +203,34 @@ describe("the API's timing records (the real SDK and server)", () => {
   }, 30_000);
 
   // The SDK sends the late part of a request already sent on its own, with a
-  // parent span and no route: never sent either.
+  // parent span, the request's own URL and no route: never sent either. The
+  // call's id proves nothing (the segment rules would replace it in a record
+  // that was sent), so the test looks for the record itself, by its span id,
+  // and for the request's own path, which no route would take out of it
+  // (#355's last verification, 14 November 2026).
   it("sends no record of work a route started that ended after its reply", async () => {
     const response = await fetch(`${base}/late/abcdef`);
     await response.arrayBuffer();
     expect(response.status).toBe(200);
+    let late: string[] = [];
     await vi.waitFor(() => {
-      expect(builtWith(LATE_ID).filter((record) => typeof record.trace?.parent_span_id === "string")).not.toEqual([]);
+      late = built.filter((event) => event.includes(LATE_ID)
+        && typeof (JSON.parse(event) as BuiltTransaction).trace?.parent_span_id === "string");
+      expect(late).not.toEqual([]);
     }, { timeout: 10_000 });
+    // Not vacuous: the SDK built it with a span id of its own, and with the request's own path.
+    const lateSpanIds = late.map((event) => (JSON.parse(event) as BuiltTransaction).trace?.span_id)
+      .filter((spanId): spanId is string => typeof spanId === "string");
+    expect(lateSpanIds).toHaveLength(late.length);
+    for (const spanId of lateSpanIds) expect(spanId).toMatch(/^[\da-f]{16}$/u);
+    expect(late.join("\n")).toContain("/late/abcdef");
     expect(await flush(5_000)).toBe(true);
-    expect(envelopes.join("\n")).not.toContain(LATE_ID);
+    const everything = envelopes.join("\n");
+    for (const spanId of lateSpanIds) expect(everything).not.toContain(spanId);
+    expect(everything).not.toContain("/late/abcdef");
+    expect(everything).not.toContain(LATE_ID);
+    // No record that reached the ingest has a parent span, this file's others included.
+    expect(envelopes.flatMap(transactionsIn).filter((event) => event.contexts?.trace?.parent_span_id !== undefined)
+      .map((event) => event.transaction)).toEqual([]);
   }, 30_000);
 });

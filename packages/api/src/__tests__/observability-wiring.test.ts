@@ -90,11 +90,13 @@ describe("the API's Sentry options", () => {
     expect(options.ignoreTransactions).toEqual([WEB_VITALS_TRANSACTION]);
   });
 
-  // #355's verifications (13 November 2026): a caller's trace headers can set
-  // the sampling draw, and the late part of a request already sent has no
-  // route, so no record with a parent span is sent; and this process sends
-  // no trace headers on its own calls out.
-  it("send no timing record with a parent span, and no trace headers on calls out", () => {
+  // #355's verifications (13 and 14 November 2026): a caller's trace headers
+  // can set the sampling draw, and the late part of a request already sent
+  // repeats the request's own URL without its route, so no record with a
+  // parent span is sent; and this process asks for no trace headers on its
+  // own calls out. The real SDK shows both in sentry-timing-records.test.ts
+  // (no record it sends has a parent; a plain request's record has none).
+  it("send no timing record with a parent span, and ask the SDK for no trace headers on calls out", () => {
     const trace = { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001" };
     const parented: ScrubbableTransaction = { type: "transaction", contexts: { trace: { ...trace, parent_span_id: "00000000000000aa" } } };
     const own: ScrubbableTransaction = { type: "transaction", contexts: { trace } };

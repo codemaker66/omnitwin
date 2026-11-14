@@ -146,7 +146,8 @@ describe("the API's errors in Sentry", () => {
    *  scrubbing a report never changes what a route reads. */
   const received: IncomingHttpHeaders[] = [];
   /** Each transaction as the SDK built it, before the API's scrubber ran:
-   *  its request, and its trace's and spans' attributes, as JSON. */
+   *  its request, its trace's and spans' attributes, and its parent span if
+   *  it continued a trace, as JSON. */
   const built: string[] = [];
   let ingest: Server;
   let server: FastifyInstance;
@@ -187,7 +188,7 @@ describe("the API's errors in Sentry", () => {
     Sentry.getClient()?.on("postprocessEvent", (event) => {
       if (event.type !== "transaction") return;
       try {
-        built.push(JSON.stringify({ request: event.request, trace: event.contexts?.trace?.data, spans: event.spans?.map((span) => span.data) }));
+        built.push(JSON.stringify({ request: event.request, trace: event.contexts?.trace?.data, parent: event.contexts?.trace?.parent_span_id, spans: event.spans?.map((span) => span.data) }));
       } catch {
         built.push("{}");
       }
@@ -348,6 +349,17 @@ describe("the API's errors in Sentry", () => {
     // (Blake, 13 November 2026: "Strip browser details, say so").
     expect(events.length).toBeGreaterThanOrEqual(3);
     expect(transactions.length).toBeGreaterThanOrEqual(4);
+    // Each request came as a browser's does, with no trace of its own: the
+    // API sends no trace headers, so neither do these tests' requests, made
+    // in its process. So none of the API's records has a parent span, and
+    // each was sent: the two to /boom among them, over fetch and over
+    // node:http (#355's last verification, 14 November 2026).
+    const parents = built.map((event) => JSON.parse(event) as { request?: { url?: string }; parent?: unknown })
+      .filter((event) => event.request?.url?.startsWith(base) === true)
+      .map((event) => event.parent);
+    expect(parents.length).toBeGreaterThanOrEqual(transactions.length);
+    expect(parents.filter((parent) => parent !== undefined)).toEqual([]);
+    expect(transactions.filter(({ event }) => event.transaction === "GET /boom")).toHaveLength(2);
     const name = (event: SentEvent): string => event.transaction ?? event.exception?.values?.[0]?.value ?? "?";
     expect(events
       .filter(({ event }) => event.request?.headers?.[CONTROL_HEADER] !== CONTROL)

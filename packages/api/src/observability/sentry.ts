@@ -39,12 +39,19 @@ export type SentryOptionsEnv = Pick<Env, "SENTRY_DSN" | "SENTRY_ENVIRONMENT" | "
  *     can set the sampling draw (sample_rand) to make every one of its
  *     requests a record; dropped, the rate alone decides which requests are
  *     timed, and the privacy page's "about one request in ten" holds;
- *   - the late part of a request already sent: work a route started that
- *     ended after its reply (a push, an email, a provider's call), which the
- *     SDK sends on its own with a parent. It has no route of its own, so its
- *     URLs would go through the segment rules alone (a push endpoint's token
- *     with a colon in it is not taken for an id).
- * (#355's verifications, 13 November 2026.)
+ *   - the late part of a request already sent, which the SDK sends on its
+ *     own with a parent: work a route started that ended after its reply (a
+ *     push, an email, a provider's call), whose record repeats the request's
+ *     own URL but not its route, so a code spelled only in letters there
+ *     could not be told from a word and would be sent; and, where the caller
+ *     went away before the route finished (an aborted or timed-out request,
+ *     whose record the SDK sends when the connection closes), the route's own
+ *     work, its database and provider calls included. That work keeps its
+ *     route, but nothing in its record tells it from the late part of a
+ *     request that continued a caller's trace, so it is not sent either: the
+ *     request's own record still shows how long it took until the caller
+ *     went away.
+ * (#355's verifications, 13 and 14 November 2026.)
  */
 export function hasParentSpan(event: ScrubbableTransaction): boolean {
   return event.contexts?.trace?.parent_span_id !== undefined;
