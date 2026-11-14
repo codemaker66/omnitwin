@@ -73,6 +73,7 @@ export const GuestListSchema = z.strictObject({
   tables: z.array(KitTableSchema).max(TABLES_MAX),
   paperVersion: z.number().int().min(0),
   changedSincePrint: z.boolean(),
+  printedAt: z.iso.datetime().nullable(),
   updatedAt: z.iso.datetime(),
 });
 
@@ -95,6 +96,7 @@ export function emptyGuestList(planId: string, nowIso: string): GuestList {
     tables: [],
     paperVersion: 0,
     changedSincePrint: false,
+    printedAt: null,
     updatedAt: nowIso,
   };
 }

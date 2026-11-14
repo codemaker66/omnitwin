@@ -107,7 +107,8 @@ export const GuestSchema;      // { id: uuid, name: 1..80, party: 0..60, tableId
 export const KitTableSchema;   // { id: uuid, number: int 1..999, name: 0..60, seats: int 1..24 }
 export const GuestListSchema;  // { version: 1, planId: uuid, title: 0..120, eventDate: "YYYY-MM-DD" | null,
                                //   sortBy: "last-word" | "first-word", guests: Guest[] (<=600), tables: KitTable[] (<=80),
-                               //   paperVersion: int >= 0, changedSincePrint: boolean, updatedAt: ISO string }
+                               //   paperVersion: int >= 0, changedSincePrint: boolean, printedAt: ISO string | null,
+                               //   updatedAt: ISO string }
 export type Guest, KitTable, GuestList;
 export function emptyGuestList(planId: string, nowIso: string): GuestList;
 export function repairGuestList(list: GuestList): { readonly list: GuestList; readonly unseated: number };
@@ -295,7 +296,9 @@ export function byTable(list: GuestList): readonly { readonly number: number; re
   readonly seats: number; readonly guests: readonly { readonly seat: number; readonly name: string }[] }[];
 export function covers(list: GuestList): { readonly tables: readonly { readonly number: number; readonly covers: number }[]; readonly total: number };
 export function placeCards(list: GuestList): readonly { readonly name: string; readonly table: number }[];
-export function markPrinted(list: GuestList, nowIso: string): GuestList;   // paperVersion + 1 only if changedSincePrint
+export function markPrinted(list: GuestList, nowIso: string): GuestList;   // printedAt = nowIso always; paperVersion + 1 if changedSincePrint
+                                                                           // or paperVersion is 0 (a first print is version 1); then
+                                                                           // changedSincePrint = false; updatedAt untouched
 export function toCsv(list: GuestList): string;                             // name, party, table, seat
 ```
 

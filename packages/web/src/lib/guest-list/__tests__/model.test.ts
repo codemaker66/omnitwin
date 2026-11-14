@@ -128,6 +128,7 @@ describe("emptyGuestList and GuestListSchema", () => {
     expect(list.sortBy).toBe("last-word");
     expect(list.paperVersion).toBe(0);
     expect(list.changedSincePrint).toBe(false);
+    expect(list.printedAt).toBeNull();
     expect(list.updatedAt).toBe(NOW);
     expect(GuestListSchema.safeParse(list).success).toBe(true);
   });
@@ -139,6 +140,16 @@ describe("emptyGuestList and GuestListSchema", () => {
     expect(GuestListSchema.safeParse({ ...list, eventDate: "2027-02-30" }).success).toBe(false);
     expect(GuestListSchema.safeParse({ ...list, eventDate: "2027-06-12" }).success).toBe(true);
     expect(GuestListSchema.safeParse({ ...list, updatedAt: "yesterday" }).success).toBe(false);
+  });
+
+  it("takes printedAt as null or an ISO timestamp, and refuses anything else", () => {
+    expect(GuestListSchema.safeParse({ ...list, printedAt: null }).success).toBe(true);
+    expect(GuestListSchema.safeParse({ ...list, printedAt: NOW }).success).toBe(true);
+    expect(GuestListSchema.safeParse({ ...list, printedAt: "yesterday" }).success).toBe(false);
+    expect(GuestListSchema.safeParse({ ...list, printedAt: "2026-11-13" }).success).toBe(false);
+    const { printedAt, ...without } = list;
+    expect(printedAt).toBeNull();
+    expect(GuestListSchema.safeParse(without).success).toBe(false);
   });
 
   it("allows 600 guests and refuses 601", () => {
