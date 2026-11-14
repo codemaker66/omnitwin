@@ -104,8 +104,9 @@ it:
 - **The plan's names:** a name sits on its piece when it fits; else along the row of pieces it stands in, end to end
   (the top table's three trestles), starting from its own piece's middle and never set off that piece, so a name at
   a row's end names the end piece; else just beside its piece, on floor kept clear of every other piece, number and
-  name by twice its gap to its own piece, so it never reads as a neighbour's; else the caption names it ("Too small
-  to name here: …"). The 60% plan had dropped "Top table". The setup page's small plan sets names the same way and
+  name by twice its gap to its own piece, so it never reads as a neighbour's; else the caption names it ("No room
+  to name on this plan: …", Blake's wording of 14 November, from his question form; it was "Too small to name here:
+  …", which both glance testers found ambiguous). The 60% plan had dropped "Top table". The setup page's small plan sets names the same way and
   names under itself any it has no room for, so the crew handed that page alone can match names to pieces.
 - **Rings** come from the planner's own access and allergy notes, never the sheet's counts ("1 wheelchair space").
   A label of digits or one character rings only after "table" or "tables". A run of tables rings every one it gives,
