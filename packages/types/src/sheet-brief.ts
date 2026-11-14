@@ -151,11 +151,32 @@ export function sheetStoreList(sheet: HallkeeperSheetV2): StoreGroup[] {
 
 // ------------------------------------------------------------ setup steps --
 
+/**
+ * Chairs set at the tables of one of a step's lines: how many, how many at
+ * each table when every table there seats the same, and the tables, as their
+ * line names them ("Tables 1–11", "Top table").
+ */
+export interface SeatsAt {
+  readonly qty: number;
+  readonly each: number | null;
+  readonly tables: string;
+}
+
 export interface SetupItem {
   readonly name: string;
   readonly qty: number;
-  /** Chairs set at these tables, read from the generator's "with N chairs". */
+  /**
+   * Chairs set at these tables, read from the generator's "with N chairs":
+   * what a setup short enough to sit under the brief prints on the table's
+   * own line. Null on every line but a table's that seats chairs.
+   */
   readonly chairs: { readonly total: number; readonly each: number | null } | null;
+  /**
+   * On the line of chairs that follows a step's tables: the chairs each table
+   * line seats, which the setup's own page prints instead (study D). Null on
+   * every other line.
+   */
+  readonly seats: readonly SeatsAt[] | null;
   /** Where the pieces go, busiest zone first. */
   readonly where: readonly { readonly zone: Zone; readonly qty: number }[];
   /** The planner's notes, each printed only at its first row in the setup. */
@@ -243,10 +264,44 @@ interface ItemDraft {
   labels: string[];
 }
 
+/** The chairs at each of an item's tables, when every one seats the same; null when they differ or some seat none. */
+function chairsEach(draft: ItemDraft): number | null {
+  return draft.chairEach.size === 1 && !draft.someBare ? [...draft.chairEach][0] ?? null : null;
+}
+
+/**
+ * The chairs the plan seats at its tables, which have no line of their own:
+ * the generator folds each into its table's "… with N chairs". They are the
+ * plan's chairs that no line lists (an accessory's line may list the chairs
+ * it dresses). Their model names them when they are all one model and as
+ * many as the tables' lines count, so the line agrees with the store.
+ */
+function seatedChairs(sheet: HallkeeperSheetV2, seatedTotal: number): { readonly name: string; readonly notes: readonly string[] } {
+  const listed = new Set<string>();
+  for (const phase of sheet.phases) for (const zone of phase.zones) for (const row of zone.rows) {
+    if (!row.isAccessory) for (const position of row.positions) listed.add(position.objectId);
+  }
+  const seated = (sheet.floorPlan?.objects ?? []).filter((object) => object.category === "chair" && !listed.has(object.objectId));
+  const models = new Set(seated.map((chair) => chair.name));
+  const [model] = models;
+  return {
+    name: models.size === 1 && model !== undefined && seated.length === seatedTotal ? model : SEATED_CHAIRS,
+    notes: seated.flatMap((chair) => (chair.note === undefined ? [] : [chair.note])),
+  };
+}
+
+/** A table's line as the generator writes it, "… with N chairs": the table, and the chairs seated at each. Only a table's line seats chairs. */
+function tableWithChairs(row: { readonly name: string; readonly category: string }): { readonly name: string; readonly each: number } | null {
+  const seated = row.category === "table" ? WITH_CHAIRS.exec(row.name) : null;
+  return seated?.[1] === undefined || seated[2] === undefined ? null : { name: seated[1], each: Number(seated[2]) };
+}
+
 /**
  * The phases a room is built in, each item merged across the zones it is
  * set in (one dance floor is one line, not three), with the planner's
- * deadline for the phase. A note prints once, where it first belongs, so an
+ * deadline for the phase. The tables that seat chairs lead their step, and a
+ * line of their own follows them with the chairs: how many go to which
+ * tables, with the seated chairs' notes. A note prints once, where it first belongs, so an
  * allergy on a table does not repeat on its linen.
  */
 export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
@@ -256,6 +311,11 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
   const seenNotes = new Set<string>();
   const planNotes = new Map<string, string>();
   for (const object of sheet.floorPlan?.objects ?? []) if (object.note !== undefined) planNotes.set(object.objectId, object.note);
+  let seatedTotal = 0;
+  for (const phase of sheet.phases) for (const zone of phase.zones) for (const row of zone.rows) {
+    seatedTotal += row.qty * (tableWithChairs(row)?.each ?? 0);
+  }
+  const chairs = seatedChairs(sheet, seatedTotal);
   const anyWhole = wholeNotes([...planNotes.values()]);
   // A row's notes are its own pieces' notes, so only those can stand whole in
   // it; two notes that happen to read as a third piece's note stay two. A row
@@ -267,18 +327,17 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
   return sheet.phases.filter((phase) => phase.zones.some((zone) => zone.rows.length > 0)).map((phase) => {
     const drafts = new Map<string, ItemDraft>();
     for (const zone of phase.zones) for (const row of zone.rows) {
-      const chairs = WITH_CHAIRS.exec(row.name);
-      const name = chairs?.[1] ?? row.name;
+      const table = tableWithChairs(row);
+      const name = table?.name ?? row.name;
       const key = `${name}|${String(row.afterDepth)}|${String(row.isAccessory)}`;
       const draft = drafts.get(key) ?? { name, qty: 0, chairTotal: 0, chairEach: new Set<number>(), someBare: false, where: new Map<Zone, number>(), notes: [], accessory: row.isAccessory, labels: [] };
       draft.qty += row.qty;
       draft.labels.push(...(row.labels ?? []));
-      if (chairs?.[2] !== undefined) {
-        const each = Number(chairs[2]);
-        draft.chairTotal += row.qty * each;
-        draft.chairEach.add(each);
-      } else {
+      if (table === null) {
         draft.someBare = true;
+      } else {
+        draft.chairTotal += row.qty * table.each;
+        draft.chairEach.add(table.each);
       }
       draft.where.set(zone.zone, (draft.where.get(zone.zone) ?? 0) + row.qty);
       for (const note of splitNotes(row.notes, wholeOf(row.positions))) {
@@ -287,6 +346,40 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
         draft.notes.push(note);
       }
       drafts.set(key, draft);
+    }
+    // The tables that seat chairs lead the step, as a crew sets a room: then the chairs at them, then the rest in order.
+    const seatingTables = [...drafts.values()].filter((draft) => draft.chairEach.size > 0);
+    const drafted = [...seatingTables, ...[...drafts.values()].filter((draft) => draft.chairEach.size === 0)];
+    const items: SetupItem[] = drafted.map((draft) => ({
+      name: draft.name,
+      qty: draft.qty,
+      chairs: draft.chairEach.size === 0 ? null : { total: draft.chairTotal, each: chairsEach(draft) },
+      seats: null,
+      where: [...draft.where].map(([zone, qty]) => ({ zone, qty })).sort((a, b) => b.qty - a.qty),
+      notes: draft.notes,
+      accessory: draft.accessory,
+      labels: draft.labels,
+    }));
+    if (seatingTables.length > 0) {
+      const notes: string[] = [];
+      for (const note of chairs.notes) {
+        if (seenNotes.has(note)) continue;
+        seenNotes.add(note);
+        notes.push(note);
+      }
+      items.splice(seatingTables.length, 0, {
+        name: chairs.name,
+        qty: seatingTables.reduce((sum, draft) => sum + draft.chairTotal, 0),
+        chairs: null,
+        seats: seatingTables.map((draft) => {
+          const named = formatTableLabels(draft.labels);
+          return { qty: draft.chairTotal, each: chairsEach(draft), tables: named.length > 0 ? named : draft.name };
+        }),
+        where: [],
+        notes,
+        accessory: false,
+        labels: [],
+      });
     }
     const deadline = sheet.instructions?.phaseDeadlines.find((candidate) => candidate.phase === phase.phase) ?? null;
     return {
@@ -298,15 +391,7 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
         late: setupBy !== null && Date.parse(deadline.deadline) > Date.parse(setupBy),
         otherDay: eventDay !== null && venueDay(deadline.deadline, timeZone) !== eventDay,
       },
-      items: [...drafts.values()].map((draft) => ({
-        name: draft.name,
-        qty: draft.qty,
-        chairs: draft.chairEach.size === 0 ? null : { total: draft.chairTotal, each: draft.chairEach.size === 1 && !draft.someBare ? [...draft.chairEach][0] ?? null : null },
-        where: [...draft.where].map(([zone, qty]) => ({ zone, qty })).sort((a, b) => b.qty - a.qty),
-        notes: draft.notes,
-        accessory: draft.accessory,
-        labels: draft.labels,
-      })),
+      items,
     };
   });
 }

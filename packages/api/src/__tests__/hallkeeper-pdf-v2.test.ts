@@ -140,7 +140,9 @@ describe("the four fixtures, laid out", () => {
     expect(text.match(/Parquet Dance Floor Panel/gu)).toHaveLength(2); // store list and one setup line
     // One laid floor is one line, at the floor's middle (planner-qol E-13).
     expect(text).toContain("30 Parquet Dance Floor Panel Perimeter · Laid as one floor");
-    expect(text).toContain("10 chairs each");
+    // The chairs at the tables are a line of their own after the tables, as study D sets them.
+    expect(text).toContain("120 Chiavari Wedding Chair 110 at Tables 1–11, 10 each · 10 at Top table");
+    expect(text).not.toContain("chairs each");
     expect(text).toContain("Structure by 10:00 Band loads in at 10:15");
     expect(text).toContain("Final touches");
     expect(text).toContain("Room set by");
@@ -740,13 +742,43 @@ describe("A, then D (T-696): the brief with the room, then the setup to tick", (
     expect(place.x).toBeGreaterThan(PAGE_W * 0.6);
   });
 
-  it("lists the plan's numbered notes that no setup line carries, after the steps", async () => {
+  it("keeps each table's chairs on its own line when the setup sits under the brief on page 1, so a short sheet stays one page", async () => {
+    const sheet: HallkeeperSheetV2 = { ...BASE_SHEET, instructions: { ...EMPTY_INSTRUCTIONS, specialInstructions: "Keep the north aisle clear for the photographer." } };
+    const pages = pdfPages(await generateSheetPdfV2(sheet));
+    expect(pages).toHaveLength(1);
+    // The store above still counts "80 Chairs for the tables"; the setup has no line of its own for them.
+    const text = textOf(pages[0] ?? []);
+    const setup = text.slice(text.indexOf("SETUP, IN ORDER"));
+    expect(setup).toContain("8 6ft Round Table 10 chairs each");
+    expect(setup).not.toContain("Chairs for the tables");
+  });
+
+  it("puts the seated chairs' notes under the chairs line, where the crew sets those chairs", async () => {
     const text = pdfText(await generateSheetPdfV2(withSeatNotes(2)));
+    // Page 1's store counts the same chairs; the setup's line follows its tables.
+    const tables = text.indexOf("Trestle Table (White Cloth)", text.indexOf("SETUP, IN ORDER"));
+    const line = text.indexOf("120 Chiavari Wedding Chair", tables);
+    expect(tables).toBeGreaterThan(text.indexOf("SETUP, IN ORDER"));
+    expect(line).toBeGreaterThan(tables);
+    for (const seat of ["Seat 1: guest needs the aisle side", "Seat 2: guest needs the aisle side"]) {
+      expect(text.indexOf(seat, line), seat).toBeGreaterThan(line);
+      expect(text.indexOf(seat, line), seat).toBeLessThan(text.indexOf("Cake Cutting Table", line));
+    }
+    expect(text).not.toContain("NOTES ON THE PLAN");
+  });
+
+  it("lists the plan's numbered notes that no setup line carries, after the steps", async () => {
+    // A noted piece that the copy's setup lines lost.
+    const sheet = weddingWithPlan((objects) => {
+      const poseur = objects.find((object) => standsAt(object, 8.2, 4.2));
+      if (poseur === undefined) throw new Error("the wedding has a poseur at (8.2, 4.2)");
+      return [...objects, { ...poseur, objectId: "00000000-0000-4000-8000-0000000bb001", x: 9.4, z: -3.6, note: "Fire blanket here; keep the corner clear" }];
+    });
+    const text = pdfText(await generateSheetPdfV2(sheet));
     const listed = text.indexOf("NOTES ON THE PLAN");
     // The last "Final touches" is the final step's head; the first is the rail's station.
     expect(listed).toBeGreaterThan(text.lastIndexOf("Final touches"));
-    expect(text.indexOf("Seat 1: guest needs the aisle side", listed)).toBeGreaterThan(listed);
-    expect(text.indexOf("Seat 2: guest needs the aisle side", listed)).toBeGreaterThan(listed);
+    expect(text.indexOf("Fire blanket here; keep the corner clear", listed)).toBeGreaterThan(listed);
   });
 
   it("starts the setup on the page a long brief ran onto, rather than a page later", async () => {
@@ -765,8 +797,9 @@ describe("A, then D (T-696): the brief with the room, then the setup to tick", (
   it("sets a line's notes under its name, so a long place beside them adds no gap", async () => {
     const second = pdfPages(await render())[1] ?? [];
     const lastNote = second.find((line) => line.text.endsWith("catering has the card"));
-    const next = second.find((line) => line.text === "Cake Cutting Table");
-    if (lastNote === undefined || next === undefined) throw new Error("page 2 should carry the round tables' notes and the cake table");
+    // The next line after the round tables: the top table's trestles, as the tables that seat chairs lead the step.
+    const next = second.find((line) => line.text === "Trestle Table (White Cloth)");
+    if (lastNote === undefined || next === undefined) throw new Error("page 2 should carry the round tables' notes and the top table's trestles");
     expect(lastNote.y - next.y).toBeLessThan(30);
   });
 });

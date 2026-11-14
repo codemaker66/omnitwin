@@ -116,6 +116,31 @@ it:
 - With nothing set out in steps, the plan's numbered notes print under "Nothing is placed in this layout yet.".
 - The ready-by caption reads "60 min before guests come in", matching Guests in beside it.
 
+### As built: the chairs line (14 November)
+
+Study D sets the chairs at the tables as a tick line of their own after the tables ("120 Chiavari chairs · 110 at the
+rounds · 10 at the top table"), and both page 2 re-testers of 12 November asked for a chair total. It is built on
+branch `claude/hallkeeper-chairs-line`, for its own PR after #415:
+
+- On the setup's own page the tables that seat chairs lead their step, as a crew sets a room, and a line of the
+  chairs set at them follows: "120 Chiavari Wedding Chair · 110 at Tables 1–11, 10 each · 10 at Top table". The
+  tables' own lines drop "10 chairs each".
+- Its name is the plan's chair model when the chairs the plan seats are all one model and as many as the tables'
+  lines count, which is how the store counts them; otherwise "Chairs for the tables", the store's words for chairs
+  known only by count. Its count is the tables' lines' own total.
+- Its place names the tables as their lines do (the planner's names, else the table's own name), with "N each"
+  when every table there seats the same.
+- The seated chairs' notes print under that line, where the crew sets those chairs, so "Notes on the plan" keeps
+  only the notes no line carries.
+- Only a table's line seats chairs, as the store already rules: an old copy's "Table Centrepiece with 10 chairs"
+  adds none.
+- A setup short enough to sit under the brief on page 1 keeps "10 chairs each" on each table's line and no chairs
+  line, so a short sheet stays one page; the seated chairs' notes are then among the plan's notes after the steps.
+  The line's 20 pt had put two short sheets' Martyn's Law prompts overleaf.
+- Glance test of page 2 (two fresh Opus testers, the brief verbatim): 8 / 8 / 8. Both found the chair total and
+  its split. Their next asks were every access need in Keep in view with its place, the store's pull on the setup
+  page, and the duty manager's phone, which the data does not hold.
+
 ## F: the day at the venue (its own PR, after A and D)
 
 - `GET` a venue day's cover as a PDF: staff of that venue only, rendered per request, `Cache-Control: private,

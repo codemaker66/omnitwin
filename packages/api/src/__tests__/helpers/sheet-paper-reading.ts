@@ -125,6 +125,10 @@ export function quantitiesBefore(text: string, name: string): number[] {
 /** A phone row's item as the setup merges it: "6ft Round Table with 10 chairs" seats 10 at a "6ft Round Table". */
 const SEATED = /^(.*) with (\d+) chairs?$/u;
 
+/** The chairs a phone row seats: only a table's row seats them, as the store and the setup read it. */
+const seatsOf = (row: { readonly name: string; readonly category: string; readonly qty: number }): number =>
+  row.category === "table" ? row.qty * Number(SEATED.exec(row.name)?.[2] ?? 0) : 0;
+
 const sameNumbers = (a: readonly number[], b: readonly number[]): boolean => a.length === b.length && a.every((value, i) => value === b[i]);
 
 /**
@@ -133,8 +137,10 @@ const sameNumbers = (a: readonly number[], b: readonly number[]): boolean => a.l
  * and its setup lines (sheetStoreList and sheetSetupSteps, the shared rules
  * in @omnitwin/types). The phone lists the manifest's rows zone by zone;
  * merged across zones, each phase's rows must be that phase's setup lines,
- * and the chairs its table rows seat, with its loose chairs, must be the
- * store's chair count.
+ * the paper's line of chairs at a phase's tables must be what those tables'
+ * rows seat (printed on the setup's own page; a setup under the brief keeps
+ * them on the tables' lines), and the chairs all table rows seat, with the
+ * loose chairs, must be the store's chair count.
  */
 export function roomDisagreements(sheet: HallkeeperSheetV2, pdf: Buffer): string[] {
   const text = bodyText(pdf);
@@ -143,25 +149,33 @@ export function roomDisagreements(sheet: HallkeeperSheetV2, pdf: Buffer): string
   const store = storeGroups.flatMap((group) => group.items);
   const found: string[] = [];
 
-  const names = new Set([...store.map((item) => item.name), ...steps.flatMap((step) => step.items.map((item) => item.name))]);
+  const lines = steps.flatMap((step) => step.items);
+  const names = new Set([...store.map((item) => item.name), ...lines.map((item) => item.name)]);
   for (const name of names) {
     const expected = [
       ...store.filter((item) => item.name === name).map((item) => item.qty),
-      ...steps.flatMap((step) => step.items.filter((item) => item.name === name).map((item) => item.qty)),
+      ...lines.filter((item) => item.name === name && item.seats === null).map((item) => item.qty),
     ].sort((a, b) => a - b);
+    // The chairs line prints where the setup has its own page.
+    const withChairsLine = [...expected, ...lines.filter((item) => item.name === name && item.seats !== null).map((item) => item.qty)].sort((a, b) => a - b);
     const printed = quantitiesBefore(text, name);
-    if (!sameNumbers(printed, expected)) found.push(`paper prints ${name} as [${printed.join(", ")}], the lists say [${expected.join(", ")}]`);
+    if (!sameNumbers(printed, expected) && !sameNumbers(printed, withChairsLine)) {
+      found.push(`paper prints ${name} as [${printed.join(", ")}], the lists say [${withChairsLine.join(", ")}]`);
+    }
   }
 
   const rows = sheet.phases.flatMap((phase) => phase.zones.flatMap((zone) => zone.rows));
   for (const phase of sheet.phases) {
+    const phaseRows = phase.zones.flatMap((zone) => zone.rows);
     const onPhone = new Map<string, number>();
-    for (const row of phase.zones.flatMap((zone) => zone.rows)) {
-      const item = SEATED.exec(row.name)?.[1] ?? row.name;
+    for (const row of phaseRows) {
+      const item = row.category === "table" ? SEATED.exec(row.name)?.[1] ?? row.name : row.name;
       onPhone.set(item, (onPhone.get(item) ?? 0) + row.qty);
     }
     const onPaper = new Map<string, number>();
+    let paperSeats = 0;
     for (const item of steps.find((step) => step.phase === phase.phase)?.items ?? []) {
+      if (item.seats !== null) { paperSeats += item.qty; continue; }
       onPaper.set(item.name, (onPaper.get(item.name) ?? 0) + item.qty);
     }
     for (const name of new Set([...onPhone.keys(), ...onPaper.keys()])) {
@@ -169,9 +183,11 @@ export function roomDisagreements(sheet: HallkeeperSheetV2, pdf: Buffer): string
         found.push(`${phase.phase}: the phone's rows give ${name} ×${String(onPhone.get(name) ?? 0)}, the paper ×${String(onPaper.get(name) ?? 0)}`);
       }
     }
+    const phoneSeats = phaseRows.reduce((sum, row) => sum + seatsOf(row), 0);
+    if (phoneSeats !== paperSeats) found.push(`${phase.phase}: the phone's tables seat ${String(phoneSeats)} chairs, the paper's chairs line ${String(paperSeats)}`);
   }
 
-  const seated = rows.reduce((sum, row) => sum + row.qty * Number(SEATED.exec(row.name)?.[2] ?? 0), 0);
+  const seated = rows.reduce((sum, row) => sum + seatsOf(row), 0);
   const loose = rows.filter((row) => row.category === "chair").reduce((sum, row) => sum + row.qty, 0);
   const chairs = storeGroups.find((group) => group.title === "Chairs")?.items.reduce((sum, item) => sum + item.qty, 0) ?? 0;
   if (seated + loose !== chairs) found.push(`the phone seats ${String(seated)} and lists ${String(loose)} loose chairs; the store holds ${String(chairs)}`);
@@ -180,6 +196,5 @@ export function roomDisagreements(sheet: HallkeeperSheetV2, pdf: Buffer): string
 
 /** The chairs a sheet's table rows seat ("… with 10 chairs" × qty). */
 export function seatedChairs(sheet: HallkeeperSheetV2): number {
-  return sheet.phases.flatMap((phase) => phase.zones.flatMap((zone) => zone.rows))
-    .reduce((sum, row) => sum + row.qty * Number(SEATED.exec(row.name)?.[2] ?? 0), 0);
+  return sheet.phases.flatMap((phase) => phase.zones.flatMap((zone) => zone.rows)).reduce((sum, row) => sum + seatsOf(row), 0);
 }
