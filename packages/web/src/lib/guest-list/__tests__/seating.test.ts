@@ -252,6 +252,40 @@ describe("setTables", () => {
   });
 });
 
+describe("a number that is not finite changes nothing", () => {
+  function seatedFixture(): GuestList {
+    const seated = seatEveryone(setTables(listOf(people(24)), 2, 12, tableIds(2)));
+    return { ...seated, changedSincePrint: false };
+  }
+
+  it("setTables returns the same list for NaN or an infinity, as count or as seats", () => {
+    const base = seatedFixture();
+    const before = JSON.stringify(base);
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const badCount = setTables(base, bad, 12, tableIds(5));
+      expect(badCount).toBe(base);
+      expect(badCount.changedSincePrint).toBe(false);
+      const badSeats = setTables(base, 2, bad, tableIds(5));
+      expect(badSeats).toBe(base);
+      expect(badSeats.changedSincePrint).toBe(false);
+    }
+    expect(JSON.stringify(base)).toBe(before);
+    expect(summary(base)).toMatchObject({ seated: 24, tables: 2 });
+  });
+
+  it("setTableSeats returns the same list for NaN or an infinity, and keeps high seats seated", () => {
+    const base = seatedFixture();
+    const tableId = uuid(5000);
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const same = setTableSeats(base, tableId, bad);
+      expect(same).toBe(base);
+      expect(same.changedSincePrint).toBe(false);
+    }
+    expect(base.guests[11]).toMatchObject({ tableId, seat: 12 });
+    expect(summary(base).toSeat).toBe(0);
+  });
+});
+
 describe("setTableSeats", () => {
   it("clamps the seats and sends guests whose seat is beyond the new count back to seat", () => {
     const seated = seatEveryone(setTables(list180(), 18, 10, tableIds(18)));
@@ -383,6 +417,115 @@ describe("seatEveryone", () => {
     expect(guestNamed(s, "Guest 3")).toMatchObject({ tableId: uuid(5000), seat: 1 });
     expect(s.guests.map((g) => g.seat)).toEqual([2, 3, 1, 4, 5]);
     expectInvariant(s);
+  });
+
+  it("seats a late-added party member at the party's own table when it has room", () => {
+    const base = setTables(
+      listOf([...people(3), ...["F1", "F2"].map((name) => ({ name, party: "Family" }))]),
+      3,
+      10,
+      tableIds(3),
+    );
+    // The family sits at table 3 by hand; tables 1 and 2 are empty.
+    let seated = mustList(moveGuest(base, uuid(1003), uuid(5002), 1));
+    seated = mustList(moveGuest(seated, uuid(1004), uuid(5002), 2));
+    const later = addGuests(seated, [{ name: "F3", party: "family" }], [uuid(2000)]);
+    const s = seatEveryone(later);
+    expect(guestNamed(s, "F3")).toMatchObject({ tableId: uuid(5002), seat: 3 });
+    expect(guestNamed(s, "Guest 1")).toMatchObject({ tableId: uuid(5000), seat: 1 });
+    expectInvariant(s);
+  });
+
+  it("sends a party member unseated by hand, or by fewer seats, back to the party's table", () => {
+    const base = setTables(
+      listOf(["A", "B", "C"].map((name) => ({ name, party: "Trio" }))),
+      2,
+      10,
+      tableIds(2),
+    );
+    let list = mustList(moveGuest(base, uuid(1000), uuid(5001), 1));
+    list = mustList(moveGuest(list, uuid(1001), uuid(5001), 2));
+    list = mustList(moveGuest(list, uuid(1002), uuid(5001), 9));
+    const byHand = seatEveryone(mustList(moveGuest(list, uuid(1001), null)));
+    expect(guestNamed(byHand, "B")).toMatchObject({ tableId: uuid(5001), seat: 2 });
+    const fewerSeats = seatEveryone(setTableSeats(list, uuid(5001), 8)); // C (seat 9) is unseated
+    expect(guestNamed(fewerSeats, "C")).toMatchObject({ tableId: uuid(5001), seat: 3 });
+    expectInvariant(byHand);
+    expectInvariant(fewerSeats);
+  });
+
+  it("joins the lowest-numbered table where the party sits that has room for all its unseated members", () => {
+    const base = setTables(
+      listOf([
+        { name: "P1", party: "Pen" },
+        { name: "P2", party: "Pen" },
+        { name: "P3", party: "Pen" },
+        { name: "P4", party: "Pen" },
+        { name: "L1", party: "Pen" },
+        { name: "L2", party: "Pen" },
+      ]),
+      3,
+      4,
+      tableIds(3),
+    );
+    // P1, P2, P3 at table 3 (one seat free), P4 at table 2 (three seats free).
+    let list = mustList(moveGuest(base, uuid(1000), uuid(5002), 1));
+    list = mustList(moveGuest(list, uuid(1001), uuid(5002), 2));
+    list = mustList(moveGuest(list, uuid(1002), uuid(5002), 3));
+    list = mustList(moveGuest(list, uuid(1003), uuid(5001), 1));
+    const s = seatEveryone(list);
+    // Two unseated (L1, L2): table 3 has only 1 free; table 2 has 3 free and is the lowest that fits both
+    // (table 1 is empty, but the party does not sit there).
+    expect(guestNamed(s, "L1").tableId).toBe(uuid(5001));
+    expect(guestNamed(s, "L2").tableId).toBe(uuid(5001));
+    expectInvariant(s);
+  });
+
+  it("takes the lowest-numbered of two own tables when both have room", () => {
+    const base = setTables(
+      listOf(["P1", "P2", "L1"].map((name) => ({ name, party: "Pen" }))),
+      3,
+      4,
+      tableIds(3),
+    );
+    let list = mustList(moveGuest(base, uuid(1000), uuid(5002), 1));
+    list = mustList(moveGuest(list, uuid(1001), uuid(5001), 1));
+    const s = seatEveryone(list);
+    expect(guestNamed(s, "L1")).toMatchObject({ tableId: uuid(5001), seat: 2 });
+  });
+
+  it("falls back to the first table with room when the party's own tables are full", () => {
+    const base = setTables(
+      listOf([
+        { name: "P1", party: "Pen" },
+        { name: "P2", party: "Pen" },
+        { name: "L1", party: "Pen" },
+      ]),
+      2,
+      2,
+      tableIds(2),
+    );
+    let list = mustList(moveGuest(base, uuid(1000), uuid(5001), 1));
+    list = mustList(moveGuest(list, uuid(1001), uuid(5001), 2)); // table 2 full of the party
+    const s = seatEveryone(list);
+    expect(guestNamed(s, "L1")).toMatchObject({ tableId: uuid(5000), seat: 1 });
+  });
+
+  it("leaves a guest with no party out of all this: they take the first free seat", () => {
+    const base = setTables(
+      listOf([
+        { name: "P1", party: "Pen" },
+        { name: "Solo", party: "" },
+        { name: "Solo2", party: "  " },
+      ]),
+      2,
+      4,
+      tableIds(2),
+    );
+    const list = mustList(moveGuest(base, uuid(1000), uuid(5001), 1)); // the Pen guest sits at table 2
+    const s = seatEveryone(list);
+    expect(guestNamed(s, "Solo")).toMatchObject({ tableId: uuid(5000), seat: 1 });
+    expect(guestNamed(s, "Solo2")).toMatchObject({ tableId: uuid(5000), seat: 2 });
   });
 
   it("with too few seats, seats what fits and leaves the rest to seat", () => {

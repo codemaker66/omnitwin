@@ -17,7 +17,6 @@ import {
   GUEST_NAME_MAX,
   GUESTS_MAX,
   PARTY_MAX,
-  SEATS_DEFAULT,
   SEATS_MAX,
   SEATS_MIN,
   TABLES_MAX,
@@ -34,8 +33,8 @@ const TABLE_NUMBER_MAX = 999;
 // Small helpers
 // ---------------------------------------------------------------------------
 
-function clampInt(value: number, min: number, max: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
+/** `value` must be finite: callers return the list unchanged for NaN or an infinity. */
+function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(value)));
 }
 
@@ -120,14 +119,16 @@ export function renameGuest(
 
 /**
  * Set how many tables there are. Existing tables keep their number, name, seats
- * and guests. New ones take the next numbers (the highest number plus one) and
+ * and guests. A count or seats that is not a finite number (an empty field gives
+ * NaN) changes nothing: the same list comes back, unmarked. New ones take the next numbers (the highest number plus one) and
  * the given seats, one id each, and only as many as there are ids. Tables
  * beyond `count` go, highest number first, and their guests go back to "to
  * seat". Nothing is renumbered.
  */
 export function setTables(list: GuestList, count: number, seats: number, ids: readonly string[]): GuestList {
-  const target = clampInt(count, 0, TABLES_MAX, 0);
-  const seatsEach = clampInt(seats, SEATS_MIN, SEATS_MAX, SEATS_DEFAULT);
+  if (!Number.isFinite(count) || !Number.isFinite(seats)) return list;
+  const target = clampInt(count, 0, TABLES_MAX);
+  const seatsEach = clampInt(seats, SEATS_MIN, SEATS_MAX);
 
   const surplus = Math.max(0, list.tables.length - target);
   const removed = new Set(
@@ -155,10 +156,10 @@ export function setTables(list: GuestList, count: number, seats: number, ids: re
   return changed(list, { tables, guests });
 }
 
-/** Set a table's seats (clamped). Guests whose seat is now beyond the count go back to "to seat". */
+/** Set a table's seats (clamped; not a finite number changes nothing). Guests whose seat is now beyond the count go back to "to seat". */
 export function setTableSeats(list: GuestList, tableId: string, seats: number): GuestList {
-  if (!list.tables.some((t) => t.id === tableId)) return list;
-  const count = clampInt(seats, SEATS_MIN, SEATS_MAX, SEATS_DEFAULT);
+  if (!Number.isFinite(seats) || !list.tables.some((t) => t.id === tableId)) return list;
+  const count = clampInt(seats, SEATS_MIN, SEATS_MAX);
   return changed(list, {
     tables: list.tables.map((t) => (t.id === tableId ? { ...t, seats: count } : t)),
     guests: list.guests.map((g) => (g.tableId === tableId && g.seat !== null && g.seat > count ? unseat(g) : g)),
@@ -192,8 +193,9 @@ function partyKey(guest: Guest): string {
  * Seat every guest who is "to seat", leaving seated guests where they are and
  * filling only free seats. Tables are used in number order, the lowest free
  * seat first. A party (unseated guests sharing a non-empty party label, taken
- * at its first member's place in the list) goes whole to the first table with
- * room for all of it; guests with no party go one at a time. A party is split,
+ * at its first member's place in the list) first joins a table where the party
+ * already sits, the lowest-numbered one with room for all its unseated members;
+ * failing that it goes whole to the first table with room for all of it; guests with no party go one at a time. A party is split,
  * in list order, only when it is larger than every table. A party that would
  * fit a table but finds none with room stays "to seat". With too few seats,
  * what fits is seated and the rest stay "to seat".
@@ -221,34 +223,48 @@ export function seatEveryone(list: GuestList): GuestList {
     return seat;
   }
 
-  const units: number[][] = [];
+  // A unit is one guest with no party, or every unseated member of one party.
+  const units: { readonly key: string; readonly members: number[] }[] = [];
   const partyUnits = new Map<string, number[]>();
   base.guests.forEach((guest, index) => {
     if (guest.tableId !== null) return;
     const key = partyKey(guest);
     if (key === "") {
-      units.push([index]);
+      units.push({ key: "", members: [index] });
       return;
     }
     const unit = partyUnits.get(key);
     if (unit === undefined) {
-      const fresh = [index];
-      partyUnits.set(key, fresh);
-      units.push(fresh);
+      const members = [index];
+      partyUnits.set(key, members);
+      units.push({ key, members });
     } else {
       unit.push(index);
     }
   });
 
+  const partyTables = new Map<string, Set<string>>();
+  for (const guest of base.guests) {
+    if (guest.tableId === null) continue;
+    const key = partyKey(guest);
+    if (key === "") continue;
+    const sitting = partyTables.get(key) ?? new Set<string>();
+    sitting.add(guest.tableId);
+    partyTables.set(key, sitting);
+  }
+
   const seatOf = new Map<number, { readonly tableId: string; readonly seat: number }>();
-  for (const unit of units) {
-    const whole = tables.find((t) => freeSeats(t) >= unit.length);
+  for (const { key, members } of units) {
+    const own = partyTables.get(key);
+    const whole =
+      (own === undefined ? undefined : tables.find((t) => own.has(t.id) && freeSeats(t) >= members.length)) ??
+      tables.find((t) => freeSeats(t) >= members.length);
     if (whole !== undefined) {
-      for (const index of unit) seatOf.set(index, { tableId: whole.id, seat: place(whole) });
+      for (const index of members) seatOf.set(index, { tableId: whole.id, seat: place(whole) });
       continue;
     }
-    if (unit.length <= largest) continue;
-    for (const index of unit) {
+    if (members.length <= largest) continue;
+    for (const index of members) {
       const table = tables.find((t) => freeSeats(t) > 0);
       if (table === undefined) break;
       seatOf.set(index, { tableId: table.id, seat: place(table) });

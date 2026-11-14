@@ -272,7 +272,7 @@ it("setTables takes away the last tables first and never renumbers the rest", ()
 ```
 
 - [ ] **Step 2: Run the test file.** Expected: FAIL.
-- [ ] **Step 3: Implement.** `seatEveryone` works table by table in number order. A party is every unseated guest sharing a non-empty party label (compared trimmed, case-insensitive), taken at its first member's place in the list. A whole party goes to the first table with room for all of it; guests with no party go one at a time. A new table's number is the highest number plus one. `moveGuest` with no `seat` takes the lowest free seat.
+- [ ] **Step 3: Implement.** `seatEveryone` works table by table in number order. A party is every unseated guest sharing a non-empty party label (compared trimmed, case-insensitive), taken at its first member's place in the list. A party's unseated members first join a table where the party already sits, if it has room for all of them (the lowest-numbered such table). Otherwise a whole party goes to the first table with room for all of it; guests with no party go one at a time. A new table's number is the highest number plus one. `moveGuest` with no `seat` takes the lowest free seat.
 - [ ] **Step 4: Run the test.** Expected: PASS.
 - [ ] **Step 5: Commit** `feat(kit): tables, seats and seat everyone`
 
