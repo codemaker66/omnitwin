@@ -481,10 +481,18 @@ export async function opportunityRoutes(
     if (parsed.data.currency !== undefined) updateData.currency = parsed.data.currency;
     if (parsed.data.nextAction !== undefined) updateData.nextAction = parsed.data.nextAction;
     if (parsed.data.nextActionDueAt !== undefined) updateData.nextActionDueAt = isoToDate(parsed.data.nextActionDueAt);
-    if (toStage !== undefined) {
-      updateData.stage = toStage;
+    if (toStage !== undefined) updateData.stage = toStage;
+    // What a stage brings is written only on a real move: a save naming the
+    // stage the deal already has keeps its step, its date and its closing date.
+    if (toStage !== undefined && toStage !== fromStage) {
       if (toStage === "won" || toStage === "lost") updateData.closedAt = new Date();
-      if (parsed.data.nextAction === undefined) updateData.nextAction = nextActionForStage(toStage);
+      // The stage's own step replaces the old one, and the old step's date
+      // goes with it unless the move names one: a deal only waiting on the
+      // client is not overdue.
+      if (parsed.data.nextAction === undefined) {
+        updateData.nextAction = nextActionForStage(toStage);
+        if (parsed.data.nextActionDueAt === undefined) updateData.nextActionDueAt = null;
+      }
     }
 
     type Updated =
