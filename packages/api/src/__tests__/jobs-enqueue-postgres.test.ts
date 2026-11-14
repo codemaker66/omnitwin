@@ -32,6 +32,22 @@ const wordsKind = defineJobKind({
   payload: z.object({ text: z.string() }).strict(),
   handler: async (): Promise<void> => { /* nothing to do */ },
 });
+const numbersKind = defineJobKind({
+  kind: "test.numbers",
+  version: 1,
+  scope: "platform",
+  timeoutMs: 1000,
+  payload: z.object({ n: z.number() }).strict(),
+  handler: async (): Promise<void> => { /* nothing to do */ },
+});
+const mapKind = defineJobKind({
+  kind: "test.map",
+  version: 1,
+  scope: "platform",
+  timeoutMs: 1000,
+  payload: z.record(z.string(), z.string()),
+  handler: async (): Promise<void> => { /* nothing to do */ },
+});
 const venueKind = defineJobKind({
   kind: "test.venue",
   version: 1,
@@ -140,6 +156,57 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: declaring a kind and writing a
     const { created } = await enqueueJob(db, venueKind, { key: "a", venueId, payload: {} });
     expect(created).toBe(true);
     expect(await oneJob("test.venue", "a")).toMatchObject({ scope: "venue", venue_id: venueId });
+  });
+
+  /**
+   * Each refusal below must happen in code, before any statement: PostgreSQL
+   * would reject the same input with an error that aborts the caller's whole
+   * transaction. So every case runs the refused write inside a transaction,
+   * then writes another job in that same transaction and commits it.
+   */
+  async function refusedYetUsable(refused: (tx: Parameters<Parameters<Database["transaction"]>[0]>[0]) => Promise<unknown>): Promise<void> {
+    const after = await db.transaction(async (tx) => {
+      await refused(tx);
+      return enqueueJob(tx, effect, { key: "after-refusal", payload: { n: 1 } });
+    });
+    expect(after.created).toBe(true);
+    expect(await countJobs()).toBe(1);
+  }
+
+  it("refuses a key holding a NUL character or a lone surrogate, and the transaction stays usable", async () => {
+    await refusedYetUsable(async (tx) => {
+      await expect(enqueueJob(tx, effect, { key: "a\u0000b", payload: { n: 1 } })).rejects.toThrow(JobInputError);
+      await expect(enqueueJob(tx, effect, { key: "a\ud800b", payload: { n: 1 } })).rejects.toThrow(JobInputError);
+    });
+  });
+
+  it("refuses a payload string holding a NUL character, and the transaction stays usable", async () => {
+    await refusedYetUsable(async (tx) => {
+      await expect(enqueueJob(tx, wordsKind, { key: "a", payload: { text: "a\u0000b" } })).rejects.toThrow(JobInputError);
+    });
+  });
+
+  it("refuses a payload string holding a lone surrogate, and the transaction stays usable", async () => {
+    await refusedYetUsable(async (tx) => {
+      await expect(enqueueJob(tx, wordsKind, { key: "a", payload: { text: "a\ud800b" } })).rejects.toThrow(JobInputError);
+      await expect(enqueueJob(tx, wordsKind, { key: "b", payload: { text: "a\udc00b" } })).rejects.toThrow(JobInputError);
+    });
+  });
+
+  it("refuses a payload number the table prints in full, and the transaction stays usable", async () => {
+    // 1e300 is 6 bytes in JavaScript and 301 digits in jsonb: it would pass a size check made on JSON.stringify.
+    await refusedYetUsable(async (tx) => {
+      await expect(enqueueJob(tx, numbersKind, { key: "a", payload: { n: 1e300 } })).rejects.toThrow(JobInputError);
+      await expect(enqueueJob(tx, numbersKind, { key: "b", payload: { n: 1e-7 } })).rejects.toThrow(JobInputError);
+    });
+    await expect(enqueueJob(db, numbersKind, { key: "c", payload: { n: 123456789 } })).resolves.toMatchObject({ created: true });
+  });
+
+  it("refuses a payload object key holding a NUL character or a lone surrogate, and the transaction stays usable", async () => {
+    await refusedYetUsable(async (tx) => {
+      await expect(enqueueJob(tx, mapKind, { key: "a", payload: { "a\u0000b": "x" } })).rejects.toThrow(JobInputError);
+      await expect(enqueueJob(tx, mapKind, { key: "b", payload: { "a\ud800b": "x" } })).rejects.toThrow(JobInputError);
+    });
   });
 
   it("refuses a kind with a time limit over 15 seconds, and two kinds of one name", () => {
