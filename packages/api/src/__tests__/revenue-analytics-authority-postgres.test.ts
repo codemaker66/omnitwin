@@ -62,7 +62,7 @@ describe.skipIf(testUrl === undefined)("analytics authority on isolated PostgreS
   const fixtureSchema = `analytics_authority_${randomUUID().replaceAll("-", "")}`;
   const tables: PgTable[] = [
     schema.venues, schema.spaces, schema.bookings, schema.opportunities,
-    schema.proposals, schema.enquiries, schema.quotes, schema.revenueScenarios,
+    schema.proposals, schema.proposalStatusHistory, schema.enquiries, schema.quotes, schema.revenueScenarios,
     schema.comfortConstraints, schema.configurations, schema.events,
   ];
 
@@ -90,7 +90,7 @@ describe.skipIf(testUrl === undefined)("analytics authority on isolated PostgreS
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE venues, spaces, bookings, opportunities, proposals, enquiries, quotes, revenue_scenarios, comfort_constraints");
+    await pool.query("TRUNCATE venues, spaces, bookings, opportunities, proposals, proposal_status_history, enquiries, quotes, revenue_scenarios, comfort_constraints");
     await pool.query(
       "INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Trades Hall Glasgow', 'trades-hall-glasgow', '85 Glassford Street')",
       [VENUE],
@@ -246,5 +246,42 @@ describe.skipIf(testUrl === undefined)("analytics authority on isolated PostgreS
     const dashboard = await server.inject({ method: "GET", url: PRICED_ROUTES[1], headers: headers("staff") });
     expect(dashboard.statusCode, dashboard.body).toBe(200);
     expect(dashboard.json<{ data: Record<string, unknown> }>().data).toMatchObject({ enquiryConversionPercent: 100 });
+  });
+
+  // Archive is how the office files a won proposal, and an acceptance it
+  // files is still an acceptance (audit api-proposals-money-3), as the
+  // proposal's own lock and client link read it (routes/proposals.ts
+  // everAccepted). The Proposal status card's "accepted" still reads the
+  // statuses the proposals have now.
+  it("still counts an accepted proposal once it is archived, and never a declined one", async () => {
+    await pool.query(
+      "INSERT INTO enquiries (venue_id, name, email) VALUES ($1, 'Web enquiry', 'web@example.test'), ($1, 'Phone enquiry', 'phone@example.test')",
+      [VENUE],
+    );
+    const filed = async (title: string, moves: readonly (readonly [string, string])[]): Promise<void> => {
+      const status = moves[moves.length - 1]?.[1] ?? "draft";
+      const { rows } = await pool.query<{ id: string }>(
+        "INSERT INTO proposals (venue_id, title, status) VALUES ($1, $2, $3) RETURNING id", [VENUE, title, status],
+      );
+      for (const [index, [from, to]] of moves.entries()) {
+        await pool.query(
+          "INSERT INTO proposal_status_history (proposal_id, from_status, to_status, created_at) VALUES ($1, $2, $3, $4)",
+          [rows[0]?.id, from, to, new Date(Date.UTC(2026, 9, 1 + index))],
+        );
+      }
+    };
+    await filed("Henderson wedding", [["draft", "sent"], ["sent", "accepted"], ["accepted", "archived"]]);
+    await filed("Merchants' dinner", [["draft", "sent"], ["sent", "declined"], ["declined", "archived"]]);
+
+    const pipeline = await server.inject({ method: "GET", url: PRICED_ROUTES[0], headers: headers("staff") });
+    expect(pipeline.statusCode, pipeline.body).toBe(200);
+    expect(pipeline.json<{ data: Record<string, unknown> }>().data).toMatchObject({
+      enquiryCount: 2, proposalCount: 2, acceptedProposalCount: 1, conversionPercent: 50, proposalStatusCounts: { archived: 2 },
+    });
+    const dashboard = await server.inject({ method: "GET", url: PRICED_ROUTES[1], headers: headers("staff") });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    expect(dashboard.json<{ data: Record<string, unknown> }>().data).toMatchObject({
+      enquiryConversionPercent: 50, proposalStatusCounts: { archived: 2 },
+    });
   });
 });
