@@ -100,12 +100,13 @@ export function emptyGuestList(planId: string, nowIso: string): GuestList {
 }
 
 /**
- * Put right any guest whose seating cannot stand: the table is gone, the seat
- * is beyond the table's seats, or the seat is already held by an earlier guest
- * in list order. Such a guest goes back to "to seat" (no table, no seat) and is
- * counted. A seat on a guest with no table is cleared without being counted,
- * as that guest was never seated. Guests are never reordered; the input is not
- * changed.
+ * Put right any guest whose seating cannot stand: the table is gone, the table
+ * is held with no seat, the seat is beyond the table's seats, or the seat is
+ * already held by an earlier guest in list order. Such a guest goes back to
+ * "to seat" (no table, no seat) and is counted; repair never invents a seat.
+ * A seat on a guest with no table is cleared without being counted, as that
+ * guest was never seated. After repair, every guest has both a table and a
+ * seat, or neither. Guests are never reordered; the input is not changed.
  */
 export function repairGuestList(
   list: GuestList,
@@ -127,7 +128,10 @@ export function repairGuestList(
       unseated += 1;
       return { ...guest, tableId: null, seat: null };
     }
-    if (guest.seat === null) return guest;
+    if (guest.seat === null) {
+      unseated += 1;
+      return { ...guest, tableId: null };
+    }
     const key = `${guest.tableId}:${String(guest.seat)}`;
     if (guest.seat > seats || taken.has(key)) {
       unseated += 1;

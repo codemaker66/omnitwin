@@ -172,8 +172,8 @@ describe("repairGuestList", () => {
       guestAt(5, uuid(9), 3), // table is gone
       guestAt(6, uuid(2), 5), // beyond the table's four seats
       guestAt(7, uuid(2), 4), // fine
-      guestAt(8, uuid(2), null), // at a table, no seat: left alone
-      guestAt(9, null, null), // to seat: left alone
+      guestAt(8, uuid(2), 2), // fine
+      guestAt(9, uuid(1), 3), // fine
       guestAt(10, uuid(1), 4), // fine
     ];
     return { ...list, tables, guests };
@@ -182,7 +182,7 @@ describe("repairGuestList", () => {
   it("unseats, and counts, a guest whose table is gone, whose seat is taken twice, or beyond the table's seats", () => {
     const { list: repaired, unseated } = repairGuestList(brokenList());
     expect(unseated).toBe(3);
-    expect(repaired.guests.filter((g) => g.tableId === null).length).toBe(4);
+    expect(repaired.guests.filter((g) => g.tableId === null).length).toBe(3);
     expect(repaired.guests.every((g) => g.tableId !== null || g.seat === null)).toBe(true);
   });
 
@@ -216,6 +216,25 @@ describe("repairGuestList", () => {
     const result = repairGuestList(clean);
     expect(result.unseated).toBe(0);
     expect(result.list).toEqual(clean);
+  });
+
+  it("unseats, and counts, a guest who holds a table with no seat, and never invents a seat", () => {
+    const half: GuestList = { ...list, tables, guests: [guestAt(1, uuid(1), null), guestAt(2, uuid(1), 1)] };
+    const result = repairGuestList(half);
+    expect(result.unseated).toBe(1);
+    expect(result.list.guests[0]).toEqual(guestAt(1, null, null));
+    expect(result.list.guests[1]).toEqual(guestAt(2, uuid(1), 1));
+  });
+
+  it("leaves every repaired guest with both a table and a seat, or neither", () => {
+    const mixed: GuestList = {
+      ...list,
+      tables,
+      guests: [guestAt(1, uuid(1), null), guestAt(2, null, 3), guestAt(3, uuid(9), null), guestAt(4, uuid(2), 2)],
+    };
+    const { list: repaired, unseated } = repairGuestList(mixed);
+    expect(unseated).toBe(2);
+    expect(repaired.guests.every((g) => (g.tableId === null) === (g.seat === null))).toBe(true);
   });
 
   it("clears a seat on a guest with no table without counting it as unseated", () => {
