@@ -231,13 +231,12 @@ export async function configurationRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    // Only what the access check and metadata merge read; the response is the
-    // UPDATE's own RETURNING row. Skipping thumbnail_url keeps a metadata save
-    // from reading the stored data URL twice.
+    // Only what the access check reads; the response is the UPDATE's own
+    // RETURNING row. Skipping thumbnail_url keeps a metadata save from reading
+    // the stored data URL twice.
     const [config] = await db.select({
       userId: configurations.userId,
       venueId: configurations.venueId,
-      metadata: configurations.metadata,
     })
       .from(configurations)
       .where(and(eq(configurations.id, params.data.id), isNull(configurations.deletedAt)))
@@ -262,16 +261,21 @@ export async function configurationRoutes(
     if (parsed.data.visibility !== undefined) updateData["visibility"] = parsed.data.visibility;
     if (parsed.data.thumbnailUrl !== undefined) updateData["thumbnailUrl"] = parsed.data.thumbnailUrl;
     if (parsed.data.metadata !== undefined) {
-      // Preserve the .passthrough() contract declared on ConfigurationMetadataSchema:
+      // Preserve the .loose() contract declared on ConfigurationMetadataSchema:
       // unknown sibling keys (e.g. a future seatingChart or dietary flags) must
       // survive a partial PATCH that only updates `instructions`. Null clears the
-      // column outright; any object merges onto the existing blob.
-      if (parsed.data.metadata === null) {
-        updateData["metadata"] = null;
-      } else {
-        const existing = (config.metadata ?? {}) as Record<string, unknown>;
-        updateData["metadata"] = { ...existing, ...parsed.data.metadata };
-      }
+      // column outright (SQL NULL); an object merges onto the stored blob
+      // shallowly, each top-level key it carries replacing the stored one whole.
+      // The merge happens in the UPDATE itself, on the row as it stands: two
+      // saves of different keys at once (Event details' instructions, the
+      // planner's gangway review and event kind) once read the same old blob
+      // and the later write dropped the other's key. A stored value that is not
+      // an object (none is written today: a jsonb 'null' or an array put there
+      // from outside the route) starts again from {}, as the old read-and-spread
+      // did, instead of `||` wrapping it into an array.
+      updateData["metadata"] = parsed.data.metadata === null
+        ? null
+        : sql`(case when jsonb_typeof(${configurations.metadata}) = 'object' then ${configurations.metadata} else '{}'::jsonb end) || ${JSON.stringify(parsed.data.metadata)}::jsonb`;
     }
 
     const rows = await db.update(configurations)
