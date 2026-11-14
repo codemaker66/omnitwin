@@ -581,14 +581,16 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     const own = await call("GET", `/enquiries/${enquiryId}`, asClient);
     expect(own.status).toBe(200);
     const data = own.body["data"] as Record<string, unknown>;
-    for (const field of ["firstResponseAt", "firstResponseBy", "firstResponseChannel", "firstResponseRecordedAt", "referrerHost", "utmSource", "acquisitionChannel"]) {
+    for (const field of ["firstResponseAt", "firstResponseBy", "firstResponseChannel", "firstResponseRecordedAt", "referrerHost", "utmSource", "acquisitionChannel", "eventId"]) {
       expect(data, field).not.toHaveProperty(field);
     }
     expect(data).toMatchObject({ id: enquiryId, state: "submitted" });
     const listed = await call("GET", "/enquiries", asClient);
-    expect((listed.body["data"] as Record<string, unknown>[]).every((row) => !("firstResponseAt" in row))).toBe(true);
+    expect((listed.body["data"] as Record<string, unknown>[]).every((row) => !("firstResponseAt" in row) && !("eventId" in row))).toBe(true);
     const staffView = await call("GET", `/enquiries/${enquiryId}`, asStaff());
     expect(staffView.body["data"]).toMatchObject({ firstResponseChannel: "email", firstResponseBy: people.staff });
+    // The event the venue filed it under is its team's to read (the spine, 0109).
+    expect(staffView.body["data"]).toHaveProperty("eventId", null);
   });
 
   it("records a proposal sent as the first reply to its enquiry, or its deal's enquiry, never another venue's", async () => {

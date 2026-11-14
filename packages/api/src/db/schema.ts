@@ -816,9 +816,16 @@ export const enquiries = pgTable("enquiries", {
   utmMedium: varchar("utm_medium", { length: 100 }),
   utmCampaign: varchar("utm_campaign", { length: 100 }),
   acquisitionChannel: varchar("acquisition_channel", { length: 20 }).$type<AcquisitionChannel>(),
+  // Migration 0109 (the spine): the event this enquiry is for, at its own
+  // venue. Moved, never emptied (trigger enquiries_event_link_kept); withheld
+  // from the enquiry's customer (routes/enquiries.ts asSeenBy).
+  eventId: uuid("event_id"),
 }, (table) => [
   // Migration 0100: the key an engagement event pins itself to its venue by.
   unique("enquiries_id_venue_unique").on(table.id, table.venueId),
+  foreignKey({ columns: [table.eventId, table.venueId], foreignColumns: [events.id, events.venueId], name: "enquiries_event_venue_fk" })
+    .onDelete("restrict"),
+  index("enquiries_event_idx").on(table.eventId).where(sql`${table.eventId} IS NOT NULL`),
   foreignKey({ columns: [table.firstResponseBy], foreignColumns: [users.id], name: "enquiries_first_response_by_fk" })
     .onDelete("set null"),
   check(
@@ -893,7 +900,9 @@ export const clientAccounts = pgTable("client_accounts", {
   name: varchar("name", { length: 200 }).notNull(),
   accountType: varchar("account_type", { length: 60 }).notNull().default("event_client"),
   primaryContactId: uuid("primary_contact_id").references((): AnyPgColumn => contacts.id, { onDelete: "set null" }),
-  sourceEnquiryId: uuid("source_enquiry_id").references(() => enquiries.id, { onDelete: "set null" }),
+  // Typed as AnyPgColumn: enquiries -> events -> client_accounts -> enquiries
+  // is a cycle of keys since 0109, which TypeScript cannot infer through.
+  sourceEnquiryId: uuid("source_enquiry_id").references((): AnyPgColumn => enquiries.id, { onDelete: "set null" }),
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1068,7 +1077,9 @@ export const contactKeptApart = pgTable("contact_kept_apart", {
 export const opportunities = pgTable("opportunities", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueId: uuid("venue_id").notNull().references(() => venues.id),
-  clientAccountId: uuid("client_account_id").references(() => clientAccounts.id, { onDelete: "set null" }),
+  // Typed as AnyPgColumn: opportunities -> events -> client_accounts is a
+  // cycle of keys since 0109, which TypeScript cannot infer through.
+  clientAccountId: uuid("client_account_id").references((): AnyPgColumn => clientAccounts.id, { onDelete: "set null" }),
   primaryContactId: uuid("primary_contact_id").references(() => contacts.id, { onDelete: "set null" }),
   sourceEnquiryId: uuid("source_enquiry_id").references(() => enquiries.id, { onDelete: "set null" }),
   ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
@@ -1085,11 +1096,21 @@ export const opportunities = pgTable("opportunities", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Migration 0109 (the spine): the event this deal is for, at its own venue.
+  // Moved, never emptied (trigger opportunities_event_link_kept).
+  eventId: uuid("event_id"),
 }, (table) => [
   index("opportunities_venue_stage_idx").on(table.venueId, table.stage),
   index("opportunities_account_idx").on(table.clientAccountId),
   index("opportunities_source_enquiry_idx").on(table.sourceEnquiryId),
   index("opportunities_next_action_idx").on(table.venueId, table.nextActionDueAt),
+  unique("opportunities_id_venue_unique").on(table.id, table.venueId),
+  foreignKey({ columns: [table.eventId, table.venueId], foreignColumns: [events.id, events.venueId], name: "opportunities_event_venue_fk" })
+    .onDelete("restrict"),
+  index("opportunities_event_idx").on(table.eventId).where(sql`${table.eventId} IS NOT NULL`),
+  // An event has one open deal; a lost or archived one may stand beside it.
+  uniqueIndex("opportunities_one_open_per_event").on(table.eventId)
+    .where(sql`${table.eventId} IS NOT NULL AND ${table.deletedAt} IS NULL AND ${table.stage} NOT IN ('lost', 'archived')`),
 ]);
 
 export const opportunityStatusHistory = pgTable("opportunity_status_history", {
@@ -1672,9 +1693,14 @@ export const events = pgTable("events", {
   clientName: varchar("client_name", { length: 200 }),
   // CRM spine linkage (Canon §2.4, T-487) — events join the Sell→Hold journey
   // instead of floating free of the pipeline. clientName stays as the legacy
-  // denormalised label; these FKs are authoritative where present.
-  clientAccountId: uuid("client_account_id").references(() => clientAccounts.id, { onDelete: "set null" }),
-  opportunityId: uuid("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
+  // denormalised label; these FKs are authoritative where present. Since
+  // migration 0109 the account must be the event's own venue's
+  // (events_client_account_venue_fk below; its ON DELETE SET NULL
+  // ("client_account_id") lives in the migration).
+  clientAccountId: uuid("client_account_id"),
+  // Typed as AnyPgColumn: opportunities and enquiries name events in their
+  // keys since 0109, a cycle TypeScript cannot infer through.
+  opportunityId: uuid("opportunity_id").references((): AnyPgColumn => opportunities.id, { onDelete: "set null" }),
   // Headcount triple (Canon §2.4, R2): guaranteed = contract floor, expected
   // = working number, setFor = what the room is physically set for. The
   // legacy single guestCount remains for existing consumers.
@@ -1691,6 +1717,7 @@ export const events = pgTable("events", {
   fixtureSource: varchar("fixture_source", { length: 40 }),
 }, (table) => [
   unique("events_id_venue_unique").on(table.id, table.venueId),
+  foreignKey({ columns: [table.clientAccountId, table.venueId], foreignColumns: [clientAccounts.id, clientAccounts.venueId], name: "events_client_account_venue_fk" }),
   index("events_venue_status_idx").on(table.venueId, table.status),
   index("events_created_by_idx").on(table.createdBy),
   index("events_client_account_idx").on(table.clientAccountId),
@@ -2518,10 +2545,16 @@ export const proposals = pgTable("proposals", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Migration 0109 (the spine): the event this proposal is for, at its own
+  // venue. Moved, never emptied (trigger proposals_event_link_kept).
+  eventId: uuid("event_id"),
 }, (table) => [
   unique("proposals_share_code_unique").on(table.shareCode),
   // Migration 0100: the key an engagement event pins itself to its venue by.
   unique("proposals_id_venue_unique").on(table.id, table.venueId),
+  foreignKey({ columns: [table.eventId, table.venueId], foreignColumns: [events.id, events.venueId], name: "proposals_event_venue_fk" })
+    .onDelete("restrict"),
+  index("proposals_event_idx").on(table.eventId).where(sql`${table.eventId} IS NOT NULL`),
   index("proposals_venue_status_idx").on(table.venueId, table.status),
   index("proposals_opportunity_idx").on(table.opportunityId),
   index("proposals_enquiry_idx").on(table.enquiryId),
@@ -3940,6 +3973,77 @@ export const eventBindingReviews = pgTable("event_binding_reviews", {
     "event_binding_reviews_reason_check",
     sql`${table.reason} IN ('enquiry_events_differ', 'possibly_same_event', 'event_status_derived')`,
   ),
+]);
+
+// Migration 0109 (the spine): every join of a record to its event that the
+// spine made, so each can be undone (undoneAt). eventId has no key: the
+// record must outlive an event the undo removes. One join in force per record.
+export const eventLinkJoins = pgTable("event_link_joins", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  subjectKind: varchar("subject_kind", { length: 20 })
+    .$type<"enquiry" | "opportunity" | "proposal" | "deposit_request">().notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  eventId: uuid("event_id").notNull(),
+  path: varchar("path", { length: 20 })
+    .$type<"enquiry_bookings" | "plan_link" | "enquiry" | "deal" | "deposit_request" | "new_event">().notNull(),
+  eventMade: boolean("event_made").notNull().default(false),
+  joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
+  undoneAt: timestamp("undone_at", { withTimezone: true }),
+}, (table) => [
+  uniqueIndex("event_link_joins_open_unique").on(table.subjectKind, table.subjectId).where(sql`${table.undoneAt} IS NULL`),
+  check(
+    "event_link_joins_subject_kind_check",
+    sql`${table.subjectKind} IN ('enquiry', 'opportunity', 'proposal', 'deposit_request')`,
+  ),
+  check(
+    "event_link_joins_path_check",
+    sql`${table.path} IN ('enquiry_bookings', 'plan_link', 'enquiry', 'deal', 'deposit_request', 'new_event')`,
+  ),
+]);
+
+// Migration 0109 (the spine): the list of joins a person should check, one
+// question per row: the record, why its join was in doubt, the events it
+// could belong to, and, once answered, who answered and what they chose. One
+// open question per record and reason. Migration 0109 copies October's
+// event_binding_reviews rows in (bindingReviewId names the source row, whose
+// text is read there; detail here holds kinds and counts, never a name).
+export const eventLinkReviews = pgTable("event_link_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  subjectKind: varchar("subject_kind", { length: 20 })
+    .$type<"enquiry" | "opportunity" | "proposal" | "booking" | "event">().notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  reason: varchar("reason", { length: 40 })
+    .$type<"reaches_many_events" | "paths_disagree" | "second_open_deal" | "enquiry_events_differ" | "possibly_same_event" | "event_status_derived">()
+    .notNull(),
+  candidateEventIds: uuid("candidate_event_ids").array().notNull().default(sql`'{}'::uuid[]`),
+  detail: text("detail").notNull(),
+  bindingReviewId: uuid("binding_review_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolvedBy: uuid("resolved_by").references(() => users.id, { onDelete: "set null" }),
+  resolution: varchar("resolution", { length: 20 }).$type<"joined" | "own_event" | "merged" | "kept_apart" | "noted">(),
+  resolvedEventId: uuid("resolved_event_id"),
+}, (table) => [
+  uniqueIndex("event_link_reviews_open_unique").on(table.subjectKind, table.subjectId, table.reason)
+    .where(sql`${table.resolvedAt} IS NULL AND ${table.bindingReviewId} IS NULL`),
+  uniqueIndex("event_link_reviews_binding_review_unique").on(table.bindingReviewId)
+    .where(sql`${table.bindingReviewId} IS NOT NULL`),
+  index("event_link_reviews_venue_open_idx").on(table.venueId, table.createdAt).where(sql`${table.resolvedAt} IS NULL`),
+  check(
+    "event_link_reviews_subject_kind_check",
+    sql`${table.subjectKind} IN ('enquiry', 'opportunity', 'proposal', 'booking', 'event')`,
+  ),
+  check(
+    "event_link_reviews_reason_check",
+    sql`${table.reason} IN ('reaches_many_events', 'paths_disagree', 'second_open_deal', 'enquiry_events_differ', 'possibly_same_event', 'event_status_derived')`,
+  ),
+  check(
+    "event_link_reviews_resolution_check",
+    sql`${table.resolution} IS NULL OR ${table.resolution} IN ('joined', 'own_event', 'merged', 'kept_apart', 'noted')`,
+  ),
+  check("event_link_reviews_resolution_whole", sql`(${table.resolvedAt} IS NULL) = (${table.resolution} IS NULL)`),
 ]);
 
 // House status-history convention (enquiry_status_history pattern). Rows
