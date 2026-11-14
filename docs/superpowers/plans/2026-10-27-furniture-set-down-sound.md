@@ -554,252 +554,566 @@ Values as planned; their primary sources are cited in `modes.ts`:
 
 ## PR 3: the wiring
 
+**Re-planned on 14 November 2026** against master `7c3461e7` (the October text assumed seams that #288 replaced, and a desktop menu that was unmounted on 6 September). The re-plan's ten questions were ruled as R75–R84 (Qn is ruling R(74 + n)):
+
+- **R75 (Q1).** The cascade keeps the approved listening page's selection, its 85–110 ms spacing and its −1 dB step. Each voice plays at its own piece's touchdown, never before. The page's cascade stays byte-identical. There is no "patter" yet.
+- **R76 (Q2).** A drop-in renders `kind: "drop"` at speed 1, the approved "Set it down". A let-go or a resting hand's set-down renders `kind: "settle"` at `clamp(0.5 + handSpeed / 3, 0.5, 1)`.
+- **R77 (Q3).** A space outside `RoomSlug` clamps each band's time, `reverberantGain` and the send to the six surveyed rooms' empty, calibrated range. No finish is invented.
+- **R78 (Q4).** A small `SetDownSound` shell is always mounted. The driver loads at the planner's first idle when the mode is not Off, and at arming at the latest, and the Worker starts at arming. A bundle test keeps the engine out of the planner's static graph. A landing whose driver hasn't loaded by contact is dropped and counted.
+- **R79 (Q5).** The gate below holds only Tasks 14a and 14b. Tasks 10, 11, 12, 13 and 15 do not wait for it.
+- **R80 (Q6).** A light piece's late exact render plays if it can start within 45 ms of contact, and is silent after that. The tap logs both cases. Impact sounds lagging their visual by a few tens of milliseconds are perceived as one event, and ITU-R BT.1359 puts the detection threshold for late audio at about 125 ms. The 20 ms window stays as a heavy piece's choice between the exact render and a variant.
+- **R81 (Q7).** `item.clothed` is passed, so a clothed table's hem is heard. Task 16's evidence carries an A/B pair for Blake.
+- **R82 (Q8).** Arming makes `planner-refuse` audible, because Quiet includes refusals. The PR body says so.
+- **R83 (Q9).** A browser without module Workers plays no set-downs, because the main thread never renders them (R48).
+- **R84 (Q10).** Under reduced motion the render is posted at the in-place announcement, and it plays when it returns.
+
+### 1. The seams: what the plan assumed, what master has, what changes
+
+| # | Plan assumption (Oct) | Today's master (7c3461e7) | What changes in the plan |
+|---|---|---|---|
+| 1 | `placement.ts` `computeSurfaceHeight`, lines 285–332 | `lib/placement.ts:296–332` (doc :281–295). Same rule. It returns 0 at once for a table-dressing applicator (:303) and skips non-scene placements (:308). Coordinates are render space (`RENDER_SCALE` 1.0, `constants/scale.ts:33`). `scaledFurnitureHeight` is private (:79). | Task 10 stands; its anchors move. Tests build positions with `toRenderSpace`. |
+| 2 | `canRestOnFurnitureSurface` in `placement.ts` | Moved to `lib/furniture-semantics.ts:42–48`, imported at `placement.ts:7–10`. A stage supports anything; a table supports only projector, laptop and microphone (:13–22). | Task 10 consumes it there. No edit. |
+| 3 | `stepFurnitureSettles`, "the `lift < LANDED` block, lines 278–289" | Gone with #288. `touchDown(motion)` is private at `lib/furniture-motion.ts:401–412` and is called at :460 inside `stepFurnitureSettles` (:426–470). It has no id and no listener. | Task 11 hooks the call site at :460, not `touchDown` itself (it has no id). |
+| 4 | `subscribeFurnitureTouchdown`, `announceFurnitureReleased`, `subscribeFurnitureReleased` | None exist. `subscribeFurnitureSettleFrames` (:484) gives each frame's live ids for the instancing layer, not contacts. | Task 11 adds one seam, `subscribeFurnitureLandings`, with four callbacks. The "released" seam is dropped (R25). |
+| 5 | How a piece came down was not modelled | #288 has three ways down, but records only `dropIn` (:65): a drop-in (`dropInFurniture` :249–258); a let-go (`releaseFurniture` :223–242, which zeroes `carrySpeed` at :231); and a resting hand's set-down (`HOLD_STILL` branch :444–448). | Task 11 adds `landing` and a stashed `handSpeed` to the channel (R25). |
+| 6 | Timing from the spec | `CARRY_LIFT` :77 (0.03 / 0.03 / 0.015 m), `HOLD_STILL` :79 (0.4 s), `DROP_HEIGHT` :86 (0.05 m), `SET_DOWN_AIM` :89 (−0.03 m), spring 420 / 28 (`springs.ts:60`) stepped at ≤ 1/240 s (`springs.ts:95`). Stepping it at 60 fps: contact on frame 5 (83.3 ms) at 0.654 m/s for a drop-in, frame 4 (66.7 ms) at 0.558 m/s for a carried light piece, frame 3 (50.0 ms) at 0.434 m/s for a carried heavy one (computed here; Task 11's tests pin them). | These feed Task 11's tests and Task 12's speed rule. |
+| 7 | Cascade offsets invented by `planCascade` | `landingDelays` (:282–313): a set's table first, then its chairs 12 ms apart (`SET_STAGGER` :273); a Lay out ripples out over 0.24 s (`RIPPLE` :271). It is applied by `FurnitureMotion.tsx:93–94`. | Task 12's cascade never schedules a voice before its own piece lands (R27). Q1. |
+| 8 | Reduced motion plays "at once" | `FurnitureMotion.tsx:86` returns before any drop-in. `SelectionSystem.tsx:446`, :469, :479 and :547 skip carry, settle and release. So under reduced motion nothing touches down. | Task 11 adds an in-place announcement in both places. |
+| 9 | `SelectionSystem.tsx` `settleDrop`, lines 410–441, as the move's sound seam | `settleDrop` is at :454–489 (release at :479–482). It is called at :683 (touch) and :1244 (mouse); `returnLiftedPiece` is at :539–551. The store moves pieces live during a drag (:442). | Not a sound seam any more (R25), except to announce in-place landings under reduced motion. |
+| 10 | `subscribeFurniturePlaced` | `stores/placement-store.ts:222` (`announcePlaced` :227), called by ten actions (:388 … :977). Remote edits go to the live overlay (`lib/layout-live/live-document.ts:164`) and are never announced. Cloth applicators are never placed (:351). | Unchanged; SetDownSound does not subscribe directly. Task 5's deferred minor (applicators knock) is already met on master; Task 14b keeps a guard test. |
+| 11 | `<FurnitureMotion />` at `PlannerScene.tsx:698`; the Canvas wrapper at :606 | `<FurnitureMotion />` at `components/editor/PlannerScene.tsx:721`, inside the `!timelinePreviewActive` fragment :713–725. The canvas host is :619–627, `</Canvas>` :760, `frameloop="demand"` :633. Every chrome mounts it: v2 through `planner-chrome/RoomStage.tsx:21`, and the HUD (#428) also. | Task 14b mounts after :721 and after :760. |
+| 12 | Walk mode from `useEditorStore` | `useCockpitStore((s) => s.walkMode)` (`PlannerScene.tsx:346`) | Task 14b reads the cockpit store. |
+| 13 | Rooms by slug; the drawn room by `resolveRoomGeometry(space)` | Space slugs equal `RoomSlug`: `packages/api/src/db/seed.ts:83–88` and `packages/types/src/trades-hall-venue-truth.ts:55–62`, matching `isRoomSlug` (`lib/set-down/rooms.ts:456` @a77396cb). `resolveRoomGeometry` (`data/room-geometries.ts:235`) returns the four drawn rooms by name (:183–212) and the galleries from the database outline (seeded 8 × 4 × 3 m). The outline is true (x, z) (#423's analysis). | The reflections use the drawn room as the spec says. Before a space is loaded (null), no sound plays. An unsurveyed slug (R71) is Q3. |
+| 14 | The registry: a default to change, a room bus to add | `lib/sound-registry.ts`. `PLANNER_SOUND_DEFAULT_MODE = "off"` (:610). Limiter at :621; `PLANNER_LIMITER_WARMUP_SECONDS` is unexported (:639). The policy (:712–737) reads `PLANNER_SOUND_RECIPES[id]`. The graph (:764–794) is mono, with a fixed "hall" convolver for the rare moments; there is no stereo path, room bus, `audioSession` or tap. The brush cascade is in `playPlannerSound` (:913–952). The arming hook (:856) is mounted only by `SoundControl`, so nothing in the shipped planner arms, and the planner is silent today. The one caller is `lib/place-in-hand.ts:258` (`planner-refuse`). | Task 13 as planned, plus R57, R58, R62, R63, R26 and batch admission. The default flip collides with #357 (section 3). |
+| 15 | `SoundControl.tsx`: `usePlannerSoundShortcut(onToggled?)`, `SoundSettings` | `usePlannerSoundShortcut()` takes no argument (:74). `SoundSettings` (:85) is a Segmented radiogroup with pc-* classes. `SOUND_MODE_LINES` is at :47. The speaker is mounted only at `pages/PlannerChromeFixturePage.tsx:109`. | Task 13 adds `onToggled`. |
+| 16 | Shift M | `shiftedLetter("m")` (SoundControl :67–70). Measure is `letter("m")`, which has `shift: false` (`lib/planner-keymap.ts:667`, `planner-keys.ts:79–88`). | No clash. Mounted for every chrome from PlannerScene (Task 14b). |
+| 17 | `CockpitTopBar.tsx` lines 170–200, the Layers popover, for wide desktops | `CockpitTopBar` has been mounted nowhere since 172bf4a3 (6 Sep, before the plan); only its test renders it. Its "Planning overlays" became "Scene overlays" in `cockpit/ReferenceSceneSettings.tsx:20–58`, inside the desktop More menu (`VerticalToolbox.tsx:1965–1967` button, :2047 mount; `PlannerCockpit.tsx:80` passes `compactDesktop`). | Task 15's desktop row goes in `ReferenceSceneSettings`. CockpitTopBar is not touched. |
+| 18 | `VerticalToolbox.tsx` lines 1388–1414, the mobile More sheet | :1406–1438 ("Tools" grid ends :1437; `mobileSheetTitleStyle` :1249) | Anchors only. |
+| 19 | `SlateMenu.tsx`: "after the last section" | The last section is the list at `planner-chrome/SlateMenu.tsx:182–211`; the Popover closes at :212. | Anchors only. |
+| 20 | (none) | #428 (not on master) adds a third chrome, `?chrome=hud`. Its `planner-hud/HudSheets.tsx` ToolsSheet says the sound setting "follow[s] once that engine can be fetched on its own". | Task 15 adds the row there if #428 has landed. Q4. |
+| 21 | A Worker "bundled in this Vite app" | No sound Worker. The house pattern is `components/meshes/crafted/crafted-textures.ts:66–151`: a module-worker probe (:71–80), `FIRST_ANSWER_MS` (:64), `new Worker(new URL(…, import.meta.url), { type: "module" })` (:110), and an in-place fallback. Its worker is `crafted-texture.worker.ts:18–37`. `vite.config.ts:129` sets `worker: { format: "es" }`; the dev warm-up list is at :112–127. | Task 14a follows that pattern. |
+| 22 | The engine's room state | `roomConstant` :264, `reverberantGain` :286, `roomState` :292, the default box :308–345 (all @a77396cb, `lib/set-down/room-acoustics.ts`). | Task 12 adds `roomSend` and R71's clamp. |
+| 23 | The page's stand-ins | @cdf0734d `tools/set-down-listening/page.ts`: `EAR_HEIGHT_M` :110, `REFERENCE_DISTANCE_M` :114, `REVERB_SEND` :130, the cross-fade :136–137, `LIMITER_WARMUP_S` :144, the start rule in `playVoices` :290–329, `directPath` :489, the cascade :516–541, the ear :548–576 | They move into the engine (Task 12) and the registry (Task 13), and the page imports them. |
+
+### 2. Already done by #288 and later work: no task rebuilds these
+
+- **The contact frame.** `touchDown()` (:401) stops the lift at the support at speed; contact is the frame where `lift <= 0` (:460). (#288, merged 29 Oct.)
+- **The landing order.** `landingDelays()` (:282) and its use in FurnitureMotion (:85–95). A cascade reads these delays and never invents its own landing times.
+- **The hand.** Carry, lift into the hand, the resting-hand set-down and let-go, with mass classes (`massForCategory` :99, resolver installed at `FurnitureMotion.tsx:77–80`).
+- **Bringing the branch up to #288** (R25's precondition). #416's branch merged master 7c3461e7 at d573c30f.
+- **Cloth applicators stay silent.** They never become PlacedItems (`placement-store.ts:351`) and are ignored by the surface search (:303).
+- **The speaker is never on screen** in the shipped planner. It is mounted only on the fixture page; the spec's "never mount it in the utilities" is already true.
+- **The palette's settings store.** Device keys `venviewer.planner-sound` and `venviewer.planner-sound-level` (:51–52) and `SoundSettings`. No production device has a stored choice, because nothing mounted the speaker, so the D1 default reaches everyone.
+
+### 3. Collisions with open pull requests
+
+The scan (`gh pr view <n> --json files`) covered all 44 open PRs against the seam files.
+
+| PR | State | Files it shares with the wiring | Tasks hit | How to sequence |
+|---|---|---|---|---|
+| **#357** v2 catch-up (T-671/T-680) | open, mergeable | It sets `sound-registry.ts:584–612` to `"quiet"` (D1) with new comment text; changes `planner-sound.test.ts:91–96` and :232–237 (an "off" test that plays `planner-set-table`) and `sound-control.test.tsx` (default-dependent cases); adds the `PlannerScene` `inCanvas` prop (:272–282) and `{inCanvas}` after :722. | 13, 14b | Best: #357 lands first, and Task 13 drops its default edit. Otherwise Task 13 copies #357's D1 hunks verbatim (identical changes merge cleanly) and rebases the retirement edit to the off test once #357 lands; that conflict is mechanical. 14b inserts after :721, so one unchanged line (:722) separates it from #357's insertion, and both apply cleanly. |
+| #178, #182, #192, #200 | superseded | #178: registry D1 and planner-sound test. #200: PlannerScene and SelectionSystem. #192: placement.ts. | — | #357's body says it replaces them. Ignore them; their owner closes them once #357 lands. |
+| **#428** the HUD (T-723) | open, not draft | `SelectionSystem.tsx` :885 and :1296 (ours: :446–551); `PlannerScene.tsx` :98–105, :324–333, :507–528, :662, :726, :753 (ours: the import near :50, :721, :760); `planner-chrome-flag.ts` (adds `hud`); a bundle test that keeps the HUD's modules off every other planner; a ToolsSheet that reserves Sound | 11, 14b, 15 | No overlapping hunks; either order merges cleanly. If #428 lands first, Task 15 adds the Sound row to its ToolsSheet. Otherwise Task 15's PR body hands the row to T-723's owner. Q4 decides whether the engine "can be fetched on its own", which the HUD asked for. |
+| #411 planner bounds | open, conflicting | `placement.ts` :1–5, :107–118, :233–260, :484–540 and `placement-store.ts` | 10 | Task 10 touches :281–332 only, so they are independent. Re-anchor if #411 lands first. |
+| #418 | mergeable | `VerticalToolbox.tsx` :1667 and :2041–2049 (beside the `ReferenceSceneSettings` mount) | 15 | Task 15 edits `ReferenceSceneSettings.tsx` itself, not :2047, so there is no overlap. |
+| #417, #347 | mergeable | `VerticalToolbox.tsx` ToolBtn :800–1141 | 15 | No overlap with the More sheet (:1406–1438). |
+| #388 | mergeable | `VerticalToolbox.tsx` :1538 and :1997; `placement-store.ts`; `planner-keymap.ts` | 15 | No overlap; the wiring only subscribes to the store. |
+| #243 | draft, conflicting, held | SelectionSystem, placement.ts, planner-keys and keymap, placement-store, VerticalToolbox :2241 | 10, 11 | Held. Whoever revives it rebases. |
+| **#416** the engine | delta review | the engine, `planner-sound.test.ts`, recipes, renderer | all | PR 3 starts from master once #416 has merged. |
+| **PR 2** the listening page | branch at cdf0734d, not merged | `tools/set-down-listening/page.ts` | 12, 13 | Tasks 12 and 13 edit page.ts. If PR 2 has not merged when PR 3 starts, PR 3's branch starts from the page branch merged with master. |
+| #431 surveyed rooms, web (T-662) | draft | a dev page only | — | No collision now. When T-662 draws the galleries from the survey, the reflections follow with no change here (spec section 4). |
+
+### 5. The gate before Tasks 14a and 14b (rulings R48 and R79)
+
+Tasks 14a and 14b, the render at the drop, do not start until the listening page has timed renders on real phones (ruling R79). Tasks 12 and 13 do not wait. The page keeps each render's time on the device that ran it (`ArtifactData` list, "timings"). The gate needs:
+- the median and worst render times, with the Grand Hall's 18 early reflections, for a Chiavari, a 6 ft round and a staging deck, on the phones Blake uses;
+- each set against its time to contact: 50 ms for a carried heavy piece (frame 3), 66.7 ms for light and table pieces (frame 4) and 83.3 ms for a drop-in (frame 5).
+
+Render-at-drop is confirmed only if light and table pieces render inside their time to contact. Heavy pieces keep the render-ahead fallback whatever the timings. If light pieces miss as well, the design comes back for a ruling (R80 names the fallback). Tasks 10, 11, 12, 13 and 15 do not depend on the gate.
+
+
+
 ### Task 10: Find the support under each foot
 
 **Files:**
-- Modify: `lib/placement.ts` (around `computeSurfaceHeight`, lines 285–332)
-- Test: `lib/__tests__/placement-support.test.ts`
+- Modify: `lib/placement.ts`. Add `findSupportingItem` directly above `computeSurfaceHeight` (:281–332). Both share one private `supportUnder()` that returns `{ placed, top } | null`, reusing `computeRotatedFootprint` (:63) and `scaledFurnitureHeight` (:79).
+- Test: create `lib/__tests__/placement-support.test.ts`.
 
 **Interfaces:**
-- Produces: `findSupportingItem(x: number, z: number, candidate: CatalogueItem, placedItems: readonly PlacedItem[], excludeIds: ReadonlySet<string>): PlacedItem | null`. It returns the item whose top `computeSurfaceHeight` uses, or null for the floor. `computeSurfaceHeight` becomes a call to it, returning the same numbers.
+- Consumes `canRestOnFurnitureSurface` (`lib/furniture-semantics.ts:42`), `isSceneFurniturePlacement` and `isTableDressingApplicatorSlug` (`lib/table-dressing.ts`).
+- Produces `findSupportingItem(x: number, z: number, candidate: CatalogueItem, placedItems: readonly PlacedItem[], excludeIds: ReadonlySet<string>): PlacedItem | null`:
+  - x and z are in render space;
+  - it returns the highest compatible support whose rotated, scaled footprint contains the point, or null for the floor;
+  - it returns null at once for an applicator candidate;
+  - it skips non-scene placements and unknown catalogue ids;
+  - on a tie it keeps the first in `placedItems` order, as today's strict `>` does (:321).
+- `computeSurfaceHeight` returns `supportUnder(...)?.top ?? 0`, the same numbers as before.
 
-- [ ] **Step 1: Write the failing tests:**
-  - a chair over a `staging-deck-6x4` returns the deck;
-  - the same point with the deck in `excludeIds` returns null;
-  - a laptop over a round returns the round, but a chair over a round returns null (`canRestOnFurnitureSurface`);
-  - for 200 seeded points over a mixed layout, `computeSurfaceHeight` equals the found item's top, or 0, every time;
-  - a foot past the deck's edge, at the deck's half-width plus 1 cm, returns null.
-- [ ] **Step 2: Run** `vitest run src/lib/__tests__/placement-support.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement**, then run that file and `vitest run src/stores/__tests__/placement-store.test.ts`. Expected: PASS, with the existing behaviour unchanged.
-- [ ] **Step 4: Commit** with the message "Name the piece a placement stands on, not just its height (T-700)".
+- [ ] **Step 1: Write the failing tests** in `placement-support.test.ts`:
+  - a `chiavari-chair` at a `staging-deck-6x4`'s centre returns the deck;
+  - the same with the deck in `excludeIds` returns null;
+  - a `laptop` over `round-table-6ft` returns the round, and a `chiavari-chair` over it returns null;
+  - a deck stacked on a deck returns the upper one;
+  - two equal-height decks overlapping return the first in order;
+  - a deck at `rotationY = π/2`: a point inside the turned footprint and outside the unturned one returns the deck;
+  - a deck at `scale: 1.5`: a point between the unscaled and scaled half-widths returns the deck;
+  - a foot at the deck's half-width + 0.01 m returns null, and at − 0.01 m the deck;
+  - a `white-table-cloth` candidate returns null;
+  - a placed item with an unknown `catalogueItemId` is skipped;
+  - for 200 points from `seededRandom(1)` over a mixed layout (two decks, a stacked deck, a round, a `dancefloor-panel`, chairs), `computeSurfaceHeight` equals the found item's top, or 0, exactly (`toBe`), for `chiavari-chair`, `laptop` and `mic-stand` candidates.
+- [ ] **Step 2: Run** `$HOLD "… task 10" bash -c 'cd packages/web && pnpm exec vitest run src/lib/__tests__/placement-support.test.ts'`. Expected: FAIL (`findSupportingItem` is missing).
+- [ ] **Step 3: Implement**, then run that file with `src/lib/__tests__/placement.test.ts src/stores/__tests__/placement-store.test.ts`. Expected: PASS, with existing behaviour unchanged.
+- [ ] **Step 4: Commit** `lib/placement.ts lib/__tests__/placement-support.test.ts` with the message "Name the piece a placement stands on, not just its height (T-700)".
 
-### Task 11: Touchdown and release seams
+### Task 11: Landing seams in the motion
+
+Already on master: the contact frame, `landingDelays`, the carry and let-go, and mass classes (section 2). This task adds only the seam.
 
 **Files:**
-- Modify:
-  - `lib/furniture-motion.ts`: in `stepFurnitureSettles`, at the `if (motion.lift.value < LANDED)` block (lines 278–289), before the velocity is zeroed;
-  - `components/SelectionSystem.tsx`: `settleDrop`, lines 410–441.
-- Test: `lib/__tests__/furniture-motion-touchdown.test.ts`
+- Modify `lib/furniture-motion.ts`:
+  - `MotionChannel` (:42–70) gains `landing: FurnitureLanding` and `handSpeed: number`, with defaults in `channel()` (:120–143);
+  - `carryFurniture` (:161–178) calls `pickedUp(id, mass === "heavy")` when the piece was not in hand (`liftTarget === 0` before the call). That includes a piece caught mid-drop, which also tells the listener its drop will not land;
+  - `releaseFurniture` (:223–242) copies `carrySpeed` into `handSpeed` before :231, sets `landing = "let-go"`, and calls `dropStarted` only when `lift > 0`. A piece a resting hand already set down plays nothing (R25);
+  - `dropInFurniture` (:249–258) sets `landing = "drop-in"` and calls `dropStarted(id, "drop-in", 0, delaySeconds)`;
+  - the `HOLD_STILL` branch (:444–448) sets `landing = "set-down"` and `handSpeed = carrySpeed`, and calls `dropStarted(id, "set-down", handSpeed, 0)`;
+  - the call site at :460 reads `Math.abs(lift.velocity)`, calls `touchDown(motion)`, then calls `touchedDown(id, landing, speed, handSpeed)`;
+  - new exports (below). The listeners are kept in an array replaced on subscribe and unsubscribe and iterated by index, so the frame path allocates nothing. (`stepFurnitureSettles` already allocates its `live` array at :432; that is not this seam's.)
+- Modify `components/editor/FurnitureMotion.tsx:86`: under reduced motion, call `announceFurnitureLandedInPlace(ids, "drop-in", 0)` before returning.
+- Modify `components/SelectionSystem.tsx`:
+  - `moveDragTo` (:446–449) measures the carry under reduced motion too; `carryFurniture` still runs only without it;
+  - `settleDrop` (:479–482) and `returnLiftedPiece` (:547), under reduced motion, call `announceFurnitureLandedInPlace(lastMovingIds.current, "let-go", handSpeed)`, where handSpeed is the measured carry's `hypot(vx, vz)`, or 0.
+- Test: create `lib/__tests__/furniture-motion-landings.test.ts`, `components/__tests__/SelectionSystem.landings.test.tsx` (set up as `SelectionSystem.motion.test.tsx`) and `components/editor/__tests__/FurnitureMotion.landings.test.tsx` (`mountInStubRoot` and `advance`, as `FurnitureMotion.instanced.test.tsx:1–47`).
 
 **Interfaces:**
-- Produces:
-  - `type FurnitureTouchdownListener = (id: string, speed: number) => void`;
-  - `subscribeFurnitureTouchdown(listener: FurnitureTouchdownListener): () => void`, called with the absolute value of `lift.velocity` at the contact frame;
-  - `announceFurnitureReleased(ids: Iterable<string>): void`;
-  - `subscribeFurnitureReleased(listener: (ids: readonly string[]) => void): () => void`.
+```ts
+export type FurnitureLanding = "drop-in" | "let-go" | "set-down";
+export interface FurnitureLandingListener {
+  /** A hand took the piece (or caught it mid-drop); heavy = stage, AV, lighting. */
+  pickedUp(id: string, heavy: boolean): void;
+  /** It starts down: a drop-in after `delaySeconds`, a let-go or a resting hand's set-down at once. */
+  dropStarted(id: string, landing: FurnitureLanding, handSpeed: number, delaySeconds: number): void;
+  /** The frame it reaches its support, at |lift.velocity| m/s. */
+  touchedDown(id: string, landing: FurnitureLanding, contactSpeed: number, handSpeed: number): void;
+  /** Reduced motion: it is down with no motion and no contact frame. */
+  landedInPlace(id: string, landing: FurnitureLanding, handSpeed: number): void;
+}
+export function subscribeFurnitureLandings(listener: FurnitureLandingListener): () => void;
+export function announceFurnitureLandedInPlace(ids: Iterable<string>, landing: FurnitureLanding, handSpeed: number): void;
+export function furnitureLandingListenerCount(): number;
+```
 
-`settleDrop` calls `announceFurnitureReleased(lastMovingIds.current)` for a move gesture whenever ids moved, under reduced motion too, before clearing `lastMovingIds`.
+- [ ] **Step 1: Write the failing tests** in `furniture-motion-landings.test.ts`, stepping at 1/60:
+  - `dropInFurniture("a")` calls `dropStarted("a", "drop-in", 0, 0)` at once, and `touchedDown` exactly once on step 5, where the pose's lift first reads 0, at 0.654 ± 0.01 m/s;
+  - drop-ins with delays 0 and 0.1 s touch down 6 steps apart;
+  - a light carry at 1.2 m/s then `releaseFurniture` gives `pickedUp(id, false)` once, `dropStarted("let-go", 1.2, 0)`, then `touchedDown` on step 4 at 0.558 ± 0.01 with handSpeed 1.2;
+  - with the resolver returning `"heavy"`: `pickedUp(id, true)`, and touchdown on step 3 at 0.434 ± 0.01;
+  - a hand at rest past `HOLD_STILL` gives `dropStarted("set-down", h < 0.05)` and its `touchedDown`; a later `releaseFurniture` calls neither;
+  - `clearAllFurnitureSettles()` before contact means no `touchedDown`;
+  - a piece caught mid-drop by `carryFurniture` gives `pickedUp`, and no `touchedDown` until it is released;
+  - `announceFurnitureLandedInPlace(["a", "b"], "let-go", 0.8)` calls `landedInPlace` twice and nothing else;
+  - unsubscribing returns `furnitureLandingListenerCount()` to its value before;
+  - 180 pieces dropping with one counting listener: the median step over 30 frames is under 0.5 ms (a guard; review checks that no object or array is made on the seam's path).
 
-- [ ] **Step 1: Write the failing tests:**
-  - after `dropInFurniture("a", 0.14)`, stepping `stepFurnitureSettles(1/60)` until it lands calls the listener exactly once with id "a" and a speed > 0.3 m/s, on the frame `dropping` turns false;
-  - two pieces at different heights land on different frames;
-  - `clearAllFurnitureSettles()` before landing means no call;
-  - with 180 pieces dropping and one listener, the median step over 30 frames is under 0.5 ms. This is a guard: the listener receives primitives only, and the review checks that no array or object is made per frame on that path;
-  - `announceFurnitureReleased` notifies once with every id.
-- [ ] **Step 2: Run** `vitest run src/lib/__tests__/furniture-motion-touchdown.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement.** Call the listeners with primitives inside the loop; never build an array per frame.
-- [ ] **Step 4: Run** it and the existing `vitest run src/lib/__tests__/furniture-motion.test.ts src/components/__tests__/SelectionSystem*.test.tsx`. Expected: PASS.
-- [ ] **Step 5: Commit** with the message "Tell listeners the frame a piece touches down, and when a move is let go (T-700)".
+  In `FurnitureMotion.landings.test.tsx`: under reduced motion (`matchMedia` stub), `placeItem` gives `landedInPlace(id, "drop-in", 0)` and no `dropStarted`; without it, `dropStarted("drop-in")`.
 
-### Gate before Tasks 12–14: the phone timings (ruling R48)
+  In `SelectionSystem.landings.test.tsx`: under reduced motion, a mouse drag and release of a chair gives one `landedInPlace(id, "let-go", h > 0)`; without it, a `dropStarted("let-go")` and no `landedInPlace`.
+- [ ] **Step 2: Run** those three files. Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run** them with `src/lib/__tests__/furniture-motion.test.ts src/components/__tests__/SelectionSystem.motion.test.tsx src/components/__tests__/SelectionSystem.touch.test.tsx src/components/editor/__tests__/FurnitureMotion.instanced.test.tsx src/components/editor/__tests__/FurnitureMotion.doors.test.tsx`. Expected: PASS, with the existing motion unchanged.
+- [ ] **Step 5: Commit** with the message "Tell listeners when a piece starts down and the frame it lands, and how it came down (T-700)".
 
-Tasks 12, 13 and 14 do not start until part 2's listening page has timed renders on real phones (it keeps each render's time on the device that ran it):
-- the median and worst render times, with the Grand Hall's 18 early reflections, for a light piece (a Chiavari), a table (a 6 ft round) and a heavy piece (a staging deck), on the phones Blake uses for the ear test;
-- set against the time from a drop's start to its contact: 50 ms for a carried heavy piece, 67–69 ms for light and table pieces, 83 ms for a drop-in.
+### Task 12: The driver's arithmetic, in the engine
 
-Render-at-drop in a Worker is confirmed only if light and table pieces render inside their time to contact on those phones. Heavy pieces keep the render-ahead fallback whatever the timings. If light pieces miss as well, the design goes back for a ruling before Task 12 starts.
-
-### Task 12: Timing, cascade and listener (pure)
+This moves the page's stand-ins (R57, R58, R61) and folds in R18, R19, R26, R27 (Q1, ruling R75), R37 and R71 (Q3, ruling R77).
 
 **Files:**
-- Create: `lib/set-down/timing.ts`, `lib/set-down/cascade.ts`, `lib/set-down/listener.ts`
-- Test: `lib/set-down/__tests__/wiring-pure.test.ts`
+- Create in `lib/set-down/`: `timing.ts`, `cascade.ts`, `listener.ts`, `fatigue.ts`, `voice.ts`.
+- Modify `lib/set-down/room-acoustics.ts` (@a77396cb :264–345): add `roomSend`; add `send` to `RoomState` (:50); apply R71's clamp in `roomState` for a non-surveyed slug.
+- Modify `tools/set-down-listening/page.ts` (@cdf0734d): delete the stand-ins at :110–130, :489 and :510–541, and the ear arithmetic at :548–576, importing them from the engine instead. Keep `RIGHT`, the slider and the room-end viewer, which are the page's own.
+- Test: create `lib/set-down/__tests__/wiring-pure.test.ts`; add cases to `lib/set-down/__tests__/room-acoustics.test.ts`.
 
 **Interfaces:**
-- Consumes: `Vec3` (Task 4) and `BodyFamily` (Task 5).
-- Produces:
-  - `interface AudioClock { readonly currentTime: number; readonly outputLatency: number }`;
-  - `setDownStartTime(clock: AudioClock, presentDelaySeconds: number): number`, which is `currentTime + max(0, presentDelay − outputLatency)`;
+- `timing.ts`:
+  - `interface AudioClock { readonly currentTime: number; readonly outputLatency: number; readonly sampleRate: number }`;
+  - `HEARD_WINDOW_S = 0.045`: a late exact render still plays if it can start within 45 ms of its contact frame (ruling R80);
+  - `presentDelayFor(frameDeltaSeconds: number): number` clamps to [1/240, 1/30];
+  - `setDownStartTime(clock: AudioClock, presentDelaySeconds: number, onsetSeconds: number): number` returns `currentTime + max(0, presentDelay − outputLatency − onsetSeconds)`. It lands R37's `onsetSeconds` (carpet's bottoming thud) on the frame. The heard onset is never before the frame.
+- `cascade.ts` (the page's :516–541 moved, plus Q1):
+  - constants `CASCADE_VOICES = 8`, `CASCADE_GAP_S = 0.085`, `CASCADE_GAP_SPREAD_S = 0.025`, `CASCADE_STEP_DB = -1`;
+  - `interface CascadePiece { readonly id: string; readonly family: BodyFamily; readonly landsAfterSeconds: number }`;
   - `interface CascadeVoice { readonly id: string; readonly offsetSeconds: number; readonly levelDb: number }`;
-  - `planCascade(items: readonly { readonly id: string; readonly family: BodyFamily }[], seed: number): readonly CascadeVoice[]`;
+  - `planCascade(pieces: readonly CascadePiece[], seed: number): readonly CascadeVoice[]`:
+    - 1–3 pieces each get a voice at their own `landsAfterSeconds`, at 0, −1 and −2 dB;
+    - 4 or more take the page's selection: one piece of each non-chair family in input order, then chairs at `floor((k + 0.5)·n / count)`, up to 8;
+    - the selection is stably ordered by `landsAfterSeconds`;
+    - `offset₀ = landsAfter₀` and `offsetₖ = max(landsAfterₖ, offsetₖ₋₁ + GAP + SPREAD·random())`, with `seededRandom(seed)` drawn once per voice after the first, as the page draws it;
+    - the level falls 1 dB per voice.
+- `listener.ts` (R61, R18, R19):
+  - `EAR_HEIGHT_M = 1.6`, `REFERENCE_DISTANCE_M = 2`, `EAR_REACH_M = { min: 2, max: 6 }`;
   - `interface Ear { readonly position: Vec3; readonly right: Vec3 }`;
-  - `earFor(camera: { readonly position: Vec3; readonly right: Vec3 }, landing: Vec3, walking: boolean): Ear`;
-  - `directPath(ear: Ear, source: Vec3): { readonly gain: number; readonly azimuthRad: number; readonly distanceM: number }`, with gain = min(1, 2 / distance).
+  - `earFor(camera: { readonly position: Vec3; readonly right: Vec3 }, landing: Vec3, walking: boolean, reach = EAR_REACH_M): Ear`:
+    - `reach = clamp(|camera − landing|, reach.min, reach.max)`;
+    - the ear stands on the landing's horizontal line toward the camera at `sqrt(max(0, reach² − (1.6 − landing.y)²))`, with y = 1.6;
+    - its right is the camera's right made horizontal and normalised, or +z if degenerate;
+    - when walking it is `(camera.x, 1.6, camera.z)`;
+  - `clampEarToRoom(ear: Ear, geometry: RoomGeometry | null): Ear` puts the ear inside the polygon (the nearest point inset 0.3 m) with `0.3 ≤ y ≤ ceiling − 0.3`, or `ceiling / 2` when the ceiling is under 0.6 m. The ear is left as it is when the geometry is null;
+  - `directPath(ear: Ear, source: Vec3): { readonly gain: number; readonly azimuthRad: number; readonly distanceM: number }` gives gain `min(1, 2 / max(d, 1e-6))` and `lateralAzimuth(source − ear, ear.right)` (R18).
+- `fatigue.ts` (R26): `class SetDownFatigue { levelDb(nowMs: number): number; record(nowMs: number, count: number): void }`, with a 5-minute window:
+  - nothing changes up to 20 plays in the window;
+  - after that the level falls linearly to −3 dB at 30 plays;
+  - it recovers as the window empties;
+  - two consecutive readings differ by no more than 1 dB.
+- `voice.ts` (the main-thread gather, pure):
+  - `footPositions(item: PlacedItem, body: SetDownBody): readonly { readonly x: number; readonly z: number }[]` rotates as three.js does about +y (`x' = x cos θ + z sin θ`, `z' = −x sin θ + z cos θ`), then translates, in render space;
+  - `landingRender(landing: FurnitureLanding, handSpeed: number): { readonly kind: "drop" | "settle"; readonly speed: number }` and `settleSpeedFor(handSpeed)` (Q2, ruling R76);
+  - `voiceInput(args: { item; placedItems; roomSlug; geometry: RoomGeometry | null; acoustics: RoomAcoustics; ear: Ear; landing: FurnitureLanding; handSpeed: number; seed: number; sampleRate: number }): { readonly input: SetDownInput; readonly directGain: number; readonly surfacesKey: string; readonly slug: string }`:
+    - the slug is `getCatalogueItem(item.catalogueItemId)?.slug ?? item.catalogueItemId`, as the page does;
+    - the body is `bodyFor(slug, item.scale)`;
+    - each foot goes through `findSupportingItem` (excluding the item itself), then `surfaceKindForSupport`, then `surfaceResponse`;
+    - the source is `(toRealWorld(x), item.y, toRealWorld(z))`;
+    - the reflections are `earlyReflections(reflectionRoomFor(acoustics, geometry), source, clampEarToRoom(ear, geometry))`, or none when the geometry is null;
+    - `direct = { gain: 1, azimuthRad }`, a unit-gain render (R57), with `directGain = directPath(...).gain` returned for the dry GainNode;
+    - `clothed` is `item.clothed` (Q7, ruling R81).
+- `room-acoustics.ts`:
+  - `roomSend(room: RoomAcoustics, contents: BandValues): number` is `sqrt(32π / roomConstant(room, contents))`. It is R58's `REVERB_SEND × reverberantGain` with R_ref cancelled: EST, from Q = 2 on the floor and r_ref = 2 m. The send carries the whole render, early reflections included (R64), which Blake heard as right;
+  - `RoomState` gains `send`;
+  - R71 (Q3, ruling R77): for `!isRoomSlug(room.slug)`, the times are clamped per band into [min, max] of the six rooms' empty times, and `reverberantGain` and `send` into the six rooms' empty range.
 
-**The cascade:**
-- 1–3 items give one voice each at offset 0, with levels 0, −1 and −2 dB.
-- 4 or more give min(8, n) voices: every table family first, then chairs.
-- Offsets are seeded, 0.085–0.11 s apart (at most three in any 250 ms window, the policy's burst rule), so 8 voices span about 0.6–0.8 s.
-- Level falls 1 dB per voice.
+- [ ] **Step 1: Write the failing tests** in `wiring-pure.test.ts`:
+  - **Timing:**
+    - the start is never before `currentTime`;
+    - with `outputLatency` 0.005, a present delay of 0.016 and onset 0, it starts at +0.011;
+    - with onset 0.004 it starts at +0.007, so the onset is heard at the frame;
+    - with `outputLatency` 0.06 it starts now;
+    - `presentDelayFor(0.5)` is 1/30, and `presentDelayFor(0)` is 1/240.
+  - **The cascade:**
+    - over the six rooms' `referenceDinner` and seeds 1–20, with every `landsAfterSeconds` 0, `planCascade` returns exactly the ids, offsets and levels of the page's stand-in at cdf0734d (held in the test as a reference implementation, as `planner-sound.test.ts` holds `uncachedFft`);
+    - with real delays from `landingDelays` for 180 chairs and 18 rounds: 8 voices, no voice before its own piece's landing, at most 3 in any 250 ms, and levels strictly falling;
+    - 2 pieces give 2 voices at their own landings.
+  - **The ear:**
+    - a camera 20 m away puts the ear 6 m from the landing, and one 1 m away puts it 2 m from the landing, both at y = 1.6;
+    - when walking, the ear is the camera at 1.6 m;
+    - the page's `playPiece` and `playCascade` ears at cdf0734d are reproduced to 1e-12;
+    - an ear above the Robert Adam Room's drawn 2.18 m ceiling clamps to ≤ 1.88 m, and one outside the Reception Room's L clamps inside it;
+    - a source to the ear's right has azimuth > 0;
+    - the direct gain at 6 m is 1/3.
+  - **Fatigue:** plays 1–20 read 0 dB; the 25th reads −1.5 ± 0.01; 30 and beyond reach −3, never lower; a jump never exceeds 1 dB between readings; after 5 quiet minutes it climbs back to 0 in steps of ≤ 1 dB.
+  - **The voice:**
+    - a foot at (+0.5, 0) under `rotationY = π/2` lands at (0, −0.5) plus the item's position;
+    - a chair over a deck gets four `stage-deck` surfaces, and one straddling the deck's edge gets mixed surfaces;
+    - `voiceInput` for an unknown slug at `scale: 1.7` is finite;
+    - `direct.gain` is 1 and `directGain` is `min(1, 2/d)`;
+    - with `geometry` null there are no reflections;
+    - a drop-in renders `{ "drop", 1 }`, and a let-go at 0 and 3 m/s renders `{ "settle", 0.5 }` and `{ "settle", 1 }`.
 
-**The ear:** at `clamp(distance(camera, landing), 2, 6)` metres from the landing, on the camera's line. In Walk it is the camera itself.
-
-**No look-ahead yet.** The spec allows a one-frame look-ahead for devices whose output latency is too high. It waits for the device day's measurement (Task 17): if a phone hears set-downs more than 20 ms after the contact frame, it becomes a follow-up task. Until then nothing predicts, so nothing can be heard early.
-
-- [ ] **Step 1: Write the failing tests:**
-  - the start time is never before `currentTime`;
-  - with outputLatency 0.005 and a present delay of 0.016, it starts at +0.011, so it is heard at 0.016;
-  - with outputLatency 0.06 it starts now (heard 44 ms after the present, the honest floor without look-ahead);
-  - a cascade of 180 items gives 8 voices, tables first, every 250 ms window holding ≤ 3, all offsets ≤ 0.9 s, and levels strictly falling;
-  - 2 items give 2 voices at offset 0;
-  - a camera 20 m away puts the ear 6 m from the landing, and one 1 m away puts it 2 m from the landing;
-  - in Walk the ear is the camera;
-  - a source to the ear's right has an azimuth > 0;
-  - the direct gain at 6 m is 1/3.
-- [ ] **Step 2: Run** `vitest run src/lib/set-down/__tests__/wiring-pure.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement** the three modules.
-- [ ] **Step 4: Run.** Expected: PASS.
-- [ ] **Step 5: Commit** with the message "Time each set-down to the frame, shape Lay out's cascade and place the ear (T-700)".
+  In `room-acoustics.test.ts`:
+  - `roomSend` is 0.9793057 ± 1e-6 for the empty Grand Hall and 0.8288978 ± 1e-6 dressed with `referenceDinner("grand-hall")` (the page's probe, ledger 14 Nov 17:10);
+  - `roomState(...).send` equals `roomSend`;
+  - the null-space box reads every band inside the surveyed envelope, no longer 6.52 s;
+  - the six surveyed rooms' `rt` are unchanged by R71.
+- [ ] **Step 2: Run** `src/lib/set-down/__tests__/wiring-pure.test.ts src/lib/set-down/__tests__/room-acoustics.test.ts src/lib/set-down/__tests__/calibration.test.ts`. Expected: FAIL in the new cases only.
+- [ ] **Step 3: Implement** the five modules and the room-acoustics change. Run. Expected: PASS.
+- [ ] **Step 4: Commit** the engine with the message "Time each set-down to its frame, shape the cascade and place the ear, in the engine (T-700)".
+- [ ] **Step 5: Update the page** to import `EAR_HEIGHT_M`, `REFERENCE_DISTANCE_M`, `earFor`, `directPath`, `planCascade` and `RoomState.send`.
+  - Build with `node tools/set-down-listening/build.mjs <listening>/index.html`, where `<listening>` is a local folder outside the repo.
+  - Run `node tools/set-down-listening/page.check.mjs <listening>/index.html` under the house's browser hold, a script kept outside the repo. Expected: 80/80 PASS, and the send probe still prints 0.9793057 / 0.8288978.
+  - Commit `tools/set-down-listening/page.ts` with the message "The listening page takes its ear, cascade and send from the engine (T-700)". Republish only if the bundle changed in behaviour (it should not).
 
 ### Task 13: The registry plays set-downs through the room
 
+This folds in R57, R58, R62, R63 and R26, and covers D1, the policy, the wake, the audio session and the tap.
+
 **Files:**
-- Modify: `lib/sound-registry.ts`, `lib/planner-sound-recipes.ts`, `components/planner-chrome/SoundControl.tsx`
-- Test: `lib/__tests__/planner-sound.test.ts` (update) and `lib/__tests__/planner-set-down-sound.test.ts` (new, using the `FakeContext` pattern of `planner-sound.test.ts`, extended with `createConvolver`, a two-channel `createBuffer` and `outputLatency`)
+- Modify `lib/sound-registry.ts`:
+  - `SOUND_REGISTRY` (:61–62, :73): retire the three ids and add `"planner-set-down"`;
+  - the header comment (:584–605): take #357's hunk verbatim, then add the set-down sentences;
+  - `PLANNER_SOUND_DEFAULT_MODE` (:610) becomes `"quiet"`, the same line as #357 and #178;
+  - export `PLANNER_LIMITER_WARMUP_SECONDS` (:639);
+  - delete the cascade constants (:640–642);
+  - `PlannerSoundPolicy.decide` (:716) takes its set and gap from `ruleFor(id)`;
+  - `PlannerGraph` (:740) and `buildPlannerGraph` (:764) gain the room bus (`room: GainNode`) and the current `wet`;
+  - `armPlannerSound` (:843) sets the audio session and notifies listeners that the context is armed;
+  - `playPlannerSound` (:913–952) loses the brush cascade;
+  - add the set-down path below it, and extend `__resetPlannerSoundForTests` (:979).
+- Modify `lib/planner-sound-recipes.ts`: `PLANNER_SOUND_IDS` (:17–31) and the recipes of `planner-set-table`, `planner-set-chair` and `planner-brush` are retired. `PLANNER_TOUCH_DB` (#416) is kept (R3, R4).
+- Modify `components/planner-chrome/SoundControl.tsx`: `SOUND_MODE_LINES.quiet` (:49) becomes "Pieces set down in the room, refusals, the evening, Present and Send."; `usePlannerSoundShortcut(onToggled?)` (:74).
+- Modify `tools/set-down-listening/page.ts` (@cdf0734d :136–144): import the warm-up and cross-fade constants from the registry.
+- Test: update `lib/__tests__/planner-sound.test.ts` and `components/planner-chrome/__tests__/sound-control.test.tsx` (its default-dependent cases, as #357 does); create `lib/__tests__/planner-set-down-sound.test.ts`. Its `FakeContext` follows `planner-sound.test.ts` and adds `createConvolver`, a two-channel `createBuffer`, recorded `AudioParam` ramps, `outputLatency` and `baseLatency`, `sampleRate`, and `resume`/`suspend` promises.
 
 **Interfaces:**
-- Consumes: `SetDownRender` and `Stereo` (Tasks 4 and 6); `AudioClock` (Task 12).
-- Produces:
-  - the registry id `"planner-set-down"` (label "Planner: a piece set down as itself, on its surface, in its room", `device-toggle`, `PLANNER_SOUND_STORAGE_KEY`);
-  - `interface ScheduledSetDown { readonly render: SetDownRender; readonly startAt: number; readonly roomSend: number }`;
-  - `playSetDowns(batch: readonly ScheduledSetDown[]): boolean`. The batch is one policy decision, recorded as `min(batch.length, 8)` plays.
-  - `setPlannerRoomTail(tail: Stereo, key: string): void`, a new ConvolverNode with `normalize = false`, cross-faded from the old one over 0.1 s, with the old one disconnected after 0.15 s;
-  - `plannerAudioClock(): AudioClock | null`;
-  - `PLANNER_SOUND_DEFAULT_MODE = "quiet"`;
-  - `usePlannerSoundShortcut(onToggled?: (mode: PlannerSoundMode) => void): void` in `SoundControl.tsx`.
+```ts
+export const PLANNER_LIMITER_WARMUP_SECONDS = 0.25;      // R63, now exported
+export const PLANNER_ROOM_CROSSFADE_SECONDS = 0.1;       // R62
+export const PLANNER_ROOM_RELEASE_SECONDS = 0.15;        // R62
+export interface SetDownVoice {
+  readonly render: Stereo & { readonly onsetSeconds: number };   // a unit-gain SetDownRender (R57)
+  readonly startAt: number;     // context seconds (setDownStartTime); held to ≥ the warm-up (R63)
+  readonly levelDb: number;     // the cascade's step; the registry adds SetDownFatigue (R26)
+  readonly directGain: number;  // directPath's gain, on the dry GainNode only (R57, R11)
+  readonly send: number;        // RoomState.send, unscaled by distance (R58)
+  readonly tap?: { readonly slug: string; readonly surface: string; readonly rtMid: number; readonly contactMs: number };
+}
+export interface SetDownBatch { play(voice: SetDownVoice): boolean }   // valid 1.5 s; false once Off or hidden
+export function beginSetDownBatch(count: number): SetDownBatch | null; // one policy decision, recorded as min(count, 8) plays
+export function setPlannerRoomTail(tail: Stereo, key: string): boolean; // false if not armed or tail.sampleRate ≠ the context's
+export function plannerAudioClock(): AudioClock | null;                // outputLatency, else baseLatency, else 0
+export function wakePlannerSound(): void;                              // resume if suspended; restart the 20 s timer; plays nothing
+export function subscribePlannerSoundArmed(listener: (sampleRate: number) => void): () => void;
+export function usePlannerSoundShortcut(onToggled?: (mode: PlannerSoundMode) => void): void; // SoundControl.tsx
+```
 
-**Changes:**
-- **Retired:** the `planner-set-table`, `planner-set-chair` and `planner-brush` recipes and ids, and their registry entries, with spec 9's brush role taken by `planCascade`.
-- **Policy:** `PlannerSoundPolicy.decide` takes its set and gap from a `ruleFor(id)` that also covers `"planner-set-down"`: set `"quiet"`, gap 45 ms.
-- **Arming** sets `navigator.audioSession.type = "ambient"` where it exists, typed through a narrow local interface (no `any`).
-- **Resuming:** a set-down that arrives while the context is suspended resumes it, and schedules against `currentTime` after the resume promise settles.
-- **The recorder tap:** with `?soundtap=1` in the URL, the registry keeps `window.__venSoundTap = { log: Array<{ at: number; slug: string; surface: string; rtMid: number }>, record(seconds: number): Promise<Blob> }`. It uses a MediaStreamAudioDestinationNode and a MediaRecorder on the master, and is created only on that flag. The type declaration lives in the registry.
-- **`SOUND_MODE_LINES.quiet`** becomes "Pieces set down in the room, refusals, the evening, Present and Send."
+**The graph:**
+- Each voice is a two-channel `AudioBufferSource`, then a level gain (`levelDb` plus fatigue).
+- The level gain feeds a dry gain (`directGain`) into the master, and a send gain (`send`) into the room bus.
+- The room bus feeds the current convolver (`normalize = false`), then its fade, then the master before the limiter.
+- A new tail fades in over 0.1 s while the old one fades out. The old one is disconnected after 0.15 s.
+- The palette's own hall convolver is unchanged.
 
-- [ ] **Step 0:** Run `grep -rn "planner-set-table\|planner-set-chair\|planner-brush" packages/web/src`. Today it finds only `planner-sound-recipes.ts`, `sound-registry.ts` and `planner-sound.test.ts`. Every hit is changed in this task.
+**Resuming.** A play while the context is suspended waits for `resume()` to settle and schedules against the resumed clock (Review Focus 1). `wakePlannerSound` at drop start (Task 14b) normally has it running by contact.
+
+**Arming** sets `navigator.audioSession.type = "ambient"` where it exists, typed through a narrow local interface.
+
+**The tap.** With `?soundtap=1` the registry keeps `window.__venSoundTap = { log, record(seconds): Promise<Blob> }`, using a `MediaStreamAudioDestinationNode` on the master and a `MediaRecorder`. The type is declared in the registry and the tap is created only on that flag.
+
+- [ ] **Step 0:** Run `git grep -n "planner-set-table\|planner-set-chair\|planner-brush" -- packages`. At master the hits are only `planner-sound-recipes.ts`, `sound-registry.ts` and `planner-sound.test.ts`. Every hit changes in this task.
 - [ ] **Step 1: Update `planner-sound.test.ts`:**
-  - the default is `"quiet"`;
-  - the set-table and set-chair recipe tests and the brush cascade test are removed;
+  - the default is `"quiet"` (#357's edit);
+  - the set-table, set-chair and brush cascade tests go;
+  - the "off" test plays `planner-refuse`;
   - the hero rule becomes: each of horizon, Send, Present and act peaks ≤ `SET_DOWN_TOUCH_DB + 6`.
-- [ ] **Step 2: Write `planner-set-down-sound.test.ts`:**
-  - nothing plays before arming or when Off;
-  - a batch of 3 starts 3 two-channel sources at their `startAt`, each connected to the dry bus and to the room send;
-  - a second batch 30 ms later is refused (gap);
-  - with the context suspended, a batch resumes it and still starts (Review Focus 1);
-  - `setPlannerRoomTail` makes a second convolver whose gain ramps from 0 to 1 over 0.1 s while the first ramps to 0;
-  - `plannerAudioClock()` reports `outputLatency`, falling back to `baseLatency`, or 0;
-  - arming sets `navigator.audioSession.type` to "ambient" when present;
-  - with `?soundtap=1`, `window.__venSoundTap.log` gains an entry per played set-down, and without the flag `__venSoundTap` is undefined.
-- [ ] **Step 3: Run** `vitest run src/lib/__tests__/planner-set-down-sound.test.ts src/lib/__tests__/planner-sound.test.ts src/lib/__tests__/sound-registry.test.ts`. Expected: FAIL.
-- [ ] **Step 4: Implement** in `sound-registry.ts`, `planner-sound-recipes.ts` and `SoundControl.tsx`.
-- [ ] **Step 5: Run** the three files. Expected: PASS, including the source scan.
-- [ ] **Step 6: Commit** with the message "Play set-downs through each room's own tail, on by default at Quiet (T-700, D1)".
 
-### Task 14: The engine in the scene
+  Update `sound-control.test.tsx`'s default-dependent cases as #357 does.
+- [ ] **Step 2: Write `planner-set-down-sound.test.ts`:**
+  - before arming, or when Off, `beginSetDownBatch` is null;
+  - a batch of 3 starts three two-channel sources at their `startAt`, each ≥ 0.25. Each runs level → dry (gain = directGain) → master, and level → send (gain = send) → room bus. The send gain never equals `send × directGain` unless directGain is 1;
+  - a second batch 30 ms later is refused (gap 45 ms);
+  - after a batch of 8, a single play within the second is refused ("too-many");
+  - with the tab hidden the batch is refused;
+  - Off mid-batch makes `play` return false;
+  - suspended: `wakePlannerSound` resumes once and restarts the 20 s timer, and a play while suspended starts after the resume settles, never before the resumed `currentTime`;
+  - `setPlannerRoomTail`:
+    - makes a second convolver with `normalize === false`;
+    - its fade ramps 0 → 1 over 0.1 s while the first ramps to 0, and the first is disconnected at 0.15 s (fake timers);
+    - a tail at 44.1 kHz on a 48 kHz context returns false and keeps the old one;
+  - `plannerAudioClock()` is null before arming and reports `outputLatency`, falling back to `baseLatency`, or 0, plus `sampleRate`;
+  - `subscribePlannerSoundArmed` hears the context's rate once;
+  - arming sets `navigator.audioSession.type` to "ambient" when present, and does nothing when absent;
+  - after 30 set-down plays in 5 minutes, the 31st voice's level gain is under −2.9 dB, and no two consecutive voices differ by more than 1 dB;
+  - with `?soundtap=1`, `__venSoundTap.log` gains one entry per played voice; without the flag `__venSoundTap` is undefined.
+- [ ] **Step 3: Run** `src/lib/__tests__/planner-set-down-sound.test.ts src/lib/__tests__/planner-sound.test.ts src/lib/__tests__/sound-registry.test.ts src/components/planner-chrome/__tests__/sound-control.test.tsx`. Expected: FAIL in the new cases.
+- [ ] **Step 4: Implement**, then rebuild the page and run its check, as in Task 12 Step 5.
+- [ ] **Step 5: Run** the four files. Expected: PASS, including the registry's source scan (`sound-registry.test.ts:116`).
+- [ ] **Step 6: Commit** with the message "Play set-downs through each room's own tail, on by default at Quiet (D1, T-700)". If #357 has landed, drop the default hunks and say so in the body.
+
+### Gate (section 5): Tasks 14a and 14b wait for the phone timings (ruling R79)
+
+### Task 14a: The set-down Worker and its client
+
+This implements R48 (render at the drop in a Worker; heavy pieces rendered ahead) and R15 (the tail in the Worker, idle slices as the fallback).
 
 **Files:**
-- Create: `components/editor/SetDownSound.tsx`, `components/editor/PlannerSoundReceipt.tsx`
-- Modify: `components/editor/PlannerScene.tsx` (mount `<SetDownSound />` beside `<FurnitureMotion />` at line 698, and `<PlannerSoundReceipt />` in the DOM wrapper around the `<Canvas>` at line 606)
-- Test: `components/editor/__tests__/SetDownSound.test.tsx`
+- Create in `lib/set-down/`:
+  - `worker-protocol.ts`: the job and answer types, and `isSetDownJob`, a runtime guard;
+  - `worker-jobs.ts`: the pure handler `runSetDownJob(job): { answer; transfer: ArrayBuffer[] }`;
+  - `set-down.worker.ts`: a thin `onmessage`, as `crafted-texture.worker.ts:18–37`;
+  - `renderer.ts`: the main-thread client, as `crafted-textures.ts:66–151`.
+- Modify `vite.config.ts:112–127`: add the worker to the dev warm-up list.
+- Test: create `lib/set-down/__tests__/worker-jobs.test.ts` and `lib/set-down/__tests__/renderer.test.ts` (a fake Worker; happy-dom has none).
+
+**Interfaces:**
+```ts
+type SetDownJob =
+  | { readonly kind: "render"; readonly id: number; readonly key: string; readonly input: SetDownInput }
+  | { readonly kind: "tail"; readonly id: number; readonly key: string; readonly rt: BandValues;
+      readonly sampleRate: number; readonly seed: number; readonly onsetSeconds: number };
+type SetDownAnswer =
+  | { readonly kind: "render"; readonly id: number; readonly ok: true; readonly left: ArrayBuffer; readonly right: ArrayBuffer;
+      readonly sampleRate: number; readonly peakDb: number; readonly onsetSeconds: number; readonly limitDb: number; readonly workMs: number }
+  | { readonly kind: "tail"; readonly id: number; readonly ok: true; readonly left: ArrayBuffer; readonly right: ArrayBuffer;
+      readonly sampleRate: number; readonly workMs: number }
+  | { readonly kind: "render" | "tail"; readonly id: number; readonly ok: false; readonly error: string };
+export interface SetDownRenderer {
+  render(input: SetDownInput, priority: "exact" | "ahead", key: string): Promise<SetDownRender & { readonly workMs: number }>;
+  tail(rt: BandValues, options: { sampleRate: number; seed: number; onsetSeconds: number }, key: string): Promise<Stereo>; // latest wins
+  cancel(matches: (key: string) => boolean): void;   // drops queued jobs, never the running one
+  dispose(): void;
+}
+export function createSetDownRenderer(options?: { readonly createWorker?: () => WorkerLike }): SetDownRenderer | null;
+```
+
+**Behaviour:**
+- One job runs at a time. Exact renders go before queued "ahead" renders and tails, so an exact job never waits behind more than the job already running.
+- `createSetDownRenderer` returns null where module Workers are refused (Q9, ruling R83). With no answer within 10 s, or on a Worker error, every pending promise rejects and the renderer reports itself broken.
+- The tail's fallback, where no Worker runs, is `tailSlices` on idle callbacks, taking steps while `deadline.timeRemaining() > 1` (the Task 4 deferred note; R72's setup step).
+- Each answer carries the Worker's `workMs` for Task 16 and the device day.
+
+- [ ] **Step 1: Write the failing tests:**
+  - `worker-jobs.test.ts`:
+    - a render job for a Chiavari on the Grand Hall's oak, with its 18 reflections, seed 7 at 48 kHz, returns channels bytewise equal to `renderSetDown(input)`, and both buffers are in `transfer`;
+    - a tail job equals `renderRoomTail` bytewise;
+    - an unknown kind, or a NaN `sampleRate`, answers `ok: false` without throwing.
+  - `renderer.test.ts`:
+    - an exact job is posted before queued ahead jobs, with at most one in flight;
+    - `cancel` drops queued jobs but not the running one;
+    - a newer tail replaces a queued older one;
+    - answers resolve their own promises as `Float32Array` views with no copy;
+    - an `onerror` rejects everything, and later calls reject at once;
+    - a throwing `createWorker` returns null;
+    - no answer within 10 s (fake timers) breaks it.
+- [ ] **Step 2: Run** both. Expected: FAIL. **Step 3: Implement.** **Step 4: Run.** Expected: PASS, and the registry's scan still passes (no Web Audio names in these files).
+- [ ] **Step 5: Commit** with the message "Render set-downs and room tails in a Worker, exact renders first (T-700)".
+
+### Task 14b: The engine in the scene
+
+**Files:**
+- Create:
+  - `components/editor/SetDownSound.tsx`, an R3F shell (`useFrame` for the frame delta, `useThree` for the camera);
+  - `components/editor/set-down-driver.ts`, the driver, `import()`ed per Q4;
+  - `components/editor/PlannerSoundReceipt.tsx` (DOM).
+- Modify `components/editor/PlannerScene.tsx`:
+  - add the imports beside :50;
+  - add `<SetDownSound />` straight after `<FurnitureMotion />` at :721, so its frame runs after the motion's;
+  - add `<PlannerSoundReceipt />` after `</Canvas>` at :760.
+- Test: create `components/editor/__tests__/SetDownSound.test.tsx` and `components/editor/__tests__/PlannerSoundReceipt.test.tsx`; add a block to `__tests__/bundle-splitting.test.ts` if Q4 is ruled lazy.
 
 **Interfaces:**
 - Consumes:
-  - `subscribeFurniturePlaced` (the placement store);
-  - `subscribeFurnitureTouchdown` and `subscribeFurnitureReleased` (Task 11);
-  - `findSupportingItem` (Task 10);
-  - Tasks 3–6 and 12;
-  - `playSetDowns`, `setPlannerRoomTail`, `plannerAudioClock`, `usePlannerSoundArming` and `usePlannerSoundShortcut` (Task 13);
-  - `useThree` for the camera and the frame clock; `useEditorStore` for `space`; `prefersReducedMotion`.
-- Produces: `SetDownSound(): null` and `PlannerSoundReceipt(): ReactElement | null`.
+  - `subscribeFurnitureLandings` and `furnitureLandingListenerCount` (Task 11);
+  - Task 12's modules;
+  - `beginSetDownBatch`, `setPlannerRoomTail`, `plannerAudioClock`, `wakePlannerSound` and `subscribePlannerSoundArmed` (Task 13);
+  - `createSetDownRenderer` (Task 14a);
+  - `useEditorStore` (`space`), `useCockpitStore` (`walkMode`), `usePlacementStore`, `resolveRoomGeometry`, `roomAcousticsFor` and `roomState`.
+- Produces `SetDownSound(): null` and `PlannerSoundReceipt(): ReactElement | null`. The receipt mounts `usePlannerSoundArming()` and `usePlannerSoundShortcut(onToggled)` for every chrome.
 
 **Behaviour:**
-- **Announced ids** wait for their touchdowns. Under reduced motion, or after a 400 ms timeout, they play at once.
-- **Touchdowns** in the same frame form one batch. A batch of 4 or more uses `planCascade`.
-- **Released ids** play `kind: "settle"`.
-- **Rendering is in a Worker, never in `SetDownSound`** (ruling R48; spec section 9). As each drop starts (an announced placement, or a carried piece let go), `SetDownSound` posts the render's input to a set-down Worker, which runs `renderSetDown` and transfers the Float32 channels back. Nothing renders on the main thread.
-  - At the contact frame the exact render plays if it is ready, or if it arrives within the 20 ms heard window after contact.
-  - Otherwise a variant rendered ahead plays. When a heavy piece (stage, AV, lighting) is picked up, the Worker renders on idle its variants for the surfaces under it: a few seeds per piece, surface and room state, cached and dropped when the room state's key changes.
-  - Under reduced motion there is no drop to render during: the render is posted at the announcement, and this task settles whether the sound waits for it or plays a cached variant at once.
-- **Each voice's input**, gathered on the main thread and posted to the Worker:
-  - `bodyFor(slug, item.scale)`;
-  - each foot's world position (rotate by `rotationY`, add `x`, `z`) → `findSupportingItem` → `surfaceKindForSupport`;
-  - `earFor` from the camera, with `walking` from `useEditorStore` walk mode;
-  - `earlyReflections` against `resolveRoomGeometry(space)`, the room as drawn;
-  - `startAt` = `setDownStartTime(plannerAudioClock(), presentDelay)` at the contact frame, where `presentDelay` is one frame interval (`state.clock`'s last delta, capped at 1/30 s).
-- **The Worker's cost** is measured in this task (render times and garbage collection, on the desktop and a phone). Scratch buffers are reused only if the measurement shows a cost.
-- **The room tail:**
-  - on placement-store changes, debounced 250 ms: compute `roomState(roomAcousticsFor(space), placedItems)`;
-  - when its `key` changes, drive `tailSlices` with `requestIdleCallback` (or `setTimeout(…, 0)` where missing), one slice per callback, then call `setPlannerRoomTail`;
-  - the room send for each voice is `reverberantGain × directPath(…).gain` relative to the direct sound;
-  - on space change, compute the tail at once; on unmount, cancel every pending slice and subscription.
-- **The receipt:** Shift M (through `usePlannerSoundShortcut(onToggled)`) shows "Sound off · Shift M" or "Sound on · Shift M" for 2.4 s, in a `role="status"` `aria-live="polite"` capsule styled like `LayoutLiveLayer`'s `layout-live-capsule`. It has no animation under reduced motion.
+- **Batches.** `dropStarted` (or `landedInPlace`) calls made in one task are flushed by `queueMicrotask` as one batch. A placement's ids, or a release's, arrive synchronously.
+  - Up to 3 pieces are all voiced.
+  - 4 or more go through `planCascade`, with `landsAfterSeconds = delaySeconds − the batch's least`.
+- **At drop start, for each voice:**
+  - `landingRender`;
+  - `earFor(camera, source, walkMode)`;
+  - `voiceInput`;
+  - `renderer.render(input, "exact", key)`;
+  - `wakePlannerSound()`.
+- **At each voiced id's `touchedDown`:**
+  - The batch's first contact calls `beginSetDownBatch(voiceCount)`.
+  - `startAt = setDownStartTime(clock, presentDelayFor(lastDelta), onsetSeconds) + max(0, offset − elapsed since the batch's first contact)`.
+  - The render played is the first of:
+    1. the exact render, if it is ready;
+    2. a heavy piece's cached variant for (slug, scale, surfacesKey, room key, rate);
+    3. the exact render, if it arrives within `HEARD_WINDOW_S`.
+  - Otherwise the voice is skipped and logged as a miss (Q6, ruling R80).
+- **Supports at contact.** They are re-read at contact for voiced ids. A changed `surfacesKey` takes a matching variant if there is one, or otherwise the drop-start render, logged as stale (Review Focus 5).
+- **Reduced motion.** A `landedInPlace` voice plays when its render answers, at `currentTime` (Q10, ruling R84).
+- **`pickedUp(id, true)`.** The Worker renders "ahead" variants: seeds 1–3, for the surfaces under the piece now and for the room's floor. They are asked again when the carried piece has moved more than 1 m or its supports change, checked at most every 250 ms. The cache is dropped when the room key changes.
+- **The room.**
+  - Placement-store changes, debounced 250 ms, give `roomState(roomAcousticsFor(space), placedItems)`.
+  - A new key, or a new context rate from `subscribePlannerSoundArmed`, sends a tail job to the Worker (latest wins), then `setPlannerRoomTail`.
+  - A space change computes at once and cancels pending jobs.
+  - A voice's `send` is `RoomState.send` (R58), never scaled by distance (R11).
+- **Unmount** unsubscribes everything, cancels the debounce and the idle slices, and disposes the renderer.
+- **Never on the main thread.** Nothing in this component or the driver calls `renderSetDown` or `renderRoomTail`.
 
-- [ ] **Step 1: Write the failing tests** in `SetDownSound.test.tsx`. Mount `SetDownSound` beside `FurnitureMotion` with `mountInStubRoot` (`components/__tests__/stub-r3f-root.tsx`), stepping frames with `advance` from `@react-three/fiber`, as `FurnitureMotion.instanced.test.tsx` does. Use registry stand-ins via `vi.mock("../../../lib/sound-registry.js")`, and check:
-  - `loadConfiguration` and undo (store writes without an announce) play nothing;
-  - a remote overlay write plays nothing;
-  - a catalogue placement posts its render to the Worker as its drop starts and plays one set-down after its touchdown frame, and nothing calls `renderSetDown` on the main thread;
-  - a render that is not back within 20 ms of contact plays a variant rendered ahead, never late;
-  - under reduced motion it plays at once;
-  - Lay out with 80 chairs and 10 tables calls `playSetDowns` once with ≤ 8 voices (Review Focus 2: ten placements in one second give ≤ 8 admitted plays and no queue growth);
-  - a chair over a deck renders with a `stage-deck` surface;
-  - switching `space` from grand-hall to saloon makes the next tail the Saloon's and cancels the pending Grand Hall slices (Review Focus 3);
-  - unmounting leaves no subscription: the listener counts return to their values before mount;
-  - Shift M shows the receipt with role status.
-- [ ] **Step 2: Run** `vitest run src/components/editor/__tests__/SetDownSound.test.tsx`. Expected: FAIL.
-- [ ] **Step 3: Implement** `SetDownSound.tsx` and `PlannerSoundReceipt.tsx`, and mount them in `PlannerScene.tsx`.
-- [ ] **Step 4: Run** it and `vitest run src/components/editor/__tests__/PlannerScene*.test.tsx`. Expected: PASS.
-- [ ] **Step 5: Commit** with the message "Set every piece down in its room, as it lands (T-700)".
+**The receipt.**
+- Shift M shows "Sound off · Shift M" or "Sound on · Shift M" for 2.4 s.
+- It is a `role="status"` `aria-live="polite"` capsule with the `layout-live-capsule` class (`LayoutLiveLayer.css:60`).
+- It has no animation under reduced motion.
+
+- [ ] **Step 1: Write the failing tests** in `SetDownSound.test.tsx`. Mount it beside `FurnitureMotion` with `mountInStubRoot`, step with `advance`, mock the registry with `vi.mock("../../../lib/sound-registry.js")`, and inject a fake renderer through a test seam:
+  - `loadConfiguration`, undo and a plain `setState` post nothing and play nothing;
+  - a `placeItem` posts one exact render at the announcement and plays one voice on its contact frame (frame 5);
+  - `renderSetDown` is never called on the main thread (a module spy);
+  - `startAt` at contact equals `setDownStartTime` for `outputLatency` 0.005 and 0.06;
+  - a render answered 10 ms after contact plays at once, and one answered 30 ms after plays nothing for a chair; for a staging deck with a variant cached since pickup, the variant plays;
+  - under reduced motion, `placeItem` plays nothing until the render answers, then one voice;
+  - a drag and release of a chair plays a "settle" render at its contact (frame 4), and a release after a resting-hand set-down plays nothing more;
+  - Lay out (`autoArrangeBanquet`) with 80 chairs and 8 rounds posts ≤ 8 renders and makes one `beginSetDownBatch(n ≤ 8)`, with no voice before its piece's contact and ≤ 3 in any 250 ms;
+  - ten `placeItem` calls within a second give ≤ 8 admitted plays and a queue that never exceeds 8 (Review Focus 2);
+  - a chair placed over a deck renders with `stage-deck` surfaces;
+  - switching `space` from grand-hall to saloon makes the next tail job the Saloon's and cancels the Grand Hall's (Review Focus 3);
+  - an added round changes the key after 250 ms and calls `setPlannerRoomTail` once;
+  - an imported piece (unknown id, `scale: 1.7`) renders finite and plays (Review Focus 4);
+  - unmounting returns `furnitureLandingListenerCount()` and the store's listener count to their values before mount, and disposes the renderer.
+
+  In `PlannerSoundReceipt.test.tsx`:
+  - Shift M shows a status "Sound off · Shift M" that is gone after 2.4 s, then "Sound on · Shift M";
+  - there is no animation class under reduced motion;
+  - the first `pointerdown` arms.
+- [ ] **Step 2: Run** both, plus `src/components/editor/__tests__/PlannerScene.test.tsx src/components/editor/__tests__/FurnitureMotion.instanced.test.tsx`. Expected: FAIL in the new files.
+- [ ] **Step 3: Implement**, and mount in `PlannerScene.tsx`. **Step 4: Run.** Expected: PASS.
+- [ ] **Step 5:** Measure on the desktop: each voice's `workMs` and the main thread's frame time over 20 placements, from a quick browser run with `?soundtap=1`. Measure the Worker's garbage collection from a Chrome performance trace of 20 placements. Reuse scratch buffers only if the trace shows a cost (R48). Record the figures for the PR body.
+- [ ] **Step 6: Commit** with the message "Set every piece down in its room, as it lands (T-700)".
 
 ### Task 15: Sound in the menus, and no button on screen
 
+This task does not wait on the gate.
+
 **Files:**
 - Modify:
-  - `components/editor/cockpit/CockpitTopBar.tsx`: lines 170–200, the Layers popover;
-  - `components/editor/VerticalToolbox.tsx`: lines 1388–1414, the mobile More sheet;
-  - `components/planner-chrome/SlateMenu.tsx`: after the last section.
-- Test: the existing tests of those three, updated, plus `components/editor/__tests__/sound-menus.test.tsx` (new)
+  - `components/editor/cockpit/ReferenceSceneSettings.tsx` (:20–58): a `<details>` titled "Sound" holding `<SoundSettings />`, outside the preview lock at :28, because sound is a device setting. This is today's wide-desktop menu; CockpitTopBar is not mounted (row 17);
+  - `components/editor/VerticalToolbox.tsx`: in the mobile More sheet, after the Tools grid (:1437), a "Sound" title (`mobileSheetTitleStyle`, :1249) and `<SoundSettings />`;
+  - `components/planner-chrome/SlateMenu.tsx`, after :211: a `pc-slate-menu__section` with `role="group"`, `aria-label="Sound"`, a `pc-slate-menu__head` "Sound" and `<SoundSettings />`;
+  - if #428 has landed: `components/planner-hud/HudSheets.tsx` ToolsSheet, the row its comment reserves.
+- Test: update `cockpit/__tests__/ReferenceSceneSettings.test.tsx`, `editor/__tests__/MobilePlannerChrome.test.tsx` and `planner-chrome/__tests__/slate-menu.test.tsx`; create `components/editor/__tests__/sound-menus.test.tsx`.
 
-**Interfaces:**
-- Consumes: `SoundSettings` (`components/planner-chrome/SoundControl.tsx`).
-
-**Changes:**
-- **The top bar:**
-  - the Layers button's `aria-label` and the menu's `aria-label` become "View and sound";
-  - the head "Planning overlays" stays over the overlays;
-  - a new head "Sound" sits over `<SoundSettings />`, below the overlay note.
-- **The More sheet:** a "Sound" title (`mobileSheetTitleStyle`) plus `<SoundSettings />` after Tools.
-- **The slate menu:** a `pc-slate-menu__section` with `role="group"`, `aria-label="Sound"`, a `pc-caps` head "Sound", and `<SoundSettings />`.
-- **Nothing else.** No speaker is mounted anywhere outside the `/dev/planner-chrome` fixture.
+**Interfaces:** consumes `SoundSettings` (`SoundControl.tsx:85`). Nothing else is mounted. The speaker stays on the fixture page alone.
 
 - [ ] **Step 1: Write the failing tests** in `sound-menus.test.tsx`:
-  - opening the top bar's menu shows a "Sound" heading and the Off, Quiet and Full radios, with Quiet checked by default;
+  - in the desktop More menu (`compactDesktop`), opening "More planner tools" and then "Sound" shows the radiogroup "Sound" with Off, Quiet and Full, Quiet checked by default;
   - choosing Off writes `venviewer.planner-sound` = "off";
-  - the More sheet and the slate menu each show the same control;
-  - no element in the rendered planner, `App`, has an accessible name matching /^Sound: /, the speaker's own label.
-- [ ] **Step 2: Run** `vitest run src/components/editor/__tests__/sound-menus.test.tsx`. Expected: FAIL.
-- [ ] **Step 3: Implement** the three menu changes, and update the existing tests that assert the "Planning overlays" accessible name.
-- [ ] **Step 4: Run** it and the three components' existing test files. Expected: PASS.
-- [ ] **Step 5: Commit** with the message "Keep Sound in the planner's menus, never as a button on screen (T-700)".
+  - the mobile More sheet and the slate menu each show the same control;
+  - rendering `PlannerCockpit` (v1, desktop and phone) and `PlannerChromeV2` gives no element whose accessible name matches `/^Sound: /`.
+- [ ] **Step 2: Run** it. Expected: FAIL. **Step 3: Implement**, and update the three existing tests. **Step 4: Run** it with the three existing files. Expected: PASS.
+- [ ] **Step 5:** Note for Task 16: `SoundSettings` carries v2's pc-* styles into v1's menus, so check its look in the screenshots and adjust only the row's container if it clashes.
+- [ ] **Step 6: Commit** with the message "Keep Sound in the planner's menus, never as a button on screen (T-700)".
 
 ### Task 16: Browser evidence, then open PR 3
 
-- [ ] **Step 1:** Write `D:/claude/furniture-sound-20261027/live/sound-live.mjs` (outside the repo), adapted from `D:/claude/furniture-rebuild-20261026/live/batch4-live.mjs`. It keeps that script's safety:
-  - every non-GET request is aborted;
-  - the guest draft (POST `/public/configurations`) and its reads are answered locally, so nothing is written anywhere.
-
-  It takes a base URL, opens `<base>/plan/<stub>?soundtap=1` in Chromium, clicks once to arm the sound, then places pieces through the real UI, driving the catalogue and the floor as `packages/web/e2e/editor.spec.ts` and `editor-interactions.spec.ts` do:
-  1. a Chiavari;
-  2. a 6 ft round with its chairs;
-  3. Lay out to 80.
-
-  It reads `__venSoundTap.log` after each step, records 4 s around the first placement with `__venSoundTap.record(4)`, writes the WAV and a JSON report under `D:/claude/furniture-sound-20261027/evidence/<phase>/`, and takes screenshots of the three menus.
-- [ ] **Step 2:** Run `wait-memory.sh 8704 6656 4`. When it allows, start the worktree's Vite dev server: add an entry for E:/claude/furniture-sound on port 5262 to the app's launch registry (the release-path memory's "Dev servers for worktrees") and use `preview_start`, then close its pane tab. Run `node sound-live.mjs http://localhost:5262 local`.
+- [ ] **Step 1:** Write `sound-live.mjs`, a script kept outside the repo, from the furniture rebuild's batch 4 live script (also kept outside the repo).
+  - **Its safety:** every non-GET request is aborted, and the guest draft (POST `/public/configurations`) and its reads are answered locally.
+  - **The browser:** Playwright with `channel: "chrome"`, headed. The browser pane draws no frames off screen, and the planner's demand loop needs frames for touchdowns.
+  - It opens `<base>/plan/<stub>?soundtap=1` and clicks once to arm. Through the real UI it then:
+    1. places a Chiavari (the toolbox's Add, the catalogue, the floor);
+    2. places a 6 ft round with its chairs (ChairCountDialog);
+    3. presses "Lay out" (`PlannerCommandDeck.tsx:406`);
+    4. drags and releases a chair;
+    5. places one piece under `emulateMedia({ reducedMotion: "reduce" })`.
+  - After each step it reads `__venSoundTap.log` and records 4 s around the first placement.
+  - It writes the WAV and a JSON report to `<evidence>/<phase>/`, where `<evidence>` is a local folder outside the repo.
+  - It takes screenshots of the receipt and the three menus: the desktop More menu, the mobile More sheet at 375 × 812, and the `?chrome=v2` slate menu.
+  - For Q7 it renders a clothed and a bare round as WAVs for Blake.
+- [ ] **Step 2:** Run the house's memory wait, a script kept outside the repo, as `wait-memory.sh 8704 6656 4`. When it allows:
+  - start the worktree's Vite dev server on port 5262 through `preview_start` (the launch entry), then close its pane tab;
+  - run `node sound-live.mjs http://localhost:5262 local` under the house's browser hold, a script kept outside the repo.
 
   Expected:
-  - the log shows 1 entry, then the group's batch, then ≤ 8 entries for Lay out, with `rtMid` falling after each;
-  - the WAV's onsets, peak and T20, checked by a small Node script importing `analysis.ts`'s functions, match the engine's own renders within 2 dB and 10 %.
-- [ ] **Step 3:** Run `pnpm --filter @omnitwin/web exec vitest run src/lib/set-down src/lib/__tests__ src/components/editor/__tests__/SetDownSound.test.tsx src/components/editor/__tests__/sound-menus.test.tsx`, then typecheck and lint. Expected: clean.
-- [ ] **Step 4:** Push. Open PR "Furniture set-down sound, 3 of 3: in the planner, on at Quiet (T-700)". The body gives the evidence and Blake's ear-test result. If the ear test has not said "Ship them", the PR holds set-downs behind `?setdowns=1` until he does, following his flags rule.
+  - the log shows 1 entry; then the set's voices (≤ 3 within 250 ms, each at or after its contact); then ≤ 8 for Lay out, with `rtMid` falling after each;
+  - for every entry, `startAt + onset + outputLatency − contactMs` lies in [0, 20 ms] where the latency allows for an on-time voice, and in (20, 45] ms for a voice the tap logs as late (ruling R80);
+  - the WAV's onsets, peak and T20, read by a small Node script importing `analysis.ts`, match the engine's own renders within 2 dB and 10 %;
+  - the reduced-motion entry plays after its render, with no contact.
+- [ ] **Step 3:** Run all of these through `$HOLD`:
+  - the set-down folder, and `src/lib/__tests__/{planner-sound,planner-set-down-sound,sound-registry,furniture-motion,furniture-motion-landings,placement-support}.test.ts`, plus the component tests named in Tasks 11, 14b and 15;
+  - `tsc --noEmit` (delete `packages/web/tsconfig.tsbuildinfo` first);
+  - eslint over the changed files;
+  - `pnpm --filter @omnitwin/web build`, then the gzip sizes of the set-down chunks (main and Worker) against the 25 KB budget.
+
+  Expected: clean, and the sizes reported.
+- [ ] **Step 4:** Push. Open "Furniture set-down sound, 3 of 3: in the planner, on at Quiet (T-700)". The body gives:
+  - the evidence;
+  - the gate's phone timings (or, under Q5, which tasks waited);
+  - Blake's ear test of 14 Nov, in which he judged the set-downs right and none of them off, so no `?setdowns=1` flag is needed;
+  - the rulings on Q1–Q10;
+  - the refusal sound going live (Q8, ruling R82);
+  - what is not yet measured on a phone (the device day, Task 17).
+
+---
+
+### Known limits carried into PR 3
+
+- **The first set-down after arming** waits for the limiter's 0.25 s warm-up (R63). A click that arms and places at once may hear its first set-down up to about 0.1 s late. Later plays are on time.
+- **The tail** is made at arming, at the context's rate. On a slow phone the very first set-down may play before its tail is in, and so dry. This is to be measured on the device day.
+- **A heavy piece's variants** carry their reflections and pan from where the piece was picked up, and are refreshed every metre of carry. They are a fallback by design (R48).
+
 
 ## PR 4: live, checked and written down
 
