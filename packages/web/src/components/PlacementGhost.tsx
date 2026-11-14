@@ -8,7 +8,7 @@ const _ahead = new Vector3();
 const _ndc = new Vector2();
 
 import { useCatalogueStore } from "../stores/catalogue-store.js";
-import { usePlacementStore } from "../stores/placement-store.js";
+import { chairBrushOnRoomFloor, usePlacementStore } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useTouchGestureStore } from "../stores/touch-gesture-store.js";
 import { getCatalogueItem, type CatalogueItem } from "../lib/catalogue.js";
@@ -79,6 +79,8 @@ const WARM_SCALE = 1e-4;
 const ARBITRATED_CLICK_MS = 700;
 /** A click this soon after a brush or a drawn floor is let go is that release's own click, ms. */
 const RELEASE_CLICK_MS = 300;
+/** A brush that sets no chair: one list, so drawing it again is no change. */
+const NO_CHAIRS: readonly ChairBrushPoint[] = [];
 
 /** A pointer to follow on the next frame: a move, or the finger the touch arbiter raised the ghost above. */
 interface PendingPointer {
@@ -121,7 +123,8 @@ export function PlacementGhost(): React.ReactElement | null {
     && (tableClothStyleForCatalogueItem(selectedItemId) !== null || tableSettingForCatalogueItem(selectedItemId) !== null);
   // A dressing's preview snaps to the table under it, so it follows in React.
   const dressingPosition = usePlacementStore((s) => (dressing ? s.ghostPosition : null));
-  const [chairBrushPreview, setChairBrushPreview] = useState<readonly ChairBrushPoint[]>([]);
+  /** The chairs a brush being dragged will set; null while no brush is being dragged. */
+  const [chairBrushPreview, setChairBrushPreview] = useState<readonly ChairBrushPoint[] | null>(null);
   const chairBrushStartRef = useRef<{ readonly x: number; readonly z: number } | null>(null);
   const chairBrushEndRef = useRef<{ readonly x: number; readonly z: number } | null>(null);
   const chairBrushActiveRef = useRef(false);
@@ -234,7 +237,7 @@ export function PlacementGhost(): React.ReactElement | null {
       chairBrushStartRef.current = null;
       chairBrushEndRef.current = null;
       chairBrushActiveRef.current = false;
-      setChairBrushPreview([]);
+      setChairBrushPreview(null);
     }
 
     function selectedChairItem(itemId: string | null): CatalogueItem | null {
@@ -250,20 +253,28 @@ export function PlacementGhost(): React.ReactElement | null {
         chairBrushStartRef.current = hit;
       }
       const start = chairBrushStartRef.current;
-      const summary = computeChairBrushSummary(
-        item,
-        start.x,
-        start.z,
-        hit.x,
-        hit.z,
-        usePlacementStore.getState().ghostRotation,
-      );
+      const rotation = usePlacementStore.getState().ghostRotation;
+      // On a room's own floor the preview is the chairs the release will set, by the store's own answer
+      // (chairBrushOnRoomFloor): the brush's ends on the grid while it is on, no chair through a wall, and
+      // none at all once the drag is back to a single chair.
+      const onFloor = chairBrushOnRoomFloor(item, start.x, start.z, hit.x, hit.z, rotation);
+      if (onFloor !== null) {
+        if (onFloor.brushing) {
+          chairBrushActiveRef.current = true;
+          chairBrushEndRef.current = hit;
+          setChairBrushPreview(onFloor.chairs);
+        } else {
+          setChairBrushPreview(chairBrushActiveRef.current ? NO_CHAIRS : null);
+        }
+        return;
+      }
+      const summary = computeChairBrushSummary(item, start.x, start.z, hit.x, hit.z, rotation);
       if (summary.points.length > 1) {
         chairBrushActiveRef.current = true;
         chairBrushEndRef.current = hit;
         setChairBrushPreview(summary.points);
       } else if (!chairBrushActiveRef.current) {
-        setChairBrushPreview([]);
+        setChairBrushPreview(null);
       }
     }
 
@@ -338,7 +349,7 @@ export function PlacementGhost(): React.ReactElement | null {
       chairBrushStartRef.current = hit;
       chairBrushEndRef.current = hit;
       chairBrushActiveRef.current = false;
-      setChairBrushPreview([]);
+      setChairBrushPreview(null);
     }
 
     function onPointerMove(event: PointerEvent): void {
@@ -637,7 +648,9 @@ export function PlacementGhost(): React.ReactElement | null {
   }
 
   // --- The truthful ghost: the card's whole set, judged with every body (Q-05) ---
-  const brushing = catalogueItem.category === "chair" && chairBrushPreview.length > 1;
+  // A brush being dragged draws its own chairs in the ghost's place: more than one in a room with no floor
+  // of its own, and on a room's own floor however many of them stand on it, one or none included.
+  const brushing = catalogueItem.category === "chair" && chairBrushPreview !== null;
   // A card set down as a card shows that set, whichever chrome armed it, and behind truthfulGhost alone a
   // piece shows itself as the old way sets it down (setup-cards ghostSetInHand), judged as the commit is.
   const handSet = cardParams !== null && !brushing ? ghostSetInHand(cardParams) : null;
@@ -652,7 +665,7 @@ export function PlacementGhost(): React.ReactElement | null {
     !atCapReason &&
     ghostInvalidReason !== "Unknown catalogue item";
 
-  if (catalogueItem.category === "chair" && chairBrushPreview.length > 1) {
+  if (brushing) {
     const floorY = usePlacementStore.getState().ghostPosition?.[1] ?? 0;
     return (
       <group name="chair-brush-preview">

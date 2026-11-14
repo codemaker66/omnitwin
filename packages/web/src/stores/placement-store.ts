@@ -15,7 +15,7 @@ import {
 } from "../lib/placement.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { DANCE_FLOOR_PANELS, cardIsWholeSet, placesAsCard, resizeDanceFloor, type ResizeAnchor } from "../lib/setup-cards.js";
-import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
+import { getCatalogueItem, isAtMaxCount, type CatalogueItem } from "../lib/catalogue.js";
 import { createTableGroup, diningTablesAmong, rearrangeTableGroup, tableGroupChairFootprint, ungroupedKeepingTables } from "../lib/table-group.js";
 import {
   FILL_AISLE_RULE,
@@ -38,7 +38,7 @@ import { useRoomDimensionsStore } from "./room-dimensions-store.js";
 import { useCatalogueStore } from "./catalogue-store.js";
 import { createGhostWorld, judgeGhost, refusalChip } from "../lib/ghost-truth.js";
 import { snapToFurnitureAlignment } from "../lib/snap-guide.js";
-import { computeChairBrushSummary } from "../lib/chair-brush.js";
+import { chairBrushOnFloor, computeChairBrushSummary, type ChairBrushOnFloor, type ChairBrushPoint } from "../lib/chair-brush.js";
 import {
   canApplyTableLinenToItem,
   isDiningTableItem,
@@ -99,7 +99,11 @@ export interface PlacementState {
   /** Snap-to-grid enabled (default true). */
   readonly snapEnabled: boolean;
 
-  /** Place the currently selected catalogue item at the ghost position. */
+  /**
+   * Place the currently selected catalogue item at the ghost position. In a centred rectangle the
+   * spot is taken through the grid and the snaps again; on a room's own floor (lib/room-floor) the
+   * piece stands exactly where it is handed.
+   */
   readonly placeItem: (catalogueItemId: string, x: number, z: number, rotationY?: number) => void;
   /** Place a row or block of chairs from a drag brush. Returns newly placed IDs. */
   readonly placeChairBrush: (
@@ -142,8 +146,8 @@ export interface PlacementState {
   readonly toggleSnap: () => void;
   /** Clear all placed items. */
   readonly clearAll: () => void;
-  /** Place a table with auto-arranged chairs as a group. */
-  readonly placeTableGroup: (catalogueItemId: string, x: number, z: number, rotationY: number, chairCount: number) => void;
+  /** Place a table with auto-arranged chairs as a group, the table where placeItem would set it. */
+  readonly placeTableGroup:(catalogueItemId: string, x: number, z: number, rotationY: number, chairCount: number) => void;
   /**
    * Sets a card's stamped set down exactly as it stands (the ghost's
    * resolved pose; no snapping), as one undo step: every piece settled on
@@ -335,6 +339,48 @@ function numberEdited(items: readonly PlacedItem[], editedIds: ReadonlySet<strin
   return items.map((item) => byId.get(item.id) ?? item);
 }
 
+/**
+ * Whether placeItem and placeTableGroup set a piece down exactly where they are handed it.
+ *
+ * Both are handed the spot its ghost stood on (lib/place-in-hand, lib/chair-question), which
+ * updateGhost has already taken through the grid, the platform edges, the walls and the furniture
+ * lines. In a room that is the centred rectangle of its size they take it through those steps a
+ * second time, as they always have. On an empty floor there the second pass gives the same answer.
+ * With furniture already down it does not always: in the Grand Hall with 72 chairs placed, the second
+ * review's probe had a chair set up to 1.16 m off its valid ghost, and a trestle that had been pushed
+ * clear of a wall set back through it. That is the main room's behaviour on master, and it is left
+ * alone here. On a room's own floor (lib/room-floor) the second pass went wrong on an empty floor
+ * too, because a piece pulled against one wall then faces walls it did not face before: it set the
+ * piece down up to 1.44 m from its valid ghost, on a spot nothing had judged against the other
+ * furniture. There the piece stands where it is handed.
+ */
+function standsWhereHanded(): boolean {
+  return useRoomDimensionsStore.getState().dimensions.floor !== undefined;
+}
+
+/**
+ * The chairs a brush between two floor points sets in the open room when it
+ * carries its own floor (lib/chair-brush chairBrushOnFloor): its ends on the
+ * grid while the grid is on, and only the chairs that stand wholly on the
+ * floor. Null in a room with no floor, where the brush is filled and shown as
+ * it always was. placeChairBrush sets exactly these and the brush's preview
+ * draws exactly these (components/PlacementGhost), so the two cannot differ.
+ * No room with a floor of its own has a door's clear space recorded; were one
+ * to, the set-down would still leave it empty, as in the Grand Hall.
+ */
+export function chairBrushOnRoomFloor(
+  chair: CatalogueItem,
+  startX: number,
+  startZ: number,
+  endX: number,
+  endZ: number,
+  rotationY: number,
+): ChairBrushOnFloor | null {
+  const floor = useRoomDimensionsStore.getState().dimensions.floor;
+  if (floor === undefined) return null;
+  return chairBrushOnFloor(chair, startX, startZ, endX, endZ, rotationY, floor, usePlacementStore.getState().snapEnabled);
+}
+
 export const usePlacementStore = create<PlacementState>()((set, get) => ({
   placedItems: [],
   ghostPosition: null,
@@ -356,12 +402,14 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       postPlacementNotice(atCap);
       return;
     }
-    const pos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
+    // On a room's own floor the piece stands exactly where its ghost stood (standsWhereHanded).
+    const asHanded = standsWhereHanded();
+    const pos = state.snapEnabled && !asHanded ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     // Apply platform edge snapping (fixes bug where placeItem lost edge snap)
     const catItem = getCatalogueItem(catalogueItemId);
     let finalX = pos[0];
     let finalZ = pos[2];
-    if (catItem !== undefined) {
+    if (catItem !== undefined && !asHanded) {
       const roomDims = useRoomDimensionsStore.getState().dimensions;
       const edgeSnap = snapToPlatformEdge(finalX, finalZ, catItem, rotationY, state.placedItems, new Set());
       finalX = edgeSnap.x;
@@ -401,19 +449,28 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const catalogueItem = getCatalogueItem(catalogueItemId);
     if (catalogueItem === undefined || catalogueItem.category !== "chair") return [];
 
-    const start = state.snapEnabled ? snapPositionToGrid(startX, startZ) : [startX, 0, startZ] as const;
-    const end = state.snapEnabled ? snapPositionToGrid(endX, endZ) : [endX, 0, endZ] as const;
-    const summary = computeChairBrushSummary(
-      catalogueItem,
-      start[0],
-      start[2],
-      end[0],
-      end[2],
-      rotationY,
-    );
-    if (summary.points.length <= 1) return [];
+    // On a room's own floor: the chairs of the brush that stand wholly on it, as its preview showed them.
+    const onFloor = chairBrushOnRoomFloor(catalogueItem, startX, startZ, endX, endZ, rotationY);
+    let points: readonly ChairBrushPoint[];
+    if (onFloor !== null) {
+      if (!onFloor.brushing) return [];
+      points = onFloor.chairs;
+    } else {
+      const start = state.snapEnabled ? snapPositionToGrid(startX, startZ) : [startX, 0, startZ] as const;
+      const end = state.snapEnabled ? snapPositionToGrid(endX, endZ) : [endX, 0, endZ] as const;
+      const summary = computeChairBrushSummary(
+        catalogueItem,
+        start[0],
+        start[2],
+        end[0],
+        end[2],
+        rotationY,
+      );
+      if (summary.points.length <= 1) return [];
+      points = summary.points;
+    }
 
-    const newItems = summary.points.map((point) => {
+    const newItems = points.map((point) => {
       const surfaceY = candidateSurfaceHeight(
         catalogueItemId,
         point.x,
@@ -719,12 +776,14 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       postPlacementNotice(atCap);
       return;
     }
-    const pos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
+    // On a room's own floor the table stands exactly where its ghost stood (standsWhereHanded).
+    const asHanded = standsWhereHanded();
+    const pos = state.snapEnabled && !asHanded ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     // Apply edge + wall snap (same as placeItem) so position matches the ghost
     const catItem = getCatalogueItem(catalogueItemId);
     let finalX = pos[0];
     let finalZ = pos[2];
-    if (catItem !== undefined) {
+    if (catItem !== undefined && !asHanded) {
       const roomDims = useRoomDimensionsStore.getState().dimensions;
       const edgeSnap = snapToPlatformEdge(finalX, finalZ, catItem, rotationY, state.placedItems, new Set());
       finalX = edgeSnap.x;
@@ -886,6 +945,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         rule: FILL_AISLE_RULE,
         // The same doors the prompt's preview kept clear (AutoFillPrompt), so what it said is what lands.
         doorSpaces,
+        floor: dims.floor,
       }, state.placedItems);
       if (fill === null) return null;
       // A kept chair the planner never sets takes the plan's chair where it would reach a door.
@@ -903,11 +963,13 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       return fill.plan;
     }
     // Room dimensions are render-space; the plan works in metres. Spacing runs
-    // between the backs of the chairs (lib/auto-fill).
-    const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length), { doorSpaces: roomDoorKeepOuts() });
+    // between the backs of the chairs (lib/auto-fill). A room whose walls are
+    // not the centred rectangle of its size hands over its floor, and no group
+    // is planned outside its walls.
+    const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length), { doorSpaces: roomDoorKeepOuts(), floor: dims.floor });
     if (plan === null) return null;
 
-    // Map each planned table (metres, room-centred) back to render space and
+    // Map each planned table (metres, in the room) back to render space and
     // build a full table+chairs group at floor level.
     const placedItems: PlacedItem[] = [];
     for (const t of plan.tables) {
@@ -943,10 +1005,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const plan = planTheatreFill(chairItem, targetGuests, toRealWorld(dims.width), toRealWorld(dims.length), {
       doorSpaces: roomDoorKeepOuts(),
       chairSupply: plannerChairSupply(chairItem.slug),
+      floor: dims.floor,
     });
     if (plan === null) return null;
 
-    // Each planned seat (metres, room-centred, facing the stage) → a floor-level
+    // Each planned seat (metres, in the room, facing the stage) → a floor-level
     // chair of its row's kind in render space. No groups — theatre chairs stand alone.
     const placedItems = plan.seats.map((s) =>
       createPlacedItem(s.chairItemId, toRenderSpace(s.xM), toRenderSpace(s.zM), s.rotationY, null, 0),
@@ -969,6 +1032,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       roomWidthM: toRealWorld(dims.width),
       roomLengthM: toRealWorld(dims.length),
       doorSpaces: roomDoorKeepOuts(),
+      floor: dims.floor,
     });
     if (fix === null) return null;
     // One write, so the editor history records one step and one undo takes it back.

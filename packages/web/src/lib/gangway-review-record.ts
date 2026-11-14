@@ -1,6 +1,7 @@
-import { GangwayReviewSchema, withGangwayDecisions, type GangwayReview, type GangwayReviewItem, type SpaceDimensions } from "@omnitwin/types";
+import { GangwayReviewSchema, withGangwayDecisions, type GangwayReview, type GangwayReviewItem } from "@omnitwin/types";
 import { getConfig, patchConfigMetadata, type ConfigMetadataInput } from "../api/configurations.js";
 import { gangwayReview, roomExits, roomWallNames } from "./auto-fill.js";
+import type { PlannerRoomDimensions } from "./room-floor.js";
 import { doorKeepOuts, roomDoorClearSpaces } from "./door-clear-spaces.js";
 import type { PlacedItem } from "./placement.js";
 import { useEditorStore } from "../stores/editor-store.js";
@@ -23,6 +24,12 @@ import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 // metadata, so the review goes to the venue with it. The stored review is
 // read again just before each write, so the venue's latest decisions are kept.
 // A guest's preview stores nothing; its review is derived wherever it opens.
+//
+// An item's location, where it is a polygon, is the floor of its pinch, in
+// real metres (lib/auto-fill gangwayFloor). Whoever draws it fills it by the
+// nonzero rule: in a room with its own floor its parts may overlap, so the
+// outline can wind twice round some floor, and its shoelace area can be more
+// than the floor it covers. Every spot it winds round is the room's floor.
 // ---------------------------------------------------------------------------
 
 /** How long the pinches must stay still before the review is written, ms: a drag writes once, after it ends. */
@@ -33,7 +40,7 @@ export const GANGWAY_RECORD_DELAY_MS = 3000;
  * them, judging the gangways Fill lays: clear of the room's doors where they
  * are recorded (lib/door-clear-spaces), wherever the review is read.
  */
-function derivedItems(placedItems: readonly PlacedItem[], room: SpaceDimensions, roomSlug: string | null): readonly GangwayReviewItem[] {
+function derivedItems(placedItems: readonly PlacedItem[], room: PlannerRoomDimensions, roomSlug: string | null): readonly GangwayReviewItem[] {
   const wallNames = roomWallNames(roomSlug);
   const doors = roomDoorClearSpaces(roomSlug);
   return gangwayReview(placedItems, room, roomExits(roomSlug), {
@@ -45,7 +52,7 @@ function derivedItems(placedItems: readonly PlacedItem[], room: SpaceDimensions,
 /** The review a layout holds: the items as derived now, each stored decision laid back over its item while it holds. */
 export function layoutGangwayReview(
   placedItems: readonly PlacedItem[],
-  room: SpaceDimensions,
+  room: PlannerRoomDimensions,
   roomSlug: string | null,
   stored: GangwayReview | null,
 ): GangwayReview {
