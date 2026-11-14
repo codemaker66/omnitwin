@@ -350,15 +350,18 @@ describe("the API's errors in Sentry", () => {
     expect(events.length).toBeGreaterThanOrEqual(3);
     expect(transactions.length).toBeGreaterThanOrEqual(4);
     // Each request came as a browser's does, with no trace of its own: the
-    // API sends no trace headers, so neither do these tests' requests, made
-    // in its process. So none of the API's records has a parent span, and
-    // each was sent: the two to /boom among them, over fetch and over
-    // node:http (#355's last verification, 14 November 2026).
+    // API sends no trace headers, so neither do these tests' fetch requests,
+    // made in its process (the node:http one writes its header lines raw, so
+    // none could be added to it anyway). So no record the SDK built for the
+    // API has a parent span, and every one it built was sent, both /boom
+    // records among them; the 404's is never built, as the SDK drops records
+    // of 401 to 404 itself (#355's verifications at 48004a5b and 4e2acb3e,
+    // 14 November 2026).
     const parents = built.map((event) => JSON.parse(event) as { request?: { url?: string }; parent?: unknown })
       .filter((event) => event.request?.url?.startsWith(base) === true)
       .map((event) => event.parent);
-    expect(parents.length).toBeGreaterThanOrEqual(transactions.length);
     expect(parents.filter((parent) => parent !== undefined)).toEqual([]);
+    expect(transactions).toHaveLength(parents.length);
     expect(transactions.filter(({ event }) => event.transaction === "GET /boom")).toHaveLength(2);
     const name = (event: SentEvent): string => event.transaction ?? event.exception?.values?.[0]?.value ?? "?";
     expect(events

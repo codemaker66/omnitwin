@@ -344,20 +344,31 @@ Verification workflows that night (each finding put to three skeptics) found mor
   carried Sentry's trace headers, so the tests' requests, made in the same process,
   were dropped too. The API now sends trace headers to no one
   (`tracePropagationTargets: []`), which also stops telling Clerk, Stripe, Resend and
-  R2 our trace ids and route names. A record no route matched (a 404, a 503 while
-  draining, a malformed URL) has no pattern, so its own path has the segment rules
-  alone, a code spelled only in letters being the gap.
+  R2 our trace ids and route names. A record no route matched (a malformed URL's 400,
+  say; an unknown path's 404 is never sent, as the SDK itself drops records of 401
+  to 404) has no pattern, so its own path has the segment rules alone, a code spelled
+  only in letters being the gap.
 - The fifth (two lenses, 14 November) found that the late-part test could not fail if
   such a record were sent, since the segment rules replaced its call's id anyway (it
   now looks for the record's own span id and the request's own path, and checks that
   no record sent has a parent); that the other two real-SDK tests did not check that
-  their plain requests continued no trace (they now do, a request over node:http
-  included); and that an aborted or timed-out request's route work goes with the late
-  parts, which is kept (nothing in such a record tells it from the late part of a
+  their plain requests continued no trace (they now do, for the requests made with
+  fetch; capture-path's node:http request writes its headers raw, so none could be
+  added to it); and that an aborted or timed-out request's route work goes with the
+  late parts, which is kept (nothing in such a record tells it from the late part of a
   request that continued a caller's trace) and now said. Checking it turned up one
   more: a push endpoint's device token at FCM has a colon in it, which the segment
   rules did not take for an id, so a push that ended before its route's reply would
   have named the device in that request's record. Colons now count.
+- The sixth (two lenses, at 4e2acb3e) found that counting colons would also have taken
+  a long or digit-bearing route placeholder for an id (none exists yet; the longest is
+  18 characters), so a segment that starts with a colon is now never one; that the
+  tests did not cover a token whose digit or capitals come only after its colon; that
+  the capture-path test showed only its /boom records sent (it now shows every record
+  built for the API sent); and that "a 404" above was wrong. The check runs found two
+  more: a lint error, an `any` read from Sentry's attribute bag (latent since the
+  second's fixes, as no run had finished since), and a test whose second round could
+  not fail, as its CLS of 500 is one the report schema refuses.
 
 The paragraph now reads:
 

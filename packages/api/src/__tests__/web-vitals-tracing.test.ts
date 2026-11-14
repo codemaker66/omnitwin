@@ -118,8 +118,8 @@ describe("API tracing of the page-speed reports (the real SDK, route and server)
     // Both came as a browser's do, with no trace of their own (the API sends
     // no trace headers, its own requests in this process included): the
     // control's record was sent for itself, and the report's was kept out by
-    // the SDK's filter, not by a parent span (#355's last verification,
-    // 14 November 2026).
+    // the SDK's filter, not by a parent span (#355's verification at
+    // 48004a5b, 14 November 2026).
     expect(seen.filter((record) => record.name.startsWith("POST /public/")).map((record) => record.parent))
       .toEqual([undefined, undefined]);
     // The SDK's own filter, given the API's options, kept the report's out.

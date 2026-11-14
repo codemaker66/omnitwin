@@ -406,11 +406,13 @@ const URL_PARTS = /^([a-z][a-z\d+.-]*:\/\/[^/?#]*)?([^?#]*)([\s\S]*)$/iu;
  * Clerk's `user_…`, digit or not). Colons count in both, as in the device
  * token of a push endpoint at FCM (Chrome's `fcm/send/<token>`), which a
  * push that ends before its route's reply puts in that request's record
- * (#355's last verification, 14 November 2026). The words of a route or an
- * API ("venues", "changes-since-last-handoff", "v1", "messages:send") and
- * placeholders (":id") stay.
+ * (found while checking #355's verification at 48004a5b, 14 November 2026),
+ * but not at a segment's start: that is a route's placeholder, however long
+ * (":id", ":runtimePackageVersionId", ":slot1Id"), and the transaction's
+ * name and `http.route` keep it. The words of a route or an API ("venues",
+ * "changes-since-last-handoff", "v1", "messages:send") stay too.
  */
-const RECORD_SEGMENT = /^(?:[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}|(?=[^/]*\d)[\w.~%:-]{6,}|(?=[^/]*[A-Z])(?=[^/]*[a-z])[\w:-]{20,})$/u;
+const RECORD_SEGMENT = /^(?:[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}|(?!:)(?=[^/]*\d)[\w.~%:-]{6,}|(?!:)(?=[^/]*[A-Z])(?=[^/]*[a-z])[\w:-]{20,})$/u;
 
 /** Replaces each path segment that names one record with `:id`, keeping the
  *  origin, the route's words, and anything after the path. */
@@ -475,9 +477,10 @@ function templateUrlsDeep<T>(value: T, template: (url: string) => string): T {
  * request's, as `url`, `url.path` on Fastify's own span and the rest carry it)
  * on its route's pattern (`http.route`, as Fastify matched it), and every
  * other with its query and fragment cut and each segment that looks like a
- * record's id replaced. A record no route matched (a 404, a 503 while the
- * server drains, a malformed URL) has no pattern, so its own path goes
- * through those segment rules alone.
+ * record's id replaced. A record no route matched (a malformed URL's 400,
+ * say; an unknown path's 404 is never sent, as the SDK itself drops records
+ * of 401 to 404) has no pattern, so its own path goes through those segment
+ * rules alone.
  * A transaction is the timing record the API sends for a sample of requests
  * whether or not anything failed, and the privacy page says it carries no
  * address, identifier or browser details (Blake, 13 November 2026: "Strip

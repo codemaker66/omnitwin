@@ -694,9 +694,10 @@ describe("scrubTransaction", () => {
     expect(withoutIdentifiers("/v1/users/AbCdEfGhIjKlMnOpQrSt")).toBe("/v1/users/:id");
   });
 
-  // #355's last verification (14 November 2026): a push endpoint at FCM
-  // (Chrome's) ends in the device's token, which has a colon in it, and a push
-  // that ends before its route's reply puts that URL in the request's record.
+  // Found while checking #355's verification at 48004a5b (14 November 2026):
+  // a push endpoint at FCM (Chrome's) ends in the device's token, which has a
+  // colon in it, and a push that ends before its route's reply puts that URL
+  // in the request's record.
   it("names no device in a push endpoint's URL, colon and all", () => {
     const TOKEN = "fakeDev1ceTok:APA91bFAKE-push-0123456789-abcdefABCDEF";
     const endpoint = `https://fcm.googleapis.com/fcm/send/${TOKEN}`;
@@ -719,11 +720,30 @@ describe("scrubTransaction", () => {
       "http.url": "https://fcm.googleapis.com/fcm/send/:id",
     });
     expect(JSON.stringify(out)).not.toContain("APA91b");
-    // Each rule on its own: a short token with a digit, and a long one in both cases with none.
+    // Each rule on its own: a short token with a digit, and a long one in both
+    // cases with none; and either with what makes it an id only after its colon.
     expect(withoutIdentifiers("/fcm/send/ab1:cd")).toBe("/fcm/send/:id");
+    expect(withoutIdentifiers("/fcm/send/abc:d1")).toBe("/fcm/send/:id");
     expect(withoutIdentifiers("/fcm/send/AbCdEfGhIj:KlMnOpQrSt")).toBe("/fcm/send/:id");
+    expect(withoutIdentifiers("/fcm/send/abcdefghij:KLMNOPQRSt")).toBe("/fcm/send/:id");
     // An API's own words with a colon in them stay.
     expect(withoutIdentifiers("/v1/projects/venviewer/messages:send")).toBe("/v1/projects/venviewer/messages:send");
+  });
+
+  // #355's verification at 4e2acb3e (14 November 2026): with colons counted,
+  // a long or digit-bearing placeholder would have been taken for an id.
+  it("keeps a route's placeholders, however long, in its name and route", () => {
+    expect(withoutIdentifiers("/runtime-package-previews/:runtimePackageVersionId")).toBe("/runtime-package-previews/:runtimePackageVersionId");
+    expect(withoutIdentifiers("/slots/:slot1Id/seats")).toBe("/slots/:slot1Id/seats");
+    const out = scrubTransaction({
+      type: "transaction",
+      transaction: "GET /runtime-package-previews/:runtimePackageVersionId",
+      request: { url: "https://api.example.test/runtime-package-previews/a1b2c3d4e5", method: "GET" },
+      contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", data: { "http.route": "/runtime-package-previews/:runtimePackageVersionId" } } },
+    });
+    expect(out.transaction).toBe("GET /runtime-package-previews/:runtimePackageVersionId");
+    expect(out.contexts?.trace?.data).toEqual({ "http.route": "/runtime-package-previews/:runtimePackageVersionId" });
+    expect(out.request?.url).toBe("https://api.example.test/runtime-package-previews/:runtimePackageVersionId");
   });
 
   it("finds the request's own path in its trace where the record has no request, and cuts fragments", () => {

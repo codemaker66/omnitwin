@@ -207,7 +207,7 @@ describe("the API's timing records (the real SDK and server)", () => {
   // call's id proves nothing (the segment rules would replace it in a record
   // that was sent), so the test looks for the record itself, by its span id,
   // and for the request's own path, which no route would take out of it
-  // (#355's last verification, 14 November 2026).
+  // (#355's verification at 48004a5b, 14 November 2026).
   it("sends no record of work a route started that ended after its reply", async () => {
     const response = await fetch(`${base}/late/abcdef`);
     await response.arrayBuffer();
