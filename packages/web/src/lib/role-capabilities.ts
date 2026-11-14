@@ -212,6 +212,19 @@ export function canDraftWithAI(user: { readonly role: string; readonly venueId: 
 }
 
 /**
+ * The venue whose enquiries this person records replies to and reads the
+ * reply-time alarm for: their own, when they are on its commercial team;
+ * null for anyone else. Mirrors `isVenueCommercialMember` (`utils/query.ts`),
+ * which `POST /enquiries/:id/first-response` and `GET /enquiries/reply-alarm`
+ * both read: the reply time is the team's own measure, so the floor, a
+ * customer and a platform admin acting for no venue are refused.
+ */
+export function replyVenueOf(user: { readonly role: string; readonly venueId: string | null } | null): string | null {
+  if (user === null || user.venueId === null) return null;
+  return hasRole(COMMERCIAL_ROLES, user.role) ? user.venueId : null;
+}
+
+/**
  * Whether the Ops lens's compile (`POST /ops/handoff-packs/from-configuration/:id`)
  * would be answered for this person on this layout. The route reads
  * `canAccessResource`: the layout's owner, the venue floor at the layout's
