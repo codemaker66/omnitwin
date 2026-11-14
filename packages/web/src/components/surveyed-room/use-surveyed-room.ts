@@ -232,21 +232,31 @@ const IDLE: SurveyedRoomState = { status: "idle" };
 const STARTING: SurveyedRoomState = { status: "loading", settled: 0, expected: null };
 
 interface Held {
-  /** The entry the state belongs to. */
+  /** The load the state belongs to: an entry and an attempt at it. */
   readonly key: string | null;
   readonly state: SurveyedRoomState;
 }
+
+const NOTHING_HELD: Held = { key: null, state: IDLE };
 
 /**
  * The surveyed room for a registry entry (null: none asked for). A new entry,
  * by its folder and revision rather than its identity, stops the load under
  * way and starts its own; the state of the room before is never shown for it.
+ *
+ * Nothing is kept for an entry that has left: its room is let go, and should
+ * the same entry come back it is loaded afresh, never shown first as it stood
+ * before (a room mounted, unmounted and mounted again would fetch its
+ * photographs and hold the frames to compile twice; a failure would flash).
+ *
+ * `attempt` loads the same entry again: a caller that offers another try
+ * after a failure raises it by one.
  */
-export function useSurveyedRoom(entry: SurveyedRoomEntry | null): SurveyedRoomState {
+export function useSurveyedRoom(entry: SurveyedRoomEntry | null, attempt = 0): SurveyedRoomState {
   const base = entry?.base ?? null;
   const revision = entry?.revision ?? null;
-  const key = base === null || revision === null ? null : `${base}?r=${String(revision)}`;
-  const [held, setHeld] = useState<Held>({ key: null, state: IDLE });
+  const key = base === null || revision === null ? null : `${base}?r=${String(revision)}#${String(attempt)}`;
+  const [held, setHeld] = useState<Held>(NOTHING_HELD);
 
   useEffect(() => {
     if (base === null || revision === null || key === null) return undefined;
@@ -261,7 +271,11 @@ export function useSurveyedRoom(entry: SurveyedRoomEntry | null): SurveyedRoomSt
       // An abort is this effect's own, and `show` then keeps quiet; anything else is a failure to tell.
       (error: unknown) => { show({ status: "failed", failure: error instanceof SurveyedRoomLoadError ? error.failure : unexpected(asked, error) }); },
     );
-    return () => { controller.abort(); };
+    return () => {
+      controller.abort();
+      // The load has left (another entry, another attempt, or none): what was held for it goes with it.
+      setHeld(NOTHING_HELD);
+    };
   }, [base, key, revision]);
 
   if (key === null) return IDLE;

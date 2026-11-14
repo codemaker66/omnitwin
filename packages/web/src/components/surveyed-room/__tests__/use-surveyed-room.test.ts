@@ -305,14 +305,72 @@ describe("useSurveyedRoom", () => {
     expect(state.room.entry).toEqual({ ...SALOON, revision: 2 });
   });
 
-  it("stops its load when it unmounts, and reports nothing after", async () => {
+  /** The hook under an entry and attempt a test can change, with the status of every render kept. */
+  function renderLoad(initial: SurveyedRoomEntry | null) {
+    const seen: SurveyedRoomState["status"][] = [];
+    const hook = renderHook(({ entry, attempt }: { entry: SurveyedRoomEntry | null; attempt?: number }) => {
+      const state = useSurveyedRoom(entry, attempt);
+      seen.push(state.status);
+      return state;
+    }, { initialProps: { entry: initial } });
+    return { ...hook, seen };
+  }
+
+  it("lets a room go when its entry leaves, and loads it afresh when the entry returns", async () => {
+    const fake = serveSaloon(saloonFiles());
+    const { result, rerender, seen } = renderLoad(SALOON);
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    const first = result.current;
+    rerender({ entry: null });
+    expect(result.current).toEqual({ status: "idle" });
+    seen.length = 0;
+    rerender({ entry: SALOON });
+    // In the very render the entry returns it is loading: the room from before is never shown again.
+    expect(result.current).toEqual({ status: "loading", settled: 0, expected: null });
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    expect(seen.slice(0, seen.indexOf("ready"))).toEqual(seen.slice(0, seen.indexOf("ready")).map(() => "loading"));
+    expect(result.current).not.toBe(first);
+    expect(fake).toHaveBeenCalledTimes(6);
+  });
+
+  it("forgets a failure when its entry leaves, so the entry can load when it returns", async () => {
+    const files = saloonFiles();
+    const fake = serveSaloon(files, { "walls-relief.bin": () => new Response("gone", { status: 404 }) });
+    const { result, rerender, seen } = renderLoad(SALOON);
+    await waitFor(() => { expect(result.current.status).toBe("failed"); });
+    rerender({ entry: null });
+    expect(result.current).toEqual({ status: "idle" });
+    fake.mockRestore();
+    serveSaloon(files);
+    seen.length = 0;
+    rerender({ entry: SALOON });
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    expect(seen).not.toContain("failed");
+  });
+
+  it("loads the same entry again for a new attempt, which is how a failure is retried", async () => {
+    const files = saloonFiles();
+    const fake = serveSaloon(files, { "survey.json": () => new Response("busy", { status: 503 }) });
+    const { result, rerender } = renderLoad(SALOON);
+    await waitFor(() => { expect(result.current.status).toBe("failed"); });
+    // The same entry and attempt: the failure stands and nothing is asked for again.
+    rerender({ entry: { ...SALOON }, attempt: 0 });
+    expect(result.current.status).toBe("failed");
+    expect(fake).toHaveBeenCalledTimes(1);
+    fake.mockRestore();
+    serveSaloon(files);
+    rerender({ entry: SALOON, attempt: 1 });
+    expect(result.current).toEqual({ status: "loading", settled: 0, expected: null });
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+  });
+
+  it("stops its load when it unmounts", async () => {
     const walls = held();
     serveSaloon(saloonFiles(), { "walls-relief.bin": walls.answer });
-    const { result, unmount } = renderHook(() => useSurveyedRoom(SALOON));
+    const { unmount } = renderHook(() => useSurveyedRoom(SALOON));
     await waitFor(() => { expect(walls.signal()).not.toBeNull(); });
-    const before = result.current;
+    expect(walls.signal()?.aborted).toBe(false);
     unmount();
     expect(walls.signal()?.aborted).toBe(true);
-    expect(result.current).toBe(before);
   });
 });
