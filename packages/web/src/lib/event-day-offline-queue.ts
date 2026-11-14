@@ -127,6 +127,17 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
     await handle.delete(queueKey);
   }
 
+  /** Acks a task status only while its row still holds the press with this
+   *  idempotency key. A task keeps one row, so a later press (on this page or
+   *  another) writes over an earlier one's; that later press stays queued.
+   *  The compare and the delete are one step of the store (one readwrite
+   *  transaction on IndexedDB). Resolves whether the row was deleted; a row
+   *  already gone is no error. */
+  async function ackIf(queueKey: string, idempotencyKey: string): Promise<boolean> {
+    return handle.deleteIf(queueKey, (stored) =>
+      stored.value.kind === "task_status" && stored.value.input.idempotencyKey === idempotencyKey);
+  }
+
   /** A request step replays after every step pressed before it on this
    *  device: its stamp is never behind the latest kept one, even under a
    *  clock that stood still or stepped back between the presses. */
@@ -206,6 +217,7 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
 
     list,
     ack,
+    ackIf,
 
     /** Replay in the order the ops were made. An op is acked only once the
      *  server has it, fresh or replayed; the first failure stops the drain so
@@ -261,6 +273,11 @@ export function listPendingEventDayOps(): Promise<readonly QueuedEventDayOp[]> {
 
 export function ackEventDayOp(queueKey: string): Promise<void> {
   return defaultQueue.ack(queueKey);
+}
+
+/** Acks a queued task status only while its row still holds that press. */
+export function ackEventDayOpIf(queueKey: string, idempotencyKey: string): Promise<boolean> {
+  return defaultQueue.ackIf(queueKey, idempotencyKey);
 }
 
 export function drainEventDayOps(

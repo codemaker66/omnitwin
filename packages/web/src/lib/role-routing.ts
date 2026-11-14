@@ -29,3 +29,13 @@ export function getDefaultRoute(role: string, platformRole?: string): string {
   if (hasRole(WORKSPACE_ROLES, role)) return "/dashboard";
   return "/plan";
 }
+
+/**
+ * Where the planner's account control leads a signed-in person: the venue's
+ * desk (/dashboard) for the roles that route admits, as it always has, and
+ * anyone else to their own home (getDefaultRoute). The desk refuses a client
+ * or a caterer with "Access needed" and a sign-out (audit web-auth-routing-5).
+ */
+export function accountRoute(role: string, platformRole?: string): string {
+  return hasRole(WORKSPACE_ROLES, role) ? "/dashboard" : getDefaultRoute(role, platformRole);
+}

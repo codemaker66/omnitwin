@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { memoryBackend, withBackend } from "../idb-cache.js";
+import { memoryBackend, withBackend, type CacheBackend } from "../idb-cache.js";
 import { createEventDayQueue, type QueuedEventDayOp, type RequestStepInput } from "../event-day-offline-queue.js";
 
 function queue() {
@@ -214,5 +214,63 @@ describe("event-day offline queue", () => {
     expect(pending).toBeDefined();
     await q.ack(pending?.queueKey ?? "");
     expect(await q.list()).toEqual([]);
+  });
+
+  // #418 B2 and B1: a task keeps one row, so a later press writes over an
+  // earlier one's row. The earlier press's ack must not take the later one
+  // with it: ackIf deletes the row only while it still holds that press.
+  describe("acking a task status only while its row still holds that press", () => {
+    const statusesQueued = async (q: ReturnType<typeof queue>): Promise<readonly (string | undefined)[]> =>
+      (await q.list()).map((op) => (op.kind === "task_status" ? op.input.idempotencyKey : op.kind));
+
+    it("deletes the row while it still holds that press", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start" });
+      expect(await q.ackIf("task:task-1", "start")).toBe(true);
+      expect(await q.list()).toEqual([]);
+    });
+
+    it("keeps a row a later press has written since", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start" });
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done" });
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      expect(await statusesQueued(q)).toEqual(["done"]);
+    });
+
+    it("is no error when the row is already gone", async () => {
+      const q = queue();
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start" });
+      await q.ack("task:task-1");
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      expect(await q.list()).toEqual([]);
+    });
+
+    it("compares and deletes in the store's one conditional step, never a read and then a delete", async () => {
+      // A read and a delete made apart could let another tab's write fall
+      // between them. With the store's plain read and delete refused, the
+      // compare can only be its conditional delete: one readwrite
+      // transaction on IndexedDB.
+      const inner = memoryBackend();
+      const backend: CacheBackend = {
+        ...inner,
+        get: () => Promise.reject(new Error("a read apart from the delete")),
+        delete: () => Promise.reject(new Error("a delete without the compare")),
+      };
+      const q = createEventDayQueue(withBackend<QueuedEventDayOp>(backend));
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done" });
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      expect(await statusesQueued(q)).toEqual(["done"]);
+      expect(await q.ackIf("task:task-1", "done")).toBe(true);
+      expect(await q.list()).toEqual([]);
+    });
+
+    it("never deletes another kind of op that shares nothing but the call", async () => {
+      const q = queue();
+      await q.enqueueIssueCreate("event-1", { title: "Lift", detail: "Use the stair.", severity: "urgent" }, "issue-a");
+      expect(await q.ackIf("issue:issue-a", "issue-a")).toBe(false);
+      expect(await statusesQueued(q)).toEqual(["issue_create"]);
+    });
   });
 });

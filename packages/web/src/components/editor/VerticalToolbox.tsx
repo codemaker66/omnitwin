@@ -18,6 +18,7 @@ import { useSelectionStore } from "../../stores/selection-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
+import { accountRoute } from "../../lib/role-routing.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.js";
 import { useMarkupStore, MARKUP_COLOR_VALUES, type MarkupColor } from "../../stores/markup-store.js";
@@ -1667,9 +1668,16 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
     window.open(`/hallkeeper/${configId}`, "_blank");
   }, []);
 
+  // Your Account (desktop) and Account (the phone's More sheet): the person's
+  // own place, never a route that refuses their role (lib/role-routing.ts).
+  // This toolbox is the planner's own, so a person whose own place is the
+  // planner (a caterer) is there already: the control stays put rather than
+  // drop the plan's code and ?eventId from the address (#418 C2).
   const handleAuth = useCallback(() => {
-    if (useAuthStore.getState().isAuthenticated) {
-      void navigate("/dashboard");
+    const { isAuthenticated: signedIn, user } = useAuthStore.getState();
+    if (signedIn && user !== null) {
+      const destination = accountRoute(user.role, user.platformRole);
+      if (destination !== "/plan") void navigate(destination);
     } else {
       setShowAuth(true);
     }
@@ -2041,7 +2049,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
 
         <div style={{ flex: 1 }} />
 
-        <ToolBtn active={false} compact={isNarrow} subLabel={isAuthenticated ? "Account" : "Sign In"} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "Saved layouts and enquiries." : "Sign in to save and share layouts."} tooltipEnabled={showDesktopHints} onClick={() => { if (isAuthenticated) { void navigate("/dashboard"); } else { setShowAuth(true); } }}>
+        <ToolBtn active={false} compact={isNarrow} subLabel={isAuthenticated ? "Account" : "Sign In"} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "Saved layouts and enquiries." : "Sign in to save and share layouts."} tooltipEnabled={showDesktopHints} onClick={handleAuth}>
           <User size={ICON_SIZE} />
         </ToolBtn>
         {compactDesktop && <ReferenceSceneSettings />}
