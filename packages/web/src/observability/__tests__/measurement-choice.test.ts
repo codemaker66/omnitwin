@@ -265,20 +265,35 @@ describe("the measurement choice", () => {
   });
 
   it("takes an event for another tab's press as one where the tab's own storage cannot be asked", () => {
-    setMeasurementDeclined(true);
     const realSession = window.sessionStorage;
-    const seen: string[] = [];
-    const stop = subscribeMeasurementChoice(() => { seen.push(measurementChoiceState()); });
     const browserStorage = window.localStorage;
-    Object.defineProperty(window, "sessionStorage", { configurable: true, get: () => { throw new Error("blocked"); } });
-    try {
-      browserStorage.removeItem(MEASUREMENT_DECLINED_KEY);
-      // With its storage area named, the check has to ask for the tab's own.
-      window.dispatchEvent(new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, newValue: null, storageArea: browserStorage }));
-      expect(seen).toEqual(["measured"]);
-    } finally {
-      Object.defineProperty(window, "sessionStorage", { configurable: true, value: realSession });
-      stop();
-    }
+    const seen: string[] = [];
+    withStorage({ local: fullStorage(new Map()) }, () => {
+      Object.defineProperty(window, "sessionStorage", { configurable: true, get: () => { throw new Error("blocked"); } });
+      const stop = subscribeMeasurementChoice(() => { seen.push(measurementChoiceState()); });
+      try {
+        // Neither the browser nor the tab will keep it: held for this page.
+        setMeasurementDeclined(true);
+        expect(measurementChoiceState()).toBe("declined-this-page");
+        // With its storage area named, the check has to ask for the tab's
+        // own, which throws: taken for another tab's press, the press held for
+        // the page gives way to it (taken for this tab's own, it would stand).
+        window.dispatchEvent(new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, newValue: null, storageArea: browserStorage }));
+        expect(seen.at(-1)).toBe("measured");
+      } finally {
+        stop();
+        Object.defineProperty(window, "sessionStorage", { configurable: true, value: realSession });
+      }
+    });
+  });
+
+  it("leaves a press held for the page alone when a frame of this tab changes the tab's own copy", () => {
+    const tab: Storage = { ...fullStorage(new Map()), length: 0, key: () => null, clear: () => undefined };
+    withStorage({ local: fullStorage(new Map()), session: tab }, () => {
+      setMeasurementDeclined(true);
+      expect(measurementChoiceState()).toBe("declined-this-page");
+      window.dispatchEvent(new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, newValue: null, storageArea: tab }));
+      expect(measurementChoiceState()).toBe("declined-this-page");
+    });
   });
 });

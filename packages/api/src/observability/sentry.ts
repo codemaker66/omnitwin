@@ -31,15 +31,22 @@ export const WEB_VITALS_TRANSACTION = "/public/web-vitals";
 export type SentryOptionsEnv = Pick<Env, "SENTRY_DSN" | "SENTRY_ENVIRONMENT" | "NODE_ENV" | "SENTRY_TRACES_SAMPLE_RATE">;
 
 /**
- * Whether a timing record times a request that arrived carrying a trace of
- * its own (sentry-trace and baggage headers): its parent is a span elsewhere.
- * The web app sends no such headers, so only a caller does, and the baggage
- * can set the sampling draw (sample_rand), which would let a caller make
- * every one of its requests a timing record. Such a record is never sent, so
- * the rate alone decides which requests are timed, and the privacy page's
- * "about one request in ten" holds (#355's verification, 13 November 2026).
+ * Whether a timing record has a parent span, and so is not a request's own
+ * whole record. Two kinds have one, and neither is sent:
+ *   - a request that arrived carrying a trace (sentry-trace and baggage
+ *     headers). The web app sends none, and this API sends them to no one
+ *     (tracePropagationTargets), so only another caller does, and its baggage
+ *     can set the sampling draw (sample_rand) to make every one of its
+ *     requests a record; dropped, the rate alone decides which requests are
+ *     timed, and the privacy page's "about one request in ten" holds;
+ *   - the late part of a request already sent: work a route started that
+ *     ended after its reply (a push, an email, a provider's call), which the
+ *     SDK sends on its own with a parent. It has no route of its own, so its
+ *     URLs would go through the segment rules alone (a push endpoint's token
+ *     with a colon in it is not taken for an id).
+ * (#355's verifications, 13 November 2026.)
  */
-export function continuesIncomingTrace(event: ScrubbableTransaction): boolean {
+export function hasParentSpan(event: ScrubbableTransaction): boolean {
   return event.contexts?.trace?.parent_span_id !== undefined;
 }
 
@@ -54,9 +61,9 @@ export function continuesIncomingTrace(event: ScrubbableTransaction): boolean {
  *     allergy note left in a message or breadcrumb (`./health-redaction.ts`);
  *   - beforeSendTransaction: the timing records carry no address, identifier
  *     or browser details (`scrubTransaction`: no request header, breadcrumb,
- *     query, body or token, and no record's id in any URL), as the privacy
- *     page says, and one that continues a caller's trace is not sent
- *     (`continuesIncomingTrace`);
+ *     query, body or token, and no segment that looks like a record's id in
+ *     any URL), as the privacy page says, and one with a parent span is not
+ *     sent (`hasParentSpan`);
  *   - beforeBreadcrumb: the query in http breadcrumbs.
  */
 export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
@@ -64,6 +71,12 @@ export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
     dsn: env.SENTRY_DSN,
     environment: env.SENTRY_ENVIRONMENT ?? env.NODE_ENV,
     tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+    // No trace headers on any request this process makes (to Clerk, Stripe,
+    // Resend, R2): the services need none, and the baggage would tell them
+    // our trace ids and route names. The tests' own requests to the API, made
+    // in this process, so carry none either, and are timed as a browser's are
+    // (#355's verification, 13 November 2026).
+    tracePropagationTargets: [],
     // A page-speed report is traced by no one: the privacy page says the
     // server keeps only the timings and logs nothing for them (T-685,
     // 12 November 2026); before #355 a trace also carried the visitor's user
@@ -71,7 +84,7 @@ export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
     // failure still reaches Sentry through the error normaliser's capture.
     ignoreTransactions: [WEB_VITALS_TRANSACTION],
     beforeSend: (event) => scrubApiSentryEvent(scrubErrorEvent(event)),
-    beforeSendTransaction: (event) => (continuesIncomingTrace(event) ? null : scrubTransaction(event)),
+    beforeSendTransaction: (event) => (hasParentSpan(event) ? null : scrubTransaction(event)),
     beforeBreadcrumb: scrubBreadcrumb,
   };
 }

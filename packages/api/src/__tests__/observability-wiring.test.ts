@@ -11,7 +11,7 @@ import {
   scrubTransaction,
   type ScrubbableTransaction,
 } from "../observability/redact.js";
-import { WEB_VITALS_TRANSACTION, buildSentryOptions, continuesIncomingTrace } from "../observability/sentry.js";
+import { WEB_VITALS_TRANSACTION, buildSentryOptions, hasParentSpan } from "../observability/sentry.js";
 
 // ---------------------------------------------------------------------------
 // The wiring: the redaction in observability/redact.ts reaches the server only
@@ -91,16 +91,18 @@ describe("the API's Sentry options", () => {
   });
 
   // #355's verifications (13 November 2026): a caller's trace headers can set
-  // the sampling draw, so a timing record of a request that continued one is
-  // never sent; the rate alone decides, and "about one request in ten" holds.
-  it("send no timing record of a request that continued a caller's trace", () => {
+  // the sampling draw, and the late part of a request already sent has no
+  // route, so no record with a parent span is sent; and this process sends
+  // no trace headers on its own calls out.
+  it("send no timing record with a parent span, and no trace headers on calls out", () => {
     const trace = { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001" };
-    const continued: ScrubbableTransaction = { type: "transaction", contexts: { trace: { ...trace, parent_span_id: "00000000000000aa" } } };
+    const parented: ScrubbableTransaction = { type: "transaction", contexts: { trace: { ...trace, parent_span_id: "00000000000000aa" } } };
     const own: ScrubbableTransaction = { type: "transaction", contexts: { trace } };
-    expect(continuesIncomingTrace(continued)).toBe(true);
-    expect(continuesIncomingTrace(own)).toBe(false);
-    expect(options.beforeSendTransaction?.(continued, {})).toBeNull();
+    expect(hasParentSpan(parented)).toBe(true);
+    expect(hasParentSpan(own)).toBe(false);
+    expect(options.beforeSendTransaction?.(parented, {})).toBeNull();
     expect(options.beforeSendTransaction?.(own, {})).not.toBeNull();
+    expect(options.tracePropagationTargets).toEqual([]);
   });
 
   it("name SENTRY_ENVIRONMENT over NODE_ENV when it is set", () => {

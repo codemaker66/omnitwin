@@ -12,9 +12,10 @@ import { PLAN_CLAIM_SECRET_HEADER } from "../services/configuration-claim-secret
 //
 //   1. Fastify's request log line (pino's `req` serializer writes req.url).
 //   2. Sentry error events (`event.request.url`) and http breadcrumbs.
-//   3. Sentry transactions: `event.request.url`, plus span attributes the
-//      OpenTelemetry HTTP instrumentation records (`url.full`, `http.url`,
-//      `http.target`, `url.query`).
+//   3. Sentry transactions: any string anywhere in one (the request's URL,
+//      span attributes under any key, `url` and `url.full` among them, span
+//      descriptions, the name). scrubTransaction walks them all, and also
+//      replaces each record's id in them (the privacy page's "no identifier").
 //
 // The same three places, and anything else an event, breadcrumb or
 // transaction quotes, also lose the segment after a capability path
@@ -205,8 +206,10 @@ export function errorLogSerializer(err: unknown): SerializedError {
  */
 export type ScrubbableTransaction = Parameters<NonNullable<NodeOptions["beforeSendTransaction"]>>[0];
 
-/** Span / trace attribute keys whose value is, or contains, a URL. The
- *  Fastify span writes the request url, query included, to `url.path`. */
+/** Span / trace attribute keys whose value is, or contains, a URL, whose
+ *  query is cut first. The Fastify span writes the request url, query
+ *  included, to `url.path`. A transaction's URLs under any key (the SDK's
+ *  plain `url` among them) then go through scrubTransaction's walk. */
 const URL_ATTRIBUTE_KEYS: readonly string[] = ["url.full", "http.url", "http.target", "url.path"];
 
 /**
@@ -270,11 +273,12 @@ function isDroppedHeaderAttribute(key: string): boolean {
   return DROPPED_HEADER_ATTRIBUTES.some((attribute) => lower === attribute || lower.startsWith(`${attribute}.`));
 }
 
-/** Span / trace attribute keys that hold a bare query string, or the caller's
- *  address: node-core records the first X-Forwarded-For entry (behind Railway,
- *  the visitor's IP) as `http.client_ip` whatever `sendDefaultPii` says. */
+/** Span / trace attribute keys that hold a bare query string or fragment, or
+ *  the caller's address: node-core records the first X-Forwarded-For entry
+ *  (behind Railway, the visitor's IP) as `http.client_ip` whatever
+ *  `sendDefaultPii` says. */
 const DROPPED_ATTRIBUTE_KEYS: readonly string[] = [
-  "url.query", "http.query",
+  "url.query", "http.query", "url.fragment", "http.fragment",
   "http.client_ip", "client.address", "net.peer.ip", "network.peer.address", "net.sock.peer.addr",
 ];
 
@@ -465,7 +469,10 @@ function templateUrlsDeep<T>(value: T, template: (url: string) => string): T {
  * key, through one rule: the request's own path (a string whose path is the
  * request's, as `url`, `url.path` on Fastify's own span and the rest carry it)
  * on its route's pattern (`http.route`, as Fastify matched it), and every
- * other with its query cut and each segment that names a record replaced.
+ * other with its query and fragment cut and each segment that looks like a
+ * record's id replaced. A record no route matched (a 404, a 503 while the
+ * server drains, a malformed URL) has no pattern, so its own path goes
+ * through those segment rules alone.
  * A transaction is the timing record the API sends for a sample of requests
  * whether or not anything failed, and the privacy page says it carries no
  * address, identifier or browser details (Blake, 13 November 2026: "Strip
@@ -494,7 +501,8 @@ export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransa
     dropBrowserDetails(data);
   }
   const template = (url: string): string => {
-    const cut = withoutQuery(url);
+    // The query (its marker left) and any fragment go.
+    const cut = withoutQuery(url).replace(/#[\s\S]*$/u, "");
     if (route !== undefined && requestPath !== undefined && pathOf(cut) === requestPath) return onRoute(cut, route);
     return withoutIdentifiers(cut);
   };

@@ -317,25 +317,37 @@ the page's Sentry entries say what such a record carries. "Wait for their reply
 (Recommended)": switching on waits for the solicitor (step 3 above). "Change both
 (Recommended)": the switch says where the browser blocks storage that "your visits in
 this browser are never measured", and why. "Name every condition (Recommended)": the
-cookies section names each of paragraph 5's conditions, not a part of them. A second
-verification that night (five lenses, three skeptics a finding) found three more
-things. Record ids in the timing records' URLs (user, event and booking ids in the
-request's path, provider ids in outgoing calls): the record "with no address,
-identifier or browser details" Blake approved needs none, so every URL and path left
-anywhere in a record, under any key (the SDK's plain `url` and Fastify's own span
-among them), is put on the route's pattern where it is the request's own path, and
-otherwise loses each segment that names a record, and a record carries no breadcrumbs
-(they hold outgoing calls' URLs). And a caller's trace headers can set the sampling
-draw (the baggage's sample_rand), so a record of a request that continues a caller's
-trace is never sent (the web app sends none): the rate alone decides, and "about one
-request in ten" holds. A third verification (four lenses) found both of those holes
-in the first fixes, which only covered named keys and the sampler. A press held only in memory was lost at the next
-page load, which the page's own links are, though the line said it held until a reload
-or leaving the site: Blake chose "Keep it for the tab (Recommended)", with the lines
-"…holds only in this tab, until you close it." and, where the tab will not keep it
-either, "…holds only until you leave this page.". And paragraph 5(1)(d)'s "clear and
-comprehensive information": Blake chose "Use the statute's words (Recommended)". The
-paragraph now reads:
+cookies section names each of paragraph 5's conditions, not a part of them.
+
+Verification workflows that night (each finding put to three skeptics) found more:
+- The second (five lenses) found record ids in the timing records' URLs (user, event
+  and booking ids in the request's path, provider ids in outgoing calls), against the
+  approved "with no address, identifier or browser details"; a press held only in
+  memory, lost at the next page load, which the page's own links are, though the line
+  said it held until a reload or leaving the site (Blake chose "Keep it for the tab
+  (Recommended)", with the lines "…holds only in this tab, until you close it." and,
+  where the tab will not keep it either, "…holds only until you leave this page.");
+  and "clear information" where paragraph 5(1)(d) says "clear and comprehensive
+  information" (Blake chose "Use the statute's words (Recommended)").
+- The third (four lenses) found that the first fix for the ids covered named keys
+  only (the SDK also writes a plain `url` key, Fastify's own span writes the path
+  again, and breadcrumbs hold outgoing calls' URLs), and that a caller's baggage sets
+  the sampling draw (sample_rand), which the sampler as first written, returning the
+  rate, could not stop. Every URL and path anywhere in a record now goes on the route's
+  pattern where it is the request's own path, and otherwise loses each segment that
+  looks like a record's id (a UUID, a token with a digit, a long token in both cases);
+  a record carries no breadcrumbs; and no record with a parent span is sent.
+- The fourth (three lenses) found that that rule drops every record with a parent, the
+  late parts of a request already sent included (work a route started that ended
+  after its reply, which has no route and so only the segment rules), which is kept on
+  purpose and now said and tested; and that the API's own calls carried Sentry's trace
+  headers, so the tests' requests, made in the same process, were dropped too. The API
+  now sends trace headers to no one (`tracePropagationTargets: []`), which also stops
+  telling Clerk, Stripe, Resend and R2 our trace ids and route names. A record no route
+  matched (a 404, a 503 while draining, a malformed URL) has no pattern, so its own
+  path has the segment rules alone, a code spelled only in letters being the gap.
+
+The paragraph now reads:
 
 > **How fast our pages are.** When you open one of our pages, your browser may measure
 > how quickly it loaded and responded, and how much its content shifted while it was

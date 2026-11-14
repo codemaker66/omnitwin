@@ -17,7 +17,9 @@ import { initSentry } from "../observability/sentry.js";
 // out to a stand-in provider with an id in the URL. Each transaction as the
 // SDK built it, just before the API's own scrubber, is read from the client's
 // postprocessEvent hook (so the test cannot pass for want of the details),
-// and what the SDK sent is read from the stand-in ingest.
+// and what the SDK sent is read from the stand-in ingest. The tests' own
+// requests carry no trace headers: the API's options send none
+// (tracePropagationTargets), so they reach it as a browser's do.
 // ---------------------------------------------------------------------------
 
 const MARKED_AGENT = "ProbeBrowser/9.9 (timing-record-marker-5ad1)";
@@ -28,15 +30,25 @@ const MARKED_LANGUAGE = "gd-GB";
 const CODE = "qwertyzx";
 /** A provider's id in the URL of the call the route makes (as Clerk's users/<id>). */
 const PROVIDER_ID = "user_2NNEqL2nrIRdJ194ndJqAHwEfxC";
-/** A caller's trace, whose baggage sets the sampling draw to its lowest. */
+/** An id in the URL of a call a route starts that ends after its reply. */
+const LATE_ID = "late_9QwErTy2uIoP";
+/** A caller's trace and its baggage, as another Sentry-instrumented service would send. */
+const CALLER_TRACE_ID = "0123456789abcdef0123456789abcdef";
+const CALLER_SPAN_ID = "0123456789abcdef";
 const CALLER_TRACE = {
-  "sentry-trace": "0123456789abcdef0123456789abcdef-0123456789abcdef-1",
-  baggage: "sentry-trace_id=0123456789abcdef0123456789abcdef,sentry-sample_rand=0,sentry-sample_rate=1,sentry-sampled=true",
+  "sentry-trace": `${CALLER_TRACE_ID}-${CALLER_SPAN_ID}-1`,
+  baggage: `sentry-trace_id=${CALLER_TRACE_ID},sentry-sample_rand=0,sentry-sample_rate=1,sentry-sampled=true`,
 };
 
 interface SentTransaction {
   readonly transaction?: unknown;
   readonly request?: { readonly headers?: unknown; readonly url?: unknown };
+}
+
+/** A transaction as the SDK built it, from the client's hook. */
+interface BuiltTransaction {
+  readonly transaction?: unknown;
+  readonly trace?: { readonly trace_id?: unknown; readonly parent_span_id?: unknown };
 }
 
 /** The transactions in one envelope (newline-delimited JSON: the envelope's
@@ -70,6 +82,9 @@ describe("the API's timing records (the real SDK and server)", () => {
   let base = "";
   let flush: (timeout: number) => Promise<boolean>;
 
+  const builtWith = (text: string): BuiltTransaction[] =>
+    built.filter((event) => event.includes(text)).map((event) => JSON.parse(event) as BuiltTransaction);
+
   beforeAll(async () => {
     ingest = createServer((request, response) => {
       const chunks: Buffer[] = [];
@@ -82,11 +97,16 @@ describe("the API's timing records (the real SDK and server)", () => {
       });
     });
     const ingestBase = await listen(ingest);
-    // A stand-in for a provider the route calls out to.
+    // A stand-in for a provider the routes call out to; slow for a late call,
+    // so that call ends well after its route's reply.
     provider = createServer((request, response) => {
       request.resume();
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end("{}");
+      const answer = (): void => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end("{}");
+      };
+      if (request.url?.startsWith("/v1/late/") === true) setTimeout(answer, 500);
+      else answer();
     });
     const providerBase = await listen(provider);
 
@@ -123,6 +143,11 @@ describe("the API's timing records (the real SDK and server)", () => {
       return { id: "a-venue" };
     });
     server.get("/forced/:code", () => ({ ok: true }));
+    server.get("/late/:code", (_request, reply) => {
+      void reply.send({ ok: true });
+      // Work the route started that ends after its reply, as a push or an email would.
+      void fetch(`${providerBase}/v1/late/${LATE_ID}`).then((call) => call.arrayBuffer(), () => undefined);
+    });
     await server.listen({ port: 0, host: "127.0.0.1" });
     base = `http://127.0.0.1:${String((server.server.address() as AddressInfo).port)}`;
   }, 60_000);
@@ -147,8 +172,10 @@ describe("the API's timing records (the real SDK and server)", () => {
       expect(sent).toHaveLength(1);
     }, { timeout: 10_000 });
     // The SDK did record all of it: without the scrubber it would be sent.
+    // And the request came as a browser's does, with no trace of its own.
     const builtVenue = built.filter((event) => event.includes("\"GET /venues/:venueId\"")).join("\n");
     for (const marker of ["timing-record-marker-5ad1", MARKED_LANGUAGE, CODE, PROVIDER_ID]) expect(builtVenue).toContain(marker);
+    expect(builtWith("\"GET /venues/:venueId\"").map((record) => record.trace?.parent_span_id)).toEqual([undefined]);
     // None of it was sent: no header, the route's pattern in place of the
     // path, and no marker or id anywhere in what reached the ingest.
     expect(sent[0]?.request?.headers).toBeUndefined();
@@ -157,19 +184,33 @@ describe("the API's timing records (the real SDK and server)", () => {
     for (const marker of ["timing-record-marker-5ad1", MARKED_LANGUAGE, CODE, PROVIDER_ID]) expect(everything).not.toContain(marker);
   }, 30_000);
 
-  // #355's verification (13 November 2026): a caller's baggage can set the
-  // sampling draw (sample_rand), so a request that continues a caller's trace
-  // is never sent as a timing record; the rate alone decides.
-  it("sends no timing record of a request that carries a caller's trace, however its baggage set the draw", async () => {
+  // #355's verifications (13 November 2026): a caller's baggage can set the
+  // sampling draw (sample_rand), so a request that continues a caller's
+  // trace is never sent as a timing record.
+  it("sends no timing record of a request that continues a caller's trace", async () => {
     const response = await fetch(`${base}/forced/abcdef`, { headers: CALLER_TRACE });
     await response.arrayBuffer();
     expect(response.status).toBe(200);
-    // Traced: the SDK built its record...
+    // Traced, and continuing the caller's trace: the SDK built its record...
     await vi.waitFor(() => {
-      expect(built.some((event) => event.includes("\"GET /forced/:code\""))).toBe(true);
+      expect(builtWith("\"GET /forced/:code\"").map((record) => [record.trace?.trace_id, record.trace?.parent_span_id]))
+        .toEqual([[CALLER_TRACE_ID, CALLER_SPAN_ID]]);
     }, { timeout: 10_000 });
-    await flush(2_000);
+    expect(await flush(5_000)).toBe(true);
     // ...and none was sent.
     expect(envelopes.flatMap(transactionsIn).filter((event) => event.transaction === "GET /forced/:code")).toEqual([]);
+  }, 30_000);
+
+  // The SDK sends the late part of a request already sent on its own, with a
+  // parent span and no route: never sent either.
+  it("sends no record of work a route started that ended after its reply", async () => {
+    const response = await fetch(`${base}/late/abcdef`);
+    await response.arrayBuffer();
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(builtWith(LATE_ID).filter((record) => typeof record.trace?.parent_span_id === "string")).not.toEqual([]);
+    }, { timeout: 10_000 });
+    expect(await flush(5_000)).toBe(true);
+    expect(envelopes.join("\n")).not.toContain(LATE_ID);
   }, 30_000);
 });

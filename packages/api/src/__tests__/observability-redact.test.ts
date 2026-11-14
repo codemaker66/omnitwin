@@ -689,6 +689,34 @@ describe("scrubTransaction", () => {
     expect(withoutIdentifiers("/venues/:id/rooms?[redacted]")).toBe("/venues/:id/rooms?[redacted]");
     expect(withoutIdentifiers("/events/:id/changes-awaiting-acknowledgement")).toBe("/events/:id/changes-awaiting-acknowledgement");
     expect(withoutIdentifiers("/v1/h2645/x")).toBe("/v1/h2645/x");
+    // A long token in both cases is an id from twenty characters, not nineteen.
+    expect(withoutIdentifiers("/v1/users/AbCdEfGhIjKlMnOpQrS")).toBe("/v1/users/AbCdEfGhIjKlMnOpQrS");
+    expect(withoutIdentifiers("/v1/users/AbCdEfGhIjKlMnOpQrSt")).toBe("/v1/users/:id");
+  });
+
+  it("finds the request's own path in its trace where the record has no request, and cuts fragments", () => {
+    const out = scrubTransaction({
+      type: "transaction",
+      contexts: {
+        trace: {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000001",
+          data: {
+            "http.route": "/bookings/:bookingId",
+            "url.full": "https://api.example.test/bookings/qwertyzx#note",
+            url: "https://api.example.test/bookings/qwertyzx",
+            "url.fragment": "note",
+          },
+        },
+      },
+      spans: [{ trace_id: "00000000000000000000000000000001", span_id: "0000000000000002", start_timestamp: 1, data: { "http.url": "https://cdn.example.test/p/AB12CD/print#section-2" } }],
+    });
+    expect(out.contexts?.trace?.data).toEqual({
+      "http.route": "/bookings/:bookingId",
+      "url.full": "https://api.example.test/bookings/:bookingId",
+      url: "https://api.example.test/bookings/:bookingId",
+    });
+    expect(out.spans?.[0]?.data).toEqual({ "http.url": "https://cdn.example.test/p/:id/print" });
   });
 
   it("drops the request body, the caller's address and credentials, and the query in url.path", () => {
