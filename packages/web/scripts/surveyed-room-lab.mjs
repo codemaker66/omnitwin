@@ -50,7 +50,8 @@ const query = new URLSearchParams({ base: ROOM, r: REVISION, render: PROFILE });
 if (PHOTOS !== null) query.set("photos", PHOTOS);
 
 const browser = await chromium.launch({
-  channel: "chromium",
+  // "chrome" is the installed Google Chrome, for a machine without Playwright's own Chromium.
+  channel: option("channel", "chromium"),
   headless: true,
   args: ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"],
 });
