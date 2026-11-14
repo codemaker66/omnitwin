@@ -42,6 +42,19 @@ const LISTED: readonly SurveyedRoomEntry[] = [];
 /** The same rooms by space slug: each is filed under its own slug, so a key cannot name another room's entry. */
 export const SURVEYED_ROOMS: ReadonlyMap<string, SurveyedRoomEntry> = new Map(LISTED.map((entry) => [entry.slug, entry]));
 
+/** A public folder on this origin: a path of plain segments, nothing that climbs or leaves. */
+const PUBLIC_FOLDER = /^(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)+$/;
+
+/**
+ * A survey's folder as a development page or parameter names one: the path
+ * without its trailing slashes, or null for anything but a plain path on
+ * this site (another origin, a query, a segment that climbs).
+ */
+export function publicSurveyFolder(asked: string): string | null {
+  const base = asked.replace(/\/+$/, "");
+  return PUBLIC_FOLDER.test(base) ? base : null;
+}
+
 /** A survey file's URL, at the entry's revision. */
 export function surveyFileUrl(entry: SurveyedRoomEntry, file: string): string {
   return `${entry.base}/${file}?r=${String(entry.revision)}`;
