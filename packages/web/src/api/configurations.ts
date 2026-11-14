@@ -235,13 +235,16 @@ export async function authBatchSave(
 //
 // The planner's human layer: special instructions, day-of contact, per-
 // phase deadlines, access notes. Persists to the configurations.metadata
-// JSONB column via the auth PATCH endpoint. Pass null to clear.
+// JSONB column via the auth PATCH endpoint. Each key sent replaces the stored
+// one whole and the others are kept (a shallow merge on the server). No single
+// key can be removed: the server refuses null for these keys, and only a null
+// for the whole value clears the column, every key with it.
 // ---------------------------------------------------------------------------
 
 export interface ConfigMetadataInput {
-  readonly instructions?: EventInstructions | null;
+  readonly instructions?: EventInstructions;
   /** The layout's gangway review, as lib/gangway-review-record writes it. */
-  readonly gangwayReview?: GangwayReview | null;
+  readonly gangwayReview?: GangwayReview;
 }
 
 const PatchConfigResponseSchema = z.object({ id: z.string() }).loose();

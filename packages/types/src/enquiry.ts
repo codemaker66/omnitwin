@@ -177,27 +177,60 @@ export type CreateEnquiry = z.infer<typeof CreateEnquirySchema>;
 export const GUEST_ENQUIRY_SOURCES = ["website", "walkthrough"] as const;
 export type GuestEnquirySource = (typeof GUEST_ENQUIRY_SOURCES)[number];
 
+/**
+ * The most a guest may give in each field the public enquiry forms offer:
+ * characters for the name, telephone and message, and the largest guest
+ * count. GuestEnquirySchema holds the API to these (zod counts a string's
+ * Unicode code points). The forms (the front door's composer, the
+ * walkthrough's and the planner's) set the name, telephone and guest count
+ * on their fields; a message over its limit is kept whole and held at Send
+ * with the reason (packages/web lib/enquiry-message-length.ts). So a form
+ * never sends what the API would refuse as "Validation failed".
+ */
+export const GUEST_ENQUIRY_LIMITS = {
+  nameLength: 200,
+  phoneLength: 30,
+  messageLength: MAX_MESSAGE_LENGTH,
+  guestCount: MAX_GUEST_COUNT,
+} as const;
+
+/**
+ * The last event date GuestEnquirySchema takes, which the three forms set as
+ * their date field's max: a date input with no max takes a year of five or
+ * six digits ("20277-05-01"), and the schema reads a year of four.
+ */
+export const GUEST_ENQUIRY_LATEST_EVENT_DATE = "9999-12-31";
+
+/**
+ * A guest's email as the public enquiry route takes it. The forms that post
+ * there check an address with this as well as their own typo rules
+ * (packages/web lib/email-validation.ts), so a guest is asked to correct an
+ * address the API would refuse instead of being told only that the enquiry
+ * was not sent.
+ */
+export const GuestEnquiryEmailSchema = z.string().trim().check(z.email()).max(255);
+
 export const GuestEnquirySchema = z
   .object({
     configurationId: ConfigurationIdSchema.optional(),
     venueSlug: z.string().trim().min(1).max(100).optional(),
-    email: z.string().trim().check(z.email()).max(255),
-    phone: z.string().trim().max(30).optional(),
+    email: GuestEnquiryEmailSchema,
+    phone: z.string().trim().max(GUEST_ENQUIRY_LIMITS.phoneLength).optional(),
     /** A name that is empty once trimmed is no name: it parses to undefined,
      *  so the enquiry falls back to the email and never stores "" as the name
      *  a hold's title is later built from (booking titles need a character). */
     name: z
       .string()
       .trim()
-      .max(200)
+      .max(GUEST_ENQUIRY_LIMITS.nameLength)
       .transform((name) => (name === "" ? undefined : name))
       .optional(),
     /** A day the calendar has: it is stored in a date column, which refuses
      *  "2027-02-30", "2027-13-01" and year 0000 (audit enquiries-crm-6). */
     eventDate: z.string().refine(isCalendarDate, "Not a calendar date").optional(),
     eventType: z.string().trim().max(100).optional(),
-    guestCount: z.number().int().nonnegative().max(MAX_GUEST_COUNT).optional(),
-    message: z.string().max(MAX_MESSAGE_LENGTH).optional(),
+    guestCount: z.number().int().nonnegative().max(GUEST_ENQUIRY_LIMITS.guestCount).optional(),
+    message: z.string().max(GUEST_ENQUIRY_LIMITS.messageLength).optional(),
     source: z.enum(GUEST_ENQUIRY_SOURCES).optional(),
     roomSlug: z.string().trim().min(1).max(100).optional(),
     /** Where the person came from (migration 0100). No page sends it until

@@ -9,6 +9,7 @@ import {
   reverberantGain,
   reverberationTimes,
   roomAcousticsFor,
+  roomConstant,
   roomState,
 } from "../room-acoustics.js";
 import { ROOM_ACOUSTICS, ROOM_PLANS, UNCALIBRATED, domeGeometry, type RoomAcoustics, type RoomSlug } from "../rooms.js";
@@ -73,17 +74,42 @@ describe("Trades Hall rooms", () => {
     expect(fine.volumeM3).toBeCloseTo(50.1, 1);
     expect(fine.surfaceM2).toBeCloseTo(54.44, 1);
     expect(fine.openingM2).toBeCloseTo(Math.PI * 3.32 * 3.32, 9);
-    const ceiling = GRAND_HALL.surfaces.find((surface) => surface.material === "plaster-lath");
-    expect(ceiling?.areaM2).toBeCloseTo(21.135 * 10.59 - fine.openingM2, 9);
-    const dome = GRAND_HALL.surfaces.filter(
-      (surface) => surface.material === "plaster-masonry" && surface.role === "ceiling",
-    );
-    expect(dome.map((surface) => surface.areaM2)).toEqual([fine.surfaceM2]);
+    const flat = GRAND_HALL.surfaces.filter((surface) => surface.role === "ceiling" && surface.dome !== true);
+    expect(flat).toHaveLength(1);
+    expect(flat[0]?.areaM2).toBeCloseTo(21.135 * 10.59 - fine.openingM2, 9);
+    const dome = GRAND_HALL.surfaces.filter((surface) => surface.dome === true);
+    expect(dome.map((surface) => [surface.role, surface.areaM2])).toEqual([["ceiling", fine.surfaceM2]]);
   });
 
-  // The next two check the survey and its EST curtains against the research's
-  // Eyring estimate (grand_hall_estimate.py), so they read Eyring as
-  // calculated, before the tracer's calibration (rulings R33 and R40).
+  it("gives the dome and the coffered ceiling round it the plaster-on-lath row, and no other room a dome", () => {
+    // No source gives the dome's construction, so it is EST: the lath row of
+    // the ceiling it rises from, never an unsourced solid plaster (ruling R49).
+    for (const surface of GRAND_HALL.surfaces.filter((s) => s.role === "ceiling")) {
+      expect(surface.material).toBe("plaster-lath");
+    }
+    for (const slug of ROOM_SLUGS.filter((s) => s !== "grand-hall")) {
+      expect(ROOM_ACOUSTICS[slug].surfaces.some((surface) => surface.dome === true)).toBe(false);
+    }
+  });
+
+  it("gives the Robert Adam Room plaster-on-lath ceilings, under the timber floors above it", () => {
+    // The survey puts its lower section under the Grand Hall and its upper
+    // under the Saloon, whose floors are timber on joists or a timber subfloor
+    // (ruling R49).
+    const room = ROOM_ACOUSTICS["robert-adam-room"];
+    const ceilings = room.surfaces.filter((surface) => surface.role === "ceiling");
+    expect(ceilings.map((surface) => surface.material)).toEqual(["plaster-lath"]);
+    expect(ceilings[0]?.areaM2).toBeCloseTo(11.2 * 7.6 + 9.8 * 5.6, 9);
+    expect(GRAND_HALL.surfaces.find((surface) => surface.role === "floor")?.material).toBe("oak-boards-joists");
+    expect(ROOM_ACOUSTICS.saloon.surfaces.find((surface) => surface.role === "floor")?.material).toBe(
+      "parquet-timber-subfloor",
+    );
+  });
+
+  // The next two check the survey and its EST curtains against the first hand
+  // estimate of 27 October (Eyring at 1 kHz: 2.14 s with the curtains drawn,
+  // about 3.5 s without), so they read Eyring as calculated, before the
+  // tracer's calibration (rulings R33 and R40).
   it("puts the empty Grand Hall, curtains included, between 2.0 and 2.6 s at 1 kHz, as surveyed", () => {
     const rt = reverberationTimes(surveyed(GRAND_HALL), NO_CONTENTS);
     expect(rt[3]).toBeGreaterThan(2.0);
@@ -143,13 +169,21 @@ describe("Trades Hall rooms", () => {
     }
   });
 
-  it("panels the Grand Hall's dado to its scanned 1.95 m cap rail", () => {
-    // The perimeter less the openings' widths (15.62 m), times 1.95 m.
-    const expected = (2 * (21.135 + 10.59) - 15.62) * 1.95;
+  it("panels the Grand Hall's dado to its scanned 1.95 m cap rail, less only each opening's part of that band", () => {
+    // By hand from hall-spec.ts's openings: the five windows take only the
+    // band above their sills (two arches 2.7 m wide and one 2.67 m, sills
+    // 0.915 m; two windows 1.43 m wide, sills 0.935 m), and the doors take the
+    // band from the floor (1.1, 1.45 and 1.08 m wide to the rail; the fire
+    // exit, 1.06 m wide, to its 1.91 m head). Under a sill the wall is panelled.
+    const windows = (2 * 2.7 + 2.67) * (1.95 - 0.915) + 2 * 1.43 * (1.95 - 0.935);
+    const doors = (1.1 + 1.45 + 1.08) * 1.95 + 1.06 * 1.91;
+    const expected = 2 * (21.135 + 10.59) * 1.95 - windows - doors;
     const dado = GRAND_HALL.surfaces.filter(
       (surface) => surface.material === "hardwood-panelling" && Math.abs(surface.areaM2 - expected) < 1e-6,
     );
     expect(dado).toHaveLength(1);
+    // The old rule, (perimeter - the openings' 15.62 m of width) x 1.95 m, left
+    // out the 10.1 m2 of panelling under the sills (#416 review A12).
   });
 });
 
@@ -333,6 +367,31 @@ describe("room state", () => {
 
   it("holds the empty Grand Hall's reverberant gain at 1", () => {
     expect(Math.abs(reverberantGain(GRAND_HALL, NO_CONTENTS) - 1)).toBeLessThan(1e-9);
+  });
+
+  it("counts the air's 4 m V in the room constant, as Eyring's time does", () => {
+    // Two rooms with the same surfaces and different volumes: without the air
+    // their reverberant gains would be equal. R = (S alpha + 4 m V) / (1 - alpha).
+    const surfaces: RoomAcoustics["surfaces"] = [
+      { material: "plaster-masonry", areaM2: 400, role: "wall" },
+      { material: "oak-boards-joists", areaM2: 100, role: "floor" },
+    ];
+    const small: RoomAcoustics = { slug: "small", volumeM3: 300, surfaces, calibration: UNCALIBRATED, source: "test" };
+    const large: RoomAcoustics = { ...small, slug: "large", volumeM3: 3000 };
+    const surfaceA = 400 * 0.04 + 100 * 0.07; // 1 kHz
+    const m = 1.07e-3; // AIR_ATTENUATION_PER_M at 1 kHz
+    const ratio = Math.sqrt((surfaceA + 4 * m * 3000) / (surfaceA + 4 * m * 300));
+    expect(reverberantGain(small, NO_CONTENTS) / reverberantGain(large, NO_CONTENTS)).toBeCloseTo(ratio, 9);
+    expect(ratio).toBeGreaterThan(1.1);
+    // The exported room constant itself, which the listening page reads.
+    const meanAlpha = surfaceA / 500;
+    expect(roomConstant(small, NO_CONTENTS)).toBeCloseTo((surfaceA + 4 * m * 300) / (1 - meanAlpha), 9);
+    expect(roomConstant(large, NO_CONTENTS)).toBeCloseTo((surfaceA + 4 * m * 3000) / (1 - meanAlpha), 9);
+    // And the empty Grand Hall's, which every reverberant gain is relative to.
+    expect(reverberantGain(small, NO_CONTENTS)).toBeCloseTo(
+      Math.sqrt(roomConstant(GRAND_HALL, NO_CONTENTS) / roomConstant(small, NO_CONTENTS)),
+      9,
+    );
   });
 
   it("lowers every room's reverberant gain as contents are added", () => {

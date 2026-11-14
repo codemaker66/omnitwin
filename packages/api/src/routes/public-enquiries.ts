@@ -12,10 +12,10 @@ import {
   type EnquiryAttributionRecord,
   type EnquirySource,
 } from "@omnitwin/types";
-import { eq, and, isNull, asc, inArray, sql } from "drizzle-orm";
-import { enquiries, enquiryStatusHistory, configurations, spaces, users, venues } from "../db/schema.js";
+import { eq, and, isNull, asc, inArray, like, notInArray, sql } from "drizzle-orm";
+import { enquiries, enquiryStatusHistory, configurations, emailSends, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { resolveEmailReplyTo, sendEmailAsync } from "../services/email.js";
+import { resolveEmailReplyTo, sendEmailAsync, type SendLimit } from "../services/email.js";
 import { enquiryAcknowledgement, newEnquiryNotification } from "../services/email-templates.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
 import { acquisitionContextFor, funnelBrowserSignalsEnabled, recordEnquiryEngagement } from "../services/enquiry-funnel.js";
@@ -32,11 +32,12 @@ const GuestEnquiryBody = GuestEnquirySchema;
  * Venues whose public twin is published and may therefore receive walkthrough
  * enquiries. This is the venue-path's OPT-IN GATE (2026-07 security review): a
  * venue slug is public and guessable, so without a gate any tenant would be
- * enumerable and spammable by slug. The config path does not read this list:
- * anyone may make a public plan in any live venue's room (POST
- * /public/configurations, as the planner at /v/:venueSlug/plan does), so a
- * plan's id is no secret and that path reaches every live venue (audit
- * public-surface-7, left for a decision). The allowlist mirrors how the twin
+ * enumerable and spammable by slug. The config path reads it too (Blake, 12
+ * November 2026, "Gate it like the form"; audit public-surface-7): anyone may
+ * make a public plan in any live venue's room (POST /public/configurations, as
+ * the planner at /v/:venueSlug/plan does), so a plan's id is no secret, and a
+ * plan whose venue is not on this list answers the venue path's 404. A guest
+ * may still plan in such a venue's room. The allowlist mirrors how the twin
  * bundle is actually deployed (manually, per venue, to R2); env-overridable so new
  * twins are enabled without a code change, defaulting to the flagship so the
  * live twin works with no extra deploy step. The default is the DATABASE slug
@@ -74,6 +75,51 @@ const ENQUIRY_NAME_MAX = 200;
 function offeredOccasionLabel(eventType: string | undefined): string | null {
   const key = eventType?.trim().toLowerCase() ?? "";
   return ENQUIRY_OCCASION_KEYS.includes(key) ? occasionLabel(key) : null;
+}
+
+/** An enquiry's acknowledgement is recorded in email_sends under this key and its id. */
+const ACKNOWLEDGEMENT_KEY = "enquiry-acknowledged:";
+
+/**
+ * At most one acknowledgement to one address in 24 hours (Blake, 12 November
+ * 2026, decision (c)): it goes in the venue's name to an address nobody has
+ * confirmed, so without this anyone could have the venue mail a stranger as
+ * often as they liked. Counted from the acknowledgements email_sends holds for
+ * the address, lower-cased, recorded in the 24 hours before this one is
+ * decided. One that reached nobody does not count: one this limit held back
+ * ("suppressed"), or one the provider did not take ("failed"), whose guest
+ * may well ask again because no reply came. Decided under a
+ * transaction-scoped advisory lock on the address, so of two sent at once
+ * one goes. The enquiry is kept and the team told whatever it decides.
+ */
+function oneAcknowledgementADay(recipient: string): SendLimit {
+  const address = recipient.toLowerCase();
+  return {
+    lockKey: `enquiry-acknowledgement-to:${address}`,
+    allows: async (tx) => {
+      const [recent] = await tx.select({ id: emailSends.id })
+        .from(emailSends)
+        .where(and(
+          like(emailSends.idempotencyKey, `${ACKNOWLEDGEMENT_KEY}%`),
+          sql`lower(${emailSends.recipient}) = ${address}`,
+          notInArray(emailSends.status, ["suppressed", "failed"]),
+          sql`${emailSends.createdAt} > now() - interval '24 hours'`,
+        ))
+        .limit(1);
+      return recent === undefined;
+    },
+  };
+}
+
+/** The venue's first room in use (lowest sortOrder, then the oldest): where
+ *  an enquiry that names no room is filed. */
+async function flagshipRoom(db: Database, venueId: string): Promise<{ id: string; name: string } | undefined> {
+  const [flagship] = await db.select({ id: spaces.id, name: spaces.name })
+    .from(spaces)
+    .where(and(eq(spaces.venueId, venueId), isNull(spaces.deletedAt)))
+    .orderBy(asc(spaces.sortOrder), asc(spaces.createdAt))
+    .limit(1);
+  return flagship;
 }
 
 /** How a notice says where an enquiry came from, when it names no room. */
@@ -143,7 +189,9 @@ export async function publicEnquiryRoutes(
       // The plan's room and venue, while the venue is live: a deleted venue
       // takes no enquiry here, as it takes none on the venue path below.
       // Deleting a venue leaves its rooms and its guests' plans as they were.
-      const [planned] = await db.select({ spaceId: spaces.id, venueId: spaces.venueId, roomName: spaces.name })
+      const [planned] = await db.select({
+        spaceId: spaces.id, venueId: spaces.venueId, roomName: spaces.name, roomRemovedAt: spaces.deletedAt, venueSlug: venues.slug,
+      })
         .from(configurations)
         .innerJoin(spaces, eq(spaces.id, configurations.spaceId))
         .innerJoin(venues, eq(venues.id, spaces.venueId))
@@ -157,11 +205,28 @@ export async function publicEnquiryRoutes(
       if (planned === undefined) {
         return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
       }
+      // The venue path's gate, and its answer: a venue whose walkthrough is
+      // not published takes no enquiry by either path.
+      if (!twinPublicVenueSlugs().includes(planned.venueSlug)) {
+        return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
+      }
+      // Taking a room out of use leaves the plans guests made in it (review
+      // of #404, P5). An enquiry from one is filed as the venue path files
+      // one naming no room: against the venue's first room in use, or the
+      // plan's own when none is left, since the enquiry matters more than the room.
+      let filedIn: { spaceId: string; roomName: string | null } = { spaceId: planned.spaceId, roomName: planned.roomName };
+      if (planned.roomRemovedAt !== null) {
+        request.log.warn(
+          { event: "enquiry.room_removed", venueId: planned.venueId, configurationId: parsed.data.configurationId },
+          "enquiry came from a plan whose room was taken out of use",
+        );
+        filedIn = { spaceId: (await flagshipRoom(db, planned.venueId))?.id ?? planned.spaceId, roomName: null };
+      }
       anchor = {
         venueId: planned.venueId,
-        spaceId: planned.spaceId,
+        spaceId: filedIn.spaceId,
         configurationId: parsed.data.configurationId,
-        roomName: planned.roomName,
+        roomName: filedIn.roomName,
         venuePath: false,
         venueSlug: null,
       };
@@ -184,11 +249,7 @@ export async function publicEnquiryRoutes(
       if (venue === undefined) {
         return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
       }
-      const [flagship] = await db.select({ id: spaces.id, name: spaces.name })
-        .from(spaces)
-        .where(and(eq(spaces.venueId, venue.id), isNull(spaces.deletedAt)))
-        .orderBy(asc(spaces.sortOrder), asc(spaces.createdAt))
-        .limit(1);
+      const flagship = await flagshipRoom(db, venue.id);
       // A published venue with no space is a real onboarding state, not an
       // internal error — collapse it into the same 404 (not a 500 that would
       // leak "this venue exists but is unconfigured").
@@ -437,12 +498,14 @@ export async function publicEnquiryRoutes(
 
     // The venue's own acknowledgement to the organiser. Until this existed a
     // guest got a 201 and silence. Idempotent per enquiry, so a retried POST
-    // or a replayed webhook cannot thank the same person twice.
+    // or a replayed webhook cannot thank the same person twice, and at most
+    // one a day to one address (oneAcknowledgementADay).
     if (!accessRequest && !pricingEnquiry) {
       const acknowledgement = await enquiryAcknowledgement({
         venueName,
         roomName,
-        organiserName: parsed.data.name ?? parsed.data.email,
+        // Greeted by only when it reads as a name; never the address it goes to.
+        organiserName: parsed.data.name ?? null,
         eventType: offeredOccasionLabel(parsed.data.eventType),
         eventDate: parsed.data.eventDate ?? null,
         guestCount: parsed.data.guestCount ?? null,
@@ -450,8 +513,9 @@ export async function publicEnquiryRoutes(
       });
       sendEmailAsync({ to: parsed.data.email, ...acknowledgement }, {
         db,
-        idempotencyKey: `enquiry-acknowledged:${enquiry.id}`,
+        idempotencyKey: `${ACKNOWLEDGEMENT_KEY}${enquiry.id}`,
         logger: request.log,
+        limit: oneAcknowledgementADay(parsed.data.email),
       });
     }
 

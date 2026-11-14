@@ -68,14 +68,15 @@ function uncachedFft(re: Float64Array, im: Float64Array): void {
 }
 
 describe("the fft", () => {
-  it.each([8, 1024, 2048])("equals the uncached formula bit for bit at %i points, first call and cached", (n) => {
+  // 131,072 points is above the cache's largest size, 65,536, so its factors are built afresh on every call (ruling R52).
+  it.each([8, 1024, 2048, 131072])("equals the uncached formula bit for bit at %i points, on a first call and a second", (n) => {
     const random = seededRandom(n);
     const inputRe = Float64Array.from({ length: n }, () => 2 * random() - 1);
     const inputIm = Float64Array.from({ length: n }, () => 2 * random() - 1);
     const expectedRe = Float64Array.from(inputRe);
     const expectedIm = Float64Array.from(inputIm);
     uncachedFft(expectedRe, expectedIm);
-    // Twice: the first call may build the table, the second reads it from the cache.
+    // Twice: the first call may build the table, the second reads it from the cache (or, above the cache's size, builds it again).
     for (let pass = 0; pass < 2; pass += 1) {
       const re = Float64Array.from(inputRe);
       const im = Float64Array.from(inputIm);

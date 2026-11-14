@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The octave bands the set-down engine measures and renders in (T-677).
+// The octave bands the set-down engine measures and renders in (T-700).
 //
 // Every material, piece and room is described by one number per band, from
 // 125 Hz to 8 kHz. Where a source has no 8 kHz value, its 4 kHz value stands in.

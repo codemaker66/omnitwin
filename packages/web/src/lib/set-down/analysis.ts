@@ -1,7 +1,7 @@
 import { applyFilter, biquadCoefficients, fft } from "../planner-sound-render.js";
 
 // ---------------------------------------------------------------------------
-// Measuring a render (T-677).
+// Measuring a render (T-700).
 //
 // The set-down engine is tuned and tested by measurement, never by ear alone:
 // how long a room rings, how much of a sound sits in each octave, where its

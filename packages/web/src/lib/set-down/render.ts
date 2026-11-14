@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The modal set-down renderer (T-677): one piece landing on the surface under
+// The modal set-down renderer (T-700): one piece landing on the surface under
 // each of its feet, heard from where the listener stands, in plain arithmetic.
 //
 // Each foot strikes its surface with a force pulse, 1 - cos over its contact
@@ -62,7 +62,14 @@ export interface SetDownInput {
   readonly kind: "drop" | "settle";
   /** A floor-length cloth, whose hem brushes the floor as the table lands. */
   readonly clothed: boolean;
-  /** The direct sound's amplitude and its lateral angle (lateralAzimuth: its sine is the share to the right). */
+  /**
+   * The direct sound's amplitude and its lateral angle (lateralAzimuth: its
+   * sine is the share to the right). The gain is 0 to 1: 1 is the level rule's
+   * own level, that of a source at the listener's reference distance or
+   * nearer, and a farther source is quieter. The renderer holds it to 0..1
+   * (and takes a gain that is not a number as 1), so no caller's gain takes a
+   * render past the -6 dBFS window's top (ruling R53).
+   */
   readonly direct: { readonly gain: number; readonly azimuthRad: number };
   /** Early reflections, relative to the direct sound (earlyReflections). */
   readonly reflections: readonly Reflection[];
@@ -197,6 +204,28 @@ const RATTLE_DB = -18;
 const RATTLE_RING_S = 0.005;
 const RATTLE_TICK_S = 0.004;
 const RATTLE_Q = 3;
+/**
+ * The rattle draws from a stream of its own: its noise is drawn sample by
+ * sample, so on the play's own stream it moved every mode's draw with the
+ * sample rate (ruling R53). The stream is the play's seed mixed with the
+ * piece's (rattleSeed), so two pieces at one seed rattle differently (ruling
+ * R68), plus this offset. After the mix the rattle's stream starts at no fixed
+ * distance from the play's, so the stretches the two use can overlap: about
+ * once in 10^5 seeds and pieces, and harmlessly, since an overlap only
+ * correlates the rattle's noise with some mode draws.
+ */
+const RATTLE_SEED_OFFSET = 0x40000000;
+
+/** The rattle's seed for a play of `slug` at `seed`: the seed's state mixed with the slug's FNV-1a hash, plus the offset. */
+function rattleSeed(seed: number, slug: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < slug.length; i += 1) {
+    hash ^= slug.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (((seed >>> 0) ^ (hash >>> 0)) + RATTLE_SEED_OFFSET) >>> 0;
+}
+
 const PUFF_S = 0.04;
 const PUFF_HZ = 600;
 const PUFF_DB = -24;
@@ -214,8 +243,8 @@ const FRAME_KINDS: ReadonlySet<PartKind> = new Set<PartKind>(["beech-frame", "st
  * How much energy the struck spot radiates against the piece's own modes, per
  * hertz of the surface's bank, for a foot stopping 1 kg (EST). The surface
  * takes the foot's momentum, so it sounds harder under a heavier piece: the
- * ratio grows as the root of the mass each foot stops. Research 4.1: a chair
- * is heard mostly through the floor and its seat.
+ * ratio grows as the root of the mass each foot stops. Set so a chair is heard
+ * mostly through the floor and its seat (EST).
  */
 const STRUCK_BALANCE = 1.2;
 /**
@@ -468,20 +497,23 @@ function landingPulses(
 /**
  * Folding legs knocking in their joints after the landing: short noise ticks
  * at 1.2-3 kHz, each peaking at 1, written into `force`, which rings the
- * frames (at the level RATTLE_DB sets on what it rings).
+ * frames (at the level RATTLE_DB sets on what it rings). `random` is the
+ * rattle's own stream: when and at what pitch each tick falls is drawn first,
+ * so those are the same at every rate, and then the ticks' noise.
  */
 function addRattle(force: Float64Array, landings: readonly FootLanding[], sampleRate: number, random: () => number): void {
   const last = Math.max(...landings.map((landing) => landing.time));
   const count = RATTLE_COUNT[0] + Math.floor(random() * (RATTLE_COUNT[1] - RATTLE_COUNT[0] + 1));
   const earliest = last + RATTLE_AFTER_S;
+  const ticks = Array.from({ length: count }, () => ({ at: earliest + random() * Math.max(0, RATTLE_WINDOW_S - earliest), hz: lerp(RATTLE_HZ, random()) }));
   const length = Math.max(4, Math.round(RATTLE_TICK_S * sampleRate));
   const attack = Math.max(1, Math.round(0.0003 * sampleRate));
   const fall = 0.0007 * sampleRate;
   const tick = new Float64Array(length);
-  for (let k = 0; k < count; k += 1) {
-    const start = Math.round((earliest + random() * Math.max(0, RATTLE_WINDOW_S - earliest)) * sampleRate);
+  for (const { at, hz } of ticks) {
+    const start = Math.round(at * sampleRate);
     for (let i = 0; i < length; i += 1) tick[i] = 2 * random() - 1;
-    filterInPlace(tick, length, biquadCoefficients("bandpass", lerp(RATTLE_HZ, random()), RATTLE_Q, sampleRate));
+    filterInPlace(tick, length, biquadCoefficients("bandpass", hz, RATTLE_Q, sampleRate));
     for (let i = 0; i < length; i += 1) tick[i] = (tick[i] ?? 0) * (i < attack ? i / attack : Math.exp(-(i - attack) / fall));
     scalePeakTo(tick, length, 1);
     for (let i = 0; i < length && start + i < force.length - DRIVE_TAIL; i += 1) force[start + i] = (force[start + i] ?? 0) + (tick[i] ?? 0);
@@ -1018,6 +1050,14 @@ function levelFor(source: Float64Array, sourcePeak: number, targetDb: number, sa
  * and when, each mode +-1.5 % in frequency and +-2 dB in gain). Nothing in it
  * throws, and every body, even an empty one, is heard.
  *
+ * Determinism holds per sample rate. The noises (the rattle's ticks, the
+ * puff, the hem) are drawn a sample at a time, so the same seed draws other
+ * noise at another rate. What the seed decides about the piece is drawn before
+ * any rate-sized noise, or on a stream of its own, and is the same at every
+ * rate: the play's speed, its feet, every mode's frequency, decay and gain,
+ * and when and at what pitch the legs rattle (ruling R53). Its loudness and
+ * brightness at 44.1 kHz match 48 kHz's (render-rates.test.ts).
+ *
  * At full direct gain the source is set to SET_DOWN_TOUCH_LOUDNESS_DB
  * + 3 log10(m / 4) + 10 log10(v) of momentary loudness (rulings R36, R45),
  * where v is the play's own speed (a quarter of the set-down's for a settle,
@@ -1050,7 +1090,7 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
   let rattle: Float64Array | null = null;
   if (piece.body.legRattle) {
     rattle = new Float64Array(drive);
-    addRattle(rattle, landings, sampleRate, random);
+    addRattle(rattle, landings, sampleRate, seededRandom(rattleSeed(input.seed, piece.body.slug)));
   }
 
   // The voices: the piece's parts, driven by every foot (and its frames by the rattle too), and each surface's
@@ -1152,7 +1192,8 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
   }
 
   // The space: any reflection under 1 ms folds into the direct sound; later ones (up to a second) follow it.
-  const directGain = Number.isFinite(input.direct.gain) ? Math.max(0, input.direct.gain) : 1;
+  // The direct gain is held to its contract, 0..1 (ruling R53).
+  const directGain = Number.isFinite(input.direct.gain) ? clamp(input.direct.gain, 0, 1) : 1;
   let folded = 1;
   const later: Reflection[] = [];
   for (const reflection of input.reflections) {

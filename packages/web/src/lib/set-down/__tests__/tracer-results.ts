@@ -1,12 +1,13 @@
 // ---------------------------------------------------------------------------
 // The offline ray tracer's results (tools/set-down-acoustics), read for the
-// tests that hold the room model to it (T-677, Task 7).
+// tests that hold the room model to it (T-700, Task 7).
 //
-// The tracer (raytrace.py) traces each room's prism empty, half dressed and
-// fully dressed, and writes results.json. The calibration test checks the
-// model against it; the room test checks that rooms.ts carries the factors
-// fitted from it. This file is the one place that reads it, defines the half
-// dressing, and states the fitting rule.
+// The tracer (raytrace.py) traces each room as a box with the model's volume
+// and surface areas (the Grand Hall with a cap of the scanned dome's volume),
+// empty, half dressed and fully dressed, and writes results.json. The
+// calibration test checks the model against it; the room test checks that
+// rooms.ts carries the factors fitted from it. This file is the one place that
+// reads it, defines the half dressing, and states the fitting rule.
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
@@ -69,14 +70,15 @@ export const LOW_OCTAVE_EDGE_HZ = 125 / Math.SQRT2;
 const NO_CONTENTS: BandValues = [0, 0, 0, 0, 0, 0, 0];
 
 const bands = z.tuple([z.number(), z.number(), z.number(), z.number(), z.number(), z.number(), z.number()]);
-/** What the run that wrote results.json records of itself (ruling R38). */
+const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
+/** What the run that wrote results.json records of itself (rulings R38 and R50). */
 const traceRecord = z.object({
   /** sha256 of the rooms.json it traced, with CRLF line ends read as LF. */
-  roomsSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  roomsSha256: sha256,
+  /** sha256 of the raytrace.py that traced it, with CRLF line ends read as LF. */
+  raytraceSha256: sha256,
   batch: z.number().int().positive(),
   numpy: z.string().min(1),
-  /** Set when the record was added after the trace by raytrace.py --stamp. */
-  stamped: z.string().optional(),
 });
 const roomResult = z.object({
   empty: bands,
@@ -168,8 +170,23 @@ export function fittedCalibration(slug: TracedRoom): BandValues {
   return [factor(0), factor(1), factor(2), factor(3), factor(4), factor(5), factor(6)];
 }
 
-/** sha256 of the committed rooms.json, with CRLF line ends read as LF (as raytrace.py hashes it). */
+/**
+ * sha256 of a file in the tracer's folder with CRLF line ends read as LF, as
+ * raytrace.py's lf_sha256 hashes it, so a Windows checkout (CRLF) and a Linux
+ * one (LF) agree. Read as latin1, one character a byte, so the hash is of the
+ * file's exact bytes.
+ */
+function lfSha256(name: string): string {
+  const bytes = readFileSync(resolve(TRACER_DIR, name), "latin1").replace(/\r\n/g, "\n");
+  return createHash("sha256").update(bytes, "latin1").digest("hex");
+}
+
+/** sha256 of the committed rooms.json, LF-normalised. */
 export function committedRoomsSha256(): string {
-  const text = readFileSync(resolve(TRACER_DIR, "rooms.json"), "utf8").replace(/\r\n/g, "\n");
-  return createHash("sha256").update(text, "utf8").digest("hex");
+  return lfSha256("rooms.json");
+}
+
+/** sha256 of the committed raytrace.py, LF-normalised (ruling R50). */
+export function committedRaytraceSha256(): string {
+  return lfSha256("raytrace.py");
 }

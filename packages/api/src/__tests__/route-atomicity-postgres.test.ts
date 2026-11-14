@@ -6,6 +6,7 @@ import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
 import { claimConfigRoutes } from "../routes/claim-config.js";
+import { configurationRoutes } from "../routes/configurations.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
 import { quoteRoutes } from "../routes/quotes.js";
 import { proposalRoutes } from "../routes/proposals.js";
@@ -70,6 +71,7 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
     const db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
+    await server.register(configurationRoutes, { db, prefix: "/configurations" });
     await server.register(publicConfigRoutes, { db, prefix: "/public" });
     await server.register(quoteRoutes, { db, prefix: "/quotes" });
     await server.register(proposalRoutes, { db, prefix: "/proposals" });
@@ -153,6 +155,62 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
       const result = await pool.query<{ thumbnail_url: string | null }>("SELECT thumbnail_url FROM configurations WHERE id = $1", [CONFIG]);
       expect(result.rows[0]?.thumbnail_url).toBeNull();
     });
+  });
+
+  it("keeps both keys when two layout metadata saves of different keys land at once", async () => {
+    // Event details saving instructions while the planner records its gangway
+    // review: each old handler read the same stored blob, and the later write
+    // dropped the other's key. The merge now happens in the UPDATE itself, and
+    // a key neither save names (the schema keeps unknown keys) survives both.
+    await pool.query(`UPDATE configurations SET review_status = 'draft', metadata = '{"fixtureKept":"Kept","gangwayReview":{"items":[]}}'::jsonb WHERE id = $1`, [CONFIG]);
+    const save = (metadata: Record<string, unknown> | null) => server.inject({
+      method: "PATCH", url: `/configurations/${CONFIG}`, headers: headers(), payload: { metadata },
+    }).then((r) => r);
+    const stored = async (): Promise<{ metadata: unknown; kind: string | null }> => {
+      const result = await pool.query<{ metadata: unknown; kind: string | null }>(
+        "SELECT metadata, jsonb_typeof(metadata) AS kind FROM configurations WHERE id = $1", [CONFIG]);
+      const row = result.rows[0];
+      if (row === undefined) throw new Error("fixture layout missing");
+      return row;
+    };
+    const review = { items: [] };
+    await withBlocker(async (client) => {
+      await client.query("SELECT id FROM configurations WHERE id = $1 FOR UPDATE", [CONFIG]);
+      const responses = Promise.all([
+        save({ instructions: { specialInstructions: "Load in at 08:00" } }),
+        save({ gangwayReview: review }),
+      ]);
+      await waitForBlockedQueries(2);
+      await client.query("COMMIT");
+      expect((await responses).map((r) => r.statusCode)).toEqual([200, 200]);
+    });
+    const merged = await stored();
+    expect(merged.kind).toBe("object");
+    expect(merged.metadata).toMatchObject({
+      fixtureKept: "Kept",
+      gangwayReview: review,
+      instructions: { specialInstructions: "Load in at 08:00" },
+    });
+
+    // A key cannot be nulled on its own: the schema refuses it, and nothing is written.
+    expect((await save({ gangwayReview: null })).statusCode).toBe(400);
+    expect((await stored()).metadata).toEqual(merged.metadata);
+
+    // An explicit null clears the column to SQL NULL (pg reads a jsonb 'null'
+    // as null too, so ask the database), and the next save starts from {}.
+    expect((await save(null)).statusCode).toBe(200);
+    const cleared = await pool.query<{ cleared: boolean }>("SELECT metadata IS NULL AS cleared FROM configurations WHERE id = $1", [CONFIG]);
+    expect(cleared.rows[0]?.cleared).toBe(true);
+    expect((await save({ fixtureAfter: "one" })).statusCode).toBe(200);
+    expect(await stored()).toEqual({ metadata: { fixtureAfter: "one" }, kind: "object" });
+
+    // A stored value that is not an object starts again from {} too, instead
+    // of `||` wrapping it into an array.
+    for (const odd of ["null", "[1]", "\"text\""]) {
+      await pool.query("UPDATE configurations SET metadata = $2::jsonb WHERE id = $1", [CONFIG, odd]);
+      expect((await save({ fixtureAfter: "two" })).statusCode).toBe(200);
+      expect(await stored()).toEqual({ metadata: { fixtureAfter: "two" }, kind: "object" });
+    }
   });
 
   function appendLine(amount: number): Promise<{ statusCode: number; body: string }> {

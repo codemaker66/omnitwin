@@ -175,6 +175,18 @@ export function awaitsVenue(user: { readonly role: string; readonly venueId: str
 }
 
 /**
+ * Who opens the Diary page (`/diary`): its readers (DIARY_ROLES) and a
+ * platform admin, whatever its venue role, as `GET /calendar`'s
+ * `canReadDiary` admits them. The staff header's Diary link, Find and the
+ * route's guard all read this one rule, so the Diary is never offered to
+ * someone the page then refuses.
+ */
+export function opensDiary(user: { readonly role: string; readonly platformRole: string } | null | undefined): boolean {
+  if (user === null || user === undefined) return false;
+  return user.platformRole === "admin" || hasRole(DIARY_ROLES, user.role);
+}
+
+/**
  * The venue whose Diary this person reads from the staff desks: their own, for
  * the Diary's readers and a platform admin; null for anyone else. Find's day
  * answer and the Enquiries desk's Diary fact both follow it, so neither asks

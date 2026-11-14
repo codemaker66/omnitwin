@@ -18,7 +18,9 @@
 
 **Tech Stack:** TypeScript strict, React 18 with React Three Fiber, the Web Audio API, Vitest (happy-dom), Python 3 with numpy (the offline ray tracer only), and esbuild (bundled with Vite) for the listening page.
 
-**Spec:** `docs/superpowers/specs/2026-10-27-furniture-set-down-sound-design.md` (approved by Blake on 27 Oct 2026). The research data is in `D:/claude/furniture-sound-20261027/research/acoustic-data.md` and the first estimate in `D:/claude/furniture-sound-20261027/analysis/grand_hall_estimate.py`.
+**Spec:** `docs/superpowers/specs/2026-10-27-furniture-set-down-sound-design.md` (approved by Blake on 27 Oct 2026). The data's primary sources are cited row by row in `lib/set-down/acoustic-data.ts`, `rooms.ts`, `surfaces.ts` and `modes.ts`; the values tabled below are as planned, and the code holds the values that shipped.
+
+**Task number.** This is T-700, renumbered on 13 Nov 2026 (the repository's T-677 is the foundry's shared-lock migration). Commits made before then say T-677; the branch names keep `t677`. The #416 review's rulings R46–R53 (`docs/sessions/2026-11-13.md`) amend this plan where noted.
 
 Paths below are relative to `packages/web/src/` unless they start with `tools/`, `docs/` or `packages/`. The worktree is `E:/claude/furniture-sound`, on branch `claude/furniture-sound-t677`.
 
@@ -26,13 +28,13 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
 
 - **Web Audio only in the registry.** Only `lib/sound-registry.ts` may contain the patterns `AudioContext`, `webkitAudioContext`, `createOscillator`, `createBufferSource`, `HTMLAudioElement`, `new Audio(` and `<audio` (`lib/__tests__/sound-registry.test.ts` scans `src/`).
 - **Strict TypeScript.** No `any`, no new runtime dependency, and `.js` suffixes on relative imports, as the repo does.
-- **Bands.** Octave bands are 125, 250, 500, 1000, 2000, 4000 and 8000 Hz. Wherever a material has no 8 kHz value, use its 4 kHz value.
+- **Bands.** Octave bands are 125, 250, 500, 1000, 2000, 4000 and 8000 Hz. Wherever a material has no 8 kHz value, use its 4 kHz value, or 4 kHz + 0.01 (EST) where the row rises with frequency (ruling R65).
 - **Sample rate.** 48000 Hz unless the context says otherwise. Every render is seeded and deterministic, using `seededRandom` from `lib/planner-sound-render.ts`.
 - **Timing.** A set-down is heard no earlier than the contact frame is shown, and within 20 ms of it where the device's output latency allows.
 - **Levels:**
-  - set-downs stay within an 8 dB window of K-weighted loudness across the catalogue;
+  - set-downs stay within an 8 dB window of momentary K-weighted loudness (BS.1770 momentary maximum, 400 ms window; R45) across the catalogue;
   - the common pieces (chairs, rounds, trestles, poseurs) stay within 4 dB of each other;
-  - set-down peaks sit between −32 and −16 dBFS before the master;
+  - set-down peaks sit between −32 and −6 dBFS on the pre-pan mono source before the master (R42; the plan's first figure was −16);
   - two plays of the same piece on the same surface differ by no more than 3 dB;
   - energy above 14 kHz is under 0.5 % of the total;
   - the horizon, Send, Present and act sounds stay at most 6 dB above the common set-downs.
@@ -42,10 +44,10 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
 
   | Work | Budget |
   |---|---|
-  | Rendering one set-down | ≤ 2 ms |
+  | Rendering one set-down | In a Worker, started as the drop starts, its Float32 channels transferred back; never on the main thread. Contact comes 50 ms later for a carried heavy piece, 67–69 ms for light and table pieces, 83 ms for a drop-in. With the Grand Hall's 18 reflections a render took 7.5–23.9 ms (medians) on the build desktop in the #416 review, so about 23–120 ms on a phone at 3–5x (EST). Heavy pieces fall back to variants rendered ahead on idle. Spec section 9; R48, amending the plan's first "≤ 2 ms" |
   | The touchdown watcher | allocation-free, ≤ 0.05 ms at 180 settling pieces |
   | Recomputing reverberation times | ≤ 0.5 ms |
-  | The tail | idle slices of ≤ 4 ms each, ≤ 150 ms in total, ≤ 2 MB |
+  | The tail | idle slices of ≤ 4 ms each, ≤ 150 ms in total; 1.2 x the longest band's reverberation time in seconds at any rate, its memory per rate stated in `tail.ts` (R46; the plan's first cap was 2 MB) |
   | Voices at once | ≤ 8 |
   | Engine and data | ≤ 25 KB gzipped, lazy with the planner |
 - **This PC is short of memory** (system commit at 92–97 %). Run Vitest on single files (`pnpm --filter @omnitwin/web exec vitest run <file>`). CI runs the full suites. Check free memory before the ray tracer and any browser run (`D:/claude/furniture-rebuild-20261026/tools/wait-memory.sh`).
@@ -110,7 +112,7 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
   - `OBJECT_ABSORPTION: Readonly<Record<Exclude<AbsorberKind, "fabric-face" | "none">, BandValues>>`;
   - `FABRIC_FACE_PER_M2: BandValues`.
 
-These values are pinned from the research file, for 125 Hz to 4 kHz; 8 kHz repeats 4 kHz except for air. Each row carries a comment naming its source and label (LAB, FIELD, TEXTBOOK or EST), copied from `acoustic-data.md`.
+These values are as planned, for 125 Hz to 4 kHz; 8 kHz repeats 4 kHz, or 4 kHz + 0.01 (EST) where the row rises (ruling R65), except for air. Each row carries a comment naming its primary source and label (LAB, FIELD, TEXTBOOK or EST). Ruling R49 (13 Nov) replaced `plaster-lath` with James's "plaster on lath, deep air space", 0.20 / 0.15 / 0.10 / 0.05 / 0.05 / 0.05 (TEXTBOOK), as the planned row sat below both rows it cited; `acoustic-data.ts` holds the shipped values.
 
 | Id | α at 125 / 250 / 500 / 1k / 2k / 4k Hz |
 |---|---|
@@ -183,7 +185,7 @@ Objects, in m² per piece at 125 Hz to 4 kHz:
   - `roomState(room: RoomAcoustics, items: readonly PlacedItem[]): RoomState`;
   - `referenceDinner(slug: RoomSlug): readonly PlacedItem[]`. This is the dressed reference that Task 7's tracer and Task 9's page share. It holds the room's published dinner capacity (`types/src/trades-hall-venue-truth.ts`) in `chiavari-chair` items, plus ceil(capacity ÷ 10) `round-table-6ft-white` items, all on a regular grid inside the room. The Grand Hall's figure is 180 chairs and 18 rounds.
 
-**Rooms** (`rooms.ts`). Compute each area from the named source in code, with a comment, so a later survey edits one place.
+**Rooms** (`rooms.ts`). Compute each area from the named source in code, with a comment, so a later survey edits one place. As planned; ruling R49 (13 Nov) amended it: the Robert Adam Room's ceilings and the Grand Hall's dome are `plaster-lath`, the dado band subtracts only each opening's extent within it, survey figures are labelled measured or EST, and the Saloon, Robert Adam and Reception heights are the survey mesh's area means (5.60, 3.03 and 2.89 m). The galleries' walls and ceiling became `plasterboard-studs` by R13.
 
 - **Grand Hall** (`components/grand-hall/hall-spec.ts`):
   - 21.135 × 10.59 m, coffered ceiling at 6.7 m;
@@ -323,7 +325,7 @@ Objects, in m² per piece at 125 Hz to 4 kHz:
   - `SET_DOWN_BODIES: Readonly<Record<CraftedFurnitureSlug, SetDownBody>>`;
   - `bodyFor(slug: string, scale?: number): SetDownBody`. It scales the feet by `scale`, the mass by scale³ and lengths by `scale`. A slug that is not crafted uses its catalogue category, `tableShape` and size to pick a family template.
 
-**Surfaces** (`surfaces.ts`), with values from research sections 4.1–4.3:
+**Surfaces** (`surfaces.ts`), with values as planned; their primary sources are cited in `surfaces.ts` and `modes.ts`. R47 (13 Nov) set `timber-on-slab`'s hardness to 1 (every use clamps at 1) and its contact modulus to the timber face's:
 
 | Kind | Hardness | Modes and cut-off |
 |---|---|---|
@@ -413,7 +415,7 @@ Objects, in m² per piece at 125 Hz to 4 kHz:
   - `renderSetDown(input: SetDownInput): SetDownRender`;
   - `SET_DOWN_TOUCH_DB`, the anchor peak of a Chiavari dropped on the oak at 1 m/s. It equals `PLANNER_TOUCH_DB`, which this task exports from `lib/planner-sound-recipes.ts` as −22, the mean of the two set-down peaks being retired. A palette rebalance then moves the set-downs with it.
 
-Values pinned from research section 4:
+Values as planned; their primary sources are cited in `modes.ts`:
 
 **As-built loss factors:**
 
@@ -432,7 +434,7 @@ Values pinned from research section 4:
 | upholstery | 0.25 | 1.0 |
 
 **Contact time:**
-- Hard caps on hard surfaces: t = 2.87·(m² / (R·E*²·v))^(1/5). Use R = 0.01 m; E* = 1.5 GPa for oak and parquet, 11 GPa for slab timber, and 3 GPa for a nylon glide.
+- Hard caps on hard surfaces: t = 2.87·(m² / (R·E*²·v))^(1/5). Use R = 0.01 m; E* = 1.5 GPa for oak and parquet, and 3 GPa for a nylon glide. The plan had 11 GPa for slab timber; R47 (13 Nov) made it the timber face's 1.5 GPa, since a 1.8 mm contact's stress lies within about 5 mm of a 20 mm board and the slab cannot enter it.
 - Rubber: π√(m/k) with k = 1.1 MN/m. Felt: 12 ms.
 - Carpet: 45 ms, plus a second hard pulse at 30–40 ms at −14 dB.
 - Hard contacts on hard surfaces add 2–5 micro-collisions within 15 ms, falling 6–12 dB each.
@@ -482,7 +484,7 @@ Values pinned from research section 4:
 - Consumes: `ROOM_ACOUSTICS`, `reverberationTimes` and `contentsAbsorption` (Task 3).
 - Produces: `results.json`, shaped as `{ "<slug>": { "empty": [7 seconds], "dressed": [7 seconds], "rays": 20000, "seed": 1 } }`; and calibration factors in `rooms.ts`.
 
-**The ray tracer** (`raytrace.py`, numpy only):
+**The ray tracer** (`raytrace.py`, numpy only). As built (rulings R28, R33 and R50), each room is traced as a box with the model's volume and surface areas, the Grand Hall with a spherical cap of the scanned dome's volume; the two-part rooms become the rectangle with their floor's area and their walls' perimeter. So the trace tests Eyring's diffuse-field assumption, not the absorption data or the rooms' outlines. The geometry as first planned:
 - **Geometry:**
   - each room is a prism of its floor polygon and height;
   - the Grand Hall adds a dome: a cylinder of radius 3.5 m and height 1.5 m with a hemisphere cap, over the centre;
@@ -500,11 +502,12 @@ Values pinned from research section 4:
 
 - [ ] **Step 1: Write the failing test** in `calibration.test.ts`. It reads `tools/set-down-acoustics/results.json` and checks, for 250 Hz to 4 kHz, every room, empty and dressed:
   - |model − tracer| / tracer ≤ 0.15;
-  - the Grand Hall's empty mid band lies in 2.0–3.8 s, the research's comparable-room range widened by the curtain uncertainty, or the README's "difference explained" entry names the reason.
+  - the Grand Hall's empty mid band lies in 2.0–3.8 s, a plausibility band from the first estimate (2.14 s with the curtains drawn, about 3.5 s with them open) and La Redoute's measured 3.2 s, or the hall is on the test's explicit list of range exceptions (R50: a named constant, as `GALLERY_NON_DIFFUSE` is, never a README heading).
+  - As built and amended (R40, R50, R51): fitted on empty, then within 15 % half and fully laid from 250 Hz to 8 kHz, with the change with fullness within 15 % too; results.json records the sha256 of the rooms.json and the raytrace.py it came from, and a test checks both; every room has a plausibility row in the README.
 - [ ] **Step 2: Run** `vitest run src/lib/set-down/__tests__/calibration.test.ts`. Expected: FAIL (`results.json` is missing).
 - [ ] **Step 3: Export the rooms** with `EXPORT=1 pnpm --filter @omnitwin/web exec vitest run ../../tools/set-down-acoustics/export-rooms.test.ts`, then run `python tools/set-down-acoustics/raytrace.py tools/set-down-acoustics/rooms.json tools/set-down-acoustics/results.json`. Expected: it prints each room's empty and dressed T20 per band. Run it twice with seeds 1 and 2 and keep the run only if the two agree within 3 % (the silent-corruption rule).
 - [ ] **Step 4: Fit `calibration`** in `rooms.ts` and run the test. Expected: PASS.
-- [ ] **Step 5: Commit** `tools/set-down-acoustics/* lib/set-down/rooms.ts lib/set-down/__tests__/calibration.test.ts` with the message "Check each room's echo against a ray-traced model of its real shape (T-677)".
+- [ ] **Step 5: Commit** `tools/set-down-acoustics/* lib/set-down/rooms.ts lib/set-down/__tests__/calibration.test.ts` with the message "Check each room's echo against a ray-traced model of its real shape (T-677)". (That subject, on f8e30804, overstates the trace: it is of boxes with each room's volume and areas, as its body says. R50; the PR body corrects it.)
 
 ### Task 8: Open PR 1
 
@@ -542,7 +545,7 @@ Values pinned from research section 4:
 - [ ] **Step 2:** Write `page.ts`, `page.html` and `build.mjs`. `build.mjs` uses esbuild, resolved from Vite's own dependency with `createRequire`, to bundle `page.ts` as an IIFE and inline it into `page.html`.
 - [ ] **Step 3:** Build with `node tools/set-down-listening/build.mjs D:/claude/furniture-sound-20261027/listening/index.html`, then run `wait-memory.sh 8704 6656 2`. When memory allows, run `node tools/set-down-listening/page.check.mjs D:/claude/furniture-sound-20261027/listening/index.html`. Expected: PASS. If memory doesn't allow, say the check is not run, and why.
 - [ ] **Step 4:** Publish with `Artifact` (icon "sound", with a one-sentence description). Send Blake the link.
-- [ ] **Step 5:** Commit `tools/set-down-listening/*` with the message "A listening page for the set-downs, built from the engine itself (T-677)". Push, and open PR "Furniture set-down sound, 2 of 3: the listening page (T-677)".
+- [ ] **Step 5:** Commit `tools/set-down-listening/*` with the message "A listening page for the set-downs, built from the engine itself (T-700)". Push, and open PR "Furniture set-down sound, 2 of 3: the listening page (T-700)".
 - [ ] **Step 6, the ear test:** after Blake has listened (on laptop speakers, earbuds and his phone), ask him with `AskUserQuestion`:
   - "How do the set-downs sound?" Options: "Ship them (Recommended)"; "Change some"; "Start again".
   - "Is the echo right?" Options: "Yes (Recommended)"; "Too much"; "Too little".
@@ -568,7 +571,7 @@ Values pinned from research section 4:
   - a foot past the deck's edge, at the deck's half-width plus 1 cm, returns null.
 - [ ] **Step 2: Run** `vitest run src/lib/__tests__/placement-support.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Implement**, then run that file and `vitest run src/stores/__tests__/placement-store.test.ts`. Expected: PASS, with the existing behaviour unchanged.
-- [ ] **Step 4: Commit** with the message "Name the piece a placement stands on, not just its height (T-677)".
+- [ ] **Step 4: Commit** with the message "Name the piece a placement stands on, not just its height (T-700)".
 
 ### Task 11: Touchdown and release seams
 
@@ -596,7 +599,15 @@ Values pinned from research section 4:
 - [ ] **Step 2: Run** `vitest run src/lib/__tests__/furniture-motion-touchdown.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Implement.** Call the listeners with primitives inside the loop; never build an array per frame.
 - [ ] **Step 4: Run** it and the existing `vitest run src/lib/__tests__/furniture-motion.test.ts src/components/__tests__/SelectionSystem*.test.tsx`. Expected: PASS.
-- [ ] **Step 5: Commit** with the message "Tell listeners the frame a piece touches down, and when a move is let go (T-677)".
+- [ ] **Step 5: Commit** with the message "Tell listeners the frame a piece touches down, and when a move is let go (T-700)".
+
+### Gate before Tasks 12–14: the phone timings (ruling R48)
+
+Tasks 12, 13 and 14 do not start until part 2's listening page has timed renders on real phones (it keeps each render's time on the device that ran it):
+- the median and worst render times, with the Grand Hall's 18 early reflections, for a light piece (a Chiavari), a table (a 6 ft round) and a heavy piece (a staging deck), on the phones Blake uses for the ear test;
+- set against the time from a drop's start to its contact: 50 ms for a carried heavy piece, 67–69 ms for light and table pieces, 83 ms for a drop-in.
+
+Render-at-drop in a Worker is confirmed only if light and table pieces render inside their time to contact on those phones. Heavy pieces keep the render-ahead fallback whatever the timings. If light pieces miss as well, the design goes back for a ruling before Task 12 starts.
 
 ### Task 12: Timing, cascade and listener (pure)
 
@@ -638,7 +649,7 @@ Values pinned from research section 4:
 - [ ] **Step 2: Run** `vitest run src/lib/set-down/__tests__/wiring-pure.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Implement** the three modules.
 - [ ] **Step 4: Run.** Expected: PASS.
-- [ ] **Step 5: Commit** with the message "Time each set-down to the frame, shape Lay out's cascade and place the ear (T-677)".
+- [ ] **Step 5: Commit** with the message "Time each set-down to the frame, shape Lay out's cascade and place the ear (T-700)".
 
 ### Task 13: The registry plays set-downs through the room
 
@@ -682,7 +693,7 @@ Values pinned from research section 4:
 - [ ] **Step 3: Run** `vitest run src/lib/__tests__/planner-set-down-sound.test.ts src/lib/__tests__/planner-sound.test.ts src/lib/__tests__/sound-registry.test.ts`. Expected: FAIL.
 - [ ] **Step 4: Implement** in `sound-registry.ts`, `planner-sound-recipes.ts` and `SoundControl.tsx`.
 - [ ] **Step 5: Run** the three files. Expected: PASS, including the source scan.
-- [ ] **Step 6: Commit** with the message "Play set-downs through each room's own tail, on by default at Quiet (T-677, D1)".
+- [ ] **Step 6: Commit** with the message "Play set-downs through each room's own tail, on by default at Quiet (T-700, D1)".
 
 ### Task 14: The engine in the scene
 
@@ -705,13 +716,17 @@ Values pinned from research section 4:
 - **Announced ids** wait for their touchdowns. Under reduced motion, or after a 400 ms timeout, they play at once.
 - **Touchdowns** in the same frame form one batch. A batch of 4 or more uses `planCascade`.
 - **Released ids** play `kind: "settle"`.
-- **Each voice:**
+- **Rendering is in a Worker, never in `SetDownSound`** (ruling R48; spec section 9). As each drop starts (an announced placement, or a carried piece let go), `SetDownSound` posts the render's input to a set-down Worker, which runs `renderSetDown` and transfers the Float32 channels back. Nothing renders on the main thread.
+  - At the contact frame the exact render plays if it is ready, or if it arrives within the 20 ms heard window after contact.
+  - Otherwise a variant rendered ahead plays. When a heavy piece (stage, AV, lighting) is picked up, the Worker renders on idle its variants for the surfaces under it: a few seeds per piece, surface and room state, cached and dropped when the room state's key changes.
+  - Under reduced motion there is no drop to render during: the render is posted at the announcement, and this task settles whether the sound waits for it or plays a cached variant at once.
+- **Each voice's input**, gathered on the main thread and posted to the Worker:
   - `bodyFor(slug, item.scale)`;
   - each foot's world position (rotate by `rotationY`, add `x`, `z`) → `findSupportingItem` → `surfaceKindForSupport`;
   - `earFor` from the camera, with `walking` from `useEditorStore` walk mode;
   - `earlyReflections` against `resolveRoomGeometry(space)`, the room as drawn;
-  - `renderSetDown`;
-  - `startAt` = `setDownStartTime(plannerAudioClock(), presentDelay)`, where `presentDelay` is one frame interval (`state.clock`'s last delta, capped at 1/30 s).
+  - `startAt` = `setDownStartTime(plannerAudioClock(), presentDelay)` at the contact frame, where `presentDelay` is one frame interval (`state.clock`'s last delta, capped at 1/30 s).
+- **The Worker's cost** is measured in this task (render times and garbage collection, on the desktop and a phone). Scratch buffers are reused only if the measurement shows a cost.
 - **The room tail:**
   - on placement-store changes, debounced 250 ms: compute `roomState(roomAcousticsFor(space), placedItems)`;
   - when its `key` changes, drive `tailSlices` with `requestIdleCallback` (or `setTimeout(…, 0)` where missing), one slice per callback, then call `setPlannerRoomTail`;
@@ -722,7 +737,8 @@ Values pinned from research section 4:
 - [ ] **Step 1: Write the failing tests** in `SetDownSound.test.tsx`. Mount `SetDownSound` beside `FurnitureMotion` with `mountInStubRoot` (`components/__tests__/stub-r3f-root.tsx`), stepping frames with `advance` from `@react-three/fiber`, as `FurnitureMotion.instanced.test.tsx` does. Use registry stand-ins via `vi.mock("../../../lib/sound-registry.js")`, and check:
   - `loadConfiguration` and undo (store writes without an announce) play nothing;
   - a remote overlay write plays nothing;
-  - a catalogue placement plays one set-down after its touchdown frame;
+  - a catalogue placement posts its render to the Worker as its drop starts and plays one set-down after its touchdown frame, and nothing calls `renderSetDown` on the main thread;
+  - a render that is not back within 20 ms of contact plays a variant rendered ahead, never late;
   - under reduced motion it plays at once;
   - Lay out with 80 chairs and 10 tables calls `playSetDowns` once with ≤ 8 voices (Review Focus 2: ten placements in one second give ≤ 8 admitted plays and no queue growth);
   - a chair over a deck renders with a `stage-deck` surface;
@@ -732,7 +748,7 @@ Values pinned from research section 4:
 - [ ] **Step 2: Run** `vitest run src/components/editor/__tests__/SetDownSound.test.tsx`. Expected: FAIL.
 - [ ] **Step 3: Implement** `SetDownSound.tsx` and `PlannerSoundReceipt.tsx`, and mount them in `PlannerScene.tsx`.
 - [ ] **Step 4: Run** it and `vitest run src/components/editor/__tests__/PlannerScene*.test.tsx`. Expected: PASS.
-- [ ] **Step 5: Commit** with the message "Set every piece down in its room, as it lands (T-677)".
+- [ ] **Step 5: Commit** with the message "Set every piece down in its room, as it lands (T-700)".
 
 ### Task 15: Sound in the menus, and no button on screen
 
@@ -763,7 +779,7 @@ Values pinned from research section 4:
 - [ ] **Step 2: Run** `vitest run src/components/editor/__tests__/sound-menus.test.tsx`. Expected: FAIL.
 - [ ] **Step 3: Implement** the three menu changes, and update the existing tests that assert the "Planning overlays" accessible name.
 - [ ] **Step 4: Run** it and the three components' existing test files. Expected: PASS.
-- [ ] **Step 5: Commit** with the message "Keep Sound in the planner's menus, never as a button on screen (T-677)".
+- [ ] **Step 5: Commit** with the message "Keep Sound in the planner's menus, never as a button on screen (T-700)".
 
 ### Task 16: Browser evidence, then open PR 3
 
@@ -783,7 +799,7 @@ Values pinned from research section 4:
   - the log shows 1 entry, then the group's batch, then ≤ 8 entries for Lay out, with `rtMid` falling after each;
   - the WAV's onsets, peak and T20, checked by a small Node script importing `analysis.ts`'s functions, match the engine's own renders within 2 dB and 10 %.
 - [ ] **Step 3:** Run `pnpm --filter @omnitwin/web exec vitest run src/lib/set-down src/lib/__tests__ src/components/editor/__tests__/SetDownSound.test.tsx src/components/editor/__tests__/sound-menus.test.tsx`, then typecheck and lint. Expected: clean.
-- [ ] **Step 4:** Push. Open PR "Furniture set-down sound, 3 of 3: in the planner, on at Quiet (T-677)". The body gives the evidence and Blake's ear-test result. If the ear test has not said "Ship them", the PR holds set-downs behind `?setdowns=1` until he does, following his flags rule.
+- [ ] **Step 4:** Push. Open PR "Furniture set-down sound, 3 of 3: in the planner, on at Quiet (T-700)". The body gives the evidence and Blake's ear-test result. If the ear test has not said "Ship them", the PR holds set-downs behind `?setdowns=1` until he does, following his flags rule.
 
 ## PR 4: live, checked and written down
 
@@ -792,12 +808,12 @@ Values pinned from research section 4:
 **Files:**
 - Create: `docs/engineering/furniture-sound.md`, the engineering note: how the engine works, the data sources, how to add a piece or a room, and how to recalibrate.
 - Modify:
-  - `docs/state/tasks.md`: add the T-677 row, with the next free id checked at the time;
+  - `docs/state/tasks.md`: update the T-700 row (added with PR 1 on 13 Nov 2026) to its shipped state;
   - `docs/sessions/2026-10-27.md` (or the day it ships): decisions, PRs, evidence and limits;
   - `docs/engineering/README.md`: link the note.
 
 - [ ] **Step 1:** Write the three documents. Check the links (`node tools/check-doc-links.mjs` if it exists, otherwise `grep -o "](.*)"` and test each path).
-- [ ] **Step 2:** Commit them on PR 3's branch before it merges, or as a docs PR if PR 3 has merged, with the message "Record the furniture set-down sound in the engineering notes and the day's log (T-677)".
+- [ ] **Step 2:** Commit them on PR 3's branch before it merges, or as a docs PR if PR 3 has merged, with the message "Record the furniture set-down sound in the engineering notes and the day's log (T-700)".
 - [ ] **Step 3:** After PR 3 merges and Vercel's production deployment for its SHA is READY (`gh api repos/codemaker66/omnitwin/deployments?sha=<sha>`):
   - run `node D:/claude/furniture-sound-20261027/live/sound-live.mjs https://venviewer.com prod-grand-hall`, then again with the Saloon's stub (`prod-saloon`). Production is read-only for agents, and the script's aborts keep it so;
   - check the production chunk carries the engine: the served JavaScript contains `planner-set-down`;

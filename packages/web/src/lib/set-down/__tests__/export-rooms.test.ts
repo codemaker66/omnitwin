@@ -1,5 +1,5 @@
 // The rooms the offline ray tracer traces: tools/set-down-acoustics/rooms.json
-// (T-677, Task 7). The export itself runs only with EXPORT=1:
+// (T-700, Task 7). The export itself runs only with EXPORT=1:
 //   EXPORT=1 pnpm exec vitest run src/lib/set-down/__tests__/export-rooms.test.ts
 // It lives here, not under tools/, because packages/web's vitest only includes
 // src/**. The other tests always run: the committed rooms.json must equal the

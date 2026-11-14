@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fastify";
-import { Pool } from "pg";
+import { Client, Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import * as schema from "../db/schema.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
 import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
-import { __resetResendClientForTests } from "../services/email.js";
+import { notifyCommercialTeam } from "../services/commercial-notifications.js";
+import { __resetResendClientForTests, sendEmail, type SendLimit } from "../services/email.js";
 
 // ---------------------------------------------------------------------------
 // What the public enquiry route takes from anyone, and what it sends back
@@ -70,33 +71,47 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
   let server: FastifyInstance;
   const liveVenue = randomUUID();
   const closedVenue = randomUUID();
+  // A live venue whose walkthrough is not published: its slug is not on the list.
+  const unlistedVenue = randomUUID();
+  // A published venue with one room, which a test takes out of use.
+  const bareVenue = randomUUID();
   const liveRoom = randomUUID();
   const closedRoom = randomUUID();
-  const venues: readonly string[] = [liveVenue, closedVenue];
+  const unlistedRoom = randomUUID();
+  const bareRoom = randomUUID();
+  // The live venue's second room (after liveRoom in its order), which a test takes out of use.
+  const removedRoom = randomUUID();
+  const published: readonly string[] = [liveVenue, closedVenue, bareVenue];
+  const venues: readonly string[] = [...published, unlistedVenue];
   // Guest leads and people are found by email, so each address is this run's own.
   const run = randomUUID().slice(0, 8);
   const saved = new Map(SET_HERE.map((name) => [name, process.env[name]]));
+  /** The routes' connections, as pg_stat_activity names them. */
+  const applicationName = `public_enquiry_intake_${randomUUID()}`;
 
   beforeAll(async () => {
     if (target === undefined) throw new Error("Explicit test database required");
     pool = new Pool({
-      connectionString: target, application_name: `public_enquiry_intake_${randomUUID()}`, max: 4,
+      connectionString: target, application_name: applicationName, max: 4,
       options: "-c statement_timeout=30000 -c lock_timeout=20000",
     });
     expect((await pool.query<{ name: string }>("SELECT current_database() AS name")).rows[0]?.name).toBe("venviewer_platform_test");
     await pool.query(
       `INSERT INTO venues (id, name, slug, address) VALUES ($1::uuid, 'TEST ONLY Intake Hall', $1::text, 'Test only'),
-        ($2::uuid, 'TEST ONLY Closed Hall', $2::text, 'Test only')`,
-      [liveVenue, closedVenue],
+        ($2::uuid, 'TEST ONLY Closed Hall', $2::text, 'Test only'), ($3::uuid, 'TEST ONLY Unlisted Hall', $3::text, 'Test only'),
+        ($4::uuid, 'TEST ONLY Bare Hall', $4::text, 'Test only')`,
+      [liveVenue, closedVenue, unlistedVenue, bareVenue],
     );
     await pool.query(
-      `INSERT INTO spaces (id, venue_id, name, slug, width_m, length_m, height_m, floor_plan_outline)
-       VALUES ($1, $2, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]'), ($3, $4, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]')`,
-      [liveRoom, liveVenue, closedRoom, closedVenue],
+      `INSERT INTO spaces (id, venue_id, name, slug, width_m, length_m, height_m, floor_plan_outline, sort_order)
+       VALUES ($1, $2, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]', 0), ($3, $4, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]', 0),
+         ($5, $6, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]', 0), ($7, $8, 'TEST ONLY Bare Room', 'bare', 10, 10, 3, '[]', 0),
+         ($9, $2, 'TEST ONLY Removed Room', 'removed', 10, 10, 3, '[]', 5)`,
+      [liveRoom, liveVenue, closedRoom, closedVenue, unlistedRoom, unlistedVenue, bareRoom, bareVenue, removedRoom],
     );
-    // Both venues publish their walkthrough (their slug is their id), so the
-    // venue path's own gate lets each through to the lookup.
-    process.env["TWIN_PUBLIC_VENUE_SLUGS"] = venues.join(",");
+    // Three venues publish their walkthrough (their slug is their id), so the
+    // venue path's own gate lets each through to the lookup; the fourth does not.
+    process.env["TWIN_PUBLIC_VENUE_SLUGS"] = published.join(",");
     // A test value: the provider's client above is a stand-in, so nothing leaves the process.
     process.env["RESEND_API_KEY"] = "re_test_only_not_a_key";
     delete process.env["ENQUIRY_FALLBACK_EMAIL"];
@@ -190,9 +205,40 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
     throw new Error(`Nothing was handed to the provider for ${address}`);
   }
 
+  /** How many messages were handed to the provider for this address, however its case was typed. */
+  function handedCount(address: string): number {
+    return handed.filter((each) => each.to.toLowerCase() === address.toLowerCase()).length;
+  }
+
+  /** What became of an enquiry's acknowledgement once the send was decided
+   *  (the route queues it after answering): its email_sends status. */
+  async function acknowledgementOf(enquiryId: string): Promise<string> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const { rows } = await pool.query<{ status: string }>(
+        "SELECT status FROM email_sends WHERE idempotency_key = $1 AND status <> 'pending'", [`enquiry-acknowledged:${enquiryId}`],
+      );
+      if (rows[0] !== undefined) return rows[0].status;
+      await new Promise((resolve) => { setTimeout(resolve, 50); });
+    }
+    throw new Error(`The acknowledgement of ${enquiryId} was never decided`);
+  }
+
+  /** Waits for this many messages to be handed to the provider for the address, and no more. */
+  async function expectHanded(address: string, count: number): Promise<void> {
+    for (let attempt = 0; attempt < 100 && handedCount(address) < count; attempt += 1) {
+      await new Promise((resolve) => { setTimeout(resolve, 50); });
+    }
+    expect(handedCount(address)).toBe(count);
+  }
+
   /** The words a reader sees: react-email writes `<!-- -->` between the parts of a sentence. */
   function readable(html: string): string {
     return html.replaceAll("<!-- -->", "");
+  }
+
+  /** The acknowledgement's greeting: the first paragraph under its heading. */
+  function greetingOf(html: string): string | undefined {
+    return /<\/h[1-6]>\s*<p[^>]*>([\s\S]*?)<\/p>/u.exec(readable(html))?.[1];
   }
 
   async function enquiriesAt(venueId: string): Promise<number> {
@@ -221,6 +267,57 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
       "SELECT venue_id, space_id, source, room_chosen FROM enquiries WHERE id = $1", [enquiryId],
     );
     expect(rows).toEqual([{ venue_id: liveVenue, space_id: liveRoom, source: "planner", room_chosen: true }]);
+  });
+
+  // Blake, 12 November 2026, "Gate it like the form": a plan's id is no
+  // secret, since anyone may make one in any live venue's room, so the planner
+  // path takes an enquiry only for a venue the website's form would take one for.
+  it("takes a planner enquiry only for a venue whose walkthrough is published, as the venue path does", async () => {
+    const guest = { email: `test-only-unlisted-${run}@example.test`, name: "TEST ONLY Unlisted Guest", eventType: "wedding" };
+    // A guest may still plan in an unlisted venue's room; the enquiry is what is refused.
+    const unlistedPlan = idOf(await newPlan(unlistedRoom), "id");
+    const fromPlan = await enquire({ configurationId: unlistedPlan, ...guest });
+    const fromWebsite = await enquire({ venueSlug: unlistedVenue, source: "website", ...guest });
+    // The venue path's own answer, so the two paths cannot be told apart.
+    expect([fromPlan.statusCode, fromPlan.json()]).toEqual([404, { error: "Venue not found", code: "NOT_FOUND" }]);
+    expect(fromPlan.json()).toEqual(fromWebsite.json());
+    expect(await enquiriesAt(unlistedVenue)).toBe(0);
+    const { rows: kept } = await pool.query<{ leads: number; people: number }>(
+      `SELECT (SELECT count(*)::int FROM guest_leads WHERE email = $1) AS leads,
+              (SELECT count(*)::int FROM contacts WHERE venue_id = $2) AS people`,
+      [guest.email, unlistedVenue],
+    );
+    expect(kept).toEqual([{ leads: 0, people: 0 }]);
+
+    // A published venue's plan still files its enquiry.
+    const listedPlan = idOf(await newPlan(liveRoom), "id");
+    idOf(await enquire({ configurationId: listedPlan, ...guest, email: `test-only-listed-${run}@example.test` }), "enquiryId");
+  });
+
+  // Review of #404, P5: taking a room out of use leaves the plans guests made
+  // in it, and an enquiry sent from one is the guest's all the same.
+  it("files an enquiry from a plan whose room was taken out of use as naming no room, and keeps it", async () => {
+    const plan = idOf(await newPlan(removedRoom), "id");
+    const barePlan = idOf(await newPlan(bareRoom), "id");
+    // Taken out of use as DELETE /spaces/:id takes a room: its plans stay.
+    await pool.query("UPDATE spaces SET deleted_at = now() WHERE id = ANY($1::uuid[])", [[removedRoom, bareRoom]]);
+
+    const email = `test-only-removed-${run}@example.test`;
+    const fromRemoved = idOf(await enquire({ configurationId: plan, email, name: "TEST ONLY Ailsa Grant", eventType: "wedding" }), "enquiryId");
+    const fromBare = idOf(await enquire({ configurationId: barePlan, email: `test-only-bare-${run}@example.test`, eventType: "wedding" }), "enquiryId");
+    const { rows } = await pool.query<{ id: string; space_id: string; configuration_id: string; source: string; room_chosen: boolean }>(
+      "SELECT id, space_id, configuration_id, source, room_chosen FROM enquiries WHERE id = ANY($1::uuid[]) ORDER BY created_at",
+      [[fromRemoved, fromBare]],
+    );
+    expect(rows).toEqual([
+      // Filed as the venue path files an enquiry naming no room: against the
+      // venue's first room in use, from the planner, with its plan.
+      { id: fromRemoved, space_id: liveRoom, configuration_id: plan, source: "planner", room_chosen: false },
+      // A venue with no room left in use still keeps it, against the plan's own room, naming none.
+      { id: fromBare, space_id: bareRoom, configuration_id: barePlan, source: "planner", room_chosen: false },
+    ]);
+    // The reply does not name the room either.
+    expect(readable((await handedTo(email)).html)).not.toContain("TEST ONLY Removed Room");
   });
 
   it("keeps the enquiry of a guest who gives no name and an email longer than the name column holds", async () => {
@@ -296,5 +393,162 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
     const offered = readable((await handedTo(guest)).html);
     expect(offered).toContain("Occasion");
     expect(offered).toContain("Wedding");
+  });
+
+  // Blake, 12 November 2026, "Name if it looks real": the same reply greets
+  // by the name given only when it reads as a person's name, and otherwise
+  // says "Hello,", never the address it is sent to.
+  it("greets by name only a name that reads as one, and everyone else with Hello", async () => {
+    const lure = "URGENT payment notice - call 0800 000 000";
+    // A web address made of letters, a hyphen and a full stop: mail programs make a link of it.
+    const address = "Refund at th-deposit.example";
+    const given: Record<string, string | undefined> = { lure, address, accented: "Siobhán O’Neill-Smith", none: undefined };
+    const greetings: Record<string, string | undefined> = {};
+    const bodies = new Map<string, string>();
+    for (const [label, name] of Object.entries(given)) {
+      const email = `test-only-greet-${label}-${run}@example.test`;
+      idOf(await enquire({
+        venueSlug: liveVenue, source: "website", email, eventType: "wedding", ...(name === undefined ? {} : { name }),
+      }), "enquiryId");
+      const words = readable((await handedTo(email)).html);
+      greetings[label] = greetingOf(words);
+      bodies.set(email, words);
+    }
+    expect(greetings).toEqual({ lure: "Hello,", address: "Hello,", accented: "Dear Siobhán O’Neill-Smith,", none: "Hello," });
+    // Nowhere else in the email either: not the lure, and not the address.
+    for (const [email, words] of bodies) {
+      expect(words).not.toContain("URGENT");
+      expect(words).not.toContain("0800 000 000");
+      expect(words).not.toContain("th-deposit");
+      expect(words).not.toContain(email);
+    }
+  });
+
+  // Blake, 12 November 2026, decision (c), the cap: at most one
+  // acknowledgement to one address in 24 hours, so nobody can make the venue
+  // mail a stranger again and again. The enquiry is still kept and the team
+  // still told; only the guest's copy is held back, and recorded as such.
+  it("acknowledges one address once in a day, and still keeps every enquiry and tells the team of each", async () => {
+    const team = `test-only-team-${run}@example.test`;
+    process.env["ENQUIRY_FALLBACK_EMAIL"] = team;
+    const noticesBefore = vi.mocked(notifyCommercialTeam).mock.calls.length;
+    try {
+      const guest = `test-only-twice-${run}@example.test`;
+      const asked = { venueSlug: liveVenue, source: "website", name: "TEST ONLY Ailsa Grant", eventType: "wedding" };
+      const first = idOf(await enquire({ ...asked, email: guest }), "enquiryId");
+      // The same address, typed in capitals.
+      const second = idOf(await enquire({ ...asked, email: guest.toUpperCase() }), "enquiryId");
+      expect([await acknowledgementOf(first), await acknowledgementOf(second)]).toEqual(["sent", "suppressed"]);
+      expect(handedCount(guest)).toBe(1);
+
+      const { rows } = await pool.query<{ id: string }>("SELECT id FROM enquiries WHERE id = ANY($1::uuid[]) ORDER BY created_at", [[first, second]]);
+      expect(rows.map((row) => row.id)).toEqual([first, second]);
+      await expectHanded(team, 2);
+      expect(vi.mocked(notifyCommercialTeam).mock.calls.length - noticesBefore).toBe(2);
+
+      // Another address has its own day.
+      const other = idOf(await enquire({ ...asked, email: `test-only-other-${run}@example.test` }), "enquiryId");
+      expect(await acknowledgementOf(other)).toBe("sent");
+      await expectHanded(team, 3);
+    } finally {
+      delete process.env["ENQUIRY_FALLBACK_EMAIL"];
+    }
+  });
+
+  it("counts the day back from the last acknowledgement that went to the address, in whatever case it was typed", async () => {
+    const lapsed = `test-only-lapsed-${run}@example.test`;
+    const recent = `test-only-recent-${run}@example.test`;
+    const held = `test-only-held-${run}@example.test`;
+    const undelivered = `test-only-undelivered-${run}@example.test`;
+    const elsewhere = `test-only-other-email-${run}@example.test`;
+    // What earlier acknowledgements left behind: one sent 25 hours ago, one
+    // sent 23 hours ago, one held back an hour ago, and one the provider did
+    // not take an hour ago (nothing reached that address, so its guest is
+    // still owed a reply), each address in capitals.
+    const earlier = [
+      { address: lapsed, status: "sent", ago: "25 hours" },
+      { address: recent, status: "sent", ago: "23 hours" },
+      { address: held, status: "suppressed", ago: "1 hour" },
+      { address: undelivered, status: "failed", ago: "1 hour" },
+    ].map((row) => ({ ...row, key: `enquiry-acknowledged:test-only-${randomUUID()}` }));
+    // Another email the venue sent an address an hour ago, under another key:
+    // only an acknowledgement uses up an address's day (review of #414, Y3).
+    const otherEmail = { address: elsewhere, status: "sent", ago: "1 hour", key: `enquiry-approved:test-only-${randomUUID()}` };
+    try {
+      for (const row of [...earlier, otherEmail]) {
+        await pool.query(
+          `INSERT INTO email_sends (idempotency_key, recipient, subject, status, created_at)
+           VALUES ($1, $2, 'TEST ONLY earlier acknowledgement', $3, now() - $4::interval)`,
+          [row.key, row.address.toUpperCase(), row.status, row.ago],
+        );
+      }
+      const asked = { venueSlug: liveVenue, source: "website", eventType: "wedding" };
+      const decided: string[] = [];
+      for (const email of [lapsed, recent, held, undelivered, elsewhere]) {
+        decided.push(await acknowledgementOf(idOf(await enquire({ ...asked, email }), "enquiryId")));
+      }
+      expect(decided).toEqual(["sent", "suppressed", "sent", "sent", "sent"]);
+      expect([lapsed, recent, held, undelivered, elsewhere].map(handedCount)).toEqual([1, 0, 1, 1, 1]);
+    } finally {
+      await pool.query("DELETE FROM email_sends WHERE idempotency_key = ANY($1::text[])", [[...earlier, otherEmail].map((row) => row.key)]);
+    }
+  });
+
+  // Review of #414, X7: a send that failed may be taken over by a replay of
+  // its key. Under a limit the replay is decided again, as a first send is.
+  it("decides a replay of a failed send under its limit again", async () => {
+    const db = drizzle(pool, { schema });
+    const to = `test-only-replay-${run}@example.test`;
+    const heldBack = `test-only-replay-held-${randomUUID()}`;
+    const letGo = `test-only-replay-let-${randomUUID()}`;
+    const limit = (allowed: boolean): SendLimit => ({ lockKey: `test-only-replay:${to}`, allows: () => Promise.resolve(allowed) });
+    const payload = { to, subject: "TEST ONLY replayed send", html: "<p>TEST ONLY</p>" };
+    try {
+      await pool.query(
+        `INSERT INTO email_sends (idempotency_key, recipient, subject, status)
+         VALUES ($1, $3, 'TEST ONLY failed send', 'failed'), ($2, $3, 'TEST ONLY failed send', 'failed')`,
+        [heldBack, letGo, to],
+      );
+      expect(await sendEmail(payload, { db, idempotencyKey: heldBack, limit: limit(false) })).toBe(true);
+      expect(await sendEmail(payload, { db, idempotencyKey: letGo, limit: limit(true) })).toBe(true);
+      const { rows } = await pool.query<{ idempotency_key: string; status: string }>(
+        "SELECT idempotency_key, status FROM email_sends WHERE idempotency_key = ANY($1::text[])", [[heldBack, letGo]],
+      );
+      expect(Object.fromEntries(rows.map((row) => [row.idempotency_key, row.status]))).toEqual({ [heldBack]: "suppressed", [letGo]: "sent" });
+      expect(handedCount(to)).toBe(1);
+    } finally {
+      await pool.query("DELETE FROM email_sends WHERE idempotency_key = ANY($1::text[])", [[heldBack, letGo]]);
+    }
+  });
+
+  it("acknowledges two enquiries from one address sent at the same moment once", async () => {
+    // Nothing this suite queued earlier may still be on its way to email_sends.
+    await acknowledgementsSettled();
+    const guest = `test-only-same-moment-${run}@example.test`;
+    const asked = { venueSlug: liveVenue, source: "website", email: guest, eventType: "wedding" };
+    // Every write to email_sends waits behind this lock and every read passes
+    // it, so both acknowledgements read before either is written: only a
+    // lock taken before the read can let the second see the first.
+    const blocker = new Client({ connectionString: target, application_name: `public_enquiry_blocker_${run}`, options: "-c lock_timeout=20000" });
+    await blocker.connect();
+    let ids: string[] = [];
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query("LOCK TABLE email_sends IN SHARE MODE");
+      ids = (await Promise.all([enquire(asked), enquire(asked)])).map((response) => idOf(response, "enquiryId"));
+      await expect.poll(async () => {
+        const { rows } = await pool.query<{ waiting: number }>(
+          "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+          [applicationName],
+        );
+        return rows[0]?.waiting;
+      }, { timeout: 10_000 }).toBe(2);
+    } finally {
+      await blocker.query("ROLLBACK");
+      await blocker.end();
+    }
+    const decided = await Promise.all(ids.map(acknowledgementOf));
+    expect([...decided].sort()).toEqual(["sent", "suppressed"]);
+    expect(handedCount(guest)).toBe(1);
   });
 });

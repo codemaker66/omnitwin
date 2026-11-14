@@ -238,9 +238,10 @@ interface Twiddles {
 }
 
 /**
- * Sizes up to this keep their table (at most 1 MB). A larger transform, such
- * as `energyShareAbove` over a whole render, builds its table for the call:
- * still one cos and sin per factor rather than one per butterfly.
+ * Sizes up to this keep their table (about 1 MB per size, 2 MB in all). A
+ * larger transform, such as `energyShareAbove` over a whole render, builds its
+ * table for the call: still one cos and sin per factor rather than one per
+ * butterfly.
  */
 const TWIDDLE_CACHE_MAX = 1 << 16;
 const twiddleCache = new Map<number, Twiddles>();
