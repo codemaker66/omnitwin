@@ -12,7 +12,10 @@ vi.mock("../../../api/configurations.js", () => ({ submitGuestEnquiry: mocks.sub
 const { FreshEnquiry } = await import("../FreshEnquiry.js");
 const {
   FRESH_ENQUIRY_CRAFT_PREFIX,
+  FRESH_ENQUIRY_DATE_AFTER_LAST,
+  FRESH_ENQUIRY_DATE_BEFORE_TODAY,
   FRESH_ENQUIRY_DATE_LABEL,
+  FRESH_ENQUIRY_DATE_NOT_A_DATE,
   FRESH_ENQUIRY_EMAIL_INVALID,
   FRESH_ENQUIRY_EMAIL_REQUIRED,
   FRESH_ENQUIRY_SENT_LINE,
@@ -122,6 +125,149 @@ describe("FreshEnquiry — the enquiry it posts", () => {
     expect(screen.getByRole("button", { name: "Send enquiry" })).toBeTruthy();
     expect(document.querySelector('a[href^="tel:"]')).toBeTruthy();
     expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+  });
+});
+
+// Blake, 13 and 14 November 2026: the front door refuses an event date before
+// the guest's own today, in his words, "Choose a date from today onwards."
+// The form checks its own fields (noValidate), so Send is held and focus goes
+// to the date field, marked invalid with the reason attached, as the email's
+// problem is. The review of #405 (Q3), as the release lead ruled: a date past
+// the last the API takes, and one that is not a calendar date, are held too,
+// each in the owner's own words of 14 November (fresh-copy.ts). A date not on
+// the calendar is named first (it cannot be compared with today), then a year
+// past the last, then a date before today.
+describe("FreshEnquiry — a date from today", () => {
+  const zone = process.env["TZ"];
+  beforeEach(() => {
+    // West of Greenwich, where the UTC date is tomorrow by the evening.
+    process.env["TZ"] = "America/Los_Angeles";
+    vi.useFakeTimers({ toFake: ["Date"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    if (zone === undefined) Reflect.deleteProperty(process.env, "TZ");
+    else process.env["TZ"] = zone;
+  });
+
+  function dateField(): HTMLInputElement {
+    const field = screen.getByTestId("enquiry-composer").querySelector<HTMLInputElement>("input[type='date']");
+    if (field === null) throw new Error("No date field");
+    return field;
+  }
+
+  /** A browser that keeps what a guest typed in the date field, where
+   *  happy-dom clears what is not a date of four-digit year. */
+  function typedIntoDate(field: HTMLInputElement, typed: string): void {
+    Object.defineProperty(field, "value", { configurable: true, get: () => typed, set: () => undefined });
+    fireEvent.input(field);
+  }
+
+  /** Send held on the date: nothing posted, focus on the field, which is
+   *  marked invalid with `reason` beside it, said once as Send finds it. */
+  function expectHeldOnTheDate(field: HTMLInputElement, reason: string): void {
+    expect(mocks.submitGuestEnquiry).not.toHaveBeenCalled();
+    expect(document.activeElement, "focus after Send").toBe(field);
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    const described = document.getElementById(field.getAttribute("aria-describedby") ?? "");
+    expect(described?.textContent, "the reason beside the field").toBe(reason);
+    expect(screen.getByRole("alert").textContent, "the reason said once, at Send").toBe(reason);
+  }
+
+  it("names its three refusals apart, each in the owner's words", () => {
+    expect([FRESH_ENQUIRY_DATE_BEFORE_TODAY, FRESH_ENQUIRY_DATE_AFTER_LAST, FRESH_ENQUIRY_DATE_NOT_A_DATE]).toEqual([
+      "Choose a date from today onwards.",
+      "Choose a year with four digits.",
+      "Choose a date from the calendar.",
+    ]);
+  });
+
+  it("holds Send for a date before the guest's own today, and takes focus to the date with the reason", () => {
+    // 22:30 on 30 April in California, 05:30 on 1 May in UTC.
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    render(<FreshEnquiry />);
+    const date = dateField();
+    expect(date.min, "the picker's earliest day is the guest's today").toBe("2027-04-30");
+    fireEvent.change(date, { target: { value: "2027-04-29" } });
+    send();
+    expectHeldOnTheDate(date, "Choose a date from today onwards.");
+  });
+
+  it("sends the guest's own today, though the UTC date is already tomorrow", async () => {
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    mocks.submitGuestEnquiry.mockResolvedValueOnce({ enquiryId: "enq-today" });
+    render(<FreshEnquiry />);
+    fireEvent.change(dateField(), { target: { value: "2027-04-30" } });
+    send();
+    await waitFor(() => {
+      expect(mocks.submitGuestEnquiry).toHaveBeenCalledWith(expect.objectContaining({ eventDate: "2027-04-30" }));
+    });
+  });
+
+  it("reads today when Send is pressed: a form left open past midnight holds yesterday and sends the new day", async () => {
+    // 23:59:30 on 30 April, local.
+    vi.setSystemTime(new Date("2027-05-01T06:59:30Z"));
+    mocks.submitGuestEnquiry.mockResolvedValueOnce({ enquiryId: "enq-midnight" });
+    render(<FreshEnquiry />);
+    const date = dateField();
+    fireEvent.change(date, { target: { value: "2027-04-30" } });
+    // 00:00:30 on 1 May, local.
+    vi.setSystemTime(new Date("2027-05-01T07:00:30Z"));
+    send();
+    expectHeldOnTheDate(date, "Choose a date from today onwards.");
+    fireEvent.change(date, { target: { value: "2027-05-01" } });
+    send();
+    await waitFor(() => {
+      expect(mocks.submitGuestEnquiry).toHaveBeenCalledWith(expect.objectContaining({ eventDate: "2027-05-01" }));
+    });
+  });
+
+  // A browser that lets a fifth year digit through even with max set
+  // (Chromium caps the year; Firefox and Safari were not measured) posts
+  // "20277-05-01", which the API refuses, and the guest could only be told
+  // to try again. It is a day on the calendar, and after today, so it is
+  // named for its year, never "from today onwards".
+  it("holds Send for a year past the last the API takes: \"Choose a year with four digits.\"", () => {
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    render(<FreshEnquiry />);
+    const date = dateField();
+    typedIntoDate(date, "20277-05-01");
+    send();
+    expectHeldOnTheDate(date, "Choose a year with four digits.");
+  });
+
+  // A day the calendar does not have cannot be compared with today, so it is
+  // named first, even in a year that is also past the last or before today.
+  it.each([
+    ["30 February", "2027-02-30"],
+    ["29 February in a year with none", "2027-02-29"],
+    ["a thirteenth month", "2027-13-01"],
+    ["the year 0000, before any the API takes", "0000-05-01"],
+    ["30 February of a year past the last", "20277-02-30"],
+  ])("holds Send for a date not on the calendar (%s): \"Choose a date from the calendar.\"", (_case, typed) => {
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    render(<FreshEnquiry />);
+    const date = dateField();
+    typedIntoDate(date, typed);
+    send();
+    expectHeldOnTheDate(date, "Choose a date from the calendar.");
+  });
+
+  it("says the reason quietly once the guest changes the date, and drops it for a date from today", () => {
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    render(<FreshEnquiry />);
+    const date = dateField();
+    fireEvent.change(date, { target: { value: "2027-04-29" } });
+    send();
+    expectHeldOnTheDate(date, "Choose a date from today onwards.");
+    fireEvent.change(date, { target: { value: "2027-04-28" } });
+    expect(screen.queryByRole("alert"), "no alert while the guest picks again").toBeNull();
+    expect(date.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByText("Choose a date from today onwards.")).toBeTruthy();
+    fireEvent.change(date, { target: { value: "2027-05-02" } });
+    expect(date.getAttribute("aria-invalid")).toBe("false");
+    expect(date.hasAttribute("aria-describedby")).toBe(false);
+    expect(screen.queryByText("Choose a date from today onwards.")).toBeNull();
   });
 });
 

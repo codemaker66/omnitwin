@@ -17,6 +17,7 @@ import { EnquiryTrapField, useEnquiryTrap } from "../components/shared/EnquiryTr
 import { submitGuestEnquiry } from "../api/configurations.js";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
 import { isValidEmail } from "../lib/email-validation.js";
+import { guestToday } from "../lib/guest-today.js";
 import { messageLengthProblem } from "../lib/enquiry-message-length.js";
 import {
   TWIN_ENQUIRE_CLOSE,
@@ -68,6 +69,7 @@ export function TwinEnquiryModal({
   const [sends, setSends] = useState(0);
   const emailRef = useRef<HTMLInputElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
   /** The hidden field no person reaches, and how long the form is open. */
   const { inputRef: hiddenFieldRef, read: readHiddenTrap } = useEnquiryTrap();
@@ -285,9 +287,13 @@ export function TwinEnquiryModal({
               <label className="vv-twin-enq-label" htmlFor="tw-enq-date">
                 Event date
               </label>
+              {/* No date before the guest's own today (Blake, 13 November
+                  2026): the browser refuses one in its own words. */}
               <input
+                ref={dateRef}
                 id="tw-enq-date"
                 type="date"
+                min={guestToday()}
                 max={GUEST_ENQUIRY_LATEST_EVENT_DATE}
                 className="vv-twin-enq-input"
                 value={eventDate}
@@ -351,7 +357,19 @@ export function TwinEnquiryModal({
 
           <EnquiryTrapField inputRef={hiddenFieldRef} />
 
-          <button type="submit" className="vv-twin-enq-submit" disabled={isSubmitting} aria-busy={isSubmitting}>
+          <button
+            type="submit"
+            className="vv-twin-enq-submit"
+            disabled={isSubmitting}
+            aria-busy={isSubmitting}
+            onClick={() => {
+              // Today is read as Send checks the form, never only when it was
+              // drawn: a form left open past midnight takes the new day. The
+              // click comes before the browser checks the fields (Enter in a
+              // field clicks this button too).
+              if (dateRef.current !== null) dateRef.current.min = guestToday();
+            }}
+          >
             {isSubmitting && <ActivityIndicator size={18} />}
             {isSubmitting ? TWIN_ENQUIRE_SENDING : TWIN_ENQUIRE_CTA}
           </button>

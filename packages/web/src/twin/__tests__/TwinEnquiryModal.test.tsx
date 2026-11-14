@@ -172,6 +172,50 @@ describe("TwinEnquiryModal", () => {
     expect(date.max).toBe(GUEST_ENQUIRY_LATEST_EVENT_DATE);
   });
 
+  // Blake, 13 November 2026: no event date before today. The walkthrough's
+  // form sets the date field's min to the guest's own today, so the browser
+  // refuses an earlier date in its own words. happy-dom does not run that
+  // check on a date field; a browser does, and min is what it reads.
+  describe("its date field", () => {
+    const zone = process.env["TZ"];
+    beforeEach(() => {
+      // West of Greenwich, where the UTC date is tomorrow by the evening.
+      process.env["TZ"] = "America/Los_Angeles";
+      vi.useFakeTimers({ toFake: ["Date"] });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      if (zone === undefined) Reflect.deleteProperty(process.env, "TZ");
+      else process.env["TZ"] = zone;
+    });
+
+    it("takes no date before the guest's own today, which is not the UTC date", () => {
+      // 22:30 on 30 April in California, 05:30 on 1 May in UTC.
+      vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+      renderModal();
+      expect(screen.getByLabelText<HTMLInputElement>("Event date").min).toBe("2027-04-30");
+    });
+
+    it("reads today when Send is pressed, so a form left open past midnight takes the new day", () => {
+      // 23:59:30 on 30 April, local.
+      vi.setSystemTime(new Date("2027-05-01T06:59:30Z"));
+      renderModal();
+      const date = screen.getByLabelText<HTMLInputElement>("Event date");
+      fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+      fireEvent.change(date, { target: { value: "2027-04-30" } });
+      expect(date.min).toBe("2027-04-30");
+      // 00:00:30 on 1 May, local, with nothing touched since.
+      vi.setSystemTime(new Date("2027-05-01T07:00:30Z"));
+      // A browser checks the field against min just before the form's submit
+      // event, before anything the form does on Send can draw it again.
+      let minAsChecked = "";
+      screen.getByTestId("twin-enquiry-form").addEventListener("submit", () => { minAsChecked = date.min; }, { capture: true });
+      fireEvent.click(screen.getByRole("button", { name: "Send to the events team" }));
+      // 30 April is now yesterday and refused; 1 May, today, is taken.
+      expect(minAsChecked).toBe("2027-05-01");
+    });
+  });
+
   it("does not post a guest count past what the API accepts", () => {
     renderModal();
     fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });

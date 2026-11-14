@@ -19,6 +19,7 @@ import { roomPhrase } from "../../lib/unrecorded-ask.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { isValidEmail } from "../../lib/email-validation.js";
+import { guestToday } from "../../lib/guest-today.js";
 import { messageLengthProblem } from "../../lib/enquiry-message-length.js";
 import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
 import { PLAN_LINK_CONSEQUENCE } from "./VisitorPlanLinkActions.js";
@@ -280,6 +281,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const emailRef = useRef<HTMLInputElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
 
@@ -643,9 +645,13 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               }}>
                 Event date
               </label>
+              {/* No date before the guest's own today (Blake, 13 November
+                  2026): the browser refuses one in its own words. */}
               <input
+                ref={dateRef}
                 id="ge-date"
                 type="date"
+                min={guestToday()}
                 max={GUEST_ENQUIRY_LATEST_EVENT_DATE}
                 className="omni-enq-input"
                 value={eventDate}
@@ -742,6 +748,13 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
           <button
             type="submit"
             disabled={isSubmitting}
+            onClick={() => {
+              // Today is read as Send checks the form, never only when it was
+              // drawn: a form left open past midnight takes the new day. The
+              // click comes before the browser checks the fields (Enter in a
+              // field clicks this button too).
+              if (dateRef.current !== null) dateRef.current.min = guestToday();
+            }}
             style={{
               width: "100%", padding: "14px 20px", fontSize: 15, fontWeight: 700,
               display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,

@@ -435,6 +435,67 @@ describe("GuestEnquiryModal says again what each Send finds", () => {
   });
 });
 
+// Blake, 13 November 2026: no event date before today. The planner's form
+// sets the date field's min to the guest's own today, so the browser refuses
+// an earlier date in its own words. happy-dom does not run that check on a
+// date field; a browser does, and min is what it reads.
+describe("GuestEnquiryModal's date field", () => {
+  const rooms: VenueDetail = {
+    id: "venue-dates", name: "Date Rooms", slug: "date-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+  const zone = process.env["TZ"];
+
+  beforeEach(() => {
+    resetStores();
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(rooms);
+    mocks.submit.mockResolvedValue({});
+    useEditorStore.setState({ configId: "cfg-1", venueId: rooms.id, isPublicPreview: false });
+    // West of Greenwich, where the UTC date is tomorrow by the evening.
+    process.env["TZ"] = "America/Los_Angeles";
+    vi.useFakeTimers({ toFake: ["Date"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    if (zone === undefined) Reflect.deleteProperty(process.env, "TZ");
+    else process.env["TZ"] = zone;
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  async function open(): Promise<HTMLInputElement> {
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+    await screen.findByText("Your details are shared only with the Date Rooms events team.");
+    return screen.getByLabelText<HTMLInputElement>("Event date");
+  }
+
+  it("takes no date before the guest's own today, which is not the UTC date", async () => {
+    // 22:30 on 30 April in California, 05:30 on 1 May in UTC.
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    expect((await open()).min).toBe("2027-04-30");
+  });
+
+  it("reads today when Send is pressed, so a form left open past midnight takes the new day", async () => {
+    // 23:59:30 on 30 April, local.
+    vi.setSystemTime(new Date("2027-05-01T06:59:30Z"));
+    const date = await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.change(date, { target: { value: "2027-04-30" } });
+    expect(date.min).toBe("2027-04-30");
+    // 00:00:30 on 1 May, local, with nothing touched since.
+    vi.setSystemTime(new Date("2027-05-01T07:00:30Z"));
+    // A browser checks the field against min just before the form's submit
+    // event, before anything the form does on Send can draw it again.
+    let minAsChecked = "";
+    screen.getByTestId("guest-enquiry-form").addEventListener("submit", () => { minAsChecked = date.min; }, { capture: true });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    // 30 April is now yesterday and refused; 1 May, today, is taken.
+    expect(minAsChecked).toBe("2027-05-01");
+  });
+});
+
 // Blake, 12 November 2026: a hidden trap on the public forms. The form sends
 // what its hidden field holds and how long it was open before Send; the API
 // judges a hit, keeps the enquiry and emails nobody.
