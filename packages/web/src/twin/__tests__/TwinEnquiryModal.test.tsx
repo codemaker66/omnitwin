@@ -9,6 +9,7 @@ import {
 import { TwinEnquiryModal } from "../TwinEnquiryModal.js";
 import { TWIN_ENQUIRE_EMAIL_INVALID } from "../twin-copy.js";
 import { pressEnterIn } from "../../test/implicit-submit.js";
+import { expectOutOfReach, hiddenTrapIn } from "../../test/enquiry-trap.js";
 
 // -----------------------------------------------------------------------------
 // TwinEnquiryModal — the one-click, stay-in-the-twin enquiry (finding [2]).
@@ -179,6 +180,42 @@ describe("TwinEnquiryModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send to the events team" }));
     expect(submitMock).not.toHaveBeenCalled();
     expect(guests.checkValidity()).toBe(false);
+  });
+
+  // Blake, 12 November 2026: a hidden trap on the public forms. The form
+  // sends what its hidden field holds and how long it was open before Send;
+  // the API judges a hit, keeps the enquiry and emails nobody.
+  describe("its hidden trap", () => {
+    beforeEach(() => { vi.useFakeTimers({ toFake: ["Date", "performance"] }); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("sends an empty hidden field and how long the form was open before Send", async () => {
+      renderModal();
+      act(() => { vi.advanceTimersByTime(4200); });
+      fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+      fireEvent.click(screen.getByRole("button", { name: "Send to the events team" }));
+      await waitFor(() => {
+        expect(submitMock).toHaveBeenCalledWith(expect.objectContaining({ email: "guest@example.com", trap: "", openMs: 4200 }));
+      });
+    });
+
+    it("sends whatever a script put in the hidden field, whether or not it said so", async () => {
+      renderModal();
+      const form = screen.getByTestId("twin-enquiry-form");
+      // Set as a script sets it, with no input event for React to hear.
+      hiddenTrapIn(form).value = "https://example.test/offer";
+      fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+      fireEvent.click(screen.getByRole("button", { name: "Send to the events team" }));
+      await waitFor(() => {
+        expect(submitMock).toHaveBeenCalledWith(expect.objectContaining({ trap: "https://example.test/offer", openMs: 0 }));
+      });
+    });
+
+    it("keeps the hidden field out of a person's reach, by eye, keyboard, screen reader or autofill", () => {
+      renderModal();
+      const form = screen.getByTestId("twin-enquiry-form");
+      expectOutOfReach(hiddenTrapIn(form), form);
+    });
   });
 
   it("shows work during submission and removes it on failure", async () => {

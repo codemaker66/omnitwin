@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { GUEST_ENQUIRY_LATEST_EVENT_DATE, GUEST_ENQUIRY_LIMITS } from "@omnitwin/types";
 import { ActivityIndicator } from "../shared/Activity.js";
+import { EnquiryTrapField, useEnquiryTrap } from "../shared/EnquiryTrap.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
@@ -253,6 +254,13 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
   const venue = usePlannerVenueIdentity(venueId);
   const venueName = venue.known ? venue.name : null;
   const [draft] = useState(() => initialDraft(configId));
+  // The hidden field no person reaches, and how long the form is open. A
+  // form that opens with what this guest typed before in this tab (a kept
+  // draft, or the contact details of their last send) may rightly be sent at
+  // once, so it sends no time; the hidden field is sent all the same.
+  const { inputRef: hiddenFieldRef, read: readHiddenTrap } = useEnquiryTrap(
+    Object.values(draft).every((value) => value === ""),
+  );
   const [email, setEmail] = useState(draft.email);
   const [phone, setPhone] = useState(draft.phone);
   const [name, setName] = useState(draft.name);
@@ -345,6 +353,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
         eventType: eventType !== "" ? eventType : undefined,
         guestCount: guestCount !== "" ? parseInt(guestCount, 10) : undefined,
         message: message.trim() !== "" ? message.trim() : undefined,
+        ...readHiddenTrap(),
       });
       storeJson(DRAFT_KEY_PREFIX + configId, null);
       storeJson(CONTACT_KEY, { email: email.trim(), phone: phone.trim(), name: name.trim() });
@@ -354,7 +363,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
     } finally {
       setIsSubmitting(false);
     }
-  }, [configId, email, phone, name, eventDate, eventType, guestCount, message, emailValid]);
+  }, [configId, email, phone, name, eventDate, eventType, guestCount, message, emailValid, readHiddenTrap]);
 
   // Escape closes it wherever focus is, through the planner's one keyboard
   // owner, and while it is open the planner's shortcuts leave the room alone.
@@ -726,6 +735,8 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               placeholder="Event details"
             />
           </div>
+
+          <EnquiryTrapField inputRef={hiddenFieldRef} />
 
           {/* Submit CTA */}
           <button

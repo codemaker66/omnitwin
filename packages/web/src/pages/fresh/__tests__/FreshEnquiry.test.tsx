@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { GUEST_ENQUIRY_LATEST_EVENT_DATE, GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
 import { pressEnterIn } from "../../../test/implicit-submit.js";
+import { expectOutOfReach, hiddenTrapIn } from "../../../test/enquiry-trap.js";
 
 const mocks = vi.hoisted(() => ({
   submitGuestEnquiry: vi.fn<(input: unknown) => Promise<unknown>>(),
@@ -54,6 +55,9 @@ describe("FreshEnquiry — the enquiry it posts", () => {
       eventType: "wedding",
       guestCount: 100,
       message: draft,
+      // The hidden trap's two readings: its field, empty, and how long the form was open.
+      trap: "",
+      openMs: expect.any(Number) as number,
     });
   });
 
@@ -118,6 +122,40 @@ describe("FreshEnquiry — the enquiry it posts", () => {
     expect(screen.getByRole("button", { name: "Send enquiry" })).toBeTruthy();
     expect(document.querySelector('a[href^="tel:"]')).toBeTruthy();
     expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+  });
+});
+
+// Blake, 12 November 2026: a hidden trap on the public forms. The front door
+// sends what its hidden field holds and how long the form was open before
+// Send; the API judges a hit, keeps the enquiry and emails nobody.
+describe("FreshEnquiry — its hidden trap", () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["Date", "performance"] }); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("sends an empty hidden field and how long the form was open before Send", async () => {
+    mocks.submitGuestEnquiry.mockResolvedValueOnce({ enquiryId: "enq-trap" });
+    render(<FreshEnquiry />);
+    act(() => { vi.advanceTimersByTime(12_500); });
+    send();
+    await waitFor(() => {
+      expect(mocks.submitGuestEnquiry).toHaveBeenCalledWith(expect.objectContaining({ email: "couple@example.test", trap: "", openMs: 12_500 }));
+    });
+  });
+
+  it("sends whatever a script put in the hidden field, whether or not it said so", async () => {
+    mocks.submitGuestEnquiry.mockResolvedValueOnce({ enquiryId: "enq-trap" });
+    render(<FreshEnquiry />);
+    hiddenTrapIn(screen.getByTestId("enquiry-composer")).value = "https://example.test/offer";
+    send();
+    await waitFor(() => {
+      expect(mocks.submitGuestEnquiry).toHaveBeenCalledWith(expect.objectContaining({ trap: "https://example.test/offer", openMs: 0 }));
+    });
+  });
+
+  it("keeps the hidden field out of a person's reach, by eye, keyboard, screen reader or autofill", () => {
+    render(<FreshEnquiry />);
+    const form = screen.getByTestId("enquiry-composer");
+    expectOutOfReach(hiddenTrapIn(form), form);
   });
 });
 

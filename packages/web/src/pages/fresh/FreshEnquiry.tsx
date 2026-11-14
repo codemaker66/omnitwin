@@ -13,6 +13,7 @@ import {
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
 } from "@omnitwin/types";
 import { ActivityIndicator } from "../../components/shared/Activity.js";
+import { EnquiryTrapField, useEnquiryTrap } from "../../components/shared/EnquiryTrap.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { isValidEmail } from "../../lib/email-validation.js";
 import {
@@ -110,6 +111,8 @@ export function FreshEnquiry(): ReactElement {
   const [emailFocusRequests, setEmailFocusRequests] = useState(0);
   const emailRef = useRef<HTMLInputElement>(null);
   const sentRef = useRef<HTMLDivElement>(null);
+  /** The hidden field no person reaches, and how long the form is open. */
+  const { inputRef: hiddenFieldRef, read: readHiddenTrap } = useEnquiryTrap();
 
   // The form sets noValidate, so the browser neither focuses nor announces a
   // missing or invalid email: Send does it here (a11y-2). Focus moves once the
@@ -200,6 +203,7 @@ export function FreshEnquiry(): ReactElement {
         eventType: eventKey,
         guestCount: guests,
         message: craftNote === null ? composed.body : `${composed.body}\n\n${craftNote}`,
+        ...readHiddenTrap(),
       })
         .then(() => {
           setSendState("sent");
@@ -208,7 +212,7 @@ export function FreshEnquiry(): ReactElement {
           setSendState("error");
         });
     },
-    [composed, guests, emailProblem, emailTrimmed, name, phone, dateISO, eventKey, craftNote],
+    [composed, guests, emailProblem, emailTrimmed, name, phone, dateISO, eventKey, craftNote, readHiddenTrap],
   );
 
   const copyEnquiry = useCallback(() => {
@@ -351,6 +355,7 @@ export function FreshEnquiry(): ReactElement {
             />
           </label>
         </div>
+        <EnquiryTrapField inputRef={hiddenFieldRef} />
       </div>
 
       <div className="fr-enq-answer" aria-live="polite">

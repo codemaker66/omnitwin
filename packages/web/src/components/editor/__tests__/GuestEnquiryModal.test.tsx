@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   findUnsupportedProposalClaim,
   GUEST_ENQUIRY_LATEST_EVENT_DATE,
@@ -23,6 +23,7 @@ vi.mock("../EditorBridge.js", async (importOriginal) => ({
 
 const { GuestEnquiryModal } = await import("../GuestEnquiryModal.js");
 import { pressEnterIn } from "../../../test/implicit-submit.js";
+import { expectOutOfReach, hiddenTrapIn } from "../../../test/enquiry-trap.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
@@ -431,6 +432,80 @@ describe("GuestEnquiryModal says again what each Send finds", () => {
     expect(again.textContent).toBe(problem);
     expect(again, "a new alert, so a screen reader hears it again").not.toBe(first);
     expect(mocks.submit).not.toHaveBeenCalled();
+  });
+});
+
+// Blake, 12 November 2026: a hidden trap on the public forms. The form sends
+// what its hidden field holds and how long it was open before Send; the API
+// judges a hit, keeps the enquiry and emails nobody.
+describe("GuestEnquiryModal's hidden trap", () => {
+  const rooms: VenueDetail = {
+    id: "venue-trap", name: "Trap Rooms", slug: "trap-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+
+  beforeEach(() => {
+    resetStores();
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(rooms);
+    mocks.submit.mockResolvedValue({});
+    useEditorStore.setState({ configId: "cfg-1", venueId: rooms.id, isPublicPreview: false });
+    vi.useFakeTimers({ toFake: ["Date", "performance"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  async function open(): Promise<HTMLElement> {
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+    await screen.findByText("Your details are shared only with the Trap Rooms events team.");
+    return screen.getByTestId("guest-enquiry-form");
+  }
+
+  it("sends an empty hidden field and how long the form was open before Send", async () => {
+    await open();
+    act(() => { vi.advanceTimersByTime(5300); });
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    await waitFor(() => {
+      expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ email: "guest@example.test", trap: "", openMs: 5300 }));
+    });
+  });
+
+  it("sends whatever a script put in the hidden field, whether or not it said so", async () => {
+    const form = await open();
+    hiddenTrapIn(form).value = "https://example.test/offer";
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    await waitFor(() => {
+      expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ trap: "https://example.test/offer", openMs: 0 }));
+    });
+  });
+
+  // The form keeps what the guest typed when it is closed (planner-qol
+  // E-08), and starts the next plan's enquiry from the contact details they
+  // gave last time, so Send at once on opening it again is a person, not a
+  // script. The time is then not sent, which the API reads as no hit; the
+  // hidden field still is.
+  it.each([
+    ["a draft kept from an earlier opening", "venviewer.enquiry-draft.cfg-1"],
+    ["the contact details of the last send", "venviewer.enquiry-contact"],
+  ])("sends no time for a form opened with %s, and still sends the hidden field", async (_case, key) => {
+    sessionStorage.setItem(key, JSON.stringify({ email: "guest@example.test" }));
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    await waitFor(() => { expect(mocks.submit).toHaveBeenCalledTimes(1); });
+    expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ email: "guest@example.test", trap: "" }));
+    // Absent, as JSON sends an undefined field: not posted at all.
+    expect(mocks.submit).toHaveBeenCalledWith(expect.not.objectContaining({ openMs: expect.anything() as unknown }));
+  });
+
+  it("keeps the hidden field out of a person's reach, by eye, keyboard, screen reader or autofill", async () => {
+    const form = await open();
+    expectOutOfReach(hiddenTrapIn(form), form);
   });
 });
 

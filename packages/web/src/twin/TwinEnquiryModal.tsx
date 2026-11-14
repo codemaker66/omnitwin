@@ -13,6 +13,7 @@ import {
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
 } from "@omnitwin/types/enquiry";
 import { ActivityIndicator } from "../components/shared/Activity.js";
+import { EnquiryTrapField, useEnquiryTrap } from "../components/shared/EnquiryTrap.js";
 import { submitGuestEnquiry } from "../api/configurations.js";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
 import { isValidEmail } from "../lib/email-validation.js";
@@ -68,6 +69,8 @@ export function TwinEnquiryModal({
   const emailRef = useRef<HTMLInputElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
+  /** The hidden field no person reaches, and how long the form is open. */
+  const { inputRef: hiddenFieldRef, read: readHiddenTrap } = useEnquiryTrap();
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -118,6 +121,7 @@ export function TwinEnquiryModal({
         eventType: eventType !== "" ? eventType : undefined,
         guestCount: guests,
         message: message.trim() !== "" ? message.trim() : undefined,
+        ...readHiddenTrap(),
       })
         .then(() => {
           setSubmitted(true);
@@ -129,7 +133,7 @@ export function TwinEnquiryModal({
           setIsSubmitting(false);
         });
     },
-    [email, phone, name, eventDate, eventType, guestCount, message, emailValid],
+    [email, phone, name, eventDate, eventType, guestCount, message, emailValid, readHiddenTrap],
   );
 
   const onKeyDown = useCallback(
@@ -344,6 +348,8 @@ export function TwinEnquiryModal({
             }}
             placeholder="Tell us about your event"
           />
+
+          <EnquiryTrapField inputRef={hiddenFieldRef} />
 
           <button type="submit" className="vv-twin-enq-submit" disabled={isSubmitting} aria-busy={isSubmitting}>
             {isSubmitting && <ActivityIndicator size={18} />}
