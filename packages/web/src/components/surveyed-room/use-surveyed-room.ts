@@ -28,8 +28,8 @@
 //   unexpected anything else, kept with its message
 //
 // The photographs are not loaded here: they belong to the renderer and its
-// device (room-photos.ts), and a room is drawn in their average tone until
-// they arrive. An abort is passed through untouched and is never a failure.
+// device (room-photos.ts), and a room is drawn in a plain tone until they
+// arrive. An abort is passed through untouched and is never a failure.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from "react";

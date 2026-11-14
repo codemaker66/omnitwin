@@ -67,13 +67,13 @@ names every fault it finds. Keys the web does not use are dropped.
 | `slug`, `revision`, `captured` | room slug, integer from 1, ISO date | shape |
 | `room.name`, `room.venue`, `room.ceilingHeight` | name, venue slug, metres | shape |
 | `room.outline` | wall-face corners in planner (x, z), counter-clockwise seen from above | at least 3 vertices, simple, wound the tools' way |
-| `atlas.size`, `ppm`, `vRange`, `row` | the wall atlas's pixels, texels per metre, the heights a strip covers, a strip's height | shape |
+| `atlas.size`, `ppm`, `vRange`, `row` | the wall atlas's pixels, texels per metre, the heights a strip covers, a strip's height | shape; `row` within a texel of `(vRange[1] - vRange[0]) * ppm`, which is what ties `ppm` to the image |
 | `atlas.files` | the atlas image at each size, **largest first** | at least one; each listed in `files`; order against byte counts |
 | `walls[]` | `id`, `reliefId`, `length`, `height`, `kind`, `atlas` (the strip's top-left texel, width, height) | one per outline segment, in order; length within 2 mm of its segment; strips inside the atlas, a row high, wide enough, not overlapping |
 | `relief.container`, `file`, `order` | `"GHR1"`, the walls' relief file, its entry ids | `order` is exactly the walls' relief ids |
 | `ceiling.extent` | `{ x: [x0, x1], z: [z0, z1] }` the ceiling photograph covers | increasing |
 | `ceiling.files` | the ceiling photograph at each size, **largest first** (may be empty) | listed in `files`; order against byte counts |
-| `ceiling.relief` | optional: `file`, `id`, `reference` (the height depth is measured down from), `heightRange` | file listed in `files` |
+| `ceiling.relief` | optional: `file`, `id`, `reference` (the height depth is measured down from), `heightRange` | file listed in `files`; the relief's heights (`reference` minus depth) must lie in `heightRange` when it loads |
 | `floor.extent` | `{ x: [x0, x1], z: [z0, z1] }` the floor photograph covers | increasing |
 | `floor.files` | the floor photograph at each size, **largest first** (may be empty) | listed in `files`; order against byte counts |
 | `ceiling.orientation`, `floor.orientation` | optional statement of how the image lies | if present, must be `"columns planner +x, rows from planner +z"` |
@@ -100,27 +100,32 @@ seen from below.
 
 ## Loading, and failing
 
-`useSurveyedRoom(entry)` (or `loadSurveyedRoom`) fetches `survey.json` and the relief files at the
-entry's revision, checks them and builds the surfaces. Its state is `idle`, `loading` (files read
+An entry names its room (`slug`), its folder (`base`) and its `revision`. `useSurveyedRoom(entry)`
+(or `loadSurveyedRoom`) fetches `survey.json` and the relief files at the entry's revision, checks
+them and builds the surfaces. Its state is `idle`, `loading` (files read
 of files expected, the total unknown until the record says), `ready` or `failed`. There is no
 fallback: a room either loads whole or fails with the file and one of these reasons, so a caller
-can say that the surveyed room could not be loaded.
+can say that the surveyed room could not be loaded. The hook keeps nothing for an entry that has
+left: its room is let go, and the same entry coming back loads afresh. Its second argument,
+`attempt`, loads the same entry again when raised, which is how a failure is tried again.
 
 | Reason | Meaning |
 | --- | --- |
 | `network`, `http` | the request never completed, or the server refused it (status kept) |
 | `json`, `schema` | `survey.json` is not JSON, or not a usable record |
+| `room` | the record is of another room than the entry names, or of a venue that is not Trades Hall |
 | `revision` | the record's revision is not the one asked for |
 | `format` | a relief file is not a GHR1 container, or holds other entries than the record names |
 | `integrity` | a relief file's size is not the one the record lists |
-| `geometry` | a surface cannot be built (a relief wound inside out) |
+| `geometry` | a surface cannot be built: a relief wound inside out, with no triangles, or reaching more than 5 mm (`RELIEF_BOUNDS_TOLERANCE`, the error the tools simplify to) outside what its record gives it (a wall's length and its strip's heights; a ceiling's extent and `heightRange`) |
 | `unexpected` | anything else, with its message |
 
 A file's SHA-256 is recorded but not verified in the browser. The photographs are loaded by the
 component, not the hook: the room has its shape at once in a plain mid-grey (the record carries no
 average colours) and takes each photograph as it arrives. `SurveyedRoomModel` reports photographs
 settled of photographs expected, and names the ones that failed; a failed photograph leaves its
-surface in the plain tone and is never counted as loaded. A device takes the first image of each
+surface in the plain tone and is never counted as loaded. Photographs still in flight when the room
+or the size changes are stopped, not left to download and decode for nothing. A device takes the first image of each
 list at full quality and the second otherwise (`roomPhotoFile`; phones and software rasterisers
 take the second, as `hall-finish.ts` decides for the hall).
 
@@ -168,6 +173,8 @@ planner's own pipeline for the device:
     /dev/surveyed-room?base=/rooms/saloon/survey-2026-07-11&r=1
 
 - `base` is the survey's folder under `packages/web/public`, `r` its revision (1 when left out).
+  The room the folder should hold is `slug`, or where that is left out the room a folder under
+  `/rooms/<room>/` is filed under; a folder holding another room's survey is refused.
 - `photos=half` or `photos=full` takes that size of the photographs whatever the device.
 - `render=phone|tablet|desktop|office|off` chooses the pipeline's profile (`off` draws plainly);
   `pipeline=ao` shows the occlusion alone.
@@ -176,8 +183,8 @@ planner's own pipeline for the device:
   exposure and the glass's glow.
 - While files load, the shared Activity status counts them. A room that cannot be loaded says so
   with the file and the reason; a photograph that fails is named at the foot of the page.
-- `window.__roomLab` is the bridge for captures: `ready()`, `status()`, `setPose(name | wall index |
-  wall id | { position, target, fov })`, `exposure()`, `setExposure(n)`, `setGlow(n)`.
+- `window.__roomLab` is the bridge for captures: `ready()`, `status()`, `setPose(wall id | name | wall index |
+  { position, target, fov })` (a wall's exact id wins over a name or digits), `exposure()`, `setExposure(n)`, `setGlow(n)`.
 
 `packages/web/scripts/surveyed-room-lab.mjs` opens the page headless on this machine's GPU, waits
 for `ready` (or reports why the room failed), sets each pose and writes a PNG:
@@ -208,8 +215,13 @@ for `ready` (or reports why the room failed), sets each pose and writes a PNG:
   tablet's pass and a snapshot's unnamed target; the same text for two rooms; the same text before
   and after a photograph replaces its placeholder.
 
-What only a render can prove, and has not been proven: that a device compiles those shaders; the
-normal and motion targets as the passes read them (`?pipeline=ao`); each photograph's orientation
-on screen (walls, ceiling, floor); culling as seen from an orbit; the placeholder's swap; the
-edge-on softening's look; and disposal on a real device. The Saloon's own files had not been
-published when this was written, so nothing here has been seen with a room's real photographs.
+Seen rendered, 14 November 2026: the Saloon's first build, staged and not yet published, on the
+development page in headless Chrome over WebGPU on an NVIDIA RTX 4090. The room reached ready with
+3 of 3 photographs and no page errors; every wall's strip was on its wall and its lettering read
+the right way round; the floor's hearth lay at the fireplace and its bays at the windows; and the
+walls were culled from outside.
+
+What only a render can prove, and has not been proven on a device: the placeholder's swap,
+disposal after a device loss, the WebGL2 fallback, the normal and motion targets as the passes
+read them (`?pipeline=ao`), and the edge-on softening's look near a strip's edge (a face that
+takes a mip 2.5 to 4 levels coarser reads texels 6 to 16 wide, and a strip's gutter is 8).
