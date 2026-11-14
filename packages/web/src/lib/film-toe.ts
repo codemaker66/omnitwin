@@ -1,42 +1,42 @@
 // ---------------------------------------------------------------------------
-// Film toe — how deep the photographed room's tone curve cuts into its darks
+// Film toe — the light Neutral's toe takes out of a photograph, given back
 //
 // The Grand Hall is drawn from the scan's own photographs, which are already
-// display-referred. Khronos PBR Neutral, the curve the hall used, subtracts
-// up to 0.04 from every channel before its shoulder: that cancels the 4 %
-// mirror reflection a lit dielectric adds, so a material's base colour comes
-// out as authored. A photograph has no such reflection to cancel, so the same
-// subtraction only takes light out of its darks (linear 0.05 leaves as 0.016).
+// display-referred. Khronos PBR Neutral, the curve the hall draws through,
+// subtracts up to 0.04 from every channel before its shoulder: that cancels
+// the 4 % mirror reflection a lit dielectric adds, so a material's base colour
+// comes out as authored. A photograph has no such reflection to cancel, so the
+// same subtraction only takes light out of its darks (linear 0.05 leaves as
+// 0.016).
 //
-// This curve is Neutral with the depth of that subtraction as a number, the
-// toe: at 0.04 it is Neutral, value for value; at 0 a colour whose peak is
-// under 0.8 leaves exactly as it arrived, so Daylight is the photograph. The
-// shoulder starts at 0.8 less the toe, measured after the toe is taken, as in
-// Neutral: a grey gives up the whole toe and meets it at an incoming 0.8,
-// while a saturated colour gives up almost none and meets it a little sooner
-// (from 0.76 at Neutral's toe). The renderer calls the curve through its usual
-// tone-mapping path, after the pipeline's grade and vignette and with the
-// mood's exposure, which is where a toe is exact for every mood.
+// The curve cannot be changed for the photographs alone: it is one curve for
+// the whole frame, and the furniture standing in the hall is lit material,
+// tuned under Neutral's toe, whose colours move with it (measured on the
+// planner, 14 November: with no toe anywhere the red chairs draw paler and
+// pinker). So the curve stays Neutral, and a photograph adds to its own
+// colour, before the curve, what the toe will take out again. `filmToe` is the
+// toe the photographs then come out with: at 0.04 they add nothing and draw as
+// before; at 0 they leave the curve exactly as they arrived, wherever the
+// frame's own occlusion and bloom have not touched them.
 //
-// The grade's saturation can take a channel of a saturated colour under zero.
-// Neutral answers such a colour by adding light (its quadratic, run below
-// zero), so this curve gives that answer in proportion to the toe: all of it
-// at Neutral's toe, where the two then agree for every colour, and none at
-// toe 0, where every colour under the shoulder is left alone.
+// What reaches the curve is the material's colour after the frame's last
+// stage: the planner's grade and vignette, where its pipeline draws
+// (PlannerRenderPipeline), then the exposure. `sceneOutput` (scene-grade.ts)
+// tells a material which of those follow the draw it is in. A draw that is not
+// the view's own frame (a reflection capture, a thumbnail) adds nothing.
 // ---------------------------------------------------------------------------
 
-import { CustomToneMapping } from "three";
-import { float, max, min, mix, select, uniform, vec3 } from "three/tsl";
+import { float, luminance, max, min, mix, screenUV, select, smoothstep, uniform, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { getNativeRenderer } from "./native-renderer.js";
+import { sceneGrade, sceneOutput, VIGNETTE_FALLOFF, VIGNETTE_REACH } from "./scene-grade.js";
 
 /** Khronos PBR Neutral's own toe. */
 export const NEUTRAL_TOE = 0.04;
-/** The toe the hall draws with unless a view asks for another. */
-export const DEFAULT_FILM_TOE = NEUTRAL_TOE;
+/** The toe the hall's photographs draw with unless a view asks for another. */
+export const DEFAULT_FILM_TOE: number = NEUTRAL_TOE;
 
-/** The shoulder starts at this less the toe, after the toe is taken (Neutral: 0.8 - 0.04). */
-const SHOULDER_PEAK = 0.8;
+/** Neutral's shoulder starts here, measured after the toe is taken (0.8 - 0.04). */
+const SHOULDER_START = 0.8 - NEUTRAL_TOE;
 /** How far a compressed highlight moves toward white (Neutral's own figure). */
 const DESATURATION = 0.15;
 /** How steeply Neutral's own toe bends: its 6.25, which is 1 / (4 x 0.04). */
@@ -51,9 +51,9 @@ export function toeCurvatureFor(toe: number): number {
   return 1 / (4 * Math.max(toe, 1e-6));
 }
 
-/** The toe the curve draws with now; the shader reads it every frame. Set it with `setFilmToe`. */
+/** The toe the photographs draw with now; their shaders read it every frame. Set it with `setFilmToe`. */
 export const filmToe = uniform(DEFAULT_FILM_TOE);
-/** That toe's curvature, worked out here so the default draws with Neutral's own 6.25 exactly. */
+/** That toe's curvature, worked out here rather than in every fragment. */
 const toeCurvature = uniform(toeCurvatureFor(DEFAULT_FILM_TOE));
 
 /** A toe held to the range the curve is defined for; the default for a value that is not a number. */
@@ -61,7 +61,7 @@ export function clampFilmToe(toe: number): number {
   return Number.isFinite(toe) ? Math.min(NEUTRAL_TOE, Math.max(0, toe)) : DEFAULT_FILM_TOE;
 }
 
-/** Sets the toe the curve draws with. */
+/** Sets the toe the photographs draw with. */
 export function setFilmToe(toe: number): void {
   const held = clampFilmToe(toe);
   filmToe.value = held;
@@ -77,27 +77,44 @@ export function filmToeFromSearch(search: string): number | null {
 }
 
 /**
- * What the curve takes from every channel of a colour whose least channel is
- * `least`. Under zero it is Neutral's own answer in proportion to the toe (a
- * negative figure: light is added); from zero to twice the toe, the toe's bend.
+ * The toe a page's photographs are to draw with, or null when they draw
+ * through Neutral as it is: the address's `?toe=` if it has one, else the
+ * default if that is no longer Neutral's own. Null builds the photographs'
+ * materials exactly as they were before this file existed.
+ */
+export function photographToeFor(search: string): number | null {
+  const asked = filmToeFromSearch(search);
+  if (asked !== null) return asked;
+  return DEFAULT_FILM_TOE === NEUTRAL_TOE ? null : DEFAULT_FILM_TOE;
+}
+
+/**
+ * What a curve with this toe takes from every channel of a colour whose least
+ * channel is `least`. From zero to twice the toe, the toe's bend; above it,
+ * the toe. Under zero every toe gives Neutral's own answer (a negative figure:
+ * light is added), which the grade's saturation can ask for in a saturated
+ * colour.
  */
 export function filmToeOffset(least: number, toe: number): number {
-  if (least < 0) return (toe / NEUTRAL_TOE) * (least - NEUTRAL_CURVATURE * least * least);
+  if (least < 0) return least - NEUTRAL_CURVATURE * least * least;
   return least < 2 * toe ? least - (least * least) / (4 * toe) : toe;
 }
 
-/** The curve on plain numbers: the shader's twin, for tests and tools. */
+/**
+ * Neutral with its toe as a number, on plain numbers: the curve a photograph
+ * comes out with at `toe`. At 0.04 it is Khronos PBR Neutral, value for value;
+ * at 0 a colour whose peak is under the shoulder leaves as it arrived.
+ */
 export function filmCurve(colour: readonly [number, number, number], exposure: number, toe: number): [number, number, number] {
   const r = colour[0] * exposure;
   const g = colour[1] * exposure;
   const b = colour[2] * exposure;
   const offset = filmToeOffset(Math.min(r, g, b), toe);
   const lifted: [number, number, number] = [r - offset, g - offset, b - offset];
-  const start = SHOULDER_PEAK - toe;
   const peak = Math.max(lifted[0], lifted[1], lifted[2]);
-  if (peak < start) return lifted;
-  const d = 1 - start;
-  const newPeak = 1 - (d * d) / (peak + d - start);
+  if (peak < SHOULDER_START) return lifted;
+  const d = 1 - SHOULDER_START;
+  const newPeak = 1 - (d * d) / (peak + d - SHOULDER_START);
   const scale = newPeak / peak;
   const grey = 1 - 1 / (DESATURATION * (peak - newPeak) + 1);
   return [
@@ -108,65 +125,81 @@ export function filmCurve(colour: readonly [number, number, number], exposure: n
 }
 
 /**
- * The curve as shader nodes, each step in the order three's own Neutral takes
- * it (nodes/display/ToneMappingFunctions.js), so the default toe computes what
- * Neutral computes, step for step. Every branch is computed and one is chosen,
- * so the guards below only keep an unchosen branch finite.
+ * The light a photograph adds to every channel as it arrives at the curve, so
+ * that Neutral's own toe, taken from the sum, leaves what a toe of `toe` would
+ * have left. `least` is the least channel arriving, before the addition.
+ * Nothing at Neutral's toe; the whole 0.04 at no toe, for a least channel of
+ * 0.04 or more.
  */
-function curveNodes(colour: Node<"vec3">, exposure: Node<"float">): Node<"vec3"> {
-  const exposed = colour.mul(exposure);
-  const least = min(exposed.r, min(exposed.g, exposed.b));
-  const square = least.mul(least);
-  const underZero = least.sub(square.mul(NEUTRAL_CURVATURE)).mul(filmToe.div(NEUTRAL_TOE));
-  const withinToe = least.sub(square.mul(toeCurvature));
-  const bend = select(least.lessThan(float(0)), underZero, withinToe);
-  const offset = select(least.lessThan(filmToe.mul(2)), bend, filmToe);
-  const lifted = exposed.sub(offset);
-  const start = float(SHOULDER_PEAK).sub(filmToe);
-  const peak = max(lifted.r, max(lifted.g, lifted.b));
-  const d = float(1).sub(start);
-  const newPeak = float(1).sub(d.mul(d).div(max(peak.add(d.sub(start)), 1e-4)));
-  const rolled = lifted.mul(newPeak.div(max(peak, 1e-4)));
-  const grey = float(1).sub(float(1).div(float(DESATURATION).mul(peak.sub(newPeak)).add(1)));
-  return select(peak.lessThan(start), lifted, mix(rolled, vec3(newPeak), grey));
+export function photographLiftFor(least: number, toe: number): number {
+  const arriving = Math.max(least, 0);
+  // What the toe asked for leaves of the least channel.
+  const kept = arriving - filmToeOffset(arriving, toe);
+  // The least channel Neutral's toe turns into that.
+  const fed = kept < NEUTRAL_TOE ? Math.sqrt(kept / NEUTRAL_CURVATURE) : kept + NEUTRAL_TOE;
+  return fed - arriving;
+}
+
+/** What follows a material's colour on the way to the curve, on plain numbers. */
+export interface OutputStage {
+  /** The renderer's exposure. */
+  readonly exposure: number;
+  /** The grade's gain per channel; ones where no pipeline draws. */
+  readonly whiteBalance: readonly [number, number, number];
+  /** The grade's saturation; 1 where no pipeline draws. */
+  readonly saturation: number;
+  /** The vignette's shade at the fragment, 1 at the centre and where no pipeline draws. */
+  readonly shade: number;
+}
+
+/** A material's colour as it arrives at the curve after `stage` (scene-grade.ts: balance, saturation, shade, then exposure). */
+export function arrivingColour(colour: readonly [number, number, number], stage: OutputStage): [number, number, number] {
+  const r = colour[0] * stage.whiteBalance[0];
+  const g = colour[1] * stage.whiteBalance[1];
+  const b = colour[2] * stage.whiteBalance[2];
+  const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const reach = stage.exposure * stage.shade;
+  return [
+    (grey + (r - grey) * stage.saturation) * reach,
+    (grey + (g - grey) * stage.saturation) * reach,
+    (grey + (b - grey) * stage.saturation) * reach,
+  ];
 }
 
 /**
- * The curve in the shape a renderer's node library keeps: it is called with
- * the scene colour's rgb and the exposure, as the renderer calls its own curves.
+ * A photograph's colour with the lift for `toe` added, on plain numbers: the
+ * shader's twin, for tests and tools. An equal amount in every channel after
+ * the white balance passes through the saturation unchanged, so the lift is
+ * divided by the exposure, the shade and each channel's gain.
  */
-export function photographToneMapping(colour: Node, exposure: Node): Node {
-  if (!isColourNode(colour) || !isExposureNode(exposure)) return colour;
-  return curveNodes(colour, exposure);
-}
-
-/** Whether a value is a shader node at all, read as three marks every node. */
-function isShaderNode(node: object): boolean {
-  const flag: unknown = Reflect.get(node, "isNode");
-  return flag === true;
-}
-
-// The node library declares its curves on untyped nodes, while the renderer
-// always calls one with the scene colour's rgb and its exposure
-// (ToneMappingNode.setup): these two predicates state that for the compiler.
-function isColourNode(node: Node): node is Node<"vec3"> {
-  return isShaderNode(node);
-}
-
-function isExposureNode(node: Node): node is Node<"float"> {
-  return isShaderNode(node);
+export function liftedPhotograph(colour: readonly [number, number, number], stage: OutputStage, toe: number): [number, number, number] {
+  const arriving = arrivingColour(colour, stage);
+  const lift = photographLiftFor(Math.min(arriving[0], arriving[1], arriving[2]), toe) / (stage.exposure * stage.shade);
+  return [
+    colour[0] + lift / stage.whiteBalance[0],
+    colour[1] + lift / stage.whiteBalance[1],
+    colour[2] + lift / stage.whiteBalance[2],
+  ];
 }
 
 /**
- * Registers the curve with a renderer's node library as its custom tone
- * mapping. True when the renderer now draws `CustomToneMapping` with this
- * curve; false for a renderer with no node library, which keeps Neutral.
+ * A photograph's colour with the lift for `filmToe` added, as shader nodes.
+ * `sceneOutput` says what follows the draw this fragment is in; outside the
+ * view's own frame the lift is nothing. The grade and the vignette are the
+ * pipeline's own (PlannerRenderPipeline.buildPlannerPipeline), restated here:
+ * the two must change together.
  */
-export function registerPhotographToneMapping(renderer: object): boolean {
-  const native = getNativeRenderer(renderer);
-  if (native === null) return false;
-  if (native.library.getToneMappingFunction(CustomToneMapping) === null) {
-    native.library.addToneMapping(photographToneMapping, CustomToneMapping);
-  }
-  return native.library.getToneMappingFunction(CustomToneMapping) === photographToneMapping;
+export function photographLift(colour: Node<"vec3">): Node<"vec3"> {
+  const balance = sceneGrade.whiteBalance.sub(1).mul(sceneOutput.graded).add(1);
+  const saturation = mix(float(1), sceneGrade.saturation, sceneOutput.graded);
+  const distance = screenUV.sub(0.5).length().mul(VIGNETTE_REACH);
+  const shade = mix(float(1), float(1).sub(sceneOutput.vignette), smoothstep(VIGNETTE_FALLOFF[0], VIGNETTE_FALLOFF[1], distance));
+  const reach = max(sceneOutput.exposure.mul(shade), 1e-4);
+  const balanced = colour.mul(balance);
+  const arriving = mix(vec3(luminance(balanced)), balanced, saturation).mul(reach);
+  const least = max(min(arriving.r, min(arriving.g, arriving.b)), 0);
+  const kept = select(least.lessThan(filmToe.mul(2)), least.mul(least).mul(toeCurvature), least.sub(filmToe));
+  const fed = select(kept.lessThan(NEUTRAL_TOE), max(kept, 0).div(NEUTRAL_CURVATURE).sqrt(), kept.add(NEUTRAL_TOE));
+  const lift = fed.sub(least).mul(sceneOutput.main).div(reach);
+  return colour.add(vec3(lift).div(balance));
 }

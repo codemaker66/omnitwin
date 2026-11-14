@@ -6,10 +6,9 @@ import { ACESFilmicToneMapping, NeutralToneMapping, NoToneMapping, type ToneMapp
  * Hall's model is coloured from the same scan's photographs and draws under
  * the Khronos PBR Neutral curve, which rolls off the highlights of lit
  * furniture and lamps. Neutral also takes up to 0.04 out of every channel (its
- * toe), which darkens the photographs: the canvas swaps in the same curve with
- * that toe adjustable where the renderer can take one (lib/film-toe.ts,
- * components/scene/CaptureToneMapping.tsx). Other scenes keep R3F's default
- * ACES curve. */
+ * toe): right for the lit furniture, whose colours were tuned under it, but it
+ * darkens the photographs, which can give that light back in their own
+ * materials (lib/film-toe.ts). Other scenes keep R3F's default ACES curve. */
 export function captureToneMapping(captureShown: boolean, photographedRoom = false): ToneMapping {
   if (captureShown) return NoToneMapping;
   return photographedRoom ? NeutralToneMapping : ACESFilmicToneMapping;

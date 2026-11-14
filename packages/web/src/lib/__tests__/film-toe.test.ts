@@ -1,26 +1,16 @@
-import { describe, expect, it } from "vitest";
-import { CustomToneMapping } from "three";
+import { afterEach, describe, expect, it } from "vitest";
 import {
-  DEFAULT_FILM_TOE, NEUTRAL_TOE, clampFilmToe, filmCurve, filmToe, filmToeFromSearch, filmToeOffset,
-  photographToneMapping, registerPhotographToneMapping, setFilmToe, toeCurvatureFor,
+  DEFAULT_FILM_TOE, NEUTRAL_TOE, arrivingColour, clampFilmToe, filmCurve, filmToe, filmToeFromSearch, filmToeOffset,
+  liftedPhotograph, photographLiftFor, photographToeFor, setFilmToe, toeCurvatureFor, type OutputStage,
 } from "../film-toe.js";
+import { normalisedGain, sceneOutput, withMainDraw, withPipelineOutput } from "../scene-grade.js";
+import { withNativeComposedFrame, withNativeRenderScope } from "../native-renderer.js";
+import { Color, PerspectiveCamera, RenderTarget, Scene } from "three";
 
 type Colour = [number, number, number];
 
-/** A stand-in for a renderer's node library: one curve per tone-mapping constant, first one kept. */
-function fakeNativeRenderer(): { readonly isWebGPURenderer: true; readonly library: { addToneMapping(curve: unknown, type: number): void; getToneMappingFunction(type: number): unknown } } {
-  const curves = new Map<number, unknown>();
-  return {
-    isWebGPURenderer: true,
-    library: {
-      addToneMapping(curve: unknown, type: number): void { if (!curves.has(type)) curves.set(type, curve); },
-      getToneMappingFunction(type: number): unknown { return curves.get(type) ?? null; },
-    },
-  };
-}
-
 /** Khronos PBR Neutral as three r186 writes it (nodes/display/ToneMappingFunctions.js), on plain numbers. */
-function khronosNeutral(colour: Colour, exposure: number): Colour {
+function khronosNeutral(colour: readonly [number, number, number], exposure: number): Colour {
   const startCompression = 0.8 - 0.04;
   const desaturation = 0.15;
   let [r, g, b] = [colour[0] * exposure, colour[1] * exposure, colour[2] * exposure];
@@ -45,25 +35,42 @@ function seeded(seed: number): () => number {
   };
 }
 
-const EXPOSURES = [1, 1.06, 1.3] as const; // the hall's Daylight, Evening and Candlelight
+function worstGap(a: readonly [number, number, number], b: readonly [number, number, number]): number {
+  return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]));
+}
 
-describe("the photographed room's film toe", () => {
+const EXPOSURES = [1, 1.06, 1.3] as const; // the hall's Daylight, Evening and Candlelight
+const TOES = [0, 0.01, 0.02, 0.03, NEUTRAL_TOE] as const;
+
+/** What follows a material where no pipeline draws: the exposure alone. */
+function plainStage(exposure: number): OutputStage {
+  return { exposure, whiteBalance: [1, 1, 1], saturation: 1, shade: 1 };
+}
+
+/** A stage as the planner's pipeline makes one: a normalised white balance, a mood's saturation, a vignette's shade. */
+function pipelineStage(next: () => number): OutputStage {
+  const gain = normalisedGain([0.8 + next() * 0.5, 0.9 + next() * 0.2, 0.75 + next() * 0.5], new Color());
+  return {
+    exposure: EXPOSURES[Math.floor(next() * EXPOSURES.length)] ?? 1,
+    whiteBalance: [gain.r, gain.g, gain.b],
+    saturation: 0.96 + next() * 0.08,
+    shade: 0.78 + next() * 0.22,
+  };
+}
+
+describe("Neutral with its toe as a number", () => {
   it("is Khronos PBR Neutral, value for value, at Neutral's toe", () => {
     const next = seeded(20261113);
     let worst = 0;
     for (let i = 0; i < 20000; i += 1) {
       // Scene colours from black to well past the shoulder, darks sampled densely.
       const colour: Colour = [next() ** 2 * 1.6, next() ** 2 * 1.6, next() ** 2 * 1.6];
-      for (const exposure of EXPOSURES) {
-        const ours = filmCurve(colour, exposure, NEUTRAL_TOE);
-        const theirs = khronosNeutral(colour, exposure);
-        worst = Math.max(worst, Math.abs(ours[0] - theirs[0]), Math.abs(ours[1] - theirs[1]), Math.abs(ours[2] - theirs[2]));
-      }
+      for (const exposure of EXPOSURES) worst = Math.max(worst, worstGap(filmCurve(colour, exposure, NEUTRAL_TOE), khronosNeutral(colour, exposure)));
     }
     expect(worst).toBeLessThan(1e-12);
   });
 
-  it("is Khronos PBR Neutral at Neutral's toe for a colour the grade pushed out of range too", () => {
+  it("gives a colour the grade pushed under zero Neutral's own answer at every toe", () => {
     // The planner's grade saturates in linear light (Evening: 1.02), which
     // takes a zero channel of a saturated colour under zero before the curve.
     const next = seeded(422);
@@ -71,40 +78,15 @@ describe("the photographed room's film toe", () => {
     let underZero = 0;
     for (let i = 0; i < 20000; i += 1) {
       const colour: Colour = [next() * 1.3 - 0.1, next() * 1.3 - 0.1, next() * 1.3 - 0.1];
-      if (Math.min(colour[0], colour[1], colour[2]) < 0) underZero += 1;
+      const least = Math.min(colour[0], colour[1], colour[2]);
+      if (least < 0) underZero += 1;
       for (const exposure of EXPOSURES) {
-        const ours = filmCurve(colour, exposure, NEUTRAL_TOE);
-        const theirs = khronosNeutral(colour, exposure);
-        worst = Math.max(worst, Math.abs(ours[0] - theirs[0]), Math.abs(ours[1] - theirs[1]), Math.abs(ours[2] - theirs[2]));
+        worst = Math.max(worst, worstGap(filmCurve(colour, exposure, NEUTRAL_TOE), khronosNeutral(colour, exposure)));
+        if (least < 0) worst = Math.max(worst, worstGap(filmCurve(colour, exposure, 0), khronosNeutral(colour, exposure)));
       }
     }
     expect(underZero).toBeGreaterThan(1000);
     expect(worst).toBeLessThan(1e-12);
-  });
-
-  it("leaves a colour with a channel under zero as it arrived at toe 0, and gives it Neutral's light in proportion to the toe", () => {
-    const colour: Colour = [-0.01, 0.2, 0.5];
-    expect(filmCurve(colour, 1, 0)).toEqual(colour);
-    const neutral = khronosNeutral(colour, 1);
-    const half = filmCurve(colour, 1, NEUTRAL_TOE / 2);
-    for (const channel of [0, 1, 2] as const) {
-      expect(half[channel]).toBeCloseTo((colour[channel] + neutral[channel]) / 2, 12);
-    }
-    expect(filmToeOffset(-0.01, NEUTRAL_TOE)).toBeCloseTo(-0.01 - 6.25 * 0.0001, 15);
-  });
-
-  it("meets zero without a step from either side, at every toe", () => {
-    for (const toe of [0, 0.01, 0.02, NEUTRAL_TOE]) {
-      expect(filmToeOffset(0, toe)).toBe(0);
-      expect(Math.abs(filmToeOffset(-1e-9, toe))).toBeLessThan(2e-9);
-      expect(Math.abs(filmToeOffset(1e-9, toe))).toBeLessThan(2e-9);
-    }
-  });
-
-  it("bends with Neutral's own 6.25 at Neutral's toe, and stays finite with no toe", () => {
-    expect(toeCurvatureFor(NEUTRAL_TOE)).toBe(6.25);
-    expect(toeCurvatureFor(0.02)).toBeCloseTo(12.5, 12);
-    expect(Number.isFinite(toeCurvatureFor(0))).toBe(true);
   });
 
   it("draws with Neutral's toe by default, so the hall's look does not move until a toe is chosen", () => {
@@ -115,7 +97,7 @@ describe("the photographed room's film toe", () => {
     const next = seeded(7);
     for (let i = 0; i < 20000; i += 1) {
       for (const exposure of EXPOSURES) {
-        const limit = 0.799 / exposure;
+        const limit = 0.759 / exposure;
         const colour: Colour = [next() * limit, next() * limit, next() * limit];
         const out = filmCurve(colour, exposure, 0);
         expect(out[0]).toBe(colour[0] * exposure);
@@ -130,23 +112,20 @@ describe("the photographed room's film toe", () => {
     expect(filmCurve([0.05, 0.05, 0.05], 1, NEUTRAL_TOE)[0]).toBeCloseTo(0.015625, 12);
   });
 
-  it("never brightens a colour in range under every toe's shoulder as the toe deepens, and never takes more than the toe", () => {
-    // A colour with a channel under zero is the one the toe adds light to, as
-    // Neutral does; these colours are all in range.
-    // In the shoulder Neutral mixes a highlight toward white by an amount that
-    // moves with the toe, so a dark channel of a bright colour may rise there.
-    // The shoulder starts at 0.8 less the toe after the toe is taken, and a
-    // saturated colour gives up almost none of it, so a peak under 0.76 is the
-    // range every toe up to Neutral's leaves to the toe alone.
+  it("never brightens a colour in range as the toe deepens, and never takes more than the toe", () => {
     const next = seeded(99);
     for (let i = 0; i < 5000; i += 1) {
-      const colour: Colour = [next() * 0.759, next() * 0.759, next() * 0.759];
+      const colour: Colour = [next() * 1.4, next() * 1.4, next() * 1.4];
       const shallow = filmCurve(colour, 1, 0);
       const middle = filmCurve(colour, 1, 0.02);
       const deep = filmCurve(colour, 1, NEUTRAL_TOE);
-      for (const channel of [0, 1, 2] as const) {
-        expect(middle[channel]).toBeLessThanOrEqual(shallow[channel] + 1e-12);
-        expect(deep[channel]).toBeLessThanOrEqual(middle[channel] + 1e-12);
+      // The shoulder mixes a highlight toward white by an amount that moves with
+      // its peak, so only colours under it at every toe are compared channel by channel.
+      if (Math.max(colour[0], colour[1], colour[2]) < 0.759) {
+        for (const channel of [0, 1, 2] as const) {
+          expect(middle[channel]).toBeLessThanOrEqual(shallow[channel] + 1e-12);
+          expect(deep[channel]).toBeLessThanOrEqual(middle[channel] + 1e-12);
+        }
       }
       const least = Math.min(colour[0], colour[1], colour[2]);
       expect(filmToeOffset(least, 0.02)).toBeLessThanOrEqual(0.02);
@@ -154,41 +133,111 @@ describe("the photographed room's film toe", () => {
     }
   });
 
-  it("never brightens a grey as the toe deepens, on either side of the shoulder", () => {
-    for (let grey = 0; grey <= 1.6; grey += 0.01) {
-      const shallow = filmCurve([grey, grey, grey], 1, 0)[0];
-      const middle = filmCurve([grey, grey, grey], 1, 0.02)[0];
-      const deep = filmCurve([grey, grey, grey], 1, NEUTRAL_TOE)[0];
-      expect(middle).toBeLessThanOrEqual(shallow + 1e-12);
-      expect(deep).toBeLessThanOrEqual(middle + 1e-12);
-    }
-  });
-
-  it("meets its two branches without a step where the least channel is twice the toe", () => {
+  it("meets its branches without a step at twice the toe and at zero", () => {
     for (const toe of [0.01, 0.02, NEUTRAL_TOE]) {
       expect(filmToeOffset(2 * toe - 1e-9, toe)).toBeCloseTo(toe, 9);
       expect(filmToeOffset(2 * toe, toe)).toBe(toe);
     }
+    for (const toe of TOES) {
+      expect(filmToeOffset(0, toe)).toBe(0);
+      expect(Math.abs(filmToeOffset(-1e-9, toe))).toBeLessThan(2e-9);
+      expect(Math.abs(filmToeOffset(1e-9, toe))).toBeLessThan(2e-9);
+    }
     expect(filmToeOffset(0.5, 0)).toBe(0);
-    expect(filmToeOffset(0, 0)).toBe(0);
   });
 
-  it("lets a saturated colour into the shoulder below a peak of 0.8 at Neutral's toe, and never at toe 0", () => {
-    const saturated: Colour = [0.79, 0.3, 0.0004];
-    expect(filmCurve(saturated, 1, 0)).toEqual(saturated);
-    const atNeutral = filmCurve(saturated, 1, NEUTRAL_TOE);
-    expect(atNeutral[0]).toBeLessThan(0.79 - filmToeOffset(0.0004, NEUTRAL_TOE));
-  });
-
-  it("starts the shoulder at an incoming peak of 0.8 for a colour whose least channel clears twice the toe", () => {
-    for (const toe of [0, 0.02, NEUTRAL_TOE]) {
-      const under = filmCurve([0.79, 0.5, 0.5], 1, toe);
-      expect(under[0]).toBeCloseTo(0.79 - filmToeOffset(0.5, toe), 12);
+  it("starts the shoulder where Neutral does, after the toe is taken, at every toe", () => {
+    for (const toe of TOES) {
+      const under = filmCurve([0.75 + toe, 0.5, 0.5], 1, toe);
+      expect(under[0]).toBeCloseTo(0.75, 12);
       const over = filmCurve([0.9, 0.5, 0.5], 1, toe);
-      expect(over[0]).toBeLessThan(0.9 - filmToeOffset(0.5, toe));
+      expect(over[0]).toBeLessThan(0.9 - toe);
       expect(over[0]).toBeLessThan(1);
     }
   });
+
+  it("bends with Neutral's own 6.25 at Neutral's toe, and stays finite with no toe", () => {
+    expect(toeCurvatureFor(NEUTRAL_TOE)).toBe(6.25);
+    expect(toeCurvatureFor(0.02)).toBeCloseTo(12.5, 12);
+    expect(Number.isFinite(toeCurvatureFor(0))).toBe(true);
+  });
+});
+
+describe("the light a photograph adds for the toe to take", () => {
+  it("is nothing at Neutral's toe and the whole toe with none, above the toe's bend", () => {
+    for (const least of [0, 0.001, 0.02, 0.04, 0.079, 0.08, 0.3, 0.9]) {
+      expect(Math.abs(photographLiftFor(least, NEUTRAL_TOE))).toBeLessThan(1e-15);
+    }
+    for (const least of [0.04, 0.05, 0.3, 0.9]) expect(photographLiftFor(least, 0)).toBeCloseTo(NEUTRAL_TOE, 15);
+    expect(photographLiftFor(0, 0)).toBe(0);
+    expect(photographLiftFor(-0.01, 0)).toBe(0);
+  });
+
+  it("never darkens, never adds more than the toe, and adds more as the toe shallows", () => {
+    const next = seeded(31);
+    for (let i = 0; i < 20000; i += 1) {
+      const least = next() ** 2 * 1.2;
+      let previous = Number.POSITIVE_INFINITY;
+      for (const toe of TOES) {
+        const lift = photographLiftFor(least, toe);
+        expect(lift).toBeGreaterThanOrEqual(-1e-15);
+        expect(lift).toBeLessThanOrEqual(NEUTRAL_TOE + 1e-15);
+        expect(lift).toBeLessThanOrEqual(previous + 1e-15);
+        previous = lift;
+      }
+    }
+  });
+
+  it("makes Neutral leave what a curve with the asked toe would have left, with no pipeline", () => {
+    const next = seeded(14);
+    let worst = 0;
+    for (let i = 0; i < 20000; i += 1) {
+      const colour: Colour = [next() ** 2 * 1.4, next() ** 2 * 1.4, next() ** 2 * 1.4];
+      for (const exposure of EXPOSURES) {
+        const stage = plainStage(exposure);
+        for (const toe of TOES) {
+          const shown = khronosNeutral(arrivingColour(liftedPhotograph(colour, stage, toe), stage), 1);
+          worst = Math.max(worst, worstGap(shown, filmCurve(colour, exposure, toe)));
+        }
+      }
+    }
+    expect(worst).toBeLessThan(1e-12);
+  });
+
+  it("does so through the planner's grade and vignette too, in every mood", () => {
+    const next = seeded(2027);
+    let worst = 0;
+    let underZero = 0;
+    for (let i = 0; i < 20000; i += 1) {
+      const stage = pipelineStage(next);
+      const colour: Colour = [next() ** 2 * 1.2, next() ** 2 * 1.2, next() ** 2 * 1.2];
+      const arriving = arrivingColour(colour, stage);
+      if (Math.min(arriving[0], arriving[1], arriving[2]) < 0) underZero += 1;
+      for (const toe of TOES) {
+        const shown = khronosNeutral(arrivingColour(liftedPhotograph(colour, stage, toe), stage), 1);
+        worst = Math.max(worst, worstGap(shown, filmCurve(arriving, 1, toe)));
+      }
+    }
+    // The grade's saturation takes some of these under zero, where the lift is nothing and Neutral answers alone.
+    expect(underZero).toBeGreaterThan(50);
+    expect(worst).toBeLessThan(1e-12);
+  });
+
+  it("at no toe a photograph under the shoulder is on the screen what arrived at the curve", () => {
+    const next = seeded(5);
+    for (let i = 0; i < 5000; i += 1) {
+      const stage = pipelineStage(next);
+      const colour: Colour = [next() * 0.4, next() * 0.4, next() * 0.4];
+      const arriving = arrivingColour(colour, stage);
+      if (Math.min(arriving[0], arriving[1], arriving[2]) < 0 || Math.max(arriving[0], arriving[1], arriving[2]) >= 0.759) continue;
+      const shown = khronosNeutral(arrivingColour(liftedPhotograph(colour, stage, 0), stage), 1);
+      expect(worstGap(shown, arriving)).toBeLessThan(1e-12);
+    }
+  });
+});
+
+describe("the toe a view asks for", () => {
+  afterEach(() => { setFilmToe(DEFAULT_FILM_TOE); });
 
   it("reads a toe from a page address and holds it to the curve's range", () => {
     expect(filmToeFromSearch("?toe=0.02")).toBe(0.02);
@@ -201,36 +250,93 @@ describe("the photographed room's film toe", () => {
     expect(filmToeFromSearch("")).toBeNull();
   });
 
+  it("leaves the photographs' materials as they were for a view that asks for nothing", () => {
+    expect(photographToeFor("")).toBeNull();
+    expect(photographToeFor("?sky=1")).toBeNull();
+    expect(photographToeFor("?toe=dark")).toBeNull();
+    expect(photographToeFor("?toe=0")).toBe(0);
+    expect(photographToeFor("?toe=0.02")).toBe(0.02);
+    // Asked for by name, even Neutral's own toe builds the lift, so a comparison can step through every toe on one page.
+    expect(photographToeFor("?toe=0.04")).toBe(NEUTRAL_TOE);
+  });
+
   it("falls back to the default for a toe that is not a number", () => {
     expect(clampFilmToe(Number.NaN)).toBe(DEFAULT_FILM_TOE);
     expect(clampFilmToe(Number.POSITIVE_INFINITY)).toBe(DEFAULT_FILM_TOE);
     expect(clampFilmToe(0.03)).toBe(0.03);
   });
 
-  it("holds the toe the shader reads to the curve's range", () => {
+  it("holds the toe the shaders read to the curve's range", () => {
     setFilmToe(0.02);
     expect(filmToe.value).toBe(0.02);
     setFilmToe(1);
     expect(filmToe.value).toBe(NEUTRAL_TOE);
-    setFilmToe(DEFAULT_FILM_TOE);
-    expect(filmToe.value).toBe(DEFAULT_FILM_TOE);
+    setFilmToe(-3);
+    expect(filmToe.value).toBe(0);
+  });
+});
+
+describe("what a material is told follows its draw", () => {
+  const resting = { main: 0, exposure: 1, graded: 0, vignette: 0 };
+  const read = (): typeof resting => ({
+    main: sceneOutput.main.value, exposure: sceneOutput.exposure.value, graded: sceneOutput.graded.value, vignette: sceneOutput.vignette.value,
   });
 
-  it("registers the curve as a renderer's custom tone mapping, and again without replacing it", () => {
-    const renderer = fakeNativeRenderer();
-    expect(registerPhotographToneMapping(renderer)).toBe(true);
-    expect(renderer.library.getToneMappingFunction(CustomToneMapping)).toBe(photographToneMapping);
-    expect(registerPhotographToneMapping(renderer)).toBe(true);
+  it("rests at a draw that adds nothing: not the view's frame, no grade, no vignette", () => {
+    expect(read()).toEqual(resting);
   });
 
-  it("leaves a renderer with no node library on its own curve", () => {
-    expect(registerPhotographToneMapping({})).toBe(false);
-    expect(registerPhotographToneMapping({ isWebGPURenderer: false })).toBe(false);
+  it("declares the view's own frame and its exposure for the length of the draw, and restores them if it throws", () => {
+    let during: typeof resting | null = null;
+    withMainDraw(true, 1.3, () => { during = read(); });
+    expect(during).toEqual({ main: 1, exposure: 1.3, graded: 0, vignette: 0 });
+    expect(read()).toEqual(resting);
+    expect(() => { withMainDraw(true, 1.06, () => { throw new Error("lost"); }); }).toThrow("lost");
+    expect(read()).toEqual(resting);
   });
 
-  it("does not claim a custom tone mapping that another curve already holds", () => {
-    const renderer = fakeNativeRenderer();
-    renderer.library.addToneMapping(() => null, CustomToneMapping);
-    expect(registerPhotographToneMapping(renderer)).toBe(false);
+  it("declares the pipeline's grade and vignette for the length of its frame, and restores them if it throws", () => {
+    let during: typeof resting | null = null;
+    withPipelineOutput(0.22, () => { during = read(); });
+    expect(during).toEqual({ main: 0, exposure: 1, graded: 1, vignette: 0.22 });
+    expect(read()).toEqual(resting);
+    expect(() => { withPipelineOutput(0.22, () => { throw new Error("lost"); }); }).toThrow("lost");
+    expect(read()).toEqual(resting);
+  });
+
+  it("calls a draw to the canvas the view's frame, and a draw into a target (a reflection capture) not", () => {
+    const scene = new Scene();
+    const camera = new PerspectiveCamera();
+    let target: RenderTarget | null = null;
+    const renderer = { getRenderTarget: () => target, toneMappingExposure: 1.06 };
+    const capture = new RenderTarget(1, 1);
+    const seen: number[] = [];
+    withNativeRenderScope(renderer, scene, camera, () => { seen.push(sceneOutput.main.value, sceneOutput.exposure.value); });
+    target = capture;
+    withNativeRenderScope(renderer, scene, camera, () => { seen.push(sceneOutput.main.value); });
+    expect(seen).toEqual([1, 1.06, 0]);
+    expect(read()).toEqual(resting);
+    capture.dispose();
+  });
+
+  it("inside a composed frame calls the scene's own pass the view's frame, and the passes around it not", () => {
+    const scene = new Scene();
+    const camera = new PerspectiveCamera();
+    const quad = new Scene();
+    const renderer = { getRenderTarget: (): RenderTarget | null => null, toneMappingExposure: 1.3 };
+    const seen: Record<string, number> = {};
+    withNativeComposedFrame(renderer, scene, camera, () => {
+      // The pipeline draws the canvas with a quad; the scene and its shadow map are drawn nested in it.
+      withNativeRenderScope(renderer, quad, camera, () => {
+        withNativeRenderScope(renderer, scene, camera, () => {
+          seen["scene pass"] = sceneOutput.main.value;
+          withNativeRenderScope(renderer, scene, new PerspectiveCamera(), () => { seen["shadow map"] = sceneOutput.main.value; });
+          seen["scene pass after"] = sceneOutput.main.value;
+        });
+        withNativeRenderScope(renderer, new Scene(), camera, () => { seen["post pass"] = sceneOutput.main.value; });
+      });
+    });
+    expect(seen).toEqual({ "scene pass": 1, "shadow map": 0, "scene pass after": 1, "post pass": 0 });
+    expect(read()).toEqual(resting);
   });
 });

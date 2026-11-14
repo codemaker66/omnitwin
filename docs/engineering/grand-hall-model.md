@@ -297,14 +297,36 @@ filtered) and installed as the scene's environment before the room's first frame
 first capture made three rebuild every material of the scene pass once more, a 2.2-3.0 s
 main-thread task at 4x CPU on the phone profile, on master as on the branch (review R2). `HallEnvironment` stands in only
 while the room is not drawn. The canvas draws the photographed room through Khronos PBR Neutral
-with its toe as a number (`lib/film-toe.ts`, chosen in `lib/capture-display.ts` and
-`CaptureToneMapping`), after the planner's pipeline grades each mood
+(`lib/capture-display.ts`, `CaptureToneMapping`), after the planner's pipeline grades each mood
 ([planner rendering](planner-rendering.md)). Neutral's toe takes up to 0.04 from every channel to
 cancel the mirror reflection of a lit material; a photograph has none, so at that toe the wall
 atlas shows 11 levels darker per channel on average and its texels under L* 10 rise from 8.4 % to
-14.9 % (simulated on `walls-4096.webp`, 13 November 2026). The default toe is still Neutral's
-0.04, value for value; at 0 a colour under the shoulder leaves as it arrived, so Daylight is the
-photograph. `?toe=0` to `?toe=0.04` in the page address draws with another toe for comparison.
+14.9 % (simulated on `walls-4096.webp`, 13 November 2026).
+
+The curve is one curve for the whole frame, and the furniture is lit material whose colours were
+tuned under Neutral's toe: drawn with no toe anywhere, the planner's red chairs come out paler and
+pinker (measured on `/dev/planner-lab`, 14 November 2026). So the curve stays Neutral, and the
+photographs can give the toe back themselves (`lib/film-toe.ts`): the matt and the varnished
+photographs (`hall-materials.ts`, where `relitPhoto` is shown) add to their own colour, before the
+curve, what the toe will take out again, so they come out as if the curve's toe were `filmToe`.
+At 0.04 they add nothing; at 0 a photograph under the shoulder is on the screen what arrived at
+the curve, and in Daylight that is the photograph. The addition is exact where nothing else has
+touched the pixel. Where the pipeline's occlusion darkens a photograph, the addition is darkened
+with it, so a crease keeps part of the toe; that is less than it loses today.
+
+For the addition to be exact a photograph has to know what follows its draw: the exposure, and in
+the planner's pipeline the grade and the vignette. `sceneOutput` (`lib/scene-grade.ts`) carries
+those. Every draw declares whether it is the view's own frame (`withNativeRenderScope`), and the
+pipeline declares its grade and vignette around its frame; a draw nobody declared, such as the
+room's reflection capture, adds nothing, so the furniture's reflections are as they were. The
+pipeline's grade and vignette are restated in `photographLift` and must change with it.
+
+The default toe is still Neutral's, and at the default the photographs' materials are built
+without the addition at all (`photographToeFor` answers null), so the shaders are the ones the
+hall always had. `?toe=0` to `?toe=0.04` in the page address builds it and draws the photographs
+with that toe, for comparison. The planner's exported images and thumbnails are not drawn as the
+view's own frame, so they keep Neutral's toe for now; that is to settle before a default other
+than Neutral's ships.
 
 ## The real sky (`?sky=1`)
 
