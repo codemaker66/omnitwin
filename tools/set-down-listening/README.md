@@ -65,7 +65,7 @@ or for the limiter says so, in ms.
   (EST): a source on the floor (Q = 2) has a reverberant energy of 32π / R
   times its direct energy at the 2 m reference, so with the tail at unit
   energy the send is √(32π / R_ref), R_ref being the empty Grand Hall's room
-  constant at 1 kHz. Each set-down is rendered at full direct gain and turned
+  constant at 1 kHz, air included (the engine's `roomConstant`). Each set-down is rendered at full direct gain and turned
   down by its dry gain (`min(1, 2 / distance)`, Task 12's `directPath`): the
   render is linear in its direct gain, so the dry sound is the same, and the
   send is the room's alone.

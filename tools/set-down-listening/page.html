@@ -260,6 +260,7 @@
   .notes { margin-top: 16px; background: var(--sheet); border-radius: 10px; padding: 14px 22px; font-size: 13.5px; color: var(--ink-2); }
   .notes p { margin: 0; }
   .notes p + p { margin-top: 6px; }
+  .notes p:empty { display: none; }
 
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .panel :focus-visible { outline-color: var(--focus-forest); }
@@ -345,7 +346,8 @@
 
   <footer class="notes">
     <p id="save-status" role="status"></p>
-    <p id="audio-status">Sound starts with your first tap. On an iPhone the ring switch silences this page, as it will the planner.</p>
+    <p id="audio-status" role="status"></p>
+    <p id="audio-hint">Sound starts with your first tap. On an iPhone the ring switch silences this page, as it will the planner.</p>
   </footer>
 </div>
 

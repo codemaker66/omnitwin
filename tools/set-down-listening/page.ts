@@ -18,12 +18,11 @@ import { getCatalogueItem, getCatalogueItemBySlug } from "../../packages/web/src
 import type { PlacedItem } from "../../packages/web/src/lib/placement.js";
 import { dbToGain, gainToDb, seededRandom } from "../../packages/web/src/lib/planner-sound-render.js";
 import { PLANNER_LIMITER, PLANNER_SOUND_DEFAULT_LEVEL, limiterMakeupDb } from "../../packages/web/src/lib/sound-registry.js";
-import { SURFACE_ABSORPTION } from "../../packages/web/src/lib/set-down/acoustic-data.js";
 import { OCTAVE_BANDS_HZ, type BandValues } from "../../packages/web/src/lib/set-down/bands.js";
 import { SET_DOWN_BODIES, bodyFor, type BodyFamily, type FootCap, type SetDownBody } from "../../packages/web/src/lib/set-down/bodies.js";
 import { earlyReflections, lateralAzimuth, reflectionRoomFor, type Vec3 } from "../../packages/web/src/lib/set-down/reflections.js";
 import { renderSetDown, type SetDownRender } from "../../packages/web/src/lib/set-down/render.js";
-import { referenceDinner, roomState, type RoomState } from "../../packages/web/src/lib/set-down/room-acoustics.js";
+import { referenceDinner, roomConstant, roomState, type RoomState } from "../../packages/web/src/lib/set-down/room-acoustics.js";
 import { ROOM_ACOUSTICS, ROOM_PLANS, type RoomSlug } from "../../packages/web/src/lib/set-down/rooms.js";
 import { floorKindForRoom, surfaceKindForSupport, surfaceResponse, type SurfaceKind } from "../../packages/web/src/lib/set-down/surfaces.js";
 import { tailOnsetSeconds, tailSlices, type Stereo } from "../../packages/web/src/lib/set-down/tail.js";
@@ -122,23 +121,13 @@ const REFERENCE_DISTANCE_M = 2;
  * times its direct energy at r. At the 2 m reference that is 32 pi / R. The
  * tail has unit energy per channel, so a send of sqrt(32 pi / R) makes the
  * convolved echo carry that energy. reverberantGain's square is R_ref / R,
- * with R_ref the empty Grand Hall's room constant at 1 kHz, so
- * REVERB_SEND x reverberantGain = sqrt(32 pi / R_ref) x sqrt(R_ref / R) =
- * sqrt(32 pi / R) for any room. The send carries the whole render, early
- * reflections included, which biases the echo about 1-2 dB high (R64, EST).
+ * with R_ref the empty Grand Hall's room constant at 1 kHz (the engine's
+ * roomConstant, air included), so REVERB_SEND x reverberantGain =
+ * sqrt(32 pi / R_ref) x sqrt(R_ref / R) = sqrt(32 pi / R) for any room. The
+ * send carries the whole render, early reflections included, which biases
+ * the echo about 1-2 dB high (R64, EST).
  */
-const REVERB_SEND = Math.sqrt((32 * Math.PI) / emptyHallRoomConstant());
-
-function emptyHallRoomConstant(): number {
-  let area = 0;
-  let absorption = 0;
-  for (const surface of ROOM_ACOUSTICS["grand-hall"].surfaces) {
-    area += surface.areaM2;
-    absorption += surface.areaM2 * SURFACE_ABSORPTION[surface.material][ONE_KHZ];
-  }
-  const mean = absorption / area;
-  return absorption / (1 - mean);
-}
+const REVERB_SEND = Math.sqrt((32 * Math.PI) / roomConstant(ROOM_ACOUSTICS["grand-hall"], [0, 0, 0, 0, 0, 0, 0]));
 
 // --- The audio graph (mirroring lib/sound-registry.ts's planner graph) ------------------------------
 
@@ -186,8 +175,14 @@ function optional<T>(value: T): T | undefined {
 let audio: AudioGraph | null = null;
 /** Set once making the graph has failed, so it is not tried again on every gesture. */
 let audioFailed = false;
-/** What the current gesture has spent finishing a tail before it could play, in ms. */
+/** What the current play spent finishing a tail before it could start, in ms. */
 let tailWaitMs = 0;
+/**
+ * What making the graph spent on its tail, for a play in the same gesture to
+ * count: the graph is made in the gesture's capture listener, just before the
+ * key's own handler plays. Cleared once that gesture's events have run.
+ */
+let armWaitMs = 0;
 
 function makeGraph(): AudioGraph | null {
   const Context = optional(window.AudioContext);
@@ -237,7 +232,10 @@ function arm(): AudioGraph | null {
     });
     ui.page.dataset.audio = graph.context.state;
     // The tail at the context's own rate, at once: a ConvolverNode takes no other rate.
-    finishTail();
+    armWaitMs = finishTail();
+    window.setTimeout(() => {
+      armWaitMs = 0;
+    }, 0);
   }
   // A touch's pointerdown is not yet a gesture to the browser; the click that follows it resumes.
   if (audio.context.state !== "running") audio.context.resume().catch(() => undefined);
@@ -405,21 +403,27 @@ function useTail(): void {
   installTail(audio, builtTail.stereo, builtTail.key);
 }
 
-/** Finishes the current room's tail now, rather than in idle time; the work is added to the gesture's wait. */
-function finishTail(): void {
+/** Finishes the current room's tail now, rather than in idle time; returns the ms it took. */
+function finishTail(): number {
   requestTail();
   const job = tailJob;
-  if (job === null) return;
+  if (job === null) return 0;
   const begin = performance.now();
   for (let done = false; !done; ) done = stepTail(job);
-  tailWaitMs += performance.now() - begin;
+  return performance.now() - begin;
+}
+
+/** Begins a play's count of what it waited for: only its own gesture's graph-making, if any. */
+function startWait(): void {
+  tailWaitMs = armWaitMs;
+  armWaitMs = 0;
 }
 
 /** Makes sure the current tail is on the graph before a set-down plays, finishing it now if it is not. */
 function tailNow(graph: AudioGraph): void {
   const want = wantedTail();
   if (graph.wet?.key === want.key && builtTail?.sampleRate === want.sampleRate) return;
-  finishTail();
+  tailWaitMs += finishTail();
   useTail();
 }
 
@@ -490,6 +494,7 @@ function renderAt(body: SetDownBody, surface: SurfaceKind, kind: "drop" | "settl
 function playPiece(kind: "drop" | "settle"): void {
   const graph = arm();
   if (graph === null) return;
+  startWait();
   tailNow(graph);
   const height = supportHeight(state.support);
   const across = Math.sqrt(Math.max(0, state.distanceM ** 2 - (EAR_HEIGHT_M - height) ** 2));
@@ -545,6 +550,7 @@ function cascadePieces(items: readonly PlacedItem[]): readonly { readonly item: 
 function playCascade(): void {
   const graph = arm();
   if (graph === null) return;
+  startWait();
   tailNow(graph);
   const geometry = drawnRoom(state.room);
   const box = computeBoundingBox(geometry.wallPolygon);
@@ -739,7 +745,8 @@ class DeviceTimings {
   private async write(): Promise<void> {
     const doc = this.document;
     if (doc === null || !this.dirty) return;
-    if (this.writing) {
+    // One write at a time, and none inside an `unavailable` backoff, whichever path asked for it.
+    if (this.writing || Date.now() < this.notBefore) {
       this.schedule();
       return;
     }
@@ -1028,12 +1035,8 @@ function wire(): void {
   onPress(ui.move, () => { playPiece("settle"); });
   onPress(ui.layOut, playCascade);
   // Any first gesture makes the context; each later one resumes it if the browser suspended it.
-  // A gesture begins with a pointerdown or a keydown, which starts its count of time spent finishing a tail.
   for (const type of ["pointerdown", "keydown", "touchend", "click"] as const) {
-    document.addEventListener(type, () => {
-      if (type === "pointerdown" || type === "keydown") tailWaitMs = 0;
-      arm();
-    }, { capture: true });
+    document.addEventListener(type, () => { arm(); }, { capture: true });
   }
 }
 

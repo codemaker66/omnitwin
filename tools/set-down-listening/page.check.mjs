@@ -38,17 +38,15 @@ function check(name, ok, detail = "") {
 }
 
 // The send the Grand Hall's voices should carry, from the engine itself: sqrt(32 pi / R_ref) x reverberantGain,
-// R_ref being the empty hall's room constant at 1 kHz (R11; the page's EST derivation, Q = 2 at 2 m).
+// R_ref being the empty hall's room constant at 1 kHz from the engine's roomConstant (R11; the page's EST
+// derivation, Q = 2 at 2 m). It is checked here against the gain the live graph holds.
 const probe = await esbuild.build({
   stdin: {
     contents: `
       import { ROOM_ACOUSTICS } from "../../packages/web/src/lib/set-down/rooms.js";
-      import { SURFACE_ABSORPTION } from "../../packages/web/src/lib/set-down/acoustic-data.js";
-      import { referenceDinner, roomState } from "../../packages/web/src/lib/set-down/room-acoustics.js";
+      import { referenceDinner, roomConstant, roomState } from "../../packages/web/src/lib/set-down/room-acoustics.js";
       const hall = ROOM_ACOUSTICS["grand-hall"];
-      let area = 0, absorption = 0;
-      for (const s of hall.surfaces) { area += s.areaM2; absorption += s.areaM2 * SURFACE_ABSORPTION[s.material][3]; }
-      const send = Math.sqrt((32 * Math.PI) / (absorption / (1 - absorption / area)));
+      const send = Math.sqrt((32 * Math.PI) / roomConstant(hall, [0, 0, 0, 0, 0, 0, 0]));
       export const emptySend = send * roomState(hall, []).reverberantGain;
       export const dressedSend = send * roomState(hall, referenceDinner("grand-hall")).reverberantGain;
     `,
@@ -234,11 +232,20 @@ try {
   await tab.click("#set-down");
   check("a room's tail is made with the room change, not on the press", !(await waited(tab)).includes("tail"), (await waited(tab)) || "no wait");
   check("a mic stand on a deck in the Saloon plays", (await voices(tab)) === 13, `${await text(tab, "render-ms")}, peak ${await text(tab, "peak-db")}`);
+  // A click with no pointer before it (assistive technology, or a script) after a room change: the room change's
+  // own tail work is not this play's wait.
+  await tab.click("#room-robert-adam-room");
+  await tab.locator("#set-down").evaluate((button) => button.click());
+  check("a pointerless click after a room change shows no tail wait", (await voices(tab)) === 14 && !(await waited(tab)).includes("tail"), (await waited(tab)) || "no wait");
   for (const room of ROOMS) {
     await tab.click(`#room-${room}`);
     await tab.click("#lay-out");
   }
-  check("every room's dinner cascade plays", (await voices(tab)) === 13 + 8 * ROOMS.length);
+  check("every room's dinner cascade plays", (await voices(tab)) === 14 + 8 * ROOMS.length);
+  check(
+    "the audio status is announced, apart from the ring-switch hint",
+    (await tab.locator("#audio-status").getAttribute("role")) === "status" && (await tab.locator("#audio-hint").innerText()).includes("ring switch"),
+  );
   await setDressing(tab, 0);
   await tab.click("#room-grand-hall");
   await tab.waitForTimeout(400);
