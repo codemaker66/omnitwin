@@ -252,7 +252,7 @@ describe.skipIf(target === undefined)("the public forms' hidden trap, on the mig
     ["both", "both", { trap: "x", openMs: 40 }, "field and time", 40],
   ] as const)("keeps an enquiry that hit the trap (%s), answers it as any other, tells the team in the app and emails nobody", async (_case, label, trapped, hit, openMs) => {
     const control = enquiryIdOf(await enquire(asked(`${label}-control`)));
-    const payload = { ...asked(label), ...trapped };
+    const payload: Record<string, unknown> = { ...asked(label), ...trapped };
     const response = await enquire(payload);
     const enquiryId = enquiryIdOf(response);
 
@@ -311,7 +311,7 @@ describe.skipIf(target === undefined)("the public forms' hidden trap, on the mig
   }, 60_000);
 
   it("treats an enquiry whose hidden field is empty and whose form was open three seconds as any other", async () => {
-    const payload = { ...asked("fine"), trap: "", openMs: 3000 };
+    const payload: Record<string, unknown> = { ...asked("fine"), trap: "", openMs: 3000 };
     const enquiryId = enquiryIdOf(await enquire(payload));
     expect(await emailsOf(enquiryId)).toEqual({ "enquiry-acknowledged:(id)": "sent", "enquiry-new:(id):fallback": "sent" });
     expect(handedCount(String(payload.email))).toBe(1);
