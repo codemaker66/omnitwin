@@ -6,7 +6,12 @@
 // folder; nothing in the repository.
 //   node scripts/planner-lab.mjs --base http://127.0.0.1:5213 --out D:/claude/x \
 //     [--profile desktop|tablet|phone|off] [--mood daylight|evening|candlelight] \
-//     [--views room,plan,eye] [--frames 120] [--guests 160]
+//     [--views room,plan,eye] [--frames 120] [--guests 160] [--channel chromium|chrome]
+//
+// Another Trades Hall room, drawn as surveyed from a staged folder, from the planner's own cameras:
+//   node scripts/planner-lab.mjs --base http://127.0.0.1:5213 --out D:/claude/x --frames 0 \
+//     --space saloon --roomsBase /rooms/saloon/survey-2026-07-11 [--roomsRev 1] \
+//     [--views opening,plan,from-fireplace,from-windows,from-front,from-rear]
 import { chromium } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,7 +27,13 @@ const PROFILE = option("profile", "desktop");
 const MOOD = option("mood", "daylight");
 const VIEWS = option("views", "room,plan,eye").split(",").filter((view) => view.length > 0);
 const FRAMES = Number(option("frames", "120"));
-const GUESTS = Number(option("guests", "160"));
+// Another Trades Hall room instead of the Grand Hall (`--space saloon`), and its staged survey
+// (`--roomsBase /rooms/saloon/survey-2026-07-11 [--roomsRev 1]`), drawn as surveyed in the planner's scene.
+const SPACE = option("space", "");
+const ROOMS_BASE = option("roomsBase", "");
+const ROOMS_REV = option("roomsRev", "1");
+const CHANNEL = option("channel", "chromium");
+const GUESTS = Number(option("guests", SPACE === "" ? "160" : "0"));
 
 /** Camera poses in the hall's frame (metres): position, then the point looked at. */
 const POSES = {
@@ -45,13 +56,32 @@ const DEVICES = {
   off: { viewport: { width: 1600, height: 900 }, deviceScaleFactor: 2, isMobile: false, hasTouch: false },
 };
 
+/**
+ * Poses for a room shown by `--space`, in its own frame. "opening" is the planner's own opening
+ * view (the camera is left where the planner put it); the four sides look in from beyond each
+ * wall, above the ceiling, where a surveyed room's near walls and ceiling are not drawn.
+ */
+const ROOM_POSES = {
+  saloon: {
+    opening: null,
+    plan: [[0, 17, 1.8], [0, 0, 0]],
+    "from-fireplace": [[0, 9, 15], [0, 1.5, 0]],
+    "from-windows": [[0, 9, -15], [0, 1.5, 0]],
+    "from-front": [[17, 9, 0], [0, 1.5, 0]],
+    "from-rear": [[-17, 9, 0], [0, 1.5, 0]],
+  },
+};
+
 const device = DEVICES[PROFILE];
 if (device === undefined) throw new Error(`Unknown profile ${PROFILE}`);
-for (const view of VIEWS) if (POSES[view] === undefined) throw new Error(`Unknown view ${view}`);
+const poses = SPACE === "" ? POSES : ROOM_POSES[SPACE];
+if (poses === undefined) throw new Error(`No poses for the room ${SPACE}`);
+const views = SPACE === "" || process.argv.includes("--views") ? VIEWS : Object.keys(poses);
+for (const view of views) if (poses[view] === undefined) throw new Error(`Unknown view ${view}`);
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
-  channel: "chromium",
+  channel: CHANNEL,
   headless: true,
   args: ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"],
 });
@@ -60,23 +90,35 @@ try {
   const context = await browser.newContext(device);
   const page = await context.newPage();
   page.on("pageerror", (error) => { console.error(`page error: ${error.message}`); });
-  await page.goto(`${BASE}/dev/planner-lab?render=${PROFILE}&guests=${GUESTS}`, { waitUntil: "domcontentloaded" });
+  const room = SPACE === "" ? "" : `&space=${encodeURIComponent(SPACE)}`;
+  const survey = ROOMS_BASE === "" ? "" : `&rooms=surveyed&roomsBase=${encodeURIComponent(ROOMS_BASE)}&roomsRev=${encodeURIComponent(ROOMS_REV)}`;
+  await page.goto(`${BASE}/dev/planner-lab?render=${PROFILE}&guests=${GUESTS}${room}${survey}`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => window.__plannerLab?.ready() === true, undefined, { timeout: 240000, polling: 500 });
+  if (SPACE !== "") {
+    // How the room's survey stands: drawn with its photographs counted in, or failed with the file and the reason.
+    summary.space = SPACE;
+    summary.surveyedRoom = await page.evaluate(() => window.__plannerLab.surveyedRoom());
+    console.log(`surveyed room: ${JSON.stringify(summary.surveyedRoom)}`);
+  }
   summary.adapter = await page.evaluate(async () => {
     const gpu = navigator.gpu;
     if (gpu === undefined) return "no WebGPU";
     const adapter = await gpu.requestAdapter();
     return adapter === null ? "no adapter" : `${adapter.info.vendor} ${adapter.info.architecture} ${adapter.info.description}`.trim();
   });
-  await page.evaluate((mood) => { window.__plannerLab.setMood(mood); }, MOOD);
+  // The moods are the Grand Hall's own light; another room is shown as photographed.
+  if (SPACE === "") await page.evaluate((mood) => { window.__plannerLab.setMood(mood); }, MOOD);
   await page.waitForTimeout(2500);
-  for (const view of VIEWS) {
-    const [position, target] = POSES[view];
-    await page.evaluate(({ position, target }) => { window.__plannerLab.pose(position, target); }, { position, target });
-    // The planner's glide, then a still frame long enough for temporal refinement.
-    await page.waitForFunction(() => window.__plannerLab.cameraState().gliding === false, undefined, { timeout: 15000, polling: 100 });
+  for (const view of views) {
+    const pose = poses[view];
+    if (pose !== null) {
+      const [position, target] = pose;
+      await page.evaluate(({ position, target }) => { window.__plannerLab.pose(position, target); }, { position, target });
+      // The planner's glide, then a still frame long enough for temporal refinement.
+      await page.waitForFunction(() => window.__plannerLab.cameraState().gliding === false, undefined, { timeout: 15000, polling: 100 });
+    }
     await page.waitForTimeout(1500);
-    const file = join(OUT, `${PROFILE}-${MOOD}-${view}.png`);
+    const file = join(OUT, `${PROFILE}-${SPACE === "" ? MOOD : SPACE}-${view}.png`);
     await page.screenshot({ path: file, type: "png" });
     summary.captures.push({ view, file });
     console.log(`captured ${file}`);
