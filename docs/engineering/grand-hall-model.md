@@ -324,9 +324,10 @@ pipeline's grade and vignette are restated in `photographLift` and must change w
 The default toe is still Neutral's, and at the default the photographs' materials are built
 without the addition at all (`photographToeFor` answers null), so the shaders are the ones the
 hall always had. `?toe=0` to `?toe=0.04` in the page address builds it and draws the photographs
-with that toe, for comparison. The planner's exported images and thumbnails are not drawn as the
-view's own frame, so they keep Neutral's toe for now; that is to settle before a default other
-than Neutral's ships.
+with that toe, for comparison. The plan thumbnail sent with a layout (`lib/ortho-capture.ts`) is
+not the view's own frame, so the photographs add nothing in it. Nor has it a toe to give back:
+it is drawn into a render target, which three draws with no tone mapping and no exposure
+(`Renderer.currentToneMapping`, read in r186 on 14 November 2026).
 
 ## The real sky (`?sky=1`)
 
