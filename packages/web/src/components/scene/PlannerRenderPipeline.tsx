@@ -59,7 +59,7 @@ import { CameraPoseWatch, MotionBloom } from "../../lib/motion-bloom.js";
 import { registerNativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { compileEach, compileWithin, drawAhead, requestNativePrecompile, withoutShadowMapDraws } from "../../lib/native-precompile.js";
 import type { RenderProfile } from "../../lib/render-quality.js";
-import { sceneGrade } from "../../lib/scene-grade.js";
+import { sceneGrade, VIGNETTE_FALLOFF, VIGNETTE_REACH, withPipelineOutput } from "../../lib/scene-grade.js";
 import { watchViewHand } from "../../lib/view-hand.js";
 
 /**
@@ -200,12 +200,14 @@ export function buildPlannerPipeline(
     owned.push(glow);
     graded = vec4(resolved.rgb.add(glow.rgb.mul(glow.weight)), resolved.a);
   }
-  // The camera's eye: white balance, then saturation, in linear light.
+  // The camera's eye: white balance, then saturation, in linear light. The
+  // hall's photographs work this grade and the vignette below back out of
+  // their own colour (lib/film-toe.ts photographLift): the two change together.
   const balanced = graded.rgb.mul(sceneGrade.whiteBalance);
   graded = vec4(mix(vec3(luminance(balanced)), balanced, sceneGrade.saturation), graded.a);
   if (profile.vignette > 0) {
-    const distance = screenUV.sub(0.5).length().mul(1.4142);
-    const shade = mix(float(1), float(1 - profile.vignette), smoothstep(0.35, 1.0, distance));
+    const distance = screenUV.sub(0.5).length().mul(VIGNETTE_REACH);
+    const shade = mix(float(1), float(1 - profile.vignette), smoothstep(VIGNETTE_FALLOFF[0], VIGNETTE_FALLOFF[1], distance));
     graded = vec4(graded.rgb.mul(shade), graded.a);
   }
 
@@ -335,7 +337,9 @@ export function PlannerRenderPipeline({ enabled, profile, sceneNormals = profile
         // Frames follow while the glow returns, and one after a camera move to see it stop.
         if (motion.returning || cameraMoved) invalidate();
       }
-      built.pipeline.render();
+      // The grade and vignette above follow everything this frame draws: a
+      // material that must know reads them (scene-grade.ts sceneOutput).
+      withPipelineOutput(debugView === null ? profile.vignette : 0, () => { built.pipeline.render(); });
     }, precompile);
     // A pipeline rebuilt for the same renderer (an effect given up, the
     // profile changed) compiles ahead before it draws. The first is compiled
