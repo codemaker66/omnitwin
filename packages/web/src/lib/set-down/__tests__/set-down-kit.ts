@@ -101,8 +101,10 @@ export interface BandDecay {
  * The scatter of one T20 reading of a decay of noise, as a fraction of its time T:
  * sigma_D / T = 0.88 root((1 + 1.90 / n) / (N B T)), for a bandwidth B in hertz, n = 10 for an integrated impulse
  * response and N = 1 decay averaged (ISO 3382-2:2008, after Davy, Dunn and Dubout, Acustica, 1979; ruling R67).
+ * A band read from no bins has no scatter to scale by: it throws, rather than return Infinity and pass every check.
  */
 export function decayScatter(bandwidthHz: number, seconds: number): number {
+  if (!(bandwidthHz > 0) || !(seconds > 0)) throw new Error(`decayScatter: a band of ${String(bandwidthHz)} Hz over ${String(seconds)} s has no scatter to read`);
   const n = 10;
   const decays = 1;
   return 0.88 * Math.sqrt((1 + 1.9 / n) / (decays * bandwidthHz * seconds));

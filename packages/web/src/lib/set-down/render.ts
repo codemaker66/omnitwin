@@ -209,8 +209,10 @@ const RATTLE_Q = 3;
  * sample, so on the play's own stream it moved every mode's draw with the
  * sample rate (ruling R53). The stream is the play's seed mixed with the
  * piece's (rattleSeed), so two pieces at one seed rattle differently (ruling
- * R68), then moved a quarter of the generator's period along, as the tail's
- * right channel is moved half of it.
+ * R68), plus this offset. After the mix the rattle's stream starts at no fixed
+ * distance from the play's, so the stretches the two use can overlap: about
+ * once in 10^5 seeds and pieces, and harmlessly, since an overlap only
+ * correlates the rattle's noise with some mode draws.
  */
 const RATTLE_SEED_OFFSET = 0x40000000;
 

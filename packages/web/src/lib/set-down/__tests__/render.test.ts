@@ -371,6 +371,16 @@ describe("what each piece is made of", () => {
     expect(median(rises)).toBeGreaterThanOrEqual(6);
   });
 
+  it("rattles two pieces differently at one seed: the rattle's stream mixes in the piece, and nothing else does (ruling R68)", () => {
+    // The same body under another slug: only the rattle's stream reads the slug.
+    const input = inputFor("round-table-6ft-white", "oak-boards-joists", { seed: 3 });
+    const twin: SetDownInput = { ...input, body: { ...input.body, slug: "round-table-6ft-white-twin" } };
+    expect(sameSamples(renderSetDown(input).left, renderSetDown(twin).left)).toBe(false);
+    const still: SetDownInput = { ...input, body: { ...input.body, legRattle: false } };
+    const stillTwin: SetDownInput = { ...twin, body: { ...twin.body, legRattle: false } };
+    expect(sameSamples(renderSetDown(still).left, renderSetDown(stillTwin).left)).toBe(true);
+  });
+
   it("rings a steel mic stand at 1 kHz for 0.2 s and more, seeds 1-8 (ruling R44)", () => {
     for (let seed = 1; seed <= 8; seed += 1) {
       const stand = setDown("mic-stand", "oak-boards-joists", { seed });
