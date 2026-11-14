@@ -238,7 +238,8 @@ On 14 November 2026 Blake approved the same re-pin from 6.18.54.1 to 6.18.58.1
 after WSL updated itself overnight (the last gate on 6.18.54.1 passed at 01:20 UTC;
 the operator refused PR #388's gate at 16:54 on the new kernel). Node 22.23.2,
 Playwright's Chromium 147.0.7727.15, NVIDIA 616.92 and the renderer were unchanged.
-The five cases ran on the new kernel in this re-pin's own required gate before it merged.
+The five cases passed on the new kernel (CI run 43624511341, attempt 2, PR #411's
+merge ref 235b6843; 5 passed in 55.1 s) before publication refused the runtime.
 
 ## One explicitly admitted local run
 
