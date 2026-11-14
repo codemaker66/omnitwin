@@ -131,11 +131,21 @@ export function setFurnitureMassResolver(resolve: (id: string) => FurnitureMass)
 /**
  * Hears pieces come down, for the set-down sound (T-700). Every call carries
  * primitives only, so the frame that reports a touchdown makes nothing for it.
+ *
+ * The contract:
+ * - The latest `dropStarted` for an id is the one that counts: a let-go while
+ *   a piece is still on its way down starts it down again.
+ * - Not everything lands. A `pickedUp` may be followed by no landing at all,
+ *   and a `dropStarted` by no `touchedDown`: a release at lift 0, a motion
+ *   cleared (a room change), a preview or an unmount.
+ * - A listener only listens. It must not drive the motion (carry, release,
+ *   drop in, clear) from inside a callback, which may run mid-step. One that
+ *   throws is reported and the motion carries on (R86).
  */
 export interface FurnitureLandingListener {
   /** A hand took the piece (or caught it mid-drop); heavy = stage, AV, lighting. */
   pickedUp(id: string, heavy: boolean): void;
-  /** It starts down: a drop-in after `delaySeconds`, a let-go or a resting hand's set-down at once. */
+  /** It starts down: a drop-in after `delaySeconds`, a let-go or a resting hand's set-down at once. The latest for an id counts. */
   dropStarted(id: string, landing: FurnitureLanding, handSpeed: number, delaySeconds: number): void;
   /** The frame it reaches its support, at |lift.velocity| m/s. */
   touchedDown(id: string, landing: FurnitureLanding, contactSpeed: number, handSpeed: number): void;
@@ -168,29 +178,65 @@ export function furnitureLandingListenerCount(): number {
 }
 
 /**
+ * A listener that throws is reported, never swallowed, and never stops the
+ * motion or a carry, release or gesture's close half way (R86): the error goes
+ * to the page's error reporting, or is thrown again on a microtask where there
+ * is none. Nothing is made unless something throws.
+ */
+function reportListenerError(error: unknown): void {
+  const host: { reportError?: (error: unknown) => void } = globalThis;
+  if (typeof host.reportError === "function") host.reportError(error);
+  else queueMicrotask(() => { throw error; });
+}
+
+/**
  * Under reduced motion nothing comes down: the placement and the hand call
  * this instead, for pieces that are down where they stand.
  */
 export function announceFurnitureLandedInPlace(ids: Iterable<string>, landing: FurnitureLanding, handSpeed: number): void {
   const listeners = landingListeners;
   for (const id of ids) {
-    for (let i = 0; i < listeners.length; i++) listeners[i]?.landedInPlace(id, landing, handSpeed);
+    for (let i = 0; i < listeners.length; i++) {
+      try {
+        listeners[i]?.landedInPlace(id, landing, handSpeed);
+      } catch (error) {
+        reportListenerError(error);
+      }
+    }
   }
 }
 
 function announcePickedUp(id: string, heavy: boolean): void {
   const listeners = landingListeners;
-  for (let i = 0; i < listeners.length; i++) listeners[i]?.pickedUp(id, heavy);
+  for (let i = 0; i < listeners.length; i++) {
+    try {
+      listeners[i]?.pickedUp(id, heavy);
+    } catch (error) {
+      reportListenerError(error);
+    }
+  }
 }
 
 function announceDropStarted(id: string, landing: FurnitureLanding, handSpeed: number, delaySeconds: number): void {
   const listeners = landingListeners;
-  for (let i = 0; i < listeners.length; i++) listeners[i]?.dropStarted(id, landing, handSpeed, delaySeconds);
+  for (let i = 0; i < listeners.length; i++) {
+    try {
+      listeners[i]?.dropStarted(id, landing, handSpeed, delaySeconds);
+    } catch (error) {
+      reportListenerError(error);
+    }
+  }
 }
 
 function announceTouchedDown(id: string, landing: FurnitureLanding, contactSpeed: number, handSpeed: number): void {
   const listeners = landingListeners;
-  for (let i = 0; i < listeners.length; i++) listeners[i]?.touchedDown(id, landing, contactSpeed, handSpeed);
+  for (let i = 0; i < listeners.length; i++) {
+    try {
+      listeners[i]?.touchedDown(id, landing, contactSpeed, handSpeed);
+    } catch (error) {
+      reportListenerError(error);
+    }
+  }
 }
 
 function channel(id: string): MotionChannel {

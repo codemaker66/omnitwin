@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DROP_HEIGHT,
   activeFurnitureSettleCount,
@@ -96,6 +96,7 @@ beforeEach(() => {
 afterEach(() => {
   unsubscribe();
   clearAllFurnitureSettles();
+  vi.unstubAllGlobals();
   // The seam hands its listeners primitives only: no object or array is made for them.
   for (const entry of heard) {
     for (const arg of entry.args) expect(["string", "number", "boolean"]).toContain(typeof arg);
@@ -291,7 +292,98 @@ describe("the listeners", () => {
   });
 });
 
+describe("a listener that throws (R86)", () => {
+  const failure = new Error("a listener's fault");
+  const thrower: FurnitureLandingListener = {
+    pickedUp: () => { throw failure; },
+    dropStarted: () => { throw failure; },
+    touchedDown: () => { throw failure; },
+    landedInPlace: () => { throw failure; },
+  };
+
+  /** The thrower first, then the recorder, so the recorder hears only what got past it. */
+  function throwerFirst(): () => void {
+    unsubscribe();
+    const stopThrowing = subscribeFurnitureLandings(thrower);
+    unsubscribe = subscribeFurnitureLandings(recorder);
+    return stopThrowing;
+  }
+
+  it("is reported, not thrown, and the next listener hears each touchdown as the step goes on", () => {
+    const reportError = vi.fn();
+    vi.stubGlobal("reportError", reportError);
+    const stopThrowing = throwerFirst();
+    try {
+      dropInFurniture("a");
+      dropInFurniture("b");
+      expect(() => { steps(10); }).not.toThrow();
+      expect(calls("touchedDown").map((entry) => entry.args.slice(0, 2))).toEqual([["a", "drop-in"], ["b", "drop-in"]]);
+      // Two starts and two touchdowns, each reported once.
+      expect(reportError).toHaveBeenCalledTimes(4);
+      for (const [error] of reportError.mock.calls) expect(error).toBe(failure);
+      steps(60);
+      expect(activeFurnitureSettleCount()).toBe(0);
+    } finally {
+      stopThrowing();
+    }
+  });
+
+  it("lets a carry and a release finish for every piece", () => {
+    const reportError = vi.fn();
+    vi.stubGlobal("reportError", reportError);
+    const stopThrowing = throwerFirst();
+    try {
+      carryFurniture(["a", "b", "c"], 1, 0);
+      expect(calls("pickedUp").map((entry) => entry.args[0])).toEqual(["a", "b", "c"]);
+      steps(6);
+      for (const id of ["a", "b", "c"]) expect(furnitureMotionPose(id)?.lift).toBeGreaterThan(0);
+      releaseFurniture(["a", "b", "c"]);
+      expect(calls("dropStarted").map((entry) => entry.args.slice(0, 2))).toEqual([["a", "let-go"], ["b", "let-go"], ["c", "let-go"]]);
+      steps(60);
+      expect(calls("touchedDown").map((entry) => entry.args[0])).toEqual(["a", "b", "c"]);
+      expect(activeFurnitureSettleCount()).toBe(0);
+      expect(reportError).toHaveBeenCalledTimes(9);
+    } finally {
+      stopThrowing();
+    }
+  });
+
+  it("lets an in-place announcement reach every piece and every listener", () => {
+    const reportError = vi.fn();
+    vi.stubGlobal("reportError", reportError);
+    const stopThrowing = throwerFirst();
+    try {
+      announceFurnitureLandedInPlace(["a", "b"], "set-down", 0);
+      expect(calls("landedInPlace").map((entry) => entry.args)).toEqual([["a", "set-down", 0], ["b", "set-down", 0]]);
+      expect(reportError).toHaveBeenCalledTimes(2);
+    } finally {
+      stopThrowing();
+    }
+  });
+
+  it("throws the error again on a microtask where the page has no reportError", () => {
+    const queued: (() => void)[] = [];
+    vi.stubGlobal("reportError", undefined);
+    vi.stubGlobal("queueMicrotask", (task: () => void) => { queued.push(task); });
+    const stopThrowing = throwerFirst();
+    try {
+      dropInFurniture("a");
+    } finally {
+      vi.unstubAllGlobals();
+      stopThrowing();
+    }
+    // The drop still started, and the recorder after the thrower heard it.
+    expect(only("dropStarted").args).toEqual(["a", "drop-in", 0, 0]);
+    expect(queued).toHaveLength(1);
+    const [rethrow] = queued;
+    expect(() => { rethrow?.(); }).toThrow(failure);
+  });
+});
+
 describe("the seam's cost", () => {
+  // A guard on the whole step's time, springs and all. It cannot see an
+  // allocation: that the seam makes no object or array per frame is review's
+  // to check (the plan's perf guard), and the primitive-arguments check above.
   it("steps 180 dropping pieces with one counting listener in a median under 0.5 ms a frame", () => {
     unsubscribe();
     unsubscribe = () => undefined;
