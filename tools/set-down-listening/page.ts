@@ -16,13 +16,15 @@ import { toRealWorld } from "../../packages/web/src/constants/scale.js";
 import { computeBoundingBox, roomGeometries, type RoomGeometry } from "../../packages/web/src/data/room-geometries.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../packages/web/src/lib/catalogue.js";
 import type { PlacedItem } from "../../packages/web/src/lib/placement.js";
-import { dbToGain, gainToDb, seededRandom } from "../../packages/web/src/lib/planner-sound-render.js";
+import { dbToGain, gainToDb } from "../../packages/web/src/lib/planner-sound-render.js";
 import { PLANNER_LIMITER, PLANNER_SOUND_DEFAULT_LEVEL, limiterMakeupDb } from "../../packages/web/src/lib/sound-registry.js";
 import { OCTAVE_BANDS_HZ, type BandValues } from "../../packages/web/src/lib/set-down/bands.js";
 import { SET_DOWN_BODIES, bodyFor, type BodyFamily, type FootCap, type SetDownBody } from "../../packages/web/src/lib/set-down/bodies.js";
-import { earlyReflections, lateralAzimuth, reflectionRoomFor, type Vec3 } from "../../packages/web/src/lib/set-down/reflections.js";
+import { planCascade, type CascadePiece } from "../../packages/web/src/lib/set-down/cascade.js";
+import { EAR_HEIGHT_M, REFERENCE_DISTANCE_M, directPath, earFor, type Ear } from "../../packages/web/src/lib/set-down/listener.js";
+import { earlyReflections, reflectionRoomFor, type Vec3 } from "../../packages/web/src/lib/set-down/reflections.js";
 import { renderSetDown, type SetDownRender } from "../../packages/web/src/lib/set-down/render.js";
-import { referenceDinner, roomConstant, roomState, type RoomState } from "../../packages/web/src/lib/set-down/room-acoustics.js";
+import { referenceDinner, roomState, type RoomState } from "../../packages/web/src/lib/set-down/room-acoustics.js";
 import { ROOM_ACOUSTICS, ROOM_PLANS, type RoomSlug } from "../../packages/web/src/lib/set-down/rooms.js";
 import { floorKindForRoom, surfaceKindForSupport, surfaceResponse, type SurfaceKind } from "../../packages/web/src/lib/set-down/surfaces.js";
 import { tailOnsetSeconds, tailSlices, type Stereo } from "../../packages/web/src/lib/set-down/tail.js";
@@ -106,28 +108,13 @@ function drawnRoom(slug: RoomSlug): RoomGeometry {
   return { wallPolygon: [[-x, -z], [x, -z], [x, z], [-x, z]], ceilingHeight: GALLERY_CEILING_M, features: [], hasDome: false, domeRadius: 0 };
 }
 
-/** The listener's ear: standing height. */
-const EAR_HEIGHT_M = 1.6;
-/** Facing along +x, the room's length, so +z is to the right (lateralAzimuth's convention). */
-const RIGHT: Vec3 = { x: 0, y: 0, z: 1 };
-/** The direct sound's gain is 1 at this distance and falls as 1/r beyond it (Task 12's directPath). */
-const REFERENCE_DISTANCE_M = 2;
-
 /**
- * The room send's constant (ruling R11: the send is REVERB_SEND x
- * reverberantGain, not scaled by the direct gain). EST, from diffuse-field
- * theory, since the registry does not define it yet (Task 13): a source of
- * directivity Q = 2 on the floor gives a reverberant energy 16 pi r^2 / (Q R)
- * times its direct energy at r. At the 2 m reference that is 32 pi / R. The
- * tail has unit energy per channel, so a send of sqrt(32 pi / R) makes the
- * convolved echo carry that energy. reverberantGain's square is R_ref / R,
- * with R_ref the empty Grand Hall's room constant at 1 kHz (the engine's
- * roomConstant, air included), so REVERB_SEND x reverberantGain =
- * sqrt(32 pi / R_ref) x sqrt(R_ref / R) = sqrt(32 pi / R) for any room. The
- * send carries the whole render, early reflections included, which biases
- * the echo about 1-2 dB high (R64, EST).
+ * The listener faces along +x, the room's length, so +z is to the right
+ * (lateralAzimuth's convention). The ear itself is the engine's (earFor:
+ * 1.6 m high, ruling R61), and so are the direct sound's 1/r fall
+ * (directPath) and the room send (RoomState.send, ruling R58).
  */
-const REVERB_SEND = Math.sqrt((32 * Math.PI) / roomConstant(ROOM_ACOUSTICS["grand-hall"], [0, 0, 0, 0, 0, 0, 0]));
+const RIGHT: Vec3 = { x: 0, y: 0, z: 1 };
 
 // --- The audio graph (mirroring lib/sound-registry.ts's planner graph) ------------------------------
 
@@ -462,15 +449,17 @@ function supportHeight(support: Support): number {
   return slug === null ? 0 : (getCatalogueItemBySlug(slug)?.height ?? 0);
 }
 
-function distance(a: Vec3, b: Vec3): number {
-  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+/** A placed piece's catalogue slug, or its own id when the catalogue does not know it. */
+function slugOf(item: PlacedItem): string {
+  return getCatalogueItem(item.catalogueItemId)?.slug ?? item.catalogueItemId;
 }
 
 /** Renders one piece landing at `source`, heard at `ear`, on `surface`, and times it. */
-function renderAt(body: SetDownBody, surface: SurfaceKind, kind: "drop" | "settle", source: Vec3, ear: Vec3, sampleRate: number): { readonly render: SetDownRender; readonly ms: number; readonly directGain: number } {
+function renderAt(body: SetDownBody, surface: SurfaceKind, kind: "drop" | "settle", source: Vec3, ear: Ear, sampleRate: number): { readonly render: SetDownRender; readonly ms: number; readonly directGain: number } {
   const response = surfaceResponse(surface, state.room);
   const begin = performance.now();
-  const reflections = earlyReflections(reflectionRoomFor(ROOM_ACOUSTICS[state.room], drawnRoom(state.room)), source, { position: ear, right: RIGHT });
+  const reflections = earlyReflections(reflectionRoomFor(ROOM_ACOUSTICS[state.room], drawnRoom(state.room)), source, ear);
+  const direct = directPath(ear, source);
   // Rendered at full direct gain and turned down by the dry gain: the render is linear in its direct gain,
   // so the dry sound is the same, and the send stays the room's alone (ruling R11).
   const render = renderSetDown({
@@ -479,15 +468,14 @@ function renderAt(body: SetDownBody, surface: SurfaceKind, kind: "drop" | "settl
     speed: 1,
     kind,
     clothed: false,
-    direct: { gain: 1, azimuthRad: lateralAzimuth({ x: source.x - ear.x, y: source.y - ear.y, z: source.z - ear.z }, RIGHT) },
+    direct: { gain: 1, azimuthRad: direct.azimuthRad },
     reflections,
     seed,
     sampleRate,
   });
   const ms = performance.now() - begin;
   seed += 1;
-  // Stand-in for Task 12's directPath (gain = min(1, 2 / distance)); replace when it lands.
-  return { render, ms, directGain: Math.min(1, REFERENCE_DISTANCE_M / Math.max(distance(source, ear), 1e-6)) };
+  return { render, ms, directGain: direct.gain };
 }
 
 /** The selected piece, set down (or settled) at the chosen distance ahead of the listener. */
@@ -499,53 +487,23 @@ function playPiece(kind: "drop" | "settle"): void {
   const height = supportHeight(state.support);
   const across = Math.sqrt(Math.max(0, state.distanceM ** 2 - (EAR_HEIGHT_M - height) ** 2));
   const source: Vec3 = { x: across / 2, y: height, z: 0 };
-  const ear: Vec3 = { x: -across / 2, y: EAR_HEIGHT_M, z: 0 };
+  // The listener stands the chosen distance from the landing, so the ear is where it stands.
+  const listener: Ear = { position: { x: -across / 2, y: EAR_HEIGHT_M, z: 0 }, right: RIGHT };
+  const ear = earFor(listener, source, false, { min: state.distanceM, max: state.distanceM });
   const surface = surfaceKindForSupport(SUPPORT_SLUG[state.support], state.room);
   const { render, ms, directGain } = renderAt(bodyFor(state.slug), surface, kind, source, ear, graph.context.sampleRate);
-  const held = playVoices(graph, [{ render, offsetSeconds: 0, levelDb: 0, directGain, send: REVERB_SEND * currentRoom().state.reverberantGain }]);
+  const held = playVoices(graph, [{ render, offsetSeconds: 0, levelDb: 0, directGain, send: currentRoom().state.send }]);
   timings.recordSetDown(state.slug, ms);
   showRender(render, ms, 1);
   showWait(held);
 }
 
 /**
- * Lay out's cascade (spec section 6; Task 12's plan): eight voices, tables
- * first, about 0.1 s apart, each 1 dB softer. Stand-in for Task 12's
- * planCascade; replace when it lands.
- */
-const CASCADE_VOICES = 8;
-const CASCADE_GAP_S = 0.085;
-const CASCADE_GAP_SPREAD_S = 0.025;
-const CASCADE_STEP_DB = -1;
-
-/** One piece of each table family first, then chairs spread across the layout, so the cascade sweeps the room (stand-in for planCascade). */
-function cascadePieces(items: readonly PlacedItem[]): readonly { readonly item: PlacedItem; readonly slug: string }[] {
-  const tables: { item: PlacedItem; slug: string }[] = [];
-  const chairs: { item: PlacedItem; slug: string }[] = [];
-  const families = new Set<BodyFamily>();
-  for (const item of items) {
-    const slug = getCatalogueItem(item.catalogueItemId)?.slug ?? item.catalogueItemId;
-    const family = bodyFor(slug).family;
-    if (family === "chair") chairs.push({ item, slug });
-    else if (!families.has(family)) {
-      families.add(family);
-      tables.push({ item, slug });
-    }
-  }
-  const picked = tables.slice(0, CASCADE_VOICES);
-  const count = Math.min(CASCADE_VOICES - picked.length, chairs.length);
-  for (let k = 0; k < count; k += 1) {
-    const chair = chairs[Math.floor(((k + 0.5) * chairs.length) / count)];
-    if (chair !== undefined) picked.push(chair);
-  }
-  return picked;
-}
-
-/**
- * "Lay out a dinner": the reference dinner's cascade, each piece heard from
- * the chosen distance on the line to a listener standing at the room's end
- * (Task 12's ear rule, held to 2 m at the nearest), on the room's floor. The
- * ear's placement is a stand-in for Task 12's earFor; replace when it lands.
+ * "Lay out a dinner": the reference dinner's cascade (the engine's
+ * planCascade, ruling R75), each piece heard from the chosen distance on the
+ * line to a listener standing at the room's end (the engine's earFor, held to
+ * 2 m at the nearest), on the room's floor. Every piece lands at once here, so
+ * the voices keep the cascade's own spacing.
  */
 function playCascade(): void {
   const graph = arm();
@@ -554,29 +512,24 @@ function playCascade(): void {
   tailNow(graph);
   const geometry = drawnRoom(state.room);
   const box = computeBoundingBox(geometry.wallPolygon);
-  const viewer: Vec3 = { x: box.minX + 1, y: EAR_HEIGHT_M, z: 0 };
-  const random = seededRandom(seed);
-  const send = REVERB_SEND * currentRoom().state.reverberantGain;
+  const viewer: Ear = { position: { x: box.minX + 1, y: EAR_HEIGHT_M, z: 0 }, right: RIGHT };
+  const { send } = currentRoom().state;
   const surface = floorKindForRoom(state.room);
+  const dinner = referenceDinner(state.room);
+  const placed = new Map(dinner.map((item) => [item.id, item]));
+  const pieces: CascadePiece[] = dinner.map((item) => ({ id: item.id, family: bodyFor(slugOf(item)).family, landsAfterSeconds: 0 }));
   const voices: Voice[] = [];
-  let offset = 0;
   let total = 0;
   let lastMs = 0;
   let last: SetDownRender | null = null;
-  for (const [index, { item, slug }] of cascadePieces(referenceDinner(state.room)).entries()) {
+  for (const { id, offsetSeconds, levelDb } of planCascade(pieces, seed)) {
+    const item = placed.get(id);
+    if (item === undefined) continue;
+    const slug = slugOf(item);
     const source: Vec3 = { x: toRealWorld(item.x), y: 0, z: toRealWorld(item.z) };
-    // R61: the ear stays at EAR_HEIGHT_M for every voice, so the floor's reflection is a standing listener's.
-    // Only its place on the floor follows the line towards the listener, far enough along it that the ear is
-    // `reach` from the landing.
-    const away = distance(viewer, source);
-    const reach = Math.min(Math.max(away, REFERENCE_DISTANCE_M), state.distanceM);
-    const along = Math.sqrt(Math.max(0, reach ** 2 - (EAR_HEIGHT_M - source.y) ** 2));
-    const flat = Math.hypot(viewer.x - source.x, viewer.z - source.z);
-    const k = flat > 1e-6 ? along / flat : 0;
-    const ear: Vec3 = { x: source.x + (viewer.x - source.x) * k, y: EAR_HEIGHT_M, z: source.z + (viewer.z - source.z) * k };
+    const ear = earFor(viewer, source, false, { min: REFERENCE_DISTANCE_M, max: state.distanceM });
     const { render, ms, directGain } = renderAt(bodyFor(slug), surface, "drop", source, ear, graph.context.sampleRate);
-    if (index > 0) offset += CASCADE_GAP_S + CASCADE_GAP_SPREAD_S * random();
-    voices.push({ render, offsetSeconds: offset, levelDb: CASCADE_STEP_DB * index, directGain, send });
+    voices.push({ render, offsetSeconds, levelDb, directGain, send });
     timings.recordSetDown(slug, ms);
     total += ms;
     last = render;
