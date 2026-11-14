@@ -7,6 +7,7 @@ import {
   VenueReplyBodySchema,
   toEventPlanAudienceRole,
   ProposalVersionPayloadSchema,
+  QuoteSnapshotSchema,
   proposalVersionPayloadDigest,
   isProposalEditable,
   ShortCodeSchema,
@@ -20,6 +21,7 @@ import {
   type ProposalNextVersion,
   type ProposalVersionPayload,
   type ProposalStatus,
+  type QuoteSnapshot,
 } from "@omnitwin/types";
 import {
   proposals,
@@ -27,6 +29,7 @@ import {
   proposalShareTokens,
   proposalVersions,
   proposalStatusHistory,
+  quoteLineItems,
   eventConfigurationLinks,
   enquiries,
   configurations,
@@ -1189,6 +1192,12 @@ export async function proposalRoutes(
     if (!isPlatformAdmin(request.user) && !isProposalEditable(proposal.status as ProposalStatus)) {
       return reply.status(422).send({ error: "Proposal content is frozen in its current status", code: "NOT_EDITABLE" });
     }
+    // A quote's total is the sum of its lines while the money engine has no
+    // modifiers or discounts (routes/quotes.ts: totalMinor = subtotalMinor),
+    // and the schema already holds the subtotal to the lines.
+    if (parsed.data.quote !== null && parsed.data.quote.totalMinor !== parsed.data.quote.subtotalMinor) {
+      return reply.status(422).send(QUOTE_MISMATCH);
+    }
     // Written from a version already followed by another: said as that, not
     // as a change to what it takes, and before the layout is drawn for it.
     // (Checked again under the lock below.)
@@ -1210,8 +1219,6 @@ export async function proposalRoutes(
     if (checked !== undefined && checked !== nextVersionBasis(proposal.currentVersion, proposal, taken)) {
       return reply.status(409).send(TAKEN_CHANGED);
     }
-
-    const sourceHash = proposalVersionPayloadDigest(payload);
 
     // The head and snapshot commit together. Lock before rechecking editability
     // so a delayed request cannot create content after the proposal is frozen.
@@ -1235,6 +1242,16 @@ export async function proposalRoutes(
       if (basedOn !== undefined && current.currentVersion !== basedOn) return "VERSION_CHANGED" as const;
       if (checked !== undefined && current.currentVersion !== proposal.currentVersion) return "VERSION_CHANGED" as const;
 
+      // A quote named by id is written as this proposal's quote is stored,
+      // never as it was sent, like the layout and the facts beside it: what
+      // the client accepts, pays a deposit on and signs is read from here.
+      // One with no id (a share, a hand-made version) keeps its own lines.
+      const sentQuoteId = payload.quote?.quoteId ?? null;
+      const storedQuote = sentQuoteId === null ? null : await storedQuoteSnapshot(tx, sentQuoteId, current);
+      if (sentQuoteId !== null && storedQuote === null) return "QUOTE_MISMATCH" as const;
+      const saved: ProposalVersionPayload = storedQuote === null ? payload : { ...payload, quote: storedQuote };
+      const sourceHash = proposalVersionPayloadDigest(saved);
+
       const [claimed] = await tx.update(proposals)
         .set({ currentVersion: sql`${proposals.currentVersion} + 1`, updatedAt: new Date() })
         .where(eq(proposals.id, current.id))
@@ -1244,7 +1261,7 @@ export async function proposalRoutes(
       const [version] = await tx.insert(proposalVersions).values({
         proposalId: current.id,
         version: claimed.version,
-        payload,
+        payload: saved,
         sourceHash,
         createdBy: request.user.id,
       }).returning();
@@ -1253,23 +1270,16 @@ export async function proposalRoutes(
       // A deal with no value yet takes the total of the first quote a saved
       // version carries (roadmap X1), as the quote is stored, never the figure
       // sent; a value already set is the booker's and stays.
-      const quoteId = payload.quote?.quoteId ?? null;
-      if (quoteId !== null && current.opportunityId !== null) {
-        const [quote] = await tx.select({ totalMinor: quotes.totalMinor, currency: quotes.currency }).from(quotes)
-          .where(and(eq(quotes.id, quoteId), eq(quotes.proposalId, current.id), eq(quotes.venueId, current.venueId),
-            isNull(quotes.deletedAt)))
-          .limit(1);
-        if (quote !== undefined) {
-          await tx.update(opportunities)
-            .set({ estimatedValueMinor: quote.totalMinor, updatedAt: new Date() })
-            .where(and(
-              eq(opportunities.id, current.opportunityId),
-              eq(opportunities.venueId, current.venueId),
-              isNull(opportunities.deletedAt),
-              eq(opportunities.estimatedValueMinor, 0),
-              eq(opportunities.currency, quote.currency),
-            ));
-        }
+      if (storedQuote !== null && current.opportunityId !== null) {
+        await tx.update(opportunities)
+          .set({ estimatedValueMinor: storedQuote.totalMinor, updatedAt: new Date() })
+          .where(and(
+            eq(opportunities.id, current.opportunityId),
+            eq(opportunities.venueId, current.venueId),
+            isNull(opportunities.deletedAt),
+            eq(opportunities.estimatedValueMinor, 0),
+            eq(opportunities.currency, storedQuote.currency),
+          ));
       }
       return { version };
     });
@@ -1287,6 +1297,7 @@ export async function proposalRoutes(
       return reply.status(409).send({ error: "The proposal's links changed; reload before saving a version", code: "REVISION_CONFLICT" });
     }
     if (result === "VERSION_CHANGED") return reply.status(409).send(VERSION_CHANGED);
+    if (result === "QUOTE_MISMATCH") return reply.status(422).send(QUOTE_MISMATCH);
     const { version } = result;
 
     if (version !== undefined) {
@@ -1574,6 +1585,39 @@ const TAKEN_CHANGED = {
   error: "The layout or the event changed after this was checked, so the version was not saved. Check it again.",
   code: "REVISION_CONFLICT",
 } as const;
+
+/** A version's quote that is not this proposal's own live quote, or whose
+ *  total is not the sum of its lines (audit api-proposals-money-1). */
+const QUOTE_MISMATCH = {
+  error: "The quote is not this proposal's own, or its total is not the sum of its lines, so the version was not saved.",
+  code: "QUOTE_MISMATCH",
+} as const;
+
+/**
+ * The quote a version names, as stored: this proposal's own, at its venue and
+ * not deleted, with its lines in their order. Its row is held (FOR SHARE) so
+ * a line added meanwhile is in both the lines and the totals or in neither.
+ * Null when there is no such quote, or its rows do not make a valid snapshot.
+ */
+async function storedQuoteSnapshot(tx: ProposalTransaction, quoteId: string, proposal: ProposalRecord): Promise<QuoteSnapshot | null> {
+  const [quote] = await tx.select({
+    id: quotes.id, currency: quotes.currency, subtotalMinor: quotes.subtotalMinor, totalMinor: quotes.totalMinor,
+  }).from(quotes)
+    .where(and(eq(quotes.id, quoteId), eq(quotes.proposalId, proposal.id), eq(quotes.venueId, proposal.venueId),
+      isNull(quotes.deletedAt)))
+    .for("share");
+  if (quote === undefined) return null;
+  const lineItems = await tx.select({
+    description: quoteLineItems.description, quantity: quoteLineItems.quantity,
+    unitAmountMinor: quoteLineItems.unitAmountMinor, lineTotalMinor: quoteLineItems.lineTotalMinor,
+  }).from(quoteLineItems)
+    .where(eq(quoteLineItems.quoteId, quote.id))
+    .orderBy(quoteLineItems.sortOrder, quoteLineItems.id);
+  const snapshot = QuoteSnapshotSchema.safeParse({
+    quoteId: quote.id, currency: quote.currency, lineItems, subtotalMinor: quote.subtotalMinor, totalMinor: quote.totalMinor,
+  });
+  return snapshot.success ? snapshot.data : null;
+}
 
 /** The version a person read when they acted: the booker confirming a send,
  *  the client answering. Optional, so a page from before it still works. */
