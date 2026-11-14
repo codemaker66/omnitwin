@@ -441,10 +441,14 @@ describe("starting on a page load", () => {
       expect(send).not.toHaveBeenCalled();
       // It stops following the route and listening for hides: a later hide
       // sends nothing, even once the choice is undone, as this load is over.
+      // The later values are ones the server would take (a CLS of 500 made
+      // the report one it refuses, so nothing was sent either way: #355's
+      // mutation check, 14 November 2026), so a hide still listened to would
+      // send them.
       expect(router.listeners).toBe(0);
       setMeasurementDeclined(false);
       setVisibility("visible");
-      for (const [name, entry] of vitals.callbacks) entry.callback(metric(name as Metric["name"], 500, "good", `v6-1761650099999-${name}`));
+      for (const [name, entry] of vitals.callbacks) entry.callback(metric(name as Metric["name"], name === "CLS" ? 0.05 : 500, "good", `v6-1761650099999-${name}`));
       setVisibility("hidden");
       expect(send).not.toHaveBeenCalled();
     } finally {
