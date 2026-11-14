@@ -39,7 +39,11 @@ interface RoomLabStatus {
 declare global {
   interface Window {
     __roomLab?: {
-      /** True once the room is drawn, every photograph has arrived or failed, and nothing is still compiling. */
+      /**
+       * True once the room has loaded and been posed, every photograph has
+       * arrived or failed, and nothing is still compiling. No frame is
+       * checked: a capture waits a moment more before it reads the canvas.
+       */
       ready: () => boolean;
       status: () => RoomLabStatus;
       /** Poses the camera: a named pose, a wall's index or id, or a position and target. False when it is none of them. */
@@ -83,15 +87,21 @@ function RendererProbe({ onRenderer }: { readonly onRenderer: (renderer: object 
   return null;
 }
 
-/** What the page is doing, in words, with a measured share where there is one. */
-function working(state: SurveyedRoomState, photos: SurveyedRoomPhotoProgress | null): { readonly label: string; readonly progress?: number } | null {
+/**
+ * What the page is doing, in words, with a measured share where there is one.
+ * The photographs are loading only once the model has said so: until the 3D
+ * view has mounted it (still starting, or unable to start) nothing is being
+ * fetched, and a view that has stopped fetches nothing more.
+ */
+function working(
+  state: SurveyedRoomState, photos: SurveyedRoomPhotoProgress | null, viewUnavailable: boolean,
+): { readonly label: string; readonly progress?: number } | null {
   if (state.status === "loading") {
     if (state.expected === null) return { label: "Reading the survey…" };
     return { label: `Reading the survey: ${String(state.settled)} of ${String(state.expected)} files`, progress: (state.settled / state.expected) * 100 };
   }
-  if (state.status !== "ready") return null;
+  if (state.status !== "ready" || photos === null || viewUnavailable) return null;
   const name = state.room.record.room.name;
-  if (photos === null) return { label: `Loading the ${name}'s photographs…` };
   if (photos.settled >= photos.expected) return null;
   return {
     label: `Loading the ${name}'s photographs: ${String(photos.settled)} of ${String(photos.expected)}`,
@@ -103,6 +113,12 @@ export function SurveyedRoomLabPage(): ReactElement {
   const [query] = useState(() => parseRoomLabQuery(window.location.search));
   const state = useSurveyedRoom(query.entry);
   const [photos, setPhotos] = useState<SurveyedRoomPhotoProgress | null>(null);
+  // The 3D view could not start, or has stopped (NativeCanvas shows its own card): nothing is loading behind it.
+  const [viewUnavailable, setViewUnavailable] = useState(false);
+  const [markView] = useState(() => ({
+    unavailable: (): void => { setViewUnavailable(true); },
+    created: (): void => { setViewUnavailable(false); },
+  }));
   const [pose, setPose] = useState<RoomPose | null>(null);
   const [exposure, setExposure] = useState(1);
   const [glow, setGlow] = useState(1);
@@ -157,12 +173,15 @@ export function SurveyedRoomLabPage(): ReactElement {
     return () => { delete window.__roomLab; };
   }, []);
 
-  const work = working(state, photos);
+  const work = working(state, photos, viewUnavailable);
   const failedPhotos = photos !== null && photos.settled >= photos.expected ? photos.failed : [];
 
   return (
     <div style={{ position: "fixed", inset: 0, background: GROUND, color: INK, fontFamily: "Inter, sans-serif", fontSize: 13 }}>
-      <Canvas frameloop="demand" dpr={[1, 2]} gl={{ antialias: true, powerPreference: "high-performance" }} camera={{ fov: 40, near: 0.1, far: 200, position: [13, 15, 15] }}>
+      <Canvas
+        frameloop="demand" dpr={[1, 2]} gl={{ antialias: true, powerPreference: "high-performance" }} camera={{ fov: 40, near: 0.1, far: 200, position: [13, 15, 15] }}
+        onCreated={markView.created} onUnavailable={markView.unavailable}
+      >
         <color attach="background" args={[GROUND]} />
         <CaptureToneMapping captureShown={false} photographedRoom />
         <PlannerRenderPipeline enabled profile={profile} />
