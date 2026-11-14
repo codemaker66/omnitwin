@@ -79,6 +79,25 @@ describe("parsePaste", () => {
     expect(p.rows).toEqual([['"Unclosed Name'], ["Ailsa Fraser"], ['5" Table Lead']]);
   });
 
+  it("keeps a nickname at the start of a cell apart from the next guests, with tabs", () => {
+    const p = parsePaste('"Dod" Murray\tTop\nAilsa\tTop\nChidi "CJ"\tTop');
+    expect(p.rows).toEqual([['"Dod" Murray', "Top"], ["Ailsa", "Top"], ['Chidi "CJ"', "Top"]]);
+    expect(parsePaste('"Granny" Fraser\tTop\nChidi\tTop').rows).toEqual([['"Granny" Fraser', "Top"], ["Chidi", "Top"]]);
+  });
+
+  it("keeps a nickname at the start of a cell apart from the next guests, with commas", () => {
+    const p = parsePaste('"Dod" Murray,Top\nAilsa,Top\nChidi "CJ",Top');
+    expect(p.rows).toEqual([['"Dod" Murray', "Top"], ["Ailsa", "Top"], ['Chidi "CJ"', "Top"]]);
+    expect(parsePaste('"Granny" Fraser,Top\nChidi,Top').rows).toEqual([['"Granny" Fraser', "Top"], ["Chidi", "Top"]]);
+    // One name a line is read as written, quotes and all.
+    expect(parsePaste('"Granny" Fraser\nChidi\n"Zo"').rows).toEqual([['"Granny" Fraser'], ["Chidi"], ['"Zo"']]);
+  });
+
+  it("still reads a real quoted cell whole after a nickname cell", () => {
+    expect(parsePaste('"Granny" Fraser\tTop\n"Fraser, Ailsa"\tTop').rows).toEqual([['"Granny" Fraser', "Top"], ["Fraser, Ailsa", "Top"]]);
+    expect(parsePaste('"Granny" Fraser,Top\n"Fraser, Ailsa",Top').rows).toEqual([['"Granny" Fraser', "Top"], ["Fraser, Ailsa", "Top"]]);
+  });
+
   it("cleans every cell: NFC, control characters out, whitespace runs to one space", () => {
     const p = parsePaste(`Zoe${COMBINING_DIAERESIS}${NUL}${BEL}\t ${NO_BREAK_SPACE}Top   table${ZERO_WIDTH_SPACE}\n`);
     expect(p.rows[0]).toEqual([`Zo${E_DIAERESIS}`, `Top table${ZERO_WIDTH_SPACE}`]);
@@ -105,6 +124,53 @@ describe("parsePaste", () => {
   it("guesses the first column with no second name and no party when there is no header", () => {
     const p = parsePaste("Ailsa\tFraser\tTop\nChidi\tOkafor\tTop");
     expect([p.hadHeader, p.nameColumn, p.secondNameColumn, p.partyColumn]).toEqual([false, 0, null, null]);
+  });
+
+  it("recognises the usual name headings as a header", () => {
+    for (const heading of ["Name", "Names", "Name(s)", "Guest name", "Guest Names", "Given name", "Family name", "Surname", "Last name", "Full names", "First name", "Guest", "Guests"]) {
+      const p = parsePaste(`${heading}\nAilsa Fraser`);
+      expect([heading, p.hadHeader, p.rows.length]).toEqual([heading, true, 1]);
+    }
+  });
+
+  it("recognises the usual party headings as a header, and guesses the party column", () => {
+    for (const heading of ["Household", "Party", "Group", "Family", "Party/household", "Party / Household"]) {
+      const p = parsePaste(`Guest\t${heading}\nAilsa Fraser\tFraser`);
+      expect([heading, p.hadHeader, p.partyColumn]).toEqual([heading, true, 1]);
+      expect(parsePaste(`${heading}\nFraser`).hadHeader).toBe(true);
+    }
+  });
+
+  it("recognises a header by a heading no guest carries", () => {
+    for (const heading of ["Table", "Table no", "Table number", "Seat", "RSVP", "Email", "Phone", "Diet", "Dietary", "Dietary requirements", "Notes", "Title"]) {
+      expect([heading, parsePaste(`Ailsa Fraser\t${heading}\nChidi Okafor\tx`).hadHeader]).toEqual([heading, true]);
+    }
+    const p = parsePaste("Guest name\tTable\nAilsa Fraser\t4\nChidi Okafor\t4");
+    expect(p.hadHeader).toBe(true);
+    expect(p.rows.length).toBe(2);
+    expect(p.nameColumn).toBe(0);
+  });
+
+  it("guesses columns from the widened headings", () => {
+    const p = parsePaste("Table\tGiven name\tFamily name\tParty/household\nx\tAilsa\tFraser\tFraser");
+    expect([p.nameColumn, p.secondNameColumn, p.partyColumn]).toEqual([1, 2, 3]);
+  });
+
+  it("does not take a guest list for a header just because a name has a heading word in it", () => {
+    expect(parsePaste("Ailsa Fraser\nGuest of honour\nTable Lead").hadHeader).toBe(false);
+  });
+
+  it("lets the caller overrule the header test, both ways", () => {
+    const withHeading = "Guest name\tTable\nAilsa Fraser\t4";
+    const off = parsePaste(withHeading, { header: false });
+    expect([off.hadHeader, off.rows.length, off.nameColumn, off.secondNameColumn, off.partyColumn]).toEqual([false, 2, 0, null, null]);
+    expect(off.rows[0]).toEqual(["Guest name", "Table"]);
+    const plain = "Ailsa Fraser\tTop\nChidi Okafor\tTop";
+    const on = parsePaste(plain, { header: true });
+    expect([on.hadHeader, on.rows.length, on.nameColumn, on.secondNameColumn, on.partyColumn]).toEqual([true, 1, 0, null, null]);
+    expect(on.rows[0]).toEqual(["Chidi Okafor", "Top"]);
+    expect(parsePaste(plain, {}).hadHeader).toBe(false);
+    expect(parsePaste("", { header: true }).hadHeader).toBe(false);
   });
 
   it("does not count trailing empty cells as columns", () => {
@@ -257,6 +323,14 @@ describe("pasted text stays out of errors", () => {
     const start = performance.now();
     const p = parsePaste(text);
     expect(p.rows.length).toBe(20_000);
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
+
+  it("reads a large paste of cell-start quotes that end at one stray quote in linear time", () => {
+    const text = [...Array.from({ length: 20_000 }, (_, i) => `"Name ${String(i)}`), 'x"y'].join("\n");
+    const start = performance.now();
+    const p = parsePaste(text);
+    expect(p.rows.length).toBe(20_001);
     expect(performance.now() - start).toBeLessThan(2000);
   });
 });

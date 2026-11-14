@@ -86,48 +86,61 @@ function firstChars(text: string, max: number): string {
 // Splitting
 // ---------------------------------------------------------------------------
 
-/** Where a quoted cell opening at `open` ends, or -1 when it never closes. */
-function closingQuote(text: string, open: number, delimiter: string): number {
+/** How a quote that opens a cell fared: it closes at `close`, or it is plain text. */
+type QuoteReading =
+  | { readonly kind: "closes"; readonly close: number }
+  /** Plain text. Another opening quote before `until` would read the same, so it need not be scanned. */
+  | { readonly kind: "plain"; readonly until: number };
+
+/**
+ * Where a quoted cell opening at `open` ends. A quote inside it closes the
+ * cell only when the delimiter, a line end or the end of the text follows;
+ * "" is one quote. Any other quote (as in `"Granny" Fraser`) shows the
+ * opening quote was never a CSV quote, so the cell is plain text, as lenient
+ * CSV readers treat it. The same goes when no quote follows at all.
+ */
+function readOpeningQuote(text: string, open: number, delimiter: string): QuoteReading {
   let at = open + 1;
   for (;;) {
     const quote = text.indexOf('"', at);
-    if (quote === -1) return -1;
-    if (text[quote + 1] === '"') {
+    if (quote === -1) return { kind: "plain", until: Number.POSITIVE_INFINITY };
+    const next = text[quote + 1];
+    if (next === '"') {
       at = quote + 2;
       continue;
     }
-    const next = text[quote + 1];
-    if (next === undefined || next === delimiter || next === "\n" || next === "\r") return quote;
-    at = quote + 1;
+    if (next === undefined || next === delimiter || next === "\n" || next === "\r") return { kind: "closes", close: quote };
+    return { kind: "plain", until: quote };
   }
 }
 
 /**
  * Splits text into records of raw cells. A quoted cell (a quote at the very
  * start of a cell) runs to its closing quote and may hold the delimiter and
- * line ends; "" inside it is one quote. A quote that never closes is plain
- * text. Line ends are \n, \r\n or \r.
+ * line ends; "" inside it is one quote. A cell-start quote that is not a CSV
+ * quote (see `readOpeningQuote`) is plain text. Line ends are \n, \r\n or \r.
  */
 function splitRecords(text: string, delimiter: string): string[][] {
   const records: string[][] = [];
   let cells: string[] = [];
   let cell = "";
   let atCellStart = true;
-  let noMoreClosers = false;
+  // An opening quote before this position has been found to be plain text;
+  // skipping the scan for the ones inside that stretch keeps reading linear.
+  let plainUntil = -1;
   let i = 0;
 
   while (i < text.length) {
     const c = text.charAt(i);
-    if (c === '"' && atCellStart && !noMoreClosers) {
-      const close = closingQuote(text, i, delimiter);
-      if (close !== -1) {
-        cell = text.slice(i + 1, close).replaceAll('""', '"');
+    if (c === '"' && atCellStart && i >= plainUntil) {
+      const reading = readOpeningQuote(text, i, delimiter);
+      if (reading.kind === "closes") {
+        cell = text.slice(i + 1, reading.close).replaceAll('""', '"');
         atCellStart = false;
-        i = close + 1;
+        i = reading.close + 1;
         continue;
       }
-      // No quote anywhere after this point can close, so none ever will.
-      noMoreClosers = true;
+      plainUntil = reading.until;
     }
     if (c === delimiter) {
       cells.push(cell);
@@ -193,10 +206,22 @@ function readCells(text: string): string[][] {
 // Header and column guesses
 // ---------------------------------------------------------------------------
 
-const HEADER_CELL = /^(first|last|sur|full)?\s*name$|^guest$|^household$|^party$|^group$|^family$/i;
-const NAME_HEADING = /name|guest/i;
-const SECOND_NAME_HEADING = /sur|last|family\s*name/i;
-const PARTY_HEADING = /household|party|group|family/i;
+// Cells are cleaned before they are tested: single spaces, trimmed.
+/** A surname heading: "surname", "last name", "family name", "last names", "surname(s)". */
+const SURNAME_HEADING = /^(?:sur|last|family)\s*names?(?:\(s\))?$/i;
+/** A name heading: "name", "names", "name(s)", "guest name", "given name", "full names", and the surname ones. */
+const NAME_HEADING = /^(?:(?:guest|first|given|last|sur|family|full)\s*)?names?(?:\(s\))?$/i;
+/** "guest" or "guests" on its own: the name column of a one-column sheet. */
+const GUEST_HEADING = /^guests?$/i;
+/** A party heading: "household", "party", "group", "family", or two of them as "party/household". */
+const PARTY_HEADING = /^(?:household|party|group|family)(?:\s*\/\s*(?:household|party|group|family))?$/i;
+/** Headings that only a header row carries: no guest is named like this. */
+const HEADER_ONLY_HEADING =
+  /^(?:table(?:\s*(?:no\.?|number))?|seat|rsvp|e-?mail|phone|diet|dietary(?:\s*requirements)?|notes|title)$/i;
+
+function isHeaderCell(cell: string): boolean {
+  return NAME_HEADING.test(cell) || GUEST_HEADING.test(cell) || PARTY_HEADING.test(cell) || HEADER_ONLY_HEADING.test(cell);
+}
 
 function findColumn(header: readonly string[], test: (cell: string, at: number) => boolean): number | null {
   const at = header.findIndex(test);
@@ -213,13 +238,13 @@ const NO_HEADER_GUESS: Guess = { nameColumn: 0, secondNameColumn: null, partyCol
 
 function guessColumns(header: readonly string[]): Guess {
   const nameColumn =
-    findColumn(header, (cell) => NAME_HEADING.test(cell) && !SECOND_NAME_HEADING.test(cell)) ??
+    findColumn(header, (cell) => (NAME_HEADING.test(cell) && !SURNAME_HEADING.test(cell)) || GUEST_HEADING.test(cell)) ??
     findColumn(header, (cell) => NAME_HEADING.test(cell)) ??
     0;
-  const secondNameColumn = findColumn(header, (cell, at) => at !== nameColumn && SECOND_NAME_HEADING.test(cell));
+  const secondNameColumn = findColumn(header, (cell, at) => at !== nameColumn && SURNAME_HEADING.test(cell));
   const partyColumn = findColumn(
     header,
-    (cell, at) => at !== nameColumn && at !== secondNameColumn && PARTY_HEADING.test(cell) && !NAME_HEADING.test(cell),
+    (cell, at) => at !== nameColumn && at !== secondNameColumn && PARTY_HEADING.test(cell),
   );
   return { nameColumn, secondNameColumn, partyColumn };
 }
@@ -232,12 +257,17 @@ function guessColumns(header: readonly string[]): Guess {
  * Reads pasted text into cells, drops a header row if there is one, and
  * guesses the name, second-name and party columns from that header. Without a
  * header the guess is the first column alone.
+ *
+ * The first row is a header when one of its cells is a usual heading (see
+ * `isHeaderCell`). `opts.header` overrules that test: true takes the first
+ * row as the header, false takes it as a guest.
  */
-export function parsePaste(text: string): ParsedPaste {
+export function parsePaste(text: string, opts?: { readonly header?: boolean }): ParsedPaste {
   const all = readCells(text);
   const columnCount = all.reduce((widest, row) => Math.max(widest, row.length), 0);
   const first = all[0];
-  const header = first !== undefined && first.some((cell) => HEADER_CELL.test(cell)) ? first : null;
+  const isHeader = opts?.header ?? (first?.some(isHeaderCell) ?? false);
+  const header = isHeader && first !== undefined ? first : null;
   const rows = header === null ? all : all.slice(1);
   const guess: Guess = header === null ? NO_HEADER_GUESS : guessColumns(header);
   return { rows, columnCount, hadHeader: header !== null, ...guess };

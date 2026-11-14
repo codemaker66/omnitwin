@@ -160,7 +160,7 @@ export interface ParsedPaste {
   readonly secondNameColumn: number | null;         // e.g. a separate surname column
   readonly partyColumn: number | null;
 }
-export function parsePaste(text: string): ParsedPaste;
+export function parsePaste(text: string, opts?: { readonly header?: boolean }): ParsedPaste;
 export interface Taken {
   readonly guests: readonly { readonly name: string; readonly party: string }[];
   readonly droppedColumns: number;
@@ -206,7 +206,8 @@ it("takes 5,000 rows without throwing and stops at the room left", () => {
 - [ ] **Step 2: Run the test file.** Expected: FAIL, module not found.
 - [ ] **Step 3: Implement.** Rules the tests do not fully pin:
   - Any tab in the text means tab-separated. Otherwise it is comma-separated only if every non-blank line has the same number (one or more) of commas outside quotes; otherwise one name a line.
-  - A first row is a header when a cell matches `/^(first|last|sur|full)?\s*name$|^guest$|^household$|^party$|^group$|^family$/i`. Guesses: name = first cell matching `name|guest`; second name = a cell matching `sur|last`; party = `household|party|group|family`.
+  - A first row is a header when any of its cleaned cells is one of the usual headings, case-insensitive: a name heading (an optional `guest`, `first`, `given`, `last`, `sur`, `family` or `full` before `name`, with an optional plural: `name`, `names`, `name(s)`, `guest name`, `given name`, `family name`, `surname`, `last name`, `full names`); `guest`, `guests`, `household`, `party`, `group`, `family`, `party/household`; or a heading only a header row carries (`table`, `table no`, `table number`, `seat`, `rsvp`, `email`, `phone`, `diet`, `dietary`, `dietary requirements`, `notes`, `title`). The caller may overrule the test with `opts.header` (true: the first row is the header; false: it is a guest row). Guesses use the same headings: name = the first name-ish heading or `guest(s)` (a surname heading only when there is no other); second name = a `sur`/`last`/`family name` heading; party = `household`, `party`, `group`, `family`, `party/household`.
+  - A cell-start quote opens a quoted cell only when a later quote is followed by the delimiter, a line end or the end of the text ("" is one quote). A quote followed by anything else (`"Granny" Fraser`) means the opening quote is plain text.
   - Clean each cell: Unicode NFC, control characters removed, runs of whitespace to one space, trimmed. Length is counted in characters (code points), not UTF-16 units.
   - Two name columns join as "first second" (or the reverse when `secondFirst`).
   - No function here throws with the pasted text in its message.
