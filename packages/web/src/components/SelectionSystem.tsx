@@ -30,6 +30,7 @@ import {
 } from "../lib/planner-tools.js";
 import {
   CARRY_AT_REST,
+  announceFurnitureLandedInPlace,
   beginFurnitureSettle,
   carryFurniture,
   clearFurnitureSettle,
@@ -442,12 +443,17 @@ export function SelectionSystem(): null {
       usePlacementStore.getState().moveItemsByDelta(allMovingIds, frame.dx, frame.dz);
       useSelectionStore.getState().setActiveGuides(frame.guides);
       lastMovingIds.current = allMovingIds;
-      // Carried pieces lean a little back from the way they travel.
-      if (!prefersReducedMotion()) {
-        carry.current = measureCarry(carry.current, frame.dx, frame.dz, performance.now());
-        if (carry.current.measured) carryFurniture(allMovingIds, carry.current.vx, carry.current.vz);
-      }
+      // Carried pieces lean a little back from the way they travel. The hand's
+      // speed is measured under reduced motion too: a let-go is heard at it.
+      carry.current = measureCarry(carry.current, frame.dx, frame.dz, performance.now());
+      if (carry.current.measured && !prefersReducedMotion()) carryFurniture(allMovingIds, carry.current.vx, carry.current.vz);
       invalidateRef.current();
+    }
+
+    /** The carrying hand's speed, metres a second, before the gesture's close forgets it; 0 until a move is timed. */
+    function handSpeed(): number {
+      const hand = carry.current;
+      return hand.measured ? Math.hypot(hand.vx, hand.vz) : 0;
     }
 
     /** The end of a drag: a move settles onto the grid and the pieces set their weight down. */
@@ -475,8 +481,11 @@ export function SelectionSystem(): null {
           }
         }
         // Let go: the pieces swing upright and set their weight down. A hand
-        // that rested let the loop sleep, so the release must wake it.
-        if (!prefersReducedMotion() && lastMovingIds.current.size > 0) {
+        // that rested let the loop sleep, so the release must wake it. Under
+        // reduced motion nothing comes down: they are down where they stand.
+        if (prefersReducedMotion()) {
+          announceFurnitureLandedInPlace(lastMovingIds.current, "let-go", handSpeed());
+        } else if (lastMovingIds.current.size > 0) {
           releaseFurniture(lastMovingIds.current);
           invalidateRef.current();
         }
@@ -544,7 +553,8 @@ export function SelectionSystem(): null {
         const primary = placement.placedItems.find((placed) => placed.id === dragItemId.current);
         if (primary !== undefined && lastMovingIds.current.size > 0) {
           placement.moveItemsByDelta(lastMovingIds.current, origin.x - primary.x, origin.z - primary.z);
-          if (!prefersReducedMotion()) releaseFurniture(lastMovingIds.current);
+          if (prefersReducedMotion()) announceFurnitureLandedInPlace(lastMovingIds.current, "let-go", handSpeed());
+          else releaseFurniture(lastMovingIds.current);
         }
       }
       closePointerGesture();
