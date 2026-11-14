@@ -486,7 +486,8 @@ function templateUrlsDeep<T>(value: T, template: (url: string) => string): T {
  */
 export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransaction {
   const traceData = event.contexts?.trace?.data;
-  const routeAttribute = traceData?.["http.route"];
+  // Sentry types attribute bags as `{ [key: string]: any }`: read as unknown, then narrowed.
+  const routeAttribute: unknown = traceData?.["http.route"];
   const route = typeof routeAttribute === "string" && routeAttribute.startsWith("/") ? routeAttribute : undefined;
   const requestUrl = [event.request?.url, traceData?.["url.full"], traceData?.["http.target"], traceData?.["url.path"]]
     .find((value): value is string => typeof value === "string");
