@@ -234,6 +234,12 @@ after WSL updated itself again; the rest of the runtime was unchanged, and the
 five cases passed on the new kernel (CI run 38873316500, attempt 1, PR #88's
 merge ref 1f53ab8f) before publication refused the runtime.
 
+On 14 November 2026 Blake approved the same re-pin from 6.18.54.1 to 6.18.58.1
+after WSL updated itself overnight (the last gate on 6.18.54.1 passed at 01:20 UTC;
+the operator refused PR #388's gate at 16:54 on the new kernel). Node 22.23.2,
+Playwright's Chromium 147.0.7727.15, NVIDIA 616.92 and the renderer were unchanged.
+The five cases ran on the new kernel in this re-pin's own required gate before it merged.
+
 ## One explicitly admitted local run
 
 This is an operator-invoked, temporary process. No self-hosted GitHub runner,
