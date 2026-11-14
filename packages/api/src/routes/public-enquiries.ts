@@ -19,6 +19,7 @@ import { resolveEmailReplyTo, sendEmailAsync, type SendLimit } from "../services
 import { enquiryAcknowledgement, newEnquiryNotification } from "../services/email-templates.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
 import { acquisitionContextFor, funnelBrowserSignalsEnabled, recordEnquiryEngagement } from "../services/enquiry-funnel.js";
+import { lockGuestLead } from "../services/guest-lead-lock.js";
 import { linkEnquiryToPerson, type LinkOutcome } from "../services/people-link.js";
 import { sqlStateOf } from "../utils/sql-state.js";
 
@@ -385,7 +386,10 @@ export async function publicEnquiryRoutes(
       // The guest lead is written once, by the first enquiry from that exact
       // email, and never changed afterwards. It names no venue, so updating
       // it let any venue's enquiry overwrite the name and phone another
-      // venue's guest gave.
+      // venue's guest gave. An erasure deletes it under the same lock
+      // (services/guest-lead-lock.ts), so it never deletes the lead of an
+      // enquiry it could not yet see.
+      await lockGuestLead(tx, parsed.data.email);
       await tx.execute(sql`
         INSERT INTO guest_leads (email, phone, name, first_enquiry_id)
         SELECT ${parsed.data.email}::text, ${parsed.data.phone ?? null}::text, ${parsed.data.name ?? null}::text, ${enquiry.id}::uuid

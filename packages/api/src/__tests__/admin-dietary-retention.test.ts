@@ -25,6 +25,10 @@ vi.mock("../services/dietary-memory.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../services/dietary-memory.js")>(),
   removeUnusedRememberedNotes: (...args: unknown[]) => removeUnusedRememberedNotes(...args) as unknown,
 }));
+const eraseLapsedPeople = vi.fn();
+vi.mock("../services/people-retention.js", () => ({
+  eraseLapsedPeople: (...args: unknown[]) => eraseLapsedPeople(...args) as unknown,
+}));
 vi.mock("../services/cleanup.js", () => ({
   cleanupPreviewConfigurations: () => Promise.resolve(0),
   cleanupOrphanedFiles: () => Promise.resolve(0),
@@ -38,6 +42,8 @@ afterAll(async () => { await server.close(); });
 beforeEach(() => {
   removeLapsedDietaryNotes.mockReset();
   removeUnusedRememberedNotes.mockReset();
+  eraseLapsedPeople.mockReset();
+  eraseLapsedPeople.mockResolvedValue({ dryRun: false, people: 2, keptForBooking: 1, enquiries: 3, deferred: { people: 4, enquiries: 1 }, outOfTime: false });
 });
 
 const token = (payload: Record<string, unknown>): string => JSON.stringify(payload);
@@ -53,6 +59,21 @@ describe("POST /admin/retention/dietary-notes (the rehearsal)", () => {
     expect(res.statusCode).toBe(403);
     expect(removeLapsedDietaryNotes).not.toHaveBeenCalled();
     expect(removeUnusedRememberedNotes).not.toHaveBeenCalled();
+  });
+
+  it("reports who the 24-month pass would erase, changing nothing, to a platform admin only", async () => {
+    const forbidden = await server.inject({
+      method: "POST", url: "/admin/retention/people", headers: { authorization: `Bearer ${venueAdmin}` },
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(eraseLapsedPeople).not.toHaveBeenCalled();
+    eraseLapsedPeople.mockResolvedValueOnce({ dryRun: true, people: 4, keptForBooking: 1, enquiries: 6 });
+    const res = await server.inject({
+      method: "POST", url: "/admin/retention/people", headers: { authorization: `Bearer ${platformAdmin}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ data: unknown }>().data).toEqual({ dryRun: true, people: 4, keptForBooking: 1, enquiries: 6 });
+    expect(eraseLapsedPeople.mock.calls[0]?.[1]).toEqual({ dryRun: true });
   });
 
   it("runs the pass as a dry run and reports it", async () => {
@@ -84,6 +105,8 @@ describe("POST /admin/cleanup", () => {
     expect(body.message).toContain("removed the allergy note from 2 layout(s) and 3 event sheet(s) past their retention, and from 5 logged change(s)");
     expect(body.message).toContain("removed the notes on single pieces from 1 layout(s)");
     expect(body.message).toContain("removed 1 remembered note(s) unused for the agreed period");
+    expect(body.message).toContain("erased 2 person(s) and 3 enquiry(ies) 24 months after the last contact, leaving 5 for another run");
+    expect(eraseLapsedPeople.mock.calls[0]?.[1]).toBeUndefined();
     expect(removeUnusedRememberedNotes.mock.calls[0]?.[1]).toBeUndefined();
     // The real pass: no dry run and no storage step.
     expect(removeLapsedDietaryNotes.mock.calls[0]?.[1]).toBeUndefined();
