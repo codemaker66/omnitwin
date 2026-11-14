@@ -7,6 +7,7 @@ import { createTableGroup } from "../../lib/table-group.js";
 import { PLANNER_INTERACTION_FLOOR_NAME, placementFloorPoint } from "../../lib/planner-interaction-floor.js";
 import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
 import { PLANNER_CHROME_STORAGE_KEY } from "../../lib/planner-chrome-flag.js";
+import { useCameraReferenceStore } from "../../stores/camera-reference-store.js";
 import { useChairDialogStore } from "../../stores/chair-dialog-store.js";
 import { GHOST_RAISE_PX, LIFT_HOLD_MS, PLACE_HOLD_MS } from "../../lib/touch-arbiter.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
@@ -590,13 +591,16 @@ describe("a double-click on a placed table (QoL B-01)", () => {
     return { clientX: ((at.x + 1) / 2) * 400, clientY: ((1 - at.y) / 2) * 400 };
   }
 
-  it("selects the table in v2, which mounts no chair dialog, and opens the dialog in v1 as before", () => {
+  it("selects the table in v2 and the HUD, which mount no chair dialog, and opens the dialog in v1 as before", () => {
     render(<SelectionSystem />);
     try {
-      window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "v2");
-      act(() => { fireEvent.dblClick(canvas, { ...overTheRound(), button: 0 }); });
-      expect(useChairDialogStore.getState().pending).toBeNull();
-      expect(useSelectionStore.getState().selectedIds.has(tableId)).toBe(true);
+      for (const chrome of ["v2", "hud"]) {
+        window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, chrome);
+        act(() => { useSelectionStore.getState().clearSelection(); });
+        act(() => { fireEvent.dblClick(canvas, { ...overTheRound(), button: 0 }); });
+        expect(useChairDialogStore.getState().pending, chrome).toBeNull();
+        expect(useSelectionStore.getState().selectedIds.has(tableId), chrome).toBe(true);
+      }
       window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "v1");
       act(() => { fireEvent.dblClick(canvas, { ...overTheRound(), button: 0 }); });
       expect(useChairDialogStore.getState().pending).toMatchObject({ tableShape: "round" });
@@ -607,3 +611,30 @@ describe("a double-click on a placed table (QoL B-01)", () => {
   });
 });
 
+// The viewpoint's composer is mounted by the first chrome alone (App.tsx). A draft opened under another would be
+// shown by nothing, and an open draft holds the camera's keys (lib/camera-rig.ts).
+describe("a right click on the room with nothing in hand", () => {
+  function rightClickOnTheFloor(): void {
+    act(() => {
+      fireEvent.mouseDown(canvas, { button: 2, buttons: 2, clientX: 120, clientY: 300 });
+      fireEvent.mouseUp(canvas, { button: 2, clientX: 120, clientY: 300 });
+    });
+  }
+
+  it("opens a viewpoint's draft under the first chrome, which shows it, and none under v2 or the HUD", () => {
+    render(<SelectionSystem />);
+    try {
+      for (const chrome of ["v2", "hud"]) {
+        window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, chrome);
+        rightClickOnTheFloor();
+        expect(useCameraReferenceStore.getState().draft, chrome).toBeNull();
+      }
+      window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "v1");
+      rightClickOnTheFloor();
+      expect(useCameraReferenceStore.getState().draft).toMatchObject({ source: "floor" });
+    } finally {
+      window.localStorage.removeItem(PLANNER_CHROME_STORAGE_KEY);
+      useCameraReferenceStore.getState().closeDraft();
+    }
+  });
+});

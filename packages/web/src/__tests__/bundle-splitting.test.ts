@@ -356,3 +356,101 @@ describe("the planner's device drafts stay off the app root (T-671)", () => {
     expect(codeOnly).toMatch(/import\(["']\.\/TwinEnquiryModal\.js["']\)/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The planner HUD stays behind its flag (T-723)
+//
+// The HUD is one of three chromes, shown only for `?chrome=hud` until it is
+// made the default. A planner that does not ask for it must download none of
+// it (the release lead's ruling on flag-only code, 13 Nov 2026): whatever a
+// module every planner loads imports statically rides in that planner's
+// chunks. So the HUD's own modules are reached by two dynamic imports only:
+// the screen from EditorPage, and its parts of the room's scene from
+// PlannerScene. A static import of any of them from anywhere else fails here.
+// ---------------------------------------------------------------------------
+
+describe("the planner HUD stays behind its flag (T-723)", () => {
+  /** The HUD's own modules, as paths from src/ with their .js ending. */
+  const HUD_ONLY: readonly RegExp[] = [
+    /^components\/planner-hud\//,
+    /^lib\/hud\//,
+    /^stores\/planner-hud-store\.js$/,
+    /^components\/grand-hall\/HallStage\.js$/,
+    /^components\/grand-hall\/hall-stage\.js$/,
+    /^lib\/lens-shift\.js$/,
+    /^components\/editor\/ChosenMarks\.js$/,
+    /^lib\/chosen-mark\.js$/,
+  ];
+  /** The backend-free lab mounts the HUD's frame directly. It is a development route, in no production build. */
+  const DEV_ONLY: readonly string[] = ["pages/PlannerLabPage.tsx"];
+
+  function isHudOnly(modulePath: string): boolean {
+    return HUD_ONLY.some((pattern) => pattern.test(modulePath));
+  }
+
+  /** Every static import and re-export in `code` that brings a module in at run time (type-only ones bring nothing). */
+  function staticSpecifiers(code: string): string[] {
+    const found: string[] = [];
+    for (const match of code.matchAll(/^[ \t]*(?:import|export)\s+(?!type\b)[^;'"]*?\bfrom\s+["']([^"']+)["']/gm)) found.push(match[1] ?? "");
+    for (const match of code.matchAll(/^[ \t]*import\s+["']([^"']+)["']/gm)) found.push(match[1] ?? "");
+    return found;
+  }
+
+  it("reads imports the way the bundler does: static ones only, and not types", () => {
+    const code = [
+      'import { a } from "./a.js";',
+      "import {",
+      "  b,",
+      '} from "../b.js";',
+      'import "./side-effect.css";',
+      'export { c } from "./c.js";',
+      'import type { D } from "./types.js";',
+      'const lazy = () => import("./lazy.js");',
+      'type E = typeof import("./lazy.js");',
+    ].join("\n");
+    expect(staticSpecifiers(code)).toEqual(["./a.js", "../b.js", "./c.js", "./side-effect.css"]);
+  });
+
+  it("lets nothing outside the HUD import the HUD's modules statically", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const root = path.resolve("src");
+    const offenders: string[] = [];
+    let read = 0;
+    for (const entry of await fs.readdir(root, { recursive: true })) {
+      const file = entry.replace(/\\/g, "/");
+      if (!/\.tsx?$/.test(file) || /(^|\/)__tests__\//.test(file) || /\.test\.tsx?$/.test(file)) continue;
+      const self = file.replace(/\.tsx?$/, ".js");
+      if (isHudOnly(self) || DEV_ONLY.includes(file)) continue;
+      const { codeOnly } = await readSource(`src/${file}`);
+      read += 1;
+      for (const specifier of staticSpecifiers(codeOnly)) {
+        if (!specifier.startsWith(".")) continue;
+        const target = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
+        if (isHudOnly(target)) offenders.push(`${file} imports ${target}`);
+      }
+    }
+    // The walk found the planner's sources (a wrong root would pass by reading nothing).
+    expect(read).toBeGreaterThan(500);
+    expect(offenders).toEqual([]);
+  });
+
+  it("fetches the screen from EditorPage, and its parts of the scene from PlannerScene, on demand", async () => {
+    const page = await readSource("src/pages/EditorPage.tsx");
+    expect(page.codeOnly).toMatch(/import\(["']\.\.\/components\/planner-hud\/PlannerHud\.js["']\)/);
+    const scene = await readSource("src/components/editor/PlannerScene.tsx");
+    expect(scene.codeOnly).toMatch(/=>\s*import\(["']\.\.\/planner-hud\/hud-scene\.js["']\)/);
+    // And the scene asks for them only where a screen has asked for the stage or the mark.
+    expect(scene.codeOnly).toMatch(/if\s*\(!hudSceneAsked\)\s*return/);
+  });
+
+  it("keeps the stage's measurements and lens out of what the hall's model, its views and the camera rig import", async () => {
+    for (const file of ["src/components/grand-hall/GrandHallModel.tsx", "src/components/grand-hall/HallViewDirector.tsx", "src/stores/hall-view-store.ts", "src/components/CameraRig.tsx"]) {
+      const { codeOnly } = await readSource(file);
+      expect(codeOnly, file).not.toMatch(/from\s+["'][^"']*\/(?:hall-stage|HallStage|lens-shift|chosen-mark|ChosenMarks)\.js["']/);
+    }
+    // The two heights the hall's model does need are a module of their own.
+    const model = await readSource("src/components/grand-hall/GrandHallModel.tsx");
+    expect(model.codeOnly).toMatch(/from\s+["']\.\/hall-stage-cuts\.js["']/);
+  });
+});

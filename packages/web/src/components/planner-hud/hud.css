@@ -1,0 +1,1256 @@
+/* ---------------------------------------------------------------------------
+ * THE PLANNER HUD: the hall, words on the night, and one shelf
+ * (docs/superpowers/specs/2026-11-13-planner-hud-design.md).
+ *
+ * The hall is one picture that fills the screen above the shelf (the stage:
+ * grand-hall/hall-stage.ts). The top bar is not a surface: the plaque, the four
+ * steps and the view stand on the night above the hall's walls. The shelf is
+ * the one surface: the seat line, the status line, the quiet words, the hand of
+ * cards and the one primary key. A sheet and the first screen are the shelf
+ * grown upward.
+ *
+ * Every measure is a token in the first block below, so it can be tuned in
+ * one place; the colours are the ground's (hud-ground.css). The rules that hold
+ * everywhere: a 4 px grid and an 8 px unit; radius 0, circles only for round
+ * glyph keys; lines 1 px and the chosen outline 2 px; no shadow, glow, blur,
+ * filter or gradient; one sans in two weights at four sizes, the event's name
+ * alone in the serif; motion only in answer to a press, ease-out, and under
+ * reduced motion nothing travels. A hover only takes a line or a word to full
+ * ink (calm-hover.test.ts).
+ * ------------------------------------------------------------------------- */
+
+.hud-root {
+  /* -- Measure: a 4 px grid, an 8 px unit -------------------------------- */
+  --hud-u: 4px;
+  --hud-gutter: 16px;            /* screen edge to the first mark */
+  --hud-gap: 8px;                /* between marks in one group */
+  --hud-gap-wide: 16px;          /* between words in one group */
+  --hud-gap-group: 32px;         /* between groups: twice the widest gap within */
+  --hud-reach: 8px;              /* a word's hit area past its letters, each side */
+  --hud-hit: 44px;               /* the smallest hit area */
+  --hud-bar-h: 48px;
+  --hud-bar-row: 40px;           /* the steps' own line, where the bar stands in two */
+  --hud-bar-all: var(--hud-bar-h); /* the bar's whole height, however many lines it stands in */
+  --hud-shelf-h: 152px;
+  --hud-shelf-pad-top: 12px;
+  --hud-shelf-pad-bottom: 8px;
+  --hud-shelf-side: 192px;       /* the shelf's side columns never narrower: the quiet words in one line */
+  /*
+   * The shelf's arrangement. 152 px will not hold a full-width status line
+   * above a row of 2:3 photographs with two-line captions, so by default the
+   * status line stands at the top of the left column, over the quiet words,
+   * and the cards take the shelf's full height. For the doctrine's stacked
+   * reading set the areas to "status status status" "words cards act" and
+   * raise --hud-shelf-h to 188px.
+   */
+  --hud-shelf-columns: minmax(var(--hud-shelf-side), 1fr) minmax(0, max-content) minmax(var(--hud-shelf-side), 1fr);
+  --hud-shelf-rows: auto 1fr;
+  --hud-shelf-areas: "status cards act" "words cards act";
+  /*
+   * How high the shelf rises with a sheet or the first screen on it, at most:
+   * six tenths of the screen, so the hall stays in sight above it. A short
+   * window has not six tenths to spare (a 768-line laptop leaves a browser
+   * about 640 px, and six tenths of that less the shelf is 233 px: a sheet
+   * with its own act out of sight). There it rises as far as a sheet needs
+   * (--hud-sheet-need over the shelf), and never over the top bar. Where six
+   * tenths is already enough, six tenths it stays.
+   */
+  --hud-sheet-need: 420px;       /* the tallest sheet that is not a list, as it opens: Lay out, 418 px */
+  --hud-rise: max(60dvh, min(100dvh - var(--hud-bar-all), var(--hud-shelf-h) + var(--hud-sheet-need)));
+  --hud-sheet-pad: 24px;
+  --hud-sheet-measure: 720px;
+  --hud-sheet-measure-wide: 1040px;
+  --hud-act-h: 48px;             /* the one primary key */
+  --hud-stepper-value: 64px;
+
+  /* -- Cards: photographs, 2:3 ------------------------------------------- */
+  --hud-card-col: 96px;          /* a card's column: its caption's width */
+  --hud-card-w: 64px;            /* the photograph's width; its height is half again */
+  --hud-card-rise: 4px;          /* a card in hand */
+  --hud-photo-zoom: 1.16;        /* the square render, enlarged from its foot, so its margin falls outside the frame */
+  --hud-answer-w: 144px;         /* the first screen's photographs */
+  --hud-round: 32px;             /* a round glyph key's circle */
+  --hud-swatch: 24px;            /* a cloth */
+
+  /* -- Lines and states --------------------------------------------------- */
+  --hud-hair: 1px;
+  --hud-chosen: 2px;
+  --hud-radius: 0;
+  --hud-underline: 6px;          /* from the baseline to a current step's line */
+  --hud-glyph-size: 16px;
+  --hud-dim: 0.6;                /* steps ahead, the other cards while one is in hand */
+  --hud-off: 0.36;               /* nothing to do now */
+
+  /* -- Type: one sans, two weights, four sizes on 1.25 -------------------- */
+  --hud-sans: var(--house-sans);
+  --hud-serif: var(--house-serif);
+  --hud-regular: 400;
+  --hud-medium: 500;
+  --hud-s: 11px;
+  --hud-s-lh: 16px;
+  --hud-m: 13px;
+  --hud-m-lh: 20px;
+  --hud-l: 16px;
+  --hud-l-lh: 24px;
+  --hud-xl: 20px;
+  --hud-xl-lh: 28px;
+  --hud-label-track: 0.08em;     /* the one label style, for the sheets' section heads */
+
+  /* -- Motion: in answer to a press only --------------------------------- */
+  --hud-ease: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --hud-press-ms: 160ms;
+  --hud-move-ms: 240ms;
+  --hud-pressed: 0.97;
+
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  color: var(--hud-ink);
+  font-family: var(--hud-sans);
+  font-size: var(--hud-m);
+  font-weight: var(--hud-regular);
+  line-height: var(--hud-m-lh);
+  font-variant-numeric: tabular-nums lining-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* No more specific than a class, so each key's own colour below is the one it wears. */
+.hud-root :where(button, input) {
+  font: inherit;
+  color: inherit;
+}
+
+.hud-root :focus-visible {
+  outline: var(--hud-chosen) solid var(--hud-ink);
+  outline-offset: var(--hud-chosen);
+}
+
+/* The top bar's keys reach the screen's edges, which would cut a ring drawn outside them: theirs is drawn inside. */
+.hud-root .hud-bar :focus-visible {
+  outline-offset: calc(-1 * var(--hud-chosen));
+}
+
+.hud-root :is(button, input):disabled,
+.hud-root [aria-disabled="true"] {
+  opacity: var(--hud-off);
+  cursor: default;
+}
+
+.hud-room {
+  position: absolute;
+  inset: 0;
+}
+
+/* The room's canvas ends where the shelf begins: the shelf is the picture's foot, and nothing is drawn under it. */
+.hud-room .venviewer-planner-shell {
+  bottom: var(--hud-shelf-h);
+}
+
+@keyframes hud-rise {
+  from { clip-path: inset(100% 0 0 0); }
+  to { clip-path: inset(0); }
+}
+
+@keyframes hud-arrive {
+  from { opacity: 0; }
+}
+
+/* -- The marks every part is made of --------------------------------------- */
+
+.hud-glyph {
+  flex: none;
+  width: var(--hud-glyph-size);
+  height: var(--hud-glyph-size);
+}
+
+/* A word that does something: secondary ink until pointed at or pressed. */
+.hud-word {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hud-hit);
+  margin-inline: calc(-1 * var(--hud-reach));
+  padding: 0 var(--hud-reach);
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink-2);
+  font-weight: var(--hud-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--hud-press-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
+}
+
+/* A choice among words (the view, the light): the one chosen at full ink and underlined. */
+.hud-option,
+.hud-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hud-u);
+  min-height: var(--hud-hit);
+  margin-inline: calc(-1 * var(--hud-reach));
+  padding: 0 var(--hud-reach);
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  font-weight: var(--hud-medium);
+  white-space: nowrap;
+  opacity: var(--hud-dim);
+  text-decoration-line: underline;
+  text-decoration-color: transparent;
+  text-decoration-thickness: var(--hud-hair);
+  text-underline-offset: var(--hud-underline);
+  cursor: pointer;
+  transition: opacity var(--hud-press-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
+}
+
+.hud-option[aria-checked="true"] {
+  opacity: 1;
+  text-decoration-color: currentColor;
+}
+
+/* A key with an edge: the sheets' secondary acts. */
+.hud-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hud-gap);
+  min-height: var(--hud-hit);
+  padding: 0 var(--hud-gap-wide);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  font-weight: var(--hud-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--hud-press-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
+}
+
+.hud-key[aria-pressed="true"] {
+  outline: var(--hud-chosen) solid var(--hud-ink);
+  outline-offset: calc(-1 * var(--hud-chosen));
+}
+
+/* The one primary act: a solid rectangle of the accent. */
+.hud-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hud-gap);
+  min-height: var(--hud-act-h);
+  padding: 0 var(--hud-gap-wide);
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: var(--hud-accent);
+  color: var(--hud-on-accent);
+  font-weight: var(--hud-medium);
+  text-align: center;
+  text-wrap: balance;
+  cursor: pointer;
+  transition: scale var(--hud-press-ms) var(--hud-ease);
+}
+
+.hud-act[hidden] {
+  display: none;
+}
+
+/* Sent: the move is done, so the key steps back to words. */
+.hud-act[data-move="sent"] {
+  background: none;
+  color: var(--hud-ink);
+}
+
+/* A glyph alone: "more", close. The glyph keeps its line; the hit area reaches past it. */
+.hud-glyph-key {
+  display: inline-grid;
+  place-items: center;
+  width: var(--hud-hit);
+  height: var(--hud-hit);
+  margin-inline: calc((var(--hud-glyph-size) - var(--hud-hit)) / 2);
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  cursor: pointer;
+  transition: scale var(--hud-press-ms) var(--hud-ease);
+}
+
+/* A round glyph key: the one place a circle is drawn, a 1 px line round minus or plus. */
+.hud-round {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: var(--hud-hit);
+  height: var(--hud-hit);
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  cursor: pointer;
+  transition: scale var(--hud-press-ms) var(--hud-ease);
+}
+
+.hud-round::before {
+  position: absolute;
+  inset: calc((var(--hud-hit) - var(--hud-round)) / 2);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: 50%;
+  content: "";
+}
+
+.hud-word:active:not(:disabled),
+.hud-option:active,
+.hud-step:active,
+.hud-key:active:not(:disabled),
+.hud-act:active,
+.hud-glyph-key:active,
+.hud-round:active:not(:disabled) {
+  scale: var(--hud-pressed);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hud-word:hover:not(:disabled) {
+    color: var(--hud-ink);
+  }
+
+  .hud-option:hover,
+  .hud-step:hover {
+    opacity: 1;
+  }
+
+  .hud-key:hover:not(:disabled) {
+    border-color: var(--hud-ink);
+  }
+
+  .hud-round:hover:not(:disabled)::before {
+    border-color: var(--hud-ink);
+  }
+}
+
+/* -- The top bar ------------------------------------------------------------
+ * Not a surface: its words stand on the night above the hall's walls, which
+ * the stage keeps --hud-bar-h of the canvas dark for (hall-stage.ts), in the
+ * night's own light ink whatever the ground. Away from the stage the hall may
+ * pass behind them, so the bar takes one flat scrim of the night.
+ */
+
+.hud-bar {
+  --hud-ink: var(--hud-night-ink);
+  --hud-ink-2: var(--hud-night-ink-2);
+  --hud-line: var(--hud-night-line);
+  color: var(--hud-ink);
+  transition: background-color var(--hud-move-ms) var(--hud-ease);
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas: "plaque steps view";
+  column-gap: var(--hud-gap-group);
+  align-items: center;
+  height: var(--hud-bar-h);
+  padding: 0 var(--hud-gutter);
+  background-color: color-mix(in srgb, var(--hud-night) 76%, transparent);
+}
+
+.hud-root[data-stage="held"] .hud-bar {
+  background-color: transparent;
+}
+
+.hud-bar__plaque {
+  grid-area: plaque;
+  display: flex;
+  align-items: center;
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.hud-steps {
+  grid-area: steps;
+  justify-self: center;
+}
+
+.hud-steps__list {
+  display: flex;
+  gap: var(--hud-gap-wide);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hud-step[data-state="done"],
+.hud-step[data-state="current"],
+.hud-step[data-open="true"] {
+  opacity: 1;
+}
+
+.hud-step[data-state="current"] {
+  text-decoration-color: currentColor;
+}
+
+.hud-view {
+  grid-area: view;
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: var(--hud-gap-group);
+}
+
+.hud-view__switch {
+  display: flex;
+  gap: var(--hud-gap-wide);
+}
+
+/* -- The shelf -------------------------------------------------------------- */
+
+.hud-shelf {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: var(--hud-shelf-columns);
+  grid-template-rows: var(--hud-shelf-rows);
+  grid-template-areas: var(--hud-shelf-areas);
+  column-gap: var(--hud-gap-group);
+  height: var(--hud-shelf-h);
+  padding: var(--hud-shelf-pad-top) var(--hud-gutter) var(--hud-shelf-pad-bottom);
+  background: var(--hud-ground);
+}
+
+/* The top edge is the seat line: a hairline, filled in ink as far as the guests are seated. */
+.hud-shelf__edge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--hud-hair);
+  background: var(--hud-line);
+  pointer-events: none;
+}
+
+.hud-shelf__fill {
+  display: block;
+  height: 100%;
+  background: var(--hud-ink);
+  transform: scaleX(var(--hud-seat-fill, 0));
+  transform-origin: left center;
+}
+
+.hud-shelf__status {
+  grid-area: status;
+  align-self: start;
+  min-width: 0;
+}
+
+.hud-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--hud-gap-wide);
+  margin: 0;
+}
+
+.hud-status[hidden] {
+  display: none;
+}
+
+.hud-status__lead {
+  margin: 0;
+  color: var(--hud-ink);
+  font-size: var(--hud-l);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-l-lh);
+}
+
+.hud-status__item {
+  color: var(--hud-ink-2);
+}
+
+/* Something to look at: in the accent, underlined, and a press chooses it. Its hit area reaches past its line. */
+.hud-status__look {
+  min-height: var(--hud-hit);
+  margin: calc((var(--hud-m-lh) - var(--hud-hit)) / 2) calc(-1 * var(--hud-reach));
+  padding: 0 var(--hud-reach);
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-accent);
+  font-weight: var(--hud-medium);
+  text-decoration: underline;
+  text-decoration-thickness: var(--hud-hair);
+  text-underline-offset: var(--hud-u);
+  cursor: pointer;
+  transition: scale var(--hud-press-ms) var(--hud-ease);
+}
+
+.hud-status__look:active {
+  scale: var(--hud-pressed);
+}
+
+.hud-status__lead.hud-status__look {
+  margin-block: calc((var(--hud-l-lh) - var(--hud-hit)) / 2);
+}
+
+.hud-shelf__words {
+  display: flex;
+  flex-wrap: wrap;
+  grid-area: words;
+  align-self: end;
+  column-gap: var(--hud-gap-wide);
+  min-width: 0;
+}
+
+/* The hand: eight cards and More, on one rhythm of columns, standing on the shelf. */
+.hud-cards {
+  display: flex;
+  grid-area: cards;
+  align-items: flex-end;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hud-cards[hidden] {
+  display: none;
+}
+
+.hud-cards__slot {
+  flex: none;
+  width: var(--hud-card-col);
+}
+
+/* Centred where the hand fits, and from its first card where it slides: a centred row that overflows cannot be slid back to its start. */
+.hud-cards__slot:first-child {
+  margin-inline-start: auto;
+}
+
+.hud-cards__slot:last-child {
+  margin-inline-end: auto;
+}
+
+.hud-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  text-align: center;
+  cursor: grab;
+  touch-action: manipulation;
+  user-select: none;
+  transition: translate var(--hud-move-ms) var(--hud-ease), opacity var(--hud-move-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
+}
+
+.hud-card:active {
+  scale: var(--hud-pressed);
+}
+
+/*
+ * The photograph: the square render on its seamless ground, standing on the
+ * frame's foot. The frame's own ground is the tile (the shelf's ground on the
+ * light grounds), and the render darkens onto it, so the render's pale ground
+ * is the shelf exactly and only the furniture shows. That holds while the card
+ * rises or fades, when the card becomes its own isolated group.
+ */
+.hud-card__art,
+.hud-card-carry__art,
+.hud-first-open__art {
+  position: relative;
+  display: block;
+  flex: none;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  background: var(--hud-tile);
+}
+
+.hud-card__art {
+  width: var(--hud-card-w);
+}
+
+.hud-card__art img,
+.hud-card-carry__art img,
+.hud-first-open__art img {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  transform-origin: 50% 100%;
+  scale: var(--hud-photo-zoom);
+  mix-blend-mode: var(--hud-photo-blend);
+  pointer-events: none;
+}
+
+/* One line each. A caption wider than its column (a long count) runs past it evenly on both sides, never into the next card's alone. */
+.hud-card__name,
+.hud-card__detail {
+  font-size: var(--hud-s);
+  line-height: var(--hud-s-lh);
+  white-space: nowrap;
+}
+
+.hud-card__name {
+  margin-top: var(--hud-u);
+  font-weight: var(--hud-medium);
+}
+
+.hud-card__count,
+.hud-card__detail {
+  color: var(--hud-ink-2);
+}
+
+/* In hand: a 2 px ink outline and a rise; the others stand back. */
+.hud-card[data-armed="true"] {
+  translate: 0 calc(-1 * var(--hud-card-rise));
+  cursor: default;
+}
+
+.hud-card[data-armed="true"] .hud-card__art {
+  outline: var(--hud-chosen) solid var(--hud-ink);
+}
+
+.hud-shelf[data-in-hand="true"] .hud-card:not([data-armed="true"]) {
+  opacity: var(--hud-dim);
+}
+
+/* More: a word on the captions' line, with no photograph above it. */
+.hud-card--more {
+  cursor: pointer;
+}
+
+.hud-card--more .hud-card__art {
+  background: none;
+}
+
+.hud-card--more .hud-card__name {
+  color: var(--hud-ink-2);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hud-card:hover .hud-card__detail,
+  .hud-card:hover .hud-card__count,
+  .hud-card--more:hover .hud-card__name {
+    color: var(--hud-ink);
+  }
+}
+
+.hud-shelf__act {
+  display: flex;
+  grid-area: act;
+  align-self: end;
+  justify-self: end;
+  min-width: 0;
+}
+
+/* What is carried from the hand until the floor's own ghost takes over. */
+.hud-card-carry {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.hud-card-carry[hidden] {
+  display: none;
+}
+
+.hud-card-carry__art {
+  position: absolute;
+  top: var(--hud-gap-wide);
+  left: var(--hud-gap-wide);
+  width: var(--hud-card-w);
+}
+
+body.hud-dragging-card,
+body.hud-dragging-card * {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* -- The chosen piece's verbs, in the cards' place -------------------------- */
+
+.hud-piece {
+  display: flex;
+  grid-area: cards;
+  align-items: center;
+  align-self: end;
+  justify-content: center;
+  gap: var(--hud-gap-group);
+  min-height: var(--hud-act-h);
+  transition: opacity var(--hud-move-ms) var(--hud-ease);
+}
+
+@starting-style {
+  .hud-piece {
+    opacity: 0;
+  }
+}
+
+.hud-stepper,
+.hud-swatches {
+  display: flex;
+  align-items: center;
+}
+
+.hud-stepper__value {
+  min-width: var(--hud-stepper-value);
+  font-size: var(--hud-l);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-l-lh);
+  text-align: center;
+}
+
+.hud-swatch {
+  position: relative;
+  width: var(--hud-hit);
+  height: var(--hud-hit);
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  cursor: pointer;
+  transition: scale var(--hud-press-ms) var(--hud-ease);
+}
+
+.hud-swatch::before {
+  position: absolute;
+  inset: calc((var(--hud-hit) - var(--hud-swatch)) / 2);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: 50%;
+  background: var(--hud-linen);
+  content: "";
+}
+
+.hud-swatch[data-linen="white"] { --hud-linen: var(--hud-linen-ivory); }
+.hud-swatch[data-linen="black"] { --hud-linen: var(--hud-linen-black); }
+.hud-swatch[data-linen="bare"] { --hud-linen: var(--hud-linen-bare); }
+
+.hud-swatch[aria-checked="true"]::before {
+  outline: var(--hud-chosen) solid var(--hud-ink);
+  outline-offset: var(--hud-chosen);
+}
+
+.hud-swatch:active:not(:disabled) {
+  scale: var(--hud-pressed);
+}
+
+.hud-piece__keys {
+  display: flex;
+  gap: var(--hud-gap-wide);
+}
+
+/* -- Sheets: the shelf, grown ------------------------------------------------ */
+
+.hud-sheet {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  max-height: calc(var(--hud-rise) - var(--hud-shelf-h));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--hud-sheet-pad) max(var(--hud-gutter), calc((100% - var(--hud-sheet-measure)) / 2));
+  background: var(--hud-ground);
+  animation: hud-rise var(--hud-move-ms) var(--hud-ease);
+}
+
+.hud-sheet[data-wide="true"] {
+  padding-inline: max(var(--hud-gutter), calc((100% - var(--hud-sheet-measure-wide)) / 2));
+}
+
+/*
+ * Lay out says more once a count is typed: what it will move, what will not
+ * fit, and then its act, last. So this sheet may rise as far as the top bar
+ * to show all of it. Where even that is too little, it is slid to its end as
+ * the prompt grows (HudSheets.tsx).
+ */
+.hud-sheet[data-sheet="layout"] {
+  max-height: calc(100dvh - var(--hud-bar-all) - var(--hud-shelf-h));
+}
+
+.hud-sheet__close {
+  position: absolute;
+  top: calc(var(--hud-sheet-pad) + (var(--hud-xl-lh) - var(--hud-hit)) / 2);
+  right: var(--hud-gutter);
+}
+
+.hud-sheet__title {
+  margin: 0 var(--hud-gap-group) var(--hud-gap) 0;
+  font-size: var(--hud-xl);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-xl-lh);
+}
+
+/* The title takes focus as its sheet opens, to hand the keyboard on (HudSheets.tsx); it is not a control, so it wears no ring. */
+.hud-root .hud-sheet__title:focus-visible {
+  outline: none;
+}
+
+.hud-sheet__lede {
+  max-width: 60ch;
+  margin: 0;
+  color: var(--hud-ink-2);
+  font-size: var(--hud-l);
+  line-height: var(--hud-l-lh);
+}
+
+.hud-sheet__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hud-gap);
+  margin-top: var(--hud-sheet-pad);
+}
+
+/* The one label style: 11 px capitals, tracked, for a section's head. */
+.hud-sheet__heading {
+  margin: 0;
+  color: var(--hud-ink-2);
+  font-size: var(--hud-s);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-s-lh);
+  letter-spacing: var(--hud-label-track);
+  text-transform: uppercase;
+}
+
+.hud-sheet__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hud-gap) var(--hud-gap-wide);
+}
+
+.hud-sheet__note {
+  margin: 0;
+  color: var(--hud-ink-2);
+}
+
+/* Three answers to one question. */
+.hud-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--hud-gap);
+  margin-top: var(--hud-sheet-pad);
+}
+
+.hud-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hud-u);
+  min-height: var(--hud-hit);
+  padding: var(--hud-gap-wide);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--hud-press-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
+}
+
+.hud-choice[aria-checked="true"] {
+  outline: var(--hud-chosen) solid var(--hud-ink);
+  outline-offset: calc(-1 * var(--hud-chosen));
+}
+
+.hud-choice:active:not([aria-disabled="true"]) {
+  scale: var(--hud-pressed);
+}
+
+.hud-choice__name {
+  font-size: var(--hud-l);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-l-lh);
+}
+
+.hud-choice__line {
+  color: var(--hud-ink-2);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hud-choice:hover:not([aria-disabled="true"]) {
+    border-color: var(--hud-ink);
+  }
+}
+
+.hud-number {
+  width: calc(var(--hud-stepper-value) + var(--hud-gap-group));
+  min-height: var(--hud-hit);
+  padding: 0 var(--hud-gap);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  font-size: var(--hud-xl);
+  line-height: var(--hud-xl-lh);
+  text-align: center;
+  appearance: textfield;
+}
+
+.hud-number::-webkit-inner-spin-button,
+.hud-number::-webkit-outer-spin-button,
+.hud-sheet .auto-fill__input::-webkit-inner-spin-button,
+.hud-sheet .auto-fill__input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+/* The whole catalogue, as the hand's own cards, by kind. */
+.hud-catalogue {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--hud-card-col));
+  gap: var(--hud-gap-wide) 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hud-catalogue .hud-card {
+  cursor: pointer;
+}
+
+.hud-catalogue .hud-card__name {
+  white-space: normal;
+}
+
+/*
+ * Lay out's own prompt (components/editor/cockpit/AutoFillPrompt.tsx), reused
+ * whole and set in the sheet's type: its submit is the sheet's one primary
+ * (the shelf's primary steps aside while its own sheet is open), Back a word.
+ */
+.hud-sheet .auto-fill {
+  gap: var(--hud-gap-wide);
+}
+
+.hud-sheet .auto-fill__style {
+  color: var(--hud-ink-2);
+  font-size: var(--hud-s);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-s-lh);
+  letter-spacing: var(--hud-label-track);
+}
+
+.hud-sheet .auto-fill__question {
+  color: var(--hud-ink);
+  font-family: var(--hud-sans);
+  font-size: var(--hud-l);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-l-lh);
+}
+
+.hud-sheet .auto-fill__input {
+  min-height: var(--hud-hit);
+  padding: 0 var(--hud-gap);
+  border: var(--hud-hair) solid var(--hud-line);
+  border-radius: var(--hud-radius);
+  background: none;
+  box-shadow: none;
+  color: var(--hud-ink);
+  font-size: var(--hud-xl);
+  font-weight: var(--hud-regular);
+  line-height: var(--hud-xl-lh);
+  /* A count is typed here: the browser's own little arrows are put away, as on the sheets' other number. */
+  appearance: textfield;
+}
+
+.hud-sheet :is(.auto-fill__hint, .auto-fill__note, .auto-fill__placed) {
+  color: var(--hud-ink);
+  font-size: var(--hud-m);
+  font-weight: var(--hud-regular);
+  line-height: var(--hud-m-lh);
+}
+
+.hud-sheet :is(.auto-fill__basis, .auto-fill__stated) {
+  color: var(--hud-ink-2);
+  font-size: var(--hud-m);
+  font-weight: var(--hud-regular);
+  line-height: var(--hud-m-lh);
+  letter-spacing: 0;
+}
+
+.hud-sheet .auto-fill__short {
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  color: var(--hud-accent);
+  font-size: var(--hud-m);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-m-lh);
+}
+
+.hud-sheet .lens-panel__button {
+  min-height: var(--hud-act-h);
+  padding: 0 var(--hud-gap-wide);
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: var(--hud-accent);
+  box-shadow: none;
+  color: var(--hud-on-accent);
+  font-size: var(--hud-m);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-m-lh);
+  letter-spacing: 0;
+}
+
+.hud-sheet .lens-panel__button--ghost {
+  background: none;
+  color: var(--hud-ink-2);
+}
+
+/* The prompt's own hover brightens and its press casts a glow: both are taken back. */
+.hud-sheet .lens-panel__button:is(:hover, :active):not(:disabled) {
+  filter: none;
+  box-shadow: none;
+}
+
+/* -- Laptops ------------------------------------------------------------------ */
+
+@media (max-width: 1366px) {
+  .hud-root {
+    --hud-card-col: 88px;
+  }
+}
+
+/*
+ * Narrower than the one row needs: nine columns of 88 px between side columns
+ * of 192 px want 1272 px. A column is never narrower than its caption and a
+ * side column never narrower than its words, so the hand slides between them.
+ * A short window keeps that; one with height to spare stands the shelf in two
+ * rows, below.
+ */
+@media (max-width: 1279px) {
+  .hud-root {
+    --hud-card-w: 56px;
+  }
+
+  .hud-cards {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding-top: var(--hud-gap);   /* a card in hand rises inside the sliding row */
+    scrollbar-width: none;
+  }
+}
+
+/* -- Tablets and narrow windows -------------------------------------------------
+ * The shelf in two rows: what the room needs and the keys above, and below
+ * them the hand with the whole width, where nine cards fit and none slides.
+ */
+
+@media (min-width: 768px) and (max-width: 1279px) and (min-height: 600px) {
+  .hud-root {
+    --hud-shelf-h: 196px;
+    --hud-shelf-columns: minmax(0, 1fr) auto auto;
+    --hud-shelf-rows: minmax(var(--hud-act-h), auto) minmax(0, 1fr);
+    --hud-shelf-areas: "status words act" "cards cards cards";
+  }
+
+  /*
+   * As tall as --hud-shelf-h says while its first row is one key high, which
+   * is nearly always. A status line or a receipt that wraps past that makes
+   * the row taller, and the shelf grows upward over the room's foot for as
+   * long as it does: nothing is written across the hand or off the shelf.
+   */
+  .hud-shelf {
+    row-gap: var(--hud-gap);
+    height: auto;
+    min-height: var(--hud-shelf-h);
+  }
+
+  .hud-shelf__status,
+  .hud-shelf__words,
+  .hud-shelf__act {
+    align-self: center;
+  }
+
+  .hud-cards {
+    overflow: visible;
+    padding-top: 0;
+  }
+}
+
+/* An upright tablet: the primary key's longer labels take two lines, and leave the status line room for its own. */
+@media (min-width: 768px) and (max-width: 899px) and (min-height: 600px) {
+  .hud-shelf__act .hud-act {
+    max-width: 216px;
+  }
+}
+
+/* An upright tablet at its narrowest: the hand takes the gutters too. */
+@media (min-width: 768px) and (max-width: 823px) and (min-height: 600px) {
+  .hud-root {
+    --hud-card-col: 84px;
+  }
+
+  .hud-cards {
+    margin-inline: calc(-1 * var(--hud-gutter));
+  }
+}
+
+/*
+ * Under 1024 px the name, the four steps and the view will not stand in one
+ * line, so the steps take a line of their own under the other two. The stage
+ * keeps the bar's whole height dark, whatever it comes to (HudFrame.tsx).
+ */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .hud-root {
+    --hud-bar-all: calc(var(--hud-bar-h) + var(--hud-bar-row));
+  }
+
+  .hud-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: var(--hud-bar-h) var(--hud-bar-row);
+    grid-template-areas: "plaque view" "steps steps";
+    height: auto;
+  }
+}
+
+@media (max-height: 800px) {
+  .hud-root {
+    --hud-answer-w: 120px;
+  }
+}
+
+/*
+ * A window too short for the tallest sheet as it is written (Lay out): sheets
+ * are set closer, and that one goes without its opening lines. Only that one.
+ * Elsewhere a sheet's first lines can be all it has to say: why its keys are
+ * off, or that there is nothing to send yet.
+ */
+@media (max-height: 620px) {
+  .hud-root {
+    --hud-sheet-pad: 16px;
+  }
+
+  .hud-sheet__lede--spare {
+    display: none;
+  }
+}
+
+/* -- Phones: the same two bars ------------------------------------------------- */
+
+@media (max-width: 767px) {
+  .hud-root {
+    --hud-bar-all: calc(var(--hud-bar-h) + env(safe-area-inset-top, 0px));
+    --hud-answer-w: 96px;       /* the first screen's three answers in one row */
+    --hud-card-col: 96px;       /* a name and its count on one line; the row slides */
+    --hud-card-w: 48px;
+    --hud-shelf-h: 236px;        /* as laid out below, for the risen sheet's measure */
+    --hud-shelf-columns: minmax(0, 1fr) auto;
+    --hud-shelf-rows: auto auto auto;
+    --hud-shelf-areas: "status words" "cards cards" "act act";
+  }
+
+  /* The top bar: the name, the step you are on, and the way to the tools. */
+  .hud-bar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: var(--hud-gap-wide);
+    height: calc(var(--hud-bar-h) + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) max(var(--hud-gutter), env(safe-area-inset-right, 0px)) 0 max(var(--hud-gutter), env(safe-area-inset-left, 0px));
+  }
+
+  /*
+   * The phone's shelf is as tall as what it holds (a status line that wraps, a
+   * notch below), so the room's canvas runs a little way under it: no gap can
+   * open between the hall and the shelf, whatever the shelf's height.
+   */
+  .hud-room .venviewer-planner-shell {
+    bottom: calc(var(--hud-shelf-h) - 40px);
+  }
+
+  .hud-steps {
+    justify-self: end;
+  }
+
+  .hud-steps__slot:not([data-state="current"]) {
+    display: none;
+  }
+
+  /* How the room is looked at and lit stays with wider screens. The tools do not: Measure, Draw and snapping are a phone's too. */
+  .hud-view__switch,
+  .hud-view > .hud-option {
+    display: none;
+  }
+
+  /* The shelf: the status line, a sliding row of cards, the primary key full width. */
+  .hud-shelf {
+    row-gap: var(--hud-gap);
+    height: auto;
+    padding:
+      var(--hud-shelf-pad-top)
+      max(var(--hud-gutter), env(safe-area-inset-right, 0px))
+      calc(var(--hud-shelf-pad-bottom) + env(safe-area-inset-bottom, 0px))
+      max(var(--hud-gutter), env(safe-area-inset-left, 0px));
+  }
+
+  .hud-shelf__words {
+    align-self: start;
+    justify-self: end;
+    margin-block: calc((var(--hud-l-lh) - var(--hud-hit)) / 2);
+  }
+
+  .hud-shelf__lay-out {
+    display: none;
+  }
+
+  .hud-cards {
+    margin-inline: calc(-1 * var(--hud-gutter));
+    padding: var(--hud-u) var(--hud-gutter) 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .hud-card__detail {
+    display: none;
+  }
+
+  .hud-piece {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: var(--hud-gap) var(--hud-gap-wide);
+  }
+
+  .hud-shelf__act {
+    justify-self: stretch;
+  }
+
+  .hud-act {
+    width: 100%;
+  }
+
+  .hud-sheet {
+    padding-inline: var(--hud-gutter);
+  }
+
+  .hud-choices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* -- Reduced motion: nothing travels or shrinks; a state shows by its line alone -- */
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-root :is(.hud-word, .hud-option, .hud-step, .hud-key, .hud-act, .hud-glyph-key, .hud-round, .hud-card, .hud-swatch, .hud-choice, .hud-status__look, .hud-first-open__answer):active {
+    scale: none;
+  }
+
+  .hud-card[data-armed="true"] {
+    translate: none;
+  }
+}

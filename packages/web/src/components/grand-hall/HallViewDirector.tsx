@@ -47,6 +47,15 @@ export function HallViewDirector(): null {
     if (request === null) return;
     const store = useHallViewStore.getState();
     const cockpit = useCockpitStore.getState();
+    // Where the hall is held as a stage (HallStage says where its camera stands), Room is that picture and Plan fills it.
+    const staged = store.stagePoses;
+    if (staged !== null && request.preset === "room" && store.stagePhase !== "off" && !cockpit.walkMode) {
+      // On the stage already, or on the way to it.
+      store.clearViewRequest(request.nonce);
+      return;
+    }
+    // Any other view leaves the stage, and its camera is let go before anything reads where it stands.
+    if (staged === null || request.preset !== "room") store.setStagePhase("off");
     if (request.preset === "walk") {
       // A glide still under way would hand the camera back to the orbit on
       // its next frame (any bookmark camera ends a walk): stop it first.
@@ -58,7 +67,9 @@ export function HallViewDirector(): null {
     }
     // Leaving the room restores the orbit pose first; the glide starts there.
     if (cockpit.walkMode) cockpit.setWalkMode(false);
-    const pose = HALL_VIEW_POSES[request.preset];
+    const pose = staged?.[request.preset] ?? HALL_VIEW_POSES[request.preset];
+    // The glide to the stage lands tilted at the floor; HallStage squares the camera up from there.
+    if (staged !== null && request.preset === "room") store.setStagePhase("arriving");
     const current = hasTarget(controls) ? controls.target : { x: 0, y: 0, z: 0 };
     useBookmarkStore.getState().startTransition(
       { id: `hall-view-${request.preset}`, name: request.preset === "plan" ? "Plan" : "Room", position: pose.position, target: pose.target, kind: "default" },

@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   CanvasTexture,
@@ -874,7 +875,7 @@ export function PlacedFurniture(): React.ReactElement {
     !cameraInteractionActive
     && (
       cameraReferenceItemIds.has(placedId)
-      || (!marqueeActive && placedId === primaryNameplateItemId)
+      || (!marqueeActive && placedId === primaryNameplateItemId && plannerFeatureEnabled("roomCallouts"))
     )
   ), [cameraInteractionActive, cameraReferenceItemIds, marqueeActive, primaryNameplateItemId]);
 

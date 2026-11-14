@@ -518,6 +518,28 @@ describe("GuestEnquiryModal keeps the guest's work", () => {
     expect(await screen.findByText("Keep Rooms will reply to")).toBeTruthy();
   });
 
+  // The planner HUD says a plan is sent from this alone (T-723): putting the form away is not sending it.
+  it("tells its opener when the enquiry has arrived, and not for a form put away or a send that failed", async () => {
+    const onSubmitted = vi.fn();
+    const onClose = vi.fn();
+    render(<GuestEnquiryModal configId="cfg-1" onClose={onClose} onSubmitted={onSubmitted} />);
+    await screen.findByText("Your details are shared only with the Keep Rooms events team.");
+    fireEvent.click(screen.getByRole("dialog"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onSubmitted).not.toHaveBeenCalled();
+
+    mocks.submit.mockRejectedValueOnce(new Error("The events team could not be reached"));
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("The events team could not be reached");
+    expect(onSubmitted).not.toHaveBeenCalled();
+
+    mocks.submit.mockResolvedValueOnce({});
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    await screen.findByText("Keep Rooms will reply to");
+    expect(onSubmitted).toHaveBeenCalledTimes(1);
+  });
+
   it("takes focus to the answer and announces it", async () => {
     mocks.submit.mockResolvedValue({});
     await open();

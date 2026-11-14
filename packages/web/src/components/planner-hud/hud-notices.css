@@ -1,0 +1,28 @@
+/* ---------------------------------------------------------------------------
+ * RECEIPTS (HudNotices.tsx): one plain line about what was just refused or
+ * done. While it shows it takes the status line's place on the shelf, in the
+ * same type, with Undo as a word after it; it arrives by light alone.
+ * ------------------------------------------------------------------------- */
+
+.hud-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--hud-gap-wide);
+  margin: 0;
+  animation: hud-arrive var(--hud-move-ms) var(--hud-ease);
+}
+
+.hud-notice__line {
+  color: var(--hud-ink);
+  font-weight: var(--hud-medium);
+  text-wrap: pretty;
+}
+
+.hud-notice .hud-notice__undo {
+  margin-block: calc((var(--hud-m-lh) - var(--hud-hit)) / 2);
+  color: var(--hud-ink);
+  text-decoration: underline;
+  text-decoration-thickness: var(--hud-hair);
+  text-underline-offset: var(--hud-u);
+}

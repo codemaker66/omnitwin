@@ -548,7 +548,7 @@ function PlannerChrome(): React.ReactElement {
       )}
     >
       <PlannerWorkContext.Provider value={NO_2D_VIEW}>
-        <PlannerChromeV2 />
+        {chrome === "hud" ? <PlannerHud /> : <PlannerChromeV2 />}
       </PlannerWorkContext.Provider>
     </Suspense>
   );
@@ -560,6 +560,12 @@ function PlannerChrome(): React.ReactElement {
  * (PlanDrawingSwitch) here so the cards offer "Continue in the drawing".
  */
 const NO_2D_VIEW: PlannerWork = { continueIn2d: null };
+
+/** The HUD (13 Nov 2026: the hall as one picture, and one shelf), loaded only behind `?chrome=hud`. */
+const PlannerHud = lazy(async () => {
+  const module = await import("../components/planner-hud/PlannerHud.js");
+  return { default: module.PlannerHud };
+});
 
 /** The new chrome (T-671), loaded only behind its flag. */
 const PlannerChromeV2 = lazy(async () => {

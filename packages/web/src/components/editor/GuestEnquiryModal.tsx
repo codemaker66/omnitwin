@@ -120,7 +120,10 @@ function getLayoutSummary(): string {
 
 interface GuestEnquiryModalProps {
   readonly configId: string;
+  /** The form is put away: after it was sent, or without sending. */
   readonly onClose: () => void;
+  /** The enquiry reached the venue. Putting the form away is not that, so it is told on its own. */
+  readonly onSubmitted?: () => void;
 }
 
 // The guest's draft, kept for this tab (planner-qol E-08): closing the form,
@@ -246,7 +249,7 @@ function ViewOnlyLink({ configId }: { readonly configId: string }): React.ReactE
   );
 }
 
-export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps): React.ReactElement {
+export function GuestEnquiryModal({ configId, onClose, onSubmitted }: GuestEnquiryModalProps): React.ReactElement {
   // The venue this layout belongs to, never a hard-coded one: another venue's
   // guest must not be told that Trades Hall will reply (T-635 N5, item 1).
   const venueId = useEditorStore((state) => state.venueId);
@@ -349,12 +352,13 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
       storeJson(DRAFT_KEY_PREFIX + configId, null);
       storeJson(CONTACT_KEY, { email: email.trim(), phone: phone.trim(), name: name.trim() });
       setSubmitted(true);
+      onSubmitted?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong — please try again");
     } finally {
       setIsSubmitting(false);
     }
-  }, [configId, email, phone, name, eventDate, eventType, guestCount, message, emailValid]);
+  }, [configId, email, phone, name, eventDate, eventType, guestCount, message, emailValid, onSubmitted]);
 
   // Escape closes it wherever focus is, through the planner's one keyboard
   // owner, and while it is open the planner's shortcuts leave the room alone.

@@ -10,6 +10,7 @@ import {
 import { circulationBandColor } from "../../lib/circulation-scene.js";
 import { RENDER_SCALE } from "../../constants/scale.js";
 import { closedLoopSegments } from "../../lib/loop-segments.js";
+import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 
 // ---------------------------------------------------------------------------
 // ClearanceRings — the judged clear zone drawn under selected dining tables.
@@ -94,7 +95,7 @@ export function ClearanceRings(): ReactElement | null {
   return (
     <group name="clearance-rings">
       {rings.map((ring) => <RingOutline key={ring.itemId} ring={ring} />)}
-      {worst !== null && worst.reason !== null && (
+      {worst !== null && worst.reason !== null && plannerFeatureEnabled("roomCallouts") && (
         <Html
           position={[
             worst.centreX * RENDER_SCALE,
