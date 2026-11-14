@@ -32,7 +32,7 @@ type RoomPhotoSource = import("../room-photos.js").RoomPhotoSource;
 const SALOON = parseSurveyRecord(JSON.parse(
   readFileSync(path.resolve("src/components/surveyed-room/__tests__/fixtures/saloon-survey.fixture.json"), "utf-8"),
 ));
-const ENTRY = { base: "/rooms/saloon/survey-2026-07-11", revision: 3 };
+const ENTRY = { slug: "saloon", base: "/rooms/saloon/survey-2026-07-11", revision: 3 };
 
 /** A decoded image, with its close() kept apart for assertions. */
 function bitmap(): { readonly image: ImageBitmap; readonly close: ReturnType<typeof vi.fn> } {

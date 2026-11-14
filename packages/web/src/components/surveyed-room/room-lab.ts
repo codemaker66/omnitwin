@@ -33,7 +33,17 @@ export interface RoomLabQuery {
 /** A public folder on this origin: a path of plain segments, nothing that climbs or leaves. */
 const PUBLIC_FOLDER = /^(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)+$/;
 
-/** Reads `?base=<public folder>&r=<revision>[&photos=full|half]`. */
+/** A room's slug, as a survey's record writes it. */
+const ROOM_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** A survey published where the tools publish one: /rooms/<room>/<survey>. */
+const ROOM_FOLDER = /^\/rooms\/([^/]+)(?:\/|$)/;
+
+/**
+ * Reads `?base=<public folder>&r=<revision>[&slug=<room>][&photos=full|half]`.
+ * The room the folder should hold is `slug`, or where that is left out the
+ * room a folder under /rooms/<room>/ is filed under; the load refuses a
+ * folder that holds another room's survey.
+ */
 export function parseRoomLabQuery(search: string): RoomLabQuery {
   const params = new URLSearchParams(search);
   const photos = params.get("photos");
@@ -43,10 +53,13 @@ export function parseRoomLabQuery(search: string): RoomLabQuery {
   if (asked === null || asked === "") return none("Add ?base=<public folder>&r=<revision>, for example ?base=/rooms/saloon/survey-2026-07-11&r=1.");
   const base = asked.replace(/\/+$/, "");
   if (!PUBLIC_FOLDER.test(base)) return none(`"${asked}" is not a public folder: give a path on this site, such as /rooms/saloon/survey-2026-07-11.`);
+  const slug = params.get("slug") ?? ROOM_FOLDER.exec(base)?.[1] ?? null;
+  if (slug === null) return none(`Add &slug=<room>: "${base}" is not under /rooms/<room>/, so the room it should hold must be named.`);
+  if (!ROOM_SLUG.test(slug)) return none(`"${slug}" is not a room: give its slug, such as saloon.`);
   const r = params.get("r") ?? "1";
   const revision = Number(r);
   if (!/^[1-9][0-9]*$/.test(r) || !Number.isSafeInteger(revision)) return none(`"${r}" is not a revision: give a whole number from 1.`);
-  return { entry: { base, revision }, problem: null, photoQuality };
+  return { entry: { slug, base, revision }, problem: null, photoQuality };
 }
 
 export interface RoomPose {

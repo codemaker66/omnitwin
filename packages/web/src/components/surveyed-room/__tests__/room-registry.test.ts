@@ -7,13 +7,17 @@ import {
   type SurveyedRoomEntry,
 } from "../room-registry.js";
 
-const SALOON: SurveyedRoomEntry = { base: "/rooms/saloon/survey-2026-07-11", revision: 3 };
+const SALOON: SurveyedRoomEntry = { slug: "saloon", base: "/rooms/saloon/survey-2026-07-11", revision: 3 };
 const ROOMS: ReadonlyMap<string, SurveyedRoomEntry> = new Map([["saloon", SALOON]]);
 
 describe("surveyed room registry", () => {
   it("lists no room until one is published", () => {
     expect(SURVEYED_ROOMS.size).toBe(0);
     expect(surveyedRoomFor("trades-hall", "saloon")).toBeNull();
+  });
+
+  it("files every listed room under its own slug", () => {
+    for (const [slug, entry] of SURVEYED_ROOMS) expect(entry.slug).toBe(slug);
   });
 
   it("finds a listed room for either of Trades Hall's venue slugs", () => {

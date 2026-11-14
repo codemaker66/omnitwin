@@ -28,10 +28,23 @@ function inside(outline: readonly PlanPoint[], x: number, z: number): boolean {
 describe("the surveyed-room lab's query", () => {
   it("reads the survey's folder and revision", () => {
     expect(parseRoomLabQuery("?base=/rooms/saloon/survey-2026-07-11&r=3")).toEqual({
-      entry: { base: "/rooms/saloon/survey-2026-07-11", revision: 3 }, problem: null, photoQuality: null,
+      entry: { slug: "saloon", base: "/rooms/saloon/survey-2026-07-11", revision: 3 }, problem: null, photoQuality: null,
     });
     // Revision 1 when left out; a trailing slash is not part of the folder.
-    expect(parseRoomLabQuery("?base=/rooms/saloon/survey-2026-07-11/").entry).toEqual({ base: "/rooms/saloon/survey-2026-07-11", revision: 1 });
+    expect(parseRoomLabQuery("?base=/rooms/saloon/survey-2026-07-11/").entry).toEqual({ slug: "saloon", base: "/rooms/saloon/survey-2026-07-11", revision: 1 });
+  });
+
+  it("names the room the folder should hold: the one it is filed under, or the one it is told", () => {
+    expect(parseRoomLabQuery("?base=/rooms/reception-room/survey-2026-08-01").entry?.slug).toBe("reception-room");
+    expect(parseRoomLabQuery("?base=/rooms/saloon/survey-2026-07-11&slug=reception-room").entry?.slug).toBe("reception-room");
+    expect(parseRoomLabQuery("?base=/staging/try-3&slug=saloon").entry).toEqual({ slug: "saloon", base: "/staging/try-3", revision: 1 });
+    // A folder filed under no room cannot say which room it should hold.
+    const unfiled = parseRoomLabQuery("?base=/staging/try-3");
+    expect(unfiled.entry).toBeNull();
+    expect(unfiled.problem).toMatch(/^Add &slug=<room>/);
+    const shouted = parseRoomLabQuery("?base=/rooms/saloon/survey-2026-07-11&slug=The%20Saloon");
+    expect(shouted.entry).toBeNull();
+    expect(shouted.problem).toMatch(/is not a room/);
   });
 
   it("takes a photograph size when asked for one", () => {

@@ -40,7 +40,7 @@ function saloon(revision = 1): SurveyedRoom {
   const record = parseSurveyRecord(typeof json === "object" && json !== null ? { ...json, revision } : json);
   const frame = buildRoomFrame(record.room.outline);
   const reliefs = { walls: null, ceiling: null };
-  return { entry: { base: "/rooms/saloon/survey-2026-07-11", revision }, record, frame, reliefs, geometry: buildRoomGeometry(record, frame, reliefs) };
+  return { entry: { slug: "saloon", base: "/rooms/saloon/survey-2026-07-11", revision }, record, frame, reliefs, geometry: buildRoomGeometry(record, frame, reliefs) };
 }
 
 /** A decoded image, with its close() kept apart for assertions. */

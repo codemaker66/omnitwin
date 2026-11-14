@@ -17,6 +17,8 @@
 //   json       survey.json is not JSON (a dev server answers a missing file
 //              with its page)
 //   schema     survey.json is not a record this reader can use
+//   room       the record is of another room than the entry names, or of a
+//              venue that is not Trades Hall
 //   revision   the record is another revision than the registry asks for, so
 //              files kept by a browser could be paired with the wrong record
 //   format     a relief file is not a GHR1 container, or holds other entries
@@ -31,6 +33,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from "react";
+import { isTradesHallVenueSlug } from "../../hooks/use-trades-hall-venue.js";
 import { fetchSurveyRecord, SurveyLoadError, type SurveyLoadFailure } from "./load-survey.js";
 import { assertReliefIds, parseReliefContainer, type ReliefMesh } from "./relief-container.js";
 import { buildRoomFrame, type RoomFrame } from "./room-frame.js";
@@ -43,7 +46,7 @@ import type { SurveyRecord } from "./survey-record.js";
 /** The record's file name in every survey folder. */
 export const SURVEY_RECORD_FILE = "survey.json";
 
-export type SurveyedRoomFailureReason = SurveyLoadFailure | "revision" | "format" | "integrity" | "geometry" | "unexpected";
+export type SurveyedRoomFailureReason = SurveyLoadFailure | "room" | "revision" | "format" | "integrity" | "geometry" | "unexpected";
 
 /** Why a surveyed room could not be loaded. */
 export interface SurveyedRoomFailure {
@@ -161,6 +164,14 @@ async function load(entry: SurveyedRoomEntry, signal: AbortSignal, onProgress: (
     if (!(error instanceof SurveyLoadError)) throw error;
     throw new SurveyedRoomLoadError({ file: SURVEY_RECORD_FILE, url: recordUrl, reason: error.reason, status: error.status, detail: error.message }, error);
   }
+  // The folder must hold the room that was asked for, at Trades Hall: a registry entry pointed at
+  // another room's survey would otherwise draw that room without complaint.
+  if (record.slug !== entry.slug || !isTradesHallVenueSlug(record.room.venue)) {
+    throw new SurveyedRoomLoadError({
+      file: SURVEY_RECORD_FILE, url: recordUrl, reason: "room", status: null,
+      detail: `the record is of "${record.slug}" at venue "${record.room.venue}", but Trades Hall's "${entry.slug}" was asked for`,
+    });
+  }
   if (record.revision !== entry.revision) {
     throw new SurveyedRoomLoadError({
       file: SURVEY_RECORD_FILE, url: recordUrl, reason: "revision", status: null,
@@ -253,19 +264,20 @@ const NOTHING_HELD: Held = { key: null, state: IDLE };
  * after a failure raises it by one.
  */
 export function useSurveyedRoom(entry: SurveyedRoomEntry | null, attempt = 0): SurveyedRoomState {
+  const slug = entry?.slug ?? null;
   const base = entry?.base ?? null;
   const revision = entry?.revision ?? null;
-  const key = base === null || revision === null ? null : `${base}?r=${String(revision)}#${String(attempt)}`;
+  const key = slug === null || base === null || revision === null ? null : `${slug}@${base}?r=${String(revision)}#${String(attempt)}`;
   const [held, setHeld] = useState<Held>(NOTHING_HELD);
 
   useEffect(() => {
-    if (base === null || revision === null || key === null) return undefined;
+    if (slug === null || base === null || revision === null || key === null) return undefined;
     const controller = new AbortController();
     const show = (state: SurveyedRoomState): void => {
       if (!controller.signal.aborted) setHeld({ key, state });
     };
     show(STARTING);
-    const asked: SurveyedRoomEntry = { base, revision };
+    const asked: SurveyedRoomEntry = { slug, base, revision };
     loadSurveyedRoom(asked, controller.signal, (progress) => { show({ status: "loading", ...progress }); }).then(
       (room) => { show({ status: "ready", room }); },
       // An abort is this effect's own, and `show` then keeps quiet; anything else is a failure to tell.
@@ -276,7 +288,7 @@ export function useSurveyedRoom(entry: SurveyedRoomEntry | null, attempt = 0): S
       // The load has left (another entry, another attempt, or none): what was held for it goes with it.
       setHeld(NOTHING_HELD);
     };
-  }, [base, key, revision]);
+  }, [base, key, revision, slug]);
 
   if (key === null) return IDLE;
   return held.key === key ? held.state : STARTING;

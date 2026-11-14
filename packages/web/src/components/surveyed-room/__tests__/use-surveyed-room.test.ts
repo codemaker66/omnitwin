@@ -14,12 +14,14 @@ import {
 import { grandHallFile, grandHallRecordJson } from "./fixtures/grand-hall-record.js";
 import { encodeReliefFile, flatCeilingEntry, flatWallEntry, type ReliefEntrySource } from "./fixtures/relief-file.js";
 
-const SALOON: SurveyedRoomEntry = { base: "/rooms/saloon/survey-2026-07-11", revision: 1 };
+const SALOON: SurveyedRoomEntry = { slug: "saloon", base: "/rooms/saloon/survey-2026-07-11", revision: 1 };
 const FIXTURE_TEXT = readFileSync(path.resolve("src/components/surveyed-room/__tests__/fixtures/saloon-survey.fixture.json"), "utf-8");
 
 interface RawSaloon {
   schemaVersion: number;
+  slug: string;
   revision: number;
+  room: { venue: string; [key: string]: unknown };
   walls: { id: string; reliefId: string; length: number; height: number }[];
   ceiling: { extent: { x: [number, number]; z: [number, number] }; relief?: { file: string; id: string } };
   files: Record<string, { bytes: number; sha256: string }>;
@@ -136,7 +138,7 @@ describe("loading a surveyed room", () => {
   });
 
   it("loads the Grand Hall's shipped relief through a record that lists its real size", async () => {
-    const hall: SurveyedRoomEntry = { base: "/rooms/grand-hall/survey-2026-07-11", revision: 7 };
+    const hall: SurveyedRoomEntry = { slug: "grand-hall", base: "/rooms/grand-hall/survey-2026-07-11", revision: 7 };
     serve({ "survey.json": json(grandHallRecordJson()), "walls-relief.bin": bytes(grandHallFile("walls-relief.bin")) });
     const room = await loadSurveyedRoom(hall);
     expect(room.geometry.walls.indices.length / 3).toBe(35185);
@@ -150,6 +152,8 @@ describe("loading a surveyed room", () => {
     ["the record is a page, not JSON", () => new Response("<!doctype html><title>Venviewer</title>", { status: 200 }), { reason: "json" }],
     ["the record is another schema version", json({ ...saloonFiles().record, schemaVersion: 1 }), { reason: "schema" }],
     ["the record is another revision than was asked for", json({ ...saloonFiles().record, revision: 2 }), { reason: "revision" }],
+    ["the record is of another room", json({ ...saloonFiles().record, slug: "reception-room" }), { reason: "room" }],
+    ["the record is of another venue's room", json({ ...saloonFiles().record, room: { ...saloonFiles().record.room, venue: "another-venue" } }), { reason: "room" }],
   ])("fails, naming survey.json, when %s", async (_name, answer, expected) => {
     const fake = serveSaloon(saloonFiles(), { "survey.json": answer });
     const failure = await failureOf(loadSurveyedRoom(SALOON));

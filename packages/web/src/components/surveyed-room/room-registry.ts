@@ -10,6 +10,9 @@
 //
 // No room is listed yet: the Saloon joins once its files are published. The
 // Grand Hall keeps its own code (components/grand-hall) and is not listed.
+// An entry names its room, and the load holds the folder's record to it
+// (use-surveyed-room.ts): another room's survey, or another venue's, is
+// refused rather than drawn.
 //
 // The switch is per device while surveyed rooms are reviewed: `?rooms=surveyed`
 // turns them on and remembers it; `?rooms=plain` turns them off again.
@@ -19,6 +22,11 @@
 import { isTradesHallVenueSlug } from "../../hooks/use-trades-hall-venue.js";
 
 export interface SurveyedRoomEntry {
+  /**
+   * The room's slug, which its space and its survey's record share: a folder
+   * that holds another room's survey is refused when it loads.
+   */
+  readonly slug: string;
   /** The survey's public folder, without a trailing slash. */
   readonly base: string;
   /**
@@ -28,8 +36,11 @@ export interface SurveyedRoomEntry {
   readonly revision: number;
 }
 
-/** Trades Hall's surveyed rooms, by space slug. */
-export const SURVEYED_ROOMS: ReadonlyMap<string, SurveyedRoomEntry> = new Map<string, SurveyedRoomEntry>();
+/** Trades Hall's surveyed rooms. None is listed yet. */
+const LISTED: readonly SurveyedRoomEntry[] = [];
+
+/** The same rooms by space slug: each is filed under its own slug, so a key cannot name another room's entry. */
+export const SURVEYED_ROOMS: ReadonlyMap<string, SurveyedRoomEntry> = new Map(LISTED.map((entry) => [entry.slug, entry]));
 
 /** A survey file's URL, at the entry's revision. */
 export function surveyFileUrl(entry: SurveyedRoomEntry, file: string): string {
