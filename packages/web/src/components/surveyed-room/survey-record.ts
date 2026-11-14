@@ -34,6 +34,12 @@ import { outlineFault, segmentLength, type PlanPoint } from "./room-frame.js";
 export const SURVEY_SCHEMA_VERSION = 2;
 /** How far a wall's recorded length may differ from its outline segment, metres. */
 export const WALL_LENGTH_TOLERANCE = 0.002;
+/**
+ * How far the atlas's row may differ from the heights its strips cover times
+ * its texels per metre, in texels: the tools round a row up to a whole texel
+ * (the Saloon's is exact at 1111; the Grand Hall's 1304 covers 1303.45).
+ */
+export const ATLAS_ROW_TOLERANCE = 1;
 
 /** A published file's name: no folders, nothing to climb out of the room's folder with. */
 const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -163,6 +169,17 @@ function crossChecks(record: Shape): Issue[] {
     issues.push({
       path: ["walls"],
       message: `has ${String(walls.length)} walls but the outline has ${String(outline.length)} segments; there must be one wall per segment, in outline order`,
+    });
+  }
+
+  // A strip is as many texels high as the heights it covers at the atlas's scale. Nothing else ties
+  // `ppm` to the image: a record saying 100 for an atlas packed at 200 would pass every strip's own
+  // checks and dress each wall in a quarter of its strip.
+  const span = (atlas.vRange[1] - atlas.vRange[0]) * atlas.ppm;
+  if (Math.abs(atlas.row - span) > ATLAS_ROW_TOLERANCE) {
+    issues.push({
+      path: ["atlas", "row"],
+      message: `is ${String(atlas.row)} texels, but vRange [${String(atlas.vRange[0])}, ${String(atlas.vRange[1])}] at ${String(atlas.ppm)} texels per metre is ${span.toFixed(2)}: a strip's height must be the heights it covers, to within ${String(ATLAS_ROW_TOLERANCE)} texel`,
     });
   }
 

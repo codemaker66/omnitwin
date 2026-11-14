@@ -174,6 +174,24 @@ describe("survey.json, schema version 2", () => {
     expect(faults(narrow)).toEqual(['walls[0].atlas: wall "front" (7.008 m at 200 texels per metre) is wider than its 1400-texel strip']);
   });
 
+  it("refuses an atlas whose row is not the heights its strips cover at its texels per metre", () => {
+    // 100 texels per metre for an atlas packed at 200: every strip's own checks pass, and each wall would wear a quarter of its strip.
+    const halved = saloon();
+    halved.atlas.ppm = 100;
+    expect(faults(halved)).toEqual([
+      "atlas.row: is 1111 texels, but vRange [-0.02, 5.535] at 100 texels per metre is 555.50: a strip's height must be the heights it covers, to within 1 texel",
+    ]);
+    // A texel either way is the tools' rounding (the Grand Hall's row of 1304 covers 1303.45).
+    const rounded = saloon();
+    rounded.atlas.row = 1112;
+    for (const wall of rounded.walls) wall.atlas[3] = 1112;
+    expect(parseSurveyRecord(rounded).atlas.row).toBe(1112);
+    const twoOut = saloon();
+    twoOut.atlas.row = 1113;
+    for (const wall of twoOut.walls) wall.atlas[3] = 1113;
+    expect(faults(twoOut)).toHaveLength(1);
+  });
+
   it("refuses a relief order that is not exactly the walls' relief ids", () => {
     const missing = saloon();
     missing.relief.order.pop();
