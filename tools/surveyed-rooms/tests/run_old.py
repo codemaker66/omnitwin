@@ -13,6 +13,10 @@ import runpy
 import sys
 
 SURVEY = os.path.dirname(os.path.abspath(sys.argv[1]))
+if os.path.basename(sys.argv[1]) == "label-views.py":
+    # as build.sh runs it: one BLAS thread, set here because numpy loads (with project) before the script does
+    for name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+        os.environ[name] = "1"
 sys.path.insert(0, SURVEY)
 import project  # noqa: E402
 

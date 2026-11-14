@@ -373,6 +373,10 @@ def static(room_path, manifest_path):
     c.same("build.sh's scripts, in order = the driver's steps, in order", old_steps, new_steps)
     c.same("build.sh flags: fix-corners.py --positions-only, project-walls.py --labels, pack-detail.py --atlas proj",
            [True, True, True], [bool(re.search(p, build_sh)) for p in (r'fix-corners\.py" --positions-only', r'project-walls\.py" "\$wall" --labels', r'pack-detail\.py" --atlas proj')])
+    step_runner = load_path("roombuild_step", os.path.join(HERE, "roombuild", "step.py"))
+    c.same("build.sh scripts run with one BLAS thread = the driver's steps run with one",
+           re.findall(r'OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 python3 "\$SURVEY/([\w-]+\.py)"', build_sh),
+           [alias[s] for s in step_runner.SINGLE_BLAS_STEPS])
     c.same("build.sh walls with canvases (canvas-veil.py runs for all four; these write a field)", sorted(cvc["CANVASES"]),
            sorted(argv[6] for argv in driver.commands(room)["walls"] if argv[4] == "canvases"))
     c.same("build.sh against the published survey: pack-atlas.py --alpha-from, as survey.atlas.alphaFrom", "published" if "--alpha-from \"$PUBLISH\"" in build_sh else None,

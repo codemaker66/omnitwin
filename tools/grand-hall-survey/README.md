@@ -32,7 +32,13 @@ Playwright from `packages/web` and `packages/reconstruction-foundry`); Chromium 
 measuring page (Playwright's own, or set `CHROMIUM_PATH`). The work directory needs about 3 GB.
 On four cores the walls' labels take about 40 minutes and their photographs about 8, each step
 under 1.3 GB of memory; the ceiling, dome and floor's projection takes most of the rest of the
-build's two hours. Two runs of the walls give byte-identical labels, orthophotos and atlases. The
+build's two hours. Two runs of the walls give byte-identical labels, orthophotos and atlases.
+`label-views.py` runs each station's bands on four threads (`SURVEY_THREADS`) and holds BLAS to one
+thread: it sets `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS` and `MKL_NUM_THREADS` to 1 before numpy
+loads, and `build.sh` sets the same. With BLAS running threads of its own under the four bands, their
+concurrent matrix products deadlocked or crashed on Windows (OpenBLAS 0.3.31: three runs of four on
+the end wall, 13-14 November 2026, the stall inside `project.depth_lookup`), and the extra threads
+only oversubscribed the cores. The
 walls' 2 mm detail takes about 15 minutes more (2.5 to 5.3 a wall, at most 1.25 GB), and two runs give
 byte-identical tiles. The portraits' varnish veil takes about a minute and a quarter a canvas (each
 panorama that saw it read once, under 0.8 GB); two runs give byte-identical corrections.

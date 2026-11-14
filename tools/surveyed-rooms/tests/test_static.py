@@ -329,6 +329,39 @@ class Refusals(unittest.TestCase):
         self.assertIn("SURVEYED_ROOMS_NODE_ROOT", publish.publish_problems(node)[0])
 
 
+class OneBlasThread(unittest.TestCase):
+    """The labels' band threads each call BLAS, and BLAS threads of its own under them deadlocked: every
+    entry point holds BLAS to one thread for that step, before numpy loads."""
+    NAMES = ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")
+
+    @staticmethod
+    def source(*parts):
+        with open(os.path.join(ROOMS, *parts), encoding="utf-8") as f:
+            return f.read()
+
+    def test_the_step_runner_sets_it_for_labels_before_numpy_loads(self):
+        path = os.path.join(ROOMS, "roombuild", "step.py")
+        spec = importlib.util.spec_from_file_location("roombuild_step", path)
+        step = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(step)
+        env = {"OPENBLAS_NUM_THREADS": "4"}
+        self.assertEqual(step.hold_blas("labels", env), {n: "1" for n in self.NAMES})
+        self.assertEqual(env, {n: "1" for n in self.NAMES})
+        env = {"OPENBLAS_NUM_THREADS": "4"}
+        self.assertEqual(step.hold_blas("atlas", env), {})
+        self.assertEqual(env, {"OPENBLAS_NUM_THREADS": "4"})
+        src = self.source("roombuild", "step.py")
+        self.assertLess(src.index("hold_blas(sys.argv[1])"), src.index("from roombuild import"))
+
+    def test_the_old_script_its_build_and_its_test_runner_set_it_too(self):
+        script = self.source("..", "grand-hall-survey", "label-views.py")
+        self.assertLess(script.index("os.environ[_name] = '1'"), script.index("import numpy"))
+        build_sh = self.source("..", "grand-hall-survey", "build.sh")
+        self.assertIn('OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 python3 "$SURVEY/label-views.py"', build_sh)
+        runner = self.source("tests", "run_old.py")
+        self.assertLess(runner.index('os.environ[name] = "1"'), runner.index("import project"))
+
+
 class SubCommands(unittest.TestCase):
     """--list, --only and --resume: a caller can run one sub-command at a time (taking whatever
     lock it must round each), and a stopped build picks up where it left off."""

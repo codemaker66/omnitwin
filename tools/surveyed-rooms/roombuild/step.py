@@ -11,6 +11,25 @@ pack-floor <in.npz> <out-dir> | detail <wall> | pack-detail
 import os
 import sys
 
+# A step whose band threads each call numpy's BLAS gets one BLAS thread, as build.sh gives label-views.py
+# (which says why: BLAS threads under concurrent callers deadlocked). OpenBLAS reads the setting when
+# numpy first loads, so it is made here, before any import that loads numpy.
+SINGLE_BLAS_STEPS = ('labels',)
+BLAS_THREAD_VARIABLES = ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS')
+
+
+def hold_blas(step, environ=os.environ):
+    """Sets one BLAS thread in `environ` for a step that needs it; returns what it set."""
+    if step not in SINGLE_BLAS_STEPS:
+        return {}
+    for name in BLAS_THREAD_VARIABLES:
+        environ[name] = '1'
+    return {name: '1' for name in BLAS_THREAD_VARIABLES}
+
+
+if __name__ == '__main__' and len(sys.argv) > 1:
+    hold_blas(sys.argv[1])
+
 ROOMS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOMS not in sys.path:
     sys.path.insert(0, ROOMS)
