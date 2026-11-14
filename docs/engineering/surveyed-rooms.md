@@ -8,7 +8,8 @@ everything from a record published with the room's files. The Grand Hall's code 
 untouched; the two paths share only pieces that were already room-neutral.
 
 Code: `packages/web/src/components/surveyed-room/`. Version 1 (13 November 2026) draws a room on a
-development page. It is not mounted in the planner yet, and no room is listed in the registry.
+development page. Since 14 November it is also mounted in the planner's scene, behind a per-device
+switch ([In the planner](#in-the-planner)). No room is listed in the registry yet.
 
 ## What draws a room
 
@@ -19,11 +20,15 @@ development page. It is not mounted in the planner yet, and no room is listed in
 | `relief-container.ts` | Reads a GHR1 relief file for any ids | no |
 | `room-atlas.ts` | A wall-local point's place in the wall atlas | no |
 | `room-registry.ts` | Which rooms are surveyed, and the per-device switch | no |
+| `room-visibility.ts` | Which walls, and whether the ceiling, the camera's side lets it see | no |
+| `room-status.ts` | How the planner's surveyed room stands, and the caption's words for it | no |
+| `use-planner-surveyed-room.ts` | Which survey the planner's room has, loaded and published | no |
 | `load-survey.ts` | Fetches and checks one record, with typed failures | no |
 | `room-geometry.ts` | Walls, ceiling and floor as plain typed arrays | no |
 | `use-surveyed-room.ts` | Loads record and reliefs, builds the surfaces, one typed state | no |
 | `room-lab.ts` | The development page's query and camera poses | no |
-| `room-buffers.ts` | The arrays as three geometries | yes |
+| `room-buffers.ts` | The arrays as three geometries, and which walls of them are drawn | yes |
+| `room-sight.ts` | Keeps what is drawn in step with the camera's side | yes |
 | `room-photos.ts` | The photographs: placeholders, off-thread decode, swap, disposal | yes |
 | `room-materials.ts` | Three unlit photograph materials (TSL) and their grade | yes |
 | `SurveyedRoomModel.tsx` | The React Three Fiber component | yes |
@@ -40,10 +45,11 @@ A room is three draws: its walls (every wall in one geometry), its ceiling and i
 - **Floor.** The outline at y = 0, cut into triangles by ear clipping, since an outline need not be
   convex (the Saloon's has four reflex corners). Its photograph covers `floor.extent`.
 - **Facing.** Every triangle is counter-clockwise seen from inside the room and only front faces are
-  drawn, so a wall is seen from inside and vanishes from outside: an orbiting camera looks in
-  through the walls nearest it, with no cutaway. A relief wound the other way would draw as nothing,
-  so it is refused by name. Real reliefs keep a few slivers folded back on their steps (1.5% of the
-  Grand Hall's triangles, 0.1% of its area); the test is on the whole surface.
+  drawn, so a flat wall is seen from inside and vanishes from outside. A relief wound the other way
+  would draw as nothing, so it is refused by name. Real reliefs keep a few slivers folded back on
+  their steps (1.5% of the Grand Hall's triangles, 0.1% of its area); the test is on the whole
+  surface. Front faces alone leave a wall's relief floating when the wall is seen from behind, so
+  whole surfaces are also taken away by the camera's side (next section).
 - **Photographs.** Shown as taken: they hold the light of the day of the scan. The grade is three
   uniforms (`RoomGradeUniforms`): `exposure` and `tint` over the room, and `glow`, which the walls'
   glass is multiplied by in their place. The atlas's alpha marks glass (255 − 127 × glass), and
@@ -54,6 +60,118 @@ A room is three draws: its walls (every wall in one geometry), its ceiling and i
   2.5 levels, or 4 for a wall face turned up or down. A face's direction comes from its position's
   screen derivatives, never from the normal (reading the normal in an unlit material's colour upset
   the pass's normal target in the hall).
+
+## What the camera's side takes away
+
+Seen from outside and above, where the planner's cameras usually are, a wall's flat face is culled
+but the tops of its cornice, the sides of its piers and the returns of its bays still face the
+camera, and floated as ribbons where the wall should have gone (seen on 14 November). So
+(`room-visibility.ts`, plain numbers in the room's own frame):
+
+- **A wall is drawn while the camera is on its plane or in front of it, and not once the camera is
+  behind it.** The plane is the wall's outline segment, depth 0 of its relief, whatever stands
+  proud of it (the Saloon's relief stands up to 0.9 m proud and 0.8 m back).
+- **A short wall goes with its neighbours.** A wall of `RETURN_MAX_LENGTH` (0.6 m) or less, a
+  bay's return, is also not drawn while the camera is behind both its neighbours' planes: it faces
+  along the side that has gone and would stand alone as a strip. A longer wall between two that
+  have gone is a wall of the room (the side of an L's arm) and stays.
+- **The ceiling is not drawn while the camera is above its height** (its relief's reference, or a
+  flat ceiling's own).
+
+The plain shell decides the same way (`stores/visibility-store.ts`): the camera's signed distance
+from each wall's plane, the wall gone at or past it. What does not carry over: its fade (these are
+opaque photographs in the scene pass, with its normal and motion outputs and no blending to fade
+through), its four walls by compass side (here one plane a wall), and its Cut and Full modes (a
+surveyed wall has no body to show from behind, so it is always cut by the camera's side).
+
+Edge cases, on purpose. A camera exactly on a plane sees that wall edge-on: its flat face covers
+nothing and its relief's sides are seen truly, so it is drawn; the rule keeps no state, so a still
+camera never flickers. A wall pops as the camera crosses its plane, which is where its face covers
+least; what is left to pop is its relief's profile. A camera behind a wall's plane but inside the
+room (an outline need not be convex) loses only walls turned from it. A camera inside a recess
+deeper than the wall's plane (a window's reveal) loses that wall; the planner's cameras do not
+stand there.
+
+**How the walls are switched** (`room-buffers.ts`). The walls stay one mesh, one material and one
+draw: the indices of the walls to draw are packed to the front of the walls' index and the draw
+range covers them; the ceiling's draw range is all or nothing. A draw range is what three both
+draws and raycasts, so a surface that is not drawn is not met by a measuring ray either. One mesh
+a wall would be a draw, a render object and a set of uniforms a wall in every pass, and three
+raycasts a mesh whether or not it is visible; geometry groups need a material array, which no
+other mesh of the planner has. The cost here is writing the index again when the set of walls
+changes, a few times in an orbit (the Saloon's is 75,651 indices, 0.3 MB). The walls' index is a
+32-bit copy of its own from the start: three r186's WebGPU backend replaces a 16-bit index array
+with a 32-bit copy at first upload, after which writes to the first array would reach nothing.
+
+**When it is decided** (`room-sight.ts`, `SurveyedRoomModel`). Each frame before it is drawn, and
+written to the buffers only when the camera has changed sides. A camera moved later in the same
+frame, by an owner whose turn comes after the room's, is drawn once as from where it was; the
+model sees that after the frame and asks for one more, so the view never rests on the wrong walls
+whatever order the frame's subscribers run in.
+
+## In the planner
+
+`components/editor/PlannerScene.tsx` draws a surveyed room in place of the plain shell when all of
+these hold (`use-planner-surveyed-room.ts`):
+
+- this device has asked for surveyed rooms: `?rooms=surveyed`, remembered; `?rooms=plain` turns
+  it off again;
+- the room is listed in the registry under its space's slug;
+- the space's venue has been read and is Trades Hall. Another venue's room of the same slug, or a
+  venue not yet read or unreadable, keeps the shell. (The Grand Hall is never asked about: it keeps
+  its own model.)
+
+Where the switch is off, or the room has no survey, nothing changes and nothing is asked of
+anyone: no venue is read and nothing is fetched.
+
+- **Loading.** The plain shell stays, on its parchment, until the survey's record and reliefs have
+  loaded and its surfaces are built; then the surveyed room takes its place in one step, in a plain
+  tone, and its photographs follow. The room never blanks.
+- **Failing.** If the survey cannot be loaded the shell stays and the planner says so through its
+  quiet caption (`editor/cockpit/RoomResolveCaption.tsx`, the one that speaks for a capture and for
+  the Grand Hall's surfaces): "The surveyed Saloon could not load, so the room is drawn plainly.
+  Planning is unaffected." The file and reason are kept in `stores/surveyed-room-store.ts` for a
+  developer. The same caption counts the files and then the photographs in, with the shared
+  Activity motion only while something is arriving, and keeps a still note if a photograph failed.
+  On a phone, where the caption is otherwise kept off the stage, a failure still shows.
+- **Surround, fog, camera response.** A surveyed room stands as the Grand Hall does: the dark
+  surround (`#120e0b`), no fog, and the Neutral tone curve that leaves photographs as taken
+  (`CaptureToneMapping`'s `photographedRoom`; under the planner's default film curve they would be
+  regraded). With its near walls and ceiling taken away the surround shows through every opening,
+  and photographs of a lit interior hold against a dark ground, not against paper brighter than
+  they are. The blueprint ink is not drawn over it. All of this follows what is drawn: while the
+  shell stands (loading, failed) the scene is the plain room's.
+- **Light.** The photographs are unlit. The furniture keeps the planner's own rig for a plain room
+  (`RoomLighting`'s hemisphere and ambient), now under the Neutral curve.
+- **Unchanged.** Where furniture may stand, the room's bounds, snapping, the camera's limits and
+  opening view, and what is saved all come from the room's data (`data/room-geometries.ts` and the
+  space), not from how it is drawn. The Saloon's surveyed outline (12.19 m by 7.47 m with two
+  0.24 m bays) is not the planner's Saloon (11.9 m by 6.9 m with four alcoves); replacing a room's
+  outline data is a separate piece of work.
+- **Not wired to a surveyed room in this version:** the walls' Cut and Full control and a wall's
+  click (the plain shell's), the section plane's cut, and the shell's metre grid on the floor.
+
+### A staged survey, in development builds
+
+`?roomsBase=<public folder>&roomsRev=<revision>` (with `?rooms=surveyed`) stands in for the
+registry's entry for whichever room is open, so a staged survey can be seen in the planner without
+listing it. The folder's record must be that room's own. Production builds ignore both parameters
+(`plannerSurveyedRoomAsk` is handed `import.meta.env.DEV`).
+
+`/dev/planner-lab` shows the planner's scene with a made-up space and no API; `?space=saloon` makes
+that space Trades Hall's Saloon (`pages/planner-lab-rooms.ts`), so:
+
+    /dev/planner-lab?space=saloon&rooms=surveyed&roomsBase=/rooms/saloon/survey-2026-07-11&roomsRev=1
+
+is the planner's scene with the surveyed Saloon, from the planner's own cameras.
+`window.__plannerLab.ready()` is true once the survey is drawn with every photograph in or failed,
+or has failed; `surveyedRoom()` returns its status (the failure's file and reason included);
+`pose(position, target)` glides the planner's camera. `scripts/planner-lab.mjs` captures it:
+
+    node scripts/planner-lab.mjs --base http://127.0.0.1:5362 --out <folder> --frames 0 \
+      --space saloon --roomsBase /rooms/saloon/survey-2026-07-11
+
+writes the planner's opening view, a plan view and a view in from beyond each of the four sides.
 
 ## The `survey.json` contract (schema version 2)
 
@@ -160,8 +278,7 @@ Rules the room's materials keep for the planner's pipeline:
 ## What version 1 leaves out
 
 On purpose: the walls' 2 mm detail tiles, relighting by baked light channels (so no moods beyond
-the grade), wall bodies and section cut lines, light fittings, doors, the sun and sky, walk mode,
-and mounting in the planner. Also not done: verifying files' SHA-256, average-colour placeholders
+the grade), wall bodies and section cut lines, light fittings, doors, the sun and sky and walk mode. Also not done: verifying files' SHA-256, average-colour placeholders
 (the record would need to carry them), and removing ambient occlusion from glowing glass (the
 pass's occlusion weight is 1 on every room surface, as on the hall's photographed glazing).
 
@@ -221,7 +338,35 @@ development page in headless Chrome over WebGPU on an NVIDIA RTX 4090. The room 
 the right way round; the floor's hearth lay at the fireplace and its bays at the windows; and the
 walls were culled from outside.
 
+- `__tests__/room-visibility.test.ts`: the rule as plain logic, on a box, an L, a stepped side and
+  the Saloon's outline: each side from outside, a corner, a camera on a plane and a millimetre
+  behind it, a bay's returns with and without their neighbours, inside a bay, the ceiling, and the
+  packing of the drawn walls' indices.
+- `__tests__/room-sight.test.ts`: writes only on a change of side, says when the camera has moved
+  on since, reads the camera in the room's own frame; the buffers' draw ranges, the index's upload,
+  and that a wall or ceiling not drawn is not met by a ray.
+- `__tests__/SurveyedRoomModel.test.tsx` also drives real frames: the ranges follow the camera, and
+  a camera moved after the room's turn gets exactly one more frame.
+- `__tests__/use-planner-surveyed-room.test.ts`: the switch, the registry's injectable table, the
+  staged folder and that a production build ignores it, the venue, a failure, another room's
+  survey, and the caption's words.
+- `editor/__tests__/PlannerScene.surveyed-room.test.tsx`: in the manner of `PlannerScene.test.tsx`,
+  what the scene draws: the shell exactly as today with the switch off or no survey, the shell
+  until ready and the surveyed room after, the shell and the note on failure, another venue's room,
+  a production build, the Grand Hall left alone, a history preview.
+
+Seen in the planner's scene: nothing yet. What only a render can prove of the mount: that the
+near walls and ceiling go with nothing of them left floating from the planner's opening view, a
+plan view and each side; how a wall's pop reads during an orbit; that the index's upload under
+WebGPU draws the right walls (three's change detection and `writeBuffer` path were read, not run);
+the swap from the shell on parchment to the room in its dark surround; the furniture under the
+Neutral curve with the plain rig; and the caption in place.
+
 What only a render can prove, and has not been proven on a device: the placeholder's swap,
 disposal after a device loss, the WebGL2 fallback, the normal and motion targets as the passes
-read them (`?pipeline=ao`), and the edge-on softening's look near a strip's edge (a face that
-takes a mip 2.5 to 4 levels coarser reads texels 6 to 16 wide, and a strip's gutter is 8).
+read them (`?pipeline=ao`), and the edge-on softening's look near a strip's edge. A face softened by 2.5 to 4 mip levels reads
+texels 6 to 16 base texels wide (twice that across a bilinear pair), and a strip's gutter is 8. In
+the Saloon's staged atlas each strip's edge is repeated 4 texels into the gutter with its own
+alpha (opaque where the edge is wall), so a gutter does not itself read as glass; but such a face
+within about 16 texels (8 cm) of its strip's edge blends in the neighbouring strip, its glass
+included. At the default grade glass and wall are drawn alike, so only the colour could show.
