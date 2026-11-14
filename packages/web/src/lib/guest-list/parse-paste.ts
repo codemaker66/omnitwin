@@ -209,6 +209,8 @@ interface Guess {
   readonly partyColumn: number | null;
 }
 
+const NO_HEADER_GUESS: Guess = { nameColumn: 0, secondNameColumn: null, partyColumn: null };
+
 function guessColumns(header: readonly string[]): Guess {
   const nameColumn =
     findColumn(header, (cell) => NAME_HEADING.test(cell) && !SECOND_NAME_HEADING.test(cell)) ??
@@ -235,10 +237,10 @@ export function parsePaste(text: string): ParsedPaste {
   const all = readCells(text);
   const columnCount = all.reduce((widest, row) => Math.max(widest, row.length), 0);
   const first = all[0];
-  const hadHeader = first !== undefined && first.some((cell) => HEADER_CELL.test(cell));
-  const rows = hadHeader ? all.slice(1) : all;
-  const guess: Guess = hadHeader && first !== undefined ? guessColumns(first) : { nameColumn: 0, secondNameColumn: null, partyColumn: null };
-  return { rows, columnCount, hadHeader, ...guess };
+  const header = first !== undefined && first.some((cell) => HEADER_CELL.test(cell)) ? first : null;
+  const rows = header === null ? all : all.slice(1);
+  const guess: Guess = header === null ? NO_HEADER_GUESS : guessColumns(header);
+  return { rows, columnCount, hadHeader: header !== null, ...guess };
 }
 
 // ---------------------------------------------------------------------------
