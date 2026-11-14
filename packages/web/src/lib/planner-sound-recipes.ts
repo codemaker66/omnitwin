@@ -90,6 +90,14 @@ export interface PlannerSoundRecipe {
   readonly voices: readonly PlannerSoundVoice[];
 }
 
+/**
+ * The palette's touch level in dBFS: the mean of the two set-down peaks
+ * (planner-set-table at -20, planner-set-chair at -24). The modal set-downs
+ * (lib/set-down/render.ts) anchor their level here, so a rebalance of the
+ * palette moves them with it.
+ */
+export const PLANNER_TOUCH_DB = -22;
+
 const SET_DOWN_VARY = { pitch: 0.03, levelDb: 1 } as const;
 /** No sound, of any kind, plays within this of its own last play. */
 export const PLANNER_SOUND_MIN_GAP_MS = 45;
