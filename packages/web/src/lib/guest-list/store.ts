@@ -53,8 +53,12 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
   }
 
   async function save(list: GuestList, loadedUpdatedAt: string | null): Promise<Saved> {
+    // A list that open would refuse is never written; the stored copy stays as it was.
+    const checked = GuestListSchema.safeParse(list);
+    if (!checked.success) return "not-kept";
+    const toStore = checked.data;
     try {
-      const stored = await handle.get(list.planId);
+      const stored = await handle.get(toStore.planId);
       let newerCopy = false;
       if (stored !== null) {
         const parsed = GuestListSchema.safeParse(stored.value);
@@ -64,7 +68,12 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
             !(Date.parse(parsed.data.updatedAt) <= Date.parse(loadedUpdatedAt));
         }
       }
-      await handle.put(list.planId, list);
+      await handle.put(toStore.planId, toStore);
+      // Read back: put resolves before the browser commits, so a quota failure would otherwise pass as "saved".
+      const back = await handle.get(toStore.planId);
+      if (back === null) return "not-kept";
+      const kept = GuestListSchema.safeParse(back.value);
+      if (!kept.success || kept.data.updatedAt !== toStore.updatedAt) return "not-kept";
       return newerCopy ? "newer-copy-kept-ours" : "saved";
     } catch {
       return "not-kept";
@@ -86,13 +95,14 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
       for (const row of rows) {
         const parsed = GuestListSchema.safeParse(row.stored.value);
         if (!parsed.success) continue;
-        const removeFrom = Date.parse(`${deleteAfter(parsed.data).dateIso}T00:00:00.000Z`);
-        if (nowMs < removeFrom) continue;
         try {
+          const removeFrom = Date.parse(`${deleteAfter(parsed.data).dateIso}T00:00:00.000Z`);
+          // Fails safe: a removal moment that cannot be read never removes a list.
+          if (!(nowMs >= removeFrom)) continue;
           await handle.delete(row.key);
           removed += 1;
         } catch {
-          // This one could not be removed; carry on with the rest.
+          // This one could not be worked out or removed; carry on with the rest.
         }
       }
     } catch {
@@ -104,13 +114,21 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
   return { open, save, erase, sweep };
 }
 
+/** A handle for a browser with no IndexedDB: every call is refused, so the store answers "not-kept". */
+function unavailableHandle(): CacheHandle<unknown> {
+  const refuse = (): Promise<never> => Promise.reject(new Error("storage unavailable"));
+  return { get: refuse, put: refuse, delete: refuse, list: refuse };
+}
+
 let cachedStore: GuestListStore | null = null;
 
-/** The device store, made once. */
+/** The device store, made once. Without IndexedDB it keeps nothing and says so. */
 export function guestListStore(): GuestListStore {
   if (cachedStore !== null) return cachedStore;
   cachedStore = createGuestListStore(
-    openCache<unknown>({ dbName: GUEST_LIST_DB, storeName: GUEST_LIST_STORE }),
+    typeof indexedDB === "undefined"
+      ? unavailableHandle()
+      : openCache<unknown>({ dbName: GUEST_LIST_DB, storeName: GUEST_LIST_STORE }),
   );
   return cachedStore;
 }
