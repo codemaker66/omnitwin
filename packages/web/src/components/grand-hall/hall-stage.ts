@@ -1,3 +1,4 @@
+import type { SpringConfig } from "../../lib/springs.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WIDTH } from "./hall-spec.js";
 
 // ---------------------------------------------------------------------------
@@ -66,6 +67,18 @@ const PLAN_FOV_DEG = 36;
 export const PLAN_MAX_HEIGHT_M = 32;
 /** Plan looks from just inside the orbit's steepest angle (MIN_POLAR_ANGLE, 0.1). */
 const PLAN_LEAN = Math.tan(0.107);
+/**
+ * The camera squaring itself up as it lands on the stage: firm, settled in a
+ * third of a second with no overshoot to see. A setting for the shared spring
+ * (lib/springs.ts, stepSpring), never a second spring. The numbers are the
+ * shared table's (SPRING_PRESETS.sheetSettle), written again here for as long
+ * as the stage is behind a flag: nothing else in production uses that entry
+ * yet, so the bundler leaves it out of the table, and reading it from here put
+ * it back, in a shared file nine of the build's other files import
+ * (14 Nov 2026). The stage's tests hold these to the table's own numbers. When
+ * the stage is the planner's own view, read the table again.
+ */
+export const STAGE_SQUARING_SPRING: SpringConfig = { stiffness: 300, damping: 30 };
 
 export interface StageLens {
   /** Vertical field of view, degrees. */

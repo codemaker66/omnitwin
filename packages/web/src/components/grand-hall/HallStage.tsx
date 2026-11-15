@@ -30,12 +30,12 @@ import { MAX_POLAR_ANGLE } from "../../lib/camera-rig.js";
 import { clearLensShift, lensShift, setLensShift } from "../../lib/lens-shift.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { DRAG_THRESHOLD_PX, screenDistance } from "../../lib/selection.js";
-import { isSpringSettled, SPRING_PRESETS, stepSpring, type SpringState } from "../../lib/springs.js";
+import { isSpringSettled, stepSpring, type SpringState } from "../../lib/springs.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useTouchGestureStore } from "../../stores/touch-gesture-store.js";
-import { hallStageFraming, mixLens, stageLens, stagePoseAt, type HallStageFraming, type StageLens } from "./hall-stage.js";
+import { hallStageFraming, mixLens, STAGE_SQUARING_SPRING, stageLens, stagePoseAt, type HallStageFraming, type StageLens } from "./hall-stage.js";
 import { HALL_VIEW_POSES } from "./HallViewDirector.js";
 
 type Vec3 = readonly [number, number, number];
@@ -400,7 +400,7 @@ export function HallStage(): null {
     }
     if (own.mode === "squaring") {
       const spring = own.squared;
-      if (spring.value < 1) stepSpring(spring, 1, Math.min(delta, MAX_STEP_S), SPRING_PRESETS.sheetSettle);
+      if (spring.value < 1) stepSpring(spring, 1, Math.min(delta, MAX_STEP_S), STAGE_SQUARING_SPRING);
       if (spring.value >= 1 || isSpringSettled(spring, 1)) {
         hold(own, camera, controls, stage);
       } else {

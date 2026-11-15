@@ -453,4 +453,53 @@ describe("the planner HUD stays behind its flag (T-723)", () => {
     const model = await readSource("src/components/grand-hall/GrandHallModel.tsx");
     expect(model.codeOnly).toMatch(/from\s+["']\.\/hall-stage-cuts\.js["']/);
   });
+
+  /** The pages the router builds only in development: the dynamic imports inside devFixtureRoutes, as paths from src/. */
+  async function developmentOnlyPages(): Promise<readonly string[]> {
+    const router = await readSource("src/router.tsx");
+    // The gate that keeps them out of every production build.
+    expect(router.codeOnly).toMatch(/import\.meta\.env\.DEV\s*\?\s*devFixtureRoutes\(\)\s*:\s*\[\]/);
+    const body = /function devFixtureRoutes\(\)[^{]*\{([\s\S]*?)\n\}/.exec(router.codeOnly)?.[1] ?? "";
+    return Array.from(body.matchAll(/import\(["']\.\/(pages\/[^"']+)\.js["']\)/g), (match) => `${match[1] ?? ""}.tsx`);
+  }
+
+  it("reads nothing from shared code that only the HUD would bring into a production build", async () => {
+    // The bundler leaves out of a shared module whatever nothing in production reads: an export, or one entry of a
+    // table. Its first production reader puts it back, into the file that module is built into, for every page that
+    // fetches that file; a reader fetched on demand does it as surely as any other. Building this branch and master
+    // from one tree and reading each file's modules (14 Nov 2026) found three: the hand's card pictures
+    // (setupCardPreviewUrl, in a file fifteen others import), two entries of the spring table (in one nine import)
+    // and the hall's list of lights (in the planner's own file). So the HUD keeps a copy of each, held to its
+    // original by a test beside it, until it is the planner. This reads sources, so it is a tripwire for those
+    // three and for the spring table; the two builds are the proof.
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const devOnly = await developmentOnlyPages();
+    for (const page of [...DEV_ONLY, "pages/FurnitureLabPage.tsx", "pages/GrandHallLabPage.tsx"]) expect(devOnly).toContain(page);
+
+    const hudSprings = new Map<string, string[]>();
+    const otherSprings = new Set<string>();
+    const offenders: string[] = [];
+    let hudFiles = 0;
+    for (const entry of await fs.readdir(path.resolve("src"), { recursive: true })) {
+      const file = entry.replace(/\\/g, "/");
+      if (!/\.tsx?$/.test(file) || /(^|\/)__tests__\//.test(file) || /\.test\.tsx?$/.test(file) || devOnly.includes(file)) continue;
+      const { codeOnly } = await readSource(`src/${file}`);
+      const springs = Array.from(codeOnly.matchAll(/\bSPRING_PRESETS\.(\w+)/g), (match) => match[1] ?? "");
+      if (!isHudOnly(file.replace(/\.tsx?$/, ".js"))) {
+        for (const name of springs) otherSprings.add(name);
+        continue;
+      }
+      hudFiles += 1;
+      for (const name of springs) hudSprings.set(name, [...(hudSprings.get(name) ?? []), file]);
+      for (const name of codeOnly.match(/\b(?:setupCardPreviewUrl|setupCardLook|HALL_MOOD_NAMES)\b/g) ?? []) offenders.push(`${file} reads ${name}`);
+    }
+    for (const [name, files] of hudSprings) {
+      if (!otherSprings.has(name)) offenders.push(`${files.join(", ")}: SPRING_PRESETS.${name}, which nothing else in production reads`);
+    }
+    // The walk found the HUD's sources, and the rest of the planner's springs to compare them with.
+    expect(hudFiles).toBeGreaterThanOrEqual(20);
+    expect(otherSprings.size).toBeGreaterThan(5);
+    expect(offenders).toEqual([]);
+  });
 });

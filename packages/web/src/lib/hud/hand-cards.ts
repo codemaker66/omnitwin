@@ -1,6 +1,5 @@
 import { getCatalogueItem, getCatalogueItemBySlug } from "../catalogue.js";
 import { countLabel } from "../count-label.js";
-import { setupCardPreviewUrl } from "../crafted-furniture.js";
 import { isDiningTableItem } from "../furniture-semantics.js";
 import type { PlacedItem } from "../placement.js";
 import {
@@ -14,6 +13,7 @@ import {
 } from "../setup-cards.js";
 import { isSceneFurniturePlacement } from "../table-dressing.js";
 import type { PlannerEventKind } from "../../stores/planner-event-store.js";
+import { handCardPictureUrl } from "./card-pictures.js";
 
 // ---------------------------------------------------------------------------
 // The hand: the cards along the bottom of the planner (13 Nov 2026).
@@ -177,7 +177,7 @@ export function handCard(id: CardId, counts: FloorCounts, chairSlug: string): Ha
   const detail = face.seats > 0 ? countLabel(face.seats, "seat") : face.size;
   const art = params.card === "piece"
     ? getCatalogueItemBySlug(params.slug)?.thumbnailUrl ?? null
-    : setupCardPreviewUrl(params, chairSlug);
+    : handCardPictureUrl(params, chairSlug);
   return { id, params, name, detail, art, placed: placedFor(id, counts) };
 }
 

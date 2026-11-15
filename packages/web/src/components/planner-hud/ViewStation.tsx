@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { HALL_MOOD_NAMES, type HallMoodName } from "../grand-hall/hall-mood.js";
+import type { HallMoodName } from "../grand-hall/hall-mood.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
 import { useHallViewStore, type HallViewPreset } from "../../stores/hall-view-store.js";
 import { usePlannerHudStore } from "../../stores/planner-hud-store.js";
@@ -24,12 +24,27 @@ const MOOD_WORDS: Readonly<Record<HallMoodName, string>> = {
   candlelight: "Candlelight",
 };
 
+/**
+ * The light a press goes to from each: round the three, in the order the hall
+ * names them (hall-mood.ts, HALL_MOOD_NAMES). Said here as a map of its own,
+ * which the compiler holds to every light there is and
+ * __tests__/view-station.test.tsx holds to that order: only this screen reads
+ * the list in production, so importing it added it to the planner's own
+ * download for everyone (the design note, "Behind its flag, and nothing
+ * more").
+ */
+const NEXT_MOOD: Readonly<Record<HallMoodName, HallMoodName>> = {
+  daylight: "evening",
+  evening: "candlelight",
+  candlelight: "daylight",
+};
+
 export function ViewStation(): ReactElement {
   const hall = useModelledGrandHall();
   const activePreset = useHallViewStore((state) => state.activePreset);
   const mood = useHallViewStore((state) => state.mood);
   const toolsOpen = usePlannerHudStore((state) => state.sheet === "tools");
-  const nextMood = HALL_MOOD_NAMES[(HALL_MOOD_NAMES.indexOf(mood) + 1) % HALL_MOOD_NAMES.length] ?? "daylight";
+  const nextMood = NEXT_MOOD[mood];
   return (
     <div className="hud-view" role="group" aria-label="The view">
       {hall ? (

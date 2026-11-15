@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { canRedo, canUndo, redoLabel, undoLabel } from "../../lib/editor-history.js";
 import { plannerChairSlug } from "../../lib/furniture-defaults.js";
 import { handCardsFromCounts, type HandCard } from "../../lib/hud/hand-cards.js";
+import { SEAT_LINE_SPRING } from "../../lib/hud/hud-motion.js";
 import { roomStatus, seatLine, type RoomStatus } from "../../lib/hud/room-seals.js";
 import { KEY_PRIORITY, usePlannerKeyBindings, type KeyBinding } from "../../lib/planner-keys.js";
-import { SPRING_PRESETS } from "../../lib/springs.js";
 import { useSpringCssVariable } from "../../lib/use-spring-value.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
@@ -176,7 +176,7 @@ function SeatEdge(): ReactElement {
   const fillRef = useRef<HTMLSpanElement>(null);
   const guests = plane.guests !== null && plane.guests > 0 ? plane.guests : null;
   const fraction = guests === null ? 0 : Math.min(1, plane.seats / guests);
-  useSpringCssVariable(fillRef, "--hud-seat-fill", fraction, SPRING_PRESETS.dialGlide, { unit: "" });
+  useSpringCssVariable(fillRef, "--hud-seat-fill", fraction, SEAT_LINE_SPRING, { unit: "" });
   return (
     <span className="hud-shelf__edge" aria-hidden="true">
       <span ref={fillRef} className="hud-shelf__fill" />
