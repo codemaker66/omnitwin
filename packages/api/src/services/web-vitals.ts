@@ -137,8 +137,9 @@ export const WEB_VITALS_BATCH_MIN_SAMPLES = 10;
 export const WEB_VITALS_BATCH_EVERY_MS = 60 * 60_000;
 
 /** How long a flush waits for the write before it, and for its own, and the
- *  database's bound on each statement: well inside the API's 25-second
- *  shutdown grace. */
+ *  database's bound on each statement: inside the API's 25-second shutdown
+ *  grace (SHUTDOWN_GRACE_MS, index.ts) with about ten seconds to spare for
+ *  requests in flight, which a test holds. */
 export const WEB_VITALS_BATCH_WRITE_TIMEOUT_MS = 15_000;
 
 /** Rows per insert statement: PostgreSQL takes at most 65,535 bind
