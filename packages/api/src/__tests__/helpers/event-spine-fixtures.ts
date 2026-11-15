@@ -1,8 +1,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { z } from "zod";
 import type { EnquiryStatus, OpportunityStage, ProposalStatus } from "@omnitwin/types";
 import type { Database } from "../../db/client.js";
 import * as schema from "../../db/schema.js";
@@ -16,7 +19,9 @@ import type { MutationActor } from "../../services/booking-mutations.js";
 // a spine suite never applies the spine's migration to it. It uses it only as
 // the door to the cluster: openSpineDatabase makes a throwaway database there,
 // migrates it with the repository's own migrator and folder, and close() drops
-// it. The fixtures insert with plain SQL and return ids.
+// it. openSpineDatabaseBefore does the same up to the entry before the spine's
+// migration, for the suite that runs that migration over older rows. The
+// fixtures insert with plain SQL and return ids.
 // ---------------------------------------------------------------------------
 
 const MIGRATIONS = resolve(import.meta.dirname, "../../../drizzle");
@@ -49,6 +54,64 @@ export function platformTarget(): string | undefined {
 
 /** A migrated database of the suite's own on the platform cluster, dropped by close(). */
 export async function openSpineDatabase(label: string): Promise<SpineDatabase> {
+  const opened = await openThrowawayDatabase(label, MIGRATIONS);
+  return { pool: opened.pool, db: drizzle(opened.pool, { schema }), url: opened.url, close: () => opened.close() };
+}
+
+/** A database written before the spine's migration, for the suite that runs that migration over it. */
+export interface SpineDatabaseBefore {
+  readonly pool: Pool;
+  readonly url: string;
+  /** Runs the spine's migration and every one after it, with the real migrator and the repository's folder. */
+  migrateToHead(): Promise<void>;
+  /** Ends the pool and drops the database, once. */
+  close(): Promise<void>;
+}
+
+const JournalSchema = z.object({ entries: z.array(z.object({ tag: z.string() }).passthrough()) }).passthrough();
+
+/**
+ * A database of the suite's own on the platform cluster, migrated up to the
+ * entry before the spine's migration (found by its tag, `*_event_spine_links`,
+ * so a renumbering does not break it), dropped by close(). It is migrated from
+ * a temporary copy of the folder that ends there, removed once it is made.
+ */
+export async function openSpineDatabaseBefore(label: string): Promise<SpineDatabaseBefore> {
+  const journal = JournalSchema.parse(JSON.parse(await readFile(join(MIGRATIONS, "meta/_journal.json"), "utf8")));
+  const isSpine = (tag: string): boolean => tag.endsWith("_event_spine_links");
+  const spine = journal.entries.findIndex((entry) => isSpine(entry.tag));
+  if (spine < 1 || journal.entries.filter((entry) => isSpine(entry.tag)).length !== 1) {
+    throw new Error("The journal must hold exactly one *_event_spine_links migration, after at least one other");
+  }
+  const kept = journal.entries.slice(0, spine);
+  const opened = await (async (): Promise<ThrowawayDatabase> => {
+    const folder = await mkdtemp(join(tmpdir(), "venviewer-spine-before-"));
+    try {
+      await mkdir(join(folder, "meta"));
+      for (const entry of kept) await copyFile(join(MIGRATIONS, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`));
+      await writeFile(join(folder, "meta/_journal.json"), JSON.stringify({ ...journal, entries: kept }));
+      return await openThrowawayDatabase(label, folder);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  })();
+  return {
+    pool: opened.pool,
+    url: opened.url,
+    async migrateToHead() { await migrate(drizzle(opened.pool), { migrationsFolder: MIGRATIONS }); },
+    close: () => opened.close(),
+  };
+}
+
+/** A database of the suite's own on the platform cluster, migrated from the given folder. */
+interface ThrowawayDatabase {
+  readonly pool: Pool;
+  readonly url: string;
+  /** Ends the pool and drops the database, once. */
+  close(): Promise<void>;
+}
+
+async function openThrowawayDatabase(label: string, migrationsFolder: string): Promise<ThrowawayDatabase> {
   const target = platformTarget();
   if (target === undefined) throw new Error("VENVIEWER_PLATFORM_TEST_DATABASE_URL is required");
   const name = `venviewer_spine_${randomBytes(8).toString("hex")}`;
@@ -67,18 +130,16 @@ export async function openSpineDatabase(label: string): Promise<SpineDatabase> {
     pool.on("error", (error: Error & { readonly code?: string }) => { if (error.code !== "57P01") throw error; });
     const [row] = (await pool.query<{ name: string }>("SELECT current_database() AS name")).rows;
     if (row?.name !== name) throw new Error("Connected to the wrong database");
-    await migrate(drizzle(pool), { migrationsFolder: MIGRATIONS });
+    await migrate(drizzle(pool), { migrationsFolder });
   } catch (error) {
     await pool?.end();
     await door.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`).finally(() => door.end());
     throw error;
   }
   const opened = pool;
-  const db: Database = drizzle(opened, { schema });
   let closed = false;
   return {
     pool: opened,
-    db,
     url: url.toString(),
     async close() {
       if (closed) return;

@@ -33,9 +33,14 @@
 --      names and booking titles. Each copy carries a fixed sentence for its
 --      reason and the id of the row it came from, through which the old text
 --      can still be read.
+--   7. spine_join_old_records(), the repeatable join of old records, and one
+--      call of it: each proposal, deal and enquiry with no event joins the one
+--      event a path reaches, goes on the list when paths disagree, or gets an
+--      event of its own when it must have one and nothing reaches any. The
+--      deploy and the nightly workflows call it again.
 --
 -- Re-running the file changes nothing: every step skips what is already in
--- place, and a review row is copied once.
+-- place, a review row is copied once, and the join finds nothing left to do.
 -- ---------------------------------------------------------------------------
 
 SET LOCAL lock_timeout = '5s';
@@ -237,6 +242,461 @@ SELECT
   r."created_at"
 FROM "event_binding_reviews" r
 ON CONFLICT DO NOTHING;
+--> statement-breakpoint
+
+-- 7. The join of old records -------------------------------------------------
+-- The one repeatable step that joins proposals, deals and enquiries made
+-- before the links to their events, never by a guess. It is the only writer
+-- of event_link_joins. It runs below, and again after every release and every
+-- night, beside live writers; run twice, the second run changes nothing.
+--
+-- It takes no table lock: one could deadlock against a writer that has made
+-- an event and is about to write a booking. It walks the records one at a
+-- time, oldest first, and locks each one's own row FOR NO KEY UPDATE (a
+-- deal's enquiry before the deal), reads again under that lock that the
+-- record still has no event and still holds what the decision reads, and that
+-- it is not listed, and only then decides. An event it joins is taken FOR NO
+-- KEY UPDATE last and must still be live. A record a writer has just given an
+-- event, or changed, is left to the next run.
+--
+-- A live event is an events row with deleted_at IS NULL at the record's own
+-- venue. Listed is an open question of the join's own (resolved_at IS NULL,
+-- binding_review_id IS NULL). A listed record is never touched; a deal or a
+-- proposal whose enquiry is listed, and a proposal whose open deal has no
+-- event, wait with it. A question's detail holds counts and kinds, never a
+-- name.
+CREATE OR REPLACE FUNCTION "spine_join_old_records"()
+  RETURNS TABLE ("joined" integer, "events_made" integer, "listed" integer)
+  LANGUAGE plpgsql
+  AS $join$
+DECLARE
+  -- Which records must have an event: the one definition (event-spine.ts and
+  -- enquiry.ts in @omnitwin/types), written out. Each rule built on these is
+  -- written where it is marked "(Rule: ...)".
+  -- OPEN_OPPORTUNITY_STAGES: a deal at these stages still needs its event.
+  open_deal_stages CONSTANT text[] := ARRAY['new', 'qualified', 'proposal_drafting', 'proposal_sent', 'negotiation', 'won'];
+  -- SENT_PROPOSAL_STATUSES: the customer has been given the proposal.
+  sent_proposal_statuses CONSTANT text[] := ARRAY['sent', 'changes_requested', 'accepted'];
+  -- CLOSED_ENQUIRY_STATES: no further work is expected.
+  closed_enquiry_states CONSTANT text[] := ARRAY['rejected', 'withdrawn', 'archived'];
+  -- NON_BOOKING_ENQUIRY_TYPES: an enquiry of these types asks to book nothing.
+  -- Compared with btrim(event_type), as isBookingEnquiry trims; no type at all asks to book.
+  non_booking_enquiry_types CONSTANT text[] := ARRAY['venue-access', 'venue-enquiry'];
+
+  this_enquiry record;
+  this_deal record;
+  this_proposal record;
+  v_a uuid[];              -- the live events an enquiry's undeleted bookings sit in
+  v_b uuid[];              -- the live events a floor plan is linked to
+  v_candidates uuid[];
+  v_target uuid;
+  v_path text;
+  v_reason text;
+  v_detail text;
+  v_make boolean;
+  v_second boolean;
+  v_for_enquiry boolean;
+  v_name text;             -- what an event the join makes is named by, before the naming rule
+  v_client text;           -- its client's name, before the naming rule
+  v_type text;             -- its occasion
+  v_fixture text;          -- its fixture_source
+  v_q_id uuid;             -- a deal's enquiry, when it is of the deal's venue
+  v_q_event uuid;
+  v_q_name text;
+  v_q_type text;
+  v_q_fixture text;
+  v_q_may_become boolean;
+  v_base uuid;
+  v_asked uuid;
+  v_request uuid;
+  v_request_event uuid;
+  v_made uuid[] := '{}';
+  v_constraint text;
+  v_rows integer;
+  v_joined integer := 0;
+  v_events_made integer := 0;
+  v_listed integer := 0;
+BEGIN
+  -- 0. An open question whose record has its event by now (a writer gave it
+  --    one) is closed: joined, to that event, by nobody.
+  WITH "answered" AS (
+    SELECT v."id", CASE v."subject_kind"
+        WHEN 'enquiry' THEN (SELECT q."event_id" FROM "enquiries" q WHERE q."id" = v."subject_id")
+        WHEN 'opportunity' THEN (SELECT o."event_id" FROM "opportunities" o WHERE o."id" = v."subject_id")
+        WHEN 'proposal' THEN (SELECT p."event_id" FROM "proposals" p WHERE p."id" = v."subject_id")
+      END AS "event_id"
+    FROM "event_link_reviews" v
+    WHERE v."resolved_at" IS NULL AND v."binding_review_id" IS NULL
+  )
+  UPDATE "event_link_reviews" v
+  SET "resolution" = 'joined', "resolved_event_id" = a."event_id", "resolved_at" = now(), "resolved_by" = NULL
+  FROM "answered" a
+  WHERE v."id" = a."id" AND a."event_id" IS NOT NULL AND v."resolved_at" IS NULL;
+
+  -- 1. Enquiries that may become an event, with none. ----------------------
+  FOR this_enquiry IN
+    SELECT q."id", q."venue_id", q."state", q."event_type", q."configuration_id",
+      -- (Rule: an open enquiry) not in CLOSED_ENQUIRY_STATES.
+      q."state" <> ALL (closed_enquiry_states) AS "is_open",
+      -- (Rule: a worked enquiry, enquiryWorked) a first reply; a live hold,
+      -- booking or viewing; an undeleted deal, proposal or quote.
+      (q."first_response_at" IS NOT NULL
+        OR EXISTS (SELECT 1 FROM "bookings" b WHERE b."enquiry_id" = q."id" AND b."deleted_at" IS NULL
+          AND b."status" = 'active' AND b."kind" IN ('hold', 'ink', 'viewing'))
+        OR EXISTS (SELECT 1 FROM "opportunities" o WHERE o."source_enquiry_id" = q."id" AND o."deleted_at" IS NULL)
+        OR EXISTS (SELECT 1 FROM "proposals" p WHERE p."enquiry_id" = q."id" AND p."deleted_at" IS NULL)
+        OR EXISTS (SELECT 1 FROM "quotes" t WHERE t."enquiry_id" = q."id" AND t."deleted_at" IS NULL)) AS "is_worked"
+    FROM "enquiries" q
+    WHERE q."event_id" IS NULL
+      -- (Rule: an enquiry that may become an event, enquiryMayBecomeEvent)
+      -- not a draft, and asks to book the venue's rooms.
+      AND q."state" <> 'draft'
+      AND (q."event_type" IS NULL OR btrim(q."event_type") <> ALL (non_booking_enquiry_types))
+    ORDER BY q."created_at", q."id"
+  LOOP
+    -- Under its own lock: still no event, still as read above, not listed.
+    SELECT q."name", q."fixture_source" INTO v_name, v_fixture
+    FROM "enquiries" q
+    WHERE q."id" = this_enquiry."id" AND q."event_id" IS NULL AND q."state" = this_enquiry."state"
+      AND q."event_type" IS NOT DISTINCT FROM this_enquiry."event_type"
+      AND q."configuration_id" IS NOT DISTINCT FROM this_enquiry."configuration_id"
+    FOR NO KEY UPDATE;
+    CONTINUE WHEN NOT FOUND;
+    CONTINUE WHEN EXISTS (SELECT 1 FROM "event_link_reviews" l
+      WHERE l."subject_kind" = 'enquiry' AND l."subject_id" = this_enquiry."id"
+        AND l."resolved_at" IS NULL AND l."binding_review_id" IS NULL);
+
+    v_a := ARRAY(SELECT DISTINCT e."id" FROM "bookings" b JOIN "events" e ON e."id" = b."event_id"
+      WHERE b."enquiry_id" = this_enquiry."id" AND b."deleted_at" IS NULL
+        AND e."venue_id" = this_enquiry."venue_id" AND e."deleted_at" IS NULL
+      ORDER BY e."id");
+    v_b := ARRAY(SELECT DISTINCT e."id" FROM "event_configuration_links" k JOIN "events" e ON e."id" = k."event_id"
+      WHERE k."configuration_id" = this_enquiry."configuration_id"
+        AND e."venue_id" = this_enquiry."venue_id" AND e."deleted_at" IS NULL
+      ORDER BY e."id");
+
+    v_reason := NULL;
+    v_target := NULL;
+    v_make := false;
+    IF cardinality(v_a) > 1 THEN
+      v_reason := 'reaches_many_events';
+      v_candidates := v_a;
+      v_detail := format('Its held dates sit in %s events.', cardinality(v_a));
+    ELSIF cardinality(v_a) = 1 AND NOT (v_b <@ v_a) THEN
+      v_reason := 'paths_disagree';
+      v_candidates := ARRAY(SELECT DISTINCT x FROM unnest(v_a || v_b) AS x ORDER BY x);
+      v_detail := 'Its held dates sit in one event, and its floor plan is linked to another.';
+    ELSIF cardinality(v_a) = 1 THEN
+      v_target := v_a[1];
+      v_path := 'enquiry_bookings';
+    ELSIF cardinality(v_b) > 1 THEN
+      v_reason := 'reaches_many_events';
+      v_candidates := v_b;
+      v_detail := format('Its floor plan is linked to %s events.', cardinality(v_b));
+    ELSIF cardinality(v_b) = 1 THEN
+      v_target := v_b[1];
+      v_path := 'plan_link';
+    ELSIF this_enquiry."is_open" AND this_enquiry."is_worked" THEN
+      v_make := true;
+      v_path := 'new_event';
+    ELSE
+      CONTINUE;
+    END IF;
+
+    IF v_reason IS NOT NULL THEN
+      INSERT INTO "event_link_reviews" ("venue_id", "subject_kind", "subject_id", "reason", "candidate_event_ids", "detail")
+      VALUES (this_enquiry."venue_id", 'enquiry', this_enquiry."id", v_reason, v_candidates, v_detail)
+      ON CONFLICT DO NOTHING;
+      GET DIAGNOSTICS v_rows = ROW_COUNT;
+      v_listed := v_listed + v_rows;
+      CONTINUE;
+    END IF;
+    IF v_make THEN
+      v_client := v_name;
+      v_type := this_enquiry."event_type";
+      -- (Rule: an event the join makes; the same statement in steps 1, 2 and
+      -- 3) a draft with no dates and no guests, made by nobody; named by its
+      -- record, trimmed and cut to 200, or 'Event' when that is blank or holds
+      -- an '@' (an event is never named by an email address, event-name.ts);
+      -- its client's name the same way, or none; its occasion trimmed and cut
+      -- to 80.
+      INSERT INTO "events" ("venue_id", "name", "client_name", "event_type", "status", "guest_count", "created_by", "fixture_source")
+      VALUES (this_enquiry."venue_id",
+        CASE WHEN btrim(coalesce(v_name, '')) = '' OR strpos(v_name, '@') > 0 THEN 'Event' ELSE left(btrim(v_name), 200) END,
+        CASE WHEN btrim(coalesce(v_client, '')) = '' OR strpos(v_client, '@') > 0 THEN NULL ELSE left(btrim(v_client), 200) END,
+        left(nullif(btrim(v_type), ''), 80), 'draft', 0, NULL, v_fixture)
+      RETURNING "id" INTO v_target;
+      v_made := v_made || v_target;
+      v_events_made := v_events_made + 1;
+    ELSE
+      PERFORM 1 FROM "events" e WHERE e."id" = v_target AND e."deleted_at" IS NULL FOR NO KEY UPDATE;
+      CONTINUE WHEN NOT FOUND;
+    END IF;
+    UPDATE "enquiries" SET "event_id" = v_target WHERE "id" = this_enquiry."id";
+    INSERT INTO "event_link_joins" ("venue_id", "subject_kind", "subject_id", "event_id", "path", "event_made")
+    VALUES (this_enquiry."venue_id", 'enquiry', this_enquiry."id", v_target, v_path, v_make);
+    v_joined := v_joined + 1;
+  END LOOP;
+
+  -- 2. Deals with no event, oldest first. ------------------------------------
+  FOR this_deal IN
+    SELECT o."id", o."venue_id", o."stage", o."source_enquiry_id", o."title", o."event_type",
+      -- (Rule: an open deal) at a stage in OPEN_OPPORTUNITY_STAGES.
+      o."stage" = ANY (open_deal_stages) AS "is_open"
+    FROM "opportunities" o
+    WHERE o."deleted_at" IS NULL AND o."event_id" IS NULL
+    ORDER BY o."created_at", o."id"
+  LOOP
+    -- Its enquiry first (the lock order), when it is of the deal's venue.
+    SELECT q."id", q."event_id", q."name", q."event_type", q."fixture_source",
+      -- The rule of step 1: an enquiry that may become an event.
+      (q."state" <> 'draft' AND (q."event_type" IS NULL OR btrim(q."event_type") <> ALL (non_booking_enquiry_types)))
+    INTO v_q_id, v_q_event, v_q_name, v_q_type, v_q_fixture, v_q_may_become
+    FROM "enquiries" q
+    WHERE q."id" = this_deal."source_enquiry_id" AND q."venue_id" = this_deal."venue_id"
+    FOR NO KEY UPDATE;
+    -- Then the deal: still no event, still as read above, and neither it nor
+    -- its enquiry listed.
+    PERFORM 1 FROM "opportunities" o
+    WHERE o."id" = this_deal."id" AND o."event_id" IS NULL AND o."deleted_at" IS NULL
+      AND o."stage" = this_deal."stage"
+      AND o."source_enquiry_id" IS NOT DISTINCT FROM this_deal."source_enquiry_id"
+    FOR NO KEY UPDATE;
+    CONTINUE WHEN NOT FOUND;
+    CONTINUE WHEN EXISTS (SELECT 1 FROM "event_link_reviews" l
+      WHERE l."resolved_at" IS NULL AND l."binding_review_id" IS NULL
+        AND ((l."subject_kind" = 'opportunity' AND l."subject_id" = this_deal."id")
+          OR (l."subject_kind" = 'enquiry' AND l."subject_id" = this_deal."source_enquiry_id")));
+
+    -- The live event its enquiry is joined to, if any.
+    v_target := (SELECT e."id" FROM "events" e
+      WHERE e."id" = v_q_event AND e."venue_id" = this_deal."venue_id" AND e."deleted_at" IS NULL);
+    IF v_target IS NOT NULL THEN
+      v_second := this_deal."is_open" AND EXISTS (SELECT 1 FROM "opportunities" o
+        WHERE o."event_id" = v_target AND o."id" <> this_deal."id"
+          AND o."deleted_at" IS NULL AND o."stage" = ANY (open_deal_stages));
+      IF NOT v_second THEN
+        PERFORM 1 FROM "events" e WHERE e."id" = v_target AND e."deleted_at" IS NULL FOR NO KEY UPDATE;
+        CONTINUE WHEN NOT FOUND;
+        -- A deal a writer opened on the same event in the same moment is
+        -- caught by the one-open-deal index: this one is then listed, and the
+        -- run goes on. Any other unique violation stops the run.
+        BEGIN
+          UPDATE "opportunities" SET "event_id" = v_target WHERE "id" = this_deal."id";
+          INSERT INTO "event_link_joins" ("venue_id", "subject_kind", "subject_id", "event_id", "path", "event_made")
+          VALUES (this_deal."venue_id", 'opportunity', this_deal."id", v_target, 'enquiry', false);
+          v_joined := v_joined + 1;
+        EXCEPTION WHEN unique_violation THEN
+          GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+          IF v_constraint IS DISTINCT FROM 'opportunities_one_open_per_event' THEN
+            RAISE;
+          END IF;
+          v_second := true;
+        END;
+      END IF;
+      IF v_second THEN
+        INSERT INTO "event_link_reviews" ("venue_id", "subject_kind", "subject_id", "reason", "candidate_event_ids", "detail")
+        VALUES (this_deal."venue_id", 'opportunity', this_deal."id", 'second_open_deal', ARRAY[v_target],
+          'The event its enquiry is joined to already has an open deal.')
+        ON CONFLICT DO NOTHING;
+        GET DIAGNOSTICS v_rows = ROW_COUNT;
+        v_listed := v_listed + v_rows;
+      END IF;
+    ELSIF this_deal."is_open" THEN
+      -- Nothing reaches it. The event is made for its enquiry when that may
+      -- become one and has none (the deal joins it through its enquiry);
+      -- otherwise it is named by the deal.
+      v_for_enquiry := v_q_id IS NOT NULL AND v_q_event IS NULL AND v_q_may_become;
+      IF v_for_enquiry THEN
+        v_name := v_q_name;
+        v_client := v_q_name;
+        v_type := v_q_type;
+      ELSE
+        v_name := this_deal."title";
+        v_client := NULL;
+        v_type := this_deal."event_type";
+      END IF;
+      v_fixture := v_q_fixture;
+      -- (Rule: an event the join makes; as in step 1.)
+      INSERT INTO "events" ("venue_id", "name", "client_name", "event_type", "status", "guest_count", "created_by", "fixture_source")
+      VALUES (this_deal."venue_id",
+        CASE WHEN btrim(coalesce(v_name, '')) = '' OR strpos(v_name, '@') > 0 THEN 'Event' ELSE left(btrim(v_name), 200) END,
+        CASE WHEN btrim(coalesce(v_client, '')) = '' OR strpos(v_client, '@') > 0 THEN NULL ELSE left(btrim(v_client), 200) END,
+        left(nullif(btrim(v_type), ''), 80), 'draft', 0, NULL, v_fixture)
+      RETURNING "id" INTO v_target;
+      v_made := v_made || v_target;
+      v_events_made := v_events_made + 1;
+      IF v_for_enquiry THEN
+        UPDATE "enquiries" SET "event_id" = v_target WHERE "id" = v_q_id;
+        INSERT INTO "event_link_joins" ("venue_id", "subject_kind", "subject_id", "event_id", "path", "event_made")
+        VALUES (this_deal."venue_id", 'enquiry', v_q_id, v_target, 'new_event', true);
+        v_joined := v_joined + 1;
+      END IF;
+      UPDATE "opportunities" SET "event_id" = v_target WHERE "id" = this_deal."id";
+      INSERT INTO "event_link_joins" ("venue_id", "subject_kind", "subject_id", "event_id", "path", "event_made")
+      VALUES (this_deal."venue_id", 'opportunity', this_deal."id", v_target,
+        CASE WHEN v_for_enquiry THEN 'enquiry' ELSE 'new_event' END, NOT v_for_enquiry);
+      v_joined := v_joined + 1;
+    END IF;
+    -- A closed deal that reaches no event is left.
+  END LOOP;
+
+  -- 3. Proposals with no event, oldest first. --------------------------------
+  FOR this_proposal IN
+    SELECT p."id", p."venue_id", p."status", p."opportunity_id", p."enquiry_id", p."configuration_id", p."title",
+      -- (Rule: a proposal that must have an event, proposalMustHaveEvent; the
+      -- loop reads undeleted proposals only) sent; or with an agreement; or
+      -- with a deposit request in force; or a draft for a deal or an enquiry.
+      (p."status" = ANY (sent_proposal_statuses)
+        OR EXISTS (SELECT 1 FROM "proposal_contract_versions" a WHERE a."proposal_id" = p."id")
+        OR EXISTS (SELECT 1 FROM "proposal_deposit_requests" d WHERE d."proposal_id" = p."id" AND d."cancelled_at" IS NULL)
+        OR (p."status" = 'draft' AND (p."opportunity_id" IS NOT NULL OR p."enquiry_id" IS NOT NULL))) AS "must_have"
+    FROM "proposals" p
+    WHERE p."deleted_at" IS NULL AND p."event_id" IS NULL
+    ORDER BY p."created_at", p."id"
+  LOOP
+    -- Under its own lock: still no event, still as read above, and neither it
+    -- nor its enquiry listed; one whose open deal has no event waits with it.
+    PERFORM 1 FROM "proposals" p
+    WHERE p."id" = this_proposal."id" AND p."event_id" IS NULL AND p."deleted_at" IS NULL
+      AND p."status" = this_proposal."status"
+      AND p."opportunity_id" IS NOT DISTINCT FROM this_proposal."opportunity_id"
+      AND p."enquiry_id" IS NOT DISTINCT FROM this_proposal."enquiry_id"
+      AND p."configuration_id" IS NOT DISTINCT FROM this_proposal."configuration_id"
+    FOR NO KEY UPDATE;
+    CONTINUE WHEN NOT FOUND;
+    CONTINUE WHEN EXISTS (SELECT 1 FROM "event_link_reviews" l
+      WHERE l."resolved_at" IS NULL AND l."binding_review_id" IS NULL
+        AND ((l."subject_kind" = 'proposal' AND l."subject_id" = this_proposal."id")
+          OR (l."subject_kind" = 'enquiry' AND l."subject_id" = this_proposal."enquiry_id")));
+    CONTINUE WHEN EXISTS (SELECT 1 FROM "opportunities" o
+      WHERE o."id" = this_proposal."opportunity_id" AND o."event_id" IS NULL
+        AND o."deleted_at" IS NULL AND o."stage" = ANY (open_deal_stages));
+
+    -- base: the live event of its deal, else of its enquiry.
+    v_path := 'deal';
+    v_base := (SELECT e."id" FROM "opportunities" o JOIN "events" e ON e."id" = o."event_id"
+      WHERE o."id" = this_proposal."opportunity_id" AND e."venue_id" = this_proposal."venue_id" AND e."deleted_at" IS NULL);
+    IF v_base IS NULL THEN
+      v_path := 'enquiry';
+      v_base := (SELECT e."id" FROM "enquiries" q JOIN "events" e ON e."id" = q."event_id"
+        WHERE q."id" = this_proposal."enquiry_id" AND e."venue_id" = this_proposal."venue_id" AND e."deleted_at" IS NULL);
+    END IF;
+    -- asked: the live event its deposit request in force names (one is in force at most).
+    SELECT d."id", d."event_id" INTO v_request, v_request_event
+    FROM "proposal_deposit_requests" d
+    WHERE d."proposal_id" = this_proposal."id" AND d."cancelled_at" IS NULL;
+    v_asked := (SELECT e."id" FROM "events" e WHERE e."id" = v_request_event AND e."deleted_at" IS NULL);
+
+    v_reason := NULL;
+    v_target := NULL;
+    v_make := false;
+    IF v_base IS NOT NULL AND v_asked IS NOT NULL AND v_base <> v_asked THEN
+      v_reason := 'paths_disagree';
+      v_candidates := ARRAY(SELECT x FROM unnest(ARRAY[v_base, v_asked]) AS x ORDER BY x);
+      v_detail := format('Its %s is in one event, and its deposit request names another.', v_path);
+    ELSIF v_base IS NOT NULL THEN
+      v_target := v_base;
+    ELSIF v_asked IS NOT NULL THEN
+      v_target := v_asked;
+      v_path := 'deposit_request';
+    ELSIF this_proposal."must_have" THEN
+      -- Its floor plan places it only once it must have an event: a draft
+      -- made from a plan alone has none until it is sent.
+      v_b := ARRAY(SELECT DISTINCT e."id" FROM "event_configuration_links" k JOIN "events" e ON e."id" = k."event_id"
+        WHERE k."configuration_id" = this_proposal."configuration_id"
+          AND e."venue_id" = this_proposal."venue_id" AND e."deleted_at" IS NULL
+        ORDER BY e."id");
+      IF cardinality(v_b) > 1 THEN
+        v_reason := 'reaches_many_events';
+        v_candidates := v_b;
+        v_detail := format('Its floor plan is linked to %s events.', cardinality(v_b));
+      ELSIF cardinality(v_b) = 1 THEN
+        v_target := v_b[1];
+        v_path := 'plan_link';
+      ELSE
+        v_make := true;
+        v_path := 'new_event';
+      END IF;
+    ELSE
+      CONTINUE;
+    END IF;
+
+    IF v_reason IS NOT NULL THEN
+      INSERT INTO "event_link_reviews" ("venue_id", "subject_kind", "subject_id", "reason", "candidate_event_ids", "detail")
+      VALUES (this_proposal."venue_id", 'proposal', this_proposal."id", v_reason, v_candidates, v_detail)
+      ON CONFLICT DO NOTHING;
+      GET DIAGNOSTICS v_rows = ROW_COUNT;
+      v_listed := v_listed + v_rows;
+      CONTINUE;
+    END IF;
+    IF v_make THEN
+      v_name := this_proposal."title";
+      v_client := NULL;
+      v_type := NULL;
+      v_fixture := (SELECT q."fixture_source" FROM "enquiries" q
+        WHERE q."id" = this_proposal."enquiry_id" AND q."venue_id" = this_proposal."venue_id");
+      -- (Rule: an event the join makes; as in step 1.)
+      INSERT INTO "events" ("venue_id", "name", "client_name", "event_type", "status", "guest_count", "created_by", "fixture_source")
+      VALUES (this_proposal."venue_id",
+        CASE WHEN btrim(coalesce(v_name, '')) = '' OR strpos(v_name, '@') > 0 THEN 'Event' ELSE left(btrim(v_name), 200) END,
+        CASE WHEN btrim(coalesce(v_client, '')) = '' OR strpos(v_client, '@') > 0 THEN NULL ELSE left(btrim(v_client), 200) END,
+        left(nullif(btrim(v_type), ''), 80), 'draft', 0, NULL, v_fixture)
+      RETURNING "id" INTO v_target;
+      v_made := v_made || v_target;
+      v_events_made := v_events_made + 1;
+    ELSE
+      PERFORM 1 FROM "events" e WHERE e."id" = v_target AND e."deleted_at" IS NULL FOR NO KEY UPDATE;
+      CONTINUE WHEN NOT FOUND;
+    END IF;
+    UPDATE "proposals" SET "event_id" = v_target WHERE "id" = this_proposal."id";
+    INSERT INTO "event_link_joins" ("venue_id", "subject_kind", "subject_id", "event_id", "path", "event_made")
+    VALUES (this_proposal."venue_id", 'proposal', this_proposal."id", v_target, v_path, v_make);
+    v_joined := v_joined + 1;
+    -- Its deposit request in force takes the same event when it names none,
+    -- recorded with the path its proposal took.
+    IF v_request IS NOT NULL AND v_request_event IS NULL THEN
+      UPDATE "proposal_deposit_requests" SET "event_id" = v_target WHERE "id" = v_request AND "event_id" IS NULL;
+      IF FOUND THEN
+        INSERT INTO "event_link_joins" ("venue_id", "subject_kind", "subject_id", "event_id", "path", "event_made")
+        VALUES (this_proposal."venue_id", 'deposit_request', v_request, v_target, v_path, false);
+        v_joined := v_joined + 1;
+      END IF;
+    END IF;
+  END LOOP;
+
+  -- 4. Every event made here gets the house's default phases, exactly as 0090
+  --    gave the events it made (defaultEventPhaseInputs in @omnitwin/types):
+  --    no room, no time, and every evidence field "not checked".
+  INSERT INTO "event_phases" (
+    "event_id", "template_key", "name", "sort_order", "starts_at", "duration_minutes", "guest_count",
+    "ops_tasks_count", "review_gates_count", "density_status", "density_label",
+    "staff_conflicts_status", "staff_conflicts_label", "notes"
+  )
+  SELECT
+    n."event_id", p."template_key", p."name", p."sort_order", NULL, p."duration_minutes", NULL,
+    0, 0, 'not_checked', 'Density not checked', 'not_checked', 'Staff conflicts not checked', NULL
+  FROM unnest(v_made) AS n("event_id")
+  CROSS JOIN (VALUES
+    ('arrival', 'Arrival', 0, 30),
+    ('ceremony', 'Ceremony', 1, 45),
+    ('room-flip', 'Room Flip', 2, 45),
+    ('dinner', 'Dinner', 3, 90),
+    ('speeches', 'Speeches', 4, 30),
+    ('bar-queue', 'Bar Queue', 5, 45),
+    ('dancing', 'Dancing', 6, 90),
+    ('breakdown', 'Breakdown', 7, 45)
+  ) AS p("template_key", "name", "sort_order", "duration_minutes");
+
+  "joined" := v_joined;
+  "events_made" := v_events_made;
+  "listed" := v_listed;
+  RETURN NEXT;
+END;
+$join$;
+--> statement-breakpoint
+-- Join what is already there.
+SELECT * FROM spine_join_old_records();
 --> statement-breakpoint
 
 -- The five-second lock limit was for this file alone; anything after it in

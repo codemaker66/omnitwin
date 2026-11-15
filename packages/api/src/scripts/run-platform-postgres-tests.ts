@@ -27,6 +27,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/booking-event-bind-postgres.test.ts",
   // The spine's links (0109), on a database of its own: venue-pinned keys, a link moved never emptied, one open deal per event.
   "src/__tests__/event-spine-links-schema-postgres.test.ts",
+  // ...and its join of old records, run by the migrator over rows written before it: never a guess, and repeatable.
+  "src/__tests__/event-spine-links-migration-postgres.test.ts",
   "src/__tests__/enquiry-bookings-postgres.test.ts",
   // A booking stored with an empty title keeps its venue's Diary range readable (API-9).
   "src/__tests__/calendar-untitled-booking-postgres.test.ts",
