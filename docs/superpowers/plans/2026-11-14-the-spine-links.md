@@ -50,6 +50,11 @@ The money ledger (spec section 8) is a design only. Pieces E and wave 1b build i
 **Left open for piece C's design, not decided here:** what closes an event that never had a booking when its
 enquiry is later turned down or withdrawn. Today such an event stays a draft.
 
+**Corrected after the design's review (15 November).** Only October's two kinds of question are copied into the
+new list; its status notes stay in October's table (design 5.6). Tasks 2 and 3 were built before this
+correction, so the build applies it to both as one fix: the copy, the list of reasons in SQL and in Drizzle, and
+the two suites' counts.
+
 **Not in this plan.** Stages 2 to 6 above. Anything a client sees. Any write to `events.client_account_id` or
 `events.opportunity_id`. Pull request #247 (erase a person) and the People Book's merge, which stay with their
 owners.
@@ -286,7 +291,7 @@ git commit -m "feat(types): which records must have an event (T-704)"
     `id uuid` primary key; `venue_id uuid NOT NULL` to `venues`; `subject_kind varchar(20) NOT NULL`, one of
     `enquiry`, `opportunity`, `proposal`, `booking`, `event`; `subject_id uuid NOT NULL`;
     `reason varchar(40) NOT NULL`, one of `reaches_many_events`, `paths_disagree`, `second_open_deal`,
-    `enquiry_events_differ`, `possibly_same_event`, `event_status_derived`;
+    `enquiry_events_differ`, `possibly_same_event`;
     `candidate_event_ids uuid[] NOT NULL DEFAULT '{}'`; `detail text NOT NULL`;
     `binding_review_id uuid` (the `event_binding_reviews` row it was copied from, unique where not null);
     `created_at timestamptz NOT NULL DEFAULT now()`; `resolved_at timestamptz`;
@@ -368,12 +373,15 @@ Expected: FAIL, column `event_id` does not exist.
   4. The three columns, their keys, their indexes, and `opportunities_one_open_per_event`.
   5. `event_link_is_kept()` and its three triggers (`DROP TRIGGER IF EXISTS` before each `CREATE TRIGGER`).
   6. The two tables with `CREATE TABLE IF NOT EXISTS`, their checks and indexes.
-  7. Copy every `event_binding_reviews` row into `event_link_reviews`: `subject_kind` `booking` and `subject_id`
+  7. Copy the `event_binding_reviews` rows that ask a question (reason `enquiry_events_differ` or
+     `possibly_same_event`) into `event_link_reviews`. The `event_status_derived` rows record a status October's
+     migration changed: they are history, not questions, so they are not copied and stay in October's table
+     (design 5.6). For each copied row: `subject_kind` `booking` and `subject_id`
      the booking when it has one, else `event` and the event; `candidate_event_ids` the one event; `reason` and
      `created_at` as they are; `binding_review_id` its id; `ON CONFLICT DO NOTHING`. Its `detail` is NOT
      copied: October's text holds event names and booking titles. Write one fixed sentence for each reason
      ("Carried over from October's list: this booking's enquiry had bookings in more than one event." and its
-     two fellows); the screen reads the old text through `binding_review_id` if it needs it.
+     fellow); the screen reads the old text through `binding_review_id` if it needs it.
   8. `SET LOCAL lock_timeout TO DEFAULT;` as the file's last statement (Tasks 3 and 4 add theirs above it).
 
 - [ ] **Step 4: Mirror it in `schema.ts`** and add the journal entry.
@@ -532,13 +540,13 @@ it("joins what one path reaches, lists what is in doubt, makes an event where no
   expect(await eventRow(await eventOf("enquiries", m.address))).toMatchObject({ name: "Event", client_name: null });
   expect(String((await eventRow(await eventOf("enquiries", m.longType)))["event_type"])).toHaveLength(80);
 
-  // The list: exactly these open questions, and the three copied from 0090 once.
+  // The list: exactly these open questions, and October's two questions copied once (its status note is not).
   expect(await openReviews(mixed)).toEqual(sorted([
     ["enquiry", c.enquiry, "reaches_many_events"], ["enquiry", g.enquiry, "paths_disagree"],
     ["opportunity", h.second, "second_open_deal"], ["proposal", j.twoLinks, "reaches_many_events"],
     ["proposal", k.disagrees, "paths_disagree"],
   ]));
-  expect(await copiedReviewCount(mixed)).toBe(3);
+  expect(await copiedReviewCount(mixed)).toBe(2);
   // No review row holds a name or an address.
   expect(await reviewDetails(mixed)).not.toEqual(expect.arrayContaining([expect.stringMatching(/@|Gordon|Chamber/)]));
   // Every join is recorded, and nothing crossed venues.
