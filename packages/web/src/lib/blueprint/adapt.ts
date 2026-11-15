@@ -2,7 +2,7 @@ import { CANONICAL_ASSETS, type CanonicalAsset } from "@omnitwin/types";
 import type { EditorObject } from "../../stores/editor-store.js";
 import type { Space } from "../../api/spaces.js";
 import { toRealWorld, toRenderSpace } from "../../constants/scale.js";
-import { computeBoundingBox, roomGeometries } from "../../data/room-geometries.js";
+import { computeBoundingBox, resolveRoomGeometry } from "../../data/room-geometries.js";
 import { normalizeFurnitureScale } from "../furniture-scale.js";
 import {
   effectiveTableLinenStyle,
@@ -18,6 +18,7 @@ import type {
   EventType,
   ItemKind,
   Point,
+  RoomDimensions,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -29,9 +30,12 @@ import type {
 //
 // Assumptions (explicit so they're easy to revisit):
 //
-//   1. 3D origin is the ROOM CENTRE at floor level. X/Z are stored in
-//      render-space units; the blueprint uses real-world metres. The
-//      bridge projects (render x, render z) → (metre x, metre y).
+//   1. 3D origin is the ROOM CENTRE at floor level, except in a room whose
+//      walls' bounds are not centred on it (the Robert Adam Room, or a room
+//      drawn from a stored outline that starts at a corner): there the
+//      plan's corner is the bounds' own (RoomDimensions.originM).
+//      X/Z are stored in render-space units; the blueprint uses real-world
+//      metres. The bridge projects (render x, render z) → (metre x, metre y).
 //
 //   2. The catalogue's `CANONICAL_ASSETS` array is the source of truth
 //      for an asset's physical dimensions and shape. Placed-object
@@ -46,6 +50,12 @@ const ASSET_BY_ID = new Map<string, CanonicalAsset>(
   CANONICAL_ASSETS.map((a) => [a.id, a]),
 );
 
+/** The plan's frame in the editor's scene: its size and, where the room is not centred on the origin, its corner. */
+type PlanFrame = Pick<RoomDimensions, "widthM" | "lengthM" | "originM">;
+
+/** Under this, a room's bounds are centred on the scene's origin (metres). */
+const CENTRED_M = 1e-9;
+
 /**
  * Convert an editor/3D XZ position into blueprint metre-space.
  *
@@ -56,8 +66,15 @@ const ASSET_BY_ID = new Map<string, CanonicalAsset>(
 export function editorPositionToBlueprintPoint(
   positionX: number,
   positionZ: number,
-  room: { readonly widthM: number; readonly lengthM: number },
+  room: PlanFrame,
 ): Point {
+  // A room whose bounds are not centred on the scene's origin: the plan's corner is theirs.
+  if (room.originM !== undefined) {
+    return {
+      x: toRealWorld(positionX) - room.originM.x,
+      y: toRealWorld(positionZ) - room.originM.z,
+    };
+  }
   return {
     x: toRealWorld(positionX) + room.widthM / 2,
     y: toRealWorld(positionZ) + room.lengthM / 2,
@@ -69,8 +86,14 @@ export function editorPositionToBlueprintPoint(
  */
 export function blueprintPointToEditorPosition(
   point: Point,
-  room: { readonly widthM: number; readonly lengthM: number },
+  room: PlanFrame,
 ): { readonly positionX: number; readonly positionZ: number } {
+  if (room.originM !== undefined) {
+    return {
+      positionX: toRenderSpace(point.x + room.originM.x),
+      positionZ: toRenderSpace(point.y + room.originM.z),
+    };
+  }
   return {
     positionX: toRenderSpace(point.x - room.widthM / 2),
     positionZ: toRenderSpace(point.y - room.lengthM / 2),
@@ -126,7 +149,7 @@ function linenLabelForObject(
  */
 export function editorObjectToBlueprintItem(
   o: EditorObject,
-  room: { widthM: number; lengthM: number },
+  room: PlanFrame,
   chairsByGroupId?: ReadonlyMap<string, readonly Point[]>,
 ): BlueprintItem | null {
   const asset = assetForObject(o);
@@ -243,16 +266,25 @@ function parseM(value: string): number {
   return Number.isFinite(n) && n > 0 ? n : 10;
 }
 
-function resolveBlueprintRoom(space: Pick<Space, "name" | "widthM" | "lengthM"> | null): {
-  readonly widthM: number;
-  readonly lengthM: number;
-} {
+/** The space as the plan reads it: its name and stored size and, where the caller holds them, its stored outline and height. */
+type PlanSpace = Pick<Space, "name" | "widthM" | "lengthM"> & Partial<Pick<Space, "heightM" | "floorPlanOutline">>;
+
+function resolveBlueprintRoom(space: PlanSpace | null): PlanFrame {
   if (space === null) return { widthM: 10, lengthM: 10 };
 
-  const namedGeometry = roomGeometries[space.name];
-  if (namedGeometry !== undefined) {
-    const bounds = computeBoundingBox(namedGeometry.wallPolygon);
-    return { widthM: bounds.width, lengthM: bounds.depth };
+  // The walls the 3D planner draws the room from, by the one rule it uses (resolveRoomGeometry, which
+  // hooks/use-planner-room-dimensions hands to lib/room-floor plannerRoomOf): a named room's own drawing,
+  // else the space's stored outline. The ceiling's height is not the plan's concern.
+  const walls = resolveRoomGeometry({ name: space.name, heightM: space.heightM ?? "", floorPlanOutline: space.floorPlanOutline ?? [] })?.wallPolygon;
+  const bounds = walls === undefined ? null : computeBoundingBox(walls);
+  // An outline that encloses no floor says nothing: the stored size below.
+  if (bounds !== null && bounds.width > 0 && bounds.depth > 0) {
+    const size = { widthM: bounds.width, lengthM: bounds.depth };
+    // The Robert Adam Room's walls are drawn about the middle of its upper section, so their bounds
+    // run from z = −3.7 to z = +9.0, and a stored outline may start at a corner: the plan stands where
+    // the walls do (audit editor-save-4). Bounds centred on the origin take the two lines they always did.
+    const centred = Math.abs(bounds.minX + bounds.maxX) <= CENTRED_M && Math.abs(bounds.minZ + bounds.maxZ) <= CENTRED_M;
+    return centred ? size : { ...size, originM: { x: bounds.minX, z: bounds.minZ } };
   }
 
   return {
@@ -266,7 +298,7 @@ function resolveBlueprintRoom(space: Pick<Space, "name" | "widthM" | "lengthM"> 
  * state snapshot. The adapter is pure — no subscriptions, no effects.
  */
 export interface AdaptInput {
-  readonly space: Pick<Space, "name" | "widthM" | "lengthM"> | null;
+  readonly space: PlanSpace | null;
   readonly objects: readonly EditorObject[];
   readonly lastSavedAt: Date | null;
   /** User-chosen event type; falls back to "wedding" when null. */

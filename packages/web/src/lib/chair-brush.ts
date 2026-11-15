@@ -1,5 +1,7 @@
 import { toRenderSpace } from "../constants/scale.js";
 import type { CatalogueItem } from "./catalogue.js";
+import { computeRotatedFootprint, snapPositionToGrid } from "./placement.js";
+import { rectWithinFloor, type RoomFloor } from "./room-floor.js";
 
 const CHAIR_BRUSH_GAP_M = 0.12;
 const LINE_DOMINANCE_RATIO = 1.45;
@@ -102,4 +104,44 @@ export function computeChairBrushSummary(
 
   const mode = points.length <= 1 ? "single" : rows > 1 && columns > 1 ? "block" : "row";
   return { mode, columns, rows, points };
+}
+
+/** A brush as it is set down in a room that carries its own floor (lib/room-floor). */
+export interface ChairBrushOnFloor {
+  /** Whether the drag is a brush at all: more than one chair before the walls are asked. A shorter drag is one chair, set by the click. */
+  readonly brushing: boolean;
+  /** The chairs it sets: those of the brush that stand wholly on the floor, in the brush's own order. */
+  readonly chairs: readonly ChairBrushPoint[];
+}
+
+/**
+ * The brush between two floor points on a room's own floor: the same row or
+ * block, its ends taken to the grid when the grid is on, less every chair
+ * whose footprint is not wholly on the floor. The straight run between two
+ * points of such a floor can leave it (across the Robert Adam Room's step, a
+ * Saloon pier, the Reception Room's shoulders), and a chair is never set
+ * through a wall. The one answer for the brush's preview and for what it
+ * sets down, so the preview shows the chairs that will be set.
+ */
+export function chairBrushOnFloor(
+  chair: CatalogueItem,
+  startX: number,
+  startZ: number,
+  endX: number,
+  endZ: number,
+  rotationY: number,
+  floor: RoomFloor,
+  snapToGrid: boolean,
+): ChairBrushOnFloor {
+  const [fromX, , fromZ] = snapToGrid ? snapPositionToGrid(startX, startZ) : [startX, 0, startZ] as const;
+  const [toX, , toZ] = snapToGrid ? snapPositionToGrid(endX, endZ) : [endX, 0, endZ] as const;
+  const summary = computeChairBrushSummary(chair, fromX, fromZ, toX, toZ, rotationY);
+  if (summary.points.length <= 1) return { brushing: false, chairs: [] };
+  return {
+    brushing: true,
+    chairs: summary.points.filter((point) => {
+      const { halfW, halfD } = computeRotatedFootprint(chair, point.rotationY);
+      return rectWithinFloor(floor, point.x, point.z, halfW, halfD);
+    }),
+  };
 }

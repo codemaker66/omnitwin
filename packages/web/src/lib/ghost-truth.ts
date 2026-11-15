@@ -1,5 +1,5 @@
-import type { SpaceDimensions } from "@omnitwin/types";
 import { toRealWorld, toRenderSpace } from "../constants/scale.js";
+import { floorCrossings, rectWithinFloor, type PlannerRoomDimensions } from "./room-floor.js";
 import { getCatalogueItem, type CatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import {
@@ -47,11 +47,11 @@ export interface GhostWorld {
   readonly placedItems: readonly PlacedItem[];
   readonly byId: ReadonlyMap<string, PlacedItem>;
   readonly index: PlacementOverlapIndex;
-  /** The room, render-space, centred on the origin. */
-  readonly room: SpaceDimensions;
+  /** The room, render-space: centred on the origin, or with its own floor where its walls are not that rectangle. */
+  readonly room: PlannerRoomDimensions;
 }
 
-export function createGhostWorld(placedItems: readonly PlacedItem[], room: SpaceDimensions): GhostWorld {
+export function createGhostWorld(placedItems: readonly PlacedItem[], room: PlannerRoomDimensions): GhostWorld {
   return {
     placedItems,
     byId: new Map(placedItems.map((placed) => [placed.id, placed])),
@@ -141,8 +141,14 @@ function signOf(delta: number): 1 | -1 {
   return delta < 0 ? -1 : 1;
 }
 
-/** How a body crosses the room's walls, axis by axis. */
-function wallViolations(body: PlacementBody, room: SpaceDimensions, out: Violation[]): void {
+/** How a body crosses the room's walls: wall by wall on a room's own floor (lib/room-floor), else axis by axis. */
+function wallViolations(body: PlacementBody, room: PlannerRoomDimensions, out: Violation[]): void {
+  if (room.floor !== undefined) {
+    for (const { depth, escapes } of floorCrossings(room.floor, body.x, body.z, body.halfW, body.halfD)) {
+      out.push({ kind: "outside_room", obstacleId: null, depth, escapes });
+    }
+    return;
+  }
   const axes: readonly { readonly axis: "x" | "z"; readonly centre: number; readonly half: number; readonly roomHalf: number }[] = [
     { axis: "x", centre: body.x, half: body.halfW, roomHalf: room.width / 2 },
     { axis: "z", centre: body.z, half: body.halfD, roomHalf: room.length / 2 },
@@ -185,7 +191,10 @@ function isClear(bodies: readonly GhostBody[], world: GhostWorld, excludeIds: Re
     const body = shifted(unshifted, dx, dz);
     const halfW = world.room.width / 2;
     const halfL = world.room.length / 2;
-    if (body.x - body.halfW < -halfW || body.x + body.halfW > halfW || body.z - body.halfD < -halfL || body.z + body.halfD > halfL) return false;
+    const { floor } = world.room;
+    if (floor !== undefined) {
+      if (!rectWithinFloor(floor, body.x, body.z, body.halfW, body.halfD)) return false;
+    } else if (body.x - body.halfW < -halfW || body.x + body.halfW > halfW || body.z - body.halfD < -halfL || body.z + body.halfD > halfL) return false;
     if (world.index.overlapsAny(body, excludeIds)) return false;
   }
   return true;
