@@ -891,7 +891,8 @@ function plansOn(buf: Buffer): (PlanReading | null)[] {
     const markers = shapes.filter((shape) => shape.stroke === INK.accent);
     const names = (pages[index] ?? []).map((line): PlanName => {
       const baseline = PAGE_H - line.y;
-      return { line, box: { left: line.x, top: baseline - line.size * 0.73, right: line.x2, bottom: baseline + line.size * 0.21 }, x: (line.x + line.x2) / 2, y: baseline - line.size * 0.36 };
+      // The letters' box, from Inter's own metrics: capital tops (0.7275 em) down to descenders (0.2412 em).
+      return { line, box: { left: line.x, top: baseline - line.size * 0.7275, right: line.x2, bottom: baseline + line.size * 0.2412 }, x: (line.x + line.x2) / 2, y: baseline - line.size * 0.36 };
     }).filter((name) => name.x > floor.left && name.x < floor.right && name.y > floor.top && name.y < floor.bottom
       && !markers.some((marker) => holds(marker, name.x, name.y)));
     return { floor, pieces: shapes.filter((shape) => shape.stroke !== INK.accent), markers, names };
@@ -1052,20 +1053,43 @@ describe("what #415's review found (T-696)", () => {
     expectNamesClear(plan, "the wedding's page 1");
   });
 
+  it("keeps a name's letters twice as far from any other piece as from their own, a neighbour closing in a step at a time", async () => {
+    const base = boardWithProjectorNamed();
+    const plan = base.floorPlan;
+    const projector = plan?.objects.find((object) => object.name === "Laser Projector");
+    if (plan === null || plan === undefined || projector === undefined) throw new Error("the board has its projector");
+    let nearThreshold = 0;
+    // A second projector-sized piece south of the named one, 1.6 m away and then nearer by 5 cm a time.
+    for (let step = 0; step <= 28; step++) {
+      const away = 1.6 - step * 0.05;
+      const neighbour = { ...projector, objectId: `00000000-0000-4000-8000-0000000cc${String(step).padStart(3, "0")}`, z: projector.z + away, label: undefined };
+      const sheet: HallkeeperSheetV2 = { ...base, floorPlan: { ...plan, objects: [...plan.objects, neighbour] } };
+      const drawn = plansOn(await generateSheetPdfV2(await withPaperCheck(sheet, false)))[0];
+      const name = drawn?.names.find((candidate) => candidate.line.text === "Slides");
+      if (drawn === null || drawn === undefined || name === undefined) continue;
+      const [own, next] = drawn.pieces.map((piece) => gapBetween(name.box, piece)).sort((a, b) => a - b);
+      if (own === undefined || next === undefined) throw new Error("the plan has pieces");
+      expect(next, `${away.toFixed(2)} m: the next piece against twice the gap to its own`).toBeGreaterThanOrEqual(2 * own - 0.05);
+      if (next < 3 * own) nearThreshold += 1;
+    }
+    // The rule was met near its edge, not only with the floor wide open.
+    expect(nearThreshold).toBeGreaterThan(0);
+  });
+
   it("sets a name too wide for its piece beside it on clear floor, nearer its own piece than anything else", async () => {
     const buf = await generateSheetPdfV2(await withPaperCheck(boardWithProjectorNamed(), false));
     const plan = plansOn(buf)[0];
     const name = plan?.names.find((candidate) => candidate.line.text === "Slides");
     if (plan === null || plan === undefined || name === undefined) throw new Error("page 1's plan names the projector");
     expect(pieceUnder(plan, name)).toBeUndefined();
-    // A hair from its own piece and lined up with it, and plainly nearer it than the next piece, chairs included.
+    // Its letters 1.5 pt from its own piece and lined up with it, and the next piece, chairs included, at least twice as far.
     const [projector, next] = [...plan.pieces].sort((a, b) => gapBetween(name.box, a) - gapBetween(name.box, b));
     if (projector === undefined || next === undefined) throw new Error("the plan has pieces");
-    expect(gapBetween(name.box, projector)).toBeLessThan(4.5);
+    expect(gapBetween(name.box, projector)).toBeCloseTo(1.5, 1);
     expect((name.x >= projector.left && name.x <= projector.right) || (name.y >= projector.top && name.y <= projector.bottom)).toBe(true);
-    expect(gapBetween(name.box, next) - gapBetween(name.box, projector)).toBeGreaterThan(0.5);
+    expect(gapBetween(name.box, next)).toBeGreaterThanOrEqual(2 * gapBetween(name.box, projector) - 0.05);
     expectNamesClear(plan, "the board's projector");
-    expect(textOf(pdfPages(buf)[0] ?? [])).not.toContain("Too small to name here");
+    expect(textOf(pdfPages(buf)[0] ?? [])).not.toContain("No room to name on this plan");
   });
 
   it("names in the caption, not on the plan, a name that would sit nearer another piece than its own", async () => {
@@ -1075,7 +1099,7 @@ describe("what #415's review found (T-696)", () => {
     const plan = plansOn(buf)[0];
     if (plan === null || plan === undefined) throw new Error("page 1 draws the room");
     expect(plan.names.map((name) => name.line.text)).not.toContain("Cake");
-    expect(textOf(pdfPages(buf)[0] ?? [])).toContain("Too small to name here: Cake.");
+    expect(textOf(pdfPages(buf)[0] ?? [])).toContain("No room to name on this plan: Cake.");
   });
 
   it("sets a name along its row over its own piece at the row's end, and never over a neighbour", async () => {
@@ -1098,7 +1122,7 @@ describe("what #415's review found (T-696)", () => {
     // With the bride and groom's copper number on the next trestle in its way, the caption names it instead.
     const blocked = await generateSheetPdfV2(await withPaperCheck(rowEnd(true), true));
     expect(plansOn(blocked)[0]?.names.map((candidate) => candidate.line.text)).not.toContain("Gift table");
-    expect(textOf(pdfPages(blocked)[0] ?? [])).toContain("Too small to name here: Gift table.");
+    expect(textOf(pdfPages(blocked)[0] ?? [])).toContain("No room to name on this plan: Gift table.");
   });
 
   it("keeps every name on a plan on its piece or beside it, clear of the copper numbers and of each other", async () => {
@@ -1137,8 +1161,13 @@ describe("what #415's review found (T-696)", () => {
         if (plan === null) continue;
         // On the drawing as the plan prints it ("Table 5" as "5"), or in the words under it.
         const drawn = new Set(plan.names.map((name) => name.line.text));
-        const caption = /Too small to name here: [^]*?\.(?= |$)/u.exec(textOf(pages[index] ?? []))?.[0] ?? "";
-        for (const label of labels) expect(drawn.has(planLabel(label)) || caption.includes(label), `${what}, page ${String(index + 1)}: "${label}"`).toBe(true);
+        // The caption's own items, whole: "No room to name on this plan: Top table, Cake."
+        const caption = /No room to name on this plan: ([^]*?)\.(?= |$)/u.exec(textOf(pages[index] ?? []))?.[1] ?? "";
+        const listed = caption.length === 0 ? [] : caption.split(", ");
+        for (const label of labels) {
+          // On the drawing or in the caption: always one of them, never both.
+          expect(drawn.has(planLabel(label)) !== listed.includes(label), `${what}, page ${String(index + 1)}: "${label}"`).toBe(true);
+        }
       }
     }
   });
@@ -1151,15 +1180,15 @@ describe("what #415's review found (T-696)", () => {
     if (small === null || small === undefined) throw new Error("the setup page has its small plan");
     expect(small.names.map((name) => name.line.text)).not.toContain("Top table");
     expectNamesClear(small, "the wedding's small plan");
-    expect(textOf(second)).toContain("Too small to name here: Top table.");
-    const caption = second.find((line) => line.text.startsWith("Too small to name here"));
+    expect(textOf(second)).toContain("No room to name on this plan: Top table.");
+    const caption = second.find((line) => line.text.startsWith("No room to name on this plan"));
     // In the rail, from the small plan's own left edge (the wall band's width left of the room's outline).
     expect(caption?.x ?? 0).toBeGreaterThanOrEqual(small.floor.left - 16);
     expect(caption?.x ?? 0).toBeLessThan(small.floor.left);
     expect(PAGE_H - (caption?.y ?? PAGE_H)).toBeGreaterThan(small.floor.bottom);
     // A name page 1 has no room for either joins it there, after the top table, in the plan's order.
     const gift = weddingWithPlan((objects) => objects.map((object) => (standsAt(object, 3, 4.2) ? { ...object, label: "Gift table for the cards and presents" } : object)));
-    expect(textOf((await pagesOf(gift))[1] ?? [])).toContain("Too small to name here: Top table, Gift table for the cards and presents.");
+    expect(textOf((await pagesOf(gift))[1] ?? [])).toContain("No room to name on this plan: Top table, Gift table for the cards and presents.");
   });
 
   it("names under the plan's caption a piece it has no room to name on the drawing", async () => {
@@ -1170,7 +1199,7 @@ describe("what #415's review found (T-696)", () => {
       ? { ...object, label: "Gift table for the cards and presents" } : object));
     expect(objects.filter((object) => object.label === "Gift table for the cards and presents")).toHaveLength(1);
     const first = textOf((await pagesOf({ ...base, floorPlan: { ...plan, objects } }))[0] ?? []);
-    expect(first).toContain("Too small to name here: Gift table for the cards and presents.");
+    expect(first).toContain("No room to name on this plan: Gift table for the cards and presents.");
   });
 
   it("rings tables 3, 5 and 9 on page 1's plan, each ring round its own table", async () => {

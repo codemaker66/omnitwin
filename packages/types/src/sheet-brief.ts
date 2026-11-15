@@ -407,14 +407,20 @@ function wholePhrase(label: string): RegExp {
 // A run of tables' names after "table" or "tables", as the setup's own lines
 // write one ("Tables 1–3, 5, 7–8") or as people do ("tables 4 and 5", "table
 // A & B"). A name is a range of numbers, a number or a code with one ("12",
-// "4b", "A1"), or one letter. The names after the first are joined by a comma,
-// "and", "or" or "&", and are of the first one's kind.
+// "4b", "A1"), or one letter, never a time ("10:30"). The names after the
+// first are joined by a comma, "and", "or" or "&", and are of the first one's
+// kind. Each joins only where the run goes on or its clause ends after it: a
+// word after it makes it a count ("Table 7, 1 coeliac", "table 4 and 2 guests").
+// After "tables" and an "and", "or" or "&" the run is meant ("Tables 4 and 5
+// are nut-free"); a comma never carries one into a number a word follows.
 const TABLE_WORD = /(?<![\p{L}\p{N}])(tables?)\s+/giu;
-const FIRST_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{L}))(?![\p{L}\p{N}])/yu;
+const FIRST_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{L}))(?![\p{L}\p{N}]|[:.]\d)/yu;
+/** What joins a further name to a run: a comma, "and", "or" or "&", alone or after a comma. */
+const JOINER = /\s*,\s*(?:(?:and|or|AND|OR)\s+|&\s*)?|\s*&\s*|\s+(?:and|or|AND|OR)\s+/yu;
 /** A further name in the run; a letter only as a capital, so "and a guest" adds no table A. */
-const NEXT_NAME = /(?:\s*,\s*(?:(?:and|or|AND|OR)\s+|&\s*)?|\s*&\s*|\s+(?:and|or|AND|OR)\s+)(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{Lu}))(?![\p{L}\p{N}])/yu;
-/** What a number after "table 4 and" counts when it is not a table: "and 2 guests". */
-const COUNTED = /\s+(?:guests?|people|persons?|diners?|adults?|children|child|kids?|bab(?:y|ies)|seats?|places?|covers?|chairs?|pax)(?![\p{L}\p{N}])/iyu;
+const NEXT_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{Lu}))(?![\p{L}\p{N}]|[:.]\d)/yu;
+/** What may follow a name that joins a run: another joiner, or the end of its clause. */
+const RUN_GOES_ON = /[ \t]*(?:[,&:;.)!?–—\n]|-[ \t]|(?:and|or|AND|OR)(?![\p{L}\p{N}])|$)/yu;
 
 /** Every name such runs give, in lower case, each range spelled out. */
 function namesInRuns(words: string): ReadonlySet<string> {
@@ -439,14 +445,18 @@ function namesInRuns(words: string): ReadonlySet<string> {
     if (first === null) continue;
     add(first);
     const letters = first[4] !== undefined;
-    // "Tables" opens a run; after "table", "and 2 guests" counts people.
-    const run = (head[1] ?? "").toLowerCase() === "tables";
+    const plural = (head[1] ?? "").toLowerCase() === "tables";
     for (let at = FIRST_NAME.lastIndex; ;) {
-      NEXT_NAME.lastIndex = at;
+      JOINER.lastIndex = at;
+      const joiner = JOINER.exec(words);
+      if (joiner === null) break;
+      NEXT_NAME.lastIndex = JOINER.lastIndex;
       const next = NEXT_NAME.exec(words);
       if (next === null || (next[4] !== undefined) !== letters) break;
-      COUNTED.lastIndex = NEXT_NAME.lastIndex;
-      if (!run && !letters && COUNTED.test(words)) break;
+      RUN_GOES_ON.lastIndex = NEXT_NAME.lastIndex;
+      const closes = RUN_GOES_ON.test(words);
+      const announced = plural && !/^\s*,\s*$/u.test(joiner[0]);
+      if (!closes && !announced) break;
       add(next);
       at = NEXT_NAME.lastIndex;
     }

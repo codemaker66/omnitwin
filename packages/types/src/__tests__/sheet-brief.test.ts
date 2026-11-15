@@ -418,6 +418,20 @@ describe("careTables: the tables the care words name, for the plan to ring", () 
     expect(ringed("Tables 4 and 6 guests are vegan.")).toEqual(["4", "6"]);
   });
 
+  it("never runs on across a comma into a count, a time or a clause of its own", () => {
+    const labels = ["1", "2", "3", "4", "5", "7", "10", "12"];
+    const ringed = (words: string): string[] => [...careTables(careSheet("", words, labels))].sort();
+    // The shorthand planners write for allergies: a table, then how many guests.
+    expect(ringed("Table 3, 1 coeliac.")).toEqual(["3"]);
+    expect(ringed("Table 12, 2 coeliacs and a nut allergy.")).toEqual(["12"]);
+    expect(ringed("Table 7, 1 nut allergy")).toEqual(["7"]);
+    expect(ringed("Table 4 and 2 more guests are vegan")).toEqual(["4"]);
+    expect(ringed("Table 4, 10:30 cake")).toEqual(["4"]);
+    // A run after "tables" still ends where a count begins.
+    expect(ringed("Tables 4 and 5, 2 coeliacs")).toEqual(["4", "5"]);
+    expect([...careTables(careSheet("", "Table 7, 1 coeliac.", ["Table 1", "Table 7"]))]).toEqual(["Table 7"]);
+  });
+
   it("reads only the planner's own words, never the counts the sheet adds", () => {
     const base = careSheet("", "", ["1", "4"]);
     const access = base.instructions?.accessibility;

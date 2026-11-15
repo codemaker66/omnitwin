@@ -674,7 +674,7 @@ function planCaption(notes: boolean, rings: boolean, leftOff: readonly string[])
 
 /** The planner's names a plan had no room for, in words for under it, or null when it named them all. */
 function namesLeftOff(leftOff: readonly string[]): string | null {
-  return leftOff.length > 0 ? `Too small to name here: ${leftOff.join(", ")}.` : null;
+  return leftOff.length > 0 ? `No room to name on this plan: ${leftOff.join(", ")}.` : null;
 }
 
 /** The room as one unit for a lane: its heading, the plan (or the picture), the scale bar and the caption. */
