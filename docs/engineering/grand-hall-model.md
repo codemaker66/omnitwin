@@ -310,16 +310,27 @@ photographs can give the toe back themselves (`lib/film-toe.ts`): the matt and t
 photographs (`hall-materials.ts`, where `relitPhoto` is shown) add to their own colour, before the
 curve, what the toe will take out again, so they come out as if the curve's toe were `filmToe`.
 At 0.04 they add nothing; at 0 a photograph under the shoulder is on the screen what arrived at
-the curve, and in Daylight that is the photograph. The addition is exact where nothing else has
-touched the pixel. Where the pipeline's occlusion darkens a photograph, the addition is darkened
-with it, so a crease keeps part of the toe; that is less than it loses today.
+the curve, and in Daylight that is the photograph.
+
+The addition is exact where the photograph's own colour is all that reaches the curve. Three
+things leave a part of the toe in place, and none adds more light than the scan held. Where the
+pipeline's occlusion darkens a photograph, the addition is darkened with it, so a crease keeps
+part of the toe. A varnished photograph's reflection is added after the addition was worked out
+from the photograph alone. And an edge resolved from several samples (a phone's multisampling,
+the desktop's temporal resolve) averages colours that already carry the addition, which the
+toe's curve then takes a little more from than from each alone.
 
 For the addition to be exact a photograph has to know what follows its draw: the exposure, and in
 the planner's pipeline the grade and the vignette. `sceneOutput` (`lib/scene-grade.ts`) carries
-those. Every draw declares whether it is the view's own frame (`withNativeRenderScope`), and the
-pipeline declares its grade and vignette around its frame; a draw nobody declared, such as the
-room's reflection capture, adds nothing, so the furniture's reflections are as they were. The
-pipeline's grade and vignette are restated in `photographLift` and must change with it.
+those. Every draw through the native renderer declares itself (`withNativeRenderScope`): the
+view's own frame as such, with its exposure, and every other draw of the scene (the room's
+reflection capture, a shadow map, the plan thumbnail) as not, so it adds nothing and the
+furniture's reflections are as they were. The pipeline declares its grade and vignette around its
+frame; they mean something only for the view's own frame. The grade and the vignette are one
+function, `cameraEye` (`lib/scene-grade.ts`): the pipeline draws its frame through it and
+`photographLift` works the same function back out of the photograph's colour, so a stage added
+to it reaches both. `film-toe-graph.test.ts` runs the lift's own node graph through that function
+and three's Neutral, and holds the tests' plain-number Neutral to three's source.
 
 The default toe is still Neutral's, and at the default the photographs' materials are built
 without the addition at all (`photographToeFor` answers null), so the shaders are the ones the

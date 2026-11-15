@@ -17,7 +17,9 @@
 // colour, before the curve, what the toe will take out again. `filmToe` is the
 // toe the photographs then come out with: at 0.04 they add nothing and draw as
 // before; at 0 they leave the curve exactly as they arrived, wherever the
-// frame's own occlusion and bloom have not touched them.
+// photograph's own colour is all that reaches the curve. The frame's occlusion
+// and bloom, and a varnished photograph's own reflection, each leave a part of
+// the toe in place; none adds light the scan did not hold.
 //
 // What reaches the curve is the material's colour after the frame's last
 // stage: the planner's grade and vignette, where its pipeline draws
@@ -26,9 +28,9 @@
 // the view's own frame (a reflection capture, a thumbnail) adds nothing.
 // ---------------------------------------------------------------------------
 
-import { float, luminance, max, min, mix, screenUV, select, smoothstep, uniform, vec3 } from "three/tsl";
+import { color, float, max, min, mix, select, uniform, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { sceneGrade, sceneOutput, VIGNETTE_FALLOFF, VIGNETTE_REACH } from "./scene-grade.js";
+import { cameraEye, sceneGrade, sceneOutput, vignetteShade } from "./scene-grade.js";
 
 /** Khronos PBR Neutral's own toe. */
 export const NEUTRAL_TOE = 0.04;
@@ -185,21 +187,23 @@ export function liftedPhotograph(colour: readonly [number, number, number], stag
 /**
  * A photograph's colour with the lift for `filmToe` added, as shader nodes.
  * `sceneOutput` says what follows the draw this fragment is in; outside the
- * view's own frame the lift is nothing. The grade and the vignette are the
- * pipeline's own (PlannerRenderPipeline.buildPlannerPipeline), restated here:
- * the two must change together.
+ * view's own frame the lift is nothing. What reaches the curve is worked out
+ * with the pipeline's own function (scene-grade.ts cameraEye), so the two
+ * cannot drift apart; film-toe-graph.test.ts runs this graph against it.
  */
 export function photographLift(colour: Node<"vec3">): Node<"vec3"> {
-  const balance = sceneGrade.whiteBalance.sub(1).mul(sceneOutput.graded).add(1);
+  // The pipeline's grade and vignette where they follow this draw; the neutral ones where they do not.
+  const gain = sceneGrade.whiteBalance.sub(1).mul(sceneOutput.graded).add(1);
   const saturation = mix(float(1), sceneGrade.saturation, sceneOutput.graded);
-  const distance = screenUV.sub(0.5).length().mul(VIGNETTE_REACH);
-  const shade = mix(float(1), float(1).sub(sceneOutput.vignette), smoothstep(VIGNETTE_FALLOFF[0], VIGNETTE_FALLOFF[1], distance));
-  const reach = max(sceneOutput.exposure.mul(shade), 1e-4);
-  const balanced = colour.mul(balance);
-  const arriving = mix(vec3(luminance(balanced)), balanced, saturation).mul(reach);
+  const shade = vignetteShade(float(1).sub(sceneOutput.vignette));
+  // What reaches the curve: the camera's eye on the colour, then the exposure.
+  const arriving = cameraEye(colour, color(gain), saturation, shade).mul(sceneOutput.exposure);
   const least = max(min(arriving.r, min(arriving.g, arriving.b)), 0);
   const kept = select(least.lessThan(filmToe.mul(2)), least.mul(least).mul(toeCurvature), least.sub(filmToe));
   const fed = select(kept.lessThan(NEUTRAL_TOE), max(kept, 0).div(NEUTRAL_CURVATURE).sqrt(), kept.add(NEUTRAL_TOE));
+  // The lift is one amount in every channel as it arrives, which the saturation passes unchanged. Back at
+  // the material it is that amount over what scales it on the way: the exposure, the shade, each channel's gain.
+  const reach = max(sceneOutput.exposure.mul(shade), 1e-4);
   const lift = fed.sub(least).mul(sceneOutput.main).div(reach);
-  return colour.add(vec3(lift).div(balance));
+  return colour.add(vec3(lift).div(gain));
 }

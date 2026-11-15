@@ -6,25 +6,10 @@ import {
 import { normalisedGain, sceneOutput, withMainDraw, withPipelineOutput } from "../scene-grade.js";
 import { withNativeComposedFrame, withNativeRenderScope } from "../native-renderer.js";
 import { Color, PerspectiveCamera, RenderTarget, Scene } from "three";
+// three's own Neutral on plain numbers; film-toe-graph.test.ts holds the port to three's source.
+import { khronosNeutral } from "./khronos-neutral.js";
 
 type Colour = [number, number, number];
-
-/** Khronos PBR Neutral as three r186 writes it (nodes/display/ToneMappingFunctions.js), on plain numbers. */
-function khronosNeutral(colour: readonly [number, number, number], exposure: number): Colour {
-  const startCompression = 0.8 - 0.04;
-  const desaturation = 0.15;
-  let [r, g, b] = [colour[0] * exposure, colour[1] * exposure, colour[2] * exposure];
-  const x = Math.min(r, g, b);
-  const offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
-  r -= offset; g -= offset; b -= offset;
-  const peak = Math.max(r, g, b);
-  if (peak < startCompression) return [r, g, b];
-  const d = 1 - startCompression;
-  const newPeak = 1 - (d * d) / (peak + d - startCompression);
-  const scale = newPeak / peak;
-  const mixBy = 1 - 1 / (desaturation * (peak - newPeak) + 1);
-  return [r * scale * (1 - mixBy) + newPeak * mixBy, g * scale * (1 - mixBy) + newPeak * mixBy, b * scale * (1 - mixBy) + newPeak * mixBy];
-}
 
 /** A small seeded generator, so a failure names the same colours every run. */
 function seeded(seed: number): () => number {
