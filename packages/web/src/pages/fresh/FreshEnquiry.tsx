@@ -121,7 +121,10 @@ function daysInMonth(year: number, month: number): number {
  * itself (Blake, 13 and 14 November 2026; review of #405, Q3), in this order.
  * A day the calendar does not have (30 February; a thirteenth month; year
  * 0000, which the API refuses) comes first, since it cannot be compared with
- * today. Then a year past GUEST_ENQUIRY_LATEST_EVENT_DATE, the year of five
+ * today. A browser's own date control never hands the page such a value (it
+ * gives none at all, and FreshEnquiry reads the control's validity for that:
+ * dateUnreadable); this is for a browser that draws the field as plain text.
+ * Then a year past GUEST_ENQUIRY_LATEST_EVENT_DATE, the year of five
  * digits a doubled key gives (20277), which is a real day and after today, so
  * it is never told "from today onwards". Then a day before `today`, the
  * guest's own (guestToday), read when the form is checked.
@@ -162,6 +165,14 @@ export function FreshEnquiry(): ReactElement {
    *  as emailFocusRequests counts the email's. */
   const [dateFocusRequests, setDateFocusRequests] = useState(0);
   const dateRef = useRef<HTMLInputElement>(null);
+  /** Whether Send found the date control holding something that is no date:
+   *  30 February, or a date typed in part. A browser's own control gives the
+   *  page no value for one (it reads as empty) and reports no change while it
+   *  stays so; only its validity says so (measured in Chromium 156 on 15
+   *  November 2026). Send says it, never the form over a guest who is
+   *  part-way through typing a date, and it is dropped once the control
+   *  holds a date again, or nothing. */
+  const [dateUnreadable, setDateUnreadable] = useState(false);
   /** The hidden field no person reaches, and how long the form is open. */
   const { inputRef: hiddenFieldRef, read: readHiddenTrap } = useEnquiryTrap();
 
@@ -225,8 +236,21 @@ export function FreshEnquiry(): ReactElement {
   // The guest's own day, read at each drawing (and again at Send), never the
   // UTC date: the picker's earliest day, and the day a checked date is read against.
   const today = guestToday();
-  const dateRefusal = dateChecked ? eventDateRefusal(dateISO, today) : null;
+  const dateRefusal: EventDateRefusal | null = !dateChecked
+    ? null
+    : dateUnreadable ? "not-on-calendar" : eventDateRefusal(dateISO, today);
   const dateProblem = dateRefusal === null ? null : DATE_REFUSAL_WORDS[dateRefusal];
+
+  /** The control reports no change while what it holds is no date, nor when
+   *  it is emptied from that, so a key's release and leaving the field look
+   *  at it again. The reason stays exactly as Send said it until the control
+   *  no longer holds a non-date: the release of the Enter that sent the form
+   *  must not quieten what that Send just said. */
+  const lookAgainAtDate = (control: HTMLInputElement): void => {
+    if (!dateUnreadable || control.validity.badInput) return;
+    setDateUnreadable(false);
+    setDateFocusRequests(0);
+  };
 
   const emailTrimmed = email.trim();
   const emailProblem =
@@ -243,8 +267,12 @@ export function FreshEnquiry(): ReactElement {
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (composed === null || guests === null) return;
-      // The date comes before the email in the form, so it is named first.
-      if (eventDateRefusal(dateISO, guestToday()) !== null) {
+      // The date comes before the email in the form, so it is named first. A
+      // date the control could not read has no value to check: its validity
+      // says so (dateUnreadable).
+      const unreadable = dateRef.current?.validity.badInput === true;
+      setDateUnreadable(unreadable);
+      if (unreadable || eventDateRefusal(dateISO, guestToday()) !== null) {
         setDateChecked(true);
         setDateFocusRequests((count) => count + 1);
         return;
@@ -353,7 +381,16 @@ export function FreshEnquiry(): ReactElement {
               aria-describedby={dateProblem !== null ? "fr-enq-date-problem" : undefined}
               onChange={(event) => {
                 setDateISO(event.target.value);
+                // A change is a date again, or a part deleted to retype it:
+                // either way it is Send that says a date is no date.
+                setDateUnreadable(false);
                 setDateFocusRequests(0);
+              }}
+              onKeyUp={(event) => {
+                lookAgainAtDate(event.currentTarget);
+              }}
+              onBlur={(event) => {
+                lookAgainAtDate(event.currentTarget);
               }}
             />
             {/* Said when Send finds it, a new alert each Send; a plain line

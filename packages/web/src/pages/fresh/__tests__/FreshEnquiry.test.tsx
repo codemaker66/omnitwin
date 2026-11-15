@@ -269,6 +269,109 @@ describe("FreshEnquiry — a date from today", () => {
     expect(date.hasAttribute("aria-describedby")).toBe(false);
     expect(screen.queryByText("Choose a date from today onwards.")).toBeNull();
   });
+
+  // What a browser's own date control gives the page for a date that is not
+  // one. Measured in Chromium 156 on 15 November 2026: with 30/02/2027 typed,
+  // or a date typed in part, the control's value is empty and it reports no
+  // change; only its validity says so (badInput). The form checks its own
+  // fields, so until it read that, such an enquiry went with no date at all.
+  /** The control as that browser leaves it: an empty value, and whether what
+   *  it holds is no date (`unreadable`), which is its validity's badInput. */
+  function controlHolds(field: HTMLInputElement, unreadable: boolean): void {
+    Object.defineProperty(field, "validity", { configurable: true, get: () => ({ badInput: unreadable, valid: !unreadable }) });
+  }
+
+  it("holds Send for a date the browser's own control could not read (30 February, or a date typed in part): \"Choose a date from the calendar.\"", () => {
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    render(<FreshEnquiry />);
+    const date = dateField();
+    controlHolds(date, true);
+    expect(date.value, "the control gives the page no value for it").toBe("");
+    send();
+    expectHeldOnTheDate(date, "Choose a date from the calendar.");
+  });
+
+  it("is not quietened by the release of the key that sent the form, nor by a key that still leaves no date", () => {
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    render(<FreshEnquiry />);
+    const date = dateField();
+    controlHolds(date, true);
+    send();
+    expectHeldOnTheDate(date, "Choose a date from the calendar.");
+    fireEvent.keyUp(date, { key: "Enter", code: "Enter" });
+    fireEvent.keyUp(date, { key: "1", code: "Digit1" });
+    expect(screen.getByRole("alert").textContent, "still said as Send said it").toBe("Choose a date from the calendar.");
+    expect(date.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it.each([
+    ["with the keyboard", (field: HTMLInputElement): void => { fireEvent.keyUp(field, { key: "Backspace", code: "Backspace" }); }],
+    ["with the picker's own Clear, seen when the guest leaves the field", (field: HTMLInputElement): void => { fireEvent.blur(field); }],
+  ] as const)("drops the reason once the guest empties the control (%s), which reports no change, and then sends the enquiry with no date", async (_how, emptied) => {
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    mocks.submitGuestEnquiry.mockResolvedValueOnce({ enquiryId: "enq-no-date" });
+    render(<FreshEnquiry />);
+    const date = dateField();
+    controlHolds(date, true);
+    send();
+    expectHeldOnTheDate(date, "Choose a date from the calendar.");
+    // The last part cleared: the control is empty, its value as empty as before.
+    controlHolds(date, false);
+    emptied(date);
+    expect(date.getAttribute("aria-invalid")).toBe("false");
+    expect(date.hasAttribute("aria-describedby")).toBe(false);
+    expect(screen.queryByText("Choose a date from the calendar.")).toBeNull();
+    send();
+    await waitFor(() => { expect(mocks.submitGuestEnquiry).toHaveBeenCalledTimes(1); });
+    expect((mocks.submitGuestEnquiry.mock.calls[0]?.[0] as { eventDate?: unknown }).eventDate).toBeUndefined();
+  });
+
+  it("follows the control as the guest corrects it: a date before today is told so quietly, and one from today is sent", async () => {
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    mocks.submitGuestEnquiry.mockResolvedValueOnce({ enquiryId: "enq-corrected" });
+    render(<FreshEnquiry />);
+    const date = dateField();
+    controlHolds(date, true);
+    send();
+    expectHeldOnTheDate(date, "Choose a date from the calendar.");
+    // 30 February corrected to the 28th, which the control reports as a change.
+    controlHolds(date, false);
+    fireEvent.change(date, { target: { value: "2027-02-28" } });
+    expect(screen.queryByRole("alert"), "no alert while the guest corrects it").toBeNull();
+    expect(screen.queryByText("Choose a date from the calendar.")).toBeNull();
+    expect(screen.getByText("Choose a date from today onwards.")).toBeTruthy();
+    fireEvent.change(date, { target: { value: "2028-02-28" } });
+    expect(date.getAttribute("aria-invalid")).toBe("false");
+    expect(screen.queryByText("Choose a date from today onwards.")).toBeNull();
+    send();
+    await waitFor(() => {
+      expect(mocks.submitGuestEnquiry).toHaveBeenCalledWith(expect.objectContaining({ eventDate: "2028-02-28" }));
+    });
+  });
+
+  // Part-way through typing a date is the ordinary way to a whole one, so the
+  // form does not say "from the calendar" over a guest who is still typing:
+  // Send says it, if what the control holds is still no date by then.
+  it("says nothing while the guest is part-way through retyping a date, until Send finds it", () => {
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    render(<FreshEnquiry />);
+    const date = dateField();
+    fireEvent.change(date, { target: { value: "2027-04-29" } });
+    send();
+    expectHeldOnTheDate(date, "Choose a date from today onwards.");
+    // One part deleted to retype it: the control reports its value empty, and
+    // what it holds is no date. Then a digit, which it does not report.
+    controlHolds(date, true);
+    fireEvent.change(date, { target: { value: "" } });
+    fireEvent.keyUp(date, { key: "3", code: "Digit3" });
+    fireEvent.blur(date);
+    expect(date.getAttribute("aria-invalid")).toBe("false");
+    expect(date.hasAttribute("aria-describedby")).toBe(false);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("Choose a date from the calendar.")).toBeNull();
+    send();
+    expectHeldOnTheDate(date, "Choose a date from the calendar.");
+  });
 });
 
 // Blake, 12 November 2026: a hidden trap on the public forms. The front door
