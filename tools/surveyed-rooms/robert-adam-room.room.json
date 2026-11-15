@@ -1,0 +1,2524 @@
+{
+  "$schema": "./room.schema.json",
+  "schemaVersion": 1,
+  "slug": "robert-adam-room",
+  "name": "Robert Adam Room",
+  "venue": "trades-hall",
+  "published": {
+    "length": 11.2,
+    "width": 7.6,
+    "height": 2.8,
+    "area": 85.1,
+    "source": "tradeshallglasgow.co.uk/rooms (research/research-room-facts.md, fetched 2026-10-17); the venue's own room plan labels 11.4 m, 7.4 m, 10 m and 5.6 m",
+    "note": "The fields hold the lower section's published figures; the venue also publishes the upper section, 9.7 x 5.6 x 2.18 m, 54.3 m2 (the schema holds one set). Measured: lower section 109.0 m2 of floor, steps 3.1 m2, upper section 52.5 m2, 164.5 m2 in all. The published 11.2 x 7.6 m is the lower section's west wall to the lobby door's casing (11.19 m) by the street wall's face to the shoulders (7.64 m); the room is wider than that south of the lobby door (12.49 m) and deeper in the middle (9.44 m from the street wall's face to the back wall, 9.92 m from the entrance screen). The published 2.8 m is the beams' soffit (2.80-2.83 m); the panels between them are 3.17-3.22 m. Upper section: 5.61 m wide by 9.82 m from the lobby's south wall to the north wall, 2.17 m under its lower ceiling and 2.29 m under the raised field. Drawing and planning use the measured outline; the published capacities are kept (decided 18 October 2026). One room with two floor levels; nothing can be placed on the steps."
+  },
+  "source": {
+    "kind": "matterport-e57-twin",
+    "captureId": "trades-hall-matterport-e57-2026-07-11",
+    "captured": "2026-07-11",
+    "twin": "https://twin.venviewer.com/trades-hall",
+    "manifest": "manifest.json",
+    "mesh": "mesh/dollhouse.glb",
+    "meshSha256": "21ee097393cdaf80d5924a876fc73cbf149c0d4b050bcb56011dad2e1dd3aa9a",
+    "meshTier": "ops-grade-2cm",
+    "panoramas": {
+      "path": "tiles/scan_{index:03d}/equirect_8192.webp",
+      "size": 8192
+    },
+    "frame": {
+      "name": "e57",
+      "units": "m",
+      "up": "+Z"
+    },
+    "note": "Capture date as the twin gives it; unverified, as the Saloon's config notes."
+  },
+  "transform": {
+    "centre": [
+      0.32,
+      -0.04
+    ],
+    "floorZ": -3.575,
+    "quarterTurns": 2,
+    "note": "x = 0.32 - X, y = Z + 3.575, z = Y + 0.04. A proper rotation (det +1), the Grand Hall's quarter turn; the street wall is on -z and +x points 191.1 deg true. The centre is the middle of the outline's bounding box (X -5.938..6.576, Y -11.400..11.327) within 2 mm; it falls on the steps. Floor Z -3.575 is the lower floor's plane at the lower section's centre (-3.5753 by the raster's fit, -3.5751 by plumb lines)."
+  },
+  "site": {
+    "frame": "grand-hall-planner",
+    "observer": {
+      "latitude": 55.8593,
+      "longitude": -4.2491
+    },
+    "minusZBearingTrue": 101.1,
+    "minusZBearingGrid": 102.96,
+    "gridMinusTrueDeg": 1.861,
+    "gridOrigin": [
+      259325.3,
+      665183.84
+    ],
+    "floorODN": 10.57,
+    "pavementY": -0.17,
+    "daylightChannel": "windows",
+    "note": "Derived from the Grand Hall frame constants (tools/grand-hall-survey/README.md, Frame; merchant-city-v2 frame block). This room's quarter turn is the Grand Hall's, so its -z is the Grand Hall's -z, E57 -Y: 101.1 deg true, 102.96 grid, facing Glassford Street. gridOrigin = the Grand Hall's (259332, 665191) + this origin's Grand Hall planner position (x = 8.795 - 0.32 = 8.475, z = -0.04 + 4.963 = 4.923) on +x (-0.22427, -0.97453) and +z (-0.97453, 0.22427). floorODN = 14.19 - 0.045 - 3.575 (the Grand Hall's floor is E57 Z 0.045 at 14.19 m ODN); pavementY = 10.40 - floorODN: the lower floor is 0.17 m above the Glassford Street pavement as the Grand Hall's frame has it (one pavement level for the whole front: its fall along the street is not measured here). The three street openings are one storey below the Grand Hall's windows: their skylines must be recomputed at this height."
+  },
+  "stations": [
+    {
+      "id": "scan_085",
+      "role": "doorway",
+      "opening": "door-lobby",
+      "note": "In the lobby door's passage, 1.48 m beyond the casing's face."
+    },
+    {
+      "id": "scan_086",
+      "role": "room"
+    },
+    {
+      "id": "scan_087",
+      "role": "room"
+    },
+    {
+      "id": "scan_088",
+      "role": "room"
+    },
+    {
+      "id": "scan_094",
+      "role": "room"
+    },
+    {
+      "id": "scan_095",
+      "role": "room"
+    },
+    {
+      "id": "scan_096",
+      "role": "room"
+    },
+    {
+      "id": "scan_097",
+      "role": "room"
+    },
+    {
+      "id": "scan_098",
+      "role": "room"
+    },
+    {
+      "id": "scan_099",
+      "role": "room"
+    },
+    {
+      "id": "scan_100",
+      "role": "room"
+    },
+    {
+      "id": "scan_101",
+      "role": "room"
+    },
+    {
+      "id": "scan_102",
+      "role": "room",
+      "note": "Directly under the centre chandelier."
+    },
+    {
+      "id": "scan_103",
+      "role": "room"
+    },
+    {
+      "id": "scan_104",
+      "role": "room"
+    },
+    {
+      "id": "scan_105",
+      "role": "room",
+      "note": "In the entrance recess, 0.34 m from the screen."
+    },
+    {
+      "id": "scan_106",
+      "role": "room"
+    },
+    {
+      "id": "scan_107",
+      "role": "room"
+    },
+    {
+      "id": "scan_108",
+      "role": "room"
+    },
+    {
+      "id": "scan_109",
+      "role": "room"
+    },
+    {
+      "id": "scan_110",
+      "role": "room"
+    },
+    {
+      "id": "scan_111",
+      "role": "room"
+    },
+    {
+      "id": "scan_113",
+      "role": "room",
+      "note": "In the step alcove, at the foot of the steps."
+    },
+    {
+      "id": "scan_112",
+      "role": "room",
+      "note": "On the landing at the head of the steps; like the seven that follow it stands on the upper floor, 2.07 m above the lower floor that y = 0 is."
+    },
+    {
+      "id": "scan_114",
+      "role": "room"
+    },
+    {
+      "id": "scan_115",
+      "role": "room"
+    },
+    {
+      "id": "scan_116",
+      "role": "room"
+    },
+    {
+      "id": "scan_117",
+      "role": "room"
+    },
+    {
+      "id": "scan_118",
+      "role": "room"
+    },
+    {
+      "id": "scan_119",
+      "role": "room"
+    },
+    {
+      "id": "scan_120",
+      "role": "room"
+    }
+  ],
+  "walls": {
+    "vertices": [
+      [
+        6.258,
+        -10.88
+      ],
+      [
+        3.146,
+        -10.88
+      ],
+      [
+        3.146,
+        -8.059
+      ],
+      [
+        2.069,
+        -8.059
+      ],
+      [
+        2.069,
+        -10.247
+      ],
+      [
+        1.878,
+        -10.247
+      ],
+      [
+        1.878,
+        -11.36
+      ],
+      [
+        -0.915,
+        -11.36
+      ],
+      [
+        -0.915,
+        -10.22
+      ],
+      [
+        -1.408,
+        -10.22
+      ],
+      [
+        -1.408,
+        -8.043
+      ],
+      [
+        -2.443,
+        -8.043
+      ],
+      [
+        -2.443,
+        -10.667
+      ],
+      [
+        -4.744,
+        -10.667
+      ],
+      [
+        -4.744,
+        -9.917
+      ],
+      [
+        -6.256,
+        -9.917
+      ],
+      [
+        -6.232,
+        -6.529
+      ],
+      [
+        -5.924,
+        -6.529
+      ],
+      [
+        -5.924,
+        -5.777
+      ],
+      [
+        -4.949,
+        -5.777
+      ],
+      [
+        -4.949,
+        -3.825
+      ],
+      [
+        -5.921,
+        -3.825
+      ],
+      [
+        -5.921,
+        -3.236
+      ],
+      [
+        -4.98,
+        -3.236
+      ],
+      [
+        -4.98,
+        -1.444
+      ],
+      [
+        -2.443,
+        -1.444
+      ],
+      [
+        -2.443,
+        -1.546
+      ],
+      [
+        -1.312,
+        -1.546
+      ],
+      [
+        -1.312,
+        0.416
+      ],
+      [
+        -0.811,
+        0.416
+      ],
+      [
+        -0.811,
+        0.72
+      ],
+      [
+        -0.913,
+        0.72
+      ],
+      [
+        -0.913,
+        1.298
+      ],
+      [
+        -0.824,
+        1.298
+      ],
+      [
+        0.228,
+        2.347
+      ],
+      [
+        0.242,
+        3.09
+      ],
+      [
+        0.169,
+        9.9
+      ],
+      [
+        0.105,
+        10.14
+      ],
+      [
+        0.016,
+        10.34
+      ],
+      [
+        -0.179,
+        10.54
+      ],
+      [
+        -0.429,
+        10.73
+      ],
+      [
+        -1.03,
+        10.872
+      ],
+      [
+        -1.352,
+        10.942
+      ],
+      [
+        -1.352,
+        11.258
+      ],
+      [
+        5.808,
+        11.367
+      ],
+      [
+        5.808,
+        5.782
+      ],
+      [
+        4.306,
+        5.782
+      ],
+      [
+        4.366,
+        3.09
+      ],
+      [
+        4.386,
+        1.493
+      ],
+      [
+        3.392,
+        1.493
+      ],
+      [
+        1.666,
+        1.493
+      ],
+      [
+        1.666,
+        0.72
+      ],
+      [
+        1.564,
+        0.72
+      ],
+      [
+        1.564,
+        0.416
+      ],
+      [
+        2.048,
+        0.416
+      ],
+      [
+        2.048,
+        -1.537
+      ],
+      [
+        3.207,
+        -1.537
+      ],
+      [
+        3.207,
+        0.04
+      ],
+      [
+        4.386,
+        0.04
+      ],
+      [
+        4.893,
+        0.04
+      ],
+      [
+        4.893,
+        -1.447
+      ],
+      [
+        5.088,
+        -1.447
+      ],
+      [
+        5.088,
+        -3.238
+      ],
+      [
+        6.232,
+        -3.238
+      ]
+    ],
+    "segments": [
+      {
+        "id": "street-w",
+        "name": "Street wall, west bay",
+        "kind": "solid",
+        "height": 2.68,
+        "note": "E57 Y = -10.920 (wall face above and below the window; the apron under the board is 2.5 cm proud). Carries the west window. A boxed lintel 2.677 m up runs 0.44 m into the room over it."
+      },
+      {
+        "id": "pier-w-w",
+        "name": "West pier, west face",
+        "kind": "solid",
+        "height": 2.809,
+        "note": "E57 X = -2.826 (rms 4.0 mm). The piers are fluted casings on dark bases; this pier's end is 6 cm wider each side for its last 0.3 m (X -2.888)."
+      },
+      {
+        "id": "pier-w-n",
+        "name": "West pier, end",
+        "kind": "solid",
+        "height": 2.804,
+        "note": "E57 Y = -8.099 (rms 7.6 mm: the flutes; a tape line down its middle reads 2-3 cm deeper than its edges). A loudspeaker at its head."
+      },
+      {
+        "id": "pier-w-e",
+        "name": "West pier, east face",
+        "kind": "solid",
+        "height": 3.157,
+        "note": "E57 X = -1.749 (rms 1.2 mm)."
+      },
+      {
+        "id": "street-cw",
+        "name": "Street wall, centre bay, west of the recess",
+        "kind": "solid",
+        "height": 2.801,
+        "note": "E57 Y = -10.287, 0.19 m long."
+      },
+      {
+        "id": "recess-w",
+        "name": "Entrance recess, west side",
+        "kind": "solid",
+        "height": 2.798,
+        "note": "E57 X = -1.558 (rms 3.0 mm; +1.9 deg over its 1.1 m, drawn axis-parallel)."
+      },
+      {
+        "id": "entrance",
+        "name": "Entrance screen",
+        "kind": "screen",
+        "height": 2.796,
+        "note": "E57 Y = -11.40: a white timber screen across the back of the recess, a glazed door between two sidelights, on a dark timber plinth 0.285 m high. The door's leaf is at -11.40 and the sidelights' glass at -11.45. Two planters stand in front of it; the door is not in use."
+      },
+      {
+        "id": "recess-e",
+        "name": "Entrance recess, east side",
+        "kind": "solid",
+        "height": 2.798,
+        "note": "E57 X = 1.235 (rms 3.4 mm)."
+      },
+      {
+        "id": "street-ce",
+        "name": "Street wall, centre bay, east of the recess",
+        "kind": "solid",
+        "height": 2.803,
+        "note": "E57 Y = -10.260, 0.49 m long."
+      },
+      {
+        "id": "pier-e-w",
+        "name": "East pier, west face",
+        "kind": "solid",
+        "height": 3.14,
+        "note": "E57 X = 1.728 (rms 0.9 mm). Its end is wider for its last 0.3 m (X 1.613)."
+      },
+      {
+        "id": "pier-e-n",
+        "name": "East pier, end",
+        "kind": "solid",
+        "height": 2.825,
+        "note": "E57 Y = -8.083 (rms 9.0 mm: the flutes). A loudspeaker at its head."
+      },
+      {
+        "id": "pier-e-e",
+        "name": "East pier, east face",
+        "kind": "solid",
+        "height": 2.819,
+        "note": "E57 X = 2.763 (rms 6.7 mm)."
+      },
+      {
+        "id": "street-e",
+        "name": "Street wall, east bay",
+        "kind": "solid",
+        "height": 2.717,
+        "note": "E57 Y = -10.707: the dwarf wall under the east window. This bay has no wall face above the board: the window fills it from pier to return. A boxed lintel 2.716 m up runs over it."
+      },
+      {
+        "id": "se-west",
+        "name": "East bay, return",
+        "kind": "solid",
+        "height": 2.807,
+        "note": "E57 X = 5.064 (rms 4.2 mm)."
+      },
+      {
+        "id": "se-return",
+        "name": "South-east return",
+        "kind": "solid",
+        "height": 2.811,
+        "note": "E57 Y = -9.957 (rms 8.2 mm)."
+      },
+      {
+        "id": "east-s",
+        "name": "East wall, south part",
+        "kind": "solid",
+        "height": 2.808,
+        "note": "Drawn as measured: E57 X 6.576 at the return to 6.552 at the jog (-0.41 deg, rms 1.3 mm)."
+      },
+      {
+        "id": "east-jog",
+        "name": "East wall, jog",
+        "kind": "solid",
+        "height": 2.805,
+        "note": "0.31 m step at E57 Y -6.569."
+      },
+      {
+        "id": "east-mid",
+        "name": "East wall, south of the lobby door",
+        "kind": "solid",
+        "height": 3.175,
+        "note": "E57 X = 6.244 (rms 1.7 mm)."
+      },
+      {
+        "id": "casing-s",
+        "name": "Lobby door's casing, south side",
+        "kind": "solid",
+        "height": 3.216,
+        "note": "E57 Y = -5.817: the doorway to the entrance hall stands in a casing 0.975 m into the room and 1.95 m wide."
+      },
+      {
+        "id": "casing",
+        "name": "Lobby door's casing, face",
+        "kind": "solid",
+        "height": 3.214,
+        "note": "E57 X = 5.269 (jambs rms 9 mm; the head over the door fits the same plane, 4.5 mm). Carries the double door to the entrance hall, a timber architrave, an exit sign on a cornice shelf and a fire call point south of the door; the casing's top is 2.16 m, with the east panel above it."
+      },
+      {
+        "id": "casing-n",
+        "name": "Lobby door's casing, north side",
+        "kind": "solid",
+        "height": 3.216,
+        "note": "E57 Y = -3.865."
+      },
+      {
+        "id": "east-n",
+        "name": "East wall, north of the lobby door",
+        "kind": "solid",
+        "height": 3.162,
+        "note": "E57 X = 6.241 (rms 2.6 mm), 0.59 m long."
+      },
+      {
+        "id": "ne-south",
+        "name": "North-east shoulder",
+        "kind": "solid",
+        "height": 3.164,
+        "note": "E57 Y = -3.276: the room narrows here by 0.94 m, as it does on the west at Y -3.278."
+      },
+      {
+        "id": "ne-east",
+        "name": "East wall, north part",
+        "kind": "solid",
+        "height": 3.17,
+        "note": "E57 X = 5.300 (rms 0.2 mm)."
+      },
+      {
+        "id": "back-east",
+        "name": "Back wall, east",
+        "kind": "solid",
+        "height": 3.166,
+        "note": "E57 Y = -1.484 (rms 1.2 mm), plain."
+      },
+      {
+        "id": "pilaster-rtn",
+        "name": "East pilaster, side",
+        "kind": "solid",
+        "height": 3.151,
+        "note": "0.10 m step."
+      },
+      {
+        "id": "pilaster",
+        "name": "East pilaster",
+        "kind": "solid",
+        "height": 2.818,
+        "note": "E57 Y = -1.586: a fluted casing as wide as the east pier, facing it, with a loudspeaker at its head. Its west return stands at X 1.607, 2.5 cm into the alcove's mouth."
+      },
+      {
+        "id": "alcove-e",
+        "name": "Step alcove, east wall",
+        "kind": "solid",
+        "height": 3.186,
+        "note": "E57 X = 1.632 (the fit keeps 57% of its points: a timber-framed mirror from the skirting to about 2 m gives the mesh a false surface behind it at 1.66; a tape line above both mirrors reads 3.343 m wall to wall, the two fits 3.350). A niche 0.23 m wide and 0.17 m deep at its north end (X 1.44..1.66, Y to 0.55) is drawn closed."
+      },
+      {
+        "id": "archwall-e",
+        "name": "Wall of the arch, east of it",
+        "kind": "solid",
+        "height": 3.182,
+        "note": "E57 Y = 0.376."
+      },
+      {
+        "id": "archjamb-e",
+        "name": "Arch to the upper section, east jamb",
+        "kind": "solid",
+        "height": 2.773,
+        "note": "E57 X = 1.131: the arch's timber lining, 0.30 m deep. The arch is 2.375 m wide and as high as the upper section's ceiling (2.77 m above the lower floor), square-headed."
+      },
+      {
+        "id": "landing-rt-e",
+        "name": "Landing, east return",
+        "kind": "solid",
+        "height": 2.778,
+        "note": "0.10 m step behind the lining."
+      },
+      {
+        "id": "landing-e",
+        "name": "Landing, east wall",
+        "kind": "solid",
+        "height": 2.779,
+        "note": "E57 X = 1.233 (rms 1.6 mm)."
+      },
+      {
+        "id": "screen-tail",
+        "name": "Screen wall, south tail",
+        "kind": "solid",
+        "height": 2.773,
+        "note": "E57 Y = 1.258, 0.09 m, tangent to the curve."
+      },
+      {
+        "id": "screen",
+        "name": "Curved screen wall",
+        "kind": "solid",
+        "height": 2.765,
+        "sagitta": -0.307,
+        "note": "A quarter circle, radius 1.052 m about E57 (1.144, 2.307) (rms 5.6 mm over five heights), bowing into the room: the outside of the rear corridor's rounded corner. White, plain, with a skirting. The chord is drawn; the wall's middle stands 0.308 m inside it."
+      },
+      {
+        "id": "lobby-e",
+        "name": "Lobby, east wall",
+        "kind": "solid",
+        "height": 2.77,
+        "note": "From the curve's end to the arch into the main upper room: E57 X 0.092 to 0.078."
+      },
+      {
+        "id": "up-east",
+        "name": "Upper section, east wall",
+        "kind": "solid",
+        "height": 2.771,
+        "note": "Drawn as measured: E57 X 0.078 at the arch to 0.151 at the nook (+0.61 deg, rms 2.5 mm). A partition 0.19 m thick with the rear corridor behind it. Carries the double door to the corridor, a pier 0.19 x 0.30 m at Y 8.40..8.72 and a radiator cover (Y 8.4..9.78, 0.88 m high, 0.31 m deep). The arch's east leaf stood open against it (Y 3.09..4.99, face X -0.109)."
+      },
+      {
+        "id": "nook-1",
+        "name": "North-east nook, curved wall, chord 1",
+        "kind": "solid",
+        "height": 2.632,
+        "note": "The nook's south wall is a free curve, not a circle (a circle of 1.29 m fits only its first 45 degrees, rms 8 mm): drawn as chords through measured points."
+      },
+      {
+        "id": "nook-2",
+        "name": "North-east nook, curved wall, chord 2",
+        "kind": "solid",
+        "height": 2.632
+      },
+      {
+        "id": "nook-3",
+        "name": "North-east nook, curved wall, chord 3",
+        "kind": "solid",
+        "height": 2.632
+      },
+      {
+        "id": "nook-4",
+        "name": "North-east nook, curved wall, chord 4",
+        "kind": "solid",
+        "height": 2.699
+      },
+      {
+        "id": "nook-5",
+        "name": "North-east nook, curved wall, chord 5",
+        "kind": "solid",
+        "height": 2.77
+      },
+      {
+        "id": "nook-6",
+        "name": "North-east nook, curved wall, chord 6",
+        "kind": "solid",
+        "height": 2.797
+      },
+      {
+        "id": "nook-end",
+        "name": "North-east nook, end",
+        "kind": "solid",
+        "height": 2.797,
+        "note": "E57 X = 1.672: the nook narrows from 1.37 m to 0.32 m and stops. Battens, poles and a banner stand were stored in it."
+      },
+      {
+        "id": "up-north",
+        "name": "Upper section, north wall",
+        "kind": "solid",
+        "height": 2.77,
+        "note": "Drawn as measured: E57 Y 11.218 at the nook's end to 11.327 at the west wall (-0.87 deg, rms 2.3 mm over 6.8 m). Carries two doors."
+      },
+      {
+        "id": "up-west",
+        "name": "Upper section, west wall",
+        "kind": "solid",
+        "height": 2.764,
+        "note": "E57 X = -5.488 (rms 2.0 mm, read above the casing). A boxed casing with radiator grilles stands 0.251 m in front of it from Y 8.2 to the north wall, 1.55 m high (face X -5.237)."
+      },
+      {
+        "id": "up-return",
+        "name": "Upper section, west return",
+        "kind": "solid",
+        "height": 2.775,
+        "note": "E57 Y = 5.742 (rms 2.0 mm); its east 0.45 m stands 6 cm further north (5.80)."
+      },
+      {
+        "id": "up-west-s",
+        "name": "Upper section, west wall, south part",
+        "kind": "solid",
+        "height": 2.587,
+        "note": "E57 X -3.986 at the return to -4.046 at the arch (the bare wall is seen only at Y 5.06..5.70, -3.994, and south of the arch). The arch's west leaf stood open against it (Y 3.14..4.97, face X -3.775): the wall behind the leaf was not seen."
+      },
+      {
+        "id": "lobby-w",
+        "name": "Lobby, west wall",
+        "kind": "solid",
+        "height": 2.574,
+        "note": "E57 X -4.046 at the arch to -4.066 (+0.70 deg, rms 2.9 mm). It runs on south past the lift's landing to Y 0.03. A boxing 0.11 m proud runs along its head from 1.98 m above the upper floor (as along the wall north of the arch), which is where the height given stops."
+      },
+      {
+        "id": "lift-landing",
+        "name": "Lobby, opening to the lift's landing",
+        "kind": "solid",
+        "height": 2.765,
+        "note": "E57 Y = 1.453: the line of the lobby's south wall across the way to the platform lift's upper landing (X -4.07..-3.07, Y 0.03..1.45, outside this outline; ceiling 1.98 m above the upper floor). The whole segment is the opening."
+      },
+      {
+        "id": "lobby-s",
+        "name": "Lobby, south wall",
+        "kind": "solid",
+        "height": 2.77,
+        "note": "E57 Y = 1.453 (sections 1.450, fans 1.456; rms 7.8 mm): the north face of the block between the lift and the steps. A framed painting, fire notices, a call point and an extinguisher on it."
+      },
+      {
+        "id": "block-e",
+        "name": "Landing, west wall",
+        "kind": "solid",
+        "height": 2.771,
+        "note": "E57 X = -1.346 (rms 4.1 mm): the block's east face, with a rounded corner to the lobby."
+      },
+      {
+        "id": "landing-rt-w",
+        "name": "Landing, west return",
+        "kind": "solid",
+        "height": 2.771,
+        "note": "0.10 m step behind the arch's lining."
+      },
+      {
+        "id": "archjamb-w",
+        "name": "Arch to the upper section, west jamb",
+        "kind": "solid",
+        "height": 2.772,
+        "note": "E57 X = -1.244: the arch's timber lining."
+      },
+      {
+        "id": "archwall-w",
+        "name": "Wall of the arch, west of it",
+        "kind": "solid",
+        "height": 3.134,
+        "note": "E57 Y = 0.376."
+      },
+      {
+        "id": "alcove-w",
+        "name": "Step alcove, west wall",
+        "kind": "solid",
+        "height": 3.158,
+        "note": "E57 X = -1.728 (rms 5.6 mm; -1.9 deg over 1.2 m, drawn axis-parallel). Carries a timber-framed mirror. The block's casing returns at X -1.793 for its south 0.4 m, 6.5 cm behind this face."
+      },
+      {
+        "id": "block-s",
+        "name": "Block between the lift and the steps, south face",
+        "kind": "solid",
+        "height": 2.793,
+        "note": "E57 Y = -1.577 (rms 9.0 mm: the flutes): a fluted casing facing the west pier, with a loudspeaker at its head and a lift call button on it. Its corners are chamfered."
+      },
+      {
+        "id": "block-w",
+        "name": "Lift bay, east wall",
+        "kind": "solid",
+        "height": 2.708,
+        "note": "E57 X = -2.887 (rms 6.8 mm)."
+      },
+      {
+        "id": "lift-head",
+        "name": "Lift bay, north side under the landing",
+        "kind": "screen",
+        "height": 0.594,
+        "note": "E57 Y = 0.0 (the riser under the upper floor's edge is at -0.031). To 0.594 m it is the edge of the upper floor; above that, the lift's gate on its landing (top rail about 1.1 m above the upper floor). Height given: the riser's."
+      },
+      {
+        "id": "lift-head-w",
+        "name": "Lift bay, north wall",
+        "kind": "solid",
+        "height": 2.706,
+        "note": "E57 Y = 0.026 (rms 1.9 mm), drawn in line with the riser."
+      },
+      {
+        "id": "lift-w",
+        "name": "Lift bay, west wall",
+        "kind": "solid",
+        "height": 2.708,
+        "note": "E57 X = -4.573 (rms 2.8 mm)."
+      },
+      {
+        "id": "bay-return",
+        "name": "Return by the lift bay",
+        "kind": "solid",
+        "height": 3.13,
+        "note": "0.195 m step at E57 Y -1.487."
+      },
+      {
+        "id": "door-wall",
+        "name": "West wall, north part",
+        "kind": "solid",
+        "height": 3.132,
+        "note": "E57 X = -4.768 (rms 5.0 mm). Carries the timber door and two ventilation grilles."
+      },
+      {
+        "id": "nw-step",
+        "name": "North-west shoulder",
+        "kind": "solid",
+        "height": 3.13,
+        "note": "E57 Y = -3.278 (rms 2.4 mm)."
+      },
+      {
+        "id": "west",
+        "name": "West wall",
+        "kind": "solid",
+        "height": 3.193,
+        "note": "Drawn as measured at its dado: E57 X -5.912 at the shoulder to -5.938 at the street wall (+0.19 deg, rms 1.6 mm over 7 m). The dado stands 0.165 m proud of the wall to its rail at about 1.2 m; above the rail the wall is at X -6.089 (rms 5.9 mm). A plant stood in the south-west corner."
+      }
+    ]
+  },
+  "openings": [
+    {
+      "id": "window-west",
+      "wall": "street-w",
+      "kind": "window",
+      "headShape": "square",
+      "centreE57": [
+        -4.606,
+        -10.92
+      ],
+      "width": 2.26,
+      "sill": 0.605,
+      "head": 2.677,
+      "glazing": "frosted-lower",
+      "dressing": "none",
+      "stateInScan": "closed",
+      "reveal": {
+        "depth": 0.398
+      },
+      "glass": {
+        "width": 2.25,
+        "sill": 0.605,
+        "head": 2.677,
+        "headShape": "square",
+        "planes": [
+          {
+            "depth": 0.398,
+            "note": "E57 Y -11.318 (rms 7.3 mm; fans -11.319)."
+          }
+        ],
+        "frostedBelow": 2.0,
+        "note": "Three lights, 0.50, 1.02 and 0.49 m of glass between mullions 0.12 m wide (centres X -5.17 and -4.03) standing 4-5 cm proud of the glass. A frosted film with seven crests reaches 2.00 m; the glass above is clear. The glass itself rises to 2.805 m, 0.13 m above the lintel's soffit and behind it: the schema's glass may not rise above its face opening, so 2.677 is given."
+      },
+      "note": "Jambs E57 X -5.73 and -3.48 (mesh; -5.742 and -3.47 on the photograph re-projected on the glass plane). Board at 0.605 m. A plant stood in front of its west light."
+    },
+    {
+      "id": "entrance-screen",
+      "wall": "entrance",
+      "kind": "window",
+      "headShape": "square",
+      "centreE57": [
+        -0.17,
+        -11.4
+      ],
+      "width": 2.72,
+      "sill": 0.285,
+      "head": 2.745,
+      "glazing": "frosted-lower",
+      "dressing": "none",
+      "stateInScan": "closed",
+      "glass": {
+        "width": 2.72,
+        "sill": 0.285,
+        "head": 2.745,
+        "headShape": "square",
+        "planes": [
+          {
+            "depth": 0.05,
+            "note": "Sidelights' glass at E57 Y -11.45; the door leaf's own glass about -11.41."
+          }
+        ],
+        "frostedBelow": 1.945,
+        "note": "Sidelights X -1.53..-0.79 and 0.45..1.19; the door's glass X -0.57..0.22, from 0.535 m. The frosting carries the lettering THE TRADES HALL OF GLASGOW ... ENTRANCE and an arrow. The sidelights' sills are behind the planters and were not seen: the plinth's 0.285 m is given."
+      },
+      "note": "A glazed door (leaf X -0.77..0.43, hinged on the west, closed, to 2.805 m) between two sidelights (to 2.745 m): recorded as a window because the schema's doors are not glazed. Two white planters with plants stood in front of it."
+    },
+    {
+      "id": "window-east",
+      "wall": "street-e",
+      "kind": "window",
+      "headShape": "square",
+      "centreE57": [
+        3.935,
+        -10.707
+      ],
+      "width": 2.23,
+      "sill": 0.637,
+      "head": 2.716,
+      "glazing": "frosted-lower",
+      "dressing": "none",
+      "stateInScan": "closed",
+      "reveal": {
+        "depth": 0.413
+      },
+      "glass": {
+        "width": 2.23,
+        "sill": 0.637,
+        "head": 2.716,
+        "headShape": "square",
+        "planes": [
+          {
+            "depth": 0.413,
+            "note": "E57 Y -11.120 (rms 5.3 mm; fans -11.120)."
+          }
+        ],
+        "frostedBelow": 2.04,
+        "note": "Three lights, 0.48, 1.03 and 0.50 m of glass between mullions (centres X 3.36 and 4.50). Frosted film with crests to 2.04 m, clear above. The glass rises to 2.825 m behind the lintel, whose soffit (2.716 m) is given."
+      },
+      "note": "Fills the bay: glass from E57 X 2.82 to 5.05, the pier and the return as its jambs. Board at 0.637 m. A plant stood at each side of it."
+    },
+    {
+      "id": "door-lobby",
+      "wall": "casing",
+      "kind": "door",
+      "headShape": "square",
+      "centreE57": [
+        5.269,
+        -4.835
+      ],
+      "width": 1.35,
+      "sill": 0,
+      "head": 2.05,
+      "glazing": "none",
+      "stateInScan": "open",
+      "note": "To the entrance hall: clear between E57 Y -5.51 and -4.16 at the face (the reveals are -5.510 and -4.172), head 2.035 (mesh) to 2.075 m (photograph). Two pairs of leaves, panelled timber and glazed timber, all folded back into a passage 1.7 m deep. Station 85 stands in the passage."
+    },
+    {
+      "id": "door-west",
+      "wall": "door-wall",
+      "kind": "door",
+      "headShape": "square",
+      "centreE57": [
+        -4.768,
+        -2.735
+      ],
+      "width": 0.71,
+      "sill": 0,
+      "head": 2.045,
+      "glazing": "none",
+      "stateInScan": "closed",
+      "note": "A six-panel timber door in a timber architrave 0.18 m wide (architrave E57 Y -3.30..-2.18, to 2.20 m); the leaf is 0.10-0.14 m behind the face."
+    },
+    {
+      "id": "door-corridor",
+      "wall": "up-east",
+      "kind": "door",
+      "headShape": "square",
+      "centreE57": [
+        0.126,
+        7.495
+      ],
+      "width": 1.66,
+      "sill": 0.594,
+      "head": 2.634,
+      "glazing": "none",
+      "stateInScan": "closed",
+      "note": "White double doors to the rear corridor, leaves E57 Y 6.665..8.325, 2.04 m high, with brass pulls and an exit sign over them. Sill and head are above the lower floor: the door stands on the upper floor."
+    },
+    {
+      "id": "door-north-east",
+      "wall": "up-north",
+      "kind": "door",
+      "headShape": "square",
+      "centreE57": [
+        -0.22,
+        11.247
+      ],
+      "width": 0.94,
+      "sill": 0.594,
+      "head": 2.599,
+      "glazing": "none",
+      "stateInScan": "closed",
+      "note": "A white flush door at the mouth of the nook (leaf E57 X -0.69..0.25), 2.005 m high."
+    },
+    {
+      "id": "door-north-west",
+      "wall": "up-north",
+      "kind": "door",
+      "headShape": "square",
+      "centreE57": [
+        -2.785,
+        11.286
+      ],
+      "width": 0.95,
+      "sill": 0.594,
+      "head": 2.584,
+      "glazing": "none",
+      "stateInScan": "closed",
+      "note": "A white flush door with a vent grille, a kick plate and an entry lock (leaf E57 X -3.26..-2.31), 1.99 m high."
+    },
+    {
+      "id": "lift-landing",
+      "wall": "lift-landing",
+      "kind": "arch",
+      "headShape": "square",
+      "centreE57": [
+        -3.569,
+        1.453
+      ],
+      "width": 0.99,
+      "sill": 0.594,
+      "head": 2.569,
+      "glazing": "none",
+      "note": "The way to the platform lift's upper landing: no door, a lintel 1.975 m above the upper floor."
+    }
+  ],
+  "ceiling": {
+    "kind": "coffered",
+    "height": 2.8,
+    "heightRange": [
+      2.79,
+      2.83
+    ],
+    "regions": [
+      {
+        "id": "panel-alcove",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            2.045,
+            -1.185
+          ],
+          [
+            -1.31,
+            -1.185
+          ],
+          [
+            -1.31,
+            0.41
+          ],
+          [
+            2.045,
+            0.41
+          ]
+        ],
+        "height": 3.191,
+        "heightRange": [
+          3.125,
+          3.207
+        ],
+        "note": "Flat raised panel within a moulded cornice; bounds where the ceiling passes 3.05 m: E57 X -1.77..1.70, Y -1.23..0.45 (4.8 m2, 82% of its rectangle). Drawn pulled in to the outline (X -1.73..1.63, Y -1.23..0.37): the panel runs over a dado, a casing or a wall's head."
+      },
+      {
+        "id": "panel-north-east",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            -2.48,
+            -2.86
+          ],
+          [
+            -4.97,
+            -2.86
+          ],
+          [
+            -4.97,
+            -1.445
+          ],
+          [
+            -2.48,
+            -1.445
+          ]
+        ],
+        "height": 3.216,
+        "heightRange": [
+          3.103,
+          3.218
+        ],
+        "note": "Flat raised panel within a moulded cornice; bounds where the ceiling passes 3.05 m: E57 X 2.80..5.30, Y -2.90..-1.48 (3.5 m2, 98% of its rectangle)."
+      },
+      {
+        "id": "panel-north-west",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            5.07,
+            -2.885
+          ],
+          [
+            3.245,
+            -2.885
+          ],
+          [
+            3.245,
+            -1.46
+          ],
+          [
+            5.07,
+            -1.46
+          ]
+        ],
+        "height": 3.174,
+        "heightRange": [
+          3.083,
+          3.183
+        ],
+        "note": "Flat raised panel within a moulded cornice; bounds where the ceiling passes 3.05 m: E57 X -4.75..-2.92, Y -2.92..-1.50 (2.5 m2, 97% of its rectangle)."
+      },
+      {
+        "id": "panel-north-centre",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            2.04,
+            -2.91
+          ],
+          [
+            -1.31,
+            -2.91
+          ],
+          [
+            -1.31,
+            -1.46
+          ],
+          [
+            2.04,
+            -1.46
+          ]
+        ],
+        "height": 3.189,
+        "heightRange": [
+          3.103,
+          3.207
+        ],
+        "note": "Flat raised panel within a moulded cornice; bounds where the ceiling passes 3.05 m: E57 X -1.75..1.65, Y -2.95..-1.50 (4.8 m2, 96% of its rectangle). Drawn pulled in to the outline (X -1.72..1.63, Y -2.95..-1.50): the panel runs over a dado, a casing or a wall's head."
+      },
+      {
+        "id": "panel-east",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            -2.505,
+            -6.335
+          ],
+          [
+            -5.912,
+            -6.335
+          ],
+          [
+            -5.912,
+            -5.789
+          ],
+          [
+            -4.937,
+            -5.789
+          ],
+          [
+            -4.937,
+            -3.813
+          ],
+          [
+            -5.909,
+            -3.813
+          ],
+          [
+            -5.909,
+            -3.248
+          ],
+          [
+            -2.505,
+            -3.248
+          ]
+        ],
+        "height": 3.213,
+        "heightRange": [
+          3.129,
+          3.218
+        ],
+        "note": "Flat raised panel within a moulded cornice; bounds where the ceiling passes 3.05 m: E57 X 2.83..6.28, Y -6.38..-3.27 (8.7 m2, 82% of its rectangle). A round plaster medallion with a chandelier at its centre; a concealed light in the cornice washes the panel (seen lit on the centre one). It runs round the lobby door's casing and is drawn so."
+      },
+      {
+        "id": "panel-west",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            6.23,
+            -6.335
+          ],
+          [
+            3.22,
+            -6.335
+          ],
+          [
+            3.22,
+            -3.26
+          ],
+          [
+            6.23,
+            -3.26
+          ]
+        ],
+        "height": 3.173,
+        "heightRange": [
+          3.111,
+          3.178
+        ],
+        "note": "Flat raised panel within a moulded cornice; bounds where the ceiling passes 3.05 m: E57 X -6.05..-2.90, Y -6.38..-3.30 (9.2 m2, 95% of its rectangle). A round plaster medallion with a chandelier at its centre; a concealed light in the cornice washes the panel (seen lit on the centre one). Drawn pulled in to the outline (X -5.91..-2.90, Y -6.38..-3.30): the panel runs over a dado, a casing or a wall's head."
+      },
+      {
+        "id": "panel-centre",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            1.895,
+            -6.21
+          ],
+          [
+            -1.205,
+            -6.21
+          ],
+          [
+            -1.205,
+            -3.385
+          ],
+          [
+            1.895,
+            -3.385
+          ]
+        ],
+        "height": 3.187,
+        "heightRange": [
+          3.174,
+          3.202
+        ],
+        "note": "Flat raised panel within a moulded cornice; bounds where the ceiling passes 3.05 m: E57 X -1.57..1.52, Y -6.25..-3.42 (8.5 m2, 97% of its rectangle). A round plaster medallion with a chandelier at its centre; a concealed light in the cornice washes the panel (seen lit on the centre one)."
+      },
+      {
+        "id": "panel-south-centre",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            2.045,
+            -8.135
+          ],
+          [
+            -1.355,
+            -8.135
+          ],
+          [
+            -1.355,
+            -6.71
+          ],
+          [
+            2.045,
+            -6.71
+          ]
+        ],
+        "height": 3.199,
+        "heightRange": [
+          3.107,
+          3.208
+        ],
+        "note": "Flat raised panel within a moulded cornice; bounds where the ceiling passes 3.05 m: E57 X -1.73..1.68, Y -8.18..-6.75 (4.7 m2, 97% of its rectangle)."
+      },
+      {
+        "id": "panel-south-east",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            -2.505,
+            -8.11
+          ],
+          [
+            -5.105,
+            -8.11
+          ],
+          [
+            -5.105,
+            -6.71
+          ],
+          [
+            -2.505,
+            -6.71
+          ]
+        ],
+        "height": 3.213,
+        "heightRange": [
+          3.104,
+          3.215
+        ],
+        "note": "Flat raised panel within a moulded cornice; bounds where the ceiling passes 3.05 m: E57 X 2.83..5.42, Y -8.15..-6.75 (3.6 m2, 98% of its rectangle)."
+      },
+      {
+        "id": "panel-south-west",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            6.24,
+            -8.135
+          ],
+          [
+            3.195,
+            -8.135
+          ],
+          [
+            3.195,
+            -6.735
+          ],
+          [
+            6.24,
+            -6.735
+          ]
+        ],
+        "height": 3.185,
+        "heightRange": [
+          3.102,
+          3.192
+        ],
+        "note": "Flat raised panel within a moulded cornice; bounds where the ceiling passes 3.05 m: E57 X -6.05..-2.88, Y -8.18..-6.78 (4.4 m2, 99% of its rectangle). Drawn pulled in to the outline (X -5.92..-2.88, Y -8.18..-6.78): the panel runs over a dado, a casing or a wall's head."
+      },
+      {
+        "id": "panel-between-piers",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            2.06,
+            -9.81
+          ],
+          [
+            -1.405,
+            -9.81
+          ],
+          [
+            -1.405,
+            -8.51
+          ],
+          [
+            2.06,
+            -8.51
+          ]
+        ],
+        "height": 3.201,
+        "heightRange": [
+          3.093,
+          3.212
+        ],
+        "note": "Flat raised panel within a moulded cornice; bounds where the ceiling passes 3.05 m: E57 X -1.75..1.73, Y -9.85..-8.55 (4.3 m2, 96% of its rectangle)."
+      },
+      {
+        "id": "beam-north-west",
+        "kind": "beam",
+        "outline": [
+          [
+            5.07,
+            -3.285
+          ],
+          [
+            3.245,
+            -3.285
+          ],
+          [
+            3.245,
+            -2.86
+          ],
+          [
+            5.07,
+            -2.86
+          ]
+        ],
+        "height": 2.896,
+        "heightRange": [
+          2.887,
+          2.91
+        ],
+        "note": "A cross beam of the side aisle with a flat soffit, 0.10-0.13 m higher than the main beams (E57 X -4.75..-2.92, Y -3.33..-2.90)."
+      },
+      {
+        "id": "beam-north-east",
+        "kind": "beam",
+        "outline": [
+          [
+            -2.505,
+            -3.26
+          ],
+          [
+            -4.975,
+            -3.26
+          ],
+          [
+            -4.975,
+            -2.86
+          ],
+          [
+            -2.505,
+            -2.86
+          ]
+        ],
+        "height": 2.932,
+        "heightRange": [
+          2.926,
+          2.944
+        ],
+        "note": "A cross beam of the side aisle with a flat soffit, 0.10-0.13 m higher than the main beams (E57 X 2.83..5.33, Y -3.30..-2.90)."
+      },
+      {
+        "id": "beam-south-west",
+        "kind": "beam",
+        "outline": [
+          [
+            6.24,
+            -6.785
+          ],
+          [
+            3.22,
+            -6.785
+          ],
+          [
+            3.22,
+            -6.335
+          ],
+          [
+            6.24,
+            -6.335
+          ]
+        ],
+        "height": 2.901,
+        "heightRange": [
+          2.894,
+          2.926
+        ],
+        "note": "A cross beam of the side aisle with a flat soffit, 0.10-0.13 m higher than the main beams (E57 X -6.10..-2.90, Y -6.83..-6.38)."
+      },
+      {
+        "id": "beam-south-east",
+        "kind": "beam",
+        "outline": [
+          [
+            -2.505,
+            -6.76
+          ],
+          [
+            -5.13,
+            -6.76
+          ],
+          [
+            -5.13,
+            -6.335
+          ],
+          [
+            -2.505,
+            -6.335
+          ]
+        ],
+        "height": 2.925,
+        "heightRange": [
+          2.924,
+          2.943
+        ],
+        "note": "A cross beam of the side aisle with a flat soffit, 0.10-0.13 m higher than the main beams (E57 X 2.83..5.45, Y -6.80..-6.38)."
+      },
+      {
+        "id": "lintel-west",
+        "kind": "soffit",
+        "outline": [
+          [
+            6.238,
+            -10.868
+          ],
+          [
+            3.158,
+            -10.868
+          ],
+          [
+            3.158,
+            -10.41
+          ],
+          [
+            6.238,
+            -10.41
+          ]
+        ],
+        "height": 2.678,
+        "heightRange": [
+          2.675,
+          2.707
+        ],
+        "note": "A boxed lintel along the street wall over the west window, from the wall's face 0.47 m into the room (to E57 Y -10.45); it runs on behind the face to the window's head."
+      },
+      {
+        "id": "lintel-east",
+        "kind": "soffit",
+        "outline": [
+          [
+            -2.455,
+            -10.655
+          ],
+          [
+            -4.732,
+            -10.655
+          ],
+          [
+            -4.732,
+            -10.21
+          ],
+          [
+            -2.455,
+            -10.21
+          ]
+        ],
+        "height": 2.717,
+        "heightRange": [
+          2.714,
+          2.73
+        ],
+        "note": "As the west lintel, over the east window, to E57 Y -10.25."
+      },
+      {
+        "id": "lift-bay",
+        "kind": "soffit",
+        "outline": [
+          [
+            4.881,
+            -1.435
+          ],
+          [
+            3.219,
+            -1.435
+          ],
+          [
+            3.219,
+            0.028
+          ],
+          [
+            4.881,
+            0.028
+          ]
+        ],
+        "height": 2.706,
+        "heightRange": [
+          2.701,
+          2.712
+        ],
+        "note": "The lift bay's ceiling (plumb lines 2.705 m)."
+      },
+      {
+        "id": "upper-low",
+        "kind": "soffit",
+        "outline": [
+          [
+            -0.811,
+            0.416
+          ],
+          [
+            -0.811,
+            0.72
+          ],
+          [
+            -0.913,
+            0.72
+          ],
+          [
+            -0.913,
+            1.298
+          ],
+          [
+            -0.824,
+            1.298
+          ],
+          [
+            -0.552,
+            1.331
+          ],
+          [
+            -0.298,
+            1.436
+          ],
+          [
+            -0.08,
+            1.603
+          ],
+          [
+            0.087,
+            1.821
+          ],
+          [
+            0.192,
+            2.075
+          ],
+          [
+            0.228,
+            2.347
+          ],
+          [
+            0.242,
+            3.09
+          ],
+          [
+            0.169,
+            9.9
+          ],
+          [
+            0.105,
+            10.14
+          ],
+          [
+            0.016,
+            10.34
+          ],
+          [
+            -0.179,
+            10.54
+          ],
+          [
+            -0.429,
+            10.73
+          ],
+          [
+            -1.03,
+            10.872
+          ],
+          [
+            -1.352,
+            10.942
+          ],
+          [
+            -1.352,
+            11.258
+          ],
+          [
+            5.808,
+            11.367
+          ],
+          [
+            5.808,
+            5.782
+          ],
+          [
+            4.306,
+            5.782
+          ],
+          [
+            4.366,
+            3.09
+          ],
+          [
+            4.386,
+            1.493
+          ],
+          [
+            3.392,
+            1.493
+          ],
+          [
+            1.666,
+            1.493
+          ],
+          [
+            1.666,
+            0.72
+          ],
+          [
+            1.564,
+            0.72
+          ],
+          [
+            1.564,
+            0.416
+          ]
+        ],
+        "height": 2.765,
+        "heightRange": [
+          2.757,
+          2.778
+        ],
+        "note": "The upper section's lower ceiling, 2.166-2.180 m above its own floor: the landing, the lobby, and a border round the raised field (0.94 m wide on the west, 1.0 m on the north and east, and the south-west quarter). Downlights; an air grille and an exit sign over the landing."
+      },
+      {
+        "id": "upper-raised-north",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            4.87,
+            6.165
+          ],
+          [
+            1.195,
+            6.165
+          ],
+          [
+            1.195,
+            10.315
+          ],
+          [
+            4.87,
+            10.315
+          ]
+        ],
+        "height": 2.882,
+        "heightRange": [
+          2.871,
+          2.89
+        ],
+        "note": "The raised field's north rectangle, 2.288 m above the upper floor (plumb lines 2.288): E57 X -4.55..-0.88, Y 6.12..10.28. Plain, flat, square-edged. Both columns stand under it."
+      },
+      {
+        "id": "upper-raised-south",
+        "kind": "raised-panel",
+        "outline": [
+          [
+            3.27,
+            3.165
+          ],
+          [
+            1.195,
+            3.165
+          ],
+          [
+            1.195,
+            6.165
+          ],
+          [
+            3.27,
+            6.165
+          ]
+        ],
+        "height": 2.887,
+        "heightRange": [
+          2.874,
+          2.89
+        ],
+        "note": "The raised field's south rectangle, 2.293 m above the upper floor: E57 X -2.95..-0.88, Y 3.12..6.12."
+      },
+      {
+        "id": "arch-main",
+        "kind": "beam",
+        "outline": [
+          [
+            4.346,
+            3.06
+          ],
+          [
+            0.262,
+            3.06
+          ],
+          [
+            0.262,
+            3.14
+          ],
+          [
+            4.346,
+            3.14
+          ]
+        ],
+        "height": 2.649,
+        "heightRange": [
+          2.645,
+          2.656
+        ],
+        "note": "The head of the arch between the lobby and the main upper room, 2.055 m above the upper floor, wall to wall (4.12 m). A pair of white leaves 1.9 m wide hang on its jambs; both stood open, back against the side walls. This internal doorway has no place in the outline."
+      }
+    ],
+    "note": "Lower section: a grid of flat-soffited beams (2.799 m under the west one, 2.826 m under the east, 2.81-2.82 m across the middle aisle) with moulded cornices, and eleven flat raised panels between them (3.17-3.22 m). There are no vaults, domes or segmental beams: what read as arches in the panoramas are straight beams in an equirectangular picture. The bays by the street wall (2.795 and 2.808 m), the entrance recess (2.797 m) and the strip by the east wall (2.802 m) are at the beams' level. The height given is the beams' soffit, the venue's published 2.8 m. Upper section: see the upper regions; every height here is above the lower floor."
+  },
+  "floor": {
+    "kind": "strip-boards",
+    "boardsRun": "z",
+    "levels": [
+      {
+        "id": "lower",
+        "height": 0,
+        "note": "E57 Z = -3.5687 + 0.00054 X + 0.00102 Y (rms 4.0 mm over 91.5 m2; plumb lines -3.5683 + 0.00060 X + 0.00106 Y, rms 3.9 mm): -3.575 at the lower section's centre, level within 1.5 cm."
+      },
+      {
+        "id": "step-1",
+        "height": 0.146,
+        "outline": [
+          [
+            1.836,
+            -0.496
+          ],
+          [
+            -1.097,
+            -0.496
+          ],
+          [
+            -1.097,
+            -0.198
+          ],
+          [
+            1.836,
+            -0.198
+          ]
+        ],
+        "note": "First tread, E57 Z -3.429, riser 0.149 m at Y -0.536 (it runs -0.529 at X -1 to -0.545 at X +1: the flight is 0.5 deg askew). 2.93 m wide, wider than the others: it returns in front of the plinths. Brass nosing on its front and both ends."
+      },
+      {
+        "id": "step-2",
+        "height": 0.286,
+        "outline": [
+          [
+            1.582,
+            -0.198
+          ],
+          [
+            -0.82,
+            -0.198
+          ],
+          [
+            -0.82,
+            0.107
+          ],
+          [
+            1.582,
+            0.107
+          ]
+        ],
+        "note": "Second tread, E57 Z -3.289, riser 0.140 m at Y -0.238, going 0.298 m, 2.40 m wide between the plinths. Brass nosing."
+      },
+      {
+        "id": "step-3",
+        "height": 0.43,
+        "outline": [
+          [
+            1.582,
+            0.107
+          ],
+          [
+            -0.82,
+            0.107
+          ],
+          [
+            -0.82,
+            0.416
+          ],
+          [
+            1.582,
+            0.416
+          ]
+        ],
+        "note": "Third tread, E57 Z -3.145, riser 0.144 m at Y 0.067, going 0.305 m. Brass nosing. The upper floor is one more riser up: 0.162 m at Y 0.376, going 0.309 m."
+      },
+      {
+        "id": "plinth-west",
+        "height": 0.43,
+        "outline": [
+          [
+            1.847,
+            -0.198
+          ],
+          [
+            1.582,
+            -0.198
+          ],
+          [
+            1.582,
+            0.416
+          ],
+          [
+            1.847,
+            0.416
+          ]
+        ],
+        "note": "A dark timber plinth beside the flight, level with the third tread (0.265 x 0.61 m), carrying a potted plant. Between it and the alcove's wall a strip 0.2 m wide stays at the lower floor's level, where the handrail's posts stand."
+      },
+      {
+        "id": "plinth-east",
+        "height": 0.43,
+        "outline": [
+          [
+            -0.82,
+            -0.198
+          ],
+          [
+            -1.097,
+            -0.198
+          ],
+          [
+            -1.097,
+            0.416
+          ],
+          [
+            -0.82,
+            0.416
+          ]
+        ],
+        "note": "As the west plinth (0.277 x 0.61 m), with a plant."
+      },
+      {
+        "id": "upper",
+        "height": 0.594,
+        "outline": [
+          [
+            -0.811,
+            0.416
+          ],
+          [
+            -0.811,
+            0.72
+          ],
+          [
+            -0.913,
+            0.72
+          ],
+          [
+            -0.913,
+            1.298
+          ],
+          [
+            -0.824,
+            1.298
+          ],
+          [
+            -0.552,
+            1.331
+          ],
+          [
+            -0.298,
+            1.436
+          ],
+          [
+            -0.08,
+            1.603
+          ],
+          [
+            0.087,
+            1.821
+          ],
+          [
+            0.192,
+            2.075
+          ],
+          [
+            0.228,
+            2.347
+          ],
+          [
+            0.242,
+            3.09
+          ],
+          [
+            0.169,
+            9.9
+          ],
+          [
+            0.105,
+            10.14
+          ],
+          [
+            0.016,
+            10.34
+          ],
+          [
+            -0.179,
+            10.54
+          ],
+          [
+            -0.429,
+            10.73
+          ],
+          [
+            -1.03,
+            10.872
+          ],
+          [
+            -1.352,
+            10.942
+          ],
+          [
+            -1.352,
+            11.258
+          ],
+          [
+            5.808,
+            11.367
+          ],
+          [
+            5.808,
+            5.782
+          ],
+          [
+            4.306,
+            5.782
+          ],
+          [
+            4.366,
+            3.09
+          ],
+          [
+            4.386,
+            1.493
+          ],
+          [
+            3.392,
+            1.493
+          ],
+          [
+            1.666,
+            1.493
+          ],
+          [
+            1.666,
+            0.72
+          ],
+          [
+            1.564,
+            0.72
+          ],
+          [
+            1.564,
+            0.416
+          ]
+        ],
+        "note": "E57 Z = -2.9611 + 0.00574 X - 0.00052 Y (rms 7.3 mm; plumb lines -2.9656 + 0.00456 X - 0.00022 Y, rms 7.4 mm): -2.981 at its centre, but it falls westwards, -2.963 at the east wall to -2.993 at the west wall (3 cm over 5.6 m). Everything north of the top riser: the landing, the lobby and the main upper room."
+      },
+      {
+        "id": "lift-platform",
+        "height": 0,
+        "outline": [
+          [
+            4.35,
+            -1.594
+          ],
+          [
+            3.32,
+            -1.594
+          ],
+          [
+            3.32,
+            0.009
+          ],
+          [
+            4.35,
+            0.009
+          ]
+        ],
+        "note": "The platform lift's footprint as scanned (platform down): 1.03 x 1.60 m, its gate 5-15 cm in front of the bay's mouth. Nothing can be placed here."
+      }
+    ],
+    "note": "Mid-brown oak boards in both sections, running along E57 Y in the lower section (not measured in the upper; board width not measured). The steps are the same oak with brass nosings. The schema's levels carry no flag: the steps (step-1 to step-3), the plinths and the lift's platform are places where nothing can be placed, and that is said only in their notes. Brass handrails run up both sides of the flight from posts beside the first tread to posts on the landing."
+  },
+  "freeStanding": [
+    {
+      "id": "column-south",
+      "kind": "column",
+      "shape": "round",
+      "centre": [
+        2.382,
+        6.262
+      ],
+      "size": [
+        0.152,
+        0.152
+      ],
+      "height": 2.288,
+      "note": "A slender round white column, diameter 0.152 m (circle fit rms 5.6 mm at five heights), E57 (-2.062, 6.222). It stands on the upper floor (y 0.594) and meets the raised field (y 2.882): the height given is its own length."
+    },
+    {
+      "id": "column-north",
+      "kind": "column",
+      "shape": "round",
+      "centre": [
+        2.358,
+        8.83
+      ],
+      "size": [
+        0.152,
+        0.152
+      ],
+      "height": 2.288,
+      "note": "A slender round white column, diameter 0.152 m (circle fit rms 4.3 mm at five heights), E57 (-2.038, 8.790). It stands on the upper floor (y 0.594) and meets the raised field (y 2.882): the height given is its own length."
+    }
+  ],
+  "fittings": [
+    {
+      "id": "chandelier-west",
+      "kind": "chandelier",
+      "style": "crystal-chandelier-small",
+      "position": [
+        4.82,
+        2.55,
+        -4.794
+      ],
+      "suspension": 3.168,
+      "lowest": 2.2,
+      "radius": 0.22,
+      "note": "A crystal chandelier, five candle lamps, on a chain from the middle of its panel's medallion. Lowest drop 2.20 m and reach 0.22 m from the photograph re-projected on the plane through its axis (the mesh, which loses the crystals, gives 2.280 m)."
+    },
+    {
+      "id": "chandelier-centre",
+      "kind": "chandelier",
+      "style": "crystal-chandelier-large",
+      "position": [
+        0.362,
+        2.55,
+        -4.81
+      ],
+      "suspension": 3.183,
+      "lowest": 2.1,
+      "radius": 0.3,
+      "note": "A crystal chandelier, eight candle lamps in two tiers; station 102 stands under it, on a chain from the middle of its panel's medallion. Lowest drop 2.10 m and reach 0.30 m from the photograph re-projected on the plane through its axis (the mesh, which loses the crystals, gives 2.145 m)."
+    },
+    {
+      "id": "chandelier-east",
+      "kind": "chandelier",
+      "style": "crystal-chandelier-small",
+      "position": [
+        -4.2,
+        2.55,
+        -4.798
+      ],
+      "suspension": 3.21,
+      "lowest": 2.255,
+      "radius": 0.23,
+      "note": "A crystal chandelier, five candle lamps; the mesh puts its axis at X 4.57, the ceiling rose in the photograph at 4.51, on a chain from the middle of its panel's medallion. Lowest drop 2.25 m and reach 0.23 m from the photograph re-projected on the plane through its axis (the mesh, which loses the crystals, gives 2.300 m)."
+    }
+  ],
+  "edits": [
+    {
+      "type": "recess",
+      "wall": "casing",
+      "u": [
+        {
+          "opening": "door-lobby",
+          "offset": -0.675
+        },
+        {
+          "opening": "door-lobby",
+          "offset": 0.675
+        }
+      ],
+      "v": [
+        0.0,
+        2.05
+      ],
+      "depth": 0.3,
+      "leafPlane": 0.05,
+      "applies": [
+        "relief"
+      ],
+      "note": "PROPOSED. The lobby door stood open: a plain recess, its closed leaves modelled by the web. Leaf plane not measured."
+    }
+  ],
+  "occluders": [
+    {
+      "id": "occluder-west",
+      "shape": "vertical-cylinder",
+      "centreE57": [
+        -4.5,
+        -4.834
+      ],
+      "radius": 0.28,
+      "zE57": [
+        -1.425,
+        -0.407
+      ],
+      "fitting": "chandelier-west"
+    },
+    {
+      "id": "occluder-centre",
+      "shape": "vertical-cylinder",
+      "centreE57": [
+        -0.042,
+        -4.85
+      ],
+      "radius": 0.36,
+      "zE57": [
+        -1.525,
+        -0.392
+      ],
+      "fitting": "chandelier-centre"
+    },
+    {
+      "id": "occluder-east",
+      "shape": "vertical-cylinder",
+      "centreE57": [
+        4.52,
+        -4.838
+      ],
+      "radius": 0.29,
+      "zE57": [
+        -1.37,
+        -0.365
+      ],
+      "fitting": "chandelier-east"
+    }
+  ],
+  "survey": {
+    "methodRevision": 2,
+    "publish": {
+      "folder": "packages/web/public/rooms/robert-adam-room/survey-2026-07-11",
+      "revision": 1
+    },
+    "projection": {
+      "walls": {
+        "cosMin": 0.2,
+        "pCos": 4.0,
+        "qDist": 3.0,
+        "maxDist": 16.0
+      },
+      "ceiling": {
+        "cosMin": 0.15,
+        "pCos": 4.0,
+        "qDist": 3.0,
+        "maxDist": 16.0
+      },
+      "floor": {
+        "cosMin": 0.12,
+        "pCos": 2.0,
+        "qDist": 2.0,
+        "maxDist": 16.0,
+        "glare": 1,
+        "nadir": true
+      }
+    },
+    "wallViews": {
+      "ppm": 200,
+      "heightRange": [
+        -0.05,
+        3.3
+      ],
+      "eyeInset": 1.0,
+      "near": 0.0,
+      "far": 2.3,
+      "tileMaxLength": 6.0,
+      "modes": [
+        "position"
+      ]
+    },
+    "ceilingView": {
+      "name": "ceiling-pos",
+      "ppm": 150,
+      "eyeHeight": 1.0,
+      "near": 1.3,
+      "far": 2.3,
+      "modes": [
+        "position"
+      ]
+    },
+    "floorPhoto": {
+      "ppm": 120,
+      "refill": {
+        "innerFraction": 0.75,
+        "easeDeg": 4
+      }
+    },
+    "atlas": {
+      "size": 8192,
+      "height": 4096,
+      "ppm": {
+        "pixels": 200,
+        "span": 1
+      },
+      "vRange": [
+        -0.02,
+        3.236
+      ],
+      "featherTexels": 10,
+      "gutter": 8
+    },
+    "relief": {
+      "container": "GHR1",
+      "ppm": 100,
+      "vRange": [
+        0,
+        3.216
+      ],
+      "depthRange": [
+        -1.2,
+        0.9
+      ],
+      "simplifyError": 0.005,
+      "holdFloor": 0.04,
+      "holdCeiling": 3.176
+    },
+    "ceilingRelief": {
+      "container": "GHR1",
+      "id": "ceiling",
+      "ppm": 75,
+      "heightRange": [
+        2.3,
+        3.3
+      ],
+      "simplifyError": 0.005
+    },
+    "outputs": {
+      "walls": [
+        {
+          "file": "walls-8192.webp",
+          "size": [
+            8192,
+            4096
+          ]
+        },
+        {
+          "file": "walls-4096.webp",
+          "size": [
+            4096,
+            2048
+          ]
+        }
+      ],
+      "relief": "walls-relief.bin",
+      "ceiling": [
+        {
+          "file": "ceiling-1878.webp",
+          "size": [
+            1878,
+            3410
+          ]
+        },
+        {
+          "file": "ceiling-939.webp",
+          "size": [
+            939,
+            1705
+          ]
+        }
+      ],
+      "ceilingRelief": "ceiling-relief.bin",
+      "floor": [
+        {
+          "file": "floor-1502.webp",
+          "size": [
+            1502,
+            2728
+          ]
+        },
+        {
+          "file": "floor-751.webp",
+          "size": [
+            751,
+            1364
+          ]
+        }
+      ],
+      "manifest": "survey.json"
+    }
+  },
+  "provenance": {
+    "measuredBy": "T-662, robert-adam-measure (Claude)",
+    "method": "As the Saloon's and the Reception Room's: plan sections of the reviewed Matterport dollhouse mesh with robust line fits (Tukey IRLS, two passes) per wall face, circles for the curved wall and the columns; vertical sections for the steps; 2 cm depth rasters and photographs re-projected on each opening's plane for the openings; the lowest down-facing surface on a 2.5 cm raster for the ceilings. An independent pass by ray casting (tape lines wall to wall, fans of rays from the 30 stations, plumb lines, level rays at each riser) checked the outline, both floors, the steps and the ceilings. Scripts: tools/surveyed-rooms/measure/robert-adam-room/.",
+    "date": "2026-11-13",
+    "sources": [
+      "twin mesh/dollhouse.glb (sha256 21ee0973..., matches the twin manifest)",
+      "twin manifest.json (station poses, E57 frame)",
+      "native 4096 px cube faces (image2D) from the Matterport .e57 export, read-only",
+      "twin panoramas tiles/scan_NNN/equirect_512.webp (contact sheets only)",
+      "the venue's Robert Adam Room plan (its four labels and its layout only; private, not copied)"
+    ],
+    "residuals": [
+      {
+        "quantity": "wall face lines (75 faces fitted)",
+        "kind": "fit-rms",
+        "value": 0.009,
+        "unit": "m",
+        "note": "Largest per-face inlier rms: the fluted casings (pier ends, the block, the lobby door's casing: 7-9 mm). Plain faces 0.2-5 mm."
+      },
+      {
+        "quantity": "walls' deviation from the E57 axes",
+        "kind": "fit-max",
+        "value": 0.87,
+        "unit": "deg",
+        "note": "The upper north wall, drawn as measured (10.9 cm over 7.2 m), as are the upper east wall (+0.61 deg), the lower west wall (+0.19) and the lower east wall's south part (-0.41). The others are drawn axis-parallel: up to 1.7 cm from the fitted line at a face's ends (the west pier's west face, -0.36 deg over 2.8 m)."
+      },
+      {
+        "quantity": "independent check: station-fan line fits against the plan-section fits",
+        "kind": "check",
+        "value": 0.006,
+        "unit": "m",
+        "note": "65 faces from 30 stations (20 597 hits; ten more faces drew too few). Every drawn face within 3 mm except the lobby's south wall (+6 mm, drawn between the two) and the street wall's west face (-6 mm on 21 hits, likewise). The entrance screen differed by 21 mm: see the README's corrections."
+      },
+      {
+        "quantity": "independent check: tape lines against the fitted outline",
+        "kind": "check",
+        "value": 0.009,
+        "unit": "m",
+        "note": "19 dimensions at two heights (38 rows of two to four lines), leaving out lines that met a plant, a mullion, a picture frame, the west casing or the flutes of a casing (each named in the README). Largest of the rest: 9 mm (entrance recess), 14 mm on one line of the south-east return."
+      },
+      {
+        "quantity": "screen wall: circle through five heights",
+        "kind": "fit-rms",
+        "value": 0.0056,
+        "unit": "m",
+        "note": "Radius 1.052 m, 991 points. The nook's curved wall is not a circle: chords through measured points, within about 1 cm."
+      },
+      {
+        "quantity": "lower floor plane",
+        "kind": "fit-rms",
+        "value": 0.004,
+        "unit": "m",
+        "note": "91.5 m2; plumb lines 3.9 mm rms and the same plane within 0.2 mm at the centre."
+      },
+      {
+        "quantity": "upper floor plane",
+        "kind": "fit-rms",
+        "value": 0.0073,
+        "unit": "m",
+        "note": "33.7 m2; it is tilted 4.6-5.7 mm/m westwards, so a flat upper level at 0.594 m is within 1.7 cm of it."
+      },
+      {
+        "quantity": "steps: tread levels and riser lines, sections against plumb lines and level rays",
+        "kind": "check",
+        "value": 0.01,
+        "unit": "m",
+        "note": "Tread levels agree within 4 mm; riser lines within 10 mm. Each riser runs 15-20 mm askew over the flight's 2.4 m and is drawn square at its middle."
+      },
+      {
+        "quantity": "ceiling parts: raster medians against plumb lines",
+        "kind": "check",
+        "value": 0.002,
+        "unit": "m",
+        "note": "18 parts, each within 2 mm."
+      },
+      {
+        "quantity": "alcove's side walls",
+        "kind": "tolerance",
+        "value": 0.03,
+        "unit": "m",
+        "note": "Both carry mirrors, behind which the mesh is not trusted; a tape line above the mirrors gives 3.343 m between them, the fits 3.350."
+      },
+      {
+        "quantity": "upper west wall behind the open leaf (E57 Y 3.1..5.0)",
+        "kind": "tolerance",
+        "value": 0.03,
+        "unit": "m",
+        "note": "Not seen: drawn straight between the wall each side of the leaf."
+      },
+      {
+        "quantity": "openings' edges and heads",
+        "kind": "tolerance",
+        "value": 0.02,
+        "unit": "m",
+        "note": "2 cm depth rasters and 4-5 mm photographs re-projected on each opening's own plane; the lobby door's jambs differ by 4-7 cm between the two (the open leaves lie in the reveals) and the mesh's are given."
+      },
+      {
+        "quantity": "chandeliers' lowest points",
+        "kind": "tolerance",
+        "value": 0.05,
+        "unit": "m",
+        "note": "Read by eye from one photograph each; the mesh reads 5-8 cm higher."
+      }
+    ],
+    "note": "One room on two floors: y = 0 is the lower floor, and every height in this file is above it, the upper section's walls, doors, ceiling and columns included (its floor is y = 0.594). What the schema cannot say about this room is listed in the measurement README."
+  }
+}
