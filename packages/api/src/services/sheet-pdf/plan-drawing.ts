@@ -50,10 +50,18 @@ const RING_REACH_M = 0.7;
 
 /** A planner's name too wide for its piece, set beside it instead: one size, on clear floor. */
 const BESIDE_STYLE: TextStyle = { face: "Inter-SemiBold", size: 7, color: INK.primary };
-/** The space between a piece and a name set beside it. */
+/**
+ * Inter SemiBold's vertical metrics in ems, from its own tables: the baseline
+ * below the line's top, the capitals' height and the descenders' depth. The
+ * letters of a name run from its capitals' tops to its descenders.
+ */
+const INTER_SEMIBOLD = { ascender: 0.96875, capHeight: 0.7275, descender: 0.2412 } as const;
+/** The space between a piece and the letters of a name set beside it. */
 const BESIDE_GAP = 1.5;
-/** The least floor a name set beside its piece keeps from every other piece, number and name: twice its gap to its own, so it reads as its own piece's. */
-const BESIDE_CLEAR = 3;
+/** The least floor those letters keep from every other piece, number and name: twice their gap to their own, so the name reads as its own piece's. */
+const BESIDE_CLEAR = 2 * BESIDE_GAP;
+/** The white under a name set beside its piece, round its letters. */
+const BACKING_PAD = { x: 1, y: 0.5 } as const;
 /** A note's copper number on the plan. */
 const MARKER_R = 4.8;
 
@@ -70,8 +78,11 @@ function grown(rect: Rect, by: number): Rect {
   return { left: rect.left - by, top: rect.top - by, right: rect.right + by, bottom: rect.bottom + by };
 }
 
+/** How much ground two boxes may share and still only touch. */
+const TOUCH = 0.1;
+
 function overlaps(a: Rect, b: Rect): boolean {
-  return a.left < b.right - 0.1 && b.left < a.right - 0.1 && a.top < b.bottom - 0.1 && b.top < a.bottom - 0.1;
+  return a.left < b.right - TOUCH && b.left < a.right - TOUCH && a.top < b.bottom - TOUCH && b.top < a.bottom - TOUCH;
 }
 
 /** The page area a piece covers: its corners' box, or its circle's for a round piece. */
@@ -83,6 +94,22 @@ function extentOf(piece: PlanPiece): Rect {
   const xs = piece.corners.map((point) => point.x);
   const ys = piece.corners.map((point) => point.y);
   return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
+}
+
+/**
+ * Whether a band `length` long across the page and `height` tall, centred on (x, y), lies on a box piece: inside
+ * its four corners or on their edges, whichever way the piece is turned. A name's letters always run across the
+ * page, so a piece turned a quarter round (a screen against a side wall) offers its short side to them.
+ */
+function bandOnBox(piece: PlanPiece, x: number, y: number, length: number, height: number): boolean {
+  const band = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u = 0, v = 0]) => ({ x: x + u * length / 2, y: y + v * height / 2 }));
+  // How far inside each edge each band corner lies, signed by the order the piece's corners turn in.
+  const inside = piece.corners.flatMap((from, index) => {
+    const to = piece.corners[(index + 1) % piece.corners.length] ?? from;
+    const edge = Math.hypot(to.x - from.x, to.y - from.y);
+    return edge === 0 ? [] : band.map((point) => ((to.x - from.x) * (point.y - from.y) - (to.y - from.y) * (point.x - from.x)) / edge);
+  });
+  return inside.every((reach) => reach >= -0.01) || inside.every((reach) => reach <= 0.01);
 }
 
 /** Where a note's copper number sits on its piece. */
@@ -119,7 +146,8 @@ function rowAround(piece: PlanPiece, pieces: readonly PlanPiece[]): { readonly e
 
 /**
  * Where each planner's name prints. A name sits on its piece when it fits
- * there, else along the row its piece stands in (rowAround), still centred
+ * there across the page, as names always run (bandOnBox), else along the
+ * row its piece stands in (rowAround), still centred
  * over its own piece and clear of the copper numbers. With `beside`, a name
  * with neither sits just below, above, right or left of its piece, as a map
  * sets a name beside a narrow street: on floor clear of every other piece,
@@ -152,7 +180,12 @@ function placeNames(doc: Doc, drawing: PlanDrawing, markers: ReadonlyMap<string,
       const rect = { left: middle - width / 2 - 1.5, top: cy - style.size * 0.6, right: middle + width / 2 + 1.5, bottom: cy + style.size * 0.6 };
       return { text, style, x: middle - width / 2, y: cy - style.size * 0.55, backing: pieceStyle(piece.object.category).fill, rect };
     };
-    if (width <= Math.max(piece.width, piece.depth) * 0.92 && across >= style.size) {
+    // On its piece where it fits across the page (with room to spare at its ends): inside a box piece's corners
+    // however it is turned; a round piece is the same every way round.
+    const fits = piece.object.collisionType === "cylinder"
+      ? width <= Math.max(piece.width, piece.depth) * 0.92 && across >= style.size
+      : bandOnBox(piece, cx, cy, width / 0.92, style.size);
+    if (fits) {
       placed.push(onPiece(cx));
       continue;
     }
@@ -179,27 +212,37 @@ function placeNames(doc: Doc, drawing: PlanDrawing, markers: ReadonlyMap<string,
       }
     }
     if (!beside) continue;
-    const w = textWidth(doc, BESIDE_STYLE, text) + 3;
-    const h = BESIDE_STYLE.size * 1.2;
+    // Measured on the letters, not the white under them: capitals' tops to
+    // descenders, BESIDE_GAP from the piece's own edge.
+    const size = BESIDE_STYLE.size;
+    const lettersW = textWidth(doc, BESIDE_STYLE, text);
+    const capTop = (INTER_SEMIBOLD.ascender - INTER_SEMIBOLD.capHeight) * size;
+    const foot = (INTER_SEMIBOLD.ascender + INTER_SEMIBOLD.descender) * size;
     const own = extentOf(piece);
     const middle = (own.left + own.right) / 2;
     const level = (own.top + own.bottom) / 2;
-    const spots: readonly Rect[] = [
-      { left: middle - w / 2, top: own.bottom + BESIDE_GAP, right: middle + w / 2, bottom: own.bottom + BESIDE_GAP + h },
-      { left: middle - w / 2, top: own.top - BESIDE_GAP - h, right: middle + w / 2, bottom: own.top - BESIDE_GAP },
-      { left: own.right + BESIDE_GAP, top: level - h / 2, right: own.right + BESIDE_GAP + w, bottom: level + h / 2 },
-      { left: own.left - BESIDE_GAP - w, top: level - h / 2, right: own.left - BESIDE_GAP, bottom: level + h / 2 },
+    // Where the line's top-left goes: below, above, right or left of the piece.
+    const corners: readonly { readonly x: number; readonly y: number }[] = [
+      { x: middle - lettersW / 2, y: own.bottom + BESIDE_GAP - capTop },
+      { x: middle - lettersW / 2, y: own.top - BESIDE_GAP - foot },
+      { x: own.right + BESIDE_GAP, y: level - (capTop + foot) / 2 },
+      { x: own.left - BESIDE_GAP - lettersW, y: level - (capTop + foot) / 2 },
     ];
-    // Touching nothing, and with clear floor round it but for its own piece and the row it stands in.
+    // Touching nothing, with clear floor round its letters but for its own piece
+    // and the row it stands in: the full BESIDE_CLEAR, as overlaps forgives a touch.
     const ownRow: ReadonlySet<PlanPiece> = row?.members ?? new Set([piece]);
-    const spot = spots.find((rect) => rect.left >= floor.left && rect.right <= floor.right && rect.top >= floor.top && rect.bottom <= floor.bottom
-      && clear(rect, NONE) && clear(grown(rect, BESIDE_CLEAR), ownRow));
-    if (spot === undefined) {
+    const choice = corners.map((at) => {
+      const letters: Rect = { left: at.x, top: at.y + capTop, right: at.x + lettersW, bottom: at.y + foot };
+      const backing: Rect = { left: letters.left - BACKING_PAD.x, top: letters.top - BACKING_PAD.y, right: letters.right + BACKING_PAD.x, bottom: letters.bottom + BACKING_PAD.y };
+      return { at, letters, backing };
+    }).find(({ letters, backing }) => backing.left >= floor.left && backing.right <= floor.right && backing.top >= floor.top && backing.bottom <= floor.bottom
+      && clear(backing, NONE) && clear(grown(letters, BESIDE_CLEAR + TOUCH), ownRow));
+    if (choice === undefined) {
       leftOff.add(label);
       continue;
     }
-    taken.push(spot);
-    placed.push({ text, style: BESIDE_STYLE, x: spot.left + 1.5, y: spot.top + BESIDE_STYLE.size * 0.05, backing: "#ffffff", rect: spot });
+    taken.push(choice.backing);
+    placed.push({ text, style: BESIDE_STYLE, x: choice.at.x, y: choice.at.y, backing: "#ffffff", rect: choice.backing });
   }
   return { placed, leftOff: [...leftOff] };
 }
