@@ -43,6 +43,8 @@ files inside one transaction, so a kill at the cap leaves the ledger consistent.
 The workflow remains the audited second pass and keeps the explicit 0044
 approval gate.
 
+The pre-deploy command and its timeout are also kept in `.railway/railway.ts`, Railway's new format, because Railway stops reading `railway.json` on 1 December 2026: [the Railway config move](../operations/railway-config-move.md).
+
 ## Evidence
 
 `packages/api/src/__tests__/migrate-before-deploy-postgres.test.ts` on the

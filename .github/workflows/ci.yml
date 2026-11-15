@@ -608,6 +608,34 @@ jobs:
           sys.exit(0 if result.wasSuccessful() else 1)
           PY
 
+      - name: Railway watch list matches railway.json while both exist
+        # .railway/watch-patterns.json is the one list of paths that make
+        # Railway rebuild the API; .railway/railway.ts and the production
+        # receipt read it. Until railway.json is deleted, Railway reads that
+        # file's build.watchPatterns, so the two must be identical, in the
+        # same order. Once railway.json is gone there is nothing to compare.
+        run: |
+          node --input-type=module <<'JS'
+          import { existsSync, readFileSync } from 'node:fs';
+          const list = JSON.parse(readFileSync('.railway/watch-patterns.json', 'utf8'));
+          if (!Array.isArray(list) || list.length === 0 || !list.every((path) => typeof path === 'string' && path !== '')) {
+            console.log('::error file=.railway/watch-patterns.json::must be a non-empty list of paths');
+            process.exit(1);
+          }
+          if (!existsSync('railway.json')) {
+            console.log('railway.json is absent: nothing to compare.');
+            process.exit(0);
+          }
+          const old = JSON.parse(readFileSync('railway.json', 'utf8')).build?.watchPatterns;
+          if (JSON.stringify(old) !== JSON.stringify(list)) {
+            console.log('::error file=.railway/watch-patterns.json::differs from build.watchPatterns in railway.json, which Railway reads until it is deleted');
+            console.log(`railway.json:        ${JSON.stringify(old)}`);
+            console.log(`watch-patterns.json: ${JSON.stringify(list)}`);
+            process.exit(1);
+          }
+          console.log(`The ${list.length} watch paths match railway.json.`);
+          JS
+
   gpu-scope:
     name: GPU scope
     # The operator-run GPU benchmark is required only when a change can reach
