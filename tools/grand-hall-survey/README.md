@@ -38,7 +38,9 @@ thread: it sets `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS` and `MKL_NUM_THREADS` 
 loads, and `build.sh` sets the same. With BLAS running threads of its own under the four bands, their
 concurrent matrix products deadlocked or crashed on Windows (OpenBLAS 0.3.31: three runs of four on
 the end wall, 13-14 November 2026, the stall inside `project.depth_lookup`), and the extra threads
-only oversubscribed the cores. The
+only oversubscribed the cores. The labels do not depend on either count: on a region of the end
+wall round its portrait (u 2.5 to 8.1 m, v 1.5 to 5.0 m), four BLAS threads under one band thread
+and one BLAS thread under four band threads gave identical arrays. The
 walls' 2 mm detail takes about 15 minutes more (2.5 to 5.3 a wall, at most 1.25 GB), and two runs give
 byte-identical tiles. The portraits' varnish veil takes about a minute and a quarter a canvas (each
 panorama that saw it read once, under 0.8 GB); two runs give byte-identical corrections.

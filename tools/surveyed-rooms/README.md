@@ -180,6 +180,14 @@ and the digests of the files it wrote are appended to `build/steps.json`.
 
 The walls' steps run on four threads (`SURVEY_THREADS`) at below-normal priority, hold one
 panorama at a time, and pause between stations while the file `SURVEY_PAUSE_FILE` names exists.
+The labels step holds BLAS to one thread: `roombuild/step.py` sets `OPENBLAS_NUM_THREADS`,
+`OMP_NUM_THREADS` and `MKL_NUM_THREADS` to 1 for it before anything loads numpy, as `build.sh` and
+`label-views.py` do for the Grand Hall. Its four band threads each call BLAS, and with BLAS running
+threads of its own under them the calls deadlocked or crashed on Windows (three runs of four on the
+Grand Hall's end wall). Set nothing higher for that step. The thread counts do not change the
+result: on a region of that wall round its portrait (u 2.5 to 8.1 m, v 1.5 to 5.0 m; 12,549 blocks),
+four BLAS threads under one band thread and one BLAS thread under four band threads gave the same
+21 arrays.
 A wall's labels are the build's longest sub-command (the Grand Hall's README gives about 40
 minutes for its four walls on four cores, most of it the two long ones).
 
@@ -257,30 +265,60 @@ ends), B7, B10 (3 bays), B14 (a 4096 × 2304 atlas), B16, B17, B18 and B23 (the 
 
 ## Proofs
 
-`prove-grand-hall.py` (config against sources, 18 October 2026): the views from the config are
+`prove-grand-hall.py` (config against sources, 13 November 2026): the views from the config are
 identical to the committed files (`views-walls.json` `11526451…a40a61`, `views-ceiling.json`
-`bc496802…3814c9`), and 170 values read from `hall-spec.ts`, the survey scripts and the web
-modules match the config exactly, now including `survey.outputs` against `build.sh` and the
-`pack-*.py` literals.
+`bc496802…3814c9`), and 174 values read from `hall-spec.ts`, the survey scripts and the web
+modules match the config exactly, including the canvases against `canvasveil.py`, the detail grid
+against `project-detail.py` and `pack-detail.py`, and `survey.outputs` against `build.sh` and the
+`pack-*.py` literals. Three values are no longer compared because master's web model no longer
+holds them as numbers (each window's `sunLimitDeg`, the main door recess's `leafPlane` and its
+opening); the build reads none of them.
 
 `prove-build-identity.py --static grand-hall.room.json --manifest <the twin's manifest.json>` (or
-`SURVEYED_ROOMS_MANIFEST`): 81 checks, none different. Every table
-the new steps derive from the config equals the old scripts' literals, including on the real
-manifest the 49 stations' positions and gains bit for bit, the floor's 3.2 million texel
-positions and the dome's 3.1 million texel positions and normals bit for bit, the atlas layout
-and write order, the relief job, and the projection arguments per surface. It notices a changed
-occluder, patch, floor scale, atlas order, relief order or projection argument.
+`SURVEYED_ROOMS_MANIFEST`): 137 checks, none different. Every table the steps derive from the
+config equals the old scripts' literals, including on the real manifest the 49 stations' positions
+and gains bit for bit (and `project.stations()` gives the same list with the room's `STATION_IDS`
+as it does as written), the floor's 3.2 million texel positions and the dome's 3.1 million texel
+positions and normals bit for bit, the atlas layout and write order, the relief job, the
+projection arguments per surface, and every global the driver points at the room in
+`bestview.py`, `canvasveil.py`, `project-detail.py` and `pack-detail.py` (each wall's origin, u
+axis and normal as float arrays, bit for bit). It also compares `build.sh`'s scripts, in order,
+with the driver's sub-commands, in order, the steps each holds to one BLAS thread, and the commands
+a pinned publish runs. It notices a
+changed occluder, patch, floor scale, atlas order, relief order, projection argument, wall
+visibility limit, canvas, detail grid, station or elevation top.
 
 `tests/test_gh_scripts.py` (T2): on synthetic inputs at the real views' sizes, the old scripts
-and the new steps give identical files throughout (75 compared, 0 different): the end wall's
-projection, the ceiling, the dome's texels, the floor at 30 px/m, the window glass and layers,
-all twelve tiles' corner fixes, the atlas WebPs and PNG, the four relief maps, the GHR1 file
-(byte for byte, both through the same meshoptimizer), the ceiling and dome WebPs, and the
-flattened floor and its WebPs.
+and the driver's steps give identical files throughout: all twelve tiles' corner fixes; the end
+wall's labels (four stations label it, 9,212 seams, 11,220 blocks swept), its 2.5 mm and 5 mm
+orthophotos (6,922 seam equations, 1.4 million texels in the seams' membrane) and its canvas
+report; the ceiling, the dome's texels and the floor at 30 px/m; the window glass and layers; the
+atlas PNG and WebPs (the end wall from its 2.5 mm orthophoto, the others from a 5 mm blend), again
+with `--alpha-from`, and again with a canvas's field; the four relief maps and the GHR1 file (byte
+for byte, both through the same meshoptimizer); the ceiling and dome WebPs; the flattened floor
+and its WebPs; the end wall at 2 mm, and the 459 detail tiles with their index (three all-glass
+tiles of the window wall left out by both). The whole-tree comparison then finds no file
+different. `SURVEYED_ROOMS_OLD_SCRIPTS` points the old side at another commit's export of
+`tools/grand-hall-survey`, to set this checkout's steps and seams against that commit's scripts.
 
-Not yet proven, because it needs the full two-hour build twice (not allowed on the shared PC):
+Real data, the Grand Hall's end wall (14 November 2026): the twin's manifest, its 49 panoramas, the
+1024 depth maps and the rendered positions, through `tools/grand-hall-survey` as it stood on master
+before any seam and through the driver's steps with this checkout's scripts, both with BLAS at one
+thread. The corners step gives identical corrected positions for all 12 tiles of the four walls
+(55,104, 24,790, 37,364 and 22,787 texels moved on the window, door, end and fireplace walls). The
+end wall's labels are identical in all 21 arrays, and the two `labels-end.npz` files are the same
+bytes (45,419 blocks labelled from 35 stations, 8,763 seams). Its photographs are identical in both
+tiles' 2.5 mm and 5 mm orthophotos (2,881,261 of 2,882,987 texels coloured from 39 stations, 4,820
+seam equations). That is 43 arrays in 19 files with none different, and the run reports agree
+apart from their timings. On the machine that ran it the labels took 6.0 minutes and 976 MB, the
+photographs 2.1 minutes and 861 MB.
+
+Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
-(`render-depth-room.mjs`, so far only syntax-checked). To prove it:
+(`render-depth-room.mjs`, so far only syntax-checked), the other three walls' labels and
+photographs, the end wall's canvas and 2 mm image, the real atlas and the real detail tiles. Without a publish folder neither build pins its alpha, so the two trees
+are compared with each other; the walls' run reports are compared less their timings and memory.
+To prove it:
 
     bash tools/grand-hall-survey/build.sh <work-old>
     python -X utf8 tools/surveyed-rooms/build-room.py tools/surveyed-rooms/grand-hall.room.json <work-new> \
@@ -307,8 +345,16 @@ either. `--digest` keeps a tree's digests, so both trees need not be kept.
 ## Tests
 
     cd tools/surveyed-rooms/tests
-    python -X utf8 -m unittest test_static test_units test_gates test_small_room
-    python -X utf8 -m unittest test_gh_scripts        # stages of under two minutes each
+    python -X utf8 -m unittest test_static                 # T0, under a minute
+    python -X utf8 -m unittest test_units test_gates       # T1 and T4, about a minute and a half
+    python -X utf8 -m unittest test_small_room             # T3, about four minutes
+    python -X utf8 -m unittest test_gh_scripts             # T2, about twenty-five minutes in all
+
+T2 keeps each stage's results in the scratch folder, so its tests can be run a few at a time
+(`python -m unittest test_gh_scripts.MiniGrandHall.test_02_labels`); its longest stage is the
+atlas (about six minutes for four packings). T0 also covers the sub-commands: the list and its
+ids, one run alone and recorded, and `--resume` skipping what is done, running again what
+changed or failed, and trusting nothing after a config change.
 
 Scratch goes to `SURVEYED_ROOMS_TEST_SCRATCH` (default: the system temp folder). The GHR1
 comparisons and T3 need a Node install with meshoptimizer: this checkout's, or another named by
@@ -316,8 +362,9 @@ comparisons and T3 need a Node install with meshoptimizer: this checkout's, or a
 the manifest checks need the twin's manifest (`SURVEYED_ROOMS_MANIFEST`) and are skipped
 without it.
 
-T3 builds a 12-segment analytic room through the driver and checks the results against the
-scene's own geometry and albedo. The room is at quarter turn 1. It has two glass planes and a
+T3 builds a 12-segment analytic room through the driver, from the corners to the record (its walls
+by the best-view method at 100 px/m, its detail tiles 256 texels of 4 mm), checks the results
+against the scene's own geometry and albedo, and ends with `--resume` on the finished tree. The room is at quarter turn 1. It has two glass planes and a
 transom, a box standing in front of the glass, an open door, a mirror patch and a cross-wall
 copy patch, one coffer off centre in x and z, and a lamp painted only in the panoramas.
 
@@ -327,7 +374,9 @@ T4 builds a small room for each gate that neither the Grand Hall nor T3 opens:
 - the frosted-lower and sheer classes;
 - a clear window with a segmental head (B11);
 - stale masks and the glass digest;
-- a chamfered wall through the corners step (B4);
+- a chamfered wall through the corners step, then labelled and coloured (B4);
+- walls whose tiles are narrower than their rounded length, through the corners, the relief, the
+  atlas, the labels, the photographs and the detail (B23);
 - the floor refills' roll along z and along x (B19);
 - the ceiling relief's fallback height, padding and spacing.
 

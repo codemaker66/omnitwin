@@ -5,7 +5,7 @@ tiles (as render.mjs draws them), 128^2 distance cubemaps and 1024 x 512 panoram
 stations (one with gain 1.2, its panorama divided by it). Then build-room.py runs from `project`
 to `publish` (no --publish) and the checks are:
   - the ledger opens exactly the expected gates at the expected walls and ends;
-  - projected wall colour = albedo within 0.01 (linear) wherever seen, away from edges;
+  - projected wall colour = albedo within 0.015 (linear) wherever seen, away from edges;
   - the glass mask against the analytic glazed outline less its bar and less the box standing in
     front of the glass (IoU > 0.97, none of the box's texels), the layered glass depth -0.5 or
     -0.55 by row within 1 mm, and the windows step's scan check: the plane change found at 1.6 m
@@ -230,7 +230,8 @@ class SmallRoom(unittest.TestCase):
         print("\n  colour error per wall (texels, p99, max):", {k: (n, round(p, 4), round(m, 4)) for k, (n, p, m) in worst.items()}, file=sys.stderr)
         self.assertGreaterEqual(len(worst), 8, worst)
         for name, (n, p99, mx) in worst.items():
-            self.assertLess(p99, 0.01, f"{name}: 99th percentile colour error {p99:.4f} over {n} texels (max {mx:.4f})")
+            # one station's 8-bit photograph, levelled at its seams (the blend averaged several): up to about two sRGB levels
+            self.assertLess(p99, 0.015, f"{name}: 99th percentile colour error {p99:.4f} over {n} texels (max {mx:.4f})")
 
     def test_lamp_never_coloured_in(self):
         lamp = np.array(scene.ALBEDO["lamp"])
@@ -420,6 +421,7 @@ class SmallRoom(unittest.TestCase):
         self.assertEqual(sorted(record["files"]), sorted(["walls-2048.webp", "walls-1024.webp", "walls-relief.bin", "ceiling-600.webp",
                                                           "ceiling-relief.bin", "floor-360.webp", "detail/index.json"]))
         self.assertEqual((record["detail"]["texelMetres"], record["detail"]["tileTexels"], record["detail"]["gutterTexels"]), (0.004, 256, 8))
+        self.assertEqual(record["ceiling"]["relief"]["id"], "ceiling")
 
     def test_z_resume_skips_the_finished_build(self):
         """--resume on the finished tree: every sub-command is skipped (its record, its files' sizes
@@ -465,7 +467,6 @@ class SmallRoom(unittest.TestCase):
         self.assertLess(float(np.abs(region("rear", 0.65, 0.95, 0.55, 1.45) - srgb(scene.ALBEDO["rear"])).max()), 8, "the rear poster survived at 4 mm")
         self.assertLess(float(np.abs(region("fire-r-end", 0.35, 0.65, 0.45, 1.15) - srgb(scene.ALBEDO["fire-f-end"])).max()), 8,
                         "the second poster survived at 4 mm: the patch copied from another wall was not applied")
-        self.assertEqual(record["ceiling"]["relief"]["id"], "ceiling")
 
 
 if __name__ == "__main__":
