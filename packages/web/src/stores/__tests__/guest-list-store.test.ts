@@ -545,6 +545,139 @@ describe("guest list page state: erasing and resetting", () => {
   });
 });
 
+/** Refuses the first `count` reads, then works: storage that comes back after a failed open. */
+function readsRefusedAtFirst(inner: CacheBackend, count: number): CacheBackend {
+  let refusals = count;
+  return {
+    ...inner,
+    get: (key) => {
+      if (refusals > 0) {
+        refusals -= 1;
+        return Promise.reject(new Error(`refused ${CANARY}`));
+      }
+      return inner.get(key);
+    },
+  };
+}
+
+describe("guest list page state: a list the device could not read is never overwritten unread", () => {
+  const storedList = {
+    ...emptyGuestList(PLAN_A, START),
+    title: "Kept dinner",
+    guests: Array.from({ length: 200 }, (_, i) => guest(i + 1)),
+  };
+
+  it("writes nothing over a stored list it could not read at open", async () => {
+    const inner = memoryBackend();
+    await withBackend<unknown>(inner).put(PLAN_A, storedList);
+    const before = JSON.stringify(await inner.get(PLAN_A));
+    const store = createGuestListStore(withBackend<unknown>(readsRefusedAtFirst(inner, 1)));
+    const save = vi.spyOn(store, "save");
+
+    await state().open(PLAN_A, store, clock());
+    expect(state().kept).toBe(false);
+    expect(state().list?.guests).toEqual([]);
+    state().apply((list) => ({ ...list, guests: [guest(900)] }));
+    await state().flush();
+
+    expect(JSON.stringify(await inner.get(PLAN_A))).toBe(before);
+    expect(save).not.toHaveBeenCalled();
+    expect(state().kept).toBe(false);
+    expect(state().notice).toBeNull();
+    expect(state().list?.guests).toEqual([guest(900)]);
+
+    // Every later attempt reads again and still writes nothing.
+    state().apply((list) => ({ ...list, guests: [...list.guests, guest(901)] }));
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+    await state().flush();
+    expect(JSON.stringify(await inner.get(PLAN_A))).toBe(before);
+    expect(save).not.toHaveBeenCalled();
+    expect(state().kept).toBe(false);
+  });
+
+  it("writes nothing over an unreadable stored value it could not read at open", async () => {
+    const inner = memoryBackend();
+    await withBackend<unknown>(inner).put(PLAN_A, { planId: PLAN_A, guests: "not a list" });
+    const before = JSON.stringify(await inner.get(PLAN_A));
+    const store = createGuestListStore(withBackend<unknown>(readsRefusedAtFirst(inner, 1)));
+    const save = vi.spyOn(store, "save");
+
+    await state().open(PLAN_A, store, clock());
+    expect(state().kept).toBe(false);
+    state().apply(titled("Typed since"));
+    await state().flush();
+
+    expect(JSON.stringify(await inner.get(PLAN_A))).toBe(before);
+    expect(save).not.toHaveBeenCalled();
+    expect(state().kept).toBe(false);
+    expect(state().notice).toBeNull();
+  });
+
+  it("saves as usual once a second read finds nothing stored", async () => {
+    const inner = memoryBackend();
+    const store = createGuestListStore(withBackend<unknown>(readsRefusedAtFirst(inner, 1)));
+    const save = vi.spyOn(store, "save");
+
+    await state().open(PLAN_A, store, clock());
+    expect(state().kept).toBe(false);
+    state().apply(titled("Dinner"));
+    await state().flush();
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]?.[1]).toBeNull();
+    expect(storedTitle(await reopened(inner, PLAN_A))).toBe("Dinner");
+    expect(state().kept).toBe(true);
+    expect(state().notice).toBeNull();
+  });
+
+  it("writes nothing while reads keep failing, and tries again at the next change", async () => {
+    const inner = memoryBackend();
+    const store = createGuestListStore(withBackend<unknown>(readsRefusedAtFirst(inner, 1000)));
+    const open = vi.spyOn(store, "open");
+    const save = vi.spyOn(store, "save");
+
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Dinner"));
+    await state().flush();
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(save).not.toHaveBeenCalled();
+    expect(await inner.get(PLAN_A)).toBeNull();
+    expect(state().kept).toBe(false);
+    expect(state().list?.title).toBe("Dinner");
+
+    // The next change's autosave reads again; the change stays unsaved, so flush reads once more.
+    state().apply(titled("Dinner for two"));
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+    expect(open).toHaveBeenCalledTimes(3);
+    await state().flush();
+    expect(open).toHaveBeenCalledTimes(4);
+    expect(save).not.toHaveBeenCalled();
+    expect(await inner.get(PLAN_A)).toBeNull();
+    expect(state().kept).toBe(false);
+  });
+
+  it("lets a second read that answers after reset change nothing and write nothing", async () => {
+    const { backend, store } = device();
+    const slow = deferred<Opened>();
+    vi.spyOn(store, "open")
+      .mockImplementationOnce(() => Promise.resolve({ kind: "not-kept" }))
+      .mockImplementationOnce(() => slow.promise);
+    const save = vi.spyOn(store, "save");
+
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Dinner"));
+    const flushing = state().flush();
+    state().reset();
+    slow.resolve({ kind: "new" });
+    await flushing;
+
+    expect(save).not.toHaveBeenCalled();
+    expect(await backend.get(PLAN_A)).toBeNull();
+    expect(state().planId).toBeNull();
+    expect(state().list).toBeNull();
+  });
+});
+
 describe("guest list page state: nothing rejects and no name escapes", () => {
   it("resolves every action when every store call rejects, and logs nothing", async () => {
     const reject = (): Promise<never> => Promise.reject(new Error(`refused ${CANARY}`));

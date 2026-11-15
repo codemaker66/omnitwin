@@ -67,6 +67,12 @@ interface Session {
   live: boolean;
   /** For a session replaced with a change unsaved: the list still to be saved. */
   final: GuestList | null;
+  /**
+   * The device could not be read when this plan was opened, so a list may be
+   * stored that this session has never seen. Before writing, the device is read
+   * again; while anything is stored there, nothing is written over it.
+   */
+  unread: boolean;
 }
 
 const INITIAL = {
@@ -122,12 +128,25 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
     /**
      * Saves one at a time, in order, always the latest list, until nothing is
      * unsaved. A "not-kept" answer stops the loop; the next change tries again.
+     * An unread session reads the device first and writes only when nothing is
+     * stored; otherwise the change stays unsaved and the list is not kept.
      */
     function saveLoop(session: Session): Promise<void> {
       if (session.running !== null) return session.running;
       const run = (async () => {
         while (session.unsaved && !session.erasing) {
           clearTimer(session);
+          if (session.unread) {
+            const again = await openSafely(session.store, session.planId);
+            if (again.kind !== "new") {
+              if (isCurrent(session)) set({ kept: false });
+              return;
+            }
+            session.unread = false;
+            session.loadedUpdatedAt = null;
+            // Check again what may have changed while reading (an erase, a reset).
+            continue;
+          }
           const list = isCurrent(session) ? get().list : session.final;
           session.unsaved = false;
           if (list === null) return;
@@ -195,6 +214,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           erasing: false,
           live: true,
           final: null,
+          unread: false,
         };
         if (previous !== null) retire(previous, true);
         current = session;
@@ -227,6 +247,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             set({ phase: "unreadable", list: null });
             return;
           case "not-kept":
+            session.unread = true;
             set({ phase: "ready", list: emptyGuestList(planId, now()), kept: false });
             return;
         }
