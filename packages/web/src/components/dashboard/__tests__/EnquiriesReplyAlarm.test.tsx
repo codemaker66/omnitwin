@@ -373,23 +373,45 @@ describe("recording a reply made outside Venviewer", () => {
     expect(time.required).toBe(true);
     expect(time.getAttribute("aria-invalid")).toBeNull();
     expect(time.getAttribute("aria-describedby")).toBeNull();
+    // A refusal about the channel is the channel group's: the box names the
+    // words but is not marked invalid.
+    fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
+    const noChannel = within(form).getByRole("alert");
+    expect(noChannel.textContent).toBe("Choose how you replied.");
+    expect(time.getAttribute("aria-invalid")).toBeNull();
+    expect(time.getAttribute("aria-describedby")).toBe(noChannel.id);
+    const channels = within(form).getByRole("group", { name: "How did you reply?" });
+    expect(channels.getAttribute("aria-describedby")).toBe(noChannel.id);
     fireEvent.click(within(form).getByRole("radio", { name: "Phone call" }));
+    expect(channels.getAttribute("aria-describedby")).toBeNull();
     fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
     const missing = within(form).getByRole("alert");
     expect(missing.textContent).toBe("Enter the day and time of the reply.");
     // The refusal is the box's: it is marked invalid and names the words.
     expect(time.getAttribute("aria-invalid")).toBe("true");
     expect(time.getAttribute("aria-describedby")).toBe(missing.id);
+    expect(channels.getAttribute("aria-describedby")).toBeNull();
+    // A time after now is the box's refusal too.
+    fireEvent.change(time, { target: { value: "2026-09-25T10:00" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
+    expect(within(form).getByRole("alert").textContent).toBe("A reply cannot be later than now.");
+    expect(time.getAttribute("aria-invalid")).toBe("true");
     // 10:05 sends 09:05:00, before the stamp's 09:05:37: the server would take
     // it, and a phone call by this person would replace the decision.
     fireEvent.change(time, { target: { value: "2026-09-24T10:05" } });
     fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
-    expect(within(form).getByRole("alert").textContent).toBe("Choose a time earlier than the reply already recorded.");
+    const notEarlier = within(form).getByRole("alert");
+    expect(notEarlier.textContent).toBe("Choose a time earlier than the reply already recorded.");
+    expect(time.getAttribute("aria-invalid")).toBe("true");
+    expect(time.getAttribute("aria-describedby")).toBe(notEarlier.id);
     expect(mocks.recordFirstResponse).not.toHaveBeenCalled();
 
-    // The minute before is earlier, and is recorded.
+    // The minute before is earlier, and is recorded. Changing the time clears
+    // the refusal, and with it the box's invalid mark.
     mocks.recordFirstResponse.mockResolvedValue(recorded("enquiry-1", { at: "2026-09-24T09:04:00.000Z", channel: "phone" }));
     fireEvent.change(time, { target: { value: "2026-09-24T10:04" } });
+    expect(time.getAttribute("aria-invalid")).toBeNull();
+    expect(time.getAttribute("aria-describedby")).toBeNull();
     fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
     await waitFor(() => {
       expect(mocks.recordFirstResponse).toHaveBeenCalledWith("enquiry-1", { channel: "phone", respondedAt: "2026-09-24T09:04:00.000Z" });

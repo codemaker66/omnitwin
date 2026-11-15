@@ -97,6 +97,7 @@ export function EnquiryReply({ enquiry, canRecord, overdueSinceMs, thresholdHour
 
 const MINUTE_MS = 60_000;
 
+const NO_CHANNEL = "Choose how you replied.";
 const NO_TIME = "Enter the day and time of the reply.";
 const FUTURE_TIME = "A reply cannot be later than now.";
 const NOT_EARLIER = "Choose a time earlier than the reply already recorded.";
@@ -142,7 +143,7 @@ function ReplyForm({ enquiry, recordedAt, onDone }: {
   const save = async (): Promise<void> => {
     if (saving) return;
     if (channel === null) {
-      setFailure("Choose how you replied.");
+      setFailure(NO_CHANNEL);
       return;
     }
     let respondedAt: string | undefined;
@@ -190,7 +191,8 @@ function ReplyForm({ enquiry, recordedAt, onDone }: {
     <div className="enq-confirm enq-reply__form" role="group" aria-labelledby={legendId} onKeyDown={onKeyDown}>
       <p className="enq-confirm__question" id={legendId}>{recordedMs === null ? "Record a reply" : "Record an earlier reply"}</p>
       <p className="enq-confirm__consequence">Only your team sees this. Nothing is sent to the client.</p>
-      <fieldset className="enq-reply__choices" disabled={saving}>
+      <fieldset className="enq-reply__choices" disabled={saving}
+        aria-describedby={failure === NO_CHANNEL ? errorId : undefined}>
         <legend>How did you reply?</legend>
         {REPLY_CHANNEL_CHOICES.map((choice, index) => (
           <label key={choice.channel} className="enq-reply__choice">
