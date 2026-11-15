@@ -3,7 +3,8 @@
 Design, 13 November 2026. Status: **approved by Blake on 13 November 2026** (his answers are in section 2).
 Next comes the build plan, then the build with tests first.
 A builder's check was done on 13 November by a fresh reader with the code open; its nine questions and four
-corrections are answered in the text.
+corrections are answered in the text. The release lead's review of 15 November added two clarifications
+(sections 5.6 and 10) and three corrections of wording. Nothing Blake approved is changed.
 Piece B of the platform plan (`docs/superpowers/specs/2026-11-13-platform-plan-design.md`, section 5.2), ledger row
 T-704. Branch `claude/platform-spine-design`. Code was read at master `85a17749`; every line reference is to that
 commit.
@@ -38,7 +39,9 @@ What only he decides in this design, and his answers of 13 November, by button, 
 
 1. **When an enquiry becomes an event:** "When first worked (Recommended)" (section 5.2).
 2. **Whether Trades Hall takes card deposits into its own payment account, with the Hall as the merchant:** "Yes,
-   the Hall's own account (Recommended)" (section 8.3). Nothing goes live on this answer; it settles the design.
+   the Hall's own account (Recommended)". The button described it as: "The Hall opens or connects its own Stripe
+   account. Money goes straight to the Hall; Venviewer never holds it and takes no cut." That is option 1 of
+   section 8.3, the connected account. Nothing goes live on this answer; it settles the design.
 3. **A read-only count on the live database:** "Yes, read-only count (Recommended)". It was run the same evening
    (sections 3 and 7).
 4. **The design itself:** "Approve it (Recommended)".
@@ -72,7 +75,7 @@ All paths are under `packages/`. "schema" is `api/src/db/schema.ts`.
 | Quote | None | schema:2680-2703 |
 | Agreement (contract versions and signatures) | None. Tied to the proposal; cannot be changed or deleted | schema:2818-2853; `api/drizzle/0104_deposits_and_signatures.sql:197-228` |
 | Deposit request | A nullable event, filled by a lookup | schema:2768 |
-| The event's own `client_account_id` and `opportunity_id` | Columns exist; nothing writes them. Both are single keys that would allow another venue's record | schema:1676-1677; the only inserts are event-binding.ts:113 and `api/src/routes/events.ts:411` |
+| The event's own `client_account_id` and `opportunity_id` | Columns exist; nothing writes them. Both are single keys that would allow another venue's record | schema:1676-1677; the server's only inserts are event-binding.ts:113 and `api/src/routes/events.ts:411` (the seed and migration 0090 insert events too, and set neither) |
 
 - **How a proposal finds its event today:** `loadProposalEventContext` (`api/src/routes/proposals.ts:298-326`).
   No floor plan means no event. A floor plan linked to two events returns whichever row comes first: one row is
@@ -98,7 +101,8 @@ All paths are under `packages/`. "schema" is `api/src/db/schema.ts`.
   same event. The CI gate named for event access runs two files and neither is that one
   (`api/src/scripts/run-event-access-postgres-tests.ts:15-18`).
 - **The October join left a list nobody can see.** Migration 0090 wrote `event_binding_reviews` (schema:3927-3943)
-  for bookings it could not place with certainty. It has no screen. The migration kept no record of what it
+  for bookings it could not place with certainty, and, in the same table, a note of each event whose status it
+  changed. It has no screen. The migration kept no record of what it
   joined, so it cannot be undone except by restoring a backup.
 - **Events without a booking already exist:** `POST /events` makes one (routes/events.ts:411). The count above
   ignores them, because it only looks at events that have bookings (event-binding.ts:532-534).
@@ -311,7 +315,7 @@ has to exist before that starts.
   afresh), the enquiry, deal and proposal links, deposit requests, plan links, who may see it, passes, packs,
   tasks, shifts and the plumbing's mail rows. Where the survivor already holds the same thing (the same plan
   linked the same way, the same person given sight), the duplicate is folded into one.
-- **What stays on the loser:** its history. Its message threads (an event has one thread for each audience, by
+- **What stays on the loser:** its history. Its message threads (an event has one thread for each audience and subject, by
   a rule of the database, schema:6518-6523), its feed of changes and its notices stay where they are. A page that shows an
   event's Story also reads the events merged into it. Its timetable stays too, unless a person has worked on it:
   every event is born with the same eight empty phases (event-binding.ts:126), and moving those would give the
@@ -343,8 +347,11 @@ has to exist before that starts.
 
 One new table, `event_link_reviews`, and one staff screen. A row is one question for a person: the record (a
 proposal, a deal, an enquiry or a booking), why the join was doubtful, the events it could belong to, and, once
-answered, who answered and what they chose. The 0090 rows that never had a screen are copied in, so there is one
-list.
+answered, who answered and what they chose. October's two kinds of question are copied in, so there is one list:
+a booking whose enquiry's bookings sit in more than one event (`enquiry_events_differ`), and two events that may
+be the same occasion (`possibly_same_event`). October's third kind of row (`event_status_derived`) is not a
+question. It records a status the October migration changed, so it is not copied and is put to nobody: it stays
+in October's table as history.
 
 What the screen holds, in the desk composition already approved for the Enquiries desk:
 
@@ -521,7 +528,7 @@ One ledger, `payments`, for money in and money back, by card, bank transfer, cas
   has the venue's rule about money been met? The count gains one line: no agreement may name a booking in a
   different event.
 
-### 8.3 A payment account for each venue (decided for Trades Hall by Blake, 13 November: option 1)
+### 8.3 A payment account for each venue (decided for Trades Hall by Blake, 13 November: option 1, the recommended one he chose)
 
 Compared on Stripe's own UK documentation and price pages, read 13 November 2026:
 
@@ -608,6 +615,9 @@ Written before the code they test. Database tests run on real PostgreSQL with an
   plan lifted (section 5.3), so that is no longer only the builder's choice: it is lifted when L4's piece is
   built, with its tests.
 - **#247, erase a person; the People Book's merge:** section 5.8.
+- **This revises the platform plan's section 5.2,** which gave merge and the stage to piece C. Event merge and
+  the stage function move from piece C to piece B, because from this piece on an event can be made before its
+  first booking, and both must exist before that. Piece C keeps split, the stage words, owners and the page.
 - **Piece C** builds the event page, split, owners and the stage words on top of this. **Piece D** builds People
   on the enquiry and deal links. **Piece E** builds the ledger of section 8. **Piece G** owns the numbers.
 
