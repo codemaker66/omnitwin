@@ -96,6 +96,22 @@ function extentOf(piece: PlanPiece): Rect {
   return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
 }
 
+/**
+ * Whether a band `length` long across the page and `height` tall, centred on (x, y), lies on a box piece: inside
+ * its four corners or on their edges, whichever way the piece is turned. A name's letters always run across the
+ * page, so a piece turned a quarter round (a screen against a side wall) offers its short side to them.
+ */
+function bandOnBox(piece: PlanPiece, x: number, y: number, length: number, height: number): boolean {
+  const band = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u = 0, v = 0]) => ({ x: x + u * length / 2, y: y + v * height / 2 }));
+  // How far inside each edge each band corner lies, signed by the order the piece's corners turn in.
+  const inside = piece.corners.flatMap((from, index) => {
+    const to = piece.corners[(index + 1) % piece.corners.length] ?? from;
+    const edge = Math.hypot(to.x - from.x, to.y - from.y);
+    return edge === 0 ? [] : band.map((point) => ((to.x - from.x) * (point.y - from.y) - (to.y - from.y) * (point.x - from.x)) / edge);
+  });
+  return inside.every((reach) => reach >= -0.01) || inside.every((reach) => reach <= 0.01);
+}
+
 /** Where a note's copper number sits on its piece. */
 function markerSpot(piece: PlanPiece): { readonly x: number; readonly y: number } {
   return { x: piece.center.x + piece.width * 0.36 + 2, y: piece.center.y - piece.depth * 0.36 - 2 };
@@ -130,7 +146,8 @@ function rowAround(piece: PlanPiece, pieces: readonly PlanPiece[]): { readonly e
 
 /**
  * Where each planner's name prints. A name sits on its piece when it fits
- * there, else along the row its piece stands in (rowAround), still centred
+ * there across the page, as names always run (bandOnBox), else along the
+ * row its piece stands in (rowAround), still centred
  * over its own piece and clear of the copper numbers. With `beside`, a name
  * with neither sits just below, above, right or left of its piece, as a map
  * sets a name beside a narrow street: on floor clear of every other piece,
@@ -163,7 +180,12 @@ function placeNames(doc: Doc, drawing: PlanDrawing, markers: ReadonlyMap<string,
       const rect = { left: middle - width / 2 - 1.5, top: cy - style.size * 0.6, right: middle + width / 2 + 1.5, bottom: cy + style.size * 0.6 };
       return { text, style, x: middle - width / 2, y: cy - style.size * 0.55, backing: pieceStyle(piece.object.category).fill, rect };
     };
-    if (width <= Math.max(piece.width, piece.depth) * 0.92 && across >= style.size) {
+    // On its piece where it fits across the page (with room to spare at its ends): inside a box piece's corners
+    // however it is turned; a round piece is the same every way round.
+    const fits = piece.object.collisionType === "cylinder"
+      ? width <= Math.max(piece.width, piece.depth) * 0.92 && across >= style.size
+      : bandOnBox(piece, cx, cy, width / 0.92, style.size);
+    if (fits) {
       placed.push(onPiece(cx));
       continue;
     }

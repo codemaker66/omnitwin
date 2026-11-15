@@ -102,7 +102,9 @@ that fails without it:
   ready-by time in brick, with the word "late" on its own line under the time. The word is never cut ("Sun 08:00" on
   a rail of five steps left no room beside it) and a mono print keeps it; the rail stands a line taller only when a
   step is late.
-- **The plan's names:** a name sits on its piece when it fits; else along the row of pieces it stands in, end to end
+- **The plan's names:** a name sits on its piece when it fits there across the page, as names always run (a screen
+  turned against a side wall stands tall on the page, and offers a name only its short side); else along the row of
+  pieces it stands in, end to end
   (the top table's three trestles), starting from its own piece's middle and never set off that piece, so a name at
   a row's end names the end piece; else just beside its piece, its letters (capital tops to descenders) 1.5 pt from
   that piece and at least twice as far from every other piece, number and name, so it never reads as a neighbour's;
@@ -110,7 +112,8 @@ that fails without it:
   form; "Too small to name here" read as if the piece were too small). The 60% plan had dropped "Top table". The
   setup page's small plan sets names the same way and names under itself any it has no room for, so the crew handed
   that page alone can match names to pieces. At its scale (about 6 to 10 pt a metre) a name rarely has that much
-  floor beside its piece: there the names are table numbers on their tables, or in its caption.
+  floor beside its piece: there the names are mostly table numbers on their tables, or in its caption. A short name
+  with clear floor by its piece is set beside it there too ("PJ" by the board room's projector).
 - **Rings** come from the planner's own access and allergy notes, never the sheet's counts ("1 wheelchair space").
   A label of digits or one character rings only after "table" or "tables". A run of tables rings every one it gives,
   written as the setup's own lines write runs ("Tables 1–3, 5, 7–8") or as people do ("tables 4 and 5", "table

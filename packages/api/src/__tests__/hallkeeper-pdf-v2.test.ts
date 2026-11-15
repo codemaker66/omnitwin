@@ -816,13 +816,16 @@ function weddingWithPlan(change: (objects: HallkeeperFloorPlan["objects"]) => Ha
   return { ...base, floorPlan: { ...plan, objects: change(plan.objects) } };
 }
 
-/** The board meeting with its projector named: a piece too small for its name, alone on the floor west of the tables. */
-function boardWithProjectorNamed(): HallkeeperSheetV2 {
+/** The board meeting with one piece named by the planner: by default its projector, a piece too small for "Slides", alone on the floor west of the tables. */
+function boardWithProjectorNamed(label = "Slides", piece = "Laser Projector"): HallkeeperSheetV2 {
   const base = boardMeetingSheet();
   const plan = base.floorPlan;
   if (plan === null || plan === undefined) throw new Error("the board meeting has a plan");
-  return { ...base, floorPlan: { ...plan, objects: plan.objects.map((object) => (object.name === "Laser Projector" ? { ...object, label: "Slides" } : object)) } };
+  return { ...base, floorPlan: { ...plan, objects: plan.objects.map((object) => (object.name === piece ? { ...object, label } : object)) } };
 }
+
+/** The board meeting with its projector screen named: a piece turned a quarter round against the east wall, tall and narrow on the page. */
+const boardWithScreenNamed = (): HallkeeperSheetV2 => boardWithProjectorNamed("Screen", "Projector Screen");
 
 /** Whether a piece stands at (x, z) metres on the plan. */
 function standsAt(object: { readonly x: number; readonly z: number }, x: number, z: number): boolean {
@@ -923,10 +926,18 @@ function rowOf(plan: PlanReading, piece: PlanShape): PlanShape[] {
   return [...row].sort((a, b) => a.left - b.left);
 }
 
+/** The page box a run of pieces covers together. */
+function spanOf(row: readonly PlanShape[]): Box {
+  return {
+    left: Math.min(...row.map((piece) => piece.left)), top: Math.min(...row.map((piece) => piece.top)),
+    right: Math.max(...row.map((piece) => piece.right)), bottom: Math.max(...row.map((piece) => piece.bottom)),
+  };
+}
+
 /**
  * Every name sits on its piece, along the row its piece stands in, or beside it on clear floor, and meets no
- * copper number and no other name. A name on its piece may cover what is set on that piece or its row (the
- * microphone at the chair's place); a name beside its piece meets no piece at all.
+ * copper number and no other name. A name on its piece keeps its capitals on that piece or its row, and may
+ * cover what is set there (the microphone at the chair's place); a name beside its piece meets no piece at all.
  */
 function expectNamesClear(plan: PlanReading, what: string): void {
   expect(plan.names.length, what).toBeGreaterThan(0);
@@ -942,6 +953,9 @@ function expectNamesClear(plan: PlanReading, what: string): void {
     } else {
       const rows = under.flatMap((piece) => rowOf(plan, piece));
       for (const piece of met) expect(rows.includes(piece) || rows.some((host) => within(piece, host)), `${label} meets a piece outside its own row`).toBe(true);
+      // Never run off its piece onto the floor or over a wall: its capitals stay on the piece or its row.
+      const capitals: Box = { ...name.box, bottom: name.box.bottom - name.line.size * 0.2412 };
+      expect(under.some((piece) => within(capitals, spanOf(rowOf(plan, piece)))), `${label} runs off its piece`).toBe(true);
     }
   }
 }
@@ -1092,6 +1106,42 @@ describe("what #415's review found (T-696)", () => {
     expect(textOf(pdfPages(buf)[0] ?? [])).not.toContain("No room to name on this plan");
   });
 
+  it("sets a name beside its piece on the setup page's small plan, where the floor round it is clear", async () => {
+    // "PJ" fits on the projector on page 1; on the small plan the projector is a few points across, with clear floor by it.
+    const buf = await generateSheetPdfV2(await withPaperCheck(boardWithProjectorNamed("PJ"), false));
+    const [first, small] = plansOn(buf);
+    if (first === null || first === undefined || small === null || small === undefined) throw new Error("the board's sheet draws both plans");
+    const onFirst = first.names.find((candidate) => candidate.line.text === "PJ");
+    if (onFirst === undefined) throw new Error("page 1's plan names the projector");
+    expect(pieceUnder(first, onFirst)).toBeDefined();
+    const name = small.names.find((candidate) => candidate.line.text === "PJ");
+    if (name === undefined) throw new Error("the small plan names the projector beside it");
+    expect(pieceUnder(small, name)).toBeUndefined();
+    const [own, next] = small.pieces.map((piece) => gapBetween(name.box, piece)).sort((a, b) => a - b);
+    if (own === undefined || next === undefined) throw new Error("the small plan has pieces");
+    expect(own).toBeCloseTo(1.5, 1);
+    expect(next).toBeGreaterThanOrEqual(2 * own - 0.05);
+    expectNamesClear(small, "the board's small plan");
+    expect(textOf(pdfPages(buf)[1] ?? [])).not.toContain("No room to name on this plan");
+  });
+
+  it("sets a name on its piece only where it fits across the page, whichever way the piece is turned", async () => {
+    // The screen's long side runs down the page; a name runs across it, so "Screen" would spill over the floor and the wall.
+    const buf = await generateSheetPdfV2(await withPaperCheck(boardWithScreenNamed(), false));
+    const pages = pdfPages(buf);
+    const plans = plansOn(buf);
+    expect(plans.filter((plan) => plan !== null)).toHaveLength(2);
+    for (const [index, plan] of plans.entries()) {
+      if (plan === null) continue;
+      const what = `the board's screen named, page ${String(index + 1)}`;
+      const name = plan.names.find((candidate) => candidate.line.text === "Screen");
+      // Beside its piece on clear floor, or named under the plan: never across the screen.
+      if (name === undefined) expect(textOf(pages[index] ?? []), what).toContain("No room to name on this plan: Screen.");
+      else expect(pieceUnder(plan, name), what).toBeUndefined();
+      expectNamesClear(plan, what);
+    }
+  });
+
   it("names in the caption, not on the plan, a name that would sit nearer another piece than its own", async () => {
     // The cake's poseur stands between a round table's chairs and the bar, with the bar's copper number by it.
     const sheet = weddingWithPlan((objects) => objects.map((object) => (standsAt(object, 3, 4.2) ? { ...object, label: "Cake" } : object)));
@@ -1133,6 +1183,7 @@ describe("what #415's review found (T-696)", () => {
         : object.label === "Top table" ? { ...object, label: "Top table for the wedding party" } : object))), true],
       ["the board meeting", boardMeetingSheet(), false],
       ["the board's projector named", boardWithProjectorNamed(), false],
+      ["the board's screen named", boardWithScreenNamed(), false],
     ];
     for (const [what, sheet, issued] of sheets) {
       const plans = plansOn(await generateSheetPdfV2(await withPaperCheck(sheet, issued))).filter((plan): plan is PlanReading => plan !== null);
@@ -1149,6 +1200,7 @@ describe("what #415's review found (T-696)", () => {
         : object.label === "Top table" ? { ...object, label: "Top table for the wedding party" } : object))), true],
       ["the board meeting", boardMeetingSheet(), false],
       ["the board's projector named", boardWithProjectorNamed(), false],
+      ["the board's screen named", boardWithScreenNamed(), false],
     ];
     for (const [what, sheet, issued] of sheets) {
       const labels = (sheet.floorPlan?.objects ?? []).filter((object) => object.category !== "chair")
