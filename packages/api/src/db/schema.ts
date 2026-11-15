@@ -3986,7 +3986,7 @@ export const eventLinkJoins = pgTable("event_link_joins", {
   subjectId: uuid("subject_id").notNull(),
   eventId: uuid("event_id").notNull(),
   path: varchar("path", { length: 20 })
-    .$type<"enquiry_bookings" | "plan_link" | "enquiry" | "deal" | "deposit_request" | "new_event">().notNull(),
+    .$type<"enquiry_bookings" | "plan_link" | "enquiry" | "deal" | "proposal" | "deposit_request" | "new_event">().notNull(),
   eventMade: boolean("event_made").notNull().default(false),
   joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
   undoneAt: timestamp("undone_at", { withTimezone: true }),
@@ -3998,16 +3998,17 @@ export const eventLinkJoins = pgTable("event_link_joins", {
   ),
   check(
     "event_link_joins_path_check",
-    sql`${table.path} IN ('enquiry_bookings', 'plan_link', 'enquiry', 'deal', 'deposit_request', 'new_event')`,
+    sql`${table.path} IN ('enquiry_bookings', 'plan_link', 'enquiry', 'deal', 'proposal', 'deposit_request', 'new_event')`,
   ),
 ]);
 
 // Migration 0109 (the spine): the list of joins a person should check, one
 // question per row: the record, why its join was in doubt, the events it
 // could belong to, and, once answered, who answered and what they chose. One
-// open question per record and reason. Migration 0109 copies October's
-// event_binding_reviews rows in (bindingReviewId names the source row, whose
-// text is read there; detail here holds kinds and counts, never a name).
+// open question per record and reason. Migration 0109 copies October's two
+// kinds of question from event_binding_reviews (bindingReviewId names the
+// source row, whose text is read there; detail here holds kinds and counts,
+// never a name); its notes of a derived status are not questions and stay there.
 export const eventLinkReviews = pgTable("event_link_reviews", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueId: uuid("venue_id").notNull().references(() => venues.id),
@@ -4015,7 +4016,7 @@ export const eventLinkReviews = pgTable("event_link_reviews", {
     .$type<"enquiry" | "opportunity" | "proposal" | "booking" | "event">().notNull(),
   subjectId: uuid("subject_id").notNull(),
   reason: varchar("reason", { length: 40 })
-    .$type<"reaches_many_events" | "paths_disagree" | "second_open_deal" | "enquiry_events_differ" | "possibly_same_event" | "event_status_derived">()
+    .$type<"reaches_many_events" | "paths_disagree" | "second_open_deal" | "enquiry_events_differ" | "possibly_same_event">()
     .notNull(),
   candidateEventIds: uuid("candidate_event_ids").array().notNull().default(sql`'{}'::uuid[]`),
   detail: text("detail").notNull(),
@@ -4037,7 +4038,7 @@ export const eventLinkReviews = pgTable("event_link_reviews", {
   ),
   check(
     "event_link_reviews_reason_check",
-    sql`${table.reason} IN ('reaches_many_events', 'paths_disagree', 'second_open_deal', 'enquiry_events_differ', 'possibly_same_event', 'event_status_derived')`,
+    sql`${table.reason} IN ('reaches_many_events', 'paths_disagree', 'second_open_deal', 'enquiry_events_differ', 'possibly_same_event')`,
   ),
   check(
     "event_link_reviews_resolution_check",

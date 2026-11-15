@@ -27,8 +27,9 @@ import {
 // moved, never emptied; one open deal per event; an event's client account
 // is its own venue's; and the list of joins to check keeps one open question
 // per record and reason. Then the file itself: run again over a database that
-// already has it, it copies October's review list without its text and
-// changes nothing else.
+// already has it, it copies October's two kinds of question without their
+// text, leaves its notes of a derived status where they are, and changes
+// nothing else.
 //
 // The suite runs on a throwaway database of its own (openSpineDatabase); the
 // shared platform database is only the door to the cluster.
@@ -132,7 +133,7 @@ describe.skipIf(target === undefined)("the spine: the rules the database holds",
       .toEqual([{ venue_id: v.venueId, client_account_id: null }]);
   });
 
-  it("copies October's review list without its text, and changes nothing else when run again", async () => {
+  it("copies October's two kinds of question without their text, leaves its status notes, and changes nothing else when run again", async () => {
     const v = await venue("october");
     const e = await event(v.venueId, "Mair wedding");
     const bookingId = randomUUID();
@@ -172,12 +173,14 @@ describe.skipIf(target === undefined)("the spine: the rules the database holds",
       { subject_kind: "booking", subject_id: bookingId, reason: "possibly_same_event", candidate_event_ids: [e],
         detail: expect.stringMatching(/^Carried over from October's list: /u), binding_review_id: byReason.get("possibly_same_event"),
         created_at: new Date("2026-10-20T09:00:01Z"), resolved_at: null },
-      { subject_kind: "event", subject_id: e, reason: "event_status_derived", candidate_event_ids: [e],
-        detail: expect.stringMatching(/^Carried over from October's list: /u), binding_review_id: byReason.get("event_status_derived"),
-        created_at: new Date("2026-10-20T09:00:02Z"), resolved_at: null },
     ]);
     // No name crosses: the screen reads October's text through binding_review_id.
     for (const row of await copies()) expect(row.detail).not.toContain("Mair");
+    // The note of a derived status is not a question: it stays in October's table, and only there.
+    expect((await pool.query("SELECT id FROM event_binding_reviews WHERE venue_id = $1 AND reason = 'event_status_derived'", [v.venueId])).rows)
+      .toEqual([{ id: byReason.get("event_status_derived") }]);
+    expect((await pool.query("SELECT count(*)::int AS count FROM event_link_reviews WHERE binding_review_id = $1",
+      [byReason.get("event_status_derived")])).rows).toEqual([{ count: 0 }]);
 
     const once = await shape();
     const copied = await copies();
