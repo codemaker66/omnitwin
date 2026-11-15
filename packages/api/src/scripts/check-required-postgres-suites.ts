@@ -137,6 +137,7 @@ export const REQUIRED_POSTGRES_TEST_FILES = [
   "src/__tests__/jobs-schema-postgres.test.ts",
   "src/__tests__/jobs-enqueue-postgres.test.ts",
   "src/__tests__/jobs-claim-postgres.test.ts",
+  "src/__tests__/jobs-worker-postgres.test.ts",
 ] as const;
 
 const apiRoot = resolve(import.meta.dirname, "../..");

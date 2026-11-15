@@ -49,3 +49,13 @@ export async function openJobsDatabase(name: string): Promise<{ readonly pool: P
 export async function resetJobs(pool: Pool): Promise<void> {
   await pool.query("TRUNCATE TABLE jobs");
 }
+
+/**
+ * Makes the tests-only table a handler records its effect in, and empties it.
+ * It has no unique rule, so work done twice shows as two rows. Made here, in
+ * the throwaway database, and never by a migration.
+ */
+export async function ensureEffectsTable(pool: Pool): Promise<void> {
+  await pool.query("CREATE TABLE IF NOT EXISTS job_test_effects (key text NOT NULL, server text NOT NULL)");
+  await pool.query("TRUNCATE TABLE job_test_effects");
+}
