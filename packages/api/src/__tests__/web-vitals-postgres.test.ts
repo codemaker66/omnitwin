@@ -7,7 +7,7 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { WEB_VITALS_REPORT_BYTES, WEB_VITAL_RETENTION_DAYS, padWebVitalsReport } from "@omnitwin/types";
+import { WEB_VITALS_REPORT_BYTES, WEB_VITAL_RETENTION_DAYS, padWebVitalsReport, stepWebVitalValue } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { validateEnv } from "../env.js";
@@ -96,8 +96,9 @@ describe("the batch's shuffle", () => {
   });
 
   // A report's samples go to as many groups as it has vitals, and a batch
-  // shuffles them all together: they land apart as often as chance says.
-  it("leaves four given rows side by side among forty about as rarely as chance does", () => {
+  // shuffles them all together: four given rows land side by side no more
+  // often than chance says (the next test bounds it from both sides).
+  it("leaves four given rows side by side among forty no more often than chance does", () => {
     let together = 0;
     const firstAt = new Array<number>(40).fill(0);
     for (let run = 0; run < 4_000; run += 1) {
@@ -116,6 +117,68 @@ describe("the batch's shuffle", () => {
       expect(count).toBeGreaterThan(50);
       expect(count).toBeLessThan(150);
     }
+  });
+
+  // The release lead's delta review at fdaecd05 (WA1, 15 November 2026):
+  // through the batch's own path and its own draw (node:crypto, the default),
+  // a report's rows sit side by side in a written batch as often as chance has
+  // them, no more and no less. Ten reports of four vitals make forty rows, and
+  // two neighbours are one report's 3 times in 39 (1/13); over 4,000 batches
+  // (156,000 pairs) the rate stays within 0.0045 of that, more than five
+  // standard deviations. A shuffle that kept a report's rows apart by rule
+  // would fail it, and would itself mark side-by-side rows as two reports'.
+  it("puts a report's rows side by side in a written batch as often as chance does, no more and no less", async () => {
+    interface WrittenRow { readonly metric: string; readonly value: number }
+    const written: WrittenRow[][] = [];
+    // Records each batch's rows as its transaction would insert them.
+    const recordingDb = {
+      transaction: async (run: (tx: {
+        readonly execute: () => Promise<void>;
+        readonly insert: () => { readonly values: (rows: readonly WrittenRow[]) => Promise<void> };
+      }) => Promise<void>): Promise<void> => {
+        const rows: WrittenRow[] = [];
+        await run({
+          execute: () => Promise.resolve(),
+          insert: () => ({ values: (values) => { rows.push(...values); return Promise.resolve(); } }),
+        });
+        written.push(rows);
+      },
+    } as unknown as Database;
+    // Report `index` of a batch, its four values numbered so that every row names it.
+    const numbered = (index: number) => ({
+      ...REPORT,
+      metrics: [
+        { name: "LCP" as const, value: 1_000 + 10 * index, rating: "good" as const },
+        { name: "INP" as const, value: 100 + 10 * index, rating: "good" as const },
+        { name: "CLS" as const, value: (index + 1) / 100, rating: "good" as const },
+        { name: "TTFB" as const, value: 200 + 10 * index, rating: "good" as const },
+      ],
+    });
+    const reportOf = new Map<string, number>();
+    for (let index = 0; index < 10; index += 1) {
+      for (const metric of numbered(index).metrics) {
+        reportOf.set(`${metric.name} ${String(stepWebVitalValue(metric.name, metric.value))}`, index);
+      }
+    }
+    for (let run = 0; run < 4_000; run += 1) {
+      const batch = createWebVitalsBatch(recordingDb);
+      for (let index = 0; index < 10; index += 1) expect(batch.hold(numbered(index))).toBe(true);
+      await expect(batch.flush()).resolves.toBe(40);
+    }
+    let pairs = 0;
+    let together = 0;
+    for (const rows of written) {
+      const reports = rows.map((row) => reportOf.get(`${row.metric} ${String(row.value)}`));
+      expect(reports.filter((report) => report === undefined)).toEqual([]);
+      for (let index = 0; index + 1 < reports.length; index += 1) {
+        pairs += 1;
+        if (reports[index] === reports[index + 1]) together += 1;
+      }
+    }
+    expect(written).toHaveLength(4_000);
+    expect(pairs).toBe(156_000);
+    expect(together / pairs).toBeGreaterThan(1 / 13 - 0.0045);
+    expect(together / pairs).toBeLessThan(1 / 13 + 0.0045);
   });
 });
 
@@ -1023,17 +1086,19 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
 
   // The release lead's condition on F1, B2 and M3: a write stuck as the API
   // stops (Railway's SIGTERM closes the server) is waited for only within its
-  // bound, what is held is dropped, and the close goes on, well inside the
-  // API's own 25-second stop (index.ts). The stuck write here holds a
-  // connection of its own pool, so this shows the batch's close only. Stuck on
-  // the server's own pool, it would hold that pool's close too, until the
-  // 25-second stop ends the process (exit 1), as the doc says.
-  it("closes the whole server past a write still stuck, within the batch's bound, dropping what is held", async () => {
+  // bound, what is held is dropped, and the close goes on, inside the API's own
+  // 25-second stop (SHUTDOWN_GRACE_MS, index.ts). The stuck write here holds a
+  // connection of a pool of its own, so this shows the batch's close only
+  // (the delta review at fdaecd05, WB1). A write stuck on the server's own
+  // pool (a stalled socket: a statement past its bound ends at the database)
+  // would hold that pool's close too, until the 25-second stop ends the
+  // process with exit 1, as the doc says; no test runs that stop.
+  it("closes the whole server past a write stuck on a pool of its own, within the batch's bound, dropping what is held", async () => {
     process.env["WEB_VITALS_COLLECTION"] = "on";
     const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
     const narrowDb: Database = drizzle(narrowPool, { schema });
     const stuckBatch = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 500 });
-    const { buildServer } = await import("../index.js");
+    const { buildServer, SHUTDOWN_GRACE_MS } = await import("../index.js");
     const whole: FastifyInstance = await buildServer(validateEnv({
       NODE_ENV: "test",
       DATABASE_URL: testUrl,
@@ -1068,8 +1133,11 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     } finally {
       await narrowPool.end();
     }
-    // The batch's own bound sits well inside the API's 25-second stop.
-    expect(WEB_VITALS_BATCH_WRITE_TIMEOUT_MS).toBeLessThan(25_000);
+    // The closing write's own bound, after the time the close first gives
+    // requests in flight (the doc's "about ten seconds"), still ends inside the
+    // API's hard stop: read from index.ts, not written out here.
+    const inFlightAllowanceMs = 10_000;
+    expect(WEB_VITALS_BATCH_WRITE_TIMEOUT_MS + inFlightAllowanceMs).toBeLessThanOrEqual(SHUTDOWN_GRACE_MS);
   }, 120_000);
 
   it("writes the held reports on the route's own timer", async () => {

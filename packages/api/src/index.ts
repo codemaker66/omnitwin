@@ -647,6 +647,12 @@ export async function buildServer(env: Env = validateEnv(), options: BuildServer
 
 // --- Start server (only when run directly, not imported) ---
 
+/** The API's hard stop after SIGTERM or SIGINT: past it the process exits 1,
+ *  whatever is still closing (Railway's own kill waits 30 s, #420). Exported
+ *  so a test can hold the web vitals batch's closing write, and the time it
+ *  leaves requests in flight, inside it (web-vitals-postgres.test.ts). */
+export const SHUTDOWN_GRACE_MS = 25_000;
+
 const isDirectRun = process.argv[1]?.endsWith("index.ts") === true ||
                     process.argv[1]?.endsWith("index.js") === true;
 
@@ -678,12 +684,12 @@ if (isDirectRun) {
   //      deployment events.
   //   2. Call `server.close()` — stops accepting new connections and
   //      drains in-flight requests using Fastify's internal tracking.
-  //   3. Hard-abort after 25s so a stuck request doesn't block the
-  //      platform's KILL timer (orchestrators typically give 30s).
+  //   3. Hard-abort after SHUTDOWN_GRACE_MS (25 s) so a stuck request
+  //      doesn't block the platform's KILL timer (orchestrators typically
+  //      give 30s).
   //   4. Re-raise the exit code so container runtimes see the expected
   //      signal exit.
   // ---------------------------------------------------------------------------
-  const SHUTDOWN_GRACE_MS = 25_000;
   let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals): void => {
     if (shuttingDown) return;

@@ -21,6 +21,7 @@ import { webVitalsP75, type WebVitalP75 } from "../services/web-vitals.js";
 export const WEB_VITALS_REPORT_CAVEATS = [
   "CLS comes only from Chromium browsers (never an iPhone, Safari or Firefox), and no iPhone before iOS 26.2 sends LCP or INP: read each line's n.",
   "CLS and INP stop at the page's first hide, so they read lower than Chrome's field data (CrUX) for visitors who return to the tab.",
+  "Pages restored from the back/forward cache or prerendered (near-instant loads CrUX counts) and pages restored after a discard are not measured, so LCP and TTFB read higher than CrUX's.",
 ] as const;
 
 export function formatP75Line(row: WebVitalP75): string {

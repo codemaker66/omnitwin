@@ -47,7 +47,9 @@ trailing spaces to the same 512 bytes (`WEB_VITALS_REPORT_BYTES`, below):
   ordinary loads have, and it made its requests long before its report or not at
   all, which sets it apart in the host's log. Nor is a page the browser restored
   after discarding it, a load the visitor did not start. The p75s leave those loads
-  out. A document from the browser's own cache also reports a TTFB near 0, a value
+  out, so LCP and TTFB read higher than Chrome's field data (CrUX), which counts the
+  near-instant restored and prerendered loads; the report says so above its figures.
+  A document from the browser's own cache also reports a TTFB near 0, a value
   rare in its group (below). The
   cost: CLS and INP are kept at their values when the page is first hidden, and what
   happens after a visitor returns to the tab is not counted. Chrome's field data
@@ -166,8 +168,12 @@ trailing spaces to the same 512 bytes (`WEB_VITALS_REPORT_BYTES`, below):
     and the closing flush drops all it holds (and drops rather than start a write in
     the last tenth of its bound). The close's one bound is measured on a monotonic
     clock (`performance.now`), which a change of the wall clock cannot stretch or
-    cut. A write stuck on the server's own pool still holds its connection, so the
-    pool's close then waits until the API's 25-second stop ends the process.
+    cut. A write stuck on the server's own pool (a stalled socket: a statement past
+    its bound ends at the database) still holds its connection, so the pool's close
+    then waits until the API's 25-second stop (`SHUTDOWN_GRACE_MS`, `index.ts`) ends
+    the process with exit 1. A test holds the write's 15 seconds and ten for requests
+    in flight inside that stop and shows the batch's close on a stuck write of a pool
+    of its own; no test runs the stop itself.
   - So a page's vital is measured only once ten sampled loads of it, from one device
     class, arrive within one server process's life inside one UTC day: about twenty
     loads at a rate of 0.5, between deploys, which come several times a day. Most
@@ -404,8 +410,9 @@ samples is stored gives its place back; one stored in part keeps it. Pages
 reached by moving inside the app are not measured; each figure belongs to the page a
 load landed on. The limiter keys IPv6 per address, as the whole API does; keying it
 by /64 is an app-wide change, not this one's. What the figures leave out (CLS and INP
-after a return to the tab, CLS from every iPhone, LCP and INP from older iPhones) is
-under "What is sent", above.
+after a return to the tab, CLS from every iPhone, LCP and INP from older iPhones, and
+pages restored from the back/forward cache, prerendered or restored after a discard,
+which makes LCP and TTFB read higher than CrUX's) is under "What is sent", above.
 
 ## Reading p75
 
