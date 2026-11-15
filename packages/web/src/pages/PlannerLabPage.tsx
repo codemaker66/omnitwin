@@ -10,7 +10,7 @@ import { useHallViewStore } from "../stores/hall-view-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { nativeFrameComposer } from "../lib/native-frame-composer.js";
-import { getNativeRenderer } from "../lib/native-renderer.js";
+import { getNativeRenderer, withNativeComposedFrame } from "../lib/native-renderer.js";
 import { nativePrecompileSettled } from "../lib/native-precompile.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../lib/catalogue.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
@@ -208,7 +208,11 @@ async function measure(frames = 120, pipeline = true): Promise<LabFrameStats> {
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld();
     const started = performance.now();
-    if (composer !== null) composer();
+    // Declared as the view's own frame, as the frame loop draws it
+    // (NativeCanvas): the pipeline's scene pass is this frame's main draw only
+    // inside withNativeComposedFrame, and the hall's photographs ask which draw
+    // they are in (lib/scene-grade.ts sceneOutput).
+    if (composer !== null) withNativeComposedFrame(gl, scene, camera, composer);
     else gl.render(scene, camera);
     // A frame is not over until the GPU has finished it.
     if (device !== null) await device.queue.onSubmittedWorkDone();
@@ -245,7 +249,7 @@ async function measureGpu(frames = 60): Promise<{ readonly frames: number; reado
   backend.trackTimestamp = true;
   try {
     for (let frame = 0; frame < frames; frame++) {
-      if (composer !== null) composer();
+      if (composer !== null) withNativeComposedFrame(native, perf.scene, perf.camera, composer);
       else native.render(perf.scene, perf.camera);
       const duration = await native.resolveTimestampsAsync("render");
       if (typeof duration === "number" && Number.isFinite(duration)) times.push(duration);

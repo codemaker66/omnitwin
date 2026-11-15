@@ -42,7 +42,11 @@ export const VIGNETTE_FALLOFF = [0.35, 1.0] as const;
  * map, a thumbnail) reads the resting values and adds nothing.
  */
 export const sceneOutput = {
-  /** 1 while the view's own frame is drawn, 0 for every other draw of the scene. */
+  /**
+   * 1 while the view's own frame is drawn and leaves through Khronos PBR
+   * Neutral (lib/native-renderer.ts withNativeRenderScope); 0 for every other
+   * draw of the scene, and under any other curve or none.
+   */
   main: uniform(0),
   /** The renderer's exposure for that frame. */
   exposure: uniform(1),
