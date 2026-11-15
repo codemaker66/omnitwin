@@ -542,6 +542,7 @@
             "near": { "$ref": "#/$defs/nonNegative" },
             "far": { "$ref": "#/$defs/positive" },
             "tileMaxLength": { "$ref": "#/$defs/positive" },
+            "strayTexels": { "type": "integer", "minimum": 1, "description": "The most covered texels of one elevation tile whose rendered point may lie off the texel's own centre (a surface seen edge-on, extrapolated by the renderer); the corners step leaves them out of the tile and refuses more. Absent: none are allowed, as in the Grand Hall." },
             "modes": { "type": "array", "minItems": 1, "items": { "enum": ["position", "color"] } }
           }
         },

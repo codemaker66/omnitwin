@@ -29,6 +29,7 @@ GATES = {
     "B19": "boards run along z: refills roll along rows",
     "B20": "patch copied from another wall (the atlas and the detail tiles)",
     "B23": "elevation tiles narrower than the wall's rounded length: the wall ends at its tiles' last column",
+    "B24": "stray texels allowed: a covered texel the renderer placed off its own centre is left out of its tile",
     "B21": "test-only depth-map size (SURVEYED_ROOMS_TEST_DEPTH_SIZE)",
     "B22": "node modules from another checkout (SURVEYED_ROOMS_NODE_ROOT): its meshoptimizer meshes the relief",
 }
@@ -144,6 +145,12 @@ class Room:
     def narrow_walls(self):
         """{survey name: tile columns} of the walls whose tiles are narrower than their rounded length (gate B23)."""
         return {w["name"]: self.tile_columns(w) for w in self.order if self.tile_columns(w) < self.rounded_columns(w)}
+
+    def stray_texels(self):
+        """The most covered texels of one elevation tile that may lie off their own centres and are
+        then left out of the tile (survey.wallViews.strayTexels, gate B24); 0 when the config allows
+        none, as the Grand Hall's."""
+        return int(self.survey["wallViews"].get("strayTexels", 0))
 
     def wall_frames(self):
         """bestview.WALLS for this room, by survey name: where each wall's elevation starts (the
@@ -285,6 +292,8 @@ class Room:
                     add("B9", f"wall {w['id']} {end} end")
         if self.revision >= 2:
             add("B7", "room", f"methodRevision {self.revision}")
+        if self.stray_texels():
+            add("B24", "wall views", f"up to {self.stray_texels()} a tile")
         for o in self.cfg["openings"]:
             if o["kind"] != "window" or o["glazing"] == "none":
                 continue

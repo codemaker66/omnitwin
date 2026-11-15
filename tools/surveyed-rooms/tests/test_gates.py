@@ -12,6 +12,10 @@ synthetic room built for it (seconds each).
   build/glass.json made from other config facts.
 - B4: a chamfered corner's wall, not axis-aligned in E57, through the corners step: the fin is
   found and moved back onto the wall along its normal, nothing else moves, and it is re-projected.
+- B24: two texels the renderer placed off their own centres (a surface seen edge-on) stop the
+  labels as before; with survey.wallViews.strayTexels the corners step leaves them out and the
+  wall is labelled and coloured; more of them than allowed, or a grid in the wrong place, still
+  stop the build.
 - B19: the floor refills roll along the boards towards the middle, for boards along z (rows) and
   along x (columns).
 - The ceiling relief (B16): a hole beyond the fill's reach takes the reference height, an odd
@@ -573,6 +577,114 @@ class NarrowTiles(unittest.TestCase):
         png = np.asarray(Image.open(os.path.join(self.work, "proj", "walls-2048.png")))
         self.assertGreater(int(png[s["y"] + 50:s["y"] + 250, s["x"] + s["w"] - 3:s["x"] + s["w"], :3].min()), 10, "the strip's last columns are empty")
         self.assertEqual(s["w"], 701)
+
+
+# --- B24: texels the renderer placed off their own centres ------------------------------------------------------------
+
+STRAYS = [(250, 6, 2.45), (250, 7, 5.82)]        # (row from the top, column, metres behind the camera) on the east wall
+STRAY_OFF = (0.0018, 0.0036)                     # along the wall and down it: the Saloon's worst texel, 1.75 / 3.63 mm
+
+
+class StrayTexels(unittest.TestCase):
+    """render.mjs draws a surface seen edge-on as a sliver under a texel high and can extrapolate
+    along it: the point it writes lies metres off the view's slab and millimetres off the texel.
+    The Saloon's fireplace wall has two (the floor, below v = 0): 0.7 / 1.6 mm and 1.75 / 3.63 mm
+    off their centres, 2.45 m and 5.82 m behind the camera, where every other covered texel of the
+    room is within 0.19 mm. The labels place each texel at its centre and refuse the tile
+    (bestview.Grid). With survey.wallViews.strayTexels the corners step leaves such texels out of
+    the tile, up to that many; without it, or with more of them, the build stops as before."""
+
+    @classmethod
+    def make(cls, name, allowed, shift=0.0, data=False):
+        work = os.path.join(T4, name)
+        cfg = config(RECT, ["east", "south", "west", "north"])
+        if allowed:
+            cfg["survey"]["wallViews"]["strayTexels"] = allowed
+        room = write_room(work, cfg)
+        wall = room.wmap["east"]
+        clean = None
+        for w in room.walls:
+            _, _, P = write_wall(room, work, w, flat)
+            if w is wall:
+                clean = P
+        (v,) = room.tiles(wall)
+        (cX, cY), (uX, uY), (nX, nY) = wall["cornerE57"], wall["uE57"], wall["normalE57"]
+        inset = cfg["survey"]["wallViews"]["eyeInset"]
+        P = clean.copy()
+        if shift:                                                # the whole grid in the wrong place
+            P[..., 0] += np.float32(shift * uX)
+            P[..., 1] += np.float32(shift * uY)
+        for r, c, behind in STRAYS:
+            u = (c + 0.5) / PPM - STRAY_OFF[0]
+            P[r, c, 0] = cX + u * uX + (inset + behind) * nX
+            P[r, c, 1] = cY + u * uY + (inset + behind) * nY
+            P[r, c, 2] = TOP - (r + 0.5) / PPM - STRAY_OFF[1]
+        P[::-1].tofile(os.path.join(work, "out-walls", f"{v['name']}.position.f32"))
+        if data:
+            stations = [dict(id="scan_100", t=[CENTRE[0] - 0.0, CENTRE[1] - 0.0, 1.5], gain=1.0),
+                        dict(id="scan_101", t=[CENTRE[0] - 1.0, CENTRE[1] + 1.0, 1.5], gain=1.0)]
+            box = (CENTRE[0] - 2.0, CENTRE[0] + 2.0, CENTRE[1] - 3.0, CENTRE[1] + 3.0, 0.0, 3.0)
+            synth.write_manifest(os.path.join(work, "data"), stations)
+            synth.write_depth_maps(os.path.join(work, "data"), stations, 32, lambda o, d: synth.box_distance(o, d, box))
+            synth.write_panoramas(os.path.join(work, "data"), stations, 128, 64, synth.gh_sky)
+        return work, room, v, clean
+
+    def fixed(self, work, v):
+        w, h = v["pixels"]
+        return np.fromfile(os.path.join(work, "out-walls", f"{v['name']}.fixed.f32"), np.float32).reshape(h, w, 4)[::-1]
+
+    def test_1_without_the_allowance_the_labels_refuse_the_tile(self):
+        work, room, v, _ = self.make("stray-closed", 0)
+        self.assertNotIn("B24", {r["gate"] for r in room.ledger()})
+        self.assertNotIn("stray", step(work, "corners").stdout)
+        self.assertFalse(os.path.exists(os.path.join(work, "build", "stray-texels.json")))
+        with self.assertRaisesRegex(AssertionError, r"wall-east-0\.fixed\.f32: positions are off their texel centres by 0\.0018 / 0\.0036 m"):
+            step(work, "labels", "east")
+
+    def test_2_allowed_strays_are_left_out_and_the_wall_is_labelled_and_coloured(self):
+        work, room, v, clean = self.make("stray-open", 4, data=True)
+        self.assertIn(("B24", "wall views", "up to 4 a tile"), {(r["gate"], r["where"], r["note"]) for r in room.ledger()})
+        log = step(work, "corners").stdout
+        self.assertRegex(log, r"east wall-east-0 stray texels left out 2 off their centres by up to 1\.(79|80)\d / 3\.(59|60)\d mm")
+        self.assertIn("east moved 0", log)                       # the strays took no part in the fin search
+        fixed = self.fixed(work, v)
+        stray = np.zeros(fixed.shape[:2], bool)
+        for r, c, _ in STRAYS:
+            stray[r, c] = True
+        self.assertTrue(np.all(fixed[stray] == 0))               # uncovered, as where the mesh has a hole
+        self.assertTrue(np.array_equal(fixed[~stray], clean[~stray]))
+        with open(os.path.join(work, "build", "stray-texels.json"), encoding="utf-8") as f:
+            record = json.load(f)
+        self.assertEqual((record["allowedPerTile"], record["leftOut"]), (4, 2))
+        (tile,) = [t for t in record["tiles"] if t["texels"]]
+        self.assertEqual((tile["tile"], tile["covered"]), ("wall-east-0", fixed.shape[0] * fixed.shape[1]))
+        self.assertEqual([(t["row"], t["column"], t["slabDepth"]) for t in tile["texels"]], [(250, 6, -2.45), (250, 7, -5.82)])
+        step(work, "labels", "east")                             # the old code stops here: the tile is refused
+        step(work, "wall-photo", "east")
+        with open(os.path.join(work, "proj", "labels-east.json"), encoding="utf-8") as f:
+            report = json.load(f)
+        self.assertEqual(report["texels_valid"], fixed.shape[0] * fixed.shape[1] - 2)
+        labels = np.load(os.path.join(work, "proj", "labels-east.npz"))
+        self.assertTrue(np.all(labels["texel_label"][stray] == -1))
+        self.assertGreater(float((labels["texel_label"] >= 0).mean()), 0.3)
+        npz = np.load(os.path.join(work, "proj", f"{v['name']}.npz"))
+        self.assertTrue(np.all(npz["weight"][stray] == 0))
+        self.assertGreater(float((npz["weight"] > 0).mean()), 0.3)
+        fine = np.load(os.path.join(work, "proj", f"{v['name']}.fine.npz"))
+        self.assertFalse(np.repeat(np.repeat(stray, 2, 0), 2, 1)[fine["valid"]].any())
+
+    def test_3_more_strays_than_allowed_stop_the_corners(self):
+        work, _, _, _ = self.make("stray-many", 1)
+        with self.assertRaisesRegex(AssertionError, r"wall-east-0\.position\.f32: 2 covered texels lie off their centres \(by up to 0\.0018 / 0\.0036 m\); "
+                                                    r"survey\.wallViews\.strayTexels allows 1 a tile"):
+            step(work, "corners")
+        self.assertFalse(os.path.exists(os.path.join(work, "out-walls", "wall-east-0.fixed.f32")))
+
+    def test_4_a_grid_in_the_wrong_place_still_stops_the_build(self):
+        work, _, v, _ = self.make("stray-shifted", 4, shift=0.002)
+        w, h = v["pixels"]
+        with self.assertRaisesRegex(AssertionError, rf"wall-east-0\.position\.f32: {w * h} covered texels lie off their centres"):
+            step(work, "corners")
 
 
 # --- B19: the floor refills' roll direction -------------------------------------------------------------------

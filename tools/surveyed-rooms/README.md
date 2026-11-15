@@ -85,6 +85,11 @@ steps.
   if that is not the corner, and a `reliefId` when its id is longer than GHR1's 12 bytes.
   Without an anchor, views start at the corner; without a count, tiles are
   `ceil(length / tileMaxLength)`.
+- **Stray texels** (`survey.wallViews.strayTexels`): how many covered texels of one elevation
+  tile may lie off their own centres and be left out (gate B24). Leave it out until a room's
+  renders need it: the labels step then names the tile and the offsets, and the texels should be
+  looked at first (a few, metres outside the view's near and far, on a surface seen edge-on). A
+  grid in the wrong place moves every texel, so no small number lets it through.
 - **Ceiling view**: the camera's up is planner +z, so every room's ceiling image has columns
   along planner +x and rows from planner +z (for the Grand Hall, E57 −X and +Y, as before).
 - **Ceiling relief** (`survey.ceilingRelief`): one GHR1 entry with u = planner x, v = planner z
@@ -257,11 +262,13 @@ gates a config opens, computed before any work; `--plan` prints them and writes 
 | B19 | boards run along z | refills roll along rows |
 | B20 | a `copy` patch | the patch is taken from another wall, after every wall's own edits, in the atlas (which then holds every wall's orthophoto at once) and in the detail images (`roombuild/walls.py`) |
 | B23 | a wall's tiles are narrower than its rounded length | each tile's width is rounded on its own, so the tiles can add up to fewer columns than `round(length x ppm)` (the Saloon's fireplace wall: 1556 against 1557). The Grand Hall's scripts count the wall's right end, its relief's width and its atlas crop from the rounded length, which lies inside its tiles (4227 of 4228); such a wall ends at its tiles' last column instead, in the corners, the relief, the atlas and the detail's mapping onto the atlas |
+| B24 | `survey.wallViews.strayTexels` is set | the corners step leaves out of each elevation tile (uncovered, as where the mesh has a hole) the covered texels whose rendered point lies more than 1 mm from the texel's own centre, up to that many a tile, and lists them in `build/stray-texels.json`; a tile with more stops the build. `render.mjs` draws a surface seen edge-on (the floor under a wall) as a sliver less than a texel high and can extrapolate along it, so the point it writes lies metres off the view's slab and millimetres off the texel. The labels and the photographs place every texel at its centre and refuse a tile with one elsewhere (`bestview.Grid`, as before): that check is unchanged and still runs on what the corners step wrote |
 | B21 | `SURVEYED_ROOMS_TEST_DEPTH_SIZE` is set | test-sized depth maps (never published) |
 | B22 | `SURVEYED_ROOMS_NODE_ROOT` is set | another checkout's meshoptimizer meshes the relief (never published) |
 
 The Grand Hall opens none. The Saloon opens B5 (4 returns), B8 (4 returns), B6 and B9 (8 reflex
-ends), B7, B10 (3 bays), B14 (a 4096 × 2304 atlas), B16, B17, B18 and B23 (the fireplace wall).
+ends), B7, B10 (3 bays), B14 (a 4096 × 2304 atlas), B16, B17, B18, B23 (the fireplace wall) and
+B24 (up to 8 texels a tile; its renders hold two, both in `wall-fireplace-0`).
 
 ## Proofs
 
@@ -377,6 +384,9 @@ T4 builds a small room for each gate that neither the Grand Hall nor T3 opens:
 - a chamfered wall through the corners step, then labelled and coloured (B4);
 - walls whose tiles are narrower than their rounded length, through the corners, the relief, the
   atlas, the labels, the photographs and the detail (B23);
+- two texels rendered off their own centres: refused by the labels without the allowance, left out
+  by the corners step with it (the wall is then labelled and coloured), and refused again when
+  there are more than allowed or the whole grid is in the wrong place (B24);
 - the floor refills' roll along z and along x (B19);
 - the ceiling relief's fallback height, padding and spacing.
 

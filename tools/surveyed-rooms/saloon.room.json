@@ -2414,6 +2414,7 @@
       "near": 0.0,
       "far": 2.0,
       "tileMaxLength": 6.0,
+      "strayTexels": 8,
       "modes": [
         "position"
       ]
