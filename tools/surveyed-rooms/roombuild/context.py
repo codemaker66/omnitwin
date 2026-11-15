@@ -20,14 +20,16 @@ GATES = {
     "B7": "method revision 2: corner statistics ignore openings",
     "B8": "wall shorter than 2.0 m: corner intrusions take reference 0",
     "B9": "reflex corner: no intrusion clearing at that end",
-    "B10": "glazing other than clear: glass mask from the measured outline and planes",
+    "B10": "glazing other than clear: glass mask from the measured outline and planes; every detail tile kept",
     "B11": "segmental head in the clear colour test",
     "B14": "no atlas placement: strips packed on shelves",
     "B16": "ceiling relief from the view up at the ceiling",
     "B17": "floor refills skipped: no refill.shift",
     "B18": "outline not a rectangle: floor texels outside it masked",
     "B19": "boards run along z: refills roll along rows",
-    "B20": "patch copied from another wall",
+    "B20": "patch copied from another wall (the atlas and the detail tiles)",
+    "B23": "elevation tiles narrower than the wall's rounded length: the wall ends at its tiles' last column",
+    "B24": "stray texels allowed: a covered texel the renderer placed off its own centre is left out of its tile",
     "B21": "test-only depth-map size (SURVEYED_ROOMS_TEST_DEPTH_SIZE)",
     "B22": "node modules from another checkout (SURVEYED_ROOMS_NODE_ROOT): its meshoptimizer meshes the relief",
 }
@@ -77,6 +79,7 @@ class Room:
         self.lod = cfg["source"]["panoramas"]["size"]
         self._views = None
         self._stations = None
+        self._columns = None
 
     # --- geometry -------------------------------------------------------------------------
     def to_e57_np(self, x, z):
@@ -125,6 +128,48 @@ class Room:
         """The wall's inward normal as a (1, 3) float array, with no -0.0."""
         nX, nY = w["normalE57"]
         return np.array([[nX + 0.0, nY + 0.0, 0.0]])
+
+    def tile_columns(self, w):
+        """Texel columns of a wall's elevation: its tiles' widths added up (each tile's width is
+        rounded on its own, so the sum can fall short of the wall's rounded length)."""
+        if self._columns is None:
+            self._columns = {}
+            for v in roomlib.wall_views(self.cfg):
+                self._columns[v["wall"]] = self._columns.get(v["wall"], 0) + v["pixels"][0]
+        return self._columns[w["name"]]
+
+    def rounded_columns(self, w):
+        """A wall's length in elevation texels as the Grand Hall's scripts count it: int(round(length x ppm))."""
+        return int(round(w["length"] * float(self.survey["wallViews"]["ppm"])))
+
+    def narrow_walls(self):
+        """{survey name: tile columns} of the walls whose tiles are narrower than their rounded length (gate B23)."""
+        return {w["name"]: self.tile_columns(w) for w in self.order if self.tile_columns(w) < self.rounded_columns(w)}
+
+    def stray_texels(self):
+        """The most covered texels of one elevation tile that may lie off their own centres and are
+        then left out of the tile (survey.wallViews.strayTexels, gate B24); 0 when the config allows
+        none, as the Grand Hall's."""
+        return int(self.survey["wallViews"].get("strayTexels", 0))
+
+    def wall_frames(self):
+        """bestview.WALLS for this room, by survey name: where each wall's elevation starts (the
+        views' anchor), its u axis and its inward normal in the E57 plan (no -0.0), its length."""
+        out = {}
+        for w in self.order:
+            (aX, aY), (uX, uY), (nX, nY) = w["anchorE57"], w["uE57"], w["normalE57"]
+            out[w["name"]] = dict(start=(aX + 0.0, aY + 0.0), u=(uX + 0.0, uY + 0.0), n=(nX + 0.0, nY + 0.0), length=w["length"])
+        return out
+
+    def canvases(self):
+        """canvasveil.CANVASES for this room: the `canvas` edits by wall (survey name), in config
+        order, each (id, (u0, u1, v0, v1), whether the veil is taken off)."""
+        out = {}
+        for e in self.cfg["edits"]:
+            if e["type"] == "canvas":
+                box = (e["u"][0], e["u"][1], e["v"][0], e["v"][1])
+                out.setdefault(self.wmap[e["wall"]]["name"], []).append((e["id"], box, bool(e.get("veil", True))))
+        return out
 
     # --- survey files ------------------------------------------------------------------------
     def views(self):
@@ -238,6 +283,8 @@ class Room:
                 add("B5", f"wall {w['id']}", f"{w['length']:.3f} m")
             if w["length"] < INTRUSION_REACH:
                 add("B8", f"wall {w['id']}", f"{w['length']:.3f} m")
+            if self.tile_columns(w) < self.rounded_columns(w):
+                add("B23", f"wall {w['id']}", f"{self.tile_columns(w)} columns, {self.rounded_columns(w)} rounded")
             left, right = self.ends_reflex(w)
             for end, reflex in (("left", left), ("right", right)):
                 if reflex:
@@ -245,6 +292,8 @@ class Room:
                     add("B9", f"wall {w['id']} {end} end")
         if self.revision >= 2:
             add("B7", "room", f"methodRevision {self.revision}")
+        if self.stray_texels():
+            add("B24", "wall views", f"up to {self.stray_texels()} a tile")
         for o in self.cfg["openings"]:
             if o["kind"] != "window" or o["glazing"] == "none":
                 continue
@@ -297,9 +346,17 @@ class Room:
             out.append("survey.projection.dome is missing")
         if cfg["ceiling"].get("domes") and "domePhoto" not in survey:
             out.append("survey.domePhoto is missing")
-        for name in ("floorPhoto", "atlas", "relief", "outputs", "publish", "ceilingView"):
+        for name in ("floorPhoto", "atlas", "relief", "detail", "outputs", "publish", "ceilingView"):
             if name not in survey:
                 out.append(f"survey.{name} is missing")
+        detail = survey.get("detail")
+        if detail and detail["tile"] <= 2 * detail["gutter"]:
+            out.append(f"survey.detail: a tile of {detail['tile']} texels leaves nothing inside two gutters of {detail['gutter']}")
+        if "atlas" in survey and survey["atlas"].get("alphaFrom") and "placement" not in survey["atlas"]:
+            out.append("survey.atlas.alphaFrom keeps a published atlas's alpha, so the strips need survey.atlas.placement (where they were published)")
+        ids = [e["id"] for e in cfg["edits"] if e["type"] == "canvas"]
+        if len(ids) != len(set(ids)):
+            out.append("canvas edits: an id is used twice (canvas-<wall>.npz keys its fields by id)")
         if "floorPhoto" in survey and "floor" not in survey.get("projection", {}):
             out.append("survey.projection.floor is missing")
         if "relief" in survey:
@@ -331,4 +388,6 @@ class Room:
                 out.append("survey.outputs.ceilingRelief is missing")
             if not outputs.get("relief"):
                 out.append("survey.outputs.relief is missing")
+            if not outputs.get("detail"):
+                out.append("survey.outputs.detail is missing")
         return out

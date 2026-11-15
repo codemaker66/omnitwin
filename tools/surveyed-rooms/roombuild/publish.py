@@ -4,9 +4,11 @@ survey.json says what the published files are: the config they were built from (
 the tools' commit and the meshoptimizer that simplified each GHR1 file, the inputs taken from
 another work directory, each wall's strip in the atlas and its relief id, the encodings, the
 ceiling's extent and orientation, the glazing per opening and what the scan said about it, and
-every file's size and hash. It always goes to build/; for a room whose survey.outputs.manifest
-names it, it is published too. The Grand Hall publishes exactly its nine files, so `git diff` on
-its folder stays empty.
+every file's size and hash, and the detail tiles' grid, count and index. It always goes to build/;
+for a room whose survey.outputs.manifest names it, it is published too. The Grand Hall publishes
+exactly its nine files and its detail folder, as build.sh does, so `git diff` on its folder stays
+empty. The detail folder is replaced whole, as build.sh replaces it, so a tile a rebuild no
+longer makes does not linger.
 
 publish() refuses (before copying anything) when the scan disagrees with a window's glass
 (build/glass.json) or a relief was meshed with another checkout's meshoptimizer.
@@ -43,6 +45,11 @@ def output_files(room):
     return names
 
 
+def detail_folder(room):
+    """The published folder of detail tiles (survey.outputs.detail); its index is index.json."""
+    return room.survey["outputs"]["detail"]
+
+
 def tools_state():
     repo = os.path.dirname(os.path.dirname(ROOMS))
     try:
@@ -76,6 +83,8 @@ def node_records():
 
 def publish_problems(record):
     out = [f"glass: {line}" for line in (record.get("glassScan") or {}).get("disagreements", [])]
+    if "detail" in record and record["detail"] is None:
+        out.append("detail: the detail folder's index.json is missing (the detail step has not run)")
     out += [f"relief {name}: meshed with SURVEYED_ROOMS_NODE_ROOT={rec['nodeRoot']}"
             for name, rec in record["tools"]["relief"].items() if rec.get("nodeRoot")]
     return out
@@ -90,6 +99,10 @@ def survey_record(room):
         path = os.path.join("proj", name)
         if os.path.exists(path):
             files[name] = dict(bytes=os.path.getsize(path), sha256=sha256(path))
+    index = _json(os.path.join("proj", detail_folder(room), "index.json"))
+    if index is not None:
+        name = detail_folder(room) + "/index.json"
+        files[name] = dict(bytes=os.path.getsize(os.path.join("proj", name)), sha256=sha256(os.path.join("proj", name)))
     record = dict(
         schemaVersion=SCHEMA_VERSION, slug=room.cfg["slug"], revision=room.survey["publish"].get("revision"),
         captured=room.cfg["source"]["captured"], configSha256=room.sha256, methodRevision=room.revision,
@@ -97,7 +110,10 @@ def survey_record(room):
         linkedInputs=_json("build/linked.json") or {},
         glassScan=glass_scan(),
         atlas=dict(size=[lay["width"], lay["height"]], ppm=lay["ppm"], vRange=lay["vRange"], row=lay["row"],
-                   alpha="255 - 127 * glass", packing=lay["packing"]),
+                   alpha="255 - 127 * glass", alphaFrom=(_json("build/atlas.json") or {}).get("alphaFrom"), packing=lay["packing"]),
+        detail=None if index is None else dict(
+            folder=detail_folder(room), texelMetres=index["texelMetres"], tileTexels=index["tileTexels"],
+            gutterTexels=index["gutterTexels"], tiles=index["tiles"], totalBytes=index["totalBytes"]),
         walls=[dict(id=s["wall"]["id"], reliefId=room.relief_id(s["wall"]), length=s["wall"]["length"],
                     atlas=[s["x"], s["y"], s["w"], lay["row"]]) for s in lay["strips"]],
         relief=dict(container=rel["container"], file=room.survey["outputs"]["relief"], ppm=rel["ppm"],
@@ -138,6 +154,10 @@ def publish(room, dest):
     for name in output_files(room):
         shutil.copyfile(os.path.join("proj", name), os.path.join(dest, name))
         copied.append(name)
+    folder = detail_folder(room)
+    shutil.rmtree(os.path.join(dest, folder), ignore_errors=True)
+    shutil.copytree(os.path.join("proj", folder), os.path.join(dest, folder))
+    copied.append(folder + "/index.json")
     manifest = room.survey["outputs"].get("manifest")
     if manifest:
         shutil.copyfile("build/survey.json", os.path.join(dest, manifest))

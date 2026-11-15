@@ -1,24 +1,37 @@
-"""Removes the neighbouring walls' fittings from each wall's corners: fix-corners.py driven by a
-room config.
+"""Removes the neighbouring walls' fittings from each wall's corners: fix-corners.py
+--positions-only driven by a room config.
 
 Per row, a proud run that starts within REACH of a corner and ends before CLEAR is a fin of the
 adjacent wall: its texels move back onto this wall (the row's depth just beyond it, the median over
-REF), are re-projected there, and the corrected positions are saved for the relief step
-(out-walls/<view>.fixed.f32). Every tile's .fixed.f32 is written and every npz re-saved, as the
-old script does. The body is fix-corners.py's; the gates the Grand Hall never opens:
+REF), and the corrected positions are saved (out-walls/<view>.fixed.f32) for the labels, the
+photographs and the relief, which colour and measure the wall from them. Every tile's .fixed.f32
+is written, as the old script does. This is a port, not a call: fix-corners.py is one flat script
+with the Grand Hall's planes in it, and four gates sit inside its loop here. The body is
+fix-corners.py's with --positions-only (its re-projection of the fins belongs to the blend the
+walls no longer use); the gates the Grand Hall never opens:
   B5  a wall shorter than 2 x REF[1] gets no fin search (.fixed.f32 = its positions);
   B6  no fin search at a reflex corner (the outline steps out there: no adjacent wall in view);
   B7  methodRevision >= 2: REF and CLEAR statistics ignore texels inside window and arch
       openings and open doors, so a pier beside a bay is not pushed back to the bay's depth;
-  B4  a wall that is not axis-aligned measures depth by dot product and moves fins along its normal.
+  B4  a wall that is not axis-aligned measures depth by dot product and moves fins along its normal;
+  B24 survey.wallViews.strayTexels: a covered texel whose rendered point is not at the texel's own
+      centre is left out of the tile (uncovered, as where the mesh has a hole), up to that many a
+      tile. The renderer draws a surface seen edge-on (the floor under a wall, say) as a sliver
+      under a texel high and can extrapolate along it: the point it writes then lies metres off
+      the view's slab and millimetres off the texel. The labels and the photographs place each
+      texel at its centre and refuse a tile that has one elsewhere (bestview.Grid); that check
+      stands, and this step refuses a tile with more such texels than the config allows, so a
+      grid in the wrong place (every texel off) still stops the build.
 """
+import json
+import os
 import warnings
 
 import numpy as np
 
-from . import legacy
-
 REACH, CLEAR, REF = 0.35, 0.42, (0.45, 0.55)
+CENTRE_TOLERANCE = 0.001      # bestview.Grid's: metres a covered texel's point may lie off its centre
+STRAY_RECORD = "build/stray-texels.json"
 
 
 def open_mask(room, wall, shape, ppm, top):
@@ -44,11 +57,52 @@ def open_mask(room, wall, shape, ppm, top):
     return mask
 
 
+def off_centre(room, wall, v, P):
+    """How far each texel's rendered point lies from the texel's own centre, along the wall and up
+    it (metres), and which covered texels are more than CENTRE_TOLERANCE off: bestview.Grid's test,
+    with its arithmetic (the wall's frame as bestview.wall_vectors builds it, a tile's texels its
+    own size over its pixels, rows down from the top of the elevations)."""
+    w, h = v['pixels']
+    frame = room.wall_frames()[wall['name']]
+    o = np.array([frame['start'][0], frame['start'][1], room.cfg['transform']['floorZ']])
+    u = np.array([frame['u'][0], frame['u'][1], 0.0])
+    rel = P[..., :3].astype(np.float64) - o
+    cols = v['u0'] + (np.arange(w) + 0.5) * (v['size'][0] / w)
+    rows = room.survey['wallViews']['heightRange'][1] - (np.arange(h) + 0.5) * (v['size'][1] / h)
+    du = np.abs(rel @ u - cols[None, :])
+    dv = np.abs(rel[..., 2] - rows[:, None])
+    return du, dv, (P[..., 3] > 0.5) & ((du > CENTRE_TOLERANCE) | (dv > CENTRE_TOLERANCE))
+
+
+def drop_strays(room, wall, v, P, allowed):
+    """B24: uncovers the tile's stray texels in P (rows from the top) and returns their record; refuses
+    more than `allowed`."""
+    du, dv, stray = off_centre(room, wall, v, P)
+    count = int(stray.sum())
+    if count > allowed:
+        raise SystemExit(f"out-walls/{v['name']}.position.f32: {count} covered texels lie off their centres "
+                         f"(by up to {du[stray].max():.4f} / {dv[stray].max():.4f} m); survey.wallViews.strayTexels allows {allowed} a tile")
+    eye, target = np.array(v['eye'], float), np.array(v['target'], float)
+    forward = (target - eye) / np.linalg.norm(target - eye)
+    texels = [dict(row=int(r), column=int(c), point=[float(x) for x in P[r, c, :3]],
+                   offCentreMm=[round(float(du[r, c]) * 1000, 3), round(float(dv[r, c]) * 1000, 3)],
+                   # where the view's slab runs from near to far in front of the eye
+                   slabDepth=round(float((P[r, c, :3].astype(np.float64) - eye) @ forward), 3))
+              for r, c in zip(*np.nonzero(stray))]
+    P[stray] = 0.0
+    if count:
+        print(wall['name'], v['name'], 'stray texels left out', count, 'off their centres by up to',
+              f"{max(t['offCentreMm'][0] for t in texels):.3f} / {max(t['offCentreMm'][1] for t in texels):.3f} mm")
+    return dict(tile=v['name'], wall=wall['id'], covered=int((P[..., 3] > 0.5).sum()) + count, texels=texels)
+
+
 def run(room):
-    pj = legacy.use_occluders(room.occluder_tuples())
     PPM = float(room.survey['wallViews']['ppm'])
     TOP = room.survey['wallViews']['heightRange'][1]
-    kw = room.projection('walls')
+    allowed = room.stray_texels()                                               # B24: 0 unless the config allows some
+    strays = []
+    if os.path.exists(STRAY_RECORD):
+        os.remove(STRAY_RECORD)
     for wall in room.order:
         tiles = sorted(room.tiles(wall), key=lambda v: v['tile'])
         aligned = room.aligned(wall)
@@ -56,12 +110,16 @@ def run(room):
         for v in tiles:
             w, h = v['pixels']
             P = np.fromfile(f"out-walls/{v['name']}.position.f32", dtype=np.float32).reshape(h, w, 4)[::-1].copy()
+            if allowed:                                                         # B24
+                strays.append(drop_strays(room, wall, v, P, allowed))
             buffers.append(P)
         P = np.concatenate(buffers, 1)
         valid = P[..., 3] > 0.5
         D = np.where(valid, room.depth(wall, P), np.nan)
         H, Wd = D.shape
-        width = int(round(wall['length'] * PPM))
+        # fix-corners.py counts the right end back from the wall's rounded length, one column inside
+        # the Grand Hall's tiles (4227 of 4228). Tiles narrower than that (B23) end the wall themselves.
+        width = min(int(round(wall['length'] * PPM)), Wd)
         fin = np.zeros(D.shape, bool)
         target = np.full(D.shape, np.nan, np.float32)
         short = wall['length'] < 2 * REF[1]                                   # B5
@@ -98,10 +156,7 @@ def run(room):
             pts[:, axis] = plane + sign * target[idx]
         else:                                                                     # B4
             pts += room.normal3(wall) * (target[idx] - D[idx]).astype(np.float64)[:, None]
-        nrm = np.tile(room.normal3(wall), (len(pts), 1))
-        if len(pts):
-            rgb, ws = pj.project(pts, nrm, room.stations(), **kw)
-        # Write corrected positions per tile and patch the projected colours.
+        # Write corrected positions per tile.
         offset = 0
         for t, v in enumerate(tiles):
             w, h = v['pixels']
@@ -115,13 +170,10 @@ def run(room):
                 shift = (target[:, sl][r, c] - D[:, sl][r, c])[:, None] * room.normal3(wall)[:, :3]
                 Pt[r, c, :3] = (Pt[r, c, :3] + shift).astype(np.float32)
             Pt[::-1].astype(np.float32).tofile(f"out-walls/{v['name']}.fixed.f32")
-            npz = dict(np.load(f"proj/{v['name']}.npz"))
-            if len(r):
-                # project() returned colours in idx order; pick this tile's.
-                lookup = {k: i for i, k in enumerate(np.ravel_multi_index(idx, D.shape))}
-                order = np.array([lookup[k] for k in np.ravel_multi_index((r, c + offset), D.shape)])
-                npz['rgb'][r, c] = rgb[order]
-                npz['weight'][r, c] = ws[order]
-            np.savez_compressed(f"proj/{v['name']}.npz", **npz)
             offset += w
-        print(wall['name'], 'reprojected', len(pts), flush=True)
+        print(wall['name'], 'moved', len(pts), flush=True)
+    if allowed:                                                                 # B24
+        with open(STRAY_RECORD, 'w', encoding='utf-8', newline='\n') as f:
+            json.dump(dict(allowedPerTile=allowed, toleranceM=CENTRE_TOLERANCE, leftOut=sum(len(t['texels']) for t in strays),
+                           tiles=strays), f, indent=1)
+            f.write('\n')

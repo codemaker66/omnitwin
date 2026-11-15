@@ -12,6 +12,10 @@ synthetic room built for it (seconds each).
   build/glass.json made from other config facts.
 - B4: a chamfered corner's wall, not axis-aligned in E57, through the corners step: the fin is
   found and moved back onto the wall along its normal, nothing else moves, and it is re-projected.
+- B24: two texels the renderer placed off their own centres (a surface seen edge-on) stop the
+  labels as before; with survey.wallViews.strayTexels the corners step leaves them out and the
+  wall is labelled and coloured; more of them than allowed, or a grid in the wrong place, still
+  stop the build.
 - B19: the floor refills roll along the boards towards the middle, for boards along z (rows) and
   along x (columns).
 - The ceiling relief (B16): a hole beyond the fill's reach takes the reference height, an odd
@@ -27,6 +31,7 @@ import tempfile
 import unittest
 
 import numpy as np
+from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOMS = os.path.dirname(HERE)
@@ -136,8 +141,8 @@ def flat(U, V):
     return np.zeros(U.shape), np.ones(U.shape, bool)
 
 
-def step(work, name):
-    r = subprocess.run([sys.executable, "-X", "utf8", STEP_PY, name, "room.json"], cwd=work, env=ENV,
+def step(work, name, *args):
+    r = subprocess.run([sys.executable, "-X", "utf8", STEP_PY, name, "room.json", *args], cwd=work, env=ENV,
                        capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         raise AssertionError(f"step {name} failed:\n{r.stdout[-3000:]}\n{r.stderr[-3000:]}")
@@ -429,9 +434,257 @@ class NotAxisAligned(unittest.TestCase):
         self.assertLess(float(np.abs(along[fin] - self.U[fin]).max()), 1e-5)      # same place along it
         self.assertTrue(np.array_equal(fixed[fin][:, 2], self.P[fin][:, 2]))       # and up it
         self.assertIn("chamfer left fin rows 100", self.log)
+
+    def test_labelled_and_coloured_from_the_moved_positions(self):
+        """The best-view method on a wall that is not axis-aligned: its frame comes from the wall's
+        own u and normal, and the fin's texels are labelled and coloured where the corners step put them."""
+        step(self.work, "labels", "chamfer")
+        step(self.work, "wall-photo", "chamfer")
+        (v,) = self.room.tiles(self.wall)
+        fin = (self.U >= FIN["s"][0]) & (self.U <= FIN["s"][1]) & (self.V >= FIN["v"][0]) & (self.V <= FIN["v"][1])
+        labels = np.load(os.path.join(self.work, "proj", "labels-chamfer.npz"))
+        self.assertGreater(float((labels["texel_label"][fin] >= 0).mean()), 0.9)
         npz = np.load(os.path.join(self.work, "proj", f"{v['name']}.npz"))
-        self.assertGreater(float((npz["weight"][fin] > 0).mean()), 0.9)           # re-projected from the panoramas
+        self.assertGreater(float((npz["weight"][fin] > 0).mean()), 0.9)           # coloured from the panoramas
         self.assertFalse(np.allclose(npz["rgb"][fin], 0.4))
+        fine = np.load(os.path.join(self.work, "proj", f"{v['name']}.fine.npz"))
+        self.assertEqual(fine["rgb8"].shape[:2], (2 * fin.shape[0], 2 * fin.shape[1]))
+        self.assertGreater(float(fine["valid"][::2, ::2][fin].mean()), 0.9)
+
+
+# --- B23: tiles narrower than the wall's rounded length ------------------------------------------------------------
+
+NARROW = [[6.021, 3.503], [6.021, -3.503], [-6.021, -3.503], [-6.021, 3.503]]
+NARROW_FIN = dict(s=(0.1, 0.25), v=(1.0, 2.0), d=0.3)          # s: metres from the wall's right end
+
+
+class NarrowTiles(unittest.TestCase):
+    """Each tile's width is rounded on its own, so a wall's tiles can be narrower than its rounded
+    length: 7.006 m in two tiles is 2 x 350 = 700 columns against round(700.6) = 701 (the Saloon's
+    fireplace wall is 1556 against 1557), and 12.042 m in three is 3 x 401 = 1203 against 1204.
+    The Grand Hall's scripts index from the rounded length, which lies inside its tiles; here the
+    wall ends at its tiles' last column, through the corners, the relief, the atlas and the detail."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.work = os.path.join(T4, "narrow")
+        cfg = config(NARROW, ["east", "south", "west", "north"])
+        cfg["survey"]["detail"] = {"texel": 0.005, "tile": 256, "gutter": 8}
+        cfg["survey"]["outputs"]["detail"] = "detail"
+        cls.room = write_room(cls.work, cfg)
+        cls.grids = {}
+        for wall in cls.room.walls:
+            cls.grids[wall["id"]] = cls.write_true_tiles(wall)
+        stations = [dict(id="scan_100", t=[CENTRE[0] - 1.0, CENTRE[1] - 2.0, 1.5], gain=1.0),
+                    dict(id="scan_101", t=[CENTRE[0] + 1.0, CENTRE[1] + 2.5, 1.5], gain=1.0)]
+        data = os.path.join(cls.work, "data")
+        box = (CENTRE[0] - 3.503, CENTRE[0] + 3.503, CENTRE[1] - 6.021, CENTRE[1] + 6.021, 0.0, 3.0)
+        synth.write_manifest(data, stations)
+        synth.write_depth_maps(data, stations, 32, lambda o, d: synth.box_distance(o, d, box))
+        synth.write_panoramas(data, stations, 256, 128, synth.gh_sky)
+        cls.log = step(cls.work, "corners").stdout
+
+    @classmethod
+    def write_true_tiles(cls, wall):
+        """Position tiles with every texel at its tile's own centre (the tile's width over its
+        pixels, as render.mjs draws it), a fin near the right end, and a blended npz per tile."""
+        (cX, cY), (uX, uY), (nX, nY) = wall["cornerE57"], wall["uE57"], wall["normalE57"]
+        us, fins = [], []
+        for v in sorted(cls.room.tiles(wall), key=lambda v: v["tile"]):
+            w, h = v["pixels"]
+            U, V = np.meshgrid(v["u0"] + (np.arange(w) + 0.5) * v["size"][0] / w, TOP - (np.arange(h) + 0.5) * v["size"][1] / h)
+            s = wall["length"] - U
+            fin = (s >= NARROW_FIN["s"][0]) & (s <= NARROW_FIN["s"][1]) & (V >= NARROW_FIN["v"][0]) & (V <= NARROW_FIN["v"][1])
+            d = np.where(fin, NARROW_FIN["d"], 0.0)
+            P = np.zeros((h, w, 4), np.float32)
+            P[..., 0] = cX + U * uX + d * nX
+            P[..., 1] = cY + U * uY + d * nY
+            P[..., 2] = V
+            P[..., 3] = 1
+            P[::-1].tofile(os.path.join(cls.work, "out-walls", f"{v['name']}.position.f32"))
+            np.savez_compressed(os.path.join(cls.work, "proj", f"{v['name']}.npz"), rgb=np.full((h, w, 3), 0.4, np.float32),
+                                weight=np.ones((h, w), np.float32), valid=np.ones((h, w), bool))
+            us.append(U[0])
+            fins.append(fin)
+        return np.concatenate(us), np.concatenate(fins, 1)
+
+    def fixed(self, wall):
+        tiles = []
+        for v in sorted(self.room.tiles(wall), key=lambda v: v["tile"]):
+            w, h = v["pixels"]
+            tiles.append(np.fromfile(os.path.join(self.work, "out-walls", f"{v['name']}.fixed.f32"), np.float32).reshape(h, w, 4)[::-1])
+        return np.concatenate(tiles, 1)
+
+    def test_1_gate_and_columns(self):
+        columns = {w["id"]: (self.room.tile_columns(w), self.room.rounded_columns(w)) for w in self.room.order}
+        self.assertEqual(columns, {"east": (700, 701), "south": (1203, 1204), "west": (700, 701), "north": (1203, 1204)})
+        self.assertEqual(sorted(r["where"] for r in self.room.ledger() if r["gate"] == "B23"),
+                         ["wall east", "wall north", "wall south", "wall west"])
+        self.assertEqual(self.room.narrow_walls(), {"east": 700, "south": 1203, "west": 700, "north": 1203})
+        gh = Room(os.path.join(ROOMS, "grand-hall.room.json"), ROOMS)
+        self.assertEqual(gh.narrow_walls(), {})
+        self.assertEqual([(gh.tile_columns(w), gh.rounded_columns(w)) for w in gh.order], [(4228, 4227), (4228, 4227), (2118, 2118), (2118, 2118)])
+
+    def test_2_corners_reach_the_last_column(self):
+        """The right end's fin search starts at the tiles' last column (the rounded length would
+        index one past it: IndexError), and moves the fin back."""
+        for wall in self.room.order:
+            _, fin = self.grids[wall["id"]]
+            fixed = self.fixed(wall)
+            self.assertEqual(fixed.shape[1], self.room.tile_columns(wall))
+            depth = self.room.depth(wall, fixed)
+            self.assertGreater(int(fin.sum()), 1000)
+            self.assertGreater(float((np.abs(depth[fin]) < 1e-4).mean()), 0.9, f"{wall['id']}: the right end's fin was not moved back")
+            self.assertLess(float(np.abs(depth[~fin]).max()), 1e-4, f"{wall['id']}: texels beyond the fin moved")
+            self.assertIn(f"{wall['name']} right fin rows 100", self.log)
+
+    def test_3_relief_and_atlas_take_the_tiles_whole(self):
+        step(self.work, "windows")
+        step(self.work, "wall-depth")
+        for wall in self.room.order:
+            with open(os.path.join(self.work, "relief", f"{wall['name']}.json"), encoding="utf-8") as f:
+                meta = json.load(f)
+            cols = self.room.tile_columns(wall)
+            self.assertEqual(meta["width"], cols // 2)       # an odd count drops its last column, as the Grand Hall's 4227 does
+            D2 = np.fromfile(os.path.join(self.work, "relief", f"{wall['name']}.f32"), np.float32).reshape(meta["height"], meta["width"])
+            self.assertLess(float(np.abs(D2[80:220]).max()), 0.13)
+        step(self.work, "atlas")
+        with open(os.path.join(self.work, "build", "atlas.json"), encoding="utf-8") as f:
+            strips = {s["wall"]: s for s in json.load(f)["strips"]}
+        png = np.asarray(Image.open(os.path.join(self.work, "proj", "walls-2048.png")))
+        for name, s in strips.items():
+            strip = png[s["y"]:s["y"] + s["h"], s["x"]:s["x"] + s["w"], :3].astype(int)
+            self.assertEqual(s["w"], int(np.ceil(self.room.wmap[name]["length"] * 100)))
+            self.assertLess(int(np.abs(strip - strip[0, 0]).max()), 2, f"{name}: the strip is not the wall's one colour to its last column")
+            self.assertGreater(int(strip.min()), 100)
+
+    def test_4_labels_photographs_and_detail_on_a_narrow_wall(self):
+        step(self.work, "labels", "east")
+        step(self.work, "wall-photo", "east")
+        step(self.work, "detail", "east")
+        fine = [np.load(os.path.join(self.work, "proj", f"wall-east-{t}.fine.npz")) for t in (0, 1)]
+        self.assertEqual(sum(f["rgb8"].shape[1] for f in fine), 2 * 700)
+        valid = np.concatenate([f["valid"] for f in fine], 1)
+        self.assertGreater(float(valid.mean()), 0.3)         # two stations and 32-texel depth maps see about half of it
+        with open(os.path.join(self.work, "proj", "detail-east.json"), encoding="utf-8") as f:
+            report = json.load(f)
+        self.assertEqual(report["atlas_scale"]["k_u"], 100.0 * 700 / 701, "the detail does not map onto the atlas's crop of the tiles")
+        self.assertEqual(report["image"], [3 * 240 + 16, 6 * 240 + 16])
+        step(self.work, "windows")
+        step(self.work, "atlas")                             # the same wall again, from its half-texel orthophoto
+        with open(os.path.join(self.work, "build", "atlas.json"), encoding="utf-8") as f:
+            s = next(s for s in json.load(f)["strips"] if s["wall"] == "east")
+        png = np.asarray(Image.open(os.path.join(self.work, "proj", "walls-2048.png")))
+        self.assertGreater(int(png[s["y"] + 50:s["y"] + 250, s["x"] + s["w"] - 3:s["x"] + s["w"], :3].min()), 10, "the strip's last columns are empty")
+        self.assertEqual(s["w"], 701)
+
+
+# --- B24: texels the renderer placed off their own centres ------------------------------------------------------------
+
+STRAYS = [(250, 6, 2.45), (250, 7, 5.82)]        # (row from the top, column, metres behind the camera) on the east wall
+STRAY_OFF = (0.0018, 0.0036)                     # along the wall and down it: the Saloon's worst texel, 1.75 / 3.63 mm
+
+
+class StrayTexels(unittest.TestCase):
+    """render.mjs draws a surface seen edge-on as a sliver under a texel high and can extrapolate
+    along it: the point it writes lies metres off the view's slab and millimetres off the texel.
+    The Saloon's fireplace wall has two (the floor, below v = 0): 0.7 / 1.6 mm and 1.75 / 3.63 mm
+    off their centres, 2.45 m and 5.82 m behind the camera, where every other covered texel of the
+    room is within 0.19 mm. The labels place each texel at its centre and refuse the tile
+    (bestview.Grid). With survey.wallViews.strayTexels the corners step leaves such texels out of
+    the tile, up to that many; without it, or with more of them, the build stops as before."""
+
+    @classmethod
+    def make(cls, name, allowed, shift=0.0, data=False):
+        work = os.path.join(T4, name)
+        cfg = config(RECT, ["east", "south", "west", "north"])
+        if allowed:
+            cfg["survey"]["wallViews"]["strayTexels"] = allowed
+        room = write_room(work, cfg)
+        wall = room.wmap["east"]
+        clean = None
+        for w in room.walls:
+            _, _, P = write_wall(room, work, w, flat)
+            if w is wall:
+                clean = P
+        (v,) = room.tiles(wall)
+        (cX, cY), (uX, uY), (nX, nY) = wall["cornerE57"], wall["uE57"], wall["normalE57"]
+        inset = cfg["survey"]["wallViews"]["eyeInset"]
+        P = clean.copy()
+        if shift:                                                # the whole grid in the wrong place
+            P[..., 0] += np.float32(shift * uX)
+            P[..., 1] += np.float32(shift * uY)
+        for r, c, behind in STRAYS:
+            u = (c + 0.5) / PPM - STRAY_OFF[0]
+            P[r, c, 0] = cX + u * uX + (inset + behind) * nX
+            P[r, c, 1] = cY + u * uY + (inset + behind) * nY
+            P[r, c, 2] = TOP - (r + 0.5) / PPM - STRAY_OFF[1]
+        P[::-1].tofile(os.path.join(work, "out-walls", f"{v['name']}.position.f32"))
+        if data:
+            stations = [dict(id="scan_100", t=[CENTRE[0] - 0.0, CENTRE[1] - 0.0, 1.5], gain=1.0),
+                        dict(id="scan_101", t=[CENTRE[0] - 1.0, CENTRE[1] + 1.0, 1.5], gain=1.0)]
+            box = (CENTRE[0] - 2.0, CENTRE[0] + 2.0, CENTRE[1] - 3.0, CENTRE[1] + 3.0, 0.0, 3.0)
+            synth.write_manifest(os.path.join(work, "data"), stations)
+            synth.write_depth_maps(os.path.join(work, "data"), stations, 32, lambda o, d: synth.box_distance(o, d, box))
+            synth.write_panoramas(os.path.join(work, "data"), stations, 128, 64, synth.gh_sky)
+        return work, room, v, clean
+
+    def fixed(self, work, v):
+        w, h = v["pixels"]
+        return np.fromfile(os.path.join(work, "out-walls", f"{v['name']}.fixed.f32"), np.float32).reshape(h, w, 4)[::-1]
+
+    def test_1_without_the_allowance_the_labels_refuse_the_tile(self):
+        work, room, v, _ = self.make("stray-closed", 0)
+        self.assertNotIn("B24", {r["gate"] for r in room.ledger()})
+        self.assertNotIn("stray", step(work, "corners").stdout)
+        self.assertFalse(os.path.exists(os.path.join(work, "build", "stray-texels.json")))
+        with self.assertRaisesRegex(AssertionError, r"wall-east-0\.fixed\.f32: positions are off their texel centres by 0\.0018 / 0\.0036 m"):
+            step(work, "labels", "east")
+
+    def test_2_allowed_strays_are_left_out_and_the_wall_is_labelled_and_coloured(self):
+        work, room, v, clean = self.make("stray-open", 4, data=True)
+        self.assertIn(("B24", "wall views", "up to 4 a tile"), {(r["gate"], r["where"], r["note"]) for r in room.ledger()})
+        log = step(work, "corners").stdout
+        self.assertRegex(log, r"east wall-east-0 stray texels left out 2 off their centres by up to 1\.(79|80)\d / 3\.(59|60)\d mm")
+        self.assertIn("east moved 0", log)                       # the strays took no part in the fin search
+        fixed = self.fixed(work, v)
+        stray = np.zeros(fixed.shape[:2], bool)
+        for r, c, _ in STRAYS:
+            stray[r, c] = True
+        self.assertTrue(np.all(fixed[stray] == 0))               # uncovered, as where the mesh has a hole
+        self.assertTrue(np.array_equal(fixed[~stray], clean[~stray]))
+        with open(os.path.join(work, "build", "stray-texels.json"), encoding="utf-8") as f:
+            record = json.load(f)
+        self.assertEqual((record["allowedPerTile"], record["leftOut"]), (4, 2))
+        (tile,) = [t for t in record["tiles"] if t["texels"]]
+        self.assertEqual((tile["tile"], tile["covered"]), ("wall-east-0", fixed.shape[0] * fixed.shape[1]))
+        self.assertEqual([(t["row"], t["column"], t["slabDepth"]) for t in tile["texels"]], [(250, 6, -2.45), (250, 7, -5.82)])
+        step(work, "labels", "east")                             # the old code stops here: the tile is refused
+        step(work, "wall-photo", "east")
+        with open(os.path.join(work, "proj", "labels-east.json"), encoding="utf-8") as f:
+            report = json.load(f)
+        self.assertEqual(report["texels_valid"], fixed.shape[0] * fixed.shape[1] - 2)
+        labels = np.load(os.path.join(work, "proj", "labels-east.npz"))
+        self.assertTrue(np.all(labels["texel_label"][stray] == -1))
+        self.assertGreater(float((labels["texel_label"] >= 0).mean()), 0.3)
+        npz = np.load(os.path.join(work, "proj", f"{v['name']}.npz"))
+        self.assertTrue(np.all(npz["weight"][stray] == 0))
+        self.assertGreater(float((npz["weight"] > 0).mean()), 0.3)
+        fine = np.load(os.path.join(work, "proj", f"{v['name']}.fine.npz"))
+        self.assertFalse(np.repeat(np.repeat(stray, 2, 0), 2, 1)[fine["valid"]].any())
+
+    def test_3_more_strays_than_allowed_stop_the_corners(self):
+        work, _, _, _ = self.make("stray-many", 1)
+        with self.assertRaisesRegex(AssertionError, r"wall-east-0\.position\.f32: 2 covered texels lie off their centres \(by up to 0\.0018 / 0\.0036 m\); "
+                                                    r"survey\.wallViews\.strayTexels allows 1 a tile"):
+            step(work, "corners")
+        self.assertFalse(os.path.exists(os.path.join(work, "out-walls", "wall-east-0.fixed.f32")))
+
+    def test_4_a_grid_in_the_wrong_place_still_stops_the_build(self):
+        work, _, v, _ = self.make("stray-shifted", 4, shift=0.002)
+        w, h = v["pixels"]
+        with self.assertRaisesRegex(AssertionError, rf"wall-east-0\.position\.f32: {w * h} covered texels lie off their centres"):
+            step(work, "corners")
 
 
 # --- B19: the floor refills' roll direction -------------------------------------------------------------------

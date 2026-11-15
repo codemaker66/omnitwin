@@ -5,7 +5,7 @@ tiles (as render.mjs draws them), 128^2 distance cubemaps and 1024 x 512 panoram
 stations (one with gain 1.2, its panorama divided by it). Then build-room.py runs from `project`
 to `publish` (no --publish) and the checks are:
   - the ledger opens exactly the expected gates at the expected walls and ends;
-  - projected wall colour = albedo within 0.01 (linear) wherever seen, away from edges;
+  - projected wall colour = albedo within 0.015 (linear) wherever seen, away from edges;
   - the glass mask against the analytic glazed outline less its bar and less the box standing in
     front of the glass (IoU > 0.97, none of the box's texels), the layered glass depth -0.5 or
     -0.55 by row within 1 mm, and the windows step's scan check: the plane change found at 1.6 m
@@ -106,10 +106,11 @@ def config():
             "relief": {"container": "GHR1", "ppm": 50, "vRange": [0, 3.0], "depthRange": [-0.8, 0.5], "simplifyError": 0.005,
                        "holdFloor": 0.04, "holdCeiling": 2.96},
             "ceilingRelief": {"container": "GHR1", "id": "ceiling", "ppm": 50, "heightRange": [2.9, 3.3], "simplifyError": 0.002},
+            "detail": {"texel": 0.004, "tile": 256, "gutter": 8},
             "outputs": {"walls": [{"file": "walls-2048.webp", "size": [2048, 768]}, {"file": "walls-1024.webp", "size": [1024, 384]}],
                         "relief": "walls-relief.bin", "ceiling": [{"file": "ceiling-600.webp", "size": [600, 400]}],
                         "ceilingRelief": "ceiling-relief.bin", "floor": [{"file": "floor-360.webp", "size": [360, 240]}],
-                        "manifest": "survey.json"}},
+                        "detail": "detail", "manifest": "survey.json"}},
         "provenance": {"measuredBy": "tests/scene.py", "method": "synthetic", "date": "2026-10-18", "residuals": []},
     }
 
@@ -154,7 +155,7 @@ def build():
         P, albedo, which = scene.render_view(v)
         P.tofile(os.path.join(WORK, "out-walls", f"{v['name']}.position.f32"))
         np.savez_compressed(os.path.join(TRUTH, f"{v['name']}.npz"), albedo=albedo[::-1], which=which[::-1])
-    log = driver("--from", "project", "--to", "publish")
+    log = driver("--from", "corners", "--to", "publish")
     with open(os.path.join(T3, "build.log"), "w", encoding="utf-8") as f:
         f.write(log.stdout + log.stderr)
 
@@ -229,13 +230,19 @@ class SmallRoom(unittest.TestCase):
         print("\n  colour error per wall (texels, p99, max):", {k: (n, round(p, 4), round(m, 4)) for k, (n, p, m) in worst.items()}, file=sys.stderr)
         self.assertGreaterEqual(len(worst), 8, worst)
         for name, (n, p99, mx) in worst.items():
-            self.assertLess(p99, 0.01, f"{name}: 99th percentile colour error {p99:.4f} over {n} texels (max {mx:.4f})")
+            # one station's 8-bit photograph, levelled at its seams (the blend averaged several): up to about two sRGB levels
+            self.assertLess(p99, 0.015, f"{name}: 99th percentile colour error {p99:.4f} over {n} texels (max {mx:.4f})")
 
     def test_lamp_never_coloured_in(self):
         lamp = np.array(scene.ALBEDO["lamp"])
         for name in sorted(os.listdir(os.path.join(WORK, "proj"))):
-            if name.endswith(".npz") and name != "floor-flat.npz":
-                rgb = np.load(os.path.join(WORK, "proj", name))["rgb"].reshape(-1, 3)
+            if name.endswith(".npz") and name != "floor-flat.npz" and not name.startswith("labels-"):
+                z = np.load(os.path.join(WORK, "proj", name))
+                if "rgb8" in z.files:                      # a wall's half-texel orthophoto, sRGB
+                    from roombuild import legacy
+                    rgb = legacy.project().srgb_to_linear(z["rgb8"].reshape(-1, 3).astype(np.float64))
+                else:
+                    rgb = z["rgb"].reshape(-1, 3)
                 greenish = (rgb[:, 1] > 0.3) & (rgb[:, 0] < 0.2) & (rgb[:, 2] < 0.2)
                 self.assertEqual(int(greenish.sum()), 0, f"{name}: texels coloured by the lamp")
                 self.assertGreater(float(np.abs(rgb - lamp).max(axis=1).min()), 0.05, name)
@@ -387,12 +394,12 @@ class SmallRoom(unittest.TestCase):
         from roombuild import legacy
         wall = self.room.by_name["front"]
         tiles = sorted(self.room.tiles(wall), key=lambda v: v["tile"])
-        d = [np.load(os.path.join(WORK, "proj", f"{v['name']}.npz")) for v in tiles]
-        img = legacy.project().linear_to_srgb(np.concatenate([x["rgb"] for x in d], 1)).astype(np.float32)
-        valid = np.concatenate([x["valid"] for x in d], 1) & (np.concatenate([x["weight"] for x in d], 1) > 0)
-        img = atlas.fill(img, valid)
+        d = [np.load(os.path.join(WORK, "proj", f"{v['name']}.fine.npz")) for v in tiles]
+        img = np.concatenate([x["rgb8"] for x in d], 1).astype(np.float32)        # the half-texel orthophoto
+        valid = np.concatenate([x["valid"] for x in d], 1)
+        img = legacy.pack_atlas_functions()["fill_sparse"](img, valid, 2 * atlas.FILL_PASSES)
         s, region = self.strip("front")
-        crop = img[int(round((3.1 - 3.02) * 100)):int(round((3.1 + 0.02) * 100)), :int(round(wall["length"] * 100))]
+        crop = img[2 * int(round((3.1 - 3.02) * 100)):2 * int(round((3.1 + 0.02) * 100)), :2 * int(round(wall["length"] * 100))]
         want = np.asarray(Image.fromarray(np.clip(crop, 0, 255).astype(np.uint8)).resize((s["w"], s["h"]), Image.LANCZOS))
         self.assertTrue(np.array_equal(region[..., :3], want))
 
@@ -412,8 +419,54 @@ class SmallRoom(unittest.TestCase):
         self.assertEqual(len(record["walls"]), 12)
         self.assertEqual(record["methodRevision"], 2)
         self.assertEqual(sorted(record["files"]), sorted(["walls-2048.webp", "walls-1024.webp", "walls-relief.bin", "ceiling-600.webp",
-                                                          "ceiling-relief.bin", "floor-360.webp"]))
+                                                          "ceiling-relief.bin", "floor-360.webp", "detail/index.json"]))
+        self.assertEqual((record["detail"]["texelMetres"], record["detail"]["tileTexels"], record["detail"]["gutterTexels"]), (0.004, 256, 8))
         self.assertEqual(record["ceiling"]["relief"]["id"], "ceiling")
+
+    def test_z_resume_skips_the_finished_build(self):
+        """--resume on the finished tree: every sub-command is skipped (its record, its files' sizes
+        and hashes), except the detail of the wall whose image a patch copied from another wall
+        rewrote (gate B20), the tiles cut from it, and the record. Named to run last."""
+        ids = [line.split()[0] for line in driver("--list").stdout.splitlines() if ":" in line.split()[0]]
+        built = [i for i in ids if i.split(":")[0] not in ("inputs", "depth", "surfaces", "publish")]
+        target = 1 + [w["name"] for w in self.room.order].index("fire-r-end")
+        log = driver("--from", "corners", "--resume").stdout
+        self.assertIn(f"== detail:{target}: to run (proj/detail-fire-r-end.npy changed)", log)
+        self.assertIn(f"== Done: 3 run, {len(built) - 2} skipped", log)
+        self.assertEqual(log.count("done before, its files are as it left them: skipped"), len(built) - 2)
+        with open(os.path.join(WORK, "build", "steps.json"), encoding="utf-8") as f:
+            rows = json.load(f)
+        self.assertEqual([r["id"] for r in rows[-2:]], [f"detail:{target}", f"detail:{len(self.room.order) + 1}"])
+        self.assertTrue(all(r["exit"] == 0 and r["config"] == self.room.sha256 for r in rows))
+
+    def test_detail_tiles(self):
+        """The walls at survey.detail's grid: every wall by its id, the tiles the index lists, the
+        albedo where the atlas has it, and both posters gone (the mirror patch is project-detail.py's;
+        the patch copied from another wall, gate B20, is roombuild/walls.py's)."""
+        with open(os.path.join(WORK, "proj", "detail", "index.json"), encoding="utf-8") as f:
+            index = json.load(f)
+        self.assertEqual((index["texelMetres"], index["tileTexels"], index["gutterTexels"], index["pitchMetres"]), (0.004, 256, 8, 0.96))
+        self.assertEqual(list(index["walls"]), [w["id"] for w in self.room.order])
+        for wall in self.room.order:
+            grid = index["walls"][wall["id"]]
+            self.assertEqual((grid["columns"], grid["rows"]), (int(np.ceil(wall["length"] / 0.96 - 1e-9)), 4))
+            self.assertEqual(len(grid["tiles"]), grid["columns"] * grid["rows"], "a tile was left out: stained glass keeps every tile")
+            for t in grid["tiles"]:
+                path = os.path.join(WORK, "proj", "detail", wall["id"], f"{t['column']}_{t['row']}.webp")
+                self.assertEqual(os.path.getsize(path), t["bytes"])
+                self.assertEqual(Image.open(path).size, (256, 256))
+
+        def srgb(c):
+            return synth.srgb8(np.array(c, float)).astype(float)
+
+        def region(name, u0, u1, v0, v1):
+            img = np.load(os.path.join(WORK, "proj", f"detail-{name}.npy"), mmap_mode="r")
+            px = lambda u, v: (int(round(u / 0.004)) + 8, int(round((3.02 - v) / 0.004)) + 8)  # noqa: E731
+            (c0, r1), (c1, r0) = px(u0, v0), px(u1, v1)
+            return np.asarray(img[r0:r1, c0:c1], float)
+        self.assertLess(float(np.abs(region("rear", 0.65, 0.95, 0.55, 1.45) - srgb(scene.ALBEDO["rear"])).max()), 8, "the rear poster survived at 4 mm")
+        self.assertLess(float(np.abs(region("fire-r-end", 0.35, 0.65, 0.45, 1.15) - srgb(scene.ALBEDO["fire-f-end"])).max()), 8,
+                        "the second poster survived at 4 mm: the patch copied from another wall was not applied")
 
 
 if __name__ == "__main__":

@@ -2414,6 +2414,7 @@
       "near": 0.0,
       "far": 2.0,
       "tileMaxLength": 6.0,
+      "strayTexels": 8,
       "modes": [
         "position"
       ]
@@ -2463,6 +2464,12 @@
       "simplifyError": 0.005,
       "holdFloor": 0.04,
       "holdCeiling": 5.475
+    },
+    "detail": {
+      "texel": 0.002,
+      "tile": 512,
+      "gutter": 8,
+      "quality": 86
     },
     "ceilingRelief": {
       "container": "GHR1",
@@ -2525,6 +2532,7 @@
           ]
         }
       ],
+      "detail": "detail",
       "manifest": "survey.json"
     }
   },

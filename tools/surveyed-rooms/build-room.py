@@ -1,9 +1,11 @@
-"""Builds a surveyed room's survey files from its config: fetch, depth renders, projection, wall
-depth and relief, corner and window fixes, atlas packing, ceiling, floor, publish.
+"""Builds a surveyed room's survey files from its config: fetch, depth renders, the walls'
+corners, labels and photographs, ceiling, dome and floor projection, windows, atlas packing, wall
+depth and relief, ceiling, floor, the walls' detail tiles, publish. The steps and their order are
+tools/grand-hall-survey/build.sh's.
 
     python -X utf8 tools/surveyed-rooms/build-room.py <room.json> <work-dir> [--publish DIR]
         [--from STEP] [--to STEP] [--inputs-from DIR [--reuse-depth]] [--twin URL] [--plan]
-        [--expect-legacy]
+        [--expect-legacy] [--relief keep|rebuild] [--list] [--only ID] [--resume]
 
 Steps (each runs in <work-dir>, one process per old script invocation, as build.sh runs them):
   check     validate the config (check_room.py and the build's own checks); write room.json,
@@ -11,28 +13,47 @@ Steps (each runs in <work-dir>, one process per old script invocation, as build.
   inputs    data/: manifest, dollhouse mesh, the room's 8K panoramas (hash-checked), the mesh dump
   depth     data/depth1024/: each station's distance cubemap
   surfaces  out-walls/: the walls' and ceiling's measured positions
-  project   proj/: panoramas onto every wall, the ceiling, each dome and the floor
+  corners   out-walls/*.fixed.f32: the corners' fins moved back onto their walls
+  labels    proj/labels-<wall>.npz: each block's sharpest station (the slowest step)
+  walls     proj/<view>.fine.npz and .npz: the walls coloured from those stations, seams levelled;
+            proj/canvas-<wall>.npz for the walls with `canvas` edits
+  project   proj/: panoramas onto the ceiling, each dome and the floor
   windows   proj/<wall>-glass.npy, -layered.npy, build/glass.json (with the glass checked
             against the scan)
-  corners   out-walls/*.fixed.f32, proj/wall-*.npz corrected
   atlas     the wall atlas WebPs
   relief    relief/*.f32 and the GHR1 file(s): walls, and the ceiling when ceilingRelief is set
   overhead  the ceiling and dome WebPs
   floor     the flattened floor and its WebPs
-  publish   build/survey.json; with --publish, copies survey.outputs (and survey.json for rooms that
-            publish it) to DIR, which must be the config's survey.publish.folder
+  detail    proj/detail-<wall>.npy and proj/detail/: the walls at survey.detail's texel, in tiles
+  publish   build/survey.json; with --publish, copies survey.outputs (the detail folder, and
+            survey.json for rooms that publish it) to DIR, which must be the config's
+            survey.publish.folder
 
 Inputs and depth maps already in the work directory are kept. --inputs-from links (or copies)
 another work directory's manifest, mesh, mesh dump and this room's panoramas (the inputs step
 then hash-checks the manifest's files against it); its depth maps only with --reuse-depth, so by
 default the depth step renders every map and an identity run compares them. Every linked path
 is listed in build/linked.json, and prove-build-identity.py reports those as linked, not as
-identical. --from/--to run a span of steps (check always runs); a restart --from windows or
-corners is refused when a wall uses the clear colour test, because the corners step rewrites
-proj/wall-*.npz in place. --plan prints the gates the config opens and the steps, and writes
-nothing. --expect-legacy refuses to run unless the ledger is empty (the Grand Hall's identity
-run). --publish refuses test-sized depth maps (B21), another checkout's node modules (B22) and
-glass the scan disagrees with (build/glass.json).
+identical. --from/--to run a span of steps (check always runs). --plan prints the gates the
+config opens and the steps, and writes nothing. --expect-legacy refuses to run unless the ledger
+is empty (the Grand Hall's identity run). --publish refuses test-sized depth maps (B21), another
+checkout's node modules (B22) and glass the scan disagrees with (build/glass.json).
+
+One sub-command at a time. --list prints every sub-command of the build with its id, <step>:<n>
+(labels:3 is the third wall's labels), and writes nothing. --only ID runs exactly that one, after
+the check and whatever its step needs first (the inputs' links, the relief's job files), and
+records it in build/steps.json like any other; publish:1 writes the record and, with --publish,
+publishes. --resume skips a sub-command whose last record ended with exit 0 for the same command
+and the same config, when no sub-command it may depend on has run since and every file it wrote
+is still there with the recorded size and SHA-256; so a build stopped anywhere picks up at the
+first sub-command that is not done. A changed config skips nothing (the check and the steps' own
+refusals then run as ever): say where to start with --from. A caller that must not hold a shared
+machine for a whole build wraps each --only (or each --resume run it lets finish) in its own lock.
+
+A room whose config sets survey.atlas.alphaFrom to "published" (the Grand Hall) is published as
+build.sh publishes it: the atlas keeps the alpha of the atlas already in DIR, the relief in DIR
+stands (--relief rebuild meshes this build's instead) and check-atlas.py must pass before anything
+is copied. Without --publish such a room builds its own glass and relief, as build.sh does.
 
 Method constants stay in code (roombuild/); room facts come from the config.
 """
@@ -55,7 +76,8 @@ from roombuild import publish as publish_step  # noqa: E402
 from roombuild import relief as relief_step  # noqa: E402
 from roombuild.context import NODE_ENV, Room  # noqa: E402
 
-STEPS = ["check", "inputs", "depth", "surfaces", "project", "windows", "corners", "atlas", "relief", "overhead", "floor", "publish"]
+STEPS = ["check", "inputs", "depth", "surfaces", "corners", "labels", "walls", "project", "windows", "atlas", "relief", "overhead",
+         "floor", "detail", "publish"]
 REPO = os.path.dirname(os.path.dirname(HERE))
 STEP_PY = os.path.join(HERE, "roombuild", "step.py")
 DEPTH_SIZE = 1024                    # project.py DEPTH_SIZE / DEPTH_DIR
@@ -91,25 +113,41 @@ def write_json(path, value):
 
 # --- the plan -------------------------------------------------------------------------------------
 
-def commands(room):
+def pinned(room, dest):
+    """Whether this run publishes over an atlas whose alpha it keeps (build.sh with a publish
+    folder): survey.atlas.alphaFrom is "published" and --publish names the folder."""
+    return bool(dest) and room.survey["atlas"].get("alphaFrom") == "published"
+
+
+def commands(room, dest=None, relief="keep"):
     """Every command the build runs, by step (argv lists; py(...) runs roombuild/step.py)."""
     s = room.survey
     py = lambda *a: [sys.executable, "-X", "utf8", STEP_PY, a[0], "room.json", *a[1:]]  # noqa: E731
+    canvases = room.canvases()
     out = {
-        "inputs": [py("inputs")],
+        "inputs": [py("inputs"), ["node", legacy.survey_path("dump-mesh.mjs"), "data/dollhouse.glb", "data/mesh"]],
         "depth": [["node", os.path.join(HERE, "render-depth-room.mjs"), "build/stations.json", str(DEPTH_SIZE), "data/depth1024"]],
         "surfaces": [["node", legacy.survey_path("render.mjs"), "views/views-walls.json", "out-walls"],
                      ["node", legacy.survey_path("render.mjs"), "views/views-ceiling.json", "out-walls"]],
-        "project": [py("project-wall", w["name"]) for w in room.order] + [py("project-ceiling")]
-                   + [py("project-dome", d["id"]) for d in room.cfg["ceiling"].get("domes", [])] + [py("project-floor")],
-        "windows": [py("windows")],
         "corners": [py("corners")],
-        "atlas": [py("atlas")],
+        "labels": [py("labels", w["name"]) for w in room.order],
+        "walls": [py("wall-photo", w["name"]) for w in room.order] + [py("canvases", w["name"]) for w in room.order if w["name"] in canvases],
+        "project": [py("project-ceiling")] + [py("project-dome", d["id"]) for d in room.cfg["ceiling"].get("domes", [])] + [py("project-floor")],
+        "windows": [py("windows")],
+        "atlas": [py("atlas", *(["--alpha-from", dest] if pinned(room, dest) else []))],
         "relief": [py("wall-depth"), ["node", os.path.join(HERE, "relief-mesh-room.mjs"), "build/relief-walls.json"]],
         "overhead": [py("overhead", "proj")],
         "floor": [py("flatten-floor", "proj/floor.npz", "proj/floor-flat.npz", str(s["floorPhoto"]["ppm"])),
                   py("pack-floor", "proj/floor-flat.npz", "proj")],
+        "detail": [py("detail", w["name"]) for w in room.order] + [py("pack-detail")],
     }
+    if pinned(room, dest):
+        # build.sh against the published survey: the published relief stands unless RELIEF=rebuild,
+        # and check-atlas.py compares the atlas (and the relief) with what it replaces
+        if relief != "rebuild":
+            out["relief"] = []
+        out["relief"].append([sys.executable, "-X", "utf8", legacy.survey_path("check-atlas.py"), "proj", dest, "--json",
+                              "proj/check-atlas.json", "--alpha-pinned", *(["--relief-changed"] if relief == "rebuild" else [])])
     if "ceilingRelief" in s:
         out["relief"] += [py("ceiling-relief"), ["node", os.path.join(HERE, "relief-mesh-room.mjs"), "build/relief-ceiling.json"]]
     return out
@@ -129,13 +167,10 @@ def describe_plan(room, problems, ledger):
     lines.append(f"  atlas {lay['width']} x {lay['height']}, strips {lay['row']} high, {lay['ppm']:.3f} px/m, {lay['packing']}")
     for strip in lay["strips"]:
         lines.append(f"    {strip['wall']['id']:<24} x {strip['x']:5d}  y {strip['y']:5d}  w {strip['w']:5d}")
-    lines.append(f"  outputs: {', '.join(publish_step.output_files(room))}")
+    lines.append(f"  outputs: {', '.join(publish_step.output_files(room))}, {publish_step.detail_folder(room)}/")
     lines.append(f"  publish to {room.survey['publish']['folder']}")
-    for step, cmds in commands(room).items():
-        for argv in cmds:
-            shown = [a for a in argv if a not in (sys.executable, "-X", "utf8", "room.json")]
-            shown = [os.path.relpath(a, HERE) if os.path.isabs(a) else a for a in shown]
-            lines.append(f"  {step:<9} {' '.join(shown)}")
+    for sub in sub_commands(room):
+        lines.append(f"  {sub['id']:<12} {shown(sub['argv'])}")
     return lines
 
 
@@ -175,18 +210,115 @@ class Recorder:
             with open(self.path, encoding="utf-8") as f:
                 self.rows = json.load(f)
 
-    def run(self, step, argv):
+    def run(self, step, argv, sub=None, config=None):
+        """Runs one sub-command in the work directory and appends its record: its id (<step>:<n>),
+        the config it ran for, when, how long, its exit status and the files it wrote."""
         before = snapshot(self.work)
         t0 = time.time()
-        print(f"\n== {step}: {' '.join(os.path.basename(a) if os.path.isabs(a) else a for a in argv)}", flush=True)
+        print(f"\n== {sub or step}: {' '.join(os.path.basename(a) if os.path.isabs(a) else a for a in argv)}", flush=True)
         result = subprocess.run(argv, cwd=self.work)
         after = snapshot(self.work)
         changed = [p for p, v in after.items() if before.get(p) != v]
-        self.rows.append(dict(step=step, argv=argv, cwd=self.work, start=t0, seconds=round(time.time() - t0, 2),
+        self.rows.append(dict(id=sub, step=step, argv=argv, cwd=self.work, config=config, start=t0, seconds=round(time.time() - t0, 2),
                               exit=result.returncode, outputs=digests(self.work, changed)))
         write_json(self.path, self.rows)
         if result.returncode != 0:
-            raise SystemExit(f"build-room: step {step} failed (exit {result.returncode}): {argv}")
+            raise SystemExit(f"build-room: {sub or step} failed (exit {result.returncode}): {argv}")
+
+    def latest(self, sub):
+        """The last record of a sub-command, or None."""
+        return next((row for row in reversed(self.rows) if row.get("id") == sub), None)
+
+
+# --- sub-commands: one at a time, and picking a stopped build up ------------------------------------------
+
+# Sub-commands that do not read what earlier ones of their own step wrote: one per wall or surface.
+FAN_OUT = ("render.mjs", "labels", "wall-photo", "detail", "project-ceiling", "project-dome", "project-floor")
+
+
+def sub_commands(room, dest=None, relief="keep", twin=None):
+    """Every sub-command of the build in order: id (<step>:<n>, counted from 1 within the step, so
+    an id names the same command for as long as the config's walls and domes stay as they are),
+    step, argv, and whether it stands apart from the earlier sub-commands of its own step.
+    publish:1 has no argv: the driver writes the record (and publishes) itself."""
+    out = []
+    cmds = commands(room, dest, relief)
+    for step in STEPS[1:-1]:
+        for n, argv in enumerate(cmds[step], 1):
+            key = argv[4] if STEP_PY in argv else os.path.basename(argv[1])
+            if key == "inputs" and twin:
+                argv = argv + [twin]
+            out.append(dict(id=f"{step}:{n}", step=step, argv=argv, apart=key in FAN_OUT))
+    out.append(dict(id="publish:1", step="publish", argv=None, apart=False))
+    return out
+
+
+def shown(argv):
+    """A command as the plan and the list print it."""
+    if argv is None:
+        return "build/survey.json; with --publish, the outputs"
+    words = [a for a in argv if a not in (sys.executable, "-X", "utf8", "room.json")]
+    return " ".join(os.path.relpath(a, HERE) if os.path.isabs(a) and a.startswith(os.path.dirname(HERE)) else a for a in words)
+
+
+def fresh(rec, subs, index, config):
+    """(True, "") when sub-command `index` need not run again: its last record ended with exit 0
+    for this command and this config, nothing it may depend on has run since (any earlier step's
+    sub-command, and the earlier ones of its own step unless it stands apart from them), and every
+    file it wrote is still there with the recorded size and SHA-256. Else (False, why)."""
+    sub = subs[index]
+    row = rec.latest(sub["id"])
+    if row is None:
+        return False, "not run yet"
+    if row["exit"] != 0:
+        return False, f"its last run failed (exit {row['exit']})"
+    if row["argv"] != sub["argv"]:
+        return False, "its command changed"
+    if row.get("config") != config:
+        return False, "the config changed since it ran"
+    for other in subs[:index]:
+        if other["step"] == sub["step"] and sub["apart"]:
+            continue
+        before = rec.latest(other["id"])
+        if before is not None and before["start"] > row["start"]:
+            return False, f"{other['id']} ran after it"
+    for rel, want in row["outputs"].items():
+        path = os.path.join(rec.work, rel)
+        if not os.path.exists(path):
+            return False, f"{rel} is gone"
+        if os.path.getsize(path) != want["bytes"] or sha256_file(path) != want["sha256"]:
+            return False, f"{rel} changed"
+    return True, ""
+
+
+def run_subs(rec, subs, selected, config, resume=False, prepare=None, publish=None):
+    """Runs the selected sub-commands in order through the recorder. `prepare(step)` is called
+    once before the first sub-command of a step that runs; `publish()` stands for publish:1. With
+    `resume`, a sub-command that is fresh() is skipped. Returns the ids run and the ids skipped."""
+    ran, skipped, prepared = [], [], set()
+    for sub in selected:
+        if sub["argv"] is None:
+            if publish is not None:
+                publish()
+            ran.append(sub["id"])
+            continue
+        if resume:
+            ok, why = fresh(rec, subs, subs.index(sub), config)
+            if ok:
+                print(f"\n== {sub['id']}: done before, its files are as it left them: skipped", flush=True)
+                skipped.append(sub["id"])
+                continue
+            print(f"\n== {sub['id']}: to run ({why})", flush=True)
+        if prepare is not None and sub["step"] not in prepared:
+            prepare(sub["step"])
+            prepared.add(sub["step"])
+        if os.path.basename(sub["argv"][1]) == "dump-mesh.mjs" and os.path.exists(os.path.join(rec.work, "data", "mesh", "indices.u32")):
+            print(f"\n== {sub['id']}: data/mesh is there: kept", flush=True)
+            skipped.append(sub["id"])
+            continue
+        rec.run(sub["step"], sub["argv"], sub["id"], config)
+        ran.append(sub["id"])
+    return ran, skipped
 
 
 # --- steps --------------------------------------------------------------------------------------------
@@ -224,7 +356,7 @@ def check_step(room, work, manifest, write=True):
     write_json(os.path.join(work, "build", "ledger.json"), ledger)
     write_json(os.path.join(work, "build", "plan.json"), dict(
         config=room.path, configSha256=room.sha256, methodRevision=room.revision, ledger=ledger,
-        steps=commands(room), outputs=publish_step.output_files(room)))
+        steps=commands(room), outputs=publish_step.output_files(room), detail=publish_step.detail_folder(room)))
     for line in rep.warnings:
         print("WARNING", line)
     return problems, ledger, rep
@@ -282,7 +414,13 @@ def main():
     ap.add_argument("--reuse-depth", action="store_true", help="with --inputs-from, also reuse its depth maps (not rendered)")
     ap.add_argument("--twin", help="the twin's base URL, if not source.twin (file:// for tests)")
     ap.add_argument("--plan", action="store_true", help="print the gates and steps; write nothing")
+    ap.add_argument("--list", action="store_true", help="print every sub-command with its id (<step>:<n>); write nothing. With --resume, also whether it would run")
+    ap.add_argument("--only", metavar="ID", help="run exactly one sub-command (an id from --list), after the check")
+    ap.add_argument("--resume", action="store_true",
+                    help="skip a sub-command whose last run succeeded for this config and command, with nothing before it run since and its files unchanged")
     ap.add_argument("--expect-legacy", action="store_true", help="refuse unless no gate is open")
+    ap.add_argument("--relief", choices=["keep", "rebuild"], default="keep",
+                    help="publishing over a pinned atlas (survey.atlas.alphaFrom): keep the published relief (default) or mesh this build's")
     args = ap.parse_args()
     room = Room(args.room, args.work)
     work = room.work
@@ -307,8 +445,26 @@ def main():
     first, last = STEPS.index(args.start), STEPS.index(args.stop)
     if first > last:
         refuse(f"--from {args.start} comes after --to {args.stop}")
-    if args.start in ("windows", "corners") and any(o["glazing"] == "clear" for o in room.cfg["openings"] if o["kind"] == "window"):
-        refuse(f"--from {args.start}: the clear glass test reads proj/wall-*.npz, which the corners step rewrites in place; rerun --from project")
+    if args.only and (args.start != "check" or args.stop != "publish"):
+        refuse("--only runs one sub-command: leave --from and --to out")
+    if args.only or args.list:
+        problems, ledger, rep = check_step(room, work, manifest, write=False)
+        if problems:
+            refuse(problems)
+        subs = sub_commands(room, dest, args.relief, args.twin)
+        if args.only and args.only not in [s["id"] for s in subs]:
+            refuse(f"--only {args.only}: no such sub-command (--list prints them)")
+    if args.list:
+        rec = Recorder(work)
+        for i, sub in enumerate(subs):
+            state = ""
+            if args.resume and sub["argv"] is not None:
+                ok, why = fresh(rec, subs, i, room.sha256)
+                state = "  [done]" if ok else f"  [to run: {why}]"
+            print(f"{sub['id']:<12} {shown(sub['argv'])}{state}")
+        sys.exit(0)
+    if pinned(room, dest) and not os.path.exists(os.path.join(dest, room.survey["outputs"]["walls"][0]["file"])):
+        refuse(f"survey.atlas.alphaFrom is 'published', but {dest} holds no {room.survey['outputs']['walls'][0]['file']} to take the alpha from")
     os.makedirs(work, exist_ok=True)
     for d in ("proj", "relief", "build", "views", "data"):
         os.makedirs(os.path.join(work, d), exist_ok=True)
@@ -317,39 +473,39 @@ def main():
         refuse([f"--expect-legacy, but the config opens gate {r['gate']} at {r['where']}" for r in ledger])
     print(f"ledger: {len(ledger)} gates" + "".join(f"\n  {r['gate']} {r['where']}: {r['what']}" for r in ledger))
     rec = Recorder(work)
-    cmds = commands(room)
-    for step in STEPS[max(first, 1):last + 1]:
-        if step == "inputs":
-            if args.inputs_from:
-                link_inputs(room, work, args.inputs_from, args.reuse_depth)
-            rec.run(step, cmds["inputs"][0] + ([args.twin] if args.twin else []))
-            if not os.path.exists(os.path.join(work, "data", "mesh", "indices.u32")):
-                rec.run(step, ["node", legacy.survey_path("dump-mesh.mjs"), "data/dollhouse.glb", "data/mesh"])
-        elif step == "relief":
+    subs = sub_commands(room, dest, args.relief, args.twin)
+
+    def prepare(step):
+        """What a step needs before any of its sub-commands, whichever of them runs."""
+        if step == "inputs" and args.inputs_from:
+            link_inputs(room, work, args.inputs_from, args.reuse_depth)
+        if step == "relief":
+            if pinned(room, dest) and args.relief == "keep":
+                shutil.copyfile(os.path.join(dest, room.survey["outputs"]["relief"]), os.path.join(work, "proj", room.survey["outputs"]["relief"]))
+                print(f"\n== relief: the published {room.survey['outputs']['relief']} stands (--relief rebuild meshes this build's)")
             write_json(os.path.join(work, "build", "relief-walls.json"),
                        dict(relief_step.walls_job(room), record="build/relief-walls.node.json"))
             if "ceilingRelief" in room.survey:
                 write_json(os.path.join(work, "build", "relief-ceiling.json"),
                            dict(relief_step.ceiling_job(room), record="build/relief-ceiling.node.json"))
-            for argv in cmds["relief"]:
-                rec.run(step, argv)
-        elif step == "publish":
-            cwd = os.getcwd()
-            os.chdir(work)
-            try:
-                if dest:
-                    publish_step.publish(room, dest)
-                else:
-                    publish_step.write_record(room)
-                    for name in publish_step.output_files(room):
-                        path = os.path.join("proj", name)
-                        print(f"{sha256_file(path)[:16] if os.path.exists(path) else 'missing         '}  {name}")
-            finally:
-                os.chdir(cwd)
-        else:
-            for argv in cmds[step]:
-                rec.run(step, argv)
-    print("\n== Done")
+
+    def publish():
+        cwd = os.getcwd()
+        os.chdir(work)
+        try:
+            if dest:
+                publish_step.publish(room, dest)
+            else:
+                publish_step.write_record(room)
+                for name in publish_step.output_files(room) + [publish_step.detail_folder(room) + "/index.json"]:
+                    path = os.path.join("proj", name)
+                    print(f"{sha256_file(path)[:16] if os.path.exists(path) else 'missing         '}  {name}")
+        finally:
+            os.chdir(cwd)
+
+    selected = [s for s in subs if (s["id"] == args.only if args.only else max(first, 1) <= STEPS.index(s["step"]) <= last)]
+    ran, skipped = run_subs(rec, subs, selected, room.sha256, args.resume, prepare, publish)
+    print(f"\n== Done: {len(ran)} run" + (f", {len(skipped)} skipped" if skipped else ""))
 
 
 if __name__ == "__main__":

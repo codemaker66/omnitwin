@@ -7,8 +7,9 @@
   --expect-legacy refuses the Saloon; a config missing survey blocks is refused by name.
 - check_room.py's new checks fire (relief ids, view depth, glass outline, outputs, occluders).
 - the prover's self-test (including a linked depth map reported as linked, not identical).
-- the driver's refusals before anything is written (a restart from windows or corners with clear
-  glazing, --reuse-depth without --inputs-from, --publish with another checkout's node modules),
+- the driver's refusals before anything is written (--reuse-depth without --inputs-from, --publish
+  with another checkout's node modules, a pinned atlas with nothing published to take the alpha
+  from), publishing a pinned atlas as build.sh does, the canvases' walls,
   the config refusals (a recess on the photo, a glass block the build would ignore), the inputs
   link (depth maps only with --reuse-depth, every link recorded), publishing refused on a glass
   disagreement, and a CRLF checkout of a config hashing as its LF one.
@@ -82,6 +83,11 @@ class StaticProof(unittest.TestCase):
             "atlas": lambda r: r["survey"]["atlas"]["placement"].reverse(),
             "relief": lambda r: r["survey"]["relief"].__setitem__("order", ["window", "door", "end", "fireplace"]),
             "projection": lambda r: r["survey"]["projection"]["dome"].__setitem__("cosMin", 0.11),
+            "wall visibility": lambda r: r["survey"]["projection"]["walls"].__setitem__("maxDist", 15.0),
+            "canvas": lambda r: next(e for e in r["edits"] if e["type"] == "canvas")["u"].__setitem__(0, 4.5),
+            "detail": lambda r: r["survey"]["detail"].__setitem__("gutter", 4),
+            "station": lambda r: r["stations"].pop(),
+            "top": lambda r: r["survey"]["wallViews"]["heightRange"].__setitem__(1, 7.05),
         }
         for name, change in changes.items():
             path, _ = variant(GH, f"gh-{name}.room.json", change)
@@ -110,7 +116,9 @@ class Plans(unittest.TestCase):
         r = py("build-room.py", SALOON, os.path.join(T0, "plan-saloon"), "--plan")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         gates = Counter(re.findall(r"^    (B\d+) ", r.stdout, re.M))
-        self.assertEqual(gates, Counter({"B5": 4, "B8": 4, "B6": 8, "B9": 8, "B7": 1, "B10": 3, "B14": 1, "B16": 1, "B17": 1, "B18": 1}))
+        self.assertEqual(gates, Counter({"B5": 4, "B8": 4, "B6": 8, "B9": 8, "B7": 1, "B10": 3, "B14": 1, "B16": 1, "B17": 1, "B18": 1, "B23": 1, "B24": 1}))
+        self.assertRegex(r.stdout, r"B23 +wall fireplace .*1556 columns, 1557 rounded")
+        self.assertRegex(r.stdout, r"B24 +wall views .*up to 8 a tile")
         self.assertIn("atlas 4096 x 2304, strips 1111 high", r.stdout)
         for wall in ("window-front-return", "window-rear-return", "fireplace-rear-return", "fireplace-front-return"):
             self.assertRegex(r.stdout, rf"B5 +wall {wall} ")
@@ -122,12 +130,12 @@ class Plans(unittest.TestCase):
 
     def test_missing_survey_blocks_are_named(self):
         def strip(room):
-            for key in ("relief", "outputs", "floorPhoto", "ceilingRelief"):
+            for key in ("relief", "outputs", "floorPhoto", "ceilingRelief", "detail"):
                 room["survey"].pop(key)
         path, _ = variant(SALOON, "saloon-unready.room.json", strip)
         r = py("build-room.py", path, os.path.join(T0, "plan-unready"), "--plan")
         self.assertEqual(r.returncode, 1)
-        for name in ("survey.relief is missing", "survey.outputs is missing", "survey.floorPhoto is missing"):
+        for name in ("survey.relief is missing", "survey.outputs is missing", "survey.floorPhoto is missing", "survey.detail is missing"):
             self.assertIn(name, r.stdout)
 
     def test_publish_must_be_the_configs_folder(self):
@@ -204,13 +212,42 @@ class Refusals(unittest.TestCase):
         shutil.rmtree(work, ignore_errors=True)
         return work
 
-    def test_restart_from_windows_or_corners_with_clear_glazing(self):
-        for step in ("windows", "corners"):
-            work = self.fresh(f"restart-{step}")
-            r = py("build-room.py", GH, work, "--from", step)
-            self.assertNotEqual(r.returncode, 0)
-            self.assertIn("the clear glass test reads proj/wall-*.npz", r.stdout + r.stderr)
-            self.assertFalse(os.path.exists(work), "the refusal wrote files")
+    def test_publishing_a_pinned_atlas_follows_build_sh(self):
+        """survey.atlas.alphaFrom "published" (the Grand Hall): with a publish folder the atlas takes
+        that folder's alpha, the published relief stands and check-atlas.py runs; --relief rebuild
+        meshes the relief and tells check-atlas.py so. Without a folder, and for any other room,
+        the commands are the plain ones."""
+        drv = load_driver()
+        gh, saloon = Room(GH, T0), Room(SALOON, T0)
+        plain = drv.commands(gh)
+        self.assertEqual(plain["atlas"][0][-1], "room.json")
+        self.assertEqual([os.path.basename(c[1]) if c[0] == "node" else c[4] for c in plain["relief"]], ["wall-depth", "relief-mesh-room.mjs"])
+        keep = drv.commands(gh, "DIR")
+        self.assertEqual(keep["atlas"][0][-2:], ["--alpha-from", "DIR"])
+        self.assertEqual([os.path.basename(c[3]) for c in keep["relief"]], ["check-atlas.py"])
+        self.assertEqual(keep["relief"][0][4:], ["proj", "DIR", "--json", "proj/check-atlas.json", "--alpha-pinned"])
+        rebuild = drv.commands(gh, "DIR", "rebuild")
+        self.assertEqual(len(rebuild["relief"]), 3)
+        self.assertEqual(rebuild["relief"][-1][-2:], ["--alpha-pinned", "--relief-changed"])
+        self.assertEqual(drv.commands(saloon, "DIR"), drv.commands(saloon))
+        for step in ("corners", "labels", "walls", "detail"):
+            self.assertEqual(keep[step], plain[step])
+
+    def test_publishing_a_pinned_atlas_needs_the_published_atlas(self):
+        work = self.fresh("publish-pinned")
+        variant_path, room = variant(GH, "gh-elsewhere.room.json", lambda r: r["survey"]["publish"].__setitem__("folder", "tools/surveyed-rooms/tests"))
+        folder = os.path.join(os.path.dirname(os.path.dirname(ROOMS)), room["survey"]["publish"]["folder"])
+        r = py("build-room.py", variant_path, work, "--to", "check", "--publish", folder)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("holds no walls-4096.webp to take the alpha from", r.stdout + r.stderr)
+        self.assertFalse(os.path.exists(work), "the refusal wrote files")
+
+    def test_a_canvas_edit_adds_its_wall_to_the_walls_step(self):
+        drv = load_driver()
+        self.assertEqual([c[6] for c in drv.commands(Room(GH, T0))["walls"] if c[4] == "canvases"], ["end", "fire"])
+        self.assertEqual([c for c in drv.commands(Room(SALOON, T0))["walls"] if c[4] == "canvases"], [])
+        self.assertEqual(Room(GH, T0).canvases(), {"fire": [("fire-portrait", (4.489, 6.116, 1.911, 4.364), True)],
+                                                   "end": [("end-portrait", (4.569, 6.069, 2.226, 4.521), True)]})
 
     def test_reuse_depth_needs_inputs_from(self):
         work = self.fresh("reuse-depth")
@@ -291,6 +328,137 @@ class Refusals(unittest.TestCase):
         self.assertEqual(len(publish.publish_problems(glass)), 1)
         node = dict(clean, tools=dict(relief={"walls": dict(nodeRoot="C:/elsewhere")}))
         self.assertIn("SURVEYED_ROOMS_NODE_ROOT", publish.publish_problems(node)[0])
+
+
+class OneBlasThread(unittest.TestCase):
+    """The labels' band threads each call BLAS, and BLAS threads of its own under them deadlocked: every
+    entry point holds BLAS to one thread for that step, before numpy loads."""
+    NAMES = ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")
+
+    @staticmethod
+    def source(*parts):
+        with open(os.path.join(ROOMS, *parts), encoding="utf-8") as f:
+            return f.read()
+
+    def test_the_step_runner_sets_it_for_labels_before_numpy_loads(self):
+        path = os.path.join(ROOMS, "roombuild", "step.py")
+        spec = importlib.util.spec_from_file_location("roombuild_step", path)
+        step = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(step)
+        env = {"OPENBLAS_NUM_THREADS": "4"}
+        self.assertEqual(step.hold_blas("labels", env), {n: "1" for n in self.NAMES})
+        self.assertEqual(env, {n: "1" for n in self.NAMES})
+        env = {"OPENBLAS_NUM_THREADS": "4"}
+        self.assertEqual(step.hold_blas("atlas", env), {})
+        self.assertEqual(env, {"OPENBLAS_NUM_THREADS": "4"})
+        src = self.source("roombuild", "step.py")
+        self.assertLess(src.index("hold_blas(sys.argv[1])"), src.index("from roombuild import"))
+
+    def test_the_old_script_its_build_and_its_test_runner_set_it_too(self):
+        script = self.source("..", "grand-hall-survey", "label-views.py")
+        self.assertLess(script.index("os.environ[_name] = '1'"), script.index("import numpy"))
+        build_sh = self.source("..", "grand-hall-survey", "build.sh")
+        self.assertIn('OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 python3 "$SURVEY/label-views.py"', build_sh)
+        runner = self.source("tests", "run_old.py")
+        self.assertLess(runner.index('os.environ[name] = "1"'), runner.index("import project"))
+
+
+class SubCommands(unittest.TestCase):
+    """--list, --only and --resume: a caller can run one sub-command at a time (taking whatever
+    lock it must round each), and a stopped build picks up where it left off."""
+
+    def work(self, name):
+        work = os.path.join(T0, name)
+        shutil.rmtree(work, ignore_errors=True)
+        os.makedirs(os.path.join(work, "proj"))
+        os.makedirs(os.path.join(work, "build"))
+        return work
+
+    @staticmethod
+    def writes(rel, text):
+        return [sys.executable, "-c", f"open({rel!r}, 'a').write({text!r})"]
+
+    def subs(self):
+        """A four-step build of small files: b's two sub-commands stand apart from each other, c reads both."""
+        return [dict(id="a:1", step="a", argv=self.writes("proj/a.txt", "a"), apart=False),
+                dict(id="b:1", step="b", argv=self.writes("proj/b1.txt", "b"), apart=True),
+                dict(id="b:2", step="b", argv=self.writes("proj/b2.txt", "b"), apart=True),
+                dict(id="c:1", step="c", argv=self.writes("proj/c.txt", "c"), apart=False),
+                dict(id="publish:1", step="publish", argv=None, apart=False)]
+
+    def test_list_names_every_sub_command_and_writes_nothing(self):
+        work = os.path.join(T0, "list-gh")
+        shutil.rmtree(work, ignore_errors=True)
+        r = py("build-room.py", GH, work, "--list")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rows = dict(line.split(None, 1) for line in r.stdout.splitlines())
+        self.assertEqual(rows["inputs:2"].split()[1], os.path.join("..", "grand-hall-survey", "dump-mesh.mjs"))
+        self.assertEqual(rows["labels:3"], os.path.join("roombuild", "step.py") + " labels end")
+        self.assertEqual(rows["walls:5"], os.path.join("roombuild", "step.py") + " canvases end")
+        self.assertEqual(rows["detail:5"], os.path.join("roombuild", "step.py") + " pack-detail")
+        self.assertIn("publish:1", rows)
+        self.assertEqual(len(rows), 32)
+        self.assertFalse(os.path.exists(work), "--list wrote files")
+        drv = load_driver()
+        self.assertEqual([s["id"] for s in drv.sub_commands(Room(GH, T0))], list(rows))
+        saloon = [s["id"] for s in drv.sub_commands(Room(SALOON, T0))]
+        self.assertEqual(sum(1 for i in saloon if i.startswith("labels:")), 12)
+        self.assertEqual(len(saloon), len(set(saloon)))
+
+    def test_only_refuses_an_unknown_id_and_a_span(self):
+        work = os.path.join(T0, "only-gh")
+        shutil.rmtree(work, ignore_errors=True)
+        for args, want in ((("--only", "labels:9"), "no such sub-command"), (("--only", "labels:1", "--from", "labels"), "leave --from and --to out")):
+            r = py("build-room.py", GH, work, *args)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn(want, r.stdout + r.stderr)
+            self.assertFalse(os.path.exists(work), "the refusal wrote files")
+
+    def test_one_sub_command_runs_alone_and_is_recorded(self):
+        drv = load_driver()
+        work, subs = self.work("only"), self.subs()
+        rec = drv.Recorder(work)
+        prepared = []
+        ran, skipped = drv.run_subs(rec, subs, [subs[2]], "cfg", prepare=prepared.append)
+        self.assertEqual((ran, skipped, prepared), (["b:2"], [], ["b"]))
+        self.assertEqual(sorted(os.listdir(os.path.join(work, "proj"))), ["b2.txt"])
+        with open(os.path.join(work, "build", "steps.json"), encoding="utf-8") as f:
+            (row,) = json.load(f)
+        self.assertEqual((row["id"], row["step"], row["exit"], row["config"], list(row["outputs"])), ("b:2", "b", 0, "cfg", ["proj/b2.txt"]))
+        self.assertEqual(row["outputs"]["proj/b2.txt"]["bytes"], 1)
+
+    def test_resume_skips_what_is_done_and_reruns_what_is_stale(self):
+        drv = load_driver()
+        work, subs = self.work("resume"), self.subs()
+        published = []
+        run = lambda selected=None, config="cfg": drv.run_subs(drv.Recorder(work), subs, selected or subs, config, resume=True,  # noqa: E731
+                                                                 publish=lambda: published.append(1))
+        self.assertEqual(run(subs[:2]), (["a:1", "b:1"], []))                    # a build stopped after b:1
+        self.assertEqual(run(), (["b:2", "c:1", "publish:1"], ["a:1", "b:1"]))    # picks up at b:2
+        self.assertEqual(run(), (["publish:1"], ["a:1", "b:1", "b:2", "c:1"]))    # nothing left but the record
+        self.assertEqual(len(published), 2)
+        with open(os.path.join(work, "proj", "b1.txt"), "a") as f:                # a file changed under a finished sub-command
+            f.write("x")
+        self.assertEqual(run(), (["b:1", "c:1", "publish:1"], ["a:1", "b:2"]))    # it runs again, and what reads it; b:2 stands apart
+        os.remove(os.path.join(work, "proj", "a.txt"))                            # an earlier step's file is gone
+        self.assertEqual(run()[0], ["a:1", "b:1", "b:2", "c:1", "publish:1"])     # everything after it is stale
+        self.assertEqual(run()[1], ["a:1", "b:1", "b:2", "c:1"])
+        self.assertEqual(run(config="other")[0], ["a:1", "b:1", "b:2", "c:1", "publish:1"])   # another config: nothing is taken on trust
+        rec = drv.Recorder(work)
+        self.assertEqual(drv.fresh(rec, subs, 3, "cfg"), (False, "the config changed since it ran"))
+        changed = [dict(s, argv=s["argv"] + ["x"]) if s["id"] == "c:1" else s for s in subs]
+        self.assertEqual(drv.fresh(rec, changed, 3, "other"), (False, "its command changed"))
+
+    def test_a_failed_sub_command_stops_the_build_and_runs_again(self):
+        drv = load_driver()
+        work, subs = self.work("failed"), self.subs()
+        subs[1] = dict(subs[1], argv=[sys.executable, "-c", "import os, sys; sys.exit(0 if os.path.exists('proj/ok') else 3)"])
+        with self.assertRaises(SystemExit) as caught:
+            drv.run_subs(drv.Recorder(work), subs, subs, "cfg", resume=True)
+        self.assertIn("b:1 failed (exit 3)", str(caught.exception))
+        open(os.path.join(work, "proj", "ok"), "w").close()
+        ran, skipped = drv.run_subs(drv.Recorder(work), subs, subs, "cfg", resume=True)
+        self.assertEqual((ran, skipped), (["b:1", "b:2", "c:1", "publish:1"], ["a:1"]))
 
 
 if __name__ == "__main__":
