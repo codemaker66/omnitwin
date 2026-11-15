@@ -121,7 +121,8 @@ The repo bans gold-family colour literals and type under 11 px (`__tests__/house
 
 - Cards and their engine: `lib/setup-cards.ts`, `stores/catalogue-store.ts` (`toggleCard`, `armCard`,
   `startCardDrag`, `stepArmedCard`), the truthful ghost (`components/GhostSet.tsx`), the commit
-  (`lib/place-in-hand.ts`). Card pictures: `setupCardPreviewUrl` and each piece's `thumbnailUrl`.
+  (`lib/place-in-hand.ts`). Card pictures: the rule of `setupCardPreviewUrl` (as the screen's own copy while it
+  is behind its flag: see "Behind its flag, and nothing more") and each piece's `thumbnailUrl`.
 - Drag from a DOM card to the floor is a pointer protocol, not HTML drag and drop: on the first 7 px call
   `startCardDrag(id)`, show a preview with `pointer-events: none`, and let `PlacementGhost` place on release. Any
   element under the pointer blocks placing there, because the floor hit checks `elementFromPoint === canvas`.
@@ -142,6 +143,26 @@ screen has asked for the stage or the mark. `HallStage` says where its camera st
 (`stagePoses`), so the views' director needs none of the stage's code, and the two heights the hall's model needs
 are a module of their own (`hall-stage-cuts.ts`). `src/__tests__/bundle-splitting.test.ts` fails on a static import
 of any of the screen's modules from anywhere else.
+
+That keeps the screen's own code out. It does not keep out what the screen reads from shared code. The bundler
+leaves out of a shared module whatever nothing in production reads (an export, or one entry of a table), and the
+first production reader puts it back, into the file that module is built into, for every page that fetches that
+file. A reader fetched on demand does this as surely as any other. So the rule has a second half: **the screen may
+not be the only production reader of anything in a shared module.** Three things were, and the screen keeps its own
+copy of each, held to the original by a test so the two cannot part:
+
+| What the screen needs | The shared original | The screen's copy | Held by |
+| --- | --- | --- | --- |
+| A setup card's picture | `setupCardPreviewUrl`, `lib/crafted-furniture.ts` | `handCardPictureUrl`, `lib/hud/card-pictures.ts` | `lib/hud/__tests__/flag-only-copies.test.ts`, for every card, colourway and chair |
+| The seat line's spring | `SPRING_PRESETS.dialGlide`, `lib/springs.ts` | `SEAT_LINE_SPRING`, `lib/hud/hud-motion.ts` | the same file |
+| The stage squaring up | `SPRING_PRESETS.sheetSettle`, `lib/springs.ts` | `STAGE_SQUARING_SPRING`, `grand-hall/hall-stage.ts` | `grand-hall/__tests__/hall-stage.test.ts` |
+| The next light | `HALL_MOOD_NAMES`, `grand-hall/hall-mood.ts` | `NEXT_MOOD`, `planner-hud/ViewStation.tsx` | `planner-hud/__tests__/view-station.test.tsx`, by pressing the key |
+
+The two springs are settings handed to the one shared spring (`stepSpring`, `useSpringCssVariable`); there is no
+second spring. The same test file fails if the screen's sources read those exports again, or an entry of the spring
+table that nothing else in production reads. That is a tripwire for what was found, not a proof: the proof is two
+builds from one tree, this branch and master, compared file by file (the 13 November log has the reading). **When
+this screen is the planner, delete the copies and read the originals.**
 
 ## Honest numbers
 
