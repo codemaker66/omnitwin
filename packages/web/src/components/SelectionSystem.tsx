@@ -30,12 +30,14 @@ import {
 } from "../lib/planner-tools.js";
 import {
   CARRY_AT_REST,
+  announceFurnitureLandedInPlace,
   beginFurnitureSettle,
   carryFurniture,
   clearFurnitureSettle,
   measureCarry,
   releaseFurniture,
   type CarrySpeed,
+  type FurnitureLanding,
 } from "../lib/furniture-motion.js";
 import { prefersReducedMotion } from "../lib/reduced-motion.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
@@ -276,6 +278,8 @@ export function SelectionSystem(): null {
   const gestureIdMap = useRef<ReadonlyMap<string, string> | null>(null);
   const dragPointerId = useRef<number | null>(null);
   const cancelPointerGesture = useRef<() => void>(() => undefined);
+  /** Escape's stop: the gesture closes, and a move's pieces are down where they stand (R85). */
+  const stopPointerGesture = useRef<() => void>(() => undefined);
   // floorCache removed — drag uses math plane intersection
 
   // Stable ref for invalidate — avoids effect teardown when invalidate ref changes
@@ -332,6 +336,8 @@ export function SelectionSystem(): null {
   usePlannerKeyBindings(selectionKeyBindings({
     invalidate: () => { invalidateRef.current(); },
     cancelGesture: () => { cancelPointerGesture.current(); },
+    // Every edit but Delete stops a move where it stands (R88).
+    stopGesture: () => { stopPointerGesture.current(); },
     screenUp: () => screenUpOnFloor(camera),
     pointerFloor: () => {
       const at = lastPointer.current;
@@ -343,7 +349,7 @@ export function SelectionSystem(): null {
   useEscapeLayer("operation", {
     open: () => isDragging.current || isMarquee.current,
     onEscape: () => {
-      cancelPointerGesture.current();
+      stopPointerGesture.current();
       invalidateRef.current();
     },
   });
@@ -353,6 +359,8 @@ export function SelectionSystem(): null {
     const canvasEl = gl.domElement;
     // Cache canvas rect — refreshed on pointer down (covers resize between interactions)
     let cachedRect = canvasEl.getBoundingClientRect();
+    /** Set as the scene is torn down: nothing is announced landed then, as nothing touches down in full motion (R85). */
+    let disposed = false;
 
     function interactionTargetAt(clientX: number, clientY: number): { readonly itemId: string | null; readonly wallKey: WallKey | null } {
       cachedRect = canvasEl.getBoundingClientRect();
@@ -416,6 +424,20 @@ export function SelectionSystem(): null {
     cancelPointerGesture.current = closePointerGesture;
 
     /**
+     * A move cut short with nothing let go (Escape, a cancelled or lost
+     * pointer, the window losing focus) stops where it stands, and full
+     * motion's resting hand then sets its pieces down (HOLD_STILL). Under
+     * reduced motion they are announced as set down there (R85). Every other
+     * close is silent: a history change, a save whose ids cannot be matched,
+     * a preview, an unmount, an edit from the keys.
+     */
+    function stopPointerGestureInPlace(): void {
+      if (prefersReducedMotion()) announceLandedInPlace(lastMovingIds.current, "set-down", 0);
+      closePointerGesture();
+    }
+    stopPointerGesture.current = stopPointerGestureInPlace;
+
+    /**
      * One frame of a move drag: the pieces follow the floor point under
      * (`clientX`, `clientY`), found on a math plane rather than the floor mesh
      * so a drag works whatever the room's outline.
@@ -442,12 +464,22 @@ export function SelectionSystem(): null {
       usePlacementStore.getState().moveItemsByDelta(allMovingIds, frame.dx, frame.dz);
       useSelectionStore.getState().setActiveGuides(frame.guides);
       lastMovingIds.current = allMovingIds;
-      // Carried pieces lean a little back from the way they travel.
-      if (!prefersReducedMotion()) {
-        carry.current = measureCarry(carry.current, frame.dx, frame.dz, performance.now());
-        if (carry.current.measured) carryFurniture(allMovingIds, carry.current.vx, carry.current.vz);
-      }
+      // Carried pieces lean a little back from the way they travel. The hand's
+      // speed is measured under reduced motion too: a let-go is heard at it.
+      carry.current = measureCarry(carry.current, frame.dx, frame.dz, performance.now());
+      if (carry.current.measured && !prefersReducedMotion()) carryFurniture(allMovingIds, carry.current.vx, carry.current.vz);
       invalidateRef.current();
+    }
+
+    /** The carrying hand's speed, metres a second, before the gesture's close forgets it; 0 until a move is timed. */
+    function handSpeed(): number {
+      const hand = carry.current;
+      return hand.measured ? Math.hypot(hand.vx, hand.vz) : 0;
+    }
+
+    /** Under reduced motion, a move's pieces are down where they stand: never announced as the scene is torn down. */
+    function announceLandedInPlace(ids: ReadonlySet<string>, landing: FurnitureLanding, speed: number): void {
+      if (!disposed && ids.size > 0) announceFurnitureLandedInPlace(ids, landing, speed);
     }
 
     /** The end of a drag: a move settles onto the grid and the pieces set their weight down. */
@@ -475,8 +507,11 @@ export function SelectionSystem(): null {
           }
         }
         // Let go: the pieces swing upright and set their weight down. A hand
-        // that rested let the loop sleep, so the release must wake it.
-        if (!prefersReducedMotion() && lastMovingIds.current.size > 0) {
+        // that rested let the loop sleep, so the release must wake it. Under
+        // reduced motion nothing comes down: they are down where they stand.
+        if (prefersReducedMotion()) {
+          announceLandedInPlace(lastMovingIds.current, "let-go", handSpeed());
+        } else if (lastMovingIds.current.size > 0) {
           releaseFurniture(lastMovingIds.current);
           invalidateRef.current();
         }
@@ -544,7 +579,8 @@ export function SelectionSystem(): null {
         const primary = placement.placedItems.find((placed) => placed.id === dragItemId.current);
         if (primary !== undefined && lastMovingIds.current.size > 0) {
           placement.moveItemsByDelta(lastMovingIds.current, origin.x - primary.x, origin.z - primary.z);
-          if (!prefersReducedMotion()) releaseFurniture(lastMovingIds.current);
+          if (prefersReducedMotion()) announceLandedInPlace(lastMovingIds.current, "let-go", handSpeed());
+          else releaseFurniture(lastMovingIds.current);
         }
       }
       closePointerGesture();
@@ -1259,12 +1295,12 @@ export function SelectionSystem(): null {
       if (arbitrated.has(event)) return;
       if (event.target === canvasEl || event.pointerId !== dragPointerId.current) return;
       if (isDragging.current) onPointerUp(event);
-      else closePointerGesture();
+      else stopPointerGestureInPlace();
     }
 
     function onPointerCancel(event: PointerEvent): void {
       if (arbitrated.has(event)) return;
-      if (event.pointerId === dragPointerId.current) closePointerGesture();
+      if (event.pointerId === dragPointerId.current) stopPointerGestureInPlace();
     }
 
     function onDblClick(event: MouseEvent): void {
@@ -1331,7 +1367,7 @@ export function SelectionSystem(): null {
     canvasEl.addEventListener("pointercancel", onPointerCancel);
     canvasEl.addEventListener("lostpointercapture", onPointerCancel);
     window.addEventListener("pointerup", onOutsidePointerUp);
-    window.addEventListener("blur", closePointerGesture);
+    window.addEventListener("blur", stopPointerGestureInPlace);
     canvasEl.addEventListener("mouseup", onMouseUp);
     canvasEl.addEventListener("contextmenu", onContextMenu);
     canvasEl.addEventListener("dblclick", onDblClick);
@@ -1353,6 +1389,8 @@ export function SelectionSystem(): null {
     });
 
     return () => {
+      // First: the touch cancel below returns a lifted piece, and nothing is announced landed as the scene goes (R85).
+      disposed = true;
       unsubscribeEditor();
       unsubscribePreview();
       onTouchCancel();
@@ -1364,6 +1402,7 @@ export function SelectionSystem(): null {
       window.removeEventListener("blur", onTouchBlur);
       closePointerGesture();
       cancelPointerGesture.current = () => undefined;
+      stopPointerGesture.current = () => undefined;
       cancelAnimationFrame(marqueeRafId.current);
       touchGesture.current = null;
       canvasEl.removeEventListener("pointerdown", onPointerDown);
@@ -1374,7 +1413,7 @@ export function SelectionSystem(): null {
       canvasEl.removeEventListener("pointercancel", onPointerCancel);
       canvasEl.removeEventListener("lostpointercapture", onPointerCancel);
       window.removeEventListener("pointerup", onOutsidePointerUp);
-      window.removeEventListener("blur", closePointerGesture);
+      window.removeEventListener("blur", stopPointerGestureInPlace);
       canvasEl.removeEventListener("mouseup", onMouseUp);
       canvasEl.removeEventListener("contextmenu", onContextMenu);
       canvasEl.removeEventListener("dblclick", onDblClick);

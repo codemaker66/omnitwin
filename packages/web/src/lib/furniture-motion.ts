@@ -39,6 +39,13 @@ import { SPRING_PRESETS, isSpringSettled, stepSpring, type SpringState } from ".
 /** How a piece carries its weight: a chair rocks, a table barely leans, staging and AV do neither. */
 export type FurnitureMass = "light" | "table" | "heavy";
 
+/**
+ * How a piece came down (ruling R25): a newly placed piece set down onto the
+ * floor, a carried piece the hand let go of, or one a resting hand set down
+ * where it stood.
+ */
+export type FurnitureLanding = "drop-in" | "let-go" | "set-down";
+
 interface MotionChannel {
   readonly mass: FurnitureMass;
   /** Grid settle offset, metres, decaying to zero. */
@@ -67,6 +74,10 @@ interface MotionChannel {
   pendingDip: number;
   /** Seconds a drop-in waits for its turn before it starts down. */
   delay: number;
+  /** How it last started down, told to the landing listeners at its touchdown. */
+  landing: FurnitureLanding;
+  /** The hand's speed as it last started down, metres a second: a let-go zeroes carrySpeed, so it is kept here. */
+  handSpeed: number;
 }
 
 /** The lean while carried, radians per metre a second. */
@@ -117,6 +128,117 @@ export function setFurnitureMassResolver(resolve: (id: string) => FurnitureMass)
   };
 }
 
+/**
+ * Hears pieces come down, for the set-down sound (T-700). Every call carries
+ * primitives only, so the frame that reports a touchdown makes nothing for it.
+ *
+ * The contract:
+ * - The latest `dropStarted` for an id is the one that counts: a let-go while
+ *   a piece is still on its way down starts it down again.
+ * - Not everything lands. A `pickedUp` may be followed by no landing at all,
+ *   and a `dropStarted` by no `touchedDown`: a release at lift 0, a motion
+ *   cleared (a room change), a preview or an unmount.
+ * - A listener only listens. It must not drive the motion (carry, release,
+ *   drop in, clear) from inside a callback, which may run mid-step. One that
+ *   throws is reported and the motion carries on (R86).
+ */
+export interface FurnitureLandingListener {
+  /** A hand took the piece (or caught it mid-drop); heavy = stage, AV, lighting. */
+  pickedUp(id: string, heavy: boolean): void;
+  /** It starts down: a drop-in after `delaySeconds`, a let-go or a resting hand's set-down at once. The latest for an id counts. */
+  dropStarted(id: string, landing: FurnitureLanding, handSpeed: number, delaySeconds: number): void;
+  /** The frame it reaches its support, at |lift.velocity| m/s. */
+  touchedDown(id: string, landing: FurnitureLanding, contactSpeed: number, handSpeed: number): void;
+  /** Reduced motion: it is down with no motion and no contact frame. */
+  landedInPlace(id: string, landing: FurnitureLanding, handSpeed: number): void;
+}
+
+/**
+ * Replaced on subscribe and unsubscribe, never changed in place: a call walks
+ * the list it started with by index, so an unsubscribe during it skips no one
+ * and the frame path makes no iterator.
+ */
+let landingListeners: readonly FurnitureLandingListener[] = [];
+
+/** Hear every piece pick up, start down and land. Returns the unsubscribe. */
+export function subscribeFurnitureLandings(listener: FurnitureLandingListener): () => void {
+  landingListeners = [...landingListeners, listener];
+  let subscribed = true;
+  return () => {
+    if (!subscribed) return;
+    subscribed = false;
+    const index = landingListeners.indexOf(listener);
+    if (index >= 0) landingListeners = [...landingListeners.slice(0, index), ...landingListeners.slice(index + 1)];
+  };
+}
+
+/** How many listeners hear the landings: a room's sound must leave none behind. */
+export function furnitureLandingListenerCount(): number {
+  return landingListeners.length;
+}
+
+/**
+ * A listener that throws is reported, never swallowed, and never stops the
+ * motion or a carry, release or gesture's close half way (R86): the error goes
+ * to the page's error reporting, or is thrown again on a microtask where there
+ * is none. Nothing is made unless something throws.
+ */
+function reportListenerError(error: unknown): void {
+  const host: { reportError?: (error: unknown) => void } = globalThis;
+  if (typeof host.reportError === "function") host.reportError(error);
+  else queueMicrotask(() => { throw error; });
+}
+
+/**
+ * Under reduced motion nothing comes down: the placement and the hand call
+ * this instead, for pieces that are down where they stand.
+ */
+export function announceFurnitureLandedInPlace(ids: Iterable<string>, landing: FurnitureLanding, handSpeed: number): void {
+  const listeners = landingListeners;
+  for (const id of ids) {
+    for (let i = 0; i < listeners.length; i++) {
+      try {
+        listeners[i]?.landedInPlace(id, landing, handSpeed);
+      } catch (error) {
+        reportListenerError(error);
+      }
+    }
+  }
+}
+
+function announcePickedUp(id: string, heavy: boolean): void {
+  const listeners = landingListeners;
+  for (let i = 0; i < listeners.length; i++) {
+    try {
+      listeners[i]?.pickedUp(id, heavy);
+    } catch (error) {
+      reportListenerError(error);
+    }
+  }
+}
+
+function announceDropStarted(id: string, landing: FurnitureLanding, handSpeed: number, delaySeconds: number): void {
+  const listeners = landingListeners;
+  for (let i = 0; i < listeners.length; i++) {
+    try {
+      listeners[i]?.dropStarted(id, landing, handSpeed, delaySeconds);
+    } catch (error) {
+      reportListenerError(error);
+    }
+  }
+}
+
+function announceTouchedDown(id: string, landing: FurnitureLanding, contactSpeed: number, handSpeed: number): void {
+  const listeners = landingListeners;
+  for (let i = 0; i < listeners.length; i++) {
+    try {
+      listeners[i]?.touchedDown(id, landing, contactSpeed, handSpeed);
+    } catch (error) {
+      reportListenerError(error);
+    }
+  }
+}
+
 function channel(id: string): MotionChannel {
   const existing = channels.get(id);
   if (existing !== undefined) return existing;
@@ -137,6 +259,8 @@ function channel(id: string): MotionChannel {
     dropIn: false,
     pendingDip: 0,
     delay: 0,
+    landing: "let-go",
+    handSpeed: 0,
   };
   channels.set(id, created);
   return created;
@@ -162,6 +286,7 @@ export function carryFurniture(ids: Iterable<string>, velocityX: number, velocit
   const speed = Math.hypot(velocityX, velocityZ);
   for (const id of ids) {
     const motion = channel(id);
+    const inHand = motion.liftTarget > 0;
     const most = LEAN_MOST[motion.mass];
     const scale = speed * LEAN_PER_SPEED > most ? most / speed : LEAN_PER_SPEED;
     motion.leanTargetX = -velocityX * scale;
@@ -174,6 +299,8 @@ export function carryFurniture(ids: Iterable<string>, velocityX: number, velocit
     motion.dropIn = false;
     motion.pendingDip = 0;
     motion.delay = 0;
+    // Taken up: from rest, or caught on its way down, whose landing then never comes.
+    if (!inHand) announcePickedUp(id, motion.mass === "heavy");
   }
 }
 
@@ -228,6 +355,8 @@ export function releaseFurniture(ids: Iterable<string>): void {
     motion.leanTargetZ = 0;
     motion.liftTarget = 0;
     const dip = releaseDip(motion.mass, motion.carrySpeed);
+    // The hand's speed as it lets go, kept for the touchdown: carrySpeed goes to 0 here.
+    const handSpeed = motion.carrySpeed;
     motion.carrySpeed = 0;
     if (motion.lift.value > 0) {
       // Held off the floor: it comes down, and takes its weight as it touches.
@@ -235,6 +364,9 @@ export function releaseFurniture(ids: Iterable<string>): void {
       motion.dropIn = false;
       motion.pendingDip = dip;
       motion.delay = 0;
+      motion.landing = "let-go";
+      motion.handSpeed = handSpeed;
+      announceDropStarted(id, "let-go", handSpeed, 0);
     } else {
       motion.squash.velocity -= dip;
     }
@@ -255,6 +387,9 @@ export function dropInFurniture(id: string, height: number = DROP_HEIGHT, delayS
   motion.dropIn = true;
   motion.pendingDip = 0;
   motion.delay = Math.max(0, delaySeconds);
+  motion.landing = "drop-in";
+  motion.handSpeed = 0;
+  announceDropStarted(id, "drop-in", 0, motion.delay);
 }
 
 /** A newly placed piece, for working out the order its set or layout lands in. */
@@ -445,6 +580,10 @@ export function stepFurnitureSettles(frameDeltaSeconds: number): readonly string
       motion.liftTarget = 0;
       motion.dropping = true;
       motion.pendingDip = 0;
+      // A resting hand sets it down where it is, at what is left of its speed.
+      motion.landing = "set-down";
+      motion.handSpeed = motion.carrySpeed;
+      announceDropStarted(id, "set-down", motion.handSpeed, 0);
     }
     stepSpring(motion.x, 0, dtSeconds, SPRING_PRESETS.gridSettle);
     stepSpring(motion.z, 0, dtSeconds, SPRING_PRESETS.gridSettle);
@@ -457,7 +596,12 @@ export function stepFurnitureSettles(frameDeltaSeconds: number): readonly string
       } else {
         // Contact is a constraint: aimed below the floor, it stops at the floor, at speed.
         stepSpring(motion.lift, SET_DOWN_AIM, dtSeconds, SPRING_PRESETS.furnitureSetDown);
-        if (motion.lift.value <= 0) touchDown(motion);
+        if (motion.lift.value <= 0) {
+          // The contact frame: its speed is read before touchDown stops it.
+          const contactSpeed = Math.abs(motion.lift.velocity);
+          touchDown(motion);
+          announceTouchedDown(id, motion.landing, contactSpeed, motion.handSpeed);
+        }
       }
     } else if (motion.liftTarget > 0 || motion.lift.value !== 0) {
       stepSpring(motion.lift, motion.liftTarget, dtSeconds, SPRING_PRESETS.gridSettle);

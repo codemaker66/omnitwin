@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Matrix4, type Object3D } from "three";
 import {
   DROP_HEIGHT,
+  announceFurnitureLandedInPlace,
   beginFurnitureSettle,
   clearAllFurnitureSettles,
   composeFurnitureMotion,
@@ -81,9 +82,13 @@ export function FurnitureMotion(): null {
 
   // Newly placed pieces are set down onto the floor: a set lands in order,
   // its table and then its chairs round it, and a whole Lay out ripples out
-  // from its middle.
+  // from its middle. Under reduced motion nothing comes down: they are told
+  // to the landing listeners as down where they stand.
   useEffect(() => subscribeFurniturePlaced((ids) => {
-    if (prefersReducedMotion()) return;
+    if (prefersReducedMotion()) {
+      announceFurnitureLandedInPlace(ids, "drop-in", 0);
+      return;
+    }
     const placed = new Map(usePlacementStore.getState().placedItems.map((item) => [item.id, item]));
     const pieces = ids.flatMap((id): LandingPiece[] => {
       const item = placed.get(id);
