@@ -4,8 +4,9 @@ import { useThree, type RootState } from "@react-three/fiber";
 import { act } from "@testing-library/react";
 import { StrictMode, useEffect, useState, type ReactElement } from "react";
 import { Color, Mesh, Raycaster, Texture, Vector3, type BufferGeometry, type Object3D } from "three";
-import { MeshBasicNodeMaterial } from "three/webgpu";
+import { MeshBasicNodeMaterial, type WebGPURenderer } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { replaceStoreRenderer } from "../../../lib/native-renderer.js";
 import { intersectSelectable, SELECTION_PICK_IGNORED } from "../../../lib/raycast-gate.js";
 import { mountInStubRoot, type StubRoot } from "../../__tests__/stub-r3f-root.js";
 import { buildRoomFrame } from "../room-frame.js";
@@ -370,9 +371,10 @@ describe("SurveyedRoomModel", () => {
     await native.jobs[0]?.job(new AbortController().signal);
     expect(native.compiled).toEqual([first]);
 
-    // The device is lost and a fresh renderer takes the canvas (NativeCanvas hands it to the store): compiled for again.
-    const replacement = { domElement: document.createElement("canvas"), render: () => undefined };
-    act(() => { view.set?.({ gl: replacement as unknown as RootState["gl"] }); });
+    // The device is lost and a fresh renderer takes the canvas, handed to the store as NativeCanvas hands it
+    // (lib/native-renderer.ts replaceStoreRenderer): compiled for again. A stand-in: only its identity is read.
+    const replacement: object = { domElement: document.createElement("canvas"), render: () => undefined };
+    act(() => { if (view.set !== null) replaceStoreRenderer({ set: view.set }, replacement as WebGPURenderer); });
     const second = native.behind.get(replacement);
     expect(second).toBeDefined();
     expect(second).not.toBe(first);
