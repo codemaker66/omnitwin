@@ -30,16 +30,5 @@ export function craftedFurniturePreviewUrl(slug: string): string | null {
   return isCraftedFurnitureSlug(slug) ? `/models/furniture/${slug}/${CRAFTED_PREVIEW_VERSION}/preview.webp` : null;
 }
 
-/**
- * The version folder of the setup cards' pictures (card-dock Q-21): each
- * look's whole set (a round with its chairs, a trestle or a set with theirs,
- * a 5 × 5 floor) drawn from the same models in the same studio as the crafted
- * previews, by scripts/render-setup-previews.mjs. Each card has its own folder
- * beside the pieces', `/models/furniture/setup-<card>/<version>/`, so the
- * version sits where the immutable cache rule (vercel.json) reads it.
- * setup-v2: the rebuilt furniture (T-675), each seated look on each chair the
- * planner sets (the Chiavari at a wedding, the Turini otherwise).
- */
-export const SETUP_PREVIEW_VERSION = "setup-v2";
 
-// Each setup card's look and picture, which only the new chrome shows, are in lib/setup-card-previews.ts (T-671).
+// Each setup card's look and picture, and SETUP_PREVIEW_VERSION, which only the new chrome shows, are in lib/setup-card-previews.ts (T-671).

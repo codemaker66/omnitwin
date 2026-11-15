@@ -4,11 +4,12 @@ import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Catalogue, nothingFoundLine } from "../Catalogue.js";
+import { Rail } from "../Rail.js";
 import { placedCount, roomCounts } from "../card-counts.js";
 import { cardChoices } from "../CatalogueCard.js";
 import { CARD_TABS, CATALOGUE_CARDS, searchCatalogue } from "../../../lib/card-defaults.js";
 import { cardNeeds } from "../../../lib/card-stock.js";
-import { SETUP_PREVIEW_VERSION } from "../../../lib/crafted-furniture.js";
+import { SETUP_PREVIEW_VERSION } from "../../../lib/setup-card-previews.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { useEscapeLayer } from "../../../lib/planner-keys.js";
 import { createPlacedItem, type PlacedItem } from "../../../lib/placement.js";
@@ -365,6 +366,22 @@ describe("the store (staff; Blake's B2, hard)", () => {
     fireEvent.keyDown(search, { key: "Enter" });
     expect(useCatalogueStore.getState().armedCardId).toBeNull();
     expect(useCardsStore.getState().refusal).toEqual({ card: "round", text: "None left in store" });
+  });
+
+  // #357 VB1: a refusal from a catalogue card that is not on the rail was named by its raw id.
+  it("names a catalogue-only card on the rail's line by its name, not its id", () => {
+    useCardsStore.getState().setStock(roundStock(0));
+    openCatalogue();
+    render(<><Rail /><Catalogue /></>);
+    const search = within(catalogue()).getByRole("searchbox", { name: "Search the catalogue" });
+    fireEvent.change(search, { target: { value: "round 6" } });
+    const first = searchCatalogue("round 6")[0];
+    expect(first?.name).toBe("Round 6 ft");
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(useCatalogueStore.getState().armedCardId).toBeNull();
+    expect(useCardsStore.getState().refusal?.card).toBe(first?.id);
+    expect(document.body.textContent).toContain("None left in store · Round 6 ft");
+    expect(document.body.textContent).not.toContain("piece:");
   });
 
   // #357 V6: replacing a white Round of 10 with a round gives back what it takes, so the store

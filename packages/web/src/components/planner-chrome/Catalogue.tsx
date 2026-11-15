@@ -16,7 +16,6 @@ import { CARD_TABS, CATALOGUE_CARDS, searchCatalogue, type CardTab, type Catalog
 import { placedCounts } from "../../lib/card-stock.js";
 import { KEY_PRIORITY, lastInputWasKeys, useEscapeLayer, usePlannerKeyBindings } from "../../lib/planner-keys.js";
 import { cardMainItem, cardParamsFor, pieceCardId, type CardId } from "../../lib/setup-cards.js";
-import { SPRING_PRESETS } from "../../lib/springs.js";
 import { useSpringValue } from "../../lib/use-spring-value.js";
 import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
@@ -25,6 +24,7 @@ import { placedCount, roomCounts } from "./card-counts.js";
 import { cardFaceNow, FullCard, isCardArmed, type CardChoice } from "./CatalogueCard.js";
 import { replacePreview, replaceWith } from "./replace-with.js";
 import { NONE_LEFT_IN_STORE, refuseFromStore, storeFace } from "./store-figures.js";
+import { SHEET_SETTLE } from "./sheet-motion.js";
 import { Kbd } from "./Kbd.js";
 import { Key } from "./Keys.js";
 import "./chrome.css";
@@ -236,13 +236,13 @@ function CatalogueSheet({ sheetRef, open, searchRef, wantsSearch, disabledReason
   // The one tab stop: the card last focused, else the card in hand, else the first.
   const stop = rovingId !== null && cards.some((card) => card.id === rovingId) ? rovingId : (armedHere ?? cards[0]?.id ?? null);
 
-  // Rises on sheetSettle from the rail's edge (a clip, so nothing stretches); sinks the same way, then goes.
+  // Rises on SHEET_SETTLE from the rail's edge (a clip, so nothing stretches); sinks the same way, then goes.
   const latestOpen = useRef(open);
   latestOpen.current = open;
   const latestLeft = useRef(onLeft);
   latestLeft.current = onLeft;
   const closedOffset = stock === null ? CLOSED_OFFSET_PX : CLOSED_OFFSET_STORE_PX;
-  useSpringValue(open && risen ? 0 : closedOffset, SPRING_PRESETS.sheetSettle, (value) => {
+  useSpringValue(open && risen ? 0 : closedOffset, SHEET_SETTLE, (value) => {
     sheetRef.current?.style.setProperty("--pc-catalogue-rise", `${String(Math.round(value * 100) / 100)}px`);
     if (!latestOpen.current && value >= closedOffset) latestLeft.current();
   });

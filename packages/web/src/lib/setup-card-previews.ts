@@ -1,13 +1,24 @@
-import { SETUP_PREVIEW_VERSION } from "./crafted-furniture.js";
 import { plannerChairSlug } from "./furniture-defaults.js";
 import type { CardParams } from "./setup-cards.js";
 
 // ---------------------------------------------------------------------------
 // The setup cards' pictures (card-dock Q-21), in the folder SETUP_PREVIEW_VERSION
-// names (lib/crafted-furniture.ts). Apart from the crafted previews, which
+// names (below). Apart from the crafted previews, which
 // today's planner and the dashboard show, because only the new chrome's cards
 // show these: they load with it (T-671).
 // ---------------------------------------------------------------------------
+
+/**
+ * The version folder of the setup cards' pictures (card-dock Q-21): each
+ * look's whole set (a round with its chairs, a trestle or a set with theirs,
+ * a 5 × 5 floor) drawn from the same models in the same studio as the crafted
+ * previews, by scripts/render-setup-previews.mjs. Each card has its own folder
+ * beside the pieces', `/models/furniture/setup-<card>/<version>/`, so the
+ * version sits where the immutable cache rule (vercel.json) reads it.
+ * setup-v2: the rebuilt furniture (T-675), each seated look on each chair the
+ * planner sets (the Chiavari at a wedding, the Turini otherwise).
+ */
+export const SETUP_PREVIEW_VERSION = "setup-v2";
 
 /** A chair's word in a picture's name. */
 const PICTURE_CHAIR: Readonly<Record<string, string>> = {

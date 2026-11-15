@@ -62,12 +62,13 @@ const RAIL_NAMES: Readonly<Record<string, string>> = {
   [SCREEN]: "Screen",
 };
 
-/** A card's short name on the rail. The Turini is Theatre rows in theatre; any chair of the hall's is otherwise Chairs. */
+/** A card's short name on the rail. The Turini is Theatre rows in theatre; any chair of the hall's is otherwise Chairs.
+ *  A catalogue card that is not on the rail (a refusal from the catalogue names it here) goes by its catalogue name. */
 export function railName(id: CardId, style: RailStyle = "dinner"): string {
   if (style === "theatre" && id === THEATRE_ROWS) return "Theatre rows";
   const slug = pieceCardSlug(id);
   if (slug !== null && plannerChairFor(slug) !== null) return "Chairs";
-  return RAIL_NAMES[id] ?? id;
+  return RAIL_NAMES[id] ?? CATALOGUE_CARDS.find((card) => card.id === id)?.name ?? id;
 }
 
 export const CARD_TABS = ["Tables", "Chairs", "Staging", "AV", "Other"] as const;

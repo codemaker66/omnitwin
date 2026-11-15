@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Rail } from "../Rail.js";
 import { armOrCancel } from "../card-keys.js";
 import { cardNeeds, type UsableStock } from "../../../lib/card-stock.js";
-import { SETUP_PREVIEW_VERSION } from "../../../lib/crafted-furniture.js";
+import { SETUP_PREVIEW_VERSION } from "../../../lib/setup-card-previews.js";
 import { createPlacedItem } from "../../../lib/placement.js";
 import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 import { cardParamsFor, stampSetup } from "../../../lib/setup-cards.js";

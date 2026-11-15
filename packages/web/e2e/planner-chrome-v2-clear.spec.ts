@@ -106,6 +106,10 @@ test("the crest and \\ clear the new chrome to the hall, and \\, Esc or the cres
     await route.fulfill({ status: 200, json: { data: { ...SAVE_VENUE, logoUrl: CREST_IMAGE, spaces: [SAVE_GRAND_HALL, SAVE_SALOON] } } });
   });
   await signInAs(context, PLANNER);
+  // This device has seen the layout, so it opens as placed (recall.ts's first-open
+  // rule): no assembly replay plays, and the door's card is up from the start, not
+  // held back while pieces move in.
+  await context.addInitScript((id) => { window.localStorage.setItem("venviewer.assembly.seen", JSON.stringify([id])); }, LAYOUT);
   const page = await context.newPage();
   await page.goto(`/plan/${LAYOUT}?chrome=v2`);
 
@@ -118,10 +122,7 @@ test("the crest and \\ clear the new chrome to the hall, and \\, Esc or the cres
   await expect(hide.locator("img")).toHaveAttribute("src", CREST_IMAGE);
   await expect(dock).toBeVisible();
   await expect(title).toBeVisible();
-  // The room has drawn its first frame and the layout's assembly has come to
-  // rest before any measure is taken: while it plays (its Skip is up) the
-  // door's card waits, as it does for any piece in motion.
-  await expect(page.getByRole("button", { name: /^Skip( to the end)?$/u })).toHaveCount(0, { timeout: 60_000 });
+  // The room has drawn its first frame before any measure is taken.
   await page.waitForTimeout(1500);
   const crestAtRest = await boxOf(hide);
   const slateAtRest = await boxOf(page.locator(".pc-slate"));

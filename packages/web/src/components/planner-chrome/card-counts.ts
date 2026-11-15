@@ -5,11 +5,11 @@ import {
   CARD_COLOURWAYS,
   DANCE_FLOOR_PANEL_SLUG,
   cardMainSlug,
-  isSetupCardId,
   pieceCardSlug,
   type CardId,
   type SetupCardId,
 } from "../../lib/setup-cards.js";
+import { isSetupCardId } from "../../lib/setup-card-ids.js";
 import { tableChairSide, tableOwnChairs } from "../../lib/table-group.js";
 
 // ---------------------------------------------------------------------------
