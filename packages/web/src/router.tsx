@@ -159,6 +159,12 @@ const PlanViewPage = lazy(() =>
 const SheetCheckPage = lazy(() =>
   cockpitImport(() => import("./pages/SheetCheckPage.js").then((m) => ({ default: m.SheetCheckPage }))),
 );
+const GuestListPage = lazy(() =>
+  cockpitImport(() => import("./pages/GuestListPage.js").then((m) => ({ default: m.GuestListPage }))),
+);
+const GuestPaperPage = lazy(() =>
+  cockpitImport(() => import("./pages/GuestPaperPage.js").then((m) => ({ default: m.GuestPaperPage }))),
+);
 const OpsHandoffPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/OpsHandoffPage.js").then((m) => ({ default: m.OpsHandoffPage }))),
 );
@@ -755,6 +761,16 @@ export const router = createBrowserRouter(underRouteErrorBoundary([
     // never reveals the plan's id or planner address.
     path: "/plan-view/:token",
     element: withSuspense(<PlanViewPage />),
+  },
+  {
+    // The planner's guest list (the planner's kit). Private to the device and
+    // behind ?kit=on: the page is the not-found page until that is given.
+    path: "/plan/:code/guests",
+    element: withSuspense(<GuestListPage />),
+  },
+  {
+    path: "/plan/:code/guests/paper",
+    element: withSuspense(<GuestPaperPage />),
   },
   {
     // The page a printed hallkeeper sheet's QR code opens. Public — it answers
