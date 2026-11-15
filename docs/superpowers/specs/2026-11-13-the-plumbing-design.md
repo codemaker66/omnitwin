@@ -1,6 +1,7 @@
 # The plumbing: work that happens later, and once
 
-Design, 13 November 2026. Status: **approved by Blake on 13 November 2026.** His four decisions are in section 10.
+Design, 13 November 2026. Status: **approved by Blake on 13 November 2026.** His four decisions are in section
+10, with what was refined afterwards.
 Piece 0 of the platform plan (`docs/superpowers/specs/2026-11-13-platform-plan-design.md`, pull request #421;
 ledger row T-702). Branch `claude/platform-plumbing-design`. Every code fact below was read on master `85a17749`.
 Prices were read on the providers' own pricing pages on 13 November 2026. Section 13 says how the design itself
@@ -61,7 +62,7 @@ Section 5.2 names, for each kind of work, the key that makes a repeat harmless.
 
 The plan's pieces lean on this: A (reminders and holds that lapse), E (payments), F (sends and replies), I (the
 deletion job) and wave 1b (the push to an accounting system). An engineer's reading of the code found that each
-would otherwise build its own, or lean on GitHub's scheduler (the plan, section 5.2; the engineer's finding F3).
+would otherwise build its own, or lean on GitHub's scheduler (the plan, section 5.2 and Appendix D).
 
 **Goals.** One list of work in PostgreSQL, safe with two servers. Work written in the same transaction as its
 cause. A sender for each venue. Mail in, onto its event. Encrypted keys for each venue. Failures a person sees.
@@ -263,8 +264,10 @@ How it behaves:
   kind's time limit plus a margin. The statement is a single short transaction, so it works through Neon's pooled
   address. It takes only kinds and versions this server's code knows.
 - **The handler runs outside any transaction.** It is given ids and opens its own short transactions. Every
-  handler keeps the house order for locks (booking, then enquiry, then event) and never holds a row lock on an
-  event or a booking while it calls an outside service. The spine's lane asked for this rule, and it is agreed.
+  handler keeps the house order for locks, which the spine's design sets out in full in its section 5.4
+  (bookings, then the proposal, then the enquiry, then the deal, then the event), and never holds a row lock on
+  an event or a booking while it calls an outside service. The spine's lane asked for this rule, and it is
+  agreed.
 - **The database's clock decides** what is due and whose claim has run out, never a server's own clock.
 - **Finishing.** The row becomes `done` only if the claim token still matches, so a handler that overran cannot
   finish a job that has since been taken again, even by its own server. Where the work only changes our own
@@ -293,11 +296,14 @@ How it behaves:
 - **Old code and new rows.** During a deploy, or after a roll-back, an older server meets jobs written by newer
   code. It never takes a kind or a version it does not know; those wait for a server that does. A kind's data is
   changed in two deploys: first the code that can read the new shape, then the code that writes it.
-- **Waking.** The worker does not poll. After each pass it asks the database how long until the next job is due,
-  and sleeps that long. Work written by this server wakes it at once, after the transaction has committed. Every
-  server also plans when it starts and on each hour, so a job written by another process, or left by a server
-  that has gone, waits an hour at most. Two servers plan at the same minute, so they wake the database together,
-  not twice. Between plans, with nothing due, the database sleeps. The hour is a setting.
+- **Waking.** The worker does not poll. After each pass it asks the database how long until the next thing it
+  must act on, and sleeps that long. That is the earlier of two times: the next job coming due, and the earliest
+  claim of a running job running out, whichever server holds it. So a job left running by a server that has gone
+  is picked up as soon as its claim runs out, in under a minute. Work written by this server wakes it at once,
+  after the transaction has committed. Every server also plans when it starts and on each hour, so a job written
+  by another process waits an hour at most. Two servers plan at the same minute, so they wake the database
+  together, not twice. Between plans, with nothing due and nothing running, the database sleeps. The hour is a
+  setting.
 - **Work that repeats** has its next run written when this run is taken, keyed by the time of that run, so two
   servers make one row. Every plan also makes sure the next run exists, so a run that fails never ends the
   series. A time such as "09:00 at the venue" is worked out in the venue's own time zone.
@@ -314,9 +320,9 @@ every handler must be safe to repeat. This table is the contract for each piece 
 | Kind of work | What makes a repeat harmless |
 |---|---|
 | An email | The send's own key, unique in `email_sends` (as today). The same key goes to Resend as its idempotency key, which it honours for 24 hours: a try repeated after a crash is answered with the first result and nothing is sent twice. The tries normally finish within ten hours. No try is ever made more than 23 hours after the first, whatever held it up: the send then says Not sent, with a note if it may in fact have gone, and a person decides |
-| A hold reminder (piece A) | The key it already has: the booking, and how many days before the decision (`services/hold-reminders.ts`) |
+| A hold reminder (piece A) | The key it already has: the booking, the decision day and how many days before it, so a decision that moves earns its own reminders (`services/hold-reminders.ts`) |
 | Mail coming in | The provider's own id for the message, unique on the stored row; and the notice's own id, recorded once |
-| A payment's follow-up (piece E) | Stripe's own id for each notice, recorded once (`stripe_events`, as today). A call to Stripe carries Stripe's idempotency key, made from the ledger row's id (the spine's design) |
+| A payment's follow-up (piece E) | Stripe's own id for each notice, recorded once (`stripe_events`, as today). A call to Stripe carries Stripe's idempotency key, made from the id of the row that records the request (a line of the schedule of what is due, or a refund). It is never made from a payment's own row, which does not exist until the money has arrived. This is this design's rule for piece E; the spine's design has none |
 | A reminder that money is due (the spine) | The schedule line and its due date. If the date moves, a new job is written, and the old one wakes, reads the ledger and sends nothing |
 | A deletion (piece I) | Deleting what has gone changes nothing. The key is the request's id |
 | A push to the accounting system (wave 1b) | The invoice's id and version. It is sent as the accounting system's own idempotency key where it has one; otherwise the job looks for the invoice before making it |
@@ -437,7 +443,8 @@ daily job asks Resend for the list of what it has received and takes in anything
 4. **Otherwise** it is dropped and counted, and not stored.
 
 The token is what matters, not the domain it arrives at, so a venue that moves from our receiving address to its
-own sub-name loses no thread. When two events are merged (the spine's design), both keep their addresses.
+own sub-name loses no thread. When two events are merged (the spine's design), both addresses stay alive and
+move to the surviving event.
 Matching a reply by the message it says it answers is left out: it needs a header we do not yet set on what we
 send, and the token does the job.
 
@@ -539,11 +546,12 @@ no file is left behind.
 | Piece | Uses |
 |---|---|
 | A, the Diary | The list, for reminders and for holds that lapse; sends through the outbox |
-| B, the spine | `enqueueJob` inside its payment transactions; a job dated for any future instant; keys made from its own rows. Agreed with the spine's lane by message on 13 November: no cancel is needed; every link to an event is the (id, venue) key, refuses a delete and can be re-pointed by an event merge; handlers keep the lock order |
+| B, the spine | `enqueueJob` inside its payment transactions; a job dated for any future instant; keys made from its own rows. Its nightly count of records with no event moves onto the list once the list exists. Agreed with the spine's lane by message on 13 November: no cancel is needed; every link to an event is the (id, venue) key, refuses a delete and can be re-pointed by an event merge; handlers keep the lock order |
 | E, the yes that confirms | The outbox for receipts and "ready to confirm"; Stripe's idempotency keys |
 | F, send from here | The venue's sender; the exact words on the send's row; reply addresses; mail in; Not sent and Bounced. When it records a staff reply to an enquiry it calls the spine's `ensureEnquiryEvent` in the same transaction and writes that event on the row. It is also the piece that moves production's replies |
 | I, keeping and deleting | The list, for the erasure of one person and the 24-month deletion, in small steps |
 | Wave 1b | Encrypted keys and the outbox, for the accounting push; mail in, for "email in and the first answer drafted" |
+| The planner's kit (T-719) | In its stage 3: the list and the sends. Its pass that deletes guests' names joins the daily clean-up, and moves onto the list with it |
 
 How what runs today moves onto the list, in this order:
 
@@ -552,7 +560,8 @@ How what runs today moves onto the list, in this order:
    a time, behind one switch (5.3).
 3. **The escalation wake**, which assumes one server. Its passes become a kind on the list. This must happen
    before any second server.
-4. **The daily clean-up.** Its five passes become five kinds, each working in small batches. For one week they
+4. **The daily clean-up.** Each pass of the daily clean-up becomes a kind (five at `85a17749`; a pass added
+   since, such as the planner's kit's, moves with them), each working in small batches. For one week they
    run both from the list and from GitHub; whichever runs second finds nothing to do, because it deletes what is
    already gone. Then GitHub's schedule is removed. Its manual button stays, but asks the API to run the passes,
    with a token, as the hold-reminder workflow does; that needs one small route, because today's needs a
@@ -686,6 +695,17 @@ Asked by button on 13 November 2026. His answers are given word for word.
 
 Already decided before this design, and not asked again: the hold-reminder schedule stays off until the dry run;
 real money moves only on Blake's explicit yes.
+
+**Refined after his approval.** Each of these follows from his answers or from review, and none widens what he
+approved:
+
+- What his choice of the free email plan means (5.3, 5.5, and item 2 above), written on the day he chose it.
+- The fourth record waits until mail in is switched on for the venue (5.4). The note drafted for the Hall's
+  administrator, which Blake was sent, says the same.
+- Three corrections from a read of the repository's own conventions: how an error is scrubbed (5.1), and where
+  the check that nothing is stuck runs (5.7, section 7).
+- The release lead's review of 15 November: the lock order in full and the wake rule (5.1), the reminder's and
+  Stripe's keys (5.2), merged events' addresses (5.5), two rows and one step of section 6, and one citation.
 
 ## 11. Done when
 
