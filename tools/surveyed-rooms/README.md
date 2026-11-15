@@ -320,6 +320,18 @@ seam equations). That is 43 arrays in 19 files with none different, and the run 
 apart from their timings. On the machine that ran it the labels took 6.0 minutes and 976 MB, the
 photographs 2.1 minutes and 861 MB.
 
+Real data, stray texels (15 November 2026). The Saloon's fireplace wall stopped in its labels: of the
+868,824 covered texels of `wall-fireplace-0`, two (row 1121, columns 12 and 13, below the floor line
+at the wall's left end) hold points 0.74 / 1.64 mm and 1.75 / 3.63 mm off their centres, 2.45 m and
+5.82 m behind the camera, where the view's slab runs from 0 to 2 m in front of it: the floor, seen
+edge-on. Every other covered texel of the Saloon's 16 tiles lies within 0.19 mm of its centre, and
+every one of the Grand Hall's 12 tiles within 0.42 mm (nearly all within 0.16 mm, 1/32 of a texel).
+With gate B24 the corners step left the two out and the wall was labelled (27,357 blocks, 5,061
+seams); the Saloon's twelve walls were then labelled and coloured, each process under 1 GB. With
+this change the driver's corners step on the Grand Hall's 12 real tiles gave, in two runs, the
+files master's script gives: 23 files and 49 arrays with none different, counting the end wall's
+labels, photographs, canvas and 2 mm image beside them.
+
 Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
 (`render-depth-room.mjs`, so far only syntax-checked), the other three walls' labels and
