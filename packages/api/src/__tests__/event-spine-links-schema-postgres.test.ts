@@ -38,6 +38,17 @@ const target = platformTarget();
 const MIGRATIONS = resolve(import.meta.dirname, "../../drizzle");
 const JournalSchema = z.object({ entries: z.array(z.object({ tag: z.string() }).passthrough()) }).passthrough();
 
+interface CopiedReviewRow {
+  readonly subject_kind: string;
+  readonly subject_id: string;
+  readonly reason: string;
+  readonly candidate_event_ids: string[];
+  readonly detail: string;
+  readonly binding_review_id: string | null;
+  readonly created_at: Date;
+  readonly resolved_at: Date | null;
+}
+
 describe.skipIf(target === undefined)("the spine: the rules the database holds", () => {
   let spine: SpineDatabase;
   let pool: Pool;
@@ -149,7 +160,7 @@ describe.skipIf(target === undefined)("the spine: the rules the database holds",
         client.release();
       }
     };
-    const copies = async () => (await pool.query(`SELECT subject_kind, subject_id, reason, candidate_event_ids, detail,
+    const copies = async () => (await pool.query<CopiedReviewRow>(`SELECT subject_kind, subject_id, reason, candidate_event_ids, detail,
       binding_review_id, created_at, resolved_at FROM event_link_reviews WHERE venue_id = $1 ORDER BY created_at`, [v.venueId])).rows;
 
     await replay();
@@ -166,7 +177,7 @@ describe.skipIf(target === undefined)("the spine: the rules the database holds",
         created_at: new Date("2026-10-20T09:00:02Z"), resolved_at: null },
     ]);
     // No name crosses: the screen reads October's text through binding_review_id.
-    for (const row of await copies()) expect(String(row["detail"])).not.toContain("Mair");
+    for (const row of await copies()) expect(row.detail).not.toContain("Mair");
 
     const once = await shape();
     const copied = await copies();
