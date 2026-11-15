@@ -336,6 +336,8 @@ export function SelectionSystem(): null {
   usePlannerKeyBindings(selectionKeyBindings({
     invalidate: () => { invalidateRef.current(); },
     cancelGesture: () => { cancelPointerGesture.current(); },
+    // Every edit but Delete stops a move where it stands (R88).
+    stopGesture: () => { stopPointerGesture.current(); },
     screenUp: () => screenUpOnFloor(camera),
     pointerFloor: () => {
       const at = lastPointer.current;

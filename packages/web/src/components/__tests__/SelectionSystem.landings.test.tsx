@@ -340,4 +340,76 @@ describe("a touch lift under reduced motion (R85)", () => {
     blurWindow();
     expect(heard).toEqual([]);
   });
+
+  // The touch blur (registered first) returns the piece and announces its
+  // let-go; the window's blur stop then finds nothing left to set down.
+  it("announces a lifted chair once, as let go, when the window loses focus", () => {
+    render(<SelectionSystem />);
+    liftAndCarry();
+    blurWindow();
+    expect(heard.map((entry) => [entry.callback, entry.id, entry.landing])).toEqual([["landedInPlace", chairId, "let-go"]]);
+  });
+});
+
+describe("a key edit mid-drag (R88)", () => {
+  /** Presses a key on the window, where the planner's one key listener hears it. */
+  function pressKey(init: KeyboardEventInit): void {
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init })); });
+  }
+
+  const stoppingEdits: [string, KeyboardEventInit][] = [
+    ["a turn (Q)", { code: "KeyQ", key: "q" }],
+    ["a nudge (an arrow)", { code: "ArrowUp", key: "ArrowUp" }],
+    ["a cloth (C)", { code: "KeyC", key: "c" }],
+    ["a group (Ctrl G)", { code: "KeyG", key: "g", ctrlKey: true }],
+    ["an ungroup (Ctrl Shift G)", { code: "KeyG", key: "G", ctrlKey: true, shiftKey: true }],
+    ["a duplicate (Ctrl D)", { code: "KeyD", key: "d", ctrlKey: true }],
+  ];
+  const deleteKey: KeyboardEventInit = { code: "Delete", key: "Delete" };
+
+  beforeEach(() => {
+    // Duplicate sits behind the editing keys.
+    setPlannerFeaturesForTesting({ editingKeys: true });
+  });
+
+  afterEach(() => {
+    setPlannerFeaturesForTesting(null);
+  });
+
+  it.each(stoppingEdits)("announces the chair set down where it stands, once, when %s stops the drag under reduced motion", (_name, key) => {
+    motion.reduced = true;
+    render(<SelectionSystem />);
+    carryChair();
+    pressKey(key);
+    expect(heard).toEqual([{ callback: "landedInPlace", id: chairId, landing: "set-down", handSpeed: 0 }]);
+    pointer("pointerUp", 226, 197, 1_200);
+    pressEscape();
+    blurWindow();
+    expect(heard).toHaveLength(1);
+  });
+
+  it("announces nothing when Delete takes the dragged chair, under reduced motion", () => {
+    motion.reduced = true;
+    render(<SelectionSystem />);
+    carryChair();
+    pressKey(deleteKey);
+    expect(usePlacementStore.getState().placedItems.some((item) => item.id === chairId)).toBe(false);
+    pointer("pointerUp", 226, 197, 1_200);
+    pressEscape();
+    blurWindow();
+    expect(heard).toEqual([]);
+  });
+
+  const everyEdit: [string, KeyboardEventInit][] = [...stoppingEdits, ["Delete", deleteKey]];
+
+  it.each(everyEdit)("in full motion, announces nothing in place when %s stops the drag: the resting hand sets the chair down", (_name, key) => {
+    render(<SelectionSystem />);
+    carryChair();
+    for (let frame = 0; frame < 6; frame++) stepFurnitureSettles(1 / 60);
+    pressKey(key);
+    for (let frame = 0; frame < 120 && activeFurnitureSettleCount() > 0; frame++) stepFurnitureSettles(1 / 60);
+    expect(landedInPlace()).toEqual([]);
+    expect(heard.filter((entry) => entry.callback === "dropStarted").map((entry) => entry.landing)).toEqual(["set-down"]);
+    expect(heard.filter((entry) => entry.callback === "touchedDown").map((entry) => entry.landing)).toEqual(["set-down"]);
+  });
 });

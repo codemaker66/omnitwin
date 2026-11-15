@@ -537,8 +537,15 @@ export function putDownPieceInHand(): void {
 export interface SceneKeyDeps {
   /** Asks the demand-driven canvas for a frame. */
   readonly invalidate: () => void;
-  /** Cancels a drag or box in progress before a key edits the selection. */
+  /** Cancels a drag or box in progress before a key edits the selection: Delete's, which sets nothing down. */
   readonly cancelGesture: () => void;
+  /**
+   * Stops a drag in progress where it stands before every other key edits the
+   * selection, as a resting hand would set its pieces down: under reduced
+   * motion they are announced as set down there (T-700, R88). Without it, the
+   * gesture is cancelled.
+   */
+  readonly stopGesture?: () => void;
   /** The floor direction that runs up the screen, from the camera. */
   readonly screenUp: () => FloorDirection;
   /** The floor point under the pointer, render-space, for a paste; null off the floor. */
@@ -555,13 +562,14 @@ function afterEdit(deps: Pick<SceneKeyDeps, "invalidate">, done: boolean): false
 /** Keys that edit the selection (spec 11). */
 export function selectionKeyBindings(deps: SceneKeyDeps): KeyBinding[] {
   const priority = KEY_PRIORITY.selection;
+  const stopGesture = deps.stopGesture ?? deps.cancelGesture;
   return [
     {
       keys: TURN_CHORDS, priority, when: hasSelection, mutates: true,
       run: (event) => {
         const delta = turnForKey(event);
         if (delta === null) return false;
-        deps.cancelGesture();
+        stopGesture();
         return afterEdit(deps, turnSelection(delta));
       },
     },
@@ -570,7 +578,7 @@ export function selectionKeyBindings(deps: SceneKeyDeps): KeyBinding[] {
       run: (event) => {
         const direction = arrowFloorDirection(event.code, deps.screenUp());
         if (direction === null) return false;
-        deps.cancelGesture();
+        stopGesture();
         return afterEdit(deps, nudgeSelection(direction, nudgeMetres(event)));
       },
     },
@@ -588,15 +596,15 @@ export function selectionKeyBindings(deps: SceneKeyDeps): KeyBinding[] {
     },
     {
       keys: letter("c"), priority, when: hasSelection, mutates: true,
-      run: () => { deps.cancelGesture(); return afterEdit(deps, toggleClothOnSelection()); },
+      run: () => { stopGesture(); return afterEdit(deps, toggleClothOnSelection()); },
     },
     {
       keys: letter("g", { mod: true }), priority, when: hasSelection, mutates: true,
-      run: () => { deps.cancelGesture(); return afterEdit(deps, groupSelection()); },
+      run: () => { stopGesture(); return afterEdit(deps, groupSelection()); },
     },
     {
       keys: shiftedLetter("g", { mod: true }), priority, when: hasSelection, mutates: true,
-      run: () => { deps.cancelGesture(); return afterEdit(deps, ungroupSelection()); },
+      run: () => { stopGesture(); return afterEdit(deps, ungroupSelection()); },
     },
     {
       keys: letter("g"), priority: KEY_PRIORITY.planner,
@@ -606,7 +614,8 @@ export function selectionKeyBindings(deps: SceneKeyDeps): KeyBinding[] {
       // Taken even when refused (the notice says why), so the browser never bookmarks the page instead.
       keys: letter("d", { mod: true }), priority, when: () => editingKeys() && hasSelection() && !placing(), mutates: true,
       run: () => {
-        deps.cancelGesture();
+        // The originals are set down where they stand; the copies land as placed pieces do.
+        stopGesture();
         if (duplicateSelection()) deps.invalidate();
       },
     },
