@@ -163,15 +163,16 @@ function crossing(a0: Point, a1: Point, b0: Point, b1: Point): Point | null {
  * every wall: `p` itself if it is. Otherwise the answer lies on the edge of
  * that inset region, which is made of the walls' lines moved 0.3 m in, the
  * corners where two of those lines cross, and arcs of 0.3 m round the inward
- * corners. Each piece's point nearest `p` is a candidate, and the nearest
- * candidate that is truly 0.3 m in wins. In an outline nowhere 0.6 m wide, the
- * candidate farthest in stands in.
+ * corners. Each piece's point nearest `p` is a candidate, as are the moved
+ * lines' ends, where an arc joins a line. The nearest candidate that is truly
+ * 0.3 m in wins. In an outline nowhere 0.6 m wide, the candidate farthest in
+ * stands in.
  */
 function insetInto(outline: Outline, p: Point): Point {
   const walls = wallsOf(outline);
   if (walls.length < 3 || clearance(outline, walls, p) >= EAR_INSET_M) return p;
   const candidates: Point[] = [];
-  for (const wall of walls) candidates.push(nearestOnSegment(p, wall.insetA, wall.insetB));
+  for (const wall of walls) candidates.push(nearestOnSegment(p, wall.insetA, wall.insetB), wall.insetA, wall.insetB);
   for (let i = 0; i < walls.length; i += 1) {
     for (let j = i + 1; j < walls.length; j += 1) {
       const one = walls[i];

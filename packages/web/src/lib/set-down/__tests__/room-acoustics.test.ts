@@ -478,6 +478,33 @@ describe("the room send, and a space with no survey (T-700 Task 12)", () => {
     }
   });
 
+  it("leaves a box's band that already lies inside that range exactly as computed, and puts the rest on its edge", () => {
+    const empties = surveyedEmpties();
+    const box = roomAcousticsFor({ slug: "lady-convenors-room", widthM: "6", lengthM: "9", heightM: "3.5" });
+    let inside = 0;
+    for (const { room, items } of [
+      { room: roomAcousticsFor(null), items: [] },
+      { room: box, items: [] },
+      { room: box, items: referenceDinner("saloon") },
+    ]) {
+      const computed = reverberationTimes(room, contentsAbsorption(items.map(absorberFor)));
+      const state = roomState(room, items);
+      for (const band of BANDS) {
+        const times = empties.rt.map((rt) => rt[band]);
+        const low = Math.min(...times);
+        const high = Math.max(...times);
+        if (computed[band] > low && computed[band] < high) {
+          inside += 1;
+          expect(state.rt[band]).toBe(computed[band]);
+        } else {
+          expect(state.rt[band]).toBe(computed[band] <= low ? low : high);
+        }
+      }
+    }
+    // The default box's 4 kHz and 8 kHz (1.98 s and 1.02 s) are among them, so a clamp to a constant would fail here.
+    expect(inside).toBeGreaterThanOrEqual(2);
+  });
+
   it("leaves the six surveyed rooms' times, gain and send as their surfaces and calibration give them", () => {
     for (const slug of ROOM_SLUGS) {
       const room = ROOM_ACOUSTICS[slug];

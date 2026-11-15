@@ -303,6 +303,21 @@ describe("the ear", () => {
     expect(clampEarToRoom(outside, null)).toBe(outside);
   });
 
+  it("finds the inset edge's join where an arc round the L's inward corner meets a wall's line", () => {
+    // The Reception Room's inward corner at (3.65, 1): the 0.3 m arc round it meets the inset line z = 0.7 at
+    // (3.65, 0.7) and the inset line x = 3.35 at (3.35, 1). An ear straight towards either join from the corner
+    // is nearest that join.
+    const reception = roomGeometries["Reception Room"]!;
+    for (const [from, join] of [
+      [{ x: 3.65, z: 0.9 }, { x: 3.65, z: 0.7 }],
+      [{ x: 3.55, z: 1 }, { x: 3.35, z: 1 }],
+    ] as const) {
+      const clamped = clampEarToRoom({ position: { x: from.x, y: 1.6, z: from.z }, right: RIGHT }, reception);
+      expectNear(clamped.position, { x: join.x, y: 1.6, z: join.z }, 1e-9);
+      expect(toNearestWall(reception.wallPolygon, clamped.position)).toBeGreaterThanOrEqual(0.3 - 1e-9);
+    }
+  });
+
   it("hears a source to its right at a positive azimuth, and one 6 m away at a third of the gain", () => {
     const ear: Ear = { position: { x: 0, y: 1.6, z: 0 }, right: RIGHT };
     expect(directPath(ear, { x: 0.5, y: 0, z: 3 }).azimuthRad).toBeGreaterThan(0);
@@ -432,7 +447,7 @@ describe("the voice", () => {
     for (const ear of [HALL_EAR, { position: { x: 2.5, y: 1.6, z: 0.5 }, right: RIGHT }]) {
       const voice = voiceInput(voiceArgs(item, [item], ear));
       expect(voice.input.direct.gain).toBe(1);
-      const d = distance({ x: toRealWorld(item.x), y: item.y, z: toRealWorld(item.z) }, ear.position);
+      const d = distance({ x: toRealWorld(item.x), y: toRealWorld(item.y), z: toRealWorld(item.z) }, ear.position);
       expect(voice.directGain).toBe(Math.min(1, 2 / d));
       expect(voice.input.clothed).toBe(true);
     }

@@ -58,7 +58,12 @@ export class SetDownFatigue {
     return this.lastDb;
   }
 
-  /** Drops the plays at or before `cutoffMs`: a play counts for five minutes, not including the last instant. */
+  /**
+   * Drops the plays at or before `cutoffMs`: a play counts for five minutes,
+   * not including the last instant. Every `nowMs` comes from one monotonic
+   * clock (performance.now()), so the plays are in time order and only the
+   * front of the list can have expired.
+   */
   private forgetBefore(cutoffMs: number): void {
     let expired = 0;
     while (expired < this.played.length && (this.played[expired]?.atMs ?? Infinity) <= cutoffMs) {

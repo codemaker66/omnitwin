@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   SURFACES,
   floorKindForRoom,
+  surfaceKey,
   surfaceKindForSupport,
   surfaceResponse,
   type SurfaceKind,
@@ -126,5 +127,17 @@ describe("surface responses", () => {
     surfaceResponse("dance-floor", "saloon");
     expect(SURFACES.carpet.beneath).toBeNull();
     expect(SURFACES["dance-floor"].beneath).toBeNull();
+  });
+
+  it("keys a surface by its kind and the floor beneath it, never by the object that carries it", () => {
+    // One key for the renderer's foot groups and the voice's render cache (rulings R37 and R91).
+    const hall = surfaceResponse("dance-floor", "grand-hall");
+    expect(surfaceKey({ ...hall })).toBe(surfaceKey(hall));
+    expect(surfaceKey(surfaceResponse("dance-floor", "robert-adam-room"))).toBe(surfaceKey(hall));
+    expect(surfaceKey(surfaceResponse("dance-floor", "reception-room"))).not.toBe(surfaceKey(hall));
+    expect(surfaceKey(surfaceResponse("carpet", "north-gallery"))).toBe(surfaceKey(surfaceResponse("carpet", "south-gallery")));
+    expect(surfaceKey(surfaceResponse("stage-deck", "saloon"))).toBe("stage-deck");
+    const kinds = Object.keys(SURFACES) as SurfaceKind[];
+    expect(new Set(kinds.map((kind) => surfaceKey(surfaceResponse(kind, "grand-hall")))).size).toBe(kinds.length);
   });
 });

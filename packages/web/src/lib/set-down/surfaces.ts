@@ -48,6 +48,17 @@ export interface SurfaceResponse {
   readonly beneath: ModeBank | null;
 }
 
+/**
+ * What makes two surfaces the same surface: their kind and the floor heard
+ * beneath them, never which object carries them (ruling R37). The renderer
+ * groups a piece's feet by it and the set-down voice keys its renders by it,
+ * so the two cannot disagree (R91).
+ */
+export function surfaceKey(surface: SurfaceResponse): string {
+  const beneath = surface.beneath;
+  return beneath === null ? surface.kind : [surface.kind, beneath.lowHz, beneath.highHz, beneath.count, beneath.eta, beneath.gainDb].join("|");
+}
+
 /** A hard surface cuts nothing the renderer's ceiling (a 14 kHz low-pass) passes (EST). */
 const HARD_CUT_HZ = 16000;
 

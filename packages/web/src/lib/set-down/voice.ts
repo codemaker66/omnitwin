@@ -16,7 +16,7 @@ import { clampEarToRoom, directPath, type Ear } from "./listener.js";
 import { earlyReflections, reflectionRoomFor, type Vec3 } from "./reflections.js";
 import type { SetDownInput } from "./render.js";
 import type { RoomAcoustics } from "./rooms.js";
-import { surfaceKindForSupport, surfaceResponse, type SurfaceResponse } from "./surfaces.js";
+import { surfaceKey, surfaceKindForSupport, surfaceResponse } from "./surfaces.js";
 
 /**
  * How a piece came down: dropped in from the drawer, let go from the hand, or
@@ -62,15 +62,6 @@ export function landingRender(landing: FurnitureLanding, handSpeed: number): { r
   return { kind: "settle", speed: settleSpeedFor(handSpeed) };
 }
 
-/**
- * What makes two surfaces the same surface: their kind and the floor heard
- * beneath them (ruling R37; render.ts groups a piece's feet by the same rule).
- */
-function surfaceKey(surface: SurfaceResponse): string {
-  const beneath = surface.beneath;
-  return beneath === null ? surface.kind : [surface.kind, beneath.lowHz, beneath.highHz, beneath.count, beneath.eta, beneath.gainDb].join("|");
-}
-
 export interface VoiceInputArgs {
   readonly item: PlacedItem;
   /** Every piece in the room, the landing piece among them or not. */
@@ -100,8 +91,8 @@ export interface VoiceInputArgs {
  *   `directGain`, is for the voice's dry gain alone, so the room's send is
  *   never turned down with distance. The direct sound and the reflections are
  *   heard at the same ear, inside the room.
- * - `surfacesKey` names the feet's surfaces, in the feet's order, for caching
- *   renders.
+ * - `surfacesKey` names the feet's surfaces in the feet's order, each by
+ *   surfaceKey (the renderer's own rule), for caching renders.
  */
 export function voiceInput(args: VoiceInputArgs): {
   readonly input: SetDownInput;
@@ -119,7 +110,7 @@ export function voiceInput(args: VoiceInputArgs): {
     const supportSlug = support === null ? null : (getCatalogueItem(support.catalogueItemId)?.slug ?? support.catalogueItemId);
     return surfaceResponse(surfaceKindForSupport(supportSlug, roomSlug), roomSlug);
   });
-  const source: Vec3 = { x: toRealWorld(item.x), y: item.y, z: toRealWorld(item.z) };
+  const source: Vec3 = { x: toRealWorld(item.x), y: toRealWorld(item.y), z: toRealWorld(item.z) };
   const ear = clampEarToRoom(args.ear, geometry);
   const direct = directPath(ear, source);
   const reflections = geometry === null ? [] : earlyReflections(reflectionRoomFor(args.acoustics, geometry), source, ear);

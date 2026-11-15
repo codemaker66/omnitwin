@@ -26,7 +26,7 @@ import type { BodyPart, Foot, PartKind, SetDownBody } from "./bodies.js";
 import { contactSeconds, decaySeconds, knockSeconds, modeEnergy, partModes, surfaceModes } from "./modes.js";
 import { kWeighted, momentaryMaxOfWeighted } from "./analysis.js";
 import type { Reflection } from "./reflections.js";
-import { SURFACES, type SurfaceKind, type SurfaceResponse } from "./surfaces.js";
+import { SURFACES, surfaceKey, type SurfaceKind, type SurfaceResponse } from "./surfaces.js";
 import type { Stereo } from "./tail.js";
 
 /**
@@ -404,13 +404,7 @@ interface Group {
   readonly feet: number;
 }
 
-/** What makes two surfaces the same surface: their kind and the floor heard beneath them, never which object carries them. */
-function surfaceKey(surface: SurfaceResponse): string {
-  const beneath = surface.beneath;
-  return beneath === null ? surface.kind : [surface.kind, beneath.lowHz, beneath.highHz, beneath.count, beneath.eta, beneath.gainDb].join("|");
-}
-
-/** The feet grouped by the surface under them: each surface rings only from its own feet. */
+/** The feet grouped by the surface under them (surfaceKey): each surface rings only from its own feet. */
 function groupFeet(feet: readonly Foot[], surfaces: readonly SurfaceResponse[]): { readonly groups: Group[]; readonly of: number[] } {
   const index = new Map<string, number>();
   const counts: number[] = [];
