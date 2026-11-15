@@ -10,6 +10,7 @@
 import { toRealWorld, toRenderSpace } from "../../constants/scale.js";
 import type { RoomGeometry } from "../../data/room-geometries.js";
 import { getCatalogueItem } from "../catalogue.js";
+import type { FurnitureLanding } from "../furniture-motion.js";
 import { findSupportingItem, type PlacedItem } from "../placement.js";
 import { bodyFor, type SetDownBody } from "./bodies.js";
 import { clampEarToRoom, directPath, type Ear } from "./listener.js";
@@ -17,14 +18,6 @@ import { earlyReflections, reflectionRoomFor, type Vec3 } from "./reflections.js
 import type { SetDownInput } from "./render.js";
 import type { RoomAcoustics } from "./rooms.js";
 import { surfaceKey, surfaceKindForSupport, surfaceResponse } from "./surfaces.js";
-
-/**
- * How a piece came down: dropped in from the drawer, let go from the hand, or
- * set down by a resting hand. Task 11 gives lib/furniture-motion.ts the same
- * union as FurnitureLanding; this becomes an import of it once both are on
- * one branch. Being a string union, the motion's values pass here unchanged.
- */
-type FurnitureLanding = "drop-in" | "let-go" | "set-down";
 
 /** A let-go from a still hand settles at half speed, 3 dB under the approved "Move it" (ruling R76). */
 const STILL_SETTLE_SPEED = 0.5;
