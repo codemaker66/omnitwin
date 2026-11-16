@@ -421,6 +421,28 @@ describe("the guest paper page: the other sheets", () => {
     }
     expect(within(tools()).getByText("172 cards")).toBeTruthy();
     expect(screen.getByText("8 guests have no seat, so they are not on it")).toBeTruthy();
+    // Cards are cut apart: no version line is printed on them, so no page holds it alone.
+    expect(sheet.querySelector(".gp-foot")).toBeNull();
+    expect(sheet.querySelector(".gp-running")).toBeNull();
+  });
+
+  it("gives the place cards' pages their own margins while, and only while, the cards are shown", async () => {
+    open(`${PAPER}?kit=on&sheet=place-cards`, await storeHolding(list180()));
+    const sheet = await paper("place-cards");
+    const styles = Array.from(screen.getByTestId("guest-paper-page").querySelectorAll("style"));
+    expect(styles.map((style) => style.textContent)).toEqual(["@media print{@page{size:A4;margin:10mm 14mm}}"]);
+    expect(styles[0]?.closest("[data-sheet]")).toBe(sheet);
+    // Two columns of five 90 by 55 mm cards fit inside those margins on A4 (210 by 297 mm).
+    const margin = /margin:(\d+)mm (\d+)mm/u.exec(styles[0]?.textContent ?? "");
+    const [vertical, horizontal] = [Number(margin?.[1]), Number(margin?.[2])];
+    expect(2 * vertical + 5 * 55).toBeLessThanOrEqual(297);
+    expect(2 * horizontal + 2 * 90).toBeLessThanOrEqual(210);
+
+    for (const [name, other] of [["Table plan", "table-plan"], ["Guests by table", "by-table"], ["Covers for the caterer", "covers"]] as const) {
+      fireEvent.click(within(tools()).getByRole("link", { name }));
+      await paper(other);
+      expect(screen.getByTestId("guest-paper-page").querySelectorAll("style")).toHaveLength(0);
+    }
   });
 
   it("the covers sheet holds no guest's name", async () => {
@@ -483,23 +505,61 @@ describe("the guest paper page: the other sheets", () => {
 // ---------------------------------------------------------------------------
 
 describe("the guest paper page: printing", () => {
+  /**
+   * The version as each sheet shows it: in the tools on screen, and for the
+   * three list sheets once in the sheet's foot and once in the footer that
+   * paper repeats on every page. Place cards carry no printed version line.
+   */
+  async function expectVersionEverywhere(line: string): Promise<void> {
+    for (const [name, sheet] of SHEET_LINKS) {
+      fireEvent.click(within(tools()).getByRole("link", { name }));
+      const found = await paper(sheet);
+      expect(text(tools().querySelector(".gp-tools__version"))).toBe(line);
+      const feet = found.querySelectorAll(".gp-foot");
+      const running = found.querySelectorAll(".gp-running");
+      if (sheet === "place-cards") {
+        expect(feet).toHaveLength(0);
+        expect(running).toHaveLength(0);
+      } else {
+        expect(feet).toHaveLength(1);
+        expect(running).toHaveLength(1);
+        expect(text(feet[0])).toBe(line);
+        expect(text(running[0])).toBe(line);
+        // The repeated footer is for paper: on screen it is hidden, and silent.
+        expect(running[0]?.getAttribute("aria-hidden")).toBe("true");
+      }
+    }
+  }
+
   it("says \"Not yet printed\" on every sheet before the first print", async () => {
     open(`${PAPER}?kit=on`, await storeHolding(list180()));
     await paper("table-plan");
-    for (const [name, sheet] of SHEET_LINKS) {
-      fireEvent.click(within(tools()).getByRole("link", { name }));
-      const found = await paper(sheet);
-      expect(text(found.querySelector(".gp-foot"))).toBe("Not yet printed");
-    }
+    await expectVersionEverywhere("Not yet printed");
   });
 
-  it("carries the version and the day it was printed on every sheet", async () => {
+  it("carries the version and the day it was printed on every sheet, and on every printed page", async () => {
     open(`${PAPER}?kit=on`, await storeHolding(list180({ paperVersion: 6, printedAt: "2026-11-13T18:20:00.000Z" })));
     await paper("table-plan");
-    for (const [name, sheet] of SHEET_LINKS) {
-      fireEvent.click(within(tools()).getByRole("link", { name }));
-      const found = await paper(sheet);
-      expect(text(found.querySelector(".gp-foot"))).toBe("Version 6 · printed 13 November 2026");
+    await expectVersionEverywhere("Version 6 · printed 13 November 2026");
+  });
+
+  it("tells the day of a print in the device's own time zone, and the event's date as it was typed", async () => {
+    const zone = process.env.TZ;
+    // Summer in Glasgow: 23:30 UTC on 15 July is 00:30 on 16 July there.
+    process.env.TZ = "Europe/London";
+    try {
+      open(`${PAPER}?kit=on`, await storeHolding(list180({
+        paperVersion: 6,
+        printedAt: "2026-07-15T23:30:00.000Z",
+        eventDate: "2027-06-12",
+      })));
+      const sheet = await paper("table-plan");
+      expect(text(sheet.querySelector(".gp-running"))).toBe("Version 6 · printed 16 July 2026");
+      expect(text(tools().querySelector(".gp-tools__version"))).toBe("Version 6 · printed 16 July 2026");
+      expect(text(sheet.querySelector(".gp-eyebrow"))).toBe("Saturday 12 June 2027");
+    } finally {
+      if (zone === undefined) Reflect.deleteProperty(process.env, "TZ");
+      else process.env.TZ = zone;
     }
   });
 
@@ -518,8 +578,8 @@ describe("the guest paper page: printing", () => {
       },
     };
     printSpy.mockImplementation(() => {
-      // What is on the paper at the moment it prints.
-      events.push("print", text(document.querySelector(".gp-foot")));
+      // What is on the paper at the moment it prints: the footer every page carries.
+      events.push("print", text(document.querySelector(".gp-running")));
     });
     const fonts = deferred<undefined>();
     fontsReady(fonts.promise);
@@ -603,7 +663,7 @@ describe("the guest paper page: printing", () => {
     // A listener added after the page's runs after it, as the browser's print
     // layout does: it reads what will be printed.
     let laidOut = "";
-    const read = (): void => { laidOut = text(sheet.querySelector(".gp-foot")); };
+    const read = (): void => { laidOut = text(sheet.querySelector(".gp-running")); };
     window.addEventListener("beforeprint", read);
     act(() => {
       window.dispatchEvent(new Event("beforeprint"));

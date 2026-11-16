@@ -115,7 +115,8 @@
   font: 400 24px/1.2 var(--house-serif);
 }
 
-.gp-tools__count {
+.gp-tools__count,
+.gp-tools__version {
   margin: 0;
   color: var(--reg-text-2);
   font-variant-numeric: tabular-nums;
@@ -259,7 +260,7 @@
 .gp-eyebrow {
   margin: 0;
   color: var(--reg-text-2);
-  font: 600 12px/1.2 var(--house-sans);
+  font: 600 14px/1.25 var(--house-sans);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -286,8 +287,13 @@
   padding-top: 12px;
   border-top: 1px solid var(--house-rule-strong);
   color: var(--reg-text-2);
-  font-size: 13px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
+}
+
+/* The version footer every printed page repeats: for paper only. */
+.gp-running {
+  display: none;
 }
 
 /* The table plan: names A to Z in columns, each letter heading its names. */
@@ -311,7 +317,7 @@
 .gp-az__letter {
   margin: 0 0 6px;
   color: var(--reg-attention);
-  font: 600 13px/1 var(--house-sans);
+  font: 600 14px/1 var(--house-sans);
   letter-spacing: 0.12em;
 }
 
@@ -427,7 +433,7 @@
 
 .gp-card__table {
   color: var(--reg-text-2);
-  font: 600 12px/1 var(--house-sans);
+  font: 600 14px/1 var(--house-sans);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -435,13 +441,6 @@
 /* A card's cut marks are drawn on paper only. */
 .gp-cut {
   display: none;
-}
-
-.gp-cards__foot {
-  margin-top: 14px;
-  padding: 12px 22px;
-  border-top: 0;
-  background: var(--reg-raised);
 }
 
 /* Covers by table, for the caterer. */
@@ -503,10 +502,6 @@
     padding: 0 16px;
   }
 
-  .gp-cards__foot {
-    margin: 16px 16px 0;
-  }
-
   .gp-covers {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -534,10 +529,9 @@
    --------------------------------------------------------------------------- */
 
 @media print {
+  /* The place cards' pages take narrower margins from the page itself, while
+     their sheet is shown (GuestPaperPage.tsx, CARDS_PAGE_STYLE). */
   @page { size: A4; margin: 14mm; }
-
-  /* Ten 90 by 55 mm cards take 275 mm of the page's 297: their pages get their own margins. */
-  @page gp-cards { size: A4; margin: 10mm 14mm; }
 
   /* The body's ivory, on this page only. */
   html:has(.gp),
@@ -553,16 +547,24 @@
   .gp-leaf,
   .gp-leaf--small { max-width: none; padding: 0; background: none; box-shadow: none; }
 
-  .gp-eyebrow { font-size: 9pt; }
+  .gp-eyebrow { font-size: 10.5pt; }
   .gp-leaf__title { margin: 3mm 0 1mm; font-size: 26pt; }
   .gp-leaf--small .gp-leaf__title { font-size: 20pt; }
   .gp-leaf__sub { font-size: 14pt; }
-  .gp-foot { margin-top: 8mm; padding-top: 2.5mm; border-top-color: #8c8c8c; font-size: 10pt; break-inside: avoid; }
+
+  /* The three list sheets print as a table whose footer group, the version
+     line, the browser repeats at the foot of every page and keeps room for in
+     the flow, so it never covers a name. It replaces the sheet's one foot. */
+  .gp-frame { display: table; width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+  .gp-frame__body { display: table-row-group; }
+  .gp-frame > .gp-running { display: table-footer-group; }
+  .gp-running__line { margin: 6mm 0 0; padding-top: 2.5mm; border-top: 1px solid #8c8c8c; font-size: 10.5pt; font-variant-numeric: tabular-nums; }
+  .gp-foot { display: none; }
 
   /* The table plan: three columns, names set to be read standing at the door. */
   .gp-az { columns: 3; column-gap: 8mm; margin-top: 7mm; font-size: 12pt; line-height: 1.35; }
   .gp-az__group + .gp-az__group .gp-az__letter { margin-top: 3.5mm; }
-  .gp-az__letter { margin-bottom: 1.5mm; font-size: 10pt; }
+  .gp-az__letter { margin-bottom: 1.5mm; font-size: 10.5pt; }
   .gp-az__lead { break-inside: avoid; }
   .gp-az__entry { break-inside: avoid; }
   .gp-az__leader { border-bottom-color: #8c8c8c; }
@@ -574,16 +576,14 @@
   .gp-table__name { font-size: 12pt; }
   .gp-table__seats li { font-size: 11pt; }
 
-  /* Place cards: ten to an A4 page, two columns of five, 90 by 55 mm. The
-     cards and the version line after them share one named page. */
-  .gp-cards-sheet { page: gp-cards; }
+  /* Place cards: ten to an A4 page, two columns of five, 90 by 55 mm, and no
+     version line (the cards are cut apart). */
   .gp-cards { display: block; padding: 0; }
   .gp-cards-page { display: grid; grid-template-columns: 90mm 90mm; grid-auto-rows: 55mm; gap: 0; justify-content: center; }
   .gp-cards-page:not(:last-child) { break-after: page; }
   .gp-card { width: 90mm; height: 55mm; aspect-ratio: auto; gap: 3mm; padding: 6mm; background: none; box-shadow: none; break-inside: avoid; }
   .gp-card__name { font-size: 20pt; }
-  .gp-card__table { font-size: 9pt; }
-  .gp-cards__foot { margin: 6mm 0 0; padding: 2.5mm 0 0; border-top: 1px solid #8c8c8c; background: none; }
+  .gp-card__table { font-size: 10.5pt; }
 
   /* Cut marks: a hairline corner at each of a card's four corners, on the cut
      line, drawn with borders (which print without background graphics). */

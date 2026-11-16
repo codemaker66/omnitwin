@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactElement } from "react";
+import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import { KitGate } from "../components/guest-list/KitGate.js";
@@ -17,7 +17,8 @@ import "./GuestPaperPage.css";
 // and covers for the caterer, one sheet at a time (`?sheet=`). Everything is
 // drawn from the list kept in this browser; this page asks nothing of the
 // server and does not read the room. Above the paper, on screen only, are the
-// tools: which sheet, its count, the four sheets, Print and the way back.
+// tools: which sheet, its count, its version, the four sheets, Print and the
+// way back.
 // ---------------------------------------------------------------------------
 
 const PAGE_TITLE = "Table plan and paper";
@@ -31,8 +32,12 @@ const SHEETS: readonly { readonly sheet: Sheet; readonly label: string }[] = [
   { sheet: "covers", label: "Covers for the caterer" },
 ];
 
-// The day of a print is told as the controller's decisions set it: a UTC day.
-const PRINTED_DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+/**
+ * Ten 90 by 55 mm cards take 275 mm of A4's 297, more than the 14 mm margins
+ * leave, so while the place cards are shown their pages get margins of their
+ * own. One sheet shows at a time, so this needs no named page.
+ */
+const CARDS_PAGE_STYLE = "@media print{@page{size:A4;margin:10mm 14mm}}";
 
 export function GuestPaperPage({ store }: { readonly store?: GuestListStore }): ReactElement {
   return (
@@ -71,10 +76,15 @@ function eventDay(list: GuestList): string | null {
   return list.eventDate === null ? null : `${weekday(list.eventDate)} ${calendarDay(list.eventDate)}`;
 }
 
-/** The foot of every sheet: "Version 6 · printed 13 November 2026", or "Not yet printed". */
+/**
+ * "Version 6 · printed 13 November 2026", or "Not yet printed". The day of a
+ * print is the day on this device's own clock, as the list page tells it; the
+ * formatter is made each time so it follows the device's zone as it is now.
+ */
 function versionLine(list: GuestList): string {
   if (list.paperVersion === 0 || list.printedAt === null) return "Not yet printed";
-  return `Version ${String(list.paperVersion)} · printed ${PRINTED_DAY.format(Date.parse(list.printedAt))}`;
+  const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  return `Version ${String(list.paperVersion)} · printed ${day.format(Date.parse(list.printedAt))}`;
 }
 
 function countWords(sheet: Sheet, seated: number): string {
@@ -245,6 +255,7 @@ function ReadyPaper({ planId, list }: { readonly planId: string; readonly list: 
         <div className="gp-tools__head">
           <h1 className="gp-tools__title">{label}</h1>
           <p className="gp-tools__count">{countWords(sheet, seated)}</p>
+          <p className="gp-tools__version">{versionLine(list)}</p>
           {plan.notSeated > 0 && (
             <p className="gp-tools__gap">
               {`${counted(plan.notSeated, "guest has", "guests have")} no seat, so they are not on it`}
@@ -294,8 +305,25 @@ function ReadyPaper({ planId, list }: { readonly planId: string; readonly list: 
   );
 }
 
-function Foot({ list, className = "gp-foot" }: { readonly list: GuestList; readonly className?: string }): ReactElement {
-  return <footer className={className}>{versionLine(list)}</footer>;
+/**
+ * A list sheet's frame: the sheet, its one foot on screen, and the version
+ * footer paper repeats on every printed page. On paper the frame is a table
+ * whose footer group the browser repeats at the foot of each page and keeps
+ * room for, so the footer never covers a name. The cards, cut apart, have none.
+ */
+function PrintFrame({ list, children }: { readonly list: GuestList; readonly children: ReactNode }): ReactElement {
+  const line = versionLine(list);
+  return (
+    <div className="gp-frame">
+      <div className="gp-frame__body">
+        {children}
+        <footer className="gp-foot">{line}</footer>
+      </div>
+      <div className="gp-running" aria-hidden="true">
+        <p className="gp-running__line">{line}</p>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -309,25 +337,26 @@ function TablePlanSheet({ list }: { readonly list: GuestList }): ReactElement {
   const day = eventDay(list);
   return (
     <article className="gp-leaf gp-leaf--poster" aria-labelledby={titleId} data-testid="guest-paper-sheet" data-sheet="table-plan">
-      {day !== null && <p className="gp-eyebrow">{day}</p>}
-      <h2 className="gp-leaf__title" id={titleId}>{list.title.trim() !== "" ? list.title : "Table plan"}</h2>
-      <p className="gp-leaf__sub">Please find your table</p>
-      <div className="gp-az">
-        {plan.groups.map((group) => {
-          const [first, ...rest] = group.entries;
-          return (
-            <section key={group.letter} className="gp-az__group">
-              {/* A letter's heading and its first name stay together on paper. */}
-              <div className="gp-az__lead">
-                <h3 className="gp-az__letter">{group.letter}</h3>
-                {first !== undefined && <PlanEntry label={first.label} table={first.table} />}
-              </div>
-              {rest.map((entry, at) => <PlanEntry key={at} label={entry.label} table={entry.table} />)}
-            </section>
-          );
-        })}
-      </div>
-      <Foot list={list} />
+      <PrintFrame list={list}>
+        {day !== null && <p className="gp-eyebrow">{day}</p>}
+        <h2 className="gp-leaf__title" id={titleId}>{list.title.trim() !== "" ? list.title : "Table plan"}</h2>
+        <p className="gp-leaf__sub">Please find your table</p>
+        <div className="gp-az">
+          {plan.groups.map((group) => {
+            const [first, ...rest] = group.entries;
+            return (
+              <section key={group.letter} className="gp-az__group">
+                {/* A letter's heading and its first name stay together on paper. */}
+                <div className="gp-az__lead">
+                  <h3 className="gp-az__letter">{group.letter}</h3>
+                  {first !== undefined && <PlanEntry label={first.label} table={first.table} />}
+                </div>
+                {rest.map((entry, at) => <PlanEntry key={at} label={entry.label} table={entry.table} />)}
+              </section>
+            );
+          })}
+        </div>
+      </PrintFrame>
     </article>
   );
 }
@@ -349,36 +378,42 @@ function ByTableSheet({ list }: { readonly list: GuestList }): ReactElement {
   const eyebrow = [list.title.trim(), day ?? ""].filter((part) => part !== "").join(" · ");
   return (
     <article className="gp-leaf" aria-labelledby={titleId} data-testid="guest-paper-sheet" data-sheet="by-table">
-      {eyebrow !== "" && <p className="gp-eyebrow">{eyebrow}</p>}
-      <h2 className="gp-leaf__title" id={titleId}>Guests by table</h2>
-      <div className="gp-tables">
-        {byTable(list).map((table) => (
-          <section key={table.number} className="gp-table" aria-label={`Table ${String(table.number)}`}>
-            <h3 className="gp-table__head">
-              <span className="gp-table__number">{`Table ${String(table.number)}`}</span>
-              {table.name.trim() !== "" && <span className="gp-table__name">{table.name}</span>}
-            </h3>
-            <ol className="gp-table__seats">
-              {table.guests.map((guest) => (
-                <li key={guest.seat}>
-                  <span className="gp-table__seat">{String(guest.seat)}</span>
-                  <span className="gp-table__guest">{guest.name}</span>
-                </li>
-              ))}
-            </ol>
-          </section>
-        ))}
-      </div>
-      <Foot list={list} />
+      <PrintFrame list={list}>
+        {eyebrow !== "" && <p className="gp-eyebrow">{eyebrow}</p>}
+        <h2 className="gp-leaf__title" id={titleId}>Guests by table</h2>
+        <div className="gp-tables">
+          {byTable(list).map((table) => (
+            <section key={table.number} className="gp-table" aria-label={`Table ${String(table.number)}`}>
+              <h3 className="gp-table__head">
+                <span className="gp-table__number">{`Table ${String(table.number)}`}</span>
+                {table.name.trim() !== "" && <span className="gp-table__name">{table.name}</span>}
+              </h3>
+              <ol className="gp-table__seats">
+                {table.guests.map((guest) => (
+                  <li key={guest.seat}>
+                    <span className="gp-table__seat">{String(guest.seat)}</span>
+                    <span className="gp-table__guest">{guest.name}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ))}
+        </div>
+      </PrintFrame>
     </article>
   );
 }
 
-/** One card a seated guest, ten to an A4 page, each with its cut marks; the version follows the last page. */
+/**
+ * One card a seated guest, ten to an A4 page, each with its cut marks. Cards
+ * are cut apart, so no version line is printed on them: the version is in the
+ * tools on screen.
+ */
 function PlaceCardsSheet({ list }: { readonly list: GuestList }): ReactElement {
   const pages = inPages(placeCards(list), CARDS_A_PAGE);
   return (
     <article className="gp-cards-sheet" aria-label="Place cards" data-testid="guest-paper-sheet" data-sheet="place-cards">
+      <style>{CARDS_PAGE_STYLE}</style>
       <div className="gp-cards">
         {pages.map((page, number) => (
           <div key={number} className="gp-cards-page">
@@ -392,7 +427,6 @@ function PlaceCardsSheet({ list }: { readonly list: GuestList }): ReactElement {
           </div>
         ))}
       </div>
-      <Foot list={list} className="gp-foot gp-cards__foot" />
     </article>
   );
 }
@@ -407,22 +441,23 @@ function CoversSheet({ list }: { readonly list: GuestList }): ReactElement {
   const day = eventDay(list);
   return (
     <article className="gp-leaf gp-leaf--small" aria-labelledby={titleId} data-testid="guest-paper-sheet" data-sheet="covers">
-      <p className="gp-eyebrow">{day === null ? "For the caterer · covers by table" : `For the caterer · covers by table · ${day}`}</p>
-      <h2 className="gp-leaf__title" id={titleId}>
-        {`${counted(counts.total, "cover", "covers")}, ${counted(counts.tables.length, "table", "tables")}`}
-      </h2>
-      <div className="gp-covers">
-        {counts.tables.map((table) => (
-          <p key={table.number} className="gp-covers__line">
-            <span>{`Table ${String(table.number)}`}</span>
-            <b>{String(table.covers)}</b>
-          </p>
-        ))}
-      </div>
-      <p className="gp-covers__note">
-        No guest's name is on this sheet. Diets and allergies are not held here: ask each guest, or give the kitchen a count.
-      </p>
-      <Foot list={list} />
+      <PrintFrame list={list}>
+        <p className="gp-eyebrow">{day === null ? "For the caterer · covers by table" : `For the caterer · covers by table · ${day}`}</p>
+        <h2 className="gp-leaf__title" id={titleId}>
+          {`${counted(counts.total, "cover", "covers")}, ${counted(counts.tables.length, "table", "tables")}`}
+        </h2>
+        <div className="gp-covers">
+          {counts.tables.map((table) => (
+            <p key={table.number} className="gp-covers__line">
+              <span>{`Table ${String(table.number)}`}</span>
+              <b>{String(table.covers)}</b>
+            </p>
+          ))}
+        </div>
+        <p className="gp-covers__note">
+          No guest's name is on this sheet. Diets and allergies are not held here: ask each guest, or give the kitchen a count.
+        </p>
+      </PrintFrame>
     </article>
   );
 }

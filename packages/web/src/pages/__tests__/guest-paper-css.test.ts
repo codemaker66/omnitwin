@@ -86,6 +86,11 @@ function pt(value: string | undefined): number {
   return Number(match[1]);
 }
 
+/** Every size in px in a value: `14px`, or both ends of `clamp(18px, 1.9vw, 24px)`. */
+function pxIn(value: string): readonly number[] {
+  return [...value.matchAll(/(\d+(?:\.\d+)?)px/gu)].map((match) => Number(match[1]));
+}
+
 const A4 = { width: 210, height: 297 } as const;
 
 const printBlocks = atBlocks("@media print");
@@ -105,9 +110,26 @@ describe("the paper page's stylesheet, on paper", () => {
     expect(cascaded(print, ".gp-card").get("break-inside")).toBe("avoid");
   });
 
-  it("hides nothing on paper but the screen's tools and its decoration", () => {
+  it("hides nothing on paper but the screen's tools, its decoration and the foot the repeated footer replaces", () => {
     const hidden = print.filter(hides).flatMap((rule) => rule.selectors);
-    expect(hidden.sort()).toEqual([".gp-tools", ".gp::before"]);
+    expect(hidden.sort()).toEqual([".gp-foot", ".gp-tools", ".gp::before"]);
+  });
+
+  it("repeats the version footer on every printed page of the three list sheets, with room kept for it", () => {
+    // On screen the sheet shows its single foot; the repeated footer is for paper only.
+    expect(cascaded(screen, ".gp-running").get("display")).toBe("none");
+    // On paper each list sheet is a table whose footer group the browser repeats
+    // at the foot of every page, and lays out in the flow, so it never covers a name.
+    const frame = cascaded(print, ".gp-frame");
+    expect(frame.get("display")).toBe("table");
+    expect(frame.get("width")).toBe("100%");
+    expect(frame.get("table-layout")).toBe("fixed");
+    expect(cascaded(print, ".gp-frame__body").get("display")).toBe("table-row-group");
+    expect(cascaded(print, ".gp-frame > .gp-running").get("display")).toBe("table-footer-group");
+    // Only a sheet's frame repeats it: the place cards, cut apart, carry no version line on paper.
+    const runningSelectors = print.flatMap((rule) => rule.selectors).filter((selector) => selector.includes("gp-running"));
+    expect(runningSelectors.length).toBeGreaterThan(0);
+    for (const selector of runningSelectors) expect(selector).not.toMatch(/gp-card/u);
   });
 
   it("prints on A4 with 14 mm margins, in near-black ink", () => {
@@ -132,13 +154,13 @@ describe("the paper page's stylesheet, on paper", () => {
     expect(cardsPage.get("grid-template-columns")).toBe("90mm 90mm");
     expect(cardsPage.get("grid-auto-rows")).toBe("55mm");
     expect(cascaded(print, ".gp-cards-page:not(:last-child)").get("break-after")).toBe("page");
-    // The cards and their foot share one named page, whose margins leave room for five rows.
-    expect(cascaded(print, ".gp-cards-sheet").get("page")).toBe("gp-cards");
-    const named = cascaded(print, "@page gp-cards");
-    expect(named.get("size")).toBe("A4");
-    const [vertical, horizontal] = (named.get("margin") ?? "").split(/\s+/u).map((part) => mm(part));
-    expect(2 * (vertical ?? A4.height) + 5 * 55).toBeLessThanOrEqual(A4.height);
-    expect(2 * (horizontal ?? A4.width) + 2 * 90).toBeLessThanOrEqual(A4.width);
+    expect(cascaded(print, ".gp-card").get("break-inside")).toBe("avoid");
+    // Two columns of 90 mm fit across A4 inside the sheet's 14 mm side margins.
+    expect(2 * mm(cascaded(print, "@page").get("margin")) + 2 * 90).toBeLessThanOrEqual(A4.width);
+    // The cards' own page margins come from the page while it shows them (see
+    // the page test), not from a named page, which some browsers ignore.
+    expect(CSS).not.toMatch(/@page\s+[\w-]+/u);
+    expect(CSS).not.toMatch(/(?:^|[;{\s])page\s*:/u);
   });
 
   it("draws a card's cut marks on paper only, in ink, at its four corners", () => {
@@ -152,13 +174,33 @@ describe("the paper page's stylesheet, on paper", () => {
     }
   });
 
-  it("sets the names at a size a guest can read at the door, and nothing under the house floor", () => {
+  it("sets the names at a size a guest can read at the door", () => {
     expect(pt(cascaded(print, ".gp-az").get("font-size"))).toBeGreaterThanOrEqual(12);
     expect(pt(cascaded(print, ".gp-table__seats li").get("font-size"))).toBeGreaterThanOrEqual(11);
     expect(pt(cascaded(print, ".gp-card__name").get("font-size"))).toBeGreaterThanOrEqual(18);
-    // 11 px is 8.25 pt: every size set on paper stays above it.
-    const sizes = print.flatMap((rule) => [...rule.declarations].filter(([property]) => property === "font-size"));
-    expect(sizes.length).toBeGreaterThan(5);
-    for (const [, size] of sizes) expect(pt(size)).toBeGreaterThan(8.25);
+  });
+
+  it("sets every name and fact at 14 px or more on screen and 10.5 pt or more on paper", () => {
+    // The names and facts a reader takes from the page, each with a size of its
+    // own. The version is the sheet's foot on screen and the repeated footer on paper.
+    const namesAndFacts = [
+      ".gp-eyebrow", ".gp-az", ".gp-az__letter", ".gp-table__head", ".gp-table__name", ".gp-table__seats li",
+      ".gp-card__name", ".gp-card__table", ".gp-covers", ".gp-covers__note",
+    ];
+    for (const selector of [...namesAndFacts, ".gp-running__line"]) {
+      expect(pt(cascaded(print, selector).get("font-size")), `${selector} on paper`).toBeGreaterThanOrEqual(10.5);
+    }
+    for (const selector of [...namesAndFacts, ".gp-foot"]) {
+      const declared = cascaded(screen, selector);
+      const size = declared.get("font-size") ?? declared.get("font") ?? "";
+      expect(pxIn(size).length, `${selector} on screen`).toBeGreaterThan(0);
+      for (const px of pxIn(size)) expect(px, `${selector} on screen`).toBeGreaterThanOrEqual(14);
+    }
+    // And no size set anywhere falls under the floor: the screen in px, paper in pt.
+    const screenSizes = screen.flatMap((rule) => [...rule.declarations].filter(([property]) => property === "font-size" || property === "font"));
+    for (const [, size] of screenSizes) for (const px of pxIn(size)) expect(px).toBeGreaterThanOrEqual(14);
+    const paperSizes = print.flatMap((rule) => [...rule.declarations].filter(([property]) => property === "font-size"));
+    expect(paperSizes.length).toBeGreaterThan(5);
+    for (const [, size] of paperSizes) expect(pt(size)).toBeGreaterThanOrEqual(10.5);
   });
 });
