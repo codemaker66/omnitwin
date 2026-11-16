@@ -254,23 +254,27 @@ ON CONFLICT DO NOTHING;
 -- of event_link_joins. It runs below, and again after every release and every
 -- night, beside live writers; run twice, the second run changes nothing.
 --
--- It takes no table lock and never waits for a row another transaction
--- holds, so it cannot close a ring of waits with a writer (whose order is a
--- person, bookings, the proposal, the enquiry, the deal, the event). Each
+-- Locks. It takes no table lock, and it never waits for a row lock: each
 -- record is decided first on a plain read; nothing is locked for a record
--- that will be neither joined nor listed. For one that will be, the rows the
--- join will write are locked FOR NO KEY UPDATE SKIP LOCKED, in the writers'
+-- that will be neither joined nor listed; for one that will be, the rows the
+-- join will write are locked FOR NO KEY UPDATE SKIP LOCKED in the writers'
 -- order (a proposal, then its enquiry and its deposit request; a deal's
--- enquiry, then the deal), each re-checked to still hold what was read; the
--- record is then decided again under those locks and acted on. A row it
--- cannot have at once, or that changed, is left to the next run. An event it
--- joins is taken FOR KEY SHARE SKIP LOCKED and must still be live: the lock
--- every key to an event already takes, which no writer's FOR NO KEY UPDATE
--- waits for. The one wait left is a deal's update meeting an open deal a
--- writer has put on the same event and not yet committed (the one-open-deal
--- index): that writer, keeping the order, needs only the event after its
--- deal, which the join does not hold against it; when it commits, the deal is
--- listed instead.
+-- enquiry, then the deal), each re-checked to still hold what was read, and
+-- the record is decided again under those locks before it is acted on. An
+-- event it joins is taken FOR KEY SHARE SKIP LOCKED and must still be live:
+-- the lock every key to an event takes anyway, which no writer's FOR NO KEY
+-- UPDATE waits for. A row it cannot have at once, or that changed, is left
+-- to the next run. Every lock it takes is held until the run commits.
+--
+-- The one wait it can make on another transaction is a deal's update meeting
+-- an open deal a writer has put on the same event and not yet committed (the
+-- one-open-deal index). That wait is bounded at 100 ms, below the server's
+-- deadlock_timeout: a writer that then took the event FOR UPDATE would wait
+-- for the join's key share while the join waited for it. When the writer
+-- commits within the bound the deal is listed; otherwise the deal is left to
+-- the next run, which lists it. (Its foreign keys also take key shares on the
+-- venue rows they name; only a venue row held FOR UPDATE would make those
+-- wait, for as long as the session's own lock_timeout allows.)
 --
 -- A live event is an events row with deleted_at IS NULL at the record's own
 -- venue. Listed is an open question of the join's own (resolved_at IS NULL,
@@ -279,11 +283,18 @@ ON CONFLICT DO NOTHING;
 -- event, wait with it. A question's detail holds counts and kinds, never a
 -- name.
 --
--- After a run no enquiry that may become an event is left without one while
--- an undeleted booking, deal or proposal of it has a live event, unless it is
--- listed or a writer held it: step 1 joins an enquiry to the one live event
--- its bookings, deals and proposals sit in, and steps 2 and 3 carry the
--- enquiry onto any event they give its deal or proposal.
+-- Enquiries. After a run no enquiry that may become an event is left without
+-- one while an undeleted booking, deal or proposal of it has a live event,
+-- unless it is listed or a writer held one of its rows. Step 1 joins an
+-- enquiry to the one live event its bookings, deals and proposals sit in, or
+-- lists it when they sit in several. Steps 1 to 3 are repeated while a round
+-- joins anything (at most four rounds), so an enquiry whose deals or
+-- proposals were joined in one round is settled from all of them together in
+-- the next, and the result never depends on the order records are read in.
+-- An event is made for an enquiry, by step 1, 2 or 3, only when nothing of
+-- its own (held dates, deals, proposals, floor plan) reaches a live event, and
+-- in step 3 only after every proposal that reaches an existing event has been
+-- joined.
 CREATE OR REPLACE FUNCTION "spine_join_old_records"()
   RETURNS TABLE ("joined" integer, "events_made" integer, "listed" integer)
   LANGUAGE plpgsql
@@ -302,13 +313,22 @@ DECLARE
   -- no type at all asks to book. Compared trimmed, as isBookingEnquiry does.
   non_booking_enquiry_types CONSTANT text[] := ARRAY['venue-access', 'venue-enquiry'];
   -- What JavaScript's String.prototype.trim() removes (its WhiteSpace and
-  -- LineTerminator characters), so btrim(x, js_whitespace) is x.trim(). The
-  -- vertical tab is written \x0B: in an E'' string, \v is a plain "v".
-  js_whitespace CONSTANT text := E' \t\n\x0B\f\r                 　﻿';
+  -- LineTerminator characters), so btrim(x, js_whitespace) is x.trim(): tab,
+  -- line feed, vertical tab, form feed, carriage return, space, then U+00A0,
+  -- U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and
+  -- U+FEFF. The vertical tab is written \x0B: in an E'' string, \v is a plain
+  -- "v". The \u escapes need a UTF8 database.
+  js_whitespace CONSTANT text := E' \t\n\x0B\f\r\u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF';
+  -- The longest a deal's update may wait for a writer's uncommitted open deal
+  -- on the same event: below deadlock_timeout (1 s by default).
+  deal_update_wait CONSTANT text := '100ms';
 
   this_enquiry record;
   this_deal record;
   this_proposal record;
+  v_round integer := 0;
+  v_joined_before integer;
+  v_phase integer;
   v_locked boolean;          -- the record's rows are held: decide again, then act
   v_enquiry_locked uuid;     -- the enquiry this record's locking took, if any
   v_request_locked uuid;     -- the deposit request this record's locking took, if any
@@ -323,7 +343,8 @@ DECLARE
   v_detail text;
   v_make boolean;
   v_second boolean;
-  v_for_enquiry boolean;     -- the record's enquiry joins the same event
+  v_left boolean;
+  v_for_enquiry boolean;     -- the event is made for the record's enquiry, which joins it
   v_name text;               -- what an event the join makes is named by, before the naming rule
   v_client text;             -- its client's name, before the naming rule
   v_type text;               -- its occasion
@@ -334,11 +355,14 @@ DECLARE
   v_q_type text;
   v_q_fixture text;
   v_q_may_become boolean;
+  v_q_reaches boolean;       -- something of the enquiry's own reaches a live event
   v_deal_type text;
   v_base uuid;
   v_asked uuid;
   v_request uuid;
   v_request_event uuid;
+  v_lock_timeout text;
+  v_waited uuid[] := '{}';   -- deals whose update gave up on a writer in this run: not tried again in it
   v_made uuid[] := '{}';
   v_constraint text;
   v_rows integer;
@@ -365,6 +389,11 @@ BEGIN
   FROM "answered" a
   WHERE v."id" = a."id";
 
+  -- Steps 1 to 3, repeated while a round joins anything (at most four rounds).
+  LOOP
+    v_round := v_round + 1;
+    v_joined_before := v_joined;
+
   -- 1. Enquiries that may become an event, with none. ----------------------
   <<enquiry_loop>>
   FOR this_enquiry IN
@@ -383,6 +412,9 @@ BEGIN
       CONTINUE enquiry_loop WHEN EXISTS (SELECT 1 FROM "event_link_reviews" l
         WHERE l."subject_kind" = 'enquiry' AND l."subject_id" = this_enquiry."id"
           AND l."resolved_at" IS NULL AND l."binding_review_id" IS NULL);
+      -- (Rule: what of an enquiry's own reaches an event) its held dates (A),
+      -- its deals and proposals (C) and its floor plan (B); steps 2 and 3 ask
+      -- the same question of a record's enquiry.
       v_a := ARRAY(SELECT DISTINCT e."id" FROM "bookings" b JOIN "events" e ON e."id" = b."event_id"
         WHERE b."enquiry_id" = this_enquiry."id" AND b."deleted_at" IS NULL
           AND e."venue_id" = this_enquiry."venue_id" AND e."deleted_at" IS NULL
@@ -498,7 +530,7 @@ BEGIN
   FOR this_deal IN
     SELECT o."id", o."venue_id", o."stage", o."source_enquiry_id", o."title", o."event_type"
     FROM "opportunities" o
-    WHERE o."deleted_at" IS NULL AND o."event_id" IS NULL
+    WHERE o."deleted_at" IS NULL AND o."event_id" IS NULL AND o."id" <> ALL (v_waited)
     ORDER BY o."created_at", o."id"
   LOOP
     v_locked := false;
@@ -512,8 +544,17 @@ BEGIN
       -- Its enquiry, when it is of the deal's venue, and the live event it is joined to.
       SELECT q."id", q."event_id", q."name", q."event_type", q."fixture_source",
         -- The rule of step 1: an enquiry that may become an event.
-        (q."state" <> 'draft' AND (q."event_type" IS NULL OR btrim(q."event_type", js_whitespace) <> ALL (non_booking_enquiry_types)))
-      INTO v_q_id, v_q_event, v_q_name, v_q_type, v_q_fixture, v_q_may_become
+        (q."state" <> 'draft' AND (q."event_type" IS NULL OR btrim(q."event_type", js_whitespace) <> ALL (non_booking_enquiry_types))),
+        -- The rule of step 1: what of an enquiry's own reaches an event.
+        (EXISTS (SELECT 1 FROM "bookings" b JOIN "events" e ON e."id" = b."event_id"
+            WHERE b."enquiry_id" = q."id" AND b."deleted_at" IS NULL AND e."venue_id" = q."venue_id" AND e."deleted_at" IS NULL)
+          OR EXISTS (SELECT 1 FROM "opportunities" o JOIN "events" e ON e."id" = o."event_id"
+            WHERE o."source_enquiry_id" = q."id" AND o."deleted_at" IS NULL AND e."venue_id" = q."venue_id" AND e."deleted_at" IS NULL)
+          OR EXISTS (SELECT 1 FROM "proposals" p JOIN "events" e ON e."id" = p."event_id"
+            WHERE p."enquiry_id" = q."id" AND p."deleted_at" IS NULL AND e."venue_id" = q."venue_id" AND e."deleted_at" IS NULL)
+          OR EXISTS (SELECT 1 FROM "event_configuration_links" k JOIN "events" e ON e."id" = k."event_id"
+            WHERE k."configuration_id" = q."configuration_id" AND e."venue_id" = q."venue_id" AND e."deleted_at" IS NULL))
+      INTO v_q_id, v_q_event, v_q_name, v_q_type, v_q_fixture, v_q_may_become, v_q_reaches
       FROM "enquiries" q
       WHERE q."id" = this_deal."source_enquiry_id" AND q."venue_id" = this_deal."venue_id";
       v_target := (SELECT e."id" FROM "events" e
@@ -530,9 +571,13 @@ BEGIN
             AND o."deleted_at" IS NULL AND o."stage" = ANY (open_deal_stages));
       ELSIF this_deal."stage" = ANY (open_deal_stages) THEN
         -- Nothing reaches it: an event is made, for its enquiry when that may
-        -- become one and has none (the deal then joins it through its enquiry).
-        v_make := true;
+        -- become one and has none (the deal then joins it through its
+        -- enquiry). When something of that enquiry's own reaches an event
+        -- (step 1 could not settle it: a row it could not have at once), the
+        -- deal waits for the enquiry.
         v_for_enquiry := v_q_id IS NOT NULL AND v_q_event IS NULL AND v_q_may_become;
+        CONTINUE deal_loop WHEN v_for_enquiry AND v_q_reaches;
+        v_make := true;
       ELSE
         -- A closed deal that reaches no event is left.
         CONTINUE deal_loop;
@@ -561,22 +606,34 @@ BEGIN
       IF NOT v_second THEN
         PERFORM 1 FROM "events" e WHERE e."id" = v_target AND e."deleted_at" IS NULL FOR KEY SHARE SKIP LOCKED;
         CONTINUE WHEN NOT FOUND;
-        -- An open deal a writer has put on the same event and not committed is
-        -- met here by the one-open-deal index: the update waits for that
-        -- writer, and when it commits this deal is listed instead. Any other
-        -- unique violation stops the run.
+        -- The one wait (see above): an open deal a writer has put on the same
+        -- event and not committed is met here by the one-open-deal index. The
+        -- update waits for that writer at most deal_update_wait, once in a run;
+        -- if it commits, this deal is listed instead, and if not, the deal is
+        -- left to the next run. Any other unique violation stops the run.
+        v_left := false;
+        v_lock_timeout := current_setting('lock_timeout');
         BEGIN
+          PERFORM set_config('lock_timeout', deal_update_wait, true);
           UPDATE "opportunities" SET "event_id" = v_target WHERE "id" = this_deal."id";
+          PERFORM set_config('lock_timeout', v_lock_timeout, true);
           INSERT INTO "event_link_joins" ("venue_id", "subject_kind", "subject_id", "event_id", "path", "event_made")
           VALUES (this_deal."venue_id", 'opportunity', this_deal."id", v_target, 'enquiry', false);
           v_joined := v_joined + 1;
-        EXCEPTION WHEN unique_violation THEN
-          GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
-          IF v_constraint IS DISTINCT FROM 'opportunities_one_open_per_event' THEN
-            RAISE;
-          END IF;
-          v_second := true;
+        EXCEPTION
+          WHEN unique_violation THEN
+            GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+            PERFORM set_config('lock_timeout', v_lock_timeout, true);
+            IF v_constraint IS DISTINCT FROM 'opportunities_one_open_per_event' THEN
+              RAISE;
+            END IF;
+            v_second := true;
+          WHEN lock_not_available THEN
+            PERFORM set_config('lock_timeout', v_lock_timeout, true);
+            v_left := true;
+            v_waited := v_waited || this_deal."id";
         END;
+        CONTINUE WHEN v_left;
       END IF;
       IF v_second THEN
         INSERT INTO "event_link_reviews" ("venue_id", "subject_kind", "subject_id", "reason", "candidate_event_ids", "detail")
@@ -624,7 +681,9 @@ BEGIN
     v_joined := v_joined + 1;
   END LOOP;
 
-  -- 3. Proposals with no event, oldest first. --------------------------------
+  -- 3. Proposals with no event, oldest first: in phase 1 those that reach an
+  --    existing event, then in phase 2 those for which an event is made. ----
+  FOR v_phase IN 1..2 LOOP
   <<proposal_loop>>
   FOR this_proposal IN
     SELECT p."id", p."venue_id", p."status", p."opportunity_id", p."enquiry_id", p."configuration_id", p."title"
@@ -648,8 +707,17 @@ BEGIN
       -- Its enquiry, when it is of the proposal's venue.
       SELECT q."id", q."event_id", q."name", q."event_type", q."fixture_source",
         -- The rule of step 1: an enquiry that may become an event.
-        (q."state" <> 'draft' AND (q."event_type" IS NULL OR btrim(q."event_type", js_whitespace) <> ALL (non_booking_enquiry_types)))
-      INTO v_q_id, v_q_event, v_q_name, v_q_type, v_q_fixture, v_q_may_become
+        (q."state" <> 'draft' AND (q."event_type" IS NULL OR btrim(q."event_type", js_whitespace) <> ALL (non_booking_enquiry_types))),
+        -- The rule of step 1: what of an enquiry's own reaches an event.
+        (EXISTS (SELECT 1 FROM "bookings" b JOIN "events" e ON e."id" = b."event_id"
+            WHERE b."enquiry_id" = q."id" AND b."deleted_at" IS NULL AND e."venue_id" = q."venue_id" AND e."deleted_at" IS NULL)
+          OR EXISTS (SELECT 1 FROM "opportunities" o JOIN "events" e ON e."id" = o."event_id"
+            WHERE o."source_enquiry_id" = q."id" AND o."deleted_at" IS NULL AND e."venue_id" = q."venue_id" AND e."deleted_at" IS NULL)
+          OR EXISTS (SELECT 1 FROM "proposals" p JOIN "events" e ON e."id" = p."event_id"
+            WHERE p."enquiry_id" = q."id" AND p."deleted_at" IS NULL AND e."venue_id" = q."venue_id" AND e."deleted_at" IS NULL)
+          OR EXISTS (SELECT 1 FROM "event_configuration_links" k JOIN "events" e ON e."id" = k."event_id"
+            WHERE k."configuration_id" = q."configuration_id" AND e."venue_id" = q."venue_id" AND e."deleted_at" IS NULL))
+      INTO v_q_id, v_q_event, v_q_name, v_q_type, v_q_fixture, v_q_may_become, v_q_reaches
       FROM "enquiries" q
       WHERE q."id" = this_proposal."enquiry_id" AND q."venue_id" = this_proposal."venue_id";
       -- base: the live event of its deal, else of its enquiry.
@@ -671,6 +739,7 @@ BEGIN
       v_reason := NULL;
       v_target := NULL;
       v_make := false;
+      v_for_enquiry := false;
       IF v_request_event IS NOT NULL AND v_asked IS NULL THEN
         -- Its deposit request names an event that has been deleted: a person decides.
         v_reason := 'paths_disagree';
@@ -708,6 +777,7 @@ BEGIN
           ELSE
             v_make := true;
             v_path := 'new_event';
+            v_for_enquiry := v_q_id IS NOT NULL AND v_q_event IS NULL AND v_q_may_become;
           END IF;
         ELSIF this_proposal."status" <> 'draft' AND cardinality(v_b) = 1 THEN
           -- One that need not have an event (it is over) joins its plan's one
@@ -719,13 +789,39 @@ BEGIN
           CONTINUE proposal_loop;
         END IF;
       END IF;
-      -- Its enquiry is carried onto the same event when it may become one and
-      -- has none (the rule stated above the function).
-      v_for_enquiry := v_reason IS NULL AND v_q_id IS NOT NULL AND v_q_event IS NULL AND v_q_may_become;
+
+      -- An event is made last: not in phase 1, and in phase 2 for its enquiry
+      -- only when nothing of the enquiry's own reaches a live event, and no
+      -- other proposal of it without an event reaches one through its deal,
+      -- its deposit request or (when that would join or list it) its plan.
+      -- Otherwise it is left: the next round or run settles the enquiry first.
+      -- (A proposal that joins an existing event never carries its enquiry;
+      -- step 1 of the next round joins the enquiry from all of them.)
+      IF v_make THEN
+        CONTINUE proposal_loop WHEN v_phase = 1;
+        CONTINUE proposal_loop WHEN v_for_enquiry AND v_q_reaches;
+        CONTINUE proposal_loop WHEN v_for_enquiry AND EXISTS (
+          SELECT 1 FROM "proposals" s
+          CROSS JOIN LATERAL (SELECT count(DISTINCT e."id") AS "reached"
+            FROM "event_configuration_links" k JOIN "events" e ON e."id" = k."event_id"
+            WHERE k."configuration_id" = s."configuration_id" AND e."venue_id" = s."venue_id" AND e."deleted_at" IS NULL) pl
+          WHERE s."enquiry_id" = v_q_id AND s."id" <> this_proposal."id" AND s."deleted_at" IS NULL AND s."event_id" IS NULL
+            AND (EXISTS (SELECT 1 FROM "opportunities" o JOIN "events" e ON e."id" = o."event_id"
+                  WHERE o."id" = s."opportunity_id" AND e."venue_id" = s."venue_id" AND e."deleted_at" IS NULL)
+              OR EXISTS (SELECT 1 FROM "proposal_deposit_requests" d JOIN "events" e ON e."id" = d."event_id"
+                  WHERE d."proposal_id" = s."id" AND d."cancelled_at" IS NULL AND e."deleted_at" IS NULL)
+              OR pl."reached" = 1
+              -- The rule of step 3: one that must have an event is listed when its plan reaches several.
+              OR (pl."reached" > 1 AND (s."status" = ANY (sent_proposal_statuses)
+                OR EXISTS (SELECT 1 FROM "proposal_contract_versions" a WHERE a."proposal_id" = s."id")
+                OR EXISTS (SELECT 1 FROM "proposal_deposit_requests" d WHERE d."proposal_id" = s."id" AND d."cancelled_at" IS NULL)
+                OR (s."status" = 'draft' AND (s."opportunity_id" IS NOT NULL OR s."enquiry_id" IS NOT NULL))))));
+      END IF;
 
       EXIT WHEN v_locked;
       -- What will be written, in the writers' order: the proposal (still with
-      -- no event and still as read), then its enquiry, then its deposit request.
+      -- no event and still as read), then its enquiry when the event is made
+      -- for it, then its deposit request when it takes the event.
       PERFORM 1 FROM "proposals" p
       WHERE p."id" = this_proposal."id" AND p."event_id" IS NULL AND p."deleted_at" IS NULL
         AND p."status" = this_proposal."status"
@@ -796,8 +892,7 @@ BEGIN
     IF v_for_enquiry THEN
       UPDATE "enquiries" SET "event_id" = v_target WHERE "id" = v_q_id;
       INSERT INTO "event_link_joins" ("venue_id", "subject_kind", "subject_id", "event_id", "path", "event_made")
-      VALUES (this_proposal."venue_id", 'enquiry', v_q_id, v_target,
-        CASE WHEN v_make THEN 'new_event' ELSE 'proposal' END, v_make);
+      VALUES (this_proposal."venue_id", 'enquiry', v_q_id, v_target, 'new_event', true);
       v_joined := v_joined + 1;
     END IF;
     -- Its deposit request in force takes the same event when it names none,
@@ -808,6 +903,10 @@ BEGIN
       VALUES (this_proposal."venue_id", 'deposit_request', v_request_locked, v_target, v_path, false);
       v_joined := v_joined + 1;
     END IF;
+  END LOOP;
+  END LOOP;
+
+    EXIT WHEN v_joined = v_joined_before OR v_round = 4;
   END LOOP;
 
   -- 4. Every event made here gets the house's default phases, exactly as 0090

@@ -48,11 +48,16 @@ import {
 //  N  three event_binding_reviews rows, one of each reason, whose detail text holds a booking's title
 //  O  a withdrawn enquiry with a sent proposal and no path to any event
 //  P  a turned-down enquiry with a lost deal, which a writer later gives an event
+//  R  a withdrawn enquiry with two sent proposals, one whose plan reaches one event and one that
+//     reaches nothing, written in both orders
 //
 // A second block runs the join beside a writer on another connection: a row
-// the writer holds is left for the next run, never waited for; and an open
-// deal the writer puts on the same event, then takes the event, ends listed,
-// with neither side failing.
+// the writer holds is left for the next run, never waited for; a writer's
+// uncommitted open deal on the same event is waited for 100 ms at most, and
+// the event is held only as a key share, so a writer taking it FOR NO KEY
+// UPDATE never waits and one taking it FOR UPDATE is never half of a
+// deadlock; and while a writer holds the event an enquiry's held dates sit in,
+// nothing is made for the enquiry or its deal.
 //
 // The suites run on throwaway databases of their own (openSpineDatabaseBefore,
 // openSpineDatabase); the shared platform database is only the door to the cluster.
@@ -276,8 +281,23 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
     return {
       enquiry: await enquiry(p, { eventType: "venue-access", replied: true }),
       tabbed: await enquiry(p, { eventType: "venue-access\t", replied: true }),
+      nonBreaking: await enquiry(p, { eventType: `${String.fromCodePoint(0xa0)}venue-access`, replied: true }),
       padded: await enquiry(p, { eventType: " venue-enquiry ", replied: true }),
     };
+  }
+
+  /** A withdrawn enquiry with two sent proposals and no deal: one reaches nothing, the other's plan
+   *  is linked to one live event. Written in either order, all three end on that event. */
+  async function caseR(p: Place, planFirst: boolean) {
+    const y = await event(p, "Where the plan is");
+    const planId = await plan(p);
+    await linkPlan(y, planId);
+    const enquiryId = await enquiry(p, { state: "withdrawn" });
+    const linked = async () => proposal(p, { status: "sent", enquiryId, plan: planId });
+    const bare = async () => proposal(p, { status: "sent", enquiryId });
+    const first = planFirst ? await linked() : await bare();
+    const second = planFirst ? await bare() : await linked();
+    return { y, enquiry: enquiryId, withPlan: planFirst ? first : second, withoutPlan: planFirst ? second : first };
   }
 
   async function caseO(p: Place) {
@@ -426,6 +446,7 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
     const j = await caseJ(mixedPlace), k = await caseK(mixedPlace, true), l = await caseL(mixedPlace), m = await caseM(mixedPlace);
     await caseN(mixedPlace);
     const o = await caseO(mixedPlace), p = await caseP(mixedPlace);
+    const rPlanFirst = await caseR(mixedPlace, true), rPlanSecond = await caseR(mixedPlace, false);
     await caseA(cleanPlace);
     await caseB(cleanPlace);
     await caseF(cleanPlace);
@@ -449,7 +470,9 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
       expect(await eventOf(table, recordId)).toBeNull();
     }
     // D, E, L, P: nothing. (L's types are trimmed as JavaScript trims, tab included.)
-    for (const enquiryId of [d.enquiry, e.enquiry, l.enquiry, l.tabbed, l.padded, p.enquiry]) expect(await eventOf("enquiries", enquiryId)).toBeNull();
+    for (const enquiryId of [d.enquiry, e.enquiry, l.enquiry, l.tabbed, l.nonBreaking, l.padded, p.enquiry]) {
+      expect(await eventOf("enquiries", enquiryId)).toBeNull();
+    }
     expect(await eventOf("opportunities", p.deal)).toBeNull();
     // H: the older open deal joins, the lost one joins as history, the newer open one is listed.
     expect(await eventOf("opportunities", h.first)).toBe(await eventOf("enquiries", h.enquiry));
@@ -475,6 +498,11 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
     expect(await eventOf("proposals", o.proposal)).not.toBeNull();
     expect(await eventOf("enquiries", o.enquiry)).toBe(await eventOf("proposals", o.proposal));
     expect(await eventRow(await eventOf("enquiries", o.enquiry))).toMatchObject({ name: "Ross", client_name: "Ross" });
+    // R, in both orders: the plan's event, for the enquiry and both proposals; no event is made.
+    for (const r of [rPlanFirst, rPlanSecond]) {
+      expect([await eventOf("enquiries", r.enquiry), await eventOf("proposals", r.withPlan), await eventOf("proposals", r.withoutPlan)])
+        .toEqual([r.y, r.y, r.y]);
+    }
 
     // How each was joined.
     for (const [kind, subjectId, path, eventMade] of [
@@ -484,12 +512,16 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
       ["proposal", j.oneLink, "plan_link", false], ["proposal", j.noLink, "new_event", true], ["proposal", j.declinedOne, "plan_link", false],
       ["deposit_request", k.emptyRequest, "deal", false],
       ["enquiry", o.enquiry, "new_event", true], ["proposal", o.proposal, "enquiry", false],
+      ["proposal", rPlanFirst.withPlan, "plan_link", false], ["enquiry", rPlanFirst.enquiry, "proposal", false],
+      ["proposal", rPlanFirst.withoutPlan, "enquiry", false],
+      ["proposal", rPlanSecond.withPlan, "plan_link", false], ["enquiry", rPlanSecond.enquiry, "proposal", false],
+      ["proposal", rPlanSecond.withoutPlan, "enquiry", false],
     ] as const) {
       expect([kind, subjectId, await joinOf(kind, subjectId)]).toEqual([kind, subjectId, [path, eventMade]]);
     }
-    // What the migration's run did in `mixed`: 23 joins, 8 of them on an event made for them,
+    // What the migration's run did in `mixed`: 29 joins, 8 of them on an event made for them,
     // and 8 events made, each with its eight phases.
-    expect(await count("SELECT count(*)::int AS count FROM event_link_joins WHERE venue_id = $1", [mixed])).toBe(23);
+    expect(await count("SELECT count(*)::int AS count FROM event_link_joins WHERE venue_id = $1", [mixed])).toBe(29);
     expect(await count("SELECT count(*)::int AS count FROM event_link_joins WHERE venue_id = $1 AND event_made", [mixed])).toBe(8);
     expect(await venueEvents(mixed) - mixedEventsBefore).toBe(8);
     expect(await count(`SELECT count(*)::int AS count FROM event_phases ph JOIN event_link_joins jn ON jn.event_id = ph.event_id
@@ -566,15 +598,32 @@ describe.skipIf(target === undefined)("the spine: the join beside a live writer"
       first_response_recorded_at = created_at WHERE id = $1`, [enquiryId]);
   }
 
+  /** Returns as soon as the backend is seen waiting for a lock (the join's one bounded wait lasts 100 ms). */
   async function waitingOnALock(pid: number): Promise<void> {
-    for (let tries = 0; tries < 100; tries += 1) {
+    for (let tries = 0; tries < 600; tries += 1) {
       const [row] = (await pool.query<{ waiting: boolean }>(
         "SELECT wait_event_type = 'Lock' AS waiting FROM pg_stat_activity WHERE pid = $1", [pid])).rows;
       if (row?.waiting === true) return;
-      await new Promise((done) => setTimeout(done, 50));
+      await new Promise((done) => setTimeout(done, 5));
     }
     throw new Error("The join never waited");
   }
+
+  /** An enquiry with a hold in the event (so the join joins it there first) and an open deal of it. */
+  async function heldWithDeal(v: { readonly venueId: string; readonly rooms: { readonly hall: string } }, eventId: string) {
+    const enquiryId = await enquiryIn(pool, v.venueId, "under_review");
+    await pool.query(`INSERT INTO bookings (venue_id, space_id, event_id, enquiry_id, kind, status, title, starts_at, ends_at)
+      VALUES ($1, $2, $3, $4, 'hold', 'active', 'Held date', now() + interval '400 days', now() + interval '400 days 4 hours')`,
+    [v.venueId, v.rooms.hall, eventId, enquiryId]);
+    return { enquiryId, deal: await dealIn(pool, v.venueId, "new", enquiryId) };
+  }
+
+  const reviewsOf = async (subjectId: string): Promise<Row[]> =>
+    (await pool.query<Row>("SELECT reason, candidate_event_ids FROM event_link_reviews WHERE subject_id = $1", [subjectId])).rows;
+  const linkOf = async (table: LinkedTable, id: string): Promise<unknown> =>
+    (await pool.query<Row>(`SELECT event_id FROM ${table} WHERE id = $1`, [id])).rows[0]?.["event_id"];
+  const runOn = async (client: PoolClient): Promise<Row | undefined> =>
+    (await client.query<Row>("SELECT * FROM spine_join_old_records()")).rows[0];
 
   it("leaves a row a writer holds to the next run, and does not wait for it", async () => {
     const v = await venueIn(pool, "join beside a writer");
@@ -598,15 +647,41 @@ describe.skipIf(target === undefined)("the spine: the join beside a live writer"
     }
   }, 60_000);
 
-  it("lists a deal when a writer puts an open deal on the same event and then takes the event, and neither fails", async () => {
+  it("waits only a moment for a writer's open deal on the same event, holds the event only as a key share, and lists the deal next run", async () => {
     const v = await venueIn(pool, "open deal beside a writer");
     const x = await eventIn(pool, v.venueId, "X");
-    // The enquiry's hold is in X, so this run joins the enquiry to X before it reaches the deal.
-    const enquiryId = await enquiryIn(pool, v.venueId, "under_review");
-    await pool.query(`INSERT INTO bookings (venue_id, space_id, event_id, enquiry_id, kind, status, title, starts_at, ends_at)
-      VALUES ($1, $2, $3, $4, 'hold', 'active', 'Held date', now() + interval '400 days', now() + interval '400 days 4 hours')`,
-    [v.venueId, v.rooms.hall, x, enquiryId]);
-    const mine = await dealIn(pool, v.venueId, "new", enquiryId);
+    const { enquiryId, deal: mine } = await heldWithDeal(v, x);
+    const writer = await connection(), join = await connection();
+    try {
+      await writer.query("BEGIN");
+      await writer.query("INSERT INTO opportunities (venue_id, title, stage, event_id) VALUES ($1, 'The writer''s deal', 'qualified', $2)",
+        [v.venueId, x]);
+      // The join's transaction is kept open, so every lock it took is still held below.
+      await join.query("BEGIN");
+      const started = Date.now();
+      expect(await runOn(join)).toEqual({ joined: 1, events_made: 0, listed: 0 });
+      // Its deal update gave up on the uncommitted deal after 100 ms (in each of two rounds), not after
+      // the connection's three seconds.
+      expect(Date.now() - started).toBeLessThan(2_500);
+      // The writer takes its event last, as writers do: the join holds nothing that waits it.
+      await writer.query("SELECT id FROM events WHERE id = $1 FOR NO KEY UPDATE NOWAIT", [x]);
+      await writer.query("COMMIT");
+      await join.query("COMMIT");
+    } finally {
+      await writer.query("ROLLBACK");
+      await join.query("ROLLBACK");
+      writer.release();
+      join.release();
+    }
+    expect([await linkOf("enquiries", enquiryId), await linkOf("opportunities", mine), await reviewsOf(mine)]).toEqual([x, null, []]);
+    expect((await pool.query<Row>("SELECT * FROM spine_join_old_records()")).rows[0]).toEqual({ joined: 0, events_made: 0, listed: 1 });
+    expect(await reviewsOf(mine)).toEqual([{ reason: "second_open_deal", candidate_event_ids: [x] }]);
+  }, 60_000);
+
+  it("is never half of a deadlock with a writer that takes the event FOR UPDATE after putting an open deal on it", async () => {
+    const v = await venueIn(pool, "event taken for update beside the join");
+    const x = await eventIn(pool, v.venueId, "X");
+    const { enquiryId, deal: mine } = await heldWithDeal(v, x);
     const writer = await connection(), join = await connection();
     try {
       const pid = (await join.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid;
@@ -614,22 +689,48 @@ describe.skipIf(target === undefined)("the spine: the join beside a live writer"
       await writer.query("BEGIN");
       await writer.query("INSERT INTO opportunities (venue_id, title, stage, event_id) VALUES ($1, 'The writer''s deal', 'qualified', $2)",
         [v.venueId, x]);
-      const running = join.query("SELECT * FROM spine_join_old_records()");
-      // Its failure is read where it is awaited below, not reported twice.
+      await join.query("BEGIN");
+      const running = runOn(join);
+      // Failures are read where these are awaited below, not reported twice.
       running.catch(() => undefined);
       await waitingOnALock(pid);
-      // The writer takes its event last, as writers do: the join holds nothing it waits for.
-      await writer.query("SELECT id FROM events WHERE id = $1 FOR NO KEY UPDATE", [x]);
+      // While the join waits for the writer's deal, the writer asks for the event FOR UPDATE, which waits
+      // for the join's key share: a ring, until the join's bounded wait gives up.
+      const taking = writer.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [x]);
+      taking.catch(() => undefined);
+      expect(await running).toEqual({ joined: 1, events_made: 0, listed: 0 });
+      await join.query("COMMIT");
+      expect((await taking).rows).toEqual([{ id: x }]);
       await writer.query("COMMIT");
-      expect((await running).rows[0]).toEqual({ joined: 1, events_made: 0, listed: 1 });
+    } finally {
+      await writer.query("ROLLBACK");
+      await join.query("ROLLBACK");
+      writer.release();
+      join.release();
+    }
+    expect([await linkOf("enquiries", enquiryId), await linkOf("opportunities", mine), await reviewsOf(mine)]).toEqual([x, null, []]);
+    expect((await pool.query<Row>("SELECT * FROM spine_join_old_records()")).rows[0]).toEqual({ joined: 0, events_made: 0, listed: 1 });
+    expect(await reviewsOf(mine)).toEqual([{ reason: "second_open_deal", candidate_event_ids: [x] }]);
+  }, 60_000);
+
+  it("invents nothing for an enquiry whose held dates sit in an event a writer holds, and joins it and its deal there after", async () => {
+    const v = await venueIn(pool, "held event beside the join");
+    const z = await eventIn(pool, v.venueId, "Z");
+    const { enquiryId, deal: mine } = await heldWithDeal(v, z);
+    const writer = await connection(), join = await connection();
+    try {
+      await writer.query("BEGIN");
+      await writer.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [z]);
+      expect(await runOn(join)).toEqual({ joined: 0, events_made: 0, listed: 0 });
+      expect([await linkOf("enquiries", enquiryId), await linkOf("opportunities", mine), await reviewsOf(enquiryId), await reviewsOf(mine)])
+        .toEqual([null, null, [], []]);
+      await writer.query("COMMIT");
+      expect(await runOn(join)).toEqual({ joined: 2, events_made: 0, listed: 0 });
     } finally {
       await writer.query("ROLLBACK");
       writer.release();
       join.release();
     }
-    expect((await pool.query("SELECT event_id FROM enquiries WHERE id = $1", [enquiryId])).rows).toEqual([{ event_id: x }]);
-    expect((await pool.query("SELECT event_id FROM opportunities WHERE id = $1", [mine])).rows).toEqual([{ event_id: null }]);
-    expect((await pool.query("SELECT reason, candidate_event_ids FROM event_link_reviews WHERE subject_id = $1", [mine])).rows)
-      .toEqual([{ reason: "second_open_deal", candidate_event_ids: [x] }]);
+    expect([await linkOf("enquiries", enquiryId), await linkOf("opportunities", mine)]).toEqual([z, z]);
   }, 60_000);
 });
