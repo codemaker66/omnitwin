@@ -130,8 +130,9 @@ describe("the batch's shuffle", () => {
   it("puts a report's rows side by side in a written batch as often as chance does, no more and no less", async () => {
     interface WrittenRow { readonly metric: string; readonly value: number }
     const written: WrittenRow[][] = [];
-    // Records each batch's rows as its transaction would insert them.
-    const recordingDb = {
+    // Records each batch's rows as its transaction would insert them: the
+    // batch's write calls only transaction(), execute() and insert().values().
+    const recorder: unknown = {
       transaction: async (run: (tx: {
         readonly execute: () => Promise<void>;
         readonly insert: () => { readonly values: (rows: readonly WrittenRow[]) => Promise<void> };
@@ -143,7 +144,8 @@ describe("the batch's shuffle", () => {
         });
         written.push(rows);
       },
-    } as unknown as Database;
+    };
+    const recordingDb = recorder as Database;
     // Report `index` of a batch, its four values numbered so that every row names it.
     const numbered = (index: number) => ({
       ...REPORT,
