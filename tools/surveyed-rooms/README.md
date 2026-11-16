@@ -390,21 +390,39 @@ record only: that the files it names are the ones in the folder, with those size
 loader's to check in a browser, and that record was built with a borrowed meshoptimizer (gate
 B22), so it is a proof of the record's form and not a published room.
 
-Real data, the ghosts above the Saloon's pediments (16 November 2026; work in progress). The
-best-view walls of the Saloon carry, in the plain plaster above every pediment, outlines like a
-displaced copy of the pediment's top. Measured on the fireplace wall round its middle pediment
-(u 2.72 to 5.08 m, v 2.92 to 4.12 m; 56,734 plaster texels): the mean step in luminance between
-neighbouring plaster texels is 0.506 sRGB levels against the blend's 0.117. The pediment stands 90
-to 322 mm proud of the plaster, and three stations 1.4 to 1.65 m off the wall label 85% of the box.
-The visibility test is not at fault: rays from each of eight stations to the box's 113,190 texels
-against the mesh dump (Moeller-Trumbore, no depth map) agree with it on 98 to 99% of them, and the
-rest are the test's own allowances (376 to 2,645 texels passed though blocked, by 21 to 124 mm and
-always under its tolerance, on the pediment's own mouldings; 872 to 2,413 hidden by its 3 x 3
-minimum). The mesh is: its outline of the pediment is smaller than the photographed pediment. From
-each of the three near stations, 1,186 to 1,424 plaster texels that the station sees by the mesh
-show, in its panorama, the pediment's dark edge (on both flanks of the arch, so not a shifted
-pose), all within 9 cubemap texels of the pediment's outline in that station's depth map (99%
-within 7), and 193 to 920 more show the glow of the lamp on the pediment (within 13).
+Real data, the ghosts above the Saloon's pediments (16 November 2026). The best-view walls of the
+Saloon carried, in the plain plaster above every pediment, outlines like a displaced copy of the
+pediment's top; the blend's plaster was clean there. Measured on the fireplace wall's 5 mm
+orthophoto, in sRGB levels of luminance, over plaster only (relief under 10 mm): round the middle
+pediment (u 2.72 to 5.08 m, v 2.92 to 4.12 m; 83,183 texels) the mean step between neighbouring
+texels was 0.807 against the blend's 0.177, and 23.4 of every 1,000 neighbouring pairs stepped by
+more than 4 levels against 1.3; over the plaster above all three pediments (u 0.3 to 7.5 m, v 3.3
+to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
+
+- Where: the pediment stands 90 to 322 mm proud of the plaster. Three stations 1.4 to 1.65 m off
+  the wall and 1.46 m high label 85% of the box; from them the pediment's top hides the plaster
+  up to half a metre above it, which is where the outlines are.
+- Not the visibility test. Rays from each of eight stations to the box's 113,190 texels against
+  the mesh dump (Moeller-Trumbore, the measuring scripts' `cast`; no depth map) agree with
+  `bestview.visibility` on 98 to 99% of them. The rest are the test's own allowances: 376 to 2,645
+  texels passed though a ray is blocked, by 21 to 124 mm and always under its tolerance, on the
+  pediment's own mouldings; 872 to 2,413 hidden by its 3 x 3 minimum. The 1024-texel depth maps say
+  what the mesh says.
+- Not the seam levelling. Coloured again from the same labels with the global adjustment and the
+  local blend off, the box's plaster kept its outlines: 23.3 pairs in 1,000, mean step 0.739.
+- The mesh's outline. The scan's mesh (330,200 triangles for the building, about 800 in reach of
+  the box) draws the pediment smaller than the panoramas show it. From each of the three near
+  stations, 1,186 to 1,424 plaster texels that the station sees by the mesh show in its panorama
+  the pediment's dark edge (under 85% of the station's own clean plaster), on both flanks of the
+  arch, so it is not a shifted pose; from the two stations 3.5 m off, 54 and 60; from one 5.7 m
+  off, none. Every one lies within 9 cubemap texels of the pediment's outline in its station's
+  depth map (99% within 7). Another 193 to 920 a near station show the glow of the lamp on the
+  pediment (within 13 texels).
+- Why one station a block prints it. On the plaster blocks a near station covers that carry its
+  rim, its Laplacian energy is 7.7 to 12.8 against 0.29 to 0.38 on its other plaster blocks, so its
+  data cost there is the least of any station's (median 0.0), and the labels' occluder test, which
+  compares block means, kept it in 72 of 74 such blocks. The blend's consensus pass weighs the same
+  texels down in each of some twenty stations, whose rims fall in different places.
 
 Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
