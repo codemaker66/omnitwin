@@ -106,8 +106,9 @@ that fails without it:
   turned against a side wall stands tall on the page, and offers a name only its short side); else along the row of
   pieces it stands in, end to end
   (the top table's three trestles), starting from its own piece's middle and never set off that piece, so a name at
-  a row's end names the end piece; else just beside its piece, its letters (capital tops to descenders) 1.5 pt from
-  that piece and at least twice as far from every other piece, number and name, so it never reads as a neighbour's;
+  a row's end names the end piece; else just beside its piece, its ink (its glyphs' own outlines, so a name with no
+  descenders sits as near its piece above it as below) 1.5 pt from that piece and at least twice as far from every
+  other piece, number and name, so it never reads as a neighbour's;
   else the caption names it ("No room to name on this plan: …", Blake's wording of 14 November, by his question
   form; "Too small to name here" read as if the piece were too small, and both glance testers of the chairs line
   found it ambiguous). The 60% plan had dropped "Top table". The
@@ -120,7 +121,9 @@ that fails without it:
   written as the setup's own lines write runs ("Tables 1–3, 5, 7–8") or as people do ("tables 4 and 5", "table
   4 & 5", "4 or 5"), for "Table 4" labels too. A further name joins a run only where the run goes on or its clause
   ends after it; a word after it makes it a count ("Table 7, 1 coeliac", "table 4 and 2 more guests"), and a time
-  is never a table ("Table 4, 10:30 cake"). After "tables" and an "and", "or" or "&" the run is meant ("Tables 4
+  is never a table ("Table 4, 10:30 cake"). A time is a clock's two-digit minutes after a colon or point, so
+  shorthand with no space after a table's colon still names it ("Table 5:2 coeliacs" rings 5). After "tables" and
+  an "and", "or" or "&" the run is meant ("Tables 4
   and 5 are nut-free"), but a comma never carries a run into a number a word follows ("Tables 4 and 5, 2
   coeliacs" rings 4 and 5). "And a guest" names no table A.
 - **Balanced panel lines** never break a word that plain wrapping kept whole ("dairy-fr / ee meals").
