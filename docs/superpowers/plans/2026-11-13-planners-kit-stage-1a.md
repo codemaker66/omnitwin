@@ -681,7 +681,7 @@ test("from opening the page to the print dialog in the step budget, and nothing 
 test("the list is still there after a reload", async ({ page }) => { /* reload; 180 of 180 */ });
 test("the table plan prints readable, on whole pages", async ({ page }) => {
   // as e2e/ops-handoff-print.spec.ts: emulate print media, page.pdf(), page count >= 1,
-  // unreadableOnPaper(page, ".gp-sheet", state) is empty
+  // unreadableOnPaper(page, "[data-testid='guest-paper-sheet']", state) is empty
 });
 ```
 
