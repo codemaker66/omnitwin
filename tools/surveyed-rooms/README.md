@@ -439,6 +439,13 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
   within some 15 cm of the pediment itself, where no station has a clear view. 3,617 texels of the
   wall (0.21%) took a doubtful view, 555 of them in the box. The statistics took 109.1 s against
   80.5 s (the step 2.9 minutes against 2.3), at the same peak memory (784 MB against 788).
+- The lettering is not worse. The margin also takes views beside everything else that stands
+  proud (the columns between the boards, the shelf above them, the mantel clock: 7 to 13 cm), so
+  17.8% of the wall's texels changed station. The commonweal board coloured from each set of
+  labels as `project-walls.py` samples it (2.5 mm, no feather, no levelling): over its lettering
+  (u 3.60 to 4.10 m, v 2.33 to 2.75 m) the mean |Laplacian| of luminance is 39.29 before and 39.32
+  after, the mean step 13.12 and 13.14, and 0.75% of the samples differ (one block); over the
+  whole board (to v 1.75 m) 23.57 and 22.94, the difference lying round the clock at its foot.
 
 Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
