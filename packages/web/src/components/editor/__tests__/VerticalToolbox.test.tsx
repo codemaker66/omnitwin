@@ -374,6 +374,40 @@ describe("VerticalToolbox tool words, for the keyboard and a screen reader", () 
     await waitFor(() => { expect(screen.queryByTestId("toolbox-tooltip")).toBeNull(); });
   });
 
+  it("waits, unseen, for the browser to scroll a focused tool into view, then shows its card there", async () => {
+    renderToolbox();
+    const toolbar = screen.getByTestId("planner-toolbar");
+    const walls = screen.getByRole("button", { name: "Show All Walls" });
+    vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 70, 68, 400));
+    // Below the toolbar's view when focus arrives: the browser scrolls it in after focus.
+    const toolRect = vi.spyOn(walls, "getBoundingClientRect").mockReturnValue(new DOMRect(6, 500, 56, 56));
+    act(() => { walls.focus(); });
+    expect(screen.getByTestId("toolbox-tooltip").style.visibility).toBe("hidden");
+
+    toolRect.mockReturnValue(new DOMRect(6, 200, 56, 56));
+    act(() => { toolbar.dispatchEvent(new Event("scroll")); });
+    await waitFor(() => { expect(screen.getByTestId("toolbox-tooltip").style.visibility).toBe("visible"); });
+  });
+
+  it("holds no place in the Escape order for a disabled tool, which draws no card", () => {
+    const cleared = vi.fn();
+    const release = registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: cleared });
+    vi.useFakeTimers();
+    try {
+      renderToolbox();
+      const redo = screen.getByRole("button", { name: "Redo" });
+      expect(redo).toHaveProperty("disabled", true);
+      fireEvent.mouseEnter(redo.parentElement ?? redo);
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(screen.queryByTestId("toolbox-tooltip")).toBeNull();
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(cleared).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+      vi.useRealTimers();
+    }
+  });
+
   it("shows one card at a time: a card that opens takes the last one down at once, not over its fading exit", () => {
     renderToolbox();
     act(() => { screen.getByRole("button", { name: "Show All Walls" }).focus(); });

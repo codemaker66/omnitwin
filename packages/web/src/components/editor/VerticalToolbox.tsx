@@ -932,8 +932,10 @@ function ToolBtn({
   const dismiss = (): void => {
     if (enterTimer.current !== null) { clearTimeout(enterTimer.current); enterTimer.current = null; }
     if (!showTooltip) { setShowTooltip(false); return; }
+    // Already leaving: one exit, one timer, however often it is asked.
+    if (exitTimer.current !== null) return;
     setExiting(true);
-    exitTimer.current = setTimeout(() => { setShowTooltip(false); setExiting(false); }, 250);
+    exitTimer.current = setTimeout(() => { exitTimer.current = null; setShowTooltip(false); setExiting(false); }, 250);
   };
   const onLeave = (): void => { dismiss(); };
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -948,41 +950,59 @@ function ToolBtn({
   };
   const closeNowRef = useRef(closeNow);
   closeNowRef.current = closeNow;
+  // A disabled tool, or one whose hints are off, draws no card, so it holds no
+  // place in the Escape order either.
+  const cardOpen = showTooltip && !disabled && tooltipEnabled;
   // The card is the first layer of the planner's one Escape order: Escape takes
   // it down and does nothing else (WCAG 1.4.13).
-  useEscapeLayer("tooltip", { open: showTooltip && !exiting, onEscape: dismiss, element: cardRef });
+  useEscapeLayer("tooltip", { open: cardOpen && !exiting, onEscape: dismiss, element: cardRef });
 
   // The card is drawn in a portal, fixed to the viewport, so the toolbar's own
   // scrolling never clips it (it did, in the More planner tools panel). It is
   // placed beside the toolbar before it paints, follows its tool while the
   // toolbar scrolls or the window resizes, and goes when its tool scrolls out.
-  const cardOpen = showTooltip && !disabled && tooltipEnabled;
   const [placement, setPlacement] = useState<ToolCardPlacement | null>(null);
+  /** The card's own width, measured once while it is unplaced (its words make it 240-300 px). */
+  const naturalWidth = useRef<number | null>(null);
+  const placed = useRef(false);
+  const place = (): void => {
+    const button = buttonRef.current;
+    const card = cardRef.current;
+    if (button === null || card === null) return;
+    const toolbarElement = button.closest<HTMLElement>("[data-testid='planner-toolbar']");
+    const tool = button.getBoundingClientRect();
+    const toolbar = (toolbarElement ?? button).getBoundingClientRect();
+    if (toolScrolledOut(tool, toolbar)) {
+      // Focus opens a card before the browser scrolls its tool into view (HTML's
+      // focusing steps), so an unplaced card waits, unseen, for that scroll. A
+      // card already on screen goes when the toolbar scrolls its tool away.
+      if (placed.current) dismissRef.current();
+      return;
+    }
+    naturalWidth.current ??= card.offsetWidth;
+    // The layout that sets the toolbar where it is says which way its cards
+    // open (ReferenceViewer.css: the More panel, by the dock, opens left).
+    const toward = toolbarElement !== null && getComputedStyle(toolbarElement).getPropertyValue("--tool-cards").trim() === "left" ? "left" : "right";
+    const next = placeToolCard(tool, toolbar, { width: naturalWidth.current, height: card.offsetHeight }, { width: window.innerWidth, height: window.innerHeight }, toward);
+    placed.current = true;
+    setPlacement((was) => (
+      was?.left === next.left && was.top === next.top && was.side === next.side && was.width === next.width && was.arrowTop === next.arrowTop ? was : next
+    ));
+  };
+  const placeRef = useRef(place);
+  placeRef.current = place;
   useLayoutEffect(() => {
     if (!cardOpen) return;
     const closeMine = (): void => { closeNowRef.current(); };
     closeShownToolCard?.();
     closeShownToolCard = closeMine;
-    const place = (): void => {
-      const button = buttonRef.current;
-      const card = cardRef.current;
-      if (button === null || card === null) return;
-      const tool = button.getBoundingClientRect();
-      const toolbar = (button.closest("[data-testid='planner-toolbar']") ?? button).getBoundingClientRect();
-      if (toolScrolledOut(tool, toolbar)) {
-        dismissRef.current();
-        return;
-      }
-      const next = placeToolCard(tool, toolbar, { width: card.offsetWidth, height: card.offsetHeight }, { width: window.innerWidth, height: window.innerHeight });
-      setPlacement((was) => (
-        was?.left === next.left && was.top === next.top && was.side === next.side && was.arrowTop === next.arrowTop ? was : next
-      ));
-    };
-    place();
+    naturalWidth.current = null;
+    placed.current = false;
+    placeRef.current();
     let frame = 0;
     const follow = (): void => {
       if (frame !== 0) return;
-      frame = window.requestAnimationFrame(() => { frame = 0; place(); });
+      frame = window.requestAnimationFrame(() => { frame = 0; placeRef.current(); });
     };
     window.addEventListener("scroll", follow, { capture: true, passive: true });
     window.addEventListener("resize", follow);
@@ -994,6 +1014,12 @@ function ToolBtn({
       setPlacement(null);
     };
   }, [cardOpen]);
+  // A card narrowed to the room beside its toolbar wraps taller: place it again
+  // at the height it is drawn now, still before it paints.
+  const placedWidth = placement?.width;
+  useLayoutEffect(() => {
+    if (cardOpen && placedWidth !== undefined) placeRef.current();
+  }, [cardOpen, placedWidth]);
   const handleClick = (): void => {
     dismiss();
     onClick();
@@ -1055,6 +1081,8 @@ function ToolBtn({
           position: "fixed",
           left: placement?.left ?? 0,
           top: placement?.top ?? 0,
+          // Its own width, or narrowed to the room beside the toolbar.
+          width: placement?.width,
           // With the planner chrome's tooltips (.pc-tooltip), over the toolbar's 50.
           zIndex: 60,
           pointerEvents: "none",
@@ -1083,9 +1111,12 @@ function ToolBtn({
             background: "linear-gradient(145deg, #141414 0%, #1c1c1c 50%, #181818 100%)",
             border: "1px solid rgba(201, 138, 91,0.2)",
             borderRadius: 16,
-            padding: "18px 24px 16px",
-            minWidth: 240,
-            maxWidth: 300,
+            // A card narrowed under its 240 px keeps more of its width for words.
+            padding: placement !== null && placement.width < 240 ? "16px 18px 14px" : "18px 24px 16px",
+            // Its words set its own width while it is measured, unplaced; placed,
+            // it fills the width the placement gives it.
+            minWidth: placement === null ? 240 : undefined,
+            maxWidth: placement === null ? 300 : undefined,
             boxShadow: "0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(201, 138, 91,0.15), inset 0 1px 0 rgba(255,255,255,0.04)",
           }}>
             {/* Gold accent bar at top */}

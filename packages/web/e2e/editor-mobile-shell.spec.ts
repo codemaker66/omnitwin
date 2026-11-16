@@ -367,18 +367,24 @@ test.describe("3D planner mobile shell", () => {
     // ...and Chromium's accessibility tree, which is what a screen reader is given.
     expect(await chromiumDescription(page, "planner-toolbar", "Rotate")).toBe(spoken);
 
-    // A keyboard user: Tab onto Rotate and its whole card shows at once.
+    // A keyboard user, with a piece selected: the selection is a lower layer of the one Escape order.
     await page.mouse.move(640, 760);
     await expect(card).toHaveCount(0);
+    const tableRow = page.getByTestId("reference-scene-outliner").getByRole("button", { name: /Table 1/u });
+    await tableRow.click();
+    await expect(tableRow).toHaveAttribute("aria-pressed", "true");
+    // Tab onto Rotate and its whole card shows at once.
     await tabTo(page, rotate);
     await expect(card.getByText("Q / E", { exact: true })).toBeInViewport({ ratio: 1 });
     await expectCardBesideToolbar(card, toolbar);
-    // Escape takes the card down and nothing else: the panel stays open, the tool keeps focus.
+    // Escape takes the card down and nothing else: the piece stays selected, Rotate keeps focus...
     await page.keyboard.press("Escape");
     await expect(card).toHaveCount(0);
-    await expect(toolbar).toBeVisible();
-    await expect(more).toHaveAttribute("aria-expanded", "true");
     await expect(rotate).toBeFocused();
+    await expect(tableRow).toHaveAttribute("aria-pressed", "true");
+    // ...and the next Escape reaches the selection, so the first one stopped at the card.
+    await page.keyboard.press("Escape");
+    await expect(tableRow).toHaveAttribute("aria-pressed", "false");
 
     // A click's focus shows no card.
     const snap = toolbar.getByRole("button", { name: "Grid Snap", exact: true });
@@ -387,6 +393,24 @@ test.describe("3D planner mobile shell", () => {
     await expect(snap).not.toHaveAttribute("aria-pressed", snapWas ?? "");
     await page.waitForTimeout(600);
     await expect(card).toHaveCount(0);
+
+    // A narrow window: 683 x 320 is a 1366 x 641 laptop window at 200 % zoom (WCAG 1.4.4). The
+    // panel scrolls, and the room beside it, 190 px, is narrower than a card.
+    await page.setViewportSize({ width: 683, height: 320 });
+    await expect(toolbar).toBeVisible();
+    const select = toolbar.getByRole("button", { name: "Select & Move", exact: true });
+    await toolbar.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    await expect(select).not.toBeInViewport();
+    // Tab from More onto Select & Move, out of view until focus brings it in: its card shows, whole.
+    await more.focus();
+    await page.keyboard.press("Tab");
+    await expect(select).toBeFocused();
+    await expect(card).toContainText("Select & Move");
+    await expectCardBesideToolbar(card, toolbar);
+    // Rotate's card narrows to the room beside the panel, rather than lie over the panel and Rotate.
+    await tabTo(page, rotate);
+    await expect(card.getByText("Q / E", { exact: true })).toBeInViewport({ ratio: 1 });
+    await expectCardBesideToolbar(card, toolbar);
     expect(consoleErrors).toEqual([]);
   });
 });
