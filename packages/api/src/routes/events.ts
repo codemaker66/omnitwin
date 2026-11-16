@@ -98,6 +98,15 @@ type LinkableLayout =
  * A layout owned by a client account is refused, because owning a linked
  * layout is what admits a client to the event (grantsCustomerParticipation).
  */
+/** The event a layout is about to be linked to, held before the layout: the
+ *  link's foreign key takes the event anyway, and taking it first keeps the
+ *  house order (event, then layout), as the phase freeze does
+ *  (phase-layout-snapshots.ts) and as an erasure does (people-erasure.ts).
+ *  The other way round, a link and an erasure each wait for the other. */
+async function holdEventForLink(tx: EventLinkTransaction, eventId: string): Promise<void> {
+  await tx.select({ id: events.id }).from(events).where(eq(events.id, eventId)).for("key share");
+}
+
 async function lockLinkableLayout(
   tx: EventLinkTransaction,
   user: FastifyRequest["user"],
@@ -579,6 +588,7 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
     const created = await db.transaction(async (tx) => {
       // A variant's layout is linked to the event like any other (release
       // audit public-surface-1): the same checks, under the same lock.
+      await holdEventForLink(tx, eventRow.id);
       if (configurationId !== null) {
         const layout = await lockLinkableLayout(tx, request.user, configurationId, eventRow.venueId,
           "A layout variant configuration must belong to the event venue");
@@ -635,6 +645,7 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
     if (eventRow === null) return;
 
     const outcome = await db.transaction(async (tx) => {
+      await holdEventForLink(tx, eventRow.id);
       const layout = await lockLinkableLayout(tx, request.user, parsed.data.configurationId, eventRow.venueId,
         "A linked configuration must belong to the event venue");
       if (!layout.ok) return layout;

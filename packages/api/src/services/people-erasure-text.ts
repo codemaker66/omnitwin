@@ -52,6 +52,17 @@ export function namesToErase(values: readonly (string | null | undefined)[]): re
   return [...seen].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0));
 }
 
+/** Whether a field that holds only a name (an accepted name, a signature, a
+ *  change's client label, a day-of contact) is one of the full names, in any
+ *  case and spacing: "isla erasable" typed on a share page is her. The
+ *  "Will Smith will call" risk that keeps text matching as written does not
+ *  arise in a field that is nothing but a name. */
+export function isOnlyName(text: string | null, names: readonly string[]): boolean {
+  if (text === null) return false;
+  const typed = text.trim().replace(/\s+/gu, " ").toLowerCase();
+  return typed.length > 0 && names.some((name) => !isAddress(name) && name.toLowerCase() === typed);
+}
+
 /** LIKE patterns for a cheap SQL-side test before the exact one: does the
  *  text hold any of the names, anywhere? The caller lowers both sides in the
  *  database (`lower(column) like lower(pattern)`), so one case mapping applies

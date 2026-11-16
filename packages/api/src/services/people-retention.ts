@@ -514,7 +514,7 @@ async function runSteps(input: {
       // Kept for a booking or a contract: what never became one still goes.
       let removed = 0;
       for (const enquiry of records.enquiries) {
-        const one = await findEnquiryRecords(tx, enquiry, { reword: false, writers: records.ids });
+        const one = await findEnquiryRecords(tx, enquiry, { reword: false, writers: records.ids, lock: false });
         if ((await keptRecord(tx, one)) !== null) continue;
         removed += (await removeEnquiryRecords(tx, one)).enquiries;
       }
