@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BookingSchema, VENUE_ACCESS_ENQUIRY_TYPE, type Booking } from "@omnitwin/types";
 import { bookingRoutes } from "../routes/bookings.js";
-import { updateBookingCore } from "../services/booking-mutations.js";
+import { transitionBookingCore, updateBookingCore } from "../services/booking-mutations.js";
 import { createEventFor } from "../services/event-binding.js";
 import {
   enquiry as enquiryIn,
@@ -24,7 +24,8 @@ import {
 // other bookings have, then a new one; and the enquiry's link is written to
 // the event the hold joined, unless the enquiry is a draft or asks to book
 // nothing. A booking a person moves to another event takes its enquiry's link
-// with it when it was the last of the enquiry's bookings in the old event.
+// with it when it was the last of the enquiry's live bookings in the old
+// event (a released or cancelled one left there does not hold the link).
 // The enquiry row is locked FOR NO KEY UPDATE, so two holds pencilled at once
 // still share one event, and a writer holding a key share on the enquiry (a
 // viewing's insert, through its foreign key) never makes the bind wait.
@@ -245,6 +246,36 @@ describe.skipIf(target === undefined)("the spine: the bind joins the enquiry's o
     const away = await datelessEvent(v.venueId, "Away");
     expect(await updateBookingCore(spine.db, v.admin, kept.id, { eventId: away })).toMatchObject({ ok: true });
     expect(await enquiryEvent(third)).toBe(named);
+  });
+
+  it("a released hold left in the old event does not keep the link there: it follows the live hold, and the next hold joins it", async () => {
+    const v = await venue("released sibling");
+    const enquiryId = await enquiryIn(pool, v.venueId);
+    const live = await holdFromEnquiry(v.admin, holdBody(v, enquiryId));
+    const second = await holdFromEnquiry(v.admin, holdBody(v, enquiryId, { spaceId: v.rooms.saloon }));
+    expect(second.eventId).toBe(live.eventId);
+    expect(await transitionBookingCore(spine.db, v.admin, second.id, { toState: "released" })).toMatchObject({ ok: true });
+    const moved = await datelessEvent(v.venueId, "Where the live hold goes");
+    expect(await updateBookingCore(spine.db, v.admin, live.id, { eventId: moved })).toMatchObject({ ok: true });
+    expect(await enquiryEvent(enquiryId)).toBe(moved);
+    const next = await holdFromEnquiry(v.admin, holdBody(v, enquiryId, { spaceId: v.rooms.reception }));
+    expect(next.eventId).toBe(moved);
+  });
+
+  it("an enquiry's interest-only booking that is its last live one in the linked event takes the link when moved", async () => {
+    const v = await venue("prospect moves");
+    const enquiryId = await enquiryIn(pool, v.venueId);
+    const hold = await holdFromEnquiry(v.admin, holdBody(v, enquiryId));
+    const first = hold.eventId;
+    const [prospect] = (await pool.query<{ id: string }>(`INSERT INTO bookings
+      (venue_id, space_id, kind, title, starts_at, ends_at, event_id, enquiry_id, created_by)
+      VALUES ($1, $2, 'prospect', 'Interest only', $3, $4, $5, $6, $7) RETURNING id`,
+    [v.venueId, v.rooms.saloon, at("12:00"), at("14:00"), first, enquiryId, v.admin.id])).rows;
+    if (prospect === undefined) throw new Error("Prospect fixture missing");
+    expect(await transitionBookingCore(spine.db, v.admin, hold.id, { toState: "released" })).toMatchObject({ ok: true });
+    const moved = await datelessEvent(v.venueId, "Where the interest goes");
+    expect(await updateBookingCore(spine.db, v.admin, prospect.id, { eventId: moved })).toMatchObject({ ok: true });
+    expect(await enquiryEvent(enquiryId)).toBe(moved);
   });
 
   it("two holds pencilled at once from one enquiry still share one event, and the link names it", async () => {

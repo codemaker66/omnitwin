@@ -49,7 +49,8 @@ import { bookings, enquiries, eventPhases, events, venues } from "../db/schema.j
 // (enquiryMayBecomeEvent in @omnitwin/types): such an enquiry never has an
 // event, and its bookings bind as they always did. A booking a person moves
 // to another event takes the link with it when it was the enquiry's last
-// booking in the old event (followBookingToEvent). The link is moved, never
+// live booking in the old event (followBookingToEvent; a released or
+// cancelled one left there does not count). The link is moved, never
 // emptied (a database trigger holds that).
 //
 // Lock order: a booking path locks its bookings first, then the enquiry, then
@@ -218,8 +219,11 @@ export async function setEnquiryEvent(conn: BindConn, enquiryId: string, eventId
 /**
  * A booking a person moved to another event takes its enquiry's link with
  * it: when the enquiry's link named the event the booking left, and no other
- * undeleted booking of the enquiry is left there, the link moves to the
- * booking's new event. Otherwise nothing. Call after the booking is written
+ * live (active, undeleted) booking of the enquiry is left there, the link
+ * moves to the booking's new event. Otherwise nothing. A released or
+ * cancelled booking can never be moved again and keeps its event, so it never
+ * holds the link: the bind prefers live bookings the same way. Call after the
+ * booking is written
  * to its new event, in the same transaction: the booking is already locked,
  * and the enquiry is locked here (FOR NO KEY UPDATE), after it, as the lock
  * order asks.
@@ -238,7 +242,12 @@ export async function followBookingToEvent(
   if (enquiry?.eventId !== fromEventId) return;
   const [left] = await conn.select({ id: bookings.id })
     .from(bookings)
-    .where(and(eq(bookings.enquiryId, enquiryId), eq(bookings.eventId, fromEventId), isNull(bookings.deletedAt)))
+    .where(and(
+      eq(bookings.enquiryId, enquiryId),
+      eq(bookings.eventId, fromEventId),
+      eq(bookings.status, "active"),
+      isNull(bookings.deletedAt),
+    ))
     .limit(1);
   if (left === undefined) await setEnquiryEvent(conn, enquiryId, toEventId);
 }
