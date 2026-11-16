@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { foundWords, keepingLine, leftOutWords, seatedSentence, toSeatSentence } from "../../../components/guest-list/words.js";
 import { memoryBackend, withBackend, type CacheBackend } from "../../idb-cache.js";
@@ -76,13 +77,68 @@ function kitPaths(): string[] {
 
 const blank = (text: string): string => text.replace(/[^\n]/g, " ");
 
-/** Comments out; lines and offsets kept. Strings are not touched (`//` after a colon is a URL, not a comment). */
-function blankComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/(?<=^|\s)\/\/[^\n]*/gm, blank);
+function parseSource(code: string, path: string): ts.SourceFile {
+  return ts.createSourceFile(path, code, ts.ScriptTarget.Latest, true, path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+}
+
+const isJsDoc = (node: ts.Node): boolean => node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode;
+
+/**
+ * Every token of the file (a node with no children), in order, with the JSX text
+ * between tags set aside. The parser, not a pattern, decides what is a token:
+ * `//` or `/*` inside a string, a regular expression, a template or JSX text is
+ * not a comment to it.
+ */
+function leafTokens(file: ts.SourceFile): { readonly tokens: readonly ts.Node[]; readonly textStarts: ReadonlySet<number> } {
+  const tokens: ts.Node[] = [];
+  const textStarts = new Set<number>();
+  const collect = (node: ts.Node): void => {
+    if (node.kind === ts.SyntaxKind.JsxText) {
+      textStarts.add(node.pos);
+      return;
+    }
+    if (isJsDoc(node)) return;
+    const children = node.getChildren(file);
+    if (children.length === 0) tokens.push(node);
+    else children.forEach(collect);
+  };
+  collect(file);
+  return { tokens, textStarts };
+}
+
+/** The comments the parser sees: the trivia before and after each token, never JSX text. */
+function commentRanges(file: ts.SourceFile): readonly ts.CommentRange[] {
+  const { tokens, textStarts } = leafTokens(file);
+  const ranges = new Map<number, ts.CommentRange>();
+  for (const token of tokens) {
+    for (const range of ts.getLeadingCommentRanges(file.text, token.pos) ?? []) ranges.set(range.pos, range);
+    // Text right after a tag is JSX text, which can hold `//`; it is not trivia.
+    if (!textStarts.has(token.end)) {
+      for (const range of ts.getTrailingCommentRanges(file.text, token.end) ?? []) ranges.set(range.pos, range);
+    }
+  }
+  return [...ranges.values()].sort((a, b) => a.pos - b.pos);
+}
+
+/** Comments out, as spaces: lines and offsets kept, everything else (strings, JSX text, regular expressions) untouched. */
+function blankComments(text: string, path: string): string {
+  let result = "";
+  let at = 0;
+  for (const range of commentRanges(parseSource(text, path))) {
+    result += text.slice(at, range.pos) + blank(text.slice(range.pos, range.end));
+    at = range.end;
+  }
+  return result + text.slice(at);
+}
+
+/** The text of every token, comments excluded: two texts that differ only in comments give the same list. */
+function tokensOf(text: string, path: string): string[] {
+  const file = parseSource(text, path);
+  return leafTokens(file).tokens.map((token) => token.getText(file));
 }
 
 function readSource(path: string): Source {
-  return { path, code: blankComments(readFileSync(join(SRC, path), "utf8")) };
+  return { path, code: blankComments(readFileSync(join(SRC, path), "utf8"), path) };
 }
 
 function lineOf(code: string, index: number): number {
@@ -130,45 +186,6 @@ function endOfBracket(text: string, open: number): number {
     i += 1;
   }
   return text.length;
-}
-
-/** The text of each `${...}` in a template literal (backticks included in `literal`). */
-function interpolations(literal: string): string[] {
-  const found: string[] = [];
-  let i = 1;
-  while (i < literal.length - 1) {
-    if (literal.charAt(i) === "\\") {
-      i += 2;
-    } else if (literal.charAt(i) === "$" && literal.charAt(i + 1) === "{") {
-      const close = endOfBracket(literal, i + 1);
-      found.push(literal.slice(i + 2, close).trim());
-      i = close + 1;
-    } else {
-      i += 1;
-    }
-  }
-  return found;
-}
-
-/** The interpolations of every template literal in an expression, and whether it joins pieces with `+`. */
-function inspectExpression(expression: string): { readonly interpolated: readonly string[]; readonly joins: boolean } {
-  const interpolated: string[] = [];
-  let joins = false;
-  let i = 0;
-  while (i < expression.length) {
-    const c = expression.charAt(i);
-    if (c === "`") {
-      const end = endOfLiteral(expression, i);
-      interpolated.push(...interpolations(expression.slice(i, end)));
-      i = end;
-    } else if (c === '"' || c === "'") {
-      i = endOfLiteral(expression, i);
-    } else {
-      if (c === "+") joins = true;
-      i += 1;
-    }
-  }
-  return { interpolated, joins };
 }
 
 // ---------------------------------------------------------------------------
@@ -220,12 +237,42 @@ const nothingIsReported: Scan = (source) => [
   ...matches(source, /\bSentry\b|@sentry\//g, "the error reporter"),
 ];
 
-const nothingGoesOverTheNetwork: Scan = (source) =>
-  matches(
-    source,
-    /(?<![\w.])fetch\s*\(|\bXMLHttpRequest\b|\bsendBeacon\b|\bWebSocket\b|\bEventSource\b|\bwindow\s*\.\s*open\b|\blocation\s*\.\s*(?:assign|replace)\b|\blocation\s*\.\s*href\s*=|\b(?:pushState|replaceState)\b/g,
-    "a way to send something out",
-  );
+/**
+ * Every way the page could send something out or move itself somewhere with
+ * something on the end: `fetch` in any position (called, held in a variable, on
+ * window or globalThis), the other transports, an assignment to the location
+ * (a declaration of a variable named location is not one), a picture or audio
+ * made to load, a new URL, navigation helpers, `mailto:` and its kin.
+ *
+ * Reading the location (`useLocation`, `location.pathname`) is not a way out.
+ * `link.href = blobUrl` for the download is not one either: the file never
+ * leaves the device.
+ */
+const WAYS_OUT = new RegExp(
+  [
+    String.raw`\bfetch\b`,
+    String.raw`\bXMLHttpRequest\b`,
+    String.raw`\bsendBeacon\b`,
+    String.raw`\bWebSocket\b`,
+    String.raw`\bEventSource\b`,
+    String.raw`\bpostMessage\b`,
+    String.raw`\bnavigator\s*\.\s*share\b`,
+    String.raw`\bwindow\s*\.\s*open\b`,
+    String.raw`(?<!\b(?:const|let|var)\s+)\b(?:(?:window|document|globalThis|self)\s*\.\s*)?location\s*(?:\.\s*(?:href|search|hash|pathname)\s*)?=(?!=)`,
+    String.raw`\blocation\s*\.\s*(?:assign|replace|reload)\b`,
+    String.raw`\b(?:pushState|replaceState)\b`,
+    String.raw`\.(?:src|srcset|poster)\s*=(?!=)`,
+    String.raw`\bnew\s+(?:Image|Audio|URL)\b`,
+    String.raw`\bnavigate\s*\(`,
+    String.raw`\buseNavigate\b`,
+    String.raw`\bNavigate\b`,
+    String.raw`\b(?:useSearchParams|setSearchParams)\b`,
+    String.raw`\b(?:mailto|tel|sms):`,
+  ].join("|"),
+  "g",
+);
+
+const nothingGoesOverTheNetwork: Scan = (source) => matches(source, WAYS_OUT, "a way to send something out or to move the page");
 
 /** The kit's switch is the one thing it keeps in web storage, and only under its own key. */
 const KIT_SWITCH = "lib/guest-list/kit-switch.ts";
@@ -245,64 +292,229 @@ const storageIsKeptToItsPlace: Scan = (source) => {
   return out;
 };
 
-/** What an attribute built from data may contain, and why that is not a guest's text. */
-const ALLOWED_IN_ATTRIBUTES: ReadonlyMap<string, string> = new Map([
-  ["id", "React's useId value, an opaque string React makes; the suffix beside it is fixed words"],
-  ["String(at)", "the position of a letter group in the list, a number, in an id"],
-  ["count.view", "one of the list page's four fixed view words, in an id"],
-]);
+// ---------------------------------------------------------------------------
+// Attributes and addresses, read from the syntax tree
+//
+// The scans below follow the names a piece of code refers to, so a bare
+// `className={guest.name}`, a helper's answer and a template are all seen
+// the same way. Every name a class, id, tag or address may be built from is
+// on a list here with the reason it is not a guest's text; a name that is on
+// no list fails, and a name on a list that nothing uses fails too.
+// ---------------------------------------------------------------------------
 
-const ATTRIBUTE = /(?<![\w-])(className|id|htmlFor|data-[\w-]+|aria-labelledby|aria-describedby|aria-controls)\s*=\s*\{/g;
-
-/** Every `${...}` in an attribute the allowance list let through, counted, so a stale allowance is seen. */
-function attributeInterpolations(source: Source): { readonly attribute: string; readonly expression: string; readonly index: number }[] {
-  const out: { attribute: string; expression: string; index: number }[] = [];
-  for (const m of source.code.matchAll(ATTRIBUTE)) {
-    const open = m.index + m[0].length - 1;
-    const { interpolated } = inspectExpression(source.code.slice(open + 1, endOfBracket(source.code, open)));
-    for (const expression of interpolated) out.push({ attribute: m[1] ?? "", expression, index: m.index });
-  }
+/**
+ * Every name the code refers to, in order: `guest`, `count.view`, `String`,
+ * `.join` (a method on something that is not a plain name). String, template
+ * text and number literals refer to nothing.
+ */
+function referencesIn(node: ts.Node): string[] {
+  const plainChain = (expression: ts.Expression): string | null => {
+    if (ts.isIdentifier(expression)) return expression.text;
+    if (expression.kind === ts.SyntaxKind.ThisKeyword) return "this";
+    if (ts.isPropertyAccessExpression(expression)) {
+      const root = plainChain(expression.expression);
+      return root === null ? null : `${root}.${expression.name.text}`;
+    }
+    return null;
+  };
+  const out: string[] = [];
+  const visit = (current: ts.Node): void => {
+    if (ts.isIdentifier(current)) {
+      out.push(current.text);
+    } else if (ts.isConditionalExpression(current)) {
+      // The condition picks a value; it is never the value. Only the two branches can be what is built.
+      visit(current.whenTrue);
+      visit(current.whenFalse);
+    } else if (ts.isBinaryExpression(current) && current.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+      // `a && b` is b, or a when a is empty or false: nothing of a's content gets through.
+      visit(current.right);
+    } else if (ts.isPropertyAccessExpression(current)) {
+      const chain = plainChain(current);
+      if (chain !== null) {
+        out.push(chain);
+      } else {
+        visit(current.expression);
+        out.push(`.${current.name.text}`);
+      }
+    } else {
+      ts.forEachChild(current, visit);
+    }
+  };
+  visit(node);
   return out;
 }
 
-const attributesAreNotBuiltFromData: Scan = (source) => {
-  const out: string[] = [];
-  for (const m of source.code.matchAll(ATTRIBUTE)) {
-    const open = m.index + m[0].length - 1;
-    const { interpolated, joins } = inspectExpression(source.code.slice(open + 1, endOfBracket(source.code, open)));
-    if (joins) out.push(found(source, m.index, `${m[1] ?? "an attribute"} joins text with +`));
-    for (const expression of interpolated) {
-      if (!ALLOWED_IN_ATTRIBUTES.has(expression)) {
-        out.push(found(source, m.index, `${m[1] ?? "an attribute"} is built from \${${expression}}`));
-      }
-    }
-  }
-  return out;
-};
+interface Allowance {
+  /** Why the name is not a guest's text. */
+  readonly why: string;
+  /** The files it may be used in; null for any. */
+  readonly files: readonly string[] | null;
+}
 
-/** What an address built here may carry, and why that is not a guest's text. */
-const ALLOWED_IN_ADDRESSES: ReadonlyMap<string, string> = new Map([
-  ["planId", "the plan's own id, from the address the planner is already on"],
-  ["sheet", "one of the four fixed sheet words"],
-  ["params.toString()", "the address's own query with only the kit switch and the sheet word set"],
-  ["KIT_PARAM", "the fixed word kit"],
+type Allowed = ReadonlyMap<string, Allowance>;
+
+function isAllowed(allowed: Allowed, reference: string, path: string): boolean {
+  const allowance = allowed.get(reference);
+  return allowance !== undefined && (allowance.files === null || allowance.files.includes(path));
+}
+
+/** One name an attribute or an address is built from, and where. */
+interface Reference {
+  readonly what: string;
+  readonly reference: string;
+  /** "path:line: ", ready to put before a finding. */
+  readonly at: string;
+}
+
+function referenceAt(source: Source, file: ts.SourceFile, node: ts.Node, what: string, reference: string): Reference {
+  return { what, reference, at: found(source, node.getStart(file), "") };
+}
+
+/**
+ * The attributes that become a class, an id, a tag or a pointer to an id in the page.
+ * Left out on purpose, each for its reason, so nobody "fixes" them later:
+ *  - `aria-label`, `title`, `alt`, `placeholder`, `value`, `aria-valuetext` and the like carry text that is
+ *    meant to be read, and a reader of the list is meant to read a guest's name in them;
+ *  - `key` is React's own and never reaches the page.
+ */
+const DOM_ATTRIBUTES: ReadonlySet<string> = new Set([
+  "className",
+  "id",
+  "htmlFor",
+  "name",
+  "aria-labelledby",
+  "aria-describedby",
+  "aria-controls",
+  "aria-owns",
+  "aria-activedescendant",
 ]);
 
-function addressInterpolations(source: Source): { readonly expression: string; readonly index: number }[] {
-  const out: { expression: string; index: number }[] = [];
-  let from = source.code.indexOf("`/plan");
-  while (from !== -1) {
-    const literal = source.code.slice(from, endOfLiteral(source.code, from));
-    for (const expression of interpolations(literal)) out.push({ expression, index: from });
-    from = source.code.indexOf("`/plan", from + 1);
-  }
+const isDomAttribute = (name: string): boolean => DOM_ATTRIBUTES.has(name) || name.startsWith("data-");
+
+/** The attributes that hold an address. */
+const ADDRESS_ATTRIBUTES: ReadonlySet<string> = new Set(["href", "src", "srcSet", "poster", "to", "action", "formAction", "xlinkHref"]);
+
+/** The names every class, id, tag or pointer to an id is built from, as they stand. */
+const ID_FILES = [
+  "components/guest-list/GuestPanel.tsx",
+  "components/guest-list/GuestPaste.tsx",
+  "components/guest-list/GuestRows.tsx",
+  "components/guest-list/GuestTables.tsx",
+  "pages/GuestListPage.tsx",
+] as const;
+
+const ALLOWED_IN_ATTRIBUTES: Allowed = new Map<string, Allowance>([
+  ["id", { why: "React's useId value, an opaque string React makes (each file is checked for `const id = useId()`); the text beside it is fixed", files: ID_FILES }],
+  ["titleId", { why: "React's useId value in the paper page (checked for `const titleId = useId()`)", files: ["pages/GuestPaperPage.tsx"] }],
+  ["String", { why: "turns a number to text; its argument is listed on its own, so `String(guest.name)` still fails", files: ["components/guest-list/GuestRows.tsx"] }],
+  ["at", { why: "the position of a letter group in the A to Z list, a number, inside an id", files: ["components/guest-list/GuestRows.tsx"] }],
+  ["undefined", { why: "leaves the attribute off", files: null }],
+  ["count.view", { why: "one of the list page's four fixed view words (all, seated, to-seat, tables), inside an id", files: ["pages/GuestListPage.tsx"] }],
+  ["count.tone", { why: "a fixed tone word from the list page's own table (settled, owed) or nothing", files: ["pages/GuestListPage.tsx"] }],
+  ["notice.kind", { why: "the kind of a notice, a fixed word of the store's KitNotice type (repaired, other-tab)", files: ["pages/GuestListPage.tsx"] }],
+]);
+
+/** The names every address is built from. */
+const ALLOWED_IN_ADDRESSES: Allowed = new Map<string, Allowance>([
+  ["planId", { why: "the plan's own id, from the address the planner is already on", files: null }],
+  ["sheet", { why: "one of the four fixed sheet words (the Sheet type)", files: ["components/guest-list/GuestPanel.tsx", "pages/GuestPaperPage.tsx"] }],
+  ["sheet.sheet", { why: "the sheet word in the panel's own table of the four sheets", files: ["components/guest-list/GuestPanel.tsx"] }],
+  ["entry.sheet", { why: "the sheet word in the paper page's own table of the four sheets", files: ["pages/GuestPaperPage.tsx"] }],
+  ["paperAddress", { why: "the panel's address helper: built from the plan id and a sheet word only, its template is checked here too", files: ["components/guest-list/GuestPanel.tsx"] }],
+  ["listAddress", { why: "the paper page's address helper: built from the plan id and the kit word only, its template is checked here too", files: ["pages/GuestPaperPage.tsx"] }],
+  ["sheetAddress", { why: "the paper page's address helper: plan id, the address's own query and a sheet word, its template is checked here too", files: ["pages/GuestPaperPage.tsx"] }],
+  ["params.toString", { why: "the address's own query after only the kit switch and the sheet word have been set on it", files: ["pages/GuestPaperPage.tsx"] }],
+  ["KIT_PARAM", { why: "the fixed word kit", files: ["pages/GuestPaperPage.tsx"] }],
+  ["SHEET_PARAM", { why: "the fixed word sheet", files: ["pages/GuestPaperPage.tsx"] }],
+  ["search", { why: "the address's own query string, read from the router or the window: an address, not a guest", files: ["lib/guest-list/kit-switch.ts", "pages/GuestPaperPage.tsx"] }],
+]);
+
+/** Every name a class, id, tag or pointer to an id in the file is built from; a spread onto a DOM element counts as one. */
+function domAttributeReferences(source: Source): Reference[] {
+  const file = parseSource(source.code, source.path);
+  const out: Reference[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxAttribute(node)) {
+      const name = node.name.getText(file);
+      const value = node.initializer;
+      if (isDomAttribute(name) && value !== undefined && ts.isJsxExpression(value) && value.expression !== undefined) {
+        for (const reference of referencesIn(value.expression)) out.push(referenceAt(source, file, node, name, reference));
+      }
+    } else if (ts.isJsxSpreadAttribute(node)) {
+      const element = node.parent.parent;
+      const tag = ts.isJsxOpeningElement(element) || ts.isJsxSelfClosingElement(element) ? element.tagName.getText(file) : "";
+      if (/^[a-z]/.test(tag)) out.push(referenceAt(source, file, node, "a spread onto an element", `...${node.expression.getText(file)}`));
+    } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(node.left)) {
+      // `element.className = x`, `element.id = x`, `element.dataset.key = x`
+      const target = node.left.name.text;
+      const onDataset = ts.isPropertyAccessExpression(node.left.expression) && node.left.expression.name.text === "dataset";
+      if (isDomAttribute(target) || onDataset) {
+        for (const reference of referencesIn(node.right)) out.push(referenceAt(source, file, node, `.${target} =`, reference));
+      }
+    } else if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      // `element.setAttribute("data-x", x)`, `element.classList.add(x)`
+      const method = node.expression.name.text;
+      const receiver = node.expression.expression;
+      const [first] = node.arguments;
+      if (method === "setAttribute") {
+        const fixedName = first !== undefined && ts.isStringLiteralLike(first) ? first.text : null;
+        const watched = fixedName === null || fixedName === "class" || fixedName === "for" || isDomAttribute(fixedName);
+        if (watched) for (const argument of node.arguments) for (const reference of referencesIn(argument)) out.push(referenceAt(source, file, node, "setAttribute", reference));
+      } else if (ts.isPropertyAccessExpression(receiver) && receiver.name.text === "classList") {
+        for (const argument of node.arguments) for (const reference of referencesIn(argument)) out.push(referenceAt(source, file, node, `classList.${method}`, reference));
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return out;
+}
+
+const attributesAreNotBuiltFromData: Scan = (source) =>
+  domAttributeReferences(source)
+    .filter(({ reference }) => !isAllowed(ALLOWED_IN_ATTRIBUTES, reference, source.path))
+    .map(({ what, reference, at }) => `${at}${what} is built from ${reference}`);
+
+/** A template that begins like an address: a path, a scheme, a query or a fragment. */
+const ADDRESS_HEAD = /^(?:\/|https?:|mailto:|tel:|sms:|\?|#|\.{1,2}\/)/;
+
+/** The receivers whose `set` and `append` write into an address's query. */
+const QUERY_RECEIVER = /^(?:params|searchParams|query|url\.searchParams)$/;
+
+/** Every name an address is built from: address attributes, address-like templates and query writes. */
+function addressReferences(source: Source): Reference[] {
+  const file = parseSource(source.code, source.path);
+  const out: Reference[] = [];
+  const take = (node: ts.Node, what: string, from: ts.Node): void => {
+    for (const reference of referencesIn(from)) out.push(referenceAt(source, file, node, what, reference));
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxAttribute(node)) {
+      const name = node.name.getText(file);
+      const value = node.initializer;
+      if (ADDRESS_ATTRIBUTES.has(name) && value !== undefined && ts.isJsxExpression(value) && value.expression !== undefined) {
+        take(node, `${name} (an address)`, value.expression);
+      }
+    } else if (ts.isTemplateExpression(node) && ADDRESS_HEAD.test(node.head.text)) {
+      take(node, "an address", node);
+    } else if (ts.isNewExpression(node) && node.expression.getText(file) === "URLSearchParams") {
+      for (const argument of node.arguments ?? []) take(node, "a query", argument);
+    } else if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const method = node.expression.name.text;
+      if ((method === "set" || method === "append") && QUERY_RECEIVER.test(node.expression.expression.getText(file))) {
+        for (const argument of node.arguments) take(node, "a query", argument);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
   return out;
 }
 
 const addressesAreNotBuiltFromData: Scan = (source) =>
-  addressInterpolations(source)
-    .filter(({ expression }) => !ALLOWED_IN_ADDRESSES.has(expression))
-    .map(({ expression, index }) => found(source, index, `an address is built from \${${expression}}`));
+  addressReferences(source)
+    .filter(({ reference }) => !isAllowed(ALLOWED_IN_ADDRESSES, reference, source.path))
+    .map(({ what, reference, at }) => `${at}${what} is built from ${reference}`);
 
 // ---------------------------------------------------------------------------
 // Imports
@@ -376,6 +588,22 @@ const importsAreOnlyWhatIsAllowed: Scan = (source) => {
 const PATHS = kitPaths();
 const SOURCES = PATHS.map(readSource);
 
+/** Allowances that nothing uses, or that name a file that does not use them. */
+function staleAllowances(allowed: Allowed, referencesOf: (source: Source) => readonly Reference[]): string[] {
+  const used = new Set<string>();
+  for (const source of SOURCES) {
+    for (const { reference } of referencesOf(source)) {
+      if (isAllowed(allowed, reference, source.path)) used.add(`${reference} in ${source.path}`);
+    }
+  }
+  const usedAnywhere = (reference: string): boolean => [...used].some((entry) => entry.startsWith(`${reference} in `));
+  return [...allowed].flatMap(([reference, { files }]) =>
+    files === null
+      ? usedAnywhere(reference) ? [] : [reference]
+      : files.filter((path) => !used.has(`${reference} in ${path}`)).map((path) => `${reference} in ${path}`),
+  );
+}
+
 function scanAll(scan: Scan): string[] {
   return SOURCES.flatMap(scan);
 }
@@ -421,18 +649,25 @@ describe("the kit's source, read as text", () => {
     expect(scanAll(attributesAreNotBuiltFromData)).toEqual([]);
   });
 
-  it("every allowance for attributes is still used, so none has gone stale", () => {
-    const used = new Set(SOURCES.flatMap((source) => attributeInterpolations(source).map(({ expression }) => expression)));
-    expect([...ALLOWED_IN_ATTRIBUTES.keys()].filter((expression) => !used.has(expression))).toEqual([]);
+  it("every allowance for attributes is still used, in every file it names, so none has gone stale", () => {
+    expect(staleAllowances(ALLOWED_IN_ATTRIBUTES, domAttributeReferences)).toEqual([]);
+  });
+
+  it("an id taken from useId really is one in every file that uses it", () => {
+    for (const source of SOURCES) {
+      for (const name of ["id", "titleId"]) {
+        const used = domAttributeReferences(source).some(({ reference }) => reference === name);
+        if (used) expect(source.code, `${source.path} makes ${name} with useId`).toMatch(new RegExp(String.raw`\bconst ${name} = useId\(\);`));
+      }
+    }
   });
 
   it("no address is built from data, apart from the plan's id, the sheet word and the address's own query", () => {
     expect(scanAll(addressesAreNotBuiltFromData)).toEqual([]);
   });
 
-  it("every allowance for addresses is still used, so none has gone stale", () => {
-    const used = new Set(SOURCES.flatMap((source) => addressInterpolations(source).map(({ expression }) => expression)));
-    expect([...ALLOWED_IN_ADDRESSES.keys()].filter((expression) => !used.has(expression))).toEqual([]);
+  it("every allowance for addresses is still used, in every file it names, so none has gone stale", () => {
+    expect(staleAllowances(ALLOWED_IN_ADDRESSES, addressReferences)).toEqual([]);
   });
 
   it("no source file of the kit imports the API client, except the one read of the plan", () => {
@@ -479,7 +714,7 @@ describe("the kit's source, read as text", () => {
 });
 
 describe("the scans catch what they claim to", () => {
-  const sample = (code: string, path = "components/guest-list/Sample.tsx"): Source => ({ path, code: blankComments(code) });
+  const sample = (code: string, path = "components/guest-list/Sample.tsx"): Source => ({ path, code: blankComments(code, path) });
 
   it("refuses an error built from data and accepts one made of fixed words", () => {
     expect(errorsAreFixedWords(sample("throw new Error(`bad ${name}`);"))).toHaveLength(1);
@@ -521,15 +756,18 @@ describe("the scans catch what they claim to", () => {
     expect(attributesAreNotBuiltFromData(sample("<li data-who={`w-${name}`} />"))).toHaveLength(1);
     expect(attributesAreNotBuiltFromData(sample('<li className={"row " + name} />'))).toHaveLength(1);
     expect(attributesAreNotBuiltFromData(sample("<li aria-labelledby={`${name}-x`} />"))).toHaveLength(1);
-    expect(attributesAreNotBuiltFromData(sample("<li id={`${id}-name`} htmlFor={`${id}-${count.view}-label`} />"))).toEqual([]);
-    expect(attributesAreNotBuiltFromData(sample("<li id={open ? `${id}-detail` : undefined} />"))).toEqual([]);
+    const listPage = "pages/GuestListPage.tsx";
+    expect(attributesAreNotBuiltFromData(sample("<li id={`${id}-name`} htmlFor={`${id}-${count.view}-label`} />", listPage))).toEqual([]);
+    expect(attributesAreNotBuiltFromData(sample("<li id={open ? `${id}-detail` : undefined} />", listPage))).toEqual([]);
+    // An allowance holds only in the files it names: the same words in another file are refused.
+    expect(attributesAreNotBuiltFromData(sample("<li id={`${id}-${count.view}`} />"))).toHaveLength(2);
     expect(attributesAreNotBuiltFromData(sample('<li className="row" data-tone="copper" />'))).toEqual([]);
     expect(attributesAreNotBuiltFromData(sample("<li>{`Hello ${guest.name}`}</li>"))).toEqual([]);
   });
 
   it("refuses an address built from data", () => {
     expect(addressesAreNotBuiltFromData(sample("`/plan/${planId}/guests?q=${guest.name}`"))).toHaveLength(1);
-    expect(addressesAreNotBuiltFromData(sample("`/plan/${planId}/guests/paper?${params.toString()}`"))).toEqual([]);
+    expect(addressesAreNotBuiltFromData(sample("`/plan/${planId}/guests/paper?${params.toString()}`", "pages/GuestPaperPage.tsx"))).toEqual([]);
   });
 
   it("refuses an import that reaches the API client in any relative form, and one that is not the page's", () => {
@@ -548,6 +786,148 @@ describe("the scans catch what they claim to", () => {
     expect(at("lib/guest-list/other.ts", 'import type { PlacedObject } from "../../api/configurations.js";')).toHaveLength(1);
     expect(at("lib/guest-list/other.ts", 'import axios from "axios";')).toHaveLength(1);
     expect(at("lib/guest-list/other.ts", 'import { useState } from "react";')).toEqual([]);
+  });
+
+  // Fix round 1, I1: an attribute is built from data in its simplest form too, a bare name or a helper's answer.
+  it("refuses a class, id, name or data attribute that is a bare expression or a helper's answer", () => {
+    for (const code of [
+      "<li className={guest.name} />",
+      "<li data-name={guest.name} />",
+      "<li id={guest.name} />",
+      "<li className={cx('row', guest.name)} />",
+      "<li className={['row', name].join(' ')} />",
+      "<li htmlFor={guest.name} />",
+      "<input name={guest.name} />",
+      "<li aria-owns={guest.name} />",
+      "<li aria-activedescendant={guest.name} />",
+      "<li data-who={`w-${guest.name}`} />",
+      // The same mistake made on an element built in code.
+      "element.className = guest.name;",
+      "element.id = `row-${guest.name}`;",
+      "element.dataset.who = guest.name;",
+      'element.setAttribute("data-who", guest.name);',
+      'element.setAttribute("class", guest.name);',
+      "element.setAttribute(attribute, value);",
+      "element.classList.add(guest.name);",
+    ]) {
+      expect(attributesAreNotBuiltFromData(sample(code)), code).not.toEqual([]);
+    }
+    // Spread onto a DOM element can carry any attribute; onto a component it is only props.
+    expect(attributesAreNotBuiltFromData(sample("<li {...guest} />")), "spread on li").not.toEqual([]);
+    expect(attributesAreNotBuiltFromData(sample("<TableRow {...props} />")), "spread on a component").toEqual([]);
+  });
+
+  it("lets the attribute forms the kit uses pass, and leaves out the attributes that are read as text", () => {
+    for (const code of [
+      '<li className="row" data-tone="copper" id="x" />',
+      "<li id={`${id}-detail`} htmlFor={`${id}-name`} aria-describedby={refused ? `${id}-refused` : undefined} />",
+      "<li aria-controls={open ? `${id}-detail` : undefined} />",
+      // The text-like attributes carry a guest's name on purpose: it is what a reader is meant to read.
+      "<button aria-label={guest.name} title={guest.name} />",
+      '<img alt={guest.name} /><input placeholder={guest.name} value={guest.name} />',
+      // key is React's own and never reaches the DOM.
+      "<li key={guest.id} />",
+      // A condition picks a value and is never the value.
+      '<li data-none={entry.seat === null ? "true" : undefined} data-open={open && "true"} />',
+      // Elements built in code from fixed words.
+      'robots.name = "robots"; robots.content = guest.name; link.download = "guest-list.csv"; link.href = url;',
+      'element.setAttribute("title", guest.name); element.classList.add("row");',
+    ]) {
+      expect(attributesAreNotBuiltFromData(sample(code, "components/guest-list/GuestRows.tsx")), code).toEqual([]);
+    }
+  });
+
+  // Fix round 1, I2: the ordinary ways out, and addresses built outside /plan.
+  it("refuses every way of calling fetch, of moving the page, of loading a picture and of writing an address", () => {
+    for (const code of [
+      "window.fetch(url)",
+      "globalThis.fetch(url)",
+      "const send = fetch; send(url)",
+      "window.location = url",
+      "document.location = url",
+      "location = url",
+      "location.href = url",
+      "location.assign(url)",
+      "new Image().src = url",
+      "img.src = url",
+      "const link = `mailto:?body=${name}`",
+      "navigate(`?q=${name}`)",
+      "const go = useNavigate()",
+      "setSearchParams({ q: name })",
+      "new URL(address)",
+    ]) {
+      expect(nothingGoesOverTheNetwork(sample(code)), code).not.toEqual([]);
+    }
+    for (const code of [
+      "const prefetch = 1; const refetched = 2;",
+      "const location = useLocation();",
+      "const { search } = useLocation(); if (location.pathname === x) {}",
+      "document.title = title;",
+    ]) {
+      expect(nothingGoesOverTheNetwork(sample(code)), code).toEqual([]);
+    }
+  });
+
+  it("refuses an address built from data in any attribute that holds one, and any template that looks like one", () => {
+    for (const code of [
+      "<a href={`mailto:?body=${name}`} />",
+      "<Link to={`?q=${guest.name}`} />",
+      "<Link to={`${base}?q=${guest.name}`} />",
+      "<a href={guest.name} />",
+      "<form action={target} />",
+      "<img src={`/pic/${guest.name}`} />",
+      "const where = `/elsewhere/${guest.name}`;",
+      "const where = `?q=${guest.name}`;",
+      "const where = `https://example.com/${guest.name}`;",
+      "params.set(KIT_PARAM, guest.name);",
+      "new URLSearchParams(guest.name)",
+    ]) {
+      expect(addressesAreNotBuiltFromData(sample(code)), code).not.toEqual([]);
+    }
+    for (const code of [
+      '<Link to="/plan">Open</Link>',
+      "<Link to={`/plan/${planId}`}>Open</Link>",
+      "<Link to={sheetAddress(planId, search, entry.sheet)}>Sheet</Link>",
+      "return `/plan/${planId}/guests/paper?${params.toString()}`;",
+      'params.set(KIT_PARAM, "on"); params.set(SHEET_PARAM, sheet);',
+      "const params = new URLSearchParams(search);",
+      "<Link to={open ? listAddress(planId) : sheetAddress(planId, search, sheet)}>Back</Link>",
+    ]) {
+      expect(addressesAreNotBuiltFromData(sample(code, "pages/GuestPaperPage.tsx")), code).toEqual([]);
+    }
+    expect(addressesAreNotBuiltFromData(sample('<Link to={paperAddress(planId, "table-plan")}>Print</Link>', "components/guest-list/GuestPanel.tsx"))).toEqual([]);
+    // An address helper is allowed in the file that has it, and nowhere else.
+    expect(addressesAreNotBuiltFromData(sample('<Link to={paperAddress(planId, "table-plan")}>Print</Link>', "pages/GuestPaperPage.tsx"))).toHaveLength(1);
+  });
+
+  // Fix round 1, I3: comments are found by the TypeScript parser, so live code is never blanked.
+  it("blanks real comments only, and never live code after a look-alike", () => {
+    const jsdoc = '<input accept="text/*" />;\nconsole.log(name);\n/** a later doc comment */';
+    const inString = 'const s = "a // b"; console.log(name);';
+    const insideComment = "// note: /* open\nconsole.log(name);\n/* later */";
+    const inText = "<p>see // there</p>; console.log(name);";
+    const inTextTwo = "<p>a /* b */ c</p>; console.log(name);";
+    const inTemplate = "const t = `x // y ${1}`; console.log(name);";
+    const inRegex = "const r = /a\\/*b/; console.log(name);";
+    for (const code of [jsdoc, inString, insideComment, inText, inTextTwo, inTemplate, inRegex]) {
+      expect(nothingIsLogged(sample(code)), code).toHaveLength(1);
+    }
+    // Real comments of every shape are blanked, and lines and offsets stay where they were.
+    const commented = "/* console.log(1) */ // console.warn(2)\n{/* console.log(3) */}\n/** console.log(4) */\nlet a = 1; // console.log(5)\n";
+    expect(nothingIsLogged(sample(commented))).toEqual([]);
+    expect(blankComments(commented, "x.tsx")).toHaveLength(commented.length);
+    expect(blankComments(commented, "x.tsx").split("\n")).toHaveLength(commented.split("\n").length);
+    expect(blankComments(commented, "x.tsx")).toContain("let a = 1;");
+  });
+
+  it("keeps every line and every token of every kit file, and takes out only comments", () => {
+    for (const path of PATHS) {
+      const original = readFileSync(join(SRC, path), "utf8");
+      const stripped = blankComments(original, path);
+      expect(stripped.length, `${path} keeps its length`).toBe(original.length);
+      expect(stripped.split("\n").length, `${path} keeps its lines`).toBe(original.split("\n").length);
+      expect(tokensOf(stripped, path), `${path} keeps all its tokens`).toEqual(tokensOf(original, path));
+    }
   });
 });
 
