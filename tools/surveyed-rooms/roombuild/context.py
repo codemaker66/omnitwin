@@ -30,6 +30,7 @@ GATES = {
     "B20": "patch copied from another wall (the atlas and the detail tiles)",
     "B23": "elevation tiles narrower than the wall's rounded length: the wall ends at its tiles' last column",
     "B24": "stray texels allowed: a covered texel the renderer placed off its own centre is left out of its tile",
+    "B25": "occluder margin: a station's view of a wall texel is left out within that margin of an occluder's outline",
     "B21": "test-only depth-map size (SURVEYED_ROOMS_TEST_DEPTH_SIZE)",
     "B22": "node modules from another checkout (SURVEYED_ROOMS_NODE_ROOT): its meshoptimizer meshes the relief",
 }
@@ -151,6 +152,12 @@ class Room:
         then left out of the tile (survey.wallViews.strayTexels, gate B24); 0 when the config allows
         none, as the Grand Hall's."""
         return int(self.survey["wallViews"].get("strayTexels", 0))
+
+    def occluder_margin(self):
+        """How far beyond the mesh's outline of an occluder a station's view of a wall is not trusted, in
+        metres at the occluder (survey.projection.walls.occluderMargin, gate B25); 0.0 when the config
+        gives none, as the Grand Hall's."""
+        return float(self.survey.get("projection", {}).get("walls", {}).get("occluderMargin", 0.0))
 
     def wall_frames(self):
         """bestview.WALLS for this room, by survey name: where each wall's elevation starts (the
@@ -294,6 +301,8 @@ class Room:
             add("B7", "room", f"methodRevision {self.revision}")
         if self.stray_texels():
             add("B24", "wall views", f"up to {self.stray_texels()} a tile")
+        if self.occluder_margin():
+            add("B25", "walls", f"{self.occluder_margin() * 1000:g} mm")
         for o in self.cfg["openings"]:
             if o["kind"] != "window" or o["glazing"] == "none":
                 continue
@@ -342,6 +351,9 @@ class Room:
         for name in ("walls", "ceiling"):
             if name not in survey.get("projection", {}):
                 out.append(f"survey.projection.{name} is missing")
+        for name, settings in survey.get("projection", {}).items():
+            if name != "walls" and "occluderMargin" in settings:
+                out.append(f"survey.projection.{name}.occluderMargin: the margin is read for the walls only (their best-view labels)")
         if cfg["ceiling"].get("domes") and "dome" not in survey.get("projection", {}):
             out.append("survey.projection.dome is missing")
         if cfg["ceiling"].get("domes") and "domePhoto" not in survey:
