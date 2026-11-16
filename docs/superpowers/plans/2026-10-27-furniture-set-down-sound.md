@@ -607,7 +607,7 @@ Re-planned on 14 Nov against master 7c3461e7; part 3's branch carries the revise
 
 Tasks 12, 13 and 14 do not start until part 2's listening page has timed renders on real phones (it keeps each render's time on the device that ran it):
 - the median and worst render times, with the Grand Hall's 18 early reflections, for a light piece (a Chiavari), a table (a 6 ft round) and a heavy piece (a staging deck), on the phones Blake uses for the ear test;
-- set against the time from a drop's start to its contact: 50 ms for a carried heavy piece, 67 ms at 60 fps (69 ms continuous) for light and table pieces, 83 ms for a drop-in. Other display rates move the landings: at 75–165 Hz heavy pieces land at 49–55 ms and drop-ins at 80–89 ms.
+- set against the time from a drop's start to its contact: 50 ms for a carried heavy piece, 67 ms at 60 fps (69 ms continuous) for light and table pieces, 83 ms for a drop-in. Other display rates move the landings: at 75–165 Hz heavy pieces land at 49–56 ms, light and table pieces at 67–69 ms and drop-ins at 80–89 ms, and at 30 fps carried pieces land at 67 ms and drop-ins at 100 ms (frame by frame on master's spring).
 
 Render-at-drop in a Worker is confirmed only if light and table pieces render inside their time to contact on those phones. Heavy pieces keep the render-ahead fallback whatever the timings. If light pieces miss as well, the design goes back for a ruling before Task 12 starts.
 
