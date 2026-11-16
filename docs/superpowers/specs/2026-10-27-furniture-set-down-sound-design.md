@@ -301,10 +301,10 @@ The policy's limits (eight a second, collapse at four within 250 ms) still bound
 - **When the drop starts, a Worker renders the set-down, then transfers its Float32 channels back.** Nothing renders on the main thread.
 - **The time before contact.** On master, the set-down spring (`springs.ts` `furnitureSetDown`, stiffness 420 and damping 28, stepped at 1/240 s) aims 3 cm below the floor and stops at contact (`furniture-motion.ts`). So the contact frame comes:
   - 50 ms after the drop starts for a carried heavy piece (stage, AV and lighting, held 0.015 m up);
-  - 67–69 ms for light and table pieces (held 0.03 m up);
+  - 67 ms at 60 fps (69 ms continuous) for light and table pieces (held 0.03 m up);
   - 83 ms for a drop-in (from `DROP_HEIGHT`, 0.05 m).
 
-  These are at 60 fps; a continuous clock gives 51, 69 and 83 ms.
+  These are at 60 fps; a continuous clock gives 51, 69 and 83 ms. Other display rates move the landings: at 75–165 Hz, heavy pieces land at 49–56 ms, light and table pieces at 67–69 ms and drop-ins at 80–89 ms, and at 30 fps carried pieces land at 67 ms and drop-ins at 100 ms (frame by frame on master's spring).
 - **What a render costs, with reflections, as part 3 renders it.** The #416 review measured medians of 7.5–23.9 ms on the build desktop with the Grand Hall's 18 early reflections (a staging deck, a room divider, a television, a 6 ft round), against 4.2–5.4 ms dry after warm-up. A phone runs at about 3–5 times a desktop's time, so about 23–120 ms (EST).
 - **Heavy pieces need a fallback, so it is part of the design.** Light pieces and drop-ins have 67–83 ms: a Chiavari (about 5.5 ms with the reflections on the desktop, the review's measurement) fits even at 5x, but a 6 ft round's slowest medians might not. A carried heavy piece has 50 ms, which a phone misses. So when a heavy piece is picked up, the Worker renders on idle its variants for the surfaces under it: a few seeds per piece, surface and room state, cached. At contact the exact render plays if it is ready within the 20 ms heard window, and otherwise the variant does.
 - **Render-at-drop is confirmed only by part 2's phone timings.** The listening page times each render on the device it runs on and keeps the figures. Part 3 (Tasks 12–14 of the plan) waits for them; if they show phones missing contact for light pieces as well, the design comes back for a ruling before part 3 is built.
@@ -320,7 +320,7 @@ The policy's limits (eight a second, collapse at four within 250 ms) still bound
 2. **Room model tests:**
    - Eyring times match a worked calculation;
    - every added piece shortens the time and none lengthens it, while a dance-floor panel changes it by under 1 %;
-   - the synthesised tail's measured time per band (Schroeder backward integration, T20) is within ±10 % of its target;
+   - the synthesised tail's measured time per band (Schroeder backward integration, T20) is held by the tests to this: each reading within 4 σ_D of the scatter ISO 3382-2 expects, and each band's mean within 5 % of its target (10 % at 125 Hz);
    - the tail level follows the diffuse-field relation.
 3. **The independent check** (each room traced as a box with the model's volume and surface areas; it tests Eyring's diffuse-field assumption, not the data or the outlines):
    - fitted on empty; within 15 % of the offline ray tracer half and fully laid, from 250 Hz to 8 kHz (the galleries' named non-diffuse bands excepted), and its change with fullness within 15 % of the tracer's in every room and band, the galleries' included;
@@ -341,7 +341,7 @@ The policy's limits (eight a second, collapse at four within 250 ms) still bound
 7. **Blake's ear test, before set-downs are switched on in production.** A private listening page he can open on his phone (a claude.ai page built from the same engine code) plays any piece on any surface in any room, with a slider from empty to dressed, plus WAV renders. Changes he asks for go back through the tests.
 
    The same page times each render on the device it runs on and keeps the figures, so his phone gives the first real-device numbers for the budgets.
-8. **On real phones** (the device day with the planner lead, Wednesday 28 October, using the devices Blake provides):
+8. **On real phones** (a device day after part 3, with the planner lead, using the devices Blake provides):
    - the budgets in section 9, measured;
    - the iPhone silent switch silencing the planner;
    - sound and sight together at touchdown.

@@ -43,9 +43,9 @@ const SCATTER_SIGMAS = 1.5;
 const READER_MEAN_STANDARD_ERRORS = 3;
 /**
  * How far a band's mean over its realisations may stray from its target (ruling R52): from 250 Hz to 8 kHz the
- * measured bias (2.9 % at most) plus a margin, 5 %; the 125 Hz octave, read from about seven bins, within 10 %.
- * Seeds 1-10 put the 96 kHz Saloon's 125 Hz at +4.6 % (empty) and +5.0 % (laid); seeds 1-40 put it at +0.3 % and
- * +0.6 %, each within 1.4 % of standard error: sampling, not a bias.
+ * worst mean over the merged rooms' times (2.1 %, the Reception Room laid at 250 Hz, 96 kHz) plus a margin, 5 %; the 125 Hz
+ * octave, read from about seven bins, within 10 %. Seeds 1-10 put the 96 kHz Saloon's 125 Hz at +5.4 % (empty) and +6.3 %
+ * (laid), each within 1.8 standard errors; seeds 1-40 put it at +0.7 % and +1.1 %: sampling, not a bias.
  */
 const MEAN_BOUND = 0.05;
 const MEAN_BOUND_125_HZ = 0.1;
