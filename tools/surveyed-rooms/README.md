@@ -384,10 +384,13 @@ atlas (about six minutes for four packings). T0 also covers the sub-commands: th
 ids, one run alone and recorded, and `--resume` skipping what is done, running again what
 changed or failed, and trusting nothing after a config change.
 
-CI runs T0, T1 and T4 (the Test job's last step) whenever a change touches `tools/surveyed-rooms`
-or `tools/grand-hall-survey`, because the room build runs the hall's own scripts through seams and
-an edit to either folder can break the other. There the cases that need the twin's manifest skip
-themselves. T2 and T3 are run by hand: they take about twenty-five and four minutes.
+CI runs T0, T1 and T4 in a job of their own ("Survey tools") whenever a change touches
+`tools/surveyed-rooms` or `tools/grand-hall-survey`, because the room build runs the hall's own
+scripts through seams and an edit to either folder can break the other. There the three cases
+that need the twin's manifest skip themselves (88 tests, 3 skipped, about half a minute on a
+hosted Linux runner, where starting a process costs far less than on the Windows machine the
+times above were taken on). T2 and T3 are run by hand: they take about twenty-five and four
+minutes there.
 
 Scratch goes to `SURVEYED_ROOMS_TEST_SCRATCH` (default: the system temp folder). The GHR1
 comparisons and T3 need a Node install with meshoptimizer: this checkout's, or another named by
