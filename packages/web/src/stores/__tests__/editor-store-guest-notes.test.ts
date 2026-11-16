@@ -8,7 +8,7 @@ import { deriveEditorSaveStatus, leftBehindWords, slateSaveState, type EditorSav
 import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes, pieceNamedForRefusedSave, refusedClearsLine, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
 import { NOTE_HELD_MESSAGE, OMITTED_MESSAGE, serveNotesAsTheApiDoes as serveTheApi, type PlanOnServer } from "../../test/guest-plan-api.js";
 import { useAuthStore } from "../auth-store.js";
-import { saveBeforeLayoutChange, setEditorAutosaveRequester, useEditorStore, type EditorObject } from "../editor-store.js";
+import { keepUnsavedWorkOnDevice, saveBeforeLayoutChange, setEditorAutosaveRequester, useEditorStore, type EditorObject } from "../editor-store.js";
 import { usePlacementNoticeStore } from "../placement-notice-store.js";
 import { useSelectionStore } from "../selection-store.js";
 
@@ -2240,7 +2240,23 @@ describe("the maker's browser, when the server keeps a note a landed save did no
   });
 });
 
-describe("no save names words this browser has not shown the person, over seeded random sequences (delta review X1)", () => {
+// ---------------------------------------------------------------------------
+// The invariant over seeded random sequences (delta review X1). Since the
+// review of d917b3d0 (XA4) the sequences also take the steps a save does not
+// make itself, where XA1 was found: the page reloading with its work kept on
+// this device, sometimes just after staff wrote a note; a note staff write in
+// a version of their own, which the next save or reload meets as a newer
+// version, settled by Keep mine or Show their version; and a piece placed
+// with a note. Checked, as before, as each save is sent and at the end.
+//
+// Two things the maker's own browser does by design are told apart and
+// counted, not taken as breaches: a save #389 takes as the whole truth (the
+// maker's document read with every note, S3) may overwrite a note staff
+// wrote, and Keep mine there keeps the person's version over theirs, naming
+// the notes of theirs it replaces (XA2 at d917b3d0, found as designed).
+// ---------------------------------------------------------------------------
+
+describe("no save names words this browser has not shown the person, over seeded random sequences (delta review X1, XA4)", () => {
   const SEQUENCES = 300;
   const PIECES: readonly string[] = [A, B, C];
   const OLD = "TEST ONLY by the window";
@@ -2266,16 +2282,43 @@ describe("no save names words this browser has not shown the person, over seeded
     return one;
   }
 
-  /** What the person is shown on each piece: its note, unless it shows a note it holds that cannot be shown here. */
-  function seeOn(shown: ReadonlyMap<string, Set<string>>): (state: ReturnType<typeof store>) => void {
-    return (state) => {
-      for (const object of state.objects) {
-        if (object.notes !== "" && !noteHeldOn(state, object.id)) shown.get(object.id)?.add(object.notes);
-      }
-    };
+  /** A piece as a sequence's steps say it: A, B or C, else its id. */
+  function said(id: string): string {
+    return PIECES.includes(id) ? id.slice(-1).toUpperCase() : id;
   }
 
-  async function oneSequence(seed: number): Promise<void> {
+  /**
+   * The words a note shows the person: the note, and its first lines on their
+   * own. A restore that keeps both notes on a piece shows the stored one first,
+   * on lines of its own, above the person's (plannerDraftWithUnreadNotes).
+   */
+  function wordsShown(note: string): readonly string[] {
+    const lines = note.split("\n");
+    return lines.map((_, index) => lines.slice(0, index + 1).join("\n"));
+  }
+
+  /** The transitions a run of the sequences must reach, or it proves nothing about them (review of d917b3d0, XA4). */
+  const TRANSITIONS = [
+    "a reload with work kept on this device",
+    "a save that meets a newer version",
+    "Keep mine",
+    "Show their version",
+    "a piece placed with a note, saved",
+  ] as const;
+  type Transition = (typeof TRANSITIONS)[number];
+
+  interface Run {
+    readonly browser: (typeof BROWSERS)[number];
+    /** Each breach of the invariant, as it happened. */
+    readonly broken: readonly string[];
+    /** What happened, step by step, so a failing seed can be said in words. */
+    readonly steps: readonly string[];
+    readonly reached: ReadonlySet<Transition>;
+    /** Notes a Keep mine save in the maker's browser named from their version: the maker's choice (review of d917b3d0, XA2). */
+    readonly keptOverTheirs: number;
+  }
+
+  async function oneSequence(seed: number): Promise<Run> {
     const next = seeded(seed);
     // As before each test.
     vi.clearAllMocks();
@@ -2289,6 +2332,8 @@ describe("no save names words this browser has not shown the person, over seeded
     const browser = pickFrom(BROWSERS, next);
     const maker = browser !== "a browser that is not the maker";
     const server: PlanOnServer = { revision: 4, notes: new Map([[B, OLD], [C, OLD_C]]) };
+    // The rows the server holds and where each stands: a save that lands stores the pieces it sent.
+    const rows = new Map<string, number>(PIECES.map((id) => [id, 0]));
     serveTheApi(server, placed, { madeHere: maker });
     if (browser === "the maker, on work kept before #388") {
       persistAnonymousPlannerDraft({
@@ -2301,84 +2346,230 @@ describe("no save names words this browser has not shown the person, over seeded
       if (note === undefined) return {};
       return maker ? { notes: note } : { noteHeld: true };
     };
-    await open(plan(PIECES.map((id) => placed(id, asRead(id))), maker));
+    // Every read is of the plan as the server holds it now, as this browser is given it: the open, a reload, their version.
+    vi.mocked(configApi.getPublicConfig).mockImplementation(() => Promise.resolve({
+      ...plan([...rows].map(([id, x]) => placed(id, asRead(id), x)), maker), revision: server.revision,
+    }));
+    await store().loadConfiguration(PLAN, false);
+    expect(store().error, `seed ${String(seed)}`).toBeNull();
     expect(store().notesIncluded, `seed ${String(seed)}`).toBe(browser === "the maker, read with every note");
 
-    const shown = new Map(PIECES.map((id) => [id, new Set<string>()]));
-    const see = seeOn(shown);
+    // What the person is shown on each piece: its note, unless it shows a note it holds that cannot be shown here.
+    // One piece, under every id it has had: a piece placed here takes its row's id when a save lands, and Keep mine
+    // places a piece their version lost under a fresh one. A write that leaves every piece where it stands in the
+    // document and swaps a local id for another there is that piece's; a load is not followed.
+    const shown = new Map<string, Set<string>>();
+    const sameAs = new Map<string, string>();
+    const pieceOf = (id: string): string => sameAs.get(id) ?? id;
+    const shownOn = (id: string): Set<string> => {
+      const words = shown.get(pieceOf(id)) ?? new Set<string>();
+      shown.set(pieceOf(id), words);
+      return words;
+    };
+    const isLocal = (id: string): boolean => id.startsWith("local-");
+    let following = true;
+    const see = (state: ReturnType<typeof store>, previous?: ReturnType<typeof store>): void => {
+      if (following && previous !== undefined && previous.objects !== state.objects && previous.objects.length === state.objects.length) {
+        state.objects.forEach((object, index) => {
+          const was = previous.objects[index]?.id;
+          if (was !== undefined && was !== object.id && (isLocal(was) || isLocal(object.id))) sameAs.set(object.id, pieceOf(was));
+        });
+      }
+      for (const object of state.objects) {
+        if (object.notes === "" || noteHeldOn(state, object.id)) continue;
+        for (const words of wordsShown(object.notes)) shownOn(object.id).add(words);
+      }
+    };
     see(store());
     const stopSeeing = useEditorStore.subscribe(see);
     const api = vi.mocked(configApi.publicBatchSave).getMockImplementation();
     if (api === undefined) throw new Error("no API model");
     const broken: string[] = [];
+    const steps: string[] = [];
+    const reached = new Set<Transition>();
     let step = 0;
     let inFlight: (() => void) | null = null;
+    // The last note staff wrote on each row, and those the maker's own saves may overwrite by design.
+    const staffWrote = new Map<string, string>();
+    const theMakersToOverwrite = new Set<string>();
+    // Their version's notes, while Keep mine saves the person's version over it in the maker's browser.
+    let keepingOver: ReadonlyMap<string, string> | null = null;
+    let keptOverTheirs = 0;
     // Checked as each save is sent: a note it names on a piece is one the person has been shown on that piece.
     vi.mocked(configApi.publicBatchSave).mockImplementation(async (...sent) => {
-      for (const piece of sent[1]) {
-        if (piece.replacesNote !== undefined && piece.id !== undefined && shown.get(piece.id)?.has(piece.replacesNote) !== true) {
-          broken.push(`seed ${String(seed)} (${browser}), step ${String(step)}: a save names "${piece.replacesNote}" on ${piece.id}, never shown there`);
+      const [, pieces, , options] = sent;
+      for (const piece of pieces) {
+        if (piece.replacesNote === undefined || piece.id === undefined || shownOn(piece.id).has(piece.replacesNote)) continue;
+        // The maker keeps their own version over the other, which stays in History (XA2, found as designed).
+        if (keepingOver?.get(piece.id) === piece.replacesNote) {
+          keptOverTheirs += 1;
+          theMakersToOverwrite.add(piece.replacesNote);
+          continue;
         }
+        broken.push(`step ${String(step)}: a save names "${piece.replacesNote}" on ${said(piece.id)}, never shown there`);
       }
+      // #389 takes the maker's document read with every note as the whole truth: a note staff wrote is the maker's to lose (S3).
+      if (maker && options?.notesIncluded === true) for (const note of staffWrote.values()) theMakersToOverwrite.add(note);
+      if (pieces.some((piece) => piece.id === undefined && piece.metadata?.notes !== undefined)) reached.add("a piece placed with a note, saved");
       try {
-        return await api(...sent);
+        const answer = await api(...sent);
+        rows.clear();
+        for (const row of answer.objects) rows.set(row.id, Number(row.positionX));
+        return answer;
+      } catch (refused) {
+        if (refused instanceof ApiError && refused.code === "REVISION_CONFLICT") reached.add("a save that meets a newer version");
+        throw refused;
       } finally {
         const edit = inFlight;
         inFlight = null;
         edit?.();
       }
     });
-    const edits: readonly ((at: number) => void)[] = [
-      () => { store().updateObject(pickFrom(PIECES, next), { positionX: Math.round(next() * 9) }); },
-      (at) => { store().setObjectNotes(pickFrom(PIECES, next), `TEST ONLY words ${String(seed)}.${String(at)}`); },
-      () => { store().setObjectNotes(pickFrom(PIECES, next), ""); },
-      () => { store().removeObject(pickFrom(PIECES, next)); },
+    /** Every piece an edit may name: the plan's own, there or not, and any placed here. */
+    const pieces = (): readonly string[] => [...new Set([...PIECES, ...store().objects.map((object) => object.id)])];
+    const edits: readonly ((at: number) => string)[] = [
+      () => {
+        const id = pickFrom(pieces(), next);
+        store().updateObject(id, { positionX: Math.round(next() * 9) });
+        return `moves ${said(id)}`;
+      },
+      (at) => {
+        const id = pickFrom(pieces(), next);
+        store().setObjectNotes(id, `TEST ONLY words ${String(seed)}.${String(at)}`);
+        return `writes on ${said(id)}`;
+      },
+      () => {
+        const id = pickFrom(pieces(), next);
+        store().setObjectNotes(id, "");
+        return `clears the note on ${said(id)}`;
+      },
+      () => {
+        const id = pickFrom(pieces(), next);
+        store().removeObject(id);
+        return `removes ${said(id)}`;
+      },
+      (at) => {
+        store().addObject(CHAIR, Math.round(next() * 9), 0, 0);
+        const id = store().objects.at(-1)?.id ?? "";
+        store().setObjectNotes(id, `TEST ONLY placed ${String(seed)}.${String(at)}`);
+        return `places ${id} with a note`;
+      },
     ];
-    // The last note staff wrote on each piece through the single-piece route, which makes no new revision.
-    const staffWrote = new Map<string, string>();
-    const save = async (): Promise<void> => {
-      await store().saveToServer(false);
-      expect(broken).toEqual([]);
+    /** Staff write a note on a row: through the single-piece route, which makes no new revision, or in a version of their own. */
+    const staffWrite = (withRevision: boolean): string => {
+      const onRows = [...rows.keys()];
+      if (onRows.length === 0) return "staff find no piece to write on";
+      const id = pickFrom(onRows, next);
+      const note = `TEST ONLY staff ${String(seed)}.${String(step)}`;
+      server.notes.set(id, note);
+      staffWrote.set(id, note);
+      if (withRevision) server.revision += 1;
+      return `staff write "${note}" on ${said(id)} ${withRevision ? "with a new revision" : "with no new revision"}`;
+    };
+    /** The page reloads: its unsaved work is kept on this device, and the plan opens again as the server holds it. */
+    const reload = async (): Promise<void> => {
+      if (store().isDirty) reached.add("a reload with work kept on this device");
+      keepUnsavedWorkOnDevice();
+      following = false;
+      try {
+        store().reset();
+        await store().loadConfiguration(PLAN, false);
+      } finally {
+        following = true;
+      }
+      expect(store().error, `seed ${String(seed)}`).toBeNull();
+    };
+    /** A newer version met by a save or a reload waits for the person's choice: they make it. */
+    const settle = async (): Promise<void> => {
+      for (let tries = 0; store().saveConflict !== null; tries += 1) {
+        expect(tries, `seed ${String(seed)}: a newer version was never settled`).toBeLessThan(4);
+        if (tries < 2 && next() < 0.5) {
+          steps.push("  then Keep mine");
+          reached.add("Keep mine");
+          keepingOver = maker ? new Map(server.notes) : null;
+          try {
+            await store().keepMine(false);
+          } finally {
+            keepingOver = null;
+          }
+        } else {
+          steps.push("  then Show their version");
+          reached.add("Show their version");
+          following = false;
+          try {
+            await store().showTheirVersion(false);
+          } finally {
+            following = true;
+          }
+        }
+      }
     };
 
-    for (; step < 10; step += 1) {
+    for (; step < 12; step += 1) {
       const roll = next();
-      if (roll < 0.2) {
-        const id = pickFrom(PIECES, next);
-        const note = `TEST ONLY staff ${String(seed)}.${String(step)}`;
-        server.notes.set(id, note);
-        staffWrote.set(id, note);
-      } else if (roll < 0.5) {
-        pickFrom(edits, next)(step);
+      if (roll < 0.15) {
+        steps.push(`step ${String(step)}: ${staffWrite(false)}`);
+      } else if (roll < 0.22) {
+        steps.push(`step ${String(step)}: ${staffWrite(true)}`);
+      } else if (roll < 0.32) {
+        // Sometimes just after staff write a note.
+        const first = next() < 0.5 ? `${staffWrite(false)}, then ` : "";
+        const keeping = store().isDirty ? " with work kept on this device" : "";
+        await reload();
+        // Which browser it is now: the maker's copy read with every note is one #389 takes as sent.
+        const reads = store().notesIncluded ? "the whole truth of its notes" : "not the whole truth of its notes";
+        steps.push(`step ${String(step)}: ${first}the page reloads${keeping}, and the copy opened is ${reads}`);
+      } else if (roll < 0.55) {
+        steps.push(`step ${String(step)}: the person ${pickFrom(edits, next)(step)}`);
       } else {
         // Half the saves meet an edit that lands while they are out.
+        let during = "";
         if (next() < 0.5) {
           const edit = pickFrom(edits.slice(0, 3), next);
           const at = step + 100;
-          inFlight = () => { edit(at); };
+          inFlight = () => { during = edit(at); };
         }
-        await save();
+        await store().saveToServer(false);
+        steps.push(`step ${String(step)}: a save${during === "" ? "" : `, while it is out the person ${during}`}`);
       }
+      await settle();
     }
     // A second and third save of whatever stands.
-    step = 10;
-    await save();
-    step = 11;
-    await save();
+    for (const last of [12, 13]) {
+      step = last;
+      await store().saveToServer(false);
+      steps.push(`step ${String(step)}: a save`);
+      await settle();
+    }
     stopSeeing();
 
-    // #389 settles a save's notes one by one except for the maker's document read with every note,
-    // which it takes as the whole truth: there a note staff wrote with no new revision is the maker's to lose (S3).
-    if (browser !== "the maker, read with every note") {
-      for (const [id, note] of staffWrote) {
-        if (shown.get(id)?.has(note) !== true) {
-          expect(server.notes.get(id), `seed ${String(seed)} (${browser}): staff's note on ${id}, never shown, is not as they wrote it`).toBe(note);
-        }
-      }
+    // A note staff wrote that this browser never showed stands as they wrote it, unless the maker's own save took the
+    // notes as sent (S3) or Keep mine named it from their version (XA2): those are the maker's to overwrite.
+    for (const [id, note] of staffWrote) {
+      if (shownOn(id).has(note) || theMakersToOverwrite.has(note)) continue;
+      if (server.notes.get(id) !== note) broken.push(`end: staff's note "${note}" on ${said(id)}, never shown, is not as they wrote it`);
     }
+    return { browser, broken, steps, reached, keptOverTheirs };
   }
 
-  it(`holds over ${String(SEQUENCES)} sequences of moves, notes typed and cleared, removals, saves, edits that land while a save is out, and notes written with no new revision`, async () => {
-    for (let seed = 1; seed <= SEQUENCES; seed += 1) await oneSequence(seed);
-  }, 120_000);
+  it(`holds over ${String(SEQUENCES)} sequences of moves, notes typed and cleared, removals, pieces placed with a note, saves, edits that land while a save is out, notes written with and without a new revision, reloads with work kept on this device, and Keep mine or Show their version`, async () => {
+    const failing: string[] = [];
+    let firstSteps: readonly string[] = [];
+    const reached = new Set<Transition>();
+    let keptOverTheirs = 0;
+    for (let seed = 1; seed <= SEQUENCES; seed += 1) {
+      const run = await oneSequence(seed);
+      for (const transition of run.reached) reached.add(transition);
+      keptOverTheirs += run.keptOverTheirs;
+      if (run.broken.length === 0) continue;
+      if (failing.length === 0) firstSteps = [`seed ${String(seed)} (${run.browser}):`, ...run.steps];
+      failing.push(`seed ${String(seed)} (${run.browser}): ${run.broken.join("; ")}`);
+    }
+    expect([...TRANSITIONS].filter((transition) => !reached.has(transition)), "transitions no sequence reached").toEqual([]);
+    expect(failing, [
+      `${String(failing.length)} of ${String(SEQUENCES)} seeds fail (and ${String(keptOverTheirs)} notes Keep mine named from their version in the maker's browser were set aside as XA2's).`,
+      "The first, step by step:",
+      ...firstSteps,
+    ].join("\n")).toEqual([]);
+  }, 300_000);
 });
