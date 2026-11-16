@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { unnamedControlsInPage, type ControlNameIssue } from "../../src/test/in-page-controls.js";
 
 export type AccessibilityViewportName = "desktop" | "tablet" | "mobile";
 
@@ -20,11 +21,7 @@ export interface LandmarkAudit {
   readonly navNames: readonly string[];
 }
 
-export interface ControlNameIssue {
-  readonly selector: string;
-  readonly tagName: string;
-  readonly role: string | null;
-}
+export type { ControlNameIssue };
 
 export interface FocusIssue {
   readonly step: number;
@@ -148,98 +145,8 @@ async function collectLandmarkAudit(page: Page): Promise<LandmarkAudit> {
 }
 
 async function collectUnnamedControls(page: Page): Promise<ControlNameIssue[]> {
-  return page.evaluate(() => {
-    const selector = [
-      "button",
-      "a[href]",
-      "input:not([type='hidden'])",
-      "select",
-      "textarea",
-      "summary",
-      "[role='button']",
-      "[role='tab']",
-      "[tabindex]:not([tabindex='-1'])",
-    ].join(",");
-
-    function isVisible(element: Element): boolean {
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-    }
-
-    function selectorFor(element: Element): string {
-      const id = element.id.length > 0 ? `#${element.id}` : "";
-      const testId = element.getAttribute("data-testid");
-      const testIdPart = testId !== null && testId.trim().length > 0 ? `[data-testid="${testId.trim()}"]` : "";
-      const ariaLabel = element.getAttribute("aria-label");
-      const ariaPart = ariaLabel !== null && ariaLabel.trim().length > 0 ? `[aria-label="${ariaLabel.trim().slice(0, 60)}"]` : "";
-      const role = element.getAttribute("role");
-      const rolePart = role !== null && role.trim().length > 0 ? `[role="${role.trim()}"]` : "";
-      const className = element.classList.length > 0 ? `.${Array.from(element.classList).slice(0, 2).join(".")}` : "";
-      const text = (element.textContent ?? "").replace(/\s+/gu, " ").trim().slice(0, 60);
-      const textPart = text.length > 0 ? ` text="${text}"` : "";
-      return `${element.tagName.toLowerCase()}${id}${testIdPart}${ariaPart}${rolePart}${className}${textPart}`;
-    }
-
-    function labelText(element: Element): string {
-      if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
-        return "";
-      }
-      return Array.from(element.labels ?? [])
-        .map((label) => label.textContent?.trim() ?? "")
-        .filter((text) => text.length > 0)
-        .join(" ");
-    }
-
-    function accessibleName(element: Element): string {
-      const ariaLabel = element.getAttribute("aria-label");
-      if (ariaLabel !== null && ariaLabel.trim().length > 0) return ariaLabel.trim();
-
-      const labelledBy = element.getAttribute("aria-labelledby");
-      if (labelledBy !== null && labelledBy.trim().length > 0) {
-        const named = labelledBy
-          .split(/\s+/u)
-          .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
-          .filter((part) => part.length > 0)
-          .join(" ");
-        if (named.trim().length > 0) return named.trim();
-      }
-
-      const label = labelText(element);
-      if (label.length > 0) return label;
-
-      if (element instanceof HTMLInputElement && (element.type === "button" || element.type === "submit" || element.type === "reset")) {
-        return element.value.trim();
-      }
-
-      const title = element.getAttribute("title");
-      if (title !== null && title.trim().length > 0) return title.trim();
-
-      return element.textContent?.trim() ?? "";
-    }
-
-    /** A control no person can reach has no name to audit: hidden from
-     *  assistive technology by an aria-hidden ancestor, out of the tab order,
-     *  and drawn wholly off the page, left of or above its origin, where no
-     *  scroll reaches. All three together, never one alone: an aria-hidden
-     *  control drawn on the page is a defect and is still reported. */
-    function isOutOfEveryReach(element: Element): boolean {
-      if (!(element instanceof HTMLElement)) return false;
-      if (element.closest("[aria-hidden='true']") === null || element.tabIndex >= 0) return false;
-      const rect = element.getBoundingClientRect();
-      return rect.right + window.scrollX <= 0 || rect.bottom + window.scrollY <= 0;
-    }
-
-    return Array.from(document.querySelectorAll(selector))
-      .filter((element) => isVisible(element) && !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true")
-      .filter((element) => !isOutOfEveryReach(element))
-      .filter((element) => accessibleName(element).length === 0)
-      .map((element) => ({
-        selector: selectorFor(element),
-        tagName: element.tagName.toLowerCase(),
-        role: element.getAttribute("role"),
-      }));
-  });
+  // The reader runs in the page and is unit-tested where it lives.
+  return page.evaluate(unnamedControlsInPage);
 }
 
 async function collectFocusIssues(page: Page, maxFocusSteps: number): Promise<FocusIssue[]> {
