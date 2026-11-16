@@ -780,4 +780,31 @@ describe("the planner HUD stays behind its flag (T-723)", () => {
     const { production } = await sources();
     expect([...production].some((module) => (modules.get(module) ?? []).some((one) => one.names.includes("SPRING_PRESETS")))).toBe(true);
   });
+
+  /**
+   * What the HUD takes from the other new chrome's folder, on purpose: the plaque (that chrome's slate), the
+   * slate's audience, the host of its tooltips, and the base stylesheet they are drawn in. That chrome's own room
+   * frame, its caption and its tools are not this screen's. The frame was mounted here until it began to carry
+   * that chrome's caption over a chosen piece (#357, 16 Nov 2026), which this screen then showed too: it frames the
+   * scene itself now (planner-hud/HudRoom.tsx). Anything more taken from that folder is to be chosen, not caught.
+   */
+  const FROM_THE_OTHER_CHROME: readonly string[] = [
+    "components/planner-chrome/Slate.js",
+    "components/planner-chrome/Tooltip.js",
+    "components/planner-chrome/chrome.css",
+    "components/planner-chrome/slate-data.js",
+  ];
+
+  it("takes from the other new chrome's folder only what it reuses on purpose", async () => {
+    const { modules } = await sources();
+    const taken = new Set<string>();
+    for (const [module, imports] of modules) {
+      if (!isHudOnly(module)) continue;
+      for (const one of imports) {
+        const target = resolved(module, one.specifier);
+        if (target?.startsWith("components/planner-chrome/") === true) taken.add(target);
+      }
+    }
+    expect([...taken].sort()).toEqual([...FROM_THE_OTHER_CHROME].sort());
+  });
 });

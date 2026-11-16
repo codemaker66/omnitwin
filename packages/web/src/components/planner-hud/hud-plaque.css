@@ -9,8 +9,11 @@
  * changes: the slate is dressed from here, under .hud-root, by re-pointing the
  * house tokens it reads at the ground and by setting its parts in the HUD's
  * type. Its plate, crest, status dots and copper plane (the seats, said once
- * on the shelf) are put away. Its menu and tooltips are drawn on the page
- * itself (portals), so the same tokens are given to them while the HUD is up.
+ * on the shelf) are put away. The crest is put away with its seat: since #357
+ * it is the second chrome's switch for hiding its own tools, with a note
+ * beside it, and this screen has neither those tools nor that key. Its menu
+ * and tooltips are drawn on the page itself (portals), so the same tokens are
+ * given to them while the HUD is up.
  *
  * The lab has no backend and stands in a plain name and line (PlannerLabPage).
  *
@@ -82,7 +85,7 @@ body:has(.hud-root) .pc-tooltip {
   background: none;
 }
 
-.hud-root :is(.pc-slate__crest, .pc-plane, .pc-slate .pc-dot) {
+.hud-root :is(.pc-slate__crest-seat, .pc-slate__crest, .pc-plane, .pc-slate .pc-dot) {
   display: none;
 }
 

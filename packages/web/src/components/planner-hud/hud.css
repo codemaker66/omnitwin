@@ -156,6 +156,22 @@
   inset: 0;
 }
 
+/*
+ * The room's own frame (HudRoom.tsx): the scene, filling the room's box, and a
+ * stacking context of its own, because the scene's HTML tags set z-index up to
+ * 16777271 and must never rise over the bar or the shelf. Two classes, so it
+ * outranks the planner shell's own rule whichever stylesheet reaches the page
+ * later. Its foot is set by the rule below.
+ */
+.hud-room .hud-room-stage {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  isolation: isolate;
+  touch-action: none;
+}
+
 /* The room's canvas ends where the shelf begins: the shelf is the picture's foot, and nothing is drawn under it. */
 .hud-room .venviewer-planner-shell {
   bottom: var(--hud-shelf-h);

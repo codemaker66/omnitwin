@@ -1,12 +1,12 @@
 import { type ReactElement } from "react";
 import { EditorBridge } from "../editor/EditorBridge.js";
 import { useLayoutLiveRoom } from "../editor/LayoutLiveLayer.js";
-import { RoomStage } from "../planner-chrome/RoomStage.js";
 import { Slate } from "../planner-chrome/Slate.js";
 import { useSlateAudience } from "../planner-chrome/slate-data.js";
 import { TooltipHost } from "../planner-chrome/Tooltip.js";
 import "../planner-chrome/chrome.css";
 import { HudFrame } from "./HudFrame.js";
+import { HudRoom } from "./HudRoom.js";
 import { HudSheets } from "./HudSheets.js";
 
 // ---------------------------------------------------------------------------
@@ -20,6 +20,11 @@ import { HudSheets } from "./HudSheets.js";
 // top bar, restyled from outside (hud-plaque.css) through the house tokens the
 // HUD's ground re-points. A table in front of a door is said once, on the
 // shelf's status line, and moved clear by the one primary key.
+//
+// From the second chrome's folder this screen takes those three things and no
+// more (the slate, its audience and the tooltips' host): the room's frame is
+// its own (HudRoom.tsx), because that chrome's frame carries that chrome's
+// caption. src/__tests__/bundle-splitting.test.ts holds the list.
 // ---------------------------------------------------------------------------
 
 export function PlannerHud(): ReactElement {
@@ -30,7 +35,7 @@ export function PlannerHud(): ReactElement {
       <EditorBridge />
       <a className="vv-skip-link" href="#main-content">Skip to the room</a>
       <HudFrame
-        room={<RoomStage />}
+        room={<HudRoom />}
         plaque={(
           <div className="pc-root hud-plaque">
             <Slate />

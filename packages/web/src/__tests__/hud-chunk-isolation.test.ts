@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 //
 // 1. Each of the three is asked for on demand, and never imported outright.
 // 2. No file sent without a flag holds the HUD's own words (its root, shelf,
-//    sheets, first screen), nor the room's frame the two new chromes share.
+//    sheets, first screen), nor the other new chrome's room frame.
 // 3. No file sent without a flag holds what the HUD was once the first to read
 //    from shared modules: the setup cards' picture rule and the spring the
 //    stage squares up on. Both were found in files everyone fetches on
@@ -44,8 +44,8 @@ const REQUIRE_WEB_DIST = process.env["REQUIRE_WEB_DIST"] === "1";
 const FLAG_ENTRIES: readonly string[] = ["PlannerHud", "hud-scene", "PlannerChromeV2"];
 /** Words only the HUD's own code holds. */
 const HUD_WORDS: readonly string[] = ["hud-root", "hud-shelf", "hud-sheet", "hud-first-open", "planner-hud"];
-/** A word only the room's frame holds, which the two new chromes share (planner-chrome/RoomStage.tsx): wherever the bundler puts it, it goes to a flag alone. */
-const SHARED_FRAME_WORD = "planner-room-stage";
+/** A word only the other new chrome's own room frame holds (planner-chrome/RoomStage.tsx): wherever the bundler puts it, it goes to a flag alone. */
+const OTHER_CHROME_FRAME_WORD = "planner-room-stage";
 /** What the HUD was once the first production reader of, as the minifier leaves each. */
 const ONCE_SHARED: readonly { readonly what: string; readonly text: string }[] = [
   { what: "the setup cards' picture rule", text: "/models/furniture/setup-" },
@@ -166,9 +166,10 @@ describe("the planner HUD in the built bundle (T-723)", () => {
       expect(scripts.filter((file) => plainName(file) === name), name).toHaveLength(1);
       expect(flagOnly.map(plainName).includes(name), name).toBe(true);
     }
-    // So does the room's frame the two new chromes share, wherever the bundler has put it.
-    const frame = scripts.filter((file) => read(file).includes(SHARED_FRAME_WORD));
-    expect(frame.length, "a file that holds the shared room frame").toBeGreaterThan(0);
+    // So does the other new chrome's room frame, wherever the bundler has put it: what the two chromes share, if
+    // anything, is the bundler's to gather, and none of it is a visitor's who asked for neither.
+    const frame = scripts.filter((file) => read(file).includes(OTHER_CHROME_FRAME_WORD));
+    expect(frame.length, "a file that holds the other chrome's room frame").toBeGreaterThan(0);
     expect(frame.filter((file) => reached.has(file)).map(plainName)).toEqual([]);
   });
 

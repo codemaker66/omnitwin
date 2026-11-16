@@ -18,6 +18,8 @@ vi.mock("../components/editor/cockpit/PlannerCockpit.js", () => ({
   PlannerCockpit: () => <div data-testid="planner-cockpit" />,
 }));
 vi.mock("../components/planner-chrome/RoomStage.js", () => ({ RoomStage: () => <div data-testid="mock-room-stage" /> }));
+// The HUD's own frame for the room. The second chrome's frame (above) carries that chrome's caption, and is not the HUD's.
+vi.mock("../components/planner-hud/HudRoom.js", () => ({ HudRoom: () => <div data-testid="mock-hud-room" /> }));
 vi.mock("../pages/BlueprintPage.js", () => ({ BlueprintPage: () => <div data-testid="mock-blueprint" /> }));
 vi.mock("../components/editor/MobilePlannerTopBar.js", () => ({ MobilePlannerTopBar: () => <div data-testid="mobile-top-bar" /> }));
 vi.mock("../components/editor/SaveSendPanel.js", () => ({ SaveSendPanel: () => <div data-testid="save-send-panel" /> }));
@@ -101,10 +103,13 @@ describe("EditorPage with the HUD", () => {
     openPlanner("?chrome=hud");
     await hudOnScreen();
 
-    // The room is the page's main landmark, inside the HUD.
+    // The room is the page's main landmark, inside the HUD, in the HUD's own frame.
     const hud = screen.getByTestId("planner-hud");
-    expect(screen.getByRole("main").contains(screen.getByTestId("mock-room-stage"))).toBe(true);
+    expect(screen.getByRole("main").contains(screen.getByTestId("mock-hud-room"))).toBe(true);
     expect(hud.contains(screen.getByRole("main"))).toBe(true);
+    // Not the second chrome's frame: that one carries that chrome's caption over a chosen piece (#357), and this
+    // screen says a piece's verbs once, on the shelf.
+    expect(screen.queryByTestId("mock-room-stage")).toBeNull();
 
     for (const v1 of V1_SURFACES) expect(screen.queryByTestId(v1), v1).toBeNull();
     expect(screen.queryByTestId("planner-chrome-v2")).toBeNull();
@@ -195,6 +200,7 @@ describe("the other chromes beside the HUD", () => {
     await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); });
     expect(screen.queryByTestId("planner-hud")).toBeNull();
     expect(screen.getByTestId("mock-room-stage")).toBeTruthy();
+    expect(screen.queryByTestId("mock-hud-room")).toBeNull();
     expect(screen.getAllByTestId("editor-bridge")).toHaveLength(1);
     for (const v1 of V1_SURFACES) expect(screen.queryByTestId(v1), v1).toBeNull();
   });
