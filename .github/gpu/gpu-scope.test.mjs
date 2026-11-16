@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { decideFromGit, gpuScope } from './gpu-scope.mjs';
+import { baseFromGit, commitParents, decideFromGit, gpuScope, selectBase } from './gpu-scope.mjs';
 
 function decide(changes, { base = {}, head = {}, lines = {} } = {}) {
   return gpuScope({ changes,
@@ -92,7 +92,7 @@ function repository() {
     git('add', '--all'); git('commit', '--quiet', '--allow-empty', '-m', message);
     return git('rev-parse', 'HEAD');
   };
-  return { root, commit, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  return { root, git, commit, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
 test('git comparison: a desk change skips the run and a tour change requires it', (t) => {
@@ -118,4 +118,42 @@ test('git comparison: a missing, zero or unknown base requires the run; an unkno
     assert.deepEqual(result.reasons, [{ path: null, rule: 'no comparable base commit' }]);
   }
   assert.throws(() => decideFromGit(head, 'e'.repeat(40), repo.root), /head must be an existing full commit/);
+});
+
+const A = 'a'.repeat(40), B = 'b'.repeat(40), C = 'c'.repeat(40);
+const commitObject = (parents, message) =>
+  `tree ${'d'.repeat(40)}\n${parents.map((sha) => `parent ${sha}\n`).join('')}author x <x@example.invalid> 0 +0000\n` +
+  `committer x <x@example.invalid> 0 +0000\n\n${message}\n`;
+
+test('base selection reads parents from the commit header alone', () => {
+  assert.deepEqual(commitParents(commitObject([A, B], 'Merge B into A')), [A, B]);
+  assert.deepEqual(commitParents(commitObject([A], `a message line that looks like a header\nparent ${C}`)), [A]);
+  assert.deepEqual(commitParents(commitObject([], 'root')), []);
+  assert.throws(() => commitParents(null), /commit object missing/);
+});
+
+test('a pull request compares with its merge commit\'s first parent; anything but a two-parent merge fails closed', () => {
+  assert.equal(selectBase({ event: 'pull_request', before: C, mergeCommit: commitObject([A, B], 'merge') }), A);
+  for (const parents of [[], [A], [A, B, C]])
+    assert.equal(selectBase({ event: 'pull_request', before: C, mergeCommit: commitObject(parents, 'x') }), '', parents.length);
+  assert.equal(selectBase({ event: 'pull_request', before: C, mergeCommit: null }), '');
+  assert.equal(selectBase({ event: 'push', before: C }), C);
+  assert.equal(selectBase({ event: 'push' }), '');
+});
+
+test('git base selection: a real merge gives its first parent; a single-parent head leaves the change in scope', (t) => {
+  const repo = repository(); t.after(repo.cleanup);
+  const base = repo.commit({ 'docs/base.md': 'base\n' }, 'base');
+  repo.git('checkout', '--quiet', '-b', 'topic');
+  repo.commit({ 'packages/web/src/twin/Tour.tsx': 'export const tour = 1;\n' }, 'topic');
+  repo.git('checkout', '--quiet', '-');
+  const main = repo.commit({ 'docs/main.md': 'main\n' }, 'main moves on');
+  repo.git('merge', '--quiet', '--no-ff', '--no-edit', 'topic');
+  const merge = repo.git('rev-parse', 'HEAD');
+  assert.equal(baseFromGit('pull_request', '', merge, repo.root), main);
+  assert.equal(decideFromGit(baseFromGit('pull_request', '', merge, repo.root), merge, repo.root).changedFiles, 1);
+  assert.equal(baseFromGit('pull_request', '', main, repo.root), '');
+  assert.equal(decideFromGit(baseFromGit('pull_request', '', main, repo.root), main, repo.root).required, true);
+  assert.equal(baseFromGit('pull_request', '', 'e'.repeat(40), repo.root), '');
+  assert.equal(baseFromGit('push', base, merge, repo.root), base);
 });
