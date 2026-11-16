@@ -581,21 +581,26 @@ describe("the Grand Hall's shipped relief through the room-driven path", () => {
         if (myTriangles.has(`${String(a)},${String(b)},${String(c)}`)) sameTriangles++;
       }
     }
-    // Measured 13 November 2026: of the hall's 19,938 vertices (it copies a vertex per material,
-    // neighbour and opening), 19,246 stand bit for bit where one of this path's 17,913 does, on the
-    // same wall; the other 692 are points its doorway cuts made. 196 of this path's vertices have no
-    // twin: the relief inside the doorways, which the hall's modelled doors replace.
-    expect(shared / hallVertices).toBeGreaterThan(0.95);
-    expect(matched.size / (walls.positions.length / 3)).toBeGreaterThan(0.98);
+    // The counts are pinned as measured on 13 November 2026, not held to a share: a change to the
+    // hall's doorway cuts, or to this path, that dropped a hundred shared vertices or a few hundred
+    // whole triangles would pass any ratio loose enough to be stable.
+    //
+    // Of the hall's 19,938 vertices (it copies a vertex per material, neighbour and opening), 19,246
+    // stand bit for bit where one of this path's 17,913 does, on the same wall; the other 692 are
+    // points its doorway cuts made. 196 of this path's vertices have no twin: the relief inside the
+    // doorways, which the hall's modelled doors replace.
+    expect({ hallVertices, shared, cutPoints: hallVertices - shared }).toEqual({ hallVertices: 19938, shared: 19246, cutPoints: 692 });
+    expect({ mine: walls.positions.length / 3, twinned: matched.size, untwinned: walls.positions.length / 3 - matched.size })
+      .toEqual({ mine: 17913, twinned: 17717, untwinned: 196 });
     // At every shared vertex the atlas coordinate is the same 32-bit number.
     expect(worstUv).toBe(0);
     // Of the hall's 35,099 triangles, the 34,600 whose corners all came from the file are each one
     // of this path's, wound the same way: what faces the room there faces it here.
-    expect(wholeTriangles / hallTriangles).toBeGreaterThan(0.97);
+    expect({ hallTriangles, wholeTriangles }).toEqual({ hallTriangles: 35099, wholeTriangles: 34600 });
     expect(sameTriangles).toBe(wholeTriangles);
     // The vertex normals agree too (19,033 of the 19,246 within a degree), except beside the
     // doorways, where the hall's normals leave out the triangles it cut away.
-    expect(sameNormals / shared).toBeGreaterThan(0.97);
+    expect(sameNormals).toBe(19033);
   });
 
   it("lays the hall's floor and ceiling photographs as the hall's own code does", () => {
