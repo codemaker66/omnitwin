@@ -453,7 +453,17 @@ describe("SurveyedRoomModel", () => {
     await native.jobs[1]?.job(new AbortController().signal);
     expect(native.compiled).toEqual([first, second]);
 
-    // A job still queued when the room unmounts compiles nothing, and one whose signal has aborted neither.
+    // A job whose signal has aborted compiles nothing, though its room is still mounted and its renderer the view's.
+    native.compiled.length = 0;
+    const stopped = new AbortController();
+    stopped.abort();
+    await native.jobs[1]?.job(stopped.signal);
+    expect(native.compiled).toEqual([]);
+    // It was the signal that held it: the same job with a live one compiles.
+    await native.jobs[1]?.job(new AbortController().signal);
+    expect(native.compiled).toEqual([second]);
+
+    // A job still queued when the room unmounts compiles nothing.
     native.compiled.length = 0;
     unmount();
     await native.jobs[1]?.job(new AbortController().signal);
