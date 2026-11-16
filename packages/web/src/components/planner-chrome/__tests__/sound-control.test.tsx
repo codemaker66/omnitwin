@@ -154,6 +154,19 @@ describe("the speaker", () => {
 });
 
 describe("Shift M", () => {
+  it("tells its caller the mode each press leaves the planner in", () => {
+    const told: string[] = [];
+    function Receipt(): null {
+      usePlannerSoundShortcut((mode) => { told.push(mode); });
+      return null;
+    }
+    render(<Receipt />);
+    fireEvent.keyDown(document.body, { key: "M", shiftKey: true });
+    fireEvent.keyDown(document.body, { key: "M", shiftKey: true });
+    expect(told).toEqual(["off", "quiet"]);
+    expect(getPlannerSoundSettings().mode).toBe("quiet");
+  });
+
   it("mutes and brings back what was muted", () => {
     render(<SoundControl />);
     act(() => { setPlannerSoundMode("full"); });
@@ -193,20 +206,5 @@ describe("Shift M", () => {
     expect(mode(), "the layout's M, in either case (Caps Lock)").toBe("off");
     fireEvent.keyDown(screen.getByRole("slider", { name: "Level" }), { key: "M", shiftKey: true });
     expect(mode(), "a slider types nothing").toBe("quiet");
-  });
-});
-
-describe("Shift M's caller", () => {
-  it("is told the mode each Shift M leaves the planner in", () => {
-    const told: string[] = [];
-    function Receipt(): null {
-      usePlannerSoundShortcut((mode) => { told.push(mode); });
-      return null;
-    }
-    render(<Receipt />);
-    fireEvent.keyDown(document.body, { key: "M", shiftKey: true });
-    fireEvent.keyDown(document.body, { key: "M", shiftKey: true });
-    expect(told).toEqual(["off", "quiet"]);
-    expect(getPlannerSoundSettings().mode).toBe("quiet");
   });
 });
