@@ -2387,7 +2387,8 @@
         "cosMin": 0.2,
         "pCos": 4.0,
         "qDist": 3.0,
-        "maxDist": 16.0
+        "maxDist": 16.0,
+        "occluderMargin": 0.05
       },
       "ceiling": {
         "cosMin": 0.15,

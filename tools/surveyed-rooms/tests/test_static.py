@@ -116,9 +116,10 @@ class Plans(unittest.TestCase):
         r = py("build-room.py", SALOON, os.path.join(T0, "plan-saloon"), "--plan")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         gates = Counter(re.findall(r"^    (B\d+) ", r.stdout, re.M))
-        self.assertEqual(gates, Counter({"B5": 4, "B8": 4, "B6": 8, "B9": 8, "B7": 1, "B10": 3, "B14": 1, "B16": 1, "B17": 1, "B18": 1, "B23": 1, "B24": 1}))
+        self.assertEqual(gates, Counter({"B5": 4, "B8": 4, "B6": 8, "B9": 8, "B7": 1, "B10": 3, "B14": 1, "B16": 1, "B17": 1, "B18": 1, "B23": 1, "B24": 1, "B25": 1}))
         self.assertRegex(r.stdout, r"B23 +wall fireplace .*1556 columns, 1557 rounded")
         self.assertRegex(r.stdout, r"B24 +wall views .*up to 8 a tile")
+        self.assertRegex(r.stdout, r"B25 +walls .*\(50 mm\)")
         self.assertIn("atlas 4096 x 2304, strips 1111 high", r.stdout)
         for wall in ("window-front-return", "window-rear-return", "fireplace-rear-return", "fireplace-front-return"):
             self.assertRegex(r.stdout, rf"B5 +wall {wall} ")

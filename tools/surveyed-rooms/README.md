@@ -150,7 +150,7 @@ folder. `roombuild/walls.py` points the Grand Hall scripts' own globals at the r
 | The script reads | From the config |
 | --- | --- |
 | `project.VIEWS`, `project.STATION_IDS`, `project.CHANDELIERS` | the work directory's `views/`, `stations`, `occluders` |
-| `bestview.WALLS`, `SRC_TOP`, `FLOOR`, `COS_MIN`, `MAX_DIST` | each wall's survey name, anchor, u axis, normal and length; `wallViews.heightRange[1]`; `transform.floorZ`; `projection.walls.cosMin` and `maxDist` |
+| `bestview.WALLS`, `SRC_TOP`, `FLOOR`, `COS_MIN`, `MAX_DIST`, `OCCLUDER_MARGIN` | each wall's survey name, anchor, u axis, normal and length; `wallViews.heightRange[1]`; `transform.floorZ`; `projection.walls.cosMin` and `maxDist`; `projection.walls.occluderMargin` (0.0 without the key: no margin, gate B25) |
 | `project-walls.NORMALS` (its wall names) | the walls in order |
 | `canvasveil.CANVASES`, `PITCH` | the `canvas` edits; one elevation texel |
 | `project-detail` and `pack-detail`: `TEXEL`, `TILE`, `GUTTER`, `PPM`, `V_MIN`, `V_MAX`, `ROW`, `LENGTH`, `PATCHES`, `SRC_COLUMNS`, `NAME`, `ATLAS`, `GLASS_STRIPS` | `survey.detail`, the atlas's layout, the photo patches, the walls with narrow tiles (B23), the wall ids, `outputs.walls[0]`, the strips of the walls with clear glazing |
@@ -271,10 +271,12 @@ Both are recorded in the ledger, and `--publish` refuses either. `survey.json` r
 meshoptimizer version that simplified each GHR1 file. `--publish` also refuses glass that the
 scan disagrees with.
 
-The Grand Hall's scripts in `tools/grand-hall-survey` still build it with `build.sh`. Four of them
+The Grand Hall's scripts in `tools/grand-hall-survey` still build it with `build.sh`. Five of them
 carry a seam for this driver, each with its old value as the default: `project.py` (`VIEWS`, the
 folder `load_views` reads; `STATION_IDS`, a room's stations in place of scan 0 to 48), `bestview.py`
-(`COS_MIN`, `MAX_DIST`, the two limits `visibility` held as literals), `pack-detail.py` (`ATLAS`,
+(`COS_MIN`, `MAX_DIST`, the two limits `visibility` held as literals; `OCCLUDER_MARGIN`, 0.0, with
+the functions that apply it), `label-views.py` (its statistics and texel labels read
+`bestview.OCCLUDER_MARGIN`: at 0.0 they run as written, B25), `pack-detail.py` (`ATLAS`,
 the atlas file's name; `GLASS_STRIPS`, the glazed walls' strips, where it assumed the window wall
 at the atlas's origin; its wall loop reads `LENGTH`) and `project-detail.py` (`SRC_COLUMNS`, empty:
 the orthophoto columns of a wall whose tiles are narrower than its rounded length, B23). The steps import `project.py`, run the
@@ -306,12 +308,14 @@ gates a config opens, computed before any work; `--plan` prints them and writes 
 | B20 | a `copy` patch | the patch is taken from another wall, after every wall's own edits, in the atlas (which then holds every wall's orthophoto at once) and in the detail images (`roombuild/walls.py`) |
 | B23 | a wall's tiles are narrower than its rounded length | each tile's width is rounded on its own, so the tiles can add up to fewer columns than `round(length x ppm)` (the Saloon's fireplace wall: 1556 against 1557). The Grand Hall's scripts count the wall's right end, its relief's width and its atlas crop from the rounded length, which lies inside its tiles (4227 of 4228); such a wall ends at its tiles' last column instead, in the corners, the relief, the atlas and the detail's mapping onto the atlas |
 | B24 | `survey.wallViews.strayTexels` is set | the corners step leaves out of each elevation tile (uncovered, as where the mesh has a hole) the covered texels whose rendered point lies more than 1 mm from the texel's own centre, up to that many a tile, and lists them in `build/stray-texels.json`; a tile with more stops the build. `render.mjs` draws a surface seen edge-on (the floor under a wall) as a sliver less than a texel high and can extrapolate along it, so the point it writes lies metres off the view's slab and millimetres off the texel. The labels and the photographs place every texel at its centre and refuse a tile with one elsewhere (`bestview.Grid`, as before): that check is unchanged and still runs on what the corners step wrote |
+| B25 | `survey.projection.walls.occluderMargin` is set | the walls' labels count a station's view of a texel only where nothing nearer stands within that margin of the ray, measured at the occluder (`bestview.OCCLUDER_MARGIN`, `occluder_cube`, `clear_of_occluders`; `label-views.py`). The scan's mesh outlines a thing standing proud of a wall smaller than the panoramas show it, so along the edge of the zone it hides from a station, the station's photograph still shows the thing on wall the mesh says is in view; one station a block prints that rim sharply, far from the thing. A surface counts as an occluder when it is nearer than the texel by more than the visibility test's tolerance plus what the wall's own slope explains over the margin; the margin reaches at most 16 cubemap texels from the ray. A texel no ranked station sees clear keeps the first view that saw it at all, so nothing becomes a hole; `labels-<wall>.json` counts those under `occluder_margin` |
 | B21 | `SURVEYED_ROOMS_TEST_DEPTH_SIZE` is set | test-sized depth maps (never published) |
 | B22 | `SURVEYED_ROOMS_NODE_ROOT` is set | another checkout's meshoptimizer meshes the relief (never published) |
 
 The Grand Hall opens none. The Saloon opens B5 (4 returns), B8 (4 returns), B6 and B9 (8 reflex
-ends), B7, B10 (3 bays), B14 (a 4096 × 2304 atlas), B16, B17, B18, B23 (the fireplace wall) and
-B24 (up to 8 texels a tile; its renders hold two, both in `wall-fireplace-0`).
+ends), B7, B10 (3 bays), B14 (a 4096 × 2304 atlas), B16, B17, B18, B23 (the fireplace wall),
+B24 (up to 8 texels a tile; its renders hold two, both in `wall-fireplace-0`) and B25 (a margin of
+50 mm).
 
 ## Proofs
 
