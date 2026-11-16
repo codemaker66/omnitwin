@@ -200,3 +200,64 @@ describe("what a consequence concerns (T-695 review of #400, Y5)", () => {
     expect(found.map((consequence) => [consequence.kind, consequence.concerns])).toEqual([["insufficient_turnaround", ["lunch"]]]);
   });
 });
+
+// The release lead's ruling of 15 November 2026 on the round above: three
+// shapes are kept as they are and pinned here as they behave now, so that a
+// later fix shows as a change to a test and not as a surprise.
+describe("kept as they are for now (T-695 review of #400, the ruling of 15 November)", () => {
+  // The departure side. A reception is moved to end at midnight. Its
+  // clear-down starts at the booking's old end, so the move does not carry
+  // it, and it runs to 00:45. A party arrives at 00:30: it already overlaps
+  // the clear-down, before the move and after it, and no check reports a
+  // phase that overlaps another client, so the Diary says nothing either
+  // way. That silence is the defect, to follow up. The decision measures the
+  // party from the moved booking's end and warns, which errs on the side of
+  // caution: the true turnaround is less than nothing.
+  it("warns of the next client from the moved booking's end while the event's own clear-down is still in the room", () => {
+    const reception = bookingRow("reception", "wedding-event", day(10, 18), day(10, 22));
+    const clearDown = timedPhase("clear-down", "wedding-event", day(10, 22), day(11, 0, 45));
+    const party = bookingRow("party", "party-event", day(11, 0, 30), day(11, 3));
+    const before = held([reception, party], [clearDown], 120);
+    const to = { startsAt: day(10, 20), endsAt: day(11, 0) };
+    const found = moveConsequences(before, reception, to);
+    expect(found.map((consequence) => [consequence.kind, consequence.concerns])).toEqual([["insufficient_turnaround", ["party"]]]);
+    expect(found[0]?.summary).toMatch(/^Only 30 minutes next to the room's use/u);
+    expect(diary(before)).toEqual([]);
+    expect(diary(held([{ ...reception, ...to }, party], [clearDown], 120))).toEqual([]);
+  });
+
+  // A known false caution (review finding YA2). The move begins at the same
+  // instant as its event's own set-up, which the room already holds. The
+  // Diary shows the same 30 minutes after lunch before the move and after
+  // it, under another name; the decision lists it as new, in every id order.
+  it("still warns when the move begins at the same instant as its event's own phase", () => {
+    const lunch = bookingRow("lunch", "lunch-event", day(12, 12, 30), day(12, 13, 30));
+    const ceremony = bookingRow("ceremony", "wedding", day(12, 10), day(12, 12));
+    const setUp = timedPhase("set-up", "wedding", day(12, 14), day(12, 17));
+    const before = held([lunch, ceremony], [setUp], 120);
+    const to = { startsAt: day(12, 14), endsAt: day(12, 16) };
+    const found = moveConsequences(before, ceremony, to);
+    expect(found.map((consequence) => [consequence.kind, consequence.concerns])).toEqual([["insufficient_turnaround", ["lunch"]]]);
+    expect(found[0]?.summary).toMatch(/^Only 30 minutes next to the room's use/u);
+    expect(diary(before)).toEqual(["ceremony>lunch 30", "lunch>set-up 30"]);
+    expect(diary(held([lunch, { ...ceremony, ...to }], [setUp], 120))).toEqual(["lunch>ceremony 30"]);
+  });
+
+  // A known false caution (review finding YB2, the mirror of the Y2 case
+  // above). A wedding whose set-up is the evening before is moved to the
+  // evening, so the set-up now follows the breakfast meeting by 45 minutes.
+  // The Diary shows breakfast to wedding going from 30 minutes to 45, a
+  // turnaround the move made longer; the decision lists the 45 as new.
+  it("still lists as new a turnaround the Diary shows the move lengthening, when a carried set-up is what now follows", () => {
+    const dinner = bookingRow("dinner", "dinner-event", day(9, 15), day(9, 19));
+    const setUp = timedPhase("set-up", "wedding-event", day(9, 22), day(9, 23));
+    const breakfast = bookingRow("breakfast", "breakfast-event", day(10, 7), day(10, 8));
+    const wedding = bookingRow("wedding", "wedding-event", day(10, 8, 30), day(10, 12));
+    const before = held([dinner, breakfast, wedding], [setUp], 120);
+    const to = { startsAt: day(10, 19, 15), endsAt: day(10, 22, 45) };
+    const found = moveConsequences(before, wedding, to);
+    expect(found.map((consequence) => [consequence.kind, consequence.concerns])).toEqual([["insufficient_turnaround", ["breakfast"]]]);
+    expect(found[0]?.summary).toMatch(/^Only 45 minutes next to the room's use/u);
+    expect(diary(before)).toEqual(["breakfast>wedding 30"]);
+  });
+});

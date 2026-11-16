@@ -431,8 +431,9 @@ function apartKeysOf(world: Neighbourhood, booking: BookingRow, carried: readonl
 /** The room with the moved booking's block of time as only the booking and
  *  the phases it carries; the rest of its event apart, under the same keys
  *  before and after the move. The engine may still hold the block as one
- *  stay or several, by the venue's days, and name them differently before
- *  and after, so conflictKey knows an arrival by its first piece. */
+ *  stay or several, by the venue's days and by who is between them, and name
+ *  them differently before and after, so conflictKey knows an arrival by its
+ *  first piece. */
 function weighedApart(world: Neighbourhood, booking: BookingRow, carried: readonly ConflictPhaseInput[], keys: ReadonlyMap<string, string>): Neighbourhood {
   if (keys.size === 0) return world;
   const carriedIds = new Set(carried.map((phase) => phase.id));
