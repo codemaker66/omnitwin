@@ -174,6 +174,44 @@ export function textWidth(doc: Doc, style: TextStyle, text: string): number {
   return doc.widthOfString(value, options(style));
 }
 
+/** The part of pdfkit's EmbeddedFont that reads glyph outlines: fontkit's font, and where the baseline sits. */
+interface EmbeddedOutlines {
+  readonly ascender: number;
+  readonly font: {
+    readonly unitsPerEm: number;
+    layout(text: string, features?: readonly string[]): { readonly bbox: { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number } };
+  };
+}
+
+function isEmbeddedOutlines(value: unknown): value is EmbeddedOutlines {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<Record<keyof EmbeddedOutlines, unknown>>;
+  const font = candidate.font as { unitsPerEm?: unknown; layout?: unknown } | null | undefined;
+  return typeof candidate.ascender === "number" && typeof font?.unitsPerEm === "number" && typeof font.layout === "function";
+}
+
+/**
+ * The ink of one line as it prints, from its glyphs' own outlines: their box
+ * against the line's left edge and its top, y down the page, as drawLine sets
+ * a line (pdfkit puts the baseline the face's ascender below the top). A name
+ * with no descenders inks only down to its baseline. Null for a face with no
+ * outlines to read, or nothing to ink.
+ */
+export function inkBox(doc: Doc, style: TextStyle, text: string): { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number } | null {
+  const value = printed(style, text);
+  apply(doc, style, value);
+  // pdfkit keeps the selected font on a private field; read it as unknown.
+  const font: unknown = Reflect.get(doc, "_font");
+  if (!isEmbeddedOutlines(font)) return null;
+  const box = font.font.layout(value, style.tnum === true ? ["tnum"] : undefined).bbox;
+  if (![box.minX, box.minY, box.maxX, box.maxY].every(Number.isFinite)) return null;
+  const scale = style.size / font.font.unitsPerEm;
+  const baseline = font.ascender / 1000 * style.size;
+  // Tracking moves each later glyph along by its spacing, counted as pdfkit counts it (the string's length).
+  const tracking = (style.tracking ?? 0) * Math.max(0, value.length - 1);
+  return { left: box.minX * scale, top: baseline - box.maxY * scale, right: box.maxX * scale + tracking, bottom: baseline - box.minY * scale };
+}
+
 /** One wrapped line's advance: the face's line height plus the style's gap. */
 export function lineHeight(doc: Doc, style: TextStyle, sample = "Ag"): number {
   apply(doc, style, sample);

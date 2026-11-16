@@ -1,6 +1,6 @@
 import type { HallkeeperFloorPlan } from "@omnitwin/types";
 import { projectHallkeeperFloorPlan, type PlanViewport } from "../hallkeeper-floor-plan.js";
-import { INK, TYPE, drawLine, textWidth, type Doc, type TextStyle } from "./style.js";
+import { INK, TYPE, drawLine, inkBox, textWidth, type Doc, type TextStyle } from "./style.js";
 
 // ---------------------------------------------------------------------------
 // The room drawn from the layout's frozen catalogue footprints: one uniform
@@ -52,11 +52,12 @@ const RING_REACH_M = 0.7;
 const BESIDE_STYLE: TextStyle = { face: "Inter-SemiBold", size: 7, color: INK.primary };
 /**
  * Inter SemiBold's vertical metrics in ems, from its own tables: the baseline
- * below the line's top, the capitals' height and the descenders' depth. The
- * letters of a name run from its capitals' tops to its descenders.
+ * below the line's top, the capitals' height and the descenders' depth. A name
+ * is measured on its glyphs' own ink (inkBox); these stand in only for a face
+ * with no outlines to read.
  */
 const INTER_SEMIBOLD = { ascender: 0.96875, capHeight: 0.7275, descender: 0.2412 } as const;
-/** The space between a piece and the letters of a name set beside it. */
+/** The space between a piece and the ink of a name set beside it. */
 const BESIDE_GAP = 1.5;
 /** The least floor those letters keep from every other piece, number and name: twice their gap to their own, so the name reads as its own piece's. */
 const BESIDE_CLEAR = 2 * BESIDE_GAP;
@@ -212,27 +213,31 @@ function placeNames(doc: Doc, drawing: PlanDrawing, markers: ReadonlyMap<string,
       }
     }
     if (!beside) continue;
-    // Measured on the letters, not the white under them: capitals' tops to
-    // descenders, BESIDE_GAP from the piece's own edge.
+    // Measured on the name's own ink, not the white under it nor the face's
+    // tallest and deepest letters: a name with no descenders above its piece
+    // sits as near it as one with them, BESIDE_GAP from the piece's own edge.
     const size = BESIDE_STYLE.size;
-    const lettersW = textWidth(doc, BESIDE_STYLE, text);
-    const capTop = (INTER_SEMIBOLD.ascender - INTER_SEMIBOLD.capHeight) * size;
-    const foot = (INTER_SEMIBOLD.ascender + INTER_SEMIBOLD.descender) * size;
+    const ink = inkBox(doc, BESIDE_STYLE, text) ?? {
+      left: 0, right: textWidth(doc, BESIDE_STYLE, text),
+      top: (INTER_SEMIBOLD.ascender - INTER_SEMIBOLD.capHeight) * size, bottom: (INTER_SEMIBOLD.ascender + INTER_SEMIBOLD.descender) * size,
+    };
     const own = extentOf(piece);
     const middle = (own.left + own.right) / 2;
     const level = (own.top + own.bottom) / 2;
-    // Where the line's top-left goes: below, above, right or left of the piece.
+    const inkMiddle = (ink.left + ink.right) / 2;
+    const inkLevel = (ink.top + ink.bottom) / 2;
+    // Where the line's top-left goes for its ink to sit below, above, right or left of the piece.
     const corners: readonly { readonly x: number; readonly y: number }[] = [
-      { x: middle - lettersW / 2, y: own.bottom + BESIDE_GAP - capTop },
-      { x: middle - lettersW / 2, y: own.top - BESIDE_GAP - foot },
-      { x: own.right + BESIDE_GAP, y: level - (capTop + foot) / 2 },
-      { x: own.left - BESIDE_GAP - lettersW, y: level - (capTop + foot) / 2 },
+      { x: middle - inkMiddle, y: own.bottom + BESIDE_GAP - ink.top },
+      { x: middle - inkMiddle, y: own.top - BESIDE_GAP - ink.bottom },
+      { x: own.right + BESIDE_GAP - ink.left, y: level - inkLevel },
+      { x: own.left - BESIDE_GAP - ink.right, y: level - inkLevel },
     ];
-    // Touching nothing, with clear floor round its letters but for its own piece
+    // Touching nothing, with clear floor round its ink but for its own piece
     // and the row it stands in: the full BESIDE_CLEAR, as overlaps forgives a touch.
     const ownRow: ReadonlySet<PlanPiece> = row?.members ?? new Set([piece]);
     const choice = corners.map((at) => {
-      const letters: Rect = { left: at.x, top: at.y + capTop, right: at.x + lettersW, bottom: at.y + foot };
+      const letters: Rect = { left: at.x + ink.left, top: at.y + ink.top, right: at.x + ink.right, bottom: at.y + ink.bottom };
       const backing: Rect = { left: letters.left - BACKING_PAD.x, top: letters.top - BACKING_PAD.y, right: letters.right + BACKING_PAD.x, bottom: letters.bottom + BACKING_PAD.y };
       return { at, letters, backing };
     }).find(({ letters, backing }) => backing.left >= floor.left && backing.right <= floor.right && backing.top >= floor.top && backing.bottom <= floor.bottom

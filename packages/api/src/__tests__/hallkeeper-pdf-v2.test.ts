@@ -873,8 +873,8 @@ function standsAt(object: { readonly x: number; readonly z: number }, x: number,
 /** A box on the page, y growing down the page as pdfkit draws. */
 interface Box { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
 interface PlanShape extends Box { readonly fill: string; readonly stroke: string; readonly round: boolean }
-/** A name on the plan: its line, the box its letters take, and the middle of its capitals. */
-interface PlanName { readonly line: PdfLine; readonly box: Box; readonly x: number; readonly y: number }
+/** A name on the plan: its line, the box its ink takes, its baseline, and the middle of its capitals. */
+interface PlanName { readonly line: PdfLine; readonly box: Box; readonly baseline: number; readonly x: number; readonly y: number }
 interface PlanReading { readonly floor: Box; readonly pieces: readonly PlanShape[]; readonly markers: readonly PlanShape[]; readonly names: readonly PlanName[] }
 
 const NUM = String.raw`(-?[\d.]+)`;
@@ -903,6 +903,33 @@ function gapBetween(box: Box, shape: Box): number {
   return Math.hypot(Math.max(shape.left - box.right, 0, box.left - shape.right), Math.max(shape.top - box.bottom, 0, box.top - shape.bottom));
 }
 
+/** A face's glyph outlines as fontkit reads them, in font units with y up. */
+interface GlyphOutlines { readonly unitsPerEm: number; layout(text: string): { readonly bbox: { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number } } }
+
+function isGlyphOutlines(value: unknown): value is GlyphOutlines {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as { unitsPerEm?: unknown; layout?: unknown };
+  return typeof candidate.unitsPerEm === "number" && typeof candidate.layout === "function";
+}
+
+/** Inter SemiBold's own outlines, from the font file the sheet embeds for the plan's names. */
+const NAME_FACE = ((): GlyphOutlines => {
+  const doc = new PDFDocument({ size: "A4" });
+  registerSheetFonts(doc);
+  doc.font("Inter-SemiBold");
+  const embedded: unknown = Reflect.get(doc, "_font");
+  const face: unknown = typeof embedded === "object" && embedded !== null ? Reflect.get(embedded, "font") : undefined;
+  if (!isGlyphOutlines(face)) throw new Error("pdfkit embeds Inter SemiBold with its glyph outlines");
+  return face;
+})();
+
+/** A name's ink against its line's left edge and its baseline, y down the page: what its glyphs cover, descenders only where it has them. */
+function inkOf(text: string, size: number): Box {
+  const box = NAME_FACE.layout(text).bbox;
+  const scale = size / NAME_FACE.unitsPerEm;
+  return { left: box.minX * scale, top: -box.maxY * scale, right: box.maxX * scale, bottom: -box.minY * scale };
+}
+
 /** Each page's plan as it prints, or null on a page that draws none. */
 function plansOn(buf: Buffer): (PlanReading | null)[] {
   const pages = pdfPages(buf);
@@ -925,12 +952,15 @@ function plansOn(buf: Buffer): (PlanReading | null)[] {
       })),
     ].filter((shape) => shape.left >= floor.left - 1 && shape.right <= floor.right + 1 && shape.top >= floor.top - 1 && shape.bottom <= floor.bottom + 1);
     const markers = shapes.filter((shape) => shape.stroke === INK.accent);
-    const names = (pages[index] ?? []).map((line): PlanName => {
+    const names = (pages[index] ?? []).flatMap((line): PlanName[] => {
       const baseline = PAGE_H - line.y;
-      // The letters' box, from Inter's own metrics: capital tops (0.7275 em) down to descenders (0.2412 em).
-      return { line, box: { left: line.x, top: baseline - line.size * 0.7275, right: line.x2, bottom: baseline + line.size * 0.2412 }, x: (line.x + line.x2) / 2, y: baseline - line.size * 0.36 };
-    }).filter((name) => name.x > floor.left && name.x < floor.right && name.y > floor.top && name.y < floor.bottom
-      && !markers.some((marker) => holds(marker, name.x, name.y)));
+      const x = (line.x + line.x2) / 2;
+      const y = baseline - line.size * 0.36;
+      if (!(x > floor.left && x < floor.right && y > floor.top && y < floor.bottom) || markers.some((marker) => holds(marker, x, y))) return [];
+      // The ink its glyphs cover, from Inter SemiBold's own outlines: descenders only where the name has them.
+      const ink = inkOf(line.text, line.size);
+      return [{ line, box: { left: line.x + ink.left, top: baseline + ink.top, right: line.x + ink.right, bottom: baseline + ink.bottom }, baseline, x, y }];
+    });
     return { floor, pieces: shapes.filter((shape) => shape.stroke !== INK.accent), markers, names };
   });
 }
@@ -957,6 +987,23 @@ function rowOf(plan: PlanReading, piece: PlanShape): PlanShape[] {
     }
   }
   return [...row].sort((a, b) => a.left - b.left);
+}
+
+/**
+ * A piece and its copies standing in one column, north to south: the plain box pieces sharing one footprint and one
+ * left edge, `count` of them. A sweep that adds copies of a named piece finds each of them by name this way, not by
+ * which is nearest a name.
+ */
+function columnOf(plan: PlanReading, count: number): PlanShape[] {
+  const footprint = (piece: PlanShape): string => [piece.left, piece.right - piece.left, piece.bottom - piece.top].map((value) => value.toFixed(1)).join(" ");
+  const groups = new Map<string, PlanShape[]>();
+  for (const piece of plan.pieces) {
+    if (piece.round || piece.stroke === INK.chairLine || piece.fill !== "#ffffff") continue;
+    groups.set(footprint(piece), [...(groups.get(footprint(piece)) ?? []), piece]);
+  }
+  const column = [...groups.values()].find((group) => group.length === count);
+  if (column === undefined) throw new Error(`the plan has no column of ${String(count)} copies`);
+  return [...column].sort((a, b) => a.top - b.top);
 }
 
 /** The page box a run of pieces covers together. */
@@ -987,7 +1034,7 @@ function expectNamesClear(plan: PlanReading, what: string): void {
       const rows = under.flatMap((piece) => rowOf(plan, piece));
       for (const piece of met) expect(rows.includes(piece) || rows.some((host) => within(piece, host)), `${label} meets a piece outside its own row`).toBe(true);
       // Never run off its piece onto the floor or over a wall: its capitals stay on the piece or its row.
-      const capitals: Box = { ...name.box, bottom: name.box.bottom - name.line.size * 0.2412 };
+      const capitals: Box = { ...name.box, bottom: name.baseline };
       expect(under.some((piece) => within(capitals, spanOf(rowOf(plan, piece)))), `${label} runs off its piece`).toBe(true);
     }
   }
@@ -1090,23 +1137,23 @@ describe("what #415's review found (T-696)", () => {
     const name = plan.names.find((candidate) => candidate.line.text === "Top table");
     const own = name === undefined ? undefined : pieceUnder(plan, name);
     if (name === undefined || own === undefined) throw new Error("page 1's plan names the top table on its trestles");
-    // The planner named the middle trestle of three; the name is wider than that trestle alone.
+    // The planner named the middle trestle of three; the name, set as wide as it advances, is wider than that trestle alone.
     const row = rowOf(plan, own);
     expect(row).toHaveLength(3);
     expect(row.indexOf(own)).toBe(1);
-    expect(name.box.right - name.box.left).toBeGreaterThan(own.right - own.left);
+    expect(name.line.x2 - name.line.x).toBeGreaterThan(own.right - own.left);
     expect(name.box.left).toBeGreaterThanOrEqual(MARGIN);
     expect(name.box.right).toBeLessThanOrEqual(MARGIN + LEFT_W);
     expectNamesClear(plan, "the wedding's page 1");
   });
 
-  it("keeps a name's letters twice as far from any other piece as from their own, a neighbour closing in a step at a time", async () => {
+  it("keeps a name's ink twice as far from any other piece as from its own, a neighbour closing in from the south", async () => {
     const base = boardWithProjectorNamed();
     const plan = base.floorPlan;
     const projector = plan?.objects.find((object) => object.name === "Laser Projector");
     if (plan === null || plan === undefined || projector === undefined) throw new Error("the board has its projector");
     let nearThreshold = 0;
-    // A second projector-sized piece south of the named one, 1.6 m away and then nearer by 5 cm a time.
+    // A copy of the projector south of the named one, 1.6 m away and then nearer by 5 cm a time.
     for (let step = 0; step <= 28; step++) {
       const away = 1.6 - step * 0.05;
       const neighbour = { ...projector, objectId: `00000000-0000-4000-8000-0000000cc${String(step).padStart(3, "0")}`, z: projector.z + away, label: undefined };
@@ -1114,12 +1161,50 @@ describe("what #415's review found (T-696)", () => {
       const drawn = plansOn(await generateSheetPdfV2(await withPaperCheck(sheet, false)))[0];
       const name = drawn?.names.find((candidate) => candidate.line.text === "Slides");
       if (drawn === null || drawn === undefined || name === undefined) continue;
-      const [own, next] = drawn.pieces.map((piece) => gapBetween(name.box, piece)).sort((a, b) => a - b);
-      if (own === undefined || next === undefined) throw new Error("the plan has pieces");
-      expect(next, `${away.toFixed(2)} m: the next piece against twice the gap to its own`).toBeGreaterThanOrEqual(2 * own - 0.05);
-      if (next < 3 * own) nearThreshold += 1;
+      // The named projector is the north one of the two copies; the gaps are measured to each piece by name.
+      const [own, south] = columnOf(drawn, 2);
+      if (own === undefined || south === undefined) throw new Error("the plan has both copies");
+      const ownGap = gapBetween(name.box, own);
+      const nextGap = Math.min(...drawn.pieces.filter((piece) => piece !== own).map((piece) => gapBetween(name.box, piece)));
+      expect(ownGap, `${away.toFixed(2)} m: the ink's gap to its own piece`).toBeCloseTo(1.5, 1);
+      expect(nextGap, `${away.toFixed(2)} m: every other piece against twice the gap to its own`).toBeGreaterThanOrEqual(2 * ownGap - 0.05);
+      if (gapBetween(name.box, south) < 3 * ownGap) nearThreshold += 1;
     }
     // The rule was met near its edge, not only with the floor wide open.
+    expect(nearThreshold).toBeGreaterThan(0);
+  });
+
+  it("keeps a name above its piece as near it as one below, a neighbour closing in from the north", async () => {
+    const base = boardWithProjectorNamed();
+    const plan = base.floorPlan;
+    const projector = plan?.objects.find((object) => object.name === "Laser Projector");
+    if (plan === null || plan === undefined || projector === undefined) throw new Error("the board has its projector");
+    // A copy just south of the projector takes the floor below it, so "Slides", with no descenders, goes above.
+    const blocker = { ...projector, objectId: "00000000-0000-4000-8000-0000000dd000", z: projector.z + 0.45, label: undefined };
+    let above = 0;
+    let nearThreshold = 0;
+    // A third copy north of it, 1.2 m away and then nearer by 2.5 cm a time.
+    for (let step = 0; step <= 36; step++) {
+      const away = 1.2 - step * 0.025;
+      const neighbour = { ...projector, objectId: `00000000-0000-4000-8000-0000000dd${String(step + 1).padStart(3, "0")}`, z: projector.z - away, label: undefined };
+      const sheet: HallkeeperSheetV2 = { ...base, floorPlan: { ...plan, objects: [...plan.objects, blocker, neighbour] } };
+      const drawn = plansOn(await generateSheetPdfV2(await withPaperCheck(sheet, false)))[0];
+      const name = drawn?.names.find((candidate) => candidate.line.text === "Slides");
+      if (drawn === null || drawn === undefined || name === undefined) continue;
+      // North to south: the neighbour, the named projector, the blocker.
+      const [north, own] = columnOf(drawn, 3);
+      if (north === undefined || own === undefined) throw new Error("the plan has all three copies");
+      const ownGap = gapBetween(name.box, own);
+      const nextGap = Math.min(...drawn.pieces.filter((piece) => piece !== own).map((piece) => gapBetween(name.box, piece)));
+      expect(ownGap, `${away.toFixed(3)} m: the ink's gap to its own piece`).toBeCloseTo(1.5, 1);
+      expect(nextGap, `${away.toFixed(3)} m: every other piece against twice the gap to its own`).toBeGreaterThanOrEqual(2 * ownGap - 0.05);
+      if (name.box.bottom <= own.top) {
+        above += 1;
+        if (gapBetween(name.box, north) < 3 * ownGap) nearThreshold += 1;
+      }
+    }
+    // The name stood above its piece, and the neighbour came near the rule's edge while it did.
+    expect(above).toBeGreaterThan(0);
     expect(nearThreshold).toBeGreaterThan(0);
   });
 
