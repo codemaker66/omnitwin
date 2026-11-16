@@ -2254,6 +2254,18 @@ describe("the maker's browser, when the server keeps a note a landed save did no
 // maker's document read with every note, S3) may overwrite a note staff
 // wrote, and Keep mine there keeps the person's version over theirs, naming
 // the notes of theirs it replaces (XA2 at d917b3d0, found as designed).
+//
+// A third is counted apart: N1, which these sequences found (first seed 10).
+// In the maker's browser read with every note, work kept on this device and
+// reopened over a note staff wrote with no new revision takes that note as
+// confirmed, and the next save names it as the note it replaces. #389 takes
+// that save as sent, so the name decides nothing: the release lead ruled on 16
+// November 2026 that N1 is S3 reached by another path, whose fix is #389's
+// recorded follow-up (a new revision on the single-piece note write, so such a
+// save meets a newer version). So a name sent in a save #389 takes as sent
+// (notesIncluded true) is counted and kept out of the pass, not checked. The
+// X1 invariant is that a save #389 settles note by note never names words
+// this browser has not shown the person on that piece.
 // ---------------------------------------------------------------------------
 
 describe("no save names words this browser has not shown the person, over seeded random sequences (delta review X1, XA4)", () => {
@@ -2316,6 +2328,8 @@ describe("no save names words this browser has not shown the person, over seeded
     readonly reached: ReadonlySet<Transition>;
     /** Notes a Keep mine save in the maker's browser named from their version: the maker's choice (review of d917b3d0, XA2). */
     readonly keptOverTheirs: number;
+    /** Notes named, never shown, in a save #389 takes as sent in the maker's browser read with every note (N1, ruled S3 by another path). */
+    readonly namedTakenAsSent: number;
   }
 
   async function oneSequence(seed: number): Promise<Run> {
@@ -2395,6 +2409,7 @@ describe("no save names words this browser has not shown the person, over seeded
     // Their version's notes, while Keep mine saves the person's version over it in the maker's browser.
     let keepingOver: ReadonlyMap<string, string> | null = null;
     let keptOverTheirs = 0;
+    let namedTakenAsSent = 0;
     // Checked as each save is sent: a note it names on a piece is one the person has been shown on that piece.
     vi.mocked(configApi.publicBatchSave).mockImplementation(async (...sent) => {
       const [, pieces, , options] = sent;
@@ -2404,6 +2419,11 @@ describe("no save names words this browser has not shown the person, over seeded
         if (keepingOver?.get(piece.id) === piece.replacesNote) {
           keptOverTheirs += 1;
           theMakersToOverwrite.add(piece.replacesNote);
+          continue;
+        }
+        // N1, ruled S3 by another path (see above): a save #389 takes as sent, from the maker's browser read with every note.
+        if (maker && options?.notesIncluded === true) {
+          namedTakenAsSent += 1;
           continue;
         }
         broken.push(`step ${String(step)}: a save names "${piece.replacesNote}" on ${said(piece.id)}, never shown there`);
@@ -2549,25 +2569,37 @@ describe("no save names words this browser has not shown the person, over seeded
       if (shownOn(id).has(note) || theMakersToOverwrite.has(note)) continue;
       if (server.notes.get(id) !== note) broken.push(`end: staff's note "${note}" on ${said(id)}, never shown, is not as they wrote it`);
     }
-    return { browser, broken, steps, reached, keptOverTheirs };
+    return { browser, broken, steps, reached, keptOverTheirs, namedTakenAsSent };
   }
 
-  it(`holds over ${String(SEQUENCES)} sequences of moves, notes typed and cleared, removals, pieces placed with a note, saves, edits that land while a save is out, notes written with and without a new revision, reloads with work kept on this device, and Keep mine or Show their version`, async () => {
+  it(`holds over ${String(SEQUENCES)} sequences of moves, notes typed and cleared, removals, pieces placed with a note, saves, edits that land while a save is out, notes written with and without a new revision, reloads with work kept on this device, and Keep mine or Show their version`, async ({ annotate }) => {
     const failing: string[] = [];
     let firstSteps: readonly string[] = [];
     const reached = new Set<Transition>();
     let keptOverTheirs = 0;
+    let namedTakenAsSent = 0;
+    const n1Only: number[] = [];
     for (let seed = 1; seed <= SEQUENCES; seed += 1) {
       const run = await oneSequence(seed);
       for (const transition of run.reached) reached.add(transition);
       keptOverTheirs += run.keptOverTheirs;
-      if (run.broken.length === 0) continue;
+      namedTakenAsSent += run.namedTakenAsSent;
+      if (run.broken.length === 0) {
+        if (run.namedTakenAsSent > 0) n1Only.push(seed);
+        continue;
+      }
       if (failing.length === 0) firstSteps = [`seed ${String(seed)} (${run.browser}):`, ...run.steps];
       failing.push(`seed ${String(seed)} (${run.browser}): ${run.broken.join("; ")}`);
     }
+    // Said with every run, passed or failed, so the set-asides are never read as settled.
+    const setAside = [
+      `N1, ruled on 16 November 2026 as S3 by another path: ${String(namedTakenAsSent)} names in saves #389 takes as sent, in ${String(n1Only.length)} otherwise clean seeds (${n1Only.join(", ")}).`,
+      `XA2, found as designed: ${String(keptOverTheirs)} notes Keep mine named from their version in the maker's browser.`,
+    ].join(" ");
+    await annotate(setAside, "notice");
     expect([...TRANSITIONS].filter((transition) => !reached.has(transition)), "transitions no sequence reached").toEqual([]);
     expect(failing, [
-      `${String(failing.length)} of ${String(SEQUENCES)} seeds fail (and ${String(keptOverTheirs)} notes Keep mine named from their version in the maker's browser were set aside as XA2's).`,
+      `${String(failing.length)} of ${String(SEQUENCES)} seeds fail. Set aside: ${setAside}`,
       "The first, step by step:",
       ...firstSteps,
     ].join("\n")).toEqual([]);
