@@ -6,6 +6,7 @@ import { useAuthStore } from "../stores/auth-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
+import { NOTE_HELD_CODE, pieceNamedForRefusedSave, refusedOverHeldNote } from "../lib/guest-plan-notes.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { EventLinkedPlannerBootstrap } from "../components/editor/EventLinkedPlannerBootstrap.js";
@@ -273,6 +274,17 @@ export function EditorPage(): React.ReactElement {
   // A plan still being started below is claimed there, before it has an address.
   usePlannerDraftClaim(urlConfigId !== undefined && urlConfigId === storeConfigId);
 
+  // A guest plan opened before the sign-in resolved was read the public way,
+  // without its notes, and saves that way. Once the person is known, the store
+  // reads it again through the signed-in routes if those answer them, and only
+  // when nothing waits to be saved (delta review of #388, B2).
+  const openReadWithoutNotes = useEditorStore((s) => s.isPublicPreview && !s.notesIncluded);
+  const nothingWaitsToSave = useEditorStore((s) => !s.isDirty && !s.isSaving && s.saveConflict === null);
+  useEffect(() => {
+    if (!isAuthenticated || storeConfigId === null || !openReadWithoutNotes || !nothingWaitsToSave) return;
+    void useEditorStore.getState().readAgainForSignedInRoutes();
+  }, [isAuthenticated, authUserId, authRole, authVenueId, storeConfigId, openReadWithoutNotes, nothingWaitsToSave]);
+
   // The slate's room switch (QoL D-X3) leaves this page on /plan?space=<room>
   // with the layout it left still open, and the bootstrap below opens a room
   // only when none is. Closing exactly that layout lets the bootstrap open the
@@ -292,8 +304,21 @@ export function EditorPage(): React.ReactElement {
     }
     let cancelled = false;
     void saveBeforeLayoutChange().then((outcome) => {
-      if (cancelled || outcome === "not-kept" || useEditorStore.getState().configId !== leavingLayout) return;
-      closeLayout();
+      if (cancelled || useEditorStore.getState().configId !== leavingLayout) return;
+      switch (outcome) {
+        // A refused clear's sentence, like kept work, goes in the note the room shows.
+        case "saved":
+        case "clear-refused":
+        case "kept":
+          closeLayout();
+          return;
+        case "not-kept":
+          return;
+        default: {
+          const exhausted: never = outcome;
+          throw new Error(`Unhandled layout change outcome ${String(exhausted)}`);
+        }
+      }
     });
     return () => { cancelled = true; };
   }, [leavingLayout, roomSwitchApproval, requestedEventId, storeConfigId, urlConfigId]);
@@ -731,8 +756,9 @@ export function SaveErrorToast({
   message: string;
   isAuthenticated: boolean;
   conflict: { readonly expectedRevision: number; readonly currentRevision: number } | null;
-}): React.ReactElement {
+}): React.ReactElement | null {
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
+  const [putAway, setPutAway] = useState(false);
   const retry = (): void => {
     if (isLayoutTimelineMutationLocked()) return;
     useEditorStore.getState().clearSaveError();
@@ -742,14 +768,41 @@ export function SaveErrorToast({
     if (isLayoutTimelineMutationLocked()) return;
     void useEditorStore.getState().reloadAfterConflict(isAuthenticated);
   };
-  const dismiss = (): void => { useEditorStore.getState().clearSaveError(); };
-  const body = conflict === null
+  // A save refused because it would change a note this browser is not shown
+  // (409 NOTE_HELD), or leave out a piece holding one (409 HELD_PIECE_OMITTED):
+  // the API's own words, as they come, before them the piece when the planner
+  // can tell which (lib/guest-plan-notes). Retrying sends the same save to the
+  // same refusal, so it is not offered.
+  const refusedForHeldNote = useEditorStore((s) => refusedOverHeldNote(s.saveErrorCode));
+  // Dismissing such a refusal puts this notice away and nothing more. The
+  // refusal still stands, so the header, toolbox and slate go on saying it:
+  // cleared, they would read "Save layout" and "Saving" with nothing in flight
+  // and the same save sure to be refused. The next save starts it afresh (the
+  // page mounts this notice per failure). A refused clear of a note, which
+  // stands until it is dismissed, goes for good: nothing the person does can
+  // make that clear, and the save line then says where saving stands (ruling
+  // R1(b) on #388). Any other failure is cleared, and a refused clear's
+  // notice beneath it comes back.
+  const dismiss = (): void => {
+    const editor = useEditorStore.getState();
+    if (!refusedForHeldNote) {
+      editor.clearSaveError();
+      return;
+    }
+    editor.dismissRefusedClears();
+    setPutAway(true);
+  };
+  const refusedPiece = useEditorStore((s) => (s.saveErrorCode === NOTE_HELD_CODE ? pieceNamedForRefusedSave(s) : null));
+  const heldNoteRefusal = refusedPiece === null ? message : `${refusedPiece}: ${message}`;
+  const failure = conflict === null
     // Honest about where the changes are (T-635 N5, item 9): nothing keeps
     // them outside this tab, and the next attempt is Retry or the next change
     // (EditorBridge's autosave), not a timer. It used to say "Your layout is
     // safe; we'll try again."
     ? `Couldn't save — ${message}. Your changes are held in this tab until they save: press Retry, or your next change will try again.`
     : `Couldn't save — ${message} Server revision ${String(conflict.currentRevision)} is newer than this tab's revision ${String(conflict.expectedRevision)}.`;
+  const body = refusedForHeldNote ? heldNoteRefusal : failure;
+  if (putAway && refusedForHeldNote) return null;
   return (
     <div
       role="status"
@@ -771,7 +824,7 @@ export function SaveErrorToast({
     >
       <span style={{ color: "#e88", fontSize: 15 }}>⚠</span>
       <span style={{ flex: 1 }}>{body}</span>
-      {conflict === null ? (
+      {conflict === null && refusedForHeldNote ? null : conflict === null ? (
         <button
           type="button"
           onClick={retry}

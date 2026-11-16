@@ -230,6 +230,140 @@ describe("a signed-in person opening a public preview by its address", () => {
   });
 });
 
+// #373: a venue's own staff save a guest plan by the signed-in route. A plan
+// opened before the sign-in resolved was read the public way, without its
+// notes, and the signed-in save stores each piece as sent, so that copy stays
+// on the public routes (lib/guest-plan-notes signedInRoutesSuit). Once the
+// person is known, the plan is read again through the signed-in route, and
+// their saves go that way (delta review of #388, B2). Work not yet saved is
+// never read over.
+describe("a member of staff who opened a guest plan's link before sign-in resolved", () => {
+  const NOTE = "TEST ONLY nut allergy, seat by the door";
+
+  /** The public read: the note is the guest's, kept from any browser but theirs, and the table says it holds one. */
+  function readWithoutNotes(extra: Partial<Configuration> = {}): Configuration {
+    return draft("guest-plan", { notesIncluded: false, objects: [{ ...TABLE, configurationId: "guest-plan", metadata: { noteHeld: true } }], ...extra });
+  }
+
+  /** The signed-in read returns every note, and says so (api/configurations.ts getConfig). */
+  function readWithNotes(objects: Configuration["objects"], extra: Partial<Configuration> = {}): Configuration {
+    return draft("guest-plan", { notesIncluded: true, objects, ...extra });
+  }
+
+  const noted = { ...TABLE, configurationId: "guest-plan", metadata: { notes: NOTE } };
+
+  async function signInAs(user: typeof staff | typeof client): Promise<void> {
+    act(() => { useAuthStore.getState().beginAccessCheck(user.email); });
+    act(() => { useAuthStore.getState().setUser(user); });
+    await plannerOpenOn("guest-plan");
+  }
+
+  function table(): { readonly positionX: number; readonly notes: string; readonly noteHeld?: boolean } | undefined {
+    return useEditorStore.getState().objects.find((object) => object.id === TABLE.id);
+  }
+
+  /** The last save by the signed-in route: the plan, the note it sent on the table, and the revision it was made against. */
+  function lastSignedInSave(): { readonly configId: string; readonly note: unknown; readonly revision: number } | null {
+    const call = configApi.authBatchSave.mock.calls.at(-1);
+    if (call === undefined) return null;
+    const [configId, batch, revision] = call;
+    return { configId, note: batch.find((piece) => piece.id === TABLE.id)?.metadata?.notes, revision };
+  }
+
+  it("reads the plan again through the signed-in route, and saves by that route", async () => {
+    configApi.getPublicConfig.mockResolvedValue(readWithoutNotes());
+    configApi.getConfig.mockResolvedValue(readWithNotes([noted]));
+    renderPlanner("/plan/guest-plan");
+    await plannerOpenOn("guest-plan");
+    expect(useEditorStore.getState().notesIncluded).toBe(false);
+
+    await signInAs(staff);
+
+    await waitFor(() => { expect(configApi.getConfig).toHaveBeenCalledWith("guest-plan"); });
+    await waitFor(() => { expect(useEditorStore.getState().notesIncluded).toBe(true); });
+    act(() => { useEditorStore.getState().updateObject(TABLE.id, { positionX: 3 }); });
+    await act(async () => { await useEditorStore.getState().saveToServer(true); });
+
+    // The note goes as the signed-in read gave it, so the route that stores pieces as sent keeps it.
+    expect(lastSignedInSave()).toEqual({ configId: "guest-plan", note: NOTE, revision: 3 });
+    expect(configApi.publicBatchSave).not.toHaveBeenCalled();
+    expect(configApi.getConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves work made before the sign-in resolved the public way first, then reads the plan again with the work in it", async () => {
+    configApi.getPublicConfig.mockResolvedValue(readWithoutNotes());
+    renderPlanner("/plan/guest-plan");
+    await plannerOpenOn("guest-plan");
+    act(() => { useEditorStore.getState().updateObject(TABLE.id, { positionX: 3 }); });
+
+    await signInAs(staff);
+    await act(async () => { await Promise.resolve(); });
+
+    // Nothing is read over work not yet saved.
+    expect(configApi.getConfig).not.toHaveBeenCalled();
+    expect(useEditorStore.getState().isDirty).toBe(true);
+    expect(table()?.positionX).toBeCloseTo(3);
+
+    // It goes the way the plan was read, which settles the note it cannot see; the read follows it.
+    configApi.publicBatchSave.mockImplementationOnce((_id, batch) => {
+      const moved = batch.map((piece) => ({ ...TABLE, configurationId: "guest-plan", positionX: String(piece.positionX), metadata: { noteHeld: true } }));
+      configApi.getConfig.mockResolvedValue(readWithNotes(moved.map((piece) => ({ ...piece, metadata: { notes: NOTE } })), { revision: 4 }));
+      return Promise.resolve({ revision: 4, objects: moved });
+    });
+    await act(async () => { await useEditorStore.getState().saveToServer(true); });
+    expect(configApi.publicBatchSave).toHaveBeenCalledWith("guest-plan", [expect.objectContaining({ id: TABLE.id })], 3);
+    expect(configApi.authBatchSave).not.toHaveBeenCalled();
+
+    await waitFor(() => { expect(useEditorStore.getState().notesIncluded).toBe(true); });
+    expect(configApi.getConfig).toHaveBeenCalledTimes(1);
+    expect(table()?.positionX).toBeCloseTo(3);
+    expect(table()?.notes).toBe(NOTE);
+
+    act(() => { useEditorStore.getState().updateObject(TABLE.id, { positionX: 4 }); });
+    await act(async () => { await useEditorStore.getState().saveToServer(true); });
+    expect(lastSignedInSave()).toEqual({ configId: "guest-plan", note: NOTE, revision: 4 });
+  });
+
+  it("drops a read that comes back after the person has changed the plan, keeps the change, and reads again once it is saved", async () => {
+    configApi.getPublicConfig.mockResolvedValue(readWithoutNotes());
+    let answer: (config: Configuration) => void = () => undefined;
+    configApi.getConfig.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    renderPlanner("/plan/guest-plan");
+    await plannerOpenOn("guest-plan");
+
+    await signInAs(staff);
+    await waitFor(() => { expect(configApi.getConfig).toHaveBeenCalledTimes(1); });
+    act(() => { useEditorStore.getState().updateObject(TABLE.id, { positionX: 3 }); });
+    await act(async () => { answer(readWithNotes([noted])); await Promise.resolve(); });
+
+    expect(table()?.positionX).toBeCloseTo(3);
+    expect(table()?.noteHeld).toBe(true);
+    expect(useEditorStore.getState()).toMatchObject({ isDirty: true, notesIncluded: false });
+
+    configApi.publicBatchSave.mockImplementationOnce((_id, batch) => {
+      const moved = batch.map((piece) => ({ ...TABLE, configurationId: "guest-plan", positionX: String(piece.positionX), metadata: { noteHeld: true } }));
+      configApi.getConfig.mockResolvedValue(readWithNotes(moved.map((piece) => ({ ...piece, metadata: { notes: NOTE } })), { revision: 4 }));
+      return Promise.resolve({ revision: 4, objects: moved });
+    });
+    await act(async () => { await useEditorStore.getState().saveToServer(true); });
+    await waitFor(() => { expect(useEditorStore.getState().notesIncluded).toBe(true); });
+    expect(configApi.getConfig).toHaveBeenCalledTimes(2);
+    expect(table()?.positionX).toBeCloseTo(3);
+  });
+
+  it("does not read again for someone the signed-in routes do not answer", async () => {
+    configApi.getPublicConfig.mockResolvedValue(readWithoutNotes());
+    renderPlanner("/plan/guest-plan");
+    await plannerOpenOn("guest-plan");
+
+    await signInAs(client);
+    await act(async () => { await Promise.resolve(); });
+
+    expect(configApi.getConfig).not.toHaveBeenCalled();
+    expect(useEditorStore.getState().notesIncluded).toBe(false);
+  });
+});
+
 describe("a signed-in person's new plan", () => {
   beforeEach(() => {
     sessionHint.mockReturnValue(true);

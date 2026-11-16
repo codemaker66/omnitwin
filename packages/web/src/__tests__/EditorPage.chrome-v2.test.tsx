@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // The new chrome behind its flag (T-671 slice 6). Old and new chrome never
@@ -32,6 +32,13 @@ const { useEditorStore } = await import("../stores/editor-store.js");
 const { useCockpitStore } = await import("../stores/cockpit-store.js");
 const { PLANNER_CHROME_STORAGE_KEY } = await import("../lib/planner-chrome-flag.js");
 const originalLoadConfiguration = useEditorStore.getState().loadConfiguration;
+
+// The new chrome is a lazy chunk of EditorPage. Loaded here, before any test,
+// a render waits only on React, never on a cold module transform, which under
+// load outlasted waitFor's one second (delta review of #388 at 33a8e0ad, T9).
+beforeAll(async () => {
+  await import("../components/planner-chrome/PlannerChromeV2.js");
+});
 
 function openPlanner(search = ""): void {
   render(

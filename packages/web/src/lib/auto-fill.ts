@@ -34,6 +34,8 @@ import { footprintInKeepOut } from "./door-clear-spaces.js";
 import { placedFootprint } from "./keep-doors-clear.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { countLabel } from "./count-label.js";
+import { heldNotePieceNamed, stayedForNotesLine } from "./guest-plan-notes.js";
+import type { ChangedPiece } from "./layout-change-summary.js";
 import type { PublishedCapacityAnswer, PublishedFormat } from "./planner-truth.js";
 
 // ---------------------------------------------------------------------------
@@ -1100,6 +1102,23 @@ export function roomWallNames(roomSlug: string | null): Readonly<Record<RoomSide
 export interface RoomFill {
   readonly plan: GangwayFillPlan;
   readonly refillIds: ReadonlySet<string>;
+  /**
+   * Rounds of the fill's kind it leaves exactly where they stand, because the
+   * table or one of its chairs holds a note this browser is not shown: each
+   * by its table's name (or as a round nobody named), in refill order, for
+   * fillKeptForNotesLine.
+   */
+  readonly keptForNotes: readonly ChangedPiece[];
+}
+
+/**
+ * Fill over what is placed that finds no room at this spacing. The rounds it
+ * would have left where they stand for their notes may be what leaves it none
+ * (review of #388, KG2), so they are kept to be said, as RoomFill's are.
+ */
+export interface NoRoomFill {
+  readonly plan: null;
+  readonly keptForNotes: readonly ChangedPiece[];
 }
 
 /**
@@ -1108,11 +1127,38 @@ export interface RoomFill {
  * only round groups of the fill table's kind are set anew; every other
  * piece stays and keeps the aisle rule round it as a keep-out, and the
  * room's door clear spaces (`input.doorSpaces`) stay clear as well.
+ *
+ * A round that holds a note this browser is not shown (`holdsUnseenNote`,
+ * lib/guest-plan-notes currentHeldNoteIds, on the table or any of its chairs)
+ * is not Fill's to set anew either: a round the plan has no spot for is taken
+ * away, and a note nobody here can read would go with it. It stays where it
+ * stands, as a keep-out like any other piece.
  */
-export function planRoomFill(input: Omit<GangwayFillInput, "keepOuts">, placedItems: readonly PlacedItem[]): RoomFill | null {
-  const refillIds = fillRefillIds(placedItems, input.table);
+export function planRoomFill(
+  input: Omit<GangwayFillInput, "keepOuts">,
+  placedItems: readonly PlacedItem[],
+  holdsUnseenNote: (id: string) => boolean = () => false,
+): RoomFill | NoRoomFill {
+  const ofKind = fillRefillIds(placedItems, input.table);
+  const heldGroups = new Set(placedItems
+    .filter((placed) => ofKind.has(placed.id) && holdsUnseenNote(placed.id))
+    .map((placed) => placed.groupId));
+  const kept = placedItems.filter((placed) => ofKind.has(placed.id) && heldGroups.has(placed.groupId));
+  const keptIds = new Set(kept.map((placed) => placed.id));
+  const refillIds = keptIds.size === 0 ? ofKind : new Set([...ofKind].filter((id) => !keptIds.has(id)));
   const plan = planGangwayFill({ ...input, keepOuts: fillKeepOuts(placedItems, refillIds, input.rule.betweenTablesM) });
-  return plan === null ? null : { plan, refillIds };
+  const keptForNotes = refilledRounds(kept, keptIds).oldTables.map((table): ChangedPiece => {
+    const label = (table.label ?? "").trim();
+    // A round is known by its table. When the note is on one of its chairs and
+    // not on the table, it is said as that chair's place ("a chair at Table 6"):
+    // the table's own note panel shows nothing held (lib/guest-plan-notes).
+    const chair = holdsUnseenNote(table.id) ? undefined : kept.find((piece) => piece.groupId === table.groupId && holdsUnseenNote(piece.id));
+    const byChair = chair === undefined ? null : heldNotePieceNamed(chair, kept);
+    return byChair !== null && byChair.label !== null
+      ? { ...byChair, noun: "round" }
+      : { label: label === "" ? null : label, noun: "round" };
+  });
+  return plan === null ? { plan, keptForNotes } : { plan, refillIds, keptForNotes };
 }
 
 /** Every kept piece as a keep-out, metres, room-centred: its footprint and the aisle round it. */
@@ -1244,6 +1290,12 @@ export interface FillConsequence {
 /** A round with no name, as the consequence names it. */
 const UNNAMED_ROUND = "a round";
 
+/** A round as Fill's lines name it: its table's own name, or "a round". */
+function roundName(table: PlacedItem): string {
+  const label = (table.label ?? "").trim();
+  return label === "" ? UNNAMED_ROUND : label;
+}
+
 /** How near its spot a reused round must already stand to count as kept: a millimetre, and no turn. */
 const SAME_SPOT_M = 0.001;
 const SAME_TURN_RAD = 1e-6;
@@ -1261,10 +1313,7 @@ export function fillConsequence(
 ): FillConsequence | null {
   const { refilled, oldTables } = refilledRounds(placedItems, refillIds);
   if (oldTables.length === 0) return null;
-  const nameOf = (table: PlacedItem): string => {
-    const label = (table.label ?? "").trim();
-    return label === "" ? UNNAMED_ROUND : label;
-  };
+  const nameOf = roundName;
   const seatsOf = (table: PlacedItem): readonly PlacedItem[] => roundSeats(refilled, table);
   const chairsAt = (table: PlacedItem): number => seatsOf(table)
     .filter((placed) => getCatalogueItem(placed.catalogueItemId)?.category === "chair").length;
@@ -1396,6 +1445,17 @@ export function fillOverDoneLine(plan: BanquetFillPlan, consequence: FillConsequ
   const seated = `seated ${plan.chairs.toLocaleString("en-GB")} at ${countLabel(plan.tableCount, "table")}`;
   const changes = fillChanges(consequence, "done");
   return sentence(changes.length > 0 ? `${seated}: ${namesList(changes)}` : seated);
+}
+
+/**
+ * What the Guests lens adds once a fill has been laid round rounds it left
+ * alone for their notes (RoomFill.keptForNotes): one sentence, "Table 3
+ * stayed where it is, because it has a note that cannot be shown here." or,
+ * for several, "Tables 3, 5 and 8 stayed where they are, because each has a
+ * note that cannot be shown here." Null when it left none.
+ */
+export function fillKeptForNotesLine(kept: readonly ChangedPiece[]): string | null {
+  return stayedForNotesLine(kept);
 }
 
 /** The fill's changes to the rounds there, said before it lays ("moves 3 rounds") or after ("moved 3 rounds"). */

@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 421 cases. Four hosted CPU shards execute
-416 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 426 cases. Four hosted CPU shards execute
+421 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -189,6 +189,15 @@ room in one column no wider than the phone, the present on the hours above the
 rooms and on every room's bar, and a slot opened under its own room to its sheet
 (`day-board.spec.ts`). The other three Day Board cases keep their identities.
 The totals are unchanged.
+The next, on 12 November 2026, adds five ordinary cases for a table holding a
+note this browser is not shown (PR #388, the web half of the guest plan notes),
+against an in-memory layout server given #389's rules for held notes: in
+today's chrome Delete leaves such a table and the notice names it, a save
+refused for leaving one out says the server's sentence with no Retry, and a
+table holding the person's own note goes in two saves; in the new chrome Keep
+mine keeps a table someone has since written a note on, and Undo will not take
+one away (`planner-held-notes.spec.ts`); this changes the inventory from 421
+to 426 and the CPU partition from 416 to 421.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result

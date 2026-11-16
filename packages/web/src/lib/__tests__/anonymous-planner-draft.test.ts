@@ -5,6 +5,7 @@ import {
   discardPlannerDraft,
   persistAnonymousPlannerDraft,
   plannerDraftBaseObjects,
+  plannerDraftWithUnreadNotes,
   readAnonymousPlannerDraft,
   signedInPlannerDraftKey,
 } from "../anonymous-planner-draft.js";
@@ -290,5 +291,110 @@ describe("anonymous planner draft persistence (continued)", () => {
       baseRevision: 1,
     })).toBeNull();
     expect(localStorage.getItem(anonymousPlannerDraftKey("cfg-1"))).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A guest plan's notes go only to the browser that made the plan, so the same
+// plan at the same revision is read two ways: with its notes, or without. A
+// draft kept from a read without them holds pieces with no note, and restoring
+// that over a read with them would clear every note (review of #375, major 1).
+// So a draft says whether it was read with the notes, and one that was not
+// takes the notes it never read from the server's copy.
+// ---------------------------------------------------------------------------
+
+describe("a draft and the plan's notes", () => {
+  const HELD = "TEST ONLY nut allergy, seat by the door";
+  const A = "11111111-1111-4111-8111-11111111111a";
+  const B = "11111111-1111-4111-8111-11111111111b";
+  const C = "11111111-1111-4111-8111-11111111111c";
+
+  function piece(id: string, notes: string, positionX = 1): EditorObject {
+    return { ...objectFixture, id, notes, positionX };
+  }
+
+  function keep(objects: readonly EditorObject[], baseObjects: readonly EditorObject[], notesIncluded?: boolean): void {
+    persistAnonymousPlannerDraft({
+      configId: "cfg-1", spaceId: "space-1", venueId: "venue-1", configRevision: 4, isPublicPreview: true,
+      objects, baseObjects, isDirty: true, ...(notesIncluded === undefined ? {} : { notesIncluded }),
+    });
+  }
+
+  function kept(): NonNullable<ReturnType<typeof readAnonymousPlannerDraft>> {
+    const draft = readAnonymousPlannerDraft("cfg-1", { spaceId: "space-1", venueId: "venue-1", baseRevision: 4 });
+    if (draft === null) throw new Error("No draft kept");
+    return draft;
+  }
+
+  function notesOf(objects: readonly EditorObject[]): Record<string, string> {
+    return Object.fromEntries(objects.map((object) => [object.id, object.notes]));
+  }
+
+  it("records that the plan was read with its notes, and a draft that does not say was not", () => {
+    keep([piece(A, HELD, 5)], [piece(A, HELD)], true);
+    expect(kept().notesIncluded).toBe(true);
+
+    keep([piece(A, "", 5)], [piece(A, "")], false);
+    expect(kept().notesIncluded).not.toBe(true);
+
+    // A page from before drafts said so, or one that was never told.
+    keep([piece(A, "", 5)], [piece(A, "")]);
+    expect(kept().notesIncluded).not.toBe(true);
+  });
+
+  it("takes each note it never read from the server's copy: the pieces it moved, the ones it left, and its own base", () => {
+    // Read without notes: A (moved since) and B (left alone) came without
+    // theirs, each marked as holding one.
+    const marked = (object: EditorObject): EditorObject => ({ ...object, noteHeld: true });
+    keep([marked(piece(A, "", 5)), marked(piece(B, ""))], [marked(piece(A, "")), marked(piece(B, ""))]);
+    expect(kept().objects.map((object) => object.noteHeld)).toEqual([true, true]);
+    const restored = plannerDraftWithUnreadNotes(kept(), [piece(A, HELD), piece(B, "TEST ONLY top table")]);
+
+    expect(notesOf(restored.objects)).toEqual({ [A]: HELD, [B]: "TEST ONLY top table" });
+    // Shown their notes now, the pieces are no longer marked as holding one unseen.
+    expect(restored.objects.some((object) => "noteHeld" in object)).toBe(false);
+    expect((plannerDraftBaseObjects(restored) ?? []).some((object) => "noteHeld" in object)).toBe(false);
+    // The move is still the draft's.
+    expect(restored.objects.find((object) => object.id === A)?.positionX).toBe(5);
+    // Its base holds the notes too, so the restore counts one moved piece, not two cleared notes.
+    expect(notesOf(plannerDraftBaseObjects(restored) ?? [])).toEqual({ [A]: HELD, [B]: "TEST ONLY top table" });
+  });
+
+  it("keeps a note the draft wrote on a bare piece, and every note of a draft whose base held them", () => {
+    // Read without notes; the person wrote on C, which the server has bare.
+    keep([piece(A, ""), piece(C, "TEST ONLY typed here")], [piece(A, ""), piece(C, "")]);
+    const added = plannerDraftWithUnreadNotes(kept(), [piece(A, HELD), piece(C, "")]);
+    expect(notesOf(added.objects)).toEqual({ [A]: HELD, [C]: "TEST ONLY typed here" });
+
+    // A draft whose base held the notes read them: a note it changed stays
+    // changed, and one it cleared stays cleared.
+    keep([piece(A, "TEST ONLY corrected"), piece(B, "")], [piece(A, HELD), piece(B, "TEST ONLY top table")]);
+    const informed = plannerDraftWithUnreadNotes(kept(), [piece(A, HELD), piece(B, "TEST ONLY top table")]);
+    expect(notesOf(informed.objects)).toEqual({ [A]: "TEST ONLY corrected", [B]: "" });
+  });
+
+  it("keeps both notes when it wrote on a piece whose note it had never read, the stored one first", () => {
+    // Shown A as bare, the page wrote on it; A held a note all along. Neither
+    // is put in place of the other, as Replace keeps both when it carries a
+    // note to a table that has one.
+    keep([piece(A, "TEST ONLY typed here")], [piece(A, "")]);
+    const restored = plannerDraftWithUnreadNotes(kept(), [piece(A, HELD)]);
+    expect(notesOf(restored.objects)).toEqual({ [A]: `${HELD}\nTEST ONLY typed here` });
+    expect(notesOf(plannerDraftBaseObjects(restored) ?? [])).toEqual({ [A]: HELD });
+
+    // Having written exactly the stored note (a save that landed unheard) is no second note.
+    keep([piece(A, HELD, 5)], [piece(A, "")]);
+    expect(notesOf(plannerDraftWithUnreadNotes(kept(), [piece(A, HELD)]).objects)).toEqual({ [A]: HELD });
+  });
+
+  it("without a base to say what it read, takes the server's note wherever it holds none", () => {
+    persistAnonymousPlannerDraft({
+      configId: "cfg-1", spaceId: "space-1", venueId: "venue-1", configRevision: 4, isPublicPreview: true,
+      objects: [piece(A, "", 5), piece(C, "TEST ONLY typed here")], isDirty: true,
+    });
+    const draft = kept();
+    expect(draft.base).toBeUndefined();
+    expect(notesOf(plannerDraftWithUnreadNotes(draft, [piece(A, HELD), piece(C, "")]).objects))
+      .toEqual({ [A]: HELD, [C]: "TEST ONLY typed here" });
   });
 });

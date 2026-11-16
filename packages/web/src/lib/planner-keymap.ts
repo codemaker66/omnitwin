@@ -1,7 +1,7 @@
 import { useEditorStore } from "../stores/editor-store.js";
 import { useToolStore } from "../stores/tool-store.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
-import { usePlacementStore } from "../stores/placement-store.js";
+import { usePlacementStore, type SeatChange } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
@@ -28,6 +28,7 @@ import {
   type PlannerClipboard,
 } from "./placement-edit.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
+import { currentHeldNoteIds } from "./guest-plan-notes.js";
 import { withNoteSeeds } from "./note-seeds.js";
 import { planReplace, type ReplaceOptions, type ReplacePlan, type ReplaceResult } from "./replace.js";
 import type { CardParams } from "./setup-cards.js";
@@ -229,7 +230,7 @@ function seatsAt(table: PlacedItem, placedItems: readonly PlacedItem[]): number 
 export function changeSeatsAtSelectedTables(delta: 1 | -1): boolean {
   const ids = selectedIds();
   const placed = usePlacementStore.getState().placedItems;
-  const changes: { readonly tableId: string; readonly seats: number }[] = [];
+  const changes: SeatChange[] = [];
   for (const item of placed) {
     if (!ids.has(item.id) || item.groupId === null) continue;
     const catalogue = getCatalogueItem(item.catalogueItemId);
@@ -239,9 +240,8 @@ export function changeSeatsAtSelectedTables(delta: 1 | -1): boolean {
     if (next !== seats) changes.push({ tableId: item.id, seats: next });
   }
   if (changes.length === 0) return false;
-  asOneUndoStep(() => {
-    for (const change of changes) usePlacementStore.getState().rearrangeGroup(change.tableId, change.seats);
-  });
+  // One change, so a table kept for a held note is said once, beside the tables that did change.
+  asOneUndoStep(() => { usePlacementStore.getState().rearrangeGroups(changes); });
   return true;
 }
 
@@ -489,10 +489,13 @@ function carriedNotes(plan: ReplacePlan): ReadonlyMap<string, string> {
  * undo step, each old table's note carried to the new table nearest it in
  * that same step (lib/note-seeds). The plan comes back either way, for its
  * receipt; refused, nothing changes. `hasNote` defaults to the editor's notes.
+ * A selection with a piece whose note this browser is not shown is always
+ * refused (lib/guest-plan-notes): that is the open plan's fact, not an option.
  */
 export function replaceSelection(params: CardParams, options: Pick<ReplaceOptions, "hasNote" | "store"> = {}): ReplaceResult {
   const hasNote = options.hasNote ?? ((pieceId: string) => noteOf(pieceId) !== "");
-  const result = planReplace(selectedIds(), params, editWorld(), { ...options, hasNote });
+  const held = currentHeldNoteIds();
+  const result = planReplace(selectedIds(), params, editWorld(), { ...options, hasNote, holdsUnseenNote: (pieceId) => held.has(pieceId) });
   if (!result.ok) {
     postPlacementNotice(result.reason);
     return result;
