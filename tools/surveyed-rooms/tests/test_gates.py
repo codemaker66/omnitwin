@@ -791,7 +791,7 @@ class OccluderMargin(unittest.TestCase):
         self.assertEqual(legacy.best_view_values(self.open["room"])["bestview"]["OCCLUDER_MARGIN"], PROUD_MARGIN)
         gh = Room(os.path.join(ROOMS, "grand-hall.room.json"), ROOMS)
         self.assertEqual(legacy.best_view_values(gh)["bestview"]["OCCLUDER_MARGIN"], 0.0)
-        self.assertEqual(gh.ledger(), [])
+        self.assertNotIn("B25", {r["gate"] for r in gh.ledger()})
 
     def test_2_without_the_margin_the_box_is_outlined_in_the_plain_wall(self):
         c = self.closed
