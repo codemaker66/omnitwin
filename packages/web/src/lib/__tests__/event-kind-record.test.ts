@@ -581,7 +581,7 @@ describe("an answer still to be written when another layout opens", () => {
     expect(write).toHaveBeenCalledTimes(3);
   });
 
-  it("counts as its own only what it sent since the layout last had nothing to write", async () => {
+  it("does not count as its own an answer refused for good before the next was given", async () => {
     openOwn("mine", {});
     const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
       .mockRejectedValueOnce(new ApiError(409, "This plan is with the venue for review, so it cannot be changed now.", "CONFIG_LOCKED"))
@@ -600,6 +600,86 @@ describe("an answer still to be written when another layout opens", () => {
     window.dispatchEvent(new Event("online"));
     await settleWrites();
     expect(write).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not count as its own an answer refused for good while a newer one waited", async () => {
+    openOwn("mine", {});
+    let refuse: (error: unknown) => void = () => undefined;
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { refuse = reject; }))
+      .mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(1); });
+    // Corporate is given while wedding is on its way. Wedding is then refused for good, and corporate's own write fails.
+    answerEventKind("corporate", { writeMetadata: write });
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    refuse(new ApiError(403, "Insufficient permissions", "FORBIDDEN"));
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
+    openOwn("elsewhere", {});
+    // Wedding was refused, so a layout holding wedding now was answered elsewhere since.
+    openOwn("mine", { eventKind: "wedding" }, write);
+    expect(question()).toMatchObject({ configId: "mine", answer: "wedding", save: "kept" });
+    setOnline(true);
+    window.dispatchEvent(new Event("online"));
+    await settleWrites();
+    expect(write).toHaveBeenCalledTimes(2);
+  });
+
+  it("still counts as its own an answer whose write it never saw land, after that answer was dropped at its turn", async () => {
+    signIn("planner-a");
+    openOwn("mine", {});
+    let lose: (error: unknown) => void = () => undefined;
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { lose = reject; }))
+      .mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"))
+      .mockResolvedValue({});
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(1); });
+    // Wedding reaches the layout, but its answer is lost on the way back.
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    lose(new ApiError(0, "Network error", "NETWORK_ERROR"));
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
+    // A's session ends elsewhere, so wedding's turn comes with nobody signed in, and it is dropped.
+    signIn(null);
+    setOnline(true);
+    window.dispatchEvent(new Event("online"));
+    await settleWrites();
+    expect(write).toHaveBeenCalledTimes(1);
+    // A signs in again here and answers corporate, which fails.
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    signIn("planner-a");
+    answerEventKind("corporate", { writeMetadata: write });
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
+    openOwn("elsewhere", {});
+    // The layout holds wedding: this tab's own, whose write it never saw land.
+    openOwn("mine", { eventKind: "wedding" }, write);
+    expect(question()).toMatchObject({ configId: "mine", answer: "corporate", save: "retrying" });
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(3); });
+    expect(write).toHaveBeenLastCalledWith("mine", "corporate");
+  });
+
+  it("starts afresh once the layout is read with nothing of its own unsent or on its way", async () => {
+    openOwn("mine", {});
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
+    openOwn("elsewhere", {});
+    // The layout opens holding other, given elsewhere: wedding gives way, and that read follows wedding's write.
+    openOwn("mine", { eventKind: "other" }, write);
+    expect(question()).toMatchObject({ answer: "other", save: "kept" });
+    answerEventKind("corporate", { writeMetadata: write });
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
+    openOwn("elsewhere", {});
+    // Someone elsewhere answers wedding again: not this tab's, so it stands.
+    openOwn("mine", { eventKind: "wedding" }, write);
+    expect(question()).toMatchObject({ configId: "mine", answer: "wedding", save: "kept" });
   });
 
   it("sends only the newest of the answers given while it waited its turn, and lets an earlier one landing move it on", async () => {
@@ -637,13 +717,114 @@ describe("an answer belongs to the person who gave it", () => {
     answerEventKind("wedding", { writeMetadata: write });
     await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
     // A is signed out elsewhere, and B signs in to this browser before the network returns.
+    expect(question().receipt).not.toBeNull();
     signIn("planner-b");
-    expect(question()).toMatchObject({ configId: "venue-layout", answer: undefined, save: "kept" });
+    expect(question()).toMatchObject({ configId: "venue-layout", answer: undefined, save: "kept", receipt: null });
     expect(plannerKind()).toBeNull();
     setOnline(true);
     window.dispatchEvent(new Event("online"));
     await settleWrites();
     expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("is not shown to someone who signs in while its write is on its way, nor held for them when it is refused", async () => {
+    signIn("planner-a");
+    openOwn("venue-layout", {});
+    let refuse: (error: unknown) => void = () => undefined;
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { refuse = reject; }));
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(1); });
+    // A is signed out and B signs in while wedding's write is on its way, and it is then refused: the plan went for review.
+    signIn(null);
+    signIn("planner-b");
+    expect(question()).toMatchObject({ configId: "venue-layout", answer: undefined, save: "kept", receipt: null });
+    expect(plannerKind()).toBeNull();
+    refuse(new ApiError(409, "This plan is with the venue for review, so it cannot be changed now.", "CONFIG_LOCKED"));
+    await settleWrites();
+    expect(question()).toMatchObject({ answer: undefined, save: "kept" });
+    openOwn("venue-layout", {});
+    expect(question()).toMatchObject({ configId: "venue-layout", answer: undefined, save: "kept" });
+    expect(plannerKind()).toBeNull();
+  });
+
+  it("is not shown to someone who signs in while its write is on its way, nor tried again when that write fails", async () => {
+    signIn("planner-a");
+    openOwn("venue-layout", {});
+    let lose: (error: unknown) => void = () => undefined;
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { lose = reject; }))
+      .mockResolvedValue({});
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(1); });
+    signIn(null);
+    signIn("planner-b");
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    lose(new ApiError(0, "Network error", "NETWORK_ERROR"));
+    await settleWrites();
+    expect(question()).toMatchObject({ configId: "venue-layout", answer: undefined, save: "kept", receipt: null });
+    setOnline(true);
+    window.dispatchEvent(new Event("online"));
+    await settleWrites();
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the next person what the layout holds once a write still on its way as they signed in lands", async () => {
+    signIn("planner-a");
+    openOwn("venue-layout", {});
+    let land: () => void = () => undefined;
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockImplementationOnce(() => new Promise((resolve) => { land = () => { resolve({}); }; }));
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(1); });
+    signIn(null);
+    signIn("planner-b");
+    expect(question()).toMatchObject({ answer: undefined, save: "kept" });
+    // The write went out as A, while A was signed in: once it lands, the layout holds wedding.
+    land();
+    await vi.waitFor(() => { expect(question()).toMatchObject({ configId: "venue-layout", answer: "wedding", save: "kept" }); });
+    expect(plannerKind()).toBe("wedding");
+  });
+
+  it("leaves another open layout alone when a write let go of on its way lands", async () => {
+    signIn("planner-a");
+    openOwn("venue-layout", {});
+    let land: () => void = () => undefined;
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockImplementationOnce(() => new Promise((resolve) => { land = () => { resolve({}); }; }));
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(1); });
+    signIn(null);
+    signIn("planner-b");
+    openOwn("elsewhere", { eventKind: "corporate" });
+    land();
+    await settleWrites();
+    expect(question()).toMatchObject({ configId: "elsewhere", answer: "corporate", save: "kept" });
+    expect(plannerKind()).toBe("corporate");
+  });
+
+  it("is dropped once someone else signs in, even if its person comes back: nothing is written, and the layout shows what it holds", async () => {
+    signIn("planner-a");
+    openOwn("venue-layout", {});
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"))
+      .mockResolvedValue({});
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
+    // B signs in for a moment, and A signs in again before the network returns.
+    signIn(null);
+    signIn("planner-b");
+    signIn(null);
+    signIn("planner-a");
+    setOnline(true);
+    window.dispatchEvent(new Event("online"));
+    await settleWrites();
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(question()).toMatchObject({ configId: "venue-layout", answer: undefined, save: "kept" });
+    expect(plannerKind()).toBeNull();
   });
 
   it("lets an answer held for this visit go when someone else signs in: opened again, the layout shows only what it holds", async () => {
@@ -652,10 +833,11 @@ describe("an answer belongs to the person who gave it", () => {
     const refused = vi.fn(() => Promise.reject(new ApiError(403, "Insufficient permissions", "FORBIDDEN")));
     answerEventKind("wedding", { writeMetadata: refused });
     await vi.waitFor(() => { expect(question().save).toBe("this-visit"); });
+    changeEventKind();
     // A is signed out and B signs in, the auth bridge passing through nobody while it checks B's access.
     signIn(null);
     signIn("planner-b");
-    expect(question()).toMatchObject({ configId: "venue-layout", answer: undefined, save: "kept" });
+    expect(question()).toMatchObject({ configId: "venue-layout", answer: undefined, save: "kept", changing: false });
     expect(plannerKind()).toBeNull();
     openOwn("venue-layout", {});
     expect(question()).toMatchObject({ configId: "venue-layout", answer: undefined, save: "kept" });
@@ -716,6 +898,22 @@ describe("an answer belongs to the person who gave it", () => {
     openOwn("venue-layout", {}, write);
     expect(question()).toMatchObject({ configId: "venue-layout", answer: undefined, save: "kept" });
     expect(plannerKind()).toBeNull();
+    await settleWrites();
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("is not applied when the layout opens again with nobody signed in", async () => {
+    signIn("planner-a");
+    openOwn("venue-layout", {});
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>().mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
+    answerEventKind("corporate", { writeMetadata: write });
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
+    openOwn("elsewhere", {});
+    signIn(null);
+    openOwn("venue-layout", {}, write);
+    expect(question()).toMatchObject({ configId: "venue-layout", answer: undefined, save: "kept" });
     await settleWrites();
     expect(write).toHaveBeenCalledTimes(1);
   });

@@ -350,13 +350,19 @@ function currentUserId(): string | null {
 }
 /** Writes queued or under way, by layout, so a retry never doubles one. */
 const writesQueued = new Map<string, number>();
+/** One write of an answer, as this tab sent it. */
+interface SentWrite {
+  readonly answer: EventKindAnswer;
+}
 /**
- * Answers this tab has sent for each layout without seeing them land. A write
- * can reach the layout and lose its answer on the way back, so any of these
- * may be what the layout holds. Cleared when one of this tab's own writes is
- * seen landing, and when a layout with nothing left to write is answered anew.
+ * Each layout's writes this tab has sent without seeing them land or be
+ * refused for good. A write can reach the layout and lose its answer on the
+ * way back, so the answer of any of these may be what the layout holds. A
+ * write seen landing clears them all: the layout holds its answer, after every
+ * write sent before it. They start afresh when the layout is read with nothing
+ * of this tab's unsent or on its way, since that read follows them all.
  */
-const sentUnseen = new Map<string, Set<EventKindAnswer>>();
+const sentUnseen = new Map<string, readonly SentWrite[]>();
 /** The person last seen signed in, once this tab has written for anyone: the answers it holds are theirs. */
 let lastPerson: string | null = null;
 let stopPersonWatch: (() => void) | null = null;
@@ -423,7 +429,8 @@ export function openLayoutEventKind(layout: OpenedLayout, deps: Partial<EventKin
   if (waiting !== undefined) {
     const stands = waiting.userId === currentUserId()
       && (stored === undefined
-        || (stored !== waiting.answer && (stored === waiting.base || sentUnseen.get(layout.configId)?.has(stored) === true)));
+        || (stored !== waiting.answer
+          && (stored === waiting.base || sentUnseen.get(layout.configId)?.some((sent) => sent.answer === stored) === true)));
     if (stands) {
       knownStored.set(layout.configId, stored);
       applyAnswer(layout.configId, false, waiting.answer, "retrying");
@@ -433,6 +440,8 @@ export function openLayoutEventKind(layout: OpenedLayout, deps: Partial<EventKin
     // Another person's answer, one that landed after all, or one overtaken by an answer given elsewhere.
     unsent.delete(layout.configId);
   }
+  // Read with nothing of this tab's unsent or on its way, the layout's copy follows every write this tab sent.
+  if (!writesQueued.has(layout.configId)) sentUnseen.delete(layout.configId);
   knownStored.set(layout.configId, stored);
   if (stored !== undefined) {
     applyAnswer(layout.configId, false, stored, "kept");
@@ -502,8 +511,6 @@ function markSave(configId: string, answer: EventKindAnswer, save: EventKindSave
 /** Keeps a signed-in layout's newest answer until it is seen kept, and writes it. */
 function queueAnswer(configId: string, answer: EventKindAnswer, deps: EventKindRecordDeps): void {
   watchPerson();
-  // With nothing unsent and no write on its way, every earlier write has answered: the layout starts afresh.
-  if (!unsent.has(configId) && !writesQueued.has(configId)) sentUnseen.delete(configId);
   const entry: UnsentAnswer = { answer, base: knownStored.get(configId), userId: currentUserId() };
   unsent.set(configId, entry);
   retryAttempts = 0;
@@ -526,6 +533,7 @@ function queueAnswer(configId: string, answer: EventKindAnswer, deps: EventKindR
 function writeAnswer(configId: string, entry: UnsentAnswer, deps: EventKindRecordDeps): Promise<void> {
   writesQueued.set(configId, (writesQueued.get(configId) ?? 0) + 1);
   writing = writing.then(async () => {
+    const sent: SentWrite = { answer: entry.answer };
     try {
       if (unsent.get(configId) !== entry) return;
       if (entry.userId !== currentUserId()) {
@@ -534,24 +542,28 @@ function writeAnswer(configId: string, entry: UnsentAnswer, deps: EventKindRecor
         if (state.configId === configId && !state.guest && state.answer === entry.answer) showStoredAnswer(configId);
         return;
       }
-      const sent = sentUnseen.get(configId) ?? new Set<EventKindAnswer>();
-      sentUnseen.set(configId, sent.add(entry.answer));
+      sentUnseen.set(configId, [...(sentUnseen.get(configId) ?? []), sent]);
       await deps.writeMetadata(configId, entry.answer);
       retryAttempts = 0;
       knownStored.set(configId, entry.answer);
-      // Seen landing: the layout holds this answer now, after anything this tab sent before it.
+      // Seen landing: the layout holds this answer now, after every write this tab sent before it.
       sentUnseen.delete(configId);
       const newest = unsent.get(configId);
       if (newest !== entry) {
         // This tab's own answer landed under a newer one still to go: the newer one now replaces it.
         if (newest !== undefined) newest.base = entry.answer;
+        // Let go of on its way (a change of person, or a reopen holding another answer), it landed all the same.
+        else showLandedAnswer(configId, entry.answer);
         return;
       }
       unsent.delete(configId);
       markSave(configId, entry.answer, "kept");
     } catch (error) {
+      const final = refusedForGood(error);
+      // Refused for good, this write certainly did not land: its answer is no longer one the layout may hold.
+      if (final) sentUnseen.set(configId, (sentUnseen.get(configId) ?? []).filter((other) => other !== sent));
       if (unsent.get(configId) !== entry) return;
-      if (refusedForGood(error)) {
+      if (final) {
         unsent.delete(configId);
         markSave(configId, entry.answer, "this-visit");
         return;
@@ -600,13 +612,18 @@ function showStoredAnswer(configId: string): void {
   useEventKindQuestion.setState({ changing: false, receipt: null });
 }
 
+/** A write this tab let go of on its way landed all the same: the open layout shows what it now holds. */
+function showLandedAnswer(configId: string, answer: EventKindAnswer): void {
+  if (useEventKindQuestion.getState().configId === configId) applyAnswer(configId, false, answer, "kept");
+}
+
 /**
  * From this tab's first write, watches who is signed in. Once someone else
- * is, an answer the open layout holds for the last person, unsent or for this
- * visit, gives way at once to what the layout holds. (Their unsent answers are
- * dropped when their turn comes, or when their layout opens again.) Nobody
- * signed in is no change of person: the auth bridge passes through nobody
- * while it checks anyone's access, the same person's included.
+ * is, the last person's unsent answers are dropped, and wherever the open
+ * layout showed an answer held for them, unsent (its write perhaps still on
+ * its way) or for this visit, it gives way at once to what the layout holds.
+ * Nobody signed in is no change of person: the auth bridge passes through
+ * nobody while it checks anyone's access, the same person's included.
  */
 function watchPerson(): void {
   if (stopPersonWatch !== null) return;
@@ -616,7 +633,9 @@ function watchPerson(): void {
     if (next === null || next === lastPerson) return;
     lastPerson = next;
     const state = useEventKindQuestion.getState();
-    if (state.configId !== null && !state.guest && state.save !== "kept") showStoredAnswer(state.configId);
+    const heldForLast = state.save !== "kept" || (state.configId !== null && unsent.has(state.configId));
+    unsent.clear();
+    if (state.configId !== null && !state.guest && heldForLast) showStoredAnswer(state.configId);
   });
 }
 
