@@ -298,7 +298,7 @@ describe("TwinEnquiryModal", () => {
       });
     });
 
-    it("keeps the hidden field out of a person's reach, by eye, keyboard, screen reader or autofill", () => {
+    it("keeps the hidden field out of a person's reach by eye, keyboard and screen reader, and carries nothing in its attributes that autofill or a password manager reads", () => {
       renderModal();
       const form = screen.getByTestId("twin-enquiry-form");
       expectOutOfReach(hiddenTrapIn(form), form);

@@ -243,13 +243,16 @@ describe.skipIf(target === undefined)("the public forms' hidden trap, on the mig
 
   /** The guest's own words and details, none of which a log may hold. */
   function personal(payload: Record<string, unknown>): string[] {
-    return ["email", "name", "phone", "message"].map((field) => String(payload[field]).toLowerCase());
+    // What the hidden field held is the sender's own text too.
+    const trap = payload["trap"];
+    const held = typeof trap === "string" && trap !== "" ? [trap.toLowerCase()] : [];
+    return [...["email", "name", "phone", "message"].map((field) => String(payload[field]).toLowerCase()), ...held];
   }
 
   it.each([
     ["the hidden field holds anything", "field", { trap: "https://example.test/offer", openMs: 41_000 }, "field", 41_000],
     ["the form was open under three seconds", "time", { trap: "", openMs: 2999 }, "time", 2999],
-    ["both", "both", { trap: "x", openMs: 40 }, "field and time", 40],
+    ["both", "both", { trap: "TEST ONLY filled by a script", openMs: 40 }, "field and time", 40],
   ] as const)("keeps an enquiry that hit the trap (%s), answers it as any other, tells the team in the app and emails nobody", async (_case, label, trapped, hit, openMs) => {
     const control = enquiryIdOf(await enquire(asked(`${label}-control`)));
     const payload: Record<string, unknown> = { ...asked(label), ...trapped };

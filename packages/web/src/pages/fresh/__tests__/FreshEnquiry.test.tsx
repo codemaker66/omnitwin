@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("../../../api/configurations.js", () => ({ submitGuestEnquiry: mocks.submitGuestEnquiry }));
 
-const { FreshEnquiry } = await import("../FreshEnquiry.js");
+const { FreshEnquiry, eventDateRefusal } = await import("../FreshEnquiry.js");
 const {
   FRESH_ENQUIRY_CRAFT_PREFIX,
   FRESH_ENQUIRY_DATE_AFTER_LAST,
@@ -372,6 +372,43 @@ describe("FreshEnquiry — a date from today", () => {
     send();
     expectHeldOnTheDate(date, "Choose a date from the calendar.");
   });
+
+  // The review of #438 (EG4): behaviours the form relies on, pinned.
+  it("names the date first when the date and the email are both wrong, and takes focus to the date", () => {
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    render(<FreshEnquiry />);
+    const date = dateField();
+    fireEvent.change(date, { target: { value: "2027-04-29" } });
+    send("not an address");
+    expectHeldOnTheDate(date, "Choose a date from today onwards.");
+    expect(screen.queryByText("Enter a valid email address."), "the email's turn comes once the date is right").toBeNull();
+  });
+
+  it("keeps the reason as Send said it when the guest leaves the field while it still holds no date", () => {
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    render(<FreshEnquiry />);
+    const date = dateField();
+    controlHolds(date, true);
+    send();
+    expectHeldOnTheDate(date, "Choose a date from the calendar.");
+    fireEvent.blur(date);
+    expect(screen.getByRole("alert").textContent, "still said as Send said it").toBe("Choose a date from the calendar.");
+    expect(date.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  // Measured in Chromium (the review's EG2; the owner kept it as built on 16
+  // November 2026): the date field stops at four digits, so a doubled key in
+  // the year leaves 0277, not 20277. Year 277 is a day on the calendar, long
+  // before today, so it is told "from today onwards", never "four digits".
+  it("tells the year a doubled key leaves in Chromium, 0277, that the date is before today", () => {
+    expect(eventDateRefusal("0277-05-01", "2027-04-30")).toBe("before-today");
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    render(<FreshEnquiry />);
+    const date = dateField();
+    fireEvent.change(date, { target: { value: "0277-05-01" } });
+    send();
+    expectHeldOnTheDate(date, "Choose a date from today onwards.");
+  });
 });
 
 // Blake, 12 November 2026: a hidden trap on the public forms. The front door
@@ -401,7 +438,7 @@ describe("FreshEnquiry — its hidden trap", () => {
     });
   });
 
-  it("keeps the hidden field out of a person's reach, by eye, keyboard, screen reader or autofill", () => {
+  it("keeps the hidden field out of a person's reach by eye, keyboard and screen reader, and carries nothing in its attributes that autofill or a password manager reads", () => {
     render(<FreshEnquiry />);
     const form = screen.getByTestId("enquiry-composer");
     expectOutOfReach(hiddenTrapIn(form), form);

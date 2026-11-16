@@ -608,7 +608,7 @@ describe("GuestEnquiryModal's hidden trap", () => {
     expect(mocks.submit).toHaveBeenCalledWith(expect.not.objectContaining({ openMs: expect.anything() as unknown }));
   });
 
-  it("keeps the hidden field out of a person's reach, by eye, keyboard, screen reader or autofill", async () => {
+  it("keeps the hidden field out of a person's reach by eye, keyboard and screen reader, and carries nothing in its attributes that autofill or a password manager reads", async () => {
     const form = await open();
     expectOutOfReach(hiddenTrapIn(form), form);
   });
