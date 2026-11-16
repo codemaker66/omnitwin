@@ -7,12 +7,12 @@
 // (the backend and GPU of the planner's own renderer, read through the lab's
 // bridge after each capture) and keeps the page's uncaught errors and the
 // console's errors and warnings.
-//   node scripts/planner-lab.mjs --base http://127.0.0.1:5213 --out D:/claude/x \
+//   node scripts/planner-lab.mjs --base http://127.0.0.1:5213 --out <folder> \
 //     [--profile desktop|tablet|phone|off] [--mood daylight|evening|candlelight] \
 //     [--views room,plan,eye] [--frames 120] [--guests 160] [--channel chromium|chrome]
 //
 // Another Trades Hall room, drawn as surveyed from a staged folder, from the planner's own cameras:
-//   node scripts/planner-lab.mjs --base http://127.0.0.1:5213 --out D:/claude/x --frames 0 \
+//   node scripts/planner-lab.mjs --base http://127.0.0.1:5213 --out <folder> --frames 0 \
 //     --space saloon --roomsBase /rooms/saloon/survey-2026-07-11 [--roomsRev 1] \
 //     [--views opening,plan,from-fireplace,from-windows,from-front,from-rear]
 import { chromium } from "@playwright/test";
