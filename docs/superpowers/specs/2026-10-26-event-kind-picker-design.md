@@ -116,19 +116,30 @@ share) is never made to try.
     again, and the layout's own answer wins on the next load.
 
   A dropped connection never makes the planner ask twice. More rules for an answer not yet written:
-  - **It never overwrites a newer answer on reopening.** Each unsent answer carries what the layout held, as far as
-    this tab knows, when it was given (moved on when this tab's own earlier answer is seen written). Reopened, the
-    layout keeps the unsent answer only while it still holds that. If it holds the unsent answer itself, the write
-    landed; if it holds another, someone answered elsewhere since, and that answer stands. A retry made while the
-    layout is not open writes over whatever it holds by then: the last writer wins, as everywhere in the PATCH.
-  - **It belongs to the person who gave it.** It is never written as anyone else: after a change of person it is
-    dropped, and a reopen by someone else does not apply it. A 401 retries only while someone is still signed in.
+  - **A reopen keeps it only over what this tab knew, or sent itself.** Each unsent answer carries what the layout
+    held, as far as this tab knows, when it was given (moved on when this tab's own earlier answer is seen written).
+    The tab also counts as its own every answer it sent without seeing it land, since a write can reach the layout
+    and lose its answer on the way back; that count starts afresh once one of its writes lands, or once the layout has
+    nothing left to write. Reopened, the layout keeps the unsent answer while it holds nothing, what this tab knew, or
+    one of those answers. If it holds the unsent answer itself, the write landed; if it holds any other, someone
+    answered elsewhere since, and that answer stands. The check compares answers, not versions: an answer changed and
+    changed back elsewhere reads as unchanged.
+  - **Every write is last-writer-wins.** A write or a retry, with the layout open or not, writes over whatever the
+    layout holds by then, as everywhere in the PATCH. Only a reopen looks first.
+  - **It belongs to the person who gave it.** It is never written as anyone else. Once someone else signs in, the last
+    person's unsent answers are dropped, and an answer the open layout holds for them, unsent or for this visit, gives
+    way to what the layout holds: it is neither shown to the next person nor brought back by their reopen. Nobody
+    signed in is no change of person, because the auth bridge passes through nobody while it checks anyone's access,
+    but an answer whose turn comes while nobody is signed in is dropped in the same way. A 401 retries only while
+    someone is still signed in.
   - **Only the newest is sent.** An answer overtaken while it waited its turn never reaches the network.
 - **A guest's draft.** It is kept in localStorage `venviewer.planner.eventKind` as
   `{ version: 1, entries: [{ configId, kind }], quiet }`, newest first, with the latest 200 kept. It is validated on
   read, and a damaged record reads as empty. A kind this planner does not know (added by a later release) reads as
   answered with no kind, and is kept when the record is rewritten, so a tab left open across a release never erases
-  a newer answer. If storage is unavailable, the answer holds for this tab only.
+  it from the device. Such a tab does write it to a layout as a skip when it carries it there (a draft it claims,
+  or a signed-in layout that holds no answer), and the layout then reads as skipped everywhere. If storage is
+  unavailable, the answer holds for this tab only.
 - **When a layout opens.** The store is set from metadata (signed-in) or the device record (guest). It is reset when
   the layout changes. As built, `editor-store`'s `loadConfiguration` and `createPublicConfig` (lane E's file) hand
   the layout to `openLayoutEventKind`, with the metadata the load already holds. That is the only place an answer is
