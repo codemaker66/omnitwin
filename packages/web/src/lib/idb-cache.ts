@@ -36,6 +36,10 @@ export interface CacheBackend {
   get(key: string): Promise<unknown>;
   put(key: string, value: unknown): Promise<void>;
   delete(key: string): Promise<void>;
+  /** Deletes the entry only while `matches` holds for what it stores, read
+   *  and deleted as one step: no other write (another tab's included) can
+   *  come between the compare and the delete. Resolves whether it deleted. */
+  deleteIf(key: string, matches: (value: unknown) => boolean): Promise<boolean>;
   list(): Promise<{ key: string; value: unknown }[]>;
 }
 
@@ -43,6 +47,9 @@ export interface CacheHandle<T> {
   get(key: string): Promise<StoredValue<T> | null>;
   put(key: string, value: T): Promise<void>;
   delete(key: string): Promise<void>;
+  /** Deletes the entry only while it still matches, compared and deleted as
+   *  one step of the store. Resolves whether it deleted. */
+  deleteIf(key: string, matches: (stored: StoredValue<T>) => boolean): Promise<boolean>;
   list(): Promise<{ key: string; stored: StoredValue<T> }[]>;
 }
 
@@ -65,6 +72,13 @@ export function memoryBackend(): CacheBackend {
     // eslint-disable-next-line @typescript-eslint/require-await
     async delete(key) {
       store.delete(key);
+    },
+    // No await between the read and the delete: one step of the event loop.
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async deleteIf(key, matches) {
+      if (!store.has(key) || !matches(store.get(key))) return false;
+      store.delete(key);
+      return true;
     },
     // eslint-disable-next-line @typescript-eslint/require-await
     async list() {
@@ -125,6 +139,35 @@ function idbBackend(dbName: string, storeName: string): CacheBackend {
     async delete(key) {
       await tx("readwrite", (s) => s.delete(key));
     },
+    // The read and the delete share one readwrite transaction on the store.
+    // IndexedDB runs readwrite transactions whose scopes overlap one at a
+    // time, across every connection to the database (other tabs included),
+    // so no other write can land between the compare and the delete.
+    // `matches` runs inside the read's success callback, while the
+    // transaction is still active.
+    async deleteIf(key, matches) {
+      const db = await openDb();
+      return new Promise<boolean>((resolve, reject) => {
+        const transaction = db.transaction(storeName, "readwrite");
+        const store = transaction.objectStore(storeName);
+        let deleted = false;
+        const read = store.get(key) as IDBRequest<unknown>;
+        read.onsuccess = () => {
+          if (read.result === undefined || !matches(read.result)) return;
+          store.delete(key);
+          deleted = true;
+        };
+        transaction.oncomplete = () => {
+          resolve(deleted);
+        };
+        transaction.onerror = () => {
+          reject(transaction.error ?? new Error("indexedDB conditional delete failed"));
+        };
+        transaction.onabort = () => {
+          reject(transaction.error ?? new Error("indexedDB conditional delete aborted"));
+        };
+      });
+    },
     async list() {
       const db = await openDb();
       return new Promise((resolve, reject) => {
@@ -170,6 +213,14 @@ export function openCache<T>(opts: {
   return withBackend<T>(backend);
 }
 
+/** A stored entry, or null for anything that is not one. */
+function asStoredValue<T>(raw: unknown): StoredValue<T> | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const r = raw as { storedAt?: unknown; value?: unknown };
+  if (typeof r.storedAt !== "string") return null;
+  return { storedAt: r.storedAt, value: r.value as T };
+}
+
 /**
  * Construct a typed handle given a specific backend. Pure wiring —
  * exported so tests can inject `memoryBackend()` directly without
@@ -178,11 +229,7 @@ export function openCache<T>(opts: {
 export function withBackend<T>(backend: CacheBackend): CacheHandle<T> {
   return {
     async get(key) {
-      const raw = await backend.get(key);
-      if (raw === null || typeof raw !== "object") return null;
-      const r = raw as { storedAt?: unknown; value?: unknown };
-      if (typeof r.storedAt !== "string") return null;
-      return { storedAt: r.storedAt, value: r.value as T };
+      return asStoredValue<T>(await backend.get(key));
     },
     async put(key, value) {
       const stored: StoredValue<T> = { storedAt: new Date().toISOString(), value };
@@ -190,6 +237,12 @@ export function withBackend<T>(backend: CacheBackend): CacheHandle<T> {
     },
     async delete(key) {
       await backend.delete(key);
+    },
+    async deleteIf(key, matches) {
+      return backend.deleteIf(key, (raw) => {
+        const stored = asStoredValue<T>(raw);
+        return stored !== null && matches(stored);
+      });
     },
     async list() {
       const rows = await backend.list();
