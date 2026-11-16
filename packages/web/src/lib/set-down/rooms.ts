@@ -216,13 +216,21 @@ function grandHall(): RoomAcoustics {
     slug: "grand-hall",
     volumeM3: volume,
     surfaces: [
+      // The floor's material is EST, the plan's choice: the hall is on the first floor (the 2010 FIRST plan) over
+      // the rooms below, and no source records the construction or finish of its floor.
       surface("oak-boards-joists", floor, "floor"),
+      // The flat ceiling's material is EST, the plan's choice of plaster on lath. The scan measures the coffered
+      // ceiling's height, not its build, and HES's listing (LB32713) records "a new hall ceiling in 1955" by Walter
+      // Underwood, so whether it is lath at all is uncertain. The dome below takes this row too.
       surface("plaster-lath", floor - dome.openingM2, "ceiling"),
       // No source gives the dome's construction (EST). The 2010 licensing
       // plans put a "Dome Space" over it between the galleries, so it has air
       // behind it; it takes the plaster-on-lath row of the ceiling round it.
       { material: "plaster-lath", areaM2: dome.surfaceM2, role: "ceiling", dome: true },
       surface("hardwood-panelling", dado, "wall"),
+      // The wall above the dado is EST, the plan's half panelling and half plaster: the scan shows a plaster face
+      // there with the frieze, the inscription and the cornice, and panelling in the attic band above the cornice
+      // (hall-spec.ts, HALL_ELEVATION), but no source measures what share of it is timber.
       surface("hardwood-panelling", upperWall / 2, "wall"),
       surface("plaster-masonry", upperWall / 2, "wall"),
       surface("sash-glazing", glazing, "opening"),
@@ -231,7 +239,7 @@ function grandHall(): RoomAcoustics {
     ],
     calibration: TRACER_CALIBRATION["grand-hall"],
     source:
-      "hall-spec.ts (scan of 11 July 2026): plan, ceiling, HALL_OPENINGS windows and HALL_DOORS doors; the scanned dome (HALL_DOME, domeHeightAt), integrated, its material EST; dado to the scanned 1.95 m cap rail, less each opening's part of that band; curtains 2 x 0.9 m a window (EST)",
+      "hall-spec.ts (scan of 11 July 2026): plan, ceiling, HALL_OPENINGS windows and HALL_DOORS doors; the scanned dome (HALL_DOME, domeHeightAt), integrated, its material EST; dado to the scanned 1.95 m cap rail, less each opening's part of that band; curtains 2 x 0.9 m a window (EST); EST, the plan's choices: the floor as oak boards on joists, the flat ceiling as plaster on lath (HES records a new hall ceiling in 1955), the wall above the dado half panelling and half plaster",
   };
 }
 
