@@ -29,6 +29,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/event-spine-links-schema-postgres.test.ts",
   // ...and its join of old records, run by the migrator over rows written before it: never a guess, and repeatable.
   "src/__tests__/event-spine-links-migration-postgres.test.ts",
+  // ...and the bind: a hold joins its enquiry's own event first and keeps the enquiry's link in step.
+  "src/__tests__/event-spine-bind-postgres.test.ts",
   "src/__tests__/enquiry-bookings-postgres.test.ts",
   // A booking stored with an empty title keeps its venue's Diary range readable (API-9).
   "src/__tests__/calendar-untitled-booking-postgres.test.ts",

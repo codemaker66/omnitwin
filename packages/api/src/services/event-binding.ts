@@ -7,6 +7,8 @@ import {
   bookingKindNeedsEvent,
   defaultEventPhaseInputs,
   deriveEventStatus,
+  EnquiryStatusSchema,
+  enquiryMayBecomeEvent,
   eventNameFor,
   summariseEventBookings,
   type EventStatus,
@@ -15,7 +17,8 @@ import type { Database } from "../db/client.js";
 import { bookings, enquiries, eventPhases, events, venues } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
-// The bind (event-spine Phase A; migration 0090).
+// The bind (event-spine Phase A, migration 0090; the enquiry's link, the
+// spine's links migration).
 //
 // Every writer of a hold or an ink calls bindBookingToEvent inside the SAME
 // transaction as its booking write, then syncEventStatus once the booking is
@@ -30,31 +33,46 @@ import { bookings, enquiries, eventPhases, events, venues } from "../db/schema.j
 //
 // Joining is never a guess. A booking joins:
 //   - the event its writer names (checked to be at the booking's venue), or
-//   - the event its enquiry's other bookings already have (the enquiry row is
-//     locked first, so two holds pencilled at once from one enquiry join one
-//     event rather than making two);
+//   - its enquiry's own event (enquiries.event_id, when it names a live event
+//     of the enquiry's venue), or
+//   - the event its enquiry's other bookings already have;
 // otherwise a new event is made from the booking: its title (without one,
 // its occasion and day: eventNameFor in @omnitwin/types, a day that follows
 // the event's start in syncEventStatus), type and times, a draft until
-// syncEventStatus derives its status from the bookings.
+// syncEventStatus derives its status from the bookings. The enquiry row is
+// locked first, so two holds pencilled at once from one enquiry join one
+// event rather than making two.
+//
+// The enquiry's link is kept in step. A booking bound through its enquiry
+// writes the enquiry's event_id to the event it joined when they differ
+// (setEnquiryEvent), unless the enquiry is a draft or asks to book nothing
+// (enquiryMayBecomeEvent in @omnitwin/types): such an enquiry never has an
+// event, and its bookings bind as they always did. A booking a person moves
+// to another event takes the link with it when it was the enquiry's last
+// booking in the old event (followBookingToEvent). The link is moved, never
+// emptied (a database trigger holds that).
 //
 // Lock order: a booking path locks its bookings first, then the enquiry, then
-// the event (syncEventStatus, FOR NO KEY UPDATE so it never waits on another
-// writer's foreign-key share of the same event). updateEventCore locks the
-// event and only reads bookings, so the two never wait on each other in a
-// cycle.
+// the event (syncEventStatus), and takes the enquiry and the event FOR NO
+// KEY UPDATE, never FOR UPDATE: a row written with a key to either (a
+// booking, a viewing) takes FOR KEY SHARE on it through the foreign key, and
+// FOR UPDATE waits on that share, then deadlocks when its holder wants the
+// same row. The enquiry is locked before any row referencing it is inserted
+// in the same transaction. updateEventCore locks the event and only reads
+// bookings, so the two never wait on each other in a cycle.
 // ---------------------------------------------------------------------------
 
 /** The database or a transaction on it (nesting makes a savepoint). */
 export type BindConn = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
-/** What a new event takes from the booking that brings it into being. */
+/** What a new event takes from the booking (or enquiry) that brings it into being. */
 export interface EventSeed {
   readonly venueId: string;
   readonly title: string;
   readonly eventType: string | null;
-  readonly startsAt: Date;
-  readonly endsAt: Date;
+  /** Null for an event made for an enquiry before any booking gives it dates. */
+  readonly startsAt: Date | null;
+  readonly endsAt: Date | null;
   readonly createdBy: string | null;
   /** The client's name where the booking came from an enquiry. */
   readonly clientName?: string | null;
@@ -65,7 +83,8 @@ export interface EventSeed {
 export type BindTarget =
   /** Join the event the writer names. */
   | { readonly join: "event"; readonly eventId: string }
-  /** Join the event the enquiry's bookings already have, else make one. */
+  /** Join the enquiry's own event, else the one its bookings already have,
+   *  else make one; and keep the enquiry's link in step. */
   | { readonly join: "enquiry"; readonly enquiryId: string }
   /** Make a new event. */
   | { readonly join: "new" };
@@ -101,20 +120,27 @@ export function defaultEventPhaseRows(eventId: string): (typeof eventPhases.$inf
   }));
 }
 
-/** A new event for a booking. Headcounts stay unknown (0 and null) until
- *  someone enters them; nothing is copied that nobody stated. It is named by
- *  the booking's title, or, when the booking has none it can use, by its
- *  occasion and the venue's own day of its start (eventNameFor): an event
- *  named "" failed every read of its name, the client's schedule and home,
- *  the Diary range and the room's timeline among them. */
-async function createEventFor(conn: BindConn, seed: EventSeed): Promise<string> {
+/** events.event_type holds this many characters; an enquiry's may hold 100. */
+const EVENT_TYPE_LENGTH = 80;
+
+/** A new event for a booking or an enquiry. Headcounts stay unknown (0 and
+ *  null) until someone enters them; nothing is copied that nobody stated. It
+ *  is named by the seed's title, or, when it has none it can use, by its
+ *  occasion and the venue's own day of its start, or by the occasion alone
+ *  when it has no start (eventNameFor): an event named "" failed every read
+ *  of its name, the client's schedule and home, the Diary range and the
+ *  room's timeline among them. The occasion is cut to the column's width
+ *  first, and the name made from it as stored, so syncEventStatus still
+ *  knows the name for a made one. */
+export async function createEventFor(conn: BindConn, seed: EventSeed): Promise<string> {
   const [venue] = await conn.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, seed.venueId)).limit(1);
   if (venue === undefined) throw new Error("A new event's venue is missing");
+  const eventType = seed.eventType === null ? null : seed.eventType.slice(0, EVENT_TYPE_LENGTH);
   const [created] = await conn.insert(events).values({
     venueId: seed.venueId,
     createdBy: seed.createdBy,
-    name: eventNameFor({ title: seed.title, eventType: seed.eventType, startsAt: seed.startsAt, timeZone: venue.timeZone }),
-    eventType: seed.eventType,
+    name: eventNameFor({ title: seed.title, eventType, startsAt: seed.startsAt, timeZone: venue.timeZone }),
+    eventType,
     status: "draft",
     startsAt: seed.startsAt,
     endsAt: seed.endsAt,
@@ -149,13 +175,81 @@ export function titleWithoutEnquiryEmail(title: string, email: string): string {
 }
 
 /**
- * The event a hold or ink belongs to: the one named, the one its enquiry
- * already has, or a new one. Call inside the booking write's transaction.
+ * The enquiry's event: its own link when that names a live event of its
+ * venue; otherwise the event its bookings have (a live booking's first, then
+ * the newest); otherwise null. Call it with the enquiry row locked
+ * (FOR NO KEY UPDATE), so what it reads cannot change before the caller acts.
+ */
+export async function enquiryEventOf(
+  conn: BindConn,
+  enquiry: { readonly id: string; readonly venueId: string; readonly eventId: string | null },
+): Promise<string | null> {
+  if (enquiry.eventId !== null) {
+    const [own] = await conn.select({ id: events.id })
+      .from(events)
+      .where(and(eq(events.id, enquiry.eventId), eq(events.venueId, enquiry.venueId), isNull(events.deletedAt)))
+      .limit(1);
+    if (own !== undefined) return own.id;
+  }
+  const [joined] = await conn.select({ eventId: events.id })
+    .from(bookings)
+    .innerJoin(events, and(
+      eq(events.id, bookings.eventId),
+      eq(events.venueId, enquiry.venueId),
+      isNull(events.deletedAt),
+    ))
+    .where(and(
+      eq(bookings.enquiryId, enquiry.id),
+      eq(bookings.venueId, enquiry.venueId),
+      isNull(bookings.deletedAt),
+    ))
+    .orderBy(desc(sql`${bookings.status} = 'active'`), desc(bookings.createdAt), desc(bookings.id))
+    .limit(1);
+  return joined?.eventId ?? null;
+}
+
+/** Point the enquiry at an event of its venue (the key (event_id, venue_id)
+ *  refuses another venue's). Moving it is this same write; the link is never
+ *  emptied. Call with the enquiry row locked. */
+export async function setEnquiryEvent(conn: BindConn, enquiryId: string, eventId: string): Promise<void> {
+  await conn.update(enquiries).set({ eventId }).where(eq(enquiries.id, enquiryId));
+}
+
+/**
+ * A booking a person moved to another event takes its enquiry's link with
+ * it: when the enquiry's link named the event the booking left, and no other
+ * undeleted booking of the enquiry is left there, the link moves to the
+ * booking's new event. Otherwise nothing. Call after the booking is written
+ * to its new event, in the same transaction: the booking is already locked,
+ * and the enquiry is locked here (FOR NO KEY UPDATE), after it, as the lock
+ * order asks.
+ */
+export async function followBookingToEvent(
+  conn: BindConn,
+  move: { readonly enquiryId: string | null; readonly fromEventId: string | null; readonly toEventId: string },
+): Promise<void> {
+  const { enquiryId, fromEventId, toEventId } = move;
+  if (enquiryId === null || fromEventId === null || fromEventId === toEventId) return;
+  const [enquiry] = await conn.select({ eventId: enquiries.eventId })
+    .from(enquiries)
+    .where(eq(enquiries.id, enquiryId))
+    .limit(1)
+    .for("no key update");
+  if (enquiry?.eventId !== fromEventId) return;
+  const [left] = await conn.select({ id: bookings.id })
+    .from(bookings)
+    .where(and(eq(bookings.enquiryId, enquiryId), eq(bookings.eventId, fromEventId), isNull(bookings.deletedAt)))
+    .limit(1);
+  if (left === undefined) await setEnquiryEvent(conn, enquiryId, toEventId);
+}
+
+/**
+ * The event a hold or ink belongs to: the one named, its enquiry's own, the
+ * one its enquiry's bookings already have, or a new one. Bound through an
+ * enquiry that may have an event, the enquiry's link is written to it. Call
+ * inside the booking write's transaction, before the booking is inserted.
  */
 export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target: BindTarget): Promise<BindOutcome> {
-  // What a new event is named from: the booking's title, unless it is only
-  // the enquiry's email cut short (eventNameFor sees any other address).
-  let named = seed;
   if (target.join === "event") {
     const [row] = await conn.select({ id: events.id, venueId: events.venueId })
       .from(events)
@@ -165,33 +259,33 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
     return { ok: true, eventId: row.id, created: false };
   }
 
-  if (target.join === "enquiry") {
-    const [enquiry] = await conn.select({ id: enquiries.id, venueId: enquiries.venueId, email: enquiries.email })
-      .from(enquiries)
-      .where(eq(enquiries.id, target.enquiryId))
-      .limit(1)
-      .for("update");
-    if (enquiry === undefined || enquiry.venueId !== seed.venueId) return { ok: false, code: "ENQUIRY_VENUE_MISMATCH" };
-    // The enquiry's event: a live booking's first, then the newest.
-    const [joined] = await conn.select({ eventId: events.id })
-      .from(bookings)
-      .innerJoin(events, and(
-        eq(events.id, bookings.eventId),
-        eq(events.venueId, seed.venueId),
-        isNull(events.deletedAt),
-      ))
-      .where(and(
-        eq(bookings.enquiryId, enquiry.id),
-        eq(bookings.venueId, seed.venueId),
-        isNull(bookings.deletedAt),
-      ))
-      .orderBy(desc(sql`${bookings.status} = 'active'`), desc(bookings.createdAt), desc(bookings.id))
-      .limit(1);
-    if (joined !== undefined) return { ok: true, eventId: joined.eventId, created: false };
-    named = { ...seed, title: titleWithoutEnquiryEmail(seed.title, enquiry.email) };
-  }
+  if (target.join === "new") return { ok: true, eventId: await createEventFor(conn, seed), created: true };
 
-  return { ok: true, eventId: await createEventFor(conn, named), created: true };
+  // FOR NO KEY UPDATE still serialises two binds of one enquiry, and does not
+  // wait on another writer's key share of it (a viewing's insert).
+  const [enquiry] = await conn.select({
+    id: enquiries.id,
+    venueId: enquiries.venueId,
+    email: enquiries.email,
+    eventId: enquiries.eventId,
+    state: enquiries.state,
+    eventType: enquiries.eventType,
+  })
+    .from(enquiries)
+    .where(eq(enquiries.id, target.enquiryId))
+    .limit(1)
+    .for("no key update");
+  if (enquiry === undefined || enquiry.venueId !== seed.venueId) return { ok: false, code: "ENQUIRY_VENUE_MISMATCH" };
+  const joined = await enquiryEventOf(conn, enquiry);
+  // A new event is named from the booking's title, unless that is only the
+  // enquiry's email cut short (eventNameFor sees any other address).
+  const eventId = joined ?? await createEventFor(conn, { ...seed, title: titleWithoutEnquiryEmail(seed.title, enquiry.email) });
+  const state = EnquiryStatusSchema.safeParse(enquiry.state);
+  if (eventId !== enquiry.eventId && state.success
+    && enquiryMayBecomeEvent({ state: state.data, eventType: enquiry.eventType })) {
+    await setEnquiryEvent(conn, enquiry.id, eventId);
+  }
+  return { ok: true, eventId, created: joined === null };
 }
 
 interface SpanBooking {
