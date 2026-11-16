@@ -446,6 +446,10 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
   (u 3.60 to 4.10 m, v 2.33 to 2.75 m) the mean |Laplacian| of luminance is 39.29 before and 39.32
   after, the mean step 13.12 and 13.14, and 0.75% of the samples differ (one block); over the
   whole board (to v 1.75 m) 23.57 and 22.94, the difference lying round the clock at its foot.
+- The Grand Hall: its config gives `bestview.OCCLUDER_MARGIN` the script's own 0.0 and its plan
+  still prints an empty ledger. T0, T1 and T4 together on this change: 90 tests, none failing, one
+  skipped (a GHR1 comparison, for want of meshoptimizer in the checkout that ran them); T0's static
+  proofs ran against the twin's manifest. T2 and T3 were not run on it.
 
 Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
