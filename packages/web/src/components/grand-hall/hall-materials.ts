@@ -46,6 +46,7 @@ import type { HallPhotos, HallPhotoKind } from "./hall-photos.js";
 import type { HallDetailLayer } from "./hall-detail.js";
 import { createOakFloorMaterial } from "./hall-floor.js";
 import { doorLeafMask, doorLeafPosition, doorLeafTurn, type DoorSwingUniforms } from "./hall-doors.js";
+import { photographLift } from "../../lib/film-toe.js";
 
 type Shading = "gloss" | "metal" | "photo" | "photoGloss" | "paint";
 
@@ -456,6 +457,17 @@ interface SurfaceOptions {
   readonly section: HallSectionUniforms;
   readonly detail: HallDetailLayer | null;
   readonly sliverColour: SliverColour | null;
+  readonly lift: boolean;
+}
+
+/**
+ * A photograph as a material shows it: with the light Neutral's toe will take
+ * out again added (lib/film-toe.ts photographLift) when the view asked for a
+ * toe of its own, and otherwise the node itself, so a view that asked for
+ * nothing builds the shader it always built.
+ */
+function shown(photograph: Node<"vec3">, lift: boolean): Node<"vec3"> {
+  return lift ? photographLift(photograph) : photograph;
 }
 
 /** The section's room line, lit, at a wall's cut `height` (hall-section.ts sectionRoomLine). */
@@ -466,7 +478,7 @@ function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: Hall
   if (style.shading === "photo" || style.shading === "photoGloss") {
     const kind = style.photo ?? "walls";
     const wall = kind === "walls" ? wallTexel(photos, true, options.detail) : null;
-    const photographed = relitPhoto(photos, kind, mood, sun, wall, wall === null ? null : wallCutEdge(options.section, wall.level));
+    const photographed = shown(relitPhoto(photos, kind, mood, sun, wall, wall === null ? null : wallCutEdge(options.section, wall.level)), options.lift);
     // A near wall's slivers past the cut are drawn as the section's room line (outsideSliver).
     const line = wall === null ? null : options.sliverColour;
     const sliver = line === null ? null : outsideSliver(options.section);
@@ -527,6 +539,8 @@ export interface HallMaterialOptions {
   readonly detail?: HallDetailLayer | null;
   /** The section's room line, which a near wall's slivers past its cut take (outsideSliver; null: none). */
   readonly sliverColour?: SliverColour | null;
+  /** The view asked for a toe of its own for the photographs (lib/film-toe.ts photographToeFor): they give back what the curve's toe takes. */
+  readonly photographToe?: boolean;
 }
 
 export type HallMaterials = ReadonlyMap<HallMaterialKey, Material>;
@@ -543,7 +557,7 @@ export function createHallMaterials(
   const materials = new Map<HallMaterialKey, Material>();
   const surface: SurfaceOptions = {
     glazing: options.glazing ?? null, alphaToCoverage: options.alphaToCoverage ?? false, section, detail: options.detail ?? null,
-    sliverColour: options.sliverColour ?? null,
+    sliverColour: options.sliverColour ?? null, lift: options.photographToe ?? false,
   };
   for (const key of Object.keys(table) as HallMaterialKey[]) {
     // The floor is drawn (hall-floor.ts), lit by the same baked light.
@@ -569,7 +583,7 @@ export function createHallMaterials(
  */
 export function createDoorLeafMaterials(
   textures: HallTextures, photos: HallPhotos, mood: HallMoodUniforms, section: HallSectionUniforms, swing: DoorSwingUniforms, sun: HallSun | null = null,
-  options: { readonly card?: boolean; readonly detail?: HallDetailLayer | null } = {},
+  options: { readonly card?: boolean; readonly detail?: HallDetailLayer | null; readonly photographToe?: boolean } = {},
 ): HallMaterials {
   const table = styles(textures);
   const position = doorLeafPosition(section, swing);
@@ -577,6 +591,7 @@ export function createDoorLeafMaterials(
   const materials = new Map<HallMaterialKey, Material>();
   const card = options.card === true ? cardLeafColour(mood, swing, sun) : null;
   const detail = options.detail ?? null;
+  const lift = options.photographToe ?? false;
   for (const key of ["wallPhoto", "wallPhotoGloss", "mahoganyDark", "brass"] as const) {
     let material: Material;
     if (card !== null) {
@@ -587,15 +602,15 @@ export function createDoorLeafMaterials(
     } else if (key === "wallPhoto") {
       // Above the dado the walls' photograph is matte, on the leaves as on the relief they replace.
       const photo = new MeshBasicNodeMaterial({ fog: false });
-      photo.colorNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail));
+      photo.colorNode = shown(relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail)), lift);
       material = photo;
     } else if (key === "wallPhotoGloss") {
       const photo = new MeshStandardNodeMaterial({ roughness: table.wallPhotoGloss.roughness ?? 0.42, metalness: 0, fog: false });
       photo.colorNode = vec3(0);
-      photo.emissiveNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail));
+      photo.emissiveNode = shown(relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail)), lift);
       material = photo;
     } else {
-      material = createSurface(table[key], mood, photos, sun, { glazing: null, alphaToCoverage: false, section, detail: null, sliverColour: null });
+      material = createSurface(table[key], mood, photos, sun, { glazing: null, alphaToCoverage: false, section, detail: null, sliverColour: null, lift: false });
     }
     if (material instanceof MeshBasicNodeMaterial || material instanceof MeshStandardNodeMaterial) {
       material.positionNode = position;
