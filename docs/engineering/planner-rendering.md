@@ -23,8 +23,10 @@ A material that has to know what follows its own colour reads `sceneOutput` ther
 every draw declares whether it is the view's own frame, with its exposure, and the
 pipeline declares its grade and vignette around its frame. The Grand Hall's
 photographs use it to give back the light the curve's toe takes
-([grand hall model](grand-hall-model.md), `lib/film-toe.ts`), so the grade and the
-vignette are restated in `photographLift` and must change with the pipeline's.
+([grand hall model](grand-hall-model.md), `lib/film-toe.ts`). The white balance,
+the saturation and the vignette are one function there, `cameraEye`: the pipeline
+draws its frame through it and the photographs work it back out of their own
+colour, so a stage added to the frame's last steps belongs in that function.
 Under the planner's on-demand loop, temporal anti-aliasing draws a few more frames
 after the last change, so a still view converges to a supersampled image and the
 loop then goes idle. The pipeline stands aside only while a captured room is

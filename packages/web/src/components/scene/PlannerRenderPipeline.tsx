@@ -32,7 +32,6 @@ import { NormalBlending, RenderTarget, UnsignedByteType, type Camera, type Scene
 import { BlendMode, RenderPipeline, type Node, type NodeFrame, type UniformNode, type WebGPURenderer } from "three/webgpu";
 import {
   float,
-  luminance,
   mix,
   mrt,
   normalView,
@@ -41,8 +40,6 @@ import {
   pass,
   renderOutput,
   sample,
-  screenUV,
-  smoothstep,
   uniform,
   unpackRGBToNormal,
   vec3,
@@ -59,7 +56,7 @@ import { CameraPoseWatch, MotionBloom } from "../../lib/motion-bloom.js";
 import { registerNativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { compileEach, compileWithin, drawAhead, requestNativePrecompile, withoutShadowMapDraws } from "../../lib/native-precompile.js";
 import type { RenderProfile } from "../../lib/render-quality.js";
-import { sceneGrade, VIGNETTE_FALLOFF, VIGNETTE_REACH, withPipelineOutput } from "../../lib/scene-grade.js";
+import { cameraEye, sceneGrade, vignetteShade, withPipelineOutput } from "../../lib/scene-grade.js";
 import { watchViewHand } from "../../lib/view-hand.js";
 
 /**
@@ -200,16 +197,12 @@ export function buildPlannerPipeline(
     owned.push(glow);
     graded = vec4(resolved.rgb.add(glow.rgb.mul(glow.weight)), resolved.a);
   }
-  // The camera's eye: white balance, then saturation, in linear light. The
-  // hall's photographs work this grade and the vignette below back out of
-  // their own colour (lib/film-toe.ts photographLift): the two change together.
-  const balanced = graded.rgb.mul(sceneGrade.whiteBalance);
-  graded = vec4(mix(vec3(luminance(balanced)), balanced, sceneGrade.saturation), graded.a);
-  if (profile.vignette > 0) {
-    const distance = screenUV.sub(0.5).length().mul(VIGNETTE_REACH);
-    const shade = mix(float(1), float(1 - profile.vignette), smoothstep(VIGNETTE_FALLOFF[0], VIGNETTE_FALLOFF[1], distance));
-    graded = vec4(graded.rgb.mul(shade), graded.a);
-  }
+  // The camera's eye: white balance, then saturation, then the vignette, in
+  // linear light (scene-grade.ts cameraEye). The hall's photographs work the
+  // same function back out of their own colour (lib/film-toe.ts photographLift),
+  // so a stage belongs in that function, not here.
+  const shade = profile.vignette > 0 ? vignetteShade(float(1 - profile.vignette)) : null;
+  graded = vec4(cameraEye(graded.rgb, sceneGrade.whiteBalance, sceneGrade.saturation, shade), graded.a);
 
   const pipeline = new RenderPipeline(renderer);
   if (profile.antiAlias === "fxaa") {

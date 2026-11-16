@@ -324,14 +324,19 @@ toe's curve then takes a little more from than from each alone.
 
 For the addition to be exact a photograph has to know what follows its draw: the exposure, and in
 the planner's pipeline the grade and the vignette. `sceneOutput` (`lib/scene-grade.ts`) carries
-those. Every draw declares whether it is the view's own frame (`withNativeRenderScope`), and the
-pipeline declares its grade and vignette around its frame; a draw nobody declared, such as the
-room's reflection capture, adds nothing, so the furniture's reflections are as they were. A draw
-counts as the view's own frame for this only where Khronos PBR Neutral follows it: the renderer's
-curve for a plain draw, and for the pipeline's scene pass the curve read before the pipeline runs
-(three's `RenderPipeline.render` takes the renderer's own off while its passes draw). Under any
-other curve, or none, the photographs add nothing. The pipeline's grade and vignette are restated
-in `photographLift` and must change with it.
+those. Every draw through the native renderer declares itself (`withNativeRenderScope`): the
+view's own frame as such, with its exposure, and every other draw of the scene (the room's
+reflection capture, a shadow map, the plan thumbnail) as not, so it adds nothing and the
+furniture's reflections are as they were. A draw counts as the view's own frame for this only
+where Khronos PBR Neutral follows it: the renderer's curve for a plain draw, and for the
+pipeline's scene pass the curve read before the pipeline runs (three's `RenderPipeline.render`
+takes the renderer's own off while its passes draw). Under any other curve, or none, the
+photographs add nothing. The pipeline declares its grade and vignette around its frame; they
+mean something only for the view's own frame. The grade and the vignette are one function,
+`cameraEye` (`lib/scene-grade.ts`): the pipeline draws its frame through it and `photographLift`
+works the same function back out of the photograph's colour, so a stage added to it reaches
+both. `film-toe-graph.test.ts` runs the lift's own node graph through that function and three's
+Neutral, and holds the tests' plain-number Neutral to three's source.
 
 The photographs' toe is none by default (`DEFAULT_FILM_TOE`; Blake's pick of 14 November 2026,
 from frames of the planner at 0.04, 0.02 and 0 in which the furniture did not differ), so they are
@@ -350,7 +355,10 @@ hall's materials for both (it cannot see inside a deferred `Fn` body).
 The plan thumbnail sent with a layout (`lib/ortho-capture.ts`) is
 not the view's own frame, so the photographs add nothing in it. Nor has it a toe to give back:
 it is drawn into a render target, which three draws with no tone mapping and no exposure
-(`Renderer.currentToneMapping`, read in r186 on 14 November 2026).
+(`Renderer.currentToneMapping`, read in r186 on 14 November 2026). Measured on the planner's lab
+page on 15 November (phone profile, WebGPU): the thumbnail taken as the planner takes it, with
+the renderer's tone mapping off, with twice its exposure and with the photographs' toe at
+Neutral's is the same picture each time, 0 of 426,400 pixels apart.
 
 ## The real sky (`?sky=1`)
 

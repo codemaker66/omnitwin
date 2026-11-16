@@ -12,7 +12,8 @@
 // ---------------------------------------------------------------------------
 
 import { Color } from "three";
-import { uniform } from "three/tsl";
+import { float, luminance, mix, screenUV, smoothstep, uniform, vec3 } from "three/tsl";
+import type { Node } from "three/webgpu";
 
 /** A per-channel gain in linear light. */
 export type ChannelGain = readonly [number, number, number];
@@ -35,11 +36,37 @@ export const VIGNETTE_REACH = 1.4142;
 export const VIGNETTE_FALLOFF = [0.35, 1.0] as const;
 
 /**
+ * The vignette's shade at this fragment, as a node: 1 at the frame's centre,
+ * falling to `edge` (1 less the vignette's strength) across VIGNETTE_FALLOFF.
+ */
+export function vignetteShade(edge: Node<"float">): Node<"float"> {
+  const distance = screenUV.sub(0.5).length().mul(VIGNETTE_REACH);
+  return mix(float(1), edge, smoothstep(VIGNETTE_FALLOFF[0], VIGNETTE_FALLOFF[1], distance));
+}
+
+/**
+ * The camera's eye on a colour, as nodes, in linear light: the white balance's
+ * gain, the saturation about the colour's own luminance, then the vignette's
+ * `shade` (null: no vignette). The planner's pipeline draws its frame through
+ * this (PlannerRenderPipeline) and the hall's photographs work it back out of
+ * their own colour (lib/film-toe.ts photographLift), so a stage added here
+ * reaches both, and film-toe-graph.test.ts runs the one against the other.
+ */
+export function cameraEye(colour: Node<"vec3">, balance: Node<"color">, saturation: Node<"float">, shade: Node<"float"> | null): Node<"vec3"> {
+  const balanced = colour.mul(balance);
+  const graded = mix(vec3(luminance(balanced)), balanced, saturation);
+  return shade === null ? graded : graded.mul(shade);
+}
+
+/**
  * What follows a material's own colour on the way to the tone curve, for a
  * material that has to know (lib/film-toe.ts: the hall's photographs add what
- * the curve's toe will take). Whoever draws sets these around the draw and
- * puts them back, so a draw nobody declared (a reflection capture, a shadow
- * map, a thumbnail) reads the resting values and adds nothing.
+ * the curve's toe will take). Every draw through the native renderer declares
+ * itself (lib/native-renderer.ts): the view's own frame as `main` 1 with its
+ * exposure, every other draw of the scene (a reflection capture, a shadow map,
+ * a thumbnail) as `main` 0. `graded` and `vignette` describe the pipeline's
+ * frame around a draw and mean something only with `main`: a shadow map drawn
+ * inside that frame reads them set. Each is put back when its draw ends.
  */
 export const sceneOutput = {
   /**
