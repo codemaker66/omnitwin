@@ -171,8 +171,9 @@ copies) another work directory's manifest, mesh, mesh dump and this room's panor
 step then checks the manifest, mesh and panoramas against the manifest's SHA-256. Its depth maps
 are taken only with `--reuse-depth`, because the manifest holds no hashes for them: by default
 the depth step renders every map, so an identity run compares the renderers too. Every path
-taken from another tree is listed in `build/linked.json` and in `survey.json`, and
-`prove-build-identity.py` reports those files as linked, never as identical.
+taken from another tree is listed in `build/linked.json` (with the tree it came from, local
+provenance) and, by name and how it was linked only, in `survey.json`; `prove-build-identity.py`
+reports those files as linked, never as identical.
 
 `--from`/`--to` run a span of steps (the check always runs, and refuses if the views changed
 under rendered surfaces). No step rewrites another's files, so any step can be the start.
@@ -244,7 +245,7 @@ everything a reader needs to place the published files, and more that it drops.
 | `detail` | `folder`, `texelMetres`, `tileTexels`, `gutterTexels`, `tiles` (a count), `totalBytes`, and `index`: the tiles' index (`file`, inside the folder, with its `bytes` and `sha256`) | `survey.outputs.detail`, `detail/index.json` |
 | `files` | every published file in the room's folder: `bytes`, `sha256` | the files in `proj/` |
 | `openings[]`, `glassScan` | each window's glazing and glass planes; what the scan said about them | the config, `build/glass.json` |
-| `configSha256`, `methodRevision`, `tools`, `linkedInputs` | the config the files were built from, the method's revision, the tools' commit and the meshoptimizer behind each GHR1 file, the inputs taken from another work directory | |
+| `configSha256`, `methodRevision`, `tools`, `linkedInputs` | the config the files were built from, the method's revision, the tools' commit and the meshoptimizer behind each GHR1 file, the inputs taken from another work directory (`linkedInputs`: name relative to the work directory, `how` it was linked, and its `sha256` where `build/linked.json` has one; never the tree it came from) | `build/linked.json` |
 
 - **Orientation.** Both overhead photographs have their columns along planner +x and their rows from
   planner +z (the top row is the extent's highest z): `"columns planner +x, rows from planner +z"`.
@@ -256,6 +257,13 @@ everything a reader needs to place the published files, and more that it drops.
 - **`files` holds plain names only.** The detail tiles' index lives in the detail folder, so it is
   in `detail.index` (version 1 listed it in `files` as `detail/index.json`, which the reader's rule
   for file names refuses).
+- **The record names nothing on the build machine.** It is published into a public repository, so
+  `linkedInputs` is `{"data/manifest.json": {"how": "hard link"}, ...}`: each input by its name
+  relative to the work directory, how it was linked, and its `sha256` where `build/linked.json` has
+  one. The tree an input came from stays in `build/linked.json` (which `prove-build-identity.py`
+  reads). `record_faults()` refuses any string key or value anywhere in the record that is an
+  absolute path (a drive letter and `/` or `\`, a UNC `\\`, or a leading `/` and a name; URLs,
+  relative names and a lone `/` are not), and `--publish` then copies nothing.
 - **An open segment** has no elevation: its wall is recorded in its place with `atlas` and
   `reliefId` null, which no reader can draw yet (the reader wants a strip and a relief for every
   segment).
