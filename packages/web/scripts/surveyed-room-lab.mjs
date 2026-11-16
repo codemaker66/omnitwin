@@ -11,10 +11,11 @@
 //     [--base http://127.0.0.1:5213] [--out <folder>] [--profile desktop|tablet|phone|office|off] \
 //     [--poses overview,plan,eye,ceiling,floor,0,3] [--photos full|half] [--exposure 1] [--glow 1]
 //
-// A pose is one of the lab's names (overview, plan, eye, ceiling, floor), a
-// wall's index in the record (0 is the first wall) or a wall's id. "walls"
-// stands for every wall in turn, which is how each strip of the atlas is
-// checked for its place and its orientation.
+// A pose is a wall's id, one of the lab's names (overview, plan, eye, ceiling,
+// floor) or a wall's index in the record (0 is the first wall), tried in that
+// order as the page tries them: a wall's exact id wins, digits included.
+// "walls" stands for every wall in turn, which is how each strip of the atlas
+// is checked for its place and its orientation.
 import { chromium } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -96,9 +97,12 @@ try {
       window.__roomLab.setExposure(exposure);
       window.__roomLab.setGlow(glow);
     }, { exposure: EXPOSURE, glow: GLOW });
-    const poses = POSES.flatMap((pose) => (pose === "walls" ? summary.status.walls.map((_, index) => String(index)) : [pose]));
+    // "walls" is every wall by its index, a number. A pose typed here goes to the page as typed, a
+    // string, so the page's own rule decides it: a wall's exact id first, then a name, then digits
+    // as an index. Turned into a number here, "3" would be the fourth wall even where a wall is named "3".
+    const poses = POSES.flatMap((pose) => (pose === "walls" ? summary.status.walls.map((_, index) => index) : [pose]));
     for (const pose of poses) {
-      const known = await page.evaluate((asked) => window.__roomLab.setPose(/^[0-9]+$/.test(asked) ? Number(asked) : asked), pose);
+      const known = await page.evaluate((asked) => window.__roomLab.setPose(asked), pose);
       if (!known) {
         failed = true;
         console.error(`Unknown pose ${pose}: a name (overview, plan, eye, ceiling, floor), a wall's index or one of ${summary.status.walls.join(", ")}`);
