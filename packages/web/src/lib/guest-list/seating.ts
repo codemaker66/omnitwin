@@ -38,7 +38,7 @@ function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(value)));
 }
 
-/** Cut to `max` UTF-16 units (as the schemas count), never leaving half a pair. */
+/** Cut to `max` UTF-16 units, never leaving half a pair: never more characters than the schemas allow (they count code points). */
 function cutTo(text: string, max: number): string {
   if (text.length <= max) return text;
   const cut = text.slice(0, max);
@@ -48,6 +48,11 @@ function cutTo(text: string, max: number): string {
 
 function tidy(text: string): string {
   return text.replace(/\s+/g, " ").trim();
+}
+
+/** True when a name is over the name limit, counted in characters (code points), as the schema and the paste reader count it. */
+function overNameLimit(name: string): boolean {
+  return name.length > GUEST_NAME_MAX && Array.from(name).length > GUEST_NAME_MAX;
 }
 
 function changed(list: GuestList, patch: Partial<GuestList>): GuestList {
@@ -82,7 +87,7 @@ export function addGuests(
     if (added.length >= room || added.length >= ids.length) break;
     const id = ids[added.length];
     if (id === undefined) break;
-    if (entry.name.trim() === "" || entry.name.length > GUEST_NAME_MAX) continue;
+    if (entry.name.trim() === "" || overNameLimit(entry.name)) continue;
     added.push({ id, name: entry.name, party: cutTo(entry.party.trim(), PARTY_MAX), tableId: null, seat: null });
   }
   return changed(list, { guests: [...list.guests, ...added] });
@@ -106,7 +111,7 @@ export function renameGuest(
 ): GuestList | { readonly refused: "name" } {
   if (!list.guests.some((g) => g.id === guestId)) return list;
   const cleanName = tidy(name);
-  if (cleanName === "" || cleanName.length > GUEST_NAME_MAX) return { refused: "name" };
+  if (cleanName === "" || overNameLimit(cleanName)) return { refused: "name" };
   const cleanParty = cutTo(tidy(party), PARTY_MAX);
   return changed(list, {
     guests: list.guests.map((g) => (g.id === guestId ? { ...g, name: cleanName, party: cleanParty } : g)),

@@ -119,6 +119,16 @@ describe("addGuests", () => {
     expect(next.guests).toHaveLength(1);
     expect(next.guests[0]).toMatchObject({ id: uuid(1000), name: "Cy Twombly", party: "p".repeat(PARTY_MAX) });
   });
+
+  it("counts a name in characters, as the paste reader and the schema do: 80 emoji are added, 81 are not", () => {
+    const smile = "\u{1F600}";
+    const next = addGuests(
+      emptyGuestList(PLAN_ID, NOW),
+      [{ name: smile.repeat(GUEST_NAME_MAX), party: "" }, { name: smile.repeat(GUEST_NAME_MAX + 1), party: "" }],
+      guestIds(2),
+    );
+    expect(next.guests.map((g) => Array.from(g.name).length)).toEqual([GUEST_NAME_MAX]);
+  });
 });
 
 describe("removeGuest", () => {
@@ -168,6 +178,14 @@ describe("renameGuest", () => {
     const base = listOf([{ name: "Old", party: "" }]);
     const next = mustList(renameGuest(base, uuid(1000), "y".repeat(GUEST_NAME_MAX), ""));
     expect(next.guests[0]?.name).toHaveLength(GUEST_NAME_MAX);
+  });
+
+  it("counts the limit in characters, as the schema does: 80 emoji are a name, 81 are refused", () => {
+    const base = listOf([{ name: "Old", party: "" }]);
+    const smile = "\u{1F600}";
+    const next = mustList(renameGuest(base, uuid(1000), smile.repeat(GUEST_NAME_MAX), ""));
+    expect(Array.from(next.guests[0]?.name ?? "")).toHaveLength(GUEST_NAME_MAX);
+    expect(renameGuest(base, uuid(1000), smile.repeat(GUEST_NAME_MAX + 1), "")).toEqual({ refused: "name" });
   });
 
   it("cuts a party over the limit to its first 60 characters", () => {
