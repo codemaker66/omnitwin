@@ -13,6 +13,8 @@ from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 HERE = os.path.dirname(os.path.abspath(__file__))
+VIEWS = HERE         # where load_views looks; tools/surveyed-rooms points it at a room's own views
+STATION_IDS = None   # a room's station ids, set by tools/surveyed-rooms; None: the Grand Hall's, scan_000 to scan_<max_index>
 DATA = os.path.join(os.getcwd(), "data")
 FACES = [((1, 0, 0), (0, 0, 1)), ((-1, 0, 0), (0, 0, 1)), ((0, 1, 0), (0, 0, 1)),
          ((0, -1, 0), (0, 0, 1)), ((0, 0, 1), (0, 1, 0)), ((0, 0, -1), (0, 1, 0))]
@@ -34,7 +36,7 @@ DIRS = np.array([d for d, _ in FACES], float)
 
 def load_views(name):
     """A view list kept beside these tools (views-walls.json, views-ceiling.json, ...)."""
-    return json.load(open(os.path.join(HERE, name)))
+    return json.load(open(os.path.join(VIEWS, name)))
 
 
 def stations(max_index=48):
@@ -42,7 +44,7 @@ def stations(max_index=48):
     out = []
     for n in m["nodes"]:
         i = int(n["id"][5:])
-        if i <= max_index:
+        if (i <= max_index) if STATION_IDS is None else (n["id"] in STATION_IDS):
             g = n["exposure"]["gain"]
             wb = n["exposure"]["wb"]
             out.append(dict(id=n["id"], t=np.array(n["pose"]["t"], float), gain=np.array([g * wb[0], g * wb[1], g * wb[2]])))
