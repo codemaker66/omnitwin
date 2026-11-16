@@ -384,6 +384,17 @@ different) also holds the end wall's other 11 files, which are that morning's re
 computed again: its labels, photographs, canvas and 2 mm image stand because only the corners
 step's code changed after them.
 
+Real data, the record (16 November 2026). The Saloon's `build/survey.json`, written by `publish:1`
+in the work directory of its best-view build (12 walls, a 4096 x 2304 atlas, 288 detail tiles), was
+read by the web's own parser: one test beside `survey-record.test.ts` on the web's branch, calling
+`parseSurveyRecord` on the file as written. It took the record (40,999 bytes, SHA-256
+`4fca8c2e641d22824bc821b8d944142443f8e5004c6cab53ed21772935fe4518`), and as controls refused the
+same build's version 1 record ("schemaVersion is 1; this reader reads version 2") and this record
+with `detail/index.json` put back among `files` ("Invalid key in record"). The parser reads the
+record only: that the files it names are the ones in the folder, with those sizes, is the
+loader's to check in a browser, and that record was built with a borrowed meshoptimizer (gate
+B22), so it is a proof of the record's form and not a published room.
+
 Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
 (`render-depth-room.mjs`, so far only syntax-checked), the other three walls' labels and
