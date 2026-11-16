@@ -297,7 +297,8 @@ describe("a surface's high cut and hardness, as they reach the render (ruling R5
   // The cut weights the modes, not the struck spot's click or the knocks: those own everything above 2.5 kHz in
   // a hard landing's first 50 ms (a Chiavari's share there moves by under 8 % with the cut), so it is read once the
   // click is over, where a banquet chair's steel frame still rings at 3-6 kHz. Carpet's own 2.5 kHz cut does almost
-  // nothing: its 45 ms contact leaves nothing that high to cut (the energy above 2.5 kHz moves by under 2 %).
+  // nothing: its 45 ms contact leaves nothing that high to cut (the energy above 2.5 kHz moves within 1.4 % of a
+  // Chiavari's first 50 ms; up to 6 % of a deck's whole render).
   it.each(SEEDS)("takes the top off a piece's ring under a 2.5 kHz high cut: a banquet chair's 4 kHz octave after its landing falls below half of oak's (seed %i)", (seed) => {
     const open = onOak("banquet-chair", {}, seed);
     const cut = onOak("banquet-chair", { highCutHz: 2500 }, seed);

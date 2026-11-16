@@ -178,13 +178,13 @@ For each room and band: calibration = tracer empty T20 ÷ Eyring empty (uncalibr
     | Robert Adam Room | 124.5 Hz |
 
   - `fittedCalibration` (`tracer-results.ts`) and `calibration_factor` (`raytrace.py`) apply the same rule, and `calibration.test.ts` tests it.
-  - In the tables below, the model's 125 Hz in those rooms is therefore Eyring's own figure: 3.6–8.8 % under the tracer, and 30 % under it in the Robert Adam Room, whose box is far from diffuse at 125 Hz (absorbing floor and ceiling between hard walls). The test does not hold that band.
+  - In the tables below, the model's 125 Hz in those rooms is therefore Eyring's own figure: 2.0–8.8 % under the tracer (3.5–8.8 % empty), and 30 % under it in the Robert Adam Room, whose box is far from diffuse at 125 Hz (absorbing floor and ceiling between hard walls). The test does not hold that band.
 - The factors are in `rooms.ts` (`TRACER_CALIBRATION`). `room-acoustics.test.ts` checks that they equal the fit from results.json.
 - **Fitted on empty; within 15 % half and fully laid.** Because each factor is tracer empty ÷ Eyring empty, the empty model meets the tracer by construction: to the factor's rounding, under 0.1 %, wherever the clamp does not bind. `calibration.test.ts` says so in a test of its own. The real checks, 250 Hz to 8 kHz, are:
   - the model within 15 % of the tracer half and fully laid in every band, except the galleries' non-diffuse bands below;
   - its change with fullness, the model's half or dressed ÷ empty against the tracer's, within 15 % in every room and band, the galleries' included.
 
-R29's second, dressed factor was not needed. With the empty calibration alone, the four big rooms' half and dressed states stay within 5.1 % of the tracer from 250 Hz to 8 kHz: the Robert Adam Room half laid at 250 Hz, every other within 1.9 % (tables below). R29 does not apply to the galleries (ruling R32).
+R29's second, dressed factor was not needed. With the empty calibration alone, the four big rooms' half and dressed states stay within 5.1 % of the tracer from 250 Hz to 8 kHz: the Robert Adam Room up to 5.1 % (half, 250 Hz) and 3.5 % dressed; the other three within 1.9 % (tables below). R29 does not apply to the galleries (ruling R32).
 
 T20 per octave band in seconds, from seed 1. "Model" is the planner's figure: uncalibrated Eyring times the calibration. Seed 2's empty and dressed traces sit under each table.
 
@@ -396,8 +396,9 @@ So the gap is Sanssouci's furnishings and fittings, as far as the data go: the u
 - **The Robert Adam Room's low-mid ring (250 and 500 Hz).** The tracer reads its box 1.261 and 1.156 times Eyring there, so the factors lengthen those bands by 26 % and 16 %. They are kept (ruling R59), because an estimate independent of the tracer finds the same effect:
   - **Why.** The room's absorption sits on its floor and ceiling (mean α 0.130 at 250 Hz and 0.100 at 500 Hz) between hard plaster walls (0.041 and 0.056). That uneven spread is what Eyring's formula leaves out.
   - **The check.** Fitzroy's formula (1959) for absorption spread unevenly between the three pairs of opposite surfaces, applied to rooms.json's surfaces: floor and ceiling as one pair, and the walls' area and absorption split between the box's sides and ends as 2Lh : 2Wh. It gives Fitzroy ÷ Eyring = **1.365 at 250 Hz and 1.086 at 500 Hz**, with air left out of both. Against rooms.json's Eyring with air, as the ruling first worked it, it gives 1.379 and 1.113.
-  - **How the tracer compares.** Fitzroy is the classic upper estimate for this case. The tracer sits below it at 250 Hz and 6 % above it at 500 Hz, where the 22.9 m box's length may add a little: the real room is two sections about 11 m across, with piers and a curved wall.
-  - **The other rooms.** At 250 Hz Fitzroy ÷ Eyring is 1.00–1.12 there, as their walls absorb as much as their floors and ceilings or more, and their fitted 250 Hz factors are 1.009–1.068.
+  - **How the tracer compares.** Fitzroy is the classic upper estimate for this case. The tracer sits below it at 250 Hz and 6 % above it at 500 Hz, where the 22.9 m box's length may add a little: the real room is two sections about 11 m across, with piers and a curved wall. The kept 500 Hz factor, 1.156, is above Fitzroy's 1.086 by ruling R59's judgement; capping it at 1.086 would shorten that band by about 6 %, near the 5 % just-noticeable difference.
+  - **What Fitzroy confirms.** The direction, absorption concentrated on the floor and ceiling, and not the size of either factor.
+  - **The other rooms.** At 250 Hz Fitzroy ÷ Eyring is 1.00–1.12 there, as their walls absorb as much as their floors and ceilings or more, and their fitted 250 Hz factors are 1.009–1.068. At 500 Hz and 1 kHz Fitzroy over-reads the tracer in some of them (Fitzroy ÷ Eyring, air left out, as above): the Reception Room 1.312 and 1.631 against tracer factors 1.000 and 0.992; the galleries at 500 Hz 1.551 against 1.198; the Grand Hall at 1 kHz 1.176 against 1.009. Those rooms keep the tracer's factors, so Fitzroy is no check on their size either.
   - **What to listen for.** If the Robert Adam Room's low-mid ring sounds too long or too boomy, these two factors are the lever.
 - **The galleries' 1–4 kHz**, held at the clamp (above).
 - **The Grand Hall's curtains** (31 m² of velour, EST) carry a third of its 1 kHz absorption.
