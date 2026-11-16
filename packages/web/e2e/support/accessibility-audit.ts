@@ -218,8 +218,21 @@ async function collectUnnamedControls(page: Page): Promise<ControlNameIssue[]> {
       return element.textContent?.trim() ?? "";
     }
 
+    /** A control no person can reach has no name to audit: hidden from
+     *  assistive technology by an aria-hidden ancestor, out of the tab order,
+     *  and drawn wholly off the page, left of or above its origin, where no
+     *  scroll reaches. All three together, never one alone: an aria-hidden
+     *  control drawn on the page is a defect and is still reported. */
+    function isOutOfEveryReach(element: Element): boolean {
+      if (!(element instanceof HTMLElement)) return false;
+      if (element.closest("[aria-hidden='true']") === null || element.tabIndex >= 0) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.right + window.scrollX <= 0 || rect.bottom + window.scrollY <= 0;
+    }
+
     return Array.from(document.querySelectorAll(selector))
       .filter((element) => isVisible(element) && !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true")
+      .filter((element) => !isOutOfEveryReach(element))
       .filter((element) => accessibleName(element).length === 0)
       .map((element) => ({
         selector: selectorFor(element),

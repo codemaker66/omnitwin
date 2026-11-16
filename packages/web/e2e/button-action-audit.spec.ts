@@ -1975,8 +1975,20 @@ async function visibleControls(page: Page): Promise<readonly VisibleControlSnaps
         Number(style.opacity) !== 0;
     }
 
+    /** A control no person can reach is not one this audit asks a name or a
+     *  size of: hidden from assistive technology by an aria-hidden ancestor,
+     *  out of the tab order, and drawn wholly off the page, left of or above
+     *  its origin, where no scroll reaches. All three together, never one
+     *  alone: an aria-hidden control drawn on the page is still audited. */
+    function isOutOfEveryReach(element: Element): boolean {
+      if (!(element instanceof HTMLElement)) return false;
+      if (element.closest("[aria-hidden='true']") === null || element.tabIndex >= 0) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.right + window.scrollX <= 0 || rect.bottom + window.scrollY <= 0;
+    }
+
     return Array.from(document.querySelectorAll(selector))
-      .filter(isVisibleControl)
+      .filter((element) => isVisibleControl(element) && !isOutOfEveryReach(element))
       .map((element) => {
         const rect = element.getBoundingClientRect();
         const disabled = element instanceof HTMLButtonElement ||
