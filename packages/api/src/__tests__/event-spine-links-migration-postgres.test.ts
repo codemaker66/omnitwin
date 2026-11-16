@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool, PoolClient } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { readSpineInvariant, type SpineInvariant } from "../services/event-spine-invariant.js";
 import {
   deal as dealIn,
   enquiry as enquiryIn,
@@ -79,6 +81,12 @@ type LinkedTable = "enquiries" | "opportunities" | "proposals";
 type Question = readonly [kind: string, subjectId: string, reason: string];
 
 interface Place { readonly venueId: string; readonly room: string }
+
+/** The count of records without their event (readSpineInvariant) where nothing is owed. */
+const allZero: SpineInvariant = {
+  proposalsWithoutEvent: 0, agreementsWithoutEvent: 0, depositRequestsWithoutEvent: 0, openDealsWithoutEvent: 0,
+  workedEnquiriesWithoutEvent: 0, eventsWithTwoOpenDeals: 0, disagreeingLinks: 0, linksToClosedEvents: 0, eventDealPointersInUse: 0,
+};
 
 describe.skipIf(target === undefined)("the spine: the join of old records", () => {
   let before: SpineDatabaseBefore | undefined;
@@ -560,7 +568,18 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
     // Every join is recorded, and nothing crossed venues.
     expect(await joinsWithoutRecord()).toBe(0);
     expect(await crossVenueLinks()).toBe(0);
-    // The count (readSpineInvariant) reads zero for `clean`, and for `mixed` what its listed records give: added with the count.
+    // The count (readSpineInvariant) agrees with the join: zero for `clean`; for `mixed`, exactly
+    // what its records in doubt give, for a listed record and what waits on it keep no event.
+    //   proposals 4: C's (waits on its listed enquiry); J's sent one whose plan reaches two events
+    //                (listed); K's two whose deposit request names another event or a deleted one (listed)
+    //   open deals 2: C's (waits on its listed enquiry); H's second open deal (listed)
+    //   enquiries 2: C's, held in two events, and G's, held in one and planned in another (both listed)
+    //   links to closed events 1: K's deposit request in force naming a deleted event (its proposal listed)
+    // D, E, L and P are not counted: unworked, turned down, an access request, turned down with a lost deal.
+    expect(await readSpineInvariant(drizzle(legacy), clean)).toEqual(allZero);
+    expect(await readSpineInvariant(drizzle(legacy), mixed)).toEqual({
+      ...allZero, proposalsWithoutEvent: 4, openDealsWithoutEvent: 2, workedEnquiriesWithoutEvent: 2, linksToClosedEvents: 1,
+    });
 
     // Run again: nothing changes.
     const unchanged = await snapshot();
