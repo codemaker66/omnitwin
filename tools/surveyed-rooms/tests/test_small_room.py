@@ -416,12 +416,22 @@ class SmallRoom(unittest.TestCase):
     def test_survey_record(self):
         with open(os.path.join(WORK, "build", "survey.json"), encoding="utf-8") as f:
             record = json.load(f)
+        from roombuild import publish
+        self.assertEqual(record["schemaVersion"], 2)
         self.assertEqual(len(record["walls"]), 12)
         self.assertEqual(record["methodRevision"], 2)
         self.assertEqual(sorted(record["files"]), sorted(["walls-2048.webp", "walls-1024.webp", "walls-relief.bin", "ceiling-600.webp",
-                                                          "ceiling-relief.bin", "floor-360.webp", "detail/index.json"]))
+                                                          "ceiling-relief.bin", "floor-360.webp"]))
         self.assertEqual((record["detail"]["texelMetres"], record["detail"]["tileTexels"], record["detail"]["gutterTexels"]), (0.004, 256, 8))
+        index = os.path.join(WORK, "proj", "detail", "index.json")
+        self.assertEqual(record["detail"]["index"], dict(file="index.json", bytes=os.path.getsize(index), sha256=publish.sha256(index)))
         self.assertEqual(record["ceiling"]["relief"]["id"], "ceiling")
+        # Schema version 2: the room, the walls in outline order, the images largest first, the floor.
+        self.assertEqual(record["room"]["outline"], self.room.cfg["walls"]["vertices"])
+        self.assertEqual([w["id"] for w in record["walls"]], [s["id"] for s in self.room.cfg["walls"]["segments"]])
+        self.assertEqual(record["atlas"]["files"], ["walls-2048.webp", "walls-1024.webp"])
+        self.assertEqual(record["floor"]["files"], ["floor-360.webp"])
+        self.assertEqual(publish.record_faults(record), [], "the web's reader would refuse the built room's record")
 
     def test_z_resume_skips_the_finished_build(self):
         """--resume on the finished tree: every sub-command is skipped (its record, its files' sizes
