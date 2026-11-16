@@ -107,7 +107,8 @@ Send (`HudSheets.tsx`, `stores/planner-hud-store.ts`):
 
 - **The guest's form is the whole planner's, and stands outside this screen's element** (a portal to the page).
   Inside it, the form took the screen's page-wide rules: a focus ring in the screen's ink on the form's dark glass,
-  and its working state faded with the screen's disabled keys.
+  and its working state faded with the screen's disabled keys. Put away, sent or not, the form hands the keyboard
+  back to the key that opened it, where it would otherwise fall to the bare page.
 - **A key that is at work is not faded**, and why a key is off is said in the sheet's own words, not on the key.
 - **A plan is called sent only when the enquiry has arrived**, never because the form was put away; and the device
   remembers which layouts it has sent (their ids, the newest two dozen), so a page opened again does not invite a
@@ -156,7 +157,11 @@ The repo bans gold-family colour literals and type under 11 px (`__tests__/house
 - Figures: `lib/slate-facts.ts` `planeFacts`; doors `lib/keep-doors-clear.ts`; gaps `lib/circulation-scene.ts`.
 - Lay out: `components/editor/cockpit/AutoFillPrompt.tsx`, `placement-store.autoArrangeBanquet/Theatre`.
 - Save state and its notices: `components/planner-chrome/Slate.tsx`, reused whole and dressed from outside
-  (`hud-plaque.css`). Saving is automatic.
+  (`hud-plaque.css`). Saving is automatic. From that chrome's folder the screen takes the slate, its audience and
+  the tooltips' host, and no more (`bundle-splitting.test.ts` holds the list). The room's frame is the screen's own
+  (`HudRoom.tsx`): the other chrome's frame carries that chrome's caption over a chosen piece (#357), and this
+  screen says a piece's verbs once, on the shelf. The slate's crest, which is that chrome's switch for hiding its
+  own tools, is put away with its seat and its note.
 - Send: `components/editor/send-layout-flow.ts`, `GuestEnquiryModal`.
 - Keys and Escape: only through `lib/planner-keys.ts`. Motion: `lib/springs.ts`. Working states:
   `components/shared/Activity.tsx`.
@@ -178,29 +183,36 @@ file. A reader fetched on demand does this as surely as any other. So the rule h
 not be the only production reader of anything in a shared module.** Three things were, and the screen keeps its own
 copy of each, held to the original by a test so the two cannot part:
 
-| What the screen needs | The shared original | The screen's copy | Held by |
+| What the screen needs | The original | The screen's copy | Held by |
 | --- | --- | --- | --- |
-| A setup card's picture | `setupCardPreviewUrl`, `lib/crafted-furniture.ts` | `handCardPictureUrl`, `lib/hud/card-pictures.ts` | `lib/hud/__tests__/flag-only-copies.test.ts`, for every card, colourway and chair |
+| A setup card's picture | `setupCardPreviewUrl`, `lib/setup-card-previews.ts` (in `lib/crafted-furniture.ts` until #357) | `handCardPictureUrl`, `lib/hud/card-pictures.ts` | `lib/hud/__tests__/flag-only-copies.test.ts`, for every card, colourway and chair |
 | The seat line's spring | `SPRING_PRESETS.dialGlide`, `lib/springs.ts` | `SEAT_LINE_SPRING`, `lib/hud/hud-motion.ts` | the same file |
-| The stage squaring up | `SPRING_PRESETS.sheetSettle`, `lib/springs.ts` | `STAGE_SQUARING_SPRING`, `grand-hall/hall-stage.ts` | `grand-hall/__tests__/hall-stage.test.ts` |
+| The stage squaring up | `SHEET_SETTLE`, `planner-chrome/sheet-motion.ts` (`SPRING_PRESETS.sheetSettle` until #357) | `STAGE_SQUARING_SPRING`, `grand-hall/hall-stage.ts` | `grand-hall/__tests__/hall-stage.test.ts` |
 | The next light | `HALL_MOOD_NAMES`, `grand-hall/hall-mood.ts` | `NEXT_MOOD`, `planner-hud/ViewStation.tsx` | `planner-hud/__tests__/view-station.test.tsx`, by pressing the key |
 
 The two springs are settings handed to the one shared spring (`stepSpring`, `useSpringCssVariable`); there is no
-second spring. **When this screen is the planner, delete the copies and read the originals.**
+second spring. On 16 November the other new chrome (#357) moved two of the originals out of the shared modules
+into modules only it loads, for the same reason, so reading those two from this screen would no longer cost a
+planner without a flag anything. The copies stay while both chromes are behind flags, each still held to its
+original where that now is. **When one of the two chromes is the planner, delete the copies and read the
+originals.**
 
 Three checks hold the rule, each as far as it can see:
 
 - **From the sources** (`src/__tests__/bundle-splitting.test.ts`). It walks the imports from the app's entry and
   fails if: anything outside the screen imports one of its modules, other than the two imports on demand that
   fetch it; the screen is the only production importer of a name from a module the default planner already holds,
-  or of a package path, unless that name is on the test's short list of seams (two today, each with its reason);
-  or the screen imports a shared table whose entries the bundler keeps one by one (the spring table). It tells a
-  name the rest of production builds anyway from one that only a dropped part of its module uses. It sees
-  imports, not what the bundler makes of them.
-- **From the build** (`src/__tests__/hud-chunk-isolation.test.ts`, in CI's Build job). Following every import
-  from the page's own scripts except a flag's own imports on demand, it finds none of the flag's files, none of
-  the screen's own words, and neither of the two things the screen once made everyone fetch. It sees one build, so
-  it cannot compare with master.
+  or of a package path, unless that name is on the test's short list of seams (one today, with its reason; a
+  name that stops being a seam fails the test until it is taken off the list, as the seat line's spring hook did
+  when #357's chrome began to import it too); or the screen imports a shared table whose entries the bundler
+  keeps one by one (the spring table). It tells a name the rest of production builds anyway from one that only a
+  dropped part of its module uses. It sees imports, not what the bundler makes of them.
+- **From the build** (`src/__tests__/hud-chunk-isolation.test.ts`, in CI's Build job). It walks the build twice
+  from the page's own scripts: through every import except a flag's own three imports on demand, which is what a
+  visitor with no flag can be sent; and through every import there is. What only the second walk reaches goes to
+  a flag alone, whatever the bundler has named it. A visitor with no flag is sent none of the three, none of the
+  screen's own words, not the room's frame the two new chromes share, and neither of the two things the screen
+  once made everyone fetch. It sees one build, so it cannot compare with master.
 - **Two builds from one tree, compared** (by hand; the scripts are outside the repository). This branch, and the
   same tree with the branch's modified files read as on master: every file's bytes, and every module's rendered
   code. No module the branch did not edit may render differently in a file sent without a flag. This is the
