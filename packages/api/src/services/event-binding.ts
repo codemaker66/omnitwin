@@ -613,7 +613,7 @@ function countFrom(value: unknown, label: string): number {
 }
 
 /** A list of string values as SQL parameters, for IN (...). */
-function sqlList(values: readonly string[]): SQL {
+export function sqlList(values: readonly string[]): SQL {
   return sql.join(values.map((value) => sql`${value}`), sql`, `);
 }
 
