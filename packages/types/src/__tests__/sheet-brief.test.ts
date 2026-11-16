@@ -513,6 +513,22 @@ describe("careTables: the tables the care words name, for the plan to ring", () 
     expect([...careTables(careSheet("", "Table 7, 1 coeliac.", ["Table 1", "Table 7"]))]).toEqual(["Table 7"]);
   });
 
+  it("names a table written hard against its count after a colon, and takes only a clock's minutes for a time", () => {
+    const labels = ["1", "2", "3", "4", "5", "10", "12"];
+    const ringed = (words: string): string[] => [...careTables(careSheet("", words, labels))].sort();
+    // Quick shorthand with no space after the colon: the table, then how many guests.
+    expect(ringed("Table 5:2 coeliacs")).toEqual(["5"]);
+    expect(ringed("Table 12:3 vegans, table 4:1 nut allergy")).toEqual(["12", "4"]);
+    expect(ringed("Tables 4 and 5:2 coeliacs")).toEqual(["4", "5"]);
+    // A clock time is still never a table: two-digit minutes after a colon or a point.
+    expect(ringed("Table 4, 10:30 cake")).toEqual(["4"]);
+    expect(ringed("Table 4 or 12.30 delivery")).toEqual(["4"]);
+    // The same for tables labelled as the planner numbers them.
+    const numbered = ["Table 4", "Table 5", "Table 10", "Table 12"];
+    expect([...careTables(careSheet("", "Tables 4 and 5:2 coeliacs", numbered))].sort()).toEqual(["Table 4", "Table 5"]);
+    expect([...careTables(careSheet("", "Table 4, 10:30 cake", numbered))]).toEqual(["Table 4"]);
+  });
+
   it("reads only the planner's own words, never the counts the sheet adds", () => {
     const base = careSheet("", "", ["1", "4"]);
     const access = base.instructions?.accessibility;

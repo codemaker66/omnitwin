@@ -492,18 +492,20 @@ function wholePhrase(label: string): RegExp {
 // A run of tables' names after "table" or "tables", as the setup's own lines
 // write one ("Tables 1–3, 5, 7–8") or as people do ("tables 4 and 5", "table
 // A & B"). A name is a range of numbers, a number or a code with one ("12",
-// "4b", "A1"), or one letter, never a time ("10:30"). The names after the
+// "4b", "A1"), or one letter, never a clock time: a number with two-digit
+// minutes after a colon or point ("10:30", "12.30"). Shorthand with no space
+// after a table's colon still names it ("Table 5:2 coeliacs"). The names after the
 // first are joined by a comma, "and", "or" or "&", and are of the first one's
 // kind. Each joins only where the run goes on or its clause ends after it: a
 // word after it makes it a count ("Table 7, 1 coeliac", "table 4 and 2 guests").
 // After "tables" and an "and", "or" or "&" the run is meant ("Tables 4 and 5
 // are nut-free"); a comma never carries one into a number a word follows.
 const TABLE_WORD = /(?<![\p{L}\p{N}])(tables?)\s+/giu;
-const FIRST_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{L}))(?![\p{L}\p{N}]|[:.]\d)/yu;
+const FIRST_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{L}))(?![\p{L}\p{N}]|[:.][0-5]\d(?!\d))/yu;
 /** What joins a further name to a run: a comma, "and", "or" or "&", alone or after a comma. */
 const JOINER = /\s*,\s*(?:(?:and|or|AND|OR)\s+|&\s*)?|\s*&\s*|\s+(?:and|or|AND|OR)\s+/yu;
 /** A further name in the run; a letter only as a capital, so "and a guest" adds no table A. */
-const NEXT_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{Lu}))(?![\p{L}\p{N}]|[:.]\d)/yu;
+const NEXT_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{Lu}))(?![\p{L}\p{N}]|[:.][0-5]\d(?!\d))/yu;
 /** What may follow a name that joins a run: another joiner, or the end of its clause. */
 const RUN_GOES_ON = /[ \t]*(?:[,&:;.)!?–—\n]|-[ \t]|(?:and|or|AND|OR)(?![\p{L}\p{N}])|$)/yu;
 
