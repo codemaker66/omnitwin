@@ -430,6 +430,15 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
   edge and 50 mm the least that also clears the lamp's glow. At 50 mm the margin takes 10,349 to
   11,952 clean plaster texels out of each near station's 63,000 to 67,239 on the box (5,412 to
   6,257 at 30 mm), which other stations then colour.
+- After, the fireplace wall labelled again at 50 mm (27 stations, 1,737,186 valid texels). Of the
+  rim texels of the seven stations measured, the labels gave 705 to their own station before and
+  none after; of their glow texels, 404 and none. The box coloured straight from the labels (each
+  texel from its label's station, one sample, no feather and no levelling, so that only the labels
+  differ): the mean step on its plaster fell from 0.876 to 0.316 and the pairs stepping by more
+  than 4 levels from 19.6 to 6.7 in 1,000; what is left lies along the unlevelled seams and
+  within some 15 cm of the pediment itself, where no station has a clear view. 3,617 texels of the
+  wall (0.21%) took a doubtful view, 555 of them in the box. The statistics took 109.1 s against
+  80.5 s (the step 2.9 minutes against 2.3), at the same peak memory (784 MB against 788).
 
 Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
