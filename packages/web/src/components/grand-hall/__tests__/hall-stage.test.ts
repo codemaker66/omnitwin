@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Vector3 } from "three";
 import { computeDistanceLimits } from "../../../lib/camera-rig.js";
 import { setLensShift } from "../../../lib/lens-shift.js";
-import { SPRING_PRESETS } from "../../../lib/springs.js";
+import { SHEET_SETTLE } from "../../planner-chrome/sheet-motion.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_LENGTH, HALL_WIDTH } from "../hall-spec.js";
 import { hallStageFraming, mixLens, PLAN_MAX_HEIGHT_M, STAGE_MIN_PICTURE_PX, STAGE_PICTURE_RATIO, STAGE_SQUARING_SPRING, STAGE_WIDEST_PICTURE, stageLens, stagePoseAt, type HallStageFraming, type StageLens } from "../hall-stage.js";
 import { STAGE_CHANDELIER_CEILING_M, STAGE_NEAR_CUT_M } from "../hall-stage-cuts.js";
@@ -241,8 +241,9 @@ describe("the hall as a stage", () => {
     expect(mixLens(from, to, -1)).toEqual(from);
   });
 
-  it("squares the camera up on the shared table's sheet settle, kept as the stage's own copy while it is behind a flag", () => {
-    // hall-stage.ts says why the numbers are written twice; this is what keeps the two the same.
-    expect(STAGE_SQUARING_SPRING).toEqual(SPRING_PRESETS.sheetSettle);
+  it("squares the camera up on the planner's sheet settle, kept as the stage's own copy while it is behind a flag", () => {
+    // hall-stage.ts says why the numbers are written twice; this is what keeps the two the same. The setting was an
+    // entry of the shared spring table until #357 moved it beside the sheets that rise on it.
+    expect(STAGE_SQUARING_SPRING).toEqual(SHEET_SETTLE);
   });
 });

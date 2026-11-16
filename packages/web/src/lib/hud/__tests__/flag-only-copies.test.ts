@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getCatalogueByCategory } from "../../catalogue.js";
-import { setupCardPreviewUrl } from "../../crafted-furniture.js";
+import { setupCardPreviewUrl } from "../../setup-card-previews.js";
 import { CARD_COLOURWAYS, cardParamsFor, setupCardLooks, trestleRange, type CardParams } from "../../setup-cards.js";
 import { SPRING_PRESETS } from "../../springs.js";
 import { handCardPictureUrl } from "../card-pictures.js";
@@ -11,12 +11,15 @@ import { SEAT_LINE_SPRING } from "../hud-motion.js";
 // The screen's own copies, held to their originals
 //
 // The planner's new screen is behind a flag, and flag-only code may not grow
-// what every planner downloads. Three things it needs live in shared modules
-// that nothing else in production reads yet, so the bundler leaves them out of
+// what every planner downloads. Three things it needs lived in shared modules
+// where nothing else in production read them, so the bundler left them out of
 // those modules; importing them from the screen put them back, into files that
 // many other pages' chunks fetch. So the screen keeps a copy of each, and a
 // test holds every copy to its original: change one and not the other, and it
-// fails. Two are held here. The stage's spring is held beside the stage
+// fails. (Since 16 Nov 2026 the picture rule and the stage's spring setting
+// live in the other new chrome's own modules, #357. The copies stay while
+// both chromes are behind flags, held to the originals where they now are.)
+// Two are held here. The stage's spring is held beside the stage
 // (grand-hall/__tests__/hall-stage.test.ts) and the light's order through its
 // own key (planner-hud/__tests__/view-station.test.tsx).
 // ---------------------------------------------------------------------------

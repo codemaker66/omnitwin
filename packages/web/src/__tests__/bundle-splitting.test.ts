@@ -452,10 +452,8 @@ describe("the planner HUD stays behind its flag (T-723)", () => {
    */
   const SEAMS: ReadonlyMap<string, string> = new Map([
     ["lib/planner-features.js setPlannerChromeFeatures", "the chrome's own switches, set as it mounts and cleared as it leaves: about 70 bytes of the shared runtime file"],
-    // The other chrome's keys import this module for another hook, in a part of them no production build keeps. So
-    // the bundler builds the module whole into the HUD's own file, and no one else pays (two-build reading, 15 Nov
-    // 2026: "new to production, built into PlannerHud.js"). If that changes, this line is where to look first.
-    ["lib/use-spring-value.js useSpringCssVariable", "the seat line's spring hook: its module is in no file sent without the flag"],
+    // (The seat line's spring hook, useSpringCssVariable, was listed here until 16 Nov 2026. The other new chrome
+    // imports it in production since #357, so the HUD is no longer its only reader, and the last check below said so.)
   ]);
 
   function mentions(code: string, name: string): boolean {

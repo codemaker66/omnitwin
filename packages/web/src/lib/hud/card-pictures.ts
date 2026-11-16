@@ -4,22 +4,24 @@ import type { CardParams } from "../setup-cards.js";
 // The pictures of the hand's setup cards
 //
 // The same pictures, by the same rule, as setupCardPreviewUrl in
-// lib/crafted-furniture.ts: a card's look is its colourway, for Top and Long
+// lib/setup-card-previews.ts: a card's look is its colourway, for Top and Long
 // table whether it sets down one trestle or a set, and the chair it seats. A
 // seated look on a chair it was never drawn with has no picture.
 //
-// The rule is written again here, not imported, for as long as this screen is
-// behind its flag, because flag-only code may not grow what every planner
-// downloads (the design note, "Behind its flag, and nothing more"). Nothing
-// else in production calls setupCardPreviewUrl yet, so the bundler leaves it
-// out; importing it from here put it back, into the shared file its module is
-// built into, which twelve other files of master's build import (14 Nov 2026).
-// __tests__/flag-only-copies.test.ts holds this to the shared rule for every
-// card, colourway and chair, so the two cannot part. When this screen is the
-// planner, import the shared one and delete this.
+// The rule is written again here, not imported. It was copied on 14 Nov 2026,
+// when it lived in a module every planner fetches (lib/crafted-furniture.ts)
+// and nothing in production called it: the bundler left it out, and importing
+// it from this screen put it back for everyone, into a file twelve other files
+// of master's build import (the design note, "Behind its flag, and nothing
+// more"). Since 16 Nov 2026 the rule lives in a module only the other new
+// chrome loads (#357), so reading it from here would no longer cost a planner
+// without a flag anything. The copy stays while both chromes are behind
+// flags, as the smaller change. __tests__/flag-only-copies.test.ts holds it to
+// that rule for every card, colourway and chair, so the two cannot part. When
+// one of the two chromes is the planner, import the rule and delete this.
 // ---------------------------------------------------------------------------
 
-/** The version folder of the setup cards' pictures: SETUP_PREVIEW_VERSION in lib/crafted-furniture.ts. */
+/** The version folder of the setup cards' pictures: SETUP_PREVIEW_VERSION in lib/setup-card-previews.ts. */
 const PICTURES_VERSION = "setup-v2";
 
 /** A chair's word in a picture's name. */
