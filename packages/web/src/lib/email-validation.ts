@@ -14,10 +14,18 @@
 //   2. Plus: reject leading/trailing/consecutive dots in the local part
 //      (RFC 3696 prohibition; common typo class).
 //   3. Plus: total length ≤ 254 (RFC 3696), local part ≤ 64 (RFC 5321).
+//   4. Plus: the enquiry API's own rule (GuestEnquiryEmailSchema). Every
+//      caller posts the address to /public/enquiries, which refuses some
+//      addresses the HTML5 regex allows: a one-letter or numeric top-level
+//      domain ("jane@gmail.c"), or symbols such as ! { } before the @.
+//      Refused here, the guest can still correct it; refused there, the
+//      page could only say the enquiry was not sent (public-claims-6).
 //
 // These are the rules that catch the typos a user actually makes
 // without rejecting weird-but-valid addresses (`+`, subaddressing, etc).
 // ---------------------------------------------------------------------------
+
+import { GuestEnquiryEmailSchema } from "@omnitwin/types/enquiry";
 
 // HTML5 spec regex from https://html.spec.whatwg.org/multipage/input.html#email-state-(type=email)
 // Verbatim — this is what input type="email" validates against.
@@ -47,6 +55,6 @@ export function isValidEmail(input: string): boolean {
   // Domain must contain at least one dot (no bare hostnames for human users).
   if (!domain.includes(".")) return false;
 
-  // Defer the rest to the HTML5 spec regex.
-  return HTML5_EMAIL_RE.test(trimmed);
+  // Defer the rest to the HTML5 spec regex, and to the API that receives it.
+  return HTML5_EMAIL_RE.test(trimmed) && GuestEnquiryEmailSchema.safeParse(trimmed).success;
 }

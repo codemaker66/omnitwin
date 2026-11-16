@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { GuestEnquiryEmailSchema } from "@omnitwin/types/enquiry";
 import { isValidEmail } from "../email-validation.js";
 
 // ---------------------------------------------------------------------------
@@ -61,6 +62,32 @@ describe("isValidEmail — length limits (RFC 3696 / RFC 5321)", () => {
     const total = `${local}@${domain}`;
     expect(total.length).toBeGreaterThan(254);
     expect(isValidEmail(total)).toBe(false);
+  });
+});
+
+// public-claims-6: every caller posts the address to /public/enquiries, so an
+// address the API's own rule refuses is refused here, where the guest can
+// still correct it, rather than coming back as a failed send.
+describe("isValidEmail — never passes an address the enquiry API refuses", () => {
+  it.each([
+    ["one-letter top-level domain", "jane@gmail.c"],
+    ["numeric top-level domain", "jane@example.123"],
+    ["symbol the API refuses before the @", "o!brien@example.com"],
+    ["another such symbol", "jane{events}@example.com"],
+  ])("rejects (%s)", (_label, addr) => {
+    expect(GuestEnquiryEmailSchema.safeParse(addr).success, "the API refuses it").toBe(false);
+    expect(isValidEmail(addr)).toBe(false);
+  });
+
+  it.each([
+    "alice@example.com",
+    "alice.smith@example.co.uk",
+    "alice+events@trades-hall.com",
+    "o'brien@example.ie",
+    "j@x.io",
+  ])("still accepts %s, which the API takes too", (addr) => {
+    expect(GuestEnquiryEmailSchema.safeParse(addr).success).toBe(true);
+    expect(isValidEmail(addr)).toBe(true);
   });
 });
 
