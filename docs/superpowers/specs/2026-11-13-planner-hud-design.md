@@ -84,7 +84,34 @@ says so (`HudFrame.tsx`), so its height is written in one place, the stylesheet.
   lines can be all the sheet has to say. Lay out alone may rise as far as the top bar: once a count is typed its
   prompt says what pressing will do, and its act comes last. Where a window cannot show all of that, the sheet is
   slid to its end, so the count, the consequences and the act are in sight together.
+- **A sheet is sized from where the shelf really stands.** The shelf grows with what it holds (a status line that
+  wraps, a phone's safe area, a piece's keys on a second line) and a sheet hangs from its real top. So the screen
+  measures the shelf as it measures the bar and says so (`--hud-shelf-real`, `HudFrame.tsx`), and the stylesheet
+  takes every sheet's height from that (`--hud-shelf-now`). Sized from the fixed measure, a sheet rose over the top
+  bar by as much as the shelf had grown.
 - Each fact is said once. There is no seals column and no side panel.
+
+Keyboard and focus (`HudSheets.tsx`, `radio-keys.ts`):
+
+- **A sheet takes focus to its title as it opens, and gives it back as it shuts**: to what opened it; where that
+  has gone or cannot be seen (the first screen's answer; a step a phone's bar has folded away), to the sheet's own
+  step; failing that, to the one primary key. Never to the bare page.
+- **A group that says it is a radio group works as one**: one stop in the Tab order, and the arrow keys go to the
+  next choice and choose it (the event's kind, the lay-out style, a table's cloth, Plan / Room / Walk). A choice
+  that cannot be taken now is still stopped at, so its reason can be read. The first screen's three answers are
+  plain keys: an answer is an act that moves on, not a setting that stays chosen.
+- **The primary key stands aside only for a sheet that can do its move.** Two moves are carried out by the press
+  itself (a piece moved clear of a door, the narrowest gap shown), so their key stays whatever sheet is open.
+
+Send (`HudSheets.tsx`, `stores/planner-hud-store.ts`):
+
+- **The guest's form is the whole planner's, and stands outside this screen's element** (a portal to the page).
+  Inside it, the form took the screen's page-wide rules: a focus ring in the screen's ink on the form's dark glass,
+  and its working state faded with the screen's disabled keys.
+- **A key that is at work is not faded**, and why a key is off is said in the sheet's own words, not on the key.
+- **A plan is called sent only when the enquiry has arrived**, never because the form was put away; and the device
+  remembers which layouts it has sent (their ids, the newest two dozen), so a page opened again does not invite a
+  second enquiry for a plan that has gone. Another device does not know; only the server could say.
 
 Widths (the media rules at the foot of `hud.css`). Two things never give: a card's column is never narrower than
 its caption (84 px), and the shelf's side columns are never narrower than their words (192 px). What gives is the
@@ -159,10 +186,29 @@ copy of each, held to the original by a test so the two cannot part:
 | The next light | `HALL_MOOD_NAMES`, `grand-hall/hall-mood.ts` | `NEXT_MOOD`, `planner-hud/ViewStation.tsx` | `planner-hud/__tests__/view-station.test.tsx`, by pressing the key |
 
 The two springs are settings handed to the one shared spring (`stepSpring`, `useSpringCssVariable`); there is no
-second spring. The same test file fails if the screen's sources read those exports again, or an entry of the spring
-table that nothing else in production reads. That is a tripwire for what was found, not a proof: the proof is two
-builds from one tree, this branch and master, compared file by file (the 13 November log has the reading). **When
-this screen is the planner, delete the copies and read the originals.**
+second spring. **When this screen is the planner, delete the copies and read the originals.**
+
+Three checks hold the rule, each as far as it can see:
+
+- **From the sources** (`src/__tests__/bundle-splitting.test.ts`). It walks the imports from the app's entry and
+  fails if: anything outside the screen imports one of its modules, other than the two imports on demand that
+  fetch it; the screen is the only production importer of a name from a module the default planner already holds,
+  or of a package path, unless that name is on the test's short list of seams (two today, each with its reason);
+  or the screen imports a shared table whose entries the bundler keeps one by one (the spring table). It tells a
+  name the rest of production builds anyway from one that only a dropped part of its module uses. It sees
+  imports, not what the bundler makes of them.
+- **From the build** (`src/__tests__/hud-chunk-isolation.test.ts`, in CI's Build job). Following every import
+  from the page's own scripts except a flag's own imports on demand, it finds none of the flag's files, none of
+  the screen's own words, and neither of the two things the screen once made everyone fetch. It sees one build, so
+  it cannot compare with master.
+- **Two builds from one tree, compared** (by hand; the scripts are outside the repository). This branch, and the
+  same tree with the branch's modified files read as on master: every file's bytes, and every module's rendered
+  code. No module the branch did not edit may render differently in a file sent without a flag. This is the
+  proof; the 13 November log has its reading.
+
+Which chrome is on screen is asked of the page that mounted it (`mountedPlannerChrome`, `planner-chrome-flag.ts`),
+never of the address or the device's memory at the moment of a click: another tab's flag can change that memory
+after this page chose, and this page keeps the chrome it opened with.
 
 ## Honest numbers
 
@@ -172,7 +218,10 @@ door with something standing in its space. See `docs/engineering/planner-honest-
 ## Not built yet
 
 - The stage on an upright phone or tablet (down the hall's length, facing the fireplace). Today an upright canvas
-  opens on the planner's ordinary upright view, inside the hall.
+  opens on the planner's ordinary upright view, inside the hall. The hall's model is still cut as for the stage
+  there (the wall the camera stands behind is lowered to under the floor, doors included, and the chandeliers show
+  to 12.5 m), because the cuts follow the screen's asking for a stage, not a stage being held: the view is an
+  ordinary orbit, but the walls are not the default planner's.
 - A short wide window (a phone on its side): it keeps the one-row shelf with a sliding hand under a two-line bar,
   and has not been designed.
 - Where the doors are: the door wall is the missing one, so the door spaces should show on the floor while a card
