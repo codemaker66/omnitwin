@@ -387,6 +387,9 @@ describe("VerticalToolbox tool words, for the keyboard and a screen reader", () 
     toolRect.mockReturnValue(new DOMRect(6, 200, 56, 56));
     act(() => { toolbar.dispatchEvent(new Event("scroll")); });
     await waitFor(() => { expect(screen.getByTestId("toolbox-tooltip").style.visibility).toBe("visible"); });
+    // And it stays: the first, out-of-view look did not start its 250 ms exit.
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 400); }); });
+    expect(screen.getByTestId("toolbox-tooltip").style.animation).toContain("omni-tt-enter");
   });
 
   it("holds no place in the Escape order for a disabled tool, which draws no card", () => {
