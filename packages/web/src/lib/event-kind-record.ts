@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { ApiError } from "../api/client.js";
 import { patchConfigMetadata } from "../api/configurations.js";
 import { usePlannerEventStore, type PlannerEventKind } from "../stores/planner-event-store.js";
+import { useAuthStore } from "../stores/auth-store.js";
 import { readOnlineStatus, subscribeOnlineStatus } from "./online-status.js";
 import type { AutoFillStyle } from "./auto-fill.js";
 
@@ -12,9 +13,10 @@ import type { AutoFillStyle } from "./auto-fill.js";
 // planning?"), keeps the answer with the layout, and reads it back whenever
 // the layout opens again. The answer chooses the chair a new seat gets
 // (lib/furniture-defaults) and the shape Lay out starts with. Only a layout
-// that was new when it opened is asked: nothing stood on its floor, and
-// nothing has since. A layout someone has worked on is never interrupted,
-// however empty its floor later becomes.
+// that is new as it opens is asked: nothing on its floor, in the copy it
+// opens with or the server's. While it stays open, once anything has stood
+// on its floor it is never asked, however empty the floor becomes. A layout
+// whose saved copy is empty as it opens counts as new again.
 //
 // A signed-in layout keeps it in configurations.metadata.eventKind; the PATCH
 // merges top-level keys, so the write never touches the layout's other
@@ -34,12 +36,26 @@ export function isPlannerEventKind(value: unknown): value is PlannerEventKind {
   return value === "wedding" || value === "corporate" || value === "other";
 }
 
-/** The answer a layout's metadata holds: a kind, null (skipped), or undefined (never asked, or unreadable). */
+/**
+ * A kind a later release added: a short name this planner does not know. A
+ * tab left open across that release reads it as answered, with no kind: it
+ * never asks such a layout again, and never rewrites it away.
+ */
+function isLaterKind(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 64 && !isPlannerEventKind(value);
+}
+
+/**
+ * The answer a layout's metadata holds: a kind, null (skipped, or a kind a
+ * later release added, which this planner has no chair for), or undefined
+ * (never asked, or unreadable).
+ */
 export function storedEventKind(metadata: unknown): EventKindAnswer | undefined {
   if (typeof metadata !== "object" || metadata === null || !("eventKind" in metadata)) return undefined;
   const value: unknown = (metadata as { readonly eventKind?: unknown }).eventKind;
   if (value === null) return null;
-  return isPlannerEventKind(value) ? value : undefined;
+  if (isPlannerEventKind(value)) return value;
+  return isLaterKind(value) ? null : undefined;
 }
 
 /** An answer carried in the planner's address (`?event=wedding`), as a link from the venue's wedding page would. */
@@ -59,7 +75,8 @@ export const DEVICE_RECORD_LIMIT = 200;
 
 interface DeviceEntry {
   readonly configId: string;
-  readonly kind: EventKindAnswer;
+  /** A kind, null (skipped), or a kind a later release added, kept as it was written. */
+  readonly kind: string | null;
 }
 
 /** `quiet`: this device was told not to ask (`?event-question=off`): the venue's demo laptop, automated runs. */
@@ -101,7 +118,7 @@ export function readDeviceRecord(): DeviceRecord {
     if (typeof item !== "object" || item === null) continue;
     const { configId, kind } = item as { readonly configId?: unknown; readonly kind?: unknown };
     if (typeof configId !== "string" || configId.length === 0 || configId.length > 128 || seen.has(configId)) continue;
-    if (kind !== null && !isPlannerEventKind(kind)) continue;
+    if (kind !== null && !isPlannerEventKind(kind) && !isLaterKind(kind)) continue;
     seen.add(configId);
     entries.push({ configId, kind });
   }
@@ -119,9 +136,11 @@ function writeDeviceRecord(record: DeviceRecord): boolean {
   }
 }
 
-/** This device's answer for a layout, or undefined when it holds none. */
+/** This device's answer for a layout, or undefined when it holds none; a kind a later release added reads as answered, with no kind. */
 export function deviceEventKind(configId: string): EventKindAnswer | undefined {
-  return readDeviceRecord().entries.find((entry) => entry.configId === configId)?.kind;
+  const entry = readDeviceRecord().entries.find((candidate) => candidate.configId === configId);
+  if (entry === undefined) return undefined;
+  return entry.kind === null || isPlannerEventKind(entry.kind) ? entry.kind : null;
 }
 
 /** Keeps a layout's answer on this device, newest first; false when the device cannot keep it. */
@@ -245,9 +264,10 @@ export interface EventKindQuestionState {
   /** The layout's answer; undefined while unread or never asked. */
   readonly answer: EventKindAnswer | undefined;
   /**
-   * The layout was new when it opened: nothing stood on its floor. Only such
-   * a layout is asked. Once anything stands on it, it never is again, and
-   * nothing makes it new again: a reload of the same layout can only clear it.
+   * The layout was new as it opened: nothing stood on its floor. Only such a
+   * layout is asked. While it stays open, once anything stands on it, it is
+   * not asked again: a reload of the same layout can clear this, never set it.
+   * (Opened afresh later with an empty saved copy, it is new again.)
    */
   readonly askable: boolean;
   readonly save: EventKindSave;
@@ -298,15 +318,33 @@ export interface OpenedLayout {
  */
 export const EVENT_KIND_RETRY_MS: readonly number[] = [2_000, 5_000, 15_000, 30_000, 60_000];
 
-/** One answer given for a layout; a later answer is a new entry, even one with the same kind. */
+/**
+ * One answer given for a layout and not yet seen written. A later answer is a
+ * new entry, even one of the same kind.
+ */
 interface UnsentAnswer {
   readonly answer: EventKindAnswer;
+  /**
+   * What the layout held, as far as this tab knows, when this answer was
+   * given; moved on when this tab's own earlier answer is seen written. A
+   * different stored answer found later means someone answered elsewhere.
+   */
+  base: EventKindAnswer | undefined;
+  /** Who gave it: it is only ever written as that person. */
+  readonly userId: string | null;
 }
 
 let receiptSeq = 0;
 let writing: Promise<void> = Promise.resolve();
 /** Each layout's newest answer this tab gave and has not yet seen kept: tried again whichever layout is open. */
 const unsent = new Map<string, UnsentAnswer>();
+/** Each signed-in layout's stored answer as far as this tab knows: read as it opens, then each answer seen written. */
+const knownStored = new Map<string, EventKindAnswer | undefined>();
+
+/** The person signed in now, whose answers this tab may write. */
+function currentUserId(): string | null {
+  return useAuthStore.getState().user?.id ?? null;
+}
 /** Writes queued or under way, by layout, so a retry never doubles one. */
 const writesQueued = new Map<string, number>();
 let retryDeps: EventKindRecordDeps = DEFAULT_DEPS;
@@ -334,13 +372,15 @@ function applyAnswer(configId: string, guest: boolean, answer: EventKindAnswer |
  * - A guest's draft takes this device's answer. The address (`?event=`) answers
  *   only a draft nothing has answered yet: the link it came by started the
  *   plan. That answer is kept on the device.
- * - A signed-in layout takes the answer it holds. An answer this tab gave and
- *   has not seen kept stands over it, and is written again. Otherwise the
- *   layout takes an answer this tab holds for this visit, or the one this
- *   device kept for it as a guest's draft (claimed since), which is written to
- *   the layout. Opening writes nothing else: the address never answers a
- *   signed-in layout, so a link cannot change a layout's event, and a viewer
- *   who may not write is not made to try.
+ * - A signed-in layout takes the answer it holds. An answer this tab gave, by
+ *   the person signed in now, and has not seen kept stands over it and is
+ *   written again, unless the layout now holds that very answer (it landed) or
+ *   one given elsewhere since (the newer answer stands). Otherwise the layout
+ *   takes an answer this tab holds for this visit, or the one this device kept
+ *   for it as a guest's draft (claimed since), which is written to the layout.
+ *   Opening writes nothing else: the address never answers a signed-in
+ *   layout, so a link cannot change a layout's event, and a viewer who may not
+ *   write is not made to try.
  */
 export function openLayoutEventKind(layout: OpenedLayout, deps: Partial<EventKindRecordDeps> = {}): void {
   const current = useEventKindQuestion.getState();
@@ -363,13 +403,21 @@ export function openLayoutEventKind(layout: OpenedLayout, deps: Partial<EventKin
     return;
   }
   const use: EventKindRecordDeps = { ...DEFAULT_DEPS, ...deps };
+  const stored = storedEventKind(layout.metadata);
   const waiting = unsent.get(layout.configId);
   if (waiting !== undefined) {
-    applyAnswer(layout.configId, false, waiting.answer, "retrying");
-    if (!writesQueued.has(layout.configId)) void writeAnswer(layout.configId, waiting, use);
-    return;
+    const stands = waiting.userId === currentUserId()
+      && (stored === undefined || (stored !== waiting.answer && stored === waiting.base));
+    if (stands) {
+      knownStored.set(layout.configId, stored);
+      applyAnswer(layout.configId, false, waiting.answer, "retrying");
+      if (!writesQueued.has(layout.configId)) void writeAnswer(layout.configId, waiting, use);
+      return;
+    }
+    // Another person's answer, one that landed after all, or one overtaken by an answer given elsewhere.
+    unsent.delete(layout.configId);
   }
-  const stored = storedEventKind(layout.metadata);
+  knownStored.set(layout.configId, stored);
   if (stored !== undefined) {
     applyAnswer(layout.configId, false, stored, "kept");
     return;
@@ -417,12 +465,14 @@ export function answerEventKind(answer: EventKindAnswer, deps: Partial<EventKind
 /**
  * A refusal no new try can change: the request is wrong, not allowed, or for
  * a layout that is gone or locked for review. An expired session (401, after
- * the client has asked for a fresh token), a timeout (408), too many requests
- * (429), the route's own "try again" (409 RETRY) and a server error all pass.
+ * the client has asked for a fresh token, while someone is still signed in),
+ * a timeout (408), too many requests (429), the route's own "try again" (409
+ * RETRY) and a server error all pass. A 401 with nobody signed in is final.
  */
 function refusedForGood(error: unknown): boolean {
   if (!(error instanceof ApiError)) return false;
-  if (error.status === 401 || error.status === 408 || error.status === 429) return false;
+  if (error.status === 401) return currentUserId() === null;
+  if (error.status === 408 || error.status === 429) return false;
   if (error.status === 409) return error.code !== "RETRY";
   return error.status >= 400 && error.status < 500;
 }
@@ -435,7 +485,7 @@ function markSave(configId: string, answer: EventKindAnswer, save: EventKindSave
 
 /** Keeps a signed-in layout's newest answer until it is seen kept, and writes it. */
 function queueAnswer(configId: string, answer: EventKindAnswer, deps: EventKindRecordDeps): void {
-  const entry: UnsentAnswer = { answer };
+  const entry: UnsentAnswer = { answer, base: knownStored.get(configId), userId: currentUserId() };
   unsent.set(configId, entry);
   retryAttempts = 0;
   void writeAnswer(configId, entry, deps);
@@ -443,20 +493,34 @@ function queueAnswer(configId: string, answer: EventKindAnswer, deps: EventKindR
 
 /**
  * Writes a signed-in layout's answer, one write at a time. Only the layout's
- * newest answer settles anything: an older write that lands or fails changes
- * nothing, because the newer one is written after it. A write refused for good
- * leaves the answer held for this visit. Any other failed write keeps the
- * answer unsent, whichever layout is open by then, and tries it again: at once
- * when the browser comes back online, and after a growing wait while it is
- * online.
+ * newest answer reaches the network: one overtaken while it waited its turn is
+ * never sent. Only the person who gave it may send it: after a change of
+ * person it is dropped. A write refused for good leaves the answer held for
+ * this visit. Any other failed write keeps the answer unsent, whichever layout
+ * is open by then, and tries it again: at once when the browser comes back
+ * online, and after a growing wait while it is online. (A retry made while
+ * the layout is not open writes over whatever it holds by then: the last
+ * writer wins, as everywhere in the PATCH.)
  */
 function writeAnswer(configId: string, entry: UnsentAnswer, deps: EventKindRecordDeps): Promise<void> {
   writesQueued.set(configId, (writesQueued.get(configId) ?? 0) + 1);
   writing = writing.then(async () => {
     try {
+      if (unsent.get(configId) !== entry) return;
+      if (entry.userId !== currentUserId()) {
+        unsent.delete(configId);
+        markSave(configId, entry.answer, "this-visit");
+        return;
+      }
       await deps.writeMetadata(configId, entry.answer);
       retryAttempts = 0;
-      if (unsent.get(configId) !== entry) return;
+      knownStored.set(configId, entry.answer);
+      const newest = unsent.get(configId);
+      if (newest !== entry) {
+        // This tab's own answer landed under a newer one still to go: the newer one now replaces it.
+        if (newest !== undefined) newest.base = entry.answer;
+        return;
+      }
       unsent.delete(configId);
       markSave(configId, entry.answer, "kept");
     } catch (error) {
@@ -536,6 +600,7 @@ export function settleEventKindQuestion(): void {
 export function resetEventKindQuestionForTesting(): void {
   stopRetrying();
   unsent.clear();
+  knownStored.clear();
   writesQueued.clear();
   retryDeps = DEFAULT_DEPS;
   receiptSeq = 0;

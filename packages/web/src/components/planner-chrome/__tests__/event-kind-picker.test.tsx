@@ -360,6 +360,19 @@ describe("the receipt", () => {
     welcome.remove();
   });
 
+  it("speaks once the welcome leaves the page, though no close event of its reaches the document", async () => {
+    reducedMotion(true);
+    const welcome = otherDialog();
+    openDraft();
+    renderPlanner();
+    fireEvent.click(within(question()).getByRole("button", { name: /^Wedding/u }));
+    await new Promise((resolve) => { window.setTimeout(resolve, 60); });
+    expect(screen.queryByTestId("event-kind-receipt")).toBeNull();
+    // As PlannerArrival's unmount does: React removes the welcome, still open, and its queued close fires detached.
+    act(() => { welcome.remove(); });
+    expect(await screen.findByText("Set up for a wedding: round tables and gold Chiavari chairs.")).toBeTruthy();
+  });
+
   it("stays while a pointer is over it or focus is in it, and goes once neither is", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"] });
     reducedMotion(true);

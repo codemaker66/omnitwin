@@ -326,9 +326,11 @@ function EventKindDialog({ changing, current, leaving, onPick, onSkip }: DialogP
 /**
  * Whether no dialog holds the page. While one does, everything outside it is
  * inert, and words written into a live region there are never read out; so
- * the receipt waits until every dialog has closed, and a frame more, before it
+ * the receipt waits until every dialog has gone, and a frame more, before it
  * speaks. `dialogOpen` is the question's own state, checked again as it
- * changes; any dialog's closing is heard as it happens.
+ * changes. Any other dialog is heard as it closes and as it leaves the page:
+ * the arrival's welcome is closed in its own unmount, as React removes it, so
+ * its close event fires on an element already out of the document.
  */
 function usePageFree(dialogOpen: boolean): boolean {
   const [free, setFree] = useState(() => openDialogs().length === 0);
@@ -340,9 +342,16 @@ function usePageFree(dialogOpen: boolean): boolean {
     };
     check();
     document.addEventListener("close", check, true);
+    // Dialogs portal themselves into the page's body: a direct child leaving, or any dialog's `open` changing.
+    const leaving = typeof MutationObserver === "undefined" ? null : new MutationObserver(check);
+    const opening = typeof MutationObserver === "undefined" ? null : new MutationObserver(check);
+    leaving?.observe(document.body, { childList: true });
+    opening?.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["open"] });
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener("close", check, true);
+      leaving?.disconnect();
+      opening?.disconnect();
     };
   }, [dialogOpen]);
   return free;

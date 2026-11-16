@@ -166,7 +166,7 @@ describe("MobilePlannerTopBar identity", () => {
     expect(screen.getByTestId("mobile-planner-layout-name").textContent).toBe("Unsaved layout");
   });
 
-  it("names the event in the 2D plan as in 3D, in the copper meant for its ivory bar (T-674)", () => {
+  it("names the event in the 2D plan as in 3D, and the name opens a change there (T-674)", () => {
     resetEventKindQuestionForTesting();
     openLayoutEventKind({ configId: "cfg-activity", isPublicPreview: false, search: "", metadata: { eventKind: "wedding" }, floorEmptyAtOpen: false });
     render(<MobilePlannerTopBar mode="2d" onModeChange={vi.fn()} />);

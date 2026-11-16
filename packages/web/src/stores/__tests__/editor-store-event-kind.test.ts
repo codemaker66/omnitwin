@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Configuration, PlacedObject } from "../../api/configurations.js";
 import type { Space } from "../../api/spaces.js";
-import { useEditorStore } from "../editor-store.js";
+import { placedObjectToEditor, useEditorStore } from "../editor-store.js";
 import { useAuthStore } from "../auth-store.js";
+import { persistAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
 import { usePlannerEventStore } from "../planner-event-store.js";
 import { answerEventKind, resetEventKindQuestionForTesting, useEventKindQuestion } from "../../lib/event-kind-record.js";
 import { claimOpenDraft } from "../../hooks/use-planner-draft-claim.js";
@@ -112,6 +113,20 @@ describe("a layout's answer, as its load opens it", () => {
     configApi.getConfig.mockResolvedValueOnce(configuration("empty", { own: true }));
     await store().loadConfiguration("empty", true);
     expect(question()).toMatchObject({ configId: "empty", known: true, answer: undefined, askable: true });
+  });
+
+  it("does not open as new a layout whose restored floor is empty over a furnished server copy", async () => {
+    // A select-all and Delete kept on this device, then a reload: the floor restored is the emptied room.
+    const furnished = configuration("emptied", { furnished: true });
+    const kept = persistAnonymousPlannerDraft({
+      configId: furnished.id, spaceId: furnished.spaceId, venueId: furnished.venueId, configRevision: furnished.revision,
+      isPublicPreview: true, objects: [], isDirty: true, baseObjects: (furnished.objects ?? []).map(placedObjectToEditor),
+    });
+    expect(kept).toBe(true);
+    configApi.getPublicConfig.mockResolvedValueOnce(furnished);
+    await store().loadConfiguration("emptied");
+    expect(store().objects).toHaveLength(0);
+    expect(question()).toMatchObject({ configId: "emptied", known: true, answer: undefined, askable: false });
   });
 
   it("opens a new guest draft as new, unanswered and kept on this device", async () => {
