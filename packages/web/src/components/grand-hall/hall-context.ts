@@ -43,7 +43,7 @@ export const CONTEXT_MODEL_URL = "/rooms/grand-hall/context-2020-lidar/merchant-
 export const CONTEXT_RADIUS = 260;
 
 /**
- * The model drawn round the measured front (`?facade=1`, HallExterior): the
+ * The model drawn round the measured front (HallExterior; off on a device that chose `?facade=0`): the
  * same city with Trades Hall's Glassford Street front cut away, where the
  * modelled front stands instead (build_context.py --front-cut).
  */
