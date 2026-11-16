@@ -307,9 +307,13 @@ test.describe("3D planner mobile shell", () => {
 
     await expectNoHorizontalOverflow(page);
     await page.getByRole("button", { name: "More planner tools", exact: true }).click();
-    await page.getByTestId("planner-toolbar").getByRole("button", { name: "Rotate", exact: true }).hover();
-    await expect(page.getByText("SHORTCUT")).toBeVisible();
-    await expect(page.getByText("Q / E")).toBeVisible();
+    const rotate = page.getByTestId("planner-toolbar").getByRole("button", { name: "Rotate", exact: true });
+    await rotate.hover();
+    // The card, not each tool's hidden description, which says "Shortcut: Q / E." for a screen reader.
+    const card = page.getByTestId("toolbox-tooltip");
+    await expect(card.getByText("SHORTCUT", { exact: true })).toBeVisible();
+    await expect(card.getByText("Q / E", { exact: true })).toBeVisible();
+    await expect(rotate).toHaveAccessibleDescription("Rotate selected furniture in 15° steps. Shortcut: Q / E.");
     expect(consoleErrors).toEqual([]);
   });
 });

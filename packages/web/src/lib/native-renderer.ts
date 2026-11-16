@@ -3,6 +3,7 @@ import { Color, type Camera, type Object3D, type Scene } from "three";
 import type { RootState } from "@react-three/fiber";
 import { waitForNativeGpuWork } from "./native-gpu-completion.js";
 import { getGpuRenderer, type GpuRendererContext } from "./device-tier.js";
+import { withMainDraw } from "./scene-grade.js";
 
 const sceneRenderers = new WeakMap<Scene, WebGPURenderer>();
 
@@ -39,10 +40,18 @@ export function withNativeComposedFrame(renderer: object, scene: Object3D, camer
   }
 }
 
+/** A renderer's exposure, or 1 for a stand-in that has none. */
+function exposureOf(renderer: object): number {
+  const exposure: unknown = Reflect.get(renderer, "toneMappingExposure");
+  return typeof exposure === "number" ? exposure : 1;
+}
+
 /** Record the caller's target before Three selects its internal output target.
  * Nested renders restore their parent's scope; compilation has no render scope.
  * Inside a composed frame (withNativeComposedFrame) the nested draw of its own
- * scene and camera is the main draw. */
+ * scene and camera is the main draw. A material may ask whether the draw it
+ * is in is that main draw, and with what exposure (scene-grade.ts
+ * sceneOutput): every draw declares it here. */
 export function withNativeRenderScope(
   renderer: Pick<WebGPURenderer, "getRenderTarget">,
   scene: Object3D,
@@ -57,7 +66,7 @@ export function withNativeRenderScope(
   const scope: NativeRenderScope = { scene, camera, canvas, completions: [] };
   renderScopes.set(renderer, scope);
   try {
-    draw();
+    withMainDraw(canvas, exposureOf(renderer), draw);
   } catch (reason: unknown) {
     for (const completion of scope.completions) completion.fail(reason);
     throw reason;

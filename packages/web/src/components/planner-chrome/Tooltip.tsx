@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, type FocusEvent, type PointerEvent, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { create } from "zustand";
+import { focusedByKeyboard } from "../../lib/focused-by-keyboard.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { Kbd } from "./Kbd.js";
 import "./chrome.css";
@@ -88,15 +89,6 @@ export interface TooltipAnchorProps {
 }
 
 const NO_KEYS: readonly string[] = [];
-
-/** Whether focus arrived from the keyboard. An engine without :focus-visible says no. */
-function focusedByKeyboard(element: HTMLElement): boolean {
-  try {
-    return element.matches(":focus-visible");
-  } catch {
-    return false;
-  }
-}
 
 /** The handlers that make an element a tooltip's anchor. */
 export function useTooltip({ text, keys = NO_KEYS, side = "above", immediate = false }: TooltipOptions): TooltipAnchorProps {
