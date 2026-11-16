@@ -3,10 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { SpaceSchema } from "@omnitwin/types";
+import { SpaceSchema, type SpaceDimensions } from "@omnitwin/types";
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { PerspectiveCamera, Scene } from "three";
 import { encodeReliefFile, flatCeilingEntry, flatWallEntry } from "../../surveyed-room/__tests__/fixtures/relief-file.js";
+import type { SurveyedRoom } from "../../surveyed-room/use-surveyed-room.js";
 
 // The planner's scene with a surveyed room mounted in it (T-662), in the manner
 // of PlannerScene.test.tsx: the Canvas is stood in for by a host that keeps the
@@ -54,6 +55,9 @@ const { useLayoutTimelinePreviewStore } = await import("../../../stores/layout-t
 const { useSurveyedRoomStore } = await import("../../../stores/surveyed-room-store.js");
 const { surveyedRoomCaption } = await import("../../surveyed-room/room-status.js");
 const { resolveRoomGeometry } = await import("../../../data/room-geometries.js");
+const { computeCameraTarget, computeDefaultCameraPosition } = await import("../../../lib/camera-rig.js");
+const { surveyedRoomOpeningPose } = await import("../../surveyed-room/room-opening-view.js");
+const { HALL_VIEW_POSES } = await import("../../grand-hall/HallViewDirector.js");
 
 function sceneElements(children: ReactNode = canvasChildren.current): ReactElement<Record<string, unknown>>[] {
   return Children.toArray(children).flatMap((child) => {
@@ -162,6 +166,8 @@ describe("PlannerScene with a surveyed room", () => {
     expect(drawing()).toEqual(PLAIN_SHELL);
     expect(sceneComponent("RoomMesh")?.props).toEqual({ geometry: resolveRoomGeometry({ name: "Saloon", heightM: "5.4", floorPlanOutline: [] }), variant: "generic", includeLighting: false });
     expect(String(sceneComponent("PlannerScenePrecompiler")?.props.signature)).toContain(":generic:");
+    // And opens on the planner's own view of it: no pose of the room's own.
+    expect(sceneComponent("CameraRig")?.props.defaultPose).toBeNull();
     expect(fake).not.toHaveBeenCalled();
     expect(useSurveyedRoomStore.getState().status).toBeNull();
   });
@@ -185,7 +191,9 @@ describe("PlannerScene with a surveyed room", () => {
     expect(drawing()).toEqual(PLAIN_SHELL);
     expect(surveyedRoomCaption(useSurveyedRoomStore.getState().status)).toMatch(/^Loading the Saloon as surveyed/);
     const placement = sceneComponent("PlannerInteractionFloor")?.props;
-    const rig = sceneComponent("CameraRig")?.props;
+    const rig = sceneComponent("CameraRig")?.props as { dimensions: SpaceDimensions; defaultPose: unknown } | undefined;
+    // While the shell stands the camera opens as on any plain room.
+    expect(rig?.defaultPose).toBeNull();
 
     await waitFor(() => { expect(sceneComponent("SurveyedRoomModel")).toBeDefined(); });
     // The photographs stand as the Grand Hall's do: a dark surround, no fog, their own camera response; no blueprint
@@ -193,14 +201,23 @@ describe("PlannerScene with a surveyed room", () => {
     expect(drawing()).toEqual({
       shell: false, surveyed: true, hall: false, ink: false, background: "#120e0b", fog: false, photographedRoom: true, lighting: "polygon",
     });
-    const model = sceneComponent("SurveyedRoomModel")?.props as { room: { record: { slug: string }; entry: unknown }; onPhotoProgress: unknown } | undefined;
+    const model = sceneComponent("SurveyedRoomModel")?.props as { room: SurveyedRoom; onPhotoProgress: unknown } | undefined;
     expect(model?.room.record.slug).toBe("saloon");
     expect(model?.room.entry).toEqual({ slug: "saloon", base: FOLDER, revision: 1 });
     expect(String(sceneComponent("PlannerScenePrecompiler")?.props.signature)).toContain(":surveyed:");
-    // Placement, bounds and the camera's framing come from the room's data, not from how it is drawn.
+    // Placement, bounds and the camera's limits come from the room's data, not from how it is drawn.
     expect(sceneComponent("PlannerInteractionFloor")?.props).toEqual(placement);
     expect(sceneComponent("CameraRig")?.props.dimensions).toBe(rig?.dimensions);
-    expect(sceneComponent("CameraRig")?.props.defaultPose).toBeNull();
+    // Its opening view alone follows the survey: the planner's own way of looking at the room, from as far back
+    // as holds the room as surveyed (room-opening-view.ts), handed to the rig as the Grand Hall's own pose is.
+    const drawn = model?.room.geometry;
+    const data = rig?.dimensions;
+    if (drawn === undefined || data === undefined) throw new Error("the scene has no surveyed room or no camera rig");
+    const opening = sceneComponent("CameraRig")?.props.defaultPose as { position: readonly number[]; target: readonly number[] } | null | undefined;
+    expect(opening).toEqual(surveyedRoomOpeningPose(drawn, data, 55));
+    expect(opening?.target).toEqual(computeCameraTarget(data, 16 / 9));
+    // From well above the planner's own 12 m, where the room's walls ran off the frame.
+    expect(opening?.position[1]).toBeGreaterThan(computeDefaultCameraPosition(data, 16 / 9)[1] + 5);
     expect(useCockpitStore.getState().sceneSource?.proceduralGeometryVisible).toBe(true);
 
     // The drawn room's photograph reports reach the planner's caption.
@@ -209,6 +226,8 @@ describe("PlannerScene with a surveyed room", () => {
     expect(surveyedRoomCaption(useSurveyedRoomStore.getState().status)).toBe("Loading the Saloon's photographs · 1 of 3");
     act(() => { report({ expected: 3, settled: 3, failed: [] }); });
     expect(surveyedRoomCaption(useSurveyedRoomStore.getState().status)).toBeNull();
+    // The pose is the same object through those renders: a new one would open the camera afresh (CameraRig).
+    expect(sceneComponent("CameraRig")?.props.defaultPose).toBe(opening);
   });
 
   it("keeps the shell and says so when the survey cannot be loaded", async () => {
@@ -220,6 +239,8 @@ describe("PlannerScene with a surveyed room", () => {
     expect(drawing()).toEqual(PLAIN_SHELL);
     expect(surveyedRoomCaption(useSurveyedRoomStore.getState().status)).toBe("The surveyed Saloon could not load, so the room is drawn plainly. Planning is unaffected.");
     expect(useSurveyedRoomStore.getState().status?.failure).toMatch(/^ceiling-relief\.bin \(http\)/);
+    // The shell is what is drawn, so the camera opens as on any plain room.
+    expect(sceneComponent("CameraRig")?.props.defaultPose).toBeNull();
   });
 
   it("never draws Trades Hall's surveyed room for another venue's room of the same slug", async () => {
@@ -252,6 +273,7 @@ describe("PlannerScene with a surveyed room", () => {
     render(<PlannerScene />);
     await act(async () => { await Promise.resolve(); });
     expect(drawing()).toMatchObject({ shell: false, surveyed: false, hall: true, ink: false, background: "#120e0b", fog: false, photographedRoom: true });
+    expect(sceneComponent("CameraRig")?.props.defaultPose).toBe(HALL_VIEW_POSES.room);
     expect(fake).not.toHaveBeenCalled();
     expect(useSurveyedRoomStore.getState().status).toBeNull();
   });

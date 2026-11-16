@@ -90,6 +90,7 @@ import { HallOpeningHour } from "../grand-hall/HallOpeningHour.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
 import { SurveyedRoomModel } from "../surveyed-room/SurveyedRoomModel.js";
+import { surveyedRoomOpeningPose } from "../surveyed-room/room-opening-view.js";
 import { usePlannerSurveyedRoom } from "../surveyed-room/use-planner-surveyed-room.js";
 import { reportSurveyedRoomPhotos } from "../../stores/surveyed-room-store.js";
 import { assemblyMode } from "../../floor/assembly/flag.js";
@@ -113,6 +114,8 @@ void probeGpu();
 
 const COMPACT_PLANNER_MAX_VIEWPORT_WIDTH = 1099;
 const CAMERA_INTERACTION_SETTLE_MS = 420;
+/** The planner camera's vertical field of view, degrees: what the canvas is made with, and what a room's opening view is fitted to. */
+const PLANNER_CAMERA_FOV = 55;
 
 export interface PlannerCanvasGlOptions {
   readonly antialias: boolean;
@@ -506,6 +509,13 @@ export function PlannerScene(): ReactElement {
   // null while it loads or if it cannot, and the plain shell stays. Its photographs stand as the hall's do.
   const surveyedRoom = usePlannerSurveyedRoom(space, !realHall);
   const photographed = hallDrawn || (surveyedRoom !== null && meshVisible);
+  // Its opening view is the planner's own from far enough back to hold the room as surveyed (room-opening-view.ts).
+  // Held while the survey is the room's, whichever layer shows, as the hall's is: a pose that came and went with
+  // the layer would open the camera afresh at every change of layer.
+  const surveyedOpening = useMemo(
+    () => (surveyedRoom === null ? null : surveyedRoomOpeningPose(surveyedRoom.geometry, dimensions, PLANNER_CAMERA_FOV)),
+    [dimensions, surveyedRoom],
+  );
   // The real sun, moon and sky over the drawn hall, where this device asks for them.
   const hallSkyAsked = useMemo(() => typeof window !== "undefined" && hallSkyRequested(window.location.search), []);
   const skyLit = hallSkyAsked && hallDrawn && !timelinePreviewActive;
@@ -640,7 +650,7 @@ export function PlannerScene(): ReactElement {
           frameloop="demand"
           dpr={canvasDpr}
           gl={canvasGl}
-          camera={{ fov: 55, near: 0.1, far: 200 }}
+          camera={{ fov: PLANNER_CAMERA_FOV, near: 0.1, far: 200 }}
           style={{ width: "100%", height: "100%" }}
         >
           <color attach="background" args={[photographed ? "#120e0b" : "#eee9de"]} />
@@ -739,7 +749,7 @@ export function PlannerScene(): ReactElement {
           {realHall && !timelinePreviewActive && <HallViewDirector />}
           <CockpitPlanningCamera suspended={timelinePreviewActive || assemblyCamera} />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive || assemblyCamera}
-            defaultPose={realHall ? HALL_VIEW_POSES.room : null}
+            defaultPose={realHall ? HALL_VIEW_POSES.room : surveyedOpening}
             onOpeningPose={realHall ? markHallOpeningPose : undefined}
             captureUnavailableKey={captureFailed && captureInUse ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
           {walkMode && interiorWalk !== null && !walkCameraDisabled && (!captureFailed || !captureInUse) && (

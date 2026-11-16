@@ -22,6 +22,7 @@ switch ([In the planner](#in-the-planner)). No room is listed in the registry ye
 | `room-registry.ts` | Which rooms are surveyed, and the per-device switch | no |
 | `room-visibility.ts` | Which walls, and whether the ceiling, the camera's side lets it see | no |
 | `room-status.ts` | How the planner's surveyed room stands, and the caption's words for it | no |
+| `room-opening-view.ts` | The planner's opening view of a surveyed room | no |
 | `use-planner-surveyed-room.ts` | Which survey the planner's room has, loaded and published | no |
 | `load-survey.ts` | Fetches and checks one record, with typed failures | no |
 | `room-geometry.ts` | Walls, ceiling and floor as plain typed arrays | no |
@@ -144,10 +145,25 @@ anyone: no venue is read and nothing is fetched.
 - **Light.** The photographs are unlit. The furniture keeps the planner's own rig for a plain room
   (`RoomLighting`'s hemisphere and ambient), now under the Neutral curve.
 - **Unchanged.** Where furniture may stand, the room's bounds, snapping, the camera's limits and
-  opening view, and what is saved all come from the room's data (`data/room-geometries.ts` and the
-  space), not from how it is drawn. The Saloon's surveyed outline (12.19 m by 7.47 m with two
-  0.24 m bays) is not the planner's Saloon (11.9 m by 6.9 m with four alcoves); replacing a room's
-  outline data is a separate piece of work.
+  what is saved all come from the room's data (`data/room-geometries.ts` and the space), not from
+  how it is drawn. The Saloon's surveyed outline (12.19 m by 7.47 m with two 0.24 m bays) is not
+  the planner's Saloon (11.9 m by 6.9 m with four 0.6 m alcoves, a box 13.1 m long); replacing a
+  room's outline data is a separate piece of work.
+- **Opening view.** On a landscape screen a surveyed room opens on the planner's own view of the
+  room (the same target and the same line of sight, from `lib/camera-rig.ts` and the room's data)
+  from further back: as far along that line as puts the room as surveyed in frame, its drawn walls
+  and floor from the floor to the walls' tops, with 5% of the frame clear around it
+  (`room-opening-view.ts`). Never nearer than the planner's own opening, and never past the
+  camera's limit for the room, which is as far as a hand can zoom out. The planner's own opening
+  stands the camera above the room and inside its outline, in front of every wall, so a surveyed
+  room is drawn whole from there with its walls splayed outwards: from the planner's 11.65 m the
+  Saloon's walls reached twice the frame's half-height and the corners of its floor were outside
+  it (a capture of 15 November 2026). The fitted view stands 19.37 m back. It is handed to
+  `CameraRig` as the Grand Hall's own pose is (`defaultPose`), for as long as the survey is the
+  room's; a portrait screen keeps the planner's interior angle. The rig opens the camera afresh
+  when a room's pose changes, so the camera moves to this view at the step the surveyed room
+  replaces the shell, also where a hand had already moved it while the survey loaded. While the
+  shell stands (loading, failed) the opening is the planner's own.
 - **Not wired to a surveyed room in this version:** the walls' Cut and Full control and a wall's
   click (the plain shell's), the section plane's cut, and the shell's metre grid on the floor.
 
@@ -388,12 +404,25 @@ script recorded neither until 16 November. A capture taken since says both.
 - `__tests__/use-planner-surveyed-room.test.ts`: the switch, the registry's injectable table, the
   staged folder and that a production build ignores it, the venue, a failure, another room's
   survey, and the caption's words.
+- `__tests__/room-opening-view.test.ts`: the opening view against three's own camera: the
+  planner's own opening does not hold the Saloon as surveyed; the fitted one keeps the planner's
+  target and line of sight and holds every corner of the room's drawn box inside the margin at
+  6:5, 3:2, 16:9 and 21:9; it is held at the camera's limit, is never nearer than the planner's
+  own, and follows a wall's relief.
+- `lib/__tests__/native-drawing-backend.test.ts`: what a capture's summary says drew the frames:
+  WebGPU only once the backend holds its device, WebGL2 where the renderer fell back, each named by
+  its own device or context, and nothing for a renderer that is not the native one.
 - `editor/__tests__/PlannerScene.surveyed-room.test.tsx`: in the manner of `PlannerScene.test.tsx`,
   what the scene draws: the shell exactly as today with the switch off or no survey, the shell
   until ready and the surveyed room after, the shell and the note on failure, another venue's room,
-  a production build, the Grand Hall left alone, a history preview.
+  a production build, the Grand Hall left alone, a history preview; and the opening pose the camera
+  rig is handed: none while the shell stands, the fitted one (one object through re-renders) once
+  the surveyed room is drawn, the hall's own for the hall.
 
-Seen in the planner's scene: nothing yet. What only a render can prove of the mount: that the
+Seen in the planner's scene: one capture of the staged Saloon through `planner-lab.mjs` on
+15 November 2026, taken before the opening view was fitted, which is where the opening's fault was
+seen; nothing else of it is recorded here yet, and the fitted opening view has been worked out and
+tested against three's camera but not seen. What only a render can prove of the mount: that the
 near walls and ceiling go with nothing of them left floating from the planner's opening view, a
 plan view and each side; how a wall's pop reads during an orbit; that the index's upload under
 WebGPU draws the right walls (three's change detection and `writeBuffer` path were read, not run);
