@@ -34,6 +34,7 @@ SRC_TOP = 7.0            # v (metres above the floor) at the top edge of the ort
 FLOOR = 0.045            # E57 Z of the hall's floor
 BLOCK = 8                # texels per 40 mm block
 L, W = 21.135, 10.59
+COS_MIN, MAX_DIST = 0.2, 16.0   # visibility(): the least cosine of incidence and the farthest station (project.py's defaults)
 PIX_RAD = 2 * np.pi / 8192   # angular size of an 8K equirect pixel (its rows; columns are finer off the horizon)
 LUMA = np.array([0.2126, 0.7152, 0.0722], np.float32)
 # Each wall's frame in the E57 plan (X, Y), as wall-views.py placed the orthographic tiles: u = 0 at
@@ -254,7 +255,7 @@ def visibility(st, depthcube, pts, nrm):
     v = pts - st['t']
     dist = np.linalg.norm(v, axis=1)
     cos = -(v @ nrm) / np.maximum(dist, 1e-6)
-    ok = (cos > 0.2) & (dist < 16.0)
+    ok = (cos > COS_MIN) & (dist < MAX_DIST)
     idx = np.nonzero(ok)[0]
     if len(idx):
         idx = idx[~blocked_by_chandelier(st['t'], pts[idx])]
