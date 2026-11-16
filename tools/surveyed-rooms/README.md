@@ -386,6 +386,22 @@ record only: that the files it names are the ones in the folder, with those size
 loader's to check in a browser, and that record was built with a borrowed meshoptimizer (gate
 B22), so it is a proof of the record's form and not a published room.
 
+Real data, the ghosts above the Saloon's pediments (16 November 2026; work in progress). The
+best-view walls of the Saloon carry, in the plain plaster above every pediment, outlines like a
+displaced copy of the pediment's top. Measured on the fireplace wall round its middle pediment
+(u 2.72 to 5.08 m, v 2.92 to 4.12 m; 56,734 plaster texels): the mean step in luminance between
+neighbouring plaster texels is 0.506 sRGB levels against the blend's 0.117. The pediment stands 90
+to 322 mm proud of the plaster, and three stations 1.4 to 1.65 m off the wall label 85% of the box.
+The visibility test is not at fault: rays from each of eight stations to the box's 113,190 texels
+against the mesh dump (Moeller-Trumbore, no depth map) agree with it on 98 to 99% of them, and the
+rest are the test's own allowances (376 to 2,645 texels passed though blocked, by 21 to 124 mm and
+always under its tolerance, on the pediment's own mouldings; 872 to 2,413 hidden by its 3 x 3
+minimum). The mesh is: its outline of the pediment is smaller than the photographed pediment. From
+each of the three near stations, 1,186 to 1,424 plaster texels that the station sees by the mesh
+show, in its panorama, the pediment's dark edge (on both flanks of the arch, so not a shifted
+pose), all within 9 cubemap texels of the pediment's outline in that station's depth map (99%
+within 7), and 193 to 920 more show the glow of the lamp on the pediment (within 13).
+
 Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
 (`render-depth-room.mjs`, so far only syntax-checked), the other three walls' labels and
