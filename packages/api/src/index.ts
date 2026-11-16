@@ -111,6 +111,11 @@ import { registerSecurityHeaders } from "./middleware/security-headers.js";
 import { registerRequestId } from "./middleware/request-id.js";
 import { registerErrorNormalizer } from "./middleware/error-normalizer.js";
 import { registerMetrics } from "./observability/metrics.js";
+import { registerJobWorkerHealth } from "./services/jobs/health.js";
+import { jobLoggerFrom, startJobs } from "./services/jobs/runtime.js";
+
+/** How long the job worker waits for its running job when the server stops, inside the shutdown's 25 seconds. */
+const JOB_WORKER_STOP_GRACE_MS = 18_000;
 
 // ---------------------------------------------------------------------------
 // OMNITWIN API — Fastify server entry point
@@ -240,7 +245,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
         u === "/health/ready" ||
         u === "/health/db" ||
         u === "/health/version" ||
-        u === "/health/observability"
+        u === "/health/observability" ||
+        u === "/health/worker"
       );
     },
     // The plugin throws this object; without `statusCode` the error
@@ -384,6 +390,28 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   const connection = createDbConnection(env.DATABASE_URL);
   const db = connection.db;
   server.addHook("onClose", async () => { await connection.close(); });
+
+  // --- The job list (T-702) ---
+  // Behind JOBS_WORKER, which ships off: then this builds the list of kinds,
+  // adds no hook and runs nothing. On, the worker must stop before the pool
+  // closes, so that what it writes for the job it is running (done, a failed
+  // try, or the job handed back) still reaches the database. Fastify 5.12
+  // runs onClose hooks through avvio, last registered first and one at a
+  // time, so this hook, added after the pool's, ends before the pool's
+  // begins. It runs preClose hooks before it stops listening, so the stop
+  // begins there, while requests still drain; a preClose hook on the root
+  // runs once (each plugin context starts with its own empty list), and a
+  // second call of `stop` is the same stop. 18 seconds leaves room inside the
+  // shutdown's own 25 (SHUTDOWN_GRACE_MS below).
+  const jobs = await startJobs({ db, env, logger: jobLoggerFrom(server.log) });
+  if (jobs.worker !== null) {
+    server.addHook("preClose", (done) => {
+      void jobs.stop(JOB_WORKER_STOP_GRACE_MS);
+      done();
+    });
+    server.addHook("onClose", async () => { await jobs.stop(JOB_WORKER_STOP_GRACE_MS); });
+  }
+
   const reconstructionFoundryService = createReconstructionFoundryService(db, env);
   const foundryDerivativeRightsCustodyService =
     new FoundryDerivativeRightsCustodyService(db);
@@ -452,6 +480,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     return { status: "ok" as const, migrations };
   };
   server.get("/health/ready", readinessProbe);
+
+  // --- The job list's worker, from memory (T-702) ---
+  // GET /health/worker: 200 { worker: "off" } while JOBS_WORKER is off; with
+  // it on, the worker's status, 503 when it has a fault, has overslept its
+  // wake or is stuck in a handler. Never touches the database.
+  registerJobWorkerHealth(server);
 
   // Inject DB into auth middleware for Clerk user lookups
   setAuthDb(db);

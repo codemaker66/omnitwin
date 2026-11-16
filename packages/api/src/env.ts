@@ -162,6 +162,14 @@ const EnvSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().trim().min(1).optional(),
   STRIPE_DEPOSIT_VENUE_SLUG: z.string().trim().max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u, "must be a venue slug").optional(),
   STRIPE_LIVE_PAYMENTS_ALLOWED: z.enum(["true", "false"]).optional(),
+  // The job list's worker (T-702, services/jobs/runtime.ts). Off by default:
+  // the API then builds the list of kinds and runs nothing. On, each API
+  // process runs one worker, which wakes when work is due, when poked, and at
+  // least every JOBS_MAX_SLEEP_MINUTES (on whole multiples of it since the
+  // epoch, so every server wakes the database together). GET /health/worker
+  // says which.
+  JOBS_WORKER: z.enum(["on", "off"]).default("off"),
+  JOBS_MAX_SLEEP_MINUTES: z.coerce.number().int().min(1).max(360).default(60),
 }).superRefine((env, ctx) => {
   // Punch list #5: in production, CLERK_WEBHOOK_SECRET MUST be set so
   // the webhook route can verify signatures. The route itself also fails
