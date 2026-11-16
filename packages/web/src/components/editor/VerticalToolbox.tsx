@@ -973,9 +973,11 @@ function ToolBtn({
     const tool = button.getBoundingClientRect();
     const toolbar = (toolbarElement ?? button).getBoundingClientRect();
     if (toolScrolledOut(tool, toolbar)) {
-      // Focus opens a card before the browser scrolls its tool into view (HTML's
-      // focusing steps), so an unplaced card waits, unseen, for that scroll. A
-      // card already on screen goes when the toolbar scrolls its tool away.
+      // A card already on screen goes when the toolbar scrolls its tool away. An
+      // unplaced one waits, unseen, for its tool to come into view. Chromium
+      // scrolls a Tabbed-to tool in before its focus event (measured at 683 x 320,
+      // 17 Nov); the wait keeps the card through either order, so an engine or
+      // path that focuses first and scrolls after is covered too.
       if (placed.current) dismissRef.current();
       return;
     }

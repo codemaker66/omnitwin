@@ -119,11 +119,18 @@ async function tabTo(page: Page, target: Locator, maxPresses = 80): Promise<void
   await expect(target).toBeFocused();
 }
 
-/** One tool's card shows, wholly on screen, and covers none of the toolbar's tools. */
-async function expectCardBesideToolbar(card: Locator, toolbar: Locator): Promise<void> {
+/**
+ * One tool's card shows, placed on the side its toolbar's layout opens toward, wholly on
+ * screen, covering none of the toolbar's tools, and it stays.
+ */
+async function expectCardBesideToolbar(card: Locator, toolbar: Locator, side: "left" | "right"): Promise<void> {
   // Tab ran through other tools on its way; their cards are gone, not stacked with this
   // one (that they go at once is the unit test's: "shows one card at a time").
   await expect(card).toHaveCount(1);
+  // Placed (an unplaced card waits with visibility: hidden), on its layout's side: the More
+  // panel's `--tool-cards: left` (ReferenceViewer.css), over the room, not the dock.
+  await expect(card).toBeVisible();
+  await expect(card).toHaveAttribute("data-side", side);
   await expect(card).toBeInViewport({ ratio: 1 });
   const cardBox = await card.boundingBox();
   const barBox = await toolbar.boundingBox();
@@ -132,6 +139,10 @@ async function expectCardBesideToolbar(card: Locator, toolbar: Locator): Promise
   if (cardBox === null || barBox === null) return;
   const clear = cardBox.x >= barBox.x + barBox.width || cardBox.x + cardBox.width <= barBox.x;
   expect(clear, `card ${JSON.stringify(cardBox)} overlaps toolbar ${JSON.stringify(barBox)}`).toBe(true);
+  // And it stays: past a card's 250 ms exit it is still there, still shown.
+  await card.page().waitForTimeout(400);
+  await expect(card).toHaveCount(1);
+  await expect(card).toBeVisible();
 }
 
 /**
@@ -361,7 +372,7 @@ test.describe("3D planner mobile shell", () => {
     // Visible is not readable: in the scrolling panel the card was cut off at its edge. An
     // IntersectionObserver counts an ancestor's clip, so the whole badge must be on screen.
     await expect(card.getByText("Q / E", { exact: true })).toBeInViewport({ ratio: 1 });
-    await expectCardBesideToolbar(card, toolbar);
+    await expectCardBesideToolbar(card, toolbar, "left");
     // Playwright's own accessible-description computation, run in Chromium...
     await expect(rotate).toHaveAccessibleDescription(spoken);
     // ...and Chromium's accessibility tree, which is what a screen reader is given.
@@ -376,7 +387,7 @@ test.describe("3D planner mobile shell", () => {
     // Tab onto Rotate and its whole card shows at once.
     await tabTo(page, rotate);
     await expect(card.getByText("Q / E", { exact: true })).toBeInViewport({ ratio: 1 });
-    await expectCardBesideToolbar(card, toolbar);
+    await expectCardBesideToolbar(card, toolbar, "left");
     // Escape takes the card down and nothing else: the piece stays selected, Rotate keeps focus...
     await page.keyboard.press("Escape");
     await expect(card).toHaveCount(0);
@@ -406,11 +417,11 @@ test.describe("3D planner mobile shell", () => {
     await page.keyboard.press("Tab");
     await expect(select).toBeFocused();
     await expect(card).toContainText("Select & Move");
-    await expectCardBesideToolbar(card, toolbar);
+    await expectCardBesideToolbar(card, toolbar, "left");
     // Rotate's card narrows to the room beside the panel, rather than lie over the panel and Rotate.
     await tabTo(page, rotate);
     await expect(card.getByText("Q / E", { exact: true })).toBeInViewport({ ratio: 1 });
-    await expectCardBesideToolbar(card, toolbar);
+    await expectCardBesideToolbar(card, toolbar, "left");
     expect(consoleErrors).toEqual([]);
   });
 });
