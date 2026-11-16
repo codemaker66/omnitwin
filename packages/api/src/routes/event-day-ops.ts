@@ -10,6 +10,7 @@ import {
   EventDayOpsBoardSchema,
   OpsTaskSchema,
   UpdateEventDayIssueInputSchema,
+  UpdateOpsTaskStatusConflictSchema,
   UpdateOpsTaskStatusInputSchema,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
@@ -21,6 +22,7 @@ import {
   EVENT_DAY_ISSUE_AUDIENCE,
   EventDayIssueNotFoundError,
   EventDayTaskNotFoundError,
+  EventDayTaskStatusConflictError,
   createEventDayIssue,
   getEventDayOpsBoard,
   loadEventForOpsBoard,
@@ -300,6 +302,15 @@ export async function eventDayOpsTaskRoutes(server: FastifyInstance, opts: { db:
     } catch (err) {
       if (err instanceof EventDayTaskNotFoundError) {
         return reply.status(404).send({ error: "Task not found", code: "NOT_FOUND" });
+      }
+      // A replayed status pressed against one the task has left (#418):
+      // nothing was written, and the board is given the task as it stands.
+      if (err instanceof EventDayTaskStatusConflictError) {
+        return reply.status(409).send({
+          error: "This task moved on before this status arrived.",
+          code: "TASK_STATUS_CONFLICT",
+          details: UpdateOpsTaskStatusConflictSchema.parse({ task: err.task }),
+        });
       }
       throw err;
     }

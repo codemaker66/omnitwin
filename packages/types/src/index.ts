@@ -392,6 +392,7 @@ export {
   EventDayChangesSinceLastHandoffSchema,
   EventDayOpsBoardSchema,
   UpdateOpsTaskStatusInputSchema,
+  UpdateOpsTaskStatusConflictSchema,
   CreateEventDayIssueInputSchema,
   UpdateEventDayIssueInputSchema,
   type EventDayIssueId,
@@ -413,6 +414,7 @@ export {
   type EventDayChangesSinceLastHandoff,
   type EventDayOpsBoard,
   type UpdateOpsTaskStatusInput,
+  type UpdateOpsTaskStatusConflict,
   type CreateEventDayIssueInput,
   type UpdateEventDayIssueInput,
 } from "./event-day-ops.js";

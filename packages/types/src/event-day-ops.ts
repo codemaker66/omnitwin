@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EventIdSchema, EventPhaseIdSchema, EventPhaseSchema, EventSchema } from "./event-phase-graph.js";
-import { HandoffPackIdSchema, OpsHandoffPackBundleSchema, OpsTaskIdSchema, OpsTaskStatusSchema, SafeOpsTextSchema, SupplierInstructionIdSchema } from "./ops-compiler.js";
+import { HandoffPackIdSchema, OpsHandoffPackBundleSchema, OpsTaskIdSchema, OpsTaskSchema, OpsTaskStatusSchema, SafeOpsTextSchema, SupplierInstructionIdSchema } from "./ops-compiler.js";
 import { UserIdSchema } from "./user.js";
 
 // ---------------------------------------------------------------------------
@@ -148,8 +148,23 @@ export const UpdateOpsTaskStatusInputSchema = z.object({
   status: OpsTaskStatusSchema,
   idempotencyKey: z.string().trim().min(1).max(160).optional(),
   note: EventDaySafeTextSchema.nullable().optional(),
+  /** The status the task held, as the event-day board knew it, when this
+   *  status was pressed. A status queued on the device and replayed later
+   *  carries it, and is written only while the task still holds it; once the
+   *  task has moved on the replay is refused (409, with the task as it
+   *  stands), so a stale replay never undoes a later press (#418). A live
+   *  press, and a row queued before replays carried it, send none and are
+   *  applied as pressed. */
+  expectedStatus: OpsTaskStatusSchema.optional(),
 }).strict();
 export type UpdateOpsTaskStatusInput = z.infer<typeof UpdateOpsTaskStatusInputSchema>;
+
+/** The details of that 409 (code TASK_STATUS_CONFLICT): the task as it
+ *  stands, for the board to show. */
+export const UpdateOpsTaskStatusConflictSchema = z.object({
+  task: OpsTaskSchema,
+}).strict();
+export type UpdateOpsTaskStatusConflict = z.infer<typeof UpdateOpsTaskStatusConflictSchema>;
 
 export const CreateEventDayIssueInputSchema = z.object({
   phaseId: EventPhaseIdSchema.nullable().optional(),

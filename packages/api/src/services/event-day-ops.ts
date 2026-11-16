@@ -69,6 +69,14 @@ export interface UpdateOpsTaskStatusResult {
 export class EventDayTaskNotFoundError extends Error {}
 export class EventDayIssueNotFoundError extends Error {}
 
+/** A replayed status pressed against a status the task no longer holds
+ *  (#418): nothing was written, and `task` is the task as it stands. */
+export class EventDayTaskStatusConflictError extends Error {
+  constructor(readonly task: OpsTask) {
+    super(`Task ${task.id} moved on before this status arrived.`);
+  }
+}
+
 function toIso(value: Date): string {
   return value.toISOString();
 }
@@ -353,6 +361,102 @@ async function loadTaskWithEvent(db: Database, opsTaskId: string): Promise<{
   return joined ?? null;
 }
 
+type DatabaseOrTransaction = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/** The answer to a status whose idempotency key is already recorded for the
+ *  task: the task as it stands, and the completion event the key wrote. */
+async function recordedStatusAnswer(
+  db: DatabaseOrTransaction,
+  task: OpsTaskRow,
+  idempotencyKey: string,
+): Promise<UpdateOpsTaskStatusResult | null> {
+  const [existing] = await db.select().from(taskCompletionEvents)
+    .where(and(
+      eq(taskCompletionEvents.opsTaskId, task.id),
+      eq(taskCompletionEvents.idempotencyKey, idempotencyKey),
+    ))
+    .limit(1);
+  if (existing === undefined) return null;
+  const [reloaded] = await db.select().from(opsTasks).where(eq(opsTasks.id, task.id)).limit(1);
+  return {
+    task: serializeOpsTask(reloaded ?? task),
+    completionEvent: serializeCompletionEvent(existing),
+    idempotentReplay: true,
+  };
+}
+
+/**
+ * A status the event-day board queued on the device and replays now, pressed
+ * while the task held `expectedStatus` (#418): written only while the task
+ * still holds it, so a stale replay never undoes a later press.
+ *
+ * The comparison is the UPDATE's own condition, so PostgreSQL decides it
+ * under the row lock the write takes; nothing is read first and written
+ * later. If another write holds the row (a second replay, a live press),
+ * this UPDATE waits for it to commit and then, under READ COMMITTED, checks
+ * its condition again against the row as committed: a status moved
+ * meanwhile means nothing is written. (A live press is unconditional: it
+ * waits for this one the same way, then writes as pressed.) A replay that
+ * writes nothing gets the recorded answer if its key was written meanwhile,
+ * and is otherwise refused with the task as it stands: no completion event,
+ * board line or recorded key.
+ */
+async function updateOpsTaskStatusIfStillHeld(
+  db: Database,
+  joined: { readonly task: OpsTaskRow; readonly event: EventRow },
+  parsed: UpdateOpsTaskStatusInput & { readonly expectedStatus: OpsTaskStatus },
+  actorUserId: string | null,
+): Promise<UpdateOpsTaskStatusResult> {
+  const expected = parsed.expectedStatus;
+  return db.transaction(async (tx) => {
+    // Pressed against the very status it sets: nothing to write, only to compare.
+    const written = parsed.status === expected
+      ? []
+      : await tx.update(opsTasks)
+        .set({ status: parsed.status, updatedAt: new Date() })
+        .where(and(eq(opsTasks.id, joined.task.id), eq(opsTasks.status, expected)))
+        .returning();
+    const [updatedTask] = written;
+    if (updatedTask === undefined) {
+      const [current] = await tx.select().from(opsTasks).where(eq(opsTasks.id, joined.task.id)).limit(1);
+      if (current === undefined) throw new EventDayTaskNotFoundError(joined.task.id);
+      if (parsed.status === expected && current.status === expected) {
+        return { task: serializeOpsTask(current), completionEvent: null, idempotentReplay: parsed.idempotencyKey !== undefined };
+      }
+      const recorded = parsed.idempotencyKey === undefined
+        ? null
+        : await recordedStatusAnswer(tx, current, parsed.idempotencyKey);
+      if (recorded !== null) return recorded;
+      throw new EventDayTaskStatusConflictError(serializeOpsTask(current));
+    }
+
+    const [completion] = await tx.insert(taskCompletionEvents).values({
+      opsTaskId: joined.task.id,
+      eventId: joined.event.id,
+      actorUserId,
+      fromStatus: expected,
+      toStatus: parsed.status,
+      idempotencyKey: parsed.idempotencyKey ?? null,
+      note: parsed.note ?? null,
+    }).returning();
+    if (completion === undefined) throw new Error("Task completion event insertion returned no row.");
+
+    await tx.insert(opsStatusUpdates).values({
+      eventId: joined.event.id,
+      phaseId: updatedTask.phaseId,
+      kind: parsed.status === "blocked" ? "escalation" : "setup",
+      message: safeEventDayText(`Task "${updatedTask.title}" moved from ${expected} to ${parsed.status}.`, 500),
+      createdBy: actorUserId,
+    });
+
+    return {
+      task: serializeOpsTask(updatedTask),
+      completionEvent: serializeCompletionEvent(completion),
+      idempotentReplay: false,
+    };
+  });
+}
+
 export async function updateOpsTaskStatus(
   db: Database,
   input: UpdateOpsTaskStatusInput & {
@@ -364,25 +468,18 @@ export async function updateOpsTaskStatus(
     status: input.status,
     idempotencyKey: input.idempotencyKey,
     note: input.note,
+    expectedStatus: input.expectedStatus,
   });
   const joined = await loadTaskWithEvent(db, input.opsTaskId);
   if (joined === null) throw new EventDayTaskNotFoundError(input.opsTaskId);
 
   if (parsed.idempotencyKey !== undefined) {
-    const [existing] = await db.select().from(taskCompletionEvents)
-      .where(and(
-        eq(taskCompletionEvents.opsTaskId, joined.task.id),
-        eq(taskCompletionEvents.idempotencyKey, parsed.idempotencyKey),
-      ))
-      .limit(1);
-    if (existing !== undefined) {
-      const reloaded = await loadTaskWithEvent(db, input.opsTaskId);
-      return {
-        task: serializeOpsTask(reloaded?.task ?? joined.task),
-        completionEvent: serializeCompletionEvent(existing),
-        idempotentReplay: true,
-      };
-    }
+    const recorded = await recordedStatusAnswer(db, joined.task, parsed.idempotencyKey);
+    if (recorded !== null) return recorded;
+  }
+
+  if (parsed.expectedStatus !== undefined) {
+    return updateOpsTaskStatusIfStillHeld(db, joined, { ...parsed, expectedStatus: parsed.expectedStatus }, input.actorUserId);
   }
 
   const transition = resolveTaskStatusTransition(serializeOpsTask(joined.task).status, parsed.status);
