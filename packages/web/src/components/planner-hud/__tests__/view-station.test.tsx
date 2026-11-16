@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HALL_MOOD_NAMES } from "../../grand-hall/hall-mood.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
@@ -76,5 +76,62 @@ describe("the light's key", () => {
     expect(screen.queryByRole("button", { name: /^The light: / })).toBeNull();
     expect(screen.queryByRole("radiogroup", { name: "How to look at the room" })).toBeNull();
     expect(screen.getByRole("button", { name: "More tools" })).toBeTruthy();
+  });
+});
+
+// Plan, Room and Walk say they are a radio group, so they work as one: a single stop in the Tab order, and the
+// arrow keys go to the next view and take it (radio-keys.ts; review of 189d0c52, HB8).
+describe("the three views and the keyboard", () => {
+  function views(): readonly HTMLElement[] {
+    return within(screen.getByRole("radiogroup", { name: "How to look at the room" })).getAllByRole("radio");
+  }
+  const stops = (): readonly (string | null)[] => views().map((view) => view.getAttribute("tabindex"));
+
+  beforeEach(() => {
+    act(() => { useHallViewStore.getState().setActivePreset("room"); });
+  });
+
+  it("are one stop in the Tab order: the view the room is in", () => {
+    render(<ViewStation />);
+    expect(views().map((view) => view.textContent)).toEqual(["Plan", "Room", "Walk"]);
+    expect(stops()).toEqual(["-1", "0", "-1"]);
+  });
+
+  it("keep one stop, the first, when the camera has been moved by hand and is in none of them", () => {
+    act(() => { useHallViewStore.getState().setActivePreset(null); });
+    render(<ViewStation />);
+    expect(views().every((view) => view.getAttribute("aria-checked") === "false")).toBe(true);
+    expect(stops()).toEqual(["0", "-1", "-1"]);
+  });
+
+  it("go to the next view and take it on an arrow key, round the ends", () => {
+    render(<ViewStation />);
+    const [plan, room, walk] = views();
+    if (plan === undefined || room === undefined || walk === undefined) throw new Error("three views");
+    room.focus();
+    // The key is the group's own: nothing else takes it.
+    expect(fireEvent.keyDown(room, { key: "ArrowRight" })).toBe(false);
+    expect(document.activeElement).toBe(walk);
+    expect(useHallViewStore.getState().activePreset).toBe("walk");
+    expect(useHallViewStore.getState().viewRequest?.preset).toBe("walk");
+    fireEvent.keyDown(walk, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(plan);
+    expect(useHallViewStore.getState().activePreset).toBe("plan");
+    fireEvent.keyDown(plan, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(walk);
+    expect(stops()).toEqual(["-1", "-1", "0"]);
+  });
+
+  it("ask for a view once for each key that lands on a new one", () => {
+    render(<ViewStation />);
+    const [, room] = views();
+    if (room === undefined) throw new Error("three views");
+    room.focus();
+    const before = useHallViewStore.getState().viewRequest?.nonce ?? 0;
+    // Home takes Plan (one request); the arrow comes back to Room (a second).
+    fireEvent.keyDown(room, { key: "Home" });
+    fireEvent.keyDown(document.activeElement ?? room, { key: "ArrowRight" });
+    expect(useHallViewStore.getState().activePreset).toBe("room");
+    expect((useHallViewStore.getState().viewRequest?.nonce ?? 0) - before).toBe(2);
   });
 });

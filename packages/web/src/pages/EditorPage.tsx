@@ -29,7 +29,7 @@ import { usePlannerDraftClaim } from "../hooks/use-planner-draft-claim.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { prefetchPlannerVenue } from "../hooks/use-planner-venue-identity.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
-import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
+import { plannerChromeRequested, setMountedPlannerChrome } from "../lib/planner-chrome-flag.js";
 import { registerReplayBridge } from "../lib/action-log-replay-bridge.js";
 import {
   resolvePlannerVenue,
@@ -535,6 +535,12 @@ function PlannerChrome(): React.ReactElement {
   usePlannerToolKeys();
   const location = useLocation();
   const chrome = useMemo(() => plannerChromeRequested(location.search), [location.search]);
+  // The scene asks which chrome is mounted, and this is the one answer: the address and the device's memory can say
+  // something else by the time of a click (another tab's flag), and what is on screen has not changed.
+  useLayoutEffect(() => {
+    setMountedPlannerChrome(chrome);
+    return () => { setMountedPlannerChrome(null); };
+  }, [chrome]);
   if (chrome === "v1") return <PlannerCommsLayer />;
   return (
     <Suspense

@@ -82,13 +82,12 @@ export function FirstOpen(): ReactElement {
     <div className="hud-first-open" data-testid="hud-first-open">
       <section className="hud-first-open__stage" aria-labelledby={TITLE_ID}>
         <h2 className="hud-first-open__title" id={TITLE_ID}>What are you planning?</h2>
-        <div className="hud-first-open__answers" role="radiogroup" aria-labelledby={TITLE_ID}>
+        {/* Three plain keys under the question: an answer is an act that moves on, not a setting that stays chosen. */}
+        <div className="hud-first-open__answers" role="group" aria-labelledby={TITLE_ID}>
           {ANSWERS.map((option) => (
             <button
               key={option.kind}
               type="button"
-              role="radio"
-              aria-checked={false}
               className="hud-first-open__answer"
               data-kind={option.kind}
               onClick={() => { answer(option.kind); }}

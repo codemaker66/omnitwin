@@ -1,4 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCatalogueItem } from "../../../lib/catalogue.js";
@@ -15,7 +17,7 @@ import { useHallViewStore } from "../../../stores/hall-view-store.js";
 import { usePlacementNoticeStore } from "../../../stores/placement-notice-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
-import { usePlannerHudStore } from "../../../stores/planner-hud-store.js";
+import { HUD_SENT_STORAGE_KEY, usePlannerHudStore } from "../../../stores/planner-hud-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { HudFrame } from "../HudFrame.js";
 import { HudSheets } from "../HudSheets.js";
@@ -159,7 +161,8 @@ afterEach(() => {
   useCockpitStore.getState().setPlannedGuestCount(null);
   useDoorClearSpaceStore.getState().setRoomSpaces(null);
   usePlacementNoticeStore.getState().dismiss();
-  usePlannerHudStore.setState({ sheet: null, sentLayoutId: null });
+  usePlannerHudStore.setState({ sheet: null, sentLayoutIds: [] });
+  window.localStorage.removeItem(HUD_SENT_STORAGE_KEY);
   useEditorStore.setState({ configId: null });
   usePlannerEventStore.getState().setEventKind(null);
   setPlannerFeaturesForTesting(null);
@@ -668,6 +671,31 @@ describe("the journey and its sheets", () => {
     expect(document.activeElement).toBe(step);
   });
 
+  // What opened a sheet can be gone by the time it shuts, or folded away: a phone's top bar shows only the current
+  // step. Focus then goes to the sheet's own step, and failing that to the one primary key; never to the bare page.
+  it("hands the keyboard to the sheet's own step when what opened it has gone", async () => {
+    renderHud();
+    const gone = document.createElement("button");
+    document.body.append(gone);
+    gone.focus();
+    act(() => { usePlannerHudStore.getState().openSheet("finishing"); });
+    gone.remove();
+    press("Escape");
+    await waitFor(() => { expect(document.activeElement).toBe(stepKey("finishing")); });
+  });
+
+  it("hands it to the one primary key where the step cannot be seen either", async () => {
+    renderHud();
+    const step = stepKey("event");
+    step.focus();
+    fireEvent.click(step);
+    // As a phone's top bar folds a step away once it is no longer the current one.
+    step.hidden = true;
+    press("Escape");
+    await waitFor(() => { expect(document.activeElement).toBe(primaryKey()); });
+    expect(primaryKey().hidden).toBe(false);
+  });
+
   it("closes the sheet as the screen leaves, so its next showing opens with the shelf down", () => {
     renderHud();
     fireEvent.click(stepKey("event"));
@@ -823,15 +851,34 @@ describe("the first screen", () => {
     const first = screen.getByTestId("hud-first-open");
     expect(shelf().contains(first)).toBe(true);
     expect(within(first).getByRole("heading", { name: "What are you planning?" })).toBeTruthy();
-    const answers = within(first).getAllByRole("radio");
+    // Three plain keys under the question. An answer is an act that moves on, not a setting that stays chosen, so
+    // none of them says it is a radio button (a screen reader would announce "not checked", and wait for arrows).
+    const answers = within(within(first).getByRole("group", { name: "What are you planning?" })).getAllByRole("button");
     expect(answers.map((answer) => answer.querySelector(".hud-first-open__name")?.textContent)).toEqual(["Wedding", "Corporate", "Something else"]);
     expect(answers.every((answer) => answer.querySelector("img") !== null)).toBe(true);
+    expect(within(first).queryAllByRole("radio")).toEqual([]);
+    expect(within(first).queryByRole("radiogroup")).toBeNull();
+    expect(answers.every((answer) => !answer.hasAttribute("aria-checked"))).toBe(true);
+  });
+
+  // The answer that opened the sheet is gone by the time the sheet is up (the first screen leaves with it), so
+  // there is nothing to hand the keyboard back to. It goes to the sheet's own step, never to the bare page.
+  it("hands the keyboard to the sheet's own step when its answer's sheet is shut", async () => {
+    ask();
+    renderHud();
+    const answer = screen.getByRole("button", { name: /Wedding/u });
+    answer.focus();
+    fireEvent.click(answer);
+    expect(usePlannerHudStore.getState().sheet).toBe("event");
+    expect(answer.isConnected).toBe(false);
+    press("Escape");
+    await waitFor(() => { expect(document.activeElement).toBe(stepKey("event")); });
   });
 
   it("takes an answer as the kind of day, and opens Your event for the guest count", () => {
     ask();
     renderHud();
-    fireEvent.click(screen.getByRole("radio", { name: /Corporate/u }));
+    fireEvent.click(screen.getByRole("button", { name: /Corporate/u }));
     expect(usePlannerEventStore.getState().eventKind).toBe("corporate");
     expect(usePlannerHudStore.getState().sheet).toBe("event");
     expect(screen.queryByTestId("hud-first-open")).toBeNull();
@@ -857,5 +904,318 @@ describe("the first screen", () => {
     ask();
     renderHud({ eventGuests: 80 });
     expect(screen.queryByTestId("hud-first-open")).toBeNull();
+  });
+});
+
+function nth<T>(list: readonly T[], index: number): T {
+  const item = list[index];
+  if (item === undefined) throw new Error(`nothing at ${String(index)} of ${String(list.length)}`);
+  return item;
+}
+
+// A group that says it is a radio group works as one: a single stop in the Tab order, and the arrow keys go to the
+// next choice and choose it (radio-keys.ts). The view's three are held to the same in view-station.test.tsx.
+describe("a group of choices and the keyboard", () => {
+  function choices(name: string): { readonly radios: readonly HTMLElement[]; readonly stops: () => readonly (string | null)[] } {
+    const radios = within(screen.getByRole("radiogroup", { name })).getAllByRole("radio");
+    return { radios, stops: () => radios.map((radio) => radio.getAttribute("tabindex")) };
+  }
+
+  it("is one stop in the Tab order: the chosen one, or the first while nothing is chosen", () => {
+    renderHud();
+    fireEvent.click(stepKey("event"));
+    const kinds = choices("What are you planning?");
+    expect(kinds.stops()).toEqual(["0", "-1", "-1"]);
+    fireEvent.click(nth(kinds.radios, 1));
+    expect(kinds.stops()).toEqual(["-1", "0", "-1"]);
+  });
+
+  it("goes to the next choice and chooses it on an arrow key, round both ends, and to the ends on Home and End", () => {
+    renderHud();
+    fireEvent.click(stepKey("event"));
+    const kinds = choices("What are you planning?");
+    const [wedding, corporate, other] = [nth(kinds.radios, 0), nth(kinds.radios, 1), nth(kinds.radios, 2)];
+    const kind = (): string | null => usePlannerEventStore.getState().eventKind;
+    wedding.focus();
+    // The key is the group's own: the page does not scroll, and nothing else takes it.
+    expect(fireEvent.keyDown(wedding, { key: "ArrowRight" })).toBe(false);
+    expect(document.activeElement).toBe(corporate);
+    expect(kind()).toBe("corporate");
+    fireEvent.keyDown(corporate, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(other);
+    expect(kind()).toBe("other");
+    fireEvent.keyDown(other, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(wedding);
+    expect(kind()).toBe("wedding");
+    fireEvent.keyDown(wedding, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(other);
+    expect(kind()).toBe("other");
+    fireEvent.keyDown(other, { key: "Home" });
+    expect(document.activeElement).toBe(wedding);
+    expect(kind()).toBe("wedding");
+    fireEvent.keyDown(wedding, { key: "End" });
+    expect(document.activeElement).toBe(other);
+    expect(kinds.stops()).toEqual(["-1", "-1", "0"]);
+  });
+
+  it("leaves every other key, and an arrow with Ctrl or Alt held, alone", () => {
+    renderHud();
+    fireEvent.click(stepKey("event"));
+    const wedding = nth(choices("What are you planning?").radios, 0);
+    wedding.focus();
+    expect(fireEvent.keyDown(wedding, { key: "a" })).toBe(true);
+    expect(fireEvent.keyDown(wedding, { key: "ArrowRight", ctrlKey: true })).toBe(true);
+    expect(fireEvent.keyDown(wedding, { key: "ArrowRight", altKey: true })).toBe(true);
+    expect(document.activeElement).toBe(wedding);
+    expect(usePlannerEventStore.getState().eventKind).toBeNull();
+  });
+
+  it("stops at a choice that cannot be taken now, so its reason can be read, and does not take it", () => {
+    renderHud();
+    setGuests(40);
+    // Something stands on the floor, so rows of chairs cannot be laid.
+    setPlaced(rounds(1));
+    fireEvent.click(stepKey("layout"));
+    const styles = choices("How to lay the room");
+    const [banquet, theatre] = [nth(styles.radios, 0), nth(styles.radios, 1)];
+    expect(theatre.getAttribute("aria-disabled")).toBe("true");
+    expect(theatre.textContent).toContain("Needs an empty floor");
+    banquet.focus();
+    fireEvent.keyDown(banquet, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(theatre);
+    expect(theatre.getAttribute("aria-checked")).toBe("false");
+    expect(banquet.getAttribute("aria-checked")).toBe("true");
+    expect(styles.stops()).toEqual(["0", "-1"]);
+  });
+
+  it("goes round a chosen table's three cloths the same way, dressing it as it goes", () => {
+    renderHud();
+    setPlaced(rounds(1, 8, "bare"));
+    act(() => { useSelectionStore.getState().selectMultiple([nth(tables(), 0).id]); });
+    const cloths = choices("The cloth on this table");
+    // "No cloth" is what it wears, so that is the group's one stop.
+    expect(cloths.stops()).toEqual(["-1", "-1", "0"]);
+    const [ivory, , none] = [nth(cloths.radios, 0), nth(cloths.radios, 1), nth(cloths.radios, 2)];
+    none.focus();
+    fireEvent.keyDown(none, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(ivory);
+    expect(tables()[0]?.clothed).toBe(true);
+    expect(ivory.getAttribute("aria-checked")).toBe("true");
+    expect(cloths.stops()).toEqual(["0", "-1", "-1"]);
+    fireEvent.keyDown(ivory, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(none);
+    expect(tables()[0]?.clothed).toBe(false);
+  });
+});
+
+describe("the primary key and the sheets", () => {
+  it("says of the More card whether its sheet is open", () => {
+    renderHud();
+    const more = screen.getByRole("button", { name: "More furniture" });
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(more);
+    expect(more.getAttribute("aria-expanded")).toBe("true");
+    press("Escape");
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("stands aside while the sheet that carries its move out is open", () => {
+    renderHud();
+    setGuests(40);
+    expect(primaryKey().getAttribute("data-move")).toBe("lay-out");
+    fireEvent.click(stepKey("layout"));
+    expect(primaryKey().hidden).toBe(true);
+  });
+
+  // The Lay out sheet has no act that moves a piece clear of a door: the press itself does it. Hidden with that
+  // sheet open, the move had no key at all.
+  it("stays where its own press carries the move out, whatever sheet is open", () => {
+    renderHud();
+    recordDoors();
+    setGuests(10);
+    setPlaced(roundInADoor());
+    expect(primaryKey().getAttribute("data-move")).toBe("clear-door");
+    fireEvent.click(stepKey("layout"));
+    expect(screen.getByRole("dialog", { name: "Lay out" })).toBeTruthy();
+    expect(primaryKey().hidden).toBe(false);
+    fireEvent.click(primaryKey());
+    expect(doorBlockers(placed(), GRAND_HALL_DOOR_CLEAR_SPACES)).toEqual([]);
+  });
+});
+
+/** Every ResizeObserver made while this stands in, with what each watches: a test's page lays nothing out, and calls none. */
+function standInForResizeObserver(): { readonly watching: (target: Element) => (() => void)[]; readonly restore: () => void } {
+  const made: { readonly callback: () => void; readonly targets: Set<Element> }[] = [];
+  class Watcher implements ResizeObserver {
+    private readonly entry: { readonly callback: () => void; readonly targets: Set<Element> };
+    constructor(callback: ResizeObserverCallback) {
+      this.entry = { callback: () => { callback([], this); }, targets: new Set() };
+      made.push(this.entry);
+    }
+    observe(target: Element): void { this.entry.targets.add(target); }
+    unobserve(target: Element): void { this.entry.targets.delete(target); }
+    disconnect(): void { this.entry.targets.clear(); }
+  }
+  vi.stubGlobal("ResizeObserver", Watcher);
+  return {
+    watching: (target) => made.filter((one) => one.targets.has(target)).map((one) => one.callback),
+    restore: () => { vi.unstubAllGlobals(); },
+  };
+}
+
+// The shelf grows with what it holds, and a sheet hangs from its real top. The screen says how tall the shelf
+// stands, and the stylesheet sizes the sheets from that: from a fixed measure, a sheet rose over the top bar by as
+// much as the shelf had grown (a phone's safe area, a status line on two lines).
+describe("the shelf's own height", () => {
+  function measureAs(heights: { readonly bar: number; shelf: number }): () => void {
+    const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function measured(this: HTMLElement): DOMRect {
+      const tall = this.classList.contains("hud-bar") ? heights.bar : this.classList.contains("hud-shelf") ? heights.shelf : 0;
+      return { x: 0, y: 0, width: 0, height: tall, top: 0, right: 0, bottom: tall, left: 0, toJSON: () => ({}) };
+    });
+    return () => { measure.mockRestore(); };
+  }
+
+  it("is said to the stylesheet as the screen opens, rounded up, and again whenever the shelf changes", () => {
+    const observers = standInForResizeObserver();
+    const heights = { bar: 48, shelf: 237.4 };
+    const restore = measureAs(heights);
+    try {
+      renderHud();
+      const root = screen.getByTestId("planner-hud");
+      expect(root.style.getPropertyValue("--hud-shelf-real")).toBe("238px");
+      // The bar's own measure is unharmed.
+      expect(useHallViewStore.getState().stage).toEqual({ skyPx: 48 });
+
+      // A status line wraps to a second line: the shelf is taller, and says so.
+      heights.shelf = 262;
+      const told = observers.watching(shelf());
+      expect(told.length).toBeGreaterThan(0);
+      act(() => { for (const tell of told) tell(); });
+      expect(root.style.getPropertyValue("--hud-shelf-real")).toBe("262px");
+    } finally {
+      restore();
+      observers.restore();
+    }
+  });
+
+  it("leaves the stylesheet its own measure where the shelf cannot be measured", () => {
+    const restore = measureAs({ bar: 48, shelf: 0 });
+    try {
+      renderHud();
+      expect(screen.getByTestId("planner-hud").style.getPropertyValue("--hud-shelf-real")).toBe("");
+    } finally {
+      restore();
+    }
+  });
+
+  it("is what the stylesheet sizes every sheet from", async () => {
+    const css = (await readFile(resolve("src/components/planner-hud/hud.css"), "utf-8")).replace(/\/\*[\s\S]*?\*\//g, "");
+    // The measure the screen says, and the fixed one until it has.
+    expect(css).toMatch(/--hud-shelf-now:\s*var\(--hud-shelf-real,\s*var\(--hud-shelf-h\)\);/);
+    // A sheet's height, Lay out's, and how far the shelf may rise: all three from the shelf as it stands.
+    expect(css).toMatch(/\.hud-sheet\s*\{[^}]*max-height:\s*calc\(var\(--hud-rise\) - var\(--hud-shelf-now\)\);/);
+    expect(css).toMatch(/\.hud-sheet\[data-sheet="layout"\]\s*\{\s*max-height:\s*calc\(100dvh - var\(--hud-bar-all\) - var\(--hud-shelf-now\)\);/);
+    expect(css).toMatch(/--hud-rise:\s*max\(60dvh,\s*min\(100dvh - var\(--hud-bar-all\),\s*var\(--hud-shelf-now\) \+ var\(--hud-sheet-need\)\)\);/);
+    // And no sheet is sized from the fixed measure any more.
+    expect(css).not.toMatch(/max-height:[^;]*var\(--hud-shelf-h\)/);
+  });
+});
+
+// Lay out says more once a count is typed, and its act comes last. Where the sheet is too short to show all of it,
+// it is slid to its end as it opens and whenever the prompt grows (HudSheets.tsx): the act is never under a scroll.
+describe("the Lay out sheet in a short window", () => {
+  /** The sheet's scroll measures, and the prompt's height: a test's page has none of its own. */
+  function standInForLayout(sizes: { scrollHeight: number; clientHeight: number; prompt: number }): () => void {
+    const own = (name: "scrollHeight" | "clientHeight"): void => {
+      Object.defineProperty(HTMLElement.prototype, name, {
+        configurable: true,
+        get(this: HTMLElement): number { return this.classList.contains("hud-sheet") ? sizes[name] : 0; },
+      });
+    };
+    own("scrollHeight");
+    own("clientHeight");
+    const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function measured(this: HTMLElement): DOMRect {
+      const tall = this.classList.contains("hud-sheet__section") ? sizes.prompt : 0;
+      return { x: 0, y: 0, width: 0, height: tall, top: 0, right: 0, bottom: tall, left: 0, toJSON: () => ({}) };
+    });
+    return () => {
+      measure.mockRestore();
+      // Back to the page's own (the prototype chain's) once the stand-ins are gone.
+      delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+      delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
+    };
+  }
+
+  function openLayout(): { readonly sheet: HTMLElement; readonly prompt: HTMLElement } {
+    renderHud();
+    setGuests(60);
+    fireEvent.click(stepKey("layout"));
+    const sheet = screen.getByRole("dialog", { name: "Lay out" });
+    const prompt = sheet.querySelector<HTMLElement>(".hud-sheet__section");
+    if (prompt === null) throw new Error("the Lay out sheet has no prompt");
+    return { sheet, prompt };
+  }
+
+  it("is slid to its end as it opens, and again each time its prompt grows", () => {
+    const observers = standInForResizeObserver();
+    const sizes = { scrollHeight: 546, clientHeight: 337, prompt: 180 };
+    const restore = standInForLayout(sizes);
+    try {
+      const { sheet, prompt } = openLayout();
+      expect(sheet.scrollTop).toBe(546);
+
+      // Someone scrolls back up to read the title, then types a count: the prompt says more, and the act is brought back into sight.
+      sheet.scrollTop = 0;
+      sizes.prompt = 308;
+      sizes.scrollHeight = 674;
+      const told = observers.watching(prompt);
+      expect(told).toHaveLength(1);
+      act(() => { for (const tell of told) tell(); });
+      expect(sheet.scrollTop).toBe(674);
+
+      // The prompt shrinking again (the count cleared) moves nothing: they are reading where they are.
+      sheet.scrollTop = 120;
+      sizes.prompt = 180;
+      act(() => { for (const tell of told) tell(); });
+      expect(sheet.scrollTop).toBe(120);
+
+      // And growing once more slides it again, from the height it shrank to.
+      sizes.prompt = 250;
+      act(() => { for (const tell of told) tell(); });
+      expect(sheet.scrollTop).toBe(674);
+    } finally {
+      restore();
+      observers.restore();
+    }
+  });
+
+  it("is left where it is when all of it is in sight", () => {
+    const observers = standInForResizeObserver();
+    const sizes = { scrollHeight: 418, clientHeight: 420, prompt: 180 };
+    const restore = standInForLayout(sizes);
+    try {
+      const { sheet, prompt } = openLayout();
+      expect(sheet.scrollTop).toBe(0);
+      sizes.prompt = 200;
+      act(() => { for (const tell of observers.watching(prompt)) tell(); });
+      expect(sheet.scrollTop).toBe(0);
+    } finally {
+      restore();
+      observers.restore();
+    }
+  });
+
+  it("stops watching its prompt as it shuts", () => {
+    const observers = standInForResizeObserver();
+    const restore = standInForLayout({ scrollHeight: 546, clientHeight: 337, prompt: 180 });
+    try {
+      const { prompt } = openLayout();
+      expect(observers.watching(prompt)).toHaveLength(1);
+      press("Escape");
+      expect(observers.watching(prompt)).toHaveLength(0);
+    } finally {
+      restore();
+      observers.restore();
+    }
   });
 });

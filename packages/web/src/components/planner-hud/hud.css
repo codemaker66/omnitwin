@@ -56,7 +56,17 @@
    * tenths is already enough, six tenths it stays.
    */
   --hud-sheet-need: 420px;       /* the tallest sheet that is not a list, as it opens: Lay out, 418 px */
-  --hud-rise: max(60dvh, min(100dvh - var(--hud-bar-all), var(--hud-shelf-h) + var(--hud-sheet-need)));
+  /*
+   * The shelf as it really stands. It is taller than --hud-shelf-h wherever
+   * it grows with what it holds: a status line that wraps, a phone's safe
+   * area, the piece's keys on a second line. The screen measures it and says
+   * so here (HudFrame.tsx, --hud-shelf-real); until it has, the measure above.
+   * A sheet hangs from the shelf's real top, so its height is taken from this:
+   * taken from the fixed measure, a sheet rose over the top bar by as much as
+   * the shelf had grown.
+   */
+  --hud-shelf-now: var(--hud-shelf-real, var(--hud-shelf-h));
+  --hud-rise: max(60dvh, min(100dvh - var(--hud-bar-all), var(--hud-shelf-now) + var(--hud-sheet-need)));
   --hud-sheet-pad: 24px;
   --hud-sheet-measure: 720px;
   --hud-sheet-measure-wide: 1040px;
@@ -134,6 +144,11 @@
 .hud-root [aria-disabled="true"] {
   opacity: var(--hud-off);
   cursor: default;
+}
+
+/* A key that is off because it is at work says so at full strength: its words and its motion are the working state. */
+.hud-root .hud-act[aria-busy="true"]:disabled {
+  opacity: 1;
 }
 
 .hud-room {
@@ -762,7 +777,7 @@ body.hud-dragging-card * {
   right: 0;
   bottom: 100%;
   left: 0;
-  max-height: calc(var(--hud-rise) - var(--hud-shelf-h));
+  max-height: calc(var(--hud-rise) - var(--hud-shelf-now));
   overflow: auto;
   overscroll-behavior: contain;
   padding: var(--hud-sheet-pad) max(var(--hud-gutter), calc((100% - var(--hud-sheet-measure)) / 2));
@@ -781,7 +796,7 @@ body.hud-dragging-card * {
  * the prompt grows (HudSheets.tsx).
  */
 .hud-sheet[data-sheet="layout"] {
-  max-height: calc(100dvh - var(--hud-bar-all) - var(--hud-shelf-h));
+  max-height: calc(100dvh - var(--hud-bar-all) - var(--hud-shelf-now));
 }
 
 .hud-sheet__close {
@@ -835,9 +850,12 @@ body.hud-dragging-card * {
   gap: var(--hud-gap) var(--hud-gap-wide);
 }
 
-.hud-sheet__note {
-  margin: 0;
-  color: var(--hud-ink-2);
+/* What a sheet says about its own act (why it is off, for one): a line of its own, in the ink the titles wear. */
+.hud-sheet__say {
+  max-width: 60ch;
+  margin: var(--hud-gap) 0;
+  font-size: var(--hud-l);
+  line-height: var(--hud-l-lh);
 }
 
 /* Three answers to one question. */

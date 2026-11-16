@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactElement } from "react";
 import { advance as advanceFrame, invalidate } from "@react-three/fiber";
 import { TRADES_HALL_GRAND_HALL_DIMENSIONS, type Space } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
@@ -14,7 +14,7 @@ import { getNativeRenderer } from "../lib/native-renderer.js";
 import { nativePrecompileSettled } from "../lib/native-precompile.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../lib/catalogue.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
-import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
+import { plannerChromeRequested, setMountedPlannerChrome } from "../lib/planner-chrome-flag.js";
 import { ChromeShell } from "../components/planner-chrome/ChromeShell.js";
 import { HudFrame } from "../components/planner-hud/HudFrame.js";
 import { HudSheets } from "../components/planner-hud/HudSheets.js";
@@ -270,6 +270,11 @@ async function measureGpu(frames = 60): Promise<{ readonly frames: number; reado
 export function PlannerLabPage(): ReactElement {
   const [ready, setReady] = useState(false);
   const [chrome] = useState(() => plannerChromeRequested(window.location.search));
+  // As the planner's own page does: the scene asks which chrome is mounted.
+  useLayoutEffect(() => {
+    setMountedPlannerChrome(chrome);
+    return () => { setMountedPlannerChrome(null); };
+  }, [chrome]);
   usePlannerToolKeys();
 
   useEffect(() => {

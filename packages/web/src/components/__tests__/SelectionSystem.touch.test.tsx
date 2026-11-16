@@ -6,7 +6,7 @@ import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { createTableGroup } from "../../lib/table-group.js";
 import { PLANNER_INTERACTION_FLOOR_NAME, placementFloorPoint } from "../../lib/planner-interaction-floor.js";
 import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
-import { PLANNER_CHROME_STORAGE_KEY } from "../../lib/planner-chrome-flag.js";
+import { PLANNER_CHROME_STORAGE_KEY, setMountedPlannerChrome } from "../../lib/planner-chrome-flag.js";
 import { useCameraReferenceStore } from "../../stores/camera-reference-store.js";
 import { useChairDialogStore } from "../../stores/chair-dialog-store.js";
 import { GHOST_RAISE_PX, LIFT_HOLD_MS, PLACE_HOLD_MS } from "../../lib/touch-arbiter.js";
@@ -594,17 +594,41 @@ describe("a double-click on a placed table (QoL B-01)", () => {
   it("selects the table in v2 and the HUD, which mount no chair dialog, and opens the dialog in v1 as before", () => {
     render(<SelectionSystem />);
     try {
-      for (const chrome of ["v2", "hud"]) {
-        window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, chrome);
+      for (const chrome of ["v2", "hud"] as const) {
+        setMountedPlannerChrome(chrome);
         act(() => { useSelectionStore.getState().clearSelection(); });
         act(() => { fireEvent.dblClick(canvas, { ...overTheRound(), button: 0 }); });
         expect(useChairDialogStore.getState().pending, chrome).toBeNull();
         expect(useSelectionStore.getState().selectedIds.has(tableId), chrome).toBe(true);
       }
-      window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "v1");
+      setMountedPlannerChrome("v1");
       act(() => { fireEvent.dblClick(canvas, { ...overTheRound(), button: 0 }); });
       expect(useChairDialogStore.getState().pending).toMatchObject({ tableShape: "round" });
     } finally {
+      setMountedPlannerChrome(null);
+      useChairDialogStore.getState().clearDialog();
+    }
+  });
+
+  // Another tab that opens ?chrome=hud writes the device's memory. This page chose its chrome when it opened, and
+  // keeps it: the scene goes by what is mounted, so the first chrome's dialog still opens (and the HUD's never does).
+  it("goes by the chrome that is mounted, whatever another tab has since told the device", () => {
+    render(<SelectionSystem />);
+    try {
+      setMountedPlannerChrome("v1");
+      window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "hud");
+      act(() => { fireEvent.dblClick(canvas, { ...overTheRound(), button: 0 }); });
+      expect(useChairDialogStore.getState().pending).toMatchObject({ tableShape: "round" });
+      useChairDialogStore.getState().clearDialog();
+
+      setMountedPlannerChrome("hud");
+      window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "v1");
+      act(() => { useSelectionStore.getState().clearSelection(); });
+      act(() => { fireEvent.dblClick(canvas, { ...overTheRound(), button: 0 }); });
+      expect(useChairDialogStore.getState().pending).toBeNull();
+      expect(useSelectionStore.getState().selectedIds.has(tableId)).toBe(true);
+    } finally {
+      setMountedPlannerChrome(null);
       window.localStorage.removeItem(PLANNER_CHROME_STORAGE_KEY);
       useChairDialogStore.getState().clearDialog();
     }
@@ -624,15 +648,37 @@ describe("a right click on the room with nothing in hand", () => {
   it("opens a viewpoint's draft under the first chrome, which shows it, and none under v2 or the HUD", () => {
     render(<SelectionSystem />);
     try {
-      for (const chrome of ["v2", "hud"]) {
-        window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, chrome);
+      for (const chrome of ["v2", "hud"] as const) {
+        setMountedPlannerChrome(chrome);
         rightClickOnTheFloor();
         expect(useCameraReferenceStore.getState().draft, chrome).toBeNull();
       }
-      window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "v1");
+      setMountedPlannerChrome("v1");
       rightClickOnTheFloor();
       expect(useCameraReferenceStore.getState().draft).toMatchObject({ source: "floor" });
     } finally {
+      setMountedPlannerChrome(null);
+      useCameraReferenceStore.getState().closeDraft();
+    }
+  });
+
+  it("goes by the chrome that is mounted, whatever another tab has since told the device", () => {
+    render(<SelectionSystem />);
+    try {
+      // This page shows the first chrome; another tab has opened ?chrome=hud, and the device now remembers that.
+      setMountedPlannerChrome("v1");
+      window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "hud");
+      rightClickOnTheFloor();
+      expect(useCameraReferenceStore.getState().draft).toMatchObject({ source: "floor" });
+      useCameraReferenceStore.getState().closeDraft();
+
+      // And the other way about: under the HUD, which has nothing to show a draft in, none is opened.
+      setMountedPlannerChrome("hud");
+      window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "v1");
+      rightClickOnTheFloor();
+      expect(useCameraReferenceStore.getState().draft).toBeNull();
+    } finally {
+      setMountedPlannerChrome(null);
       window.localStorage.removeItem(PLANNER_CHROME_STORAGE_KEY);
       useCameraReferenceStore.getState().closeDraft();
     }

@@ -252,6 +252,7 @@ export function Hand({ children }: { readonly children?: ReactNode }): ReactElem
   const receipt = useReceiptShowing();
   const previewRef = useRef<HTMLDivElement>(null);
   const [dragged, setDragged] = useState<HandCard | null>(null);
+  const moreOpen = usePlannerHudStore((state) => state.sheet === "more");
 
   const cards = useMemo(() => handCardsFromCounts(kind, facts.counts, plannerChairSlug(kind)), [kind, facts.counts]);
   // A card in hand keeps the cards on the shelf, so the card can be seen in hand.
@@ -325,6 +326,7 @@ export function Hand({ children }: { readonly children?: ReactNode }): ReactElem
             className="hud-card hud-card--more"
             onClick={() => { usePlannerHudStore.getState().toggleSheet("more"); }}
             aria-label="More furniture"
+            aria-expanded={moreOpen}
             title="Everything the hall has, by kind"
           >
             <span className="hud-card__art" aria-hidden="true" />

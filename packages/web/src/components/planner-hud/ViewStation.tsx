@@ -4,6 +4,7 @@ import { useModelledGrandHall } from "../grand-hall/hall-space.js";
 import { useHallViewStore, type HallViewPreset } from "../../stores/hall-view-store.js";
 import { usePlannerHudStore } from "../../stores/planner-hud-store.js";
 import { MoreGlyph } from "./glyphs.js";
+import { onRadioGroupKeyDown, radioTabIndex } from "./radio-keys.js";
 
 // ---------------------------------------------------------------------------
 // The view, at the right of the top bar: how the room is looked at (Plan,
@@ -49,14 +50,16 @@ export function ViewStation(): ReactElement {
     <div className="hud-view" role="group" aria-label="The view">
       {hall ? (
         <>
-          <div className="hud-view__switch" role="radiogroup" aria-label="How to look at the room">
-            {VIEWS.map((view) => (
+          <div className="hud-view__switch" role="radiogroup" aria-label="How to look at the room" onKeyDown={onRadioGroupKeyDown}>
+            {VIEWS.map((view, index) => (
               <button
                 key={view.preset}
                 type="button"
                 role="radio"
                 className="hud-option"
                 aria-checked={activePreset === view.preset}
+                // One stop in the Tab order; the arrows go round the three. A camera moved by hand is in none of them.
+                tabIndex={radioTabIndex(activePreset === view.preset, index === 0, VIEWS.some((one) => one.preset === activePreset))}
                 title={view.tip}
                 onClick={() => { useHallViewStore.getState().requestView(view.preset); }}
               >

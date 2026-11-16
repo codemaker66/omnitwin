@@ -9,6 +9,7 @@ import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-prev
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { MinusGlyph, PlusGlyph } from "./glyphs.js";
+import { onRadioGroupKeyDown, radioTabIndex } from "./radio-keys.js";
 
 // ---------------------------------------------------------------------------
 // The chosen piece's verbs (the HUD's design note). When something is
@@ -99,8 +100,8 @@ export function PieceVerbs({ chosen }: { readonly chosen: Chosen }): ReactElemen
         </div>
       ) : null}
       {tableId !== null && linen !== null ? (
-        <div className="hud-swatches" role="radiogroup" aria-label="The cloth on this table">
-          {LINENS.map((option) => (
+        <div className="hud-swatches" role="radiogroup" aria-label="The cloth on this table" onKeyDown={onRadioGroupKeyDown}>
+          {LINENS.map((option, index) => (
             <button
               key={option.id}
               type="button"
@@ -108,6 +109,7 @@ export function PieceVerbs({ chosen }: { readonly chosen: Chosen }): ReactElemen
               className="hud-swatch"
               data-linen={option.id}
               aria-checked={linen === option.id}
+              tabIndex={radioTabIndex(linen === option.id, index === 0, LINENS.some((one) => one.id === linen))}
               aria-label={option.label}
               title={option.label}
               disabled={locked}

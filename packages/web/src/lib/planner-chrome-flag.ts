@@ -38,3 +38,22 @@ export function plannerChromeRequested(search: string): PlannerChrome {
     return DEFAULT_PLANNER_CHROME;
   }
 }
+
+/**
+ * The chrome on screen: the one the planner's page mounted. Code that must
+ * agree with what is mounted (which chrome has a dialog to show a thing in)
+ * asks this, and never the address or the device's memory at that moment:
+ * another tab can change the memory after this page chose, and this page keeps
+ * the chrome it has until it is opened again.
+ */
+let mounted: PlannerChrome | null = null;
+
+/** The planner's page says which chrome it has mounted, and takes that back (null) as it leaves. */
+export function setMountedPlannerChrome(chrome: PlannerChrome | null): void {
+  mounted = chrome;
+}
+
+/** The chrome on screen; today's where no page has said (the scene mounted on its own). */
+export function mountedPlannerChrome(): PlannerChrome {
+  return mounted ?? DEFAULT_PLANNER_CHROME;
+}

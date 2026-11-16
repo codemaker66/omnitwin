@@ -71,10 +71,20 @@ export function Journey(): ReactElement {
   );
 }
 
+/** Whether a press of the primary key only opens the move's sheet, where the sheet's own act then carries it out. */
+function opensItsSheet(move: NextMove, facts: RoomFacts): boolean {
+  // Two moves are carried out by the press itself, and no sheet has an act for them.
+  if (move.id === "clear-door") return false;
+  if (move.id === "open-gap") return facts.aisles.tightestPair === null;
+  return true;
+}
+
 /**
  * The one primary key: the next best move, in its own words, carried out on a
  * press. While the sheet that carries the move out is open, the sheet's own
- * act is the primary, and this key steps aside.
+ * act is the primary, and this key steps aside. A move the press itself
+ * carries out (a piece moved clear of a door, the narrowest gap shown) keeps
+ * its key whatever is open: no sheet could do it instead.
  */
 export function NextMoveKey(): ReactElement {
   const facts = useHudFacts();
@@ -82,7 +92,7 @@ export function NextMoveKey(): ReactElement {
   const sheet = usePlannerHudStore((state) => state.sheet);
   const move = useMemo(() => nextMove(facts, sent), [facts, sent]);
   return (
-    <button type="button" className="hud-act" data-move={move.id} hidden={sheet === move.step} onClick={() => { carryOut(move, facts); }}>
+    <button type="button" className="hud-act" data-move={move.id} hidden={sheet === move.step && opensItsSheet(move, facts)} onClick={() => { carryOut(move, facts); }}>
       {move.text}
     </button>
   );

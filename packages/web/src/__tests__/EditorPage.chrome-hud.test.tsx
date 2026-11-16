@@ -43,7 +43,7 @@ const { EditorPage } = await import("../pages/EditorPage.js");
 const { useEditorStore } = await import("../stores/editor-store.js");
 const { useCockpitStore } = await import("../stores/cockpit-store.js");
 const { usePlannerHudStore } = await import("../stores/planner-hud-store.js");
-const { PLANNER_CHROME_STORAGE_KEY } = await import("../lib/planner-chrome-flag.js");
+const { PLANNER_CHROME_STORAGE_KEY, mountedPlannerChrome } = await import("../lib/planner-chrome-flag.js");
 const { setPlannerChromeFeatures, setPlannerFeaturesForTesting } = await import("../lib/planner-features.js");
 const originalLoadConfiguration = useEditorStore.getState().loadConfiguration;
 // The page loads the HUD lazily; having it in the module cache keeps its first transform out of the tests' waits.
@@ -91,7 +91,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   window.localStorage.removeItem(PLANNER_CHROME_STORAGE_KEY);
-  usePlannerHudStore.setState({ sheet: null, sentLayoutId: null });
+  usePlannerHudStore.setState({ sheet: null, sentLayoutIds: [] });
   setPlannerFeaturesForTesting(null);
   setPlannerChromeFeatures({});
 });
@@ -110,6 +110,19 @@ describe("EditorPage with the HUD", () => {
     expect(screen.queryByTestId("planner-chrome-v2")).toBeNull();
     expect(screen.queryByRole("group", { name: "View mode" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Event details" })).toBeNull();
+  });
+
+  // The scene asks which chrome is mounted (a right click's draft, a double-click's dialog). The page that mounted it
+  // is the one that says, so a flag another tab sets on this device afterwards changes nothing here.
+  it("tells the scene which chrome it has mounted, and takes that back as it leaves", async () => {
+    expect(mountedPlannerChrome()).toBe("v1");
+    openPlanner("?chrome=hud");
+    await hudOnScreen();
+    expect(mountedPlannerChrome()).toBe("hud");
+    window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "v1");
+    expect(mountedPlannerChrome()).toBe("hud");
+    cleanup();
+    expect(mountedPlannerChrome()).toBe("v1");
   });
 
   it("keeps the layout syncing: EditorBridge is mounted exactly once", async () => {

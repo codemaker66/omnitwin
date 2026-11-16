@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { GuestEnquiryModal } from "../editor/GuestEnquiryModal.js";
 import { AutoFillPrompt } from "../editor/cockpit/AutoFillPrompt.js";
 import { prepareLayoutForGuestEnquiry } from "../editor/send-layout-flow.js";
@@ -24,6 +25,7 @@ import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
 import { useHudFacts } from "./hud-facts.js";
 import { CloseGlyph, MinusGlyph, PlusGlyph } from "./glyphs.js";
+import { onRadioGroupKeyDown, radioTabIndex } from "./radio-keys.js";
 
 // ---------------------------------------------------------------------------
 // The sheets: what each step of the journey opens (the HUD's design note, "Sheets are
@@ -40,12 +42,28 @@ function close(): void {
 }
 
 /**
+ * Whether a key is on the page to take the keyboard: there, not put away, not
+ * off, and laid out. (The phone's top bar shows only the current step, and the
+ * primary key stands aside while its own sheet is open.) A page with no layout
+ * at all, a test's, lays nothing out: there, being on the page is all there is
+ * to ask.
+ */
+function canTakeFocus(key: HTMLElement | null): key is HTMLElement {
+  if (key === null || !key.isConnected || key.hidden || (key instanceof HTMLButtonElement && key.disabled)) return false;
+  if (typeof key.checkVisibility === "function") return key.checkVisibility();
+  return key.getClientRects().length > 0 || document.documentElement.getClientRects().length === 0;
+}
+
+/**
  * A sheet's title, and the keyboard's way in and out of the sheet. A sheet
  * opens a long way, in the page's order, from the step, card or key that
  * opened it. So focus goes to its title as it opens: the next Tab is its first
  * control, and a screen reader says where it is. When it shuts with focus
  * still inside it (Escape, its own Close) focus goes back to what opened it;
  * shut from outside (the step again, a card taken), focus stays where it is.
+ * Where what opened it has gone (the first screen's answer) or cannot be seen
+ * (a step the phone's bar has folded away), focus goes to the sheet's own
+ * step, and failing that to the one primary key: never to the bare page.
  */
 function SheetTitle({ children }: { readonly children: ReactNode }): ReactElement {
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -54,21 +72,28 @@ function SheetTitle({ children }: { readonly children: ReactNode }): ReactElemen
   const openerRef = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
     const title = titleRef.current;
-    const sheet = title?.closest(".hud-sheet") ?? null;
+    const sheet = title?.closest<HTMLElement>(".hud-sheet") ?? null;
     const focused = document.activeElement;
     if (focused instanceof HTMLElement && focused !== document.body && sheet?.contains(focused) !== true) openerRef.current = focused;
     title?.focus({ preventScroll: true });
     return () => {
       // Read before the sheet leaves the page: this runs while its title is still in it.
+      if (sheet === null || !sheet.contains(document.activeElement)) return;
       const opener = openerRef.current;
-      if (sheet === null || opener === null || !sheet.contains(document.activeElement)) return;
+      const root = sheet.closest<HTMLElement>(".hud-root");
+      const step = sheet.dataset["sheet"] ?? "";
       // Given back once the screen has settled: the opener may be the primary key, which stands aside while its own sheet is open.
       queueMicrotask(() => {
         // Only where shutting the sheet left the keyboard nowhere. Not where the sheet is still up (the effect's second
         // run, above) or where another sheet has opened in its place and taken the keyboard to its own title.
         const now = document.activeElement;
         if (now instanceof HTMLElement && now !== document.body && now.isConnected) return;
-        if (opener.isConnected) opener.focus({ preventScroll: true });
+        const places = [
+          opener,
+          root?.querySelector<HTMLElement>(`.hud-step[data-step="${step}"]`) ?? null,
+          root?.querySelector<HTMLElement>(".hud-shelf__act .hud-act") ?? null,
+        ];
+        places.find(canTakeFocus)?.focus({ preventScroll: true });
       });
     };
   }, []);
@@ -96,14 +121,15 @@ function EventSheet(): ReactElement {
     <>
       <SheetTitle>{JOURNEY_LABELS.event}</SheetTitle>
       <p className="hud-sheet__lede">Two things shape the room: what the day is, and how many are coming. Both can change later.</p>
-      <div className="hud-choices" role="radiogroup" aria-label="What are you planning?">
-        {KINDS.map((option) => (
+      <div className="hud-choices" role="radiogroup" aria-label="What are you planning?" onKeyDown={onRadioGroupKeyDown}>
+        {KINDS.map((option, index) => (
           <button
             key={option.kind}
             type="button"
             role="radio"
             className="hud-choice"
             aria-checked={kind === option.kind}
+            tabIndex={radioTabIndex(kind === option.kind, index === 0, kind !== null)}
             onClick={() => { usePlannerEventStore.getState().setEventKind(option.kind); }}
           >
             <span className="hud-choice__name">{option.name}</span>
@@ -173,8 +199,8 @@ function LayoutSheet(): ReactElement {
     <>
       <SheetTitle>{JOURNEY_LABELS.layout}</SheetTitle>
       <p className="hud-sheet__lede hud-sheet__lede--spare">Say how many, and the room is laid for you, clear of the doors. Nothing moves until you press, and Undo takes it all back.</p>
-      <div className="hud-choices" role="radiogroup" aria-label="How to lay the room">
-        {AUTO_FILL_STYLES.map((option) => {
+      <div className="hud-choices" role="radiogroup" aria-label="How to lay the room" onKeyDown={onRadioGroupKeyDown}>
+        {AUTO_FILL_STYLES.map((option, index) => {
           // Rows of chairs need a clear floor; rounds are laid round what is already placed.
           const unavailable = option.style === "theatre" && !floorEmpty;
           return (
@@ -185,6 +211,7 @@ function LayoutSheet(): ReactElement {
               className="hud-choice"
               aria-checked={style === option.style}
               aria-disabled={unavailable || undefined}
+              tabIndex={radioTabIndex(style === option.style, index === 0, true)}
               onClick={() => { if (!unavailable) setStyle(option.style); }}
             >
               <span className="hud-choice__name">{option.label}</span>
@@ -280,6 +307,8 @@ function FinishingSheet(): ReactElement {
 
 // -- Send --------------------------------------------------------------------
 
+const SEND_WAITS_ID = "hud-send-waits";
+
 function SendSheet(): ReactElement {
   const configId = useEditorStore((state) => state.configId);
   const guestDraft = useEditorStore((state) => state.isPublicPreview);
@@ -288,6 +317,18 @@ function SendSheet(): ReactElement {
   const sent = usePlanSent();
   const [preparing, setPreparing] = useState(false);
   const [asking, setAsking] = useState(false);
+  // The form takes the keyboard while it is up, and leaves the page with it. Put away, sent or not, it hands the
+  // keyboard back to the key that opened it, not to the bare page (only where it fell there: never taken from a
+  // control that has it).
+  const keyRef = useRef<HTMLButtonElement>(null);
+  const formWasUp = useRef(false);
+  useEffect(() => {
+    if (formWasUp.current && !asking) {
+      const now = document.activeElement;
+      if (!(now instanceof HTMLElement) || now === document.body || !now.isConnected) keyRef.current?.focus({ preventScroll: true });
+    }
+    formWasUp.current = asking;
+  }, [asking]);
 
   const send = (): void => {
     if (configId === null || preparing) return;
@@ -309,19 +350,23 @@ function SendSheet(): ReactElement {
       ) : (
         <>
           <p className="hud-sheet__lede">The events team receives this layout with your contact details, and replies with what happens next. Nothing is booked by sending it.</p>
+          {/* Why the key is off is said in the sheet's own words, at full strength, not on the faded key. */}
+          {previewing ? <p className="hud-sheet__say" id={SEND_WAITS_ID}>Leave the preview to send.</p> : null}
           <div className="hud-sheet__row">
-            <button type="button" className="hud-act" disabled={preparing || previewing} aria-busy={preparing} onClick={send}>
+            <button ref={keyRef} type="button" className="hud-act" disabled={preparing || previewing} aria-busy={preparing} aria-describedby={previewing ? SEND_WAITS_ID : undefined} onClick={send}>
               {preparing ? <ActivityIndicator size={16} /> : null}
-              {preparing ? "Preparing the layout" : previewing ? "Leave the preview to send" : sent ? "Send it again" : "Continue"}
+              {preparing ? "Preparing the layout" : sent ? "Send it again" : "Continue"}
             </button>
           </div>
-          {asking ? (
+          {/* Out of this screen's own element: the form is the whole planner's, and keeps its own focus ring and working state. */}
+          {asking ? createPortal(
             <GuestEnquiryModal
               configId={configId}
               // Sent is said only when the enquiry has arrived: putting the form away unsent leaves the plan unsent.
               onSubmitted={() => { usePlannerHudStore.getState().markSent(configId); }}
               onClose={() => { setAsking(false); }}
-            />
+            />,
+            document.body,
           ) : null}
         </>
       )}

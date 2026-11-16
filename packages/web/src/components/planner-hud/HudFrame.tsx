@@ -96,21 +96,32 @@ function HudRoot({ room, plaque, sheets }: Omit<HudFrameProps, "eventGuests">): 
   // one line on a wide screen, two where the steps take a line of their own, more under a phone's notch. So the bar
   // says its height here, and no second copy of it is kept.
   const barRef = useRef<HTMLDivElement>(null);
+  // The shelf says how tall it stands, too. It grows with what it holds (a status line that wraps, a phone's safe
+  // area, a piece's keys on a second line), and a sheet hangs from its real top: sized from a fixed measure, a sheet
+  // rose over the top bar by as much as the shelf had grown. The stylesheet takes the sheets' height from this.
+  const rootRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const bar = barRef.current;
-    if (bar === null) return undefined;
+    const root = rootRef.current;
+    if (bar === null || root === null) return undefined;
+    const shelf = root.querySelector<HTMLElement>(".hud-shelf");
     const say = (): void => {
       const height = Math.round(bar.getBoundingClientRect().height);
       if (height > 0) useHallViewStore.getState().setStage({ skyPx: height });
+      // Rounded up: a sheet a fraction of a pixel short of the bar, never a fraction over it.
+      const shelfHeight = shelf === null ? 0 : Math.ceil(shelf.getBoundingClientRect().height);
+      if (shelfHeight > 0) root.style.setProperty("--hud-shelf-real", `${String(shelfHeight)}px`);
+      else root.style.removeProperty("--hud-shelf-real");
     };
     say();
     if (typeof ResizeObserver === "undefined") return undefined;
     const watch = new ResizeObserver(say);
     watch.observe(bar);
+    if (shelf !== null) watch.observe(shelf);
     return () => { watch.disconnect(); };
   }, []);
   return (
-    <div className="hud-root" data-stage={stagePhase} data-first-open={firstOpen ? "true" : undefined} data-testid="planner-hud">
+    <div ref={rootRef} className="hud-root" data-stage={stagePhase} data-first-open={firstOpen ? "true" : undefined} data-testid="planner-hud">
       <main id="main-content" className="hud-room" aria-label="The room">{room}</main>
       <div ref={barRef} className="hud-bar">
         <div className="hud-bar__plaque">{plaque}</div>
