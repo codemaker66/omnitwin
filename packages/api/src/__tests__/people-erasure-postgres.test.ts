@@ -1,9 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { LightMyRequestResponse } from "fastify";
 import * as schema from "../db/schema.js";
 import { peopleRoutes } from "../routes/people.js";
+import { proposalShareRoutes } from "../routes/proposals.js";
+import { insertBoundBookings } from "../services/event-binding.js";
 import { eraseLockedPerson } from "../services/people-erasure.js";
 import { lockPerson } from "../services/people-records.js";
 import { eraseLapsedPeople } from "../services/people-retention.js";
@@ -31,7 +33,10 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
   let spaceId: string;
   let otherSpaceId: string;
   beforeAll(async () => {
-    f = await openPeopleFixture(async (server, db) => { await server.register(peopleRoutes, { db, prefix: "/people" }); });
+    f = await openPeopleFixture(async (server, db) => {
+      await server.register(peopleRoutes, { db, prefix: "/people" });
+      await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
+    });
     const room = (venueId: string) => ({ id: randomUUID(), venueId, name: "TEST ONLY Saloon", slug: `saloon-${randomUUID()}`,
       widthM: "8", lengthM: "12", heightM: "4", floorPlanOutline: [{ x: 0, y: 0 }, { x: 8, y: 0 }, { x: 8, y: 12 }, { x: 0, y: 12 }] });
     const here = room(f.venueId);
@@ -188,6 +193,55 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     return answer.json<{ data: { mergeId: string } }>().data.mergeId;
   }
 
+  /** A layout, with planner instructions when given (configurations.metadata). */
+  async function layout(name: string, instructions?: Record<string, unknown>): Promise<string> {
+    return only(await f.db.insert(schema.configurations).values({ venueId: f.venueId, spaceId, name, layoutStyle: "dinner-rounds",
+      ...(instructions === undefined ? {} : { metadata: { instructions } }) }).returning({ id: schema.configurations.id }), "layout").id;
+  }
+
+  /** An event made from a layout, as staff link one (event_configuration_links). */
+  async function laidOutFrom(eventId: string, layoutId: string): Promise<void> {
+    await f.db.insert(schema.eventConfigurationLinks).values({ eventId, configurationId: layoutId, linkType: "source_configuration" });
+  }
+
+  /** A Diary entry through the bind core, as the product writes one: from an
+   *  enquiry it makes the event itself, with no deal on it. */
+  async function bound(input: { enquiryId?: string; kind: "ink" | "hold"; title: string }): Promise<{ id: string; eventId: string }> {
+    day += 1;
+    const startsAt = new Date(Date.UTC(2027, 1, day, 18));
+    const [row] = await insertBoundBookings(f.db, [{ venueId: f.venueId, spaceId, kind: input.kind, title: input.title,
+      createdBy: f.users.staff, startsAt, endsAt: new Date(startsAt.getTime() + 5 * 3600_000),
+      ...(input.enquiryId === undefined ? {} : { enquiryId: input.enquiryId }),
+      ...(input.kind === "hold"
+        ? { rank: 1, decisionAt: startsAt, nextAction: "TEST ONLY follow up", nextActionDueAt: startsAt, ownerUserId: f.users.staff }
+        : {}) }]);
+    if (row === undefined || row.eventId === null) throw new Error("The bind core made no event");
+    return { id: row.id, eventId: row.eventId };
+  }
+
+  /** A client's share link to a proposal, as the desk issues one; the token. */
+  async function issuedLink(proposalId: string): Promise<string> {
+    const token = randomBytes(32).toString("base64url");
+    await f.pool.query("INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix) VALUES ($1, $2, $3)",
+      [proposalId, createHash("sha256").update(token, "utf8").digest("hex"), token.slice(0, 8)]);
+    return token;
+  }
+
+  /** Waits until another connection is held up on a row lock in the table:
+   *  a statement locking it FOR UPDATE (the erasure's ordered locks, a held
+   *  proposal) that waits on a lock. */
+  async function waitForLockWait(table: string): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const { rows } = await f.pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE $1`,
+        [`%from "${table}"%for update%`]);
+      if ((rows[0]?.n ?? 0) > 0) return;
+      await new Promise((resolve) => { setTimeout(resolve, 100); });
+    }
+    throw new Error(`Nothing waited on a lock in ${table}`);
+  }
+
   it("erases a person and every record merged into them, every personal field, at this venue and nowhere else", async () => {
     const tag = randomUUID().slice(0, 8);
     const mainEmail = `morag.erase-${tag}@example.test`;
@@ -323,11 +377,20 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     const email = `released-${randomUUID().slice(0, 8)}@example.test`;
     const person = await f.addPerson({ name: "Kirsty Released", emails: [email] });
     peopleIds.push(person);
-    const asked = await enquiry({ email, contactId: person });
-    await bookedEvent({ enquiryId: asked, kind: "hold", status: "released" });
+    // Sent through a venue form, its reply address hers: the notice opens with that.
+    const asked = await enquiry({ email: `form-${randomUUID().slice(0, 8)}@example.test`, guestEmail: email, contactId: person });
+    const formNotice = await notice({ body: `${email} enquired about TEST ONLY Saloon. Open Enquiries to respond.`,
+      actionPath: "/dashboard?view=enquiries", createdAt: await arrivedAt(asked) });
+    const hold = await bookedEvent({ enquiryId: asked, kind: "hold", status: "released" });
+    // The note staff typed when they released it names her.
+    await f.pool.query("INSERT INTO booking_status_history (booking_id, from_state, to_state, note) SELECT id, 'hold', 'released', $2 FROM bookings WHERE event_id = $1",
+      [hold, "Released: Kirsty Released chose June elsewhere"]);
     const erased = await post(`/people/${person}/erase`, "admin");
     expect(erased.statusCode, erased.body).toBe(200);
     expect(await count("enquiries WHERE id = $1", [asked])).toBe(0);
+    expect(await count("event_plan_notifications WHERE id = $1", [formNotice])).toBe(0);
+    expect(await value("SELECT h.note AS value FROM booking_status_history AS h JOIN bookings AS b ON b.id = h.booking_id WHERE b.event_id = $1", [hold]))
+      .toBe("Released: Erased chose June elsewhere");
   });
 
   it("refuses a person whose event was inked straight onto it after their enquiry's hold was released", async () => {
@@ -443,8 +506,13 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     const hold = only((await f.pool.query<{ id: string }>("SELECT id FROM bookings WHERE event_id = $1", [eventId])).rows, "hold").id;
     const director = await f.addPerson({ name: "Ross Director", emails: [`ross.director-${randomUUID().slice(0, 8)}@example.test`] });
     peopleIds.push(director);
-    const directorsEvent = await bookedEvent({ opportunityId: await deal({ primaryContactId: director, sourceEnquiryId: asked }) });
-    const directorsInk = only((await f.pool.query<{ id: string }>("SELECT id FROM bookings WHERE event_id = $1", [directorsEvent])).rows, "ink").id;
+    // His deal, made from her enquiry; his proposal's layout; the event staff
+    // made from it, inked through the bind core, with no deal on the event.
+    const directorsLayout = await layout("TEST ONLY director's layout");
+    await proposal({ enquiryId: asked, opportunityId: await deal({ primaryContactId: director, sourceEnquiryId: asked }), layoutId: directorsLayout });
+    const directorsBooking = await bound({ kind: "ink", title: "TEST ONLY director's dinner" });
+    await laidOutFrom(directorsBooking.eventId, directorsLayout);
+    const directorsInk = directorsBooking.id;
     class RolledBack extends Error {}
     const seen: { outcome: unknown; reason: unknown; directors: unknown } = { outcome: undefined, reason: "unread", directors: "unread" };
     await expect(f.db.transaction(async (tx) => {
@@ -567,10 +635,11 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     leadEmails.push(assistantEmail);
     const asked = await enquiry({ email: assistantEmail, contactId: assistant, name: "Ailsa Assistant" });
     const his = await deal({ title: "Dinner — Ailsa Assistant", primaryContactId: director, sourceEnquiryId: asked });
+    const hisLayout = await layout("TEST ONLY Brodie's dinner layout");
     const offered = await proposal({ enquiryId: asked, opportunityId: his, title: "Ailsa Assistant's dinner for Brodie Director",
-      acceptedName: "Brodie Director" });
+      acceptedName: "Brodie Director", layoutId: hisLayout });
     await shareLink(offered);
-    const hisWords = await comment(offered, { authorName: "Brodie Director", body: "TEST ONLY we accept" });
+    const hisWords = await comment(offered, { authorName: "Brodie Director", body: "TEST ONLY Ailsa Assistant will confirm numbers" });
     await f.db.insert(schema.proposalStatusHistory).values({ proposalId: offered, fromStatus: "sent", toStatus: "accepted", changedBy: null,
       note: "TEST ONLY his note" });
     // His deposit makes the version sent its identity: it stays as sent.
@@ -584,8 +653,13 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     await f.pool.query("INSERT INTO proposal_versions (proposal_id, version, payload, source_hash) VALUES ($1, 1, $2::jsonb, $3)",
       [drinks, JSON.stringify({ title: "TEST ONLY drinks", clientMessage: "Thank you, Ailsa Assistant" }), "f".repeat(64)]);
     const approval = await comment(drinks, { kind: "approval_note", authorName: "Ailsa Assistant", body: "TEST ONLY approved for Brodie" });
-    // His date, inked from her enquiry onto his deal's event: his, not hers to keep.
-    const hisEvent = await bookedEvent({ enquiryId: asked, opportunityId: his, title: "Ailsa Assistant — Dinner" });
+    // His date: pencilled from her enquiry through the bind core (which makes
+    // the event, with no deal on it), linked to his proposal's layout, inked.
+    // His, not hers to keep.
+    const hisBooking = await bound({ enquiryId: asked, kind: "ink", title: "Ailsa Assistant — Dinner" });
+    await laidOutFrom(hisBooking.eventId, hisLayout);
+    const hisEvent = hisBooking.eventId;
+    expect(await value("SELECT opportunity_id AS value FROM events WHERE id = $1", [hisEvent])).toBeNull();
 
     const erased = await post(`/people/${assistant}/erase`, "admin");
     expect(erased.statusCode, erased.body).toBe(200);
@@ -596,7 +670,9 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       .toEqual({ title: "Dinner — Erased", primary_contact_id: director });
     expect(await value("SELECT row_to_json(p) AS value FROM (SELECT title, accepted_name FROM proposals WHERE id = $1) p", [offered]))
       .toEqual({ title: "Erased's dinner for Brodie Director", accepted_name: "Brodie Director" });
-    expect(await count("proposal_comments WHERE id = $1", [hisWords])).toBe(1);
+    // His comment stays his, without her name.
+    expect(await value("SELECT row_to_json(c) AS value FROM (SELECT author_name, body FROM proposal_comments WHERE id = $1) c", [hisWords]))
+      .toEqual({ author_name: "Brodie Director", body: "TEST ONLY Erased will confirm numbers" });
     expect(await value("SELECT note AS value FROM proposal_status_history WHERE proposal_id = $1", [offered])).toBe("TEST ONLY his note");
     expect(await count("proposal_share_tokens WHERE proposal_id = $1 AND revoked_at IS NULL", [offered])).toBe(1);
     expect(await value("SELECT row_to_json(v) AS value FROM (SELECT payload, source_hash FROM proposal_versions WHERE proposal_id = $1) v", [offered]))
@@ -610,6 +686,99 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       .toEqual({ title: "Erased — Dinner", kind: "ink", status: "active" });
   });
 
+  it("takes their typed name off someone else's quote with no event that they accepted through its link", async () => {
+    // Brodie's quote has no layout yet, so accepting it writes nothing to an
+    // event's change feed: only the accepted name, the approval note (the
+    // share page sends a name and no address) and the team's notice.
+    const email = `ailsa.typed-${randomUUID().slice(0, 8)}@example.test`;
+    const person = await f.addPerson({ name: "Ailsa Typed", emails: [email] });
+    peopleIds.push(person);
+    leadEmails.push(email);
+    await enquiry({ email, contactId: person, name: "Ailsa Typed" });
+    const quote = await proposal({ title: "TEST ONLY Brodie's quote" });
+    await f.pool.query("UPDATE proposals SET status = 'sent', current_version = 1, sent_version = 1, sent_at = now() WHERE id = $1", [quote]);
+    await f.pool.query("INSERT INTO proposal_versions (proposal_id, version, payload, source_hash) VALUES ($1, 1, $2::jsonb, $3)",
+      [quote, JSON.stringify({ title: "TEST ONLY Brodie's quote", clientMessage: null }), "9".repeat(64)]);
+    // An older acceptance in her name, with no note left beside it.
+    const older = await proposal({ title: "TEST ONLY Brodie's older quote", acceptedName: "Ailsa Typed" });
+    const token = await issuedLink(quote);
+    const accepted = await f.server.inject({ method: "POST", url: `/proposal-share/${token}/approve`, payload: { authorName: "Ailsa Typed", version: 1 } });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    const desk = deskPath(quote);
+    const named = "event_plan_notifications WHERE action_path = $1 AND (title LIKE '%Ailsa Typed%' OR body LIKE '%Ailsa Typed%')";
+    expect(await value("SELECT accepted_name AS value FROM proposals WHERE id = $1", [quote])).toBe("Ailsa Typed");
+    expect(await count("proposal_comments WHERE proposal_id = $1 AND author_name = 'Ailsa Typed' AND author_email IS NULL", [quote])).toBe(1);
+    expect(await count("event_plan_changes WHERE proposal_id = $1", [quote])).toBe(0);
+    expect(await count(named, [desk])).toBeGreaterThan(0);
+
+    const erased = await post(`/people/${person}/erase`, "admin");
+    expect(erased.statusCode, erased.body).toBe(200);
+    expect(await value("SELECT accepted_name AS value FROM proposals WHERE id = $1", [quote])).toBe("Erased");
+    expect(await count("proposal_comments WHERE proposal_id = $1 AND author_name = 'Erased'", [quote])).toBe(1);
+    expect(await value("SELECT accepted_name AS value FROM proposals WHERE id = $1", [older])).toBe("Erased");
+    expect(await count(named, [desk])).toBe(0);
+    // Brodie's link still opens his quote.
+    expect(await count("proposal_share_tokens WHERE proposal_id = $1 AND revoked_at IS NULL", [quote])).toBe(1);
+  });
+
+  it("refuses a client's answer that waited on their erasure: the link it came through was revoked meanwhile", async () => {
+    const email = `isla.waiting-${randomUUID().slice(0, 8)}@example.test`;
+    const person = await f.addPerson({ name: "Isla Waiting", emails: [email] });
+    peopleIds.push(person);
+    leadEmails.push(email);
+    const asked = await enquiry({ email, contactId: person, name: "Isla Waiting" });
+    const offered = await proposal({ enquiryId: asked, title: "TEST ONLY her quote" });
+    await f.pool.query("UPDATE proposals SET status = 'sent', current_version = 1, sent_version = 1, sent_at = now() WHERE id = $1", [offered]);
+    await f.pool.query("INSERT INTO proposal_versions (proposal_id, version, payload, source_hash) VALUES ($1, 1, $2::jsonb, $3)",
+      [offered, JSON.stringify({ title: "TEST ONLY her quote", clientMessage: null }), "8".repeat(64)]);
+    const token = await issuedLink(offered);
+    // Her comment arrives while the erasure holds her proposal: it waits on
+    // the lock, then finds her link revoked and writes nothing.
+    const holder = await f.pool.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM proposals WHERE id = $1 FOR UPDATE", [offered]);
+      const pending = f.server.inject({ method: "POST", url: `/proposal-share/${token}/comment`,
+        payload: { body: "TEST ONLY Isla Waiting would like a later start", kind: "comment", authorName: "Isla Waiting" } });
+      await waitForLockWait("proposals");
+      await holder.query("UPDATE proposal_share_tokens SET revoked_at = now() WHERE proposal_id = $1", [offered]);
+      await holder.query("COMMIT");
+      const answer = await pending;
+      expect(answer.statusCode, answer.body).toBe(404);
+    } finally {
+      holder.release();
+    }
+    expect(await count("proposal_comments WHERE proposal_id = $1", [offered])).toBe(0);
+  });
+
+  it("takes the Diary's locks in the order its own writers do, so a transition beside an erasure never deadlocks", async () => {
+    // A Diary transition locks its booking, then its event. The erasure locks
+    // bookings before events, so it waits on the booking and leaves the event
+    // to the transition; the other way round, both would wait for ever and
+    // PostgreSQL would roll one back.
+    const email = `nessa.locked-${randomUUID().slice(0, 8)}@example.test`;
+    const person = await f.addPerson({ name: "Nessa Locked", emails: [email] });
+    peopleIds.push(person);
+    const asked = await enquiry({ email, contactId: person });
+    const hold = await bound({ enquiryId: asked, kind: "hold", title: "TEST ONLY Nessa's hold" });
+    const transition = await f.pool.connect();
+    try {
+      await transition.query("BEGIN");
+      await transition.query("SET LOCAL lock_timeout = '10s'");
+      await transition.query("SELECT id FROM bookings WHERE id = $1 FOR UPDATE", [hold.id]);
+      const pending = post(`/people/${person}/erase`, "admin");
+      await waitForLockWait("bookings");
+      // The transition now asks for the event: it must get it at once.
+      await transition.query("SELECT id FROM events WHERE id = $1 FOR NO KEY UPDATE", [hold.eventId]);
+      await transition.query("COMMIT");
+      const answer = await pending;
+      expect(answer.statusCode, answer.body).toBe(409);
+      expect(answer.json<{ code: string }>().code).toBe("PERSON_HAS_BOOKING");
+    } finally {
+      transition.release();
+    }
+  });
+
   it("takes the person out of what the venue keeps: household, deal, proposal, Diary, change feed and notices", async () => {
     const tag = randomUUID().slice(0, 8);
     const current = `isla.now-${tag}@example.test`;
@@ -618,7 +787,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     const household = await f.addOrganisation({ name: "Isla Erasable", kind: "household" });
     await f.pool.query("UPDATE client_accounts SET address = '2 Erasable Road', notes = 'TEST ONLY Isla prefers calls', vat_number = 'GB000' WHERE id = $1",
       [household]);
-    const person = await f.addPerson({ name: "Isla Erasable", emails: [current], organisations: [household] });
+    const person = await f.addPerson({ name: "Isla Erasable", emails: [current], phones: ["+44 7700 900444"], organisations: [household] });
     await f.pool.query("UPDATE contacts SET given_name = 'Isla', family_name = 'Erasable' WHERE id = $1", [person]);
     // Her partner, at the venue on his own record, with the inbox they share.
     const partner = await f.addPerson({ name: "Brodie Erasable", emails: [inbox] });
@@ -627,6 +796,11 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     // Her first enquiry came from an address she has since replaced, typed
     // in lower case: its lead and what she signed with it go too.
     const asked = await enquiry({ email: old, contactId: person, name: "isla erasable" });
+    // The sketch she drew with it names her mother as the day-of contact, on
+    // her own mobile, written another way.
+    const sketch = await layout("TEST ONLY sketch", { dayOfContact: { name: "TEST ONLY Mum", role: "", phone: "07700 900444", email: "" },
+      specialInstructions: "", accessNotes: "" });
+    await f.pool.query("UPDATE enquiries SET configuration_id = $2 WHERE id = $1", [asked, sketch]);
     await f.db.insert(schema.guestLeads).values({ email: old, name: "Isla Erasable", phone: "+44 7700 900222" });
 
     const dealId = await deal({ title: "Wedding — Isla Erasable", primaryContactId: person, sourceEnquiryId: asked });
@@ -634,9 +808,17 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     await f.db.insert(schema.activities).values({ opportunityId: dealId, body: "Isla Erasable asked about the Saloon", createdBy: f.users.staff });
     await f.db.insert(schema.opportunityStatusHistory).values({ opportunityId: dealId, fromStage: "proposal", toStage: "lost",
       changedBy: f.users.staff, note: "Isla Erasable chose another date" });
-    const offered = await proposal({ opportunityId: dealId, title: "Isla Erasable's wedding", acceptedName: "Isla Erasable" });
+    // Her wedding layout names her as the day-of contact and in its notes, and
+    // the sheet issued from it froze a copy.
+    const weddingInstructions = { dayOfContact: { name: "Isla Erasable", role: "Bride", phone: "", email: "" },
+      specialInstructions: "Isla Erasable arrives at four", accessNotes: "Side door for Isla Erasable's florist" };
+    const weddingLayout = await layout("Isla Erasable's wedding layout", weddingInstructions);
+    const sheet = only(await f.db.insert(schema.configurationSheetSnapshots).values({ configurationId: weddingLayout, version: 1,
+      payload: { instructions: weddingInstructions }, sourceHash: "7".repeat(64) }).returning({ id: schema.configurationSheetSnapshots.id }), "sheet").id;
+    const offered = await proposal({ opportunityId: dealId, title: "Isla Erasable's wedding", acceptedName: "Isla Erasable", layoutId: weddingLayout });
     await f.pool.query("INSERT INTO proposal_versions (proposal_id, version, payload, source_hash) VALUES ($1, 1, $2::jsonb, $3)",
-      [offered, JSON.stringify({ title: "Isla Erasable's wedding", clientMessage: "Dear Isla Erasable, here is your proposal." }), "d".repeat(64)]);
+      [offered, JSON.stringify({ title: "Isla Erasable's wedding", clientMessage: "Dear Isla Erasable, here is your proposal.",
+        capacityNote: "Room for Isla Erasable's 80 guests" }), "d".repeat(64)]);
     await shareLink(offered);
     const fromLink = await comment(offered, { authorEmail: current, authorName: "Isla Erasable", body: "Our son has a nut allergy" });
     const unsigned = await comment(offered, { authorName: "Isla", body: "Could we move the date?" });
@@ -651,6 +833,15 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     const eventId = await bookedEvent({ enquiryId: asked, opportunityId: dealId, kind: "hold", status: "released",
       title: "isla erasable — Wedding", eventName: "Isla Erasable — Wedding", clientName: "Isla Erasable" });
     const hold = only((await f.pool.query<{ id: string }>("SELECT id FROM bookings WHERE event_id = $1", [eventId])).rows, "hold");
+    // The team's conversation about her hold, and a request on it.
+    const thread = only(await f.db.insert(schema.threads).values({ venueId: f.venueId, audience: "staff-private", subject: "booking",
+      bookingId: hold.id, title: "Isla Erasable called" }).returning({ id: schema.threads.id }), "thread").id;
+    const message = only(await f.db.insert(schema.messages).values({ threadId: thread, venueId: f.venueId, kind: "text",
+      authorUserId: f.users.staff, idempotencyKey: randomUUID(), authorName: "TEST ONLY staff", authorRole: "staff",
+      body: "Isla Erasable called about the menu" }).returning({ id: schema.messages.id }), "message").id;
+    const asking = only(await f.db.insert(schema.requests).values({ venueId: f.venueId, bookingId: hold.id, roomId: spaceId, kind: "other",
+      urgency: "routine", requestedByName: "TEST ONLY staff", requestedByRole: "staff", audienceRoles: ["staff"], idempotencyKey: randomUUID(),
+      detail: "Isla Erasable wants a later start" }).returning({ id: schema.requests.id }), "request").id;
     await f.db.insert(schema.eventPhases).values({ eventId, name: "TEST ONLY ceremony", sortOrder: 1, notes: "Isla Erasable walks in first" });
     await changeCopy({ eventId, proposalId: offered, sourceKind: "proposal_comment", sourceId: fromLink, label: "Isla Erasable" });
     await changeCopy({ eventId, proposalId: offered, sourceKind: "proposal_response", sourceId: offered, label: "Isla Erasable" });
@@ -679,14 +870,18 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     const acceptCopy = await changeCopy({ eventId: otherEvent, proposalId: acceptOffer, sourceKind: "proposal_response", sourceId: acceptOffer,
       label: "Isla Erasable" });
     const acceptNote = await comment(acceptOffer, { kind: "approval_note", authorName: "Isla Erasable", body: "Client approved the proposal." });
+    // An acceptance withdrawn since: no name on the proposal any more, only its copy in the feed.
+    const withdrawn = await proposal({ title: "TEST ONLY a withdrawn proposal" });
+    const withdrawnCopy = await changeCopy({ eventId: otherEvent, proposalId: withdrawn, sourceKind: "proposal_response", sourceId: withdrawn,
+      label: "Isla Erasable" });
     const elsewhereOffer = await proposal({ venueId: f.otherVenueId, title: "TEST ONLY another venue's proposal" });
     const elsewhereWords = await comment(elsewhereOffer, { authorEmail: current, body: "TEST ONLY another venue's to erase" });
 
     const erased = await post(`/people/${person}/erase`, "admin");
     expect(erased.statusCode, erased.body).toBe(200);
     expect(erased.json<{ data: { counts: unknown } }>().data.counts).toEqual({
-      people: 1, contactPoints: 1, mergeSnapshots: 0, households: 1,
-      enquiries: 1, guestLeads: 1, emailReceipts: 0, comments: 2, changeCopies: 2, notices: 2, proposals: 2, reworded: 19,
+      people: 1, contactPoints: 2, mergeSnapshots: 0, households: 1,
+      enquiries: 1, guestLeads: 1, emailReceipts: 0, comments: 2, changeCopies: 2, notices: 2, proposals: 2, reworded: 27,
     });
 
     // Her household keeps its row, without her.
@@ -702,7 +897,21 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     // The version the client was sent loses her name, its digest made again;
     // her link no longer opens it.
     expect(await value("SELECT row_to_json(v) AS value FROM (SELECT payload, source_hash <> repeat('d', 64) AS rehashed FROM proposal_versions WHERE proposal_id = $1) v", [offered]))
-      .toEqual({ payload: { title: "Erased's wedding", clientMessage: "Dear Erased, here is your proposal." }, rehashed: true });
+      .toEqual({ payload: { title: "Erased's wedding", clientMessage: "Dear Erased, here is your proposal.",
+        capacityNote: "Room for Erased's 80 guests" }, rehashed: true });
+    // Her layouts and the sheet frozen from one: the day-of contact who is her
+    // (by name, or by her number written another way) is cleared, her name
+    // leaves the notes; the sheet keeps its source hash.
+    const clearedInstructions = { dayOfContact: null, specialInstructions: "Erased arrives at four", accessNotes: "Side door for Erased's florist" };
+    expect(await value("SELECT row_to_json(c) AS value FROM (SELECT name, metadata->'instructions' AS instructions FROM configurations WHERE id = $1) c",
+      [weddingLayout])).toEqual({ name: "Erased's wedding layout", instructions: clearedInstructions });
+    expect(await value("SELECT row_to_json(s) AS value FROM (SELECT payload->'instructions' AS instructions, source_hash FROM configuration_sheet_snapshots WHERE id = $1) s",
+      [sheet])).toEqual({ instructions: clearedInstructions, source_hash: "7".repeat(64) });
+    expect(await value("SELECT metadata->'instructions'->'dayOfContact' AS value FROM configurations WHERE id = $1", [sketch])).toBeNull();
+    // The team's conversation and request about her hold.
+    expect(await value("SELECT title AS value FROM threads WHERE id = $1", [thread])).toBe("Erased called");
+    expect(await value("SELECT body AS value FROM messages WHERE id = $1", [message])).toBe("Erased called about the menu");
+    expect(await value("SELECT detail AS value FROM requests WHERE id = $1", [asking])).toBe("Erased wants a later start");
     expect(await count("proposal_share_tokens WHERE proposal_id = $1 AND revoked_at IS NULL", [offered])).toBe(0);
     expect(await value("SELECT row_to_json(c) AS value FROM (SELECT author_name, author_email, body FROM proposal_comments WHERE id = $1) c", [fromInbox]))
       .toEqual({ author_name: "Erased", author_email: inbox, body: "TEST ONLY can Erased bring the cake?" });
@@ -723,6 +932,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       .toEqual({ author_name: null, author_email: null, body: "TEST ONLY Erased agrees to the change" });
     expect(await value("SELECT accepted_name AS value FROM proposals WHERE id = $1", [acceptOffer])).toBe("Erased");
     expect(await value("SELECT author_name AS value FROM proposal_comments WHERE id = $1", [acceptNote])).toBe("Erased");
+    expect(await value("SELECT actor_label AS value FROM event_plan_changes WHERE id = $1", [withdrawnCopy.change])).toBe("Erased");
     const { rows: copies } = await f.pool.query<{ actor_label: string; title: string; summary: string }>(
       "SELECT actor_label, title, summary FROM event_plan_changes WHERE id = ANY($1::uuid[])", [[oldCopy.change, acceptCopy.change]]);
     expect(copies).toHaveLength(2);
@@ -847,6 +1057,14 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       opportunityId: await deal({ primaryContactId: keptDealer.person, sourceEnquiryId: depositSpare, at: lapsedAt }) });
     await f.db.insert(schema.proposalDepositRequests).values({ venueId: f.venueId, proposalId: depositOffer, proposalVersion: 1,
       proposalVersionHash: "a".repeat(64), basis: "amount", quoteTotalMinor: 100_000, amountMinor: 25_000, currency: "GBP" });
+    // Kept only by an ink on the event staff made from their proposal's
+    // layout: nothing left to remove, so listed and never looked at.
+    const layoutKept = await personWithEnquiry("LayoutKept", lapsedAt);
+    const keptLayout = await layout("TEST ONLY kept layout");
+    await proposal({ enquiryId: layoutKept.asked, layoutId: keptLayout, madeAt: lapsedAt });
+    const layoutEvent = await bookedEvent({ title: "TEST ONLY staff's event" });
+    await laidOutFrom(layoutEvent, keptLayout);
+    await agedBookings(layoutEvent, lapsedAt);
     // Kept for a booking with nothing left to remove, and older than everyone:
     // listed, never looked at, so it cannot hold the queue up.
     const longKeptAt = new Date(lapsedAt.getTime() - 30 * dayMs);
@@ -894,6 +1112,14 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     const loneLed = await enquiry({ email: `lone-led-${randomUUID().slice(0, 8)}@example.test` });
     await aged("enquiries", loneLed, lapsedAt);
     await deal({ primaryContactId: leader, sourceEnquiryId: loneLed, at: freshAt });
+    // A lone enquiry whose address only a deleted record holds: nobody live holds it, so it goes.
+    const deletedHolderEmail = `lone-deleted-${randomUUID().slice(0, 8)}@example.test`;
+    leadEmails.push(deletedHolderEmail);
+    const deletedHolder = await f.addPerson({ name: "TEST ONLY Deleted Holder", emails: [deletedHolderEmail] });
+    peopleIds.push(deletedHolder);
+    await f.pool.query("UPDATE contacts SET deleted_at = now() WHERE id = $1", [deletedHolder]);
+    const loneOfDeleted = await enquiry({ email: deletedHolderEmail });
+    await aged("enquiries", loneOfDeleted, lapsedAt);
     const loneDealBooked = await enquiry({ email: `lone-dealt-${randomUUID().slice(0, 8)}@example.test` });
     await aged("enquiries", loneDealBooked, lapsedAt);
     const loneDeal = await deal({ sourceEnquiryId: loneDealBooked, at: lapsedAt });
@@ -907,6 +1133,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     expect(capped.deferred.people).toBeGreaterThanOrEqual(6);
     expect(capped.deferred.enquiries).toBeGreaterThanOrEqual(3);
     expect(capped.kept).toContainEqual({ venueId: f.venueId, personId: longKept.person });
+    expect(capped.kept).toContainEqual({ venueId: f.venueId, personId: layoutKept.person });
     expect(capped.kept).not.toContainEqual({ venueId: f.venueId, personId: keptUnlinked.person });
     const timed = await eraseLapsedPeople(f.db, { now, dryRun: true, budgetMs: 0 });
     expect(timed).toMatchObject({ people: 0, enquiries: 0, outOfTime: true, deferred: capped.deferred });
@@ -925,7 +1152,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     expect(rehearsal.inTouch).toBe(1);
     expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [lapsed.person])).toBe(1);
     expect(await count("contact_points WHERE contact_id = $1", [lapsed.person])).toBe(1);
-    const goes = [lapsed.asked, lapsedUnlinked, lone, bookedSpare, bookedUnlinked, keptUnlinkedSpare, pairEnquiry, dealtSpare];
+    const goes = [lapsed.asked, lapsedUnlinked, lone, bookedSpare, bookedUnlinked, keptUnlinkedSpare, pairEnquiry, dealtSpare, loneOfDeleted];
     expect(await count("enquiries WHERE id = ANY($1::uuid[])", [goes])).toBe(goes.length);
     expect(await count("guest_leads WHERE email = $1", [loneEmail])).toBe(1);
     expect(await count("email_sends WHERE idempotency_key = $1", [loneReceipt])).toBe(1);
@@ -951,7 +1178,8 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     expect(await count("guest_leads WHERE email = $1", [secondEmail])).toBe(1);
     // Inside the 24 months, in touch by any sign, or kept for a booking:
     // nothing of theirs goes beyond what never became a booking.
-    const stay = [boundary, working, proposed, newLinked, newUnlinked, answered, rebooked, dealt, chained, booked, keptUnlinked, keptDealer, longKept, recent];
+    const stay = [boundary, working, proposed, newLinked, newUnlinked, answered, rebooked, dealt, chained, booked, keptUnlinked, keptDealer, layoutKept,
+      longKept, recent];
     expect(await count("contacts WHERE id = ANY($1::uuid[]) AND erased_at IS NULL",
       [[...stay.map((row) => row.person), tombstone, chainedOld]])).toBe(stay.length + 2);
     expect(await count("enquiries WHERE id = ANY($1::uuid[])",

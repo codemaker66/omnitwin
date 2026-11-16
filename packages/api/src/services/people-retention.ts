@@ -244,15 +244,28 @@ function lapsedPeople(cutoff: Date): SQL {
       select coalesce(array_agg(p."id") filter (where p."opportunity_id" is null or p."opportunity_id" = any(deals."own")), '{}'::uuid[]) as "own",
              coalesce(array_agg(p."id"), '{}'::uuid[]) as "all",
              coalesce(array_agg(p."configuration_id") filter (
-               where (p."opportunity_id" is null or p."opportunity_id" = any(deals."own")) and p."configuration_id" is not null
-             ), '{}'::uuid[]) as "layouts"
+               where p."opportunity_id" is not null and not (p."opportunity_id" = any(deals."own")) and p."configuration_id" is not null
+             ), '{}'::uuid[]) as "near_layouts"
       from "proposals" as p
       where p."venue_id" = c."venue_id" and (p."enquiry_id" = any(linked."ids") or p."opportunity_id" = any(deals."own" || deals."near"))
     ) as props
     cross join lateral (
       select array(
-        select ne."id" from "events" as ne
-        where ne."opportunity_id" = any(deals."near") and not coalesce(ne."client_account_id" = any(accounts."ids"), false)
+        select ol."layout" from (
+          select op."configuration_id" as "layout" from "proposals" as op where op."id" = any(props."own")
+          union select oe2."configuration_id" from "enquiries" as oe2 where oe2."id" = any(linked."ids")
+        ) as ol
+        where ol."layout" is not null and not (ol."layout" = any(props."near_layouts"))
+      ) as "own"
+    ) as layouts
+    cross join lateral (
+      select array(
+        (select ne."id" from "events" as ne
+          where ne."opportunity_id" = any(deals."near") and not coalesce(ne."client_account_id" = any(accounts."ids"), false)
+        union
+        select nl."event_id" from "event_configuration_links" as nl where nl."configuration_id" = any(props."near_layouts"))
+        except
+        select oll."event_id" from "event_configuration_links" as oll where oll."configuration_id" = any(layouts."own")
       ) as "ids"
     ) as near_events
     cross join lateral (
@@ -261,7 +274,7 @@ function lapsedPeople(cutoff: Date): SQL {
         where ev."venue_id" = c."venue_id" and (ev."opportunity_id" = any(deals."own") or ev."client_account_id" = any(accounts."ids"))
         union
         select ecl."event_id" from "event_configuration_links" as ecl join "events" as le on le."id" = ecl."event_id"
-        where le."venue_id" = c."venue_id" and ecl."configuration_id" = any(props."layouts")
+        where le."venue_id" = c."venue_id" and ecl."configuration_id" = any(layouts."own")
         union
         select bk."event_id" from "bookings" as bk
         where bk."enquiry_id" = any(linked."ids") and bk."event_id" is not null and not (bk."event_id" = any(near_events."ids"))
@@ -288,16 +301,42 @@ function lapsedPeople(cutoff: Date): SQL {
           or exists (select 1 from "proposal_deposit_requests" as dr
             where dr."proposal_id" = any(props."own") or dr."event_id" = any(own_events."ids"))
         ) as "kept",
+        -- An enquiry of theirs the step would remove: what keeps it is what
+        -- keeps the step's records of that enquiry alone (keptRecord): a live
+        -- booking pencilled out of it or on its events (those of its bookings, of the
+        -- layouts of its proposals and its own, and of deals made out of it), and
+        -- a contract or deposit on its proposals or events.
         exists (
           select 1 from unnest(linked."ids") as se("id")
+          cross join lateral (
+            select array(
+              select sp."id" from "proposals" as sp
+              where (sp."enquiry_id" = se."id"
+                  or sp."opportunity_id" in (select sd."id" from "opportunities" as sd where sd."source_enquiry_id" = se."id"))
+                and not coalesce(sp."opportunity_id" = any(deals."near"), false)
+            ) as "ids"
+          ) as its_proposals
+          cross join lateral (
+            select array(
+              select sb0."event_id" from "bookings" as sb0
+              where sb0."enquiry_id" = se."id" and sb0."event_id" is not null and not (sb0."event_id" = any(near_events."ids"))
+              union
+              select sl."event_id" from "event_configuration_links" as sl
+              where not (sl."event_id" = any(near_events."ids")) and sl."configuration_id" in (
+                select spl."configuration_id" from "proposals" as spl where spl."id" = any(its_proposals."ids")
+                union select sel."configuration_id" from "enquiries" as sel where sel."id" = se."id")
+              union
+              select sev."id" from "events" as sev
+              where sev."opportunity_id" = any(deals."own")
+                and sev."opportunity_id" in (select sd2."id" from "opportunities" as sd2 where sd2."source_enquiry_id" = se."id")
+            ) as "ids"
+          ) as its_events
           where not exists (select 1 from "bookings" as sb where sb."enquiry_id" = se."id" and ${liveBooking("sb")}
               and (sb."event_id" is null or not (sb."event_id" = any(near_events."ids"))))
-            and not exists (select 1 from "bookings" as sb0 join "bookings" as sb1 on sb1."event_id" = sb0."event_id"
-              where sb0."enquiry_id" = se."id" and not (sb0."event_id" = any(near_events."ids")) and ${liveBooking("sb1")})
-            and not exists (select 1 from "proposals" as sp join "proposal_contract_versions" as scv on scv."proposal_id" = sp."id"
-              where sp."enquiry_id" = se."id" and not coalesce(sp."opportunity_id" = any(deals."near"), false))
-            and not exists (select 1 from "proposals" as sp2 join "proposal_deposit_requests" as sdr on sdr."proposal_id" = sp2."id"
-              where sp2."enquiry_id" = se."id" and not coalesce(sp2."opportunity_id" = any(deals."near"), false))
+            and not exists (select 1 from "bookings" as sb1 where sb1."event_id" = any(its_events."ids") and ${liveBooking("sb1")})
+            and not exists (select 1 from "proposal_contract_versions" as scv where scv."proposal_id" = any(its_proposals."ids"))
+            and not exists (select 1 from "proposal_deposit_requests" as sdr
+              where sdr."proposal_id" = any(its_proposals."ids") or sdr."event_id" = any(its_events."ids"))
         ) as "spare"
     ) as t
     where c."erased_at" is null and c."merged_into_id" is null and coalesce(c."last_contact_at", c."created_at") < ${at}
@@ -493,10 +532,16 @@ async function runSteps(input: {
     if (!mayGoOn(enquiriesActedOn, limits.enquiries, enquiriesLooked)) break;
     enquiriesLooked += 1;
     const acted = await step(async (tx) => {
+      // Read, then locked by findEnquiryRecords in the other writers' order
+      // (bookings before their enquiry), then checked again under the lock:
+      // someone may have linked or booked it meanwhile.
       const [enquiry] = await tx.select(ENQUIRY_FIELDS).from(enquiries)
-        .where(and(eq(enquiries.id, candidate.id), loneEnquiryDue(cutoff))).for("update");
+        .where(and(eq(enquiries.id, candidate.id), loneEnquiryDue(cutoff)));
       if (enquiry === undefined) return NONE;
       const records = await findEnquiryRecords(tx, enquiry, { reword: true });
+      const [still] = await tx.select({ id: enquiries.id }).from(enquiries)
+        .where(and(eq(enquiries.id, candidate.id), loneEnquiryDue(cutoff)));
+      if (still === undefined) return NONE;
       const last = await lastInTouch(tx, records);
       if (last !== null && last >= cutoff) return NONE;
       if ((await keptRecord(tx, records)) !== null) return NONE;

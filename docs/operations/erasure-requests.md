@@ -47,12 +47,14 @@ bookings: only the erased person's name leaves it.
 | `guest_leads` | email, phone, name | `lower(email)` = one of their addresses or their enquiries'. No venue: kept while any enquiry anywhere uses the address | deleted |
 | `email_sends` | recipient, subject | receipts about their enquiries (the key carries the enquiry id); others by `lower(recipient) = :email` | enquiry receipts deleted; others **by hand** |
 | `event_plan_notifications` | an enquiry's in-app notice ("Morag Smith enquired about …"); notices about their proposals and their Diary holds | the venue's notices opening with the enquiry's name or address within ten minutes of its arrival, or pointing at their proposal, a change copying them, or their booking | deleted, or their name taken out. An enquiry notice another enquiry kept here could equally have written stays (**by hand**) |
-| `proposals`, `proposal_versions`, `proposal_share_tokens` | accepted name, title; each version's title and message to the client; the client's link | by their enquiry or deal | accepted name cleared, name taken out of titles and messages (the version's digest made again), links revoked |
+| `proposals`, `proposal_versions`, `proposal_share_tokens` | accepted name, title; every text of each version sent (title, message, summaries, quote lines, the occasion); the client's link | by their enquiry or deal; on someone else's proposal, by the name they typed to accept | accepted name cleared (on someone else's, their name taken out), name taken out of every version text (the version's digest made again; another person's proposal with a contract or deposit keeps its versions), their links revoked |
 | `proposal_comments` | what the client wrote: author name, email, words | on their proposals; on someone else's, signed with an address only they hold, or under their name in the change feed | on their proposals: client comments deleted (one signed with an address another live person holds is that person's: kept, without the erased person's name), staff comments lose the name. On someone else's proposal: kept for that client, without their name and address |
 | `proposal_status_history` | notes, including the client's words when they asked for changes or accepted | on their proposals | client notes cleared; staff notes lose the name |
 | `event_plan_changes` | the client's name (`actor_label`) and words copied into the event's change feed | `source_kind` `proposal_comment` (the comment's id) or `proposal_response` (the proposal's id); a client change on someone else's proposal labelled with their name (an acceptance they typed it into); other changes on their events | the copies of their own proposals' answers deleted; the rest lose the name, a client's label included (a member of staff's label stays) |
 | `opportunities`, `opportunity_status_history`, `activities` | deal title ("Wedding — Morag Smith"), next action, the note written when the deal moved stage (closing one requires it), activity notes | by `primary_contact_id` or `source_enquiry_id` | name taken out |
-| `bookings`, `events`, `event_phases` | Diary titles, event name, client name, notes, phase notes | from their enquiries; on their deals', households' and organisations' events, and on events made from their proposal's layout (`event_configuration_links`) | name taken out (a booking the venue keeps refuses the route) |
+| `bookings`, `booking_status_history`, `events`, `event_phases` | Diary titles, the note staff type on a Diary transition (a release), event name, client name, notes, phase notes | from their enquiries; on their deals', households' and organisations' events, and on events made from their proposal's layout (`event_configuration_links`) | name taken out (a booking the venue keeps refuses the route) |
+| `threads`, `messages`, `requests`, `event_plan_change_acknowledgements`, `beo_documents` | the team's conversations, requests and acknowledgements about those bookings and events, and the BEO compiled for the event | by booking or event (a BEO through its handoff pack) | name taken out |
+| `configurations`, `configuration_sheet_snapshots` | a layout's name and planner instructions: the day-of contact the hallkeeper rings (name, role, phone, email), special instructions, access notes; each event sheet freezes a copy | the layouts of their enquiries and of the proposals around them | a day-of contact who is them (their full name, an address or a phone number of theirs) cleared; their name out of the notes and the layout's name; a sheet keeps its source hash |
 | `decisions` | the reason given for a prepared decision about a booking (free text) | `subject_kind = 'booking'` and `subject_id` one of their bookings, or a booking of a deal another live person leads that was made from their enquiry | erased (set to null), the only change a decision allows (migration 0108): always on a booking pencilled from their enquiries; on the other bookings, when it names them |
 | `proposal_contract_versions`, `proposal_contract_signatures` | the client's name and email in the contract, the signer's name, email and browser | on their proposals | **kept**: a contract is kept with the booking's records for six years and no statement can change it (migration 0104). The route refuses (`PERSON_HAS_CONTRACT`) |
 | `proposal_deposit_requests`, `deposit_payments` | the deposit and its payment record | on their proposals or events | **kept** for six years with the booking's records; the route refuses |
@@ -160,6 +162,10 @@ It refuses, changing nothing:
 - `PERSON_HAS_CONTRACT`: a contract prepared or signed, or a deposit requested, on a proposal of theirs;
 - `RETRY`: someone changed one of their records at the same moment; try again.
 
+The erasure locks what it changes in the order the Diary, decision approvals and acceptances lock the same rows
+(decisions, bookings, enquiries, deals, proposals, events), so none of them is rolled back for waiting on it. A
+client's comment or acceptance that waited on the erasure finds their link revoked and is refused.
+
 Then erase by hand what the booking or the contract does not need (section 3).
 
 **Still by hand after the route:** an account (step 3's last item); email receipts sent to their address that are
@@ -169,9 +175,12 @@ not about one of their enquiries (`email_sends` by recipient: a planner account'
 too; a full name another live person at the venue also goes by; a name typed differently, a nickname; "the bride");
 an enquiry's in-app notice another enquiry kept here could equally have written (the same name within the same
 minutes, a partner's from the shared inbox), or written under an address since corrected on the enquiry (the notice
-holds no enquiry id); and a **deleted** record of theirs (a duplicate deleted instead of merged): the
-route does not treat it as theirs, the 24-month pass erases it in time, or erase it by hand. Read the step 2
-stores' text before replying.
+holds no enquiry id); the frozen copies a handoff pack keeps of its event (`handoff_packs.payload`), and the planner's
+change log of a layout's event details (`action_log` payload and inverse), which can repeat a day-of contact; a
+decision prepared on one of their bookings at the very moment of the erasure (it takes no lock the erasure holds,
+so its reason can stay: read the decisions on their bookings afterwards); and a **deleted** record of theirs (a
+duplicate deleted instead of merged): the route does not treat it as theirs, the 24-month pass erases it in time,
+or erase it by hand. Read the step 2 stores' text before replying.
 
 ## The 24-month pass
 
@@ -193,7 +202,7 @@ A night acts on at most 100 people and 200 lone enquiries, looks at no more than
 no step after two and a half minutes (the job stops at five, and the passes after this one need their time), and
 leaves the rest for the next night (the People Book's backfill falls due together in 2028, so expect a few nights of
 catching up then). One person or enquiry failing is rolled back, counted with its SQLSTATE only, and tried again
-the next night; the job then fails, after every pass has run. The log carries counts only.
+the next night; the job then fails, after every pass has run. The log carries counts and SQLSTATEs only.
 
 `POST /admin/retention/people` (platform admins) runs every step in one transaction and rolls it back, so its counts
 are exactly what the night would do now. A step that changes nothing is rolled back at once; the erasures it

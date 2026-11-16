@@ -4,13 +4,17 @@ import {
   accountMemberships,
   activities,
   bookings,
+  bookingStatusHistory,
   clientAccounts,
+  configurations,
+  configurationSheetSnapshots,
   contactPoints,
   contacts,
   decisions,
   emailSends,
   enquiries,
   eventConfigurationLinks,
+  eventPlanChangeAcknowledgements,
   eventPlanChanges,
   eventPlanNotifications,
   eventPhases,
@@ -27,6 +31,8 @@ import {
   proposalStatusHistory,
   proposalVersions,
   recordMerges,
+  requests,
+  threads,
 } from "../db/schema.js";
 import { outerColumn } from "../utils/outer-column.js";
 import { lockGuestLead } from "./guest-lead-lock.js";
@@ -60,11 +66,16 @@ import { liveContact, type PeopleTx } from "./people-records.js";
 //     enquiries or on those events.
 // A deal made from their enquiry that another live person leads (a PA
 // enquired, her director became the main contact) is that person's, with its
-// proposals, events and bookings: nothing of it is deleted, and only the
-// erased person's names leave its text.
-// Every one of those rows is locked before anything is decided, so a hold
-// pencilled or a contract prepared at the same moment either waits for the
-// erasure or is seen by it.
+// proposals, the events of its deal and of its proposals' layouts (a hold
+// pencilled from her enquiry onto one included), and their bookings: nothing
+// of it is deleted, and only the erased person's names leave its text.
+// Every one of those rows is locked before anything is decided, in the order
+// the other writers take them (decisions, bookings, enquiries, deals,
+// proposals, events: see around()), so a hold pencilled or a contract
+// prepared at the same moment waits for the erasure or is seen by it, and
+// none of them waits on it in a circle. Residues the doc names: a decision
+// prepared on one of their bookings in the same moment (it takes no lock the
+// erasure holds) keeps its reason.
 //
 // Refused, changing nothing:
 //   - a confirmed booking, or a provisional one still live (the privacy
@@ -99,15 +110,18 @@ import { liveContact, type PeopleTx } from "./people-records.js";
 //     name and address;
 //   - the rows the venue keeps as its own record of the work (deals, their
 //     stage notes and activity notes, released holds and viewings in the
-//     Diary and the reasons given for decisions on them, events and their
-//     phases, proposals and their versions, staff comments and status notes,
-//     change feed entries and notices) keep their row and lose the person's
+//     Diary with their status notes, the requests and conversations about
+//     them and the reasons given for decisions on them, events, their phases,
+//     acknowledgements and BEOs, layouts and the sheets issued from them,
+//     proposals and every text of their versions, staff comments and status
+//     notes, change feed entries and notices) keep their row and lose the person's
 //     full name and addresses from their text
 //     (services/people-erasure-text.ts). A first or family name alone is
 //     left ("Will" and "May" are words too), and so is a full name another
 //     live person at the venue also goes by. A decision's reason can only be
-//     erased whole (migration 0108): on their bookings it always is, on
-//     another person's when it names them.
+//     erased whole (migration 0108): on a booking pencilled from their
+//     enquiries it always is; on their other bookings, and on another
+//     person's deal made from their enquiry, when it names them.
 // Other venues' records of the same person are theirs to erase: nothing here
 // crosses the venue, except the guest lead, which has no venue.
 // ---------------------------------------------------------------------------
@@ -156,6 +170,9 @@ export interface EnquiryRef {
   readonly guestName: string | null;
   readonly guestEmail: string | null;
   readonly createdAt: Date;
+  /** The layout the guest drew with the enquiry, if any. */
+  readonly configurationId: string | null;
+  readonly guestPhone: string | null;
 }
 
 export const ENQUIRY_FIELDS = {
@@ -166,6 +183,8 @@ export const ENQUIRY_FIELDS = {
   guestName: enquiries.guestName,
   guestEmail: enquiries.guestEmail,
   createdAt: enquiries.createdAt,
+  configurationId: enquiries.configurationId,
+  guestPhone: enquiries.guestPhone,
 } as const;
 
 /** Deals, proposals, events and bookings. */
@@ -200,6 +219,11 @@ export interface ErasureRecords extends WorkRecords {
   readonly sharedHouseholdIds: readonly string[];
   /** Of those, the ones they are the main contact of, and who takes over. */
   readonly handedOver: readonly { readonly householdId: string; readonly to: string }[];
+  /** The layouts of their enquiries and of the proposals around them (their
+   *  own and nearby): the day-of contact and notes there name people. */
+  readonly layoutIds: readonly string[];
+  /** Their phone numbers, as written, to find them as a layout's day-of contact. */
+  readonly phones: readonly string[];
   /** Their names and addresses, to take out of the text of kept rows; none
    *  when only lapsed enquiries of a person the venue keeps are removed. */
   readonly names: readonly string[];
@@ -313,6 +337,24 @@ export async function heldByOthers(
   return new Set([...onRecord, ...asPoint].map((row) => row.address));
 }
 
+/** Their phone numbers as written: on their records and among their points. */
+async function phonesOf(tx: PeopleTx, ids: readonly string[], onRecords: readonly (string | null)[]): Promise<readonly string[]> {
+  const points = ids.length === 0 ? [] : await tx.select({ value: contactPoints.value }).from(contactPoints)
+    .where(allOf(inArray(contactPoints.contactId, [...ids]), eq(contactPoints.kind, "phone")));
+  return distinct([...onRecords, ...points.map((row) => row.value)].flatMap((value) => {
+    const phone = value?.trim() ?? "";
+    return phone.length > 0 ? [phone] : [];
+  }));
+}
+
+/** Whether two phone numbers are one, however written: their last nine
+ *  digits agree ("+44 7700 900111" and "07700 900111"). */
+export function samePhone(a: string, b: string): boolean {
+  const tail = (value: string): string => value.replace(/\D/gu, "").slice(-9);
+  const left = tail(a);
+  return left.length === 9 && left === tail(b);
+}
+
 /** The full names without those another live person at the venue goes by
  *  (their record's name, or given and family name): text naming one of them
  *  is theirs too. Addresses pass through. */
@@ -378,7 +420,7 @@ async function ownHouseholds(
   return { householdIds, sharedHouseholdIds, handedOver };
 }
 
-type RecordsBase = Omit<ErasureRecords, keyof WorkRecords | "nearby">;
+type RecordsBase = Omit<ErasureRecords, keyof WorkRecords | "nearby" | "layoutIds">;
 
 function idsOf(rows: readonly { readonly id: string | null }[]): readonly string[] {
   return distinct(rows.flatMap((row) => (row.id === null ? [] : [row.id])));
@@ -394,17 +436,38 @@ function ownBookings(enquiryIds: readonly string[], eventIds: readonly string[],
   ) ?? sql`false`;
 }
 
-/** The deals, proposals, events and bookings around the enquiries and
- *  accounts, theirs locked: a booking writer locks its enquiry or takes a key
- *  lock on its event, so it waits for this transaction, or finished first.
- *  Another live person's deal made from their enquiry is that person's, with
- *  its proposals, events and bookings, and is only read, for the names. */
+/** Locks the rows FOR UPDATE, in id order. */
+async function lockRows(
+  tx: PeopleTx,
+  table: "decisions" | "bookings" | "enquiries" | "opportunities" | "proposals" | "events",
+  ids: readonly string[],
+): Promise<void> {
+  if (ids.length === 0) return;
+  const list = sql.join(distinct(ids).slice().sort().map((id) => sql`${id}::uuid`), sql`, `);
+  await tx.execute(sql`select "id" from ${sql.identifier(table)} where "id" in (${list}) order by "id" for update`);
+}
+
+/**
+ * The deals, proposals, events and bookings around the enquiries and
+ * accounts. Another live person's deal made from their enquiry is that
+ * person's ("nearby"), with its proposals, the events of its deal and of its
+ * proposals' layouts, and the bookings on them: only the names leave those.
+ *
+ * Everything is found first with plain reads, then locked in the order the
+ * other writers take the same rows, so none of them waits on this erasure in
+ * a circle: an approval locks its decision, then its booking, then the event
+ * (decisions.ts); a Diary transition its booking, then the enquiry, then the
+ * event (event-binding.ts); an acceptance its proposal. So: decisions, then
+ * bookings, then enquiries, deals, proposals, and events last. A booking
+ * written meanwhile from one of their enquiries, or onto one of their events,
+ * waits on those locks or is read again after them.
+ */
 async function around(tx: PeopleTx, base: RecordsBase): Promise<ErasureRecords> {
   const enquiryIds = base.enquiries.map((row) => row.id);
   const deals = await tx.select({ id: opportunities.id, lead: opportunities.primaryContactId }).from(opportunities).where(allOf(
     eq(opportunities.venueId, base.venueId),
     or(among(opportunities.primaryContactId, base.ids), among(opportunities.sourceEnquiryId, enquiryIds)) ?? sql`false`,
-  )).for("update");
+  ));
   // Theirs: the person erased, or the kept person whose enquiries go.
   const theirs = new Set([...base.ids, ...base.writers]);
   const leads = distinct(deals.flatMap((deal) => (deal.lead === null || theirs.has(deal.lead) ? [] : [deal.lead])));
@@ -422,7 +485,7 @@ async function around(tx: PeopleTx, base: RecordsBase): Promise<ErasureRecords> 
     .from(proposals).where(allOf(
       eq(proposals.venueId, base.venueId),
       or(among(proposals.enquiryId, enquiryIds), among(proposals.opportunityId, [...dealIds, ...nearDealIds])) ?? sql`false`,
-    )).for("update");
+    ));
   const proposalIds = proposalRows.filter((row) => onOwnDeal(row.dealId)).map((row) => row.id);
   const nearProposalIds = proposalRows.filter((row) => !onOwnDeal(row.dealId)).map((row) => row.id);
 
@@ -431,55 +494,68 @@ async function around(tx: PeopleTx, base: RecordsBase): Promise<ErasureRecords> 
     or(among(events.opportunityId, [...dealIds, ...nearDealIds]), among(events.clientAccountId, base.accountIds)) ?? sql`false`,
   ));
   // A proposal reaches its event through its layout, as the proposal desk
-  // reads it (routes/proposals.ts): an event made by staff carries no deal.
-  const layouts = distinct(proposalRows.flatMap((row) => (row.layoutId === null ? [] : [row.layoutId])));
-  const laidOut = layouts.length === 0 ? [] : await tx.select({ id: eventConfigurationLinks.eventId, layoutId: eventConfigurationLinks.configurationId })
+  // reads it (routes/proposals.ts): an event made by staff, or bound from a
+  // hold, carries no deal, so the layout link is how it is found.
+  const layoutIds = distinct([
+    ...proposalRows.flatMap((row) => (row.layoutId === null ? [] : [row.layoutId])),
+    ...base.enquiries.flatMap((row) => (row.configurationId === null ? [] : [row.configurationId])),
+  ]);
+  const laidOut = layoutIds.length === 0 ? [] : await tx.select({ id: eventConfigurationLinks.eventId, layoutId: eventConfigurationLinks.configurationId })
     .from(eventConfigurationLinks)
     .innerJoin(events, eq(events.id, eventConfigurationLinks.eventId))
-    .where(allOf(inArray(eventConfigurationLinks.configurationId, layouts), eq(events.venueId, base.venueId)));
-  const ownLayouts = new Set(proposalRows.flatMap((row) => (onOwnDeal(row.dealId) && row.layoutId !== null ? [row.layoutId] : [])));
+    .where(allOf(inArray(eventConfigurationLinks.configurationId, layoutIds), eq(events.venueId, base.venueId)));
+  const nearLayouts = new Set(proposalRows.flatMap((row) => (!onOwnDeal(row.dealId) && row.layoutId !== null ? [row.layoutId] : [])));
+  const ownLaidOut = new Set(laidOut.filter((link) => !nearLayouts.has(link.layoutId)).map((link) => link.id));
   const accounts = new Set(base.accountIds);
   const ownEvent = (event: { readonly dealId: string | null; readonly accountId: string | null }): boolean =>
     (event.accountId !== null && accounts.has(event.accountId)) || onOwnDeal(event.dealId);
   // The event a hold from their enquiry was pencilled onto is theirs, unless
-  // it is the event of another live person's deal.
-  const othersEvents = new Set(evented.filter((event) => !ownEvent(event)).map((event) => event.id));
+  // it is another live person's: their deal's, or laid out from their
+  // proposal and not from one of the person's own.
+  const othersEvents = new Set([
+    ...evented.filter((event) => !ownEvent(event)).map((event) => event.id),
+    ...laidOut.filter((link) => nearLayouts.has(link.layoutId) && !ownLaidOut.has(link.id)).map((link) => link.id),
+  ]);
   const booked = await tx.selectDistinct({ id: bookings.eventId }).from(bookings)
     .where(allOf(among(bookings.enquiryId, enquiryIds), isNotNull(bookings.eventId)));
   const eventIds = idsOf([
     ...booked.filter((row) => row.id !== null && !othersEvents.has(row.id)),
     ...evented.filter(ownEvent),
-    ...laidOut.filter((link) => ownLayouts.has(link.layoutId)),
+    ...laidOut.filter((link) => ownLaidOut.has(link.id)),
   ]);
   const ownEvents = new Set(eventIds);
   const nearEventIds = idsOf([...evented, ...laidOut, ...booked]).filter((id) => !ownEvents.has(id));
-  if (eventIds.length > 0) await tx.select({ id: events.id }).from(events).where(inArray(events.id, [...eventIds])).for("update");
-  // A decision is executed by locking it, then its booking (decisions.ts):
-  // the decisions on their bookings are locked first here too, so an
-  // erasure and an approval never wait on each other in a circle.
   const ownBooking = ownBookings(enquiryIds, eventIds, nearEventIds);
-  const bookingIds = (await tx.select({ id: bookings.id }).from(bookings).where(ownBooking)).map((row) => row.id);
-  if (bookingIds.length > 0) {
-    await tx.select({ id: decisions.id }).from(decisions)
-      .where(allOf(eq(decisions.subjectKind, "booking"), inArray(decisions.subjectId, [...bookingIds])))
-      .orderBy(decisions.id)
-      .for("update");
-  }
-  const locked = await tx.select({ id: bookings.id }).from(bookings).where(ownBooking).for("update");
-  const ownBookingIds = new Set(locked.map((row) => row.id));
-  const nearBookings = nearEventIds.length === 0 ? [] : await tx.select({ id: bookings.id }).from(bookings)
-    .where(inArray(bookings.eventId, [...nearEventIds]));
+  const nearBooking = among(bookings.eventId, nearEventIds);
+  const bookingsFound = (await tx.select({ id: bookings.id }).from(bookings).where(or(ownBooking, nearBooking)))
+    .map((row) => row.id);
+
+  // Locked in the other writers' order (see above).
+  const decided = bookingsFound.length === 0 ? [] : (await tx.select({ id: decisions.id }).from(decisions)
+    .where(allOf(eq(decisions.subjectKind, "booking"), inArray(decisions.subjectId, bookingsFound)))).map((row) => row.id);
+  await lockRows(tx, "decisions", decided);
+  await lockRows(tx, "bookings", bookingsFound);
+  await lockRows(tx, "enquiries", enquiryIds);
+  await lockRows(tx, "opportunities", [...dealIds, ...nearDealIds]);
+  await lockRows(tx, "proposals", proposalRows.map((row) => row.id));
+  await lockRows(tx, "events", [...eventIds, ...nearEventIds]);
+  // With their enquiries and events held, no booking can start from or on
+  // them any more: read the bookings again, for one written in between.
+  const ownBookingIds = new Set((await tx.select({ id: bookings.id }).from(bookings).where(ownBooking)).map((row) => row.id));
+  const nearBookingIds = (await tx.select({ id: bookings.id }).from(bookings).where(nearBooking))
+    .map((row) => row.id).filter((id) => !ownBookingIds.has(id));
   return {
     ...base,
     dealIds,
     proposalIds,
     eventIds,
     bookingIds: [...ownBookingIds],
+    layoutIds,
     nearby: {
       dealIds: nearDealIds,
       proposalIds: nearProposalIds,
       eventIds: nearEventIds,
-      bookingIds: nearBookings.map((row) => row.id).filter((id) => !ownBookingIds.has(id)),
+      bookingIds: nearBookingIds,
     },
   };
 }
@@ -497,7 +573,8 @@ export async function findPersonRecords(tx: PeopleTx, person: ContactRow): Promi
     )
     select id from chain`);
   const ids = chain.rows.map((row) => row.id);
-  const people = await tx.select({ name: contacts.name, givenName: contacts.givenName, familyName: contacts.familyName, email: contacts.email })
+  const people = await tx.select({ name: contacts.name, givenName: contacts.givenName, familyName: contacts.familyName, email: contacts.email,
+    phone: contacts.phone })
     .from(contacts).where(inArray(contacts.id, ids)).for("update");
   const points = await tx.select({ value: contactPoints.value }).from(contactPoints)
     .where(allOf(inArray(contactPoints.contactId, ids), eq(contactPoints.kind, "email")));
@@ -517,7 +594,7 @@ export async function findPersonRecords(tx: PeopleTx, person: ContactRow): Promi
       inArray(enquiries.contactId, ids),
       allOf(isNull(enquiries.contactId), or(among(lower(enquiries.email), own), among(lower(enquiries.guestEmail), own)) ?? sql`false`),
     ) ?? sql`false`,
-  )).for("update");
+  ));
 
   const led = await tx.select({ id: clientAccounts.id }).from(clientAccounts)
     .where(allOf(eq(clientAccounts.venueId, venueId), inArray(clientAccounts.primaryContactId, ids)));
@@ -542,6 +619,7 @@ export async function findPersonRecords(tx: PeopleTx, person: ContactRow): Promi
     venueId,
     ids,
     writers: ids,
+    phones: await phonesOf(tx, ids, people.map((row) => row.phone)),
     addresses: own,
     enquiries: theirEnquiries,
     accountIds,
@@ -568,6 +646,7 @@ export async function findEnquiryRecords(
     venueId: enquiry.venueId,
     ids: [],
     writers: options.writers ?? [],
+    phones: options.reword && enquiry.guestPhone !== null ? [enquiry.guestPhone] : [],
     addresses: sentFrom.filter((address) => !held.has(address)),
     enquiries: [enquiry],
     accountIds: [],
@@ -681,20 +760,36 @@ async function reword(tx: PeopleTx, target: Reword, names: readonly string[]): P
   return changed;
 }
 
-/** Their names out of each version's title and message to the client, with
- *  the version's digest made again: the digest is the version's identity for
- *  a contract or a deposit, and neither can exist here (keptRecord refused
- *  them). Returns the proposals whose versions changed. */
+/** The value with every string in it, at any depth, without the names; the
+ *  same value when nothing changed. Keys are left as they are. */
+function deepWithoutNames<T>(value: T, names: readonly string[]): T {
+  if (typeof value === "string") return (withoutNames(value, names) ?? value) as T;
+  if (Array.isArray(value)) {
+    const items: unknown[] = value;
+    const mapped = items.map((item) => deepWithoutNames(item, names));
+    return (mapped.some((item, index) => item !== items[index]) ? mapped : value) as T;
+  }
+  if (typeof value === "object" && value !== null) {
+    const entries = Object.entries(value);
+    const mapped = entries.map(([key, item]) => [key, deepWithoutNames(item, names)] as const);
+    return (mapped.some(([, item], index) => item !== entries[index]?.[1]) ? Object.fromEntries(mapped) : value) as T;
+  }
+  return value;
+}
+
+/** Their names out of every text of each version sent (title, message,
+ *  summaries, quote lines, the occasion), with the version's digest made
+ *  again: the digest is the version's identity for a contract or a deposit,
+ *  and neither exists on these (keptRecord refused them; withoutAgreements
+ *  leaves out another person's). Returns the proposals whose versions changed. */
 async function rewordVersions(tx: PeopleTx, proposalIds: readonly string[], names: readonly string[]): Promise<readonly string[]> {
   if (names.length === 0 || proposalIds.length === 0) return [];
   const versions = await tx.select({ id: proposalVersions.id, proposalId: proposalVersions.proposalId, payload: proposalVersions.payload })
     .from(proposalVersions).where(inArray(proposalVersions.proposalId, [...proposalIds])).for("update");
   const changed = new Set<string>();
   for (const version of versions) {
-    const title = withoutNames(version.payload.title, names) ?? version.payload.title;
-    const clientMessage = withoutNames(version.payload.clientMessage, names);
-    if (title === version.payload.title && clientMessage === version.payload.clientMessage) continue;
-    const payload = { ...version.payload, title, clientMessage };
+    const payload = deepWithoutNames(version.payload, names);
+    if (payload === version.payload) continue;
     await tx.update(proposalVersions).set({ payload, sourceHash: proposalVersionPayloadDigest(payload) })
       .where(eq(proposalVersions.id, version.id));
     changed.add(version.proposalId);
@@ -755,11 +850,39 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
       or(...mentionPatterns(names).map((pattern) => sql`lower(${eventPlanChanges.actorLabel}) like lower(${pattern})`)) ?? sql`false`,
     ));
   const answeredAsThem = labelled.filter((row) => withoutNames(row.label, names) !== row.label);
+  // An answer on a proposal with no event writes no change to the feed, only
+  // the team's notice: it is found by the name typed into it, as the
+  // accepted name or the comment's signature (the share page sends a name
+  // and no address).
+  const typed = !erasing || names.length === 0 ? [] : mentionPatterns(names);
+  const acceptedAs = typed.length === 0 ? [] : (await tx.select({ id: proposals.id, name: proposals.acceptedName }).from(proposals)
+    .where(allOf(
+      eq(proposals.venueId, venueId),
+      notAmong(proposals.id, records.proposalIds),
+      isNotNull(proposals.acceptedName),
+      or(...typed.map((pattern) => sql`lower(${proposals.acceptedName}) like lower(${pattern})`)) ?? sql`false`,
+    ))).filter((row) => withoutNames(row.name, names) !== row.name);
+  const signedByName = typed.length === 0 ? [] : (await tx
+    .select({ id: proposalComments.id, proposalId: proposalComments.proposalId, name: proposalComments.authorName })
+    .from(proposalComments)
+    .innerJoin(proposals, eq(proposals.id, proposalComments.proposalId))
+    .where(allOf(
+      eq(proposals.venueId, venueId),
+      notAmong(proposals.id, records.proposalIds),
+      eq(proposalComments.authorType, "client"),
+      isNotNull(proposalComments.authorName),
+      or(...typed.map((pattern) => sql`lower(${proposalComments.authorName}) like lower(${pattern})`)) ?? sql`false`,
+    ))).filter((row) => withoutNames(row.name, names) !== row.name);
   const elsewhereProposalIds = distinct([
     ...signedElsewhere.map((row) => row.proposalId),
     ...answeredAsThem.flatMap((row) => (row.proposalId === null ? [] : [row.proposalId])),
+    ...acceptedAs.map((row) => row.id),
+    ...signedByName.map((row) => row.proposalId),
   ]);
-  const signedAsThem = answeredAsThem.flatMap((row) => (row.sourceKind === "proposal_comment" ? [row.sourceId] : []));
+  const signedAsThem = [
+    ...answeredAsThem.flatMap((row) => (row.sourceKind === "proposal_comment" ? [row.sourceId] : [])),
+    ...signedByName.map((row) => row.id),
+  ];
 
   // Their copies in the change feed go first (each change's notices go with
   // it), then the notices of a proposal without an event.
@@ -827,6 +950,20 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
     { table: "proposal_comments", columns: { author_name: 200, body: null }, where: among(proposalComments.id, [...othersComments, ...signedAsThem]) },
     { table: "proposal_status_history", columns: { note: null }, where: among(proposalStatusHistory.proposalId, proposalIds) },
     { table: "bookings", columns: { title: 200, notes: null, next_action: 500 }, where: among(bookings.id, bookingIds) },
+    // The note staff type on a Diary transition (a release, a hold put back).
+    { table: "booking_status_history", columns: { note: null }, where: among(bookingStatusHistory.bookingId, bookingIds) },
+    // Requests, conversations and acknowledgements about those bookings and events.
+    { table: "requests", columns: { detail: null, outcome_note: null },
+      where: or(among(requests.bookingId, bookingIds), among(requests.eventId, eventIds)) ?? sql`false` },
+    { table: "threads", columns: { title: 160 }, where: or(among(threads.bookingId, bookingIds), among(threads.eventId, eventIds)) ?? sql`false` },
+    { table: "messages", columns: { author_name: 160, body: 2000 },
+      where: bookingIds.length + eventIds.length === 0 ? sql`false` : sql`"messages"."thread_id" in (
+        select th."id" from "threads" as th where ${or(among(sql`th."booking_id"`, bookingIds), among(sql`th."event_id"`, eventIds)) ?? sql`false`})` },
+    { table: "event_plan_change_acknowledgements", columns: { note: null }, where: among(eventPlanChangeAcknowledgements.eventId, eventIds) },
+    // The BEO compiled for the event copies its name and notes.
+    { table: "beo_documents", columns: { body: null },
+      where: eventIds.length === 0 ? sql`false` : sql`"beo_documents"."handoff_pack_id" in (
+        select hp."id" from "handoff_packs" as hp where ${among(sql`hp."event_id"`, eventIds)})` },
     { table: "events", columns: { name: 200, client_name: 200, notes: null }, where: among(events.id, eventIds) },
     { table: "event_phases", columns: { notes: null }, where: among(eventPhases.eventId, eventIds) },
     // A client's change is labelled with the name they gave; a member of
@@ -854,6 +991,7 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
   // another person's proposal with one keeps its versions as they are.
   const reversioned = await rewordVersions(tx, [...records.proposalIds, ...await withoutAgreements(tx, nearby.proposalIds)], names);
   for (const id of await eraseDecisionReasons(tx, records, names)) changed.add(`decisions:${id}`);
+  for (const key of await rewordLayouts(tx, records, names)) changed.add(key);
   const retitled = [...changed].flatMap((key) => (key.startsWith("proposals:") ? [key.slice("proposals:".length)] : []));
   const reworded = changed.size;
 
@@ -892,6 +1030,84 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
     proposals: distinct([...accepted.map((row) => row.id), ...retitled, ...reversioned]).length,
     reworded,
   };
+}
+
+/** Whether a layout's day-of contact is them: their name, an address of
+ *  theirs, or one of their phone numbers. */
+function isThem(contact: unknown, names: readonly string[], phones: readonly string[]): boolean {
+  if (typeof contact !== "object" || contact === null) return false;
+  const field = (key: string): string => {
+    const value: unknown = (contact as Record<string, unknown>)[key];
+    return typeof value === "string" ? value.trim() : "";
+  };
+  const name = field("name");
+  const email = field("email").toLowerCase();
+  const phone = field("phone");
+  return (name.length > 0 && withoutNames(name, names) !== name)
+    || (email.length > 0 && names.includes(email))
+    || (phone.length > 0 && phones.some((theirs) => samePhone(theirs, phone)));
+}
+
+/** A layout's metadata, or a sheet's payload, with its planner instructions
+ *  taken off them: the day-of contact cleared when it is them, their names out
+ *  of the special instructions and access notes. The same document when
+ *  nothing changed. */
+function instructionsWithoutThem<T>(document: T, names: readonly string[], phones: readonly string[]): T {
+  if (typeof document !== "object" || document === null || Array.isArray(document)) return document;
+  const instructions: unknown = (document as Record<string, unknown>)["instructions"];
+  if (typeof instructions !== "object" || instructions === null || Array.isArray(instructions)) return document;
+  const before = instructions as Record<string, unknown>;
+  const after: Record<string, unknown> = { ...before };
+  let changed = false;
+  for (const key of ["specialInstructions", "accessNotes"]) {
+    const text = before[key];
+    if (typeof text !== "string") continue;
+    const reworded = withoutNames(text, names);
+    if (reworded !== null && reworded !== text) {
+      after[key] = reworded;
+      changed = true;
+    }
+  }
+  if (isThem(before["dayOfContact"], names, phones)) {
+    after["dayOfContact"] = null;
+    changed = true;
+  }
+  return changed ? ({ ...(document as Record<string, unknown>), instructions: after } as T) : document;
+}
+
+/**
+ * The layouts of their enquiries and proposals (their own, and another
+ * person's deal made from their enquiry), and every event sheet issued from
+ * them: a sheet freezes the layout's planner instructions
+ * (configuration_sheet_snapshots.payload). Where the day-of contact the
+ * hallkeeper rings is them it is cleared; their names leave the special
+ * instructions, the access notes and the layout's name. As the allergy-note
+ * retention does (dietary-retention.ts), a sheet keeps its source hash: it
+ * names the version of the layout, not its text. Returns the rows changed.
+ */
+async function rewordLayouts(tx: PeopleTx, records: ErasureRecords, names: readonly string[]): Promise<readonly string[]> {
+  if (records.layoutIds.length === 0 || (names.length === 0 && records.phones.length === 0)) return [];
+  const changed: string[] = [];
+  const layouts = await tx.select({ id: configurations.id, name: configurations.name, metadata: configurations.metadata })
+    .from(configurations).where(inArray(configurations.id, [...records.layoutIds])).for("update");
+  for (const layout of layouts) {
+    const metadata = instructionsWithoutThem(layout.metadata, names, records.phones);
+    const name = (withoutNames(layout.name, names) ?? layout.name).slice(0, 200);
+    if (metadata === layout.metadata && name === layout.name) continue;
+    await tx.update(configurations).set({ name, metadata }).where(eq(configurations.id, layout.id));
+    changed.push(`configurations:${layout.id}`);
+  }
+  const sheets = await tx.select({ id: configurationSheetSnapshots.id, payload: configurationSheetSnapshots.payload })
+    .from(configurationSheetSnapshots)
+    .where(inArray(configurationSheetSnapshots.configurationId, [...records.layoutIds]))
+    .for("update");
+  for (const sheet of sheets) {
+    const payload = instructionsWithoutThem(sheet.payload, names, records.phones);
+    if (payload === sheet.payload) continue;
+    await tx.update(configurationSheetSnapshots).set({ payload }).where(eq(configurationSheetSnapshots.id, sheet.id));
+    changed.push(`configuration_sheet_snapshots:${sheet.id}`);
+  }
+  return changed;
 }
 
 /** Of the proposals, those with no contract prepared and no deposit asked for. */

@@ -1558,6 +1558,17 @@ async function holdProposal(tx: ProposalTransaction, id: string): Promise<Propos
   return row;
 }
 
+/** Whether the client's link still opens the proposal, read again under the
+ *  proposal's lock. An erasure revokes the person's links in the same
+ *  transaction as it takes their words (services/people-erasure.ts), so an
+ *  answer that waited on it is refused instead of written after it. */
+async function linkStillOpen(tx: ProposalTransaction, tokenId: string): Promise<boolean> {
+  const [token] = await tx.select({ revokedAt: proposalShareTokens.revokedAt }).from(proposalShareTokens)
+    .where(eq(proposalShareTokens.id, tokenId))
+    .limit(1);
+  return token !== undefined && token.revokedAt === null;
+}
+
 const STATUS_CHANGED = {
   error: "The proposal changed while this was on its way. Reload it to see where it stands.",
   code: "PROPOSAL_STATUS_CHANGED",
@@ -1992,6 +2003,7 @@ export async function proposalShareRoutes(
       // read. A second request for changes at once is kept as it would have
       // been a moment later, without moving the proposal again.
       const held = await holdProposal(tx, resolved.proposal.id);
+      if (!(await linkStillOpen(tx, resolved.shareToken.id))) return "gone" as const;
       const current = held?.status ?? null;
       if (current !== read && !(kind === "request_changes" && read === "sent" && current === "changes_requested")) {
         return "changed" as const;
@@ -2037,6 +2049,7 @@ export async function proposalShareRoutes(
       const version = kind === "comment" && reading !== undefined && shows !== null && reading <= shows ? reading : shows;
       return { comment, moved: moves, version };
     });
+    if (result === "gone") return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     if (result === "changed") return reply.status(409).send(STATUS_CHANGED);
     if (result === "version") return reply.status(409).send(VERSION_CHANGED);
     const { comment } = result;
@@ -2108,6 +2121,7 @@ export async function proposalShareRoutes(
       // once; anything else that landed since the read (a withdrawal) stands.
       const held = await holdProposal(tx, resolved.proposal.id);
       if (held === undefined) return "changed" as const;
+      if (!(await linkStillOpen(tx, resolved.shareToken.id))) return "gone" as const;
       if (read !== undefined && read !== sentVersionOf(held)) return "version" as const;
       if (held.status === "accepted") return "already" as const;
       if (held.status !== resolved.proposal.status) return "changed" as const;
@@ -2135,6 +2149,7 @@ export async function proposalShareRoutes(
       return { accepted: sentVersionOf(held) };
     });
     if (outcome === "already") return { data: { status: "accepted", already: true } };
+    if (outcome === "gone") return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     if (outcome === "changed") return reply.status(409).send(STATUS_CHANGED);
     if (outcome === "version") return reply.status(409).send(VERSION_CHANGED);
     await moveDealFor(db, resolved.proposal, "accepted", null, request.log);
