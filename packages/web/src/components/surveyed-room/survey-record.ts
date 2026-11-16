@@ -9,8 +9,9 @@
 // renderer needs to place the published files comes from here, so the record
 // is checked as a whole before anything is drawn from it: the outline frames
 // a room, each wall matches its segment, the atlas strips fit and do not
-// overlap, the relief order names exactly the walls, and every file the
-// record points at is one it lists.
+// overlap, the relief order names exactly the walls, the ceiling's and the
+// floor's photographs cover the outline, and every file the record points at
+// is one it lists.
 //
 // Each list of images (`atlas.files`, `ceiling.files`, `floor.files`) is the
 // same photograph at several sizes, largest first: a device takes the first
@@ -29,11 +30,25 @@
 
 import { z } from "zod";
 import { isReliefId, RELIEF_ID_BYTES } from "./relief-container.js";
-import { outlineFault, segmentLength, type PlanPoint } from "./room-frame.js";
+import { outlineBounds, outlineFault, segmentLength, type PlanPoint } from "./room-frame.js";
 
 export const SURVEY_SCHEMA_VERSION = 2;
 /** How far a wall's recorded length may differ from its outline segment, metres. */
 export const WALL_LENGTH_TOLERANCE = 0.002;
+/**
+ * How far the outline may reach past the rectangle an overhead photograph
+ * covers (`ceiling.extent`, `floor.extent`), metres. Past it the photograph's
+ * edge would be smeared over the rest of the surface.
+ *
+ * It is not slack to tighten. The ceiling's photograph covers the outline's
+ * bounding box exactly, but the tools lay the floor's in whole texels of
+ * 1/120 m from the box's lowest x and highest z (roombuild/publish.py
+ * floor_extent), so a published `floor.extent` stops up to half a texel,
+ * 4.17 mm, short of the box's other two sides, or runs that far past them.
+ * 5 mm admits that with 0.8 mm to spare; it is also what a relief may reach
+ * outside its record (room-geometry.ts RELIEF_BOUNDS_TOLERANCE).
+ */
+export const OVERHEAD_EXTENT_TOLERANCE = 0.005;
 /**
  * How far the atlas's row may differ from the heights its strips cover times
  * its texels per metre, in texels: the tools round a row up to a whole texel
@@ -235,6 +250,26 @@ function crossChecks(record: Shape): Issue[] {
     if (extra.length > 0) parts.push(`names ${extra.join(", ")}, which no wall has`);
     if (repeated.length > 0) parts.push(`repeats ${repeated.join(", ")}`);
     issues.push({ path: ["relief", "order"], message: `must list each wall's relief id exactly once; it ${parts.join(" and ")}` });
+  }
+
+  // The floor and a flat ceiling are the outline itself, wearing a photograph laid over its extent:
+  // where the outline reaches past the extent the photograph's edge row or column would be smeared
+  // over the rest (a floor photograph cropped to a room's main rectangle, its bays left off). A
+  // larger extent is no fault. An extent that does not increase has its own fault already.
+  if (outlineValid) {
+    const bounds = outlineBounds(outline);
+    const reach = { x: [bounds.minX, bounds.maxX], z: [bounds.minZ, bounds.maxZ] } as const;
+    for (const part of ["ceiling", "floor"] as const) {
+      for (const axis of ["x", "z"] as const) {
+        const [low, high] = record[part].extent[axis];
+        const [least, most] = reach[axis];
+        if (!(high > low) || (least >= low - OVERHEAD_EXTENT_TOLERANCE && most <= high + OVERHEAD_EXTENT_TOLERANCE)) continue;
+        issues.push({
+          path: [part, "extent", axis],
+          message: `covers ${String(low)} m to ${String(high)} m, but the outline runs from ${String(least)} m to ${String(most)} m along ${axis}, more than ${String(OVERHEAD_EXTENT_TOLERANCE * 1000)} mm outside it: the ${part}'s photograph must cover the whole outline`,
+        });
+      }
+    }
   }
 
   const listed = (name: string): boolean => Object.hasOwn(record.files, name);

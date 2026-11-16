@@ -189,17 +189,17 @@ names every fault it finds. Keys the web does not use are dropped.
 | `atlas.files` | the atlas image at each size, **largest first** | at least one; each listed in `files`; order against byte counts |
 | `walls[]` | `id`, `reliefId`, `length`, `height`, `kind`, `atlas` (the strip's top-left texel, width, height) | one per outline segment, in order; length within 2 mm of its segment; strips inside the atlas, a row high, wide enough, not overlapping |
 | `relief.container`, `file`, `order` | `"GHR1"`, the walls' relief file, its entry ids | `order` is exactly the walls' relief ids |
-| `ceiling.extent` | `{ x: [x0, x1], z: [z0, z1] }` the ceiling photograph covers | increasing |
+| `ceiling.extent` | `{ x: [x0, x1], z: [z0, z1] }` the ceiling photograph covers | increasing; holds the outline's bounding box, to within 5 mm |
 | `ceiling.files` | the ceiling photograph at each size, **largest first** (may be empty) | listed in `files`; order against byte counts |
 | `ceiling.relief` | optional: `file`, `id`, `reference` (the height depth is measured down from), `heightRange` | file listed in `files`; the relief's heights (`reference` minus depth) must lie in `heightRange` when it loads |
-| `floor.extent` | `{ x: [x0, x1], z: [z0, z1] }` the floor photograph covers | increasing |
+| `floor.extent` | `{ x: [x0, x1], z: [z0, z1] }` the floor photograph covers | increasing; holds the outline's bounding box, to within 5 mm |
 | `floor.files` | the floor photograph at each size, **largest first** (may be empty) | listed in `files`; order against byte counts |
 | `ceiling.orientation`, `floor.orientation` | optional statement of how the image lies | if present, must be `"columns planner +x, rows from planner +z"` |
 | `files` | every published file's `bytes` and `sha256` | every file the record points at is listed |
 
 Version 2 adds to the tools' version 1 (which `publish.py` writes today): `room`, each wall's
 `height` and `kind`, `atlas.files`, the whole `floor` block and the largest-first rule. No version 2
-record has been published yet. Three things are assumptions the tools have yet to state, and the
+record has been published yet. Two things are assumptions the tools have yet to state, and the
 reader holds them:
 
 - **The floor photograph's orientation.** The ceiling photograph has its columns along planner +x
@@ -208,8 +208,16 @@ reader holds them:
   Grand Hall's does (`floorUv`). Where a record states an `orientation`, it must be that one.
 - **Largest first.** The record carries no pixel sizes, so the order of each image list is checked
   against the files' byte counts: a later image larger in bytes than the one before it is refused.
-- **`floor.extent`.** Taken as given; in the test fixture it is the outline's bounds, as the
-  ceiling's is.
+
+**The extents cover the outline.** The floor, and a ceiling without a relief, are the outline
+itself wearing a photograph laid over its extent, so where the outline reached past the extent the
+photograph's edge would be smeared over the rest (a floor photograph cropped to a room's main
+rectangle, its bays left off). A record whose `ceiling.extent` or `floor.extent` does not hold the
+outline's bounding box is refused, naming the extent and the axis. The tolerance is 5 mm
+(`OVERHEAD_EXTENT_TOLERANCE`), and it is not slack to tighten: the ceiling's photograph covers the
+box exactly, but the tools lay the floor's in whole texels of 1/120 m from the box's lowest x and
+highest z, so a published `floor.extent` stops up to half a texel (4.17 mm) short of the other two
+sides, or runs that far past them. An extent larger than the box is accepted.
 
 Frames follow the tools: metres, y up, origin at the centre of the floor; `u` runs left to right as
 you face a wall from inside, so `u = 0` is at its segment's end vertex; depth is positive towards

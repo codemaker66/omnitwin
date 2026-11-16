@@ -12,7 +12,7 @@ interface RawRecord {
   atlas: { files?: string[]; [key: string]: unknown };
   walls: { id: string; reliefId: string; length: number; atlas: number[]; [key: string]: unknown }[];
   relief: { file: string; order: string[]; [key: string]: unknown };
-  ceiling: { files: string[]; orientation?: string; relief?: { file: string; [key: string]: unknown }; [key: string]: unknown };
+  ceiling: { files: string[]; extent?: RawExtent; orientation?: string; relief?: { file: string; [key: string]: unknown }; [key: string]: unknown };
   floor: { files: string[]; extent?: RawExtent; orientation?: string };
   files: Record<string, { bytes: number; sha256: string }>;
 }
@@ -244,6 +244,45 @@ describe("survey.json, schema version 2", () => {
     const backwards = saloon();
     backwards.floor.extent = { x: [6.095, -6.096], z: [-3.734, 3.739] };
     expect(faults(backwards)).toEqual(["floor.extent.x: must increase ([low, high])"]);
+  });
+
+  it("refuses a floor or ceiling photograph that does not cover the outline", () => {
+    // The floor's photograph cropped to the Saloon's main rectangle: the recessed middles of its two
+    // long walls, 0.24 m and 0.225 m deep, would wear the photograph's edge rows smeared across them.
+    const cropped = saloon();
+    cropped.floor.extent = { x: [-6.096, 6.095], z: [-3.494, 3.514] };
+    expect(faults(cropped)).toEqual([
+      "floor.extent.z: covers -3.494 m to 3.514 m, but the outline runs from -3.734 m to 3.739 m along z, more than 5 mm outside it: the floor's photograph must cover the whole outline",
+    ]);
+    // The ceiling's the same, on either axis and at either end.
+    const narrow = saloon();
+    narrow.ceiling.extent = { x: [-6.09, 6.095], z: [-3.734, 3.739] };
+    expect(faults(narrow)).toEqual([
+      "ceiling.extent.x: covers -6.09 m to 6.095 m, but the outline runs from -6.096 m to 6.095 m along x, more than 5 mm outside it: the ceiling's photograph must cover the whole outline",
+    ]);
+    const both = saloon();
+    both.floor.extent = { x: [-6.096, 6], z: [-3, 3.739] };
+    expect(faults(both)).toEqual([
+      expect.stringMatching(/^floor\.extent\.x: covers -6\.096 m to 6 m, but the outline runs from -6\.096 m to 6\.095 m along x/),
+      expect.stringMatching(/^floor\.extent\.z: covers -3 m to 3\.739 m, but the outline runs from -3\.734 m to 3\.739 m along z/),
+    ]);
+  });
+
+  it("accepts a floor photograph half a texel short of the outline's box, and one larger than it", () => {
+    // The tools lay the floor's photograph in whole texels of 1/120 m from the box's lowest x and
+    // highest z, so its extent stops up to half a texel (4.17 mm) short of the other two sides.
+    const short = saloon();
+    short.floor.extent = { x: [-6.096, 6.091], z: [-3.73, 3.739] };
+    expect(parseSurveyRecord(short).floor.extent).toEqual({ x: [-6.096, 6.091], z: [-3.73, 3.739] });
+    // A millimetre past the tolerance is a photograph that does not cover its floor.
+    const shorter = saloon();
+    shorter.floor.extent = { x: [-6.096, 6.089], z: [-3.734, 3.739] };
+    expect(faults(shorter)).toEqual([expect.stringMatching(/^floor\.extent\.x: covers -6\.096 m to 6\.089 m/)]);
+    // Or runs past them, as the Saloon's own does; and a photograph of more than the room is no fault.
+    const past = saloon();
+    past.floor.extent = { x: [-6.096, 6.095833], z: [-3.736, 3.739] };
+    past.ceiling.extent = { x: [-7, 7], z: [-4.5, 4.5] };
+    expect(() => parseSurveyRecord(past)).not.toThrow();
   });
 
   it("accepts a ceiling and a floor that publish no photograph, and one size of each image", () => {
