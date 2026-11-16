@@ -180,26 +180,36 @@ function recordPrint(): void {
 /** Print: the fonts, then the version recorded and kept on the device, then the browser's print. */
 function usePrint(): { readonly printing: boolean; readonly print: () => void } {
   const busy = useRef(false);
+  /** False once the planner has left the paper: what is on screen then is another page. */
+  const here = useRef(false);
   const [printing, setPrinting] = useState(false);
 
   // The browser's own Print command (a menu, a keyboard shortcut) records the
   // version too, so no sheet goes out carrying an earlier version's number.
   useEffect(() => {
+    here.current = true;
     const onBeforePrint = (): void => {
       if (busy.current) return;
       recordPrint();
       void useGuestListStore.getState().flush();
     };
     window.addEventListener("beforeprint", onBeforePrint);
-    return () => { window.removeEventListener("beforeprint", onBeforePrint); };
+    return () => {
+      here.current = false;
+      window.removeEventListener("beforeprint", onBeforePrint);
+    };
   }, []);
+
+  // Read afresh after each wait: the planner may leave while one runs.
+  const stillHere = (): boolean => here.current;
 
   const run = async (): Promise<void> => {
     try {
       await fontsLoaded();
+      if (!stillHere()) return;
       recordPrint();
       await useGuestListStore.getState().flush();
-      window.print();
+      if (stillHere()) window.print();
     } finally {
       busy.current = false;
       setPrinting(false);

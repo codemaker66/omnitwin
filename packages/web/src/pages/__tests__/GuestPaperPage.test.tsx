@@ -549,6 +549,23 @@ describe("the guest paper page: printing", () => {
     expect(printSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("does not print another page when the planner leaves while Print is waiting", async () => {
+    const fonts = deferred<undefined>();
+    fontsReady(fonts.promise);
+    open(`${PAPER}?kit=on`, await storeHolding(list180()));
+    await paper("table-plan");
+    fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
+    fireEvent.click(within(tools()).getByRole("link", { name: "Back to the list" }));
+    expect(await screen.findByTestId("list")).toBeTruthy();
+    fonts.resolve(undefined);
+    await act(async () => {
+      await state().flush();
+    });
+    expect(printSpy).not.toHaveBeenCalled();
+    // Nothing went to paper, so no version was recorded.
+    expect(currentList().paperVersion).toBe(0);
+  });
+
   it("a first print is version 1, and printing again unchanged keeps the version", async () => {
     open(`${PAPER}?kit=on`, await storeHolding(list180()));
     await paper("table-plan");
