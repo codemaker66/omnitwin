@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   deal as dealIn,
   enquiry as enquiryIn,
@@ -51,16 +51,25 @@ import {
 //  R  a withdrawn enquiry with two sent proposals, one whose plan reaches one event and one that
 //     reaches nothing, written in both orders
 //
+// The same cases then show the undo (spine_undo_joins): after a person moves
+// one joined record and links a floor plan to one event the join made, the
+// undo puts every other link, event and phase back as it was before the
+// migration, row for row, keeps those two with their joins, and the join run
+// again lands where it did.
+//
 // A second block runs the join beside a writer on another connection: a row
 // the writer holds is left for the next run, never waited for; a writer's
 // uncommitted open deal on the same event is waited for 100 ms at most, and
 // the event is held only as a key share, so a writer taking it FOR NO KEY
 // UPDATE never waits and one taking it FOR UPDATE is never half of a
 // deadlock; and while a writer holds the event an enquiry's held dates sit in,
-// nothing is made for the enquiry or its deal.
+// nothing is made for the enquiry or its deal. A third runs the undo beside a
+// writer: a record or an event the writer holds is left to the undo's next
+// run, never waited for.
 //
 // The suites run on throwaway databases of their own (openSpineDatabaseBefore,
-// openSpineDatabase); the shared platform database is only the door to the cluster.
+// a fresh one for each case of the first block, and openSpineDatabase); the
+// shared platform database is only the door to the cluster.
 // ---------------------------------------------------------------------------
 
 const target = platformTarget();
@@ -75,11 +84,16 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
   let before: SpineDatabaseBefore | undefined;
   let legacy: Pool;
 
-  beforeAll(async () => {
+  // Each case runs the migration once, so each has a database written before it.
+  beforeEach(async () => {
     before = await openSpineDatabaseBefore("links_migration");
     legacy = before.pool;
   }, 180_000);
-  afterAll(async () => { await before?.close(); });
+  afterEach(async () => {
+    const done = before;
+    before = undefined;
+    await done?.close();
+  });
 
   const q = (text: string, values: readonly unknown[] = []) => legacy.query<Row>(text, [...values]);
 
@@ -574,6 +588,130 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
     expect(await eventOf("enquiries", p.enquiry)).toBe(later);
     expect(await joinOf("enquiry", p.enquiry)).toEqual(["deal", false]);
   }, 180_000);
+
+  // -- The undo --------------------------------------------------------------
+
+  type Restorable = Record<"enquiries" | "opportunities" | "proposals" | "depositRequests" | "events" | "phases", Row[]>;
+  const RECORD_TABLES = ["enquiries", "opportunities", "proposals", "depositRequests"] as const;
+
+  /** Every link, event and phase; read the same way before the links exist (a link then reads null) and after. */
+  async function restorable(): Promise<Restorable> {
+    const links = async (table: string): Promise<Row[]> =>
+      (await q(`SELECT id, to_jsonb(t) ->> 'event_id' AS event_id FROM ${table} t ORDER BY id`)).rows;
+    return {
+      enquiries: await links("enquiries"),
+      opportunities: await links("opportunities"),
+      proposals: await links("proposals"),
+      depositRequests: await links("proposal_deposit_requests"),
+      events: (await q("SELECT id, status, updated_at, deleted_at FROM events ORDER BY id")).rows,
+      phases: (await q("SELECT id, event_id FROM event_phases ORDER BY id")).rows,
+    };
+  }
+
+  /** Each record's event, an event the join made being named by the first record on it, so two runs of the join compare. */
+  function shape(s: Restorable, existing: ReadonlySet<string>, leave: string): Array<readonly [string, string | null]> {
+    const text = (value: unknown): string => {
+      if (typeof value !== "string") throw new Error("Expected an id");
+      return value;
+    };
+    const keyed = RECORD_TABLES.flatMap((table) => s[table].map((row) =>
+      [`${table}:${text(row["id"])}`, row["event_id"] === null ? null : text(row["event_id"])] as const));
+    const firstOn = new Map<string, string>();
+    for (const [key, eventId] of keyed) {
+      if (eventId !== null && !existing.has(eventId) && !firstOn.has(eventId)) firstOn.set(eventId, key);
+    }
+    return keyed.filter(([key]) => key !== `proposals:${leave}`)
+      .map(([key, eventId]) => [key, eventId === null || existing.has(eventId) ? eventId : `made, first with ${firstOn.get(eventId) ?? "?"}`]);
+  }
+
+  it("undoes its own joins row for row, and leaves what a person changed", async () => {
+    if (before === undefined) throw new Error("The database before the spine was not made");
+    const mixedPlace = await place("undo mixed"), cleanPlace = await place("undo clean");
+    const mixed = mixedPlace.venueId;
+    // The cases of the first test.
+    await caseA(mixedPlace);
+    const b = await caseB(mixedPlace);
+    await caseC(mixedPlace);
+    await enquiry(mixedPlace, { state: "submitted" });
+    await enquiry(mixedPlace, { state: "rejected", replied: true });
+    const f = await caseF(mixedPlace);
+    await caseG(mixedPlace);
+    await caseH(mixedPlace);
+    const i = await caseI(mixedPlace), j = await caseJ(mixedPlace);
+    await caseK(mixedPlace, true);
+    await caseL(mixedPlace);
+    await caseM(mixedPlace);
+    await caseN(mixedPlace);
+    await caseO(mixedPlace);
+    await caseP(mixedPlace);
+    await caseR(mixedPlace, true);
+    await caseR(mixedPlace, false);
+    await caseA(cleanPlace);
+    await caseB(cleanPlace);
+    await caseF(cleanPlace);
+    await caseI(cleanPlace);
+    await caseK(cleanPlace, false);
+    const untouched = await restorable();
+    const existing = new Set(untouched.events.map((row) => String(row["id"])));
+
+    await before.migrateToHead();
+    const joined = await restorable();
+    const listed = await openReviews(mixed);
+    const inForce = await count("SELECT count(*)::int AS count FROM event_link_joins WHERE undone_at IS NULL");
+    const made = await count("SELECT count(*)::int AS count FROM event_link_joins WHERE undone_at IS NULL AND event_made");
+    const iOpenEvent = await eventOf("opportunities", i.open);
+    if (iOpenEvent === null) throw new Error("I's open deal was given no event");
+    expect(made).toBeGreaterThan(1);
+
+    // A person moves one joined proposal to an event of their own, and links a floor plan to the event
+    // the join made for I's open deal.
+    const otherEvent = await event(mixedPlace, "Made by a person");
+    await q("UPDATE proposals SET event_id = $1 WHERE id = $2", [otherEvent, j.oneLink]);
+    await linkPlan(iOpenEvent, await plan(mixedPlace));
+
+    // The undo, in a transaction of the caller's: once it returns, the link rule is back in force there.
+    const client = await legacy.connect();
+    try {
+      await client.query("BEGIN");
+      // Left: the proposal a person moved, and the one join to the made event a plan is now linked to.
+      expect((await client.query<Row>("SELECT * FROM spine_undo_joins()")).rows[0])
+        .toEqual({ emptied: inForce - 2, events_removed: made - 1, left_alone: 2 });
+      expect((await client.query<Row>("SELECT current_setting('venviewer.undo_event_links', true) AS setting")).rows[0]?.["setting"])
+        .not.toBe("on");
+      await client.query("SAVEPOINT emptying");
+      await expect(client.query("UPDATE proposals SET event_id = NULL WHERE id = $1", [j.oneLink])).rejects.toThrow(/cannot be removed/);
+      await client.query("ROLLBACK TO SAVEPOINT emptying");
+      await client.query("COMMIT");
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+
+    // The two left alone, with their joins in force; I's event kept whole, not orphaned.
+    expect(await eventOf("proposals", j.oneLink)).toBe(otherEvent);
+    expect(await eventOf("opportunities", i.open)).toBe(iOpenEvent);
+    expect(await phaseCount(iOpenEvent)).toBe(8);
+    expect([await joinOf("proposal", j.oneLink), await joinOf("opportunity", i.open)]).toEqual([["plan_link", false], ["new_event", true]]);
+    expect(await count("SELECT count(*)::int AS count FROM event_link_joins WHERE undone_at IS NULL")).toBe(2);
+    // Everything else is as it was before the migration, row for row: every link, every event, every phase.
+    const withoutThose = (s: Restorable): Restorable => ({
+      ...s,
+      proposals: s.proposals.filter((row) => row["id"] !== j.oneLink),
+      opportunities: s.opportunities.filter((row) => row["id"] !== i.open),
+      events: s.events.filter((row) => row["id"] !== otherEvent && row["id"] !== iOpenEvent),
+      phases: s.phases.filter((row) => row["event_id"] !== iOpenEvent),
+    });
+    expect(withoutThose(await restorable())).toEqual(withoutThose(untouched));
+    // The open questions the join wrote are gone; the copies of October's list stay.
+    expect(await openReviews(mixed)).toEqual([]);
+    expect(await copiedReviewCount(mixed)).toBe(2);
+
+    // The join can be run again afterwards and lands where it did; the two left alone stay where they are.
+    expect(await runJoin()).toEqual({ joined: inForce - 2, events_made: made - 1, listed: listed.length });
+    expect(shape(await restorable(), existing, j.oneLink)).toEqual(shape(joined, existing, j.oneLink));
+    expect(await openReviews(mixed)).toEqual(listed);
+    expect([await eventOf("enquiries", b.enquiry), await eventOf("enquiries", f.enquiry)]).toEqual([b.event, f.event]);
+  }, 180_000);
 });
 
 describe.skipIf(target === undefined)("the spine: the join beside a live writer", () => {
@@ -732,5 +870,77 @@ describe.skipIf(target === undefined)("the spine: the join beside a live writer"
       join.release();
     }
     expect([await linkOf("enquiries", enquiryId), await linkOf("opportunities", mine)]).toEqual([z, z]);
+  }, 60_000);
+});
+
+describe.skipIf(target === undefined)("the spine: the undo beside a live writer", () => {
+  let spine: SpineDatabase | undefined;
+  let pool: Pool;
+
+  beforeAll(async () => {
+    spine = await openSpineDatabase("links_undo_beside_writer");
+    pool = spine.pool;
+  }, 180_000);
+  afterAll(async () => { await spine?.close(); });
+
+  const one = async (client: Pool | PoolClient, text: string, values: readonly unknown[] = []): Promise<Row | undefined> =>
+    (await client.query<Row>(text, [...values])).rows[0];
+  const undoIsOn = async (client: PoolClient): Promise<unknown> =>
+    (await one(client, "SELECT current_setting('venviewer.undo_event_links', true) IS NOT DISTINCT FROM 'on' AS on"))?.["on"];
+
+  it("leaves a record and an event a writer holds to its next run, never waits for them, and leaves the link rule in force even when it fails", async () => {
+    const v = await venueIn(pool, "undo beside a writer");
+    const x = await eventIn(pool, v.venueId, "X");
+    // One enquiry joins X through its held date; one worked enquiry is given an event of its own.
+    const held = await enquiryIn(pool, v.venueId, "under_review");
+    await pool.query(`INSERT INTO bookings (venue_id, space_id, event_id, enquiry_id, kind, status, title, starts_at, ends_at)
+      VALUES ($1, $2, $3, $4, 'hold', 'active', 'Held date', now() + interval '400 days', now() + interval '400 days 4 hours')`,
+    [v.venueId, v.rooms.hall, x, held]);
+    const worked = await enquiryIn(pool, v.venueId, "under_review");
+    await pool.query(`UPDATE enquiries SET first_response_at = created_at, first_response_channel = 'email',
+      first_response_recorded_at = created_at WHERE id = $1`, [worked]);
+    expect(await one(pool, "SELECT * FROM spine_join_old_records()")).toEqual({ joined: 2, events_made: 1, listed: 0 });
+    const made = (await one(pool, "SELECT event_id FROM enquiries WHERE id = $1", [worked]))?.["event_id"];
+    const links = async (): Promise<unknown[]> => [
+      (await one(pool, "SELECT event_id FROM enquiries WHERE id = $1", [held]))?.["event_id"],
+      (await one(pool, "SELECT event_id FROM enquiries WHERE id = $1", [worked]))?.["event_id"],
+    ];
+
+    const writer = await pool.connect(), undo = await pool.connect();
+    try {
+      // A lock wait would fail after three seconds rather than hang.
+      await undo.query("SET lock_timeout = '3s'");
+      // An undo that fails part-way (here a read-only transaction refuses its first row lock) leaves the rule in force.
+      await undo.query("BEGIN READ ONLY");
+      await undo.query("SAVEPOINT failing");
+      await expect(undo.query("SELECT * FROM spine_undo_joins()")).rejects.toThrow(/read-only transaction/);
+      await undo.query("ROLLBACK TO SAVEPOINT failing");
+      expect(await undoIsOn(undo)).toBe(false);
+      await undo.query("ROLLBACK");
+
+      // The writer holds the first enquiry's row, and holds the made event as a key share, as anything
+      // attaching a row to it does until it commits.
+      await writer.query("BEGIN");
+      await writer.query("SELECT id FROM enquiries WHERE id = $1 FOR NO KEY UPDATE", [held]);
+      await writer.query("SELECT id FROM events WHERE id = $1 FOR KEY SHARE", [made]);
+      const started = Date.now();
+      expect(await one(undo, "SELECT * FROM spine_undo_joins()")).toEqual({ emptied: 0, events_removed: 0, left_alone: 2 });
+      expect(Date.now() - started).toBeLessThan(2_500);
+      expect(await links()).toEqual([x, made]);
+      expect(await one(pool, "SELECT count(*)::int AS count FROM event_link_joins WHERE undone_at IS NULL")).toEqual({ count: 2 });
+      await writer.query("COMMIT");
+
+      // Its next run finishes the job.
+      expect(await one(undo, "SELECT * FROM spine_undo_joins()")).toEqual({ emptied: 2, events_removed: 1, left_alone: 0 });
+    } finally {
+      await writer.query("ROLLBACK");
+      writer.release();
+      undo.release();
+    }
+    expect(await links()).toEqual([null, null]);
+    expect(await one(pool, `SELECT (SELECT count(*)::int FROM events WHERE id = $1) AS events,
+      (SELECT count(*)::int FROM event_phases WHERE event_id = $1) AS phases,
+      (SELECT count(*)::int FROM event_link_joins WHERE undone_at IS NULL) AS joins`, [made])).toEqual({ events: 0, phases: 0, joins: 0 });
+    expect(await one(pool, "SELECT count(*)::int AS count FROM events WHERE id = $1", [x])).toEqual({ count: 1 });
   }, 60_000);
 });

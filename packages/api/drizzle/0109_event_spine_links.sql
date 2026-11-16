@@ -41,6 +41,8 @@
 --      event a path reaches, goes on the list when paths disagree, or gets an
 --      event of its own when it must have one and nothing reaches any. The
 --      deploy and the nightly workflows call it again.
+--   8. spine_undo_joins(), the join's undo, read from its own record: an
+--      operator's tool, run by hand. This file never calls it.
 --
 -- Re-running the file changes nothing: every step skips what is already in
 -- place, a review row is copied once, and the join finds nothing left to do.
@@ -938,6 +940,254 @@ BEGIN
   RETURN NEXT;
 END;
 $join$;
+--> statement-breakpoint
+
+-- 8. The undo of the join -----------------------------------------------------
+-- Puts back what the join did, read from its own record (event_link_joins),
+-- and leaves what a person has changed since. An operator's tool, run by hand
+-- and rarely; nothing calls it. Stop the deploy's and the nightly runs of the
+-- join first: the next of them would join again what was undone.
+--
+-- An event the join made (the one join row with event_made) goes, with its
+-- phases, only when nothing has attached to it since: every join recorded to
+-- it still holds; the event is as made (updated_at still its created_at, not
+-- deleted); no phase of it has been given a room or a time, or edited; and no
+-- row points at it or at one of its phases other than the records joined to
+-- it. Every foreign key to events and to event_phases is read from
+-- pg_constraint as it runs, so a table added later is covered. An event that
+-- may not go is kept WITH its joins: each of its join rows is counted in
+-- left_alone and stays in force. Every other join in force, newest first, is
+-- undone when its record still names the event it was given (the link is
+-- emptied and the row stamped undone_at); one a person has moved is counted in
+-- left_alone and left. Last, the open questions the join wrote are deleted;
+-- the copies of October's list stay.
+--
+-- Locks. As the join: no table lock, and never a wait for a row. Each record
+-- it will empty is locked FOR NO KEY UPDATE SKIP LOCKED, still naming the
+-- recorded event; an event it will delete is taken after its records (the
+-- writers' order: bookings, the proposal, the enquiry, the deal, the event)
+-- FOR UPDATE SKIP LOCKED, which no row can be attached to while it is held,
+-- then its phases FOR UPDATE SKIP LOCKED, and it is decided again under those
+-- locks. A row it cannot have at once is left: its join stays in force and is
+-- counted in left_alone, so a second run finishes the job. An event a writer
+-- is attaching a row to is held by that writer's key share, so it is kept.
+--
+-- The link trigger lets a link be emptied only while venviewer.undo_event_links
+-- is 'on'. The undo sets it for its own transaction and puts back what was
+-- there before it returns; when it raises, the (sub)transaction that rolls
+-- back puts it back, as it does every setting made in it.
+CREATE OR REPLACE FUNCTION "spine_undo_joins"()
+  RETURNS TABLE ("emptied" integer, "events_removed" integer, "left_alone" integer)
+  LANGUAGE plpgsql
+  AS $undo$
+DECLARE
+  v_prior text := current_setting('venviewer.undo_event_links', true);
+  -- Every foreign key to events (but an event's own phases) or to event_phases:
+  v_fk_tables text[];   -- the referencing table, quoted
+  v_fk_columns text[];  -- its column that names the event's or the phase's id
+  v_fk_targets text[];  -- 'event' or 'phase'
+  v_fk_kinds text[];    -- the kind of record the join records in that table, or NULL
+  v_event uuid;
+  v_join record;
+  v_joins integer;
+  v_held integer;
+  v_phases integer;
+  v_may_go boolean;
+  v_locked boolean;
+  v_attached boolean;
+  v_i integer;
+  v_removable uuid[] := '{}';
+  v_emptied integer := 0;
+  v_events_removed integer := 0;
+  v_left_alone integer := 0;
+BEGIN
+  PERFORM set_config('venviewer.undo_event_links', 'on', true);
+
+  SELECT coalesce(array_agg(f."tbl" ORDER BY f."ord"), '{}'),
+    coalesce(array_agg(f."col" ORDER BY f."ord"), '{}'),
+    coalesce(array_agg(f."target" ORDER BY f."ord"), '{}'),
+    coalesce(array_agg(f."kind" ORDER BY f."ord"), '{}')
+  INTO v_fk_tables, v_fk_columns, v_fk_targets, v_fk_kinds
+  FROM (
+    SELECT c."conrelid"::regclass::text AS "tbl", a."attname"::text AS "col",
+      CASE WHEN c."confrelid"::regclass = '"events"'::regclass THEN 'event' ELSE 'phase' END AS "target",
+      CASE c."conrelid"::regclass
+        WHEN '"enquiries"'::regclass THEN 'enquiry'
+        WHEN '"opportunities"'::regclass THEN 'opportunity'
+        WHEN '"proposals"'::regclass THEN 'proposal'
+        WHEN '"proposal_deposit_requests"'::regclass THEN 'deposit_request'
+      END AS "kind",
+      row_number() OVER (ORDER BY c."conname", k."n") AS "ord"
+    FROM pg_constraint c
+    CROSS JOIN LATERAL unnest(c."conkey", c."confkey") WITH ORDINALITY AS k("referencing", "referenced", "n")
+    JOIN pg_attribute a ON a."attrelid" = c."conrelid" AND a."attnum" = k."referencing"
+    JOIN pg_attribute r ON r."attrelid" = c."confrelid" AND r."attnum" = k."referenced" AND r."attname" = 'id'
+    WHERE c."contype" = 'f'
+      AND c."confrelid"::regclass IN ('"events"'::regclass, '"event_phases"'::regclass)
+      -- An event's own phases are judged by what they hold, below.
+      AND NOT (c."conrelid"::regclass = '"event_phases"'::regclass AND c."confrelid"::regclass = '"events"'::regclass)
+  ) f;
+
+  -- 1. Which events the join made may go. ----------------------------------
+  FOR v_event IN
+    SELECT DISTINCT j."event_id" FROM "event_link_joins" j
+    WHERE j."event_made" AND j."undone_at" IS NULL
+    ORDER BY j."event_id"
+  LOOP
+    v_locked := false;
+    LOOP
+      -- Decided on a plain read, then again under its locks.
+      v_may_go :=
+        -- Every join recorded to it still holds.
+        NOT EXISTS (SELECT 1 FROM "event_link_joins" j
+          WHERE j."event_id" = v_event AND j."undone_at" IS NULL
+            AND j."event_id" IS DISTINCT FROM (CASE j."subject_kind"
+              WHEN 'enquiry' THEN (SELECT x."event_id" FROM "enquiries" x WHERE x."id" = j."subject_id")
+              WHEN 'opportunity' THEN (SELECT x."event_id" FROM "opportunities" x WHERE x."id" = j."subject_id")
+              WHEN 'proposal' THEN (SELECT x."event_id" FROM "proposals" x WHERE x."id" = j."subject_id")
+              ELSE (SELECT x."event_id" FROM "proposal_deposit_requests" x WHERE x."id" = j."subject_id")
+            END))
+        -- The event is as the join made it.
+        AND EXISTS (SELECT 1 FROM "events" e
+          WHERE e."id" = v_event AND e."deleted_at" IS NULL AND e."updated_at" = e."created_at")
+        -- No phase of it has been given a room or a time, or edited.
+        AND NOT EXISTS (SELECT 1 FROM "event_phases" ph
+          WHERE ph."event_id" = v_event
+            AND (ph."space_id" IS NOT NULL OR ph."starts_at" IS NOT NULL OR ph."updated_at" <> ph."created_at"));
+      -- Nothing else points at it or at one of its phases.
+      v_i := 0;
+      WHILE v_may_go AND v_i < cardinality(v_fk_tables) LOOP
+        v_i := v_i + 1;
+        IF v_fk_targets[v_i] = 'phase' THEN
+          EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s t WHERE t.%I IN '
+              '(SELECT ph."id" FROM "event_phases" ph WHERE ph."event_id" = $1))',
+            v_fk_tables[v_i], v_fk_columns[v_i])
+          INTO v_attached USING v_event;
+        ELSIF v_fk_kinds[v_i] IS NULL THEN
+          EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s t WHERE t.%I = $1)', v_fk_tables[v_i], v_fk_columns[v_i])
+          INTO v_attached USING v_event;
+        ELSE
+          -- A table the join records in: its records joined to this event are left out.
+          EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s t WHERE t.%I = $1 AND t."id" NOT IN '
+              '(SELECT j."subject_id" FROM "event_link_joins" j '
+              'WHERE j."event_id" = $1 AND j."undone_at" IS NULL AND j."subject_kind" = $2))',
+            v_fk_tables[v_i], v_fk_columns[v_i])
+          INTO v_attached USING v_event, v_fk_kinds[v_i];
+        END IF;
+        v_may_go := NOT v_attached;
+      END LOOP;
+      EXIT WHEN NOT v_may_go;
+
+      -- Its records, in the writers' order, each still naming it (on the
+      -- second pass these are already held, and nothing new can be joined to
+      -- the event while it is held).
+      v_joins := (SELECT count(*) FROM "event_link_joins" j WHERE j."event_id" = v_event AND j."undone_at" IS NULL);
+      v_held :=
+        (SELECT count(*) FROM (SELECT 1 FROM "proposals" x
+          WHERE x."event_id" = v_event AND x."id" IN (SELECT j."subject_id" FROM "event_link_joins" j
+            WHERE j."event_id" = v_event AND j."undone_at" IS NULL AND j."subject_kind" = 'proposal')
+          FOR NO KEY UPDATE SKIP LOCKED) s)
+        + (SELECT count(*) FROM (SELECT 1 FROM "enquiries" x
+          WHERE x."event_id" = v_event AND x."id" IN (SELECT j."subject_id" FROM "event_link_joins" j
+            WHERE j."event_id" = v_event AND j."undone_at" IS NULL AND j."subject_kind" = 'enquiry')
+          FOR NO KEY UPDATE SKIP LOCKED) s)
+        + (SELECT count(*) FROM (SELECT 1 FROM "proposal_deposit_requests" x
+          WHERE x."event_id" = v_event AND x."id" IN (SELECT j."subject_id" FROM "event_link_joins" j
+            WHERE j."event_id" = v_event AND j."undone_at" IS NULL AND j."subject_kind" = 'deposit_request')
+          FOR NO KEY UPDATE SKIP LOCKED) s)
+        + (SELECT count(*) FROM (SELECT 1 FROM "opportunities" x
+          WHERE x."event_id" = v_event AND x."id" IN (SELECT j."subject_id" FROM "event_link_joins" j
+            WHERE j."event_id" = v_event AND j."undone_at" IS NULL AND j."subject_kind" = 'opportunity')
+          FOR NO KEY UPDATE SKIP LOCKED) s);
+      IF v_held < v_joins THEN
+        v_may_go := false;
+        EXIT;
+      END IF;
+      EXIT WHEN v_locked;
+      -- Then the event, and then every one of its phases.
+      PERFORM 1 FROM "events" e WHERE e."id" = v_event FOR UPDATE SKIP LOCKED;
+      IF NOT FOUND THEN
+        v_may_go := false;
+        EXIT;
+      END IF;
+      v_phases := (SELECT count(*) FROM "event_phases" ph WHERE ph."event_id" = v_event);
+      IF (SELECT count(*) FROM (SELECT 1 FROM "event_phases" ph WHERE ph."event_id" = v_event
+          FOR UPDATE SKIP LOCKED) s) < v_phases THEN
+        v_may_go := false;
+        EXIT;
+      END IF;
+      v_locked := true;
+    END LOOP;
+    IF v_may_go THEN
+      v_removable := v_removable || v_event;
+    END IF;
+  END LOOP;
+
+  -- 2. Every join in force, newest first. ----------------------------------
+  FOR v_join IN
+    SELECT j."id", j."subject_kind", j."subject_id", j."event_id"
+    FROM "event_link_joins" j
+    WHERE j."undone_at" IS NULL
+    ORDER BY j."joined_at" DESC, j."id"
+  LOOP
+    -- A join to an event the join made that is kept stays with its event.
+    IF v_join."event_id" <> ALL (v_removable) AND EXISTS (SELECT 1 FROM "event_link_joins" m
+        WHERE m."event_id" = v_join."event_id" AND m."event_made" AND m."undone_at" IS NULL) THEN
+      v_left_alone := v_left_alone + 1;
+      CONTINUE;
+    END IF;
+    -- Its record, still naming the event it was given.
+    CASE v_join."subject_kind"
+      WHEN 'enquiry' THEN
+        PERFORM 1 FROM "enquiries" x WHERE x."id" = v_join."subject_id" AND x."event_id" = v_join."event_id"
+        FOR NO KEY UPDATE SKIP LOCKED;
+      WHEN 'opportunity' THEN
+        PERFORM 1 FROM "opportunities" x WHERE x."id" = v_join."subject_id" AND x."event_id" = v_join."event_id"
+        FOR NO KEY UPDATE SKIP LOCKED;
+      WHEN 'proposal' THEN
+        PERFORM 1 FROM "proposals" x WHERE x."id" = v_join."subject_id" AND x."event_id" = v_join."event_id"
+        FOR NO KEY UPDATE SKIP LOCKED;
+      ELSE
+        PERFORM 1 FROM "proposal_deposit_requests" x WHERE x."id" = v_join."subject_id" AND x."event_id" = v_join."event_id"
+        FOR NO KEY UPDATE SKIP LOCKED;
+    END CASE;
+    IF NOT FOUND THEN
+      -- A person moved it, or a writer holds it.
+      v_left_alone := v_left_alone + 1;
+      CONTINUE;
+    END IF;
+    CASE v_join."subject_kind"
+      WHEN 'enquiry' THEN
+        UPDATE "enquiries" SET "event_id" = NULL WHERE "id" = v_join."subject_id";
+      WHEN 'opportunity' THEN
+        UPDATE "opportunities" SET "event_id" = NULL WHERE "id" = v_join."subject_id";
+      WHEN 'proposal' THEN
+        UPDATE "proposals" SET "event_id" = NULL WHERE "id" = v_join."subject_id";
+      ELSE
+        UPDATE "proposal_deposit_requests" SET "event_id" = NULL WHERE "id" = v_join."subject_id";
+    END CASE;
+    UPDATE "event_link_joins" SET "undone_at" = now() WHERE "id" = v_join."id";
+    v_emptied := v_emptied + 1;
+  END LOOP;
+
+  -- 3. The events that may go, and their phases with them. ------------------
+  DELETE FROM "events" e WHERE e."id" = ANY (v_removable);
+  GET DIAGNOSTICS v_events_removed = ROW_COUNT;
+
+  -- 4. The open questions the join wrote; a question a person is answering at
+  --    this moment is left to the next run. Copies of October's list stay.
+  DELETE FROM "event_link_reviews" v
+  WHERE v."id" IN (SELECT l."id" FROM "event_link_reviews" l
+    WHERE l."binding_review_id" IS NULL AND l."resolved_at" IS NULL
+    FOR UPDATE SKIP LOCKED);
+
+  PERFORM set_config('venviewer.undo_event_links', coalesce(v_prior, ''), true);
+  "emptied" := v_emptied;
+  "events_removed" := v_events_removed;
+  "left_alone" := v_left_alone;
+  RETURN NEXT;
+END;
+$undo$;
 --> statement-breakpoint
 -- Join what is already there.
 SELECT * FROM spine_join_old_records();
