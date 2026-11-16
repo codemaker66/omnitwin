@@ -423,6 +423,13 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
   data cost there is the least of any station's (median 0.0), and the labels' occluder test, which
   compares block means, kept it in 72 of 74 such blocks. The blend's consensus pass weighs the same
   texels down in each of some twenty stations, whose rims fall in different places.
+- The cure is gate B25, and the Saloon's margin is 50 mm. Measured on the box with the gate's own
+  functions: a margin of 20 mm still leaves 6, 0 and 16 of the three near stations' rim texels and
+  388, 111 and 3 of their glow texels; 30 mm leaves no rim texel and 178, 19 and 0 of the glow;
+  40 mm leaves 33, 0 and 0; 50 mm leaves none. So 30 mm is the least that clears the pediment's
+  edge and 50 mm the least that also clears the lamp's glow. At 50 mm the margin takes 10,349 to
+  11,952 clean plaster texels out of each near station's 63,000 to 67,239 on the box (5,412 to
+  6,257 at 30 mm), which other stations then colour.
 
 Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
