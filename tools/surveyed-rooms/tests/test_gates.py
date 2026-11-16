@@ -141,8 +141,9 @@ def flat(U, V):
     return np.zeros(U.shape), np.ones(U.shape, bool)
 
 
-def step(work, name, *args):
-    r = subprocess.run([sys.executable, "-X", "utf8", STEP_PY, name, "room.json", *args], cwd=work, env=ENV,
+def step(work, name, *args, depth=None):
+    env = ENV if depth is None else dict(ENV, SURVEYED_ROOMS_TEST_DEPTH_SIZE=str(depth))
+    r = subprocess.run([sys.executable, "-X", "utf8", STEP_PY, name, "room.json", *args], cwd=work, env=env,
                        capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         raise AssertionError(f"step {name} failed:\n{r.stdout[-3000:]}\n{r.stderr[-3000:]}")
@@ -685,6 +686,147 @@ class StrayTexels(unittest.TestCase):
         w, h = v["pixels"]
         with self.assertRaisesRegex(AssertionError, rf"wall-east-0\.position\.f32: {w * h} covered texels lie off their centres"):
             step(work, "corners")
+
+
+# --- B25: the occluders' margin ---------------------------------------------------------------------------------
+
+PROUD = dict(u=(2.5, 3.5), v=(1.7, 2.3), d=0.3)   # the box as the mesh draws it, on the south wall (6 m)
+PROUD_SHORT = 0.03                                # the mesh draws it this much smaller, every side, than the panoramas show it
+PROUD_DEPTH = 512                                 # cubemap texels: 4 to 6 mm at the box
+PROUD_STATIONS = (("scan_100", 2.0, 1.2), ("scan_101", 4.0, 1.2), ("scan_102", 3.0, 3.2))   # id, u along the wall, metres off it
+
+
+def slab_distance(origin, dirs, lo, hi):
+    """Distance along unit dirs (..., 3) from origin (outside the cuboid lo..hi) to the cuboid; inf where missed."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t0 = (np.asarray(lo) - origin) / dirs
+        t1 = (np.asarray(hi) - origin) / dirs
+    enter = np.minimum(t0, t1).max(axis=-1)
+    leave = np.maximum(t0, t1).min(axis=-1)
+    return np.where((leave >= enter) & (leave > 0), np.maximum(enter, 0.0), np.inf)
+
+
+class OccluderMargin(unittest.TestCase):
+    """A box stands 0.3 m proud of a plain wall. The mesh (the position tiles and the distance cubemaps) draws it
+    3 cm smaller on every side than the panoramas show it, as the scan's mesh draws the Saloon's pediments (0.3 m
+    proud, 2 to 3 cm short). Two stations 1.2 m off the wall, either side of the box, and one 3.2 m off, facing it.
+    Along the edge of the zone the box hides from a near station, that station's panorama still shows the box's
+    dark edge on wall the mesh says it sees. One station a block prints it: outlines of the box in the plain wall,
+    up to a quarter of a metre from the box. With survey.projection.walls.occluderMargin the labels leave a
+    station's view out within the margin of the box's outline, and another station's clean view takes its place."""
+
+    @classmethod
+    def build(cls, name, margin):
+        work = os.path.join(T4, name)
+        cfg = config(RECT, ["east", "south", "west", "north"])
+        cfg["stations"] = [{"id": sid, "role": "room"} for sid, _, _ in PROUD_STATIONS]
+        if margin:
+            cfg["survey"]["projection"]["walls"] = dict(cfg["survey"]["projection"]["walls"], occluderMargin=margin)
+        room = write_room(work, cfg)
+        wall = room.wmap["south"]
+        (cX, cY), (uX, uY), (nX, nY) = wall["cornerE57"], wall["uE57"], wall["normalE57"]
+
+        def e57(u, off, z):
+            return np.array([cX + u * uX + off * nX, cY + u * uY + off * nY, z])
+
+        def cuboid(grow):
+            pts = np.array([e57(u, d, v) for u in (PROUD["u"][0] - grow, PROUD["u"][1] + grow)
+                            for v in (PROUD["v"][0] - grow, PROUD["v"][1] + grow) for d in (-0.5, PROUD["d"])])
+            return pts.min(axis=0), pts.max(axis=0)
+
+        def relief(U, V):
+            inside = (U >= PROUD["u"][0]) & (U <= PROUD["u"][1]) & (V >= PROUD["v"][0]) & (V <= PROUD["v"][1])
+            return np.where(inside, PROUD["d"], 0.0), np.ones(U.shape, bool)
+
+        U = V = None
+        for w in room.walls:
+            out = write_wall(room, work, w, relief if w is wall else flat)
+            if w is wall:
+                U, V, _ = out
+        stations = [dict(id=sid, t=list(e57(u, off, 1.5)), gain=1.0) for sid, u, off in PROUD_STATIONS]
+        box = (CENTRE[0] - 2.0, CENTRE[0] + 2.0, CENTRE[1] - 3.0, CENTRE[1] + 3.0, 0.0, 3.0)
+        mesh, real = cuboid(0.0), cuboid(PROUD_SHORT)
+        data = os.path.join(work, "data")
+        synth.write_manifest(data, stations)
+        synth.write_depth_maps(data, stations, PROUD_DEPTH,
+                               lambda o, d: np.minimum(synth.box_distance(o, d, box), slab_distance(o, d, *mesh)))
+
+        def colour(s, dirs):
+            o = np.asarray(s["t"], float)
+            grain = np.random.default_rng(20261116 + int(s["id"][5:])).random(dirs.shape[:2]) - 0.5
+            plaster = np.array([0.50, 0.47, 0.42]) * (1 + 0.08 * grain[..., None])
+            hit = slab_distance(o, dirs, *real) < synth.box_distance(o, dirs, box)
+            return np.where(hit[..., None], np.array([0.03, 0.02, 0.015]), plaster)
+
+        synth.write_panoramas(data, stations, 2048, 1024, colour)
+        step(work, "labels", "south", depth=PROUD_DEPTH)
+        step(work, "wall-photo", "south", depth=PROUD_DEPTH)
+        (v,) = room.tiles(wall)
+        npz = np.load(os.path.join(work, "proj", f"{v['name']}.npz"))
+        lum = npz["rgb"] @ np.array([0.2126, 0.7152, 0.0722])
+        # plain wall well clear of the box as the panoramas show it: more than 8 cm from the mesh's outline of it
+        du = np.maximum(np.maximum(PROUD["u"][0] - U, U - PROUD["u"][1]), 0)
+        dv = np.maximum(np.maximum(PROUD["v"][0] - V, V - PROUD["v"][1]), 0)
+        plain = (np.hypot(du, dv) > 0.08) & (V > 0.2) & (V < 2.9)
+        coloured = npz["weight"] > 0
+        ghost = plain & coloured & (lum < 0.25)                   # the box's dark picture (0.02) on plaster (0.47)
+        labels = np.load(os.path.join(work, "proj", "labels-south.npz"))
+        with open(os.path.join(work, "proj", "labels-south.json"), encoding="utf-8") as f:
+            report = json.load(f)
+        return dict(room=room, ghost=ghost, plain=plain, coloured=coloured, labels=labels, report=report, V=V, U=U)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.closed = cls.build("margin-closed", 0)
+        cls.open = cls.build("margin-open", 0.05)
+
+    def test_1_gate(self):
+        self.assertNotIn("B25", {r["gate"] for r in self.closed["room"].ledger()})
+        self.assertEqual(self.closed["room"].occluder_margin(), 0.0)
+        self.assertIn(("B25", "walls", "50 mm"), {(r["gate"], r["where"], r["note"]) for r in self.open["room"].ledger()})
+        self.assertEqual(legacy.best_view_values(self.open["room"])["bestview"]["OCCLUDER_MARGIN"], 0.05)
+        gh = Room(os.path.join(ROOMS, "grand-hall.room.json"), ROOMS)
+        self.assertEqual(legacy.best_view_values(gh)["bestview"]["OCCLUDER_MARGIN"], 0.0)
+        self.assertEqual(gh.ledger(), [])
+
+    def test_2_without_the_margin_the_box_is_outlined_in_the_plain_wall(self):
+        c = self.closed
+        self.assertGreater(int(c["ghost"].sum()), 300, "the fault did not occur: the test proves nothing")
+        self.assertGreater(float(c["V"][c["ghost"]].max()), PROUD["v"][1] + 0.15)      # far above the box
+        self.assertNotIn("seenbits", c["labels"].files)                                 # the files are as before
+        self.assertNotIn("clearbits", c["labels"].files)
+        self.assertNotIn("occluder_margin", c["report"])
+
+    def test_3_with_the_margin_the_plain_wall_is_clean_and_nothing_becomes_a_hole(self):
+        c, o = self.closed, self.open
+        self.assertEqual(int(o["ghost"].sum()), 0, f"{int(o['ghost'].sum())} dark texels left in the plain wall")
+        self.assertGreaterEqual(int((o["coloured"] & o["plain"]).sum()), int((c["coloured"] & c["plain"]).sum()))
+        self.assertGreaterEqual(int(o["coloured"].sum()), int(c["coloured"].sum()))    # the doubtful views fill what is left
+        margin = o["report"]["occluder_margin"]
+        self.assertEqual((margin["metres"], margin["cubemap_texels_at_most"]), (0.05, 16))
+        lb = o["labels"]
+        seen, clear, used = lb["seenbits"], lb["clearbits"], lb["visbits"]
+        self.assertTrue(np.all(clear & ~seen == 0))                                     # clear views are views
+        self.assertTrue(np.all(clear & ~used == 0) and np.all(used & ~seen == 0))      # used = clear + the doubtful views given
+        given = int(np.unpackbits(used & ~clear).sum())
+        self.assertEqual(given, margin["texels_given_a_doubtful_view"])
+        self.assertEqual(int((lb["texel_label"] >= 0).sum()), margin["texels_labelled_clear"] + given)
+        taken = int(np.unpackbits(seen & ~clear).sum())
+        self.assertGreater(taken, 1000)                                                 # the margin took views out
+        self.assertLess(given, taken / 4)                                               # and few texels had no other
+
+    def test_4_the_margin_is_the_walls_alone(self):
+        cfg = json.loads(json.dumps(self.open["room"].cfg))
+        cfg["survey"]["projection"]["ceiling"]["occluderMargin"] = 0.05
+        work = os.path.join(T4, "margin-ceiling")
+        room = write_room(work, cfg)
+        self.assertTrue(any("survey.projection.ceiling.occluderMargin" in p for p in room.build_problems()))
+        import check_room  # noqa: PLC0415
+        schema = roomlib.load(os.path.join(ROOMS, "room.schema.json"))
+        errors = check_room.validate(cfg["survey"]["projection"], schema["$defs"]["survey"]["properties"]["projection"], schema)
+        self.assertEqual([path for path, _ in errors], ["$.ceiling"], errors)
+        self.assertEqual(check_room.validate(self.open["room"].cfg["survey"]["projection"],
+                                             schema["$defs"]["survey"]["properties"]["projection"], schema), [])
 
 
 # --- B19: the floor refills' roll direction -------------------------------------------------------------------
