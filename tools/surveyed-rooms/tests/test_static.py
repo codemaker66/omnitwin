@@ -421,6 +421,178 @@ class Refusals(unittest.TestCase):
         self.assertIn("SURVEYED_ROOMS_NODE_ROOT", publish.publish_problems(node)[0])
 
 
+class SurveyRecord(unittest.TestCase):
+    """build/survey.json, schema version 2: what the web's reader takes (survey-record.ts on the
+    web's side holds the contract; publish.record_faults repeats its refusals). The files here are
+    stand-ins of a few bytes, each size's file larger than the next size's."""
+
+    @staticmethod
+    def staged(config, name):
+        """A work directory holding a stand-in for every output and a detail index; (room, work)."""
+        from roombuild import publish
+        work = os.path.join(T0, name)
+        shutil.rmtree(work, ignore_errors=True)
+        os.makedirs(os.path.join(work, "proj", "detail"))
+        os.makedirs(os.path.join(work, "build"))
+        room = Room(config, work)
+        outputs = room.survey["outputs"]
+        images = outputs["walls"] + outputs.get("ceiling", []) + outputs.get("floor", []) + [f for d in outputs.get("domes", {}).values() for f in d]
+        pixels = {f["file"]: f["size"][0] * f["size"][1] for f in images}
+        for fname in publish.output_files(room):
+            with open(os.path.join(work, "proj", fname), "wb") as f:
+                f.write(fname.encode() + b"." * (pixels.get(fname, 0) // 4096))
+        with open(os.path.join(work, "proj", "detail", "index.json"), "w", encoding="utf-8") as f:
+            json.dump(dict(texelMetres=0.002, tileTexels=512, gutterTexels=8, tiles=3, totalBytes=30), f)
+        return room, work
+
+    @staticmethod
+    def inside(work, call):
+        cwd = os.getcwd()
+        os.chdir(work)
+        try:
+            return call()
+        finally:
+            os.chdir(cwd)
+
+    def record(self, config, name):
+        from roombuild import publish
+        room, work = self.staged(config, name)
+        return room, work, self.inside(work, lambda: publish.survey_record(room))
+
+    def test_the_saloons_record_is_what_the_reader_takes(self):
+        from roombuild import publish, surfaces
+        room, work, record = self.record(SALOON, "record-saloon")
+        cfg = room.cfg
+        self.assertEqual(record["schemaVersion"], 2)
+        self.assertEqual(record["room"], dict(name="Saloon", venue="trades-hall", ceilingHeight=5.515, outline=cfg["walls"]["vertices"]))
+        self.assertEqual([(w["id"], w["height"], w["kind"]) for w in record["walls"]],
+                         [(s["id"], s["height"], s["kind"]) for s in cfg["walls"]["segments"]])
+        self.assertEqual(record["atlas"]["files"], ["walls-4096.webp", "walls-2048.webp"])
+        self.assertEqual(record["ceiling"]["files"], ["ceiling-1829.webp", "ceiling-915.webp"])
+        self.assertEqual(record["floor"]["files"], ["floor-1463.webp", "floor-732.webp"])
+        self.assertEqual(record["floor"]["orientation"], "columns planner +x, rows from planner +z")
+        self.assertEqual(record["ceiling"]["orientation"], record["floor"]["orientation"])
+        # The floor's extent is the rectangle project-floor's texels cover: whole texels from the
+        # bounding box's lowest x and highest z.
+        pts, w, h, ppm = surfaces.floor_grid(room)
+        x0, x1, z0, z1 = room.bbox()
+        extent = record["floor"]["extent"]
+        self.assertEqual((extent["x"][0], extent["z"][1]), (x0, z1))
+        self.assertAlmostEqual(extent["x"][1] - extent["x"][0], w / ppm, places=6)
+        self.assertAlmostEqual(extent["z"][1] - extent["z"][0], h / ppm, places=6)
+        self.assertLess(max(abs(extent["x"][1] - x1), abs(extent["z"][0] - z0)), 0.5 / ppm + 1e-9)
+        self.assertEqual(record["ceiling"]["extent"], dict(x=[x0, x1], z=[z0, z1]))
+        # The detail tiles' index is in the detail block; every key of `files` is a plain name.
+        index = os.path.join(work, "proj", "detail", "index.json")
+        self.assertEqual(record["detail"]["index"], dict(file="index.json", bytes=os.path.getsize(index), sha256=publish.sha256(index)))
+        self.assertEqual(sorted(record["files"]), sorted(publish.output_files(room)))
+        self.assertTrue(all(publish.FILE_NAME.match(name) for name in record["files"]))
+        # Everything version 1 said is still said.
+        for key in ("slug", "revision", "captured", "configSha256", "methodRevision", "tools", "linkedInputs", "glassScan", "openings", "relief"):
+            self.assertIn(key, record)
+        for key in ("size", "ppm", "vRange", "row", "alpha", "alphaFrom", "packing"):
+            self.assertIn(key, record["atlas"])
+        for key in ("folder", "texelMetres", "tileTexels", "gutterTexels", "tiles", "totalBytes"):
+            self.assertIn(key, record["detail"])
+        self.assertEqual(record["ceiling"]["relief"]["id"], "ceiling")
+        self.assertEqual(publish.record_faults(record), [])
+        json.dumps(record)
+
+    def test_walls_follow_the_outline_and_images_their_sizes(self):
+        """A reader pairs walls with outline segments by position, so the record's walls are in
+        outline order whatever order the atlas was written in; and each photograph's sizes are
+        listed largest first whatever order the config gives them in."""
+        from roombuild import publish
+        room, _, record = self.record(GH, "record-gh")
+        self.assertEqual([w["id"] for w in record["walls"]], ["window", "fireplace", "door", "end"])
+        self.assertEqual(record["atlas"]["writeOrder"], ["window", "door", "end", "fireplace"])
+        self.assertEqual(publish.record_faults(record), [])
+        path, _ = variant(SALOON, "saloon-sizes.room.json", lambda r: [r["survey"]["outputs"][k].reverse() for k in ("walls", "ceiling", "floor")])
+        _, _, record = self.record(path, "record-sizes")
+        self.assertEqual(record["atlas"]["files"], ["walls-4096.webp", "walls-2048.webp"])
+        self.assertEqual(record["floor"]["files"], ["floor-1463.webp", "floor-732.webp"])
+        self.assertEqual(publish.record_faults(record), [])
+
+    def test_record_faults_are_the_readers_refusals(self):
+        import copy
+        from roombuild import publish
+        _, _, good = self.record(SALOON, "record-faults")
+        self.assertEqual(publish.record_faults(good), [])
+
+        def faults(change):
+            record = copy.deepcopy(good)
+            change(record)
+            return " | ".join(publish.record_faults(record))
+
+        self.assertIn("schemaVersion", faults(lambda r: r.__setitem__("schemaVersion", 1)))
+        self.assertIn("revision", faults(lambda r: r.__setitem__("revision", 0)))
+        self.assertIn("revision", faults(lambda r: r.__setitem__("revision", None)))
+        self.assertIn("venue", faults(lambda r: r["room"].__setitem__("venue", "Trades Hall")))
+        self.assertIn("clockwise", faults(lambda r: r["room"]["outline"].reverse()))
+        self.assertIn("not a plain file name", faults(lambda r: r["files"].__setitem__("detail/index.json", dict(bytes=1, sha256="0" * 64))))
+        self.assertIn("missing from files", faults(lambda r: r["files"].pop("floor-732.webp")))
+        self.assertIn("missing from files", faults(lambda r: r["files"].pop("ceiling-relief.bin")))
+        self.assertIn("largest image first", faults(lambda r: r["atlas"]["files"].reverse()))
+        self.assertIn("names no atlas image", faults(lambda r: r["atlas"].__setitem__("files", [])))
+        self.assertIn("overlaps", faults(lambda r: r["walls"][1].__setitem__("atlas", list(r["walls"][0]["atlas"]))))
+        self.assertIn("leaves the", faults(lambda r: r["walls"][5]["atlas"].__setitem__(0, 4000)))
+        self.assertIn("wider than", faults(lambda r: r["walls"][0]["atlas"].__setitem__(2, 1401)))
+        self.assertIn("atlas.row", faults(lambda r: r["atlas"].__setitem__("ppm", 100.0)))
+        self.assertIn("outline segment 0", faults(lambda r: r["walls"].reverse()))
+        self.assertIn("for an outline of 12", faults(lambda r: r["walls"].pop()))
+        self.assertIn("relief.order", faults(lambda r: r["relief"]["order"].pop()))
+        self.assertIn("used twice", faults(lambda r: r["walls"][1].__setitem__("reliefId", "front")))
+        self.assertIn("kind", faults(lambda r: r["walls"][0].__setitem__("kind", "glass")))
+        self.assertIn("orientation", faults(lambda r: r["floor"].__setitem__("orientation", "rows from planner -z")))
+        self.assertIn("does not increase", faults(lambda r: r["floor"]["extent"]["x"].reverse()))
+
+    def test_an_open_segment_is_recorded_and_named_as_unreadable(self):
+        """An open segment has no elevation: the record keeps its place in the outline with no strip
+        and no relief id, and says the reader cannot take it (the reader wants both for every segment)."""
+        from roombuild import publish
+        path, _ = variant(SALOON, "saloon-open.room.json", lambda r: r["walls"]["segments"][2].__setitem__("kind", "open"))
+        _, _, record = self.record(path, "record-open")
+        self.assertEqual(len(record["walls"]), 12)
+        self.assertEqual((record["walls"][2]["kind"], record["walls"][2]["atlas"], record["walls"][2]["reliefId"]), ("open", None, None))
+        self.assertNotIn("win-f-ret", record["relief"]["order"])
+        faults = publish.record_faults(record)
+        self.assertEqual(len(faults), 1, faults)
+        self.assertIn("'window-front-return' has no strip in the atlas and no relief", faults[0])
+
+    def test_publishing_copies_the_record_only_for_a_room_that_names_one(self):
+        """The Saloon's folder gets survey.json, byte for byte the build's; the Grand Hall's gets its
+        nine files and its detail folder and no record, as build.sh leaves it. A record the reader
+        would refuse stops the Saloon publishing, with nothing copied."""
+        from roombuild import publish
+        room, work = self.staged(SALOON, "publish-saloon")
+        dest = os.path.join(T0, "published-saloon")
+        shutil.rmtree(dest, ignore_errors=True)
+        self.inside(work, lambda: publish.publish(room, dest))
+        with open(os.path.join(dest, "survey.json"), "rb") as a, open(os.path.join(work, "build", "survey.json"), "rb") as b:
+            published = a.read()
+            self.assertEqual(published, b.read())
+        self.assertNotIn(b"\r", published)
+        self.assertEqual(publish.record_faults(json.loads(published)), [])
+        self.assertEqual(sorted(os.listdir(dest)), sorted(publish.output_files(room) + ["detail", "survey.json"]))
+
+        room, work = self.staged(GH, "publish-gh-record")
+        dest = os.path.join(T0, "published-gh")
+        shutil.rmtree(dest, ignore_errors=True)
+        self.inside(work, lambda: publish.publish(room, dest))
+        self.assertEqual(sorted(os.listdir(dest)), sorted(publish.output_files(room) + ["detail"]))
+        self.assertEqual(len(publish.output_files(room)), 9)
+        self.assertTrue(os.path.exists(os.path.join(work, "build", "survey.json")))
+
+        path, _ = variant(SALOON, "saloon-revision.room.json", lambda r: r["survey"]["publish"].__setitem__("revision", 0))
+        room, work = self.staged(path, "publish-refused")
+        dest = os.path.join(T0, "published-refused")
+        shutil.rmtree(dest, ignore_errors=True)
+        with self.assertRaises(SystemExit) as refused:
+            self.inside(work, lambda: publish.publish(room, dest))
+        self.assertIn("survey.json: revision is 0", str(refused.exception))
+        self.assertFalse(os.path.exists(dest))
+
+
 class OneBlasThread(unittest.TestCase):
     """The labels' band threads each call BLAS, and BLAS threads of its own under them deadlocked: every
     entry point holds BLAS to one thread for that step, before numpy loads."""

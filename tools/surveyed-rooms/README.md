@@ -135,7 +135,7 @@ statistics.
 | 11 | overhead | `step.py overhead proj` | `pack-overhead.py` |
 | 12 | floor | `step.py flatten-floor`, `step.py pack-floor` | `flatten-floor.py`, `pack-floor.py` |
 | 13 | detail | `step.py detail <wall>` per wall, then `step.py pack-detail`: the walls at `survey.detail`'s texel, cut into tiles with `detail/index.json` | `project-detail.py`, `pack-detail.py` |
-| 14 | publish | `build/survey.json`; with `--publish`, the outputs and the detail folder (DIR must be `survey.publish.folder`) | the tail of `build.sh` |
+| 14 | publish | `build/survey.json` (schema version 2, below); with `--publish`, the outputs and the detail folder (DIR must be `survey.publish.folder`) | the tail of `build.sh` |
 
 The order is `build.sh`'s, and `prove-build-identity.py --static` compares the two lists.
 
@@ -225,6 +225,49 @@ measured against that glass), the relief in DIR stands unless `--relief rebuild`
 `check-atlas.py` must pass before anything is copied. Without `--publish` the same config builds
 its own glass and relief, which is the identity run below. Other rooms' alpha is always their
 own glass mask.
+
+### The record: `survey.json`
+
+`roombuild/publish.py` writes `build/survey.json` for every room and publishes it for a room whose
+`survey.outputs.manifest` names it (the Grand Hall's is `null`: its folder gets its nine files and
+its detail tiles, and no record). It is schema version 2, the version the web's reader takes. The
+contract is that reader's code, `packages/web/src/components/surveyed-room/survey-record.ts` (a Zod
+schema and its cross-checks, described in `docs/engineering/surveyed-rooms.md`); the record holds
+everything a reader needs to place the published files, and more that it drops.
+
+| Key | What it says | From |
+| --- | --- | --- |
+| `schemaVersion` | `2` | |
+| `slug`, `revision`, `captured` | the room, the survey's revision (an integer from 1), the capture's date | `slug`, `survey.publish.revision`, `source.captured` |
+| `room` | `name`, `venue`, `ceilingHeight`, `outline` (the wall faces' corners in planner x, z, counter-clockwise seen from above) | `name`, `venue`, `ceiling.height`, `walls.vertices` |
+| `walls[]` | one per outline segment, **in outline order**: `id`, `reliefId`, `length`, `height`, `kind`, and `atlas`, its strip's top-left texel, width and height | `walls.segments`, the atlas's layout |
+| `atlas` | `size`, `ppm`, `vRange`, `row` (a strip's height), `files` (the atlas at each published size, **largest first**), and for the record `alpha`, `alphaFrom`, `packing`, `writeOrder` (the walls in the order their strips were written) | `survey.atlas`, `survey.outputs.walls` |
+| `relief` | `container`, `file`, `order` (the entries' ids), and the meshing's `ppm`, `vRange`, `depthRange`, `simplifyError` | `survey.relief`, `survey.outputs.relief` |
+| `ceiling` | `extent` (the outline's bounding box, which the ceiling view covers exactly), `orientation`, `files` largest first, and `relief` (`file`, `id`, `reference`, `heightRange`, `ppm`, `convention`) where there is one | `survey.outputs.ceiling`, `survey.ceilingRelief` |
+| `floor` | `extent`, `orientation`, `files` largest first | `survey.outputs.floor`, `survey.floorPhoto` |
+| `detail` | `folder`, `texelMetres`, `tileTexels`, `gutterTexels`, `tiles` (a count), `totalBytes`, and `index`: the tiles' index (`file`, inside the folder, with its `bytes` and `sha256`) | `survey.outputs.detail`, `detail/index.json` |
+| `files` | every published file in the room's folder: `bytes`, `sha256` | the files in `proj/` |
+| `openings[]`, `glassScan` | each window's glazing and glass planes; what the scan said about them | the config, `build/glass.json` |
+| `configSha256`, `methodRevision`, `tools`, `linkedInputs` | the config the files were built from, the method's revision, the tools' commit and the meshoptimizer behind each GHR1 file, the inputs taken from another work directory | |
+
+- **Orientation.** Both overhead photographs have their columns along planner +x and their rows from
+  planner +z (the top row is the extent's highest z): `"columns planner +x, rows from planner +z"`.
+- **The floor's extent** is the rectangle its texels cover, not the bounding box: the floor
+  projection lays whole texels of 1 / `floorPhoto.ppm` from the box's lowest x and highest z, so the
+  photograph ends up to half a texel short of or past the other two sides (the Saloon's reaches
+  x 6.095667 for the outline's 6.095 and z -3.736 for -3.734).
+- **Largest first** is by pixel count, whatever order the config lists the sizes in.
+- **`files` holds plain names only.** The detail tiles' index lives in the detail folder, so it is
+  in `detail.index` (version 1 listed it in `files` as `detail/index.json`, which the reader's rule
+  for file names refuses).
+- **An open segment** has no elevation: its wall is recorded in its place with `atlas` and
+  `reliefId` null, which no reader can draw yet (the reader wants a strip and a relief for every
+  segment).
+
+`publish.record_faults` repeats the reader's refusals (shapes, one wall per segment and its length,
+the strips, the relief's order, every named file listed, largest first by bytes). For a room that
+publishes its record, writing it prints any fault and `--publish` refuses it with nothing copied.
+The proof that the reader takes a real record is its own parser run over it: see Proofs.
 
 `SURVEYED_ROOMS_TEST_DEPTH_SIZE` (tests only) shrinks the depth maps (gate B21);
 `SURVEYED_ROOMS_NODE_ROOT` meshes the relief with another checkout's meshoptimizer (gate B22).
@@ -382,7 +425,11 @@ T2 keeps each stage's results in the scratch folder, so its tests can be run a f
 (`python -m unittest test_gh_scripts.MiniGrandHall.test_02_labels`); its longest stage is the
 atlas (about six minutes for four packings). T0 also covers the sub-commands: the list and its
 ids, one run alone and recorded, and `--resume` skipping what is done, running again what
-changed or failed, and trusting nothing after a config change.
+changed or failed, and trusting nothing after a config change. And the record
+(`test_static.SurveyRecord`, on stand-in files): the Saloon's and the Grand Hall's records pass
+`record_faults`, twenty-one spoiled records are each refused for their own reason, an open segment
+is named, and publishing copies `survey.json` for the Saloon, none for the Grand Hall, and nothing
+at all when the record would be refused.
 
 CI runs T0, T1 and T4 in a job of their own ("Survey tools") whenever a change touches
 `tools/surveyed-rooms` or `tools/grand-hall-survey`, because the room build runs the hall's own
