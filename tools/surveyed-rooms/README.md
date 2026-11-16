@@ -477,6 +477,11 @@ T4 builds a small room for each gate that neither the Grand Hall nor T3 opens:
 - two texels rendered off their own centres: refused by the labels without the allowance, left out
   by the corners step with it (the wall is then labelled and coloured), and refused again when
   there are more than allowed or the whole grid is in the wrong place (B24);
+- a box 0.3 m proud of a plain wall, which the mesh draws 3 cm smaller on every side than the
+  panoramas show it: without the margin the box's dark edge is printed in the plain wall up to a
+  quarter of a metre from it; with `occluderMargin` the plain wall is clean, no texel loses its
+  colour, and the labels' files hold the views seen, the views clear and the doubtful ones given;
+  the key is refused on any surface but the walls (B25);
 - the floor refills' roll along z and along x (B19);
 - the ceiling relief's fallback height, padding and spacing.
 
