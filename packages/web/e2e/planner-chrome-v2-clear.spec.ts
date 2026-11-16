@@ -109,7 +109,10 @@ test("the crest and \\ clear the new chrome to the hall, and \\, Esc or the cres
   // This device has seen the layout, so it opens as placed (recall.ts's first-open
   // rule): no assembly replay plays, and the door's card is up from the start, not
   // held back while pieces move in.
-  await context.addInitScript((id) => { window.localStorage.setItem("venviewer.assembly.seen", JSON.stringify([id])); }, LAYOUT);
+  // about:blank has no storage of its own and throws; only the planner's page needs it.
+  await context.addInitScript((id) => {
+    try { window.localStorage.setItem("venviewer.assembly.seen", JSON.stringify([id])); } catch { /* not the planner's page */ }
+  }, LAYOUT);
   const page = await context.newPage();
   await page.goto(`/plan/${LAYOUT}?chrome=v2`);
 
@@ -119,6 +122,11 @@ test("the crest and \\ clear the new chrome to the hall, and \\, Esc or the cres
   const dock = page.locator(".pc-zone--dock > *").first();
   const title = page.locator(".pc-slate__title");
   await expect(hide).toBeVisible({ timeout: 60_000 });
+  // The Grand Hall's welcome is a modal dialog over the planner while the room
+  // opens, and it keeps every key to itself (PlannerArrival.tsx); the chrome
+  // under it already counts as visible. With no replay to wait through, \ would
+  // land on the welcome, so wait for it to go, as a person would.
+  await expect(page.getByRole("dialog", { name: "Opening the Grand Hall", exact: true })).toBeHidden({ timeout: 60_000 });
   await expect(hide.locator("img")).toHaveAttribute("src", CREST_IMAGE);
   await expect(dock).toBeVisible();
   await expect(title).toBeVisible();
