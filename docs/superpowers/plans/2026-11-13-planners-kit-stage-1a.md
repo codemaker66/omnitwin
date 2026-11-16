@@ -518,9 +518,20 @@ it("sets noindex and no-referrer in the head and removes them on leaving", () =>
 ### Task 9: The guest list page
 
 **Files:**
-- Create: `src/pages/GuestListPage.css`, `src/components/guest-list/GuestPaste.tsx`, `GuestTables.tsx`, `GuestRows.tsx`, `GuestPanel.tsx`
-- Modify: `src/pages/GuestListPage.tsx`
-- Test: `src/pages/__tests__/GuestListPage.test.tsx` (extend), `src/components/guest-list/__tests__/GuestPaste.test.tsx`, `GuestTables.test.tsx`
+- Create: `src/pages/GuestListPage.css`, `src/components/guest-list/GuestPaste.tsx`, `GuestTables.tsx`, `GuestRows.tsx`, `GuestPanel.tsx`, `KitGate.tsx` + `KitGate.css` (the switch and plan-id gate, used by both pages), `words.ts` (the sentences that carry counts and dates)
+- Modify: `src/pages/GuestListPage.tsx`, `src/pages/GuestPaperPage.tsx` (its shell now stands behind `KitGate`), `src/lib/guest-list/seating.ts` (`addGuests` and `renameGuest` count the name limit in characters, as the schema and the paste reader do)
+- Test: `src/pages/__tests__/GuestListPage.test.tsx` (extend), `src/components/guest-list/__tests__/GuestPaste.test.tsx`, `GuestTables.test.tsx`, `src/lib/guest-list/__tests__/seating.test.ts` (two cases)
+
+**As built (the controller's decisions and the build, where they refine the text below):**
+- `GuestListPage({ store })`, default `guestListStore()`. On opening: `store.sweep(Date.now())` first, then `open(planId, store)` if the page state holds another plan, so a list past its removal day is never shown. The desk shows as soon as the list is open; the room is read once (`getPublicConfig(planId, signal)`, aborted on leaving) and any failure, 404 included, gives the "room could not be opened" words.
+- The title field's placeholder is the plan's name; nothing is written to the list until the planner types. A visit to the title or date field is one undo step.
+- Paste: a tick-box "The first row is a heading" and three selects (name; second name or none; party or none) show the reader's guesses. A row with no name is counted too: "1 row was left out: 1 with no name."
+- "Set the tables" opens two number fields in the panel ("Tables", "Seats at each table", default 10); a blank number changes nothing ("Both numbers are needed."). The tables view also offers "Change the number of tables".
+- "Seat everyone" is offered only while it would seat someone; otherwise the next step is "Print the table plan", a link to `/plan/:code/guests/paper?sheet=table-plan`. The "Paper" links go to `?sheet=table-plan|by-table|place-cards|covers`.
+- Moving: a chosen name (`aria-pressed`) opens a bar "Moving … Choose a free seat or a table." with "Let go" (Escape too) and, for a seated guest, "Leave without a seat"; free seats and tables become "Seat here" buttons. Refusals: "That seat is taken." / "That table is full."
+- A table change that sends guests back says so in numbers: "Table 2 was removed. Its 2 guests are now to seat." / "Table 1 now has 6 seats. 2 guests are now to seat."
+- The storage-refused words stand as a notice on the sheet for as long as `kept` is false; the panel's keeping line shows while the list is kept.
+- Delete: "Delete the list from this device", then "Delete 180 names for good" or "Keep the list", inside the panel; offered only in the ready state and inert while the erase runs.
 
 **The screen** is the mock-up's second screen (the private page named in the lane's notes; Blake approved its look on 13 November: "Yes, build on it"). Copy the desk pattern from `src/components/dashboard/TeamView.tsx` and `TeamView.css`, with classes prefixed `gl-`:
 

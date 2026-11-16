@@ -1,73 +1,256 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
+import { ApiError } from "../../api/client.js";
+import type { Configuration, PlacedObject } from "../../api/configurations.js";
+import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
+import { memoryBackend, withBackend, type CacheBackend } from "../../lib/idb-cache.js";
 import { KIT_STORAGE_KEY } from "../../lib/guest-list/kit-switch.js";
+import { deleteAfter, emptyGuestList, type Guest, type GuestList, type KitTable } from "../../lib/guest-list/model.js";
+import { createGuestListStore, type GuestListStore, type Opened } from "../../lib/guest-list/store.js";
+import { useGuestListStore } from "../../stores/guest-list-store.js";
 import { GuestListPage } from "../GuestListPage.js";
 
-const mocks = vi.hoisted(() => ({ getPublicConfig: vi.fn() }));
+// ---------------------------------------------------------------------------
+// The planner's guest list page. Only the one network module is stubbed (the
+// read of the plan); the list is kept in a memory store injected as the page's
+// store, so every case runs the real paste reader, seating and page state.
+// ---------------------------------------------------------------------------
+
+const mocks = vi.hoisted(() => ({
+  getPublicConfig: vi.fn<(configId: string, signal?: AbortSignal) => Promise<Configuration>>(),
+}));
 vi.mock("../../api/configurations.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../api/configurations.js")>(),
   getPublicConfig: mocks.getPublicConfig,
 }));
 
 const PLAN_ID = "3f2b8c1e-9d4a-4b6f-8a1c-2e7d5f0a9b34";
+const PAGE = `/plan/${PLAN_ID}/guests?kit=on`;
+const CANARY = "CANARY-Q7";
 
-function open(entry: string): ReturnType<typeof render> {
+function uuid(n: number): string {
+  return `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+}
+
+function assetId(slug: string): string {
+  const item = getCatalogueItemBySlug(slug);
+  if (item === undefined) throw new Error("fixture slug missing from the catalogue");
+  return item.id;
+}
+
+const ROUND_TABLE = assetId("round-table-6ft");
+const CHAIR = assetId("banquet-chair");
+
+let serial = 0;
+function piece(assetDefinitionId: string, groupId: string, x: number): PlacedObject {
+  serial += 1;
+  return {
+    id: `placed-${String(serial)}`,
+    configurationId: PLAN_ID,
+    assetDefinitionId,
+    positionX: String(x),
+    positionY: "0",
+    positionZ: "0",
+    rotationX: "0",
+    rotationY: "0",
+    rotationZ: "0",
+    scale: "1",
+    sortOrder: serial,
+    metadata: { groupId },
+  };
+}
+
+/** A plan holding `tables` round tables, each with ten chairs of its own. */
+function room(tables: number, name = "Fraser and Okafor"): Configuration {
+  const objects: PlacedObject[] = [];
+  for (let t = 1; t <= tables; t += 1) {
+    const group = `group-${String(t)}`;
+    objects.push(piece(ROUND_TABLE, group, t * 4));
+    for (let c = 0; c < 10; c += 1) objects.push(piece(CHAIR, group, t * 4));
+  }
+  return {
+    id: PLAN_ID,
+    spaceId: "space-1",
+    venueId: "venue-1",
+    userId: null,
+    name,
+    isPublicPreview: true,
+    revision: 1,
+    objects,
+  };
+}
+
+function guest(n: number, name: string, tableId: string | null = null, seat: number | null = null, party = ""): Guest {
+  return { id: uuid(1000 + n), name, party, tableId, seat };
+}
+
+function table(n: number, seats = 10, name = ""): KitTable {
+  return { id: uuid(n), number: n, name, seats };
+}
+
+function listOf(patch: Partial<GuestList>): GuestList {
+  return { ...emptyGuestList(PLAN_ID, new Date().toISOString()), ...patch };
+}
+
+function memoryStore(backend: CacheBackend = memoryBackend()): GuestListStore {
+  return createGuestListStore(withBackend<unknown>(backend));
+}
+
+async function storeHolding(list: GuestList): Promise<{ readonly store: GuestListStore; readonly backend: CacheBackend }> {
+  const backend = memoryBackend();
+  const store = memoryStore(backend);
+  expect(await store.save(list, null)).toBe("saved");
+  return { store, backend };
+}
+
+function refusingBackend(): CacheBackend {
+  const refuse = (): Promise<never> => Promise.reject(new Error("storage refused"));
+  return { get: refuse, put: refuse, delete: refuse, list: refuse };
+}
+
+function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+function open(entry: string, store?: GuestListStore): ReturnType<typeof render> {
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/plan/:code/guests" element={<GuestListPage />} />
+        <Route path="/plan/:code/guests" element={<GuestListPage store={store} />} />
+        <Route path="/plan/:code/guests/paper" element={<p data-testid="paper">paper</p>} />
+        <Route path="/plan/:code" element={<p data-testid="room">room</p>} />
         <Route path="/plan" element={<p data-testid="planner">planner</p>} />
       </Routes>
     </MemoryRouter>,
   );
 }
 
+async function desk(): Promise<HTMLElement> {
+  return screen.findByTestId("guest-list-desk");
+}
+
 function metas(name: string): HTMLMetaElement[] {
   return Array.from(document.head.querySelectorAll<HTMLMetaElement>(`meta[name='${name}']`));
 }
 
+function names(count: number): string {
+  return Array.from({ length: count }, (_, i) => `Ailsa${String(i + 1)} Fraser${String(i + 1)}`).join("\n");
+}
+
+function state(): ReturnType<typeof useGuestListStore.getState> {
+  return useGuestListStore.getState();
+}
+
+function currentList(): GuestList {
+  const list = state().list;
+  if (list === null) throw new Error("no list open");
+  return list;
+}
+
+async function flush(): Promise<void> {
+  await act(async () => {
+    await state().flush();
+  });
+}
+
+async function pasteAndAdd(text: string, count: number): Promise<void> {
+  fireEvent.change(screen.getByLabelText("Paste the names"), { target: { value: text } });
+  fireEvent.click(screen.getByRole("button", { name: `Add ${String(count)} guests` }));
+  await screen.findByText(`0 of ${String(count)} guests have a seat.`);
+}
+
+/** Everything the Tab key can reach, in document order (happy-dom has no layout). */
+function tabbables(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex]"))
+    .filter((el) => !el.hasAttribute("disabled") && el.getAttribute("tabindex") !== "-1" && el.closest("[hidden]") === null);
+}
+
+/** Presses Tab until `match` holds for the focused element, as a person would. */
+function tabUntil(match: (el: HTMLElement) => boolean): HTMLElement {
+  for (let step = 0; step < 600; step += 1) {
+    const all = tabbables();
+    const at = document.activeElement instanceof HTMLElement ? all.indexOf(document.activeElement) : -1;
+    const next = all[at + 1];
+    if (next === undefined) break;
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Tab" });
+    next.focus();
+    if (match(next)) return next;
+  }
+  throw new Error("Tab never reached the control");
+}
+
+/** Enter on a native button: the browser's default action is a click, which happy-dom does not perform. */
+function pressEnter(el: HTMLElement): void {
+  expect(el.tagName).toBe("BUTTON");
+  fireEvent.keyDown(el, { key: "Enter" });
+  fireEvent.click(el);
+}
+
+let fetchSpy: MockInstance<typeof fetch>;
+
 beforeEach(() => {
   mocks.getPublicConfig.mockReset();
+  mocks.getPublicConfig.mockResolvedValue(room(18));
+  fetchSpy = vi.spyOn(globalThis, "fetch");
   window.localStorage.clear();
   document.title = "before";
+  state().reset();
 });
-afterEach(() => { cleanup(); window.localStorage.clear(); });
 
-describe("the guest list page, as a shell", () => {
+afterEach(() => {
+  cleanup();
+  state().reset();
+  window.localStorage.clear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+// ---------------------------------------------------------------------------
+// The switch, the address and the head
+// ---------------------------------------------------------------------------
+
+describe("the guest list page: the switch and the address", () => {
   it("is the not-found page with the switch off, and makes no request", () => {
-    open(`/plan/${PLAN_ID}/guests`);
+    open(`/plan/${PLAN_ID}/guests`, memoryStore());
     expect(screen.getByTestId("not-found")).toBeTruthy();
     expect(screen.queryByTestId("guest-list-page")).toBeNull();
     expect(mocks.getPublicConfig).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("with a malformed plan id, says the address is not a plan and makes no request", () => {
-    open("/plan/not-a-uuid/guests?kit=on");
+    open("/plan/not-a-uuid/guests?kit=on", memoryStore());
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("This address is not a plan");
     expect(screen.getByRole("link", { name: "Open the planner" }).getAttribute("href")).toBe("/plan");
     expect(screen.queryByTestId("guest-list-page")).toBeNull();
     expect(screen.queryByTestId("not-found")).toBeNull();
     expect(mocks.getPublicConfig).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("renders the empty root when the switch is on and the plan id is well formed", () => {
-    open(`/plan/${PLAN_ID}/guests?kit=on`);
+  it("puts the page on its ivory register when the switch is on and the plan id is well formed", async () => {
+    open(PAGE, memoryStore());
     const root = screen.getByTestId("guest-list-page");
     expect(root.className).toBe("gl");
     expect(root.getAttribute("data-register")).toBe("ivory");
-    expect(root.childElementCount).toBe(0);
-    expect(mocks.getPublicConfig).not.toHaveBeenCalled();
+    expect(await desk()).toBeTruthy();
   });
 
-  it("answers on a later visit with no parameter once the switch was remembered", () => {
+  it("answers on a later visit with no parameter once the switch was remembered", async () => {
     window.localStorage.setItem(KIT_STORAGE_KEY, "on");
-    open(`/plan/${PLAN_ID}/guests`);
+    open(`/plan/${PLAN_ID}/guests`, memoryStore());
     expect(screen.getByTestId("guest-list-page")).toBeTruthy();
+    expect(await desk()).toBeTruthy();
   });
 
-  it("sets noindex and no-referrer in the head and removes them on leaving", () => {
-    const view = open(`/plan/${PLAN_ID}/guests?kit=on`);
+  it("sets noindex and no-referrer in the head and removes them on leaving", async () => {
+    const view = open(PAGE, memoryStore());
+    await desk();
     expect(document.title).toBe("Guest list");
     expect(metas("robots").map((m) => m.content)).toEqual(["noindex, nofollow"]);
     expect(metas("referrer").map((m) => m.content)).toEqual(["no-referrer"]);
@@ -77,10 +260,458 @@ describe("the guest list page, as a shell", () => {
   });
 
   it("keeps the head private on the malformed-address sheet too", () => {
-    const view = open("/plan/not-a-uuid/guests?kit=on");
+    const view = open("/plan/not-a-uuid/guests?kit=on", memoryStore());
     expect(metas("robots").map((m) => m.content)).toEqual(["noindex, nofollow"]);
     expect(metas("referrer").map((m) => m.content)).toEqual(["no-referrer"]);
     view.unmount();
     expect(metas("robots")).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The desk
+// ---------------------------------------------------------------------------
+
+describe("the guest list page: the desk", () => {
+  it("shows the working state while the list opens, then the desk", async () => {
+    const opened = deferred<Opened>();
+    const store: GuestListStore = { ...memoryStore(), open: () => opened.promise };
+    open(PAGE, store);
+
+    expect(screen.getByRole("status").textContent).toContain("Opening your guest list…");
+    expect(document.querySelector("[data-activity-indicator='particles']")).not.toBeNull();
+    expect(screen.queryByTestId("guest-list-desk")).toBeNull();
+
+    await act(async () => {
+      opened.resolve({ kind: "new" });
+      await opened.promise;
+    });
+
+    const shown = await desk();
+    expect(shown.className).toContain("gl-desk");
+    expect(document.querySelector("[data-activity-indicator]")).toBeNull();
+    expect(screen.queryByText("Opening your guest list…")).toBeNull();
+  });
+
+  it("shows the desk without waiting for the room", async () => {
+    const plan = deferred<Configuration>();
+    mocks.getPublicConfig.mockReturnValue(plan.promise);
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    expect(screen.getByText("0 of 1 guest has a seat.")).toBeTruthy();
+    await act(async () => {
+      plan.resolve(room(2));
+      await plan.promise;
+    });
+    expect(await screen.findByRole("button", { name: "Use the room's 2 tables" })).toBeTruthy();
+  });
+
+  it("paste, add, tables, seat: the sentence and the four counts follow", async () => {
+    open(PAGE, memoryStore());
+    await desk();
+
+    fireEvent.click(screen.getByRole("button", { name: "Paste a list" }));
+    const box = screen.getByLabelText("Paste the names");
+    expect(document.activeElement).toBe(box);
+    fireEvent.change(box, { target: { value: names(180) } });
+    expect(screen.getByText("180 names found. Only names and parties are taken.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add 180 guests" }));
+
+    expect(await screen.findByText("0 of 180 guests have a seat.")).toBeTruthy();
+    expect(screen.getByText("180 are still to seat.")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Use the room's 18 tables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Seat everyone" }));
+
+    expect(screen.getByText("180 of 180 guests have a seat.")).toBeTruthy();
+    expect(screen.queryByText(/still to seat/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Guests 180" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Seated 180" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "To seat 0" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Tables 18" })).toBeTruthy();
+    const print = screen.getByRole("link", { name: "Print the table plan" });
+    expect(print.getAttribute("href")).toBe(`/plan/${PLAN_ID}/guests/paper?sheet=table-plan`);
+    expect(screen.getByRole("link", { name: "Open the room" }).getAttribute("href")).toBe(`/plan/${PLAN_ID}`);
+    expect(currentList().tables.every((t) => t.seats === 10)).toBe(true);
+  });
+
+  it("says only names and parties were taken, and how many columns were left", async () => {
+    open(PAGE, memoryStore());
+    await desk();
+    const text = [
+      "Name\tParty\tEmail\tDiet",
+      `Ailsa Fraser\tFraser family\t${CANARY}@example.com\tVegetarian`,
+      "Chidi Okafor\tOkafor family\tchidi@example.com\tNone",
+    ].join("\n");
+    fireEvent.change(screen.getByLabelText("Paste the names"), { target: { value: text } });
+    expect(screen.getByText("2 names found. Only names and parties are taken. 2 other columns are left on your computer.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add 2 guests" }));
+    await screen.findByText("0 of 2 guests have a seat.");
+
+    const kept = currentList().guests.map((g) => ({ name: g.name, party: g.party }));
+    expect(kept).toEqual([
+      { name: "Ailsa Fraser", party: "Fraser family" },
+      { name: "Chidi Okafor", party: "Okafor family" },
+    ]);
+    expect(JSON.stringify(currentList())).not.toContain(CANARY);
+    expect(JSON.stringify(currentList())).not.toContain("Vegetarian");
+  });
+
+  it("a guest is moved with the keyboard alone", async () => {
+    const { store } = await storeHolding(listOf({
+      tables: [table(1), table(2)],
+      guests: [
+        guest(1, "Ailsa Fraser"),
+        guest(2, "Chidi Okafor", uuid(1), 1),
+        guest(3, "Morag Kerr", uuid(1), 2),
+        guest(4, "Ewan Shaw", uuid(1), 3),
+      ],
+    }));
+    open(PAGE, store);
+    await desk();
+
+    pressEnter(tabUntil((el) => el.getAttribute("aria-expanded") === "false" && (el.textContent ?? "").includes("Table 1")));
+    pressEnter(tabUntil((el) => el.textContent === "Ailsa Fraser"));
+    expect(screen.getByText(/Choose a free seat or a table/)).toBeTruthy();
+    pressEnter(tabUntil((el) => (el.textContent ?? "").includes("Seat here") && (el.textContent ?? "").includes("seat 4")));
+
+    const moved = currentList().guests.find((g) => g.id === uuid(1001));
+    expect(moved?.tableId).toBe(uuid(1));
+    expect(moved?.seat).toBe(4);
+    expect(screen.queryByText(/Choose a free seat or a table/)).toBeNull();
+    expect(screen.getByText("Ailsa Fraser is at table 1, seat 4.")).toBeTruthy();
+  });
+
+  it("Escape lets go of a chosen guest", async () => {
+    const { store } = await storeHolding(listOf({ tables: [table(1)], guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    fireEvent.click(screen.getByRole("button", { name: "To seat 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fraser, Ailsa" }));
+    expect(screen.getByText(/Choose a free seat or a table/)).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText(/Choose a free seat or a table/)).toBeNull();
+    expect(currentList().guests[0]?.tableId).toBeNull();
+    expect(screen.getByRole("button", { name: "To seat 1" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("refuses a full table in fixed words and moves nobody", async () => {
+    const { store } = await storeHolding(listOf({
+      tables: [table(1, 2)],
+      guests: [guest(1, "Ailsa Fraser"), guest(2, "Chidi Okafor", uuid(1), 1), guest(3, "Morag Kerr", uuid(1), 2)],
+    }));
+    open(PAGE, store);
+    await desk();
+    fireEvent.click(screen.getByRole("button", { name: "To seat 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fraser, Ailsa" }));
+    fireEvent.click(screen.getByRole("button", { name: "Seat here at table 1" }));
+    expect(screen.getByText("That table is full.")).toBeTruthy();
+    expect(currentList().guests[0]?.tableId).toBeNull();
+  });
+
+  it("removing a table shows its guests under To seat with the count", async () => {
+    const { store } = await storeHolding(listOf({
+      tables: [table(1), table(2)],
+      guests: [
+        guest(1, "Ailsa Fraser", uuid(1), 1),
+        guest(2, "Chidi Okafor", uuid(2), 1),
+        guest(3, "Morag Kerr", uuid(2), 2),
+      ],
+    }));
+    open(PAGE, store);
+    await desk();
+
+    fireEvent.click(screen.getByRole("button", { name: /Table 2/, expanded: false }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove table 2" }));
+
+    expect(screen.getByText("Table 2 was removed. Its 2 guests are now to seat.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "To seat 2" }));
+    expect(screen.getByText("Showing the 2 guests with no seat yet")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Kerr, Morag" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Okafor, Chidi" })).toBeTruthy();
+    expect(screen.getAllByText("No seat yet")).toHaveLength(2);
+    expect(currentList().tables.map((t) => t.number)).toEqual([1]);
+  });
+
+  it("says the list is not being kept when storage refuses, and still seats guests", async () => {
+    mocks.getPublicConfig.mockResolvedValue(room(2));
+    open(PAGE, memoryStore(refusingBackend()));
+    await desk();
+    const words = "This browser is not keeping the list. It will be gone when you close this tab. Download it before you leave.";
+    expect(screen.getByText(words)).toBeTruthy();
+    expect(screen.queryByText(/These names are kept only in this browser/)).toBeNull();
+
+    await pasteAndAdd(names(5), 5);
+    fireEvent.click(await screen.findByRole("button", { name: "Use the room's 2 tables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Seat everyone" }));
+    expect(screen.getByText("5 of 5 guests have a seat.")).toBeTruthy();
+
+    await flush();
+    expect(state().kept).toBe(false);
+    expect(screen.getByText(words)).toBeTruthy();
+  });
+
+  it("when the plan answers 404, says the room could not be opened and keeps the list", async () => {
+    mocks.getPublicConfig.mockRejectedValue(new ApiError(404, "Not found", "NOT_FOUND"));
+    const { store } = await storeHolding(listOf({
+      guests: [guest(1, "Ailsa Fraser"), guest(2, "Chidi Okafor"), guest(3, "Morag Kerr")],
+    }));
+    open(PAGE, store);
+    await desk();
+
+    expect(await screen.findByText("The room for this plan could not be opened, so its tables were not counted. Your list is unaffected.")).toBeTruthy();
+    expect(screen.getByText("0 of 3 guests have a seat.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Use the room's/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Set the tables" }));
+    const form = screen.getByRole("form", { name: "Set the tables" });
+    fireEvent.change(within(form).getByLabelText("Tables"), { target: { value: "2" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Set the tables" }));
+    expect(currentList().tables).toHaveLength(2);
+    expect(currentList().tables.every((t) => t.seats === 10)).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Seat everyone" }));
+    expect(screen.getByText("3 of 3 guests have a seat.")).toBeTruthy();
+  });
+
+  it("a blank number of tables changes nothing", async () => {
+    mocks.getPublicConfig.mockRejectedValue(new ApiError(404, "Not found", "NOT_FOUND"));
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    fireEvent.click(await screen.findByRole("button", { name: "Set the tables" }));
+    const form = screen.getByRole("form", { name: "Set the tables" });
+    fireEvent.change(within(form).getByLabelText("Seats at each table"), { target: { value: "" } });
+    fireEvent.change(within(form).getByLabelText("Tables"), { target: { value: "3" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Set the tables" }));
+    expect(currentList().tables).toHaveLength(0);
+    expect(state().canUndo).toBe(false);
+  });
+
+  it("says when the room's tables and the list's differ", async () => {
+    mocks.getPublicConfig.mockResolvedValue(room(17));
+    const tables = Array.from({ length: 18 }, (_, i) => table(i + 1));
+    const { store } = await storeHolding(listOf({ tables, guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    expect(await screen.findByText("The room has 17 tables; your list has 18.")).toBeTruthy();
+  });
+
+  it("deleting asks first, in the panel, and then the list is gone from the store", async () => {
+    // happy-dom has no browser dialog: a stand-in proves the page never asks through one.
+    const confirmSpy = vi.fn<(message?: string) => boolean>(() => true);
+    vi.stubGlobal("confirm", confirmSpy);
+    Object.defineProperty(window, "confirm", { value: confirmSpy, configurable: true, writable: true });
+    const { store } = await storeHolding(listOf({
+      guests: [guest(1, "Ailsa Fraser"), guest(2, "Chidi Okafor"), guest(3, "Morag Kerr")],
+    }));
+    open(PAGE, store);
+    await desk();
+    const panel = screen.getByRole("complementary", { name: "The event" });
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Delete the list from this device" }));
+    expect(within(panel).getByRole("button", { name: "Keep the list" })).toBeTruthy();
+    fireEvent.click(within(panel).getByRole("button", { name: "Keep the list" }));
+    expect((await store.open(PLAN_ID)).kind).toBe("ready");
+    expect(screen.getByText("0 of 3 guests have a seat.")).toBeTruthy();
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Delete the list from this device" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Delete 3 names for good" }));
+    expect(await screen.findByText("There are no guests on this list yet.")).toBeTruthy();
+    expect((await store.open(PLAN_ID)).kind).toBe("new");
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it("asks the plan once, with no body, and asks nothing else", async () => {
+    const view = open(PAGE, memoryStore());
+    await desk();
+    await pasteAndAdd(names(3), 3);
+    fireEvent.click(await screen.findByRole("button", { name: "Use the room's 18 tables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Seat everyone" }));
+    await flush();
+
+    expect(mocks.getPublicConfig).toHaveBeenCalledTimes(1);
+    const call = mocks.getPublicConfig.mock.calls[0];
+    expect(call).toHaveLength(2);
+    expect(call?.[0]).toBe(PLAN_ID);
+    const signal = call?.[1];
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    view.unmount();
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("puts no guest's name in a class, an id or an address", async () => {
+    const { store } = await storeHolding(listOf({
+      tables: [table(1, 10, "Top table")],
+      guests: [guest(1, `${CANARY} Fraser`, uuid(1), 1), guest(2, `Ailsa ${CANARY}`)],
+    }));
+    open(PAGE, store);
+    await desk();
+    fireEvent.click(screen.getByRole("button", { name: /Top table/, expanded: false }));
+    for (const el of Array.from(document.querySelectorAll("*"))) {
+      for (const attribute of ["class", "id", "href", "for", "aria-controls", "aria-labelledby", "data-testid"]) {
+        expect(el.getAttribute(attribute) ?? "").not.toContain(CANARY);
+      }
+    }
+    fireEvent.click(screen.getByRole("button", { name: /Guests 2/ }));
+    for (const el of Array.from(document.querySelectorAll("*"))) {
+      expect(el.getAttribute("class") ?? "").not.toContain(CANARY);
+      expect(el.getAttribute("id") ?? "").not.toContain(CANARY);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The device's answers, in words
+// ---------------------------------------------------------------------------
+
+describe("the guest list page: what the device says", () => {
+  it("a list that cannot be read is said so, and a new one can be started", async () => {
+    const backend = memoryBackend();
+    await backend.put(PLAN_ID, { storedAt: new Date().toISOString(), value: { not: "a list" } });
+    open(PAGE, memoryStore(backend));
+    expect(await screen.findByText("A list was kept here for this plan, but it cannot be read.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Start a new list" }));
+    await desk();
+    expect(screen.getByText("There are no guests on this list yet.")).toBeTruthy();
+  });
+
+  it("says how many guests were sent back to seat on opening, and the notice closes", async () => {
+    const { store } = await storeHolding(listOf({
+      tables: [table(1)],
+      guests: [guest(1, "Ailsa Fraser", uuid(1), 1), guest(2, "Chidi Okafor", uuid(1), 1), guest(3, "Morag Kerr", uuid(1), 1)],
+    }));
+    open(PAGE, store);
+    await desk();
+    const words = "2 guests were sent back to seat, because their table or seat was no longer there.";
+    expect(screen.getByText(words)).toBeTruthy();
+    fireEvent.click(within(screen.getByText(words).closest("[data-notice]") ?? document.body).getByRole("button", { name: "Close" }));
+    expect(screen.queryByText(words)).toBeNull();
+  });
+
+  it("says when another tab changed the list and this tab's version was kept", async () => {
+    const opened = listOf({ guests: [guest(1, "Ailsa Fraser")] });
+    const { store, backend } = await storeHolding(opened);
+    open(PAGE, store);
+    await desk();
+    const other = memoryStore(backend);
+    expect(await other.save({ ...opened, title: "Another tab", updatedAt: new Date(Date.now() + 60_000).toISOString() }, opened.updatedAt)).toBe("saved");
+
+    fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor" } });
+    await flush();
+    expect(await screen.findByText("This list was also changed in another tab. This tab's version was kept.")).toBeTruthy();
+  });
+
+  it("removes a list past its removal day on opening, rather than showing it", async () => {
+    const { store } = await storeHolding(listOf({ eventDate: "2020-01-01", guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    expect(screen.getByText("There are no guests on this list yet.")).toBeTruthy();
+    expect((await store.open(PLAN_ID)).kind).toBe("new");
+  });
+
+  it("says where the names are kept and when they are removed", async () => {
+    const dated = listOf({ eventDate: "2099-06-12", guests: [guest(1, "Ailsa Fraser")] });
+    const { store } = await storeHolding(dated);
+    const view = open(PAGE, store);
+    await desk();
+    expect(screen.getByText("These names are kept only in this browser, on this device. Nothing is sent to Venviewer. They are removed on 12 July 2099, 30 days after the event.")).toBeTruthy();
+    view.unmount();
+    state().reset();
+
+    const undated = listOf({ guests: [guest(1, "Ailsa Fraser")] });
+    const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
+      .format(Date.parse(`${deleteAfter(undated).dateIso}T00:00:00.000Z`));
+    open(PAGE, (await storeHolding(undated)).store);
+    await desk();
+    expect(screen.getByText(`These names are kept only in this browser, on this device. Nothing is sent to Venviewer. They are removed on ${day}, 90 days after your last change.`)).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The panel's next step and what is still needed
+// ---------------------------------------------------------------------------
+
+describe("the guest list page: the next step and what is still needed", () => {
+  it("with no guests, the next step is to paste a list", async () => {
+    open(PAGE, memoryStore());
+    await desk();
+    const panel = screen.getByRole("complementary", { name: "The event" });
+    expect(within(panel).getByRole("button", { name: "Paste a list" })).toBeTruthy();
+    expect(within(panel).getByText("There are no tables yet")).toBeTruthy();
+    expect(within(panel).getByText("The table plan has not been printed")).toBeTruthy();
+  });
+
+  it("names the guests with no seat, and the print that is out of date", async () => {
+    const { store } = await storeHolding(listOf({
+      tables: [table(1, 2)],
+      guests: [guest(1, "Ailsa Fraser", uuid(1), 1), guest(2, "Chidi Okafor", uuid(1), 2), guest(3, "Morag Kerr")],
+      paperVersion: 2,
+      changedSincePrint: true,
+      printedAt: "2026-11-10T12:00:00.000Z",
+    }));
+    open(PAGE, store);
+    await desk();
+    const panel = screen.getByRole("complementary", { name: "The event" });
+    expect(within(panel).getByText("1 guest has no seat")).toBeTruthy();
+    expect(within(panel).getByText("The table plan has changed since it was printed")).toBeTruthy();
+    expect(within(panel).getByText("Printed 10 November")).toBeTruthy();
+    // The one table is full, so seating everyone would seat nobody: the next step is the paper.
+    expect(within(panel).getByRole("link", { name: "Print the table plan" })).toBeTruthy();
+  });
+
+  it("with nothing left to do, says nothing else is needed", async () => {
+    const { store } = await storeHolding(listOf({
+      tables: [table(1, 2)],
+      guests: [guest(1, "Ailsa Fraser", uuid(1), 1)],
+      paperVersion: 1,
+      changedSincePrint: false,
+      printedAt: "2026-11-10T12:00:00.000Z",
+    }));
+    open(PAGE, store);
+    await desk();
+    const panel = screen.getByRole("complementary", { name: "The event" });
+    expect(within(panel).getByText("Nothing else is needed for the paper.")).toBeTruthy();
+    const paper = within(panel).getByRole("link", { name: "Place cards" });
+    expect(paper.getAttribute("href")).toBe(`/plan/${PLAN_ID}/guests/paper?sheet=place-cards`);
+  });
+
+  it("undo takes back the last change", async () => {
+    const { store } = await storeHolding(listOf({ tables: [table(1)], guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    const undo = screen.getByRole("button", { name: "Undo" });
+    expect(undo.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Seat everyone" }));
+    expect(screen.getByText("1 of 1 guest has a seat.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => {
+      expect(screen.getByText("0 of 1 guest has a seat.")).toBeTruthy();
+    });
+  });
+
+  it("downloads the list as a file made in the browser", async () => {
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser", null, null, "Fraser family")] }));
+    const made: Blob[] = [];
+    const createSpy = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      if (blob instanceof Blob) made.push(blob);
+      return "blob:guest-list";
+    });
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const clicked: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this.download);
+    });
+    open(PAGE, store);
+    await desk();
+    fireEvent.click(screen.getByRole("button", { name: "Download the list" }));
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(clicked).toEqual(["guest-list.csv"]);
+    expect(await made[0]?.text()).toContain('"Ailsa Fraser","Fraser family","",""');
+    await waitFor(() => {
+      expect(revokeSpy).toHaveBeenCalledWith("blob:guest-list");
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

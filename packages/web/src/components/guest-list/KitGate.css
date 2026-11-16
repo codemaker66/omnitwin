@@ -1,0 +1,78 @@
+/* ---------------------------------------------------------------------------
+   The kit's gate: an address that is not a plan, said on the house desk (an
+   ivory sheet on the sage ground). Colours come from the ivory register.
+   --------------------------------------------------------------------------- */
+
+.kit-gate {
+  box-sizing: border-box;
+  min-height: 100dvh;
+  padding: 24px;
+  background: var(--house-ground);
+  color: var(--reg-text-1);
+  font-family: var(--house-sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.kit-gate[data-register="ivory"] {
+  --reg-text-2: var(--vv-forest-2);
+}
+
+.kit-gate__sheet {
+  box-sizing: border-box;
+  max-width: 720px;
+  padding: 44px 48px 40px;
+  background: var(--reg-surface);
+}
+
+.kit-gate__title {
+  margin: 0;
+  font: 400 clamp(32px, 4vw, 46px)/1.08 var(--house-serif);
+  letter-spacing: -0.015em;
+}
+
+.kit-gate__lede {
+  margin: 14px 0 0;
+  color: var(--reg-text-2);
+  font: 400 19px/1.5 var(--house-serif);
+}
+
+.kit-gate__action {
+  margin: 26px 0 0;
+}
+
+.kit-gate__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--reg-primary);
+  border-radius: var(--house-radius-control);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+  font: 600 15px/1 var(--house-sans);
+  text-decoration: none;
+}
+
+.kit-gate__link:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kit-gate__link:hover {
+    border-color: var(--reg-primary-hover);
+    background: var(--reg-primary-hover);
+  }
+}
+
+@media (max-width: 760px) {
+  .kit-gate {
+    padding: 0;
+  }
+
+  .kit-gate__sheet {
+    min-height: 100dvh;
+    padding: 28px 16px 32px;
+  }
+}

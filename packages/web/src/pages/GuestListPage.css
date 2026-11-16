@@ -1,0 +1,1211 @@
+/* ---------------------------------------------------------------------------
+   The planner's guest list: the house desk of the approved mock-up's second
+   screen. The sage ground with its pale plane, an ivory sheet holding the
+   title, the counts on the copper plane (they are also the filters) and the
+   ledger; a forest panel beside it with the one next step. Colours come from
+   the register (--reg-*) and named House tones only. Client tier: body text
+   holds 7:1, so the sheet's second ink is the forest authority, and copper
+   marks a state with a dot rather than carrying text.
+   --------------------------------------------------------------------------- */
+
+.gl {
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  min-height: 100dvh;
+  padding: 24px;
+  background: var(--house-ground);
+  color: var(--reg-text-1);
+  font-family: var(--house-sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.gl[data-register="ivory"] {
+  --reg-text-2: var(--vv-forest-2);
+}
+
+/* The pale plane behind the sheet's top corner. */
+.gl::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--house-ground-plane);
+  clip-path: polygon(0 0, 62% 0, 54% 46%, 0 58%);
+  pointer-events: none;
+}
+
+.gl :is(button, input, select, textarea, a):focus-visible,
+.gl [tabindex="-1"]:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+}
+
+.gl [tabindex="-1"]:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.gl-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.gl-waiting {
+  display: grid;
+  place-items: center;
+  min-height: calc(100dvh - 48px);
+}
+
+/* ---------------------------------------------------------------------------
+   The desk and the sheet
+   --------------------------------------------------------------------------- */
+
+.gl-desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1.72fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 24px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+.gl-sheet {
+  --gl-pad: clamp(24px, 3.4vw, 48px);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 44px var(--gl-pad) 40px;
+  background: var(--reg-surface);
+}
+
+.gl-eyebrow {
+  margin: 0;
+  color: var(--reg-text-2);
+  font: 600 12px/1.2 var(--house-sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.gl-title {
+  display: block;
+  margin-top: 14px;
+}
+
+.gl-title__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 2px 0 6px;
+  border: 0;
+  border-bottom: 1px solid var(--house-rule-strong);
+  background: transparent;
+  color: var(--reg-text-1);
+  font: 400 clamp(34px, 4.4vw, 50px)/1.1 var(--house-serif);
+  letter-spacing: -0.015em;
+}
+
+.gl-title__input::placeholder {
+  color: var(--reg-text-2);
+  opacity: 1;
+}
+
+.gl .gl-title__input:focus-visible {
+  outline-offset: 4px;
+}
+
+.gl-date {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 16px;
+}
+
+.gl-date__label {
+  color: var(--reg-text-2);
+  font: 500 14px/1.3 var(--house-sans);
+}
+
+.gl-lede {
+  max-width: 36em;
+  margin: 18px 0 0;
+  color: var(--reg-text-2);
+  font: 400 19px/1.5 var(--house-serif);
+}
+
+.gl-lede__count,
+.gl-lede__owed {
+  color: var(--reg-text-1);
+  font-weight: 500;
+}
+
+.gl-lede__owed::before,
+.gl-guest__seat[data-none="true"]::before,
+.gl-seat__free::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 8px 2px 0;
+  border-radius: 50%;
+  background: var(--house-copper-dot);
+  vertical-align: middle;
+}
+
+/* ---------------------------------------------------------------------------
+   The copper plane: four counts, each a filter
+   --------------------------------------------------------------------------- */
+
+.gl-plane {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 30px calc(-1 * var(--gl-pad) - 12px) 0;
+  padding: 24px calc(var(--gl-pad) + 12px) 22px;
+  background: var(--reg-surface);
+  clip-path: polygon(0 5%, 100% 0, 99.3% 100%, 0.5% 95%);
+}
+
+.gl-count {
+  position: relative;
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 14px 6px 18px;
+  border-left: 1px solid color-mix(in srgb, var(--reg-text-1) 20%, transparent);
+}
+
+.gl-count:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.gl-count dt {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--reg-text-1);
+  font: 500 14px/1.3 var(--house-sans);
+}
+
+.gl-count dt::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--house-slate-text);
+}
+
+.gl-count[data-tone="settled"] dt::before {
+  background: var(--house-plane-dot-approved);
+}
+
+.gl-count[data-tone="owed"] dt::before {
+  background: var(--reg-attention);
+}
+
+.gl-count dd {
+  margin: 0;
+}
+
+/* The number is the button; its ::after stretches over the whole count. */
+.gl-count__button {
+  appearance: none;
+  display: block;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--reg-text-1);
+  font: 300 38px/1 var(--house-sans);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gl-count__button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.gl-count[data-tone="owed"] .gl-count__button {
+  color: var(--reg-attention);
+}
+
+.gl .gl-count__button:focus-visible {
+  outline: none;
+}
+
+.gl-count:has(.gl-count__button:focus-visible) {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+}
+
+.gl-count:has(.gl-count__button[aria-pressed="true"]) dt {
+  font-weight: 600;
+  box-shadow: 0 9px 0 -6px var(--reg-text-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gl-count:hover dt {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--reg-text-1) 45%, transparent);
+    text-underline-offset: 3px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Notices, the guest being moved, the ledger's head
+   --------------------------------------------------------------------------- */
+
+.gl-notices {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.gl-notices:empty {
+  display: none;
+}
+
+.gl-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 8px 16px;
+  border-left: 3px solid var(--reg-edge);
+  background: var(--reg-raised);
+  font-size: 15px;
+}
+
+.gl-notice p {
+  max-width: 70ch;
+  margin: 4px 0;
+}
+
+.gl-notice[data-tone="alert"] {
+  border-left-color: var(--reg-alert);
+  font-weight: 500;
+}
+
+.gl-notice[data-tone="attention"] {
+  border-left-color: var(--house-copper-dot);
+}
+
+.gl-notice[data-tone="settled"] {
+  border-left-color: var(--house-sage-dot);
+}
+
+.gl-moving {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+  padding: 14px 18px 16px;
+  border: 1px solid var(--reg-edge);
+  border-left: 3px solid var(--reg-text-1);
+  background: var(--reg-raised);
+}
+
+.gl-moving__words {
+  margin: 0;
+  font: 400 19px/1.35 var(--house-serif);
+  overflow-wrap: anywhere;
+}
+
+.gl-moving__hint {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+.gl-moving__refusal {
+  margin: 0;
+  color: var(--reg-alert);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.gl-said {
+  margin: 12px 0 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.gl-said:empty {
+  margin: 0;
+}
+
+.gl-ledger-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: 22px 0 6px;
+}
+
+.gl-showing {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+/* The ledger fills the sheet beside the panel and scrolls inside itself. */
+.gl-ledger {
+  flex: 1 1 440px;
+  min-height: 440px;
+  margin-right: -12px;
+  padding-right: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.gl-empty {
+  margin: 14px 0 0;
+  color: var(--reg-text-2);
+  font: 400 17px/1.5 var(--house-serif);
+}
+
+/* ---------------------------------------------------------------------------
+   The ledger by table
+   --------------------------------------------------------------------------- */
+
+.gl-tables,
+.gl-guest-list,
+.gl-seats {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gl-table {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 18px;
+  padding: 16px 14px 16px 12px;
+  border-bottom: 1px solid var(--reg-rule);
+  border-left: 3px solid transparent;
+}
+
+.gl-table[data-open="true"] {
+  border-left-color: var(--reg-text-1);
+  background: var(--reg-surface-selected);
+}
+
+.gl-tile {
+  display: block;
+  padding: 7px 0 6px;
+  border: 1px solid var(--house-rule-strong);
+  background: var(--reg-raised);
+  text-align: center;
+}
+
+.gl-tile small {
+  display: block;
+  color: var(--reg-text-2);
+  font: 600 12px/1 var(--house-sans);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.gl-tile b {
+  display: block;
+  margin-top: 3px;
+  font: 400 26px/1.05 var(--house-serif);
+  font-variant-numeric: tabular-nums;
+}
+
+.gl-table__main {
+  min-width: 0;
+}
+
+.gl-table__name {
+  margin: 0;
+  font: inherit;
+}
+
+.gl-table__toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin: -6px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--reg-text-1);
+  font: 400 21px/1.2 var(--house-serif);
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gl-table__toggle:hover {
+    text-decoration-color: var(--reg-edge);
+  }
+}
+
+.gl-table__names {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.gl-table__state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  color: var(--reg-text-2);
+  font: 500 14px/1.3 var(--house-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--house-radius-pill);
+  background: var(--house-copper-wash);
+  color: var(--house-ink-1);
+  font: 600 14px/1 var(--house-sans);
+}
+
+.gl-chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--house-copper-dot);
+}
+
+.gl-seats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+  margin-top: 12px;
+  font-size: 15px;
+}
+
+.gl-seat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--house-rule-strong);
+}
+
+.gl-seat__number {
+  flex: none;
+  width: 1.6em;
+  color: var(--reg-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.gl-seat__free {
+  font-weight: 500;
+}
+
+.gl-seat__guest,
+.gl-guest__name {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--house-radius-control);
+  background: none;
+  color: var(--reg-text-1);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.gl-seat__guest {
+  font: 400 15px/1.3 var(--house-sans);
+}
+
+.gl-to-seat {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.gl-to-seat__lead,
+.gl-to-seat__more {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+.gl-to-seat__names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gl-chip-button {
+  appearance: none;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--reg-edge);
+  border-radius: var(--house-radius-control);
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font: 500 14px/1.2 var(--house-sans);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+/* The guest chosen to be moved, wherever their name is shown. */
+.gl-seat__guest[aria-pressed="true"],
+.gl-guest__name[aria-pressed="true"],
+.gl-chip-button[aria-pressed="true"] {
+  padding: 0 10px;
+  border-color: var(--reg-primary);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+}
+
+.gl-table__edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--reg-rule);
+}
+
+/* ---------------------------------------------------------------------------
+   The ledger by guest, A to Z
+   --------------------------------------------------------------------------- */
+
+.gl-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 22px 0 4px;
+  color: var(--reg-text-2);
+  font: 600 12px/1 var(--house-sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.gl-letter:first-of-type .gl-group {
+  margin-top: 8px;
+}
+
+.gl-group::after {
+  content: "";
+  order: 1;
+  flex: 1;
+  height: 1px;
+  background: var(--house-rule-strong);
+}
+
+.gl-group__count {
+  order: 2;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.gl-guest {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1px solid var(--reg-rule);
+}
+
+.gl-guest__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 12px;
+  min-width: 0;
+}
+
+.gl-guest__name {
+  font: 400 18px/1.3 var(--house-serif);
+}
+
+.gl-guest__party {
+  color: var(--reg-text-2);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.gl-guest__seat {
+  color: var(--reg-text-2);
+  font: 500 14px/1.3 var(--house-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gl-guest__seat[data-none="true"] {
+  color: var(--reg-text-1);
+}
+
+.gl-guest__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.gl-guest__edit {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  align-items: flex-end;
+  gap: 12px 16px;
+  padding: 10px 0;
+}
+
+.gl-guest__edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------------------
+   Pasting a list
+   --------------------------------------------------------------------------- */
+
+.gl-paste {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+  padding: 20px 22px 22px;
+  border: 1px solid var(--house-rule-strong);
+  background: var(--reg-raised);
+}
+
+.gl-paste__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gl-section-title {
+  margin: 0;
+  font: 400 24px/1.2 var(--house-serif);
+}
+
+.gl-paste__box {
+  width: 100%;
+  min-height: 180px;
+  padding: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.gl-paste__found {
+  display: grid;
+  gap: 12px;
+}
+
+.gl-paste__words {
+  margin: 0;
+  font: 400 18px/1.45 var(--house-serif);
+}
+
+.gl-paste__left-out {
+  margin: 0;
+  font-size: 15px;
+}
+
+.gl-paste__columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.gl-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.gl-check input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--reg-primary);
+}
+
+/* ---------------------------------------------------------------------------
+   Fields, on either register
+   --------------------------------------------------------------------------- */
+
+.gl-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gl-field--wide {
+  flex: 1 1 220px;
+}
+
+.gl-field__label {
+  color: var(--reg-text-2);
+  font: 500 14px/1.3 var(--house-sans);
+}
+
+.gl-field__hint {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+.gl-field__error {
+  margin: 0;
+  color: var(--reg-alert);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gl-input,
+.gl-select,
+.gl-paste__box {
+  box-sizing: border-box;
+  min-height: 44px;
+  border: 1px solid var(--reg-edge);
+  border-radius: var(--house-radius-control);
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font: 400 16px/1.2 var(--house-sans);
+}
+
+.gl-input,
+.gl-select {
+  padding: 0 12px;
+}
+
+.gl-select {
+  width: 100%;
+}
+
+.gl-input[aria-invalid="true"] {
+  border-color: var(--reg-alert);
+}
+
+.gl-input--number {
+  width: 7em;
+}
+
+/* ---------------------------------------------------------------------------
+   Buttons and links
+   --------------------------------------------------------------------------- */
+
+.gl-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.gl-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--reg-edge);
+  border-radius: var(--house-radius-control);
+  background: transparent;
+  color: var(--reg-text-1);
+  font: 600 15px/1.1 var(--house-sans);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.gl-button--primary {
+  border-color: var(--reg-primary);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+}
+
+.gl-button--quiet {
+  font-weight: 500;
+}
+
+.gl-button--alert {
+  border-color: var(--reg-alert);
+  color: var(--reg-alert);
+}
+
+.gl-button--place {
+  padding: 0 12px;
+  border-color: var(--reg-text-1);
+  font-size: 14px;
+}
+
+.gl-button:disabled,
+.gl-button[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Working, it stays at full strength so its words and motion read. */
+.gl-button[aria-busy="true"] {
+  cursor: progress;
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gl-button:hover:not(:disabled):not([aria-disabled="true"]),
+  .gl-chip-button:hover:not([aria-pressed="true"]) {
+    background: var(--reg-surface-hover);
+  }
+
+  .gl-button--primary:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: var(--reg-primary-hover);
+    background: var(--reg-primary-hover);
+  }
+}
+
+.gl-button:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: scale(0.97);
+}
+
+.gl-link {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--reg-text-1);
+  font: 500 14px/1.3 var(--house-sans);
+  text-decoration: underline;
+  text-decoration-color: var(--reg-edge);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   The forest panel
+   --------------------------------------------------------------------------- */
+
+.gl-panel {
+  min-width: 0;
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+}
+
+.gl-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 30px 34px 34px;
+}
+
+.gl-panel__title {
+  margin: 8px 0 0;
+  font: 400 clamp(28px, 3vw, 36px)/1.1 var(--house-serif);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.gl-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 0;
+}
+
+.gl-facts > div {
+  padding: 0 16px;
+  border-left: 1px solid var(--reg-rule);
+}
+
+.gl-facts > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.gl-facts b {
+  display: block;
+  font: 300 26px/1.1 var(--house-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gl-facts span {
+  display: block;
+  margin-top: 6px;
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+.gl-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 22px;
+  border-top: 1px solid var(--reg-rule);
+}
+
+.gl-panel .gl-button--primary {
+  min-height: 48px;
+  padding: 0 20px;
+  font-size: 16px;
+}
+
+.gl-panel__note {
+  max-width: 40em;
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 15px;
+}
+
+.gl-panel__working {
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+.gl-owed,
+.gl-paper {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gl-owed li {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--reg-rule);
+  font-size: 15px;
+}
+
+.gl-owed li::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-top: 8px;
+  border-radius: 50%;
+  background: var(--reg-attention);
+}
+
+.gl-owed small {
+  grid-column: 2;
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+.gl-paper li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--reg-rule);
+  font-size: 15px;
+}
+
+.gl-owed li:last-child,
+.gl-paper li:last-child {
+  border-bottom: 0;
+}
+
+.gl-paper__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--reg-text-1);
+  text-decoration: underline;
+  text-decoration-color: var(--reg-edge);
+  text-underline-offset: 3px;
+}
+
+.gl-paper small {
+  color: var(--reg-text-2);
+  font-size: 14px;
+  text-align: right;
+}
+
+.gl-tables-form {
+  display: grid;
+  gap: 14px;
+}
+
+.gl-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.gl-tables-form .gl-input--number {
+  width: 100%;
+}
+
+.gl-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--reg-edge);
+  border-left: 3px solid var(--reg-alert);
+  background: var(--reg-raised);
+}
+
+.gl-confirm__question {
+  margin: 0;
+  font: 400 18px/1.35 var(--house-serif);
+}
+
+/* ---------------------------------------------------------------------------
+   A list that cannot be read
+   --------------------------------------------------------------------------- */
+
+.gl-alone {
+  display: grid;
+  gap: 14px;
+  box-sizing: border-box;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 44px 48px 40px;
+  background: var(--reg-surface);
+}
+
+.gl-alone__title {
+  margin: 0;
+  font: 400 clamp(34px, 4.4vw, 50px)/1.05 var(--house-serif);
+  letter-spacing: -0.015em;
+}
+
+.gl-alone__lede {
+  margin: 0;
+  font: 400 19px/1.5 var(--house-serif);
+}
+
+.gl-alone__detail {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 15px;
+}
+
+/* ---------------------------------------------------------------------------
+   One column under 900px; a phone is flush
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .gl {
+    padding: 12px;
+  }
+
+  .gl-desk {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .gl-sheet {
+    --gl-pad: 18px;
+    padding: 28px 18px;
+  }
+
+  .gl-plane {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 18px;
+    margin-inline: -18px;
+    padding-inline: 18px;
+    clip-path: none;
+  }
+
+  .gl-count:nth-child(3) {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .gl-ledger {
+    flex: none;
+    min-height: 0;
+    max-height: 70vh;
+  }
+
+  .gl-panel__body {
+    padding: 24px 18px 28px;
+  }
+
+  .gl-paste__columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gl-alone {
+    padding: 28px 18px;
+  }
+}
+
+@media (max-width: 520px) {
+  .gl {
+    padding: 0;
+  }
+
+  .gl-table {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .gl-table__state {
+    flex-direction: row;
+    flex-wrap: wrap;
+    grid-column: 2;
+    align-items: center;
+  }
+
+  .gl-seats,
+  .gl-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gl-guest {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gl-button,
+  .gl-chip-button {
+    transition: none;
+  }
+
+  .gl-button:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: none;
+  }
+}
