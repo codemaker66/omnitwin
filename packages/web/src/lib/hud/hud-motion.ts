@@ -9,8 +9,8 @@ import type { SpringConfig } from "../springs.js";
 // a setting handed to it, never a second spring. It is written again here, not
 // read from the table, for as long as this screen is behind its flag: nothing
 // else in production uses that entry yet, so the bundler leaves it out of the
-// table, and reading it from here put it back, in a shared file nine of the
-// build's other files import (14 Nov 2026). Flag-only code may not grow what
+// table, and reading it from here put it back, in a shared file seven other
+// files of master's build import (14 Nov 2026). Flag-only code may not grow what
 // every planner downloads (the design note, "Behind its flag, and nothing
 // more"). __tests__/flag-only-copies.test.ts holds these to the table's own
 // numbers. When this screen is the planner, read the table again.

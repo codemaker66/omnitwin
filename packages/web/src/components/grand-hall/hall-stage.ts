@@ -74,7 +74,7 @@ const PLAN_LEAN = Math.tan(0.107);
  * shared table's (SPRING_PRESETS.sheetSettle), written again here for as long
  * as the stage is behind a flag: nothing else in production uses that entry
  * yet, so the bundler leaves it out of the table, and reading it from here put
- * it back, in a shared file nine of the build's other files import
+ * it back, in a shared file seven other files of master's build import
  * (14 Nov 2026). The stage's tests hold these to the table's own numbers. When
  * the stage is the planner's own view, read the table again.
  */

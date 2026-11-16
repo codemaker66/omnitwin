@@ -13,7 +13,7 @@ import type { CardParams } from "../setup-cards.js";
 // downloads (the design note, "Behind its flag, and nothing more"). Nothing
 // else in production calls setupCardPreviewUrl yet, so the bundler leaves it
 // out; importing it from here put it back, into the shared file its module is
-// built into, which fifteen of the build's other files import (14 Nov 2026).
+// built into, which twelve other files of master's build import (14 Nov 2026).
 // __tests__/flag-only-copies.test.ts holds this to the shared rule for every
 // card, colourway and chair, so the two cannot part. When this screen is the
 // planner, import the shared one and delete this.
