@@ -128,6 +128,12 @@
 .enq-summary .vv-activity-status { font: 400 15px/1.45 var(--enq-sans); color: var(--enq-ink-2); }
 .enq-summary__retry { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
 .enq-summary__retry p { color: #6f2616; font: 400 15px/1.45 var(--enq-sans); }
+/* The reply-time alarm: one line in the brick ink under the summary, with
+   the one move it asks for beside it. The words carry the meaning. */
+.enq-summary__alarm { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 10px; }
+.enq-summary__alarm p { flex: 1 1 32ch; }
+.enq-summary__alarm .enq-button { font-family: var(--enq-sans); }
+.enq-summary strong[data-tone="alarm"] { color: var(--enq-brick); }
 
 /* Pipeline stages on the copper plane: the counts are the filters. The
    plane breaks out past the sheet's left edge, as the impact plane does in
@@ -321,6 +327,7 @@
 .enq-row__side { display: grid; justify-items: end; gap: 6px; }
 .enq-row__age { color: var(--enq-ink-3); font-size: 12.5px; white-space: nowrap; }
 .enq-row[data-tone="new"] .enq-row__age { color: var(--enq-copper); font-weight: 500; }
+.enq-row__alarm { padding: 1px 8px; border-radius: 999px; background: var(--enq-brick-wash); color: var(--house-brick-chip); font-size: 12px; font-weight: 600; white-space: nowrap; }
 
 .enq-empty {
   display: grid;
@@ -676,6 +683,47 @@
 }
 .enq-confirm .enq-actions { margin-top: 14px; }
 .enq-confirm__error { margin: 12px 0 0; color: #ffcdb7; font-size: 14px; }
+
+/* First reply: when and how the venue first answered, and the form that
+   records a reply made outside Venviewer. */
+.enq-reply h3:focus { outline: none; }
+.enq-reply__line { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; color: var(--enq-forest-ink); font-size: 15px; line-height: 1.45; }
+.enq-reply__line--quiet { color: var(--enq-forest-ink-2); }
+.enq-reply__line--alarm { color: var(--house-brick-lit); font-weight: 500; }
+.enq-reply__nowrap { white-space: nowrap; }
+.enq-reply__mark { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--house-brick-lit); transform: translateY(-1px); }
+.enq-reply__form { border-left: 3px solid var(--house-copper-lit); }
+.enq-reply__choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; padding: 0; border: 0; }
+.enq-reply__choices legend { margin: 0 0 8px; padding: 0; color: var(--enq-forest-ink-2); font-size: 13px; }
+.enq-reply__form .enq-reply__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--enq-forest-rule);
+  border-radius: 3px;
+  color: var(--enq-forest-ink);
+  font-size: 14.5px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.enq-reply__choice:has(input:checked) { border-color: var(--house-copper-lit); background: #f0b68f1f; }
+.enq-reply__choice input { margin: 0; accent-color: var(--house-copper-lit); }
+.enq-reply__time { display: grid; flex: 1 1 100%; gap: 6px; color: var(--enq-forest-ink-2); font-size: 13px; }
+.enq-reply__time input {
+  box-sizing: border-box;
+  max-width: 280px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--enq-forest-rule);
+  border-radius: 3px;
+  background: #18301f33;
+  color: var(--enq-forest-ink);
+  color-scheme: dark;
+  font: inherit;
+  font-size: 14.5px;
+}
 
 .enq-drafts > summary {
   display: flex;

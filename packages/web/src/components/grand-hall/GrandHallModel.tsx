@@ -52,6 +52,7 @@ import { buildGlazingPanes, createGlassMaterial, GLASS_PRESETS, parseGlassPreset
 import { HALL_MOODS, HallMoodUniforms, hallFrameStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVATION, type HallWall } from "./hall-spec.js";
 import { resetSceneGrade, setSceneGrade } from "../../lib/scene-grade.js";
+import { photographToeFor, setFilmToe } from "../../lib/film-toe.js";
 import { setCandleLight } from "../../lib/event-light.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { nativeFramePrecompile } from "../../lib/native-frame-composer.js";
@@ -292,14 +293,18 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const glazing = new HallGlazingUniforms();
   // Without slots (a software rasteriser) the walls' shaders leave the detail out entirely.
   const fine = detail.enabled ? detail : null;
+  // A view that asks for a toe of its own (`?toe=` in its address) has the
+  // photographs give back what the curve's toe takes (lib/film-toe.ts).
+  const toe = photographToeFor(window.location.search);
+  if (toe !== null) setFilmToe(toe);
   const materials = createHallMaterials(textures, photos, mood, section, sun, {
-    glazing, alphaToCoverage: multisampled, detail: fine,
+    glazing, alphaToCoverage: multisampled, detail: fine, photographToe: toe !== null,
     // A near wall's slivers of moulding past its cut take the section's room line (hall-materials.ts outsideSliver).
     sliverColour: sectionRoomLine(sectionPreset, mood, sun !== null, sun),
   });
   const casters = sun === null ? null : createHallCasterMaterials(photos);
   const doorSwing = new DoorSwingUniforms();
-  const doorMaterials = createDoorLeafMaterials(textures, photos, mood, section, doorSwing, sun, { card: sectionPreset.leaves === "card", detail: fine });
+  const doorMaterials = createDoorLeafMaterials(textures, photos, mood, section, doorSwing, sun, { card: sectionPreset.leaves === "card", detail: fine, photographToe: toe !== null });
   const beyond = createBeyondResources(sectionPreset, { mood, swing: doorSwing, section, sun }, textures, shared.beyondPhotos);
 
   // As scanned: pale silver-gilt fittings on dark bronze stems, and white
