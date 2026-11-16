@@ -65,7 +65,7 @@ export interface CardFace {
   readonly seats: number;
 }
 
-export const SETUP_CARD_IDS: readonly SetupCardId[] = ["round", "top-table", "long-table", "dance-floor"];
+// SETUP_CARD_IDS and isSetupCardId, which only the new chrome reads, are in lib/setup-card-ids.ts (T-671).
 
 const ROUND_TABLE_SLUGS: Readonly<Partial<Record<TableColourway, string>>> = {
   white: "round-table-6ft-white",
@@ -108,10 +108,6 @@ export const TRESTLE_SETS = {
  */
 export function trestleRange(card: "top-table" | "long-table"): { readonly default: number; readonly min: number; readonly max: number } {
   return plannerFeatureEnabled("tableSets") ? TRESTLE_SETS[card] : { default: 1, min: 1, max: 1 };
-}
-
-export function isSetupCardId(id: string): id is SetupCardId {
-  return (SETUP_CARD_IDS as readonly string[]).includes(id);
 }
 
 export function pieceCardId(slug: string): PieceCardId {
