@@ -1,7 +1,8 @@
 # The Diary holds the whole book: design
 
 Design, 14 November 2026; revised on 15 November after a builder's check, whose findings are answered here.
-Status: **written for Blake's approval; not approved.** No product code is written before he approves it.
+Status: **approved by Blake on 16 November 2026**, by button: "Approve it (Recommended)". His answers to its
+decisions are recorded word for word in section 14; one decision (4) has not been put to him yet.
 Piece A of the platform plan (`docs/superpowers/specs/2026-11-13-platform-plan-design.md`, section 5.2), ledger row
 T-703. Branch `claude/platform-diary-design`. Code was read at master `7c3461e7`; every `path:line` below is from the
 repository root at that commit. The two approved designs this piece meets are read from their branches: the spine
@@ -46,16 +47,16 @@ the matching for each run, and the sales lead checks thirty Saturdays.
 matching its rooms, words and owners), and with it the thirty Saturdays, switching reminders on, public dates and the
 plan's "done when". Lapsed holds, rooms sold together, set-up time and terms do not wait for it.
 
-**What only you decide** (section 14).
+**What you decided, on 16 November 2026** (section 14 has your words).
 
-1. This design.
-2. When the reminder trial run happens. We recommend: on the real holds, once they are in.
-3. When a room's dates may show on the public page. We recommend: after the thirty Saturdays are ticked and the
-   venue's admin or manager records it.
-4. What the public page shows for a room that is part of a booked combination. We recommend: Booked, or Held.
-5. Whether a seller may place a provisional hold while the caller is on the phone. On 10 October you decided only
-   staff and admin write the Diary; yes gives sellers back that one part, for holds they own. We recommend: yes,
-   never confirming.
+1. This design: approved.
+2. The reminder trial run happens on the real holds, once they are in.
+3. A room's dates may show on the public page after the thirty Saturdays are ticked and the venue's admin or
+   manager records it.
+4. Still to ask you: what the public page shows for a room that is part of a booked combination. We recommend:
+   Booked, or Held. It decides only one line of stage 2.
+5. A seller may not place a provisional hold. Your 10 October decision stands: only staff and admin write the
+   Diary, and sellers ask the office to hold a date.
 
 **What the venue decides** (section 15): which rooms are sold together, how long a hold lasts, standard set-up
 times, the office's words, and where a new booking is entered while both diaries run. Until it answers, nothing
@@ -620,8 +621,8 @@ releasing a hold or a refund waits for one tap by a named person"
    lapse notice, one reminder each morning one is due; "Release the term" exits every live night in one transaction,
    sorted by room and start, with one promotion notice for each term or single hold that moves up.
 7. **Nothing is ever released by a timer.** No code but a person's transition records a hold as lapsed (test 34).
-8. **Who may tap:** those who write the Diary at the venue (and sellers, for holds they own, if Blake agrees,
-   decision 5).
+8. **Who may tap:** those who write the Diary at the venue: staff and admin. Sellers do not (decision 5, answered
+   no on 16 November).
 
 ### 8.4 Reminders on
 
@@ -644,7 +645,7 @@ releasing a hold or a refund waits for one tap by a named person"
 ## 9. The public door
 
 - **When a room's forward book counts as reconciled:** the latest batch for the old diary is applied with nothing
-  refused or held for that room on a future date, and, unless Blake decides otherwise (decision 3), the thirty
+  refused or held for that room on a future date, and, as Blake decided (decision 3), the thirty
   Saturdays stand as "Same", none stale. The import page shows each room as ready or not, and why.
 - **Who records it:** the venue's admin or manager, on the existing control
   (`packages/api/src/routes/forward-book.ts:143`); the product never records it by itself. At a venue that has
@@ -800,7 +801,7 @@ At most one database change for each stage. Each stage is useful by itself.
 
 | Stage | Database | What it does | Waits for |
 |---|---|---|---|
-| 1. Lapsed holds and honest words | No | The Lapsed list with one-tap Release, its promotions checked; the read-only line corrected; "Free" only for rooms whose record stands; sellers' own holds, if Blake says yes (decision 5) | Nothing |
+| 1. Lapsed holds and honest words | No | The Lapsed list with one-tap Release, its promotions checked; the read-only line corrected; "Free" only for rooms whose record stands. No change for sellers (decision 5: no) | Nothing |
 | 2. Rooms sold together, and set-up | Change 1 | Combinations, claims, set-up and breakdown; part locks, the room delete, refusal words and deadlocks; the readers of 6.3 | #400, for the Diary's lane read, the conflict engine, time moves and the sheet; Blake's decision 4, for the public read; the Day Board stack (#361 to #365) to land or rebase, since both touch `booking-mutations.ts` |
 | 3. The import's place, and the dry run | Change 2 | The converter's frame, staging, the matching and its signature, the plan and its page | Stage 2 (rooms and set-up must exist to match to) |
 | 4. Apply, undo and the check | No | Apply through the bind, people and clients, undo, run again, the thirty-Saturday page, rooms shown as ready, the control's refusal | The spine's first migration (client account key pinned; its list of joins), for production. The read-only login, for the converter and the matching's values |
@@ -811,6 +812,19 @@ At most one database change for each stage. Each stage is useful by itself.
 Stage 5 does not depend on stages 3 and 4 and may be built beside them; only its merge waits for its slot.
 
 ## 14. What only Blake decides
+
+**His answers, 16 November 2026, by button, word for word.** The questions were put to him in the merge
+coordinator's question form, with this design in front of him.
+
+| Decision | His answer | What it means |
+|---|---|---|
+| 1. This design | "Approve it (Recommended)" | Approved. Building may start with the stages that do not wait on the read-only login |
+| 2. The reminder trial run | "On the real holds (Recommended)" | After the import, he sees for every live hold the mornings its reminders would go and to whom. Reminders go on only after his yes |
+| 3. When a room's dates may show publicly | "After thirty Saturdays (Recommended)" | A room can be opened only once the latest import is clean for it and the thirty Saturdays stand as "Same"; the venue's admin or manager then records it |
+| 4. A part of a booked combination on the public page | Not yet asked | Open. It decides one line of stage 2 (the public read) and nothing else |
+| 5. May a seller place a provisional hold | "No, keep it to the office" | His 10 October decision stands: only staff and admin write the Diary. Sellers ask the office to hold a date. Nothing in this piece changes for sellers, and stage 1 carries no seller change |
+
+The options as they were put to him are kept below for the record.
 
 1. **This design.** Approve it, or say what to change first.
 2. **The reminder trial run.**
@@ -895,8 +909,8 @@ run reads again. Needs its first stage only.
 - **#400** changes, among others, `hold-reminders.ts`, `calendar-conflicts.ts`, `routes/calendar.ts`, `decisions.ts`
   and `hallkeeper-sheet-v2-data.ts`. This piece's changes to them land after it; the sheet's timing fix (5.4, 6.3)
   is agreed with #400's owner; the trial run waits for it.
-- **#361 to #365** (the Day Board) change `booking-mutations.ts`, as stages 2, 5 and 6 do (and 1, if decision 5 is
-  yes); whichever lands second rebases. The Day Board shows a combined booking on its lead room only until its owner
+- **#361 to #365** (the Day Board) change `booking-mutations.ts`, as stages 2, 5 and 6 do; whichever lands second
+  rebases. The Day Board shows a combined booking on its lead room only until its owner
   reads claims; set-up and breakdown are on the booking for it to show.
 - **#415** (the sheet PDF): not touched; its files are the PDF's, not the sheet's data.
 - **#247** (erase a person): staged rows are a new store of personal data, carrying their venue and the person
