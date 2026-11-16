@@ -44,6 +44,10 @@ SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 RELIEF_ID = re.compile(r"^[\x21-\x7e]{1,12}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# A path on some machine: a drive letter and a slash or backslash, a UNC start, or a leading slash and
+# a name. A URL (https://...), a relative name and a lone "/" are not.
+MACHINE_PATH = re.compile(r"^(?:[A-Za-z]:[/\\]|\\\\|/[^\s/])")
+LINKED_KEYS = ("how", "sha256")   # what survey.json keeps of a build/linked.json entry
 WALL_KINDS = ("solid", "partition", "screen", "open")
 WALL_LENGTH_TOLERANCE = 0.002   # metres between a wall's length and its outline segment
 ATLAS_ROW_TOLERANCE = 1         # texels between atlas.row and vRange x ppm
@@ -103,6 +107,28 @@ def glass_scan():
 def node_records():
     """Which meshoptimizer simplified each GHR1 file (relief-mesh-room.mjs's records)."""
     return {name: rec for name in ("walls", "ceiling") if (rec := _json(f"build/relief-{name}.node.json")) is not None}
+
+
+def linked_inputs():
+    """The inputs taken from another work directory, for the record: each by its name relative to the
+    work directory, with how it was linked (and its SHA-256 where build/linked.json has one). The
+    tree each came from stays in build/linked.json, which prove-build-identity.py reads: the record
+    is published into a public repository and names nothing on the build machine."""
+    linked = _json("build/linked.json") or {}
+    return {name: {key: entry[key] for key in LINKED_KEYS if key in entry} for name, entry in linked.items()}
+
+
+def machine_paths(node, where=""):
+    """(where, string) for every string key or value in a JSON value that is a path on some machine."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield from machine_paths(key, f"{where}[key {key!r}]")
+            yield from machine_paths(value, f"{where}.{key}" if where else str(key))
+    elif isinstance(node, list):
+        for i, value in enumerate(node):
+            yield from machine_paths(value, f"{where}[{i}]")
+    elif isinstance(node, str) and MACHINE_PATH.match(node):
+        yield where, node
 
 
 def publish_problems(record):
@@ -232,6 +258,8 @@ def record_faults(record):
             out.append(f"{part}.extent {extent} does not increase")
         if record[part].get("orientation", OVERHEAD_ORIENTATION) != OVERHEAD_ORIENTATION:
             out.append(f"{part}.orientation is {record[part]['orientation']!r}")
+    out += [f"{where} is the absolute path {value!r}: a published record names nothing on the build machine"
+            for where, value in machine_paths(record)]
     return out
 
 
@@ -262,7 +290,7 @@ def survey_record(room):
         schemaVersion=SCHEMA_VERSION, slug=room.cfg["slug"], revision=room.survey["publish"].get("revision"),
         captured=room.cfg["source"]["captured"], configSha256=room.sha256, methodRevision=room.revision,
         tools=dict(tools_state(), relief=node_records()),
-        linkedInputs=_json("build/linked.json") or {},
+        linkedInputs=linked_inputs(),
         glassScan=glass_scan(),
         room=dict(name=room.cfg["name"], venue=room.cfg["venue"], ceilingHeight=room.cfg["ceiling"]["height"],
                   outline=[[x, z] for x, z in room.cfg["walls"]["vertices"]]),

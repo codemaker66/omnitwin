@@ -546,6 +546,105 @@ class SurveyRecord(unittest.TestCase):
         self.assertIn("orientation", faults(lambda r: r["floor"].__setitem__("orientation", "rows from planner -z")))
         self.assertIn("does not increase", faults(lambda r: r["floor"]["extent"]["x"].reverse()))
 
+    @staticmethod
+    def machine_paths(record):
+        """Every string key or value anywhere in a record that is a path on some machine: a drive
+        letter and a slash or backslash, a UNC start, or a leading '/' and a name (the shapes the fault
+        looks for, written out again so the test does not trust the fault's own pattern)."""
+        found = []
+
+        def walk(node, where):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    walk(key, where + [f"key {key!r}"])
+                    walk(value, where + [str(key)])
+            elif isinstance(node, list):
+                for i, value in enumerate(node):
+                    walk(value, where + [str(i)])
+            elif isinstance(node, str) and (re.match(r"^[A-Za-z]:[/\\]", node) or node.startswith("\\\\") or re.match(r"^/[^\s/]", node)):
+                found.append((".".join(where), node))
+        walk(record, [])
+        return found
+
+    def test_the_record_names_each_linked_input_by_its_relative_name_and_how(self):
+        """linked.json (local provenance, read by prove-build-identity.py) keeps the source tree's
+        absolute path; the published record must not: it says which inputs were linked, and how."""
+        elsewhere = "X:/elsewhere/tree"
+        linked = {
+            "data/manifest.json": dict(source=elsewhere, how="hard link"),
+            "data/mesh/tex/000.webp": dict(source=elsewhere, how="copy", sha256="ab" * 32),
+            "data/depth1024/scan_000.f32": dict(source="\\\\host\\share\\tree", how="hard link"),
+        }
+        room, work = self.staged(SALOON, "record-linked")
+        path = os.path.join(work, "build", "linked.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(linked, f, indent=1)
+        with open(path, "rb") as f:
+            before = f.read()
+        from roombuild import publish
+        record = self.inside(work, lambda: publish.survey_record(room))
+        self.assertEqual(record["linkedInputs"], {
+            "data/manifest.json": dict(how="hard link"),
+            "data/mesh/tex/000.webp": dict(how="copy", sha256="ab" * 32),
+            "data/depth1024/scan_000.f32": dict(how="hard link"),
+        })
+        self.assertEqual(self.machine_paths(record), [])
+        self.assertEqual(publish.record_faults(record), [])
+        # The work tree's own record is untouched, so the prover still reads each source.
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), before)
+        self.assertEqual(json.loads(before)["data/manifest.json"]["source"], elsewhere)
+        # A work directory that linked nothing has no linked.json: no entries.
+        os.remove(path)
+        self.assertEqual(self.inside(work, lambda: publish.survey_record(room))["linkedInputs"], {})
+
+    def test_a_record_with_a_machine_path_anywhere_is_a_fault_naming_where(self):
+        import copy
+        from roombuild import publish
+        _, _, good = self.record(SALOON, "record-paths")
+        good["linkedInputs"] = {"data/manifest.json": dict(how="hard link")}
+        self.assertEqual(publish.record_faults(good), [])
+
+        def faults(change):
+            record = copy.deepcopy(good)
+            change(record)
+            return publish.record_faults(record)
+
+        planted = faults(lambda r: r["linkedInputs"]["data/manifest.json"].__setitem__("source", "X:/elsewhere/tree"))
+        self.assertEqual(len(planted), 1, planted)
+        self.assertIn("linkedInputs", planted[0])
+        self.assertIn("data/manifest.json", planted[0])
+        self.assertIn("source", planted[0])
+        self.assertIn("absolute path", planted[0])
+        # Every shape: drive letter with either slash (either case), UNC, a leading slash and a name,
+        # in a list, in a nested object, and as a key.
+        for value in ("X:\\elsewhere\\tree", "x:/elsewhere", "\\\\host\\share", "/srv/elsewhere/tree", "/tmp"):
+            found = faults(lambda r: r["tools"].__setitem__("where", value))
+            self.assertEqual(len(found), 1, (value, found))
+            self.assertIn("tools.where", found[0])
+        self.assertIn("relief.order[", " | ".join(faults(lambda r: r["relief"]["order"].append("X:/elsewhere"))))
+        self.assertIn("openings", " | ".join(faults(lambda r: r["openings"].append(dict(id="a", deep=["/srv/a"])))))
+        self.assertIn("linkedInputs", " | ".join(faults(lambda r: r["linkedInputs"].__setitem__("X:/elsewhere/tree/a", dict(how="copy")))))
+        # Ordinary values are not machine paths: URLs, relative names, text that merely contains a
+        # slash or a colon, a lone slash, and a leading slash before a space.
+        for value in ("https://example.org/a/b", "http://localhost:3000/x", "detail/index.json", "data/mesh/tex/000.webp",
+                      "a:b", "AB:/x", "255 - 127 * glass", "u = planner x, v = planner z, y = reference - depth", "/", "/ 2", "", "scheme:rest"):
+            found = faults(lambda r: r["tools"].__setitem__("where", value))
+            self.assertEqual(found, [], (value, found))
+
+    def test_publishing_refuses_a_machine_path_in_the_record_and_copies_nothing(self):
+        from roombuild import publish
+        path, _ = variant(SALOON, "saloon-path.room.json", lambda r: r.__setitem__("name", "X:/elsewhere/tree"))
+        room, work = self.staged(path, "publish-path")
+        dest = os.path.join(T0, "published-path")
+        shutil.rmtree(dest, ignore_errors=True)
+        with self.assertRaises(SystemExit) as refused:
+            self.inside(work, lambda: publish.publish(room, dest))
+        self.assertIn("survey.json:", str(refused.exception))
+        self.assertIn("room.name", str(refused.exception))
+        self.assertIn("absolute path", str(refused.exception))
+        self.assertFalse(os.path.exists(dest))
+
     def test_an_open_segment_is_recorded_and_named_as_unreadable(self):
         """An open segment has no elevation: the record keeps its place in the outline with no strip
         and no relief id, and says the reader cannot take it (the reader wants both for every segment)."""
