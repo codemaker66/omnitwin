@@ -9,7 +9,7 @@
 // now: a set-down is never heard before its piece is seen to land.
 // ---------------------------------------------------------------------------
 
-/** The slice of an AudioContext the set-down scheduler reads. */
+/** The slice of a Web Audio context the set-down scheduler reads. */
 export interface AudioClock {
   readonly currentTime: number;
   readonly outputLatency: number;
