@@ -691,8 +691,9 @@ class StrayTexels(unittest.TestCase):
 # --- B25: the occluders' margin ---------------------------------------------------------------------------------
 
 PROUD = dict(u=(2.5, 3.5), v=(1.7, 2.3), d=0.3)   # the box as the mesh draws it, on the south wall (6 m)
-PROUD_SHORT = 0.03                                # the mesh draws it this much smaller, every side, than the panoramas show it
-PROUD_DEPTH = 512                                 # cubemap texels: 4 to 6 mm at the box
+PROUD_SHORT = 0.06                                # the mesh draws it this much smaller, every side, than the panoramas show it
+PROUD_MARGIN = 0.08                               # survey.projection.walls.occluderMargin for it
+PROUD_DEPTH = 256                                 # cubemap texels: 8 to 12 mm at the box
 PROUD_STATIONS = (("scan_100", 2.0, 1.2), ("scan_101", 4.0, 1.2), ("scan_102", 3.0, 3.2))   # id, u along the wall, metres off it
 
 
@@ -708,12 +709,14 @@ def slab_distance(origin, dirs, lo, hi):
 
 class OccluderMargin(unittest.TestCase):
     """A box stands 0.3 m proud of a plain wall. The mesh (the position tiles and the distance cubemaps) draws it
-    3 cm smaller on every side than the panoramas show it, as the scan's mesh draws the Saloon's pediments (0.3 m
-    proud, 2 to 3 cm short). Two stations 1.2 m off the wall, either side of the box, and one 3.2 m off, facing it.
-    Along the edge of the zone the box hides from a near station, that station's panorama still shows the box's
-    dark edge on wall the mesh says it sees. One station a block prints it: outlines of the box in the plain wall,
-    up to a quarter of a metre from the box. With survey.projection.walls.occluderMargin the labels leave a
-    station's view out within the margin of the box's outline, and another station's clean view takes its place."""
+    smaller on every side than the panoramas show it, as the scan's mesh draws the Saloon's pediments (0.3 m proud,
+    2 to 3 cm short: a rim up to a 4 cm block wide on its 5 mm grid). Here the grid is 1 cm and the box 6 cm short,
+    so the rim is a block wide too. Two stations 1.2 m off the wall, either side of the box, and one 3.2 m off,
+    facing it. Along the edge of the zone the box hides from a near station, that station's panorama still shows
+    the box's dark edge on wall the mesh says it sees. One station a block prints it: outlines of the box in the
+    plain wall, a third of a metre above it and half a metre beside it. With
+    survey.projection.walls.occluderMargin the labels leave a station's view out within the margin of the box's
+    outline, and another station's clean view takes its place."""
 
     @classmethod
     def build(cls, name, margin):
@@ -764,10 +767,11 @@ class OccluderMargin(unittest.TestCase):
         (v,) = room.tiles(wall)
         npz = np.load(os.path.join(work, "proj", f"{v['name']}.npz"))
         lum = npz["rgb"] @ np.array([0.2126, 0.7152, 0.0722])
-        # plain wall well clear of the box as the panoramas show it: more than 8 cm from the mesh's outline of it
+        # plain wall that some station truly sees: more than 20 cm from the mesh's outline of the box (the far
+        # station's view of the real box hides the wall up to 15 cm above it)
         du = np.maximum(np.maximum(PROUD["u"][0] - U, U - PROUD["u"][1]), 0)
         dv = np.maximum(np.maximum(PROUD["v"][0] - V, V - PROUD["v"][1]), 0)
-        plain = (np.hypot(du, dv) > 0.08) & (V > 0.2) & (V < 2.9)
+        plain = (np.hypot(du, dv) > 0.20) & (V > 0.2) & (V < 2.9)
         coloured = npz["weight"] > 0
         ghost = plain & coloured & (lum < 0.25)                   # the box's dark picture (0.02) on plaster (0.47)
         labels = np.load(os.path.join(work, "proj", "labels-south.npz"))
@@ -778,13 +782,13 @@ class OccluderMargin(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.closed = cls.build("margin-closed", 0)
-        cls.open = cls.build("margin-open", 0.05)
+        cls.open = cls.build("margin-open", PROUD_MARGIN)
 
     def test_1_gate(self):
         self.assertNotIn("B25", {r["gate"] for r in self.closed["room"].ledger()})
         self.assertEqual(self.closed["room"].occluder_margin(), 0.0)
-        self.assertIn(("B25", "walls", "50 mm"), {(r["gate"], r["where"], r["note"]) for r in self.open["room"].ledger()})
-        self.assertEqual(legacy.best_view_values(self.open["room"])["bestview"]["OCCLUDER_MARGIN"], 0.05)
+        self.assertIn(("B25", "walls", "80 mm"), {(r["gate"], r["where"], r["note"]) for r in self.open["room"].ledger()})
+        self.assertEqual(legacy.best_view_values(self.open["room"])["bestview"]["OCCLUDER_MARGIN"], PROUD_MARGIN)
         gh = Room(os.path.join(ROOMS, "grand-hall.room.json"), ROOMS)
         self.assertEqual(legacy.best_view_values(gh)["bestview"]["OCCLUDER_MARGIN"], 0.0)
         self.assertEqual(gh.ledger(), [])
@@ -803,7 +807,7 @@ class OccluderMargin(unittest.TestCase):
         self.assertGreaterEqual(int((o["coloured"] & o["plain"]).sum()), int((c["coloured"] & c["plain"]).sum()))
         self.assertGreaterEqual(int(o["coloured"].sum()), int(c["coloured"].sum()))    # the doubtful views fill what is left
         margin = o["report"]["occluder_margin"]
-        self.assertEqual((margin["metres"], margin["cubemap_texels_at_most"]), (0.05, 16))
+        self.assertEqual((margin["metres"], margin["cubemap_texels_at_most"]), (PROUD_MARGIN, 16))
         lb = o["labels"]
         seen, clear, used = lb["seenbits"], lb["clearbits"], lb["visbits"]
         self.assertTrue(np.all(clear & ~seen == 0))                                     # clear views are views
@@ -811,13 +815,15 @@ class OccluderMargin(unittest.TestCase):
         given = int(np.unpackbits(used & ~clear).sum())
         self.assertEqual(given, margin["texels_given_a_doubtful_view"])
         self.assertEqual(int((lb["texel_label"] >= 0).sum()), margin["texels_labelled_clear"] + given)
+        # every texel some station saw at all has a station (nothing the old labels coloured is lost)
+        self.assertEqual(int((lb["texel_label"] >= 0).sum()), int(np.unpackbits(np.bitwise_or.reduce(seen, axis=0)).sum()))
         taken = int(np.unpackbits(seen & ~clear).sum())
         self.assertGreater(taken, 1000)                                                 # the margin took views out
         self.assertLess(given, taken / 4)                                               # and few texels had no other
 
     def test_4_the_margin_is_the_walls_alone(self):
         cfg = json.loads(json.dumps(self.open["room"].cfg))
-        cfg["survey"]["projection"]["ceiling"]["occluderMargin"] = 0.05
+        cfg["survey"]["projection"]["ceiling"]["occluderMargin"] = PROUD_MARGIN
         work = os.path.join(T4, "margin-ceiling")
         room = write_room(work, cfg)
         self.assertTrue(any("survey.projection.ceiling.occluderMargin" in p for p in room.build_problems()))

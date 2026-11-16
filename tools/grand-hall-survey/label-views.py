@@ -194,6 +194,7 @@ def statistics(grid, sts, rb):
     bands = list(range(R0, R1, CHUNK))
     margin = B.OCCLUDER_MARGIN > 0          # then visbits holds the texels seen clear of occluders, seenbits those seen at all
     seenbits = np.zeros_like(visbits) if margin else None
+    seen_cover = np.zeros((S, nby, nbx), np.float32) if margin else None       # texels of each block a station saw at all
     with ThreadPoolExecutor(B.threads()) as pool:
         for si, st in enumerate(sts):
             if not B.station_faces_wall(st, wall):
@@ -228,11 +229,13 @@ def statistics(grid, sts, rb):
             visbits[si] = B.pack_bits(vis_all)
             if margin:
                 seenbits[si] = B.pack_bits(seen_all)
+                seen_cover[si] = B.block_sum(seen_all.astype(np.float32), nby, nbx)
             pano.close()
             print(f'  {st["id"]}: {seen} texels seen, {time.time() - t0:.1f} s', flush=True)
     stats = dict(cover=cover, rgb=rgb, lap=lap, lum2=lum2, foot=foot, visbits=visbits, nvalid=nvalid)
     if margin:
         stats['seenbits'] = seenbits
+        stats['seen_cover'] = seen_cover
     return stats
 
 
@@ -491,8 +494,9 @@ def texel_labels(ranked, visbits, valid, rb):
 def doubtful_views(ranked, label, tlab, stats, valid, rb):
     """With bestview.OCCLUDER_MARGIN set: the texels no ranked station saw clear of an occluder's margin take the
     first station of their block's ranking that saw them at all (a block without a label borrows the nearest
-    labelled block's ranking), and count as seen by it. So a texel beside an occluder keeps a doubtful view of it,
-    the only kind there is, instead of becoming a hole; everywhere else the doubtful views are left out.
+    labelled block's ranking), or failing that the station that saw most of the block at all, and count as seen by
+    it. So a texel beside an occluder keeps a doubtful view of it, the only kind there is, instead of becoming a
+    hole; everywhere else the doubtful views are left out.
     Returns the texel labels, the stations' seen bits to colour from, and how many texels took a doubtful view."""
     has = label >= 0
     filled = ranked
@@ -500,6 +504,10 @@ def doubtful_views(ranked, label, tlab, stats, valid, rb):
         ii, jj = ndimage.distance_transform_edt(~has, return_distances=False, return_indices=True)
         filled = ranked[ii, jj]
     at_all = texel_labels(filled, stats['seenbits'], valid, rb)
+    most = np.argsort(-stats['seen_cover'], axis=0, kind='stable')[:RANKED]
+    most = np.where(np.take_along_axis(stats['seen_cover'], most, 0) > 0, most, -1).astype(np.int16)
+    any_view = texel_labels(np.moveaxis(most, 0, -1), stats['seenbits'], valid, rb)
+    at_all = np.where(at_all >= 0, at_all, any_view)
     take = (tlab < 0) & (at_all >= 0)
     r, c = np.nonzero(take)
     bits = stats['visbits'].copy()
