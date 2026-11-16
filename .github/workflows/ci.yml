@@ -633,26 +633,33 @@ jobs:
       - name: Checkout the head commit
         uses: actions/checkout@v5
 
-      - name: Fetch the base commit the comparison needs
-        env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$' && [ "$BASE_SHA" != 0000000000000000000000000000000000000000 ]; then
-            git fetch --no-tags --depth=1 origin "$BASE_SHA" || echo "Base $BASE_SHA could not be fetched; the change stays in GPU scope."
-          else
-            echo "No base commit to compare; the change stays in GPU scope."
-          fi
-
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
           package-manager-cache: false
 
+      - name: Fetch the base commit the comparison needs
+        id: base
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          # gpu-scope.mjs chooses the base: on a pull request the merge commit's first parent
+          # (exactly this change; read from the commit header, which this one-commit checkout
+          # has), only when the merge has two parents; on a push the previous head. Any
+          # other case, or a failure here, leaves no base and the change in GPU scope.
+          BASE_SHA=$(node .github/gpu/gpu-scope.mjs --event "$GITHUB_EVENT_NAME" --before "$EVENT_BEFORE" --head "$GITHUB_SHA") || BASE_SHA=""
+          echo "sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          if printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$' && [ "$BASE_SHA" != 0000000000000000000000000000000000000000 ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA" || echo "Base $BASE_SHA could not be fetched; the change stays in GPU scope."
+          else
+            echo "No base commit to compare; the change stays in GPU scope."
+          fi
+
       - name: Decide whether this change needs the GPU run
         id: scope
         env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ steps.base.outputs.sha }}
         run: node .github/gpu/gpu-scope.mjs --base "$BASE_SHA" --head "$GITHUB_SHA" --output gpu-scope.json
 
       - name: Preserve the scope decision
@@ -756,8 +763,11 @@ jobs:
       - name: Independently decide the GPU scope
         id: scope
         env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: node .github/gpu/gpu-scope.mjs --base "$BASE_SHA" --head "$GITHUB_SHA" --output browser-gate-evidence/gpu-scope.json
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          # The same base as the GPU scope job, chosen by the same function in gpu-scope.mjs.
+          BASE_SHA=$(node .github/gpu/gpu-scope.mjs --event "$GITHUB_EVENT_NAME" --before "$EVENT_BEFORE" --head "$GITHUB_SHA") || BASE_SHA=""
+          node .github/gpu/gpu-scope.mjs --base "$BASE_SHA" --head "$GITHUB_SHA" --output browser-gate-evidence/gpu-scope.json
 
       - name: Download all CPU shard receipts from this run attempt
         uses: actions/download-artifact@v4
