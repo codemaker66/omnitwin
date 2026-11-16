@@ -44,7 +44,7 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
 
   | Work | Budget |
   |---|---|
-  | Rendering one set-down | In a Worker, started as the drop starts, its Float32 channels transferred back; never on the main thread. Contact comes 50 ms later for a carried heavy piece, 67–69 ms for light and table pieces, 83 ms for a drop-in. With the Grand Hall's 18 reflections a render took 7.5–23.9 ms (medians) on the build desktop in the #416 review, so about 23–120 ms on a phone at 3–5x (EST). Heavy pieces fall back to variants rendered ahead on idle. Spec section 9; R48, amending the plan's first "≤ 2 ms" |
+  | Rendering one set-down | In a Worker, started as the drop starts, its Float32 channels transferred back; never on the main thread. Contact comes 50 ms later for a carried heavy piece, 67 ms at 60 fps (69 ms continuous) for light and table pieces, 83 ms for a drop-in; other display rates move these (75–165 Hz: heavy pieces 49–55 ms, drop-ins 80–89 ms). With the Grand Hall's 18 reflections a render took 7.5–23.9 ms (medians) on the build desktop in the #416 review, so about 23–120 ms on a phone at 3–5x (EST). Heavy pieces fall back to variants rendered ahead on idle. Spec section 9; R48, amending the plan's first "≤ 2 ms" |
   | The touchdown watcher | allocation-free, ≤ 0.05 ms at 180 settling pieces |
   | Recomputing reverberation times | ≤ 0.5 ms |
   | The tail | idle slices of ≤ 4 ms each, ≤ 150 ms in total; 1.2 x the longest band's reverberation time in seconds at any rate, its memory per rate stated in `tail.ts` (R46; the plan's first cap was 2 MB) |
@@ -280,7 +280,7 @@ Objects, in m² per piece at 125 Hz to 4 kHz:
   - Azimuth is atan2 of the image direction projected on `ear.right`, measured against the direct direction.
 
 - [ ] **Step 1: Write the failing tail tests** in `tail.test.ts`:
-  - the tail for rt = [1.8, 2.2, 2.6, 2.9, 2.7, 2.0, 1.2] measures within ±10 % per band of its target, using `schroederT20` on `octaveBandpass(left, band)`, for 250 Hz to 4 kHz;
+  - the tail for rt = [1.8, 2.2, 2.6, 2.9, 2.7, 2.0, 1.2] measures, as the tests hold it, with each reading within 4 σ_D of the scatter ISO 3382-2 expects, and each band's mean within 5 % of its target (10 % at 125 Hz), using `schroederT20` on `octaveBandpass(left, band)`, for 250 Hz to 4 kHz;
   - the left and right channels correlate below 0.2;
   - each channel has unit energy (± 1e-3);
   - the tail is silent before `onsetSeconds`;
@@ -554,6 +554,8 @@ Values as planned; their primary sources are cited in `modes.ts`:
 
 ## PR 3: the wiring
 
+Re-planned on 14 Nov against master 7c3461e7; part 3's branch carries the revised tasks.
+
 ### Task 10: Find the support under each foot
 
 **Files:**
@@ -577,8 +579,8 @@ Values as planned; their primary sources are cited in `modes.ts`:
 
 **Files:**
 - Modify:
-  - `lib/furniture-motion.ts`: in `stepFurnitureSettles`, at the `if (motion.lift.value < LANDED)` block (lines 278–289), before the velocity is zeroed;
-  - `components/SelectionSystem.tsx`: `settleDrop`, lines 410–441.
+  - `lib/furniture-motion.ts`: in `stepFurnitureSettles`, in `touchDown` (lines 401–412, called at line 460 in `stepFurnitureSettles`), before the velocity is zeroed;
+  - `components/SelectionSystem.tsx`: `settleDrop` (line 454).
 - Test: `lib/__tests__/furniture-motion-touchdown.test.ts`
 
 **Interfaces:**
@@ -605,7 +607,7 @@ Values as planned; their primary sources are cited in `modes.ts`:
 
 Tasks 12, 13 and 14 do not start until part 2's listening page has timed renders on real phones (it keeps each render's time on the device that ran it):
 - the median and worst render times, with the Grand Hall's 18 early reflections, for a light piece (a Chiavari), a table (a 6 ft round) and a heavy piece (a staging deck), on the phones Blake uses for the ear test;
-- set against the time from a drop's start to its contact: 50 ms for a carried heavy piece, 67–69 ms for light and table pieces, 83 ms for a drop-in.
+- set against the time from a drop's start to its contact: 50 ms for a carried heavy piece, 67 ms at 60 fps (69 ms continuous) for light and table pieces, 83 ms for a drop-in. Other display rates move the landings: at 75–165 Hz heavy pieces land at 49–55 ms and drop-ins at 80–89 ms.
 
 Render-at-drop in a Worker is confirmed only if light and table pieces render inside their time to contact on those phones. Heavy pieces keep the render-ahead fallback whatever the timings. If light pieces miss as well, the design goes back for a ruling before Task 12 starts.
 
@@ -817,5 +819,5 @@ Render-at-drop in a Worker is confirmed only if light and table pieces render in
 - [ ] **Step 3:** After PR 3 merges and Vercel's production deployment for its SHA is READY (`gh api repos/codemaker66/omnitwin/deployments?sha=<sha>`):
   - run `node D:/claude/furniture-sound-20261027/live/sound-live.mjs https://venviewer.com prod-grand-hall`, then again with the Saloon's stub (`prod-saloon`). Production is read-only for agents, and the script's aborts keep it so;
   - check the production chunk carries the engine: the served JavaScript contains `planner-set-down`;
-  - on the device day (Wednesday 28), run the same flow on a phone, checking the budgets, the iPhone silent switch, and sound with sight at touchdown.
+  - on a device day after part 3, run the same flow on a phone, checking the budgets, the iPhone silent switch, and sound with sight at touchdown.
 - [ ] **Step 4:** Report the evidence to Blake and the planner lead. State each item as tested, measured, deployed or accepted, and name anything not measured on a device.
