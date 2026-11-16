@@ -124,7 +124,7 @@ export const ENQUIRY_REPLY_ALARM_DEFAULT_HOURS = 24;
  *  reply recorded" said nothing about an older enquiry, and most of them
  *  could no longer be cleared (a reply more than a week old is the venue's
  *  admin's or manager's to record). The desk still lists them by age. */
-export const ENQUIRY_REPLY_ALARM_FROM = "2026-10-29T00:00:00.000Z";
+export const ENQUIRY_REPLY_ALARM_FROM = "2026-11-16T00:00:00.000Z";
 /** How many flagged enquiries the alarm names, the most recently flagged
  *  first, as the desk lists them; the count covers them all. */
 export const ENQUIRY_REPLY_ALARM_LIST_LIMIT = 200;

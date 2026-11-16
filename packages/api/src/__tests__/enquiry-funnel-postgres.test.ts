@@ -657,7 +657,7 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
         await started.close();
       }
       // The default start is the release that brought the desk's reply control.
-      expect(ENQUIRY_REPLY_ALARM_FROM).toBe("2026-10-29T00:00:00.000Z");
+      expect(ENQUIRY_REPLY_ALARM_FROM).toBe("2026-11-16T00:00:00.000Z");
     });
 
     /** A venue of its own, with a room and one of its staff, so a case counts

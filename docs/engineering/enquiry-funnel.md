@@ -101,7 +101,7 @@ will pass the mark) and `asOf` (the database's clock), all read in one read-only
 repeatable-read transaction so they share one `now()` and one snapshot: a reply
 recorded meanwhile cannot leave the count and the longest disagreeing. Requests
 (access, Venviewer), seed fixtures
-and enquiries that arrived before `ENQUIRY_REPLY_ALARM_FROM` (29 October 2026, the
+and enquiries that arrived before `ENQUIRY_REPLY_ALARM_FROM` (16 November 2026, the
 release that let the desk record an outside reply) are left out: before it no
 outside reply could be recorded, and most such enquiries could no longer be cleared
 (a reply over a week old is the admin's or manager's to record); the desk still
