@@ -509,16 +509,15 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
             <div key={count.view} className="gl-count" data-tone={count.tone}>
               <dt id={`${id}-${count.view}-label`}>{count.label}</dt>
               <dd>
+                {/* Read once, as the button's name; the button lies over the whole tile and draws its focus ring. */}
+                <span id={`${id}-${count.view}-value`} className="gl-count__value" aria-hidden="true">{String(count.value)}</span>
                 <button
                   type="button"
-                  id={`${id}-${count.view}-value`}
                   className="gl-count__button"
                   aria-pressed={view === count.view}
                   aria-labelledby={`${id}-${count.view}-label ${id}-${count.view}-value`}
                   onClick={() => { showView(count.view); }}
-                >
-                  {String(count.value)}
-                </button>
+                />
               </dd>
             </div>
           ))}

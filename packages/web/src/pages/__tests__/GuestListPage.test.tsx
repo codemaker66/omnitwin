@@ -335,6 +335,22 @@ describe("the guest list page: the desk", () => {
     expect(currentList().tables.every((t) => t.seats === 10)).toBe(true);
   });
 
+  it("shows each count's number beside its button and reads it once, as the button's name", async () => {
+    open(PAGE, memoryStore());
+    await desk();
+    for (const label of ["Guests", "Seated", "To seat", "Tables"]) {
+      const button = screen.getByRole("button", { name: `${label} 0` });
+      // The button lies over its whole tile and draws the tile's focus ring; the number is drawn beside it.
+      expect(button.textContent).toBe("");
+      const [labelId = "", valueId = ""] = (button.getAttribute("aria-labelledby") ?? "").split(" ");
+      expect(document.getElementById(labelId)?.textContent).toBe(label);
+      const value = document.getElementById(valueId);
+      expect(value?.textContent).toBe("0");
+      expect(value?.getAttribute("aria-hidden")).toBe("true");
+      expect(value?.parentElement).toBe(button.parentElement);
+    }
+  });
+
   it("says only names and parties were taken, and how many columns were left", async () => {
     open(PAGE, memoryStore());
     await desk();

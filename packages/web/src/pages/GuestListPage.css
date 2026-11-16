@@ -130,6 +130,14 @@
   margin-top: 16px;
 }
 
+/* The date field keeps the house ring while any part of it has focus: its
+   calendar icon holds the focus inside the field, where :focus-visible does
+   not reach the field itself. */
+.gl .gl-date__input:focus {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+}
+
 .gl-date__label {
   color: var(--reg-text-2);
   font: 500 14px/1.3 var(--house-sans);
@@ -219,39 +227,37 @@
   margin: 0;
 }
 
-/* The number is the button; its ::after stretches over the whole count. */
+/* The number, set as it was when it was the button's own text (a button
+   centres its line in its 44px). Its button lies over the whole count. */
+.gl-count__value {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--reg-text-1);
+  font: 300 38px/1 var(--house-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.gl-count[data-tone="owed"] .gl-count__value {
+  color: var(--reg-attention);
+}
+
+/* The count's button covers its whole tile, the tile's 1px left edge
+   included, so the house ring it draws when focused (the page's own
+   :focus-visible rule) is drawn round the tile. */
 .gl-count__button {
   appearance: none;
-  display: block;
-  min-height: 44px;
+  position: absolute;
+  inset: 0;
   margin: 0;
   padding: 0;
   border: 0;
   background: none;
-  color: var(--reg-text-1);
-  font: 300 38px/1 var(--house-sans);
-  font-variant-numeric: tabular-nums;
-  text-align: left;
   cursor: pointer;
 }
 
-.gl-count__button::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-}
-
-.gl-count[data-tone="owed"] .gl-count__button {
-  color: var(--reg-attention);
-}
-
-.gl .gl-count__button:focus-visible {
-  outline: none;
-}
-
-.gl-count:has(.gl-count__button:focus-visible) {
-  outline: var(--vv-focus-ring);
-  outline-offset: 2px;
+.gl-count:not(:first-child) > dd > .gl-count__button {
+  left: -1px;
 }
 
 .gl-count:has(.gl-count__button[aria-pressed="true"]) dt {
@@ -1151,6 +1157,10 @@
   .gl-count:nth-child(3) {
     padding-left: 0;
     border-left: 0;
+  }
+
+  .gl-count:nth-child(3) > dd > .gl-count__button {
+    left: 0;
   }
 
   .gl-ledger {
