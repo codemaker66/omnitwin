@@ -1,7 +1,7 @@
 import { useEffect, useId, useState, type KeyboardEvent, type ReactElement } from "react";
 import { GuestListSchema, SEATS_MAX, SEATS_MIN, type Guest, type GuestList, type KitTable } from "../../lib/guest-list/model.js";
 import { nameTable, removeTable, setTableSeats, summary } from "../../lib/guest-list/seating.js";
-import { sentBackWords } from "./words.js";
+import { counted, sentBackWords } from "./words.js";
 
 // ---------------------------------------------------------------------------
 // The ledger by table: a row a table (its number, the planner's own name for
@@ -195,7 +195,7 @@ function TableEdit({ list, table, seatedCount, onChange, onNotice }: TableEditPr
     const sentBack = toSeat(next) - toSeat(list);
     onChange((l) => setTableSeats(l, table.id, asked));
     setSeats(String(now));
-    if (sentBack > 0) onNotice(`Table ${number} now has ${String(now)} seats. ${sentBackWords(sentBack)}`);
+    if (sentBack > 0) onNotice(`Table ${number} now has ${counted(now, "seat", "seats")}. ${sentBackWords(sentBack)}`);
   };
 
   const remove = (): void => {

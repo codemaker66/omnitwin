@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent, type ReactElement } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactElement } from "react";
 import { GuestListSchema, type Guest, type GuestList } from "../../lib/guest-list/model.js";
 import { planLabel, sortKey } from "../../lib/guest-list/paper.js";
 import { removeGuest, renameGuest } from "../../lib/guest-list/seating.js";
@@ -20,6 +20,8 @@ export interface GuestRowsProps {
   readonly moving: string | null;
   readonly onChoose: (guestId: string) => void;
   readonly onChange: (change: Change) => void;
+  /** A removal left no row in this view to take the focus. */
+  readonly onFocusHead: () => void;
 }
 
 const EMPTY: Readonly<Record<GuestFilter, string>> = {
@@ -70,11 +72,43 @@ function entriesOf(list: GuestList, filter: GuestFilter): readonly { readonly le
   return groups;
 }
 
-export function GuestRows({ list, filter, moving, onChoose, onChange }: GuestRowsProps): ReactElement {
+/** Keeps an element per guest id while it is mounted, for moving the focus to it. */
+function keep(into: Map<string, HTMLButtonElement>, guestId: string) {
+  return (node: HTMLButtonElement | null): void => {
+    if (node === null) into.delete(guestId);
+    else into.set(guestId, node);
+  };
+}
+
+export function GuestRows({ list, filter, moving, onChoose, onChange, onFocusHead }: GuestRowsProps): ReactElement {
   const id = useId();
   const [editing, setEditing] = useState<string | null>(null);
+  const names = useRef(new Map<string, HTMLButtonElement>());
+  const edits = useRef(new Map<string, HTMLButtonElement>());
+  /** Where the focus goes once the rows have drawn again: a guest's name or their Edit button. */
+  const [focusAsk, setFocusAsk] = useState<{ readonly on: "name" | "edit"; readonly guestId: string; readonly n: number } | null>(null);
+
+  useEffect(() => {
+    if (focusAsk === null) return;
+    (focusAsk.on === "name" ? names : edits).current.get(focusAsk.guestId)?.focus();
+  }, [focusAsk]);
+
+  const focusLater = (on: "name" | "edit", guestId: string): void => {
+    setFocusAsk((was) => ({ on, guestId, n: (was?.n ?? 0) + 1 }));
+  };
+
   const groups = entriesOf(list, filter);
   if (groups.length === 0) return <p className="gl-empty">{EMPTY[filter]}</p>;
+  const order = groups.flatMap((group) => group.entries.map((entry) => entry.guest.id));
+
+  // The focus goes to the next row, or the row before when this was the last; with none left, to the ledger's head.
+  const remove = (guestId: string): void => {
+    const at = order.indexOf(guestId);
+    const next = order[at + 1] ?? (at > 0 ? order[at - 1] : undefined);
+    onChange((l) => removeGuest(l, guestId));
+    if (next === undefined) onFocusHead();
+    else focusLater("name", next);
+  };
 
   return (
     <div className="gl-guests">
@@ -92,12 +126,16 @@ export function GuestRows({ list, filter, moving, onChoose, onChange }: GuestRow
                     list={list}
                     guest={entry.guest}
                     onChange={onChange}
-                    onDone={() => { setEditing(null); }}
+                    onDone={() => {
+                      setEditing(null);
+                      focusLater("edit", entry.guest.id);
+                    }}
                   />
                 ) : (
                   <>
                     <div className="gl-guest__main">
                       <button
+                        ref={keep(names.current, entry.guest.id)}
                         type="button"
                         className="gl-guest__name"
                         aria-pressed={moving === entry.guest.id}
@@ -112,10 +150,10 @@ export function GuestRows({ list, filter, moving, onChoose, onChange }: GuestRow
                       {entry.seat ?? "No seat yet"}
                     </span>
                     <div className="gl-guest__actions">
-                      <button type="button" className="gl-button gl-button--quiet" onClick={() => { setEditing(entry.guest.id); }}>
+                      <button ref={keep(edits.current, entry.guest.id)} type="button" className="gl-button gl-button--quiet" onClick={() => { setEditing(entry.guest.id); }}>
                         Edit<span className="gl-sr-only">{` ${entry.guest.name}`}</span>
                       </button>
-                      <button type="button" className="gl-button gl-button--quiet" onClick={() => { onChange((l) => removeGuest(l, entry.guest.id)); }}>
+                      <button type="button" className="gl-button gl-button--quiet" onClick={() => { remove(entry.guest.id); }}>
                         Remove<span className="gl-sr-only">{` ${entry.guest.name}`}</span>
                       </button>
                     </div>

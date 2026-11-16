@@ -330,7 +330,7 @@ describe("the guest list page: the desk", () => {
     expect(screen.getByRole("button", { name: "To seat 0" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Tables 18" })).toBeTruthy();
     const print = screen.getByRole("link", { name: "Print the table plan" });
-    expect(print.getAttribute("href")).toBe(`/plan/${PLAN_ID}/guests/paper?sheet=table-plan`);
+    expect(print.getAttribute("href")).toBe(`/plan/${PLAN_ID}/guests/paper?kit=on&sheet=table-plan`);
     expect(screen.getByRole("link", { name: "Open the room" }).getAttribute("href")).toBe(`/plan/${PLAN_ID}`);
     expect(currentList().tables.every((t) => t.seats === 10)).toBe(true);
   });
@@ -674,7 +674,10 @@ describe("the guest list page: the next step and what is still needed", () => {
     const panel = screen.getByRole("complementary", { name: "The event" });
     expect(within(panel).getByText("Nothing else is needed for the paper.")).toBeTruthy();
     const paper = within(panel).getByRole("link", { name: "Place cards" });
-    expect(paper.getAttribute("href")).toBe(`/plan/${PLAN_ID}/guests/paper?sheet=place-cards`);
+    expect(paper.getAttribute("href")).toBe(`/plan/${PLAN_ID}/guests/paper?kit=on&sheet=place-cards`);
+    for (const link of within(panel).getAllByRole("link").filter((a) => (a.getAttribute("href") ?? "").includes("/paper"))) {
+      expect(new URLSearchParams((link.getAttribute("href") ?? "").split("?")[1] ?? "").get("kit")).toBe("on");
+    }
   });
 
   it("undo takes back the last change", async () => {
@@ -713,5 +716,210 @@ describe("the guest list page: the next step and what is still needed", () => {
       expect(revokeSpy).toHaveBeenCalledWith("blob:guest-list");
     });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deleting the list
+// ---------------------------------------------------------------------------
+
+const PASTED = "PASTED-LINE-Z9";
+
+/** Everything the page holds that a person or a screen reader could still find: text, attributes and field values. */
+function everythingShown(container: HTMLElement): string {
+  const parts = [container.textContent ?? ""];
+  for (const el of Array.from(container.querySelectorAll("*"))) {
+    for (const attribute of Array.from(el.attributes)) parts.push(attribute.value);
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) parts.push(el.value);
+  }
+  return parts.join("\n");
+}
+
+describe("the guest list page: deleting the list", () => {
+  it("leaves no guest's name, and nothing typed or pasted, anywhere on the page", async () => {
+    const { store } = await storeHolding(listOf({
+      title: `${CANARY} wedding`,
+      tables: [table(1, 4, `${CANARY} table`)],
+      guests: [guest(1, "Ailsa Fraser", uuid(1), 1), guest(2, `Chidi ${CANARY}`), guest(3, "Morag Kerr")],
+    }));
+    const view = open(PAGE, store);
+    await desk();
+
+    // A move leaves the guest's name in the status line.
+    fireEvent.click(screen.getByRole("button", { name: "To seat 2" }));
+    fireEvent.click(screen.getByRole("button", { name: `${CANARY}, Chidi` }));
+    fireEvent.click(screen.getByRole("button", { name: "Seat here at table 1" }));
+    expect(screen.getByText(`Chidi ${CANARY} is at table 1, seat 2.`)).toBeTruthy();
+
+    // A paste not yet added, and an edit not yet saved.
+    fireEvent.click(screen.getByRole("button", { name: "Guests 3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add guests" }));
+    fireEvent.change(screen.getByLabelText("Paste the names"), { target: { value: `${PASTED}\nEwan Shaw` } });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Morag Kerr" }));
+    fireEvent.change(within(screen.getByRole("form", { name: "Edit a guest" })).getByLabelText("Name"), { target: { value: `Morag ${CANARY}` } });
+    expect(everythingShown(view.container)).toContain(CANARY);
+    expect(everythingShown(view.container)).toContain(PASTED);
+
+    const panel = screen.getByRole("complementary", { name: "The event" });
+    fireEvent.click(within(panel).getByRole("button", { name: "Delete the list from this device" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Delete 3 names for good" }));
+    expect(await screen.findByText("There are no guests on this list yet.")).toBeTruthy();
+
+    const left = everythingShown(view.container);
+    expect(left).not.toContain(CANARY);
+    expect(left).not.toContain(PASTED);
+    expect(left).not.toContain("Ewan");
+    expect(left).not.toContain("Ailsa");
+    expect(left).not.toContain("Morag");
+    expect(screen.getByLabelText<HTMLTextAreaElement>("Paste the names").value).toBe("");
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
+    });
+  });
+
+  it("while the erase runs, the delete is busy and inert, and the list cannot be kept", async () => {
+    const erased = deferred<undefined>();
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, { ...store, erase: () => erased.promise });
+    await desk();
+    const panel = screen.getByRole("complementary", { name: "The event" });
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Delete the list from this device" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Delete 1 name for good" }));
+    const busy = within(panel).getByRole("button", { name: "Deleting the list…" });
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.getAttribute("aria-disabled")).toBe("true");
+    expect(within(panel).getByRole("button", { name: "Keep the list" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(busy);
+    expect(screen.getByText("0 of 1 guest has a seat.")).toBeTruthy();
+
+    await act(async () => {
+      erased.resolve(undefined);
+      await erased.promise;
+    });
+    expect(await screen.findByText("There are no guests on this list yet.")).toBeTruthy();
+  });
+
+  it("offers no delete while the list is opening, or when it cannot be read", async () => {
+    const opened = deferred<Opened>();
+    open(PAGE, { ...memoryStore(), open: () => opened.promise });
+    expect(screen.getByText("Opening your guest list…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete the list from this device" })).toBeNull();
+
+    await act(async () => {
+      opened.resolve({ kind: "unreadable" });
+      await opened.promise;
+    });
+    expect(await screen.findByText("A list was kept here for this plan, but it cannot be read.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete the list from this device" })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Where the focus goes when its control goes
+// ---------------------------------------------------------------------------
+
+describe("the guest list page: the focus is kept", () => {
+  it("after a guest is removed: the next row, the row before when it was the last, then the sheet's heading", async () => {
+    const { store } = await storeHolding(listOf({
+      guests: [guest(1, "Ailsa Fraser"), guest(2, "Morag Kerr"), guest(3, "Chidi Okafor")],
+    }));
+    open(PAGE, store);
+    await desk();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Morag Kerr" }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Okafor, Chidi" }));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove Chidi Okafor" }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Fraser, Ailsa" }));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove Ailsa Fraser" }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
+    });
+  });
+
+  it("after Edit's Cancel or Save: that guest's Edit button; a refused name is said in fixed words", async () => {
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser"), guest(2, "Morag Kerr")] }));
+    open(PAGE, store);
+    await desk();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Morag Kerr" }));
+    fireEvent.click(within(screen.getByRole("form", { name: "Edit a guest" })).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit Morag Kerr" }));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Morag Kerr" }));
+    const form = screen.getByRole("form", { name: "Edit a guest" });
+    fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "   " } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+    expect(within(form).getByRole("alert").textContent).toBe("A name needs 1 to 80 characters.");
+
+    fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Morag Kerr-Shaw" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit Morag Kerr-Shaw" }));
+    });
+    expect(currentList().guests[1]?.name).toBe("Morag Kerr-Shaw");
+  });
+
+  it("closing a notice: back to the control in use when it appeared, else the sheet's heading", async () => {
+    const { store } = await storeHolding(listOf({
+      tables: [table(1, 4)],
+      guests: [guest(1, "Ailsa Fraser", uuid(1), 3), guest(2, "Chidi Okafor", uuid(1), 4), guest(3, "Morag Kerr", uuid(1), 4)],
+    }));
+    open(PAGE, store);
+    await desk();
+
+    const repaired = screen.getByText("1 guest was sent back to seat, because their table or seat was no longer there.");
+    fireEvent.click(within(repaired.closest("[data-notice]") ?? document.body).getByRole("button", { name: "Close" }));
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
+
+    fireEvent.click(screen.getByRole("button", { name: /Table 1/, expanded: false }));
+    const seats = screen.getByLabelText("Seats at table 1");
+    seats.focus();
+    fireEvent.change(seats, { target: { value: "2" } });
+    fireEvent.keyDown(seats, { key: "Enter" });
+    const words = screen.getByText("Table 1 now has 2 seats. 2 guests are now to seat.");
+    fireEvent.click(within(words.closest("[data-notice]") ?? document.body).getByRole("button", { name: "Close" }));
+    expect(screen.queryByText("Table 1 now has 2 seats. 2 guests are now to seat.")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByLabelText("Seats at table 1"));
+  });
+
+  it("closing the paste step returns to Add guests; cancelling the tables form returns to its opener", async () => {
+    const { store } = await storeHolding(listOf({ tables: [table(1)], guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add guests" }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByLabelText("Paste the names"));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add guests" }));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Change the number of tables" }));
+    fireEvent.click(within(screen.getByRole("form", { name: "Set the tables" })).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Change the number of tables" }));
+    });
+  });
+
+  it("cancelling the tables form opened from the next step returns to that step", async () => {
+    mocks.getPublicConfig.mockRejectedValue(new ApiError(404, "Not found", "NOT_FOUND"));
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Set the tables" }));
+    fireEvent.click(within(screen.getByRole("form", { name: "Set the tables" })).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Set the tables" }));
+    });
   });
 });

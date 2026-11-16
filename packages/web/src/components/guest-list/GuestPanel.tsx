@@ -45,8 +45,9 @@ export function nextStep(list: GuestList, room: RoomState): NextStep {
   return { kind: "print" };
 }
 
+/** A sheet's address. It carries the kit's switch, so a device that cannot remember it still reaches the paper. */
 export function paperAddress(planId: string, sheet: Sheet): string {
-  return `/plan/${planId}/guests/paper?sheet=${sheet}`;
+  return `/plan/${planId}/guests/paper?kit=on&sheet=${sheet}`;
 }
 
 /** The list as a file the planner keeps: made here, handed over, never sent. */

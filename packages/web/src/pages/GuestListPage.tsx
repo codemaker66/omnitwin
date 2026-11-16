@@ -104,6 +104,12 @@ function GuestDesk({ planId, store }: { readonly planId: string; readonly store:
   const room = useRoom(planId);
   useOpenedList(planId, store);
   useKeepWhenHidden();
+  // Each delete draws the desk afresh, so nothing the planner typed, pasted or was told about a guest stays on the page.
+  const [erasures, setErasures] = useState(0);
+  const erase = async (): Promise<void> => {
+    await useGuestListStore.getState().eraseList();
+    setErasures((n) => n + 1);
+  };
 
   let body: ReactElement;
   if (openPlan !== planId || phase === "opening" || (phase === "ready" && list === null)) {
@@ -115,7 +121,7 @@ function GuestDesk({ planId, store }: { readonly planId: string; readonly store:
   } else if (phase === "unreadable" || list === null) {
     body = <Unreadable />;
   } else {
-    body = <ReadyDesk planId={planId} list={list} room={room} />;
+    body = <ReadyDesk key={erasures} planId={planId} list={list} room={room} onErase={erase} afterErase={erasures > 0} />;
   }
   return <div className="gl" data-register="ivory" data-testid="guest-list-page">{body}</div>;
 }
@@ -179,7 +185,8 @@ function showingWords(view: View, list: GuestList, openTable: number | null): st
   }
 }
 
-type FocusTarget = "box" | "next" | "showing" | "moving" | "tables";
+/** Where the focus can be sent once the desk has drawn again; a target that is gone falls back to the sheet's heading. */
+type FocusTarget = "box" | "next" | "showing" | "moving" | "tables" | "heading" | "add-guests" | "change-tables";
 
 // The page state's actions, called through the store each time.
 function apply(change: (list: GuestList) => GuestList, opts?: { readonly undo?: boolean }): void {
@@ -194,17 +201,16 @@ function closeNotice(): void {
   useGuestListStore.getState().dismissNotice();
 }
 
-function eraseFromDevice(): Promise<void> {
-  return useGuestListStore.getState().eraseList();
-}
-
 interface ReadyDeskProps {
   readonly planId: string;
   readonly list: GuestList;
   readonly room: RoomState;
+  readonly onErase: () => Promise<void>;
+  /** This desk was drawn after a delete: the focus starts on the sheet's heading. */
+  readonly afterErase: boolean;
 }
 
-function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
+function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps): ReactElement {
   const id = useId();
   const kept = useGuestListStore((s) => s.kept);
   const notice = useGuestListStore((s) => s.notice);
@@ -221,13 +227,22 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
   const [roomNoticeClosed, setRoomNoticeClosed] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [tablesFormOpen, setTablesFormOpen] = useState(false);
-  const [focusAsk, setFocusAsk] = useState<{ readonly target: FocusTarget; readonly n: number } | null>(null);
+  /** The control that opened the tables form, for the focus to go back to on Cancel. */
+  const [tablesFormFrom, setTablesFormFrom] = useState<"next" | "change-tables">("next");
+  const [focusAsk, setFocusAsk] = useState<{ readonly target: FocusTarget; readonly n: number } | null>(
+    afterErase ? { target: "heading", n: 0 } : null,
+  );
 
   const boxRef = useRef<HTMLTextAreaElement>(null);
   const showingRef = useRef<HTMLParagraphElement>(null);
   const movingRef = useRef<HTMLParagraphElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const addGuestsRef = useRef<HTMLButtonElement>(null);
+  const changeTablesRef = useRef<HTMLButtonElement>(null);
   const nextRef = useRef<HTMLElement | null>(null);
   const tablesFieldRef = useRef<HTMLInputElement | null>(null);
+  /** The control focused when the table notice appeared, for its Close to return to. */
+  const tableNoticeFrom = useRef<HTMLElement | null>(null);
   // Typing in the title or the date is one change for undo: the first keystroke of each visit to the field.
   const fieldVisit = useRef(false);
 
@@ -243,9 +258,25 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
       showing: showingRef.current,
       moving: movingRef.current,
       tables: tablesFieldRef.current,
+      heading: headingRef.current,
+      "add-guests": addGuestsRef.current,
+      "change-tables": changeTablesRef.current,
     };
-    targets[focusAsk.target]?.focus();
+    (targets[focusAsk.target] ?? headingRef.current)?.focus();
   }, [focusAsk]);
+
+  /** Closing a notice: back to the control that was in use when it appeared, while it is still there. */
+  const closeAndRefocus = (close: () => void, from: HTMLElement | null): void => {
+    close();
+    if (from?.isConnected === true) from.focus();
+    else headingRef.current?.focus();
+  };
+
+  const sayTables = (words: string): void => {
+    const active = document.activeElement;
+    tableNoticeFrom.current = active instanceof HTMLElement && active !== document.body ? active : null;
+    setTableNotice(words);
+  };
 
   const chosen = moving === null ? undefined : list.guests.find((g) => g.id === moving);
   const movingId = chosen === undefined ? null : chosen.id;
@@ -360,7 +391,7 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
     const removed = list.tables.length - next.tables.length;
     const sentBack = summary(next).toSeat - counts.toSeat;
     if (removed > 0) {
-      setTableNotice(`${counted(removed, "table was", "tables were")} removed.${sentBack > 0 ? ` ${counted(sentBack, "guest is", "guests are")} now to seat.` : ""}`);
+      sayTables(`${counted(removed, "table was", "tables were")} removed.${sentBack > 0 ? ` ${counted(sentBack, "guest is", "guests are")} now to seat.` : ""}`);
     }
     setTablesFormOpen(false);
     showView("tables");
@@ -380,9 +411,22 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
     focusOn("box");
   };
 
-  const openTablesForm = (): void => {
+  /** Closing the paste step: back to "Add guests", which opened it. */
+  const closePaste = (): void => {
+    setPasteOpen(false);
+    focusOn("add-guests");
+  };
+
+  const openTablesForm = (from: "next" | "change-tables"): void => {
+    setTablesFormFrom(from);
     setTablesFormOpen(true);
     focusOn("tables");
+  };
+
+  /** Cancelling the tables form: back to the button that opened it. */
+  const cancelTablesForm = (): void => {
+    setTablesFormOpen(false);
+    focusOn(tablesFormFrom);
   };
 
   const editField = (change: (l: GuestList) => GuestList): void => {
@@ -424,7 +468,7 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
     <div className="gl-desk" data-testid="guest-list-desk">
       <main className="gl-sheet">
         <header className="gl-head">
-          <h1 className="gl-eyebrow">Guest list</h1>
+          <h1 className="gl-eyebrow" ref={headingRef} tabIndex={-1}>Guest list</h1>
           <label className="gl-title">
             <span className="gl-sr-only">The event's name</span>
             <input
@@ -493,13 +537,13 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
                   ? `${counted(notice.unseated, "guest was", "guests were")} sent back to seat, because their table or seat was no longer there.`
                   : "This list was also changed in another tab. This tab's version was kept."}
               </p>
-              <button type="button" className="gl-link" onClick={closeNotice}>Close</button>
+              <button type="button" className="gl-link" onClick={() => { closeAndRefocus(closeNotice, null); }}>Close</button>
             </div>
           )}
           {room.status === "failed" && !roomNoticeClosed && (
             <div className="gl-notice" data-notice="room" data-tone="attention">
               <p>The room for this plan could not be opened, so its tables were not counted. Your list is unaffected.</p>
-              <button type="button" className="gl-link" onClick={() => { setRoomNoticeClosed(true); }}>Close</button>
+              <button type="button" className="gl-link" onClick={() => { closeAndRefocus(() => { setRoomNoticeClosed(true); }, null); }}>Close</button>
             </div>
           )}
           {differ !== null && (
@@ -510,7 +554,7 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
           {tableNotice !== null && (
             <div className="gl-notice" data-notice="tables" data-tone="settled">
               <p>{tableNotice}</p>
-              <button type="button" className="gl-link" onClick={() => { setTableNotice(null); }}>Close</button>
+              <button type="button" className="gl-link" onClick={() => { closeAndRefocus(() => { setTableNotice(null); }, tableNoticeFrom.current); }}>Close</button>
             </div>
           )}
         </div>
@@ -537,7 +581,7 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
           <GuestPaste
             roomLeft={GUESTS_MAX - counts.guests}
             onAdd={addPasted}
-            onClose={counts.guests > 0 ? () => { setPasteOpen(false); } : undefined}
+            onClose={counts.guests > 0 ? closePaste : undefined}
             boxRef={boxRef}
           />
         )}
@@ -548,10 +592,12 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
               <p className="gl-showing" ref={showingRef} tabIndex={-1} aria-live="polite">{showing ?? ""}</p>
               <div className="gl-actions">
                 {!pasteShown && (
-                  <button type="button" className="gl-button gl-button--quiet" onClick={askPaste}>Add guests</button>
+                  <button ref={addGuestsRef} type="button" className="gl-button gl-button--quiet" onClick={askPaste}>Add guests</button>
                 )}
                 {view === "tables" && !tablesFormOpen && (
-                  <button type="button" className="gl-button gl-button--quiet" onClick={openTablesForm}>Change the number of tables</button>
+                  <button ref={changeTablesRef} type="button" className="gl-button gl-button--quiet" onClick={() => { openTablesForm("change-tables"); }}>
+                    Change the number of tables
+                  </button>
                 )}
               </div>
             </div>
@@ -565,7 +611,7 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
                   onChoose={choose}
                   onPlace={(tableId, seat) => { place(tableId, seat); }}
                   onChange={(change) => { apply(change); }}
-                  onNotice={setTableNotice}
+                  onNotice={sayTables}
                 />
               ) : (
                 <GuestRows
@@ -574,6 +620,7 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
                   moving={movingId}
                   onChoose={choose}
                   onChange={(change) => { apply(change); }}
+                  onFocusHead={() => { focusOn("showing"); }}
                 />
               )}
             </section>
@@ -593,12 +640,12 @@ function ReadyDesk({ planId, list, room }: ReadyDeskProps): ReactElement {
         tablesFieldRef={(element) => { tablesFieldRef.current = element; }}
         onPaste={askPaste}
         onUseRoomTables={takeRoomTables}
-        onOpenTablesForm={openTablesForm}
-        onCloseTablesForm={() => { setTablesFormOpen(false); }}
+        onOpenTablesForm={() => { openTablesForm("next"); }}
+        onCloseTablesForm={cancelTablesForm}
         onSetTables={setTablesTo}
         onSeatEveryone={seatAll}
         onUndo={undoLast}
-        onErase={eraseFromDevice}
+        onErase={onErase}
       />
     </div>
   );
