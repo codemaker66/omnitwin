@@ -307,22 +307,35 @@ function ReadyPaper({ planId, list }: { readonly planId: string; readonly list: 
 
 /**
  * A list sheet's frame: the sheet, its one foot on screen, and the version
- * footer paper repeats on every printed page. On paper the frame is a table
- * whose footer group the browser repeats at the foot of each page and keeps
- * room for, so the footer never covers a name. The cards, cut apart, have none.
+ * footer paper repeats on every printed page. It is a real table because a
+ * browser repeats a footer group on every printed page only for a real
+ * <tfoot> (Chromium prints a <div> styled as one once, on the last page). The
+ * footer sits in the flow, so the room for it is kept and it never covers a
+ * name. On screen the table and its parts are plain blocks and the footer is
+ * hidden; to assistive technology the table is no table (role="presentation")
+ * and the footer is silent, as the sheet's own foot already says the version.
+ * The cards, cut apart, have no frame.
  */
 function PrintFrame({ list, children }: { readonly list: GuestList; readonly children: ReactNode }): ReactElement {
   const line = versionLine(list);
   return (
-    <div className="gp-frame">
-      <div className="gp-frame__body">
-        {children}
-        <footer className="gp-foot">{line}</footer>
-      </div>
-      <div className="gp-running" aria-hidden="true">
-        <p className="gp-running__line">{line}</p>
-      </div>
-    </div>
+    <table className="gp-frame" role="presentation">
+      <tbody className="gp-frame__body">
+        <tr className="gp-frame__row">
+          <td className="gp-frame__cell">
+            {children}
+            <footer className="gp-foot">{line}</footer>
+          </td>
+        </tr>
+      </tbody>
+      <tfoot className="gp-running" aria-hidden="true">
+        <tr className="gp-frame__row">
+          <td className="gp-frame__cell">
+            <p className="gp-running__line">{line}</p>
+          </td>
+        </tr>
+      </tfoot>
+    </table>
   );
 }
 

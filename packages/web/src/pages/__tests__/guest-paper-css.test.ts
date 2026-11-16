@@ -116,16 +116,27 @@ describe("the paper page's stylesheet, on paper", () => {
   });
 
   it("repeats the version footer on every printed page of the three list sheets, with room kept for it", () => {
-    // On screen the sheet shows its single foot; the repeated footer is for paper only.
+    // The frame is a real <table> (the page test checks the elements): its
+    // <tfoot> (.gp-running) is what the browser repeats at the foot of every
+    // printed page and lays out in the flow, so it never covers a name.
+    // On screen the table and its parts are plain blocks and the footer is
+    // hidden: the sheet shows its single foot.
+    for (const part of [".gp-frame", ".gp-frame__body", ".gp-frame__row", ".gp-frame__cell"]) {
+      const onScreen = cascaded(screen, part);
+      expect(onScreen.get("display"), `${part} on screen`).toBe("block");
+      expect(onScreen.get("padding"), `${part} on screen`).toBe("0");
+      expect(onScreen.get("border"), `${part} on screen`).toBe("0");
+    }
     expect(cascaded(screen, ".gp-running").get("display")).toBe("none");
-    // On paper each list sheet is a table whose footer group the browser repeats
-    // at the foot of every page, and lays out in the flow, so it never covers a name.
+    // On paper the table's own displays come back, the footer group with them.
     const frame = cascaded(print, ".gp-frame");
     expect(frame.get("display")).toBe("table");
     expect(frame.get("width")).toBe("100%");
     expect(frame.get("table-layout")).toBe("fixed");
     expect(cascaded(print, ".gp-frame__body").get("display")).toBe("table-row-group");
-    expect(cascaded(print, ".gp-frame > .gp-running").get("display")).toBe("table-footer-group");
+    expect(cascaded(print, ".gp-frame__row").get("display")).toBe("table-row");
+    expect(cascaded(print, ".gp-frame__cell").get("display")).toBe("table-cell");
+    expect(cascaded(print, ".gp-running").get("display")).toBe("table-footer-group");
     // Only a sheet's frame repeats it: the place cards, cut apart, carry no version line on paper.
     const runningSelectors = print.flatMap((rule) => rule.selectors).filter((selector) => selector.includes("gp-running"));
     expect(runningSelectors.length).toBeGreaterThan(0);

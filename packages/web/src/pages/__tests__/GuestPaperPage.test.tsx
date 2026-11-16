@@ -424,6 +424,7 @@ describe("the guest paper page: the other sheets", () => {
     // Cards are cut apart: no version line is printed on them, so no page holds it alone.
     expect(sheet.querySelector(".gp-foot")).toBeNull();
     expect(sheet.querySelector(".gp-running")).toBeNull();
+    expect(sheet.querySelector("table, tfoot")).toBeNull();
   });
 
   it("gives the place cards' pages their own margins while, and only while, the cards are shown", async () => {
@@ -508,7 +509,10 @@ describe("the guest paper page: printing", () => {
   /**
    * The version as each sheet shows it: in the tools on screen, and for the
    * three list sheets once in the sheet's foot and once in the footer that
-   * paper repeats on every page. Place cards carry no printed version line.
+   * paper repeats on every page. That footer is a real table's <tfoot>: a
+   * browser repeats a footer group on every printed page only for a real
+   * table (Chromium prints a <div> styled as one once, on the last page).
+   * Place cards carry no printed version line and no such table.
    */
   async function expectVersionEverywhere(line: string): Promise<void> {
     for (const [name, sheet] of SHEET_LINKS) {
@@ -516,17 +520,30 @@ describe("the guest paper page: printing", () => {
       const found = await paper(sheet);
       expect(text(tools().querySelector(".gp-tools__version"))).toBe(line);
       const feet = found.querySelectorAll(".gp-foot");
-      const running = found.querySelectorAll(".gp-running");
+      const tables = found.querySelectorAll("table");
+      const footers = found.querySelectorAll("tfoot");
       if (sheet === "place-cards") {
         expect(feet).toHaveLength(0);
-        expect(running).toHaveLength(0);
+        expect(tables).toHaveLength(0);
+        expect(footers).toHaveLength(0);
+        expect(found.querySelector(".gp-running")).toBeNull();
       } else {
+        // One frame: a table that is not a table to assistive technology, its
+        // body holding the whole sheet, and one footer: the version.
+        expect(tables).toHaveLength(1);
+        const frame = tables[0];
+        expect(frame?.getAttribute("role")).toBe("presentation");
+        expect(frame?.querySelectorAll(":scope > tbody > tr > td")).toHaveLength(1);
+        expect(frame?.querySelector(":scope > tbody > tr > td")?.contains(found.querySelector(".gp-leaf__title"))).toBe(true);
+        expect(footers).toHaveLength(1);
+        const repeated = frame?.querySelector(':scope > tfoot[aria-hidden="true"]');
+        expect(repeated).toBe(footers[0]);
+        expect(text(repeated)).toBe(line);
+        // The version a screen reader hears: the sheet's own foot, never hidden.
         expect(feet).toHaveLength(1);
-        expect(running).toHaveLength(1);
         expect(text(feet[0])).toBe(line);
-        expect(text(running[0])).toBe(line);
-        // The repeated footer is for paper: on screen it is hidden, and silent.
-        expect(running[0]?.getAttribute("aria-hidden")).toBe("true");
+        expect(feet[0]?.closest("[aria-hidden]")).toBeNull();
+        expect(feet[0]?.closest("tfoot")).toBeNull();
       }
     }
   }

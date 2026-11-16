@@ -291,6 +291,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* A list sheet's frame is a real table, for paper's sake (its <tfoot> repeats
+   on every printed page). On screen its parts are plain blocks, so the sheet
+   lays out as if the table were not there. */
+.gp-frame,
+.gp-frame__body,
+.gp-frame__row,
+.gp-frame__cell {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 /* The version footer every printed page repeats: for paper only. */
 .gp-running {
   display: none;
@@ -552,12 +567,14 @@
   .gp-leaf--small .gp-leaf__title { font-size: 20pt; }
   .gp-leaf__sub { font-size: 14pt; }
 
-  /* The three list sheets print as a table whose footer group, the version
+  /* The three list sheets print as a real table whose <tfoot>, the version
      line, the browser repeats at the foot of every page and keeps room for in
      the flow, so it never covers a name. It replaces the sheet's one foot. */
   .gp-frame { display: table; width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
   .gp-frame__body { display: table-row-group; }
-  .gp-frame > .gp-running { display: table-footer-group; }
+  .gp-frame__row { display: table-row; }
+  .gp-frame__cell { display: table-cell; padding: 0; vertical-align: top; }
+  .gp-running { display: table-footer-group; }
   .gp-running__line { margin: 6mm 0 0; padding-top: 2.5mm; border-top: 1px solid #8c8c8c; font-size: 10.5pt; font-variant-numeric: tabular-nums; }
   .gp-foot { display: none; }
 
