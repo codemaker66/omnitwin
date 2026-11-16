@@ -130,10 +130,11 @@
   margin-top: 16px;
 }
 
-/* The date field keeps the house ring while any part of it has focus: its
-   calendar icon holds the focus inside the field, where :focus-visible does
-   not reach the field itself. */
-.gl .gl-date__input:focus {
+/* The date field keeps the house ring while any part of it has focus. Its
+   calendar icon holds the focus inside the field's own tree, where the field
+   matches neither :focus nor :focus-visible (measured in Chromium), so the
+   ring follows :focus-within. */
+.gl .gl-date__input:focus-within {
   outline: var(--vv-focus-ring);
   outline-offset: 2px;
 }

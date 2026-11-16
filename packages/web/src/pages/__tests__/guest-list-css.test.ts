@@ -126,8 +126,10 @@ describe("GuestListPage.css: keyboard focus", () => {
   });
 
   it("keeps the house ring on the date field while any part of it has focus, its calendar icon included", () => {
-    const focused = cascaded(TOP, (selector) => /\.gl-date__input:focus$/u.test(selector));
-    expect(focused.get("outline")).toBe("var(--vv-focus-ring)");
-    expect(focused.get("outline-offset")).toBe("2px");
+    // Chromium measured (Task 12's probe): with the calendar icon focused, the field is the active element but
+    // matches neither :focus nor :focus-visible, so only :focus-within reaches it there.
+    const within = cascaded(TOP, exactly(".gl .gl-date__input:focus-within"));
+    expect(within.get("outline")).toBe("var(--vv-focus-ring)");
+    expect(within.get("outline-offset")).toBe("2px");
   });
 });
