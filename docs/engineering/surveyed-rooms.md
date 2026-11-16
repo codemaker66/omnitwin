@@ -166,7 +166,8 @@ that space Trades Hall's Saloon (`pages/planner-lab-rooms.ts`), so:
 is the planner's scene with the surveyed Saloon, from the planner's own cameras.
 `window.__plannerLab.ready()` is true once the survey is drawn with every photograph in or failed,
 or has failed; `surveyedRoom()` returns its status (the failure's file and reason included);
-`pose(position, target)` glides the planner's camera. `scripts/planner-lab.mjs` captures it:
+`drawnBy()` says what draws the frames (below); `pose(position, target)` glides the planner's
+camera. `scripts/planner-lab.mjs` captures it:
 
     node scripts/planner-lab.mjs --base http://127.0.0.1:5362 --out <folder> --frames 0 \
       --space saloon --roomsBase /rooms/saloon/survey-2026-07-11
@@ -324,11 +325,21 @@ planner's own pipeline for the device:
   with the file and the reason; a photograph that fails is named at the foot of the page.
 - `window.__roomLab` is the bridge for captures: `ready()`, `status()`, `setPose(wall id | name | wall index |
   { position, target, fov })` (a wall's exact id wins over a name or digits), `exposure()`, `setExposure(n)`, `setGlow(n)`.
+- `status().drawnBy` (and `window.__plannerLab.drawnBy()` on the planner's lab) is what draws the
+  frames: `{ backend: "webgpu" | "webgl2", gpu }`, read from the renderer the canvas made
+  (`nativeDrawingBackend` in `lib/native-renderer.ts`), null until that renderer's backend can
+  draw. A WebGPU backend counts only once it holds its device, since three starts a renderer on
+  one and swaps in WebGL2 where no device can be had.
 
 `packages/web/scripts/surveyed-room-lab.mjs` opens the page headless on this machine's GPU, waits
 for `ready` (or reports why the room failed), sets each pose and writes a PNG:
 
     node scripts/surveyed-room-lab.mjs --room /rooms/saloon/survey-2026-07-11 --poses overview,plan,eye,walls
+
+Its summary (and `planner-lab.mjs`'s) records `drawnBy` as the page reports it, the backend again
+beside each capture (a renderer that replaced the first after a lost device may draw with another),
+the page's uncaught errors and every console error and warning. It asks for no adapter of its own:
+an adapter the script could get says only that WebGPU could be had, whatever drew the room.
 
 ## Checks
 
@@ -355,10 +366,12 @@ for `ready` (or reports why the room failed), sets each pose and writes a PNG:
   and after a photograph replaces its placeholder.
 
 Seen rendered, 14 November 2026: the Saloon's first build, staged and not yet published, on the
-development page in headless Chrome over WebGPU on an NVIDIA RTX 4090. The room reached ready with
-3 of 3 photographs and no page errors; every wall's strip was on its wall and its lettering read
+development page in headless Chrome on an NVIDIA RTX 4090. The room reached ready with 3 of 3
+photographs and no uncaught page errors; every wall's strip was on its wall and its lettering read
 the right way round; the floor's hearth lay at the fireplace and its bays at the windows; and the
-walls were culled from outside.
+walls were culled from outside. That capture's summary shows that a WebGPU adapter could be had on
+the machine, not which backend drew the frames, and it kept no console errors or warnings: the
+script recorded neither until 16 November. A capture taken since says both.
 
 - `__tests__/room-visibility.test.ts`: the rule as plain logic, on a box, an L, a stepped side and
   the Saloon's outline: each side from outside, a corner, a camera on a plane and a millimetre

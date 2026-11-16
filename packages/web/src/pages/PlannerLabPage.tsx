@@ -10,7 +10,7 @@ import { useHallViewStore } from "../stores/hall-view-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { nativeFrameComposer } from "../lib/native-frame-composer.js";
-import { getNativeRenderer } from "../lib/native-renderer.js";
+import { getNativeRenderer, nativeDrawingBackend, type NativeDrawingBackend } from "../lib/native-renderer.js";
 import { nativePrecompileSettled } from "../lib/native-precompile.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../lib/catalogue.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
@@ -138,6 +138,12 @@ declare global {
       ready: () => boolean;
       /** How the room's survey stands, where the lab shows a room as surveyed; null where it shows none. */
       surveyedRoom: () => SurveyedRoomStatus | null;
+      /**
+       * What draws the planner's frames, read from the view's own renderer
+       * (lib/native-renderer.ts): its backend and its GPU. Null until that
+       * renderer's backend can draw.
+       */
+      drawnBy: () => NativeDrawingBackend | null;
       /**
        * Steps the planner's frame loop `frames` times at 60 fps, waiting for the
        * GPU after each: frames advance even while the page is hidden. Each waits
@@ -335,6 +341,7 @@ export function PlannerLabPage(): ReactElement {
       },
       itemCount: () => usePlacementStore.getState().placedItems.length,
       surveyedRoom: () => useSurveyedRoomStore.getState().status,
+      drawnBy: () => nativeDrawingBackend(window.__venPerf?.gl ?? null),
       ready: () => {
         const surfaces = useHallViewStore.getState().surfaces;
         const settled = otherRoom === null

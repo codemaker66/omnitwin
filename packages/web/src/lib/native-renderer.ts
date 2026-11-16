@@ -280,6 +280,44 @@ export function nativeRendererGpuString(renderer: { readonly backend: object }):
   return isGpuRendererContext(backend.gl) ? getGpuRenderer(backend.gl) : null;
 }
 
+/** What a view is drawn with, as its own renderer holds it. */
+export interface NativeDrawingBackend {
+  readonly backend: "webgpu" | "webgl2";
+  /**
+   * The GPU as the backend's own device names it (WebGPU: its adapter's
+   * vendor, architecture and description) or its context does (WebGL2: the
+   * renderer string); null where the browser withholds it.
+   */
+  readonly gpu: string | null;
+}
+
+function ownText(holder: object, key: string): string {
+  const value: unknown = Reflect.get(holder, key);
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * The backend a renderer draws with, read from the renderer itself: evidence
+ * of what drew a frame, which a second `navigator.gpu.requestAdapter()` is
+ * not (that says only that WebGPU could be had). Null for anything but the
+ * native renderer, and until its backend can draw: unless told to use WebGL2,
+ * r186 starts a renderer on a WebGPU backend and swaps in the WebGL2 one while
+ * it initialises where no device can be had, so a WebGPU backend counts only
+ * once it holds its device.
+ */
+export function nativeDrawingBackend(renderer: object | null): NativeDrawingBackend | null {
+  if (renderer === null || !isNativeRenderer(renderer)) return null;
+  const backend: object = renderer.backend;
+  if (isNativeWebGLBackend(backend)) return { backend: "webgl2", gpu: nativeRendererGpuString(renderer) };
+  if (!("isWebGPUBackend" in backend) || backend.isWebGPUBackend !== true) return null;
+  if (!("device" in backend) || typeof backend.device !== "object" || backend.device === null) return null;
+  const device: object = backend.device;
+  if (!("adapterInfo" in device) || typeof device.adapterInfo !== "object" || device.adapterInfo === null) return { backend: "webgpu", gpu: null };
+  const info: object = device.adapterInfo;
+  const gpu = [ownText(info, "vendor"), ownText(info, "architecture"), ownText(info, "description")].filter((part) => part.length > 0).join(" ");
+  return { backend: "webgpu", gpu: gpu.length > 0 ? gpu : null };
+}
+
 /** Actual negotiated WebGPU limit; null means the native WebGL2 backend. */
 export function nativeRendererStorageLimit(renderer: WebGPURenderer): number | null {
   const backend = renderer.backend;

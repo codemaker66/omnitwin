@@ -3,7 +3,10 @@
 // time a frame takes through the post-processing pipeline, per device profile.
 //
 // Needs the dev server running. Writes PNGs and summary.json to the output
-// folder; nothing in the repository.
+// folder; nothing in the repository. The summary says what drew the frames
+// (the backend and GPU of the planner's own renderer, read through the lab's
+// bridge after each capture) and keeps the page's uncaught errors and the
+// console's errors and warnings.
 //   node scripts/planner-lab.mjs --base http://127.0.0.1:5213 --out D:/claude/x \
 //     [--profile desktop|tablet|phone|off] [--mood daylight|evening|candlelight] \
 //     [--views room,plan,eye] [--frames 120] [--guests 160] [--channel chromium|chrome]
@@ -85,11 +88,19 @@ const browser = await chromium.launch({
   headless: true,
   args: ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"],
 });
-const summary = { base: BASE, profile: PROFILE, mood: MOOD, guests: GUESTS, captures: [], frames: null, adapter: null };
+const summary = { base: BASE, profile: PROFILE, mood: MOOD, guests: GUESTS, captures: [], frames: null, drawnBy: null, pageErrors: [], console: [] };
 try {
   const context = await browser.newContext(device);
   const page = await context.newPage();
-  page.on("pageerror", (error) => { console.error(`page error: ${error.message}`); });
+  page.on("pageerror", (error) => {
+    summary.pageErrors.push(error.message);
+    console.error(`page error: ${error.message}`);
+  });
+  // What the page logged as an error or a warning (a WebGPU validation message is one of these, not an uncaught error).
+  page.on("console", (message) => {
+    const type = message.type();
+    if (type === "error" || type === "warning") summary.console.push({ type, text: message.text() });
+  });
   const room = SPACE === "" ? "" : `&space=${encodeURIComponent(SPACE)}`;
   const survey = ROOMS_BASE === "" ? "" : `&rooms=surveyed&roomsBase=${encodeURIComponent(ROOMS_BASE)}&roomsRev=${encodeURIComponent(ROOMS_REV)}`;
   await page.goto(`${BASE}/dev/planner-lab?render=${PROFILE}&guests=${GUESTS}${room}${survey}`, { waitUntil: "domcontentloaded" });
@@ -100,12 +111,10 @@ try {
     summary.surveyedRoom = await page.evaluate(() => window.__plannerLab.surveyedRoom());
     console.log(`surveyed room: ${JSON.stringify(summary.surveyedRoom)}`);
   }
-  summary.adapter = await page.evaluate(async () => {
-    const gpu = navigator.gpu;
-    if (gpu === undefined) return "no WebGPU";
-    const adapter = await gpu.requestAdapter();
-    return adapter === null ? "no adapter" : `${adapter.info.vendor} ${adapter.info.architecture} ${adapter.info.description}`.trim();
-  });
+  // The backend and GPU of the planner's own renderer, not of an adapter asked for here: that
+  // would say only that WebGPU could be had, whatever drew the scene.
+  const drawnBy = () => page.evaluate(() => window.__plannerLab.drawnBy());
+  summary.drawnBy = await drawnBy();
   // The moods are the Grand Hall's own light; another room is shown as photographed.
   if (SPACE === "") await page.evaluate((mood) => { window.__plannerLab.setMood(mood); }, MOOD);
   await page.waitForTimeout(2500);
@@ -120,8 +129,10 @@ try {
     await page.waitForTimeout(1500);
     const file = join(OUT, `${PROFILE}-${SPACE === "" ? MOOD : SPACE}-${view}.png`);
     await page.screenshot({ path: file, type: "png" });
-    summary.captures.push({ view, file });
-    console.log(`captured ${file}`);
+    // Read again for each capture: a renderer that replaced the first after a lost device may draw with another backend.
+    const backend = (await drawnBy())?.backend ?? null;
+    summary.captures.push({ view, file, backend });
+    console.log(`captured ${file} (${backend ?? "backend unknown"})`);
   }
   if (FRAMES > 0) {
     summary.frames = await page.evaluate((frames) => window.__plannerLab.measure(frames, true), FRAMES);
@@ -133,4 +144,6 @@ try {
   await browser.close();
 }
 writeFileSync(join(OUT, `summary-${PROFILE}-${MOOD}.json`), `${JSON.stringify(summary, null, 2)}\n`);
-console.log(`adapter: ${summary.adapter}`);
+console.log(`drawn by: ${summary.drawnBy === null ? "unknown (no renderer was ready)" : `${summary.drawnBy.backend} on ${summary.drawnBy.gpu ?? "a GPU the browser does not name"}`}`);
+const logged = (type) => summary.console.filter((entry) => entry.type === type).length;
+console.log(`console: ${logged("error")} errors, ${logged("warning")} warnings; page errors: ${summary.pageErrors.length}`);

@@ -3,7 +3,10 @@
 //
 // Needs the dev server running and the room's survey folder under
 // packages/web/public. Writes PNGs and summary.json to the output folder;
-// nothing in the repository.
+// nothing in the repository. The summary says what drew the frames (the
+// backend and GPU of the renderer the page made, read through the page's
+// bridge after each capture) and keeps the console's errors and warnings
+// beside the page's uncaught errors.
 //   node scripts/surveyed-room-lab.mjs --room /rooms/saloon/survey-2026-07-11 [--r 1] \
 //     [--base http://127.0.0.1:5213] [--out <folder>] [--profile desktop|tablet|phone|office|off] \
 //     [--poses overview,plan,eye,ceiling,floor,0,3] [--photos full|half] [--exposure 1] [--glow 1]
@@ -55,7 +58,7 @@ const browser = await chromium.launch({
   headless: true,
   args: ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"],
 });
-const summary = { base: BASE, room: ROOM, revision: REVISION, profile: PROFILE, exposure: EXPOSURE, glow: GLOW, adapter: null, status: null, captures: [], pageErrors: [] };
+const summary = { base: BASE, room: ROOM, revision: REVISION, profile: PROFILE, exposure: EXPOSURE, glow: GLOW, drawnBy: null, status: null, captures: [], pageErrors: [], console: [] };
 let failed = false;
 try {
   const context = await browser.newContext(device);
@@ -64,6 +67,11 @@ try {
     summary.pageErrors.push(error.message);
     console.error(`page error: ${error.message}`);
   });
+  // What the page logged as an error or a warning (a WebGPU validation message is one of these, not an uncaught error).
+  page.on("console", (message) => {
+    const type = message.type();
+    if (type === "error" || type === "warning") summary.console.push({ type, text: message.text() });
+  });
   await page.goto(`${BASE}/dev/surveyed-room?${query.toString()}`, { waitUntil: "domcontentloaded" });
   // Ready, or failed: a room that cannot be loaded says so at once instead of timing out.
   await page.waitForFunction(() => {
@@ -71,12 +79,9 @@ try {
     return lab !== undefined && (lab.ready() === true || lab.status().status === "failed" || lab.status().status === "idle");
   }, undefined, { timeout: 240000, polling: 500 });
   summary.status = await page.evaluate(() => window.__roomLab.status());
-  summary.adapter = await page.evaluate(async () => {
-    const gpu = navigator.gpu;
-    if (gpu === undefined) return "no WebGPU";
-    const adapter = await gpu.requestAdapter();
-    return adapter === null ? "no adapter" : `${adapter.info.vendor} ${adapter.info.architecture} ${adapter.info.description}`.trim();
-  });
+  // The backend and GPU of the renderer the page made, not of an adapter asked for here: that
+  // would say only that WebGPU could be had, whatever drew the room.
+  summary.drawnBy = summary.status.drawnBy ?? null;
   if (summary.status.status !== "ready") {
     failed = true;
     const failure = summary.status.failure;
@@ -103,14 +108,18 @@ try {
       await page.waitForTimeout(1500);
       const file = join(OUT, `${PROFILE}-${pose}.png`);
       await page.screenshot({ path: file, type: "png" });
-      summary.captures.push({ pose, file });
-      console.log(`captured ${file}`);
+      // Read again for each capture: a renderer that replaced the first after a lost device may draw with another backend.
+      const drawnBy = await page.evaluate(() => window.__roomLab.status().drawnBy);
+      summary.captures.push({ pose, file, backend: drawnBy?.backend ?? null });
+      console.log(`captured ${file} (${drawnBy?.backend ?? "backend unknown"})`);
     }
   }
 } finally {
   await browser.close();
 }
 writeFileSync(join(OUT, `summary-${PROFILE}.json`), `${JSON.stringify(summary, null, 2)}\n`);
-console.log(`adapter: ${summary.adapter}`);
+console.log(`drawn by: ${summary.drawnBy === null ? "unknown (no renderer was ready)" : `${summary.drawnBy.backend} on ${summary.drawnBy.gpu ?? "a GPU the browser does not name"}`}`);
+const logged = (type) => summary.console.filter((entry) => entry.type === type).length;
+console.log(`console: ${logged("error")} errors, ${logged("warning")} warnings; page errors: ${summary.pageErrors.length}`);
 console.log(`summary: ${join(OUT, `summary-${PROFILE}.json`)}`);
 if (failed || summary.pageErrors.length > 0) process.exitCode = 1;
