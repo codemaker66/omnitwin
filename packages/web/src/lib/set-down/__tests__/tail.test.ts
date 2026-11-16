@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { fft, seededRandom } from "../../planner-sound-render.js";
 import { OCTAVE_BANDS_HZ, type BandValues } from "../bands.js";
@@ -479,16 +480,40 @@ describe("timeAtFrequency", () => {
   });
 });
 
+/**
+ * SHA-256 of each channel's float32 bytes of the test hall's tail (RT, seed 7, a 30 ms onset) at each rate: a
+ * reference for what the synthesis renders that does not come from the code under test (ruling R93, after #416's
+ * review, NA5). Taken from tail.ts as #416 merged it (bfc4705a); NA3's frame rule keeps these rates' frames, and
+ * these bytes with them. A change to the synthesis that is meant to change the tail updates these and says why.
+ */
+const TAIL_SHA256: Readonly<Record<Rate, { readonly left: string; readonly right: string }>> = {
+  44100: { left: "164b4ba346571a0a70271b289d2bfca4ee0fe32522a53867a21a866bb28e16af", right: "0b650113d2769db177d4b5e7a88400d4788dacb782923c973a1e60ddfa25f41e" },
+  48000: { left: "a58678fe8a8766676a8f50033a4743c7507ada10c69df55df15ce4b04e09a940", right: "76d80fc5f3519d2862d15e839d58c66b68f59ec858f531a60a3ddbf3b04cd069" },
+  96000: { left: "ceac14f618733ef714634f05c90cc6824d0ded68e5080ae4dd205135a7297f51", right: "44a9db47f069c783f932b86085c92bb00ce3ad45be4f1134fa472a623587048b" },
+};
+
+function sha256(samples: Float32Array): string {
+  return createHash("sha256").update(Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength)).digest("hex");
+}
+
 describe("tailSlices", () => {
-  it.each(RATES)("works in bounded steps at %i Hz, the setup in steps of its own (two at 96 kHz), and returns the same tail as renderRoomTail", (rate) => {
+  it.each(RATES)("works in bounded steps at %i Hz, the setup in steps of its own (two at 96 kHz), and renders the pinned tail with another tail's steps between its own", (rate) => {
     const whole = rate === RATE ? tail : renderRoomTail(RT, { ...OPTIONS, sampleRate: rate });
     const slices = tailSlices(RT, { ...OPTIONS, sampleRate: rate });
+    // Another tail at the same rate, stepped between this one's steps: any state the two shared, even per frame size,
+    // would show in either.
+    const otherTimes = ALTERNATIONS[0] ?? RT;
+    const otherOptions = { sampleRate: rate, seed: 3, onsetSeconds: 0.05 };
+    const other = tailSlices(otherTimes, otherOptions);
     const steps: number[] = [];
     let step = slices.next();
+    let otherStep = other.next();
     while (step.done !== true) {
       steps.push(step.value);
+      if (otherStep.done !== true) otherStep = other.next();
       step = slices.next();
     }
+    while (otherStep.done !== true) otherStep = other.next();
     const sliced: Stereo = step.value;
     expect(steps.length).toBeGreaterThanOrEqual(7);
     // The first steps set the synthesis up, one for each 1,024 bins of its frame, and cover no samples (ruling R72):
@@ -501,8 +526,13 @@ describe("tailSlices", () => {
     }
     expect(TAIL_STEP_SAMPLES).toBe(8192);
     expect(sliced.sampleRate).toBe(rate);
-    expect(sameSamples(sliced.left, whole.left)).toBe(true);
-    expect(sameSamples(sliced.right, whole.right)).toBe(true);
+    expect(sha256(sliced.left)).toBe(TAIL_SHA256[rate].left);
+    expect(sha256(sliced.right)).toBe(TAIL_SHA256[rate].right);
+    expect(sha256(whole.left)).toBe(TAIL_SHA256[rate].left);
+    expect(sha256(whole.right)).toBe(TAIL_SHA256[rate].right);
+    const otherWhole = renderRoomTail(otherTimes, otherOptions);
+    expect(sameSamples(otherStep.value.left, otherWhole.left)).toBe(true);
+    expect(sameSamples(otherStep.value.right, otherWhole.right)).toBe(true);
   });
 });
 
