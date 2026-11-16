@@ -77,10 +77,16 @@ describe("survey.json, schema version 2", () => {
   it("refuses another version with one plain reason", () => {
     const old = saloon();
     old.schemaVersion = 1;
-    expect(faults(old)).toEqual([expect.stringMatching(/^schemaVersion is 1; this reader reads version 2/)]);
+    // Says what a version 1 record is and what would cure it, never to republish with tools that would write version 1 again.
+    expect(faults(old)).toEqual([
+      "schemaVersion is 1; this reader reads version 2 only (version 1 is what the survey tools wrote before their publish step wrote version 2, without the room, wall heights, atlas images or floor this reader needs: the room must be built again by tools that write version 2)",
+    ]);
+    const newer = saloon();
+    newer.schemaVersion = 3;
+    expect(faults(newer)).toEqual(["schemaVersion is 3; this reader reads version 2 only"]);
     const unversioned = saloon();
     delete unversioned.schemaVersion;
-    expect(faults(unversioned)).toEqual([expect.stringMatching(/^schemaVersion is missing/)]);
+    expect(faults(unversioned)).toEqual(["schemaVersion is missing; this reader reads version 2 only"]);
     expect(() => parseSurveyRecord("survey")).toThrow(/is not a JSON object/);
   });
 

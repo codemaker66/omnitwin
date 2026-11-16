@@ -198,10 +198,13 @@ names every fault it finds. Keys the web does not use are dropped.
 | `ceiling.orientation`, `floor.orientation` | optional statement of how the image lies | if present, must be `"columns planner +x, rows from planner +z"` |
 | `files` | every published file's `bytes` and `sha256` | every file the record points at is listed |
 
-Version 2 adds to the tools' version 1 (which `publish.py` writes today): `room`, each wall's
-`height` and `kind`, `atlas.files`, the whole `floor` block and the largest-first rule. No version 2
-record has been published yet. Two things are assumptions the tools have yet to state, and the
-reader holds them:
+Version 2 adds to version 1, which the tools' `publish.py` wrote until its publish step was changed
+to write version 2 (that change follows the tools on their own branch): `room`, each wall's
+`height` and `kind`, `atlas.files`, the whole `floor` block and the largest-first rule. A version 1
+record is refused saying what it is and that the room must be built again by tools that write
+version 2; it does not advise republishing, since tools that wrote version 1 would write it again.
+No version 2 record has been published yet. Two things are assumptions the tools have yet to
+state, and the reader holds them:
 
 - **The floor photograph's orientation.** The ceiling photograph has its columns along planner +x
   and its rows from planner +z (the image's top row is the extent's highest z; the tools' ceiling
