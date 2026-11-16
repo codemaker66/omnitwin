@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SURVEYED_ROOMS,
   surveyedRoomFor,
+  surveyedRoomsBySlug,
   surveyedRoomsEnabled,
   surveyFileUrl,
   type SurveyedRoomEntry,
@@ -17,6 +18,17 @@ describe("surveyed room registry", () => {
   });
 
   it("files every listed room under its own slug", () => {
+    // The table the planner reads is built by this from the list, which is empty until a room is
+    // published: so it is asked here for a list that is not.
+    const reception: SurveyedRoomEntry = { slug: "reception-room", base: "/rooms/reception-room/survey-2026-07-11", revision: 1 };
+    const table = surveyedRoomsBySlug([SALOON, reception]);
+    expect([...table.keys()]).toEqual(["saloon", "reception-room"]);
+    for (const [slug, entry] of table) expect(entry.slug).toBe(slug);
+    // So a space's slug reaches that room's entry and no other's.
+    expect(surveyedRoomFor("trades-hall", "saloon", table)).toBe(SALOON);
+    expect(surveyedRoomFor("trades-hall", "reception-room", table)).toBe(reception);
+    expect(surveyedRoomFor("trades-hall", "/rooms/saloon/survey-2026-07-11", table)).toBeNull();
+    // And the planner's own table is that builder's.
     for (const [slug, entry] of SURVEYED_ROOMS) expect(entry.slug).toBe(slug);
   });
 

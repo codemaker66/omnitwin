@@ -39,8 +39,13 @@ export interface SurveyedRoomEntry {
 /** Trades Hall's surveyed rooms. None is listed yet. */
 const LISTED: readonly SurveyedRoomEntry[] = [];
 
-/** The same rooms by space slug: each is filed under its own slug, so a key cannot name another room's entry. */
-export const SURVEYED_ROOMS: ReadonlyMap<string, SurveyedRoomEntry> = new Map(LISTED.map((entry) => [entry.slug, entry]));
+/** Rooms by space slug: each is filed under its own slug, so a key cannot name another room's entry. */
+export function surveyedRoomsBySlug(listed: readonly SurveyedRoomEntry[]): ReadonlyMap<string, SurveyedRoomEntry> {
+  return new Map(listed.map((entry) => [entry.slug, entry]));
+}
+
+/** Trades Hall's surveyed rooms by space slug. */
+export const SURVEYED_ROOMS: ReadonlyMap<string, SurveyedRoomEntry> = surveyedRoomsBySlug(LISTED);
 
 /** A public folder on this origin: a path of plain segments, nothing that climbs or leaves. */
 const PUBLIC_FOLDER = /^(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)+$/;
