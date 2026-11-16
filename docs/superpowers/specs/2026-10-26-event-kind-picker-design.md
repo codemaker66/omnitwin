@@ -56,8 +56,9 @@ you want to play, never like a form.
 
 - Interrupting work. That means asking on:
   - a layout with anything on the floor;
-  - a layout that was not new as it opened, however empty its floor later becomes (a restart of the room, the last
-    table deleted, a co-editor clearing it, a reload of an empty server copy);
+  - a layout that had anything on its floor while it was open, however empty the floor later becomes (a restart of
+    the room, the last table deleted, a co-editor clearing it, a reload of an empty server copy). A layout whose saved
+    copy is empty as it opens counts as new;
   - a layout opened from an event;
   - a layout locked for review or frozen in a phase preview;
   - a layout someone is only viewing.
@@ -74,12 +75,14 @@ It asks only when all of these hold:
    timeline preview is showing.
 2. **The layout was new as it opened.** Nothing stood on its floor, neither in the copy it opened with nor in the
    server's, and nothing has stood on it since. The load latches this (`floorEmptyAtOpen`); a reload of the same
-   layout can clear it but never set it again, and once anything stands on the floor the picker clears it for good.
+   layout can clear it but never set it again, and once anything stands on the floor the picker clears it for as long
+   as the layout stays open. Opened afresh later with an empty saved copy, it is new again.
 3. **Nothing is on the floor** now.
 4. **The layout was not opened from an event** (`?eventId=`).
 5. **The layout's answer has been read** (from its load), so the question never flashes over an answer on its way.
 6. **Nothing answers the question already.** That means none of:
-   - a stored `eventKind` key (absent means never asked; `null` means asked and skipped);
+   - a stored `eventKind` key (absent means never asked; `null` means asked and skipped; a kind this planner does
+     not know, added by a later release, counts as answered with no kind);
    - this device's record for a guest's draft;
    - a valid `?event=wedding|corporate|other` parameter on a guest's new draft;
    - an answer this tab gave and has not seen kept.
@@ -107,15 +110,25 @@ share) is never made to try.
     expired session (401; the client asks for a fresh token on every request), or the route's own "try again" (409
     `RETRY`, a save holding the row at that moment). The receipt says "Not saved yet". It is tried again after 2, 5,
     15, 30 and 60 seconds while the browser is online, and at once when it comes back online
-    (`lib/online-status.ts`). If the layout opens again meanwhile, the tab's answer stands and is written again.
+    (`lib/online-status.ts`).
   - **this-visit:** a refusal no new try changes: a refused value (400), no permission (403), a layout that is gone
     (404) or locked for review (409 `CONFIG_LOCKED`). The receipt says "Kept for this visit only". It is not tried
     again, and the layout's own answer wins on the next load.
 
-  A dropped connection never makes the planner ask twice.
+  A dropped connection never makes the planner ask twice. More rules for an answer not yet written:
+  - **It never overwrites a newer answer on reopening.** Each unsent answer carries what the layout held, as far as
+    this tab knows, when it was given (moved on when this tab's own earlier answer is seen written). Reopened, the
+    layout keeps the unsent answer only while it still holds that. If it holds the unsent answer itself, the write
+    landed; if it holds another, someone answered elsewhere since, and that answer stands. A retry made while the
+    layout is not open writes over whatever it holds by then: the last writer wins, as everywhere in the PATCH.
+  - **It belongs to the person who gave it.** It is never written as anyone else: after a change of person it is
+    dropped, and a reopen by someone else does not apply it. A 401 retries only while someone is still signed in.
+  - **Only the newest is sent.** An answer overtaken while it waited its turn never reaches the network.
 - **A guest's draft.** It is kept in localStorage `venviewer.planner.eventKind` as
   `{ version: 1, entries: [{ configId, kind }], quiet }`, newest first, with the latest 200 kept. It is validated on
-  read, and a damaged record reads as empty. If storage is unavailable, the answer holds for this tab only.
+  read, and a damaged record reads as empty. A kind this planner does not know (added by a later release) reads as
+  answered with no kind, and is kept when the record is rewritten, so a tab left open across a release never erases
+  a newer answer. If storage is unavailable, the answer holds for this tab only.
 - **When a layout opens.** The store is set from metadata (signed-in) or the device record (guest). It is reset when
   the layout changes. As built, `editor-store`'s `loadConfiguration` and `createPublicConfig` (lane E's file) hand
   the layout to `openLayoutEventKind`, with the metadata the load already holds. That is the only place an answer is
