@@ -183,11 +183,11 @@ names every fault it finds. Keys the web does not use are dropped.
 | --- | --- | --- |
 | `schemaVersion` | `2` | any other value is refused with one plain reason |
 | `slug`, `revision`, `captured` | room slug, integer from 1, ISO date | shape |
-| `room.name`, `room.venue`, `room.ceilingHeight` | name, venue slug, metres | shape |
+| `room.name`, `room.venue`, `room.ceilingHeight` | name, venue slug, metres | shape; where the ceiling has no relief, `ceilingHeight` within 5 mm of the tallest wall's `height` |
 | `room.outline` | wall-face corners in planner (x, z), counter-clockwise seen from above | at least 3 vertices, simple, wound the tools' way |
 | `atlas.size`, `ppm`, `vRange`, `row` | the wall atlas's pixels, texels per metre, the heights a strip covers, a strip's height | shape; `row` within a texel of `(vRange[1] - vRange[0]) * ppm`, which is what ties `ppm` to the image |
 | `atlas.files` | the atlas image at each size, **largest first** | at least one; each listed in `files`; order against byte counts |
-| `walls[]` | `id`, `reliefId`, `length`, `height`, `kind`, `atlas` (the strip's top-left texel, width, height) | one per outline segment, in order; length within 2 mm of its segment; strips inside the atlas, a row high, wide enough, not overlapping |
+| `walls[]` | `id`, `reliefId`, `length`, `height`, `kind`, `atlas` (the strip's top-left texel, width, height) | one per outline segment, in order; length within 2 mm of its segment; `height` no more than 5 mm above `atlas.vRange`'s top; strips inside the atlas, a row high, wide enough, not overlapping |
 | `relief.container`, `file`, `order` | `"GHR1"`, the walls' relief file, its entry ids | `order` is exactly the walls' relief ids |
 | `ceiling.extent` | `{ x: [x0, x1], z: [z0, z1] }` the ceiling photograph covers | increasing; holds the outline's bounding box, to within 5 mm |
 | `ceiling.files` | the ceiling photograph at each size, **largest first** (may be empty) | listed in `files`; order against byte counts |
@@ -219,6 +219,20 @@ box exactly, but the tools lay the floor's in whole texels of 1/120 m from the b
 highest z, so a published `floor.extent` stops up to half a texel (4.17 mm) short of the other two
 sides, or runs that far past them. An extent larger than the box is accepted.
 
+**Heights.** A wall stands from the floor to its `height` and its strip covers `atlas.vRange`, so a
+wall more than 5 mm (`HEIGHT_TOLERANCE`) taller than `vRange`'s top is refused. A ceiling without a
+relief is drawn flat at `room.ceilingHeight`, so that height must be where the walls end: the
+record is refused unless it is within 5 mm of the tallest wall's `height`, and when the walls'
+reliefs have loaded the flat ceiling is held to their highest point the same way (a `geometry`
+failure naming the walls' relief). Higher, a band of nothing would show above the walls; lower,
+they would stand through it. Two things are left alone on purpose. A ceiling with a relief is drawn
+from its measured heights (held to `heightRange`), and its room's `ceilingHeight` is only the
+relief's reference: the tools' Robert Adam Room has a coffered ceiling whose field is 2.8 m under
+walls that rise to 3.216 m into its panels. And a wall's relief is not held to that wall's own
+`height`, because the tools mesh every wall's relief over the room's whole range of heights (a
+0.594 m screen there gets a relief entry as tall as the tallest wall's); it is held to the strip's
+heights, as before.
+
 Frames follow the tools: metres, y up, origin at the centre of the floor; `u` runs left to right as
 you face a wall from inside, so `u = 0` is at its segment's end vertex; depth is positive towards
 the room. A wall relief's triangles run counter-clockwise seen from the room, a ceiling relief's
@@ -243,7 +257,7 @@ left: its room is let go, and the same entry coming back loads afresh. Its secon
 | `revision` | the record's revision is not the one asked for |
 | `format` | a relief file is not a GHR1 container, or holds other entries than the record names |
 | `integrity` | a relief file's size is not the one the record lists |
-| `geometry` | a surface cannot be built: a relief wound inside out, with no triangles, or reaching more than 5 mm (`RELIEF_BOUNDS_TOLERANCE`, the error the tools simplify to) outside what its record gives it (a wall's length and its strip's heights; a ceiling's extent and `heightRange`) |
+| `geometry` | a surface cannot be built: a relief wound inside out, with no triangles, or reaching more than 5 mm (`RELIEF_BOUNDS_TOLERANCE`, the error the tools simplify to) outside what its record gives it (a wall's length and its strip's heights; a ceiling's extent and `heightRange`); or a flat ceiling more than 5 mm from the walls' tops |
 | `unexpected` | anything else, with its message |
 
 A file's SHA-256 is recorded but not verified in the browser. The photographs are loaded by the

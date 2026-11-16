@@ -192,6 +192,44 @@ describe("survey.json, schema version 2", () => {
     expect(faults(twoOut)).toHaveLength(1);
   });
 
+  it("refuses a wall taller than the heights its strip of the atlas covers", () => {
+    // The Saloon's strips cover -0.02 m to 5.535 m.
+    const tall = saloon();
+    wallOf(tall, "rear").height = 6;
+    expect(faults(tall)).toEqual([
+      'walls[6].height: wall "rear" is 6 m high, but the atlas\'s strips cover heights up to 5.535 m (vRange), more than 5 mm short of it',
+    ]);
+    // To the strip's top and the 5 mm a relief may stand past it is a wall its strip covers.
+    const toTheTop = saloon();
+    wallOf(toTheTop, "rear").height = 5.539;
+    expect(parseSurveyRecord(toTheTop).walls[6]?.height).toBe(5.539);
+  });
+
+  it("refuses a flat ceiling that does not meet the tallest wall's top", () => {
+    const flat = (ceilingHeight: number): RawRecord => {
+      const record = saloon();
+      delete record.ceiling.relief;
+      delete record.files["ceiling-relief.bin"];
+      record.room.ceilingHeight = ceilingHeight;
+      return record;
+    };
+    // Above the walls a band of nothing would show; below their tops they would stand through it.
+    expect(faults(flat(6))).toEqual([
+      "room.ceilingHeight: is 6 m, but the tallest wall is 5.515 m high and the ceiling has no relief: a flat ceiling is drawn at this height, and must meet the walls' tops to within 5 mm",
+    ]);
+    expect(faults(flat(5.2))).toEqual([expect.stringMatching(/^room\.ceilingHeight: is 5\.2 m, but the tallest wall is 5\.515 m high/)]);
+    expect(parseSurveyRecord(flat(5.519)).room.ceilingHeight).toBe(5.519);
+    // It is the tallest wall it meets: a lower wall under it (a screen, a pier under a soffit) is no fault.
+    const screened = flat(5.515);
+    wallOf(screened, "window-front-return").height = 2.4;
+    expect(() => parseSurveyRecord(screened)).not.toThrow();
+    // A ceiling with a relief is drawn from its measured heights, whatever the walls' (a coffered
+    // ceiling's field stands below the tops of the walls that rise into its panels).
+    const coffered = saloon();
+    coffered.room.ceilingHeight = 5.1;
+    expect(parseSurveyRecord(coffered).room.ceilingHeight).toBe(5.1);
+  });
+
   it("refuses a relief order that is not exactly the walls' relief ids", () => {
     const missing = saloon();
     missing.relief.order.pop();

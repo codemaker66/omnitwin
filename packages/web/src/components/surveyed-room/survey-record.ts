@@ -50,6 +50,13 @@ export const WALL_LENGTH_TOLERANCE = 0.002;
  */
 export const OVERHEAD_EXTENT_TOLERANCE = 0.005;
 /**
+ * How far a wall's height may stand above the heights its strip of the atlas
+ * covers, and a flat ceiling from the tallest wall's top, metres: what a
+ * relief may reach outside its record (room-geometry.ts
+ * RELIEF_BOUNDS_TOLERANCE), since a wall's relief is held to the same strip.
+ */
+export const HEIGHT_TOLERANCE = 0.005;
+/**
  * How far the atlas's row may differ from the heights its strips cover times
  * its texels per metre, in texels: the tools round a row up to a whole texel
  * (the Saloon's is exact at 1111; the Grand Hall's 1304 covers 1303.45).
@@ -211,6 +218,14 @@ function crossChecks(record: Shape): Issue[] {
         });
       }
     }
+    // A wall stands from the floor to its height, and its strip covers the atlas's heights: taller
+    // than its strip, its top would wear whatever lies above the strip in the image.
+    if (wall.height > atlas.vRange[1] + HEIGHT_TOLERANCE) {
+      issues.push({
+        path: ["walls", index, "height"],
+        message: `wall "${wall.id}" is ${String(wall.height)} m high, but the atlas's strips cover heights up to ${String(atlas.vRange[1])} m (vRange), more than ${String(HEIGHT_TOLERANCE * 1000)} mm short of it`,
+      });
+    }
     const [x, y, w, h] = wall.atlas;
     if (x + w > atlas.size[0] || y + h > atlas.size[1]) {
       issues.push({
@@ -237,6 +252,21 @@ function crossChecks(record: Shape): Issue[] {
       }
     }
   });
+
+  // A ceiling without a relief is drawn flat at the room's ceiling height, so that height must be
+  // where the walls end: higher, and a band of nothing shows above them; lower, and they stand
+  // through it. A ceiling with a relief is drawn from its measured heights instead (held to
+  // `heightRange` when it loads), and the room's ceiling height is then only its reference: walls
+  // of several heights under a stepped or coffered ceiling are no fault.
+  if (record.ceiling.relief === undefined && walls.length > 0) {
+    const tallest = Math.max(...walls.map((wall) => wall.height));
+    if (Math.abs(record.room.ceilingHeight - tallest) > HEIGHT_TOLERANCE) {
+      issues.push({
+        path: ["room", "ceilingHeight"],
+        message: `is ${String(record.room.ceilingHeight)} m, but the tallest wall is ${String(tallest)} m high and the ceiling has no relief: a flat ceiling is drawn at this height, and must meet the walls' tops to within ${String(HEIGHT_TOLERANCE * 1000)} mm`,
+      });
+    }
+  }
 
   const wallReliefIds = new Set(walls.map((wall) => wall.reliefId));
   const order = record.relief.order;
