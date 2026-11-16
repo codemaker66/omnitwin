@@ -587,11 +587,20 @@ it("asks the plan once, with no body, and asks nothing else", async () => { /* g
 - Modify: `src/pages/GuestPaperPage.tsx`
 - Test: `src/pages/__tests__/GuestPaperPage.test.tsx`, `src/pages/__tests__/guest-paper-css.test.ts`
 
+**As built (the controller's decisions and the build, where they refine the text below):**
+- `GuestPaperPage({ store })`, default `guestListStore()`, behind Task 9's `KitGate` (not copied). On mount: `store.sweep(Date.now())` first (as the list page does, so a list past its removal day is never printed), then `open(planId, store)` if the page state holds another plan. The page does not read the room and makes no request. Phases: "opening" shows `<ActivityStatus variant="panel">Opening your guest list…</ActivityStatus>`; "unreadable" shows "A list was kept here for this plan, but it cannot be read." and "Back to the list"; "ready" shows the tools and the sheet.
+- Every link carries `?kit=on` (ruling R21): the four sheet links change only `sheet=` (labels "Table plan", "Guests by table", "Place cards", "Covers for the caterer"; the current one `aria-current="page"`), and "Back to the list" is `/plan/:code/guests?kit=on`.
+- The tools' count is the sheet's own: "172 names" (table plan, guests by table), "172 cards", "172 covers". While the browser is not keeping the list, the tools also show Task 9's storage-refused words.
+- The eyebrow is the event's date when set ("Saturday 12 June 2027") and nothing invented: the kit holds no room name in this stage. With no title the table plan's heading is "Table plan". Guests by table: eyebrow title and date, heading "Guests by table". Covers: eyebrow "For the caterer · covers by table" (and the date); no event title and no table's own name, as either can be a person's.
+- The foot of every sheet: "Version N · printed 15 November 2026" from `paperVersion` and `printedAt` (`Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })`); before the first print, "Not yet printed". Place cards carry it after the last page of cards.
+- Print: `await document.fonts.ready` (skipped where the browser has no `document.fonts`), then `apply((l) => markPrinted(l, new Date().toISOString()), { undo: false })` inside `flushSync` so the page shows the new version at once, `await flush()`, `window.print()`. The button is `aria-busy` while it waits; a second click does nothing. The browser's own Print command (`beforeprint`) records the version the same way, so no sheet goes out with an earlier version's number.
+- Place cards: two columns of five, 90 mm by 55 mm, `break-after: page` after each tenth card's page, with hairline corner cut marks drawn in borders on paper only. Five rows take 275 mm, more than A4 leaves inside 14 mm margins (269 mm), so the cards sheet prints on a named page, `@page gp-cards { size: A4; margin: 10mm 14mm; }`; every other sheet keeps `@page { size: A4; margin: 14mm; }`.
+
 **The sheets** (`?sheet=`; an unknown value shows the table plan):
 
 | Sheet | On paper |
 |---|---|
-| `table-plan` | Eyebrow (date and room name as the planner typed them), the title, "Please find your table", names A to Z in columns under their letters, each with its table number; foot: "Version 6 · printed 13 November 2026" |
+| `table-plan` | Eyebrow (the event's date, when set), the title, "Please find your table", names A to Z in columns under their letters, each with its table number; foot: "Version 6 · printed 13 November 2026" |
 | `by-table` | Each table: its number, the planner's name for it, its guests by seat |
 | `place-cards` | One card a seated guest: the name, and "Table 7". Ten cards to an A4 page, 90 mm by 55 mm, with cut marks |
 | `covers` | "172 covers, 18 tables", covers by table, and the line "No guest's name is on this sheet. Diets and allergies are not held here: ask each guest, or give the kitchen a count." |
@@ -618,7 +627,9 @@ it("on paper the tools are hidden, the ground is white and a card never splits a
 ```
 
 - [ ] **Step 2: Run the tests.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Print rules follow `src/components/proposal/ProposalDocument.css:318-335`: `@page { size: A4; margin: 14mm; }`, white ground, near-black ink, `break-inside: avoid` on a letter group's heading with its first entry, on a table's block and on a card; `break-after: page` after each tenth card. The Print button's handler: `await document.fonts.ready`, `apply((l) => markPrinted(l, now))`, `await flush()`, `window.print()`.
+Also tested: the print button busy and ignoring a second click; "Not yet printed" before the first print and the version and day on every sheet after; printing again unchanged keeps the version; the browser's own Print records it; every link carries `kit=on`; no guest's name in an attribute, the address, the title or the console; no request (`getPublicConfig`, `globalThis.fetch` and `XMLHttpRequest` spied) on any sheet or when printing. The stylesheet test also checks that paper hides only the tools, that ten cards fit their named page, and that names are set at 12 pt or more at the door.
+
+- [ ] **Step 3: Implement.** Print rules follow `src/components/proposal/ProposalDocument.css:318-335`: `@page { size: A4; margin: 14mm; }` (the place cards' own named page as above), white ground (the body's ivory overridden with `body:has(.gp)`), near-black ink, `break-inside: avoid` on a letter group's heading with its first entry, on a table's block and on a card; `break-after: page` after each tenth card. The Print button's handler: as in "As built" above.
 - [ ] **Step 4: Run the tests and the guards of Task 9.** Expected: PASS.
 - [ ] **Step 5: Commit** `feat(kit): the table plan, place cards and covers on paper`
 

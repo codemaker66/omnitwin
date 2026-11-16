@@ -1,0 +1,604 @@
+/* ---------------------------------------------------------------------------
+   The planner's paper: the approved mock-up's third screen. On screen, the
+   sheet sits on the sage ground with its pale plane, under an ivory strip of
+   tools; colours come from the register (--reg-*) and named House tones only.
+   On paper, A4: the tools and the ground go, the sheet prints near-black on
+   white, and nothing a reader needs whole (a letter's first name, a table, a
+   place card) is split across two pages.
+   --------------------------------------------------------------------------- */
+
+.gp {
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  min-height: 100dvh;
+  padding: 24px;
+  background: var(--house-ground);
+  color: var(--reg-text-1);
+  font-family: var(--house-sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* Client tier: the sheet's second ink holds 7:1. */
+.gp[data-register="ivory"] {
+  --reg-text-2: var(--vv-forest-2);
+}
+
+/* The pale plane behind the sheet's top corner. */
+.gp::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--house-ground-plane);
+  clip-path: polygon(0 0, 62% 0, 54% 46%, 0 58%);
+  pointer-events: none;
+}
+
+.gp :is(a, button):focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+}
+
+.gp-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.gp-waiting {
+  display: grid;
+  place-items: center;
+  min-height: calc(100dvh - 48px);
+}
+
+/* A list that cannot be read: said on its own sheet. */
+.gp-alone {
+  box-sizing: border-box;
+  max-width: 720px;
+  padding: 44px 48px 40px;
+  background: var(--reg-surface);
+}
+
+.gp-alone__title {
+  margin: 0;
+  font: 400 clamp(32px, 4vw, 46px)/1.08 var(--house-serif);
+  letter-spacing: -0.015em;
+}
+
+.gp-alone__lede {
+  margin: 14px 0 0;
+  color: var(--reg-text-2);
+  font: 400 19px/1.5 var(--house-serif);
+}
+
+.gp-alone__action {
+  margin: 26px 0 0;
+}
+
+.gp-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+/* ---------------------------------------------------------------------------
+   The tools, on screen only
+   --------------------------------------------------------------------------- */
+
+.gp-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 22px;
+  background: var(--reg-surface);
+}
+
+.gp-tools__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 22px;
+}
+
+.gp-tools__title {
+  margin: 0;
+  font: 400 24px/1.2 var(--house-serif);
+}
+
+.gp-tools__count {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.gp-tools__gap {
+  margin: 0;
+  color: var(--reg-attention);
+  font-weight: 500;
+}
+
+.gp-tools__notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--reg-alert);
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font-size: 15px;
+}
+
+.gp-tools__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+}
+
+.gp-sheets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gp-sheets__link {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 44px;
+  border-bottom: 2px solid transparent;
+  color: var(--reg-text-2);
+  font: 500 15px/1.2 var(--house-sans);
+  text-decoration: none;
+  transition: color var(--house-motion-hover) var(--house-ease-out), border-color var(--house-motion-hover) var(--house-ease-out);
+}
+
+.gp-sheets__link[aria-current="page"] {
+  border-bottom-color: var(--reg-text-1);
+  color: var(--reg-text-1);
+  font-weight: 600;
+}
+
+.gp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gp-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 18px;
+  border: 1px solid var(--reg-edge);
+  border-radius: var(--house-radius-control);
+  background: transparent;
+  color: var(--reg-text-1);
+  font: 600 15px/1 var(--house-sans);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--house-motion-hover) var(--house-ease-out), border-color var(--house-motion-hover) var(--house-ease-out);
+}
+
+.gp-button--primary {
+  border-color: var(--reg-primary);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+}
+
+.gp-button[aria-busy="true"] {
+  cursor: progress;
+}
+
+.gp-button:active:not([aria-disabled="true"]) {
+  transform: translateY(1px);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gp-sheets__link:hover {
+    border-bottom-color: var(--house-rule-strong);
+    color: var(--reg-text-1);
+  }
+
+  .gp-sheets__link[aria-current="page"]:hover {
+    border-bottom-color: var(--reg-text-1);
+  }
+
+  .gp-button:hover {
+    border-color: var(--reg-text-2);
+    background: var(--reg-surface-hover);
+  }
+
+  .gp-button--primary:hover {
+    border-color: var(--reg-primary-hover);
+    background: var(--reg-primary-hover);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   The paper, on screen
+   --------------------------------------------------------------------------- */
+
+.gp-paper {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.gp-leaf {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 44px 46px 30px;
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  box-shadow: var(--house-shadow-lift);
+}
+
+.gp-leaf--small {
+  max-width: 820px;
+  padding: 30px 32px 24px;
+}
+
+.gp-eyebrow {
+  margin: 0;
+  color: var(--reg-text-2);
+  font: 600 12px/1.2 var(--house-sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.gp-leaf__title {
+  margin: 12px 0 4px;
+  font: 400 clamp(30px, 3.6vw, 44px)/1.05 var(--house-serif);
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+.gp-leaf--small .gp-leaf__title {
+  font-size: 28px;
+}
+
+.gp-leaf__sub {
+  margin: 0;
+  color: var(--reg-text-2);
+  font: italic 400 19px/1.4 var(--house-serif);
+}
+
+.gp-foot {
+  margin-top: 30px;
+  padding-top: 12px;
+  border-top: 1px solid var(--house-rule-strong);
+  color: var(--reg-text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The table plan: names A to Z in columns, each letter heading its names. */
+.gp-az {
+  columns: 5 168px;
+  column-gap: 26px;
+  margin-top: 28px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.gp-az__group + .gp-az__group .gp-az__letter {
+  margin-top: 14px;
+}
+
+.gp-az__lead,
+.gp-az__entry {
+  break-inside: avoid;
+}
+
+.gp-az__letter {
+  margin: 0 0 6px;
+  color: var(--reg-attention);
+  font: 600 13px/1 var(--house-sans);
+  letter-spacing: 0.12em;
+}
+
+.gp-az__entry {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  padding: 1.5px 0;
+}
+
+.gp-az__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.gp-az__leader {
+  flex: 1;
+  min-width: 10px;
+  border-bottom: 1px dotted var(--house-rule-strong);
+}
+
+.gp-az__table {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Guests by table: one block a table. */
+.gp-tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 26px 30px;
+  margin-top: 28px;
+}
+
+.gp-table {
+  min-width: 0;
+  break-inside: avoid;
+}
+
+.gp-table__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: 0 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--house-rule-strong);
+  font: 600 15px/1.3 var(--house-sans);
+}
+
+.gp-table__name {
+  color: var(--reg-text-2);
+  font: italic 400 16px/1.3 var(--house-serif);
+  overflow-wrap: anywhere;
+}
+
+.gp-table__seats {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gp-table__seats li {
+  display: grid;
+  grid-template-columns: 2em minmax(0, 1fr);
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 15px;
+}
+
+.gp-table__seat {
+  color: var(--reg-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.gp-table__guest {
+  overflow-wrap: anywhere;
+}
+
+/* Place cards: on screen, two columns of cards; on paper, ten to a page. */
+.gp-cards,
+.gp-cards-page {
+  display: grid;
+  gap: 14px;
+}
+
+.gp-cards-page {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gp-card {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  aspect-ratio: 90 / 55;
+  padding: 12px;
+  background: var(--reg-raised);
+  box-shadow: var(--house-shadow-lift);
+  text-align: center;
+  break-inside: avoid;
+}
+
+.gp-card__name {
+  font: 400 clamp(18px, 1.9vw, 24px)/1.15 var(--house-serif);
+  overflow-wrap: anywhere;
+}
+
+.gp-card__table {
+  color: var(--reg-text-2);
+  font: 600 12px/1 var(--house-sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* A card's cut marks are drawn on paper only. */
+.gp-cut {
+  display: none;
+}
+
+.gp-cards__foot {
+  margin-top: 14px;
+  padding: 12px 22px;
+  border-top: 0;
+  background: var(--reg-raised);
+}
+
+/* Covers by table, for the caterer. */
+.gp-covers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 22px;
+  margin-top: 18px;
+  font-size: 15px;
+}
+
+.gp-covers__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--house-rule);
+}
+
+.gp-covers__line b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.gp-covers__note {
+  max-width: 62ch;
+  margin: 16px 0 0;
+  color: var(--reg-text-2);
+  font-size: 15px;
+}
+
+@media (max-width: 760px) {
+  .gp {
+    padding: 0;
+  }
+
+  .gp-desk,
+  .gp-paper {
+    gap: 16px;
+  }
+
+  .gp-tools {
+    padding: 16px;
+  }
+
+  .gp-leaf,
+  .gp-leaf--small {
+    padding: 28px 16px 24px;
+    box-shadow: none;
+  }
+
+  .gp-alone {
+    min-height: 100dvh;
+    padding: 28px 16px 32px;
+  }
+
+  .gp-cards {
+    padding: 0 16px;
+  }
+
+  .gp-cards__foot {
+    margin: 16px 16px 0;
+  }
+
+  .gp-covers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .gp-cards-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gp-button,
+  .gp-sheets__link {
+    transition: none;
+  }
+
+  .gp-button:active:not([aria-disabled="true"]) {
+    transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   On paper: A4, near-black ink on white, no tools, nothing split
+   --------------------------------------------------------------------------- */
+
+@media print {
+  @page { size: A4; margin: 14mm; }
+
+  /* Ten 90 by 55 mm cards take 275 mm of the page's 297: their pages get their own margins. */
+  @page gp-cards { size: A4; margin: 10mm 14mm; }
+
+  /* The body's ivory, on this page only. */
+  html:has(.gp),
+  body:has(.gp) { background: #ffffff !important; }
+
+  .gp { min-height: 0; padding: 0; background: #ffffff; }
+  .gp::before { display: none; }
+  .gp, .gp * { color: #111111 !important; }
+  .gp-tools { display: none !important; }
+
+  .gp-desk,
+  .gp-paper { display: block; max-width: none; }
+  .gp-leaf,
+  .gp-leaf--small { max-width: none; padding: 0; background: none; box-shadow: none; }
+
+  .gp-eyebrow { font-size: 9pt; }
+  .gp-leaf__title { margin: 3mm 0 1mm; font-size: 26pt; }
+  .gp-leaf--small .gp-leaf__title { font-size: 20pt; }
+  .gp-leaf__sub { font-size: 14pt; }
+  .gp-foot { margin-top: 8mm; padding-top: 2.5mm; border-top-color: #8c8c8c; font-size: 10pt; break-inside: avoid; }
+
+  /* The table plan: three columns, names set to be read standing at the door. */
+  .gp-az { columns: 3; column-gap: 8mm; margin-top: 7mm; font-size: 12pt; line-height: 1.35; }
+  .gp-az__group + .gp-az__group .gp-az__letter { margin-top: 3.5mm; }
+  .gp-az__letter { margin-bottom: 1.5mm; font-size: 10pt; }
+  .gp-az__lead { break-inside: avoid; }
+  .gp-az__entry { break-inside: avoid; }
+  .gp-az__leader { border-bottom-color: #8c8c8c; }
+
+  /* Guests by table: two columns of whole tables. */
+  .gp-tables { display: block; columns: 2; column-gap: 10mm; margin-top: 6mm; }
+  .gp-table { break-inside: avoid; margin-bottom: 6mm; }
+  .gp-table__head { border-bottom-color: #8c8c8c; font-size: 12pt; }
+  .gp-table__name { font-size: 12pt; }
+  .gp-table__seats li { font-size: 11pt; }
+
+  /* Place cards: ten to an A4 page, two columns of five, 90 by 55 mm. The
+     cards and the version line after them share one named page. */
+  .gp-cards-sheet { page: gp-cards; }
+  .gp-cards { display: block; padding: 0; }
+  .gp-cards-page { display: grid; grid-template-columns: 90mm 90mm; grid-auto-rows: 55mm; gap: 0; justify-content: center; }
+  .gp-cards-page:not(:last-child) { break-after: page; }
+  .gp-card { width: 90mm; height: 55mm; aspect-ratio: auto; gap: 3mm; padding: 6mm; background: none; box-shadow: none; break-inside: avoid; }
+  .gp-card__name { font-size: 20pt; }
+  .gp-card__table { font-size: 9pt; }
+  .gp-cards__foot { margin: 6mm 0 0; padding: 2.5mm 0 0; border-top: 1px solid #8c8c8c; background: none; }
+
+  /* Cut marks: a hairline corner at each of a card's four corners, on the cut
+     line, drawn with borders (which print without background graphics). */
+  .gp-cut { display: block; position: absolute; inset: 0; pointer-events: none; }
+  .gp-card::before,
+  .gp-card::after,
+  .gp-cut::before,
+  .gp-cut::after { content: ""; position: absolute; width: 4mm; height: 4mm; border-style: solid; border-color: #111111; border-width: 0; }
+  .gp-card::before { top: 0; left: 0; border-top-width: 0.25mm; border-left-width: 0.25mm; }
+  .gp-card::after { right: 0; bottom: 0; border-right-width: 0.25mm; border-bottom-width: 0.25mm; }
+  .gp-cut::before { top: 0; right: 0; border-top-width: 0.25mm; border-right-width: 0.25mm; }
+  .gp-cut::after { bottom: 0; left: 0; border-bottom-width: 0.25mm; border-left-width: 0.25mm; }
+
+  /* Covers: three columns of tables. */
+  .gp-covers { gap: 0 8mm; margin-top: 5mm; font-size: 12pt; }
+  .gp-covers__line { border-bottom-color: #8c8c8c; break-inside: avoid; }
+  .gp-covers__note { max-width: none; margin-top: 5mm; font-size: 11pt; }
+}
