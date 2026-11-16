@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, type ReactElement } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, type ReactElement } from "react";
 import { Volume1, Volume2, VolumeOff } from "lucide-react";
 import { shiftedLetter, usePlannerKeyBindings, type KeyBinding } from "../../lib/planner-keys.js";
 import {
@@ -46,7 +46,7 @@ const MODE_OPTIONS: readonly SegmentedOption<PlannerSoundMode>[] = [
 /** What each set plays, in the venue's words (spec 9's palette). */
 export const SOUND_MODE_LINES: Readonly<Record<PlannerSoundMode, string>> = {
   off: "Nothing plays.",
-  quiet: "Pieces set down, refusals, the evening, Present and Send.",
+  quiet: "Pieces set down in the room, refusals, the evening, Present and Send.",
   full: "Quiet, with pieces lifted, snaps, measurements and each hour.",
 };
 
@@ -65,14 +65,22 @@ function chooseMode(mode: PlannerSoundMode): void {
  * never with Ctrl, Alt or Cmd, never a held key repeating; and M alone stays
  * Measure's.
  */
-const SOUND_KEYS: readonly KeyBinding[] = [{
-  keys: shiftedLetter("m"),
-  run: () => { chooseMode(togglePlannerSoundMute()); },
-}];
+const SOUND_CHORDS = shiftedLetter("m");
 
-/** While mounted, Shift M mutes the planner and brings back what was muted. */
-export function usePlannerSoundShortcut(): void {
-  usePlannerKeyBindings(SOUND_KEYS);
+/**
+ * While mounted, Shift M mutes the planner and brings back what was muted.
+ * `onToggled` hears the mode each press leaves it in, for a receipt on screen.
+ */
+export function usePlannerSoundShortcut(onToggled?: (mode: PlannerSoundMode) => void): void {
+  const keys = useMemo((): readonly KeyBinding[] => [{
+    keys: SOUND_CHORDS,
+    run: () => {
+      const mode = togglePlannerSoundMute();
+      chooseMode(mode);
+      onToggled?.(mode);
+    },
+  }], [onToggled]);
+  usePlannerKeyBindings(keys);
 }
 
 function SoundIcon({ mode }: { readonly mode: PlannerSoundMode }): ReactElement {

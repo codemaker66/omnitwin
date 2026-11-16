@@ -1,22 +1,22 @@
 // ---------------------------------------------------------------------------
-// The planner's sound palette (T-671, spec section 9): thirteen short sounds,
+// The planner's sound palette (T-671, spec section 9): ten short sounds,
 // each a recipe of voices that lib/sound-registry.ts builds into a Web Audio
 // graph and lib/planner-sound-render.ts renders in plain arithmetic for the
 // tests and the recordings. One recipe, two renderers, so what is measured is
 // what plays.
 //
 // Levels are peak dBFS before the master. The quiet set (Q) is what "Quiet"
-// plays: the set-downs, the refusal, the cue and the four rare moments. The
-// full set (F) adds the small sounds of the hand. Hover, press, focus,
-// selection, tool and view changes, panels, the camera, undo, autosave and
-// page load are silent by design, and no sound is ever the only signal.
+// plays: the refusal, the cue and the four rare moments, with the set-downs,
+// which the set-down engine renders for each piece and room (lib/set-down/)
+// rather than from a recipe. The full set (F) adds the small sounds of the
+// hand. Hover, press, focus, selection, tool and view changes, panels, the
+// camera, undo, autosave and page load are silent by design, and no sound is
+// ever the only signal.
 // ---------------------------------------------------------------------------
 
 export type PlannerSoundSet = "quiet" | "full";
 
 export const PLANNER_SOUND_IDS = [
-  "planner-set-table",
-  "planner-set-chair",
   "planner-refuse",
   "planner-cue",
   "planner-horizon",
@@ -27,7 +27,6 @@ export const PLANNER_SOUND_IDS = [
   "planner-snap",
   "planner-measure",
   "planner-hour",
-  "planner-brush",
 ] as const;
 
 export type PlannerSoundId = (typeof PLANNER_SOUND_IDS)[number];
@@ -85,20 +84,19 @@ export interface PlannerSoundRecipe {
   readonly gapMs: number;
   /** The synthesised hall under the dry sound, in dB, for the rare moments only. */
   readonly hallSendDb: number | null;
-  /** ± variation each play, pitch as a fraction and level in dB (the set-downs). */
+  /** ± variation each play, pitch as a fraction and level in dB. */
   readonly vary: { readonly pitch: number; readonly levelDb: number } | null;
   readonly voices: readonly PlannerSoundVoice[];
 }
 
 /**
- * The palette's touch level in dBFS: the mean of the two set-down peaks
- * (planner-set-table at -20, planner-set-chair at -24). The modal set-downs
- * (lib/set-down/render.ts) anchor their level here, so a rebalance of the
- * palette moves them with it.
+ * The palette's touch level in dBFS: the mean of the two set-down peaks it
+ * had before the set-down engine replaced them (a table at -20, a chair at
+ * -24). The modal set-downs (lib/set-down/render.ts) anchor their level here,
+ * so a rebalance of the palette moves them with it.
  */
 export const PLANNER_TOUCH_DB = -22;
 
-const SET_DOWN_VARY = { pitch: 0.03, levelDb: 1 } as const;
 /** No sound, of any kind, plays within this of its own last play. */
 export const PLANNER_SOUND_MIN_GAP_MS = 45;
 
@@ -118,35 +116,6 @@ function bell(fundamentalHz: number, peakDb: number, startMs: number, decayMs: n
 }
 
 export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSoundRecipe>> = {
-  "planner-set-table": {
-    id: "planner-set-table",
-    label: "A table set down",
-    set: "quiet",
-    peakDb: -20,
-    lengthMs: 160,
-    gapMs: PLANNER_SOUND_MIN_GAP_MS,
-    hallSendDb: null,
-    vary: SET_DOWN_VARY,
-    voices: [
-      { kind: "tone", wave: "sine", hz: 118, toHz: 82, glideMs: 60, peakDb: -20, attackMs: 2, decayMs: 148, floor: 0.001 },
-      { kind: "tone", wave: "sine", hz: 196, peakDb: -29, attackMs: 2, decayMs: 88, floor: 0.001 },
-      { kind: "noise", colour: "white", peakDb: -28, attackMs: 1, lengthMs: 12, filter: { type: "bandpass", hz: 700, q: 0.9 } },
-    ],
-  },
-  "planner-set-chair": {
-    id: "planner-set-chair",
-    label: "A chair set down",
-    set: "quiet",
-    peakDb: -24,
-    lengthMs: 100,
-    gapMs: PLANNER_SOUND_MIN_GAP_MS,
-    hallSendDb: null,
-    vary: SET_DOWN_VARY,
-    voices: [
-      { kind: "tone", wave: "sine", hz: 165, toHz: 140, glideMs: 40, peakDb: -24, attackMs: 2, decayMs: 78, floor: 0.001 },
-      { kind: "noise", colour: "white", peakDb: -30, attackMs: 1, lengthMs: 8, filter: { type: "bandpass", hz: 1100, q: 0.9 } },
-    ],
-  },
   "planner-refuse": {
     id: "planner-refuse",
     label: "A placement refused",
@@ -288,19 +257,6 @@ export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSound
       { kind: "tone", wave: "sine", hz: 330, peakDb: -30, attackMs: 2, decayMs: 33, floor: 0.001 },
     ],
   },
-  "planner-brush": {
-    id: "planner-brush",
-    label: "Lay out placing several pieces",
-    set: "full",
-    peakDb: -34,
-    lengthMs: 220,
-    gapMs: PLANNER_SOUND_MIN_GAP_MS,
-    hallSendDb: null,
-    vary: null,
-    voices: [
-      { kind: "noise", colour: "white", peakDb: -34, attackMs: 20, lengthMs: 220, filter: { type: "bandpass", hz: 600, toHz: 1400, q: 0.6 } },
-    ],
-  },
 };
 
 /** The pitch the dragged hour sounds at: 330 Hz on the horizon, 660 Hz with the sun overhead. */
@@ -311,7 +267,7 @@ export function hourPitchHz(sunAltitudeDeg: number): number {
 
 /** A sound as it plays this time: retuned (the hour, a horizon's glide), and louder or softer. */
 export interface PlannerSoundVariation {
-  /** Multiplies every pitch (a set-down's ±3 %, the hour's height). */
+  /** Multiplies every pitch (the hour's height). */
   readonly pitchScale?: number;
   /** Glides every tone by this fraction over the sound (the horizon: +5 % at sunrise, −5 % at sunset). */
   readonly glide?: number;

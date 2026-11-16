@@ -17,7 +17,14 @@ import { computeBoundingBox, roomGeometries, type RoomGeometry } from "../../pac
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../packages/web/src/lib/catalogue.js";
 import type { PlacedItem } from "../../packages/web/src/lib/placement.js";
 import { dbToGain, gainToDb } from "../../packages/web/src/lib/planner-sound-render.js";
-import { PLANNER_LIMITER, PLANNER_SOUND_DEFAULT_LEVEL, limiterMakeupDb } from "../../packages/web/src/lib/sound-registry.js";
+import {
+  PLANNER_LIMITER,
+  PLANNER_LIMITER_WARMUP_SECONDS,
+  PLANNER_ROOM_CROSSFADE_SECONDS,
+  PLANNER_ROOM_RELEASE_SECONDS,
+  PLANNER_SOUND_DEFAULT_LEVEL,
+  limiterMakeupDb,
+} from "../../packages/web/src/lib/sound-registry.js";
 import { OCTAVE_BANDS_HZ, type BandValues } from "../../packages/web/src/lib/set-down/bands.js";
 import { SET_DOWN_BODIES, bodyFor, type BodyFamily, type FootCap, type SetDownBody } from "../../packages/web/src/lib/set-down/bodies.js";
 import { planCascade, type CascadePiece } from "../../packages/web/src/lib/set-down/cascade.js";
@@ -119,16 +126,10 @@ const RIGHT: Vec3 = { x: 0, y: 0, z: 1 };
 // --- The audio graph (mirroring lib/sound-registry.ts's planner graph) ------------------------------
 
 const MASTER_LEVEL = PLANNER_SOUND_DEFAULT_LEVEL;
-/** The room tail's cross-fade when the room or its dressing changes, and when the old convolver is let go (R62, plan Task 13). */
-const CROSSFADE_S = 0.1;
-const CROSSFADE_RELEASE_S = 0.15;
-/**
- * A fresh compressor holds a sound down by up to -6.8 dB for its first
- * 125 ms, so nothing plays before the limiter has run this long on the
- * context's clock (R63). It mirrors sound-registry.ts's unexported
- * PLANNER_LIMITER_WARMUP_SECONDS.
- */
-const LIMITER_WARMUP_S = 0.25;
+// The room tail's cross-fade when the room or its dressing changes, and when
+// the old convolver is let go (PLANNER_ROOM_CROSSFADE_SECONDS and
+// PLANNER_ROOM_RELEASE_SECONDS, R62), and the limiter's warm-up before
+// anything plays (PLANNER_LIMITER_WARMUP_SECONDS, R63), are the registry's.
 /** A frame: the press shows on the next one, so the sound is aimed there. */
 const FRAME_S = 1 / 60;
 const TAIL_SEED = 1;
@@ -248,15 +249,15 @@ function installTail(graph: AudioGraph, tail: Stereo, key: string): void {
     fade.gain.value = 1;
   } else {
     fade.gain.setValueAtTime(0, now);
-    fade.gain.linearRampToValueAtTime(1, now + CROSSFADE_S);
+    fade.gain.linearRampToValueAtTime(1, now + PLANNER_ROOM_CROSSFADE_SECONDS);
     old.fade.gain.cancelScheduledValues(now);
     old.fade.gain.setValueAtTime(old.fade.gain.value, now);
-    old.fade.gain.linearRampToValueAtTime(0, now + CROSSFADE_S);
+    old.fade.gain.linearRampToValueAtTime(0, now + PLANNER_ROOM_CROSSFADE_SECONDS);
     window.setTimeout(() => {
       graph.bus.disconnect(old.convolver);
       old.convolver.disconnect();
       old.fade.disconnect();
-    }, CROSSFADE_RELEASE_S * 1000);
+    }, PLANNER_ROOM_RELEASE_SECONDS * 1000);
   }
   graph.wet = { convolver, fade, key };
 }
@@ -281,7 +282,7 @@ function playVoices(graph: AudioGraph, voices: readonly Voice[]): number {
   const { context } = graph;
   const latency = context.outputLatency > 0 ? context.outputLatency : context.baseLatency;
   const lead = Math.max(0, FRAME_S - (Number.isFinite(latency) ? latency : 0));
-  const now = Math.max(context.currentTime, LIMITER_WARMUP_S);
+  const now = Math.max(context.currentTime, PLANNER_LIMITER_WARMUP_SECONDS);
   for (const voice of voices) {
     const { render } = voice;
     const buffer = context.createBuffer(2, render.left.length, render.sampleRate);
