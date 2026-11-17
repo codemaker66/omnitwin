@@ -53,7 +53,7 @@ Read from origin/master `85a17749` on 13 November 2026.
 | Signing in takes sharing away | Once a plan is claimed, its link and its one-page PDF stop, and a signed-in planner with no venue is told "Sign in as venue staff to create a client share link." | `plan-view-links.ts:76, 111`; `packages/web/src/components/editor/cockpit/ShareLensPanel.tsx:291` |
 | Paper | One A4 page: the room, a scale bar, counts of what is placed and the line "Drawn by a visitor; not reviewed by the venue." No prices, no capacity verdict | `packages/api/src/services/visitor-plan-pdf.ts:9-27`; `public-configs.ts:533` |
 | Sending a plan to the venue | An unsaved plan can be sent to Trades Hall's events team. It arrives as an enquiry in the venue's own list | `packages/api/src/routes/public-enquiries.ts:196-203` |
-| Guests | Nothing. No table holds a guest, a seat, a household or a reply. A plan holds a guest count. A placed piece can carry a label of up to 80 characters; numbering the tables is built but switched off; a table's seats come from the furniture catalogue | `schema.ts` (table names searched: guest, seat, rsvp, household, attendee); `schema.ts:388, 551, 743-768`; `packages/types/src/hallkeeper-instructions.ts:170`; `packages/web/src/stores/placement-store.ts:325-330` |
+| Guests | Nothing. No table holds an event's guest, a seat, a household or a reply (`guest_leads` holds people who sent an enquiry, and the two `guest_flow_*` tables hold crowd-flow scenarios, not guests). A plan holds a guest count. A placed piece can carry a label of up to 80 characters; numbering the tables is built but switched off; a table's seats come from the furniture catalogue | `schema.ts` (table names searched: guest, seat, rsvp, household, attendee); `schema.ts:388, 551, 743-768`; `packages/types/src/hallkeeper-instructions.ts:170`; `packages/web/src/stores/placement-store.ts:325-330` |
 | Diets and access on a plan | A plan's own details can already hold a count for each diet, a free-text allergy line and access needs, which print on the hallkeeper's sheet. They describe the event, not a named guest | `packages/types/src/hallkeeper-instructions.ts:103-109`; `packages/types/src/event-requirements.ts:110-116` |
 | Rooms | Every room is a venue's record with a size and an outline. The Grand Hall is measured by laser scan, 21.14 m by 10.59 m; the other Trades Hall rooms are the venue's published sizes drawn as plain shapes. A save is refused if a piece lies outside the room's stored outline | `schema.ts:181-202`; `packages/api/src/db/grand-hall-e57.ts:36`; `db/seed.ts:73-90`; `routes/placed-objects.ts:181-188, 250-256, 355-359`; `routes/public-configs.ts:308-309` |
 | The list of venues | A constant holding Trades Hall alone | `packages/api/src/services/public-discovery.ts:65` |
@@ -153,8 +153,9 @@ A planner meets three kinds of room, and each says what it is.
 2. **The room is the planner's own drawing.** Every size carries "entered by [the planner] on [date]", on screen
    and on every sheet and link.
 3. **Venviewer adds nothing:** no address looked up, no photograph, no capacity, no "it fits". The planner's
-   capacity and safety checks stay off for an own room, because the plan's rule is no verdict on an assumed
-   figure. Distances between tables are shown, since they follow from the planner's own sizes.
+   capacity and safety checks stay off for an own room, because the October design's rule is "No verdict on an
+   assumed input" ([the replacement map](2026-10-18-replacement-map-design.md), under "Truth"). Distances
+   between tables are shown, since they follow from the planner's own sizes.
 4. **Nothing accumulates.** Two planners' drawings of one hall are never merged or counted, and no list of the
    venues planners have typed exists. What planners type about venues is not used to approach those venues.
 5. **A drawing never becomes a venue's fact.** If that venue later joins, its rooms are its own records. A
@@ -342,7 +343,9 @@ twice from two devices).
 **The migration.** New tables only in stage 1, so nothing is backfilled and the rollback drops them. Stage 2
 adds one optional column to plans and two seeded rows; its rollback removes them once no own room exists. Each
 is its own pull request in its own merge slot, numbered at merge. The deletion job joins the nightly clean-up
-that exists, and moves to the plumbing's queue when that lands.
+that exists, as one more pass beside its five, and moves onto the plumbing's list as its own kind when that
+lands ([the plumbing design](2026-11-13-the-plumbing-design.md), section 6, whose table of who uses what
+already carries this pass).
 
 ## 7. What Blake decided, and what still waits on him
 
