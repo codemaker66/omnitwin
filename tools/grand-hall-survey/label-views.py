@@ -32,17 +32,28 @@ colours the wall from those labels.
 
 Memory stays under 1.5 GB: statistics run in bands of 64 texel rows (one row of overlap each side,
 so the Laplacian is whole), the sweep in passes of at most 40,000 blocks, and one panorama is held
-at a time. A station's bands run on SURVEY_THREADS threads (default 4) at below-normal priority, and
-the run pauses between stations while the file SURVEY_PAUSE_FILE names exists.
+at a time. A station's bands run on SURVEY_THREADS threads (default 4) at below-normal priority, with
+BLAS held to one thread (below), and the run pauses between stations while the file SURVEY_PAUSE_FILE
+names exists.
 
 Usage (in the work directory): python3 $SURVEY/label-views.py <window|door|end|fire>
     [--data DIR] [--out proj] [--region U0 U1 V0 V1] [--stats-cache FILE]
 (--region and --stats-cache are for development: one part of a wall, statistics kept between runs.)
 Writes <out>/labels-<wall>.npz and <out>/labels-<wall>.json."""
-import argparse
-import json
 import os
-import sys
+
+# One BLAS thread. The statistics run on SURVEY_THREADS band threads, and every band calls numpy's BLAS (the matrix
+# products in project.depth_lookup and bestview.visibility). With BLAS running threads of its own as well, those
+# concurrent calls deadlocked or crashed on Windows (OpenBLAS 0.3.31, 13-14 November 2026: three runs of four on the
+# end wall; the stall was inside depth_lookup's `v @ DIRS.T`). The band threads are the parallelism; BLAS threads only
+# oversubscribed the cores. OpenBLAS reads these when numpy first loads, so they are set before numpy is imported;
+# a caller that loads numpy before this file (tools/surveyed-rooms: roombuild/step.py, tests/run_old.py) sets them itself.
+for _name in ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS'):
+    os.environ[_name] = '1'
+
+import argparse  # noqa: E402
+import json  # noqa: E402
+import sys  # noqa: E402
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
