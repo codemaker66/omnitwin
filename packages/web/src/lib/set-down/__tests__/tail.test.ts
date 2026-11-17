@@ -128,20 +128,26 @@ function readingsOf(decays: readonly (readonly BandDecay[])[], rt: BandValues): 
 
 /**
  * How far one reading lies from its target, in sigma_D, measured on the decay rate: |target ÷ T20 − 1| ÷ sigma_D,
- * and infinitely far for a failed read (a T20 of 0, or not a number) (ruling R93, after #416's review, NA2).
+ * and infinitely far for a failed read, a T20 that is not a finite positive number (ruling R93, after #416's review,
+ * NA2).
  *
  * T20 is −60 dB over a fitted slope, so where an octave holds few cells its error is skewed upward while the slope's
  * is near-symmetric: over 600 readings of the alternating 0.4 s band at 125 Hz the T20 error ran −1.75 to +3.90
  * sigma_D and the rate error within ±2.99 (the review's probe). Held on T, four sigma_D was in effect a one-sided
  * two-sigma bound in rate, and a failed read (an error of −100 %) passed it once sigma_D topped 25 %. Held on the
- * rate, four sigma_D means the same on both sides, and a failed read never passes.
+ * rate, four sigma_D means the same on both sides, and a failed read never passes. The rate's error cannot fall
+ * below −1, so the bound refuses a long T20 only while four sigma_D is under 1: expectBandWithin requires that.
  */
 function readingSigmas(t20: number, target: number, sigma: number): number {
-  return t20 > 0 ? Math.abs(target / t20 - 1) / sigma : Number.POSITIVE_INFINITY;
+  return Number.isFinite(t20) && t20 > 0 ? Math.abs(target / t20 - 1) / sigma : Number.POSITIVE_INFINITY;
 }
 
-/** Every reading of one band a decay, its rate within READING_SIGMAS sigma_D of its target's. */
+/**
+ * Every reading of one band a decay, its rate within READING_SIGMAS sigma_D of its target's, on a band whose
+ * READING_SIGMAS sigma_D is under 1, so the bound holds on both sides (readingSigmas).
+ */
 function expectBandWithin({ t20s, target, sigma }: BandReadings, label: string): void {
+  expect(READING_SIGMAS * sigma, `${label}: four sigma_D under 1, or no long T20 is refused`).toBeLessThan(1);
   for (const t20 of t20s) {
     const at = `${label}: T20 ${t20.toFixed(3)} s for ${String(target)} s, sigma_D ${(100 * sigma).toFixed(1)} %`;
     expect(t20, at).toBeGreaterThan(0);
@@ -197,11 +203,19 @@ describe("one reading's distance from its target (ruling R93)", () => {
   /** sigma_D of a 0.4 s decay read from the 125 Hz octave's seven bins at 48 kHz (41.0 Hz): 23.7 %. */
   const sigma = decayScatter(7 * (48000 / 8192), 0.4);
 
-  it("never passes a failed read, however wide the band's scatter", () => {
+  it("never passes a failed read, however wide the band's scatter: a T20 of 0, not a number, or infinite", () => {
     for (const wide of [sigma, 0.3, 0.5]) {
-      expect(readingSigmas(0, 0.4, wide)).toBeGreaterThanOrEqual(READING_SIGMAS);
-      expect(readingSigmas(Number.NaN, 0.4, wide)).toBeGreaterThanOrEqual(READING_SIGMAS);
+      for (const failed of [0, Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(readingSigmas(failed, 0.4, wide), `T20 ${String(failed)} at sigma_D ${String(wide)}`).toBeGreaterThanOrEqual(READING_SIGMAS);
+      }
     }
+  });
+
+  it("refuses an absurdly long T20 wherever four sigma_D is under 1, as every band read here is (expectBandWithin checks it)", () => {
+    // The rate's error cannot fall below −1, so where four sigma_D reaches 1 (sigma_D of 25 %, a 125 Hz band under
+    // about 0.36 s) no finite T20 above the target is refused: expectBandWithin requires four sigma_D under 1.
+    expect(READING_SIGMAS * sigma).toBeLessThan(1);
+    for (const long of [100, 1000, 1e6]) expect(readingSigmas(long * 0.4, 0.4, sigma), `${String(long)} x the target`).toBeGreaterThanOrEqual(READING_SIGMAS);
   });
 
   it("puts the alternating band's 3.90 sigma_D T20 (0.769 s for 0.4 s) about two sigma_D out in rate, and readings as far above and below the target's rate the same distance out", () => {
