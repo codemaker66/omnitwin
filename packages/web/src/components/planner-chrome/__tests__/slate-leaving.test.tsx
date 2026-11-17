@@ -207,6 +207,21 @@ describe("what the slate says about work that outlived its page", () => {
     expect(document.body.textContent).toContain("Your changes to the Grand Hall layout are kept on this device and save when you open it again.");
   });
 
+  // Review of #388 at d917b3d0, XB2: lost work is the slate's alert, read from
+  // SlateAside.alert, and never a polite notice that might go unsaid.
+  it("says lost work in the layout it came from as an alert, not a status", () => {
+    useEditorStore.setState({
+      isDirty: false,
+      pendingChanges: 0,
+      leftBehind: { configId: "cfg-other", roomName: "Grand Hall", kept: false, savesOnReturn: false },
+    });
+    openSlate();
+    const lost = "Your changes to the Grand Hall layout did not reach Venviewer, and this browser could not keep them.";
+    const note = screen.getAllByRole("alert").find((region) => region.classList.contains("pc-notice"));
+    expect(note?.textContent).toContain(lost);
+    expect(screen.queryAllByRole("status").filter((region) => region.classList.contains("pc-notice"))).toEqual([]);
+  });
+
   // Delta review of #388 at 33a8e0ad, S1: a switch over a refused clear goes
   // on, and the clear's sentence goes with it into the next layout's note,
   // which stands until the person dismisses it (ruling R1(b)).

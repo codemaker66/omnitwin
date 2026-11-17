@@ -72,6 +72,19 @@ describe("the v1 planner's notes about work that outlived its page", () => {
     expect(useEditorStore.getState().leftBehind).toBeNull();
   });
 
+  // Review of #388 at d917b3d0, XB2. Lost work is an alert here as on the
+  // slate (X2): said in a polite region inserted already holding its words, a
+  // screen reader might never say it.
+  it("says lost work as an alert, and nothing of it as a status", () => {
+    useEditorStore.setState({
+      restoredFromDevice: null,
+      leftBehind: { configId: "cfg-0", roomName: "Grand Hall", kept: false, savesOnReturn: false },
+    });
+    render(<PlannerLeavingNotes />);
+    expect(screen.getByRole("alert").textContent).toBe("Your changes to the Grand Hall layout did not reach Venviewer, and this browser could not keep them.");
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   // Review of #388 at d917b3d0, XB1. A note and the restore receipt can stand
   // together (a layout's work lost on the switch, the next layout's restored).
   // In one alert, each change of the receipt from Saving to Saved re-read the
