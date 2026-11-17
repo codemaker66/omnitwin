@@ -1,7 +1,8 @@
 import { act } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BackSide, BoxGeometry, FrontSide, Mesh } from "three";
-import { ConstNode, MathNode, MeshBasicNodeMaterial, OperatorNode, VarNode } from "three/webgpu";
+import { BackSide, BoxGeometry, FrontSide, LessEqualDepth, Mesh, PerspectiveCamera } from "three";
+import { ConstNode, JoinNode, MathNode, MeshBasicNodeMaterial, OperatorNode, VarNode } from "three/webgpu";
+import { cameraProjectionMatrix, positionView, positionWorld } from "three/tsl";
 import { CUT_EYEWARD, CUT_EYEWARD_MAX } from "../hall-exterior-material.js";
 import { mountInStubRoot, type StubRoot } from "../../__tests__/stub-r3f-root.js";
 import { createSunCaster, HALL_SUN_CASTER_LAYER } from "../hall-sun.js";
@@ -79,6 +80,9 @@ describe("the measured front as drawn", () => {
     expect(cutMaterial.side).toBe(BackSide);
     expect(cutMaterial.vertexNode).not.toBeNull();
     expect(cut?.renderOrder).toBe(1);
+    // Drawn after the outside, it keeps an exact tie because the depth test passes equal depths (past the cap's reach
+    // far off, ties are all the pull leaves it): a strict test would hand them back to the outside.
+    expect(cutMaterial.depthFunc).toBe(LessEqualDepth);
     // The whole front, uncut, on the sun's shadow layer only.
     expect(caster?.castShadow).toBe(true);
     expect(caster?.layers.mask).toBe(1 << HALL_SUN_CASTER_LAYER);
@@ -89,25 +93,81 @@ describe("the measured front as drawn", () => {
     for (const dispose of disposed) expect(dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("caps the cut's pull in its vertex stage: a share of the eye's distance, never more than CUT_EYEWARD_MAX", async () => {
+  it("draws each inside face toward the eye by min(CUT_EYEWARD x its distance, CUT_EYEWARD_MAX), where it already projects", async () => {
     mounted = mountInStubRoot(<HallExterior sun={sun} lightMaps={lightMaps} />);
     await act(async () => { build.done({ geometry: new BoxGeometry(1, 1, 1) }); await Promise.resolve(); });
     const meshes = (mounted.scene.getObjectByName("grand-hall-front")?.children ?? []).filter((child): child is Mesh => child instanceof Mesh);
-    // TSL wraps each operand in a VarNode.
-    const unwrap = (node: unknown): unknown => (node instanceof VarNode ? unwrap(node.node) : node);
-    const isConst = (node: unknown, value: number): boolean => { const inner = unwrap(node); return inner instanceof ConstNode && inner.value === value; };
-    const isMath = (node: unknown, method: string): boolean => { const inner = unwrap(node); return inner instanceof MathNode && inner.method === method; };
-    // The eye's position scaled by 1 - min(CUT_EYEWARD, CUT_EYEWARD_MAX / length(positionView)): uncapped (a
-    // flat share), or added rather than taken away, the cut would reach past the glass far off, or behind it.
-    let capped = 0;
-    nodeMaterial(meshes[1]).vertexNode?.traverse((node) => {
-      if (!(node instanceof OperatorNode) || node.op !== "-" || !isConst(node.aNode, 1)) return;
-      const share = unwrap(node.bNode);
-      if (!(share instanceof MathNode) || share.method !== "min") return;
-      const inputs = [unwrap(share.aNode), unwrap(share.bNode)];
-      const cap = inputs.some((input) => input instanceof OperatorNode && input.op === "/" && isConst(input.aNode, CUT_EYEWARD_MAX) && isMath(input.bNode, "length"));
-      if (cap && inputs.some((input) => isConst(input, CUT_EYEWARD))) capped += 1;
-    });
-    expect(capped).toBe(1);
+    const vertex = nodeMaterial(meshes[1]).vertexNode;
+    expect(vertex).not.toBeNull();
+    // A camera as the planner's (55° up and down, 16:9, near 0.1 m, far 900 m), its projection in three's column order.
+    const camera = new PerspectiveCamera(55, 16 / 9, 0.1, 900);
+    camera.updateProjectionMatrix();
+    const projection: readonly number[] = [...camera.projectionMatrix.elements];
+    // The vertex stage evaluated as the GPU would: the eye's position (positionView), the world's (positionWorld, set far
+    // from it so a pull measured from the world's origin shows) and the projection. A node it cannot evaluate fails the
+    // test, so a reshaped expression is looked at again rather than passed. Each mutation the reviews named fails here:
+    // the clip vector or its w scaled instead of the point (no pull), the point divided (pushed away), or a distance
+    // taken from the world's origin.
+    type Value = number | readonly number[];
+    const each = (a: Value, b: Value, op: (x: number, y: number) => number): Value => {
+      if (typeof a === "number" && typeof b === "number") return op(a, b);
+      if (typeof a === "number" && typeof b !== "number") return b.map((y) => op(a, y));
+      if (typeof a !== "number" && typeof b === "number") return a.map((x) => op(x, b));
+      if (typeof a !== "number" && typeof b !== "number" && a.length === b.length) return a.map((x, i) => op(x, b[i] ?? Number.NaN));
+      throw new Error("operands of mismatched sizes");
+    };
+    const evaluate = (node: unknown, view: readonly number[], world: readonly number[]): Value => {
+      // TSL exports these three as variables round their shader calls, and the material holds the exports themselves:
+      // match them before a variable is unwrapped, or each would be met as the bare call inside.
+      if (node === positionView) return view;
+      if (node === positionWorld) return world;
+      if (node === cameraProjectionMatrix) return projection;
+      if (node instanceof VarNode) return evaluate(node.node, view, world);
+      if (node instanceof ConstNode && typeof node.value === "number") return node.value;
+      if (node instanceof JoinNode) return node.nodes.flatMap((part) => { const value = evaluate(part, view, world); return typeof value === "number" ? [value] : [...value]; });
+      if (node instanceof MathNode) {
+        const a = evaluate(node.aNode, view, world);
+        if (node.method === "length" && typeof a !== "number") return Math.hypot(...a);
+        if (node.method === "min") return each(a, evaluate(node.bNode, view, world), Math.min);
+      }
+      if (node instanceof OperatorNode) {
+        const a = evaluate(node.aNode, view, world);
+        const b = evaluate(node.bNode, view, world);
+        if (node.op === "*" && typeof a !== "number" && a.length === 16 && typeof b !== "number" && b.length === 4) {
+          return [0, 1, 2, 3].map((row) => b.reduce((sum, value, column) => sum + (a[column * 4 + row] ?? Number.NaN) * value, 0));
+        }
+        if (node.op === "*") return each(a, b, (x, y) => x * y);
+        if (node.op === "/") return each(a, b, (x, y) => x / y);
+        if (node.op === "-") return each(a, b, (x, y) => x - y);
+        if (node.op === "+") return each(a, b, (x, y) => x + y);
+      }
+      throw new Error(`the cut's vertex stage holds a node this test cannot evaluate: ${(node as { constructor?: { name?: string } } | null)?.constructor?.name ?? String(node)}`);
+    };
+    const clip = (point: readonly number[]): number[] => [0, 1, 2, 3].map((row) => [...point, 1].reduce((sum, value, column) => sum + (projection[column * 4 + row] ?? Number.NaN) * value, 0));
+    for (const distance of [5, 10, 40, 500]) {
+      const view = [0.05 * distance, -0.03 * distance, -distance];
+      const eye = Math.hypot(...view);
+      const pull = Math.min(CUT_EYEWARD * eye, CUT_EYEWARD_MAX);
+      const drawn = evaluate(vertex, view, [123, 45, -67]);
+      if (typeof drawn === "number") throw new Error("the vertex stage gave a number, not a clip position");
+      // Exactly the projection of the point moved toward the eye by the pull: 1.25 mm at 5 m, the cap of 2.5 mm from 10 m on.
+      const expected = clip(view.map((x) => x * (1 - pull / eye)));
+      expect(drawn).toHaveLength(4);
+      for (const [i, value] of drawn.entries()) expect(Math.abs(value - (expected[i] ?? Number.NaN))).toBeLessThan(1e-9 * Math.max(1, Math.abs(expected[i] ?? 0)));
+      // A point moved straight toward the eye projects where it did, and its depth is nearer.
+      const [dx, dy, dz, dw] = drawn;
+      const [px, py, pz, pw] = clip(view);
+      if (dx === undefined || dy === undefined || dz === undefined || dw === undefined || px === undefined || py === undefined || pz === undefined || pw === undefined) throw new Error("clip coordinates missing");
+      expect(dx / dw).toBeCloseTo(px / pw, 12);
+      expect(dy / dw).toBeCloseTo(py / pw, 12);
+      expect(dz / dw).toBeLessThan(pz / pw);
+      // The pull itself, read back from the depth the GPU tests (z / w, through the projection's z row to the eye's
+      // depth): the drawn point lies nearer by exactly that much. w alone would pass a stage that scales the whole
+      // clip vector, which moves nothing.
+      const [zz, zw] = [projection[10] ?? Number.NaN, projection[14] ?? Number.NaN];
+      const eyeDepth = (ndc: number): number => -zw / (ndc + zz);
+      expect(eye * (1 - eyeDepth(dz / dw) / eyeDepth(pz / pw))).toBeCloseTo(pull, 8);
+      expect(eye * (1 - dw / pw)).toBeCloseTo(pull, 12);
+    }
   });
 });

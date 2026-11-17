@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BoxGeometry, Float32BufferAttribute, type BufferGeometry } from "three";
-import { buildHallFront, FRONT_DETAIL_FULL, FRONT_DETAIL_LIGHT, FRONT_PART, frontPoint, LET_IN } from "../hall-exterior.js";
-import { GROUND_OPENINGS } from "../hall-exterior-spec.js";
+import { buildHallFront, DOORWAY_FILL, FRONT_DETAIL_FULL, FRONT_DETAIL_LIGHT, FRONT_PART, frontPoint, LET_IN, type HallFrontJoin } from "../hall-exterior.js";
+import { BALUSTRADES, FRONT_AXIS_X, FRONT_BAYS, FRONT_FACE_Z, FRONT_LEVELS, FRONT_PAVEMENT_Y, GROUND_OPENINGS, LINK_FACE_PROUD, TEMPLE } from "../hall-exterior-spec.js";
 import { CUT_EYEWARD, CUT_EYEWARD_MAX } from "../hall-exterior-material.js";
 import { buildWallBody } from "../hall-wall-body.js";
 
@@ -127,7 +127,11 @@ describe("the measured front against the window wall's body", () => {
  * drawn a hair toward the eye, wins the tie), or flush. Flush faces of one material draw alike; flush
  * faces of two materials would fight on the front's outside, where nothing covers them.
  */
-function frontOnItself(front: BufferGeometry): { readonly backToBack: number; readonly mixedFlush: readonly { readonly at: readonly number[]; readonly parts: readonly number[] }[] } {
+function frontOnItself(front: BufferGeometry): {
+  readonly backToBack: number;
+  readonly mixedFlush: readonly { readonly at: readonly number[]; readonly parts: readonly number[] }[];
+  readonly contacts: readonly { readonly parts: readonly [number, number]; readonly normal: V3; readonly offset: number }[];
+} {
   const part = front.getAttribute("aPart");
   const byNormal = new Map<string, Triangle[]>();
   for (const t of triangles(front)) {
@@ -137,6 +141,7 @@ function frontOnItself(front: BufferGeometry): { readonly backToBack: number; re
   }
   let backToBack = 0;
   const mixedFlush: { at: readonly number[]; parts: readonly number[] }[] = [];
+  const contacts: { parts: readonly [number, number]; normal: V3; offset: number }[] = [];
   for (const list of byNormal.values()) {
     const sorted = [...list].sort((a, b) => a.offset - b.offset);
     for (let i = 0; i < sorted.length; i++) {
@@ -146,8 +151,12 @@ function frontOnItself(front: BufferGeometry): { readonly backToBack: number; re
         const b = sorted[j];
         if (b === undefined || b.offset - a.offset > ON_PLANE) break;
         if (dot(a.normal, b.normal) < 0.99995 || sharedArea(a, b) <= 1e-6) continue;
-        if (dot(a.facing, b.facing) < 0) { backToBack += 1; continue; }
-        const parts = [Math.round(part.getX(a.vertex)), Math.round(part.getX(b.vertex))];
+        const parts: [number, number] = [Math.round(part.getX(a.vertex)), Math.round(part.getX(b.vertex))];
+        if (dot(a.facing, b.facing) < 0) {
+          backToBack += 1;
+          contacts.push({ parts, normal: a.normal, offset: a.offset });
+          continue;
+        }
         if (parts[0] !== parts[1]) {
           const [p, q, r] = a.corners;
           mixedFlush.push({ at: [p[0] + q[0] + r[0], p[1] + q[1] + r[1], p[2] + q[2] + r[2]].map((x) => Math.round((x / 3) * 1000) / 1000), parts });
@@ -155,7 +164,7 @@ function frontOnItself(front: BufferGeometry): { readonly backToBack: number; re
       }
     }
   }
-  return { backToBack, mixedFlush };
+  return { backToBack, mixedFlush, contacts };
 }
 
 describe("the measured front's own solids", () => {
@@ -167,9 +176,236 @@ describe("the measured front's own solids", () => {
   });
 });
 
+interface Contact {
+  readonly parts: readonly [number, number];
+  readonly normal: V3;
+  readonly offset: number;
+  /** How far the two solids run into each other along the normal: 0 where they only touch. */
+  readonly depth: number;
+  /** Where, as (u, z over the pavement), to the centimetre. */
+  readonly at: readonly number[];
+}
+
 /**
- * Each triangle's solid: triangles joined along shared edges, their corners welded to a micrometre. A closed
- * solid's faces meet edge to edge; two solids that touch, or are let into each other, do not.
+ * Where two of the front's solids meet on one plane, or within LET_IN of it, overlapping:
+ * - `rests`: faces looking opposite ways, from the two touching (a hundredth of a millimetre apart either way is
+ *   float noise) to one let into the other by less than LET_IN, so that a let-in cut back to the pull's own depth is
+ *   found too. Two faces looking at each other across air are no contact. A solid thinner than LET_IN would show here
+ *   as resting on itself; thinPlaces keeps every one at least twice the pull thick.
+ * - `flush`: faces of two solids looking the same way, closer than LET_IN: the solid behind ends its sides on, or
+ *   within the pull of, the other's face, as flush pieces' sides do at a split (crossed glazing bars, the review's K4).
+ *   Faces looking into the building are left out: there the sash bars' backs lie together inside their 12 mm glass,
+ *   where no two depths LET_IN apart fit, and the hall's windows look out at no glazing.
+ */
+function touches(front: BufferGeometry): { readonly rests: readonly Contact[]; readonly flush: readonly Contact[] } {
+  const part = front.getAttribute("aPart");
+  const list = triangles(front);
+  const solid = solidsOf(list);
+  const boxes = list.map(({ corners: [p, q, r] }): { readonly lo: V3; readonly hi: V3 } => ({
+    lo: [Math.min(p[0], q[0], r[0]), Math.min(p[1], q[1], r[1]), Math.min(p[2], q[2], r[2])],
+    hi: [Math.max(p[0], q[0], r[0]), Math.max(p[1], q[1], r[1]), Math.max(p[2], q[2], r[2])],
+  }));
+  const byNormal = new Map<string, number[]>();
+  list.forEach((t, i) => {
+    const key = t.normal.map((x) => Math.round(x * 200)).join(",");
+    const group = byNormal.get(key);
+    if (group === undefined) byNormal.set(key, [i]); else group.push(i);
+  });
+  const rests: Contact[] = [];
+  const flush: Contact[] = [];
+  // Into the building: the opposite of frontDirection(0, 0, 1), the street's way, in the planner's frame.
+  const inward: V3 = [0, 0, 1];
+  for (const group of byNormal.values()) {
+    const sorted = [...group].sort((i, j) => (list[i]?.offset ?? 0) - (list[j]?.offset ?? 0));
+    for (let x = 0; x < sorted.length; x++) {
+      const i = sorted[x] ?? 0;
+      const a = list[i];
+      const boxA = boxes[i];
+      if (a === undefined || boxA === undefined) continue;
+      for (let y = x + 1; y < sorted.length; y++) {
+        const j = sorted[y] ?? 0;
+        const b = list[j];
+        const boxB = boxes[j];
+        if (b === undefined || boxB === undefined) continue;
+        if (b.offset - a.offset >= LET_IN - 1e-4) break;
+        if (dot(a.normal, b.normal) < 0.99995) continue;
+        const opposed = dot(a.facing, b.facing) < -0.99995;
+        if (!opposed && (solid[i] === solid[j] || dot(a.facing, inward) > 0.99)) continue;
+        if ([0, 1, 2].some((k) => (boxA.lo[k] ?? 0) > (boxB.hi[k] ?? 0) + LET_IN || (boxB.lo[k] ?? 0) > (boxA.hi[k] ?? 0) + LET_IN)) continue;
+        if (sharedArea(a, b) <= 1e-6) continue;
+        const pa = Math.round(part.getX(a.vertex));
+        const pb = Math.round(part.getX(b.vertex));
+        const [p, q, r] = a.corners;
+        const at = [FRONT_AXIS_X - (p[0] + q[0] + r[0]) / 3, (p[1] + q[1] + r[1]) / 3 - FRONT_PAVEMENT_Y].map((v) => Math.round(v * 100) / 100);
+        const parts: readonly [number, number] = pa <= pb ? [pa, pb] : [pb, pa];
+        if (!opposed) {
+          flush.push({ parts, normal: a.normal, offset: a.offset, depth: b.offset - a.offset, at });
+          continue;
+        }
+        // A face looking along the plane's normal has its solid on the lower side, one looking against it on the
+        // higher. a lies lower: looking against the normal, its solid runs up into b's by b's offset less its own;
+        // looking along it, the two stand apart by as much.
+        const depth = dot(a.facing, a.normal) > 0 ? a.offset - b.offset : b.offset - a.offset;
+        if (depth < -1e-5) continue;
+        rests.push({ parts, normal: a.normal, offset: a.offset, depth, at });
+      }
+    }
+  }
+  return { rests, flush };
+}
+
+/**
+ * Where two pieces meet face to face, the face of one seen from inside ends at the outside along their meeting: on its
+ * holder's outer face (a panel resting on its leaf, a bar on its glass, a frame on its jambs, sill and head), or
+ * between two flush outer faces (a row's pieces, a frame built on a row). The cut pass, drawn up to half a let-in
+ * toward the eye, shows it there across a fraction of a pixel that the camera's least movement deals again: dotted
+ * lines down and across the pavilion doorways' white frames, and dots round the front door's panels (WebGPU, four
+ * samples a pixel and no temporal blend, as phones draw; 14 Nov 2026). A let-in (LET_IN) shields it where the
+ * holder's face stands in front; flush pieces must be one solid. A solid's own right-angled edge whose side faces away
+ * still shows it, and so do the masonry's own joints, stone on stone, flush at a jamb or a member stacked on another:
+ * those are T-725's, whose cure takes the pull away (hall-exterior-material.ts).
+ */
+describe("the cut pass along the seams of pieces that touch", () => {
+  const { stone: STONE, glass: GLASS, paint: PAINT, timber: TIMBER, copper: COPPER, lead: LEAD, metal: METAL } = FRONT_PART;
+  const pavilionDoorways = GROUND_OPENINGS.filter((opening) => opening.fill === "doorway");
+  /** The front's street-facing triangles of one part whose centre lies within an opening's width, between two heights over the pavement. */
+  const streetFacing = (front: BufferGeometry, part: number, u0: number, u1: number, z0: number, z1: number): number => {
+    const parts = front.getAttribute("aPart");
+    return triangles(front).filter((t) => {
+      if (t.facing[2] > -0.99 || Math.round(parts.getX(t.vertex)) !== part) return false;
+      const [p, q, r] = t.corners;
+      const u = FRONT_AXIS_X - (p[0] + q[0] + r[0]) / 3;
+      const z = (p[1] + q[1] + r[1]) / 3 - FRONT_PAVEMENT_Y;
+      return u > u0 && u < u1 && z > z0 && z < z1;
+    }).length;
+  };
+  it("reads the front's own coordinates back from the planner's, as these tests do", () => {
+    const [x, y, z] = frontPoint(1.5, 2.25, 0.3);
+    expect(FRONT_AXIS_X - x).toBeCloseTo(1.5, 12);
+    expect(y - FRONT_PAVEMENT_Y).toBeCloseTo(2.25, 12);
+    expect(FRONT_FACE_Z - z).toBeCloseTo(0.3, 12);
+  });
+  /** touches() over the whole front once per build. */
+  const found = new Map<string, ReturnType<typeof touches>>();
+  const touchesOf = (name: string, front: BufferGeometry): ReturnType<typeof touches> => {
+    const known = found.get(name);
+    if (known !== undefined) return known;
+    const fresh = touches(front);
+    found.set(name, fresh);
+    return fresh;
+  };
+  it.each(DETAILS)("lets every piece of paint, glass, timber, metal, copper and lead into what holds it, in every plane: none rests on another or is let in by less than LET_IN ($name)", ({ name, detail }) => {
+    const front = buildHallFront(detail).geometry;
+    const contacts = touchesOf(name, front).rests;
+    // The detector is live in each of the front's three directions (the masonry resting on itself, T-725's), and
+    // every other material is drawn.
+    for (const axis of [0, 1, 2] as const) {
+      expect(contacts.filter((c) => c.parts[0] === STONE && c.parts[1] === STONE && Math.abs(c.normal[axis]) > 0.99).length).toBeGreaterThan(0);
+    }
+    const drawn = new Set<number>();
+    const parts = front.getAttribute("aPart");
+    for (let i = 0; i < parts.count; i++) drawn.add(Math.round(parts.getX(i)));
+    for (const part of [GLASS, PAINT, TIMBER, METAL, COPPER, LEAD]) expect(drawn.has(part)).toBe(true);
+    expect(contacts.filter((c) => c.parts[0] !== STONE || c.parts[1] !== STONE).slice(0, 8)).toEqual([]);
+  });
+  it.each(DETAILS)("stands one of any two overlapping pieces, where either is paint, glass, timber, metal, copper or lead, at least LET_IN proud of the other, or makes them one solid ($name)", ({ name, detail }) => {
+    const { flush } = touchesOf(name, buildHallFront(detail).geometry);
+    // Live: the masonry's own flush overlaps (the course bands' ends on the openings' jambs, let in past them), T-725's.
+    expect(flush.filter((c) => c.parts[0] === STONE && c.parts[1] === STONE).length).toBeGreaterThan(0);
+    expect(flush.filter((c) => c.parts[0] !== STONE || c.parts[1] !== STONE).slice(0, 8)).toEqual([]);
+  });
+  it.each(DETAILS)("ends each fanlight bar in its fanlight's frame: no paint crosses a pavilion doorway's side lights ($name)", ({ detail }) => {
+    const front = buildHallFront(detail).geometry;
+    const parts = front.getAttribute("aPart");
+    const { frame, doorHalf } = DOORWAY_FILL;
+    const centre = (t: Triangle): readonly [number, number] => {
+      const [p, q, r] = t.corners;
+      return [FRONT_AXIS_X - (p[0] + q[0] + r[0]) / 3, (p[1] + q[1] + r[1]) / 3 - FRONT_PAVEMENT_Y];
+    };
+    const paint = triangles(front).filter((t) => Math.round(parts.getX(t.vertex)) === PAINT);
+    // The side lights' glass, a centimetre in from the frame round it, either side of each door.
+    const inALight = ([u, z]: readonly [number, number]): boolean => pavilionDoorways.some((o) => {
+      const off = Math.abs(u - o.u);
+      return off > doorHalf + frame + 0.01 && off < o.width / 2 - frame - 0.01 && z > o.bottom + 0.56 && z < o.top - frame - 0.01;
+    });
+    expect(paint.filter((t) => inALight(centre(t))).length).toBe(0);
+    // Live: the bars are drawn, slanting across each fanlight over its transom.
+    const slanting = paint.filter((t) => t.facing.every((x) => Math.abs(x) < 0.99) && pavilionDoorways.some((o) => {
+      const [u, z] = centre(t);
+      return Math.abs(u - o.u) < o.width / 2 && z > o.top && z < o.top + o.rise;
+    }));
+    expect(slanting.length).toBeGreaterThan(0);
+  });
+  it.each(DETAILS)("seats each link attic window's glass inside its 63 mm skin, where the stone round it holds it ($name)", ({ detail }) => {
+    const front = buildHallFront(detail).geometry;
+    const parts = front.getAttribute("aPart");
+    const a = BALUSTRADES.linkAttic;
+    const links = FRONT_BAYS.filter((bay) => bay.kind === "link");
+    const glass = triangles(front).filter((t) => {
+      if (Math.round(parts.getX(t.vertex)) !== GLASS) return false;
+      const [p, q, r] = t.corners;
+      const u = FRONT_AXIS_X - (p[0] + q[0] + r[0]) / 3;
+      const z = (p[1] + q[1] + r[1]) / 3 - FRONT_PAVEMENT_Y;
+      return z > a.windowBottom - 0.01 && z < a.windowTop + 0.01 && links.some((bay) => Math.abs(u - (bay.uMin + bay.uMax) / 2) < a.windowWidth / 2 + 0.01);
+    });
+    expect(glass.length).toBeGreaterThan(0);
+    // Between the skin's back, 4 mm off the window wall's plane, and the link's face.
+    const proud = glass.flatMap((t) => t.corners.map((corner) => FRONT_FACE_Z - corner[2]));
+    expect(Math.min(...proud)).toBeGreaterThan(0.004);
+    expect(Math.max(...proud)).toBeLessThan(LINK_FACE_PROUD);
+  });
+  it.each(DETAILS)("lets the course bands, the plinth and the voussoirs into the wall behind them: no stone rests on the channels' floor ($name)", ({ name, detail }) => {
+    // The channels' floor is the ground floor's wall face, open between the bands (hall-exterior.ts groundFloor), as
+    // the planner's z of each bay's plane. Each band's back only resting on it would end on it along every channel.
+    const floorZ = (bay: (typeof FRONT_BAYS)[number]): number => FRONT_FACE_Z - (bay.kind === "temple" ? TEMPLE.podiumProud - FRONT_LEVELS.channelDepth : bay.proud);
+    const inBay = (u: number, z: number, offset: number): boolean => z < FRONT_LEVELS.stringBottom
+      && FRONT_BAYS.some((bay) => u > bay.uMin && u < bay.uMax && Math.abs(offset - floorZ(bay)) < 1e-4);
+    const front = buildHallFront(detail).geometry;
+    // Live: the channels' floor is drawn at those planes, facing the street.
+    const floorFaces = triangles(front).filter((t) => {
+      const [p, q, r] = t.corners;
+      return t.facing[2] < -0.99 && inBay(FRONT_AXIS_X - (p[0] + q[0] + r[0]) / 3, (p[1] + q[1] + r[1]) / 3 - FRONT_PAVEMENT_Y, t.offset);
+    });
+    expect(floorFaces.length).toBeGreaterThan(0);
+    const resting = touchesOf(name, front).rests.filter((c) => c.parts[0] === STONE && c.parts[1] === STONE && Math.abs(c.normal[2]) > 0.99
+      && inBay(c.at[0] ?? 0, c.at[1] ?? Infinity, c.offset));
+    expect(resting.slice(0, 5)).toEqual([]);
+  });
+  it.each(DETAILS)("builds each row as one solid, and each pavilion doorway's frame with its row: no face of any material lies in a join ($name)", ({ detail }) => {
+    const build = buildHallFront(detail);
+    const list = triangles(build.geometry);
+    // The rows: the shopfronts' and pavilion doorways' white frames and the pavilion attics' stone rows, split between
+    // their holes; and each pavilion doorway's frame on its row along the transom. Both are drawn there.
+    expect(pavilionDoorways.length).toBe(2);
+    expect(build.joins.filter((join) => join.axis === "z").length).toBe(pavilionDoorways.length);
+    expect(build.joins.filter((join) => join.axis === "u").length).toBeGreaterThan(pavilionDoorways.length);
+    for (const opening of pavilionDoorways) {
+      const [u0, u1] = [opening.u - opening.width / 2, opening.u + opening.width / 2];
+      expect(streetFacing(build.geometry, PAINT, u0, u1, opening.top - 0.2, opening.top)).toBeGreaterThan(0);
+      expect(streetFacing(build.geometry, PAINT, u0, u1, opening.top, opening.top + opening.rise)).toBeGreaterThan(0);
+    }
+    // A face of any material lying in a join's plane, within it, and looking across it: the row's sides at a split, or
+    // the frame's foot along the transom, even a micrometre low (the foot's vertices sit 1e-6 under it). The
+    // triangulator's slivers along the transom in the frame's own front are no such face.
+    const facesIn = (join: HallFrontJoin): number => list.filter((t) => Math.abs(t.facing[join.axis === "u" ? 0 : 1]) > 0.99 && t.corners.every((corner) => {
+      const [u, z, proud] = [FRONT_AXIS_X - corner[0], corner[1] - FRONT_PAVEMENT_Y, FRONT_FACE_Z - corner[2]];
+      const [along, across] = join.axis === "u" ? [u, z] : [z, u];
+      return Math.abs(along - join.at) < 1e-5 && across > join.from - 1e-6 && across < join.to + 1e-6 && proud > join.back - 1e-6 && proud < join.front + 1e-6;
+    })).length;
+    expect(build.joins.filter((join) => facesIn(join) > 0)).toEqual([]);
+    // The same count finds a row's own foot on its sill, where it has faces: each pavilion doorway's.
+    for (const join of build.joins.filter((j) => j.axis === "z")) {
+      const opening = pavilionDoorways.find((o) => Math.abs(o.top - join.at) < 1e-9);
+      expect(opening).toBeDefined();
+      expect(facesIn({ ...join, at: (opening?.bottom ?? Number.NaN) - LET_IN })).toBeGreaterThan(0);
+    }
+  });
+});
+
+/**
+ * Each triangle's solid: triangles joined along shared edges, their corners welded to ten micrometres, so that each
+ * pavilion doorway's row and frame, whose foot dips a micrometre under the transom, read as the one solid they are.
+ * A closed solid's faces meet edge to edge; two solids that touch, or are let into each other, do not.
  */
 function solidsOf(list: readonly Triangle[]): number[] {
   const parent = list.map((_, i) => i);
@@ -183,7 +419,7 @@ function solidsOf(list: readonly Triangle[]): number[] {
     }
     return root;
   };
-  const weld = (p: V3): string => p.map((x) => Math.round(x * 1e6)).join(",");
+  const weld = (p: V3): string => p.map((x) => Math.round(x * 1e5)).join(",");
   const owner = new Map<string, number>();
   list.forEach((t, i) => {
     const keys = t.corners.map(weld);
