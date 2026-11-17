@@ -1572,15 +1572,18 @@ describe("EventDayOpsPage", () => {
 
     // Every order of two presses on one page, and of three on the two
     // schedules that strain the rule most, against the server's own rule
-    // (fakeServer). Each press lands, fails and is queued, or is refused. A
-    // schedule is the order of events: a press ("p0"), the answer to its
-    // first send ("a0", which may come before or after a later press, or its
-    // answer), the device coming back online ("d", which replays what is
-    // queued), and the answer to that replay ("r"). Requests are decided in
-    // the order they are sent; only the answers may come back in another
-    // order. At the end the connection is back for good. In every order the
-    // server must end on the latest status pressed that it did not refuse,
-    // with nothing sent again under a new key and nothing left in the queue.
+    // (fakeServer). Each press lands, fails and is queued, is refused, or is
+    // lost (the server wrote it, and the answer never came back). A schedule
+    // is the order of events: a press ("p0"), the answer to its first send
+    // ("a0", which may come before or after a later press, or its answer),
+    // the device coming back online ("d", which replays what is queued), and
+    // the answer to that replay ("r"). Every order runs twice: with each
+    // request decided as it is sent, and with a replay decided only when it
+    // is answered, after any later press that landed meanwhile. At the end
+    // the connection is back for good. In every order the server must end on
+    // the latest status pressed that it did not refuse, with nothing sent
+    // again under a new key and nothing left in the queue; the orders that
+    // do not are picked out by knownLimit and run as expected to fail.
     describe("every order of presses, answers and a replay", () => {
       interface Order {
         readonly fates: readonly Fate[];
@@ -1594,7 +1597,7 @@ describe("EventDayOpsPage", () => {
         { label: "Done", status: "done" },
         { label: "Block", status: "blocked" },
       ] as const;
-      const FATES: readonly Fate[] = ["lands", "fails", "refused"];
+      const FATES: readonly Fate[] = ["lands", "fails", "refused", "lost"];
 
       function product<T>(lists: readonly (readonly T[])[]): T[][] {
         return lists.reduce<T[][]>((acc, list) => acc.flatMap((prefix) => list.map((item) => [...prefix, item])), [[]]);
@@ -1632,6 +1635,7 @@ describe("EventDayOpsPage", () => {
       ];
       const ORDERS: readonly Order[] = [
         ...IN_SEND_ORDER.map((order): Order => ({ ...order, lateReplay: false })),
+        ...IN_SEND_ORDER.map((order): Order => ({ ...order, lateReplay: true })),
       ];
 
       function nameOf(order: Order): string {
@@ -1650,6 +1654,31 @@ describe("EventDayOpsPage", () => {
         return order.fates.map((fate, at) => (fate === "refused" ? null : PRESSES[at]?.status ?? null))
           .filter((status): status is NonNullable<typeof status> => status !== null)
           .at(-1) ?? "todo";
+      }
+
+      /** The orders that end on an earlier press (#418, a known limit,
+       *  reported and not fixed here; 39 of the 640, measured on the first
+       *  run). The last standing press failed and was queued, and the write
+       *  before it on the server is a press whose answer was lost: the page
+       *  took that press for unsent, so the later one is replayed against
+       *  the status before the lost write and refused. The page escapes only
+       *  when it has read what the lost press wrote before it replays: by
+       *  coming online after the lost answer and before the later press (the
+       *  lost press's own replay answers from its recorded key), or, with a
+       *  replay decided when answered, from an earlier lost press's replay
+       *  answered after the lost write. */
+      function knownLimit(order: Order): boolean {
+        const at = (event: string): number => order.schedule.indexOf(event);
+        const indices = order.fates.map((_fate, index) => index);
+        const last = indices.filter((index) => order.fates[index] !== "refused").at(-1);
+        if (last === undefined || order.fates[last] !== "fails") return false;
+        const writer = indices.filter((index) => index < last && (order.fates[index] === "lost" || order.fates[index] === "lands")).at(-1);
+        if (writer === undefined || order.fates[writer] !== "lost") return false;
+        const readOnline = at(`a${String(writer)}`) < at("d") && at("d") < at(`p${String(last)}`);
+        const earlierLost = indices.filter((index) => index < writer && order.fates[index] === "lost").at(-1);
+        const readFromEarlierReplay = order.lateReplay && earlierLost !== undefined
+          && at(`a${String(earlierLost)}`) < at("d") && at("d") < at(`p${String(writer)}`) && at(`p${String(writer)}`) < at("r");
+        return !readOnline && !readFromEarlierReplay;
       }
 
       /** Plays an order through the page and the stand-in server, then lets
@@ -1684,7 +1713,8 @@ describe("EventDayOpsPage", () => {
 
       it("runs every order", () => {
         expect(schedules(2)).toHaveLength(12);
-        expect(ORDERS).toHaveLength(9 * 12 + 27 * 2);
+        expect(ORDERS).toHaveLength(2 * (16 * 12 + 64 * 2));
+        expect(ORDERS.filter(knownLimit)).toHaveLength(39);
       });
 
       const ends = async (order: Order): Promise<void> => {
@@ -1695,9 +1725,15 @@ describe("EventDayOpsPage", () => {
         expect(server.keys()).toBe(order.fates.length);
         expect(await queue.list()).toEqual([]);
       };
-      it.each(ORDERS.map((order) => [nameOf(order), order] as const))("%s", async (_name, order) => {
+      it.each(ORDERS.filter((order) => !knownLimit(order)).map((order) => [nameOf(order), order] as const))("%s", async (_name, order) => {
         await ends(order);
       });
+      const limited = ORDERS.filter(knownLimit);
+      if (limited.length > 0) {
+        it.fails.each(limited.map((order) => [nameOf(order), order] as const))("KNOWN LIMIT %s", async (_name, order) => {
+          await ends(order);
+        });
+      }
     });
 
     // #418, beyond one page that never reloads: the server decides, so a
@@ -1721,6 +1757,62 @@ describe("EventDayOpsPage", () => {
         expect(server.status()).toBe("done");
         expect(await queue.list()).toEqual([]);
         expect(shownStatus()).toBe("Done");
+      });
+
+      it("refuses Start's replay that was on its way when the reloaded board's Done landed", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "fails" : "lands"), lateReplay: true });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+
+        await remount();
+        await syncOn();
+        await pressOn("Done");
+        await answer(() => { server.answerPress("done"); });
+        await answer(server.answerReplay);
+        await answer(server.answerAll);
+
+        expect(server.status()).toBe("done");
+        expect(statusesSent()).toEqual(["in_progress", "in_progress", "done"]);
+        expect(await queue.list()).toEqual([]);
+      });
+
+      it("ends on Done when Start and, after a reload, Done were both queued", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: () => "fails" });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+        await remount();
+        await pressOn("Done");
+        await answer(server.answerAll);
+
+        await syncOn();
+        await answer(server.answerAll);
+
+        expect(server.status()).toBe("done");
+        expect(await queue.list()).toEqual([]);
+      });
+
+      it("ends on Done when Start's answer was lost and, after a reload that read it, Done was queued", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "lost" : "fails") });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+        await remount();
+        await pressOn("Done");
+        await answer(server.answerAll);
+
+        await syncOn();
+        await answer(server.answerAll);
+
+        expect(server.status()).toBe("done");
+        expect(await queue.list()).toEqual([]);
       });
 
       // BA2's X1: another device sets the status Start's replay carries,
@@ -1794,6 +1886,123 @@ describe("EventDayOpsPage", () => {
         await waitFor(() => { expect(shownStatus()).toBe("Blocked"); });
         // No new words: the notice is the one the press left.
         expect(screen.getByText("Task saved on this device and will sync when the connection returns.")).toBeTruthy();
+      });
+
+      // A page that has not read a write made elsewhere: the press made on
+      // it is the latest, but its replay is pressed against what the page
+      // last read, so the server refuses it and the earlier write stands.
+      it("KNOWN LIMIT: refuses a replay pressed on a page that had not yet read another device's earlier write", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "fails" : "lands") });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        server.writeAs("blocked");
+        await pressOn("Start");
+        await answer(server.answerAll);
+
+        await syncOn();
+        await answer(server.answerAll);
+
+        // The last press anywhere was Start; the server keeps Blocked.
+        expect(server.status()).toBe("blocked");
+        expect(await queue.list()).toEqual([]);
+      });
+
+      it("lets another device's block stand over this page's Start queued before it", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "fails" : "lands") });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+        server.writeAs("blocked");
+
+        await syncOn();
+        await answer(server.answerAll);
+
+        expect(server.status()).toBe("blocked");
+        expect(await queue.list()).toEqual([]);
+      });
+
+      it("ends on Done when one page queued Start and the other page's Done landed after it", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "fails" : "lands") });
+        const [first, second] = renderPages();
+        await within(first).findByText("Set 12 x Round Table");
+        await within(second).findByText("Set 12 x Round Table");
+        await pressOn("Start", first);
+        await answer(server.answerAll);
+        await pressOn("Done", second);
+        await answer(server.answerAll);
+
+        await syncOn(first);
+        await answer(server.answerAll);
+
+        expect(server.status()).toBe("done");
+        expect(await queue.list()).toEqual([]);
+      });
+
+      it("refuses one page's replay that was on its way when the other page's Done landed", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "fails" : "lands"), lateReplay: true });
+        const [first, second] = renderPages();
+        await within(first).findByText("Set 12 x Round Table");
+        await within(second).findByText("Set 12 x Round Table");
+        await pressOn("Start", first);
+        await answer(server.answerAll);
+        await syncOn(first);
+        await pressOn("Done", second);
+        await answer(() => { server.answerPress("done"); });
+        await answer(server.answerReplay);
+        await answer(server.answerAll);
+
+        expect(server.status()).toBe("done");
+        expect(server.keys()).toBe(2);
+        expect(await queue.list()).toEqual([]);
+      });
+
+      // One page's earlier press is still on its way when the other page's
+      // later press fails and is queued against To do; the earlier one then
+      // lands, and the later one's replay is refused.
+      it("KNOWN LIMIT: refuses a later press queued on one page while an earlier one from the other page was still on its way", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "lands" : "fails") });
+        const [first, second] = renderPages();
+        await within(first).findByText("Set 12 x Round Table");
+        await within(second).findByText("Set 12 x Round Table");
+        await pressOn("Start", first);
+        await pressOn("Done", second);
+        await answer(() => { server.answerPress("done"); });
+        await answer(() => { server.answerPress("in_progress"); });
+
+        await syncOn(first);
+        await answer(server.answerAll);
+
+        // The last press anywhere was Done; the server keeps In progress.
+        expect(server.status()).toBe("in_progress");
+        expect(await queue.list()).toEqual([]);
+      });
+
+      // As P1, but Start was still on its way when Done failed; Start then
+      // landed and the board reloaded before Sync. The row was queued
+      // against To do and the reloaded page cannot know Start landed.
+      it("KNOWN LIMIT: refuses a later press queued while an earlier one was on its way, when the board reloads before Sync", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "lands" : "fails") });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await pressOn("Done");
+        await answer(() => { server.answerPress("done"); });
+        await answer(() => { server.answerPress("in_progress"); });
+
+        await remount();
+        await syncOn();
+        await answer(server.answerAll);
+
+        // The last press was Done; the server keeps In progress.
+        expect(server.status()).toBe("in_progress");
+        expect(await queue.list()).toEqual([]);
       });
     });
 
