@@ -118,20 +118,24 @@ share) is never made to try.
   A dropped connection never makes the planner ask twice. More rules for an answer not yet written:
   - **A reopen keeps it only over what this tab knew, or sent itself.** Each unsent answer carries what the layout
     held, as far as this tab knows, when it was given (moved on when this tab's own earlier answer is seen written).
-    The tab also counts as its own every answer it sent without seeing it land, since a write can reach the layout
-    and lose its answer on the way back; that count starts afresh once one of its writes lands, or once the layout has
-    nothing left to write. Reopened, the layout keeps the unsent answer while it holds nothing, what this tab knew, or
-    one of those answers. If it holds the unsent answer itself, the write landed; if it holds any other, someone
+    The tab also counts as its own the answer of every write it sent and has not seen land or be refused for good,
+    since a write can reach the layout and lose its answer on the way back. Every such write counts, even one sent
+    while the browser was offline, or refused with a status that is tried again. The count is cleared when one of the
+    tab's writes lands, and starts afresh when the layout is read with nothing of this tab's unsent or on its way,
+    since that read follows every write it sent. Reopened, the layout keeps the unsent answer while it holds nothing,
+    what this tab knew, or one of those answers. If it holds the unsent answer itself, the write landed; if it holds any other, someone
     answered elsewhere since, and that answer stands. The check compares answers, not versions: an answer changed and
     changed back elsewhere reads as unchanged.
   - **Every write is last-writer-wins.** A write or a retry, with the layout open or not, writes over whatever the
     layout holds by then, as everywhere in the PATCH. Only a reopen looks first.
   - **It belongs to the person who gave it.** It is never written as anyone else. Once someone else signs in, the last
-    person's unsent answers are dropped, and an answer the open layout holds for them, unsent or for this visit, gives
-    way to what the layout holds: it is neither shown to the next person nor brought back by their reopen. Nobody
-    signed in is no change of person, because the auth bridge passes through nobody while it checks anyone's access,
-    but an answer whose turn comes while nobody is signed in is dropped in the same way. A 401 retries only while
-    someone is still signed in.
+    person's unsent answers are dropped, even if that person comes back, and wherever the open layout showed an answer
+    held for them, unsent (its write perhaps still on its way) or for this visit, it gives way to what the layout
+    holds: it is neither shown to the next person nor brought back by their reopen. A write of theirs already on its
+    way can still land, since it went out while they were signed in; the layout then holds its answer, and shows it.
+    Nobody signed in is no change of person, because the auth bridge passes through nobody while it checks anyone's
+    access, but an answer whose turn comes while nobody is signed in is dropped in the same way. A 401 retries only
+    while someone is still signed in.
   - **Only the newest is sent.** An answer overtaken while it waited its turn never reaches the network.
 - **A guest's draft.** It is kept in localStorage `venviewer.planner.eventKind` as
   `{ version: 1, entries: [{ configId, kind }], quiet }`, newest first, with the latest 200 kept. It is validated on
