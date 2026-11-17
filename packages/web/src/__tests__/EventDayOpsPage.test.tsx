@@ -1268,6 +1268,138 @@ describe("EventDayOpsPage", () => {
       await waitFor(() => { expect(screen.getByRole("button", { name: "Sync pending event-day changes" }).getAttribute("aria-busy")).toBe("false"); });
     }
 
+    type Fate = "lands" | "fails" | "refused" | "lost";
+
+    /** The API, as services/event-day-ops.ts answers a status (#418): a key
+     *  already recorded changes nothing and answers the task as it stands; a
+     *  status replayed against one the task no longer holds is refused, 409
+     *  with the task as it stands, and changes nothing; a status the task
+     *  already holds changes nothing; anything else is written and moves the
+     *  task's updatedAt on. A key meets its fate the first time it is sent: it
+     *  lands, fails before it reaches the server, is refused (403), or is lost
+     *  (written, and its answer never comes back). A key sent again (a
+     *  replay) lands. A request is decided when it is sent, except a replay
+     *  held back (lateReplay), decided when it is answered. Another device
+     *  writes as it presses. */
+    function fakeServer(options: { readonly fateOf?: (status: string) => Fate; readonly lateReplay?: boolean } = {}) {
+      let status: OpsTask["status"] = "todo";
+      let writes = 0;
+      const current = (): OpsTask => ({ ...task(status), updatedAt: new Date(Date.parse(NOW) + writes * 1000).toISOString() });
+      const recorded = new Set<string>();
+      const sentOnce = new Set<string>();
+      let requests = 0;
+      const write = (key: string, next: OpsTask["status"]): void => {
+        if (next === status) return;
+        status = next;
+        writes += 1;
+        recorded.add(key);
+      };
+      const decide = (input: UpdateOpsTaskStatusInput): OpsTask | ApiError => {
+        const key = input.idempotencyKey ?? "";
+        if (recorded.has(key)) return current();
+        if (input.expectedStatus !== undefined && input.expectedStatus !== status) {
+          return new ApiError(409, "This task moved on before this status arrived.", "TASK_STATUS_CONFLICT", { task: current() });
+        }
+        write(key, input.status);
+        return current();
+      };
+      interface Sent { readonly status: string; readonly replay: boolean; readonly answer: () => void }
+      const onTheirWay: Sent[] = [];
+      mockUpdateOpsTaskStatus.mockImplementation((_taskId: string, input: UpdateOpsTaskStatusInput) =>
+        new Promise<OpsTask>((resolve, reject) => {
+          requests += 1;
+          const key = input.idempotencyKey ?? "";
+          const replay = sentOnce.has(key);
+          sentOnce.add(key);
+          const fate = replay ? "lands" : (options.fateOf?.(input.status) ?? "lands");
+          const give = (decided: OpsTask | ApiError): void => { if (decided instanceof ApiError) reject(decided); else resolve(decided); };
+          let answer: () => void;
+          if (fate === "fails") {
+            answer = () => { reject(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE")); };
+          } else if (fate === "refused") {
+            answer = () => { reject(new ApiError(403, "Forbidden", "FORBIDDEN")); };
+          } else if (fate === "lost") {
+            decide(input);
+            answer = () => { reject(new ApiError(0, "Network error", "NETWORK_ERROR")); };
+          } else if (replay && options.lateReplay === true) {
+            answer = () => { give(decide(input)); };
+          } else {
+            const decided = decide(input);
+            answer = () => { give(decided); };
+          }
+          onTheirWay.push({ status: input.status, replay, answer });
+        }));
+      mockGetEventDayOpsBoard.mockImplementation(() => {
+        const board = boardFixture();
+        return Promise.resolve(board.handoffPack === null ? board : { ...board, handoffPack: { ...board.handoffPack, opsTasks: [current()] } });
+      });
+      const answerWhere = (matches: (sent: Sent) => boolean): void => {
+        const index = onTheirWay.findIndex(matches);
+        if (index >= 0) onTheirWay.splice(index, 1)[0]?.answer();
+      };
+      return {
+        status: () => status,
+        waiting: () => onTheirWay.length,
+        /** Every request sent, replays included. */
+        requests: () => requests,
+        /** The keys sent: one per press; a status sent again under a new key would add one. */
+        keys: () => sentOnce.size,
+        /** Another device presses this status, and it lands. */
+        writeAs: (next: OpsTask["status"]): void => { write(`elsewhere-${String(writes)}`, next); },
+        /** The first send of the press with this status, if it is on its way. */
+        answerPress: (pressed: string): void => { answerWhere((sent) => !sent.replay && sent.status === pressed); },
+        answerReplay: (): void => { answerWhere((sent) => sent.replay); },
+        answerAll: (): void => { while (onTheirWay.length > 0) answerWhere(() => true); },
+      };
+    }
+
+    async function settle(): Promise<void> {
+      for (let round = 0; round < 3; round += 1) {
+        await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+      }
+    }
+
+    /** Lets answers through, then lets the page act on them. */
+    async function answer(respond: () => void): Promise<void> {
+      act(respond);
+      await settle();
+    }
+
+    function renderPages(): readonly [HTMLElement, HTMLElement] {
+      const page = (): HTMLElement => render(
+        <MemoryRouter initialEntries={[`/ops/events/${EVENT_ID}`]}>
+          <Routes>
+            <Route path="/ops/events/:eventId" element={<EventDayOpsPage />} />
+          </Routes>
+        </MemoryRouter>,
+      ).container;
+      return [page(), page()];
+    }
+
+    /** The status the board shows for the task. */
+    function shownStatus(root: ParentNode = document): string {
+      return root.querySelector(".event-day-task span")?.textContent ?? "";
+    }
+
+    /** Presses a status on a page (the whole screen when none is given). */
+    async function pressOn(label: "Start" | "Done" | "Block", page?: HTMLElement): Promise<void> {
+      fireEvent.click((page === undefined ? screen : within(page)).getByRole("button", { name: label }));
+      await settle();
+    }
+
+    /** Presses Sync on a page and lets its replay and closing read through. */
+    async function syncOn(page?: HTMLElement): Promise<void> {
+      fireEvent.click((page === undefined ? screen : within(page)).getByRole("button", { name: "Sync pending event-day changes" }));
+      await settle();
+    }
+
+    /** Unmounts the board and opens it again: a reload, or leaving it and coming back. */
+    async function remount(): Promise<void> {
+      cleanup();
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+    }
+
     it("never replays it over a later status that reached the server", async () => {
       const queue = await realQueue();
       mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
@@ -1350,6 +1482,10 @@ describe("EventDayOpsPage", () => {
 
       await replayQueue();
       expect(statusesSent()).toEqual(["in_progress", "done", "done"]);
+      // #418: the presses went as pressed; the replay goes against what the
+      // task held once Start had landed, not against To do.
+      expect(mockUpdateOpsTaskStatus.mock.calls.map(([, input]) => (input as UpdateOpsTaskStatusInput).expectedStatus))
+        .toEqual([undefined, undefined, "in_progress"]);
       expect(await queue.list()).toEqual([]);
     });
 
@@ -1387,17 +1523,6 @@ describe("EventDayOpsPage", () => {
     // supersedes only what it pressed itself; the other page's row is sent
     // as it was written.
     describe("on two pages over one queue", () => {
-      function renderPages(): readonly [HTMLElement, HTMLElement] {
-        const page = (): HTMLElement => render(
-          <MemoryRouter initialEntries={[`/ops/events/${EVENT_ID}`]}>
-            <Routes>
-              <Route path="/ops/events/:eventId" element={<EventDayOpsPage />} />
-            </Routes>
-          </MemoryRouter>,
-        ).container;
-        return [page(), page()];
-      }
-
       it("keeps the other page's later status queued when this page's earlier one lands", async () => {
         const queue = await realQueue();
         mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
@@ -1446,23 +1571,23 @@ describe("EventDayOpsPage", () => {
     });
 
     // Every order of two presses on one page, and of three on the two
-    // schedules that strain the rule most. Each press lands, fails and is
-    // queued, or is refused. A schedule is the order of events: a press
-    // ("p0"), the answer to its first send ("a0", which may come before or
-    // after a later press, or its answer), the device coming back online
-    // ("d", which replays what is queued), and the answer to that replay
-    // ("r"). Requests reach the server in the order they are sent; only the
-    // answers may come back in another order. At the end the connection is
-    // back for good. In every order the server must hold the latest status
-    // pressed that it did not refuse, and nothing may be left in the queue.
+    // schedules that strain the rule most, against the server's own rule
+    // (fakeServer). Each press lands, fails and is queued, or is refused. A
+    // schedule is the order of events: a press ("p0"), the answer to its
+    // first send ("a0", which may come before or after a later press, or its
+    // answer), the device coming back online ("d", which replays what is
+    // queued), and the answer to that replay ("r"). Requests are decided in
+    // the order they are sent; only the answers may come back in another
+    // order. At the end the connection is back for good. In every order the
+    // server must end on the latest status pressed that it did not refuse,
+    // with nothing sent again under a new key and nothing left in the queue.
     describe("every order of presses, answers and a replay", () => {
-      type Fate = "lands" | "fails" | "refused";
       interface Order {
         readonly fates: readonly Fate[];
         readonly schedule: readonly string[];
-        /** The server applies the replay when it is answered, not when it is
+        /** The server decides the replay when it is answered, not when it is
          *  sent: after a later press that may have landed meanwhile. */
-        readonly lateReplay?: boolean;
+        readonly lateReplay: boolean;
       }
       const PRESSES = [
         { label: "Start", status: "in_progress" },
@@ -1496,14 +1621,17 @@ describe("EventDayOpsPage", () => {
         return all;
       }
 
-      const ORDERS: readonly Order[] = [
-        ...product([FATES, FATES]).flatMap((fates) => schedules(2).map((schedule): Order => ({ fates, schedule }))),
+      const IN_SEND_ORDER: readonly Omit<Order, "lateReplay">[] = [
+        ...product([FATES, FATES]).flatMap((fates) => schedules(2).map((schedule) => ({ fates, schedule }))),
         ...product([FATES, FATES, FATES]).flatMap((fates) => [
           // A replay on its way while both later presses are made and answered.
           ["p0", "a0", "d", "p1", "a1", "p2", "a2", "r"],
           // Three presses on their way, answered newest first.
           ["p0", "p1", "p2", "a2", "a1", "a0", "d", "r"],
-        ].map((schedule): Order => ({ fates, schedule }))),
+        ].map((schedule) => ({ fates, schedule }))),
+      ];
+      const ORDERS: readonly Order[] = [
+        ...IN_SEND_ORDER.map((order): Order => ({ ...order, lateReplay: false })),
       ];
 
       function nameOf(order: Order): string {
@@ -1514,79 +1642,14 @@ describe("EventDayOpsPage", () => {
           return event.startsWith("p") ? label : `${label} answered`;
         };
         const fates = order.fates.map((fate, index) => `${PRESSES[index]?.label ?? "?"} ${fate}`).join(", ");
-        return `${fates}: ${order.schedule.map(words).join(", ")}`;
+        return `${fates}: ${order.schedule.map(words).join(", ")}${order.lateReplay ? " (replay decided when answered)" : ""}`;
       }
 
-      /** The API, as services/event-day-ops.ts answers it: a press meets its
-       *  own fate on its first send and lands on a replay (the connection is
-       *  back); a key already recorded changes nothing, and neither does the
-       *  status the task already holds; each write moves the task's
-       *  updatedAt on. What lands is applied as it is sent, so the server
-       *  takes requests in the order they were sent, except a replay the
-       *  order holds back (lateReplay), which is applied when answered. */
-      function fakeServer(fateOf: (status: string) => Fate, lateReplay: boolean) {
-        let status: OpsTask["status"] = "todo";
-        let writes = 0;
-        const current = (): OpsTask => ({ ...task(status), updatedAt: new Date(Date.parse(NOW) + writes * 1000).toISOString() });
-        const recorded = new Set<string>();
-        const sentOnce = new Set<string>();
-        let requests = 0;
-        const apply = (key: string, next: OpsTask["status"]): OpsTask => {
-          if (!recorded.has(key) && next !== status) {
-            status = next;
-            writes += 1;
-            recorded.add(key);
-          }
-          return current();
-        };
-        interface Sent { readonly status: string; readonly replay: boolean; readonly answer: () => void }
-        const onTheirWay: Sent[] = [];
-        mockUpdateOpsTaskStatus.mockImplementation((_taskId: string, input: UpdateOpsTaskStatusInput) =>
-          new Promise<OpsTask>((resolve, reject) => {
-            requests += 1;
-            const key = input.idempotencyKey ?? "";
-            const replay = sentOnce.has(key);
-            sentOnce.add(key);
-            const fate = replay ? "lands" : fateOf(input.status);
-            let answer: () => void;
-            if (fate === "fails") {
-              answer = () => { reject(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE")); };
-            } else if (fate === "refused") {
-              answer = () => { reject(new ApiError(403, "Forbidden", "FORBIDDEN")); };
-            } else if (replay && lateReplay) {
-              answer = () => { resolve(apply(key, input.status)); };
-            } else {
-              const updated = apply(key, input.status);
-              answer = () => { resolve(updated); };
-            }
-            onTheirWay.push({ status: input.status, replay, answer });
-          }));
-        mockGetEventDayOpsBoard.mockImplementation(() => {
-          const board = boardFixture();
-          return Promise.resolve(board.handoffPack === null ? board : { ...board, handoffPack: { ...board.handoffPack, opsTasks: [current()] } });
-        });
-        const answerWhere = (matches: (sent: Sent) => boolean): void => {
-          const index = onTheirWay.findIndex(matches);
-          if (index >= 0) onTheirWay.splice(index, 1)[0]?.answer();
-        };
-        return {
-          status: () => status,
-          waiting: () => onTheirWay.length,
-          /** Every request sent, replays and any second send included. */
-          requests: () => requests,
-          /** The keys sent: one per press, and one more for each status sent again. */
-          keys: () => sentOnce.size,
-          /** The first send of the press with this status, if it is on its way. */
-          answerPress: (pressed: string): void => { answerWhere((sent) => !sent.replay && sent.status === pressed); },
-          answerReplay: (): void => { answerWhere((sent) => sent.replay); },
-          answerAll: (): void => { while (onTheirWay.length > 0) answerWhere(() => true); },
-        };
-      }
-
-      async function settle(): Promise<void> {
-        for (let round = 0; round < 2; round += 1) {
-          await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
-        }
+      /** The status the server must end on: the latest press it did not refuse. */
+      function lastPressed(order: Order): string {
+        return order.fates.map((fate, at) => (fate === "refused" ? null : PRESSES[at]?.status ?? null))
+          .filter((status): status is NonNullable<typeof status> => status !== null)
+          .at(-1) ?? "todo";
       }
 
       /** Plays an order through the page and the stand-in server, then lets
@@ -1597,7 +1660,7 @@ describe("EventDayOpsPage", () => {
       }> {
         const queue = await realQueue();
         const fateByStatus = new Map<string, Fate>(order.fates.map((fate, index) => [PRESSES[index]?.status ?? "", fate]));
-        const server = fakeServer((status) => fateByStatus.get(status) ?? "lands", order.lateReplay === true);
+        const server = fakeServer({ fateOf: (status) => fateByStatus.get(status) ?? "lands", lateReplay: order.lateReplay });
         renderPage();
         await screen.findByText("Set 12 x Round Table");
 
@@ -1605,19 +1668,12 @@ describe("EventDayOpsPage", () => {
           act(() => { window.dispatchEvent(new Event("online")); });
           await settle();
         };
-        const answer = async (respond: () => void): Promise<void> => {
-          act(respond);
-          await settle();
-        };
         for (const event of order.schedule) {
           const press = PRESSES[Number(event.slice(1))];
           if (event === "d") await online();
           else if (event === "r") await answer(server.answerReplay);
           else if (event.startsWith("a")) await answer(() => { server.answerPress(press?.status ?? ""); });
-          else {
-            fireEvent.click(screen.getByText(press?.label ?? ""));
-            await settle();
-          }
+          else await pressOn(press?.label ?? "Start");
         }
         // The connection is back for good.
         await answer(server.answerAll);
@@ -1631,43 +1687,152 @@ describe("EventDayOpsPage", () => {
         expect(ORDERS).toHaveLength(9 * 12 + 27 * 2);
       });
 
-      // The requests each order sent before the page could send a status
-      // again (measured at 0bbaf5d9), one digit per order of ORDERS: the
-      // second send must reach none of them.
-      const REQUESTS_BEFORE =
-        "222222222222333333333333222222222222222333222222333444333333333333333333222222222222333333333333"
-        + "222222222222334433334444334433435443435454435444334433334444334433";
-
-      it.each(ORDERS.map((order, index) => [nameOf(order), order, index] as const))("%s", async (_name, order, index) => {
+      const ends = async (order: Order): Promise<void> => {
         const { server, queue } = await runOrder(order);
-        expect(server.requests()).toBe(Number(REQUESTS_BEFORE[index]));
-        expect(server.keys()).toBe(order.fates.length);
-
-        const standing = order.fates.map((fate, at) => (fate === "refused" ? null : PRESSES[at]?.status ?? null))
-          .filter((status): status is NonNullable<typeof status> => status !== null)
-          .at(-1) ?? "todo";
         expect(server.waiting()).toBe(0);
-        expect(server.status()).toBe(standing);
+        expect(server.status()).toBe(lastPressed(order));
+        // Nothing is sent again under a new key: one key per press.
+        expect(server.keys()).toBe(order.fates.length);
         expect(await queue.list()).toEqual([]);
+      };
+      it.each(ORDERS.map((order) => [nameOf(order), order] as const))("%s", async (_name, order) => {
+        await ends(order);
       });
+    });
 
-      // #418 B2, as the release lead ruled: a replay the server applies after
-      // a later press that has already landed. The page sends that later
-      // status again, once, under a fresh key, so the server ends on what
-      // was pressed last.
-      it("sends the latest status again when an older replay was applied after it landed", async () => {
-        const order: Order = { fates: ["fails", "lands"], schedule: ["p0", "a0", "d", "p1", "a1", "r"], lateReplay: true };
-        // The same order with the replay applied as it was sent: one of the 162.
-        const inSendOrder = ORDERS.findIndex((other) => other.lateReplay !== true
-          && other.fates.join() === order.fates.join() && other.schedule.join() === order.schedule.join());
-        const { server, queue } = await runOrder(order);
+    // #418, beyond one page that never reloads: the server decides, so a
+    // stale replay is refused whoever queued it and whenever it arrives.
+    describe("orders over a reload, another device and two pages", () => {
+      it("ends on Done when Start was queued, the board reloaded, and Done landed (P1)", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "fails" : "lands") });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+        await screen.findByText("Task saved on this device and will sync when the connection returns.");
+
+        await remount();
+        await pressOn("Done");
+        await answer(server.answerAll);
+        await syncOn();
+        await answer(server.answerAll);
 
         expect(server.status()).toBe("done");
-        expect(statusesSent()).toEqual(["in_progress", "in_progress", "done", "done"]);
-        expect(server.requests()).toBe(Number(REQUESTS_BEFORE[inSendOrder]) + 1);
-        expect(server.keys()).toBe(order.fates.length + 1);
+        expect(await queue.list()).toEqual([]);
+        expect(shownStatus()).toBe("Done");
+      });
+
+      // BA2's X1: another device sets the status Start's replay carries,
+      // after this page's Done landed and before the replay arrives.
+      it("lets another device's later status stand over a stale replay of the same status, and sends nothing again (X1)", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "fails" : "lands"), lateReplay: true });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+        act(() => { window.dispatchEvent(new Event("online")); });
+        await settle();
+        await pressOn("Done");
+        await answer(() => { server.answerPress("done"); });
+
+        server.writeAs("in_progress");
+        await answer(server.answerReplay);
+        await answer(server.answerAll);
+
+        expect(server.status()).toBe("in_progress");
+        expect(statusesSent()).toEqual(["in_progress", "in_progress", "done"]);
+        expect(server.keys()).toBe(2);
+        expect(await queue.list()).toEqual([]);
+        await waitFor(() => { expect(shownStatus()).toBe("In progress"); });
+      });
+
+      // BA2's X2: as X1, but Start reached the server and its answer was
+      // lost, so its replay is answered from the key the server recorded.
+      it("lets another device's later status stand when a lost Start's replay is answered from its key, and sends nothing again (X2)", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "lost" : "lands"), lateReplay: true });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+        act(() => { window.dispatchEvent(new Event("online")); });
+        await settle();
+        await pressOn("Done");
+        await answer(() => { server.answerPress("done"); });
+
+        server.writeAs("in_progress");
+        await answer(server.answerReplay);
+        await answer(server.answerAll);
+
+        expect(server.status()).toBe("in_progress");
+        expect(statusesSent()).toEqual(["in_progress", "in_progress", "done"]);
+        expect(server.keys()).toBe(2);
         expect(await queue.list()).toEqual([]);
       });
+
+      it("acks a replay the server refuses because the task moved on, and shows the task as the answer gives it", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "fails" : "lands") });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+        await screen.findByText("Task saved on this device and will sync when the connection returns.");
+        // Another device blocks the task after Start was pressed here.
+        server.writeAs("blocked");
+        // The closing read never answers: what the board shows is the refusal's.
+        mockGetEventDayOpsBoard.mockImplementation(() => new Promise<never>(() => undefined));
+
+        await syncOn();
+        await answer(server.answerAll);
+
+        expect(mockUpdateOpsTaskStatus.mock.calls[1]?.[1]).toEqual(expect.objectContaining({ status: "in_progress", expectedStatus: "todo" }));
+        expect(server.status()).toBe("blocked");
+        expect(await queue.list()).toEqual([]);
+        await waitFor(() => { expect(shownStatus()).toBe("Blocked"); });
+        // No new words: the notice is the one the press left.
+        expect(screen.getByText("Task saved on this device and will sync when the connection returns.")).toBeTruthy();
+      });
+    });
+
+    it("sends a replay as it used to while the API has not caught up with the status it was pressed against", async () => {
+      const queue = await realQueue();
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      mockUpdateOpsTaskStatus
+        .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
+        // The API before #418: its body schema is strict, and names the key it does not know.
+        .mockRejectedValueOnce(new ApiError(400, "Validation failed", "VALIDATION_ERROR", [
+          { code: "unrecognized_keys", keys: ["expectedStatus"], path: [], message: "Unrecognized key: \"expectedStatus\"" },
+        ]))
+        .mockResolvedValueOnce(task("in_progress"));
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+      fireEvent.click(screen.getByRole("button", { name: "Start" }));
+      await screen.findByText("Task saved on this device and will sync when the connection returns.");
+
+      await replayQueue();
+
+      const [, replay, asBefore] = mockUpdateOpsTaskStatus.mock.calls.map(([, input]) => input as UpdateOpsTaskStatusInput);
+      expect(replay).toEqual({ status: "in_progress", idempotencyKey: replay?.idempotencyKey, expectedStatus: "todo" });
+      expect(asBefore).toEqual({ status: "in_progress", idempotencyKey: replay?.idempotencyKey });
+      expect(await queue.list()).toEqual([]);
+    });
+
+    it("replays a row queued before replays carried a status, without one", async () => {
+      const queue = await realQueue();
+      await queue.enqueueTaskStatus(TASK_ID, { status: "done", idempotencyKey: "queued-by-an-older-page" });
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      mockUpdateOpsTaskStatus.mockResolvedValue(task("done"));
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+
+      await replayQueue();
+
+      expect(mockUpdateOpsTaskStatus.mock.calls.map(([, input]) => input as UpdateOpsTaskStatusInput))
+        .toEqual([{ status: "done", idempotencyKey: "queued-by-an-older-page" }]);
+      expect(await queue.list()).toEqual([]);
     });
   });
 

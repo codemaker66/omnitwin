@@ -12,8 +12,10 @@ import { openCache, type CacheHandle } from "./idb-cache.js";
 //
 // Mobile ops staff can lose WiFi during setup. This queue mirrors the
 // hallkeeper progress queue: failed status/issue writes are stored in IndexedDB
-// and replayed when the device is online again. Task status is last-write-wins
-// per task; issue creation keeps every queued issue; a step on a floor request
+// and replayed when the device is online again. Task status keeps one row per
+// task, the latest press, with the status it was pressed against
+// (input.expectedStatus): the server refuses its replay once the task has moved
+// on (#418). Issue creation keeps every queued issue; a step on a floor request
 // keeps every press, in the order pressed, each under its own key.
 // ---------------------------------------------------------------------------
 

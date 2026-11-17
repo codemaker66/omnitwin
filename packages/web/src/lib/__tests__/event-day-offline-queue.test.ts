@@ -189,6 +189,18 @@ describe("event-day offline queue", () => {
     });
   });
 
+  // #418: the row keeps the status its press was made against, for the
+  // replay to carry; a row written before replays carried one has none.
+  it("keeps with a task status the status it was pressed against, and none where none was given", async () => {
+    const q = queue();
+    await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "b", expectedStatus: "in_progress" });
+    await q.enqueueTaskStatus("task-2", { status: "done", idempotencyKey: "c" });
+
+    const [withExpected, without] = await q.list();
+    expect(withExpected).toMatchObject({ opsTaskId: "task-1", input: { status: "done", idempotencyKey: "b", expectedStatus: "in_progress" } });
+    expect(without?.kind === "task_status" ? without.input : null).toEqual({ status: "done", idempotencyKey: "c" });
+  });
+
   it("does not collapse separate issue reports", async () => {
     const q = queue();
     await q.enqueueIssueCreate("event-1", {
