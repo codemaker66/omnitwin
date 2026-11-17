@@ -21,6 +21,7 @@ import {
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canAccessInternalEvent } from "../utils/query.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import {
   serializeAcknowledgement,
   serializeEventPlanChange,
@@ -311,13 +312,20 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
       return { data: HallkeeperAcknowledgementSchema.parse(serializeAcknowledgement(existing)) };
     }
 
-    const [acknowledgement] = await db.insert(eventPlanChangeAcknowledgements).values({
+    // An erasure that deletes or rewords this change holds its event: one of
+    // the two is rolled back, and this answers RETRY (people-erasure.ts).
+    const inserted = await db.insert(eventPlanChangeAcknowledgements).values({
       changeId: change.id,
       eventId: eventRow.id,
       acknowledgedBy: request.user.id,
       acknowledgedByRole: role,
       note: body.data.note ?? null,
-    }).returning();
+    }).returning().catch((err: unknown) => {
+      if (lockConflictOf(err) !== null) return null;
+      throw err;
+    });
+    if (inserted === null) return reply.status(409).send(RETRY_ANSWER);
+    const [acknowledgement] = inserted;
 
     if (acknowledgement === undefined) {
       return reply.status(500).send({ error: "Failed to acknowledge change", code: "ACKNOWLEDGEMENT_CREATE_FAILED" });

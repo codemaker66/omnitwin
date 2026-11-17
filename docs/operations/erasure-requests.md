@@ -52,10 +52,10 @@ bookings: only the erased person's name leaves it.
 | `proposal_status_history` | notes, including the client's words when they asked for changes or accepted | on their proposals | client notes cleared; staff notes lose the name |
 | `event_plan_changes` | the client's name (`actor_label`) and words copied into the event's change feed | `source_kind` `proposal_comment` (the comment's id) or `proposal_response` (the proposal's id); a client change on someone else's proposal labelled with their name (an acceptance they typed it into); other changes on their events | the copies of their own proposals' answers deleted; the rest lose the name, a client's label included (a member of staff's label stays) |
 | `opportunities`, `opportunity_status_history`, `activities` | deal title ("Wedding — Morag Smith"), next action, the note written when the deal moved stage (closing one requires it), activity notes | by `primary_contact_id` or `source_enquiry_id` | name taken out |
-| `bookings`, `booking_status_history`, `events`, `event_phases` | Diary titles, the note staff type on a Diary transition (a release), event name, client name, notes, phase notes | from their enquiries; on their deals', households' and organisations' events, and on events made from their proposal's layout (`event_configuration_links`) | name taken out (a booking the venue keeps refuses the route) |
-| `threads`, `messages`, `requests`, `request_status_history`, `event_plan_change_acknowledgements`, `event_day_issues`, `task_completion_events` | the team's conversations and requests (with their resolve notes), acknowledgements, issues logged on the day and task notes about those bookings and events | by booking, event or request | name taken out |
+| `bookings`, `booking_status_history`, `events`, `event_phases` | Diary titles, the note staff type on a Diary transition (a release), event name, client name, notes, phase notes | from their enquiries; on their deals', households' and organisations' events, and on events made from their proposal's layout (`event_configuration_links`) | name taken out; a client name that is only their full name, in any case and spacing, becomes "Erased" (a booking the venue keeps refuses the route) |
+| `threads`, `messages`, `requests`, `request_status_history`, `event_plan_change_acknowledgements`, `event_day_issues`, `task_completion_events`, `ops_status_updates`, `layout_variants` | the team's conversations and requests (with their resolve notes), acknowledgements, issues logged on the day (with their escalation notes), task notes, the day's status lines (a task's move quotes its title) and layout variants (name and notes) about those bookings and events | by booking, event or request | name taken out; a message's author that is only their full name, in any case and spacing, becomes "Erased" |
 | `handoff_packs`, `beo_documents`, `ops_tasks`, `snapshot_diffs` | a handoff pack's summary and label, the BEO compiled from it (title and body copy the event's name and notes), its tasks (they copy access and phase notes) and the diffs between its versions | packs compiled for their events or from their layouts | name taken out |
-| `configurations`, `configuration_sheet_snapshots` | a layout's name and planner instructions: the day-of contact the hallkeeper rings (name, role, phone, email), special instructions, access and accessibility notes, phase-deadline reasons, piece notes; each event sheet freezes a copy, its layout's name with it, and a legacy sheet may hold a public PDF address | the layouts of their enquiries, of the proposals around them and of their events (a staff link, a layout variant) | a day-of contact who is them (their full name in any case, an address, or a phone number of theirs, from their record, their points or their enquiries) cleared; their name out of every other text and the layout's name; a changed sheet loses its PDF address and keeps its source hash |
+| `configurations`, `placed_objects`, `configuration_layout_revisions`, `configuration_sheet_snapshots` | a layout's name and planner instructions: the day-of contact the hallkeeper rings (name, role, phone, email), special instructions, access and accessibility notes, phase-deadline reasons; the pieces placed on it (a piece's note and label) and the layout's saved revisions; each event sheet freezes a copy, its layout's name with it, and a legacy sheet may hold a public PDF address | the layouts of their enquiries, of the proposals around them, and of their events and the nearby ones (a staff link, a layout variant) | a day-of contact who is them (their full name in any case, an address, or a phone number of theirs, from their record, their points or their enquiries, that no other live person at the venue holds: an office line or a household landline identifies nobody alone) cleared; their name out of every other text, the pieces' notes and labels, the revisions and the layout's name; a changed sheet loses its PDF address and keeps its source hash |
 | `decisions` | the reason given for a prepared decision about a booking (free text) | `subject_kind = 'booking'` and `subject_id` one of their bookings, or a booking of a deal another live person leads that was made from their enquiry | erased (set to null), the only change a decision allows (migration 0108): always on a booking pencilled from their enquiries; on the other bookings, when it names them |
 | `proposal_contract_versions`, `proposal_contract_signatures` | the client's name and email in the contract, the signer's name, email and browser | on their proposals | **kept**: a contract is kept with the booking's records for six years and no statement can change it (migration 0104). The route refuses (`PERSON_HAS_CONTRACT`) |
 | `proposal_deposit_requests`, `deposit_payments` | the deposit and its payment record | on their proposals or events | **kept** for six years with the booking's records; the route refuses |
@@ -165,15 +165,20 @@ It refuses, changing nothing:
 - `RETRY`: someone changed one of their records at the same moment; try again.
 
 The erasure finds what is theirs with plain reads, then locks it in the house order the other writers use for the
-same rows: decisions, bookings, proposals, enquiries, deals, events, sheets, layouts (as a decision's approval, a
-Diary transition, a proposal's send, save, acceptance, contract or deposit, a layout link, a phase freeze and a
-sheet's approval each take them). A client's comment or acceptance that waited on the erasure finds their link
-revoked and is refused. The copies of one that committed a moment before (the change feed, the team's notices) are
-written in a transaction that first holds the proposal: they wait for the erasure and are then left out, because
-the link is revoked or what the client wrote has lost their name; or they are written first, and the erasure finds
-them. What can still meet the erasure in a circle answers `RETRY` (nothing is half-done): a booking written between
-its reads and its locks; two erasures of one household's members at the same moment (erase household members one
-after the other); and the demo layout review.
+same rows: decisions, bookings, proposals, enquiries, deals, events, layouts, sheets (as a decision's approval, a
+Diary transition, a proposal's send, save, acceptance, contract or deposit, a layout link, a phase freeze, a
+sheet's submission or approval and the handoff compile each take them). A client's comment or acceptance that
+waited on the erasure finds their link revoked and is refused. Every announcement of a proposal's change (the change
+feed, the team's notices) is written in a transaction that first holds the proposal. One whose change committed a
+moment before the erasure took the proposal waits for the erasure, then is written with the proposal's title as it
+now reads; a client's copy is left out, because their link is revoked or what they wrote has lost their name. One
+written before the erasure takes the proposal is found by it. A client's answer on someone else's proposal that
+commits after the erasure's reads counts as made after the erasure.
+
+What can still meet the erasure in a circle answers `RETRY` (nothing is half-done; try again): a booking written
+between its reads and its locks; two erasures of one household's members at the same moment (erase household members
+one after the other); the demo layout review; and a hallkeeper's task tick, issue update or acknowledgement on one of
+their events, or a nearby one, at that moment (the hallkeeper's screen answers `RETRY` too).
 
 Then erase by hand what the booking or the contract does not need (section 3).
 
@@ -185,7 +190,10 @@ too; a full name another live person at the venue also goes by; a name typed dif
 an enquiry's in-app notice another enquiry kept here could equally have written (the same name within the same
 minutes, a partner's from the shared inbox), or written under an address since corrected on the enquiry (the notice
 holds no enquiry id); the planner's change log of a layout's event details (`action_log` payload and inverse), which
-can repeat a day-of contact; a decision prepared on one of their bookings at the very moment of the erasure (it
+can repeat a day-of contact and piece notes; an event's mission (`event_mission_tasks`, `event_mission_incidents`,
+`event_mission_acknowledgements`), whose tasks are replayed from a baseline the mission checks by its digest, so the
+route leaves those copies as they are: read them; a field that holds only their name, typed in a casing written
+nowhere else, other than an event's client name or a message's author; a decision prepared on one of their bookings at the very moment of the erasure (it
 takes no lock the erasure holds, so its reason can stay: read the decisions on their bookings afterwards); and a
 **deleted** record of theirs (a
 duplicate deleted instead of merged): the route does not treat it as theirs, the 24-month pass erases it in time,

@@ -6,6 +6,7 @@ import {
   bookings,
   bookingStatusHistory,
   clientAccounts,
+  configurationLayoutRevisions,
   configurations,
   configurationSheetSnapshots,
   contactPoints,
@@ -23,6 +24,7 @@ import {
   guestLeads,
   opportunities,
   opportunityStatusHistory,
+  placedObjects,
   proposalComments,
   proposalContractVersions,
   proposalDepositRequests,
@@ -71,13 +73,16 @@ import { liveContact, type PeopleTx } from "./people-records.js";
 // of it is deleted, and only the erased person's names leave its text.
 // Those rows are found with plain reads and then locked before anything is
 // changed, in the house order the other writers take the same rows
-// (decisions, bookings, proposals, enquiries, deals, events, sheets, layouts:
+// (decisions, bookings, proposals, enquiries, deals, events, layouts, sheets:
 // see around()), so a hold pencilled or a contract prepared at the same moment
 // waits for the erasure or is seen by it. Residues the doc names: a decision
-// prepared on one of their bookings in the same moment keeps its reason; a
-// booking written between the reads and the locks makes the erasure answer
-// RETRY; two erasures of one household's members at once, and the demo
-// layout review, can still meet in a circle (RETRY).
+// prepared on one of their bookings in the same moment keeps its reason; an
+// answer on someone else's proposal written after the reads counts as written
+// after the erasure; a booking written between the reads and the locks makes
+// the erasure answer RETRY; and these can still meet it in a circle (RETRY):
+// two erasures of one household's members at once, the demo layout review,
+// and a hallkeeper's task tick, issue update or acknowledgement on one of
+// their events or the nearby ones.
 //
 // Refused, changing nothing:
 //   - a confirmed booking, or a provisional one still live (the privacy
@@ -367,6 +372,39 @@ async function phonesOf(tx: PeopleTx, ids: readonly string[], onRecords: readonl
   }));
 }
 
+/** The phone numbers without those another live person at the venue holds,
+ *  on their record or among their points (an office line, a household
+ *  landline): a number they share identifies nobody alone, as an address
+ *  they share does not (heldByOthers). Compared by the last nine digits. */
+async function withoutOthersPhones(
+  tx: PeopleTx,
+  venueId: string,
+  exclude: readonly string[],
+  phones: readonly string[],
+): Promise<readonly string[]> {
+  const tails = distinct(phones.map((phone) => phone.replace(/\D/gu, "").slice(-9)).filter((tail) => tail.length === 9));
+  if (tails.length === 0) return phones;
+  const tailOf = (column: SQLWrapper): SQL => sql`right(regexp_replace(${column}, '\\D', '', 'g'), 9)`;
+  const onRecord = await tx.select({ phone: contacts.phone }).from(contacts).where(allOf(
+    eq(contacts.venueId, venueId),
+    liveContact(),
+    notAmong(contacts.id, exclude),
+    isNotNull(contacts.phone),
+    inArray(tailOf(contacts.phone), tails),
+  ));
+  const asPoint = await tx.select({ phone: contactPoints.value }).from(contactPoints)
+    .innerJoin(contacts, eq(contacts.id, contactPoints.contactId))
+    .where(allOf(
+      eq(contactPoints.venueId, venueId),
+      eq(contactPoints.kind, "phone"),
+      liveContact(),
+      notAmong(contactPoints.contactId, exclude),
+      inArray(tailOf(contactPoints.value), tails),
+    ));
+  const held = [...onRecord, ...asPoint].flatMap((row) => (row.phone === null ? [] : [row.phone]));
+  return phones.filter((phone) => !held.some((other) => samePhone(phone, other)));
+}
+
 /** Whether two phone numbers are one, however written: their last nine
  *  digits agree ("+44 7700 900111" and "07700 900111"). */
 export function samePhone(a: string, b: string): boolean {
@@ -573,9 +611,11 @@ async function findAnswersElsewhere(
  *     proposal, then the enquiry, the deal or the event;
  *   - a layout link or a phase freeze the event, then the layout
  *     (routes/events.ts, phase-layout-snapshots.ts);
- *   - a sheet's approval the sheet, then its layout (sheet-snapshot.ts).
+ *   - a sheet's approval or a submission the layout, then its sheets
+ *     (configuration-reviews.ts), and the handoff compile likewise
+ *     (ops-compiler.ts, through its pack's foreign keys).
  * So: decisions, bookings, proposals (theirs, the nearby ones and those they
- * answered on), enquiries, deals, events, sheets, layouts. A booking written
+ * answered on), enquiries, deals, events, layouts, sheets. A booking written
  * meanwhile from one of their enquiries, or onto one of their events, waits
  * on those locks; one written between the reads and the locks would be
  * locked out of order, so the erasure answers RETRY (ErasureMovedOn).
@@ -669,8 +709,8 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
     await lockRows(tx, "enquiries", enquiryIds);
     await lockRows(tx, "opportunities", [...dealIds, ...nearDealIds]);
     await lockRows(tx, "events", [...eventIds, ...nearEventIds]);
-    await lockRows(tx, "configuration_sheet_snapshots", sheetIds);
     await lockRows(tx, "configurations", layoutIds);
+    await lockRows(tx, "configuration_sheet_snapshots", sheetIds);
   }
   // With their enquiries and events held, no booking can start from or on
   // them any more. One written between the reads and the locks would be
@@ -758,7 +798,8 @@ export async function findPersonRecords(tx: PeopleTx, person: ContactRow): Promi
     venueId,
     ids,
     writers: ids,
-    phones: await phonesOf(tx, ids, [...people.map((row) => row.phone), ...theirEnquiries.map((row) => row.guestPhone)]),
+    phones: await withoutOthersPhones(tx, venueId, ids,
+      await phonesOf(tx, ids, [...people.map((row) => row.phone), ...theirEnquiries.map((row) => row.guestPhone)])),
     addresses: own,
     enquiries: theirEnquiries,
     accountIds,
@@ -788,7 +829,9 @@ export async function findEnquiryRecords(
     venueId: enquiry.venueId,
     ids: [],
     writers: options.writers ?? [],
-    phones: options.reword && enquiry.guestPhone !== null ? [enquiry.guestPhone] : [],
+    phones: options.reword && enquiry.guestPhone !== null
+      ? await withoutOthersPhones(tx, enquiry.venueId, [], [enquiry.guestPhone])
+      : [],
     addresses: sentFrom.filter((address) => !held.has(address)),
     enquiries: [enquiry],
     accountIds: [],
@@ -872,6 +915,11 @@ interface Reword {
   /** Column name → its length limit (null for text). */
   readonly columns: Readonly<Record<string, number | null>>;
   readonly where: SQL;
+  /** Columns staff fill with only a name (an event's client, a message's
+   *  author): one of their full names there, in any case and spacing,
+   *  becomes "Erased". Fields a client typed are found by the elsewhere
+   *  search, whose casing joins the names. */
+  readonly nameOnly?: readonly string[];
 }
 
 /** Rewrites the columns of each matching row without the names, row by row;
@@ -891,7 +939,7 @@ async function reword(tx: PeopleTx, target: Reword, names: readonly string[]): P
     for (const column of columns) {
       const before = row[column];
       if (typeof before !== "string") continue;
-      const after = withoutNames(before, names);
+      const after = target.nameOnly?.includes(column) === true && isOnlyName(before, names) ? ERASED_TEXT : withoutNames(before, names);
       if (after === null || after === before) continue;
       const limit = target.columns[column] ?? null;
       sets.push(sql`${sql.identifier(column)} = ${limit === null ? after : after.slice(0, limit)}`);
@@ -1055,7 +1103,7 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
     { table: "event_day_issues", columns: { title: 180, detail: null, escalation_note: null }, where: among(sql`"event_day_issues"."event_id"`, eventIds) },
     { table: "task_completion_events", columns: { note: null }, where: among(sql`"task_completion_events"."event_id"`, eventIds) },
     { table: "threads", columns: { title: 160 }, where: or(among(threads.bookingId, bookingIds), among(threads.eventId, eventIds)) ?? sql`false` },
-    { table: "messages", columns: { author_name: 160, body: 2000 },
+    { table: "messages", columns: { author_name: 160, body: 2000 }, nameOnly: ["author_name"],
       where: bookingIds.length + eventIds.length === 0 ? sql`false` : sql`"messages"."thread_id" in (
         select th."id" from "threads" as th where ${or(among(sql`th."booking_id"`, bookingIds), among(sql`th."event_id"`, eventIds)) ?? sql`false`})` },
     { table: "event_plan_change_acknowledgements", columns: { note: null }, where: among(eventPlanChangeAcknowledgements.eventId, eventIds) },
@@ -1066,7 +1114,12 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
     { table: "beo_documents", columns: { title: 200, body: null }, where: packs("beo_documents", "handoff_pack_id") },
     { table: "ops_tasks", columns: { title: 240, detail: null }, where: packs("ops_tasks", "handoff_pack_id") },
     { table: "snapshot_diffs", columns: { summary: null }, where: packs("snapshot_diffs", "handoff_pack_id") },
-    { table: "events", columns: { name: 200, client_name: 200, notes: null }, where: among(events.id, eventIds) },
+    { table: "events", columns: { name: 200, client_name: 200, notes: null }, where: among(events.id, eventIds), nameOnly: ["client_name"] },
+    // A layout variant staff made for those events, and the day's status
+    // lines (a task's move quotes its title). Neither is ever updated, only
+    // added to, so no writer holds one while it waits for the event.
+    { table: "layout_variants", columns: { name: 160, notes: null }, where: among(sql`"layout_variants"."event_id"`, eventIds) },
+    { table: "ops_status_updates", columns: { message: null }, where: among(sql`"ops_status_updates"."event_id"`, eventIds) },
     { table: "event_phases", columns: { notes: null }, where: among(eventPhases.eventId, eventIds) },
     // A client's change is labelled with the name they gave; a member of
     // staff's label stays, as theirs.
@@ -1172,36 +1225,59 @@ function documentWithoutThem<T>(document: T, names: readonly string[], phones: r
 
 /**
  * The layouts of their enquiries, proposals and events (their own, and those
- * around another person's deal made from their enquiry), and every event
- * sheet issued from them: a sheet freezes the layout's name and planner
- * instructions (configuration_sheet_snapshots.payload). A sheet whose payload
- * changes loses its legacy public PDF address too, which rendered the old
- * text; as the allergy-note retention does (dietary-retention.ts), it keeps
- * its source hash, which names the layout's version, not its text. The rows
- * were locked in around(), sheets before layouts, as a sheet's approval takes
- * them. Returns the rows changed.
+ * around another person's deal made from their enquiry), the pieces placed
+ * on them and the layout's saved revisions (a piece's note and label), and
+ * every event sheet issued from them: a sheet freezes the layout's name and
+ * planner instructions (configuration_sheet_snapshots.payload). A sheet whose
+ * payload changes loses its legacy public PDF address too, which rendered the
+ * old text; as the allergy-note retention does (dietary-retention.ts), it
+ * keeps its source hash, which names the layout's version, not its text.
+ * Taken as the other writers take them: the layout (locked in around()),
+ * then its pieces and revisions (the planner holds the layout first), then
+ * its sheets (a sheet's approval and the handoff compile hold the layout
+ * first). Returns the rows changed.
  */
 async function rewordLayouts(tx: PeopleTx, records: ErasureRecords, names: readonly string[]): Promise<readonly string[]> {
   if (records.layoutIds.length === 0 || (names.length === 0 && records.phones.length === 0)) return [];
   const changed: string[] = [];
-  const sheets = await tx.select({ id: configurationSheetSnapshots.id, payload: configurationSheetSnapshots.payload })
-    .from(configurationSheetSnapshots)
-    .where(inArray(configurationSheetSnapshots.configurationId, [...records.layoutIds]))
-    .for("no key update");
-  for (const sheet of sheets) {
-    const payload = documentWithoutThem(sheet.payload, names, records.phones);
-    if (payload === sheet.payload) continue;
-    await tx.update(configurationSheetSnapshots).set({ payload, pdfUrl: null }).where(eq(configurationSheetSnapshots.id, sheet.id));
-    changed.push(`configuration_sheet_snapshots:${sheet.id}`);
-  }
+  const layoutIds = [...records.layoutIds];
   const layouts = await tx.select({ id: configurations.id, name: configurations.name, metadata: configurations.metadata })
-    .from(configurations).where(inArray(configurations.id, [...records.layoutIds])).for("no key update");
+    .from(configurations).where(inArray(configurations.id, layoutIds)).for("no key update");
   for (const layout of layouts) {
     const metadata = documentWithoutThem(layout.metadata, names, records.phones);
     const name = (withoutNames(layout.name, names) ?? layout.name).slice(0, 200);
     if (metadata === layout.metadata && name === layout.name) continue;
     await tx.update(configurations).set({ name, metadata }).where(eq(configurations.id, layout.id));
     changed.push(`configurations:${layout.id}`);
+  }
+  const pieces = await tx.select({ id: placedObjects.id, metadata: placedObjects.metadata }).from(placedObjects)
+    .where(allOf(inArray(placedObjects.configurationId, layoutIds), isNotNull(placedObjects.metadata))).for("no key update");
+  for (const piece of pieces) {
+    const metadata = deepWithoutNames(piece.metadata, names);
+    if (metadata === piece.metadata) continue;
+    await tx.update(placedObjects).set({ metadata }).where(eq(placedObjects.id, piece.id));
+    changed.push(`placed_objects:${piece.id}`);
+  }
+  const revisions = await tx.select({ id: configurationLayoutRevisions.id, payload: configurationLayoutRevisions.payload })
+    .from(configurationLayoutRevisions).where(inArray(configurationLayoutRevisions.configurationId, layoutIds)).for("no key update");
+  for (const revision of revisions) {
+    const payload = documentWithoutThem(revision.payload, names, records.phones);
+    if (payload === revision.payload) continue;
+    await tx.update(configurationLayoutRevisions).set({ payload }).where(eq(configurationLayoutRevisions.id, revision.id));
+    changed.push(`configuration_layout_revisions:${revision.id}`);
+  }
+  const sheets = await tx.select({ id: configurationSheetSnapshots.id, payload: configurationSheetSnapshots.payload })
+    .from(configurationSheetSnapshots)
+    .where(inArray(configurationSheetSnapshots.configurationId, layoutIds))
+    .for("no key update");
+  for (const sheet of sheets) {
+    const payload = documentWithoutThem(sheet.payload, names, records.phones);
+    if (payload === sheet.payload) continue;
+    await tx.update(configurationSheetSnapshots).set({
+      payload,
+      pdfUrl: null,
+    }).where(eq(configurationSheetSnapshots.id, sheet.id));
+    changed.push(`configuration_sheet_snapshots:${sheet.id}`);
   }
   return changed;
 }

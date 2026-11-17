@@ -374,22 +374,25 @@ async function recordProposalLifecycleChange(
   input: LifecycleChangeInput,
 ): Promise<void> {
   const act = input.clientAct;
-  if (act === undefined) {
-    await announceProposalChange(db, proposal, input);
-    return;
-  }
-  // A client's act through their link is copied in one transaction that
-  // first holds the proposal FOR KEY SHARE. That waits only on a writer
-  // holding it FOR UPDATE, as an erasure of the person does from early in
-  // its pass until it commits. So the copy either waits for an erasure under
-  // way and then finds the act erased (their link revoked, or what they
-  // wrote deleted or without their name), and writes nothing; or it is
-  // written before the erasure takes the proposal, and the erasure finds it.
+  // Every announcement is written in one transaction that first holds the
+  // proposal FOR KEY SHARE: the house order, the proposal before the event
+  // and layout that the change's foreign keys take. That waits only on a
+  // writer holding the proposal FOR UPDATE, as an erasure of the person does
+  // from early in its pass until it commits, so the two never wait on each
+  // other. Read again under that lock: a title the erasure has reworded since
+  // is announced as it now reads, and a client's act it has erased (their
+  // link revoked, or what they wrote deleted or without their name) is not
+  // copied at all. A client's answer on someone else's proposal that commits
+  // after an erasure's reads is outside that erasure: it counts as made after
+  // it.
   try {
     await db.transaction(async (tx) => {
-      await tx.select({ id: proposals.id }).from(proposals).where(eq(proposals.id, proposal.id)).for("key share");
-      if (!(await linkStillOpen(tx, act.linkTokenId)) || !(await stillAsWritten(tx, act.written))) return;
-      await announceProposalChange(tx, proposal, input);
+      const [held] = await tx.select({ id: proposals.id, title: proposals.title }).from(proposals)
+        .where(eq(proposals.id, proposal.id)).for("key share");
+      if (act !== undefined && (!(await linkStillOpen(tx, act.linkTokenId)) || !(await stillAsWritten(tx, act.written)))) return;
+      const title = held?.title ?? proposal.title;
+      const now = (text: string): string => (title === proposal.title || proposal.title === "" ? text : text.split(proposal.title).join(title));
+      await announceProposalChange(tx, { ...proposal, title }, { ...input, title: now(input.title), summary: now(input.summary) });
     });
   } catch (err) {
     input.logger.error({
@@ -399,7 +402,7 @@ async function recordProposalLifecycleChange(
       configurationId: proposal.configurationId,
       sourceKind: input.sourceKind,
       sourceId: input.sourceId,
-      lost: "all of it: the client's act could not be read again",
+      lost: "all of it: the proposal could not be held and read again",
       err,
     }, "proposal change committed but its announcement could not be written");
   }

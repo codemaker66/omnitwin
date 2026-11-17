@@ -89,15 +89,6 @@ type LinkableLayout =
   | { readonly ok: true; readonly id: string }
   | { readonly ok: false; readonly status: 403 | 404 | 409; readonly body: { readonly error: string; readonly code: string } };
 
-/**
- * May this layout be linked to the event? Both link routes ask, inside the
- * transaction that writes the link. The layout's row is read under a share
- * lock: a claim (routes/claim-config.ts) locks the same row for update and
- * refuses a layout with an event link, so a claim and a link never both pass
- * on a stale read; whichever comes second waits and sees the other's result.
- * A layout owned by a client account is refused, because owning a linked
- * layout is what admits a client to the event (grantsCustomerParticipation).
- */
 /** The event a layout is about to be linked to, held before the layout: the
  *  link's foreign key takes the event anyway, and taking it first keeps the
  *  house order (event, then layout), as the phase freeze does
@@ -107,6 +98,15 @@ async function holdEventForLink(tx: EventLinkTransaction, eventId: string): Prom
   await tx.select({ id: events.id }).from(events).where(eq(events.id, eventId)).for("key share");
 }
 
+/**
+ * May this layout be linked to the event? Both link routes ask, inside the
+ * transaction that writes the link. The layout's row is read under a share
+ * lock: a claim (routes/claim-config.ts) locks the same row for update and
+ * refuses a layout with an event link, so a claim and a link never both pass
+ * on a stale read; whichever comes second waits and sees the other's result.
+ * A layout owned by a client account is refused, because owning a linked
+ * layout is what admits a client to the event (grantsCustomerParticipation).
+ */
 async function lockLinkableLayout(
   tx: EventLinkTransaction,
   user: FastifyRequest["user"],
