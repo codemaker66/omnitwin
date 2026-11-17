@@ -227,6 +227,19 @@ measured against that glass), the relief in DIR stands unless `--relief rebuild`
 its own glass and relief, which is the identity run below. Other rooms' alpha is always their
 own glass mask.
 
+**A wall no station sees.** `label-views.py` labels a block from the stations that see it, and a
+wall none sees (a nook round a corner, a face behind a screen) comes out with no labelled block.
+`project-walls.py` then has nothing to level or colour and ends in its own statistics, with an
+`IndexError`; the Grand Hall has no such wall. The room build reads the label step's own report and
+stops there by name, after the labels and again before the photographs, saying what a station
+needs in order to label a wall. `check_room.py`, given the manifest, warns of it before any work:
+it tries lines of sight in plan from every station to five points along each wall (within
+`projection.walls.maxDist`, no more edge-on than `cosMin` allows, with no solid wall or partition
+of the outline between; a doorway station looks through its own wall). A plan knows nothing of
+furniture, door leaves or a screen seen over, so that is a warning and the label step decides. On
+the four rooms measured so far it names two walls, the Robert Adam Room's `nook-5` and `nook-6`,
+which a build of that room by another lane had found unlabelled (16 November 2026).
+
 ### The record: `survey.json`
 
 `roombuild/publish.py` writes `build/survey.json` for every room and publishes it for a room whose
@@ -482,6 +495,8 @@ T4 builds a small room for each gate that neither the Grand Hall nor T3 opens:
 - two texels rendered off their own centres: refused by the labels without the allowance, left out
   by the corners step with it (the wall is then labelled and coloured), and refused again when
   there are more than allowed or the whole grid is in the wrong place (B24);
+- a wall no station sees: the labels step and the photographs stop at it by name, and a wall that
+  is seen is labelled and coloured as ever;
 - the floor refills' roll along z and along x (B19);
 - the ceiling relief's fallback height, padding and spacing.
 
