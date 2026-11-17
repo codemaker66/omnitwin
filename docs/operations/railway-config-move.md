@@ -21,17 +21,33 @@ fail to start, or go live without its migration.
 
 ## The three steps
 
-1. **Add the new file (pull request 1).** `.railway/railway.ts` declares the same
-   thirteen settings as `railway.json`. The watch list lives once, in
-   `.railway/watch-patterns.json`, which the production receipt reads and a CI
-   step keeps equal to `railway.json`'s. It touches no watched path, so merging it
-   starts no deploy and changes nothing in production.
+1. **Add the new file (pull request 1, #440).** `.railway/railway.ts` declares the
+   same thirteen settings as `railway.json`. It also declares settings
+   `railway.json` never held, and after the apply the file governs those too:
+   the source repository and branch (with `checkSuites: false`), the stored
+   build command and build environment, the region the one replica runs in, the
+   custom domain and its port, and the project, with variables left unmanaged.
+   Railway's plan shows these already match what Railway has stored. After the
+   move, changing any of them on Railway's dashboard shows on the next plan as a
+   change to undo. The watch list lives once, in `.railway/watch-patterns.json`,
+   which the production receipt reads and a CI step keeps equal to
+   `railway.json`'s. CI compares only the watch lists, so until `railway.json`
+   is deleted, a pull request that changes a setting in it must change
+   `.railway/railway.ts` the same way. Pull request 1 touches no watched path,
+   so merging it makes Railway deploy nothing and changes nothing on Railway.
+   Vercel still republishes the web, unchanged, on every merge to master, as for
+   any pull request.
 2. **Copy the settings into Railway**, in one booked slot, with Blake's yes at
    that moment: one reviewed apply from a pinned plan. Expect it to redeploy the
    API once, with its usual migration step, running the code that is already live.
 3. **Delete `railway.json` (pull request 2)**, in the same slot, and watch the
    deploy it starts. That is the first deploy with no file, and it is the proof.
    `/railway.json` stays in the watch list: harmless once the file is gone.
+   Pull request 2 also corrects the three comments that name `railway.json` as
+   the home of a setting: the start command in the `Dockerfile`, the health
+   check path in `packages/api/src/index.ts`, and the pre-deploy command in
+   `packages/api/src/scripts/migrate-before-deploy.ts`. They are watched paths,
+   but pull request 2 deploys anyway.
 
 Between steps 2 and 3 the settings exist in two places at once, which Railway's
 guide says should not happen. Both hold the same values, so whichever one Railway
@@ -42,6 +58,10 @@ reads, a deploy is the same. Doing both in one slot keeps that state to minutes.
 Book it with the merge coordinator: a quiet hour, not beside a pull request that
 carries a database migration, not while a deploy is running. Pull request 2 is
 reviewed and green before the slot starts.
+
+The slot must be done by 27 November 2026 at the latest. If it has not been
+done by then, hold every pull request that touches a watched path until it is:
+after 1 December such a merge would deploy with Railway's old stored settings.
 
 1. On Railway's dashboard, check that the environment has no pending staged
    changes. If it has, stop.
@@ -69,6 +89,8 @@ reviewed and green before the slot starts.
   builder, the watch list, the pre-deploy command and its timeout, the start
   command, the health check path and its timeout, the drain), with 0 to add,
   0 to destroy and variables unmanaged. Its output goes in the pull request.
+  It was run on 15 and 16 November 2026 and printed exactly that; the output
+  is in pull request #440.
 - After the copy: `railway config plan --detailed-exit-code` exits 0.
 - The proof deploy's own record names no config file and maps no setting to a
   file. It shows the pre-deploy command and its 900 seconds, the start command,

@@ -10,11 +10,13 @@ rebuild the API. Why this folder exists, and how the move away from
 From this folder:
 
 ```bash
-npm ci
+npm ci --ignore-scripts
 ```
 
 This installs Railway's TypeScript kit (`railway`) at the version pinned in
-`package-lock.json`. `node_modules` is ignored by git.
+`package-lock.json`, without running any package's install script: the kit
+needs none, and a script brought in by a later version would otherwise run on
+your machine. `node_modules` is ignored by git.
 
 Railway's command-line tool is not pinned here, on purpose: pinning it would
 put its installer's dependencies into this public repository's lockfile. Use a
@@ -71,5 +73,6 @@ The paths live in one place, `watch-patterns.json`. It is read by:
   exists and its list differs.
 
 `/.railway/**` is not a watched path. Railway does not read this folder when it
-deploys and the image does not contain it, so a change here deploys nothing. A
-settings change takes effect only through `apply`.
+deploys and the image does not contain it, so a change here makes Railway
+deploy nothing. (Vercel still republishes the web on every merge to master, as
+for any pull request.) A settings change takes effect only through `apply`.
