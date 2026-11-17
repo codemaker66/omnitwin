@@ -8,6 +8,7 @@ import {
   eventArchitectOpsCompilationReviewGate,
   eventGraphBindsConfiguration,
 } from "../services/ops-compiler.js";
+import { generateManifestV2, type AccessoryRule, type ManifestObjectV2 } from "../services/manifest-generator-v2.js";
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
@@ -384,6 +385,203 @@ describe("ops compiler services", () => {
     expect(source).not.toMatch(/\bcertified safe\b/iu);
     expect(source).not.toMatch(/\bproduction ready\b/iu);
     expect(source).not.toMatch(/\blegally compliant\b/iu);
+  });
+
+  // T-695 api-eventday-sheet-9. A chair set at a table folds into the table's
+  // manifest row ("Round Table with 4 chairs"), so the manifest's totals have
+  // no line for it; the frozen floor plan still holds every piece. The pick
+  // list, its total, the breakdown and the BEO count what the store sends out.
+  describe("counts every placed piece, chairs set at tables included", () => {
+    const ROOM = { widthM: 21, lengthM: 10.5 };
+    const ASSET = {
+      table: "00000000-0000-4000-8000-000000000401",
+      chiavari: "00000000-0000-4000-8000-000000000402",
+      banquet: "00000000-0000-4000-8000-000000000403",
+    } as const;
+    const CLOTH: AccessoryRule = { name: "Ivory Tablecloth", category: "linen", quantityPerParent: 1, phase: "dress", afterDepth: 1 };
+
+    /** Two round tables of `seatedPerTable` chairs, as the planner groups
+     *  them, plus `looseChairs` chairs nobody grouped; frozen as an approval
+     *  freezes them. */
+    function frozen(chair: "Chiavari Chair" | "Banquet Chair", looseChairs: number, seatedPerTable = 4): ConfigurationSheetSnapshot {
+      const objects: ManifestObjectV2[] = [];
+      for (let table = 0; table < 2; table += 1) {
+        const tableId = `00000000-0000-4000-8000-0000000005${String(table)}0`;
+        const x = table * 5 - 2.5;
+        objects.push({ id: tableId, assetName: "Round Table", assetCategory: "table", positionX: x, positionY: 0, positionZ: 0, rotationY: 0, chairCount: 0, groupId: tableId });
+        for (let seat = 0; seat < seatedPerTable; seat += 1) {
+          const angle = (seat * Math.PI) / 2;
+          objects.push({
+            id: `00000000-0000-4000-8000-0000000005${String(table)}${String(seat + 1)}`, assetName: chair, assetCategory: "chair",
+            positionX: x + Math.cos(angle), positionY: 0, positionZ: Math.sin(angle), rotationY: 0, chairCount: 0, groupId: tableId,
+          });
+        }
+      }
+      for (let seat = 0; seat < looseChairs; seat += 1) {
+        objects.push({ id: `00000000-0000-4000-8000-0000000006${String(seat).padStart(2, "0")}`, assetName: chair, assetCategory: "chair", positionX: seat, positionY: 0, positionZ: 4, rotationY: 0, chairCount: 0, groupId: null });
+      }
+      return freeze(objects, chair);
+    }
+
+    /** One round table per entry, seating that many Chiavari chairs (0: a
+     *  bare table, for the cake, say), laid out in rows of six. */
+    function frozenTables(seats: readonly number[]): ConfigurationSheetSnapshot {
+      const objects: ManifestObjectV2[] = [];
+      seats.forEach((count, table) => {
+        const id = (seat: number): string => `00000000-0000-4000-8000-000007${String(table).padStart(3, "0")}${String(seat).padStart(3, "0")}`;
+        const x = (table % 6) * 3 - 7.5;
+        const z = Math.floor(table / 6) * 3 - 3;
+        objects.push({ id: id(0), assetName: "Round Table", assetCategory: "table", positionX: x, positionY: 0, positionZ: z, rotationY: 0, chairCount: 0, groupId: id(0) });
+        for (let seat = 0; seat < count; seat += 1) {
+          const angle = (seat * 2 * Math.PI) / count;
+          objects.push({
+            id: id(seat + 1), assetName: "Chiavari Chair", assetCategory: "chair",
+            positionX: x + Math.cos(angle), positionY: 0, positionZ: z + Math.sin(angle), rotationY: 0, chairCount: 0, groupId: id(0),
+          });
+        }
+      });
+      return freeze(objects, "Chiavari Chair");
+    }
+
+    /** As an approval freezes these pieces, with a cloth on every round table. */
+    function freeze(objects: readonly ManifestObjectV2[], chair: "Chiavari Chair" | "Banquet Chair"): ConfigurationSheetSnapshot {
+      const manifest = generateManifestV2(objects, ROOM, new Map([["Round Table", [CLOTH]]]));
+      return snapshot({
+        payload: {
+          ...snapshot().payload,
+          phases: manifest.phases,
+          totals: manifest.totals,
+          floorPlan: {
+            coordinateSpace: "real_m_v1",
+            outline: [{ x: -10.5, z: -5.25 }, { x: 10.5, z: -5.25 }, { x: 10.5, z: 5.25 }, { x: -10.5, z: 5.25 }],
+            objects: objects.map((object) => ({
+              objectId: object.id,
+              assetDefinitionId: object.assetCategory === "table" ? ASSET.table : chair === "Chiavari Chair" ? ASSET.chiavari : ASSET.banquet,
+              name: object.assetName, category: object.assetCategory, x: object.positionX, z: object.positionZ,
+              rotationY: 0, scale: 1, widthM: object.assetCategory === "table" ? 1.8 : 0.45, depthM: object.assetCategory === "table" ? 1.8 : 0.45,
+              collisionType: object.assetCategory === "table" ? "cylinder" as const : "box" as const,
+            })),
+          },
+        },
+      });
+    }
+
+    it("lists the chairs on the pick list, and counts them in its total and the BEO", () => {
+      const draft = compileOpsHandoffDraft({ snapshot: frozen("Chiavari Chair", 2), previousSnapshot: null, eventGraph: null, clientNotes: null });
+      const lines = draft.pickListItems.map((item) => `${String(item.quantity)} x ${item.name} (${item.category})`);
+      expect(lines.sort()).toEqual(["10 x Chiavari Chair (chair)", "2 x Ivory Tablecloth (linen)", "2 x Round Table (table)"]);
+      expect(draft.pickListItems.reduce((sum, item) => sum + item.quantity, 0)).toBe(14);
+      expect(draft.beoBody).toContain("Pick list items: 3; total quantity 14.");
+      // Set-up still reads table by table, as the sheet does.
+      expect(draft.opsTasks.filter((task) => task.kind === "setup").map((task) => task.title)).toContain("Set 2 x Round Table with 4 chairs");
+    });
+
+    it("has the breakdown account for every chair", () => {
+      const draft = compileOpsHandoffDraft({ snapshot: frozen("Chiavari Chair", 2), previousSnapshot: null, eventGraph: null, clientNotes: null });
+      const breakdown = draft.opsTasks.filter((task) => task.kind === "breakdown").map((task) => task.detail);
+      expect(breakdown).toContain("Account for 10 x Chiavari Chair from the approved handoff pack.");
+      expect(breakdown).toContain("Account for 2 x Round Table from the approved handoff pack.");
+    });
+
+    it("shows a change of chair at the tables in the changes since the last handoff", () => {
+      const draft = compileOpsHandoffDraft({
+        snapshot: frozen("Chiavari Chair", 0),
+        previousSnapshot: { ...frozen("Banquet Chair", 0), id: PREVIOUS_SNAPSHOT_ID, version: 1, sourceHash: PREVIOUS_HASH },
+        eventGraph: null,
+        clientNotes: null,
+      });
+      expect(draft.snapshotDiff.payload).toEqual({ added: ["8 x Chiavari Chair"], removed: ["8 x Banquet Chair"], changed: [] });
+    });
+
+    // T-695 review C7: counting pieces alone hid a re-seating that keeps every
+    // count, which the row-based diff used to show: the tables' rows that name
+    // the chairs set at them are compared as well. A bare table's row is not
+    // (review I3): it bears the table's own name, which the placed count
+    // already uses for every table of that kind.
+    const earlier = (plan: ConfigurationSheetSnapshot): ConfigurationSheetSnapshot =>
+      ({ ...plan, id: PREVIOUS_SNAPSHOT_ID, version: 1, sourceHash: PREVIOUS_HASH });
+    const diffOf = (current: ConfigurationSheetSnapshot, previous: ConfigurationSheetSnapshot) =>
+      compileOpsHandoffDraft({ snapshot: current, previousSnapshot: earlier(previous), eventGraph: null, clientNotes: null }).snapshotDiff;
+
+    it("shows chairs moved from the tables into rows, though every count is the same", () => {
+      const diff = diffOf(frozen("Chiavari Chair", 8, 0), frozen("Chiavari Chair", 0));
+      expect(diff.payload).toEqual({ added: [], removed: ["2 x Round Table with 4 chairs"], changed: [] });
+    });
+
+    it("shows twelve tables of ten reseated as six of twelve and six of eight, though every count is the same", () => {
+      const diff = diffOf(frozenTables([...Array<number>(6).fill(12), ...Array<number>(6).fill(8)]), frozenTables(Array<number>(12).fill(10)));
+      expect(diff.payload).toEqual({
+        added: ["6 x Round Table with 12 chairs", "6 x Round Table with 8 chairs"],
+        removed: ["12 x Round Table with 10 chairs"],
+        changed: [],
+      });
+    });
+
+    // Review I3: ten tables of ten and two bare ones (cake, gifts), then a third bare one.
+    it("gives one count for a table added beside seated tables of the same kind", () => {
+      const diff = diffOf(frozenTables([...Array<number>(10).fill(10), 0, 0, 0]), frozenTables([...Array<number>(10).fill(10), 0, 0]));
+      expect(diff.payload).toEqual({ added: [], removed: [], changed: ["Ivory Tablecloth: 12 -> 13", "Round Table: 12 -> 13"] });
+      expect(diff.changedCount).toBe(2);
+    });
+
+    // Review I4: a change both counts would see, listed once.
+    it("does not report a change twice", () => {
+      const diff = diffOf(frozenTables([0, 0, 0]), frozenTables([0, 0]));
+      expect(diff.payload).toEqual({ added: [], removed: [], changed: ["Ivory Tablecloth: 2 -> 3", "Round Table: 2 -> 3"] });
+      expect(diff.changedCount).toBe(2);
+    });
+
+    it("reports no change when nothing moved", () => {
+      const same = diffOf(frozen("Chiavari Chair", 2), frozen("Chiavari Chair", 2));
+      expect(same.summary).toBe("No furniture count changes since the previous approved snapshot.");
+    });
+
+    // A plan frozen before 6 September 2026 has no floor plan, so the model
+    // of the chairs set at its tables was never recorded. The comparison
+    // stays totals against totals, and (review C6, as ruled) it says chairs
+    // at tables can't be compared rather than "No furniture count changes".
+    const CHAIRS_NOT_COMPARED = "Chairs at tables can't be compared with a plan frozen before 6 September 2026.";
+    const before = (plan: ConfigurationSheetSnapshot): ConfigurationSheetSnapshot =>
+      ({ ...plan, id: PREVIOUS_SNAPSHOT_ID, version: 1, sourceHash: PREVIOUS_HASH, payload: { ...plan.payload, floorPlan: null } });
+
+    it("compares a plan frozen before floor plans by its totals on both sides, never totals against pieces", () => {
+      const current = frozen("Chiavari Chair", 2);
+      const draft = compileOpsHandoffDraft({ snapshot: current, previousSnapshot: before(current), eventGraph: null, clientNotes: null });
+      expect(draft.snapshotDiff.payload).toEqual({ added: [], removed: [], changed: [] });
+      expect(draft.snapshotDiff.summary).toBe(CHAIRS_NOT_COMPARED);
+    });
+
+    it("keeps the other furniture counts beside the chairs note", () => {
+      const draft = compileOpsHandoffDraft({
+        snapshot: frozen("Chiavari Chair", 4), previousSnapshot: before(frozen("Chiavari Chair", 2)), eventGraph: null, clientNotes: null,
+      });
+      expect(draft.snapshotDiff.payload.changed).toEqual(["Chiavari Chair: 2 -> 4"]);
+      expect(draft.snapshotDiff.summary).toBe(`0 added, 0 removed, 1 quantity changed since the previous approved snapshot. ${CHAIRS_NOT_COMPARED}`);
+    });
+
+    it("claims no change against an older plan when no table on either has chairs", () => {
+      const draft = compileOpsHandoffDraft({
+        snapshot: frozen("Chiavari Chair", 8, 0), previousSnapshot: before(frozen("Chiavari Chair", 8, 0)), eventGraph: null, clientNotes: null,
+      });
+      expect(draft.snapshotDiff.summary).toBe("No furniture count changes since the previous approved snapshot.");
+    });
+  });
+
+  // T-695 review H3: phases tied on sortOrder came back in whatever order the
+  // database gave, so a room flip's neighbours (its from and to labels) could
+  // differ between two compiles of one plan, and the recompile made a new pack.
+  it("reads a room flip's neighbours the same way whatever order phases tied on sortOrder arrive in", () => {
+    const graph = eventGraph();
+    const [ceremony, flip, dinner] = graph.phases;
+    if (ceremony === undefined || flip === undefined || dinner === undefined) throw new Error("fixture");
+    const drinks = { ...ceremony, id: "00000000-0000-4000-8000-000000000314", templateKey: "arrival" as const, name: "Drinks reception" };
+    const compile = (phases: EventPhaseGraph["phases"]) => compileOpsHandoffDraft({
+      snapshot: snapshot(), previousSnapshot: null, eventGraph: { ...graph, phases }, clientNotes: null,
+    });
+    const one = compile([ceremony, drinks, flip, dinner]);
+    const other = compile([drinks, ceremony, flip, dinner]);
+    expect(other.roomFlipPlans).toEqual(one.roomFlipPlans);
+    expect(other.opsTasks.filter((task) => task.kind === "room_flip")).toEqual(one.opsTasks.filter((task) => task.kind === "room_flip"));
   });
 
   it("does not mutate the hallkeeper sheet snapshot", () => {

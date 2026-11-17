@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   findUnsupportedProposalClaim,
   GUEST_ENQUIRY_LATEST_EVENT_DATE,
@@ -23,6 +23,7 @@ vi.mock("../EditorBridge.js", async (importOriginal) => ({
 
 const { GuestEnquiryModal } = await import("../GuestEnquiryModal.js");
 import { pressEnterIn } from "../../../test/implicit-submit.js";
+import { expectOutOfReach, hiddenTrapIn } from "../../../test/enquiry-trap.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
@@ -340,6 +341,50 @@ describe("GuestEnquiryModal takes no more than the API accepts", () => {
     expect(message.value).toBe(brief);
   });
 
+  // Review of #405, Q1 and Q2. The sentence was said in the alert above the
+  // form while focus went to the message at its foot, out of view on a
+  // phone, and it kept the first count while the guest cut the message. It
+  // is now said beside the message, which names it as its problem, where
+  // focus lands; and it follows the message as the guest cuts it, quietly,
+  // until it fits.
+  it("says the message's length beside it, where focus lands, and follows the guest's cuts until it fits", async () => {
+    mocks.submit.mockResolvedValue({});
+    await open();
+    const form = screen.getByTestId("guest-enquiry-form");
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    const message = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" });
+    fireEvent.change(message, { target: { value: "b".repeat(3214) } });
+    const send = screen.getByRole("button", { name: "Send to Events Team" });
+    fireEvent.click(send);
+
+    const held = "Messages can be up to 2,000 characters. Yours is 3,214.";
+    expect(screen.getByRole("textbox", { name: "Anything else?", description: held })).toBe(message);
+    expect(message.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement, "focus after Send").toBe(message);
+    const sentence = screen.getByRole("alert");
+    expect(sentence.textContent).toBe(held);
+    // Beside the field: inside the form, directly above the message, not in the box above the form.
+    expect(form.contains(sentence)).toBe(true);
+    expect(sentence.nextElementSibling).toBe(message);
+
+    // Cut, and the number follows, without an alert at each keystroke.
+    fireEvent.change(message, { target: { value: "b".repeat(2950) } });
+    expect(screen.queryByRole("alert"), "no alert while the guest edits").toBeNull();
+    expect(screen.getByRole("textbox", {
+      name: "Anything else?", description: "Messages can be up to 2,000 characters. Yours is 2,950.",
+    })).toBe(message);
+
+    // Short enough: the sentence goes, and Send sends.
+    fireEvent.change(message, { target: { value: "b".repeat(1950) } });
+    expect(message.getAttribute("aria-invalid")).toBe("false");
+    expect(message.hasAttribute("aria-describedby")).toBe(false);
+    expect(screen.queryByText(/^Messages can be up to/u)).toBeNull();
+    fireEvent.click(send);
+    await waitFor(() => {
+      expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ message: "b".repeat(1950) }));
+    });
+  });
+
   // Counted as the API counts, or a message one past the limit is sent and
   // refused, or one at it is held for nothing: what is posted (trimmed), in
   // Unicode code points, as zod 4 reads a string's length. An emoji outside
@@ -431,6 +476,141 @@ describe("GuestEnquiryModal says again what each Send finds", () => {
     expect(again.textContent).toBe(problem);
     expect(again, "a new alert, so a screen reader hears it again").not.toBe(first);
     expect(mocks.submit).not.toHaveBeenCalled();
+  });
+});
+
+// Blake, 13 November 2026: no event date before today. The planner's form
+// sets the date field's min to the guest's own today, so the browser refuses
+// an earlier date in its own words. happy-dom does not run that check on a
+// date field; a browser does, and min is what it reads.
+describe("GuestEnquiryModal's date field", () => {
+  const rooms: VenueDetail = {
+    id: "venue-dates", name: "Date Rooms", slug: "date-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+  const zone = process.env["TZ"];
+
+  beforeEach(() => {
+    resetStores();
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(rooms);
+    mocks.submit.mockResolvedValue({});
+    useEditorStore.setState({ configId: "cfg-1", venueId: rooms.id, isPublicPreview: false });
+    // West of Greenwich, where the UTC date is tomorrow by the evening.
+    process.env["TZ"] = "America/Los_Angeles";
+    vi.useFakeTimers({ toFake: ["Date"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    if (zone === undefined) Reflect.deleteProperty(process.env, "TZ");
+    else process.env["TZ"] = zone;
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  async function open(): Promise<HTMLInputElement> {
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+    await screen.findByText("Your details are shared only with the Date Rooms events team.");
+    return screen.getByLabelText<HTMLInputElement>("Event date");
+  }
+
+  it("takes no date before the guest's own today, which is not the UTC date", async () => {
+    // 22:30 on 30 April in California, 05:30 on 1 May in UTC.
+    vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+    expect((await open()).min).toBe("2027-04-30");
+  });
+
+  it("reads today when Send is pressed, so a form left open past midnight takes the new day", async () => {
+    // 23:59:30 on 30 April, local.
+    vi.setSystemTime(new Date("2027-05-01T06:59:30Z"));
+    const date = await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.change(date, { target: { value: "2027-04-30" } });
+    expect(date.min).toBe("2027-04-30");
+    // 00:00:30 on 1 May, local, with nothing touched since.
+    vi.setSystemTime(new Date("2027-05-01T07:00:30Z"));
+    // A browser checks the field against min just before the form's submit
+    // event, before anything the form does on Send can draw it again.
+    let minAsChecked = "";
+    screen.getByTestId("guest-enquiry-form").addEventListener("submit", () => { minAsChecked = date.min; }, { capture: true });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    // 30 April is now yesterday and refused; 1 May, today, is taken.
+    expect(minAsChecked).toBe("2027-05-01");
+  });
+});
+
+// Blake, 12 November 2026: a hidden trap on the public forms. The form sends
+// what its hidden field holds and how long it was open before Send; the API
+// judges a hit, keeps the enquiry and emails nobody.
+describe("GuestEnquiryModal's hidden trap", () => {
+  const rooms: VenueDetail = {
+    id: "venue-trap", name: "Trap Rooms", slug: "trap-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+
+  beforeEach(() => {
+    resetStores();
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(rooms);
+    mocks.submit.mockResolvedValue({});
+    useEditorStore.setState({ configId: "cfg-1", venueId: rooms.id, isPublicPreview: false });
+    vi.useFakeTimers({ toFake: ["Date", "performance"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  async function open(): Promise<HTMLElement> {
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+    await screen.findByText("Your details are shared only with the Trap Rooms events team.");
+    return screen.getByTestId("guest-enquiry-form");
+  }
+
+  it("sends an empty hidden field and how long the form was open before Send", async () => {
+    await open();
+    act(() => { vi.advanceTimersByTime(5300); });
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    await waitFor(() => {
+      expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ email: "guest@example.test", trap: "", openMs: 5300 }));
+    });
+  });
+
+  it("sends whatever a script put in the hidden field, whether or not it said so", async () => {
+    const form = await open();
+    hiddenTrapIn(form).value = "https://example.test/offer";
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    await waitFor(() => {
+      expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ trap: "https://example.test/offer", openMs: 0 }));
+    });
+  });
+
+  // The form keeps what the guest typed when it is closed (planner-qol
+  // E-08), and starts the next plan's enquiry from the contact details they
+  // gave last time, so Send at once on opening it again is a person, not a
+  // script. The time is then not sent, which the API reads as no hit; the
+  // hidden field still is.
+  it.each([
+    ["a draft kept from an earlier opening", "venviewer.enquiry-draft.cfg-1"],
+    ["the contact details of the last send", "venviewer.enquiry-contact"],
+  ])("sends no time for a form opened with %s, and still sends the hidden field", async (_case, key) => {
+    sessionStorage.setItem(key, JSON.stringify({ email: "guest@example.test" }));
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    await waitFor(() => { expect(mocks.submit).toHaveBeenCalledTimes(1); });
+    expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ email: "guest@example.test", trap: "" }));
+    // Absent, as JSON sends an undefined field: not posted at all.
+    expect(mocks.submit).toHaveBeenCalledWith(expect.not.objectContaining({ openMs: expect.anything() as unknown }));
+  });
+
+  it("keeps the hidden field out of a person's reach by eye, keyboard and screen reader, and carries nothing in its attributes that autofill or a password manager reads", async () => {
+    const form = await open();
+    expectOutOfReach(hiddenTrapIn(form), form);
   });
 });
 

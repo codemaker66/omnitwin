@@ -12,6 +12,7 @@ import {
   NEXT_ACTIONS_DUE_LIMIT,
   deriveBookingState,
   eventDisplayName,
+  resolveRotaTimeZone,
   type CalendarBookingEntry,
   type CalendarEntry,
   type CalendarQuery,
@@ -192,16 +193,23 @@ export async function calendarRoutes(
     const from = new Date(query.from);
     const to = new Date(query.to);
 
-    const venueSpaces = await db
-      .select({
-        id: spaces.id,
-        name: spaces.name,
-        slug: spaces.slug,
-        sortOrder: spaces.sortOrder,
-      })
-      .from(spaces)
-      .where(and(eq(spaces.venueId, query.venueId), isNull(spaces.deletedAt)))
-      .orderBy(asc(spaces.sortOrder), asc(spaces.name));
+    const [venueSpaces, [venue]] = await Promise.all([
+      db
+        .select({
+          id: spaces.id,
+          name: spaces.name,
+          slug: spaces.slug,
+          sortOrder: spaces.sortOrder,
+        })
+        .from(spaces)
+        .where(and(eq(spaces.venueId, query.venueId), isNull(spaces.deletedAt)))
+        .orderBy(asc(spaces.sortOrder), asc(spaces.name)),
+      // The venue's own days decide which of an event's bookings in a room
+      // are one stay there (services/calendar-conflicts.ts).
+      db.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, query.venueId)).limit(1),
+    ]);
+    // A zone no clock knows is read as the house's, as the rota reads it (review Y4).
+    const timeZone = resolveRotaTimeZone(venue?.timeZone);
 
     const knownSpaceIds = new Set(venueSpaces.map((space) => space.id));
     const requestedSpaceIds = query.spaceIds?.filter((id) => knownSpaceIds.has(id));
@@ -223,7 +231,7 @@ export async function calendarRoutes(
         range: { from: from.toISOString(), to: to.toISOString() },
         rooms: [],
         entries: [],
-        conflicts: detectCalendarConflicts({ bookings: [], phases: [], turnaroundRules: [] }),
+        conflicts: detectCalendarConflicts({ bookings: [], phases: [], turnaroundRules: [], timeZone }),
         decisionsDue: { holds: [], total: 0 },
       });
       return { data: emptyResponse };
@@ -257,9 +265,9 @@ export async function calendarRoutes(
       lt(bookings.startsAt, contestedHorizon),
     );
 
-    // The reads are independent — one round-trip of latency, not seven
+    // The reads are independent — one round-trip of latency, not six
     // (review finding: this is the endpoint every calendar view polls).
-    const [bookingRows, phaseRows, ruleRows, decisionRows, nextActionRows, liveRows, venueRows] = await Promise.all([
+    const [bookingRows, phaseRows, ruleRows, decisionRows, nextActionRows, liveRows] = await Promise.all([
       db
         .select(BOOKING_ENTRY_COLUMNS)
         .from(bookings)
@@ -379,11 +387,9 @@ export async function calendarRoutes(
         .where(liveContestConditions)
         .orderBy(asc(bookings.startsAt), asc(bookings.id))
         .limit(CONTESTED_SCAN_LIMIT),
-      // The venue's clock: an event stored without a name is named by the
-      // venue's own day of its start (eventNameFor).
-      db.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, query.venueId)).limit(1),
     ]);
-    const venueZone = venueRows[0]?.timeZone ?? "Europe/London";
+    // Names read the venue's clock too, read once above: an event stored without
+    // a name is named by the venue's own day of its start (eventNameFor).
 
     // The dates found among the lean rows; full entries only for those shown.
     const contestedFound = contestedDates(liveRows.map((row) => ({
@@ -421,7 +427,7 @@ export async function calendarRoutes(
       const endsAt = new Date(row.startsAt.getTime() + row.durationMinutes * MINUTE_MS);
       // As on a booking's card: an event stored without a name is named by
       // its occasion and the venue's day, here and in the conflicts' words.
-      const eventName = eventDisplayName({ name: row.eventName, eventType: row.eventType, startsAt: row.eventStartsAt }, venueZone);
+      const eventName = eventDisplayName({ name: row.eventName, eventType: row.eventType, startsAt: row.eventStartsAt }, timeZone);
       conflictPhases.push({
         id: row.id,
         spaceId: row.spaceId,
@@ -445,10 +451,10 @@ export async function calendarRoutes(
       });
     }
 
-    const bookingEntries: CalendarEntry[] = bookingRows.map((row) => toBookingEntry(row, venueZone));
+    const bookingEntries: CalendarEntry[] = bookingRows.map((row) => toBookingEntry(row, timeZone));
     // Grouped again from the full entries: a booking released in between
     // simply leaves its date, as the next read would show.
-    const contested = contestedDates(contestedRows.map((row) => toBookingEntry(row, venueZone)));
+    const contested = contestedDates(contestedRows.map((row) => toBookingEntry(row, timeZone)));
 
     const entries = [...bookingEntries, ...phaseEntries].sort((a, b) => {
       if (a.startsAt !== b.startsAt) return a.startsAt < b.startsAt ? -1 : 1;
@@ -459,6 +465,7 @@ export async function calendarRoutes(
       bookings: conflictBookings,
       phases: conflictPhases,
       turnaroundRules: ruleRows,
+      timeZone,
     });
 
     const response: CalendarResponse = CalendarResponseSchema.parse({
@@ -473,11 +480,11 @@ export async function calendarRoutes(
       // gap; the engine's advisory-only stance is unchanged.
       turnaroundRules: ruleRows,
       decisionsDue: {
-        holds: decisionRows.map((row) => toBookingEntry(row, venueZone)),
+        holds: decisionRows.map((row) => toBookingEntry(row, timeZone)),
         total: decisionRows[0]?.total ?? 0,
       },
       nextActionsDue: {
-        holds: nextActionRows.map((row) => toBookingEntry(row, venueZone)),
+        holds: nextActionRows.map((row) => toBookingEntry(row, timeZone)),
         total: nextActionRows[0]?.total ?? 0,
       },
       contested: {

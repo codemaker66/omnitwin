@@ -45,6 +45,7 @@ import {
   taskCompletionEvents,
 } from "../db/schema.js";
 import { getOpsHandoffPackBundle } from "./ops-compiler.js";
+import { newestHandoffPack } from "./newest-handoff-pack.js";
 
 type EventRow = typeof events.$inferSelect;
 type EventPhaseRow = typeof eventPhases.$inferSelect;
@@ -303,13 +304,11 @@ export async function loadEventForOpsBoard(db: Database, eventId: string): Promi
 }
 
 export async function getEventDayOpsBoard(db: Database, eventRow: EventRow): Promise<EventDayOpsBoard> {
-  const [latestPackRow] = await db.select({ id: handoffPacks.id })
-    .from(handoffPacks)
-    .where(eq(handoffPacks.eventId, eventRow.id))
-    .orderBy(desc(handoffPacks.compiledAt))
-    .limit(1);
+  // The pack that stands for the event, by the one rule the compiler and the
+  // supplier passes share (newest-handoff-pack.ts).
+  const latestPackRow = await newestHandoffPack(db, { eventId: eventRow.id, venueId: eventRow.venueId });
 
-  const handoffPack = latestPackRow === undefined
+  const handoffPack = latestPackRow === null
     ? null
     : await getOpsHandoffPackBundle(db, latestPackRow.id);
 
