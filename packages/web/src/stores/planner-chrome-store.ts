@@ -66,11 +66,46 @@ interface PlannerChromeState extends ChromeZones {
   readonly closeAll: () => void;
   /** What the room is asked to give up at this viewport width. */
   readonly viewOffset: (viewportWidth: number) => ViewOffsetRequest;
+  /** The plane's figures, as the slate reads them, for the seats meter (card-dock spec §9). */
+  readonly figures: PlaneFigures | null;
+  readonly setFigures: (figures: PlaneFigures | null) => void;
+  /** The line above the dock (spec §6.9): what just happened, for 5 s; each post is new. */
+  readonly receipt: Receipt | null;
+  readonly postReceipt: (text: string, options: { readonly undo: boolean }) => void;
+  readonly clearReceipt: () => void;
+}
+
+/** What just happened, and whether Undo takes it back. */
+export interface Receipt {
+  readonly id: number;
+  readonly text: string;
+  readonly undo: boolean;
+}
+
+let receipts = 0;
+
+/** Guests (null with no event), seats placed, and the room's published limit for the format. */
+export interface PlaneFigures {
+  readonly guests: number | null;
+  readonly seats: number;
+  readonly limit: number | null;
 }
 
 export const usePlannerChromeStore = create<PlannerChromeState>()((set, get) => ({
   left: null,
   right: null,
+  figures: null,
+  receipt: null,
+  postReceipt: (text, { undo }) => {
+    receipts += 1;
+    set({ receipt: { id: receipts, text, undo } });
+  },
+  clearReceipt: () => { set({ receipt: null }); },
+  setFigures: (figures) => {
+    const was = get().figures;
+    if (was?.guests === figures?.guests && was?.seats === figures?.seats && was?.limit === figures?.limit) return;
+    set({ figures });
+  },
   open: (zone: ChromeZone, panel: string): void => {
     if (zone === "left" && isLeftPanel(panel)) set({ left: panel });
     if (zone === "right" && isRightPanel(panel)) set({ right: panel });
