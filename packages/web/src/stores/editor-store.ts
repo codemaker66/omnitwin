@@ -2074,6 +2074,18 @@ interface OutOfDateNotesSettled {
   readonly unsettled: ReadonlyMap<string, string>;
   /** What stopped them early, after one had landed; null when they finished. */
   readonly stoppedBy: { readonly failure: unknown } | null;
+  /**
+   * The pieces the save that landed sent, which its answer is read against
+   * (notesSentIn): a piece the first of them placed goes in the later ones
+   * under its new row's id (review of #388 at d917b3d0, XA3).
+   */
+  readonly sent: readonly BatchObjectInput[];
+}
+
+/** A save of the halving that landed: its answer, and the pieces it sent. */
+interface LandedLeaving {
+  readonly answer: configApi.BatchSaveResponse;
+  readonly pieces: readonly BatchObjectInput[];
 }
 
 /**
@@ -2114,8 +2126,8 @@ async function saveLeavingOutOfDateNotes(
   const onRecord = (ids: Iterable<string>): ReadonlyMap<string, string> => new Map([...ids].map((id) => [id, recorded.get(id) ?? ""]));
   let placedAs: ReadonlyMap<string, string> = new Map<string, string>();
   let current = revision;
-  /** The save leaving these notes to the server: its answer, or its refusal for a held note. Any other failure is thrown. */
-  const leaving = async (left: ReadonlySet<string>): Promise<configApi.BatchSaveResponse | ApiError> => {
+  /** The save leaving these notes to the server: what it sent and its answer, or its refusal for a held note. Any other failure is thrown. */
+  const leaving = async (left: ReadonlySet<string>): Promise<LandedLeaving | ApiError> => {
     const pieces = batch.map((piece, index) => {
       const object = objects[index];
       if (object === undefined) return piece;
@@ -2126,7 +2138,7 @@ async function saveLeavingOutOfDateNotes(
     try {
       const answer = await send(pieces, current);
       current = answer.revision;
-      return answer;
+      return { answer, pieces };
     } catch (err) {
       if (err instanceof ApiError && err.code === NOTE_HELD_CODE) return err;
       throw err;
@@ -2136,10 +2148,12 @@ async function saveLeavingOutOfDateNotes(
   const everyNote: ReadonlySet<string> = new Set(sent);
   const first = await leaving(everyNote);
   if (first instanceof ApiError) return null;
-  let landed: { readonly saved: configApi.BatchSaveResponse; readonly left: ReadonlySet<string> } = { saved: first, left: everyNote };
+  let landed: { readonly saved: configApi.BatchSaveResponse; readonly left: ReadonlySet<string>; readonly sent: readonly BatchObjectInput[] } = {
+    saved: first.answer, left: everyNote, sent: first.pieces,
+  };
   // Rows that cannot be matched to the pieces placed would be placed again by a later save: what landed stands.
-  const placed = placedIdsOf(objects, first.objects);
-  if (placed === null) return { saved: first, left: onRecord(everyNote), unsettled: new Map(), stoppedBy: null };
+  const placed = placedIdsOf(objects, first.answer.objects);
+  if (placed === null) return { saved: first.answer, left: onRecord(everyNote), unsettled: new Map(), stoppedBy: null, sent: first.pieces };
   placedAs = placed;
 
   const outOfDate: string[] = [];
@@ -2158,7 +2172,7 @@ async function saveLeavingOutOfDateNotes(
         if (answer instanceof ApiError) {
           high = middle;
         } else {
-          landed = { saved: answer, left };
+          landed = { saved: answer.answer, left, sent: answer.pieces };
           low = middle + 1;
         }
       }
@@ -2171,7 +2185,7 @@ async function saveLeavingOutOfDateNotes(
       const rest = new Set(outOfDate);
       const answer = await leaving(rest);
       if (!(answer instanceof ApiError)) {
-        landed = { saved: answer, left: rest };
+        landed = { saved: answer.answer, left: rest, sent: answer.pieces };
         break;
       }
       // Every note left is out of date already: the same save can only be refused again.
@@ -2184,9 +2198,10 @@ async function saveLeavingOutOfDateNotes(
       left: onRecord([...landed.left].filter((id) => proven.has(id))),
       unsettled: onRecord([...landed.left].filter((id) => !proven.has(id))),
       stoppedBy: { failure },
+      sent: landed.sent,
     };
   }
-  return { saved: landed.saved, left: onRecord(outOfDate), unsettled: new Map(), stoppedBy: null };
+  return { saved: landed.saved, left: onRecord(outOfDate), unsettled: new Map(), stoppedBy: null, sent: landed.sent };
 }
 
 /**
@@ -2343,6 +2358,8 @@ async function saveDocument(
     let outOfDate: ReadonlyMap<string, string> = new Map<string, string>();
     let unsettled: ReadonlyMap<string, string> = new Map<string, string>();
     let stoppedBy: { readonly failure: unknown } | null = null;
+    // What the save that landed sent: this batch, or the last of the halving's saves that landed (XA3).
+    let sentInLanded: readonly BatchObjectInput[] = batch;
     let refusedWords: string | null = null;
     try {
       saved = await send(batch, revision);
@@ -2352,7 +2369,7 @@ async function saveDocument(
       const stale = await saveLeavingOutOfDateNotes(objects, batch, recordedNotes(sentBase), revision, send,
         () => session === configurationSession && get().configId === configId);
       if (stale === null) throw refused;
-      ({ saved, left: outOfDate, unsettled, stoppedBy } = stale);
+      ({ saved, left: outOfDate, unsettled, stoppedBy, sent: sentInLanded } = stale);
       refusedWords = refused.message;
     }
     // The server may have accepted the old document. It no longer owns this
@@ -2440,7 +2457,7 @@ async function saveDocument(
     const theirNotes = new Map(latest.objects.map((object) => [idMap.get(object.id) ?? object.id, object.notes]));
     const leftToTheServer = new Set([...outOfDate.keys(), ...unsettled.keys()]);
     const { objects: shownAfter, confirmed: base } = takingNotesKeptUnsent(
-      objectsAfter, answeredBase, notesSentIn(batch, leftToTheServer), theirNotes,
+      objectsAfter, answeredBase, notesSentIn(sentInLanded, leftToTheServer), theirNotes,
     );
     // The API's sentence is for words over a held note; a refused clear has its
     // own (ruling C3 on #388), and both stand in one notice when both are refused.

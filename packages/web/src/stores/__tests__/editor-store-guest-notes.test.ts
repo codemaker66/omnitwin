@@ -2080,6 +2080,47 @@ describe("the maker's browser, when a note it saved without the notes' word is c
     expect(server.notes.get(C)).toBe(STAFF);
     expect(server.notes.get(B)).toBe(OLD);
   });
+
+  // Review of #388 at d917b3d0, XA3. The halving's later saves send a piece its
+  // first save placed under the new row's id, and the maker's answer then holds
+  // any note written on that row between the saves. Its answer was read only
+  // against the pieces the first batch sent by id, so such a note sat in the
+  // confirmed document unmarked while the piece, edited around, stayed bare.
+  it("never names a note written on a piece the halving placed, between its saves, while the person edits (review XA3)", async () => {
+    const ON_PLACED = "TEST ONLY staff note on the piece just placed";
+    const server: PlanOnServer = { revision: 4, notes: new Map([[B, OLD], [C, OLD_C]]) };
+    await staffRewriteUnderTheMaker(server, B);
+    store().addObject(CHAIR, 11, 0, 0);
+    expect(store().objects.at(-1)?.id).toMatch(/^local-/u);
+    const api = vi.mocked(configApi.publicBatchSave).getMockImplementation();
+    if (api === undefined) throw new Error("no API model");
+    let row = "";
+    vi.mocked(configApi.publicBatchSave).mockImplementation(async (...sent) => {
+      const answer = await api(...sent);
+      if (row === "") {
+        // The halving's first landing placed the piece. Staff write on its new row through the
+        // single-piece route, which makes no new revision, and the person moves a chair meanwhile.
+        row = answer.objects.map((piece) => piece.id).find((id) => ![A, B, C].includes(id)) ?? "";
+        server.notes.set(row, ON_PLACED);
+        store().updateObject(A, { positionX: 7 });
+      }
+      return answer;
+    });
+    const first = savesSent();
+    expect(await store().saveToServer(false)).toBe(true);
+    // Refused for B; every recorded note left (it places the piece); B sent (refused); C and the new row sent (lands).
+    expect(savesSent() - first).toBe(4);
+    store().updateObject(C, { positionX: 6 });
+    await store().saveToServer(false);
+
+    const named = Array.from({ length: savesSent() - first }, (_, index) => saveSent(first + index).batch.find((piece) => piece.id === row)?.replacesNote)
+      .filter((note) => note !== undefined);
+    expect(named).toEqual([]);
+    expect(server.notes.get(row)).toBe(ON_PLACED);
+    // The maker's browser is shown the note it was answered with, as for any piece the person has not touched since.
+    expect({ onScreen: noteOn(row), held: noteHeldOn(store(), row) }).toEqual({ onScreen: ON_PLACED, held: false });
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false });
+  });
 });
 
 // ---------------------------------------------------------------------------

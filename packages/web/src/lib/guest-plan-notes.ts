@@ -361,9 +361,12 @@ export function confirmedAfterLeaving(
 
 /**
  * The note a save sent on each piece, by id, as the person had it: what its
- * answer is read against (takingNotesKeptUnsent). A piece the save places is
- * not in it: it holds what was sent. Nor is a piece in `left`, whose note the
- * save left to the server (afterLeavingOutOfDateNotes, confirmedAfterLeaving).
+ * answer is read against (takingNotesKeptUnsent). `batch` is what that very
+ * save sent: a halving's later saves send a piece its first save placed under
+ * the new row's id, and a note written on that row between them is read
+ * against it too (review of #388 at d917b3d0, XA3). A piece the save places
+ * is not in it: it holds what was sent. Nor is a piece in `left`, whose note
+ * the save left to the server (afterLeavingOutOfDateNotes, confirmedAfterLeaving).
  */
 export function notesSentIn(batch: readonly BatchObjectInput[], left: ReadonlySet<string> = NONE): ReadonlyMap<string, string> {
   const sent = new Map<string, string>();
@@ -379,9 +382,8 @@ export function notesSentIn(batch: readonly BatchObjectInput[], left: ReadonlySe
  * not send, never enters the confirmed document unmarked while the screen
  * shows other words: a save #389 settles note by note then never names it as
  * the note a piece's note replaces. The load holds the same line for work
- * kept on this device (withNotesHeld; review of d917b3d0, XA1). One gap is
- * still open: `sent` leaves out a piece the save placed, so a note written on
- * its new row between the saves of a halving escapes this (review XA3).
+ * kept on this device (withNotesHeld; review of d917b3d0, XA1), and a halving
+ * reads its answer against the pieces its last landed save sent (XA3).
  *
  * Two kinds of save name notes this browser has not shown, as ruled: Keep
  * mine in the maker's browser names those of the version it keeps the
