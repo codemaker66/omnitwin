@@ -30,6 +30,14 @@ colours the wall from those labels.
    where the views agree; project-walls.py samples at the relief unless asked to use it, because
    with one station per block it bent lettering between blocks and lifted cornices' lit edges.
 
+With bestview.OCCLUDER_MARGIN set (tools/surveyed-rooms sets it for a room; the Grand Hall leaves it at 0, and nothing
+here changes), a station's view of a texel counts in all of the above only where no occluder stands within that margin
+of its ray. The mesh outlines a thing standing proud of a wall smaller than the panoramas show it, so along the edge of
+the zone it hides, a station's picture of the thing reaches onto the wall the mesh says is in view; with one station a
+block that rim is printed sharply, and the Laplacian even prefers it on plain wall. A texel no ranked station saw clear
+takes the first that saw it at all (doubtful_views), so nothing becomes a hole. The npz then also holds seenbits (seen at
+all) and clearbits (seen clear); visbits is clearbits plus the doubtful views given.
+
 Memory stays under 1.5 GB: statistics run in bands of 64 texel rows (one row of overlap each side,
 so the Laplacian is whole), the sweep in passes of at most 40,000 blocks, and one panorama is held
 at a time. A station's bands run on SURVEY_THREADS threads (default 4) at below-normal priority, with
@@ -113,8 +121,10 @@ def region_blocks(args, grid):
 SUBS = ((-0.25, -0.25), (-0.25, 0.25), (0.25, -0.25), (0.25, 0.25))
 
 
-def band_stats(grid, st, cube, pano, r0, r1, C0, C1, nb_c0, nb_c1):
-    """One band's per-block sums for one station (rows r0..r1, columns C0..C1)."""
+def band_stats(grid, st, cube, pano, r0, r1, C0, C1, nb_c0, nb_c1, near=None):
+    """One band's per-block sums for one station (rows r0..r1, columns C0..C1). With `near` (the station's
+    bestview.occluder_cube: bestview.OCCLUDER_MARGIN is set) the sums count only the texels clear of every
+    occluder's margin, and the result ends with the band's texels the station saw at all (rows, columns)."""
     depth, valid = grid.depth, grid.valid
     H = depth.shape[0]
     e0, e1 = max(r0 - 1, 0), min(r1 + 1, H)
@@ -123,7 +133,15 @@ def band_stats(grid, st, cube, pano, r0, r1, C0, C1, nb_c0, nb_c1):
         return None
     rr = rr + e0
     cc = cc + C0
-    vis, dist, cos = B.visibility(st, cube, grid.points(rr, cc, depth[rr, cc]), grid.n)
+    pts = grid.points(rr, cc, depth[rr, cc])
+    vis, dist, cos = B.visibility(st, cube, pts, grid.n)
+    seen = ()
+    if near is not None:
+        at_all = vis & (rr >= r0) & (rr < r1)
+        seen = ((rr[at_all], cc[at_all]),)
+        vis = vis & B.clear_of_occluders(near, pts - st['t'], dist, cos)
+        if not vis.any():
+            return seen if at_all.any() else None
     if not vis.any():
         return None
     rv, cv = rr[vis], cc[vis]
@@ -155,7 +173,7 @@ def band_stats(grid, st, cube, pano, r0, r1, C0, C1, nb_c0, nb_c1):
     sums = bs(t)
     lap_sum = bs(np.where(lok, lp, 0).sum(axis=2))
     lap_n = bs(lok.sum(axis=2).astype(np.float32))
-    return a0, a1, sums, lap_sum, lap_n, ri, ci
+    return (a0, a1, sums, lap_sum, lap_n, ri, ci) + seen
 
 
 def statistics(grid, sts, rb):
@@ -174,6 +192,9 @@ def statistics(grid, sts, rb):
     visbits = np.zeros((S, H, (Wd + 7) // 8), np.uint8)
     nvalid = B.block_sum(valid.astype(np.float32), nby, nbx)
     bands = list(range(R0, R1, CHUNK))
+    margin = B.OCCLUDER_MARGIN > 0          # then visbits holds the texels seen clear of occluders, seenbits those seen at all
+    seenbits = np.zeros_like(visbits) if margin else None
+    seen_cover = np.zeros((S, nby, nbx), np.float32) if margin else None       # texels of each block a station saw at all
     with ThreadPoolExecutor(B.threads()) as pool:
         for si, st in enumerate(sts):
             if not B.station_faces_wall(st, wall):
@@ -181,14 +202,21 @@ def statistics(grid, sts, rb):
             B.wait_while_quiet()
             t0 = time.time()
             cube = P.load_depth(st['id'])
+            near = B.occluder_cube(cube) if margin else None
             pano = B.Pano(st)
             pano.lum16()
             vis_all = np.zeros((H, Wd), bool)
-            results = list(pool.map(lambda r0: band_stats(grid, st, cube, pano, r0, min(r0 + CHUNK, R1), C0, C1, bc0, bc1), bands))
+            seen_all = np.zeros((H, Wd), bool) if margin else None
+            results = list(pool.map(lambda r0: band_stats(grid, st, cube, pano, r0, min(r0 + CHUNK, R1), C0, C1, bc0, bc1, near), bands))
             seen = 0
             for res in results:
                 if res is None:
                     continue
+                if margin:
+                    seen_all[res[-1]] = True
+                    res = res[:-1]
+                    if not res:
+                        continue
                 a0, a1, sums, lap_sum, lap_n, ri, ci = res
                 vis_all[ri, ci] = True
                 seen += len(ri)
@@ -199,9 +227,16 @@ def statistics(grid, sts, rb):
                 foot[si, a0:a1, bc0:bc1] = np.where(nv > 0, sums[..., 5] / np.maximum(nv, 1), np.inf)
                 lap[si, a0:a1, bc0:bc1] = lap_sum / np.maximum(lap_n, 1)
             visbits[si] = B.pack_bits(vis_all)
+            if margin:
+                seenbits[si] = B.pack_bits(seen_all)
+                seen_cover[si] = B.block_sum(seen_all.astype(np.float32), nby, nbx)
             pano.close()
             print(f'  {st["id"]}: {seen} texels seen, {time.time() - t0:.1f} s', flush=True)
-    return dict(cover=cover, rgb=rgb, lap=lap, lum2=lum2, foot=foot, visbits=visbits, nvalid=nvalid)
+    stats = dict(cover=cover, rgb=rgb, lap=lap, lum2=lum2, foot=foot, visbits=visbits, nvalid=nvalid)
+    if margin:
+        stats['seenbits'] = seenbits
+        stats['seen_cover'] = seen_cover
+    return stats
 
 
 # ---------------------------------------------------------------- 2. rejection and labels
@@ -456,6 +491,30 @@ def texel_labels(ranked, visbits, valid, rb):
     return lab
 
 
+def doubtful_views(ranked, label, tlab, stats, valid, rb):
+    """With bestview.OCCLUDER_MARGIN set: the texels no ranked station saw clear of an occluder's margin take the
+    first station of their block's ranking that saw them at all (a block without a label borrows the nearest
+    labelled block's ranking), or failing that the station that saw most of the block at all, and count as seen by
+    it. So a texel beside an occluder keeps a doubtful view of it, the only kind there is, instead of becoming a
+    hole; everywhere else the doubtful views are left out.
+    Returns the texel labels, the stations' seen bits to colour from, and how many texels took a doubtful view."""
+    has = label >= 0
+    filled = ranked
+    if has.any() and not has.all():
+        ii, jj = ndimage.distance_transform_edt(~has, return_distances=False, return_indices=True)
+        filled = ranked[ii, jj]
+    at_all = texel_labels(filled, stats['seenbits'], valid, rb)
+    most = np.argsort(-stats['seen_cover'], axis=0, kind='stable')[:RANKED]
+    most = np.where(np.take_along_axis(stats['seen_cover'], most, 0) > 0, most, -1).astype(np.int16)
+    any_view = texel_labels(np.moveaxis(most, 0, -1), stats['seenbits'], valid, rb)
+    at_all = np.where(at_all >= 0, at_all, any_view)
+    take = (tlab < 0) & (at_all >= 0)
+    r, c = np.nonzero(take)
+    bits = stats['visbits'].copy()
+    np.bitwise_or.at(bits, (at_all[r, c].astype(np.int64), r, c >> 3), (128 >> (c & 7)).astype(np.uint8))
+    return np.where(take, at_all, tlab), bits, int(take.sum())
+
+
 # ---------------------------------------------------------------- 4. depth
 
 def best_three(ranked, keep):
@@ -623,6 +682,14 @@ def main():
     label, method, log = solve_labels(cand['D'], wr, wd)
     ranked = ranked_lists(cand['D'], label, cand['keep'], stats['cover'])
     tlab = texel_labels(ranked, stats['visbits'], valid, rb)
+    extra, margin = {}, None
+    if 'seenbits' in stats:                 # bestview.OCCLUDER_MARGIN is set
+        clear = int((tlab >= 0).sum())
+        tlab, bits, doubtful = doubtful_views(ranked, label, tlab, stats, valid, rb)
+        extra = dict(seenbits=stats['seenbits'], clearbits=stats['visbits'])
+        stats['visbits'] = bits
+        margin = dict(metres=B.OCCLUDER_MARGIN, cubemap_texels_at_most=B.MARGIN_TEXELS, texels_labelled_clear=clear,
+                      texels_given_a_doubtful_view=doubtful)
     t2 = time.time()
     cost, todo = sweep(grid, sts, ranked, cand['keep'], stats, rb)
     delta, reliable, contrast, base = depth_field(cost, todo)
@@ -636,7 +703,7 @@ def main():
                         lap=stats['lap'], foot=np.where(np.isfinite(stats['foot']), stats['foot'], 0).astype(np.float32),
                         visbits=stats['visbits'], glare=cand['glare'], occl=cand['occl'], keep=cand['keep'], glare_changed=cand['glare_changed'],
                         D=np.where(np.isfinite(cand['D']), cand['D'], -1).astype(np.float32),
-                        region=np.array(rb), depths=DEPTHS)
+                        region=np.array(rb), depths=DEPTHS, **extra)
     has = label >= 0
     share = {ids[s]: round(float((label[has] == s).mean()), 4) for s in np.unique(label[has])}
     share = dict(sorted(share.items(), key=lambda kv: -kv[1]))
@@ -655,6 +722,8 @@ def main():
                   sweep=dict(blocks=int(todo.sum()), reliable=int(reliable.sum()), base_m=round(float(base), 4),
                              delta_mm_percentiles={p: round(float(np.percentile(delta[todo], p) * 1000), 1) for p in (5, 25, 50, 75, 95)} if todo.any() else {}),
                   seconds=dict(statistics=round(t1 - t0, 1), labels=round(t2 - t1, 1), depth=round(t3 - t2, 1)), peak_mb=B.peak_mb())
+    if margin is not None:
+        report['occluder_margin'] = margin
     B.save_json(os.path.join(args.out, f'labels-{wall}.json'), report)
     print(json.dumps({k: report[k] for k in ('labelled_blocks', 'glare_rejections', 'occluder_rejections', 'blocks_where_glare_changed_the_choice',
                                              'label_data_cost_median', 'seams', 'sweep', 'seconds', 'peak_mb')}), flush=True)
