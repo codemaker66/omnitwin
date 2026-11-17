@@ -1930,6 +1930,29 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     expect(store().leftBehind).toMatchObject({ notRemoved: TABLE_7_NOT_REMOVED });
   });
 
+  // Review of #388 at d917b3d0, XB3. Back in that layout, Show their version
+  // puts its own standing notice away but not the carried sentence, which
+  // stands until the person dismisses it (the description's Limits say so).
+  it("keeps the carried sentence through Show their version after going back to its layout", async () => {
+    const tables = await refusedThenSwitched();
+    await store().loadConfiguration(PLAN, false);
+    const at = store().configRevision ?? 0;
+    // Someone saves a newer version; the person's next save meets it, and they take theirs.
+    vi.mocked(configApi.publicBatchSave).mockRejectedValueOnce(
+      new ApiError(409, "Layout changed on the server. Reload before saving again.", "REVISION_CONFLICT", { expectedRevision: at, currentRevision: at + 1 }),
+    );
+    vi.mocked(configApi.getPublicConfig).mockResolvedValue({
+      ...plan([placed(A, {}, 2), ...tables.map((id, index) => placed(id, { displayLabel: `Table ${String(index + 1)}`, noteHeld: true }, index + 1))], false),
+      revision: at + 1,
+    });
+    store().updateObject(A, { positionX: 4 });
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(store().saveConflict?.currentRevision).toBe(at + 1);
+    await store().showTheirVersion(false);
+    expect(store()).toMatchObject({ noteClearsRefused: [], saveError: null, saveConflict: null, configRevision: at + 1 });
+    expect(store().leftBehind).toMatchObject({ configId: PLAN, notRemoved: TABLE_7_NOT_REMOVED });
+  });
+
   it("carries the earlier layout's sentence on in the note the next layout leaves behind", async () => {
     await refusedThenSwitched();
     // In the other layout the person moves a piece offline, and opens a third: that work is kept on this device.
