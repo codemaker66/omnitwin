@@ -1,3 +1,4 @@
+import { createServer, type Socket as NetSocket } from "node:net";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { CANONICAL_ASSETS } from "@omnitwin/types";
 import { readPdfPages, squashed, timesOnEachPage, type PdfPage } from "./support/pdf-text.js";
@@ -112,12 +113,36 @@ function appOrigin(baseURL: string | undefined): string {
   return new URL(baseURL).origin;
 }
 
-/** Records every request the browser makes; answers the plan read and refuses anything else bound off the app. */
-async function keepToTheDevice(context: BrowserContext, app: string): Promise<Sent[]> {
-  const sent: Sent[] = [];
+interface Socket {
+  readonly url: string;
+  readonly framesSent: string[];
+}
+
+interface Traffic {
+  readonly requests: Sent[];
+  /** Every WebSocket any page opened: requests never include them, and routes do not see them. */
+  readonly sockets: Socket[];
+}
+
+/**
+ * Records every request and every WebSocket the browser opens, from before
+ * the first navigation and across reloads; answers the plan read and refuses
+ * any other request bound off the app.
+ */
+async function keepToTheDevice(context: BrowserContext, app: string): Promise<Traffic> {
+  const traffic: Traffic = { requests: [], sockets: [] };
   context.on("request", (request) => {
-    sent.push({ method: request.method(), url: request.url(), body: request.postData() ?? "", headers: JSON.stringify(request.headers()) });
+    traffic.requests.push({ method: request.method(), url: request.url(), body: request.postData() ?? "", headers: JSON.stringify(request.headers()) });
   });
+  const watchSockets = (page: Page): void => {
+    page.on("websocket", (socket) => {
+      const opened: Socket = { url: socket.url(), framesSent: [] };
+      traffic.sockets.push(opened);
+      socket.on("framesent", (frame) => { opened.framesSent.push(frame.payload.toString()); });
+    });
+  };
+  context.pages().forEach(watchSockets);
+  context.on("page", watchSockets);
   await context.route((url) => url.origin !== app, async (route) => {
     const request = route.request();
     if (request.method() === "GET" && new URL(request.url()).pathname === PLAN_READ) {
@@ -126,14 +151,28 @@ async function keepToTheDevice(context: BrowserContext, app: string): Promise<Se
     }
     await route.abort();
   });
-  return sent;
+  return traffic;
 }
 
 /** Each request bound off the app's own origin, as "METHOD /path". */
 function awayFromTheApp(sent: readonly Sent[], app: string): string[] {
   return sent
-    .filter((request) => /^(?:https?|wss?):/u.test(request.url) && new URL(request.url).origin !== app)
+    .filter((request) => /^https?:/u.test(request.url) && new URL(request.url).origin !== app)
     .map((request) => `${request.method} ${new URL(request.url).pathname}`);
+}
+
+/**
+ * Each WebSocket opened anywhere but the app's own dev server (its hot-reload
+ * socket), matched by exact origin: the app's scheme as ws or wss, its host and port.
+ */
+function socketsAwayFromTheApp(traffic: Traffic, app: string): string[] {
+  const own = app.replace(/^http/u, "ws");
+  return traffic.sockets.map((socket) => socket.url).filter((url) => new URL(url).origin !== own);
+}
+
+/** Every socket address, or frame sent on a socket, that carries the canary. */
+function canaryOnSockets(traffic: Traffic): string[] {
+  return traffic.sockets.flatMap((socket) => [socket.url, ...socket.framesSent]).filter((text) => text.includes(CANARY));
 }
 
 function watchAddresses(page: Page): string[] {
@@ -277,7 +316,8 @@ test.describe("the guest list journey", () => {
 
   test("from opening the page to the print dialog in the step budget, and nothing is sent", async ({ page, context, baseURL }) => {
     const app = appOrigin(baseURL);
-    const sent = await keepToTheDevice(context, app);
+    const traffic = await keepToTheDevice(context, app);
+    const sent = traffic.requests;
     const addresses = watchAddresses(page);
 
     await seatTheList(page, app);
@@ -288,6 +328,7 @@ test.describe("the guest list journey", () => {
     const hands = await handsCounted(page);
     const away = awayFromTheApp(sent, app);
     report(`journey: ${String(hands.clicks)} clicks, ${String(hands.fields)} typed field(s), ${String(hands.pastes)} paste(s), ${String(hands.prints)} print call(s); ${String(sent.length)} requests in all, off the app: ${JSON.stringify(away)}`);
+    report(`journey sockets: ${JSON.stringify(traffic.sockets.map((socket) => new URL(socket.url).origin))}, off the app: ${JSON.stringify(socketsAwayFromTheApp(traffic, app))}`);
     report(`journey addresses: ${JSON.stringify(addresses.map((address) => new URL(address).pathname + new URL(address).search))}`);
 
     expect(hands.clicks).toBeLessThanOrEqual(10);
@@ -298,13 +339,15 @@ test.describe("the guest list journey", () => {
     expect(sent.filter((request) => `${request.url}\n${request.body}\n${request.headers}`.includes(CANARY)).map((request) => request.url)).toEqual([]);
     expect((await context.cookies()).filter((cookie) => `${cookie.name}=${cookie.value}`.includes(CANARY))).toEqual([]);
     expect(away).toEqual([`GET ${PLAN_READ}`]);
+    expect(socketsAwayFromTheApp(traffic, app)).toEqual([]);
+    expect(canaryOnSockets(traffic)).toEqual([]);
     expect(addresses.length).toBeGreaterThan(0);
     expect(addresses.filter((address) => new URL(address).searchParams.get("kit") !== "on")).toEqual([]);
   });
 
   test("the list is still there after a reload", async ({ page, context, baseURL }) => {
     const app = appOrigin(baseURL);
-    await keepToTheDevice(context, app);
+    const traffic = await keepToTheDevice(context, app);
     await seatTheList(page, app);
     // The page keeps each change on the device a moment after it is made: reload once the seated list is kept.
     await expect.poll(() => keptOnDevice(page)).toEqual({ guests: GUESTS, seated: GUESTS });
@@ -316,6 +359,37 @@ test.describe("the guest list journey", () => {
     await expect(page.getByRole("button", { name: `Tables ${String(TABLES)}`, exact: true })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Paste the names" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Print the table plan", exact: true })).toBeVisible();
+    // Before and after the reload, no socket went anywhere but the app's own dev server, and none carried a name.
+    report(`reload sockets: ${JSON.stringify(traffic.sockets.map((socket) => new URL(socket.url).origin))}`);
+    expect(socketsAwayFromTheApp(traffic, app)).toEqual([]);
+    expect(canaryOnSockets(traffic)).toEqual([]);
+  });
+
+  test("the socket check notices a socket that leaves the app", async ({ page, context, baseURL }) => {
+    const app = appOrigin(baseURL);
+    const traffic = await keepToTheDevice(context, app);
+    // A real listener on this machine, on a port of its own: another origin, and nothing leaves the device. It
+    // refuses the handshake; the check is about the socket being opened, not about it connecting.
+    const connections = new Set<NetSocket>();
+    const listener = createServer((connection) => {
+      connections.add(connection);
+      connection.on("close", () => { connections.delete(connection); });
+      connection.end("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    });
+    await new Promise<void>((resolve) => { listener.listen(0, "127.0.0.1", resolve); });
+    try {
+      const address = listener.address();
+      if (address === null || typeof address === "string") throw new Error("The listener has no port.");
+      const stray = `ws://127.0.0.1:${String(address.port)}/${CANARY}`;
+      await page.goto(LIST_ADDRESS);
+      await expect(page.getByRole("button", { name: "Paste a list", exact: true })).toBeVisible();
+      await page.evaluate((url) => { void new WebSocket(url); }, stray);
+      await expect.poll(() => socketsAwayFromTheApp(traffic, app)).toEqual([stray]);
+      expect(canaryOnSockets(traffic)).toEqual([stray]);
+    } finally {
+      for (const connection of connections) connection.destroy();
+      await new Promise<void>((resolve) => { listener.close(() => { resolve(); }); });
+    }
   });
 
   test("the table plan prints readable, on whole A4 pages, with its version on every page", async ({ page, context, baseURL }) => {
