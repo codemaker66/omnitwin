@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { GUEST_ENQUIRY_LATEST_EVENT_DATE, GUEST_ENQUIRY_LIMITS } from "@omnitwin/types";
 import { ActivityIndicator } from "../shared/Activity.js";
+import { EnquiryTrapField, useEnquiryTrap } from "../shared/EnquiryTrap.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
@@ -18,6 +19,7 @@ import { roomPhrase } from "../../lib/unrecorded-ask.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { isValidEmail } from "../../lib/email-validation.js";
+import { guestToday } from "../../lib/guest-today.js";
 import { messageLengthProblem } from "../../lib/enquiry-message-length.js";
 import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
 import { PLAN_LINK_CONSEQUENCE } from "./VisitorPlanLinkActions.js";
@@ -256,6 +258,13 @@ export function GuestEnquiryModal({ configId, onClose, onSubmitted }: GuestEnqui
   const venue = usePlannerVenueIdentity(venueId);
   const venueName = venue.known ? venue.name : null;
   const [draft] = useState(() => initialDraft(configId));
+  // The hidden field no person reaches, and how long the form is open. A
+  // form that opens with what this guest typed before in this tab (a kept
+  // draft, or the contact details of their last send) may rightly be sent at
+  // once, so it sends no time; the hidden field is sent all the same.
+  const { inputRef: hiddenFieldRef, read: readHiddenTrap } = useEnquiryTrap(
+    Object.values(draft).every((value) => value === ""),
+  );
   const [email, setEmail] = useState(draft.email);
   const [phone, setPhone] = useState(draft.phone);
   const [name, setName] = useState(draft.name);
@@ -269,12 +278,20 @@ export function GuestEnquiryModal({ configId, onClose, onSubmitted }: GuestEnqui
   const [emailTouched, setEmailTouched] = useState(false);
   /** Counts Sends; the alert below is a new one each Send (review of #405, F1). */
   const [sends, setSends] = useState(0);
+  /** Whether a Send has held the message for its length; from then on the
+   *  sentence beside it follows the message as the guest edits it. */
+  const [messageChecked, setMessageChecked] = useState(false);
+  /** Counts the Sends that held the message since the guest last edited it:
+   *  each says the sentence again and takes focus there. */
+  const [messageHolds, setMessageHolds] = useState(0);
+  const messageProblemRef = useRef<HTMLParagraphElement>(null);
   // A view-only link, never the planner address (planner-qol E-10): /plan/<id>
   // is an anonymous plan's edit capability, so whoever was sent it could
   // change the layout the venue is reading.
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const emailRef = useRef<HTMLInputElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
 
@@ -296,8 +313,19 @@ export function GuestEnquiryModal({ configId, onClose, onSubmitted }: GuestEnqui
     return () => { clearTimeout(timer); };
   }, []);
 
+  // A held message: focus goes to it once its sentence is drawn beside it,
+  // and the sentence is brought into view with it (review of #405, Q1).
+  useEffect(() => {
+    if (messageHolds === 0) return;
+    messageRef.current?.focus();
+    messageProblemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [messageHolds]);
+
   const emailValid = isValidEmail(email);
   const showEmailHint = emailTouched && email.trim().length > 0 && !emailValid;
+  // Recomputed as the guest edits, so the number is never one they have
+  // already cut (review of #405, Q2).
+  const messageProblem = messageChecked ? messageLengthProblem(message) : null;
 
   // The venue's published capacity for this room, keyed to the typed guest
   // count and read against the layout on the floor (standing poseurs are a
@@ -329,11 +357,10 @@ export function GuestEnquiryModal({ configId, onClose, onSubmitted }: GuestEnqui
     }
 
     // A message longer than the API takes is kept, never cut, and held here
-    // with the reason (review of #405, F5).
-    const messageProblem = messageLengthProblem(message);
-    if (messageProblem !== null) {
-      setError(messageProblem);
-      messageRef.current?.focus();
+    // with the reason beside it (review of #405, F5, Q1).
+    if (messageLengthProblem(message) !== null) {
+      setMessageChecked(true);
+      setMessageHolds((count) => count + 1);
       return;
     }
 
@@ -348,6 +375,7 @@ export function GuestEnquiryModal({ configId, onClose, onSubmitted }: GuestEnqui
         eventType: eventType !== "" ? eventType : undefined,
         guestCount: guestCount !== "" ? parseInt(guestCount, 10) : undefined,
         message: message.trim() !== "" ? message.trim() : undefined,
+        ...readHiddenTrap(),
       });
       storeJson(DRAFT_KEY_PREFIX + configId, null);
       storeJson(CONTACT_KEY, { email: email.trim(), phone: phone.trim(), name: name.trim() });
@@ -358,7 +386,7 @@ export function GuestEnquiryModal({ configId, onClose, onSubmitted }: GuestEnqui
     } finally {
       setIsSubmitting(false);
     }
-  }, [configId, email, phone, name, eventDate, eventType, guestCount, message, emailValid, onSubmitted]);
+  }, [configId, email, phone, name, eventDate, eventType, guestCount, message, emailValid, readHiddenTrap, onSubmitted]);
 
   // Escape closes it wherever focus is, through the planner's one keyboard
   // owner, and while it is open the planner's shortcuts leave the room alone.
@@ -638,9 +666,13 @@ export function GuestEnquiryModal({ configId, onClose, onSubmitted }: GuestEnqui
               }}>
                 Event date
               </label>
+              {/* No date before the guest's own today (Blake, 13 November
+                  2026): the browser refuses one in its own words. */}
               <input
+                ref={dateRef}
                 id="ge-date"
                 type="date"
+                min={guestToday()}
                 max={GUEST_ENQUIRY_LATEST_EVENT_DATE}
                 className="omni-enq-input"
                 value={eventDate}
@@ -720,21 +752,51 @@ export function GuestEnquiryModal({ configId, onClose, onSubmitted }: GuestEnqui
             }}>
               Anything else?
             </label>
+            {/* Beside the message, where focus lands, never only above the
+                form, which a phone has scrolled out of view (review of #405,
+                Q1). An alert at each Send that holds it; a plain line, its
+                number following the message, once the guest edits (Q2). */}
+            {messageProblem !== null && (
+              <p
+                key={messageHolds}
+                ref={messageProblemRef}
+                id="ge-message-problem"
+                role={messageHolds > 0 ? "alert" : undefined}
+                style={{
+                  padding: "10px 14px", borderRadius: 10, margin: "0 0 8px",
+                  background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+                  fontSize: 13, color: "#f87171", lineHeight: 1.4,
+                }}
+              >
+                {messageProblem}
+              </p>
+            )}
             <textarea
               ref={messageRef}
               id="ge-message"
               className="omni-enq-input"
               style={{ minHeight: 72, resize: "vertical" }}
               value={message}
-              onChange={(e) => { setMessage(e.target.value); }}
+              aria-invalid={messageProblem !== null}
+              aria-describedby={messageProblem !== null ? "ge-message-problem" : undefined}
+              onChange={(e) => { setMessage(e.target.value); setMessageHolds(0); }}
               placeholder="Event details"
             />
           </div>
+
+          <EnquiryTrapField inputRef={hiddenFieldRef} />
 
           {/* Submit CTA */}
           <button
             type="submit"
             disabled={isSubmitting}
+            onClick={() => {
+              // Today is read as Send checks the form, never only when it was
+              // drawn: a form left open past midnight takes the new day. The
+              // click comes before the browser checks the fields (Enter in a
+              // field clicks this button too).
+              if (dateRef.current !== null) dateRef.current.min = guestToday();
+            }}
             style={{
               width: "100%", padding: "14px 20px", fontSize: 15, fontWeight: 700,
               display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
