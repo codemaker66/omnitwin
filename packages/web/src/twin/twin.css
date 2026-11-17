@@ -642,6 +642,11 @@
   line-height: 1.4;
 }
 
+/* The same sentence beside the field it is about, between its label and it. */
+.vv-twin-enq-error--field {
+  margin: 0 0 8px;
+}
+
 .vv-twin-enq-label {
   display: block;
   margin: 0 0 6px;
