@@ -112,6 +112,41 @@ function oneAcknowledgementADay(recipient: string): SendLimit {
   };
 }
 
+/**
+ * The least time a person takes over a public enquiry form before Send (Blake,
+ * 12 November 2026: "a minimum fill of about 3 s").
+ */
+const TRAP_LEAST_OPEN_MS = 3000;
+
+/** Which of the public forms' hidden traps an enquiry hit. */
+type TrapHit = "field" | "time" | "field and time";
+
+/**
+ * Whether an enquiry hit the public forms' hidden trap (Blake, 12 November
+ * 2026): its hidden field holds anything, or its form was open under
+ * TRAP_LEAST_OPEN_MS before Send. The forms send both readings
+ * (web components/shared/EnquiryTrap.tsx); a field that is absent is no hit,
+ * so a page open since before the trap, which sends neither, is judged as
+ * every enquiry was before it. "A hit keeps the enquiry, suppresses the
+ * emails and logs it, never refuses": it is answered and stored as any other
+ * and the team is told in the app, so a person caught by mistake is still
+ * seen, but neither the guest's acknowledgement nor the team's email goes.
+ */
+function trapHit(reading: { readonly trap?: string; readonly openMs?: number }): TrapHit | null {
+  const field = reading.trap !== undefined && reading.trap !== "";
+  const time = reading.openMs !== undefined && reading.openMs < TRAP_LEAST_OPEN_MS;
+  if (field && time) return "field and time";
+  if (field) return "field";
+  return time ? "time" : null;
+}
+
+/** A send held back whatever else would allow it, under the same lock as
+ *  `limit`: recorded as "suppressed", as one the one-a-day limit holds back
+ *  is, and so never counted against that address's day. */
+function heldBack(limit: SendLimit): SendLimit {
+  return { lockKey: limit.lockKey, allows: () => Promise.resolve(false) };
+}
+
 /** The venue's first room in use (lowest sortOrder, then the oldest): where
  *  an enquiry that names no room is filed. */
 async function flagshipRoom(db: Database, venueId: string): Promise<{ id: string; name: string } | undefined> {
@@ -442,6 +477,17 @@ export async function publicEnquiryRoutes(
         "enquiry kept without its engagement: recording it failed",
       );
     }
+    // The hidden trap (trapHit): stored and answered as any other, told to
+    // the team in the app below, and emailed to nobody. The line names the
+    // enquiry, the trap and the time the form says it was open; never the
+    // guest, their address or their words, nor what the field held.
+    const trapped = trapHit(parsed.data);
+    if (trapped !== null) {
+      request.log.warn(
+        { event: "enquiry.trapped", enquiryId: enquiry.id, venueId: anchor.venueId, trap: trapped, openMs: parsed.data.openMs ?? null },
+        "enquiry kept and its emails held back: it hit the public form's hidden trap",
+      );
+    }
 
     // Notify hallkeeper(s) of the venue
     const roomName = anchor.roomName;
@@ -503,7 +549,8 @@ export async function publicEnquiryRoutes(
     // The venue's own acknowledgement to the organiser. Until this existed a
     // guest got a 201 and silence. Idempotent per enquiry, so a retried POST
     // or a replayed webhook cannot thank the same person twice, and at most
-    // one a day to one address (oneAcknowledgementADay).
+    // one a day to one address (oneAcknowledgementADay). One that hit the
+    // trap is recorded as held back and never handed to the provider.
     if (!accessRequest && !pricingEnquiry) {
       const acknowledgement = await enquiryAcknowledgement({
         venueName,
@@ -519,62 +566,65 @@ export async function publicEnquiryRoutes(
         db,
         idempotencyKey: `${ACKNOWLEDGEMENT_KEY}${enquiry.id}`,
         logger: request.log,
-        limit: oneAcknowledgementADay(parsed.data.email),
+        limit: trapped === null ? oneAcknowledgementADay(parsed.data.email) : heldBack(oneAcknowledgementADay(parsed.data.email)),
       });
     }
 
-    // ENQUIRY_EMAIL_ROLES at this venue, one email per inbox.
-    const venueRecipients = await db.select({ id: users.id, email: users.email })
-      .from(users)
-      .where(and(eq(users.venueId, anchor.venueId), inArray(users.role, [...ENQUIRY_EMAIL_ROLES])));
-    const seenInboxes = new Set<string>();
-    const announced = venueRecipients.filter((user) => {
-      const inbox = user.email.trim().toLowerCase();
-      if (seenInboxes.has(inbox)) return false;
-      seenInboxes.add(inbox);
-      return true;
-    });
-
-    // A venue with none of those users is the silent-revenue-leak case: the
-    // enquiry is stored, this loop runs zero times, and the guest still gets a
-    // 201 saying the events team has it. Fall back to a configured address so a
-    // lead can never reach nobody, and log loudly when there is no one at all.
-    const fallbackRaw = process.env["ENQUIRY_FALLBACK_EMAIL"] ?? "";
-    const fallback = fallbackRaw.trim();
-    const recipients: readonly { id: string; email: string }[] =
-      announced.length > 0
-        ? announced
-        : fallback !== ""
-          ? [{ id: "fallback", email: fallback }]
-          : [];
-
-    if (recipients.length === 0) {
-      request.log.error(
-        { enquiryId: enquiry.id, venueId: anchor.venueId },
-        "enquiry stored but NOT announced: venue has no sales, manager or hallkeeper user and ENQUIRY_FALLBACK_EMAIL is unset",
-      );
-    }
-
-    for (const hk of recipients) {
-      const emailData = await newEnquiryNotification({
-        roomName,
-        source,
-        eventType: eventTypeWords,
-        contactName: displayName,
-        contactEmail: parsed.data.email,
-        contactPhone: parsed.data.phone ?? null,
-        eventDate: parsed.data.eventDate ?? null,
-        guestCount: parsed.data.guestCount ?? null,
-        message: parsed.data.message ?? null,
-        dashboardUrl: `${process.env["FRONTEND_URL"] ?? "http://localhost:5173"}/dashboard`,
+    // ENQUIRY_EMAIL_ROLES at this venue, one email per inbox. An enquiry that
+    // hit the trap is emailed to nobody; the in-app notice above has it.
+    if (trapped === null) {
+      const venueRecipients = await db.select({ id: users.id, email: users.email })
+        .from(users)
+        .where(and(eq(users.venueId, anchor.venueId), inArray(users.role, [...ENQUIRY_EMAIL_ROLES])));
+      const seenInboxes = new Set<string>();
+      const announced = venueRecipients.filter((user) => {
+        const inbox = user.email.trim().toLowerCase();
+        if (seenInboxes.has(inbox)) return false;
+        seenInboxes.add(inbox);
+        return true;
       });
-      // Idempotency key scoped to (enquiry, recipient) so a webhook replay
-      // or retry of the POST doesn't double-notify any one hallkeeper.
-      sendEmailAsync({ to: hk.email, ...emailData }, {
-        db,
-        idempotencyKey: `enquiry-new:${enquiry.id}:${hk.id}`,
-        logger: request.log,
-      });
+
+      // A venue with none of those users is the silent-revenue-leak case: the
+      // enquiry is stored, this loop runs zero times, and the guest still gets a
+      // 201 saying the events team has it. Fall back to a configured address so a
+      // lead can never reach nobody, and log loudly when there is no one at all.
+      const fallbackRaw = process.env["ENQUIRY_FALLBACK_EMAIL"] ?? "";
+      const fallback = fallbackRaw.trim();
+      const recipients: readonly { id: string; email: string }[] =
+        announced.length > 0
+          ? announced
+          : fallback !== ""
+            ? [{ id: "fallback", email: fallback }]
+            : [];
+
+      if (recipients.length === 0) {
+        request.log.error(
+          { enquiryId: enquiry.id, venueId: anchor.venueId },
+          "enquiry stored but NOT announced: venue has no sales, manager or hallkeeper user and ENQUIRY_FALLBACK_EMAIL is unset",
+        );
+      }
+
+      for (const hk of recipients) {
+        const emailData = await newEnquiryNotification({
+          roomName,
+          source,
+          eventType: eventTypeWords,
+          contactName: displayName,
+          contactEmail: parsed.data.email,
+          contactPhone: parsed.data.phone ?? null,
+          eventDate: parsed.data.eventDate ?? null,
+          guestCount: parsed.data.guestCount ?? null,
+          message: parsed.data.message ?? null,
+          dashboardUrl: `${process.env["FRONTEND_URL"] ?? "http://localhost:5173"}/dashboard`,
+        });
+        // Idempotency key scoped to (enquiry, recipient) so a webhook replay
+        // or retry of the POST doesn't double-notify any one hallkeeper.
+        sendEmailAsync({ to: hk.email, ...emailData }, {
+          db,
+          idempotencyKey: `enquiry-new:${enquiry.id}:${hk.id}`,
+          logger: request.log,
+        });
+      }
     }
 
     return reply.status(201).send({
