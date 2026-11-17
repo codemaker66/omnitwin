@@ -72,6 +72,28 @@ describe("the v1 planner's notes about work that outlived its page", () => {
     expect(useEditorStore.getState().leftBehind).toBeNull();
   });
 
+  // Review of #388 at d917b3d0, XB1. A note and the restore receipt can stand
+  // together (a layout's work lost on the switch, the next layout's restored).
+  // In one alert, each change of the receipt from Saving to Saved re-read the
+  // whole lost-work sentence assertively. The note is the alert; the receipt,
+  // which is progress, is a polite status beside it, never inside it.
+  it("says lost work as an alert and the restore receipt beside it as a status, so the receipt's progress never re-reads the note", () => {
+    const lost = "Your changes to the Grand Hall layout did not reach Venviewer, and this browser could not keep them.";
+    useEditorStore.setState({ leftBehind: { configId: "cfg-0", roomName: "Grand Hall", kept: false, savesOnReturn: false } });
+    const { rerender } = render(<PlannerLeavingNotes />);
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toBe(lost);
+    expect(screen.getByRole("status").textContent).toMatch(/^Restored 3 changes you made at \d\d:\d\d on this device · Saving$/u);
+    expect(alert.contains(screen.getByRole("status"))).toBe(false);
+
+    useEditorStore.setState({ isDirty: false, lastSavedAt: new Date("2026-10-27T21:42:00Z") });
+    rerender(<PlannerLeavingNotes />);
+    expect(screen.getByRole("status").textContent).toContain("· Saved 21:42");
+    // The alert is the same region, its words untouched.
+    expect(screen.getByRole("alert")).toBe(alert);
+    expect(alert.textContent).toBe(lost);
+  });
+
   it("leaves the spot to the save-error toast", () => {
     useEditorStore.setState({ saveError: "Server error" });
     render(<PlannerLeavingNotes />);

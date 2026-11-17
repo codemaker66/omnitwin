@@ -57,11 +57,14 @@ export function PlannerLeavingNotes(): ReactElement | null {
         boxShadow: "0 8px 24px -8px rgba(0,0,0,0.6)",
       }}
     >
-      {/* The words alone are the live region: the dismiss key is not news. */}
-      <span role={alert ? "alert" : "status"} aria-live={alert ? "assertive" : "polite"} style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
-        {note !== null ? <span>{note}</span> : null}
+      {/* The words alone are live regions: the dismiss key is not news. The
+          note and the receipt are two, side by side: the receipt goes from
+          Saving to Saved, one polite status as the house says progress, and
+          never re-reads an alert's sentence (review of d917b3d0, XB1). */}
+      <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+        {note !== null ? <span role={alert ? "alert" : "status"} aria-live={alert ? "assertive" : "polite"}>{note}</span> : null}
         {receipt !== null ? (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <span role="status" aria-live="polite" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             {receipt.working ? <ActivityIndicator size={16} /> : null}
             <span>{receipt.lead} · {receipt.status}</span>
           </span>
