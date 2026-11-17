@@ -167,6 +167,18 @@ function placedFor(id: CardId, counts: FloorCounts): number {
   }
 }
 
+/**
+ * The card of a hand that counts these pieces: the one whose number in the
+ * room falls when they are taken off the floor, which is the card they go back
+ * to. Null where no card of this hand counts them (a piece from More, a chair
+ * on its own, one trestle of a longer table).
+ */
+export function handCardCounting(hand: readonly CardId[], items: readonly PlacedItem[], pieces: ReadonlySet<string>): CardId | null {
+  const withThem = floorCounts(items);
+  const without = floorCounts(items.filter((item) => !pieces.has(item.id)));
+  return hand.find((id) => placedFor(id, without) < placedFor(id, withThem)) ?? null;
+}
+
 /** One card's face for the hand, or null when the catalogue no longer holds its piece. */
 export function handCard(id: CardId, counts: FloorCounts, chairSlug: string): HandCard | null {
   const params = cardParamsFor(id);

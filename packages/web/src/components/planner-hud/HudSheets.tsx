@@ -25,6 +25,7 @@ import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
 import { useHudFacts } from "./hud-facts.js";
 import { CloseGlyph, MinusGlyph, PlusGlyph } from "./glyphs.js";
+import { handKeyboardOn } from "./keyboard-hand-off.js";
 import { onRadioGroupKeyDown, radioTabIndex } from "./radio-keys.js";
 
 // ---------------------------------------------------------------------------
@@ -42,19 +43,6 @@ function close(): void {
 }
 
 /**
- * Whether a key is on the page to take the keyboard: there, not put away, not
- * off, and laid out. (The phone's top bar shows only the current step, and the
- * primary key stands aside while its own sheet is open.) A page with no layout
- * at all, a test's, lays nothing out: there, being on the page is all there is
- * to ask.
- */
-function canTakeFocus(key: HTMLElement | null): key is HTMLElement {
-  if (key === null || !key.isConnected || key.hidden || (key instanceof HTMLButtonElement && key.disabled)) return false;
-  if (typeof key.checkVisibility === "function") return key.checkVisibility();
-  return key.getClientRects().length > 0 || document.documentElement.getClientRects().length === 0;
-}
-
-/**
  * A sheet's title, and the keyboard's way in and out of the sheet. A sheet
  * opens a long way, in the page's order, from the step, card or key that
  * opened it. So focus goes to its title as it opens: the next Tab is its first
@@ -63,7 +51,8 @@ function canTakeFocus(key: HTMLElement | null): key is HTMLElement {
  * shut from outside (the step again, a card taken), focus stays where it is.
  * Where what opened it has gone (the first screen's answer) or cannot be seen
  * (a step the phone's bar has folded away), focus goes to the sheet's own
- * step, and failing that to the one primary key: never to the bare page.
+ * step, and failing that to the one primary key: never to the bare page
+ * (keyboard-hand-off.ts, which the shelf's other parts that leave use too).
  */
 function SheetTitle({ children }: { readonly children: ReactNode }): ReactElement {
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -82,19 +71,14 @@ function SheetTitle({ children }: { readonly children: ReactNode }): ReactElemen
       const opener = openerRef.current;
       const root = sheet.closest<HTMLElement>(".hud-root");
       const step = sheet.dataset["sheet"] ?? "";
-      // Given back once the screen has settled: the opener may be the primary key, which stands aside while its own sheet is open.
-      queueMicrotask(() => {
-        // Only where shutting the sheet left the keyboard nowhere. Not where the sheet is still up (the effect's second
-        // run, above) or where another sheet has opened in its place and taken the keyboard to its own title.
-        const now = document.activeElement;
-        if (now instanceof HTMLElement && now !== document.body && now.isConnected) return;
-        const places = [
-          opener,
-          root?.querySelector<HTMLElement>(`.hud-step[data-step="${step}"]`) ?? null,
-          root?.querySelector<HTMLElement>(".hud-shelf__act .hud-act") ?? null,
-        ];
-        places.find(canTakeFocus)?.focus({ preventScroll: true });
-      });
+      // Given back once the screen has settled (the opener may be the primary key, which stands aside while its own
+      // sheet is open), and only where shutting the sheet left the keyboard nowhere: not where the sheet is still up
+      // (the effect's second run, above) or where another sheet has opened in its place and taken it to its own title.
+      handKeyboardOn(() => [
+        opener,
+        root?.querySelector<HTMLElement>(`.hud-step[data-step="${step}"]`) ?? null,
+        root?.querySelector<HTMLElement>(".hud-shelf__act .hud-act") ?? null,
+      ]);
     };
   }, []);
   return <h2 ref={titleRef} className="hud-sheet__title" id={TITLE_ID} tabIndex={-1}>{children}</h2>;

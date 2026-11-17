@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getCatalogueItem } from "../../catalogue.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../door-clear-spaces.js";
 import type { PlacedItem } from "../../placement.js";
 import { setPlannerFeaturesForTesting } from "../../planner-features.js";
 import { cardParamsFor, pieceCardId, stampSetup, type CardId, type CardParamsRequest } from "../../setup-cards.js";
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
-import { floorCounts, handCardIds, handCards } from "../hand-cards.js";
+import { floorCounts, handCardCounting, handCardIds, handCards } from "../hand-cards.js";
 import { journeySteps, nextMove } from "../journey.js";
 import { roomFacts, roomStatus, seatLine, type RoomStatus, type RoomStatusId } from "../room-seals.js";
 
@@ -98,6 +99,38 @@ describe("the hand", () => {
 
     const hand = handCards("wedding", items, TURINI);
     expect(hand.map((card) => card.placed)).toEqual([3, 1, 1, 1, 0, 1, 0, 0]);
+  });
+
+  // Where a piece put back has gone: the card whose number in the room falls when it leaves the floor.
+  it("says which card of a hand counts a piece, by the same count the card shows", () => {
+    const round = stamp("round", -6, 0, { seats: 10 });
+    const top = stamp("top-table", 0, 4.2);
+    const long = stamp("long-table", 0, -4.2);
+    const floor = stamp("dance-floor", 7.5, 0);
+    const bar = stamp(pieceCardId("bar-counter"), -9, 3);
+    const lectern = stamp(pieceCardId("lectern"), 9, 3);
+    const items = [...round, ...top, ...long, ...floor, ...bar, ...lectern];
+    const ids = (pieces: readonly PlacedItem[]): ReadonlySet<string> => new Set(pieces.map((piece) => piece.id));
+    const wedding = handCardIds("wedding");
+    const corporate = handCardIds("corporate");
+
+    expect(handCardCounting(wedding, items, ids(round))).toBe("round");
+    expect(handCardCounting(wedding, items, ids(top))).toBe("top-table");
+    expect(handCardCounting(wedding, items, ids(long))).toBe("long-table");
+    expect(handCardCounting(wedding, items, ids(bar))).toBe(pieceCardId("bar-counter"));
+    // The same floor is one card in a wedding's hand and another in a conference's.
+    expect(handCardCounting(wedding, items, ids(floor))).toBe("dance-floor");
+    expect(handCardCounting(corporate, items, ids(floor))).toBe(pieceCardId("dancefloor-panel"));
+    // A table chosen without its chairs is still its card's; its chairs without it are no card's.
+    const isTable = (piece: PlacedItem): boolean => getCatalogueItem(piece.catalogueItemId)?.category === "table";
+    expect(handCardCounting(wedding, items, ids(round.filter(isTable)))).toBe("round");
+    expect(handCardCounting(wedding, items, ids(round.filter((piece) => !isTable(piece))))).toBeNull();
+    // A wedding's hand has no card for a lectern, and nothing chosen is no card's.
+    expect(handCardCounting(wedding, items, ids(lectern))).toBeNull();
+    expect(handCardCounting(corporate, items, ids(lectern))).toBe(pieceCardId("lectern"));
+    expect(handCardCounting(wedding, items, new Set<string>())).toBeNull();
+    // Of several kinds chosen together, the first card in the hand's order.
+    expect(handCardCounting(wedding, items, ids([...bar, ...round]))).toBe("round");
   });
 });
 

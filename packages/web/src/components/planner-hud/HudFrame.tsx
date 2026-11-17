@@ -116,8 +116,10 @@ function HudRoot({ room, plaque, sheets }: Omit<HudFrameProps, "eventGuests">): 
     say();
     if (typeof ResizeObserver === "undefined") return undefined;
     const watch = new ResizeObserver(say);
-    watch.observe(bar);
-    if (shelf !== null) watch.observe(shelf);
+    // Watched by their outer edge, which is what is measured above. A phone's safe area is padding: turned on its
+    // side, the bar and the shelf change height by the padding alone, and a watch on what is inside it is not told.
+    watch.observe(bar, { box: "border-box" });
+    if (shelf !== null) watch.observe(shelf, { box: "border-box" });
     return () => { watch.disconnect(); };
   }, []);
   return (

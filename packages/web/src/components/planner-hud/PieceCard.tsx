@@ -1,14 +1,17 @@
-import type { ReactElement } from "react";
+import { useLayoutEffect, useRef, type ReactElement } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import { canApplyTableLinenToItem, isDiningTableItem } from "../../lib/furniture-semantics.js";
+import { handCardCounting, handCardIds } from "../../lib/hud/hand-cards.js";
 import { piecesLabel } from "../../lib/pieces-label.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { asOneUndoStep, changeSeatsAtSelectedTables, duplicateSelection, removeSelection, turnSelection } from "../../lib/planner-keymap.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { usePlannerEventStore } from "../../stores/planner-event-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { MinusGlyph, PlusGlyph } from "./glyphs.js";
+import { handKeyboardOn, screenWithKeyboardIn } from "./keyboard-hand-off.js";
 import { onRadioGroupKeyDown, radioTabIndex } from "./radio-keys.js";
 
 // ---------------------------------------------------------------------------
@@ -81,13 +84,46 @@ const LINENS: readonly { readonly id: Linen; readonly label: string }[] = [
   { id: "bare", label: "No cloth" },
 ];
 
+/**
+ * Where the keyboard goes when the verbs leave with the keyboard in them: into
+ * the cards that come back in their place. A card in hand first (its digit
+ * was pressed), then the card that counted the piece, which is where a piece
+ * put back has gone; More where the hand has no card for it; and failing those
+ * the one primary key.
+ */
+function afterTheVerbs(screen: HTMLElement, items: readonly PlacedItem[], pieces: ReadonlySet<string>): readonly (HTMLElement | null)[] {
+  const counted = handCardCounting(handCardIds(usePlannerEventStore.getState().eventKind), items, pieces);
+  const cards = Array.from(screen.querySelectorAll<HTMLElement>(".hud-card"));
+  return [
+    cards.find((card) => card.dataset["armed"] === "true") ?? null,
+    counted === null ? null : cards.find((card) => card.dataset["card"] === counted) ?? null,
+    cards.find((card) => card.classList.contains("hud-card--more")) ?? null,
+    screen.querySelector<HTMLElement>(".hud-shelf__act .hud-act"),
+  ];
+}
+
 /** The verbs for what is chosen, in the cards' place; nothing while nothing is. */
 export function PieceVerbs({ chosen }: { readonly chosen: Chosen }): ReactElement | null {
   const locked = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
+  // The verbs leave when the piece is put back or let go, and whoever pressed Put back from the keyboard is in them.
+  const partRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const part = partRef.current;
+    if (part === null) return undefined;
+    // The room as it stood with these pieces in it, kept from when they were chosen: once a piece has been put back,
+    // nothing says which card counted it. Only read if the verbs leave with the keyboard in them.
+    const items = usePlacementStore.getState().placedItems;
+    const pieces = useSelectionStore.getState().selectedIds;
+    return () => {
+      // Read before the verbs leave the page: this runs while they are still on it.
+      const screen = screenWithKeyboardIn(part);
+      if (screen !== null) handKeyboardOn(() => afterTheVerbs(screen, items, pieces));
+    };
+  }, [chosen]);
   if (chosen.count === 0) return null;
   const { tableId, linen } = chosen;
   return (
-    <section className="hud-piece" aria-labelledby={PIECE_TITLE_ID}>
+    <section ref={partRef} className="hud-piece" aria-labelledby={PIECE_TITLE_ID}>
       {tableId !== null && chosen.seats > 0 ? (
         <div className="hud-stepper" role="group" aria-label="Seats at this table">
           <button type="button" className="hud-round" aria-label="One seat fewer" disabled={locked} onClick={() => { changeSeatsAtSelectedTables(-1); }}>

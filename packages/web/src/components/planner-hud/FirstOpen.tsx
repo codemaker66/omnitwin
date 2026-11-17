@@ -1,4 +1,4 @@
-import { useEffect, type ReactElement } from "react";
+import { useEffect, useRef, type ReactElement } from "react";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
@@ -6,6 +6,7 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { usePlannerEventStore, type PlannerEventKind } from "../../stores/planner-event-store.js";
 import { usePlannerHudStore } from "../../stores/planner-hud-store.js";
 import { useHudFacts } from "./hud-facts.js";
+import { useKeyboardHandOff } from "./keyboard-hand-off.js";
 import "./hud-first-open.css";
 
 // ---------------------------------------------------------------------------
@@ -71,7 +72,26 @@ function putAside(): void {
   usePlannerHudStore.getState().finishFirstOpen();
 }
 
+/**
+ * Where the keyboard goes when the first screen leaves with the keyboard in
+ * it. Put aside, it gives the shelf back to someone who would rather begin
+ * with their own hands: so into the hand, a card already taken by its digit
+ * first, then the first card; failing those the current step, then the one
+ * primary key. An answer opens Your event, which takes the keyboard to its own
+ * title, and this then does nothing.
+ */
+function afterTheFirstScreen(screen: HTMLElement): readonly (HTMLElement | null)[] {
+  return [
+    screen.querySelector<HTMLElement>('.hud-card[data-armed="true"]'),
+    screen.querySelector<HTMLElement>(".hud-card"),
+    screen.querySelector<HTMLElement>('.hud-step[aria-current="step"]'),
+    screen.querySelector<HTMLElement>(".hud-shelf__act .hud-act"),
+  ];
+}
+
 export function FirstOpen(): ReactElement {
+  const partRef = useRef<HTMLDivElement>(null);
+  useKeyboardHandOff(partRef, afterTheFirstScreen);
   // Escape is "Start with an empty hall": the question never holds anyone.
   useEscapeLayer("panel", { open: true, onEscape: putAside });
   // A card taken by its digit while the hand stands aside: they have begun with their own hands.
@@ -79,7 +99,7 @@ export function FirstOpen(): ReactElement {
     if (state.armedCardId !== null && previous.armedCardId === null) putAside();
   }), []);
   return (
-    <div className="hud-first-open" data-testid="hud-first-open">
+    <div ref={partRef} className="hud-first-open" data-testid="hud-first-open">
       <section className="hud-first-open__stage" aria-labelledby={TITLE_ID}>
         <h2 className="hud-first-open__title" id={TITLE_ID}>What are you planning?</h2>
         {/* Three plain keys under the question: an answer is an act that moves on, not a setting that stays chosen. */}

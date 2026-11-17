@@ -124,24 +124,53 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * The rules for every key of the screen reach its two surfaces, the top bar
+ * and the shelf, and no further. The room between them is the scene's: a key
+ * the scene draws there keeps the planner's own look and ring. (:where adds
+ * nothing to a rule's weight, so each key's own rule below still outranks
+ * these.)
+ */
+
 /* No more specific than a class, so each key's own colour below is the one it wears. */
-.hud-root :where(button, input) {
+.hud-root :where(.hud-bar, .hud-shelf) :where(button, input) {
   font: inherit;
   color: inherit;
 }
 
-.hud-root :focus-visible {
-  outline: var(--hud-chosen) solid var(--hud-ink);
-  outline-offset: var(--hud-chosen);
+/*
+ * The keyboard's ring. The app draws the one ring there is (global.css) from
+ * three tokens, and on a key that is a stop in the Tab order its rule outranks
+ * any ring this sheet could draw. So the screen says what its ring is by
+ * setting those tokens: the ink of the ground the key stands on, as thick as a
+ * chosen frame, and that far clear of the key. They are set on the bar and on
+ * the shelf, each for itself, and not once on the screen: a token is worked
+ * out where it is set, and the bar's ink is the night's.
+ *
+ * A key's own outline is the keyboard's alone. What is chosen is marked by
+ * something else (a frame drawn by a part of the key, a line under a word),
+ * so a chosen key that has the keyboard shows both.
+ */
+.hud-root .hud-bar,
+.hud-root .hud-shelf {
+  --vv-focus-ring: var(--hud-chosen) solid var(--hud-ink);
+  --vv-focus-ring-offset: var(--hud-chosen);
+  --vv-focus-halo: none;
 }
 
 /* The top bar's keys reach the screen's edges, which would cut a ring drawn outside them: theirs is drawn inside. */
-.hud-root .hud-bar :focus-visible {
-  outline-offset: calc(-1 * var(--hud-chosen));
+.hud-root .hud-bar {
+  --vv-focus-ring-offset: calc(-1 * var(--hud-chosen));
 }
 
-.hud-root :is(button, input):disabled,
-.hud-root [aria-disabled="true"] {
+/* The same ring on anything else here that takes the keyboard, which the app's rule does not name. */
+.hud-root :where(.hud-bar, .hud-shelf) :focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+.hud-root :where(.hud-bar, .hud-shelf) :is(button, input):disabled,
+.hud-root :where(.hud-bar, .hud-shelf) [aria-disabled="true"] {
   opacity: var(--hud-off);
   cursor: default;
 }
@@ -256,11 +285,22 @@
   white-space: nowrap;
   cursor: pointer;
   transition: border-color var(--hud-press-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
+  position: relative;
 }
 
-.hud-key[aria-pressed="true"] {
-  outline: var(--hud-chosen) solid var(--hud-ink);
-  outline-offset: calc(-1 * var(--hud-chosen));
+/*
+ * Chosen, on a key with an edge: a 2 px frame of ink just inside the edge,
+ * over its hairline. Drawn by a part of the key and not as the key's outline,
+ * which is the keyboard's ring: a chosen key that has the keyboard wears the
+ * frame and, clear of it, the ring.
+ */
+.hud-key[aria-pressed="true"]::after,
+.hud-choice[aria-checked="true"]::after {
+  position: absolute;
+  inset: calc(-1 * var(--hud-hair));
+  border: var(--hud-chosen) solid var(--hud-ink);
+  content: "";
+  pointer-events: none;
 }
 
 /* The one primary act: a solid rectangle of the accent. */
@@ -896,11 +936,8 @@ body.hud-dragging-card * {
   text-align: left;
   cursor: pointer;
   transition: border-color var(--hud-press-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
-}
-
-.hud-choice[aria-checked="true"] {
-  outline: var(--hud-chosen) solid var(--hud-ink);
-  outline-offset: calc(-1 * var(--hud-chosen));
+  /* For its chosen frame, drawn with a pressed key's above. */
+  position: relative;
 }
 
 .hud-choice:active:not([aria-disabled="true"]) {
@@ -915,6 +952,21 @@ body.hud-dragging-card * {
 
 .hud-choice__line {
   color: var(--hud-ink-2);
+}
+
+/*
+ * A choice that cannot be taken now says why, on its second line, and the
+ * reason is read at full strength: the choice does not fade, and only its
+ * name stands back, by its colour. (Faded whole, as other keys are while
+ * there is nothing for them to do, the one line that explains it was the
+ * faintest thing on the sheet.)
+ */
+.hud-root .hud-choice[aria-disabled="true"] {
+  opacity: 1;
+}
+
+.hud-choice[aria-disabled="true"] .hud-choice__name {
+  color: color-mix(in srgb, var(--hud-ink) calc(var(--hud-off) * 100%), transparent);
 }
 
 @media (hover: hover) and (pointer: fine) {

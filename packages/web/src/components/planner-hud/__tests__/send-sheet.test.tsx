@@ -249,7 +249,8 @@ describe("the Send sheet", () => {
 describe("the stylesheet's word on a key at work", () => {
   it("keeps a busy primary key at full strength, by a rule that outranks the one that fades keys that are off", async () => {
     const css = (await readFile(resolve("src/components/planner-hud/hud.css"), "utf-8")).replace(/\/\*[\s\S]*?\*\//g, "");
-    const fades = /\.hud-root :is\(button, input\):disabled,\s*\.hud-root \[aria-disabled="true"\]\s*\{[^}]*opacity:\s*var\(--hud-off\)/.exec(css);
+    // The fading rule goes by the screen's two surfaces, through :where, which adds nothing to its weight (hud-styles.test.ts).
+    const fades = /\.hud-root :where\(\.hud-bar, \.hud-shelf\) :is\(button, input\):disabled,\s*\.hud-root :where\(\.hud-bar, \.hud-shelf\) \[aria-disabled="true"\]\s*\{[^}]*opacity:\s*var\(--hud-off\)/.exec(css);
     const busy = /\.hud-root \.hud-act\[aria-busy="true"\]:disabled\s*\{\s*opacity:\s*1;\s*\}/.exec(css);
     expect(fades, "the rule that fades keys that are off").not.toBeNull();
     expect(busy, "the rule that keeps a busy key at full strength").not.toBeNull();

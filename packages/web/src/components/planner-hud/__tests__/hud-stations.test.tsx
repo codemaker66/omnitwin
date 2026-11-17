@@ -3,12 +3,12 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getCatalogueItem } from "../../../lib/catalogue.js";
+import { getCatalogueItem, getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../../lib/door-clear-spaces.js";
 import { doorBlockers } from "../../../lib/keep-doors-clear.js";
 import { resetPlacedIdCounter, type PlacedItem } from "../../../lib/placement.js";
 import { plannerFeatureEnabled, setPlannerChromeFeatures, setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
-import { cardParamsFor, stampSetup, type CardId, type CardParamsRequest } from "../../../lib/setup-cards.js";
+import { cardParamsFor, pieceCardId, stampSetup, type CardId, type CardParamsRequest } from "../../../lib/setup-cards.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useDoorClearSpaceStore } from "../../../stores/door-clear-space-store.js";
@@ -460,6 +460,75 @@ describe("the status line", () => {
   });
 });
 
+// A receipt leaves the page as its Undo is pressed, with the keyboard on it, and a browser then leaves the keyboard on
+// the bare page. It goes on to the shelf's own Undo; to Redo where nothing is left to undo; never to the bare page.
+describe("a receipt and the keyboard", () => {
+  /** One step in the editor's history, for an Undo to take back. */
+  function recordAStep(): void {
+    const lectern = getCatalogueItemBySlug("lectern");
+    if (lectern === undefined) throw new Error("the catalogue has a lectern");
+    act(() => { useEditorStore.getState().addObject(lectern.id, 0, 0, 0); });
+  }
+
+  function receiptUndo(): HTMLElement {
+    act(() => { usePlacementNoticeStore.getState().post("Laid 12 tables of ten", { undo: true }); });
+    return within(screen.getByTestId("hud-notice-region")).getByRole("button", { name: "Undo" });
+  }
+
+  function shelfWord(name: "undo" | "redo"): HTMLElement {
+    const found = shelf().querySelector<HTMLElement>(`.hud-shelf__${name}`);
+    if (found === null) throw new Error(`no ${name} word on the shelf`);
+    return found;
+  }
+
+  afterEach(() => {
+    act(() => { useEditorStore.getState().reset(); });
+  });
+
+  it("goes from the receipt's Undo to the shelf's own while there is more to undo", async () => {
+    renderHud();
+    recordAStep();
+    recordAStep();
+    const undo = receiptUndo();
+    undo.focus();
+    fireEvent.click(undo);
+    expect(undo.isConnected).toBe(false);
+    await waitFor(() => { expect(document.activeElement).toBe(shelfWord("undo")); });
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("goes to Redo, which takes the press back, once nothing is left to undo", async () => {
+    renderHud();
+    recordAStep();
+    const undo = receiptUndo();
+    undo.focus();
+    fireEvent.click(undo);
+    expect(shelfWord("undo").hasAttribute("disabled")).toBe(true);
+    await waitFor(() => { expect(document.activeElement).toBe(shelfWord("redo")); });
+  });
+
+  it("goes on the same way when the line clears itself with the keyboard on its Undo", async () => {
+    renderHud();
+    recordAStep();
+    const undo = receiptUndo();
+    undo.focus();
+    act(() => { usePlacementNoticeStore.getState().dismiss(); });
+    expect(undo.isConnected).toBe(false);
+    await waitFor(() => { expect(document.activeElement).toBe(shelfWord("undo")); });
+  });
+
+  it("is left where it is when the line clears with the keyboard elsewhere", async () => {
+    renderHud();
+    recordAStep();
+    receiptUndo();
+    const layOut = screen.getByRole("button", { name: "Lay out for me" });
+    layOut.focus();
+    act(() => { usePlacementNoticeStore.getState().dismiss(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(document.activeElement).toBe(layOut);
+  });
+});
+
 describe("the one primary key", () => {
   it("asks how many guests while no count is known, opens Your event, and steps aside while it is open", () => {
     renderHud();
@@ -836,6 +905,85 @@ describe("the piece's verbs", () => {
     expect(document.querySelector(".hud-piece")).toBeNull();
     expect(shelf().querySelector<HTMLElement>(".hud-cards")?.hidden).toBe(false);
   });
+
+  // The verbs leave the page when the piece is put back or let go, and whoever pressed from the keyboard is in
+  // them. The keyboard goes on into the cards that come back in their place: never to the bare page.
+  it("hand the keyboard to the card a piece went back to, when Put back is pressed from the keyboard", async () => {
+    renderHud();
+    setPlaced(rounds(2, 8));
+    chooseTable();
+    const putBack = screen.getByRole("button", { name: "Put back" });
+    putBack.focus();
+    fireEvent.click(putBack);
+    expect(putBack.isConnected).toBe(false);
+    await waitFor(() => { expect(document.activeElement).toBe(cardKey("round")); });
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("hand it to More where the hand has no card for the piece", async () => {
+    renderHud();
+    // A wedding's hand, dealt while nobody has said what the day is, has no lectern.
+    setPlaced(stamp(pieceCardId("lectern"), 0, 0));
+    act(() => { useSelectionStore.getState().selectMultiple([nth(placed(), 0).id]); });
+    const putBack = screen.getByRole("button", { name: "Put back" });
+    putBack.focus();
+    fireEvent.click(putBack);
+    expect(placed()).toHaveLength(0);
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("button", { name: "More furniture" })); });
+  });
+
+  it("hand it to the one primary key where no card can take it", async () => {
+    renderHud();
+    setPlaced(rounds(1, 8));
+    chooseTable();
+    const putBack = screen.getByRole("button", { name: "Put back" });
+    putBack.focus();
+    // As where the cards cannot be seen.
+    for (const card of document.querySelectorAll<HTMLElement>(".hud-card")) card.hidden = true;
+    fireEvent.click(putBack);
+    await waitFor(() => { expect(document.activeElement).toBe(primaryKey()); });
+  });
+
+  it("hand it to the piece's card when the piece is let go with the keyboard in the verbs", async () => {
+    renderHud();
+    setPlaced(rounds(1, 8));
+    chooseTable();
+    const turn = screen.getByRole("button", { name: "Turn" });
+    turn.focus();
+    act(() => { useSelectionStore.getState().clearSelection(); });
+    expect(tables()).toHaveLength(1);
+    await waitFor(() => { expect(document.activeElement).toBe(cardKey("round")); });
+  });
+
+  it("hand it to the card in hand when a digit takes a card with the keyboard in the verbs", async () => {
+    renderHud();
+    setPlaced(rounds(1, 8));
+    chooseTable();
+    const copy = screen.getByRole("button", { name: "Copy" });
+    copy.focus();
+    press("Digit2");
+    const second = nth(handIds(), 1);
+    expect(armed()).toBe(second);
+    await waitFor(() => { expect(document.activeElement).toBe(cardKey(second)); });
+  });
+
+  it("leave the keyboard where it is when the verbs go with the keyboard elsewhere, or stay", async () => {
+    renderHud();
+    setPlaced(rounds(1, 8, "bare"));
+    chooseTable();
+    // A press that changes the piece and keeps the verbs: the keyboard stays on the key pressed.
+    const more = screen.getByRole("button", { name: "One seat more" });
+    more.focus();
+    fireEvent.click(more);
+    await act(async () => { await Promise.resolve(); });
+    expect(document.activeElement).toBe(more);
+    // The piece let go while the keyboard is on the shelf's own words: it stays there.
+    const layOut = screen.getByRole("button", { name: "Lay out for me" });
+    layOut.focus();
+    act(() => { useSelectionStore.getState().clearSelection(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(document.activeElement).toBe(layOut);
+  });
 });
 
 describe("the first screen", () => {
@@ -898,6 +1046,75 @@ describe("the first screen", () => {
     renderHud();
     expect(press("Escape").defaultPrevented).toBe(true);
     expect(screen.queryByTestId("hud-first-open")).toBeNull();
+  });
+
+  // Put aside, the first screen leaves the page with the keyboard on the key that was pressed. It gives the shelf
+  // back to someone who would rather begin with their own hands, so the keyboard goes into the hand: never to the
+  // bare page.
+  it("hands the keyboard to the hand's first card when Start with an empty hall is pressed from the keyboard", async () => {
+    ask();
+    renderHud();
+    const aside = screen.getByRole("button", { name: "Start with an empty hall" });
+    aside.focus();
+    fireEvent.click(aside);
+    expect(aside.isConnected).toBe(false);
+    await waitFor(() => { expect(document.activeElement).toBe(cardKey(nth(handIds(), 0))); });
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("hands it on the same way when Escape puts the question aside with the keyboard on an answer", async () => {
+    ask();
+    renderHud();
+    const answer = screen.getByRole("button", { name: /Wedding/u });
+    answer.focus();
+    press("Escape");
+    expect(answer.isConnected).toBe(false);
+    await waitFor(() => { expect(document.activeElement).toBe(cardKey(nth(handIds(), 0))); });
+  });
+
+  it("hands it to the card taken, when a digit takes a card with the keyboard on the question", async () => {
+    ask();
+    renderHud();
+    const answer = screen.getByRole("button", { name: /Corporate/u });
+    answer.focus();
+    press("Digit3");
+    const third = nth(handIds(), 2);
+    expect(armed()).toBe(third);
+    await waitFor(() => { expect(document.activeElement).toBe(cardKey(third)); });
+  });
+
+  it("hands it to the current step where no card can take it, and to the one primary key failing that", async () => {
+    ask();
+    renderHud();
+    // As where the cards cannot be seen.
+    for (const card of document.querySelectorAll<HTMLElement>(".hud-card")) card.hidden = true;
+    const aside = screen.getByRole("button", { name: "Start with an empty hall" });
+    aside.focus();
+    fireEvent.click(aside);
+    await waitFor(() => { expect(document.activeElement).toBe(stepKey("event")); });
+    expect(stepKey("event").getAttribute("aria-current")).toBe("step");
+
+    // And as a phone's top bar that has folded the step away, too.
+    cleanup();
+    ask();
+    renderHud();
+    for (const card of document.querySelectorAll<HTMLElement>(".hud-card")) card.hidden = true;
+    stepKey("event").hidden = true;
+    const again = screen.getByRole("button", { name: "Start with an empty hall" });
+    again.focus();
+    fireEvent.click(again);
+    await waitFor(() => { expect(document.activeElement).toBe(primaryKey()); });
+  });
+
+  it("leaves the keyboard to the sheet an answer opens, which takes it to its own title", async () => {
+    ask();
+    renderHud();
+    const answer = screen.getByRole("button", { name: /Corporate/u });
+    answer.focus();
+    fireEvent.click(answer);
+    const title = within(screen.getByRole("dialog", { name: "Your event" })).getByRole("heading", { name: "Your event" });
+    await act(async () => { await Promise.resolve(); });
+    expect(document.activeElement).toBe(title);
   });
 
   it("is not asked once the guest count is known", () => {
@@ -1043,22 +1260,31 @@ describe("the primary key and the sheets", () => {
   });
 });
 
+interface WatchStandIn {
+  /** What to call to tell each watcher of `target` that it has changed. */
+  readonly watching: (target: Element) => (() => void)[];
+  /** Which box of `target` each of its watchers was asked to watch; "content-box" is a watcher's own choice when not told. */
+  readonly boxes: (target: Element) => ResizeObserverBoxOptions[];
+  readonly restore: () => void;
+}
+
 /** Every ResizeObserver made while this stands in, with what each watches: a test's page lays nothing out, and calls none. */
-function standInForResizeObserver(): { readonly watching: (target: Element) => (() => void)[]; readonly restore: () => void } {
-  const made: { readonly callback: () => void; readonly targets: Set<Element> }[] = [];
+function standInForResizeObserver(): WatchStandIn {
+  const made: { readonly callback: () => void; readonly targets: Map<Element, ResizeObserverBoxOptions> }[] = [];
   class Watcher implements ResizeObserver {
-    private readonly entry: { readonly callback: () => void; readonly targets: Set<Element> };
+    private readonly entry: { readonly callback: () => void; readonly targets: Map<Element, ResizeObserverBoxOptions> };
     constructor(callback: ResizeObserverCallback) {
-      this.entry = { callback: () => { callback([], this); }, targets: new Set() };
+      this.entry = { callback: () => { callback([], this); }, targets: new Map() };
       made.push(this.entry);
     }
-    observe(target: Element): void { this.entry.targets.add(target); }
+    observe(target: Element, options?: ResizeObserverOptions): void { this.entry.targets.set(target, options?.box ?? "content-box"); }
     unobserve(target: Element): void { this.entry.targets.delete(target); }
     disconnect(): void { this.entry.targets.clear(); }
   }
   vi.stubGlobal("ResizeObserver", Watcher);
   return {
     watching: (target) => made.filter((one) => one.targets.has(target)).map((one) => one.callback),
+    boxes: (target) => made.flatMap((one) => { const box = one.targets.get(target); return box === undefined ? [] : [box]; }),
     restore: () => { vi.unstubAllGlobals(); },
   };
 }
@@ -1092,6 +1318,13 @@ describe("the shelf's own height", () => {
       expect(told.length).toBeGreaterThan(0);
       act(() => { for (const tell of told) tell(); });
       expect(root.style.getPropertyValue("--hud-shelf-real")).toBe("262px");
+
+      // Both are watched by their outer edge, which is what is measured. A phone's safe area is padding: turned on
+      // its side, the shelf changes height by its padding alone, and a watch on what is inside it is never told.
+      const bar = root.querySelector(".hud-bar");
+      expect(bar).not.toBeNull();
+      expect(observers.boxes(shelf())).toEqual(["border-box"]);
+      expect(bar === null ? [] : observers.boxes(bar)).toEqual(["border-box"]);
     } finally {
       restore();
       observers.restore();

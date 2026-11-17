@@ -5,15 +5,17 @@
  *
  * In the planner the plaque is the second chrome's slate
  * (components/planner-chrome/Slate.tsx), reused whole for its menu, its save
- * state and every notice a save can need. Nothing under planner-chrome/
- * changes: the slate is dressed from here, under .hud-root, by re-pointing the
- * house tokens it reads at the ground and by setting its parts in the HUD's
- * type. Its plate, crest, status dots and copper plane (the seats, said once
- * on the shelf) are put away. The crest is put away with its seat: since #357
- * it is the second chrome's switch for hiding its own tools, with a note
- * beside it, and this screen has neither those tools nor that key. Its menu
- * and tooltips are drawn on the page itself (portals), so the same tokens are
- * given to them while the HUD is up.
+ * state and every notice a save can need. One thing is added to the slate
+ * itself: it says data-eyebrow="same" where its eyebrow only repeats its
+ * title, which this sheet alone reads (the last rule below). Nothing else
+ * under planner-chrome/ changes: the slate is dressed from here, under
+ * .hud-root, by re-pointing the house tokens it reads at the ground and by
+ * setting its parts in the HUD's type. Its plate, crest, status dots and
+ * copper plane (the seats, said once on the shelf) are put away. The crest is
+ * put away with its seat: since #357 it is the second chrome's switch for
+ * hiding its own tools, with a note beside it, and this screen has neither
+ * those tools nor that key. Its menu and tooltips are drawn on the page itself
+ * (portals), so the same tokens are given to them while the HUD is up.
  *
  * The lab has no backend and stands in a plain name and line (PlannerLabPage).
  *

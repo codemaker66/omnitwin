@@ -288,7 +288,7 @@ export function Hand({ children }: { readonly children?: ReactNode }): ReactElem
         <button type="button" className="hud-word hud-shelf__lay-out" onClick={layOut} disabled={locked}>Lay out for me</button>
         <button
           type="button"
-          className="hud-word"
+          className="hud-word hud-shelf__undo"
           onClick={() => { useEditorStore.getState().undo(); }}
           disabled={!undoable || locked}
           aria-label={undoWords === null ? "Undo" : `Undo ${undoWords}`}
@@ -298,7 +298,7 @@ export function Hand({ children }: { readonly children?: ReactNode }): ReactElem
         </button>
         <button
           type="button"
-          className="hud-word"
+          className="hud-word hud-shelf__redo"
           onClick={() => { useEditorStore.getState().redo(); }}
           disabled={!redoable || locked}
           aria-label={redoWords === null ? "Redo" : `Redo ${redoWords}`}
