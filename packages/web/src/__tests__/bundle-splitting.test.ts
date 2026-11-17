@@ -356,3 +356,43 @@ describe("the planner's device drafts stay off the app root (T-671)", () => {
     expect(codeOnly).toMatch(/import\(["']\.\/TwinEnquiryModal\.js["']\)/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The new chrome stays behind its lazy import (T-671, #357)
+//
+// The default planner (EditorPage, App) loads the new chrome only behind
+// `?chrome=v2`. A static import of any of its modules from the default path
+// would put that code in every visitor's download, as round 1 of #357's review
+// found. Surfaces.tsx is the one planner-chrome module master's GhostSet
+// already reaches. This catches module-level leaks; an unused export of a
+// shared module that only the new chrome reads is kept out by moving it to a
+// module listed here (setup-card-ids, setup-card-previews, sheet-motion).
+// ---------------------------------------------------------------------------
+
+describe("the new chrome stays behind its lazy import (T-671)", () => {
+  const V2_ONLY_LIB = [
+    "src/lib/planner-edit-commands.ts",
+    "src/lib/placement-moves.ts",
+    "src/lib/live-aisles.ts",
+    "src/lib/card-store-figures.ts",
+    "src/lib/setup-card-previews.ts",
+    "src/lib/setup-card-ids.ts",
+    "src/lib/replace.ts",
+    "src/lib/caption-model.ts",
+    "src/lib/caption-placement.ts",
+    "src/lib/card-defaults.ts",
+    "src/lib/screen-anchors.ts",
+    "src/stores/cards-store.ts",
+    "src/stores/planner-chrome-store.ts",
+    "src/api/venue-inventory.ts",
+  ];
+
+  for (const entry of ["src/pages/EditorPage.tsx", "src/App.tsx"]) {
+    it(`never reaches the new chrome's modules from ${entry} by static imports`, async () => {
+      const path = await import("node:path");
+      const reached = [...await staticImportClosure(entry)].map((file) => path.relative(path.resolve("."), file).split(path.sep).join("/"));
+      expect(reached.filter((file) => file.startsWith("src/components/planner-chrome/"))).toEqual(["src/components/planner-chrome/Surfaces.tsx"]);
+      expect(reached.filter((file) => V2_ONLY_LIB.includes(file))).toEqual([]);
+    });
+  }
+});

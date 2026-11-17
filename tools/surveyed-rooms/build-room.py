@@ -323,9 +323,28 @@ def run_subs(rec, subs, selected, config, resume=False, prepare=None, publish=No
 
 # --- steps --------------------------------------------------------------------------------------------
 
-def check_step(room, work, manifest, write=True):
-    schema = roomlib.load(os.path.join(HERE, "room.schema.json"))
-    rep = check_room.check(room.cfg, schema, manifest)
+def open_room(path, work, manifest):
+    """The config as a Room, with the checker's report on it, or a refusal that names what is wrong.
+
+    Room indexes the config's blocks as it is built, and so does everything after it. So the
+    checker reads the config first: a file that is not there, is not JSON or is not well-formed is
+    refused in the checker's own words, not by a KeyError from wherever the build first reached
+    for the missing part."""
+    try:
+        cfg = check_room.read_config(path)
+    except check_room.Unreadable as exc:
+        refuse(str(exc))
+    rep = check_room.check(cfg, roomlib.load(os.path.join(HERE, "room.schema.json")), manifest)
+    if rep.errors:
+        refuse([f"config: {e}" for e in rep.errors])
+    return Room(path, work), rep
+
+
+def check_step(room, work, manifest, write=True, rep=None):
+    """The config's problems and its ledger; with `write`, also the check's files. `rep` is the
+    checker's report on this config and manifest, when the caller already has it."""
+    if rep is None:
+        rep = check_room.check(room.cfg, roomlib.load(os.path.join(HERE, "room.schema.json")), manifest)
     errors = [f"config: {e}" for e in rep.errors]
     problems = errors + ([] if errors else room.build_problems())
     if not problems:
@@ -422,17 +441,21 @@ def main():
     ap.add_argument("--relief", choices=["keep", "rebuild"], default="keep",
                     help="publishing over a pinned atlas (survey.atlas.alphaFrom): keep the published relief (default) or mesh this build's")
     args = ap.parse_args()
-    room = Room(args.room, args.work)
-    work = room.work
+    work = os.path.abspath(args.work)
     dest = os.path.abspath(args.publish) if args.publish else None
     manifest_path = os.path.join(work, "data", "manifest.json")
     if not os.path.exists(manifest_path) and args.inputs_from:
         manifest_path = os.path.join(args.inputs_from, "data", "manifest.json")
     manifest = roomlib.load(manifest_path) if os.path.exists(manifest_path) else None
+    # The config is checked before anything reads it, in every mode: what follows may take a
+    # well-formed config, and (past the plan) the survey blocks a build needs, for granted.
+    room, rep = open_room(args.room, work, manifest)
+    problems, ledger, rep = check_step(room, work, manifest, write=False, rep=rep)
     if args.plan:
-        problems, ledger, rep = check_step(room, work, manifest, write=False)
         print("\n".join(describe_plan(room, problems, ledger)))
         sys.exit(1 if problems else 0)
+    if problems:
+        refuse(problems)
     # Refusals that need only the arguments and the config come before anything is written.
     if dest and legacy.depth_override():
         refuse(f"{legacy.DEPTH_ENV} is set: test-sized depth maps are never published")
@@ -448,9 +471,6 @@ def main():
     if args.only and (args.start != "check" or args.stop != "publish"):
         refuse("--only runs one sub-command: leave --from and --to out")
     if args.only or args.list:
-        problems, ledger, rep = check_step(room, work, manifest, write=False)
-        if problems:
-            refuse(problems)
         subs = sub_commands(room, dest, args.relief, args.twin)
         if args.only and args.only not in [s["id"] for s in subs]:
             refuse(f"--only {args.only}: no such sub-command (--list prints them)")
@@ -468,7 +488,7 @@ def main():
     os.makedirs(work, exist_ok=True)
     for d in ("proj", "relief", "build", "views", "data"):
         os.makedirs(os.path.join(work, d), exist_ok=True)
-    problems, ledger, rep = check_step(room, work, manifest)
+    problems, ledger, rep = check_step(room, work, manifest, rep=rep)
     if args.expect_legacy and ledger:
         refuse([f"--expect-legacy, but the config opens gate {r['gate']} at {r['where']}" for r in ledger])
     print(f"ledger: {len(ledger)} gates" + "".join(f"\n  {r['gate']} {r['where']}: {r['what']}" for r in ledger))

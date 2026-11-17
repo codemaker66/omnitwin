@@ -175,6 +175,10 @@ taken from another tree is listed in `build/linked.json` (with the tree it came 
 provenance) and, by name and how it was linked only, in `survey.json`; `prove-build-identity.py`
 reports those files as linked, never as identical.
 
+The config is checked before anything reads it, in every mode. A file that is not there, is not
+JSON or is not well-formed is refused in `check_room.py`'s own words, and a config without a survey
+block the build needs is refused by that block's name, before the work directory is made.
+
 `--from`/`--to` run a span of steps (the check always runs, and refuses if the views changed
 under rendered surfaces). No step rewrites another's files, so any step can be the start.
 Editing patches on a built room is `--from atlas` (the detail tiles repeat them, and the run goes
@@ -382,7 +386,9 @@ bytes (45,419 blocks labelled from 35 stations, 8,763 seams). Its photographs ar
 tiles' 2.5 mm and 5 mm orthophotos (2,881,261 of 2,882,987 texels coloured from 39 stations, 4,820
 seam equations). That is 43 arrays in 19 files with none different, and the run reports agree
 apart from their timings. On the machine that ran it the labels took 6.0 minutes and 976 MB, the
-photographs 2.1 minutes and 861 MB.
+photographs 2.1 minutes and 861 MB. On the morning of 15 November the end wall's canvas (its
+report and five arrays) and its 2 mm image (its report and one array) were built both ways as well
+and are identical, which makes 23 files and 49 arrays with none different.
 
 Real data, stray texels (15 November 2026). The Saloon's fireplace wall stopped in its labels: of the
 868,824 covered texels of `wall-fireplace-0`, two (row 1121, columns 12 and 13, below the floor line
@@ -392,9 +398,12 @@ edge-on. Every other covered texel of the Saloon's 16 tiles lies within 0.19 mm 
 every one of the Grand Hall's 12 tiles within 0.42 mm (nearly all within 0.16 mm, 1/32 of a texel).
 With gate B24 the corners step left the two out and the wall was labelled (27,357 blocks, 5,061
 seams); the Saloon's twelve walls were then labelled and coloured, each process under 1 GB. With
-this change the driver's corners step on the Grand Hall's 12 real tiles gave, in two runs, the
-files master's script gives: 23 files and 49 arrays with none different, counting the end wall's
-labels, photographs, canvas and 2 mm image beside them.
+this change the driver's corners step was run again on the Grand Hall's 12 real tiles, twice, and
+both times wrote the 12 corrected-position files master's script writes. Those two runs computed
+the 12 corner files and nothing else. The comparison they print (23 files and 49 arrays, none
+different) also holds the end wall's other 11 files, which are that morning's results and were not
+computed again: its labels, photographs, canvas and 2 mm image stand because only the corners
+step's code changed after them.
 
 Real data, the record (16 November 2026). The Saloon's `build/survey.json`, written by `publish:1`
 in the work directory of its best-view build (12 walls, a 4096 x 2304 atlas, 288 detail tiles), was
@@ -410,7 +419,7 @@ B22), so it is a proof of the record's form and not a published room.
 Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
 (`render-depth-room.mjs`, so far only syntax-checked), the other three walls' labels and
-photographs, the end wall's canvas and 2 mm image, the real atlas and the real detail tiles. Without a publish folder neither build pins its alpha, so the two trees
+photographs, the real atlas and the real detail tiles. Without a publish folder neither build pins its alpha, so the two trees
 are compared with each other; the walls' run reports are compared less their timings and memory.
 To prove it:
 
@@ -453,6 +462,14 @@ changed or failed, and trusting nothing after a config change. And the record
 `record_faults`, twenty-one spoiled records are each refused for their own reason, an open segment
 is named, and publishing copies `survey.json` for the Saloon, none for the Grand Hall, and nothing
 at all when the record would be refused.
+
+CI runs T0, T1 and T4 in a job of their own ("Survey tools") whenever a change touches
+`tools/surveyed-rooms` or `tools/grand-hall-survey`, because the room build runs the hall's own
+scripts through seams and an edit to either folder can break the other. There the three cases
+that need the twin's manifest skip themselves (88 tests, 3 skipped, about half a minute on a
+hosted Linux runner, where starting a process costs far less than on the Windows machine the
+times above were taken on). T2 and T3 are run by hand: they take about twenty-five and four
+minutes there.
 
 Scratch goes to `SURVEYED_ROOMS_TEST_SCRATCH` (default: the system temp folder). The GHR1
 comparisons and T3 need a Node install with meshoptimizer: this checkout's, or another named by

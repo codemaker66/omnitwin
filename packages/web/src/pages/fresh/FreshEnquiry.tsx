@@ -13,15 +13,20 @@ import {
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
 } from "@omnitwin/types";
 import { ActivityIndicator } from "../../components/shared/Activity.js";
+import { EnquiryTrapField, useEnquiryTrap } from "../../components/shared/EnquiryTrap.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { isValidEmail } from "../../lib/email-validation.js";
+import { guestToday } from "../../lib/guest-today.js";
 import {
   FRESH_CONTACT_PHONE_DISPLAY,
   FRESH_CONTACT_PHONE_HREF,
   FRESH_ENQUIRY_COPIED,
   FRESH_ENQUIRY_COPY_ACTION,
   FRESH_ENQUIRY_CRAFT_PREFIX,
+  FRESH_ENQUIRY_DATE_AFTER_LAST,
+  FRESH_ENQUIRY_DATE_BEFORE_TODAY,
   FRESH_ENQUIRY_DATE_LABEL,
+  FRESH_ENQUIRY_DATE_NOT_A_DATE,
   FRESH_ENQUIRY_EMAIL_INVALID,
   FRESH_ENQUIRY_EMAIL_LABEL,
   FRESH_ENQUIRY_EMAIL_REQUIRED,
@@ -95,6 +100,49 @@ export function craftFromQuery(search: string): string | null {
     .replace(/(^|[ -])(\p{L})/gu, (_match: string, lead: string, letter: string) => `${lead}${letter.toUpperCase()}`);
 }
 
+/** Why the front door holds Send on its date field. */
+export type EventDateRefusal = "not-on-calendar" | "after-last" | "before-today";
+
+/** Each refusal in the owner's words (fresh-copy.ts, 14 November 2026). */
+const DATE_REFUSAL_WORDS: Readonly<Record<EventDateRefusal, string>> = {
+  "not-on-calendar": FRESH_ENQUIRY_DATE_NOT_A_DATE,
+  "after-last": FRESH_ENQUIRY_DATE_AFTER_LAST,
+  "before-today": FRESH_ENQUIRY_DATE_BEFORE_TODAY,
+};
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+/**
+ * Why Send holds a date the guest gave, or null when the enquiry may go: no
+ * date at all is no refusal. The form sets noValidate, so it checks the date
+ * itself (Blake, 13 and 14 November 2026; review of #405, Q3), in this order.
+ * A day the calendar does not have (30 February; a thirteenth month; year
+ * 0000, which the API refuses) comes first, since it cannot be compared with
+ * today. A browser's own date control never hands the page such a value (it
+ * gives none at all, and FreshEnquiry reads the control's validity for that:
+ * dateUnreadable); this is for a browser that draws the field as plain text.
+ * Then a year past GUEST_ENQUIRY_LATEST_EVENT_DATE, the year of five
+ * digits a doubled key gives (20277), which is a real day and after today, so
+ * it is never told "from today onwards". Then a day before `today`, the
+ * guest's own (guestToday), read when the form is checked.
+ */
+export function eventDateRefusal(dateISO: string, today: string): EventDateRefusal | null {
+  if (dateISO === "") return null;
+  const [, yearText, monthText, dayText] = /^(\d{4,})-(\d{2})-(\d{2})$/u.exec(dateISO) ?? [];
+  if (yearText === undefined || monthText === undefined || dayText === undefined) return "not-on-calendar";
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return "not-on-calendar";
+  // A year of five digits or more sorts before "9999" as text, so it is
+  // named by its length; a date of four is compared as the API's text is.
+  if (yearText.length > 4 || dateISO > GUEST_ENQUIRY_LATEST_EVENT_DATE) return "after-last";
+  return dateISO < today ? "before-today" : null;
+}
+
 export function FreshEnquiry(): ReactElement {
   const [eventKey, setEventKey] = useState<EnquiryEventKey>("wedding");
   const [guestsText, setGuestsText] = useState("100");
@@ -110,6 +158,23 @@ export function FreshEnquiry(): ReactElement {
   const [emailFocusRequests, setEmailFocusRequests] = useState(0);
   const emailRef = useRef<HTMLInputElement>(null);
   const sentRef = useRef<HTMLDivElement>(null);
+  /** Whether a Send has found the date refused; from then on its reason
+   *  follows the date the guest gives. */
+  const [dateChecked, setDateChecked] = useState(false);
+  /** Counts the sends that held the date since the guest last changed it,
+   *  as emailFocusRequests counts the email's. */
+  const [dateFocusRequests, setDateFocusRequests] = useState(0);
+  const dateRef = useRef<HTMLInputElement>(null);
+  /** Whether Send found the date control holding something that is no date:
+   *  30 February, or a date typed in part. A browser's own control gives the
+   *  page no value for one (it reads as empty) and reports no change while it
+   *  stays so; only its validity says so (measured in Chromium 156 on 15
+   *  November 2026). Send says it, never the form over a guest who is
+   *  part-way through typing a date, and it is dropped once the control
+   *  holds a date again, or nothing. */
+  const [dateUnreadable, setDateUnreadable] = useState(false);
+  /** The hidden field no person reaches, and how long the form is open. */
+  const { inputRef: hiddenFieldRef, read: readHiddenTrap } = useEnquiryTrap();
 
   // The form sets noValidate, so the browser neither focuses nor announces a
   // missing or invalid email: Send does it here (a11y-2). Focus moves once the
@@ -118,6 +183,11 @@ export function FreshEnquiry(): ReactElement {
   useEffect(() => {
     if (emailFocusRequests > 0) emailRef.current?.focus();
   }, [emailFocusRequests]);
+
+  // The date's refusal is taken to the same way.
+  useEffect(() => {
+    if (dateFocusRequests > 0) dateRef.current?.focus();
+  }, [dateFocusRequests]);
 
   // A sent enquiry replaces the Send button that held focus. Focus goes to the
   // confirmation, which is named by its own title, rather than falling to the
@@ -163,7 +233,24 @@ export function FreshEnquiry(): ReactElement {
     eventKey === "wedding" ? weddingRateLine(enquiryYear(dateISO)) : null;
   const scopeNote =
     eventKey === "wedding" && guests !== null ? weddingScopeNote(guests) : null;
-  const today = new Date().toISOString().slice(0, 10);
+  // The guest's own day, read at each drawing (and again at Send), never the
+  // UTC date: the picker's earliest day, and the day a checked date is read against.
+  const today = guestToday();
+  const dateRefusal: EventDateRefusal | null = !dateChecked
+    ? null
+    : dateUnreadable ? "not-on-calendar" : eventDateRefusal(dateISO, today);
+  const dateProblem = dateRefusal === null ? null : DATE_REFUSAL_WORDS[dateRefusal];
+
+  /** The control reports no change while what it holds is no date, nor when
+   *  it is emptied from that, so a key's release and leaving the field look
+   *  at it again. The reason stays exactly as Send said it until the control
+   *  no longer holds a non-date: the release of the Enter that sent the form
+   *  must not quieten what that Send just said. */
+  const lookAgainAtDate = (control: HTMLInputElement): void => {
+    if (!dateUnreadable || control.validity.badInput) return;
+    setDateUnreadable(false);
+    setDateFocusRequests(0);
+  };
 
   const emailTrimmed = email.trim();
   const emailProblem =
@@ -180,6 +267,16 @@ export function FreshEnquiry(): ReactElement {
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (composed === null || guests === null) return;
+      // The date comes before the email in the form, so it is named first. A
+      // date the control could not read has no value to check: its validity
+      // says so (dateUnreadable).
+      const unreadable = dateRef.current?.validity.badInput === true;
+      setDateUnreadable(unreadable);
+      if (unreadable || eventDateRefusal(dateISO, guestToday()) !== null) {
+        setDateChecked(true);
+        setDateFocusRequests((count) => count + 1);
+        return;
+      }
       if (emailProblem !== null) {
         setEmailTouched(true);
         setEmailFocusRequests((count) => count + 1);
@@ -200,6 +297,7 @@ export function FreshEnquiry(): ReactElement {
         eventType: eventKey,
         guestCount: guests,
         message: craftNote === null ? composed.body : `${composed.body}\n\n${craftNote}`,
+        ...readHiddenTrap(),
       })
         .then(() => {
           setSendState("sent");
@@ -208,7 +306,7 @@ export function FreshEnquiry(): ReactElement {
           setSendState("error");
         });
     },
-    [composed, guests, emailProblem, emailTrimmed, name, phone, dateISO, eventKey, craftNote],
+    [composed, guests, emailProblem, emailTrimmed, name, phone, dateISO, eventKey, craftNote, readHiddenTrap],
   );
 
   const copyEnquiry = useCallback(() => {
@@ -274,14 +372,40 @@ export function FreshEnquiry(): ReactElement {
           <label className="fr-enq-field">
             <span>{FRESH_ENQUIRY_DATE_LABEL}</span>
             <input
+              ref={dateRef}
               type="date"
               min={today}
               max={GUEST_ENQUIRY_LATEST_EVENT_DATE}
               value={dateISO}
+              aria-invalid={dateProblem !== null}
+              aria-describedby={dateProblem !== null ? "fr-enq-date-problem" : undefined}
               onChange={(event) => {
                 setDateISO(event.target.value);
+                // A change is a date again, or a part deleted to retype it:
+                // either way it is Send that says a date is no date.
+                setDateUnreadable(false);
+                setDateFocusRequests(0);
+              }}
+              onKeyUp={(event) => {
+                lookAgainAtDate(event.currentTarget);
+              }}
+              onBlur={(event) => {
+                lookAgainAtDate(event.currentTarget);
               }}
             />
+            {/* Said when Send finds it, a new alert each Send; a plain line
+                once the guest changes the date, and gone once it is one the
+                form takes, as the email's problem is (below). */}
+            {dateProblem !== null && (
+              <small
+                key={dateFocusRequests}
+                className="fr-enq-problem"
+                id="fr-enq-date-problem"
+                role={dateFocusRequests > 0 ? "alert" : undefined}
+              >
+                {dateProblem}
+              </small>
+            )}
           </label>
         </div>
         <div className="fr-enq-fields fr-enq-contact">
@@ -351,6 +475,7 @@ export function FreshEnquiry(): ReactElement {
             />
           </label>
         </div>
+        <EnquiryTrapField inputRef={hiddenFieldRef} />
       </div>
 
       <div className="fr-enq-answer" aria-live="polite">

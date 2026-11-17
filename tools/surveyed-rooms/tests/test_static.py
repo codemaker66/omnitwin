@@ -5,6 +5,9 @@
 - prove-grand-hall.py still PROVED after the roomlib and survey.outputs changes.
 - build-room.py --plan: the Grand Hall opens no gate; the Saloon opens exactly the expected ones;
   --expect-legacy refuses the Saloon; a config missing survey blocks is refused by name.
+- a config that is missing, not JSON or not well-formed is refused by what is wrong with it, in
+  every mode and before anything is written, never by a traceback; so is a config without the
+  survey block a publish reads.
 - check_room.py's new checks fire (relief ids, view depth, glass outline, outputs, occluders).
 - the prover's self-test (including a linked depth map reported as linked, not identical).
 - the driver's refusals before anything is written (--reuse-depth without --inputs-from, --publish
@@ -142,6 +145,94 @@ class Plans(unittest.TestCase):
         r = py("build-room.py", GH, os.path.join(T0, "publish-gh"), "--to", "check", "--publish", os.path.join(T0, "elsewhere"))
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("is not the config's survey.publish.folder", r.stdout + r.stderr)
+
+
+class MalformedConfigs(unittest.TestCase):
+    """A config that is missing, is not JSON or is not well-formed is refused by what is wrong with
+    it, in every mode and before anything is written: never by a traceback from wherever the build
+    first reached for the missing part (Room indexes the config's blocks as it is built)."""
+
+    WORK = os.path.join(T0, "malformed-work")
+    CASES = (
+        ("no wall views", lambda room: room["survey"].pop("wallViews"), "schema $.survey: missing wallViews"),
+        ("a wall that is not there", lambda room: room["survey"]["wallViews"].__setitem__("order", ["nope"]), "survey.wallViews.order: no wall nope"),
+        ("no transform", lambda room: room.pop("transform"), "schema $: missing transform"),
+        ("no survey", lambda room: room.pop("survey"), "schema $: missing survey"),
+        ("no panorama size", lambda room: room["source"]["panoramas"].pop("size"), "schema $.source.panoramas: missing size"),
+        # Room does not read this one, but the plan's first lines multiply by it.
+        ("a word for a number", lambda room: room["survey"]["wallViews"].__setitem__("ppm", "fine"), "schema $.survey.wallViews.ppm: expected number"),
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.drv = load_driver()
+        with open(SALOON, "rb") as f:
+            saloon = f.read()
+        cls.truncated = cls.raw("saloon-truncated.room.json", saloon[: len(saloon) // 2])
+        cls.missing = os.path.join(T0, "no-such.room.json")
+
+    @staticmethod
+    def raw(name, data):
+        os.makedirs(T0, exist_ok=True)
+        path = os.path.join(T0, name)
+        with open(path, "wb") as f:
+            f.write(data)
+        return path
+
+    def refusal(self, path):
+        with self.assertRaises(self.drv.Refused) as caught:
+            self.drv.open_room(path, self.WORK, None)
+        return str(caught.exception)
+
+    def test_each_fault_is_named(self):
+        for label, change, want in self.CASES:
+            path, _ = variant(SALOON, "saloon-malformed.room.json", change)
+            self.assertIn(want, self.refusal(path), label)
+        self.assertIn("not JSON (", self.refusal(self.truncated))
+        self.assertIn("schema $: expected object", self.refusal(self.raw("saloon-array.room.json", b"[1, 2, 3]\n")))
+        self.assertIn("not UTF-8 (", self.refusal(self.raw("saloon-latin.room.json", b'{"name": "Caf\xe9"}\n')))
+        self.assertIn("cannot be read (", self.refusal(self.missing))
+
+    def test_a_good_config_opens_with_its_report(self):
+        for path in (GH, SALOON):
+            room, rep = self.drv.open_room(path, self.WORK, None)
+            self.assertEqual((room.sha256, rep.errors), (Room(path, self.WORK).sha256, []), path)
+
+    def test_the_driver_refuses_in_every_mode_and_writes_nothing(self):
+        no_transform, _ = variant(SALOON, "saloon-no-transform.room.json", lambda room: room.pop("transform"))
+        for path, want in ((no_transform, "schema $: missing transform"), (self.truncated, "not JSON (")):
+            for mode in (("--plan",), ("--list",), ("--only", "check:1"), ()):
+                shutil.rmtree(self.WORK, ignore_errors=True)
+                r = py("build-room.py", path, self.WORK, *mode)
+                said = r.stdout + r.stderr
+                self.assertEqual(r.returncode, 1, f"{mode}: {said[-800:]}")
+                self.assertIn(want, said, mode)
+                self.assertNotIn("Traceback", said, mode)
+                self.assertFalse(os.path.exists(self.WORK), f"{mode}: the refusal wrote files")
+
+    def test_a_missing_survey_block_is_named_before_a_publish_reads_it(self):
+        # survey.publish and survey.outputs are optional in the schema, and the refusals that guard
+        # a publish read them: the build's own problems are found before those refusals run.
+        no_publish, _ = variant(SALOON, "saloon-no-publish.room.json", lambda room: room["survey"].pop("publish"))
+        no_outputs, hall = variant(GH, "gh-no-outputs.room.json", lambda room: room["survey"].pop("outputs"))
+        published = os.path.join(os.path.dirname(os.path.dirname(ROOMS)), hall["survey"]["publish"]["folder"])
+        for path, dest, want in ((no_publish, os.path.join(T0, "nowhere"), "survey.publish is missing"),
+                                 (no_outputs, published, "survey.outputs is missing")):
+            shutil.rmtree(self.WORK, ignore_errors=True)
+            r = py("build-room.py", path, self.WORK, "--to", "check", "--publish", dest)
+            said = r.stdout + r.stderr
+            self.assertEqual(r.returncode, 1, said[-800:])
+            self.assertIn(want, said)
+            self.assertNotIn("Traceback", said)
+            self.assertFalse(os.path.exists(self.WORK), "the refusal wrote files")
+
+    def test_the_checker_names_a_file_it_cannot_read(self):
+        for path, want in ((self.truncated, "not JSON ("), (self.missing, "cannot be read (")):
+            r = py("check_room.py", path)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn(want, r.stdout)
+            self.assertIn("FAILED (1 errors, 0 warnings)", r.stdout)
+            self.assertNotIn("Traceback", r.stderr)
 
 
 class CheckRoom(unittest.TestCase):

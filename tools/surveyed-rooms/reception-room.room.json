@@ -941,7 +941,14 @@
           ]
         }
       ],
-      "manifest": "survey.json"
+      "manifest": "survey.json",
+      "detail": "detail"
+    },
+    "detail": {
+      "texel": 0.002,
+      "tile": 512,
+      "gutter": 8,
+      "quality": 86
     }
   },
   "provenance": {

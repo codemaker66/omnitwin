@@ -207,6 +207,27 @@ class Report:
         self.facts.append(msg)
 
 
+class Unreadable(Exception):
+    """The file holds no JSON to check; the message is one plain line saying why."""
+
+
+def read_config(path):
+    """The config as parsed JSON, or Unreadable: a file that is not there, is not UTF-8 or is not
+    JSON has nothing to check field by field, so it is named as that rather than left to a
+    traceback."""
+    try:
+        with open(path, "rb") as f:
+            text = f.read().decode("utf-8")
+    except OSError as exc:
+        raise Unreadable(f"{path}: cannot be read ({exc.strerror})") from exc
+    except UnicodeDecodeError as exc:
+        raise Unreadable(f"{path}: not UTF-8 ({exc.reason} at byte {exc.start})") from exc
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise Unreadable(f"{path}: not JSON ({exc.msg} at line {exc.lineno}, column {exc.colno})") from exc
+
+
 def check_unique(rep, label, items, key="id"):
     seen = set()
     for item in items:
@@ -712,7 +733,12 @@ def main():
     ap.add_argument("--schema", default=os.path.join(HERE, "room.schema.json"))
     ap.add_argument("--quiet", action="store_true", help="print only problems")
     args = ap.parse_args()
-    room = roomlib.load(args.room)
+    try:
+        room = read_config(args.room)
+    except Unreadable as exc:
+        print(f"ERROR {exc}")
+        print(f"{os.path.basename(args.room)}: FAILED (1 errors, 0 warnings)")
+        sys.exit(1)
     schema = roomlib.load(args.schema)
     manifest = roomlib.load(args.manifest) if args.manifest else None
     rep = check(room, schema, manifest)

@@ -5,7 +5,7 @@ import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { FILL_AISLE_RULE, GRAND_HALL_WALL_NAMES, gangwayReview, grandHallExits } from "../auto-fill.js";
 import { getCatalogueItemBySlug } from "../catalogue.js";
 import { CIRCULATION_AISLE } from "../circulation.js";
-import { liveAisles, type LiveAisleOptions } from "../clearance-ring.js";
+import { liveAisles, type LiveAisleOptions } from "../live-aisles.js";
 import { createPlacedItem, type PlacedItem } from "../placement.js";
 import { cardParamsFor, stampSetup } from "../setup-cards.js";
 

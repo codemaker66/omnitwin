@@ -166,7 +166,9 @@ function readableText(code: string): readonly (readonly [string, number])[] {
 }
 
 function scriptViolations(source: string, path: string): RuleHit[] {
-  const code = blankLineComments(blankBlockComments(source));
+  // Module paths are not copy: an import names a file, not a feature.
+  const code = blankLineComments(blankBlockComments(source))
+    .replace(/^import[\s\S]*?from\s+["'][^"']+["'];?/gmu, (statement) => statement.replace(/[^\n]/gu, " "));
   const hits: RuleHit[] = [];
   if (path.endsWith(".tsx")) {
     hits.push(...hitsOf(code, /\sstyle=\{/g, "no inline style in JSX (F-59): use a class, or write a per-frame value through a ref"));
