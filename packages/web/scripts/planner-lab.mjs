@@ -17,6 +17,7 @@
 //     [--views opening,plan,from-fireplace,from-windows,from-front,from-rear]
 import { chromium } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 function option(name, fallback) {
@@ -25,7 +26,7 @@ function option(name, fallback) {
 }
 
 const BASE = option("base", "http://127.0.0.1:5213");
-const OUT = option("out", "D:/claude/grand-hall-planner/captures/latest");
+const OUT = option("out", join(tmpdir(), "planner-lab"));
 const PROFILE = option("profile", "desktop");
 const MOOD = option("mood", "daylight");
 const VIEWS = option("views", "room,plan,eye").split(",").filter((view) => view.length > 0);
