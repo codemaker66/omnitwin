@@ -1,7 +1,13 @@
+import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Database } from "../db/client.js";
-import { readSpineInvariant, spineInvariantHolds, type SpineInvariant } from "../services/event-spine-invariant.js";
+import {
+  SPINE_INVARIANT_FIELDS,
+  readSpineInvariant,
+  spineInvariantHolds,
+  type SpineInvariant,
+} from "../services/event-spine-invariant.js";
 import {
   deal as dealIn,
   enquiry as enquiryIn,
@@ -105,11 +111,44 @@ describe.skipIf(target === undefined)("the spine: the count of records without t
       SELECT p.venue_id, p.id, $2, 1, repeat('a', 64), 'amount', 100000, 25000, 'GBP', CASE WHEN $3 THEN now() END
       FROM proposals p WHERE p.id = $1 RETURNING id`, [proposalId, eventId, withdrawn]);
 
-  /** A hold for an enquiry in an event, in the venue's first room; one that is no longer live has been released. */
+  interface BookingInput {
+    readonly kind?: "hold" | "viewing";
+    readonly status?: "active" | "released" | "cancelled";
+    readonly deleted?: boolean;
+  }
+
+  /** A booking for an enquiry in the venue's first room: a live hold in the event unless told otherwise
+   *  (a viewing has no event). */
+  const booking = (v: SpineVenue, enquiryId: string, eventId: string | null, input: BookingInput = {}): Promise<string> =>
+    insertedId(`INSERT INTO bookings (venue_id, space_id, event_id, enquiry_id, kind, status, title, starts_at, ends_at, deleted_at)
+      VALUES ($1, $2, $3, $4, $5, $6, 'Held date', '2031-04-01T18:00:00Z', '2031-04-01T22:00:00Z', CASE WHEN $7 THEN now() END)
+      RETURNING id`, [v.venueId, v.rooms.hall, eventId, enquiryId, input.kind ?? "hold", input.status ?? "active", input.deleted ?? false]);
+
+  /** A hold for an enquiry in an event; one that is no longer live has been released. */
   const hold = (v: SpineVenue, enquiryId: string, eventId: string, live = true): Promise<string> =>
-    insertedId(`INSERT INTO bookings (venue_id, space_id, event_id, enquiry_id, kind, status, title, starts_at, ends_at)
-      VALUES ($1, $2, $3, $4, 'hold', $5, 'Held date', '2031-04-01T18:00:00Z', '2031-04-01T22:00:00Z') RETURNING id`,
-    [v.venueId, v.rooms.hall, eventId, enquiryId, live ? "active" : "released"]);
+    booking(v, enquiryId, eventId, { status: live ? "active" : "released" });
+
+  /** A quote written for an enquiry. */
+  const quoteFor = (v: SpineVenue, enquiryId: string): Promise<string> =>
+    insertedId("INSERT INTO quotes (venue_id, enquiry_id, name) VALUES ($1, $2, 'Fixture quote') RETURNING id", [v.venueId, enquiryId]);
+
+  const deleteProposal = async (proposalId: string): Promise<void> => {
+    await pool.query("UPDATE proposals SET deleted_at = now() WHERE id = $1", [proposalId]);
+  };
+
+  /** An accepted proposal, on an event when one is given. */
+  async function acceptedOn(v: SpineVenue, eventId: string | null): Promise<string> {
+    const proposalId = await proposal(v.venueId, "accepted");
+    if (eventId !== null) await link("proposals", proposalId, eventId);
+    return proposalId;
+  }
+
+  /** An event that has been deleted. */
+  async function deletedEvent(v: SpineVenue): Promise<string> {
+    const eventId = await event(v.venueId, "Since deleted");
+    await deleteEvent(eventId);
+    return eventId;
+  }
 
   /** A floor plan in the venue's first room. */
   const plan = (v: SpineVenue): Promise<string> =>
@@ -205,7 +244,7 @@ describe.skipIf(target === undefined)("the spine: the count of records without t
     // Access and pricing requests, their types trimmed as JavaScript trims: a tab, a no-break space, spaces.
     await repliedEnquiry(v.venueId, "submitted", "venue-access");
     await repliedEnquiry(v.venueId, "submitted", "venue-access\t");
-    await repliedEnquiry(v.venueId, "submitted", " venue-access");
+    await repliedEnquiry(v.venueId, "submitted", `${String.fromCharCode(0xa0)}venue-access`);
     await repliedEnquiry(v.venueId, "submitted", " venue-enquiry ");
     // A draft enquiry, even replied to, never has an event.
     await repliedEnquiry(v.venueId, "draft");
@@ -230,6 +269,132 @@ describe.skipIf(target === undefined)("the spine: the count of records without t
     expect(await readSpineInvariant(db, v.venueId)).toEqual({ ...ALL_ZERO, workedEnquiriesWithoutEvent: 1 });
   });
 
+  // A deposit request in force is counted in its own right, in all three places, whatever became of its
+  // proposal: the later rule ("a request in force must have an event") reads the request's own row.
+  const REQUEST_CASES: readonly (readonly [string, Arrange, Partial<SpineInvariant>])[] = [
+    ["in force with no event, its proposal since deleted", async (v) => {
+      const proposalId = await acceptedOn(v, await event(v.venueId));
+      await depositRequestFor(proposalId, null);
+      await deleteProposal(proposalId);
+    }, { depositRequestsWithoutEvent: 1 }],
+    ["in force naming a deleted event, its proposal since deleted", async (v) => {
+      const proposalId = await acceptedOn(v, null);
+      await depositRequestFor(proposalId, await deletedEvent(v));
+      await deleteProposal(proposalId);
+    }, { linksToClosedEvents: 1 }],
+    ["in force naming another event than its proposal's", async (v) => {
+      await depositRequestFor(await acceptedOn(v, await event(v.venueId, "The proposal's")), await event(v.venueId, "The request's"));
+    }, { disagreeingLinks: 1 }],
+    ["in force naming another event than its proposal's, the proposal since deleted", async (v) => {
+      const proposalId = await acceptedOn(v, await event(v.venueId, "The proposal's"));
+      await depositRequestFor(proposalId, await event(v.venueId, "The request's"));
+      await deleteProposal(proposalId);
+    }, { disagreeingLinks: 1 }],
+    ["withdrawn, with no event, its proposal since deleted", async (v) => {
+      const proposalId = await acceptedOn(v, await event(v.venueId));
+      await depositRequestFor(proposalId, null, true);
+      await deleteProposal(proposalId);
+    }, {}],
+  ];
+
+  it.each(REQUEST_CASES)("counts a deposit request %s", async (label, arrange, expected) => {
+    const v = await venue(`request ${label}`);
+    await arrange(v);
+    expect(await readSpineInvariant(db, v.venueId)).toEqual({ ...ALL_ZERO, ...expected });
+  });
+
+  // A link to a deleted event, through each kind of record that must have an event; one that need not is not counted.
+  const CLOSED_EVENT_CASES: readonly (readonly [string, Arrange, Partial<SpineInvariant>])[] = [
+    ["an open deal", async (v) => { await link("opportunities", await deal(v.venueId, "qualified"), await deletedEvent(v)); },
+      { linksToClosedEvents: 1 }],
+    ["a worked enquiry", async (v) => { await link("enquiries", await repliedEnquiry(v.venueId), await deletedEvent(v)); },
+      { linksToClosedEvents: 1 }],
+    ["a proposal and its deposit request in force", async (v) => {
+      const eventId = await deletedEvent(v);
+      await depositRequestFor(await acceptedOn(v, eventId), eventId);
+    }, { linksToClosedEvents: 2 }],
+    ["a lost deal and a declined proposal, which need no event", async (v) => {
+      const eventId = await deletedEvent(v);
+      await link("opportunities", await deal(v.venueId, "lost"), eventId);
+      await link("proposals", await proposal(v.venueId, "declined"), eventId);
+    }, {}],
+  ];
+
+  it.each(CLOSED_EVENT_CASES)("counts a link to a deleted event from %s", async (label, arrange, expected) => {
+    const v = await venue(`closed event ${label}`);
+    await arrange(v);
+    expect(await readSpineInvariant(db, v.venueId)).toEqual({ ...ALL_ZERO, ...expected });
+  });
+
+  // An open enquiry with no reply, worked by one sign alone, none of which reaches a live event.
+  const WORK_CASES: readonly (readonly [string, (v: SpineVenue, enquiryId: string) => Promise<void>, number])[] = [
+    ["a live hold, in an event since deleted", async (v, enquiryId) => { await booking(v, enquiryId, await deletedEvent(v)); }, 1],
+    ["a viewing", async (v, enquiryId) => { await booking(v, enquiryId, null, { kind: "viewing" }); }, 1],
+    ["a deal (lost, so it needs no event of its own)", async (v, enquiryId) => { await deal(v.venueId, "lost", enquiryId); }, 1],
+    ["a proposal (declined, so it needs no event of its own)", async (v, enquiryId) => {
+      await proposal(v.venueId, "declined", { enquiryId });
+    }, 1],
+    ["a quote", async (v, enquiryId) => { await quoteFor(v, enquiryId); }, 1],
+    ["nothing but a cancelled hold, in an event since deleted", async (v, enquiryId) => {
+      await booking(v, enquiryId, await deletedEvent(v), { status: "cancelled" });
+    }, 0],
+    ["nothing but a deleted hold, in a live event", async (v, enquiryId) => {
+      await booking(v, enquiryId, await event(v.venueId), { deleted: true });
+    }, 0],
+    ["nothing but a deleted deal", async (v, enquiryId) => {
+      await pool.query("UPDATE opportunities SET deleted_at = now() WHERE id = $1", [await deal(v.venueId, "lost", enquiryId)]);
+    }, 0],
+  ];
+
+  it.each(WORK_CASES)("counts an open enquiry worked by %s", async (label, arrange, expected) => {
+    const v = await venue(`worked by ${label}`);
+    await arrange(v, await enquiry(v.venueId, "submitted"));
+    expect(await readSpineInvariant(db, v.venueId)).toEqual({ ...ALL_ZERO, workedEnquiriesWithoutEvent: expected });
+  });
+
+  it("does not count a deal or a proposal on another event than its enquiry's", async () => {
+    const v = await venue("other events than the enquiry's");
+    const enquiryId = await repliedEnquiry(v.venueId);
+    await link("enquiries", enquiryId, await event(v.venueId, "The enquiry's"));
+    const dealId = await deal(v.venueId, "qualified", enquiryId);
+    const dealEvent = await event(v.venueId, "The deal's");
+    await link("opportunities", dealId, dealEvent);
+    await link("proposals", await proposal(v.venueId, "sent", { opportunityId: dealId, enquiryId }), dealEvent);
+    await link("proposals", await proposal(v.venueId, "sent", { enquiryId }), await event(v.venueId, "The proposal's"));
+    expect(await readSpineInvariant(db, v.venueId)).toEqual(ALL_ZERO);
+  });
+
+  it("does not count a proposal against another venue's deal", async () => {
+    // A proposal naming another venue's deal is a tenancy fault of its own, outside this count.
+    const here = await venue("proposal here"), there = await venue("deal there");
+    const theirDeal = await deal(there.venueId, "qualified");
+    await link("opportunities", theirDeal, await event(there.venueId, "Theirs"));
+    await link("proposals", await proposal(here.venueId, "sent", { opportunityId: theirDeal }), await event(here.venueId, "Ours"));
+    expect(await readSpineInvariant(db, here.venueId)).toEqual(ALL_ZERO);
+  });
+
+  it("counts an event with two open deals, seen with the one-open-deal index dropped inside a transaction rolled back", async () => {
+    const v = await venue("two open deals, index dropped");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("DROP INDEX opportunities_one_open_per_event");
+      const [made] = (await client.query<{ id: string }>(
+        "INSERT INTO events (venue_id, name, status) VALUES ($1, 'Two deals', 'draft') RETURNING id", [v.venueId])).rows;
+      if (made === undefined) throw new Error("The fixture wrote no event");
+      await client.query(`INSERT INTO opportunities (venue_id, title, stage, event_id)
+        VALUES ($1, 'First open deal', 'new', $2), ($1, 'Second open deal', 'qualified', $2)`, [v.venueId, made.id]);
+      expect(await readSpineInvariant(drizzle(client), v.venueId)).toEqual({ ...ALL_ZERO, eventsWithTwoOpenDeals: 1 });
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+    const indexes = (await pool.query<{ indexname: string }>(
+      "SELECT indexname FROM pg_indexes WHERE tablename = 'opportunities' AND indexname = 'opportunities_one_open_per_event'")).rows;
+    expect(indexes).toEqual([{ indexname: "opportunities_one_open_per_event" }]);
+    expect(await readSpineInvariant(db, v.venueId)).toEqual(ALL_ZERO);
+  });
+
   it("reads every venue when none is named", async () => {
     const one = await venue("everywhere one"), two = await venue("everywhere two");
     await proposal(one.venueId, "sent");
@@ -238,7 +403,7 @@ describe.skipIf(target === undefined)("the spine: the count of records without t
     const everywhere = await readSpineInvariant(db);
     expect(here.proposalsWithoutEvent).toBe(1);
     expect(everywhere.proposalsWithoutEvent).toBeGreaterThanOrEqual(2);
-    for (const field of Object.keys(ALL_ZERO) as (keyof SpineInvariant)[]) {
+    for (const field of SPINE_INVARIANT_FIELDS) {
       expect(everywhere[field]).toBeGreaterThanOrEqual(here[field]);
     }
   });

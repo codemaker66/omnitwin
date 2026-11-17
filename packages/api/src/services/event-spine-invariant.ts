@@ -16,32 +16,38 @@ import { sqlList, type InvariantReader } from "./event-binding.js";
 // It is the definition in @omnitwin/types (event-spine.ts) in SQL, and it
 // agrees with the join of old records (spine_join_old_records, migration
 // *_event_spine_links): a record the join rightly leaves alone is not
-// counted, and one it should join is. The definition's sets are passed in as
+// counted, and one it should join is, but for the deposit-request rule below.
+// The definition's sets are passed in as
 // values, never retyped, so the count and the rule cannot drift apart.
 //
 //   proposalsWithoutEvent        undeleted proposals with no event that must
 //                                have one (proposalMustHaveEvent)
 //   agreementsWithoutEvent       agreements (proposal_contract_versions) whose
 //                                undeleted proposal has no event
-//   depositRequestsWithoutEvent  deposit requests in force, of an undeleted
-//                                proposal, with no event
+//   depositRequestsWithoutEvent  deposit requests in force with no event
 //   openDealsWithoutEvent        undeleted deals at an open stage with no event
 //   workedEnquiriesWithoutEvent  enquiries with no event that must have one
 //                                (enquiryMustHaveEvent)
 //   eventsWithTwoOpenDeals       events with more than one undeleted open deal
 //   disagreeingLinks             an undeleted proposal and its undeleted deal
-//                                on two events, both set; and a deposit request
-//                                in force and its undeleted proposal on two
-//                                events, both set. A deal or proposal on
+//                                of the same venue on two events, both set; and
+//                                a deposit request in force and its proposal on
+//                                two events, both set. A deal or proposal on
 //                                another event than its enquiry's is not one.
 //   linksToClosedEvents          records counted as needing an event above
 //                                (proposals, deposit requests, deals,
 //                                enquiries) whose event is deleted
 //   eventDealPointersInUse       events naming a deal (events.opportunity_id)
 //
-// While a question on the list of joins to check is open, the count is not
-// zero: the join lists a doubtful record and leaves it without an event, and
-// records that wait on it wait unlisted. The count counts them all.
+// A deposit request in force is counted in its own right, in all three
+// places, whatever became of its proposal: the later rule that a request in
+// force must have an event reads the request's own row, so a deleted proposal
+// must not hide one.
+//
+// Every listed record (on the list of joins to check) that must have an
+// event, and every record waiting on one, is counted. A listed record that
+// need not have an event (an unworked enquiry whose floor plan reaches
+// several events, say), and October's copied questions, are not.
 // ---------------------------------------------------------------------------
 
 /**
@@ -51,9 +57,9 @@ import { sqlList, type InvariantReader } from "./event-binding.js";
  * as js_whitespace.
  */
 export const JS_WHITESPACE = [
-  "\u0009", "\u000A", "\u000B", "\u000C", "\u000D", " ", " ", " ",
-  " ", " ", " ", " ", " ", " ", " ", " ", " ", " ", " ",
-  " ", " ", " ", " ", "　", "﻿",
+  "\u0009", "\u000A", "\u000B", "\u000C", "\u000D", "\u0020", "\u00A0", "\u1680",
+  "\u2000", "\u2001", "\u2002", "\u2003", "\u2004", "\u2005", "\u2006", "\u2007", "\u2008", "\u2009", "\u200A",
+  "\u2028", "\u2029", "\u202F", "\u205F", "\u3000", "\uFEFF",
 ].join("");
 
 export interface SpineInvariant {
@@ -76,9 +82,25 @@ function countFrom(value: unknown, label: string): number {
   return count;
 }
 
-/** True when every one of the nine numbers is zero. */
+/** Each field of SpineInvariant named once: the compiler refuses a field left out, one too many, or a misspelling. */
+const FIELD_NAMES: { readonly [Field in keyof SpineInvariant]: Field } = {
+  proposalsWithoutEvent: "proposalsWithoutEvent",
+  agreementsWithoutEvent: "agreementsWithoutEvent",
+  depositRequestsWithoutEvent: "depositRequestsWithoutEvent",
+  openDealsWithoutEvent: "openDealsWithoutEvent",
+  workedEnquiriesWithoutEvent: "workedEnquiriesWithoutEvent",
+  eventsWithTwoOpenDeals: "eventsWithTwoOpenDeals",
+  disagreeingLinks: "disagreeingLinks",
+  linksToClosedEvents: "linksToClosedEvents",
+  eventDealPointersInUse: "eventDealPointersInUse",
+};
+
+/** The nine fields of the count. */
+export const SPINE_INVARIANT_FIELDS: readonly (keyof SpineInvariant)[] = Object.values(FIELD_NAMES);
+
+/** True when every one of the nine numbers is zero; any other key of a wider report is not judged. */
 export function spineInvariantHolds(counts: SpineInvariant): boolean {
-  return Object.values(counts).every((count) => count === 0);
+  return SPINE_INVARIANT_FIELDS.every((field) => counts[field] === 0);
 }
 
 export async function readSpineInvariant(conn: InvariantReader, venueId: string | null = null): Promise<SpineInvariant> {
@@ -125,9 +147,8 @@ export async function readSpineInvariant(conn: InvariantReader, venueId: string 
         WHERE p.event_id IS NULL AND ${proposalMustHave} AND ${inVenue(sql`p.venue_id`)})::text AS proposals_without_event,
       (SELECT count(*) FROM proposal_contract_versions c JOIN proposals p ON p.id = c.proposal_id
         WHERE p.deleted_at IS NULL AND p.event_id IS NULL AND ${inVenue(sql`p.venue_id`)})::text AS agreements_without_event,
-      (SELECT count(*) FROM proposal_deposit_requests r JOIN proposals p ON p.id = r.proposal_id
-        WHERE r.cancelled_at IS NULL AND r.event_id IS NULL AND p.deleted_at IS NULL
-          AND ${inVenue(sql`r.venue_id`)})::text AS deposit_requests_without_event,
+      (SELECT count(*) FROM proposal_deposit_requests r
+        WHERE r.cancelled_at IS NULL AND r.event_id IS NULL AND ${inVenue(sql`r.venue_id`)})::text AS deposit_requests_without_event,
       (SELECT count(*) FROM opportunities o
         WHERE o.event_id IS NULL AND ${dealMustHave} AND ${inVenue(sql`o.venue_id`)})::text AS open_deals_without_event,
       (SELECT count(*) FROM enquiries q
@@ -137,20 +158,18 @@ export async function readSpineInvariant(conn: InvariantReader, venueId: string 
         WHERE o.event_id IS NOT NULL AND ${dealMustHave} AND ${inVenue(sql`o.venue_id`)}
         GROUP BY o.event_id HAVING count(*) > 1
       ) t)::text AS events_with_two_open_deals,
-      ((SELECT count(*) FROM proposals p JOIN opportunities o ON o.id = p.opportunity_id
+      ((SELECT count(*) FROM proposals p JOIN opportunities o ON o.id = p.opportunity_id AND o.venue_id = p.venue_id
           WHERE p.deleted_at IS NULL AND o.deleted_at IS NULL
             AND p.event_id IS NOT NULL AND o.event_id IS NOT NULL AND p.event_id <> o.event_id
             AND ${inVenue(sql`p.venue_id`)})
         + (SELECT count(*) FROM proposal_deposit_requests r JOIN proposals p ON p.id = r.proposal_id
-          WHERE r.cancelled_at IS NULL AND p.deleted_at IS NULL
+          WHERE r.cancelled_at IS NULL
             AND r.event_id IS NOT NULL AND p.event_id IS NOT NULL AND r.event_id <> p.event_id
             AND ${inVenue(sql`r.venue_id`)}))::text AS disagreeing_links,
       ((SELECT count(*) FROM proposals p JOIN events x ON x.id = p.event_id
           WHERE x.deleted_at IS NOT NULL AND ${proposalMustHave} AND ${inVenue(sql`p.venue_id`)})
-        + (SELECT count(*) FROM proposal_deposit_requests r JOIN proposals p ON p.id = r.proposal_id
-            JOIN events x ON x.id = r.event_id
-          WHERE r.cancelled_at IS NULL AND p.deleted_at IS NULL AND x.deleted_at IS NOT NULL
-            AND ${inVenue(sql`r.venue_id`)})
+        + (SELECT count(*) FROM proposal_deposit_requests r JOIN events x ON x.id = r.event_id
+          WHERE r.cancelled_at IS NULL AND x.deleted_at IS NOT NULL AND ${inVenue(sql`r.venue_id`)})
         + (SELECT count(*) FROM opportunities o JOIN events x ON x.id = o.event_id
           WHERE x.deleted_at IS NOT NULL AND ${dealMustHave} AND ${inVenue(sql`o.venue_id`)})
         + (SELECT count(*) FROM enquiries q JOIN events x ON x.id = q.event_id

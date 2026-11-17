@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   CLOSED_ENQUIRY_STATES,
   NON_BOOKING_ENQUIRY_TYPES,
@@ -11,6 +12,7 @@ import {
 } from "@omnitwin/types";
 import {
   JS_WHITESPACE,
+  SPINE_INVARIANT_FIELDS,
   readSpineInvariant,
   spineInvariantHolds,
   type SpineInvariant,
@@ -19,15 +21,21 @@ import {
 // ---------------------------------------------------------------------------
 // The spine's count (readSpineInvariant) without a database: it reads the
 // nine numbers it is given and nothing else, refuses an answer it cannot read
-// rather than reporting zero, and takes the definition's sets from
-// @omnitwin/types as values. Its whitespace is exactly what JavaScript's
-// trim() removes, and exactly the join's own (js_whitespace in migration
-// *_event_spine_links). The counting itself is proven on PostgreSQL in
+// rather than reporting zero, scopes every one of its parts to the venue when
+// one is named, and takes the definition's sets from @omnitwin/types as
+// values. Its whitespace is exactly what JavaScript's trim() removes, and
+// exactly the join's own (js_whitespace in migration *_event_spine_links). The
+// counting itself is proven on PostgreSQL in
 // event-spine-invariant-postgres.test.ts.
 // ---------------------------------------------------------------------------
 
 const DRIZZLE = resolve(import.meta.dirname, "../../drizzle");
 const VENUE = "00000000-0000-4000-8000-000000000001";
+const JournalSchema = z.object({ entries: z.array(z.object({ tag: z.string() }).passthrough()) }).passthrough();
+
+/** Every part of the statement that is scoped by the counted row's venue: one sub-select each, and the
+ *  two halves of disagreeingLinks and four of linksToClosedEvents. */
+const VENUE_SCOPED_PARTS = 13;
 
 const COLUMNS = [
   "proposals_without_event",
@@ -66,6 +74,14 @@ function reader(rows: readonly Record<string, unknown>[]) {
   };
 }
 
+/** The one statement the reader was given, as SQL text and parameters. */
+function onlyStatement(conn: { readonly seen: readonly SQL[] }): { readonly sql: string; readonly params: unknown[] } {
+  expect(conn.seen).toHaveLength(1);
+  const [statement] = conn.seen;
+  if (statement === undefined) throw new Error("The count sent no statement");
+  return dialect.sqlToQuery(statement);
+}
+
 /** A row of the nine columns, each the given value, with any overrides. */
 function row(value: unknown, overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return { ...Object.fromEntries(COLUMNS.map((column) => [column, value])), ...overrides };
@@ -87,19 +103,18 @@ const sortedCodes = (text: string): number[] =>
   Array.from({ length: text.length }, (_unit, index) => text.charCodeAt(index)).sort((x, y) => x - y);
 
 describe("readSpineInvariant", () => {
-  it("reads the nine counts as numbers, scoped to a venue when one is named", async () => {
+  it("reads the nine counts as numbers, every part scoped to a venue when one is named", async () => {
     const conn = reader([row("0", { open_deals_without_event: "3", links_to_closed_events: 2 })]);
     expect(await readSpineInvariant(conn, VENUE)).toEqual({ ...ALL_ZERO, openDealsWithoutEvent: 3, linksToClosedEvents: 2 });
-    expect(conn.seen).toHaveLength(1);
-    const query = dialect.sqlToQuery(conn.seen[0] as SQL);
-    expect(query.params).toContain(VENUE);
-    expect(query.sql).toContain("venue_id = $");
+    const query = onlyStatement(conn);
+    expect(query.sql.match(/venue_id = \$\d+/gu)).toHaveLength(VENUE_SCOPED_PARTS);
+    expect(query.params.filter((param) => param === VENUE)).toHaveLength(VENUE_SCOPED_PARTS);
   });
 
   it("passes the definition's sets and JavaScript's whitespace as values, never retyped", async () => {
     const conn = reader([row("0")]);
     await readSpineInvariant(conn, VENUE);
-    const query = dialect.sqlToQuery(conn.seen[0] as SQL);
+    const query = onlyStatement(conn);
     for (const value of [...OPEN_OPPORTUNITY_STAGES, ...SENT_PROPOSAL_STATUSES, ...CLOSED_ENQUIRY_STATES,
       ...NON_BOOKING_ENQUIRY_TYPES, JS_WHITESPACE]) {
       expect(query.params).toContain(value);
@@ -112,7 +127,7 @@ describe("readSpineInvariant", () => {
   it("reads the whole database when no venue is named", async () => {
     const conn = reader([row(0)]);
     expect(await readSpineInvariant(conn)).toEqual(ALL_ZERO);
-    expect(dialect.sqlToQuery(conn.seen[0] as SQL).sql).not.toContain("venue_id = $");
+    expect(onlyStatement(conn).sql).not.toMatch(/venue_id = \$/u);
   });
 
   it("refuses an answer it cannot read rather than reporting zero", async () => {
@@ -129,11 +144,20 @@ describe("readSpineInvariant", () => {
 });
 
 describe("spineInvariantHolds", () => {
+  it("names each of the nine fields once", () => {
+    expect([...SPINE_INVARIANT_FIELDS].sort()).toEqual(Object.keys(ALL_ZERO).sort());
+  });
+
   it("holds only when every one of the nine numbers is zero", () => {
     expect(spineInvariantHolds(ALL_ZERO)).toBe(true);
-    for (const field of Object.keys(ALL_ZERO) as (keyof SpineInvariant)[]) {
+    for (const field of SPINE_INVARIANT_FIELDS) {
       expect([field, spineInvariantHolds({ ...ALL_ZERO, [field]: 1 })]).toEqual([field, false]);
     }
+  });
+
+  it("judges the nine and nothing else, so a wider report that carries them still holds", () => {
+    const report = { ...ALL_ZERO, status: "ok", reviewList: 3, joinsToCheck: 2 };
+    expect(spineInvariantHolds(report)).toBe(true);
   });
 });
 
@@ -148,8 +172,8 @@ describe("JS_WHITESPACE", () => {
   });
 
   it("is the join's own js_whitespace, character for character", async () => {
-    const journal = await readFile(resolve(DRIZZLE, "meta/_journal.json"), "utf8");
-    const tag = (JSON.parse(journal) as { entries: { tag: string }[] }).entries.find((entry) => entry.tag.endsWith("_event_spine_links"))?.tag;
+    const journal = JournalSchema.parse(JSON.parse(await readFile(resolve(DRIZZLE, "meta/_journal.json"), "utf8")));
+    const tag = journal.entries.find((entry) => entry.tag.endsWith("_event_spine_links"))?.tag;
     if (tag === undefined) throw new Error("No *_event_spine_links migration in the journal");
     const source = await readFile(resolve(DRIZZLE, `${tag}.sql`), "utf8");
     const literal = /js_whitespace CONSTANT text := E'([^']*)';/u.exec(source)?.[1];
