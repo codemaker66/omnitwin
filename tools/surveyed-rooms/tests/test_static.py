@@ -156,6 +156,27 @@ class CheckRoom(unittest.TestCase):
             rep = check(roomlib.load(path))
             self.assertEqual((rep.errors, rep.warnings), ([], []), path)
 
+    def test_walls_no_station_has_a_line_to(self):
+        """In plan: a room 6 m by 4 m with a dead-end nook 2 m deep and 1 m wide opening off one corner."""
+        verts = [[3, 2], [3, -1], [5, -1], [5, -2], [-3, -2], [-3, 2]]
+        ids = ["east", "nook-north", "nook-end", "south", "west", "north"]
+        room = {"walls": {"vertices": verts, "segments": [{"id": i, "kind": "solid", "height": 3.0} for i in ids]},
+                "transform": {"centre": [0, 0], "floorZ": 0, "quarterTurns": 0}}
+        self.assertGreater(roomlib.signed_area(verts), 0)
+        walls = roomlib.walls(room)
+        across = [(0.0, 1.5)]            # across the room from the nook's mouth
+        # The nook's north wall faces away from it, and the room's east wall stands before the nook's end.
+        self.assertEqual(check_room.out_of_sight(walls, across, 16.0, 0.2), ["nook-north", "nook-end"])
+        # One looking straight down the nook sees its end; its north wall is in front of that one, but too edge-on.
+        self.assertEqual(check_room.out_of_sight(walls, across + [(0.0, -1.5)], 16.0, 0.2), ["nook-north"])
+        self.assertEqual(check_room.out_of_sight(walls, across + [(4.0, -1.5)], 16.0, 0.2), [])     # one inside the nook
+        self.assertEqual(check_room.out_of_sight(walls, [(0.0, 0.0)], 1.0, 0.2), ids)             # nothing within a metre
+        self.assertEqual(check_room.out_of_sight(walls, [], 16.0, 0.2), ids)
+        # A wall that is open has no elevation to be seen, and one that is a screen is seen past.
+        room["walls"]["segments"][0]["kind"] = "screen"
+        room["walls"]["segments"][1]["kind"] = "open"
+        self.assertEqual(check_room.out_of_sight(roomlib.walls(room), across, 16.0, 0.2), [])
+
     def errors(self, change, manifest=False):
         _, room = variant(SALOON, "saloon-check.room.json", change)
         return "\n".join(check(room, manifest).errors)

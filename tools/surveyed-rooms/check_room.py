@@ -29,6 +29,9 @@ DOORWAY_SLACK = 0.1      # and this far past the opening's jambs
 ON_WALL = 0.05           # an opening's centreE57 must lie this close to its wall's face
 ANCHOR_LIMIT = 0.05      # a survey anchor may sit this far from its corner
 GEOMETRIC_GLAZING = ("stained-backlit", "frosted-lower", "sheer")
+SIGHT_SAMPLES = (0.1, 0.3, 0.5, 0.7, 0.9)   # along a wall: where a line of sight from a station is tried
+SIGHT_INSET = 0.01       # metres in front of the face, so the wall itself is not in the way
+SIGHT_BLOCKERS = ("solid", "partition")     # the kinds of wall a station does not see past
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +161,36 @@ def _segments_cross(p, q, r, s):
     if o1 != o2 and o3 != o4:
         return True
     return (o1 == 0 and on(p, q, r)) or (o2 == 0 and on(p, q, s)) or (o3 == 0 and on(r, s, p)) or (o4 == 0 and on(r, s, q))
+
+
+def out_of_sight(walls, stations, reach, cos_min):
+    """The ids of the walls (roomlib.walls frames; an open one has no elevation and is passed over)
+    that no station has a clear line to in plan: within `reach` metres, at an incidence whose cosine
+    is at least `cos_min`, with no solid wall or partition of the outline between. A station is its
+    planner (x, z), followed for a doorway station by the id of the wall it looks through.
+
+    A plan knows nothing of what stands in a room, of a low screen seen over or of a door leaf, so
+    this can only warn. The label step is what finds a wall unlabelled, and the build stops there."""
+    blockers = [(w["start"], w["end"], w["id"]) for w in walls if w["segment"]["kind"] in SIGHT_BLOCKERS]
+
+    def clear(station, w, point):
+        sx, sz, *through = station
+        dx, dz = sx - point[0], sz - point[1]
+        dist = math.hypot(dx, dz)
+        if dist == 0 or dist > reach or (dx * w["normal"][0] + dz * w["normal"][1]) / dist < cos_min:
+            return False
+        return not any(i != w["id"] and i not in through and _segments_cross((sx, sz), point, a, b)
+                       for a, b, i in blockers)
+
+    out = []
+    for w in walls:
+        if w["segment"]["kind"] == "open":
+            continue
+        points = [(w["origin"][0] + w["u"][0] * f * w["length"] + w["normal"][0] * SIGHT_INSET,
+                   w["origin"][1] + w["u"][1] * f * w["length"] + w["normal"][1] * SIGHT_INSET) for f in SIGHT_SAMPLES]
+        if not any(clear(station, w, point) for point in points for station in stations):
+            out.append(w["id"])
+    return out
 
 
 class Report:
@@ -398,6 +431,7 @@ def check_stations(rep, room, wmap, openings, manifest):
         return
     nodes = {n["id"]: n for n in manifest["nodes"]}
     roles = {}
+    placed = []
     for s in room["stations"]:
         roles[s["role"]] = roles.get(s["role"], 0) + 1
         node = nodes.get(s["id"])
@@ -406,6 +440,8 @@ def check_stations(rep, room, wmap, openings, manifest):
             continue
         X, Y, Z = node["pose"]["t"]
         x, y, z = roomlib.to_planner(room, X, Y, Z)
+        doorway = openings.get(s.get("opening")) if s["role"] == "doorway" else None
+        placed.append((x, z, doorway["wall"]) if doorway else (x, z))
         if not 1.0 <= y <= 2.0:
             rep.warn(f"station {s['id']}: lens {y:.3f} m above this room's floor (a tripod stands 1.4-1.6 m)")
         if s["role"] == "room":
@@ -434,6 +470,14 @@ def check_stations(rep, room, wmap, openings, manifest):
             if not s.get("note"):
                 rep.error(f"station {s['id']}: an outside station needs a note saying why it is kept")
     rep.fact("stations: " + ", ".join(f"{n} {r}" for r, n in sorted(roles.items())))
+    limits = room["survey"].get("projection", {}).get("walls", {})
+    reach, cos_min = limits.get("maxDist", 16.0), limits.get("cosMin", 0.2)
+    order = room["survey"]["wallViews"].get("order") or [s["id"] for s in room["walls"]["segments"]]
+    for wall_id in out_of_sight(list(wmap.values()), placed, reach, cos_min):
+        if wall_id in order:
+            rep.warn(f"wall {wall_id}: no station has a clear line to it in plan (within {reach:g} m, more than "
+                     f"{math.degrees(math.asin(cos_min)):.0f} degrees off its face, no solid wall or partition between): "
+                     "the label step may find nothing to photograph it from")
     mesh = room["source"].get("mesh")
     want = room["source"].get("meshSha256")
     have = manifest.get("contentHashes", {}).get(mesh)

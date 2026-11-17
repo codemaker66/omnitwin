@@ -452,6 +452,59 @@ class NotAxisAligned(unittest.TestCase):
         self.assertGreater(float(fine["valid"][::2, ::2][fin].mean()), 0.9)
 
 
+# --- a wall no station sees -----------------------------------------------------------------------------------------
+
+class UnseenWall(unittest.TestCase):
+    """A wall no station sees is labelled nowhere. The build stops there and says which wall:
+    project-walls.py levels and colours labelled blocks, and with none it ends in its own
+    statistics (an IndexError on the 95th percentile of nothing)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.work = os.path.join(T4, "unseen")
+        cls.room = write_room(cls.work, config(RECT, ["screened", "window", "rear", "fire"]))
+        for wall in cls.room.walls:
+            write_wall(cls.room, cls.work, wall, flat)
+        stations = [dict(id="scan_100", t=[CENTRE[0] - 0.0, CENTRE[1] - 0.0, 1.5], gain=1.0),
+                    dict(id="scan_101", t=[CENTRE[0] - 1.0, CENTRE[1] + 1.0, 1.5], gain=1.0)]
+        data = os.path.join(cls.work, "data")
+        # The room is 4 m by 6 m in E57 x and y. In every station's depth map something stands a metre
+        # in front of the first wall, across the whole room: nothing of that wall is seen.
+        box = (CENTRE[0] - 2.0, CENTRE[0] + 2.0, CENTRE[1] - 2.0, CENTRE[1] + 3.0, 0.0, 3.0)
+        synth.write_manifest(data, stations)
+        synth.write_depth_maps(data, stations, 32, lambda o, d: synth.box_distance(o, d, box))
+        synth.write_panoramas(data, stations, 128, 64, synth.gh_sky)
+        step(cls.work, "corners")
+
+    def run_step(self, name, *args):
+        return subprocess.run([sys.executable, "-X", "utf8", STEP_PY, name, "room.json", *args], cwd=self.work, env=ENV,
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+    def refused(self, r):
+        said = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 1, said[-3000:])
+        self.assertIn("wall screened: no station labels any block of it", said)
+        self.assertIn("2 stations tried", said)
+        self.assertNotIn("Traceback", said)
+
+    def test_1_the_labels_step_stops_at_the_wall_by_name(self):
+        self.refused(self.run_step("labels", "screened"))
+        with open(os.path.join(self.work, "proj", "labels-screened.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["labelled_blocks"], 0)       # the report stays, for whoever looks
+
+    def test_2_the_photographs_stop_at_it_too(self):
+        """As after a labels step by tools older than this refusal: the report is there, with nothing labelled."""
+        if not os.path.exists(os.path.join(self.work, "proj", "labels-screened.json")):
+            self.run_step("labels", "screened")
+        self.refused(self.run_step("wall-photo", "screened"))
+
+    def test_3_a_wall_that_is_seen_is_labelled_and_coloured_as_ever(self):
+        step(self.work, "labels", "rear")
+        step(self.work, "wall-photo", "rear")
+        with open(os.path.join(self.work, "proj", "labels-rear.json"), encoding="utf-8") as f:
+            self.assertGreater(json.load(f)["labelled_blocks"], 0)
+
+
 # --- B23: tiles narrower than the wall's rounded length ------------------------------------------------------------
 
 NARROW = [[6.021, 3.503], [6.021, -3.503], [-6.021, -3.503], [-6.021, 3.503]]
