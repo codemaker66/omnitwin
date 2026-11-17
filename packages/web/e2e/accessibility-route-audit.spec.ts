@@ -24,6 +24,7 @@ const CHANGE_ID = "00000000-0000-4000-8000-000000004006";
 const NOTIFICATION_ID = "00000000-0000-4000-8000-000000004009";
 const PROPOSAL_TOKEN = "t469-accessibility-proposal";
 const SUPPLIER_TOKEN = "t469-accessibility-supplier";
+const GUEST_LIST_PLAN_ID = "00000000-0000-4000-8000-000000004070";
 const HASH = "b".repeat(64);
 
 // Fresh fixtures per case; a failure must not skip other routes or viewports.
@@ -334,6 +335,26 @@ async function mockSupplierUnavailableRoutes(page: Page): Promise<void> {
   });
 }
 
+async function mockGuestListPlanRoutes(page: Page): Promise<void> {
+  // The guest list's one request: the read of the plan, to count the room's tables.
+  await page.route(`${API}/public/configurations/${GUEST_LIST_PLAN_ID}`, (route) => {
+    void route.fulfill({
+      json: {
+        data: {
+          id: GUEST_LIST_PLAN_ID,
+          venueId: VENUE_ID,
+          spaceId: "00000000-0000-4000-8000-000000004002",
+          userId: null,
+          name: "Grand Hall dinner",
+          isPublicPreview: true,
+          revision: 1,
+          objects: [],
+        },
+      },
+    });
+  });
+}
+
 function mockNoRoutes(_page: Page): Promise<void> {
   return Promise.resolve();
 }
@@ -462,6 +483,16 @@ const routeSpecs: readonly RouteSpec[] = [
     readyText: "There is no page at this address",
     readyRole: "heading",
     mockRoutes: mockNoRoutes,
+  },
+  {
+    // The planner's kit (stage 1a): a plan's guest list, kept only on this
+    // device and answering only behind its switch. Audited as a planner first
+    // meets it: an empty list, with the paste box open.
+    routeName: "the planner's guest list",
+    contrastTarget: "client",
+    path: `/plan/${GUEST_LIST_PLAN_ID}/guests?kit=on`,
+    readyText: "There are no guests on this list yet.",
+    mockRoutes: mockGuestListPlanRoutes,
   },
 ];
 
