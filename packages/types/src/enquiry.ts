@@ -240,6 +240,14 @@ export const GuestEnquirySchema = z
     /** What happened before they sent it, e.g. a 30-second walk of the twin
      *  (migration 0100), held under the same rule as `attribution`. */
     engagement: EnquiryEngagementSchema.optional().catch(undefined),
+    /** The public forms' hidden trap (Blake, 12 November 2026): what the
+     *  field no person sees or reaches holds, and how long the form was open
+     *  before Send, in milliseconds. The route judges a hit from them; an
+     *  enquiry that sends neither, from a page older than the trap, is judged
+     *  as before. A hit is kept, never refused, so the trap takes any text
+     *  (the body limit bounds it; it is never stored) and any number. */
+    trap: z.string().optional(),
+    openMs: z.number().optional(),
   })
   .refine(
     (value) => (value.configurationId === undefined) !== (value.venueSlug === undefined),
