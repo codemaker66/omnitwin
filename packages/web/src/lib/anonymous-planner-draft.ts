@@ -381,3 +381,25 @@ export function plannerDraftWithUnreadNotes(
   });
   return { ...draft, objects, base: { ...draft.base, changed } };
 }
+
+/**
+ * The notes a draft kept without the plan's notes has read, once it is
+ * restored where the plan is read with them (`restored`, from
+ * plannerDraftWithUnreadNotes over `serverObjects`): the notes its own base
+ * holds, and each note it had never read that the restore now shows on a
+ * piece it has. Not one on a piece the draft took away: that piece is not on
+ * screen, so its note was shown to nobody, and it stays unread (review of #388
+ * at d917b3d0, XA1). A draft with no base shows the server's note on every
+ * piece it has, so it has read those.
+ */
+export function plannerDraftNotesRead(
+  kept: AnonymousPlannerDraft,
+  restored: AnonymousPlannerDraft,
+  serverObjects: readonly EditorObject[],
+): readonly EditorObject[] {
+  const onScreen = new Set(restored.objects.map((object) => object.id));
+  const shown = plannerDraftBaseObjects(restored);
+  if (shown === null) return serverObjects.filter((object) => onScreen.has(object.id));
+  const readBefore = new Map((plannerDraftBaseObjects(kept) ?? []).map((object) => [object.id, object]));
+  return shown.map((object) => (onScreen.has(object.id) ? object : readBefore.get(object.id) ?? object));
+}

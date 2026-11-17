@@ -2090,9 +2090,9 @@ describe("the maker's browser, when a note it saved without the notes' word is c
 // while that save was out, the store kept their working copy but took the
 // answer as the confirmed document, so the note sat in the base and nowhere on
 // screen, and the next save named it as the note it replaced, which cleared
-// it. The invariant these hold to: no save from this browser ever sends
-// replacesNote with words this browser has not shown the person on that
-// piece, whatever the order of edits, saves and answers.
+// it. The invariant these hold to: a save #389 settles note by note never
+// sends replacesNote with words this browser has not shown the person on that
+// piece (the exceptions as ruled are with the seeded sequences below).
 // ---------------------------------------------------------------------------
 
 describe("the maker's browser, when the server keeps a note a landed save did not send (delta review X1)", () => {
@@ -2237,6 +2237,105 @@ describe("the maker's browser, when the server keeps a note a landed save did no
     expect(server.notes.has(C)).toBe(false);
     expect(pieceIds()).toEqual([A, B]);
     expect({ onScreen: noteOn(A), held: noteHeldOn(store(), A) }).toEqual({ onScreen: STAFF, held: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review of #388 at d917b3d0, XA1 (major). X1's rule held for every save that
+// lands, but not at load. Work kept in the maker's browser while its copy was
+// not the whole truth of the notes (notesIncluded false) is restored over the
+// maker's read, which carries every note with no mark, and the store took that
+// read as the confirmed document while the screen showed the kept words: the
+// next save named a note this browser never showed. Ruled: such a read is
+// taken as any other browser's read is, each note held, and the notes the
+// kept work had read go back on their pieces (keepingConfirmedNotes), as for a
+// browser the notes are kept from. A piece the work removed was never on
+// screen, so a note it never read there stays held, and the save puts the
+// piece back.
+// ---------------------------------------------------------------------------
+
+describe("the maker's browser, when work kept on this device is restored over a note it never showed (review XA1)", () => {
+  const OLD = "TEST ONLY by the window";
+  const OLD_C = "TEST ONLY wheelchair space";
+
+  /** Kept on this device while the plan's copy was not the whole truth of its notes: A moved, B and C holding the notes it was shown. */
+  function keptUnderTheMaker(): void {
+    persistAnonymousPlannerDraft({
+      configId: PLAN, spaceId: SPACE, venueId: VENUE, configRevision: 4, isPublicPreview: true,
+      objects: [kept(A, "", 5), kept(B, OLD), kept(C, OLD_C)], baseObjects: [kept(A), kept(B, OLD), kept(C, OLD_C)], isDirty: true,
+    });
+  }
+
+  it("never names a note staff rewrote while the work was kept, and shows it once the save finds it (probe P1)", async () => {
+    const STAFF = "TEST ONLY staff rewrite while the work was kept";
+    keptUnderTheMaker();
+    // Staff rewrote B's note through the single-piece route, which makes no new revision, before the page reopened.
+    const server: PlanOnServer = { revision: 4, notes: new Map([[B, STAFF], [C, OLD_C]]) };
+    serveTheApi(server, placed, { madeHere: true });
+    await open(plan([placed(A), placed(B, { notes: STAFF }), placed(C, { notes: OLD_C })], true));
+    expect(store()).toMatchObject({ notesIncluded: false, isDirty: true });
+    expect(noteOn(B)).toBe(OLD);
+    // The receipt counts the one change the person made, the move, not the staff's rewrite.
+    expect(store().restoredFromDevice?.changes).toBe(1);
+
+    const first = savesSent();
+    expect(await store().saveToServer(false)).toBe(true);
+    // The person's words go as theirs, naming nothing: never in place of a note they were not shown.
+    expect(sentPiece(first, B).metadata?.notes).toBe(OLD);
+    expect(sentPiece(first, B).replacesNote).toBeUndefined();
+    for (let n = first; n < savesSent(); n += 1) expect(sentPiece(n, B).replacesNote, `save ${String(n)} names a note on B`).toBeUndefined();
+    // The staff's words stand, and B now shows them: the save found them, and they are this browser's to change.
+    expect(server.notes.get(B)).toBe(STAFF);
+    expect({ onScreen: noteOn(B), held: noteHeldOn(store(), B) }).toEqual({ onScreen: STAFF, held: false });
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false });
+    // The move kept on this device is saved.
+    expect(sentPiece(savesSent() - 1, A).positionX).toBe(5);
+  });
+
+  it("restores nothing over a staff rewrite when the work kept on this device changed nothing else", async () => {
+    const STAFF = "TEST ONLY staff rewrite while the work was kept";
+    // The kept copy differs from its own base only where the person moved A and moved it back.
+    persistAnonymousPlannerDraft({
+      configId: PLAN, spaceId: SPACE, venueId: VENUE, configRevision: 4, isPublicPreview: true,
+      objects: [kept(A), kept(B, OLD)], baseObjects: [kept(A), kept(B, OLD)], isDirty: true,
+    });
+    const server: PlanOnServer = { revision: 4, notes: new Map([[B, STAFF]]) };
+    serveTheApi(server, placed, { madeHere: true });
+    await open(plan([placed(A), placed(B, { notes: STAFF })], true));
+    // Nothing of the person's to restore: the plan opens as read, every note shown.
+    expect(store()).toMatchObject({ restoredFromDevice: null, isDirty: false, notesIncluded: true });
+    expect(noteOn(B)).toBe(STAFF);
+    expect(draftOnDevice()).toBeNull();
+  });
+
+  it("puts back a piece the person removed that came to hold a note staff wrote, when the page is reloaded as the refusal says (probe P1c)", async () => {
+    const STAFF = "TEST ONLY staff note added, then the piece removed";
+    keptUnderTheMaker();
+    const server: PlanOnServer = { revision: 4, notes: new Map([[B, OLD], [C, OLD_C]]) };
+    serveTheApi(server, placed, { madeHere: true });
+    await open(plan([placed(A), placed(B, { notes: OLD }), placed(C, { notes: OLD_C })], true));
+    expect(await store().saveToServer(false)).toBe(true);
+    // Staff add a note to A through the single-piece route (no new revision); the person, never shown it, removes A.
+    server.notes.set(A, STAFF);
+    store().removeObject(A);
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(store()).toMatchObject({ saveErrorCode: "HELD_PIECE_OMITTED", saveError: OMITTED_MESSAGE });
+
+    // The page is reloaded, as that sentence says: the work kept on this device is restored over the maker's read.
+    keepUnsavedWorkOnDevice();
+    store().reset();
+    await open({ ...plan([placed(A, { notes: STAFF }, 5), placed(B, { notes: OLD }), placed(C, { notes: OLD_C })], true), revision: server.revision });
+    const first = savesSent();
+    await store().saveToServer(false);
+    // The staff's note stands, and A with it.
+    expect({ onServer: server.notes.get(A) ?? null, sentLast: saveSent(savesSent() - 1).batch.some((piece) => piece.id === A) })
+      .toEqual({ onServer: STAFF, sentLast: true });
+    for (let n = first; n < savesSent(); n += 1) expect(sentPiece(n, A).replacesNote, `save ${String(n)} names a note on A`).toBeUndefined();
+    // A came back on screen, and the person was told it stayed; the save that kept it shows the note to this browser, the maker's.
+    expect(pieceIds()).toContain(A);
+    expect(notice()).toMatch(/stayed where it is, because it has a note that cannot be shown here\.$/u);
+    expect({ onScreen: noteOn(A), held: noteHeldOn(store(), A) }).toEqual({ onScreen: STAFF, held: false });
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false });
   });
 });
 

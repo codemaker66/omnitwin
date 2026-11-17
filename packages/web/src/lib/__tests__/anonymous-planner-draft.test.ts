@@ -5,6 +5,7 @@ import {
   discardPlannerDraft,
   persistAnonymousPlannerDraft,
   plannerDraftBaseObjects,
+  plannerDraftNotesRead,
   plannerDraftWithUnreadNotes,
   readAnonymousPlannerDraft,
   signedInPlannerDraftKey,
@@ -385,6 +386,26 @@ describe("a draft and the plan's notes", () => {
     // Having written exactly the stored note (a save that landed unheard) is no second note.
     keep([piece(A, HELD, 5)], [piece(A, "")]);
     expect(notesOf(plannerDraftWithUnreadNotes(kept(), [piece(A, HELD)]).objects)).toEqual({ [A]: HELD });
+  });
+
+  // Review of #388 at d917b3d0, XA1: the restore shows a note it never read
+  // only on a piece the draft still has, so only there has it now read it.
+  it("has read the notes its base holds and those the restore shows, never one on a piece it took away", () => {
+    // Read without notes: A (moved) and C (removed since) were bare; B held the person's own note.
+    keep([piece(A, "", 5), piece(B, "TEST ONLY own note")], [piece(A, ""), piece(B, "TEST ONLY own note"), piece(C, "")]);
+    const server = [piece(A, HELD), piece(B, "TEST ONLY staff rewrite"), piece(C, "TEST ONLY staff note on C")];
+    const restored = plannerDraftWithUnreadNotes(kept(), server);
+    // The restore fills C's base too, but C is not on screen: its note stays unread.
+    expect(notesOf(plannerDraftBaseObjects(restored) ?? [])[C]).toBe("TEST ONLY staff note on C");
+    expect(notesOf(plannerDraftNotesRead(kept(), restored, server))).toEqual({ [A]: HELD, [B]: "TEST ONLY own note", [C]: "" });
+
+    // A draft with no base shows the server's note on every piece it has, and has read those.
+    persistAnonymousPlannerDraft({
+      configId: "cfg-1", spaceId: "space-1", venueId: "venue-1", configRevision: 4, isPublicPreview: true,
+      objects: [piece(A, "", 5)], isDirty: true,
+    });
+    const bare = plannerDraftWithUnreadNotes(kept(), server);
+    expect(notesOf(plannerDraftNotesRead(kept(), bare, server))).toEqual({ [A]: HELD });
   });
 
   it("without a base to say what it read, takes the server's note wherever it holds none", () => {

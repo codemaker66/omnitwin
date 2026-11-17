@@ -14,6 +14,7 @@ import {
   persistAnonymousPlannerDraft,
   plannerDraftBaseObjects,
   plannerDraftKeyFor,
+  plannerDraftNotesRead,
   plannerDraftWithUnreadNotes,
   readAnonymousPlannerDraft,
   type AnonymousPlannerDraft,
@@ -46,6 +47,7 @@ import {
   signedInRoutesSuit,
   stayedForNotesLine,
   takingNotesKeptUnsent,
+  withNotesHeld,
 } from "../lib/guest-plan-notes.js";
 import { holdPlannerPageLock, isPlannerPageOpen, plannerPageId } from "../lib/planner-page-lock.js";
 import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
@@ -1246,23 +1248,41 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       const confirmedHere = localDraft !== null && !notesRead && localDraft.baseRevision === config.revision
         ? plannerDraftBaseObjects(localDraft)
         : null;
-      const serverObjects = confirmedHere === null ? readObjects : keepingConfirmedNotes(readObjects, confirmedHere);
+      const readHere = confirmedHere === null ? readObjects : keepingConfirmedNotes(readObjects, confirmedHere);
+      // The maker's read under work kept here at this very revision by a page
+      // whose copy was not the whole truth of the notes: restored, that work
+      // is saved with its notes settled one by one, so this read cannot be its
+      // confirmed document as it stands. It carries every note unmarked while
+      // the screen shows the kept words, and the next save named a note this
+      // browser never showed: a rewrite staff made with no new revision, or
+      // one on a piece the work had removed, cleared (review of #388 at
+      // d917b3d0, XA1). So it is taken as any other browser's read, each note
+      // held, and the notes the work had read go back on their pieces, as for
+      // a browser the notes are kept from: a rewritten note is then found by
+      // the save and shown, and a removed piece holding one is put back.
+      const underKeptWork = keptDraft !== null && localDraft !== null && notesRead && keptDraft.notesIncluded !== true
+        && localDraft.baseRevision === config.revision
+        ? keepingConfirmedNotes(withNotesHeld(readObjects), plannerDraftNotesRead(keptDraft, localDraft, readObjects))
+        : null;
       // One edited from this revision restores as it is. One edited from any
       // other revision restores onto the base it was edited from, at that
       // revision, as a conflict the person settles before anything is saved:
       // it never overwrites the newer copy, and nothing (no autosave, no live
       // refetch) merges it. This load already holds their version.
       const draftIsCurrent = localDraft !== null && localDraft.baseRevision === config.revision;
-      const draftBase = localDraft === null ? null : draftIsCurrent ? serverObjects : plannerDraftBaseObjects(localDraft);
+      const draftBase = localDraft === null ? null : draftIsCurrent ? underKeptWork ?? readHere : plannerDraftBaseObjects(localDraft);
       // QoL D-X2: a save sent as the page closed can land unheard, leaving a
       // kept copy a revision behind a server that already holds it. Only a
       // copy with work the server lacks restores, so that is no conflict; nor
-      // is a copy that changes nothing.
+      // is a copy that changes nothing, a note someone else wrote since being
+      // no change of the person's (XA1).
       const keptWork = localDraft !== null && draftBase !== null
         && changedBetween(draftBase, localDraft.objects).size > 0
-        && !serverHoldsLayout(localDraft.objects, serverObjects, (id) => EDITOR_HISTORY_IDS.isLocalId(id))
+        && !serverHoldsLayout(localDraft.objects, underKeptWork ?? readHere, (id) => EDITOR_HISTORY_IDS.isLocalId(id))
         ? localDraft
         : null;
+      // Work not restored opens on the read as it is, every note shown.
+      const serverObjects = keptWork !== null && underKeptWork !== null ? underKeptWork : readHere;
       const staleDraftBase = keptWork !== null && !draftIsCurrent ? draftBase : null;
       const restoredDraft = keptWork;
       const objects = restoredDraft?.objects ?? serverObjects;
@@ -2412,8 +2432,11 @@ async function saveDocument(
     // Nor, after any save that lands, a note the server kept that this save
     // did not send: the piece shows it if the person has not touched its note
     // since the save went, and holds it otherwise (delta review of #388 at
-    // 7a51b6e4, X1). No save from this browser ever names, as the note a
-    // piece's note replaces, words this browser has not shown on that piece.
+    // 7a51b6e4, X1). So a save #389 settles note by note never names, as the
+    // note a piece's note replaces, words a landed save's answer brought that
+    // this browser has not shown on that piece; the load holds the same line
+    // (XA1), and the exceptions as ruled are in lib/guest-plan-notes
+    // takingNotesKeptUnsent.
     const theirNotes = new Map(latest.objects.map((object) => [idMap.get(object.id) ?? object.id, object.notes]));
     const leftToTheServer = new Set([...outOfDate.keys(), ...unsettled.keys()]);
     const { objects: shownAfter, confirmed: base } = takingNotesKeptUnsent(

@@ -131,6 +131,17 @@ export function keepingConfirmedNotes(
 }
 
 /**
+ * A read as a browser the plan's notes are kept from is given it: each piece
+ * that holds a note marked as holding one, its words left off (#389 answers
+ * any browser but the maker's so). For the maker's read under work kept here
+ * while its copy was not the whole truth of the notes, which this browser
+ * takes as any other's (review of #388 at d917b3d0, XA1).
+ */
+export function withNotesHeld(objects: readonly EditorObject[]): readonly EditorObject[] {
+  return objects.map((object) => (object.notes === "" ? object : { ...object, notes: "", noteHeld: true }));
+}
+
+/**
  * A guest plan's save batch (objects through editorToBatch, in order), with
  * each piece whose note differs from the one the server last confirmed here
  * naming that note. A piece the server confirmed no note for names nothing:
@@ -364,9 +375,19 @@ export function notesSentIn(batch: readonly BatchObjectInput[], left: ReadonlySe
 
 /**
  * A landed save's answer, read against what that save sent (delta review of
- * #388 at 7a51b6e4, X1), so that no save from this browser ever sends
- * replacesNote with words this browser has not shown the person on that
- * piece, whatever the order of edits, saves and answers.
+ * #388 at 7a51b6e4, X1), so that a note the server kept, which the save did
+ * not send, never enters the confirmed document unmarked while the screen
+ * shows other words: a save #389 settles note by note then never names it as
+ * the note a piece's note replaces. The load holds the same line for work
+ * kept on this device (withNotesHeld; review of d917b3d0, XA1). One gap is
+ * still open: `sent` leaves out a piece the save placed, so a note written on
+ * its new row between the saves of a halving escapes this (review XA3).
+ *
+ * Two kinds of save name notes this browser has not shown, as ruled: Keep
+ * mine in the maker's browser names those of the version it keeps the
+ * person's over (XA2), and a save #389 takes as sent (the maker's copy read
+ * with every note) may name one staff wrote with no new revision, a name #389
+ * does not read (N1, which is S3 by another path).
  *
  * The plan's maker is answered with the rows as stored (#389, `madeHere`).
  * A piece the save sent with no note therefore comes back holding the note
