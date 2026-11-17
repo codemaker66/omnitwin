@@ -1893,6 +1893,13 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
       .toMatch(/^In the Grand Hall layout, a [^:]+'s note was not removed: it was changed somewhere else, and that note cannot be shown here\.$/u);
     // Not carried, it is as it was.
     expect(refusedClearsLine({ objects: [held], baseObjects: [{ ...held, noteHeld: true }], noteClearsRefused: [B] })).toBe(TABLE_7_NOT_REMOVED);
+    // With several refused clears the layout is said once, before the first (review of d917b3d0, XB4).
+    const table5 = { ...kept(C), label: "Table 5" };
+    expect(refusedClearsLine({
+      objects: [held, table5], baseObjects: [{ ...held, noteHeld: true }, { ...table5, noteHeld: true }], noteClearsRefused: [B, C],
+    }, "the Grand Hall layout")).toBe(
+      `In the Grand Hall layout, ${TABLE_7_NOT_REMOVED} Table 5's note was not removed: it was changed somewhere else, and that note cannot be shown here.`,
+    );
   });
 
   // Delta review of #388 at 7a51b6e4, X6. The carried sentence stands until
