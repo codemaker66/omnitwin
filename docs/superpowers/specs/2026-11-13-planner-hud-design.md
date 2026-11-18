@@ -91,14 +91,32 @@ says so (`HudFrame.tsx`), so its height is written in one place, the stylesheet.
   bar by as much as the shelf had grown.
 - Each fact is said once. There is no seals column and no side panel.
 
-Keyboard and focus (`HudSheets.tsx`, `radio-keys.ts`):
+Keyboard and focus (`HudSheets.tsx`, `keyboard-hand-off.ts`, `radio-keys.ts`, the head of `hud.css`):
 
 - **A sheet takes focus to its title as it opens, and gives it back as it shuts**: to what opened it; where that
   has gone or cannot be seen (the first screen's answer; a step a phone's bar has folded away), to the sheet's own
   step; failing that, to the one primary key. Never to the bare page.
+- **Every part that leaves with the keyboard in it hands the keyboard on** (`keyboard-hand-off.ts`), however it
+  leaves: its own key, Escape, or a planner key. Each names its places, best first, and the keyboard goes to the
+  first that takes it: the browser is asked, place by place, since a key can look able and still refuse. The chosen
+  piece's verbs: the card in hand, then the card that counted the piece (where
+  a piece put back has gone), then More, then the primary key. The first screen, put aside: the hand's first card,
+  for someone who chose to begin with their own hands, then the current step, then the primary key. A receipt whose
+  Undo is pressed: the shelf's own Undo, then Redo, which takes the press back. Where two parts leave before the
+  first one's turn has come, the later one decides.
+- **The ring is the app's one ring, told what to be.** The app draws it from three tokens, and on a key that is a
+  stop in the Tab order its rule outranks any ring a screen draws for itself. So the screen sets the tokens, on
+  the bar and on the shelf each for itself (the bar's ink is the night's): the ink of the ground, 2 px, 2 px clear
+  of the key; inside the key on the bar, whose keys reach the screen's edges.
+- **A key's own outline is the keyboard's alone.** Chosen is marked by something else: a 2 px frame drawn by a
+  part of the key (a kind of day, a lay-out style, a pressed key), a ring round a cloth's sample, a line under a
+  view's word. A chosen key that has the keyboard shows both.
+- **The rules for every key reach the bar and the shelf, and not the room between them.** A key the scene draws in
+  the room (a tape's ×) keeps the planner's own look and ring.
 - **A group that says it is a radio group works as one**: one stop in the Tab order, and the arrow keys go to the
   next choice and choose it (the event's kind, the lay-out style, a table's cloth, Plan / Room / Walk). A choice
-  that cannot be taken now is still stopped at, so its reason can be read. The first screen's three answers are
+  that cannot be taken now is still stopped at, so its reason can be read; and the reason is at full strength:
+  such a choice does not fade as other keys do, only its name stands back. The first screen's three answers are
   plain keys: an answer is an act that moves on, not a setting that stays chosen.
 - **The primary key stands aside only for a sheet that can do its move.** Two moves are carried out by the press
   itself (a piece moved clear of a door, the narrowest gap shown), so their key stays whatever sheet is open.
@@ -131,7 +149,7 @@ arrangement:
 - The plaque's line (the day, the room, the save state) gives way a whole item at a time, never part of a word.
 
 Measures (tokens at the top of `hud.css`): a 4 px grid; one sans in two weights at 11, 13, 16 and 20 px; square
-corners, circles only for round glyph keys; 1 px lines and a 2 px chosen outline; no shadow, glow, blur or
+corners, circles only for round glyph keys; 1 px lines and a 2 px chosen frame; no shadow, glow, blur or
 gradient; one accent on under a hundredth of the screen, meaning chosen, the one primary key, or something to look
 at; motion only in answer to a press, 160 to 240 ms, no bounce.
 
@@ -206,12 +224,17 @@ Three checks hold the rule, each as far as it can see:
   name that stops being a seam fails the test until it is taken off the list, as the seat line's spring hook did
   when #357's chrome began to import it too); or the screen imports a shared table whose entries the bundler
   keeps one by one (the spring table). It tells a name the rest of production builds anyway from one that only a
-  dropped part of its module uses. It sees imports, not what the bundler makes of them.
+  dropped part of its module uses. It sees imports, not what the bundler makes of them, and it is general for
+  imported names only. Three things it would not see: the screen alone reading an entry of some other shared
+  table the bundler keeps entry by entry (it knows the spring table); a name that a production module imports
+  and the bundler then drops as unused; and a member read through a module imported whole (`import * as`), which
+  the test counts as reading every name. None exists today. The comparison of two builds, below, is the proof
+  for all three.
 - **From the build** (`src/__tests__/hud-chunk-isolation.test.ts`, in CI's Build job). It walks the build twice
   from the page's own scripts: through every import except a flag's own three imports on demand, which is what a
   visitor with no flag can be sent; and through every import there is. What only the second walk reaches goes to
   a flag alone, whatever the bundler has named it. A visitor with no flag is sent none of the three, none of the
-  screen's own words, not the room's frame the two new chromes share, and neither of the two things the screen
+  screen's own words, not the other new chrome's frame for the room, and neither of the two things the screen
   once made everyone fetch. It sees one build, so it cannot compare with master.
 - **Two builds from one tree, compared** (by hand; the scripts are outside the repository). This branch, and the
   same tree with the branch's modified files read as on master: every file's bytes, and every module's rendered

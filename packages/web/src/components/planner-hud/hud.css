@@ -12,7 +12,8 @@
  * Every measure is a token in the first block below, so it can be tuned in
  * one place; the colours are the ground's (hud-ground.css). The rules that hold
  * everywhere: a 4 px grid and an 8 px unit; radius 0, circles only for round
- * glyph keys; lines 1 px and the chosen outline 2 px; no shadow, glow, blur,
+ * glyph keys; lines 1 px, and 2 px for the chosen frame and for the keyboard's
+ * ring (a key's own outline is the ring's alone); no shadow, glow, blur,
  * filter or gradient; one sans in two weights at four sizes, the event's name
  * alone in the serif; motion only in answer to a press, ease-out, and under
  * reduced motion nothing travels. A hover only takes a line or a word to full
