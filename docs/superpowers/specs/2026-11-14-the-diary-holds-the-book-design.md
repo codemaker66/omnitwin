@@ -958,7 +958,9 @@ run reads again. Needs its first stage only.
 - **#400** changes, among others, `hold-reminders.ts` (owners who have left are no longer emailed),
   `calendar-conflicts.ts`, `routes/calendar.ts`, `decisions.ts` and `hallkeeper-sheet-v2-data.ts`. This piece's
   changes to them land after it; the sheet's timing fix (5.4, 6.3) is agreed with #400's owner; the trial run waits
-  for it and runs with it in place.
+  for it and runs with it in place. **#400 merged on 17 November 2026, after this design was written.** Wherever
+  this design says "after #400" or waits on it, that wait is over. The lines this design cites in #400's five
+  files are as they stood at `7c3461e7`; the build finds them again on master before it relies on them.
 - **#361 to #365** (the Day Board) change `booking-mutations.ts`, as stages 1, 2, 5 and 6 do; whichever lands second
   rebases. The Day Board shows a combined booking on its lead room only until its owner reads claims.
 - **#415** (the sheet PDF): not touched; its files are the PDF's, not the sheet's data.
