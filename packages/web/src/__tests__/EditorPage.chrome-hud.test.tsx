@@ -50,10 +50,13 @@ const { setPlannerChromeFeatures, setPlannerFeaturesForTesting } = await import(
 const originalLoadConfiguration = useEditorStore.getState().loadConfiguration;
 // The page loads the HUD lazily; having it in the module cache keeps its first transform out of the tests' waits.
 await import("../components/planner-hud/PlannerHud.js");
+// Each new chrome is fetched on demand, and its first import under a loaded suite runs past waitFor's 1 s default:
+// the second chrome's own test gives it this long too (EditorPage.chrome-v2.test.tsx).
+const CHUNK_MS = 10_000;
 
 /** The lazy HUD, once it has loaded. */
 async function hudOnScreen(): Promise<HTMLElement> {
-  return waitFor(() => screen.getByTestId("planner-hud"), { timeout: 10_000 });
+  return waitFor(() => screen.getByTestId("planner-hud"), { timeout: CHUNK_MS });
 }
 
 function openPlanner(search = ""): void {
@@ -197,7 +200,7 @@ describe("the other chromes beside the HUD", () => {
 
   it("still renders the second chrome for ?chrome=v2, with no HUD", async () => {
     openPlanner("?chrome=v2");
-    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); });
+    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); }, { timeout: CHUNK_MS });
     expect(screen.queryByTestId("planner-hud")).toBeNull();
     expect(screen.getByTestId("mock-room-stage")).toBeTruthy();
     expect(screen.queryByTestId("mock-hud-room")).toBeNull();

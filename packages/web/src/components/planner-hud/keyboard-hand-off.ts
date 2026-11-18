@@ -40,6 +40,11 @@ let asked = 0;
  * turn has come (the first screen's answer opens a sheet, and the sheet is
  * shut at once), the keyboard was somewhere in between, and where it goes now
  * is the second part's to say: the first gives way.
+ *
+ * Whether a place took the keyboard is the browser's to say, not this
+ * module's to predict: a key may look able and still refuse (made unseen or
+ * inert by a rule canTakeFocus does not read). So each place is asked in turn
+ * until the keyboard is on one.
  */
 export function handKeyboardOn(places: () => readonly (HTMLElement | null)[]): void {
   asked += 1;
@@ -48,7 +53,11 @@ export function handKeyboardOn(places: () => readonly (HTMLElement | null)[]): v
     if (mine !== asked) return;
     const now = document.activeElement;
     if (now instanceof HTMLElement && now !== document.body && now.isConnected) return;
-    places().find(canTakeFocus)?.focus({ preventScroll: true });
+    for (const place of places()) {
+      if (!canTakeFocus(place)) continue;
+      place.focus({ preventScroll: true });
+      if (document.activeElement === place) return;
+    }
   });
 }
 
