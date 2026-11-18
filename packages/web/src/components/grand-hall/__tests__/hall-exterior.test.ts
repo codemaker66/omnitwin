@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  FRONT_DETAIL_FULL, FRONT_DETAIL_LIGHT, FRONT_PART, ROOM_BODY_HALF_X, bandOutline, blockedHalfWidth, buildHallFront, frontFootprint, frontPoint,
-  hallWindowHoles, insetArchOutline, openIntervals, openingOutline,
+  FRONT_DETAIL_FULL, FRONT_DETAIL_LIGHT, FRONT_PART, LET_IN, ROOM_BODY_HALF_X, bandOutline, blockedHalfWidth, buildHallFront, frontFootprint,
+  frontPoint, hallWindowHoles, insetArchOutline, openIntervals, openingOutline,
 } from "../hall-exterior.js";
 import {
   DOME, FRONT_AXIS_X, FRONT_BAYS, FRONT_FACE_Z, FRONT_HALF_WIDTH, FRONT_PAVEMENT_Y, GROUND_OPENINGS, LINK_FACE_PROUD, TEMPLE,
@@ -151,10 +151,12 @@ describe("the front's outlines", () => {
 describe("the built front", () => {
   it("is finite, stands on the pavement and keeps within its frontage", () => {
     const position = full.geometry.getAttribute("position");
+    const part = full.geometry.getAttribute("aPart");
     const footprint = frontFootprint();
     let minY = Infinity;
     let minX = Infinity;
     let maxX = -Infinity;
+    const underfoot = new Set<number>();
     for (let i = 0; i < position.count; i++) {
       const x = position.getX(i);
       const y = position.getY(i);
@@ -163,8 +165,11 @@ describe("the built front", () => {
       minY = Math.min(minY, y);
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x);
+      if (y < HALL_PAVEMENT_Y - 1e-6) underfoot.add(Math.round(part.getX(i)));
     }
-    expect(minY).toBeGreaterThanOrEqual(HALL_PAVEMENT_Y - 1e-6);
+    // Nothing goes below the pavement but the downpipes, let into it as into their drains.
+    expect(minY).toBeGreaterThanOrEqual(HALL_PAVEMENT_Y - LET_IN - 1e-6);
+    expect([...underfoot]).toEqual([FRONT_PART.metal]);
     // The pavilions' top cornice overhangs them by 0.3 m; nothing reaches past the end bays.
     expect(minX).toBeGreaterThanOrEqual(footprint.xMin - 1e-6);
     expect(maxX).toBeLessThanOrEqual(footprint.xMax + 1e-6);

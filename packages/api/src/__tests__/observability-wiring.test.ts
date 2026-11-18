@@ -10,7 +10,7 @@ import {
   scrubBreadcrumb,
   scrubTransaction,
 } from "../observability/redact.js";
-import { buildSentryOptions } from "../observability/sentry.js";
+import { WEB_VITALS_TRANSACTION, buildSentryOptions } from "../observability/sentry.js";
 
 // ---------------------------------------------------------------------------
 // The wiring: the redaction in observability/redact.ts reaches the server only
@@ -82,6 +82,9 @@ describe("the API's Sentry options", () => {
     expect(options.beforeSend).toBeTypeOf("function");
     expect(options.beforeSendTransaction).toBe(scrubTransaction);
     expect(options.beforeBreadcrumb).toBe(scrubBreadcrumb);
+    // The page-speed reports' route is left out of tracing; the real SDK,
+    // route and server show it in web-vitals-tracing.test.ts.
+    expect(options.ignoreTransactions).toEqual([WEB_VITALS_TRANSACTION]);
   });
 
   it("name SENTRY_ENVIRONMENT over NODE_ENV when it is set", () => {
