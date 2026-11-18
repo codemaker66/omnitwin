@@ -13,6 +13,10 @@ Railway's [Infrastructure as Code guide](https://docs.railway.com/infrastructure
 Today `railway.json` is the only place that makes a deploy run the database
 migration first, start with the command that works, wait for `/health/ready` and
 drain for 30 seconds ([Deploy ordering](../engineering/deploy-ordering.md)).
+In practice Railway's pre-deploy command is the only step applying migrations
+today (the Deploy workflow's migration job has not run since late October: one
+of its runs, started then, has never finished and holds the workflow's only
+concurrency group), which is one more reason it must not be lost.
 Railway also keeps its own stored copy of the settings, and that copy is old.
 Railway's read-only plan of 14 November showed it: no migration step, an old
 start command the built image cannot run, the wrong health check, and no drain.
