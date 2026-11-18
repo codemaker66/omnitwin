@@ -111,13 +111,14 @@ const ACCESSIBILITY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as 
  *  and on 8 November, when it said that clients and planners sign in as well as
  *  venue staff, that the site serves its own typefaces, and that Resend also
  *  carries the acknowledgement sent to the guest (v1.0 final review); and on
- *  13 November, when it described the page-speed measurements, their lawful
- *  basis, how long they are kept and why they need no consent, added the
- *  "Don't measure my visits" switch, narrowed "What we do not do" to
- *  third-party analytics, and said what the error monitor's timing records
- *  carry (T-685). This is the day that goes live: re-date it, and the
- *  sitemap's /privacy date, if the merge slips to another day. */
-const PRIVACY_UPDATED = { text: "13 November 2026", iso: "2026-11-13" } as const;
+ *  18 November, the day it went live (written from 12 November), when it
+ *  described the page-speed measurements, their lawful basis, how long they
+ *  are kept and why they need no consent, added the "Don't measure my
+ *  visits" switch, narrowed "What we do not do" to third-party analytics, and
+ *  said what the error monitor's timing records carry (T-685). This is the
+ *  day that goes live: re-date it, and the sitemap's /privacy date, if the
+ *  merge slips to another day. */
+const PRIVACY_UPDATED = { text: "18 November 2026", iso: "2026-11-18" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
  *  retention pass and the planner also read. */
