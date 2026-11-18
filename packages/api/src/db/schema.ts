@@ -39,6 +39,8 @@ import type {
   AgentTrajectory,
   BookingLostReason,
   EngagementEventKind,
+  WebVitalDeviceClass,
+  WebVitalName,
   FirstResponseChannel,
   CaptureInclude,
   CaptureSourceKind,
@@ -816,7 +818,7 @@ export const enquiries = pgTable("enquiries", {
   utmMedium: varchar("utm_medium", { length: 100 }),
   utmCampaign: varchar("utm_campaign", { length: 100 }),
   acquisitionChannel: varchar("acquisition_channel", { length: 20 }).$type<AcquisitionChannel>(),
-  // Migration 0109 (the spine): the event this enquiry is for, at its own
+  // Migration 0110 (the spine): the event this enquiry is for, at its own
   // venue. Moved, never emptied (trigger enquiries_event_link_kept); withheld
   // from the enquiry's customer (routes/enquiries.ts asSeenBy).
   eventId: uuid("event_id"),
@@ -901,7 +903,7 @@ export const clientAccounts = pgTable("client_accounts", {
   accountType: varchar("account_type", { length: 60 }).notNull().default("event_client"),
   primaryContactId: uuid("primary_contact_id").references((): AnyPgColumn => contacts.id, { onDelete: "set null" }),
   // Typed as AnyPgColumn: enquiries -> events -> client_accounts -> enquiries
-  // is a cycle of keys since 0109, which TypeScript cannot infer through.
+  // is a cycle of keys since 0110, which TypeScript cannot infer through.
   sourceEnquiryId: uuid("source_enquiry_id").references((): AnyPgColumn => enquiries.id, { onDelete: "set null" }),
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1078,7 +1080,7 @@ export const opportunities = pgTable("opportunities", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueId: uuid("venue_id").notNull().references(() => venues.id),
   // Typed as AnyPgColumn: opportunities -> events -> client_accounts is a
-  // cycle of keys since 0109, which TypeScript cannot infer through.
+  // cycle of keys since 0110, which TypeScript cannot infer through.
   clientAccountId: uuid("client_account_id").references((): AnyPgColumn => clientAccounts.id, { onDelete: "set null" }),
   primaryContactId: uuid("primary_contact_id").references(() => contacts.id, { onDelete: "set null" }),
   sourceEnquiryId: uuid("source_enquiry_id").references(() => enquiries.id, { onDelete: "set null" }),
@@ -1096,7 +1098,7 @@ export const opportunities = pgTable("opportunities", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  // Migration 0109 (the spine): the event this deal is for, at its own venue.
+  // Migration 0110 (the spine): the event this deal is for, at its own venue.
   // Moved, never emptied (trigger opportunities_event_link_kept).
   eventId: uuid("event_id"),
 }, (table) => [
@@ -1694,12 +1696,12 @@ export const events = pgTable("events", {
   // CRM spine linkage (Canon §2.4, T-487) — events join the Sell→Hold journey
   // instead of floating free of the pipeline. clientName stays as the legacy
   // denormalised label; these FKs are authoritative where present. Since
-  // migration 0109 the account must be the event's own venue's
+  // migration 0110 the account must be the event's own venue's
   // (events_client_account_venue_fk below; its ON DELETE SET NULL
   // ("client_account_id") lives in the migration).
   clientAccountId: uuid("client_account_id"),
   // Typed as AnyPgColumn: opportunities and enquiries name events in their
-  // keys since 0109, a cycle TypeScript cannot infer through.
+  // keys since 0110, a cycle TypeScript cannot infer through.
   opportunityId: uuid("opportunity_id").references((): AnyPgColumn => opportunities.id, { onDelete: "set null" }),
   // Headcount triple (Canon §2.4, R2): guaranteed = contract floor, expected
   // = working number, setFor = what the room is physically set for. The
@@ -2545,7 +2547,7 @@ export const proposals = pgTable("proposals", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  // Migration 0109 (the spine): the event this proposal is for, at its own
+  // Migration 0110 (the spine): the event this proposal is for, at its own
   // venue. Moved, never emptied (trigger proposals_event_link_kept).
   eventId: uuid("event_id"),
 }, (table) => [
@@ -3975,7 +3977,7 @@ export const eventBindingReviews = pgTable("event_binding_reviews", {
   ),
 ]);
 
-// Migration 0109 (the spine): every join of a record to its event that the
+// Migration 0110 (the spine): every join of a record to its event that the
 // spine made, so each can be undone (undoneAt). eventId has no key: the
 // record must outlive an event the undo removes. One join in force per record.
 export const eventLinkJoins = pgTable("event_link_joins", {
@@ -4002,10 +4004,10 @@ export const eventLinkJoins = pgTable("event_link_joins", {
   ),
 ]);
 
-// Migration 0109 (the spine): the list of joins a person should check, one
+// Migration 0110 (the spine): the list of joins a person should check, one
 // question per row: the record, why its join was in doubt, the events it
 // could belong to, and, once answered, who answered and what they chose. One
-// open question per record and reason. Migration 0109 copies October's two
+// open question per record and reason. Migration 0110 copies October's two
 // kinds of question from event_binding_reviews (bindingReviewId names the
 // source row, whose text is read there; detail here holds kinds and counts,
 // never a name); its notes of a derived status are not questions and stay there.
@@ -7009,4 +7011,36 @@ export const decisionEvents = pgTable("decision_events", {
   index("decision_events_decision_created_idx").on(table.decisionId, table.createdAt),
   check("decision_events_kind", sql`${table.kind} IN ('prepared', 'executed', 'declined', 'failed', 'stale', 'withdrawn', 'execution_error')`),
   check("decision_events_detail", sql`jsonb_typeof(${table.detail}) = 'object'`),
+]);
+
+// ---------------------------------------------------------------------------
+// Migration 0109: field web vitals (goal 07).
+//
+// One row per vital of a sampled page load: the route's pattern (never an
+// address), a device class, the value on its vital's step (WEB_VITAL_STEPS, so
+// its precision names no browser) and the rating it earns; not how the page
+// was reached. Nothing about the visitor. Only the UTC day it arrived, not the
+// moment, and written in shuffled hourly batches of at least ten samples of
+// one vital, page, device class and day (createWebVitalsBatch), so neither row
+// order, xmin nor restore history pairs a row with a host's request log. Kept
+// WEB_VITAL_RETENTION_DAYS, then removed by the nightly
+// cleanup. Written only by routes/public-web-vitals.ts, through its batch.
+// ---------------------------------------------------------------------------
+
+export const webVitalSamples = pgTable("web_vital_samples", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).default(sql`date_trunc('day', now(), 'UTC')`).notNull(),
+  page: varchar("page", { length: 160 }).notNull(),
+  device: varchar("device", { length: 10 }).$type<WebVitalDeviceClass>().notNull(),
+  metric: varchar("metric", { length: 8 }).$type<WebVitalName>().notNull(),
+  value: doublePrecision("value").notNull(),
+  rating: varchar("rating", { length: 20 }).notNull(),
+}, (table) => [
+  check("web_vital_samples_page_shape", sql`${table.page} ~ '^/$|^(/([a-z][a-z-]{0,39}|:[A-Za-z]{1,40}|\\*))+$'`),
+  check("web_vital_samples_device_check", sql`${table.device} IN ('phone', 'tablet', 'desktop')`),
+  check("web_vital_samples_metric_check", sql`${table.metric} IN ('LCP', 'INP', 'CLS', 'TTFB')`),
+  check("web_vital_samples_rating_check", sql`${table.rating} IN ('good', 'needs-improvement', 'poor')`),
+  check("web_vital_samples_value_check", sql`${table.value} >= 0`),
+  // The cleanup and the p75 report both read by day alone.
+  index("web_vital_samples_recorded_idx").on(table.recordedAt),
 ]);

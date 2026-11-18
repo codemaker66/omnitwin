@@ -1,4 +1,4 @@
-import { Suspense, lazy, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type Ref } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type Ref } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
 import { Check, ChevronDown } from "lucide-react";
@@ -15,11 +15,13 @@ import { saveBeforeLayoutChange, useEditorStore } from "../../stores/editor-stor
 import { roomSwitchState } from "../../lib/planner-room-switch.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { usePlannerChromeStore } from "../../stores/planner-chrome-store.js";
 import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.js";
 import { canFreezePhaseLayoutForVenue } from "../editor/cockpit/PhaseLayoutSnapshotAction.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { CreamKey, QuietKey } from "./Keys.js";
 import { usePopoverState } from "./Popover.js";
+import { SlateCrest } from "./SlateCrest.js";
 import { SlateMenu, slateMenuRooms } from "./SlateMenu.js";
 import { useEventHold, useSlateAudience } from "./slate-data.js";
 import { Chip, Notice, StatusDot, type StatusDotTone } from "./Surfaces.js";
@@ -33,9 +35,10 @@ const LazyClerkRouteProvider = lazy(() => import("../auth/ClerkRouteProvider.js"
 // The slate — what this is, and whether it is saved (T-671 slice 7; spec 6.1,
 // frames 01, 17 and 19).
 //
-// A lacquer plate top left: the crest, the eyebrow (the day and the room), the
-// title as the key to the slate's menu, and one line: the hold, the save state
-// in plain words, "Sample" for a sample. Under it the copper plane carries the
+// A lacquer plate top left: the crest (which hides and shows the tools,
+// T-680), the eyebrow (the day and the room), the title as the key to the
+// slate's menu, and one line: the hold, the save state in plain words,
+// "Sample" for a sample. Under it the copper plane carries the
 // figures that decide: guests, seats against the room's published limit, and
 // tables. A notice under the plane says what is safe and the way forward when
 // a save did not arrive, the connection dropped or someone else changed the
@@ -61,7 +64,7 @@ const DOT_TONE: Readonly<Partial<Record<SlateSaveMark, StatusDotTone>>> = {
 };
 
 export interface SlateCardProps {
-  /** The venue's crest, or nothing. */
+  /** The crest: the switch that hides and shows the tools (SlateCrest, T-680), or nothing. */
   readonly crest: ReactNode;
   /** "Sat 28 Nov 2026 · Grand Hall". */
   readonly eyebrow: string;
@@ -173,7 +176,7 @@ export function SlateCard({
   return (
     <section className="pc-slate" aria-label={title} data-save={save.kind} data-plane={plane === null ? "none" : "joined"} data-pc-popover-anchor>
       <div className="pc-lacquer pc-slate__plate">
-        {crest !== null ? <span className="pc-slate__crest" aria-hidden="true">{crest}</span> : null}
+        {crest}
         <div className="pc-slate__words">
           <span className="pc-caps pc-slate__eyebrow">{eyebrow}</span>
           <button
@@ -318,10 +321,13 @@ export function Slate(): ReactElement {
   const roomName = space?.name ?? "The room";
   const guests = event?.guestCount ?? null;
   const roomSlug = space?.slug ?? null;
-  const plane = useMemo(
-    () => (walk ? null : planeFacts({ items, guests, roomSlug })),
-    [guests, items, roomSlug, walk],
-  );
+  const figures = useMemo(() => planeFacts({ items, guests, roomSlug }), [guests, items, roomSlug]);
+  const plane = walk ? null : figures;
+  // The seats meter on the dock's edge reads the same figures, in Walk too.
+  useEffect(() => {
+    usePlannerChromeStore.getState().setFigures({ guests: figures.guests, seats: figures.seats, limit: figures.limit });
+  }, [figures]);
+  useEffect(() => () => { usePlannerChromeStore.getState().setFigures(null); }, []);
   const acts = useMemo(() => {
     if (graph === null || space === null) return [];
     return actsInRoom(graph, space.id, facts.configId).map((act) => (actsSet[act.id] === true ? { ...act, state: "this" as const } : act));
@@ -416,9 +422,12 @@ export function Slate(): ReactElement {
     : conflict !== null ? "Choose a version first"
       : facts.isDirty || facts.isSaving ? "Saving this layout first"
         : null;
-  const crest = venue.logoUrl !== null && venue.logoUrl !== failedLogo
-    ? <img src={venue.logoUrl} alt="" onError={() => { setFailedLogo(venue.logoUrl); }} />
-    : null;
+  const crest = (
+    <SlateCrest
+      logoUrl={venue.logoUrl !== null && venue.logoUrl !== failedLogo ? venue.logoUrl : null}
+      onLogoError={() => { setFailedLogo(venue.logoUrl); }}
+    />
+  );
 
   return (
     <>

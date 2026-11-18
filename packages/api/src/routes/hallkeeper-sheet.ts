@@ -4,7 +4,6 @@ import { eq, and, isNull } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   configurations,
-  events,
   hallkeeperProgress,
 } from "../db/schema.js";
 import { assembleSheetDataV2, ApprovedSnapshotUnavailableError, linkedEventIds } from "../services/hallkeeper-sheet-v2-data.js";
@@ -94,32 +93,18 @@ async function loadConfigAuthPivot(
   return row === undefined ? null : row;
 }
 
-/** Whether an event is a live event of the layout's own venue. */
-async function isVenueEvent(db: Database, configId: string, eventId: string): Promise<boolean> {
-  const [row] = await db.select({ id: events.id })
-    .from(events)
-    .innerJoin(configurations, eq(configurations.venueId, events.venueId))
-    .where(and(eq(events.id, eventId), isNull(events.deletedAt), eq(configurations.id, configId)))
-    .limit(1);
-  return row !== undefined;
-}
-
 /** The event this request's ticks belong to (lib/hallkeeper-progress.ts
- *  progressEventFor), and how many events the layout is linked to, so a
- *  sheet keeping eventless ticks on a reused layout can say they count on no
- *  Day Board. */
+ *  progressEventFor), chosen from the events the layout serves exactly as the
+ *  sheet's times are, and how many those are, so a sheet keeping eventless
+ *  ticks on a reused layout can say they count on no Day Board. */
 async function progressEventOf(
   db: Database,
   configId: string,
   query: unknown,
 ): Promise<{ readonly eventId: string | null; readonly linkedEvents: number }> {
-  const requested = requestedEventId(query);
-  const [linked, requestedIsVenueEvent] = await Promise.all([
-    linkedEventIds(db, configId),
-    requested === null ? Promise.resolve(false) : isVenueEvent(db, configId, requested),
-  ]);
+  const linked = await linkedEventIds(db, configId);
   return {
-    eventId: progressEventFor({ linkedEventIds: linked, requestedEventId: requested, requestedIsVenueEvent }),
+    eventId: progressEventFor({ linkedEventIds: linked, requestedEventId: requestedEventId(query) }),
     linkedEvents: linked.length,
   };
 }

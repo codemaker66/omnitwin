@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- 0109 — the links (the spine, stage 1)
+-- 0110 — the links (the spine, stage 1)
 --
 -- A booking already belongs to its event (0090). From this file a proposal,
 -- a deal (opportunities) and an enquiry can each point at their event the

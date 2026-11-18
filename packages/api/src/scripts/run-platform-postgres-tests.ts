@@ -25,7 +25,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/hold-promotion-postgres.test.ts",
   // The bind (migration 0090): zero holds or inks without an event.
   "src/__tests__/booking-event-bind-postgres.test.ts",
-  // The spine's links (0109), on a database of its own: venue-pinned keys, a link moved never emptied, one open deal per event.
+  // The spine's links (0110), on a database of its own: venue-pinned keys, a link moved never emptied, one open deal per event.
   "src/__tests__/event-spine-links-schema-postgres.test.ts",
   // ...and its join of old records, run by the migrator over rows written before it: never a guess, and repeatable.
   "src/__tests__/event-spine-links-migration-postgres.test.ts",
@@ -98,6 +98,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
   // ...and on the platform database: a deleted venue takes no enquiry (audit public-surface-7).
   "src/__tests__/public-enquiry-intake-postgres.test.ts",
+  // ...and the public forms' hidden trap: a hit is kept, answered as any other and told in the app, never emailed.
+  "src/__tests__/public-enquiry-trap-postgres.test.ts",
   // Sixty guest plans and ten enquiries an hour from one address, through the whole app's limiter.
   "src/__tests__/public-intake-limits-postgres.test.ts",
   // The reference loadouts list: photo count and cover subqueries name their loadout (VENVIEWER-API-1).
@@ -114,6 +116,10 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/pricing-rule-dates-postgres.test.ts",
   // Migration 0107: a venue manager's Ops review is stored as venue_manager; other roles and venues stay refused.
   "src/__tests__/event-architect-ops-review-postgres.test.ts",
+  // A second compile of the same plan returns the event's pack: the floor keeps its ticks, suppliers hear of no change.
+  "src/__tests__/ops-handoff-recompile-postgres.test.ts",
+  // A layout reached through a frozen phase plan: its event's ticks and times agree; an unrelated event gets neither.
+  "src/__tests__/hallkeeper-phase-plan-postgres.test.ts",
   // A 200-character account name on the floor: taps, requests and their steps, the handover picker and the request's thread keep 160, never refuse.
   "src/__tests__/floor-long-names-postgres.test.ts",
 ] as const;

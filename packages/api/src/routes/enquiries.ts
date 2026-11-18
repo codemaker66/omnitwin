@@ -106,7 +106,7 @@ function canWorkEnquiry(user: JwtUser, enquiry: { readonly userId: string | null
 }
 
 type EnquiryRow = typeof enquiries.$inferSelect;
-/** The venue's own fields: the funnel's measurements (0100) and the event it filed the enquiry under (0109). */
+/** The venue's own fields: the funnel's measurements (0100) and the event it filed the enquiry under (0110). */
 const VENUE_ONLY_FIELDS = [...ENQUIRY_FUNNEL_FIELDS, "eventId"] as const satisfies readonly (keyof EnquiryRow)[];
 type CustomerEnquiry = Omit<EnquiryRow, (typeof VENUE_ONLY_FIELDS)[number]>;
 
@@ -115,7 +115,7 @@ const WITHHELD_FIELDS: ReadonlySet<string> = new Set(VENUE_ONLY_FIELDS);
 /**
  * An enquiry as its reader may see it. When and how the venue first replied,
  * and where the person was found, are the venue's own measurements (migration
- * 0100), and the event it is filed under is the venue's own record (0109):
+ * 0100), and the event it is filed under is the venue's own record (0110):
  * its team and Venviewer's admins read the whole row, and the enquiry's
  * customer reads it without them.
  */
