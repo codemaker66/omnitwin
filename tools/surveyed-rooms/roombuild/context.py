@@ -31,6 +31,7 @@ GATES = {
     "B23": "elevation tiles narrower than the wall's rounded length: the wall ends at its tiles' last column",
     "B24": "stray texels allowed: a covered texel the renderer placed off its own centre is left out of its tile",
     "B25": "occluder margin: a station's view of a wall texel is left out within that margin of an occluder's outline",
+    "B26": "the wall behind what stood before it: a region's texels are moved back to the wall before the labels are chosen",
     "B21": "test-only depth-map size (SURVEYED_ROOMS_TEST_DEPTH_SIZE)",
     "B22": "node modules from another checkout (SURVEYED_ROOMS_NODE_ROOT): its meshoptimizer meshes the relief",
 }
@@ -261,6 +262,19 @@ class Room:
                 out.append((self.wmap[e["wall"]], u0, u1, e["v"][0], e["v"][1], e["depth"]))
         return out
 
+    def behinds(self):
+        """`behind` edits, resolved, in config order (gate B26): (wall, u0, u1, v0, v1, like, depth). What
+        the elevation shows in the rectangle stood before the wall when it was scanned (an open door's
+        leaf, a plant). `like` is 'left' or 'right': each row takes its depth from the strip of wall just
+        beyond the rectangle on that side; or `like` is None and `depth` is one depth for every row,
+        metres before the wall's face."""
+        out = []
+        for e in self.cfg["edits"]:
+            if e["type"] == "behind":
+                u0, u1 = (roomlib.resolve_u(self.cfg, r, self.openings, self.wmap) for r in e["u"])
+                out.append((self.wmap[e["wall"]], u0, u1, e["v"][0], e["v"][1], e.get("like"), e.get("depth")))
+        return out
+
     def floor_refills(self):
         return [e for e in self.cfg["edits"] if e["type"] == "floor-refill"]
 
@@ -325,6 +339,9 @@ class Room:
         for e in self.cfg["edits"]:
             if e["type"] == "patch" and e["mode"] == "copy":
                 add("B20", f"wall {e['wall']}", f"from {e['from']['wall']}")
+        for wall, u0, u1, v0, v1, like, depth in self.behinds():
+            add("B26", f"wall {wall['id']}", f"u {u0:.3f}..{u1:.3f}, v {v0}..{v1}, "
+                + (f"each row's depth from the wall beyond its {like}" if like else f"at {depth:g} m before the face"))
         if os.environ.get("SURVEYED_ROOMS_TEST_DEPTH_SIZE"):
             add("B21", "projection", os.environ["SURVEYED_ROOMS_TEST_DEPTH_SIZE"])
         if os.environ.get(NODE_ENV):

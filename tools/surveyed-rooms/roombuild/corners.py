@@ -22,6 +22,14 @@ walls no longer use); the gates the Grand Hall never opens:
       texel at its centre and refuse a tile that has one elsewhere (bestview.Grid); that check
       stands, and this step refuses a tile with more such texels than the config allows, so a
       grid in the wrong place (every texel off) still stops the build.
+  B26 a `behind` edit: what the elevation shows in its rectangle stood before the wall when it was
+      scanned (an open door's leaf, a plant), so there the wall's photograph would be that thing's
+      and its relief a lump. Its texels move back to where the wall is, as a fin's do: each row to
+      the depth of the strip of wall just beyond the rectangle on the named side (the median over
+      roomlib.BEHIND_STRIP), or every row to one given depth. The labels then choose, for the wall
+      behind, among the stations that saw it past the thing; the one facing the thing no longer
+      counts there, because its distance map holds the thing nearer. A patch can only put another
+      part of a wall in such a place, which serves for panelling and not for lettering.
 """
 import json
 import os
@@ -29,8 +37,11 @@ import warnings
 
 import numpy as np
 
+import roomlib
+
 REACH, CLEAR, REF = 0.35, 0.42, (0.45, 0.55)
 CENTRE_TOLERANCE = 0.001      # bestview.Grid's: metres a covered texel's point may lie off its centre
+BEHIND_PROUD = 0.06           # B26: a texel this far before its row's depth stood before the wall (the fins' own margin)
 STRAY_RECORD = "build/stray-texels.json"
 
 
@@ -148,6 +159,36 @@ def run(room):
             fin[rows_idx, cols[zcols]] = True
             target[rows_idx, cols[zcols]] = ref[rows_idx]
             print(wall['name'], end, 'fin rows', int(is_fin_row.sum()), 'texels', int(zone.sum()))
+        for edited, u0, u1, v0, v1, like, depth in room.behinds():              # B26
+            if edited is not wall:
+                continue
+            rows_v = TOP - (np.arange(H) + 0.5) / PPM
+            cols_u = (np.arange(Wd) + 0.5) / PPM
+            rsel = np.nonzero((rows_v >= v0) & (rows_v <= v1))[0]
+            csel = np.nonzero((cols_u >= u0) & (cols_u <= u1))[0]
+            borrowed = 0
+            if like is None:
+                ref = np.full(len(rsel), depth, np.float64)
+            else:
+                strip = (cols_u > u1) & (cols_u <= u1 + roomlib.BEHIND_STRIP) if like == 'right' \
+                    else (cols_u < u0) & (cols_u >= u0 - roomlib.BEHIND_STRIP)
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore', RuntimeWarning)          # rows with no wall in the strip
+                    ref = np.nanmedian(stats[np.ix_(rsel, np.nonzero(strip)[0])], axis=1)
+                known = np.isfinite(ref)
+                if not known.any():
+                    raise SystemExit(f"behind edit on wall {wall['id']} (u {u0:.3f}..{u1:.3f}, v {v0}..{v1}): the strip of wall "
+                                     f"beyond its {like} holds no covered texel to take a depth from")
+                borrowed = int((~known).sum())
+                # a row with no wall in the strip (an opening beside it, a hole in the mesh) takes the nearest rows' depth
+                ref = np.interp(np.arange(len(rsel)), np.nonzero(known)[0], ref[known])
+            block = D[np.ix_(rsel, csel)]
+            with np.errstate(invalid='ignore'):
+                rr, cc = np.nonzero(block > ref[:, None] + BEHIND_PROUD)        # uncovered texels (NaN) compare False
+            fin[rsel[rr], csel[cc]] = True
+            target[rsel[rr], csel[cc]] = ref[rr]
+            print(wall['name'], f"behind u {u0:.3f}..{u1:.3f} v {v0}..{v1}: moved back {len(rr)} texels"
+                  + (f" ({borrowed} rows took the nearest rows' depth)" if borrowed else ''))
         # Move fin texels back onto the wall: same position along the wall and up it.
         idx = np.nonzero(fin & valid)
         pts = P[idx][:, :3].astype(np.float64)

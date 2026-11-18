@@ -76,7 +76,13 @@ steps.
   opening's centre less 0.54 m; `{"openingDelta": [a, b]}` is centre(b) − centre(a). A patch
   `shift`s from u + by, `mirror`s about u = about, or `copy`s from another wall
   (`from: {wall, u, mirror}`, as wide as the target). A `recess` changes the relief only; the
-  build refuses one that also names `photo`.
+  build refuses one that also names `photo`. A `behind` edit says that what the elevation shows
+  in its rectangle stood before the wall when it was scanned (an open door's leaf, a plant): the
+  wall there is put back at its own depth before the photographs are chosen, each row `like` the
+  strip of wall just beyond the rectangle on its `left` or `right`, or all at one `depth` (gate
+  B26). Use a patch where the wall behind was seen by no station (a dado behind a sideboard) and
+  another stretch of wall can stand in for it; use `behind` where it was seen past the thing and
+  nothing else can stand in (lettering).
 - **Stations**: list every one the room uses. `room` stations must lie inside the outline;
   `doorway` stations name the opening they stand in or just beyond (up to 2 m beyond its face);
   `outside` stations need a note.
@@ -350,13 +356,16 @@ gates a config opens, computed before any work; `--plan` prints them and writes 
 | B23 | a wall's tiles are narrower than its rounded length | each tile's width is rounded on its own, so the tiles can add up to fewer columns than `round(length x ppm)` (the Saloon's fireplace wall: 1556 against 1557). The Grand Hall's scripts count the wall's right end, its relief's width and its atlas crop from the rounded length, which lies inside its tiles (4227 of 4228); such a wall ends at its tiles' last column instead, in the corners, the relief, the atlas and the detail's mapping onto the atlas |
 | B24 | `survey.wallViews.strayTexels` is set | the corners step leaves out of each elevation tile (uncovered, as where the mesh has a hole) the covered texels whose rendered point lies more than 1 mm from the texel's own centre, up to that many a tile, and lists them in `build/stray-texels.json`; a tile with more stops the build. `render.mjs` draws a surface seen edge-on (the floor under a wall) as a sliver less than a texel high and can extrapolate along it, so the point it writes lies metres off the view's slab and millimetres off the texel. The labels and the photographs place every texel at its centre and refuse a tile with one elsewhere (`bestview.Grid`, as before): that check is unchanged and still runs on what the corners step wrote |
 | B25 | `survey.projection.walls.occluderMargin` is set | the walls' labels count a station's view of a texel only where nothing nearer stands within that margin of the ray, measured at the occluder (`bestview.OCCLUDER_MARGIN`, `occluder_cube`, `clear_of_occluders`; `label-views.py`). The scan's mesh outlines a thing standing proud of a wall smaller than the panoramas show it, so along the edge of the zone it hides from a station, the station's photograph still shows the thing on wall the mesh says is in view; one station a block prints that rim sharply, far from the thing. A surface counts as an occluder when it is nearer than the texel by more than the visibility test's tolerance plus what the wall's own slope explains over the margin. That allowance is the wall's alone, so a floor, a ceiling, a side wall or a pilaster's flank that meets the wall counts as an occluder of the texels beside it, though it hides nothing: a known cost, a band along every such junction about as wide as the margin, in which a station that faces the wall loses its view (0.50% of the views in an empty room at 50 mm, all within 5 cm of a junction; measured under "Real data, the ghosts above the Saloon's pediments"). The margin is looked for in a square of up to 16 cubemap texels round the ray, measured with the ray's own texel: along the square's diagonals it reaches up to 1.4 times the margin, and it reaches the margin in full only where the occluder stands far enough from the station (for 50 mm on 1024-texel depth maps, 1.6 m at a cube face's centre, 2.7 m at the middle of an edge and 3.65 m in a corner; nearer than that it is what 16 texels span there, at half a metre 16 mm at a face's centre and 7 mm in a corner). `labels-<wall>.json` counts the views the margin left out and those of them for which it was so capped. A texel none of its block's six ranked stations sees clear takes the first station of the block's whole order that does (`clear_views`); a texel that stations see, but none of them clear, keeps the doubtful view that passes farthest from the occluder (`doubtful_views`, `bestview.occluder_clearance`), so nothing a station saw becomes a hole; `labels-<wall>.json` counts both under `occluder_margin` |
+| B26 | a `behind` edit | the corners step moves the covered texels of the edit's rectangle that stand more than 0.06 m before the wall back to where the wall is, as it moves a corner's fin: each row to the median depth of the strip of wall just beyond the rectangle on the named side (0.10 m wide; a row with no wall in the strip takes the nearest rows' depth), or every row to the one depth given. The labels, the photographs, the 2 mm detail and the relief all read those positions (`out-walls/<view>.fixed.f32`), so the wall behind is photographed from the stations whose distance maps show it past the thing, the station that faces the thing no longer counts there, and the relief has no lump. Texels that no station saw stay without a photograph, as anywhere: a patch covers those |
 | B21 | `SURVEYED_ROOMS_TEST_DEPTH_SIZE` is set | test-sized depth maps (never published) |
 | B22 | `SURVEYED_ROOMS_NODE_ROOT` is set | another checkout's meshoptimizer meshes the relief (never published) |
 
 The Grand Hall opens none. The Saloon opens B5 (4 returns), B8 (4 returns), B6 and B9 (8 reflex
-ends), B7, B10 (3 bays), B14 (a 4096 × 2304 atlas), B16, B17, B18, B23 (the fireplace wall),
-B24 (up to 8 texels a tile; its renders hold two, both in `wall-fireplace-0`) and B25 (a margin of
-50 mm).
+ends), B7, B10 (3 bays), B14 (a 4096 × 2304 atlas), B16, B17, B18, B20 (three patches from
+other walls: the dado behind the sideboard, the door and panelling behind the piano, and the
+passage door, which stood open), B23 (the fireplace wall), B24 (up to 8 texels a tile; its renders
+hold two, both in `wall-fireplace-0`), B25 (a margin of 50 mm) and B26 (the first lettered board,
+behind the lobby door's open leaf).
 
 ## Proofs
 
@@ -655,6 +664,11 @@ T4 builds a small room for each gate that neither the Grand Hall nor T3 opens:
   strip is labelled (40 blocks); with a margin of 80 mm every view of it is within the margin of
   the screen's edge, no block is labelled, and the stop at that wall says that the margin is set
   and that 2,464 texels were seen only in views it does not count (B25);
+- a board standing half a metre before a banded wall with a dado, between a station that faces it
+  and two that see past it: without the edit the wall wears the board's picture and a lump; with a
+  `behind` edit every row goes back to its own depth (the dado's or the face's), the bands behind
+  the board are photographed from the two side stations alone, and the wall beside it is as it
+  was; the checker holds the edit to one of `like` and `depth` and its strip to the wall (B26);
 - the floor refills' roll along z and along x (B19);
 - the ceiling relief's fallback height, padding and spacing.
 

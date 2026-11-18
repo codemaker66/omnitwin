@@ -2249,31 +2249,123 @@
   "concealedLights": [],
   "edits": [
     {
-      "type": "recess",
+      "type": "patch",
       "wall": "front",
       "u": [
-        {
-          "opening": "door-lobby",
-          "offset": -0.55
-        },
-        {
-          "opening": "door-lobby",
-          "offset": 0.55
-        }
+        0.855,
+        1.992
       ],
       "v": [
         0.0,
         2.45
       ],
-      "depth": 0.3,
-      "leafPlane": 0.05,
+      "mode": "mirror",
+      "about": 3.469,
       "applies": [
+        "photo",
         "relief"
       ],
-      "note": "PROPOSED. The lobby door stood open: a plain recess, its closed leaf modelled by the web (as the Grand Hall's main door). Leaf plane not measured."
+      "note": "The lobby door stood open in the scan, and through it the elevation holds the lobby beyond and nothing at all. Its opening (u 0.855 to 1.992 between the jambs, read off the relief) takes the picture and the relief of the store door's leaf, this wall's other door, closed, mirrored about the point midway between the two (u 3.469: the store door's leaf runs from u 4.93 to 6.10), so the knob falls on the side the open leaf's does. The store door's small brass plate arrives mirrored. Replaces the plain recess proposed on 18 October (its closed leaf was to be modelled by the web)."
     },
     {
-      "type": "recess",
+      "type": "patch",
+      "wall": "front",
+      "u": [
+        1.99,
+        2.24
+      ],
+      "v": [
+        0.0,
+        2.45
+      ],
+      "mode": "mirror",
+      "about": 1.42,
+      "applies": [
+        "photo",
+        "relief"
+      ],
+      "note": "The lobby door's open leaf, hinged on this jamb, stood before the door's own architrave (in the elevation the leaf runs from u 1.98 to 2.67, 0.05 to 1.0 m before the wall). The architrave takes the picture and the relief of the door's other architrave (u 0.60 to 0.85), mirrored about the middle of the door case (u 1.42: its outer edges are at u 0.60 and 2.24, read off the relief beside the door and above the leaf). Until 18 November the patch ran on to u 2.489 and put the corner's panelling over the first lettered board, which begins at u 2.26: see the `behind` edit."
+    },
+    {
+      "type": "behind",
+      "wall": "front",
+      "u": [
+        2.24,
+        2.68
+      ],
+      "v": [
+        1.13,
+        2.47
+      ],
+      "like": "right",
+      "note": "The lobby door's open leaf also stood before the first lettered board, which begins at u 2.26: from the dado rail to the leaf's top the elevation holds the leaf, 0.4 to 1.0 m before the wall, where the board is. Those texels are moved back to the board, each row to the depth of the same board just beyond the leaf (u 2.68 to 2.78), so that the board's lettering is photographed from the stations that saw it past the leaf. Below the dado rail the sideboard's patch covers the leaf."
+    },
+    {
+      "type": "patch",
+      "wall": "rear",
+      "u": [
+        0.0,
+        1.65
+      ],
+      "v": [
+        0.0,
+        1.05
+      ],
+      "mode": "mirror",
+      "about": 3.5505,
+      "applies": [
+        "photo",
+        "relief"
+      ],
+      "note": "Movable: a piano stood in the rear corner by the fireplace wall. On this wall it stands 0.3 to 0.6 m before the dado from the corner to u 1.65, to 1.01 m above the floor. Mirrored from the wall's other end about the wall's centre (its length 7.101 m)."
+    },
+    {
+      "type": "patch",
+      "wall": "front",
+      "u": [
+        2.24,
+        4.8
+      ],
+      "v": [
+        0.0,
+        1.12
+      ],
+      "mode": "copy",
+      "from": {
+        "wall": "rear",
+        "u": 2.27
+      },
+      "applies": [
+        "photo",
+        "relief"
+      ],
+      "note": "Movable: a carved sideboard stood against this wall between its two doors (u 2.70 to 4.80, 1.11 m high, its front 0.8 m off the wall), and the lobby door's open leaf before its end (from u 2.24, where the door's architrave ends). No station sees the dado behind them. The rear wall's dado stands in for it, taken to be of the same panelling, from the middle of that wall (u 2.27 to 4.83): where the panels fall behind the sideboard is not known."
+    },
+    {
+      "type": "patch",
+      "wall": "fireplace-rear-end",
+      "u": [
+        0.15,
+        2.19
+      ],
+      "v": [
+        0.0,
+        1.2
+      ],
+      "mode": "copy",
+      "from": {
+        "wall": "fireplace-front-end",
+        "u": 0.008,
+        "mirror": true
+      },
+      "applies": [
+        "photo",
+        "relief"
+      ],
+      "note": "Movable: the piano (see the rear wall's patch) stood before this wall's door and panelling, to 1.19 m above the floor. The fireplace wall's other end is this wall's mirror twin (its door's centre 0.950 m from the room's corner, this one's 0.951 m), so its lower part is taken, mirrored."
+    },
+    {
+      "type": "patch",
       "wall": "window-front-end",
       "u": [
         {
@@ -2289,31 +2381,17 @@
         0.0,
         2.45
       ],
-      "depth": 0.3,
-      "leafPlane": 0.05,
-      "applies": [
-        "relief"
-      ],
-      "note": "PROPOSED. The passage door stood open. Leaf plane not measured."
-    },
-    {
-      "type": "patch",
-      "wall": "front",
-      "u": [
-        1.999,
-        2.489
-      ],
-      "v": [
-        0.0,
-        2.45
-      ],
-      "mode": "mirror",
-      "about": 1.434,
+      "mode": "copy",
+      "from": {
+        "wall": "window-rear-end",
+        "u": 0.431,
+        "mirror": true
+      },
       "applies": [
         "photo",
         "relief"
       ],
-      "note": "PROPOSED. The lobby door's open leaf stands in front of the panelling at E57 X -1.27..-0.57 (u 1.999..2.699); mirrored about the door's centre (u 1.434). The target is u 1.999..2.489 (X -0.57..-1.06), so its source is E57 X 0.56..1.05 (u 0.379..0.869): beyond that the source wall has a slot (X 1.14..1.22, 1.8..2.6 m) and, below 1.0 m, a 9 cm set-back (X 1.06..1.26) that the hidden target does not. Corrected 18 Oct (T-662 stage 2): the earlier target u 2.211..2.7 mirrored onto X 0.77..1.26, which holds the slot and the set-back. The remaining strip u 2.489..2.699 (X -1.06..-1.27) needs another source (the room's XGRIDS frames). The source holds a corner loudspeaker above 1.6 m: patch that first or split v."
+      "note": "The passage door stood open in the scan (its leaf ajar in the passage), and the elevation holds nothing in its opening. It takes the picture and the relief of the stair door, closed, in the window wall's other end, mirrored: that end is this one's mirror twin, and its door is 1.09 m wide to this one's 1.12 m. Replaces the plain recess proposed on 18 October."
     }
   ],
   "occluders": [
