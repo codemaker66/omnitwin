@@ -303,13 +303,19 @@
   background: var(--lg-green);
   color: var(--lg-paper);
 }
-/* Where the browser refuses its storage, pressing changes nothing. */
+/* Where the browser refuses its storage, pressing changes nothing, so the
+   switch dims as the site's other unavailable buttons do (#355's
+   verification, 18 November 2026). */
 .lg-choice-button[aria-disabled="true"] {
   cursor: not-allowed;
+  opacity: 0.6;
 }
+/* Its own ring, and its pill kept: the page's general focus rule would square
+   its corners whenever a link or a key brings focus here. */
 .lg-choice-button:focus-visible {
   outline: 2px solid var(--lg-green);
   outline-offset: 3px;
+  border-radius: 999px;
 }
 /* Forced colours (Windows contrast themes) replace the fill that shows the
    switch pressed, so pressed takes the system's own colours for a selected
@@ -323,6 +329,14 @@
   }
   .lg-choice-button[aria-pressed="true"]:focus-visible {
     outline-color: CanvasText;
+  }
+  /* Unavailable: the system's colour for a disabled control, filled as
+     pressed, and not dimmed again. */
+  .lg-choice-button[aria-pressed="true"][aria-disabled="true"] {
+    border-color: GrayText;
+    background: GrayText;
+    color: Canvas;
+    opacity: 1;
   }
 }
 .lg-choice-state {

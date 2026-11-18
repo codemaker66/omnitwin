@@ -81,8 +81,13 @@ describe("the API's Sentry options", () => {
     expect(options.environment).toBe("production");
     expect(options.tracesSampleRate).toBe(0.1);
     expect(options.beforeSend).toBeTypeOf("function");
-    // The transaction scrubber, behind the drop of a caller's trace (below).
-    const own: ScrubbableTransaction = { type: "transaction", request: { url: "https://api.example.test/people/search?q=someone" } };
+    // The transaction scrubber, behind the drops of a caller's trace and of a
+    // request no route matched (below).
+    const own: ScrubbableTransaction = {
+      type: "transaction",
+      request: { url: "https://api.example.test/people/search?q=someone" },
+      contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", op: "http.server", data: { "http.route": "/people/search" } } },
+    };
     expect(options.beforeSendTransaction?.(structuredClone(own), {})).toEqual(scrubTransaction(structuredClone(own)));
     expect(options.beforeBreadcrumb).toBe(scrubBreadcrumb);
     // The page-speed reports' route is left out of tracing; the real SDK,
@@ -107,10 +112,12 @@ describe("the API's Sentry options", () => {
     expect(options.tracePropagationTargets).toEqual([]);
   });
 
-  // #355's review at 33db2ba1 (WX1, 18 November 2026): a request no route
-  // matched (an unknown path's rate-limited 429, a malformed URL's 400) has
-  // only the segment rules for its own path, which keep an email-shaped
-  // segment or a phone number, so its record is never sent.
+  // #355's review at 33db2ba1 (WX1) and the verification of its fix (18
+  // November 2026): a request no route matched (an unknown path's
+  // rate-limited 429, a malformed URL's 400) has only the segment rules for
+  // its own path, which keep an email-shaped segment or a phone number, so its
+  // record is never sent, whichever span roots it: the SDK's http.server span,
+  // or, for a GET whose path looks like a static file, Fastify's own.
   it("send no timing record of a request no route matched, and judge only a request's own record", () => {
     const trace = { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001" };
     const request = (data: Record<string, unknown>): ScrubbableTransaction => ({
@@ -121,12 +128,20 @@ describe("the API's Sentry options", () => {
     const limited = request({ "http.response.status_code": 429 });
     const caughtAll = request({ "http.route": "*", "http.response.status_code": 204 });
     const routed = request({ "http.route": "/venues/:venueId", "http.response.status_code": 200 });
+    // Each sign alone: the SDK's request span, kept with no URL; and Fastify's
+    // own request span, with only its path.
+    const bareServer: ScrubbableTransaction = { type: "transaction", contexts: { trace: { ...trace, op: "http.server", data: { "http.response.status_code": 400 } } } };
+    const fastifyRoot = (data: Record<string, unknown>): ScrubbableTransaction => ({
+      type: "transaction",
+      contexts: { trace: { ...trace, op: "request_handler.fastify", data } },
+    });
+    const staticLike = fastifyRoot({ "url.path": "/old/someone@example.test/photo.png", "http.response.status_code": 429 });
+    const routedStatic = fastifyRoot({ "url.path": "/files/abc/photo.png", "http.route": "/files/:fileId/photo.png", "http.response.status_code": 200 });
     const otherWork: ScrubbableTransaction = { type: "transaction", contexts: { trace: { ...trace, op: "db", data: {} } } };
-    expect([limited, caughtAll, routed, otherWork].map(isUnroutedRequest)).toEqual([true, true, false, false]);
-    expect(options.beforeSendTransaction?.(limited, {})).toBeNull();
-    expect(options.beforeSendTransaction?.(caughtAll, {})).toBeNull();
-    expect(options.beforeSendTransaction?.(routed, {})).not.toBeNull();
-    expect(options.beforeSendTransaction?.(otherWork, {})).not.toBeNull();
+    expect([limited, caughtAll, routed, bareServer, staticLike, routedStatic, otherWork].map(isUnroutedRequest))
+      .toEqual([true, true, false, true, true, false, false]);
+    for (const unrouted of [limited, caughtAll, bareServer, staticLike]) expect(options.beforeSendTransaction?.(unrouted, {})).toBeNull();
+    for (const kept of [routed, routedStatic, otherWork]) expect(options.beforeSendTransaction?.(kept, {})).not.toBeNull();
   });
 
   it("name SENTRY_ENVIRONMENT over NODE_ENV when it is set", () => {

@@ -53,7 +53,7 @@ interface SentTransaction {
 /** A transaction as the SDK built it, from the client's hook. */
 interface BuiltTransaction {
   readonly transaction?: unknown;
-  readonly trace?: { readonly trace_id?: unknown; readonly span_id?: unknown; readonly parent_span_id?: unknown };
+  readonly trace?: { readonly trace_id?: unknown; readonly span_id?: unknown; readonly parent_span_id?: unknown; readonly op?: unknown };
 }
 
 /** The transactions in one envelope (newline-delimited JSON: the envelope's
@@ -264,5 +264,25 @@ describe("the API's timing records (the real SDK and server)", () => {
     }, { timeout: 10_000 });
     expect(await flush(5_000)).toBe(true);
     expect(envelopes.join("\n")).not.toContain(UNMATCHED_MARKER);
+  }, 30_000);
+
+  // The verification of that fix (18 November 2026): a GET whose path looks
+  // like a static file gets no http.server span from the SDK, so Fastify's
+  // own request span roots its record, with the path and no route: never
+  // sent either. The first request spends the limiter's budget, if the test
+  // before has not.
+  it("sends no record of a static-looking path no route matched either", async () => {
+    const spend = await fetch(`${base}/old-route/budget`);
+    await spend.arrayBuffer();
+    const path = `/old-route/${UNMATCHED_MARKER}/photo.png`;
+    const response = await fetch(`${base}${path}`);
+    await response.arrayBuffer();
+    expect(response.status).toBe(429);
+    // Not vacuous: the SDK built it, rooted on Fastify's span, with the path.
+    await vi.waitFor(() => {
+      expect(builtWith(path).map((record) => record.trace?.op)).toContain("request_handler.fastify");
+    }, { timeout: 10_000 });
+    expect(await flush(5_000)).toBe(true);
+    expect(envelopes.join("\n")).not.toContain(path);
   }, 30_000);
 });

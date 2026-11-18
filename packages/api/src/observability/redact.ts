@@ -469,6 +469,18 @@ function templateUrlsDeep<T>(value: T, template: (url: string) => string): T {
 }
 
 /**
+ * The request's own URL as a timing record carries it: the SDK's request
+ * data, or an attribute of the span the record was built from (`url.path` on
+ * Fastify's own request span, which roots the record of a GET whose path
+ * looks like a static file). None for a record of other work.
+ */
+export function requestUrlOf(event: ScrubbableTransaction): string | undefined {
+  const traceData = event.contexts?.trace?.data;
+  return [event.request?.url, traceData?.["url.full"], traceData?.["http.target"], traceData?.["url.path"]]
+    .find((value): value is string => typeof value === "string");
+}
+
+/**
  * `beforeSendTransaction`: removes `request.query_string`, the body, the
  * cookies, every request header, the user, the tags, the extra data and the
  * breadcrumbs, drops the address, credential and browser attributes from the
@@ -478,10 +490,11 @@ function templateUrlsDeep<T>(value: T, template: (url: string) => string): T {
  * path is the request's, as `url`, `url.path` on Fastify's own span and the
  * rest carry it) on its route's pattern (`http.route`, as Fastify matched it),
  * and every other with its query, fragment and any user[:password]@ cut and
- * each segment that looks like a record's id replaced. A request's record
- * that no route matched is never sent (`isUnroutedRequest`, sentry.ts), nor
- * is a 404's (the SDK drops records of 401 to 404); the record of other work,
- * with no request of its own, has the segment rules alone for any URL in it.
+ * each segment that looks like a record's id replaced. A record that carries
+ * a request's URL (`requestUrlOf`) but no route is never sent
+ * (`isUnroutedRequest`, sentry.ts), nor is a 404's (the SDK drops records of
+ * 401 to 404); the record of other work, with no request URL of its own, has
+ * the segment rules alone for any URL in it.
  * A transaction is the timing record the API sends for a sample of requests
  * whether or not anything failed, and the privacy page says it carries no
  * address, identifier or browser details (Blake, 13 November 2026: "Strip
@@ -493,8 +506,7 @@ export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransa
   // Sentry types a trace context's attribute bag as `{ [key: string]: any }`: read as unknown, then narrowed.
   const routeAttribute: unknown = traceData?.["http.route"];
   const route = typeof routeAttribute === "string" && routeAttribute.startsWith("/") ? routeAttribute : undefined;
-  const requestUrl = [event.request?.url, traceData?.["url.full"], traceData?.["http.target"], traceData?.["url.path"]]
-    .find((value): value is string => typeof value === "string");
+  const requestUrl = requestUrlOf(event);
   const requestPath = requestUrl === undefined ? undefined : pathOf(requestUrl);
   if (event.request !== undefined) {
     delete event.request.query_string;

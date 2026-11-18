@@ -2,7 +2,7 @@ import type { FastifyRequest } from "fastify";
 import type { NodeOptions, fastifyIntegration } from "@sentry/node";
 import type { Env } from "../env.js";
 import { scrubApiSentryEvent } from "./health-redaction.js";
-import { scrubBreadcrumb, scrubErrorEvent, scrubTransaction, type ScrubbableTransaction } from "./redact.js";
+import { requestUrlOf, scrubBreadcrumb, scrubErrorEvent, scrubTransaction, type ScrubbableTransaction } from "./redact.js";
 
 // ---------------------------------------------------------------------------
 // Sentry — error tracking + tracing for Fastify
@@ -58,24 +58,30 @@ export function hasParentSpan(event: ScrubbableTransaction): boolean {
 }
 
 /**
- * Whether a request's timing record has no route of its own: Fastify matched
- * no route, so `http.route` is missing or names no path ("*", its catch-all).
- * Such requests still get records: an unknown path's 429 from the limiter on
- * unmatched paths (index.ts), a malformed URL's 400, a request answered
- * before routing. The request's own path could then go only through the
- * segment rules, which keep an email-shaped segment, a phone number, a short
- * booking number and much else, so none of these is sent; a request no route
- * matched has almost no timing worth keeping. (An unknown path's 404 never
- * reaches here: the SDK drops records of 401 to 404 itself.) Only a request's
- * own record (op http.server) is judged; other work's records have no
- * request path. (#355's review at 33db2ba1, WX1, 18 November 2026.)
+ * Whether a record is a request's own and has no route: its `http.route` is
+ * missing or names no path, and it is the SDK's `http.server` record or any
+ * other that carries a request's URL or path (`requestUrlOf`, redact.ts).
+ * Fastify's not-found handler gives no route at all; a "*" would come only
+ * from a catch-all route, which the API has none of. A GET whose path looks
+ * like a static file gets no `http.server` span from the SDK, so Fastify's
+ * own request span roots its record, with the path in `url.path`. Requests no
+ * route matched still get records: an unknown path's 429 from the limiter on
+ * unmatched paths (index.ts), a malformed URL's 400. Their own path could go
+ * only through the segment rules, which keep an email-shaped segment, a phone
+ * number, a short booking number and much else, so none is sent; such a
+ * request has almost no timing worth keeping. (An unknown path's 404 never
+ * reaches here: the SDK drops records of 401 to 404 itself.) The one routed
+ * kind found without a route goes too: a request Fastify answers 503 while
+ * closing, before any hook runs, which Fastify logs. A record of other work
+ * carries no request URL and keeps the segment rules. (#355's review at
+ * 33db2ba1, WX1, and the verification of its fix, 18 November 2026.)
  */
 export function isUnroutedRequest(event: ScrubbableTransaction): boolean {
   const trace = event.contexts?.trace;
-  if (trace?.op !== "http.server") return false;
   // Sentry types a trace context's attribute bag as `{ [key: string]: any }`: read as unknown, then narrowed.
-  const route: unknown = trace.data?.["http.route"];
-  return typeof route !== "string" || !route.startsWith("/");
+  const route: unknown = trace?.data?.["http.route"];
+  if (typeof route === "string" && route.startsWith("/")) return false;
+  return trace?.op === "http.server" || requestUrlOf(event) !== undefined;
 }
 
 /**
@@ -88,11 +94,12 @@ export function isUnroutedRequest(event: ScrubbableTransaction): boolean {
  *     query parameters in exception values (`./redact.ts`), then any guest
  *     allergy note left in a message or breadcrumb (`./health-redaction.ts`);
  *   - beforeSendTransaction: the timing records carry no address, identifier
- *     or browser details (`scrubTransaction`: no request header, user, tag,
- *     breadcrumb, query, body or token, and no segment that looks like a
- *     record's id in any URL), as the privacy page says; one with a parent
- *     span is not sent (`hasParentSpan`), nor is a request's record that no
- *     route matched (`isUnroutedRequest`);
+ *     or browser details (`scrubTransaction`: no browser-supplied header
+ *     beyond the host and content length, no user, tag, breadcrumb, query,
+ *     body or token, and no segment that looks like a record's id in any
+ *     URL), as the privacy page says; one with a parent span is not sent
+ *     (`hasParentSpan`), nor is a request's record that no route matched
+ *     (`isUnroutedRequest`);
  *   - beforeBreadcrumb: the query in http breadcrumbs.
  * Leave `dataCollection` unset: in @sentry/core 10.60 any key in it switches
  * its base to collect everything (the user's address, cookies, every body),

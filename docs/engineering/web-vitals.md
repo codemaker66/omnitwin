@@ -382,22 +382,26 @@ Verification workflows that night (each finding put to three skeptics) found mor
   last review, of the delta to 3475d20a, found only wording. At 3475d20a every check
   passed and every one of 38 mutations was caught by a test.
 - The release lead's review of 33db2ba1 (18 November) found that gap wider than said:
-  the API limits a path no route matches on the same budget as the rest
-  (`limitUnmatchedPaths`, `packages/api/src/index.ts`), so once an address passes 100
-  requests a minute an unknown path is answered with a 429, a status the SDK does not
-  drop, and an email-shaped segment or a phone number in that path would have been
-  sent. No record of a request no route matched is sent now (`isUnroutedRequest`,
-  `packages/api/src/observability/sentry.ts`: an `http.server` record whose
-  `http.route` is missing or names no path), which a real-SDK test shows with the
-  limiter itself, on a budget of one. The review also asked that a record keep no
-  user, tags or extra data, whatever adds them; that any user and password in a URL's
-  origin be cut; that "no request header" say what it means (no browser-supplied
-  header beyond the host and content length: the server's own host name and a body's
-  length stay); that browser errors carry no locale or time zone (the `CultureContext`
-  integration is dropped beside `BrowserSession`); and that the switch say it is
-  unavailable where the browser refuses its storage, show as pressed in forced
-  colours, and be linked from the sentences that send a visitor to it. All of these
-  are done.
+  the API limits a path no route matches on the global limiter's budget
+  (`limitUnmatchedPaths`, `packages/api/src/index.ts`: 100 a minute from one address,
+  shared with every route that has no limit of its own), so past it an unknown path is
+  answered with a 429, a status the SDK does not drop, and an email-shaped segment or
+  a phone number in that path would have been sent. No record of a request no route
+  matched is sent now (`isUnroutedRequest`, `packages/api/src/observability/sentry.ts`:
+  any record that carries a request's URL or path and whose `http.route` is missing or
+  names no path, whether the SDK's `http.server` span roots it or, for a GET whose
+  path looks like a static file, which the SDK gives no such span, Fastify's own
+  request span; the verification of the first fix found that second form). Real-SDK
+  tests show both with the limiter itself, on a budget of one. The review also asked
+  that a record keep no user, tags or extra data, whatever adds them; that any user
+  and password in a URL's origin be cut; that "no request header" say what it means
+  (no browser-supplied header beyond the host and content length: the server's own
+  host name and a body's length stay); that browser errors carry no locale or time
+  zone (the `CultureContext` integration is dropped beside `BrowserSession`); and that
+  the switch say it is unavailable where the browser refuses its storage, show as
+  pressed in forced colours, and be linked from the sentences that send a visitor to
+  it. All of these are done, and where storage is refused the switch also dims
+  (GrayText in forced colours).
 
 The paragraph now reads:
 
