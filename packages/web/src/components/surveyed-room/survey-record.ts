@@ -41,12 +41,25 @@ export const WALL_LENGTH_TOLERANCE = 0.002;
  * edge would be smeared over the rest of the surface.
  *
  * It is not slack to tighten. The ceiling's photograph covers the outline's
- * bounding box exactly, but the tools lay the floor's in whole texels of
- * 1/120 m from the box's lowest x and highest z (roombuild/publish.py
- * floor_extent), so a published `floor.extent` stops up to half a texel,
- * 4.17 mm, short of the box's other two sides, or runs that far past them.
- * 5 mm admits that with 0.8 mm to spare; it is also what a relief may reach
- * outside its record (room-geometry.ts RELIEF_BOUNDS_TOLERANCE).
+ * bounding box exactly, but the tools lay the floor's in whole texels from
+ * the box's lowest x and highest z, so a published `floor.extent` stops up to
+ * half a texel short of the box's other two sides, or runs that far past
+ * them. Every room configured so far photographs its floor at 120 texels per
+ * metre: half a texel is 4.17 mm, which 5 mm admits with 0.8 mm to spare.
+ *
+ * So 5 mm covers that half texel only for a floor photograph of at least 100
+ * texels per metre (0.5 / 100 m is 5 mm). The record carries no floor
+ * resolution, so this reader cannot tell a coarser photograph that is whole
+ * from one that was cropped: at 60 texels per metre half a texel is 8.33 mm,
+ * and a whole floor would be refused here as not covering the outline. The
+ * tools must therefore never publish such a record. Their side of this is in
+ * tools/surveyed-rooms/roombuild/publish.py: `floor_extent`, which lays the
+ * extent, and `record_faults`, which repeats this refusal before anything is
+ * published. Neither is in this repository yet: they arrive with the tools'
+ * pull request that follows #442.
+ *
+ * 5 mm is also what a relief may reach outside its record (room-geometry.ts
+ * RELIEF_BOUNDS_TOLERANCE).
  */
 export const OVERHEAD_EXTENT_TOLERANCE = 0.005;
 /**
