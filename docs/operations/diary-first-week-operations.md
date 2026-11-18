@@ -168,8 +168,9 @@ anything is sent.**
 
 - No auto-remediation — every rollback and cleanup is a human decision
   with the checklist open.
-- No in-process schedulers — the cron owns timing; the code owns
-  idempotency (house cleanup convention).
+- The job list owns timing; the code owns being safe to repeat
+  (`docs/engineering/the-job-list.md`). The request-escalation wake still runs by
+  itself until it moves onto the list.
 - No compliance or delivery-guarantee claims: reminders are a planning
   nudge; the smoke suite is planning-support verification. Decisions stay
   with people.

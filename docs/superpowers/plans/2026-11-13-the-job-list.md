@@ -28,8 +28,9 @@ the list (plan 3). Stages 2 to 4 of the spec. Each gets its own plan when this o
 - **Every handler is safe to repeat.** The list promises at least once.
 - **A handler talks to the database and to a provider, nothing heavier,** and its time limit is 15 seconds or
   less.
-- **A handler runs outside any transaction.** It takes locks in the order booking, then enquiry, then event, and
-  never holds a row lock on an event or a booking while it calls an outside service.
+- **A handler runs outside any transaction.** It takes locks in the order bookings, then the proposal, then the
+  enquiry, then the deal, then the event (the spine's design, section 5.4), and never holds a row lock on an
+  event or a booking while it calls an outside service.
 - **States:** `queued`, `running`, `done`, `dead`, `abandoned`. No others.
 - **Retries:** after 1 minute, 5 minutes, 30 minutes, 2 hours and 6 hours, then `dead`. Six tries by default.
 - **Lost claims:** the first puts the job back after 5 minutes; the second makes it `dead`.
