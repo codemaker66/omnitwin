@@ -96,3 +96,46 @@ jobs:
           echo "Migrations applied for commit ${{ github.event.workflow_run.head_sha }}."
           echo "Railway's GitHub integration is triggering the container build + deploy."
           echo "Monitor progress: https://railway.app/"
+
+  # The event rules after a release (docs/engineering/the-spine.md): joins the
+  # proposals, deals and enquiries made since the last run to their events,
+  # then reads the bind's and the spine's counts and prints one line of JSON.
+  # Railway releases by itself, so a red run here reports and blocks nothing;
+  # no job needs this one. It runs only when the migrate job does (the same
+  # if: and environment:, so it waits for the same Production approval); the
+  # nightly run in cleanup.yml waits for none. The --join flag goes when the
+  # rule is tightened (stage 6), after which this only reads.
+  event-rules:
+    name: Event rules (reports only; never blocks a release)
+    needs: migrate
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @omnitwin/types (required by api)
+        run: pnpm --filter @omnitwin/types build
+
+      - name: Join old records and read the event rules
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm --filter @omnitwin/api exec tsx src/scripts/check-booking-event-bind.ts --join
