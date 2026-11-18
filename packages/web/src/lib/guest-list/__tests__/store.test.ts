@@ -307,12 +307,12 @@ describe("guestListStore on a device without IndexedDB", () => {
     vi.resetModules();
   });
 
-  it("keeps nothing and says so", async () => {
+  it("keeps nothing and says so: this browser has no storage, which is not a read that failed", async () => {
     vi.resetModules();
     vi.stubGlobal("indexedDB", undefined);
     const { guestListStore } = await import("../store.js");
     const s = guestListStore();
-    expect(await s.open(PLAN_A)).toEqual({ kind: "not-kept" });
+    expect(await s.open(PLAN_A)).toEqual({ kind: "no-storage" });
     expect(await s.save(listFor(PLAN_A), null)).toBe("not-kept");
     expect(await s.sweep(Date.parse("2099-01-01T00:00:00Z"))).toBe(0);
     await expect(s.erase(PLAN_A)).resolves.toBeUndefined();

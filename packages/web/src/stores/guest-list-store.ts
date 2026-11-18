@@ -30,6 +30,12 @@ export interface GuestListState {
   readonly list: GuestList | null;
   /** False while the device is not keeping the list. */
   readonly kept: boolean;
+  /**
+   * The device could not be read when this plan was opened, so a list may be
+   * kept there that this page has not seen. Until a read succeeds, nothing
+   * here writes to the device or erases it.
+   */
+  readonly unread: boolean;
   readonly notice: KitNotice;
   readonly canUndo: boolean;
   open(planId: string, store: GuestListStore, now?: () => string): Promise<void>;
@@ -80,6 +86,7 @@ const INITIAL = {
   phase: "opening",
   list: null,
   kept: true,
+  unread: false,
   notice: null,
   canUndo: false,
 } as const satisfies Partial<GuestListState>;
@@ -144,6 +151,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             }
             session.unread = false;
             session.loadedUpdatedAt = null;
+            if (isCurrent(session)) set({ unread: false });
             // Check again what may have changed while reading (an erase, a reset).
             continue;
           }
@@ -248,6 +256,10 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             return;
           case "not-kept":
             session.unread = true;
+            set({ phase: "ready", list: emptyGuestList(planId, now()), kept: false, unread: true });
+            return;
+          case "no-storage":
+            // Nothing can be stored here, so nothing stored has gone unseen.
             set({ phase: "ready", list: emptyGuestList(planId, now()), kept: false });
             return;
         }
@@ -295,7 +307,8 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
       async startAgain() {
         const session = current;
         if (session === null || get().phase !== "unreadable") return;
-        await eraseSafely(session.store, session.planId);
+        // A session that has not read the device clears the page only.
+        if (!session.unread) await eraseSafely(session.store, session.planId);
         if (!isCurrent(session) || get().phase !== "unreadable") return;
         session.undo = [];
         session.loadedUpdatedAt = null;
@@ -315,7 +328,8 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         clearTimer(session);
         session.unsaved = false;
         if (session.running !== null) await session.running;
-        await eraseSafely(session.store, session.planId);
+        // A list this session never read is not erased unseen: only the page is cleared.
+        if (!session.unread) await eraseSafely(session.store, session.planId);
         // Anything changed while erasing is dropped with the rest of the list.
         clearTimer(session);
         session.unsaved = false;

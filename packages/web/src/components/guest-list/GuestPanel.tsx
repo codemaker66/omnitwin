@@ -68,6 +68,8 @@ export interface GuestPanelProps {
   /** The event's name as shown: the list's title, else the plan's name. */
   readonly title: string;
   readonly kept: boolean;
+  /** False while a list may be kept here that the page could not read: deleting is not offered then. */
+  readonly canDelete: boolean;
   readonly canUndo: boolean;
   readonly room: RoomState;
   readonly tablesFormOpen: boolean;
@@ -189,7 +191,7 @@ export function GuestPanel(props: GuestPanelProps): ReactElement {
             <button type="button" className="gl-button gl-button--quiet" onClick={() => { download(list); }}>Download the list</button>
             <button type="button" className="gl-button gl-button--quiet" disabled={!canUndo} onClick={props.onUndo}>Undo</button>
           </div>
-          <DeleteList guests={counts.guests} onErase={props.onErase} />
+          {props.canDelete && <DeleteList guests={counts.guests} onErase={props.onErase} />}
         </section>
       </div>
     </aside>

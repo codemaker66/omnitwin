@@ -704,7 +704,7 @@ describe("the guest paper page: printing", () => {
 
   it("says when the browser is not keeping the list", async () => {
     const refusing: GuestListStore = {
-      open: () => Promise.resolve({ kind: "not-kept" }),
+      open: () => Promise.resolve({ kind: "no-storage" }),
       save: () => Promise.resolve("not-kept"),
       erase: () => Promise.resolve(),
       sweep: () => Promise.resolve(0),
@@ -714,6 +714,22 @@ describe("the guest paper page: printing", () => {
     expect(within(tools()).getByText(
       "This browser is not keeping the list. It will be gone when you close this tab. Download it before you leave.",
     )).toBeTruthy();
+  });
+
+  it("says, as an alert, when the list kept here could not be opened just now", async () => {
+    const unread: GuestListStore = {
+      open: () => Promise.resolve({ kind: "not-kept" }),
+      save: () => Promise.resolve("not-kept"),
+      erase: () => Promise.resolve(),
+      sweep: () => Promise.resolve(0),
+    };
+    open(`${PAPER}?kit=on`, unread);
+    await paper("table-plan");
+    const words = within(tools()).getByText(
+      "The list kept here for this plan could not be opened just now. Reload the page to try again. Anything added here is not being kept.",
+    );
+    expect(words.getAttribute("role")).toBe("alert");
+    expect(within(tools()).queryByText(/This browser is not keeping the list/)).toBeNull();
   });
 });
 

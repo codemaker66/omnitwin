@@ -5,7 +5,7 @@ import { GuestPaste, type PastedGuest } from "../components/guest-list/GuestPast
 import { GuestRows, type GuestFilter } from "../components/guest-list/GuestRows.js";
 import { GuestTables } from "../components/guest-list/GuestTables.js";
 import { KitGate } from "../components/guest-list/KitGate.js";
-import { counted, DATE_REFUSED, NOT_KEPT, seatedSentence, toSeatSentence } from "../components/guest-list/words.js";
+import { counted, DATE_REFUSED, NOT_KEPT, NOT_OPENED, seatedSentence, toSeatSentence } from "../components/guest-list/words.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import {
   earliestEventDate,
@@ -221,6 +221,7 @@ interface ReadyDeskProps {
 function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps): ReactElement {
   const id = useId();
   const kept = useGuestListStore((s) => s.kept);
+  const unread = useGuestListStore((s) => s.unread);
   const notice = useGuestListStore((s) => s.notice);
   const canUndo = useGuestListStore((s) => s.canUndo);
   const counts = summary(list);
@@ -590,7 +591,11 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
         </dl>
 
         <div className="gl-notices">
-          {!kept && (
+          {unread ? (
+            <div className="gl-notice" data-notice="unread" data-tone="alert" role="alert">
+              <p>{NOT_OPENED}</p>
+            </div>
+          ) : !kept && (
             <div className="gl-notice" data-notice="not-kept" data-tone="alert">
               <p>{NOT_KEPT}</p>
             </div>
@@ -698,6 +703,7 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
         list={list}
         title={title}
         kept={kept}
+        canDelete={!unread}
         canUndo={canUndo}
         room={room}
         tablesFormOpen={tablesFormOpen}

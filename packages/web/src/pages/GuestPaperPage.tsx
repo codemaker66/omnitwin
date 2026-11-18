@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode }
 import { flushSync } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import { KitGate } from "../components/guest-list/KitGate.js";
-import { calendarDay, counted, NOT_KEPT, weekday } from "../components/guest-list/words.js";
+import { calendarDay, counted, NOT_KEPT, NOT_OPENED, weekday } from "../components/guest-list/words.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import { KIT_PARAM } from "../lib/guest-list/kit-switch.js";
 import type { GuestList } from "../lib/guest-list/model.js";
@@ -243,6 +243,7 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
 function ReadyPaper({ planId, list }: { readonly planId: string; readonly list: GuestList }): ReactElement {
   const { search } = useLocation();
   const kept = useGuestListStore((s) => s.kept);
+  const unread = useGuestListStore((s) => s.unread);
   const { printing, print } = usePrint();
   const sheet = sheetFrom(search);
   const label = SHEETS.find((entry) => entry.sheet === sheet)?.label ?? "Table plan";
@@ -262,7 +263,9 @@ function ReadyPaper({ planId, list }: { readonly planId: string; readonly list: 
             </p>
           )}
         </div>
-        {!kept && <p className="gp-tools__notice">{NOT_KEPT}</p>}
+        {unread
+          ? <p className="gp-tools__notice" role="alert">{NOT_OPENED}</p>
+          : !kept && <p className="gp-tools__notice">{NOT_KEPT}</p>}
         <div className="gp-tools__row">
           <nav aria-label="Sheets">
             <ul className="gp-sheets">

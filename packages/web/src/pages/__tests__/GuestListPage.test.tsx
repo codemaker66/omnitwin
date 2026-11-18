@@ -109,6 +109,22 @@ function refusingBackend(): CacheBackend {
   return { get: refuse, put: refuse, delete: refuse, list: refuse };
 }
 
+/** The first read refuses, then storage works: a read that failed just now. */
+function firstReadRefused(inner: CacheBackend): CacheBackend {
+  let refused = false;
+  return {
+    ...inner,
+    get: (key) => {
+      if (refused) return inner.get(key);
+      refused = true;
+      return Promise.reject(new Error("storage refused"));
+    },
+  };
+}
+
+const NOT_KEPT_WORDS = "This browser is not keeping the list. It will be gone when you close this tab. Download it before you leave.";
+const NOT_OPENED = "The list kept here for this plan could not be opened just now. Reload the page to try again. Anything added here is not being kept.";
+
 function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
   let resolve: (value: T) => void = () => undefined;
   const promise = new Promise<T>((r) => {
@@ -449,12 +465,13 @@ describe("the guest list page: the desk", () => {
     expect(currentList().tables.map((t) => t.number)).toEqual([1]);
   });
 
-  it("says the list is not being kept when storage refuses, and still seats guests", async () => {
+  it("says the list is not being kept when this browser has no storage, and still seats guests", async () => {
     mocks.getPublicConfig.mockResolvedValue(room(2));
-    open(PAGE, memoryStore(refusingBackend()));
+    open(PAGE, { ...memoryStore(refusingBackend()), open: () => Promise.resolve({ kind: "no-storage" }) });
     await desk();
-    const words = "This browser is not keeping the list. It will be gone when you close this tab. Download it before you leave.";
+    const words = NOT_KEPT_WORDS;
     expect(screen.getByText(words)).toBeTruthy();
+    expect(screen.queryByText(NOT_OPENED)).toBeNull();
     expect(screen.queryByText(/These names are kept only in this browser/)).toBeNull();
 
     await pasteAndAdd(names(5), 5);
@@ -465,6 +482,26 @@ describe("the guest list page: the desk", () => {
     await flush();
     expect(state().kept).toBe(false);
     expect(screen.getByText(words)).toBeTruthy();
+  });
+
+  it("says, as an alert, when the list kept here could not be opened, offers no delete, and never erases it", async () => {
+    const kept = listOf({ guests: [guest(1, "Ailsa Fraser"), guest(2, "Chidi Okafor"), guest(3, "Morag Kerr")] });
+    const { backend } = await storeHolding(kept);
+    const before = JSON.stringify(await backend.get(PLAN_ID));
+    open(PAGE, memoryStore(firstReadRefused(backend)));
+    await desk();
+
+    const notice = screen.getByText(NOT_OPENED).closest("[data-notice]");
+    expect(notice?.getAttribute("role")).toBe("alert");
+    expect(screen.queryByText(NOT_KEPT_WORDS)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete the list from this device" })).toBeNull();
+
+    // Work done here is not kept over the list nobody has seen.
+    await pasteAndAdd(names(2), 2);
+    await flush();
+    expect(screen.getByText(NOT_OPENED)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete the list from this device" })).toBeNull();
+    expect(JSON.stringify(await backend.get(PLAN_ID))).toBe(before);
   });
 
   it("when the plan answers 404, says the room could not be opened and keeps the list", async () => {

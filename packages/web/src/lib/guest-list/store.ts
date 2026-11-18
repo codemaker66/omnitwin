@@ -19,8 +19,10 @@ export type Opened =
   | { readonly kind: "new" }
   /** Something is stored for this plan but it is not a valid list; it is left in place. */
   | { readonly kind: "unreadable" }
-  /** Storage refused; work in memory only. */
-  | { readonly kind: "not-kept" };
+  /** Storage refused the read; a list may be stored that was not seen. Work in memory only. */
+  | { readonly kind: "not-kept" }
+  /** This browser has no storage for a list (no IndexedDB): nothing is kept here, or can be. */
+  | { readonly kind: "no-storage" };
 
 export type Saved = "saved" | "not-kept" | "newer-copy-kept-ours";
 
@@ -114,10 +116,18 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
   return { open, save, erase, sweep };
 }
 
-/** A handle for a browser with no IndexedDB: every call is refused, so the store answers "not-kept". */
-function unavailableHandle(): CacheHandle<unknown> {
-  const refuse = (): Promise<never> => Promise.reject(new Error("storage unavailable"));
-  return { get: refuse, put: refuse, delete: refuse, list: refuse };
+/**
+ * The store of a browser with no IndexedDB. Nothing can be stored, so nothing
+ * stored can go unseen: it opens as "no-storage", which is not a read that
+ * failed, and keeps nothing.
+ */
+function noStorageStore(): GuestListStore {
+  return {
+    open: () => Promise.resolve({ kind: "no-storage" }),
+    save: () => Promise.resolve("not-kept"),
+    erase: () => Promise.resolve(),
+    sweep: () => Promise.resolve(0),
+  };
 }
 
 let cachedStore: GuestListStore | null = null;
@@ -125,10 +135,8 @@ let cachedStore: GuestListStore | null = null;
 /** The device store, made once. Without IndexedDB it keeps nothing and says so. */
 export function guestListStore(): GuestListStore {
   if (cachedStore !== null) return cachedStore;
-  cachedStore = createGuestListStore(
-    typeof indexedDB === "undefined"
-      ? unavailableHandle()
-      : openCache<unknown>({ dbName: GUEST_LIST_DB, storeName: GUEST_LIST_STORE }),
-  );
+  cachedStore = typeof indexedDB === "undefined"
+    ? noStorageStore()
+    : createGuestListStore(openCache<unknown>({ dbName: GUEST_LIST_DB, storeName: GUEST_LIST_STORE }));
   return cachedStore;
 }

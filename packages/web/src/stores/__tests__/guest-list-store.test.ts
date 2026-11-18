@@ -656,6 +656,53 @@ describe("guest list page state: a list the device could not read is never overw
     expect(state().kept).toBe(false);
   });
 
+  it("says the session is unread until a read succeeds, and a browser with no storage is not unread", async () => {
+    const inner = memoryBackend();
+    const store = createGuestListStore(withBackend<unknown>(readsRefusedAtFirst(inner, 1)));
+    await state().open(PLAN_A, store, clock());
+    expect(state().unread).toBe(true);
+    expect(state().kept).toBe(false);
+    state().apply(titled("Dinner"));
+    await state().flush();
+    // The second read found nothing stored, so the session is read and kept.
+    expect(state().unread).toBe(false);
+    expect(state().kept).toBe(true);
+    state().reset();
+    expect(state().unread).toBe(false);
+
+    const noStorage: GuestListStore = {
+      open: () => Promise.resolve({ kind: "no-storage" }),
+      save: () => Promise.resolve("not-kept"),
+      erase: () => Promise.resolve(),
+      sweep: () => Promise.resolve(0),
+    };
+    await state().open(PLAN_A, noStorage, clock());
+    expect(state().phase).toBe("ready");
+    expect(state().list?.guests).toEqual([]);
+    expect(state().kept).toBe(false);
+    expect(state().unread).toBe(false);
+  });
+
+  it("while unread, erasing clears the page only and never touches the device", async () => {
+    const inner = memoryBackend();
+    await withBackend<unknown>(inner).put(PLAN_A, storedList);
+    const before = JSON.stringify(await inner.get(PLAN_A));
+    const store = createGuestListStore(withBackend<unknown>(readsRefusedAtFirst(inner, 1)));
+    const erase = vi.spyOn(store, "erase");
+
+    await state().open(PLAN_A, store, clock());
+    expect(state().unread).toBe(true);
+    state().apply((list) => ({ ...list, guests: [guest(900)] }));
+    await state().eraseList();
+
+    expect(erase).not.toHaveBeenCalled();
+    expect(JSON.stringify(await inner.get(PLAN_A))).toBe(before);
+    expect(state().list?.guests).toEqual([]);
+    expect(state().canUndo).toBe(false);
+    expect(state().unread).toBe(true);
+    expect(state().kept).toBe(false);
+  });
+
   it("lets a second read that answers after reset change nothing and write nothing", async () => {
     const { backend, store } = device();
     const slow = deferred<Opened>();

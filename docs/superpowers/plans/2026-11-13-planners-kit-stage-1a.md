@@ -353,7 +353,8 @@ export type Opened =
   | { readonly kind: "ready"; readonly list: GuestList; readonly repaired: number }
   | { readonly kind: "new" }
   | { readonly kind: "unreadable" }          // something is stored for this plan but it is not a valid list
-  | { readonly kind: "not-kept" };           // storage refused; work in memory only
+  | { readonly kind: "not-kept" }            // storage refused the read; a list may be stored unseen; work in memory only
+  | { readonly kind: "no-storage" };         // no IndexedDB in this browser: nothing is kept here, or can be
 export type Saved = "saved" | "not-kept" | "newer-copy-kept-ours";
 export interface GuestListStore {
   open(planId: string): Promise<Opened>;
@@ -362,7 +363,7 @@ export interface GuestListStore {
   sweep(nowMs: number): Promise<number>;     // removes lists past deleteAfter(); returns how many
 }
 export function createGuestListStore(handle: CacheHandle<unknown>): GuestListStore;
-export function guestListStore(): GuestListStore;   // the lazily made device store
+export function guestListStore(): GuestListStore;   // the lazily made device store; without IndexedDB it opens as "no-storage"
 ```
 
 - [ ] **Step 1: Write the failing tests** (Review Focus 2 and 3 live here)
@@ -464,12 +465,12 @@ export const AUTOSAVE_MS = 600, UNDO_STEPS = 30;
 
 Behaviour:
 - `now` defaults to `() => new Date().toISOString()`; it is the only clock, used for every `updatedAt`.
-- `open` sets `planId`, phase "opening", then asks `store.open(planId)`: "ready" gives that list (phase "ready", `kept` true, notice `repaired` when `repaired > 0`, and the repaired list is then saved); "new" gives `emptyGuestList(planId, now())` (`kept` true; nothing is written until the first change); "unreadable" gives phase "unreadable" with `list` null; "not-kept" gives an empty list in memory with `kept` false. A second `open` while one is in flight, or for another plan, must not let the older answer overwrite the newer. A change the replaced plan still had unsaved is saved before the new plan is read. A session whose `open` answered "not-kept" has not read the device, so before each write it calls `store.open(planId)` again: only "new" lets the save go ahead (`loadedUpdatedAt` null); "ready" or "unreadable" writes nothing and leaves `kept` false; "not-kept" writes nothing and reads again at the next attempt. A stored list is never overwritten by a session that has not read it, and that second read's answer changes nothing after `reset`, `eraseList` or a newer `open`.
+- `open` sets `planId`, phase "opening", then asks `store.open(planId)`: "ready" gives that list (phase "ready", `kept` true, notice `repaired` when `repaired > 0`, and the repaired list is then saved); "new" gives `emptyGuestList(planId, now())` (`kept` true; nothing is written until the first change); "unreadable" gives phase "unreadable" with `list` null; "not-kept" gives an empty list in memory with `kept` false and `unread` true (the page says the list kept here could not be opened just now); "no-storage" gives an empty list in memory with `kept` false and `unread` false. A second `open` while one is in flight, or for another plan, must not let the older answer overwrite the newer. A change the replaced plan still had unsaved is saved before the new plan is read. A session whose `open` answered "not-kept" has not read the device, so before each write it calls `store.open(planId)` again: only "new" lets the save go ahead (`loadedUpdatedAt` null); "ready" or "unreadable" writes nothing and leaves `kept` false; "not-kept" writes nothing and reads again at the next attempt. A stored list is never overwritten by a session that has not read it, and that second read's answer changes nothing after `reset`, `eraseList` or a newer `open`.
 - `apply(change)`: no-op when `list` is null. If `change(list)` returns the SAME object, nothing happens (no undo step, no save). Otherwise the previous list is pushed on the undo stack (unless `opts.undo === false`; at most `UNDO_STEPS`, oldest dropped), the new list gets `updatedAt: now()`, and a save is scheduled.
 - Autosave: a timer of `AUTOSAVE_MS` starts on the first unsaved change and is NOT restarted by later changes, so a change is saved within 600 ms. Saves run one at a time, in order; a save always writes the latest list. `store.save(list, loadedUpdatedAt)`: "saved" sets `kept` true; "newer-copy-kept-ours" sets `kept` true and notice `other-tab`; "not-kept" sets `kept` false and keeps the list in memory, and later changes try again. After any answer but "not-kept", the remembered `loadedUpdatedAt` becomes the saved list's `updatedAt`.
 - `undo()`: restores the previous list's guests, tables, title, eventDate and sortBy, but KEEPS the current `paperVersion` and `printedAt`, sets `changedSincePrint` true and `updatedAt: now()`, and schedules a save. `canUndo` is false when the stack is empty.
 - `startAgain()`: only when "unreadable": erases the stored value, then begins a new empty list (phase "ready").
-- `eraseList()`: cancels any pending save, waits for a running one, erases the stored list, and leaves a new empty list in memory with the undo stack and notice cleared.
+- `eraseList()`: cancels any pending save, waits for a running one, erases the stored list, and leaves a new empty list in memory with the undo stack and notice cleared. While the session is unread it clears memory only and never touches the device, and the page does not offer Delete.
 - `flush()`: saves now if anything is unsaved, and resolves when no save is pending or running. It never rejects. The pages call it before leaving and before printing.
 - `reset()`: cancels timers and returns to the initial state (`planId` null, phase "opening", list null, `kept` true, notice null, `canUndo` false). Tests call it between cases.
 - No action rejects or throws to its caller, and nothing puts a guest's name into an error, a log line or a thrown value.

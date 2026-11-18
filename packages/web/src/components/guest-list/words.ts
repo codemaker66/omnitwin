@@ -74,8 +74,13 @@ export function keepingLine(list: GuestList): string {
 export const DATE_REFUSED =
   `That date would remove this list straight away: a list is removed ${String(KEEP_DAYS_AFTER_EVENT)} days after its event. Check the year.`;
 
+/** This browser cannot keep a list (it has no storage for one), or refused to write it. */
 export const NOT_KEPT =
   "This browser is not keeping the list. It will be gone when you close this tab. Download it before you leave.";
+
+/** A list may be kept here, but the read of it failed just now: the page has not seen it and does not touch it. */
+export const NOT_OPENED =
+  "The list kept here for this plan could not be opened just now. Reload the page to try again. Anything added here is not being kept.";
 
 /** "180 names found. Only names and parties are taken. 1 other column is left on your computer." */
 export function foundWords(found: number, droppedColumns: number): string {
