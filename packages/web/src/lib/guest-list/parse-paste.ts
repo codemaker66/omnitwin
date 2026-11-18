@@ -182,9 +182,14 @@ function trimTrailingEmpty(cells: readonly string[]): string[] {
  * Any tab in the text means tab-separated. Otherwise it is comma-separated
  * only when every non-blank line has the same number (one or more) of commas
  * outside quotes; otherwise it is one name a line.
+ *
+ * `written` is true when the text is two cells a line, every line with a
+ * comma followed by a space between them ("Fraser, Ailsa"): the way a list is
+ * written by hand. A spreadsheet's export puts no space after its comma.
  */
-function readCells(text: string): string[][] {
+function readCells(text: string): { readonly rows: string[][]; readonly written: boolean } {
   let records: string[][];
+  let written = false;
   if (text.includes("\t")) {
     records = splitRecords(text, "\t");
   } else {
@@ -193,13 +198,15 @@ function readCells(text: string): string[][] {
     const width = first === undefined ? 0 : first.length;
     if (width >= 2 && byComma.every((r) => r.length === width)) {
       records = byComma;
+      written = width === 2 && byComma.every((r) => r[1]?.startsWith(" ") === true);
     } else {
       records = text.split(/\r\n|\n|\r/).map((line) => [line]);
     }
   }
-  return records
+  const rows = records
     .filter((r) => !isBlankRecord(r))
     .map((r) => trimTrailingEmpty(r.map(cleanCell)));
+  return { rows, written };
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +243,14 @@ interface Guess {
 
 const NO_HEADER_GUESS: Guess = { nameColumn: 0, secondNameColumn: null, partyColumn: null };
 
+/** "Fraser, Ailsa": the name is column 2, then column 1, so "Ailsa Fraser" is added. */
+const SURNAME_FIRST_GUESS: Guess = { nameColumn: 1, secondNameColumn: 0, partyColumn: null };
+
+/** Two cells, each one word: a surname and a first name, as a list written by hand has them. */
+function isTwoSingleWords(row: readonly string[]): boolean {
+  return row.length === 2 && row.every((cell) => cell !== "" && !cell.includes(" "));
+}
+
 function guessColumns(header: readonly string[]): Guess {
   const nameColumn =
     findColumn(header, (cell) => (NAME_HEADING.test(cell) && !SURNAME_HEADING.test(cell)) || GUEST_HEADING.test(cell)) ??
@@ -256,20 +271,26 @@ function guessColumns(header: readonly string[]): Guess {
 /**
  * Reads pasted text into cells, drops a header row if there is one, and
  * guesses the name, second-name and party columns from that header. Without a
- * header the guess is the first column alone.
+ * header the guess is the first column alone, except for a list written
+ * surname first by hand: no tab, every line two single words with a comma and
+ * a space between them ("Fraser, Ailsa"), read as column 2 then column 1. The
+ * page shows the first guest as it will be added, whatever the guess.
  *
  * The first row is a header when one of its cells is a usual heading (see
  * `isHeaderCell`). `opts.header` overrules that test: true takes the first
  * row as the header, false takes it as a guest.
  */
 export function parsePaste(text: string, opts?: { readonly header?: boolean }): ParsedPaste {
-  const all = readCells(text);
+  const { rows: all, written } = readCells(text);
   const columnCount = all.reduce((widest, row) => Math.max(widest, row.length), 0);
   const first = all[0];
   const isHeader = opts?.header ?? (first?.some(isHeaderCell) ?? false);
   const header = isHeader && first !== undefined ? first : null;
   const rows = header === null ? all : all.slice(1);
-  const guess: Guess = header === null ? NO_HEADER_GUESS : guessColumns(header);
+  let guess: Guess;
+  if (header !== null) guess = guessColumns(header);
+  else if (written && rows.every(isTwoSingleWords)) guess = SURNAME_FIRST_GUESS;
+  else guess = NO_HEADER_GUESS;
   return { rows, columnCount, hadHeader: header !== null, ...guess };
 }
 

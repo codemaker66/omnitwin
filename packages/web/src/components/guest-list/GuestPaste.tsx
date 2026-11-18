@@ -55,6 +55,9 @@ export function GuestPaste({ roomLeft, onAdd, onClose, boxRef }: GuestPasteProps
   const taken = takeNames(parsed, chosen, roomLeft);
   const leftOut = leftOutWords(taken.skipped);
   const pasted = text.trim() !== "";
+  /** The first guest exactly as Add will add it, shown under the column choices. */
+  const firstGuest = parsed.columnCount >= 2 ? taken.guests[0] : undefined;
+  const twoNameColumns = chosen.secondNameColumn !== null && chosen.secondNameColumn !== chosen.nameColumn;
 
   const columns = Array.from({ length: parsed.columnCount }, (_, at) => at);
   const columnLabel = (at: number): string => {
@@ -156,6 +159,28 @@ export function GuestPaste({ roomLeft, onAdd, onClose, boxRef }: GuestPasteProps
                   {columns.map((at) => <option key={at} value={String(at)}>{columnLabel(at)}</option>)}
                 </select>
               </div>
+            </div>
+          )}
+
+          {parsed.columnCount >= 2 && (firstGuest !== undefined || twoNameColumns) && (
+            <div className="gl-paste__first">
+              {firstGuest !== undefined && (
+                <p className="gl-paste__words">
+                  {`The first guest will be added as: ${firstGuest.name}${
+                    chosen.partyColumn === null ? "" : `, party: ${firstGuest.party === "" ? "none" : firstGuest.party}`
+                  }`}
+                </p>
+              )}
+              {twoNameColumns && (
+                <button
+                  type="button"
+                  className="gl-button gl-button--quiet"
+                  aria-pressed={chosen.secondFirst}
+                  onClick={() => { setPick({ ...chosen, secondFirst: !chosen.secondFirst }); }}
+                >
+                  Put the two names the other way round
+                </button>
+              )}
             </div>
           )}
 

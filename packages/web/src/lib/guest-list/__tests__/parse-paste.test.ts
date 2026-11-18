@@ -187,6 +187,44 @@ describe("parsePaste", () => {
   });
 });
 
+describe("parsePaste: a list written surname first", () => {
+  const guessOf = (text: string): readonly unknown[] => {
+    const p = parsePaste(text);
+    return [p.hadHeader, p.nameColumn, p.secondNameColumn, p.partyColumn];
+  };
+
+  it("reads \"Fraser, Ailsa\" as column 2 then column 1, so whole names are added with nothing chosen", () => {
+    const p = parsePaste("Fraser, Ailsa\nOkafor, Chidi\n\nKerr, Morag\n");
+    expect([p.hadHeader, p.columnCount, p.nameColumn, p.secondNameColumn, p.partyColumn]).toEqual([false, 2, 1, 0, null]);
+    const t = takeNames(p, { nameColumn: p.nameColumn, secondNameColumn: p.secondNameColumn, secondFirst: false, partyColumn: p.partyColumn }, 600);
+    expect(t.guests.map((g) => g.name)).toEqual(["Ailsa Fraser", "Chidi Okafor", "Morag Kerr"]);
+    expect(t.droppedColumns).toBe(0);
+  });
+
+  it("keeps today's guess for a spreadsheet's export, whose comma has no space after it", () => {
+    expect(guessOf("Fraser,Ailsa\nOkafor,Chidi")).toEqual([false, 0, null, null]);
+  });
+
+  it("keeps today's guess unless every line is written so: a comma and a space, two single words", () => {
+    expect(guessOf("Fraser, Ailsa\nOkafor,Chidi")).toEqual([false, 0, null, null]);
+    expect(guessOf("Fraser, Ailsa Mary\nOkafor, Chidi")).toEqual([false, 0, null, null]);
+    expect(guessOf("Fraser, Ailsa\nOkafor, ")).toEqual([false, 0, null, null]);
+  });
+
+  it("never reads a paste with a tab in it as written", () => {
+    expect(guessOf("Fraser, Ailsa\nOkafor\tChidi")).toEqual([false, 0, null, null]);
+  });
+
+  it("leaves a heading row's guess as it was", () => {
+    expect(guessOf("Name, Household\nAilsa, Frasers\nChidi, Okafors")).toEqual([true, 0, null, 1]);
+  });
+
+  it("leaves a one-column paste as it was", () => {
+    const p = parsePaste("Ailsa Fraser\nChidi Okafor");
+    expect([p.columnCount, p.nameColumn, p.secondNameColumn, p.partyColumn]).toEqual([1, 0, null, null]);
+  });
+});
+
 describe("takeNames", () => {
   it("takes names and parties only, and says what it left", () => {
     const t = takeNames(parsePaste(SHEET_4_COLUMNS_180_ROWS), { nameColumn: 0, secondNameColumn: 1, secondFirst: false, partyColumn: 2 }, 600);

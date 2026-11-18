@@ -763,6 +763,19 @@
   gap: 12px;
 }
 
+/* The first guest as it will be added, and the one control that puts its two names the other way round. */
+.gl-paste__first {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.gl-paste__first .gl-paste__words {
+  overflow-wrap: anywhere;
+}
+
 .gl-check {
   display: inline-flex;
   align-items: center;

@@ -103,6 +103,59 @@ describe("GuestPaste", () => {
     expect(added(onAdd)).toEqual([{ name: "Ailsa", party: "3" }]);
   });
 
+  it("adds a list written surname first as whole names with nothing chosen, and shows the first guest before it is added", () => {
+    const { onAdd } = paste("Fraser, Ailsa\nOkafor, Chidi\nKerr, Morag");
+    expect(screen.getByText("The first guest will be added as: Ailsa Fraser")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add 3 guests" }));
+    expect(added(onAdd).map((g) => g.name)).toEqual(["Ailsa Fraser", "Chidi Okafor", "Morag Kerr"]);
+  });
+
+  it("keeps today's guess for a spreadsheet's export, and the line shows what it will add", () => {
+    const { onAdd } = paste("Fraser,Ailsa\nOkafor,Chidi");
+    expect(screen.getByText("The first guest will be added as: Fraser")).toBeTruthy();
+    // With one name column there is nothing to put the other way round.
+    expect(screen.queryByRole("button", { name: "Put the two names the other way round" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Second name"), { target: { value: "1" } });
+    expect(screen.getByText("The first guest will be added as: Fraser Ailsa")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Put the two names the other way round" }));
+    expect(screen.getByText("The first guest will be added as: Ailsa Fraser")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add 2 guests" }));
+    expect(added(onAdd).map((g) => g.name)).toEqual(["Ailsa Fraser", "Chidi Okafor"]);
+  });
+
+  it("follows every change of the selects, the party included when a party column is chosen", () => {
+    const { onAdd } = paste("Name\tHousehold\tEmail\nAilsa Fraser\tFraser family\tailsa@example.com\nChidi Okafor\t\tchidi@example.com");
+    expect(screen.getByText("The first guest will be added as: Ailsa Fraser, party: Fraser family")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Party"), { target: { value: "" } });
+    expect(screen.getByText("The first guest will be added as: Ailsa Fraser")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Party"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add 2 guests" }));
+    expect(added(onAdd)[0]).toEqual({ name: "Ailsa Fraser", party: "Fraser family" });
+  });
+
+  it("puts the two name columns the other way round in one click, and back in another", () => {
+    const { onAdd } = paste("Fraser, Ailsa\nOkafor, Chidi");
+    const swap = screen.getByRole("button", { name: "Put the two names the other way round" });
+    expect(swap.getAttribute("aria-pressed")).toBe("false");
+    expect(swap.classList.contains("gl-button")).toBe(true);
+    fireEvent.click(swap);
+    expect(swap.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("The first guest will be added as: Fraser Ailsa")).toBeTruthy();
+    fireEvent.click(swap);
+    expect(screen.getByText("The first guest will be added as: Ailsa Fraser")).toBeTruthy();
+    fireEvent.click(swap);
+    fireEvent.click(screen.getByRole("button", { name: "Add 2 guests" }));
+    expect(added(onAdd).map((g) => g.name)).toEqual(["Fraser Ailsa", "Okafor Chidi"]);
+  });
+
+  it("a one-column paste shows no line, no columns and no swap: its journey does not grow", () => {
+    const { onAdd } = paste("Ailsa Fraser\nChidi Okafor");
+    expect(screen.queryByText(/The first guest will be added as/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Put the two names the other way round" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add 2 guests" }));
+    expect(added(onAdd).map((g) => g.name)).toEqual(["Ailsa Fraser", "Chidi Okafor"]);
+  });
+
   it("offers no add while nothing is found, and says so", () => {
     paste("Name\n");
     expect(screen.getByText("No names were found in what was pasted.")).toBeTruthy();
