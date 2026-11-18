@@ -167,6 +167,41 @@ anyone: no venue is read and nothing is fetched.
 - **Not wired to a surveyed room in this version:** the walls' Cut and Full control and a wall's
   click (the plain shell's), the section plane's cut, and the shell's metre grid on the floor.
 
+**The fitted opening holds the room, and opens it small.** A capture of 16 November 2026 showed
+the fitted opening ([Checks](#checks)): the whole room is in frame, and small in it. Worked out
+from the pose on the Saloon's numbers, its floor's box spans about 37.5% of a 16:9 frame's width
+(55.6% at 6:5, 28.6% at 21:9) and 66.9% of its height. The cause, in the order it matters (the
+review of #444, SM2, whose arithmetic was run again for this note):
+
+- **No wall is hidden from the opening.** The camera stands at (2.18, 19.67, -2.06), inside the
+  outline (x from -6.10 to 6.10, z from -3.73 to 3.74), so it is in front of every wall's plane and
+  every wall is drawn (`room-visibility.ts`) and counted in the fit. Leaving "the hidden near
+  wall" out of the fit would change nothing: there is none.
+- **The far wall's top binds the fit.** The far top corner of the drawn surfaces' box
+  (-6.096, 5.515, 3.739) needs 19.37 m. The near top corner needs 18.41 m, and with the near
+  walls' tops left out the fit still needs 19.37 m. The floor alone needs 14.69 m. (That corner
+  is a corner of the box, which the outline does not reach; the review puts the real top points
+  at about 19.14 m, so the box's overreach is small.)
+- **Sight lines this near the vertical splay tall walls outwards.** The line of sight is 8.9
+  degrees off vertical. From there the top of a 5.5 m wall lands far outside its foot in the
+  frame, so holding the walls' tops is what pushes the camera back and shrinks the floor.
+
+So the lever is the composition, not which walls are counted: fitting the floor and a stated share
+of the walls' height, or giving surveyed rooms a more oblique pitch, are the options named so far.
+That rework belongs to the publishing piece (before any room is listed) and is judged on a render.
+
+**To decide before any room is listed** (the review of #444, SM4; nothing is changed for it yet):
+
+- **Combined view.** The planner's default layer is Combined (`hybrid`, `stores/cockpit-store.ts`).
+  The Grand Hall collapses it to its model (`sceneLayerMode` in `PlannerScene.tsx`); a surveyed room
+  does not. Where a capture of the room is mounted as well (development builds, and production
+  only through an allow-listed `?splatBundle=` cut), the opaque photographed walls and the capture
+  are drawn over each other. Decide whether a drawn surveyed room collapses Combined to the model
+  as the hall does, or test the two together on purpose.
+- **A capture's failure note.** `RoomResolveCaption.tsx` puts the survey's caption ahead of the
+  capture's, a capture's lasting failure note included. That note must not be masked by the
+  survey's caption: it takes precedence, or sits beside it.
+
 ### A staged survey, in development builds
 
 `?roomsBase=<public folder>&roomsRev=<revision>` (with `?rooms=surveyed`) stands in for the
@@ -419,10 +454,13 @@ script recorded neither until 16 November. A capture taken since says both.
   rig is handed: none while the shell stands, the fitted one (one object through re-renders) once
   the surveyed room is drawn, the hall's own for the hall.
 
-Seen in the planner's scene: one capture of the staged Saloon through `planner-lab.mjs` on
-15 November 2026, taken before the opening view was fitted, which is where the opening's fault was
-seen; nothing else of it is recorded here yet, and the fitted opening view has been worked out and
-tested against three's camera but not seen. What only a render can prove of the mount: that the
+Seen in the planner's scene, twice. A capture of the staged Saloon through `planner-lab.mjs` on
+15 November 2026, taken before the opening view was fitted, is where the opening's fault was seen.
+A capture on 16 November 2026 (17:52 UTC, on the RTX 4090; of commit 7fae2dc2 by the lane's note,
+since the summaries of that day carried no commit) showed the fitted opening: the room holds, every
+wall and the floor in frame, but small, its floor's box about 37.5% of a 16:9 frame's width
+([why, and what would change it](#in-the-planner)). Nothing else of that capture is recorded here
+yet. What only a render can prove of the mount: that the
 near walls and ceiling go with nothing of them left floating from the planner's opening view, a
 plan view and each side; how a wall's pop reads during an orbit; that the index's upload under
 WebGPU draws the right walls (three's change detection and `writeBuffer` path were read, not run);
