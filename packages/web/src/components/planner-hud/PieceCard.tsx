@@ -107,19 +107,19 @@ export function PieceVerbs({ chosen }: { readonly chosen: Chosen }): ReactElemen
   const locked = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   // The verbs leave when the piece is put back or let go, and whoever pressed Put back from the keyboard is in them.
   const partRef = useRef<HTMLElement>(null);
+  const pieces = useSelectionStore((state) => state.selectedIds);
   useLayoutEffect(() => {
     const part = partRef.current;
     if (part === null) return undefined;
-    // The room as it stood with these pieces in it, kept from when they were chosen: once a piece has been put back,
-    // nothing says which card counted it. Only read if the verbs leave with the keyboard in them.
+    // The room as it stood with these pieces in it, kept from when they were chosen or last changed: once a piece has
+    // been put back, nothing says which card counted it. Only read if the verbs leave with the keyboard in them.
     const items = usePlacementStore.getState().placedItems;
-    const pieces = useSelectionStore.getState().selectedIds;
     return () => {
       // Read before the verbs leave the page: this runs while they are still on it.
       const screen = screenWithKeyboardIn(part);
       if (screen !== null) handKeyboardOn(() => afterTheVerbs(screen, items, pieces));
     };
-  }, [chosen]);
+  }, [chosen, pieces]);
   if (chosen.count === 0) return null;
   const { tableId, linen } = chosen;
   return (
