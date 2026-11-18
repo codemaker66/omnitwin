@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   BufferGeometry,
@@ -279,7 +280,7 @@ export function CirculationOverlay(): React.ReactElement | null {
           key={`${String(seg.from[0])},${String(seg.from[2])}-${String(seg.to[0])},${String(seg.to[2])}`}
           segment={seg}
           dotGeometry={dotGeometry}
-          showLabel={index === 0}
+          showLabel={index === 0 && plannerFeatureEnabled("roomCallouts")}
         />
       ))}
     </group>
