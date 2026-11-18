@@ -1129,7 +1129,7 @@ This task does not wait on the gate.
 - [ ] **Step 1:** Write the three documents. Check the links (`node tools/check-doc-links.mjs` if it exists, otherwise `grep -o "](.*)"` and test each path).
 - [ ] **Step 2:** Commit them on PR 3's branch before it merges, or as a docs PR if PR 3 has merged, with the message "Record the furniture set-down sound in the engineering notes and the day's log (T-700)".
 - [ ] **Step 3:** After PR 3 merges and Vercel's production deployment for its SHA is READY (`gh api repos/codemaker66/omnitwin/deployments?sha=<sha>`):
-  - run `node D:/claude/furniture-sound-20261027/live/sound-live.mjs https://venviewer.com prod-grand-hall`, then again with the Saloon's stub (`prod-saloon`). Production is read-only for agents, and the script's aborts keep it so;
+  - run `node sound-live.mjs https://venviewer.com prod-grand-hall` (Task 16's script, kept outside the repo), then again with the Saloon's stub (`prod-saloon`). Production is read-only for agents, and the script's aborts keep it so;
   - check the production chunk carries the engine: the served JavaScript contains `planner-set-down`;
   - on a device day after part 3, run the same flow on a phone, checking the budgets, the iPhone silent switch, and sound with sight at touchdown.
 - [ ] **Step 4:** Report the evidence to Blake and the planner lead. State each item as tested, measured, deployed or accepted, and name anything not measured on a device.
