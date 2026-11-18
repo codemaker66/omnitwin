@@ -108,8 +108,10 @@ export async function adminRoutes(
           + ` past their retention, and from ${String(dietaryNotes.actionLog)} logged change(s)`
           + `; removed the notes on single pieces from ${String(dietaryNotes.pieceNotes.layouts)} layout(s)`
           + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`
-          + `; erased ${String(people.people)} person(s) and ${String(people.enquiries)} enquiry(ies) 24 months after the last contact`
-          + `, leaving ${String(people.deferred.people + people.deferred.enquiries)} for another run`,
+          + (people.off
+            ? "; the 24-month people pass is off until its first day is set"
+            : `; erased ${String(people.people)} person(s) and ${String(people.enquiries)} enquiry(ies) 24 months after the last contact`
+              + `, leaving ${String(people.deferred.people + people.deferred.enquiries)} for another run`),
       },
     };
   });

@@ -10,7 +10,7 @@ import { proposalRoutes, proposalShareRoutes } from "../routes/proposals.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 import { eraseLockedPerson } from "../services/people-erasure.js";
 import { lockPerson } from "../services/people-records.js";
-import { eraseLapsedPeople } from "../services/people-retention.js";
+import { eraseLapsedPeople, PEOPLE_RETENTION_START_VARIABLE } from "../services/people-retention.js";
 import { openPeopleFixture, PLATFORM_TARGET, type PeopleFixture, type PeopleFixtureUser } from "./support/people-platform-fixture.js";
 
 // ---------------------------------------------------------------------------
@@ -1667,7 +1667,20 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     expect(await count("general_audit_log WHERE target_id = $1", [lapsed.person])).toBe(0);
 
     // The night does exactly what the rehearsal said.
-    const pass = await eraseLapsedPeople(f.db, { now });
+    // The switch (Blake, 18 Nov 2026): with no first day named, the default,
+    // or one still ahead, a real run reads nothing and changes nothing.
+    const named = process.env[PEOPLE_RETENTION_START_VARIABLE];
+    Reflect.deleteProperty(process.env, PEOPLE_RETENTION_START_VARIABLE);
+    try {
+      expect(await eraseLapsedPeople(f.db, { now }))
+        .toMatchObject({ off: true, people: 0, enquiries: 0, keptForBooking: 0, deferred: { people: 0, enquiries: 0 } });
+    } finally {
+      if (named !== undefined) process.env[PEOPLE_RETENTION_START_VARIABLE] = named;
+    }
+    expect(await eraseLapsedPeople(f.db, { now, startsOn: new Date("2028-03-02T00:00:00Z") })).toMatchObject({ off: true, people: 0 });
+    expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [lapsed.person])).toBe(1);
+    // From its first day (the run's own day here), it erases.
+    const pass = await eraseLapsedPeople(f.db, { now, startsOn: new Date("2028-03-01T00:00:00Z") });
     expect({ ...pass, dryRun: true }).toEqual(rehearsal);
     expect(pass.kept).toEqual(expect.arrayContaining([
       { venueId: f.venueId, personId: booked.person },
@@ -1695,7 +1708,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
 
     // A second night finds nothing more of theirs: still one audit row. The
     // kept people, with nothing left to remove, are listed and not looked at.
-    const again = await eraseLapsedPeople(f.db, { now, limits: { examined: 0 } });
+    const again = await eraseLapsedPeople(f.db, { now, startsOn: new Date("2028-03-01T00:00:00Z"), limits: { examined: 0 } });
     expect(again.failed).toBe(0);
     expect(again.kept).toEqual(expect.arrayContaining([
       { venueId: f.venueId, personId: booked.person },

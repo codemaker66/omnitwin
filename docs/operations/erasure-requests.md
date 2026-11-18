@@ -201,6 +201,13 @@ or erase it by hand. Read the step 2 stores' text before replying.
 
 ## The 24-month pass
 
+**Off until the venue names its first day.** Blake decided on 18 November 2026 to merge with the pass off until a
+start date is picked: erasure on request is live at merge, and the 24-month pass erases nothing until
+`PEOPLE_RETENTION_STARTS_ON` holds a date (YYYY-MM-DD) that has come. Set it as a repository variable (Settings,
+Secrets and variables, Actions, Variables) for the nightly job, and in the API's environment for `POST /admin/cleanup`.
+Unset, empty or not a real date, the pass is off: the night's log says so, and nothing is read or changed.
+`POST /admin/retention/people` still rehearses it and counts what it would do, to choose the date by.
+
 The nightly cleanup (`scripts/run-cleanup.ts`, `services/people-retention.ts`) runs the same erasure:
 - for every person we have not been in touch with for 24 calendar months (the run's time minus 24 months, counted
   by the database: 1 March 2028 reaches back to 1 March 2026, 731 days). "In touch" is any contact about anything of theirs: the People Book's last contact, and their

@@ -71,6 +71,23 @@ export const PEOPLE_PASS_LIMITS = { people: 100, enquiries: 200, examined: 500 }
  *  the public run 43398620096: about 6 s an erasure, 3 s a look. */
 export const PEOPLE_PASS_BUDGET_MS = 150_000;
 
+/**
+ * The 24-month pass erases nothing until the venue names its first day
+ * (Blake, 18 Nov 2026: "Merge with the pass off until you pick a date"):
+ * this variable holds that day as YYYY-MM-DD, and every real run reads it,
+ * the nightly job's and POST /admin/cleanup's alike. Unset, empty or not a
+ * date, the pass is off. A rehearsal counts what it would do either way.
+ */
+export const PEOPLE_RETENTION_START_VARIABLE = "PEOPLE_RETENTION_STARTS_ON";
+
+/** The first day the 24-month pass erases, or null while it is off. */
+export function peopleRetentionStartsOn(value: string | undefined): Date | null {
+  const text = value?.trim() ?? "";
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text)) return null;
+  const day = new Date(`${text}T00:00:00.000Z`);
+  return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(text) ? day : null;
+}
+
 export interface PeopleRetentionLimits {
   readonly people: number;
   readonly enquiries: number;
@@ -83,6 +100,9 @@ export interface PeopleRetentionOptions {
   readonly limits?: Partial<PeopleRetentionLimits>;
   /** Milliseconds after which no new step starts (PEOPLE_PASS_BUDGET_MS). */
   readonly budgetMs?: number;
+  /** The first day a real run erases. Left out, PEOPLE_RETENTION_STARTS_ON
+   *  says; null keeps it off. A rehearsal is never off. */
+  readonly startsOn?: Date | null;
 }
 
 export interface KeptPerson {
@@ -92,6 +112,8 @@ export interface KeptPerson {
 
 export interface PeopleRetentionResult {
   readonly dryRun: boolean;
+  /** A real run that did nothing: no first day is set, or it is still ahead. */
+  readonly off: boolean;
   /** People erased (or who would be). */
   readonly people: number;
   /** People past the 24 months who are kept for a booking or a contract. */
@@ -147,6 +169,12 @@ interface Tally {
 }
 
 const NONE: Tally = { people: 0, keptForBooking: 0, inTouch: 0, enquiries: 0, kept: null };
+
+/** A real run while the pass is off: nothing read, nothing changed. */
+const OFF: PeopleRetentionResult = {
+  dryRun: false, off: true, people: 0, keptForBooking: 0, inTouch: 0, enquiries: 0, failed: 0, failedStates: [],
+  deferred: { people: 0, enquiries: 0 }, outOfTime: false, kept: [],
+};
 
 function before(column: SQL, cutoff: Date): SQL {
   return sql`${column} < ${cutoff.toISOString()}::timestamptz`;
@@ -409,6 +437,10 @@ export async function eraseLapsedPeople(db: Database, options: PeopleRetentionOp
 async function runPass(db: Database, options: PeopleRetentionOptions): Promise<PeopleRetentionResult> {
   const now = options.now ?? new Date();
   const dryRun = options.dryRun ?? false;
+  const startsOn = options.startsOn === undefined
+    ? peopleRetentionStartsOn(process.env[PEOPLE_RETENTION_START_VARIABLE])
+    : options.startsOn;
+  if (!dryRun && (startsOn === null || now.getTime() < startsOn.getTime())) return OFF;
   const limits: PeopleRetentionLimits = { ...PEOPLE_PASS_LIMITS, ...options.limits };
   const cutoff = await cutoffFor(db, now);
   const deadline = Date.now() + (options.budgetMs ?? PEOPLE_PASS_BUDGET_MS);
@@ -552,6 +584,7 @@ async function runSteps(input: {
 
   return {
     dryRun: input.dryRun,
+    off: false,
     people,
     keptForBooking: keptForBooking + keptAlready.length,
     inTouch,

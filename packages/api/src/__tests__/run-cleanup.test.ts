@@ -48,12 +48,12 @@ vi.mock("../services/web-vitals.js", () => ({
 const { describeFailure, runScheduledCleanup } = await import("../scripts/run-cleanup.js");
 const { DietaryMemoryWriteError } = await import("../services/dietary-memory.js");
 const { DietaryRetentionError } = await import("../services/dietary-retention.js");
-const { PeopleRetentionError } = await import("../services/people-retention.js");
+const { PeopleRetentionError, peopleRetentionStartsOn } = await import("../services/people-retention.js");
 
 /** The people pass's result, as eraseLapsedPeople returns it. */
 function peopleResult(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    dryRun: false, people: 1, keptForBooking: 2, inTouch: 0, enquiries: 3, failed: 0, failedStates: [],
+    dryRun: false, off: false, people: 1, keptForBooking: 2, inTouch: 0, enquiries: 3, failed: 0, failedStates: [],
     deferred: { people: 0, enquiries: 0 }, outOfTime: false, kept: [], ...overrides,
   };
 }
@@ -257,5 +257,27 @@ describe("runScheduledCleanup", () => {
     expect(describeFailure(new AggregateError([failure, new Error("params: jane.smith@example.test")])))
       .toBe("DietaryRetentionError (SQLSTATE 57014); Error");
     expect(describeFailure("a string")).toBe("string");
+  });
+});
+
+describe("the 24-month pass's switch (Blake, 18 Nov 2026: off until a first day is named)", () => {
+  it("reads a first day only as a real YYYY-MM-DD date; anything else keeps the pass off", () => {
+    expect(peopleRetentionStartsOn(undefined)).toBeNull();
+    expect(peopleRetentionStartsOn("")).toBeNull();
+    expect(peopleRetentionStartsOn("soon")).toBeNull();
+    expect(peopleRetentionStartsOn("2027-1-5")).toBeNull();
+    expect(peopleRetentionStartsOn("2027-02-30")).toBeNull();
+    expect(peopleRetentionStartsOn("2027-13-01")).toBeNull();
+    expect(peopleRetentionStartsOn(" 2027-01-05 ")?.toISOString()).toBe("2027-01-05T00:00:00.000Z");
+  });
+
+  it("says the pass is off and counts nothing as erased or failed while it is", async () => {
+    peopleMock.mockResolvedValue(peopleResult({ off: true, people: 0, keptForBooking: 0, enquiries: 0 }));
+    const lines: string[] = [];
+    const result = await runScheduledCleanup(db, (line) => { lines.push(line); });
+    expect(lines).toContain(
+      "[cleanup] The 24-month people pass is off until PEOPLE_RETENTION_STARTS_ON names its first day; nothing was looked at or erased");
+    expect(lines.some((line) => line.includes("24 months after the last contact"))).toBe(false);
+    expect(result).toMatchObject({ peopleErased: 0, peopleKeptForBooking: 0, enquiriesErased: 0, peopleDeferred: 0, peopleStepsFailed: 0 });
   });
 });

@@ -16,7 +16,8 @@
 //      this removal.
 //   5. People and lone enquiries 24 months after our last contact
 //      (eraseLapsedPeople, services/people-retention.ts), as the privacy page
-//      promises.
+//      promises, from the first day PEOPLE_RETENTION_STARTS_ON names; off
+//      until then.
 //   6. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
 //      0100): the enquiry funnel keeps them no longer than the privacy page
 //      keeps an enquiry, whether or not their enquiry or proposal remains.
@@ -40,7 +41,7 @@ import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
-import { eraseLapsedPeople } from "../services/people-retention.js";
+import { eraseLapsedPeople, PEOPLE_RETENTION_START_VARIABLE } from "../services/people-retention.js";
 import { removeExpiredWebVitalSamples } from "../services/web-vitals.js";
 import { sqlStateOf } from "../utils/sql-state.js";
 
@@ -138,6 +139,10 @@ export async function runScheduledCleanup(
 
   const lapsedPeople = await pass("24-month people", async () => {
     const result = await eraseLapsedPeople(db);
+    if (result.off) {
+      log(`[cleanup] The 24-month people pass is off until ${PEOPLE_RETENTION_START_VARIABLE} names its first day; nothing was looked at or erased`);
+      return result;
+    }
     const deferred = result.deferred.people + result.deferred.enquiries;
     log(`[cleanup] Erased ${String(result.people)} person(s) and ${String(result.enquiries)} enquiry(ies) 24 months after the last contact; kept ${String(result.keptForBooking)} person(s) for a booking; left ${String(deferred)} for the next night${result.outOfTime ? " (its time ran out)" : ""}`);
     if (result.failed > 0) {
