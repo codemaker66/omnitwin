@@ -218,6 +218,7 @@ function GuestEdit({ list, guest, onChange, onDone }: GuestEditProps): ReactElem
           value={party}
           maxLength={PARTY_MAX}
           autoComplete="off"
+          spellCheck={false}
           onChange={(event) => { setParty(event.target.value); }}
         />
       </div>

@@ -221,6 +221,7 @@ function TableEdit({ list, table, seatedCount, onChange, onNotice }: TableEditPr
           value={name}
           maxLength={TABLE_NAME_MAX}
           autoComplete="off"
+          spellCheck={false}
           onChange={(event) => { setName(event.target.value); }}
           onBlur={keepName}
           onKeyDown={onEnter(keepName)}

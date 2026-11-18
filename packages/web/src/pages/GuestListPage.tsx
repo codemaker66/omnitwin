@@ -546,6 +546,7 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
               placeholder={roomName !== "" ? roomName : "Name the event"}
               maxLength={TITLE_MAX}
               autoComplete="off"
+              spellCheck={false}
               onChange={onTitle}
               onBlur={() => { fieldVisit.current = false; }}
             />

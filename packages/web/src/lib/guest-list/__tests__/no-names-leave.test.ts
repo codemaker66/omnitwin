@@ -517,6 +517,57 @@ const addressesAreNotBuiltFromData: Scan = (source) =>
     .map(({ what, reference, at }) => `${at}${what} is built from ${reference}`);
 
 // ---------------------------------------------------------------------------
+// Fields a browser may send to a spelling service
+// ---------------------------------------------------------------------------
+
+/**
+ * The kinds of `<input>` that hold no text a person types, each with why it may
+ * go without `spellCheck={false}` and `autoComplete="off"`. Every other input,
+ * and every `<textarea>`, can hold a guest's name (a party is a household's
+ * surname, a table or an event is often named for people): with a browser's
+ * cloud spelling service on, its text would go to that service, and an
+ * autofill store would keep it.
+ */
+const INPUT_TYPES_WITH_NO_TEXT: ReadonlyMap<string, string> = new Map([
+  ["date", "holds a calendar day, never a name; no browser spells a date or offers to keep one as text"],
+  ["number", "holds a count (tables, seats); no browser spells a number"],
+  ["checkbox", "holds a yes or no; there is no text in it"],
+]);
+
+/** Every text `<input>` and every `<textarea>` carries `spellCheck={false}` and `autoComplete="off"`. */
+const nameFieldsOptOut: Scan = (source) => {
+  const file = parseSource(source.code, source.path);
+  const out: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tag = node.tagName.getText(file);
+      if (tag === "input" || tag === "textarea") {
+        const at = (what: string): string => found(source, node.getStart(file), `a <${tag}> ${what}`);
+        const attributes = node.attributes.properties;
+        if (attributes.some((attribute) => ts.isJsxSpreadAttribute(attribute))) {
+          out.push(at("takes a spread, so what it carries cannot be read here"));
+        } else {
+          const value = (name: string): string | null => {
+            const attribute = attributes.find((a) => ts.isJsxAttribute(a) && a.name.getText(file) === name);
+            if (attribute === undefined || !ts.isJsxAttribute(attribute) || attribute.initializer === undefined) return null;
+            return attribute.initializer.getText(file);
+          };
+          const type = tag === "input" ? value("type") : null;
+          const noText = type !== null && INPUT_TYPES_WITH_NO_TEXT.has(type.replace(/^"|"$/g, ""));
+          if (!noText) {
+            if (value("spellCheck") !== "{false}") out.push(at("that can hold a name lacks spellCheck={false}"));
+            if (value("autoComplete") !== '"off"') out.push(at('that can hold a name lacks autoComplete="off"'));
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return out;
+};
+
+// ---------------------------------------------------------------------------
 // Imports
 // ---------------------------------------------------------------------------
 
@@ -670,6 +721,13 @@ describe("the kit's source, read as text", () => {
     expect(staleAllowances(ALLOWED_IN_ADDRESSES, addressReferences)).toEqual([]);
   });
 
+  it("every field that can hold a name opts out of spelling services and autofill: spellCheck={false}, autoComplete=\"off\"", () => {
+    expect(scanAll(nameFieldsOptOut)).toEqual([]);
+    // The scan is not blind: the kit's name field, party field, paste box, table name and event title are all text fields.
+    const fields = SOURCES.flatMap((source) => [...source.code.matchAll(/<(?:input|textarea)\b/g)].map(() => source.path));
+    expect(fields.length).toBeGreaterThanOrEqual(5);
+  });
+
   it("no source file of the kit imports the API client, except the one read of the plan", () => {
     expect(scanAll(importsAreOnlyWhatIsAllowed)).toEqual([]);
   });
@@ -726,6 +784,21 @@ describe("the scans catch what they claim to", () => {
     expect(errorsAreFixedWords(sample('throw new Error("storage unavailable");'))).toEqual([]);
     expect(errorsAreFixedWords(sample('const refuse = () => Promise.reject(new Error("storage unavailable"));'))).toEqual([]);
     expect(errorsAreFixedWords(sample("if (isError(x)) { try { y(); } catch { z(); } }"))).toEqual([]);
+  });
+
+  it("refuses a text field without both opt-outs, and lets a date, a number and a checkbox go without", () => {
+    expect(nameFieldsOptOut(sample('<input value={v} spellCheck={false} autoComplete="off" />'))).toEqual([]);
+    expect(nameFieldsOptOut(sample('<textarea value={v} autoComplete="off" spellCheck={false}></textarea>'))).toEqual([]);
+    expect(nameFieldsOptOut(sample('<input value={v} autoComplete="off" />'))).toHaveLength(1);
+    expect(nameFieldsOptOut(sample("<input value={v} spellCheck={false} />"))).toHaveLength(1);
+    expect(nameFieldsOptOut(sample("<textarea value={v} />"))).toHaveLength(2);
+    expect(nameFieldsOptOut(sample('<input type="text" value={v} spellCheck={true} autoComplete="off" />'))).toHaveLength(1);
+    expect(nameFieldsOptOut(sample('<input value={v} spellCheck={false} autoComplete="name" />'))).toHaveLength(1);
+    expect(nameFieldsOptOut(sample("<input {...props} />"))).toHaveLength(1);
+    expect(nameFieldsOptOut(sample('<input type="date" value={v} />'))).toEqual([]);
+    expect(nameFieldsOptOut(sample('<input type="number" value={v} />'))).toEqual([]);
+    expect(nameFieldsOptOut(sample('<input type="checkbox" checked={v} />'))).toEqual([]);
+    expect(nameFieldsOptOut(sample("<input type={kind} value={v} />"))).toHaveLength(2);
   });
 
   it("refuses a log line, a failure report and a way out, and ignores them in comments", () => {
