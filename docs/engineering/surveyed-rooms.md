@@ -223,7 +223,9 @@ camera. `scripts/planner-lab.mjs` captures it:
     node scripts/planner-lab.mjs --base http://127.0.0.1:5362 --out <folder> --frames 0 \
       --space saloon --roomsBase /rooms/saloon/survey-2026-07-11
 
-writes the planner's opening view, a plan view and a view in from beyond each of the four sides.
+writes the planner's opening view, a plan view and a view in from beyond each of the four sides,
+and `summary-<profile>-<space>.json` beside them (the Grand Hall's is named by its mood; a room has
+none applied). It exits 1 if the page threw an uncaught error.
 
 ## The `survey.json` contract (schema version 2)
 
@@ -394,6 +396,13 @@ Its summary (and `planner-lab.mjs`'s) records `drawnBy` as the page reports it, 
 beside each capture (a renderer that replaced the first after a lost device may draw with another),
 the page's uncaught errors and every console error and warning. It asks for no adapter of its own:
 an adapter the script could get says only that WebGPU could be had, whatever drew the room.
+
+Both summaries also carry `commit` and `uncommittedPaths`: the commit of the checkout the script is
+in and how many of its paths differ from it (`git rev-parse HEAD`, `git status --porcelain`), so
+evidence quoted for a commit rests on the record and shows when the tree was not clean. A staged
+survey folder that is not committed counts as one such path. That is the tree a dev server started
+from the same checkout serves; a capture of a server started from another checkout (`--base`) is
+not of it, and the scripts cannot tell.
 
 ## Checks
 

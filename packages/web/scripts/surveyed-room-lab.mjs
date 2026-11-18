@@ -2,11 +2,13 @@
 // this machine's own GPU: a screenshot of each pose asked for, at a grade.
 //
 // Needs the dev server running and the room's survey folder under
-// packages/web/public. Writes PNGs and summary.json to the output folder;
-// nothing in the repository. The summary says what drew the frames (the
-// backend and GPU of the renderer the page made, read through the page's
-// bridge after each capture) and keeps the console's errors and warnings
-// beside the page's uncaught errors.
+// packages/web/public. Writes PNGs and summary-<profile>.json to the output
+// folder; nothing in the repository. The summary says what drew the frames
+// (the backend and GPU of the renderer the page made, read through the page's
+// bridge after each capture), keeps the console's errors and warnings beside
+// the page's uncaught errors, and names the commit of the checkout this
+// script is in with the number of paths changed since it: the tree a dev
+// server started from this checkout serves.
 //   node scripts/surveyed-room-lab.mjs --room /rooms/saloon/survey-2026-07-11 [--r 1] \
 //     [--base http://127.0.0.1:5213] [--out <folder>] [--profile desktop|tablet|phone|office|off] \
 //     [--poses overview,plan,eye,ceiling,floor,0,3] [--photos full|half] [--exposure 1] [--glow 1]
@@ -17,13 +19,30 @@
 // "walls" stands for every wall in turn, which is how each strip of the atlas
 // is checked for its place and its orientation.
 import { chromium } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function option(name, fallback) {
   const index = process.argv.indexOf(`--${name}`);
   return index >= 0 && index + 1 < process.argv.length ? process.argv[index + 1] : fallback;
+}
+
+/**
+ * The commit of the checkout this script is in, and how many of its paths differ from that commit:
+ * what a dev server started from this checkout serves. A capture of a server started elsewhere
+ * (`--base`) is not of this tree, and nothing here can tell. Nulls where git cannot say.
+ */
+function checkout() {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const git = (args) => execFileSync("git", args, { cwd: here, encoding: "utf8" });
+  try {
+    return { commit: git(["rev-parse", "HEAD"]).trim(), uncommittedPaths: git(["status", "--porcelain"]).split("\n").filter((row) => row !== "").length };
+  } catch {
+    return { commit: null, uncommittedPaths: null };
+  }
 }
 
 const BASE = option("base", "http://127.0.0.1:5213");
@@ -59,7 +78,8 @@ const browser = await chromium.launch({
   headless: true,
   args: ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"],
 });
-const summary = { base: BASE, room: ROOM, revision: REVISION, profile: PROFILE, exposure: EXPOSURE, glow: GLOW, drawnBy: null, status: null, captures: [], pageErrors: [], console: [] };
+const summary = { base: BASE, ...checkout(), room: ROOM, revision: REVISION, profile: PROFILE, exposure: EXPOSURE, glow: GLOW, drawnBy: null, status: null, captures: [], pageErrors: [], console: [] };
+console.log(`checkout: ${summary.commit ?? "unknown (git could not say)"}${summary.uncommittedPaths > 0 ? `, with ${summary.uncommittedPaths} uncommitted paths` : ""}`);
 let failed = false;
 try {
   const context = await browser.newContext(device);
