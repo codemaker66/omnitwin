@@ -49,9 +49,13 @@ describe("a surveyed room's sight", () => {
     const sight = new RoomSight(PLANES, buffers);
     const room = new Group();
     const camera = cameraAt(0, 9, 15);
+    // Everything, the ceiling included, until a camera has been read.
+    expect(sight.ceilingDrawn).toBe(true);
     expect(sight.update(camera, room)).toBe(true);
     expect(buffers.calls).toHaveLength(1);
     expect(buffers.calls[0]?.ceiling).toBe(false);
+    // What the room's model reads to leave the ceiling's mesh out of the frame altogether.
+    expect(sight.ceilingDrawn).toBe(false);
     expect(buffers.calls[0]?.walls).toEqual(["front", "window-front-end", "window-front-return", "window", "window-rear-return", "window-rear-end", "rear"]);
     // An orbit that stays beyond the fireplace side, above the ceiling: the same surfaces, nothing written.
     camera.position.set(2, 11, 12);
@@ -65,6 +69,7 @@ describe("a surveyed room's sight", () => {
     camera.position.set(0, 1.6, 0);
     expect(sight.update(camera, room)).toBe(true);
     expect(buffers.calls[2]).toEqual({ walls: IDS, ceiling: true });
+    expect(sight.ceilingDrawn).toBe(true);
   });
 
   it("says when the camera has changed sides since it last drew, and writes nothing in saying so", () => {

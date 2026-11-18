@@ -27,7 +27,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactElement } from "react";
 import { addAfterEffect, useFrame, useThree } from "@react-three/fiber";
-import type { Group } from "three";
+import type { Group, Mesh } from "three";
 import { useHallFinish } from "../grand-hall/hall-finish.js";
 import { nativeFramePrecompile } from "../../lib/native-frame-composer.js";
 import { requestNativePrecompile } from "../../lib/native-precompile.js";
@@ -116,6 +116,7 @@ export function SurveyedRoomModel({ room, photoQuality, grade, onPhotoProgress }
   }, [invalidate, photos, quality, room]);
 
   const group = useRef<Group | null>(null);
+  const ceilingMesh = useRef<Mesh | null>(null);
 
   // A wall the camera is behind, and the ceiling from above, are not drawn
   // (room-visibility.ts): decided each frame before it is drawn, and written
@@ -125,7 +126,14 @@ export function SurveyedRoomModel({ room, photoQuality, grade, onPhotoProgress }
     return new RoomSight(roomPlanes(room.frame, ceilingHeight), buffers);
   }, [buffers, room]);
   useFrame(({ camera }) => {
-    if (group.current !== null) sight.update(camera, group.current);
+    if (group.current === null) return;
+    sight.update(camera, group.current);
+    // A ceiling taken away is not drawn at all. Its empty draw range alone still had every pass that
+    // draws the room bind a pipeline and issue an indexed draw of nothing (three r186 skips a draw
+    // only for a count below zero), which WebGPU warns of. The range stays as it is, since three
+    // raycasts a mesh whether or not it is visible. Set each frame from what the sight draws, so a
+    // room that takes another's place never inherits a ceiling left hidden.
+    if (ceilingMesh.current !== null) ceilingMesh.current.visible = sight.ceilingDrawn;
   });
   // A camera moved after the room's turn in a frame was drawn as from where
   // it had been: one more frame puts that right, whoever moved it and when.
@@ -155,7 +163,7 @@ export function SurveyedRoomModel({ room, photoQuality, grade, onPhotoProgress }
     // dispose={null}: what is drawn here is freed by the effects above, once, not by the reconciler too.
     <group ref={group} name="surveyed-room" userData={ROOM_USER_DATA} dispose={null}>
       <mesh name="surveyed-room-walls" geometry={buffers.walls} material={materials.walls} frustumCulled={false} userData={ROOM_USER_DATA} />
-      <mesh name="surveyed-room-ceiling" geometry={buffers.ceiling} material={materials.ceiling} frustumCulled={false} userData={ROOM_USER_DATA} />
+      <mesh ref={ceilingMesh} name="surveyed-room-ceiling" geometry={buffers.ceiling} material={materials.ceiling} frustumCulled={false} userData={ROOM_USER_DATA} />
       <mesh name="surveyed-room-floor" geometry={buffers.floor} material={materials.floor} frustumCulled={false} userData={ROOM_USER_DATA} />
     </group>
   );

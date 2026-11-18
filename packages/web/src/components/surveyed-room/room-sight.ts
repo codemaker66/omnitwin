@@ -50,6 +50,11 @@ export class RoomSight {
     return false;
   }
 
+  /** Whether the ceiling is drawn now: false once the camera last read stood above it. */
+  get ceilingDrawn(): boolean {
+    return this.ceiling;
+  }
+
   /** Draws what `camera`'s side lets it see of `room`; true when that changed what is drawn. */
   update(camera: Camera, room: Object3D): boolean {
     const ceiling = this.read(camera, room);

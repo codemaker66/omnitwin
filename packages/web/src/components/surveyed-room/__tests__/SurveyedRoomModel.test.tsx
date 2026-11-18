@@ -392,6 +392,44 @@ describe("SurveyedRoomModel", () => {
     expect(ceiling.drawRange.count).toBe(Infinity);
   });
 
+  it("does not draw a ceiling taken away at all, where an empty draw range alone would still issue a draw of nothing (SR9)", () => {
+    const view: ViewHandle = { camera: null, set: null };
+    mounted = mountInStubRoot(<><View into={view} /><Harness initial={{ room: saloon(), photoQuality: 1 }} /></>);
+    const scene = mounted.scene;
+    const ceiling = drawn(scene, "ceiling");
+    // Inside, under the ceiling: drawn.
+    view.camera?.position.set(0, 1.6, 0);
+    act(() => { advance(1); });
+    expect(ceiling.mesh.visible).toBe(true);
+    // From above, where the planner's cameras usually are: the mesh itself is not drawn, so no pass binds a pipeline
+    // to draw none of it. Its draw range stays empty too, since three raycasts a mesh whether or not it is visible:
+    // a measuring ray straight up from the floor still passes where the ceiling is.
+    view.camera?.position.set(0, 9, 15);
+    act(() => { advance(2); });
+    expect(ceiling.mesh.visible).toBe(false);
+    expect(ceiling.geometry.drawRange.count).toBe(0);
+    scene.updateMatrixWorld(true);
+    const up = new Raycaster(new Vector3(0, 1.5, 0), new Vector3(0, 1, 0));
+    expect(up.intersectObject(scene, true).map((hit) => hit.object.name)).not.toContain("surveyed-room-ceiling");
+    // The walls and the floor are drawn as ever.
+    expect(drawn(scene, "walls").mesh.visible).toBe(true);
+    expect(drawn(scene, "floor").mesh.visible).toBe(true);
+    // Another room takes this one's place while the camera is back under the ceiling: its ceiling is drawn, and met.
+    view.camera?.position.set(0, 1.6, 0);
+    act(() => { setProps({ room: saloon(2), photoQuality: 1 }); });
+    act(() => { advance(3); });
+    const next = drawn(scene, "ceiling");
+    expect(next.geometry).not.toBe(ceiling.geometry);
+    expect(next.mesh.visible).toBe(true);
+    expect(next.geometry.drawRange.count).toBe(Infinity);
+    scene.updateMatrixWorld(true);
+    expect(up.intersectObject(scene, true).map((hit) => hit.object.name)).toContain("surveyed-room-ceiling");
+    // And from above again it goes.
+    view.camera?.position.set(0, 9, 15);
+    act(() => { advance(4); });
+    expect(next.mesh.visible).toBe(false);
+  });
+
   it("asks for one more frame when the camera is moved after the room's turn in a frame, and then rests", () => {
     const view: ViewHandle = { camera: null, set: null };
     const moves: (readonly [number, number, number])[] = [];
