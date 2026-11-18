@@ -893,6 +893,35 @@ class SubCommands(unittest.TestCase):
         changed = [dict(s, argv=s["argv"] + ["x"]) if s["id"] == "c:1" else s for s in subs]
         self.assertEqual(drv.fresh(rec, changed, 3, "other"), (False, "its command changed"))
 
+    def test_resume_knows_a_command_however_its_paths_are_spelt(self):
+        """Windows names one interpreter python.exe to one shell and python.EXE to another. A build begun
+        from the first and picked up from the second has not changed its commands, and must not run again
+        from its start; on a file system that tells the two spellings apart, it has."""
+        drv = load_driver()
+        work, subs = self.work("resume-spelling"), self.subs()
+        self.assertEqual(drv.run_subs(drv.Recorder(work), subs, subs, "cfg", resume=True)[0], ["a:1", "b:1", "b:2", "c:1", "publish:1"])
+
+        def with_argv(change):
+            return [dict(s, argv=change(s["argv"])) if s["argv"] else s for s in subs]
+
+        respelt = sys.executable.swapcase()
+        self.assertNotEqual(respelt, sys.executable)
+        same_file = os.path.normcase(respelt) == os.path.normcase(sys.executable)      # Windows: yes. Linux: no
+        again = with_argv(lambda argv: [respelt, *argv[1:]])
+        for index in range(4):
+            self.assertEqual(drv.fresh(drv.Recorder(work), again, index, "cfg"),
+                             (True, "") if same_file else (False, "its command changed"), again[index]["id"])
+        if same_file:
+            self.assertEqual(drv.run_subs(drv.Recorder(work), again, again, "cfg", resume=True), (["publish:1"], ["a:1", "b:1", "b:2", "c:1"]))
+        # Another program is another command on any file system, and so is a word that is no path, however like.
+        other = with_argv(lambda argv: [sys.executable + "-other", *argv[1:]])
+        self.assertEqual(drv.fresh(drv.Recorder(work), other, 0, "cfg"), (False, "its command changed"))
+        shouted = with_argv(lambda argv: [*argv[:-1], argv[-1].upper()])
+        self.assertNotEqual(shouted[0]["argv"], subs[0]["argv"])
+        self.assertEqual(drv.fresh(drv.Recorder(work), shouted, 0, "cfg"), (False, "its command changed"))
+        shorter = with_argv(lambda argv: argv[:-1])
+        self.assertEqual(drv.fresh(drv.Recorder(work), shorter, 0, "cfg"), (False, "its command changed"))
+
     def test_a_failed_sub_command_stops_the_build_and_runs_again(self):
         drv = load_driver()
         work, subs = self.work("failed"), self.subs()

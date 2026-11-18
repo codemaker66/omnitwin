@@ -522,7 +522,10 @@ T2 keeps each stage's results in the scratch folder, so its tests can be run a f
 (`python -m unittest test_gh_scripts.MiniGrandHall.test_02_labels`); its longest stage is the
 atlas (about six minutes for four packings). T0 also covers the sub-commands: the list and its
 ids, one run alone and recorded, and `--resume` skipping what is done, running again what
-changed or failed, and trusting nothing after a config change. And the record
+changed or failed, trusting nothing after a config change, and knowing a command again when
+Windows spells its interpreter's path another way (`python.EXE` to one shell, `python.exe` to
+another: a build begun from the first used to run again from its start when picked up from the
+second). And the record
 (`test_static.SurveyRecord`, on stand-in files): the Saloon's and the Grand Hall's records pass
 `record_faults`, twenty-one spoiled records are each refused for their own reason, an open segment
 is named, and publishing copies `survey.json` for the Saloon, none for the Grand Hall, and nothing
@@ -530,11 +533,10 @@ at all when the record would be refused.
 
 CI runs T0, T1 and T4 in a job of their own ("Survey tools") whenever a change touches
 `tools/surveyed-rooms` or `tools/grand-hall-survey`, because the room build runs the hall's own
-scripts through seams and an edit to either folder can break the other. There the three cases
-that need the twin's manifest skip themselves (88 tests, 3 skipped, about half a minute on a
-hosted Linux runner, where starting a process costs far less than on the Windows machine the
-times above were taken on). T2 and T3 are run by hand: they take about twenty-five and four
-minutes there.
+scripts through seams and an edit to either folder can break the other. There the cases that
+need the twin's manifest skip themselves, and the run takes about half a minute (a hosted Linux
+runner starts a process far faster than the Windows machine the times above were taken on). T2
+and T3 are run by hand: they take about twenty-five and four minutes there.
 
 Scratch goes to `SURVEYED_ROOMS_TEST_SCRATCH` (default: the system temp folder). The GHR1
 comparisons and T3 need a Node install with meshoptimizer: this checkout's, or another named by
@@ -544,7 +546,12 @@ without it.
 
 T3 builds a 12-segment analytic room through the driver, from the corners to the record (its walls
 by the best-view method at 100 px/m, its detail tiles 256 texels of 4 mm), checks the results
-against the scene's own geometry and albedo, and ends with `--resume` on the finished tree. The room is at quarter turn 1. It has two glass planes and a
+against the scene's own geometry and albedo, and ends with `--resume` on the finished tree. Every
+run builds its own room, and one test holds that no sub-command on record is older than the run:
+a tree left in the scratch folder was built by the tools as they stood then, and the suite once
+judged a two-day-old build that way. `SURVEYED_ROOMS_TEST_KEEP=1` keeps a finished tree, for
+working on one assertion without the two minutes' build each time; the `--resume` check is then
+skipped, and a result from a kept tree is not one to report. The room is at quarter turn 1. It has two glass planes and a
 transom, a box standing in front of the glass, an open door, a mirror patch and a cross-wall
 copy patch, one coffer off centre in x and z, and a lamp painted only in the panoramas.
 

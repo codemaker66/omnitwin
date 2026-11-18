@@ -20,7 +20,8 @@ to `publish` (no --publish) and the checks are:
   - both GHR1 files parse (tests/ghr1.py) with the config's ids;
   - a quarter-turn-2 rectangle variant opens no gate.
 Needs node with meshoptimizer: the checkout these tools are in, or SURVEYED_ROOMS_NODE_ROOT.
-Scratch: SURVEYED_ROOMS_TEST_SCRATCH (default: the system temp folder).
+Scratch: SURVEYED_ROOMS_TEST_SCRATCH (default: the system temp folder). Every run builds its own
+room there; SURVEYED_ROOMS_TEST_KEEP=1 keeps a finished one (see KEEP below).
 """
 import copy
 import json
@@ -29,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 import numpy as np
@@ -52,7 +54,12 @@ TRUTH = os.path.join(T3, "truth")
 CONFIG = os.path.join(T3, "test-room.room.json")
 NODE_ROOT = os.environ.get("SURVEYED_ROOMS_NODE_ROOT", os.path.dirname(os.path.dirname(ROOMS)))
 ENV = dict(os.environ, SURVEYED_ROOMS_TEST_DEPTH_SIZE="128")       # SURVEYED_ROOMS_NODE_ROOT passes through
-STATIONS = [dict(id="scan_100", p=(1.5, -0.8), gain=1.0), dict(id="scan_101", p=(-1.5, 0.8), gain=1.2),
+# A tree an earlier run left in the scratch folder was built by the tools as they stood then, and these
+# tests would judge that build, not this one. So every run builds its own. KEEP is for working on one
+# assertion without waiting for the build each time, never for a result that is reported: the check of
+# --resume is then skipped, because a tree that has been picked up once has nothing left to run.
+KEEP = os.environ.get("SURVEYED_ROOMS_TEST_KEEP") == "1"
+STATIONS =[dict(id="scan_100", p=(1.5, -0.8), gain=1.0), dict(id="scan_101", p=(-1.5, 0.8), gain=1.2),
             dict(id="scan_102", p=(0.0, 1.2), gain=0.95)]
 
 
@@ -176,7 +183,8 @@ class SmallRoom(unittest.TestCase):
     def setUpClass(cls):
         if not node_ready():
             raise unittest.SkipTest(f"no meshoptimizer under {NODE_ROOT}: the relief step cannot run")
-        if not os.path.exists(os.path.join(WORK, "build", "survey.json")):
+        cls.began = time.time()
+        if not (KEEP and os.path.exists(os.path.join(WORK, "build", "survey.json"))):
             build()
         cls.room = Room(CONFIG, WORK)
         with open(os.path.join(WORK, "build", "atlas.json"), encoding="utf-8") as f:
@@ -433,11 +441,23 @@ class SmallRoom(unittest.TestCase):
         self.assertEqual(record["floor"]["files"], ["floor-360.webp"])
         self.assertEqual(publish.record_faults(record), [], "the web's reader would refuse the built room's record")
 
+    def test_the_tree_is_this_runs_own(self):
+        """Every sub-command on record ran after this run began: nothing is judged here that an earlier
+        run, and so perhaps earlier code, built."""
+        if KEEP:
+            self.skipTest("SURVEYED_ROOMS_TEST_KEEP=1: the tree is a kept one")
+        with open(os.path.join(WORK, "build", "steps.json"), encoding="utf-8") as f:
+            rows = json.load(f)
+        self.assertTrue(rows)
+        self.assertEqual([r["id"] for r in rows if r["start"] < self.began], [])
+
     def test_z_resume_skips_the_finished_build(self):
         """--resume on the finished tree: every sub-command is skipped (its record, its files' sizes
         and hashes), except the detail of the wall whose image a patch copied from another wall
         rewrote (gate B20), the tiles cut from it, and the record. Named to run last."""
-        ids = [line.split()[0] for line in driver("--list").stdout.splitlines() if ":" in line.split()[0]]
+        if KEEP:
+            self.skipTest("SURVEYED_ROOMS_TEST_KEEP=1: a kept tree may have been picked up before, and then has nothing left to run")
+        ids =[line.split()[0] for line in driver("--list").stdout.splitlines() if ":" in line.split()[0]]
         built = [i for i in ids if i.split(":")[0] not in ("inputs", "depth", "surfaces", "publish")]
         target = 1 + [w["name"] for w in self.room.order].index("fire-r-end")
         log = driver("--from", "corners", "--resume").stdout

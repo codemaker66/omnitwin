@@ -261,6 +261,17 @@ def shown(argv):
     return " ".join(os.path.relpath(a, HERE) if os.path.isabs(a) and a.startswith(os.path.dirname(HERE)) else a for a in words)
 
 
+def same_command(recorded, now):
+    """Whether a recorded command is the one to be run now: word for word, except that two absolute
+    paths are the same word wherever the file system holds them to be the same file's name. Windows
+    names one interpreter python.exe to one shell and python.EXE to another, and a build begun from
+    the first is not to run again from its start when it is picked up from the second. (os.path.normcase
+    changes nothing where the case of a name matters.)"""
+    return len(recorded) == len(now) and all(
+        a == b or (os.path.isabs(a) and os.path.isabs(b) and os.path.normcase(a) == os.path.normcase(b))
+        for a, b in zip(recorded, now))
+
+
 def fresh(rec, subs, index, config):
     """(True, "") when sub-command `index` need not run again: its last record ended with exit 0
     for this command and this config, nothing it may depend on has run since (any earlier step's
@@ -272,7 +283,7 @@ def fresh(rec, subs, index, config):
         return False, "not run yet"
     if row["exit"] != 0:
         return False, f"its last run failed (exit {row['exit']})"
-    if row["argv"] != sub["argv"]:
+    if not same_command(row["argv"], sub["argv"]):
         return False, "its command changed"
     if row.get("config") != config:
         return False, "the config changed since it ran"
