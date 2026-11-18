@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { CloseStuckJobSchema, type StuckJobAction, type StuckWork } from "@omnitwin/types";
+import { CloseStuckJobSchema, type JobState, type SelfTestResult, type StuckJobAction, type StuckWork } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
 import type { JobRegistry } from "../services/jobs/kinds.js";
 import { selfTestJob } from "../services/jobs/kinds/selftest.js";
-import { abandonDeadJob, enqueueJob, JobRetryPreparationError, listStuckWork, retryDeadJob } from "../services/jobs/store.js";
+import { abandonDeadJob, enqueueJob, JobRetryPreparationError, listStuckWork, readJobState, retryDeadJob } from "../services/jobs/store.js";
 import { installedJobWorker, pokeJobWorker } from "../services/jobs/wake.js";
 
 // ---------------------------------------------------------------------------
@@ -15,12 +15,25 @@ import { installedJobWorker, pokeJobWorker } from "../services/jobs/wake.js";
 // GET  /admin/jobs/stuck        the newest 200 dead jobs, the counts, the worker
 // POST /admin/jobs/:id/retry    Try again: a dead job back on the list, due now
 // POST /admin/jobs/:id/close    Close: a dead job put down, with a note
-// POST /admin/jobs/selftest     one harmless job, to see the list carry work
+// POST /admin/jobs/selftest     one harmless job, to see the list carry work;
+//                               the answer says what became of it
 //
 // Every route is for platform administrators only. A response carries the
 // fields of `StuckJobSchema` and nothing else: never a job's payload, and no
 // person's name or address.
 // ---------------------------------------------------------------------------
+
+/**
+ * How long the self-test waits for its job when a worker runs in this process:
+ * one read after each gap, 5 seconds in all. A bounded wait inside one
+ * administrator's request, not the worker polling.
+ */
+const SELF_TEST_WAIT_MS: readonly number[] = [100, 200, 400, 800, 1500, 2000];
+
+/** A state the job leaves only by a person's hand: waiting longer would not change the answer. */
+function isFinished(state: JobState): boolean {
+  return state === "done" || state === "dead" || state === "abandoned";
+}
 
 const JobIdParams = z.object({ id: z.uuid() });
 
@@ -50,9 +63,10 @@ function invalid(reply: FastifyReply, error: z.ZodError, what: string): FastifyR
 
 export async function adminJobsRoutes(
   server: FastifyInstance,
-  opts: { db: Database; registry: JobRegistry },
+  opts: { db: Database; registry: JobRegistry; selfTestWaitMs?: readonly number[] },
 ): Promise<void> {
   const { db, registry } = opts;
+  const selfTestWaitMs = opts.selfTestWaitMs ?? SELF_TEST_WAIT_MS;
   const preHandler = [authenticate, authorizePlatformAdmin()];
 
   server.get("/stuck", { preHandler }, async (): Promise<{ data: StuckWork }> => {
@@ -62,12 +76,27 @@ export async function adminJobsRoutes(
     return { data: { ...listed, worker } };
   });
 
-  server.post("/selftest", { preHandler }, async (): Promise<{ data: StuckJobAction }> => {
+  server.post("/selftest", { preHandler }, async (request): Promise<{ data: SelfTestResult }> => {
     const { id } = await db.transaction((tx) =>
       enqueueJob(tx, selfTestJob, { key: `manual:${randomUUID()}`, payload: { nonce: randomUUID() } }));
     // After the commit: a poke inside the transaction could wake the worker before the job is visible.
     pokeJobWorker();
-    return { data: { id } };
+
+    // With no worker in this process nothing here will run the job: read once and say so (another server's worker may already have taken it).
+    // With one, wait for it, bounded: a read after each gap, stopping at the first state the job does not leave by itself.
+    // `request.raw.destroyed` is true as soon as the request body has been read, so the caller leaving is read from the socket.
+    let state: JobState | null = null;
+    if (installedJobWorker() !== null) {
+      for (const gap of selfTestWaitMs) {
+        if (request.socket.destroyed) break;
+        await new Promise<void>((resolve) => { setTimeout(resolve, gap); });
+        state = await readJobState(db, id);
+        if (state !== null && isFinished(state)) break;
+      }
+    }
+    state ??= await readJobState(db, id);
+    if (state === null) throw new Error("the self-test job disappeared");
+    return { data: { id, state } };
   });
 
   server.post("/:id/retry", { preHandler }, async (request, reply) => {

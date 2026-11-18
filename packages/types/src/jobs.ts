@@ -10,6 +10,12 @@ import { z } from "zod";
 // never leaves the table that owns it.
 // ---------------------------------------------------------------------------
 
+/** The most dead jobs Stuck work lists, newest first. */
+export const STUCK_JOBS_LIMIT = 200;
+
+/** The five states of a job, and no others. */
+export const JobStateSchema = z.enum(["queued", "running", "done", "dead", "abandoned"]);
+
 /** One dead job, as the page shows it. */
 export const StuckJobSchema = z.object({
   id: z.uuid(),
@@ -40,8 +46,8 @@ export const JobWorkerStatusSchema = z.object({
 });
 
 export const StuckWorkSchema = z.object({
-  /** The newest 200 dead jobs, newest first. */
-  jobs: z.array(StuckJobSchema).max(200),
+  /** The newest STUCK_JOBS_LIMIT dead jobs, newest first. */
+  jobs: z.array(StuckJobSchema).max(STUCK_JOBS_LIMIT),
   counts: z.object({
     queued: z.number().int(),
     running: z.number().int(),
@@ -60,6 +66,11 @@ export const CloseStuckJobSchema = z.object({
 /** The answer to Try again, Close and the self-test: the job's id. */
 export const StuckJobActionSchema = z.object({ id: z.uuid() });
 
+/** The self-test’s answer: its job’s id, and the state the job had reached when the server stopped waiting. */
+export const SelfTestResultSchema = z.object({ id: z.uuid(), state: JobStateSchema });
+
+export type JobState = z.infer<typeof JobStateSchema>;
+export type SelfTestResult = z.infer<typeof SelfTestResultSchema>;
 export type StuckJob = z.infer<typeof StuckJobSchema>;
 export type JobWorkerStatus = z.infer<typeof JobWorkerStatusSchema>;
 export type StuckWork = z.infer<typeof StuckWorkSchema>;

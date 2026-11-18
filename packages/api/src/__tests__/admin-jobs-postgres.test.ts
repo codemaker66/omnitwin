@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { StuckJobActionSchema, StuckJobSchema, StuckWorkSchema, USER_ROLES, type StuckJob } from "@omnitwin/types";
+import { SelfTestResultSchema, StuckJobSchema, StuckWorkSchema, USER_ROLES, type SelfTestResult, type StuckJob } from "@omnitwin/types";
 import { sql } from "drizzle-orm";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Pool } from "pg";
@@ -137,10 +137,6 @@ type StuckBody = { readonly data: z.infer<typeof StuckWorkSchema> };
 /** What a response said, checked against the contract instead of trusted. */
 function stuckBody(response: { json: () => unknown }): StuckBody {
   return z.object({ data: StuckWorkSchema }).parse(response.json());
-}
-
-function actionId(response: { json: () => unknown }): string {
-  return z.object({ data: StuckJobActionSchema }).parse(response.json()).data.id;
 }
 
 /** The throwaway database's url, marked with the whole server's name; any query the url already has stays. */
@@ -571,30 +567,87 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
   // ---- The self-test ----------------------------------------------------------
 
   describe("the self-test", () => {
+    /** The same plugin with short waits, so a job nobody takes costs milliseconds, not five seconds. */
+    let shortWait: FastifyInstance;
+
+    beforeAll(async () => {
+      shortWait = Fastify();
+      await shortWait.register(adminJobsRoutes, { db, registry, selfTestWaitMs: [10, 10, 10], prefix: "/admin/jobs" });
+      await shortWait.ready();
+    });
+
+    afterAll(async () => {
+      await shortWait.close();
+    });
+
     afterEach(() => {
       installJobWorker(null);
     });
 
-    it("with no worker installed it still writes the job, queued, and answers its id", async () => {
+    /** What the response said, against the contract (the shape itself is asserted on `json()`). */
+    function selfTestResult(response: { json: () => unknown }): SelfTestResult {
+      return z.object({ data: SelfTestResultSchema }).parse(response.json()).data;
+    }
+
+    function pressOn(target: FastifyInstance) {
+      return target.inject({ method: "POST", url: "/admin/jobs/selftest", headers: { authorization: `Bearer ${platformAdmin}` } });
+    }
+
+    it("with a worker running here it waits for the job and answers that it is done", async () => {
+      const worker = new JobWorker({ db, registry, serverId: "admin-jobs-test-run", logger: quietLogger, alerts: recordingJobAlerts() });
+      installJobWorker(worker);
+      worker.start();
+      try {
+        const response = await asPlatformAdmin("POST", "/admin/jobs/selftest");
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({ data: { id: expect.any(String) as string, state: "done" } });
+        const result = selfTestResult(response);
+        expect(result.id).toMatch(UUID_SHAPE);
+        const rows = (await pool.query<{ id: string; kind: string; state: string }>("SELECT id, kind, state FROM jobs")).rows;
+        expect(rows).toEqual([{ id: result.id, kind: "jobs.selftest", state: "done" }]);
+      } finally {
+        await worker.stop(1000);
+      }
+    }, 20_000);
+
+    it("with no worker installed it writes the job, answers queued at once, and does not wait", async () => {
       installJobWorker(null);
+      const started = Date.now();
       const response = await asPlatformAdmin("POST", "/admin/jobs/selftest");
+      const took = Date.now() - started;
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ data: { id: expect.any(String) as string } });
-      const id = actionId(response);
-      expect(id).toMatch(UUID_SHAPE);
+      expect(response.json()).toEqual({ data: { id: expect.any(String) as string, state: "queued" } });
+      const result = selfTestResult(response);
+      expect(result.id).toMatch(UUID_SHAPE);
+      // The default waits add up to 5 seconds and the first gap alone is 100 ms: this did not wait for any of them.
+      expect(took).toBeLessThan(1000);
       const rows = (await pool.query<{ id: string; kind: string; state: string }>("SELECT id, kind, state FROM jobs")).rows;
-      expect(rows).toEqual([{ id, kind: "jobs.selftest", state: "queued" }]);
+      expect(rows).toEqual([{ id: result.id, kind: "jobs.selftest", state: "queued" }]);
     });
 
-    it("writes one job and pokes the worker", async () => {
+    it("a worker that never takes the job: all the reads are made, the answer is queued, and the request returns", async () => {
+      // Installed but never started, so nothing takes the job.
+      installJobWorker(new JobWorker({ db, registry, serverId: "admin-jobs-test-idle", logger: quietLogger, alerts: recordingJobAlerts() }));
+      const started = Date.now();
+      const response = await pressOn(shortWait);
+      const took = Date.now() - started;
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ data: { id: expect.any(String) as string, state: "queued" } });
+      const result = selfTestResult(response);
+      // Three gaps of 10 ms were waited out, and nothing like the default 5 seconds.
+      expect(took).toBeGreaterThanOrEqual(25);
+      expect(took).toBeLessThan(2000);
+      expect((await rowOf(result.id)).state).toBe("queued");
+    });
+
+    it("writes one job and pokes the worker, after the job is committed", async () => {
       const worker = new JobWorker({ db, registry, serverId: "admin-jobs-test", logger: quietLogger, alerts: recordingJobAlerts() });
       const poke = vi.spyOn(worker, "poke");
       installJobWorker(worker);
 
-      const response = await asPlatformAdmin("POST", "/admin/jobs/selftest");
+      const response = await pressOn(shortWait);
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ data: { id: expect.any(String) as string } });
-      const data = { id: actionId(response) };
+      const data = selfTestResult(response);
       expect(data.id).toMatch(UUID_SHAPE);
       expect(poke).toHaveBeenCalledTimes(1);
       const rows = (await pool.query<{ id: string; kind: string; state: string; scope: string; payload: { nonce: string } }>(
@@ -605,8 +658,8 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
       expect(typeof rows[0]?.payload.nonce).toBe("string");
 
       // A second press is a second job (each has its own key), not the same one.
-      const again = { data: { id: actionId(await asPlatformAdmin("POST", "/admin/jobs/selftest")) } };
-      expect(again.data.id).not.toBe(data.id);
+      const again = selfTestResult(await pressOn(shortWait));
+      expect(again.id).not.toBe(data.id);
       expect(poke).toHaveBeenCalledTimes(2);
 
       // With a worker installed, Stuck work reports its status in place of "off".

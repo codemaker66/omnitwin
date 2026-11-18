@@ -1,4 +1,4 @@
-import type { StuckWork } from "@omnitwin/types";
+import { JobStateSchema, STUCK_JOBS_LIMIT, type JobState, type StuckWork } from "@omnitwin/types";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import type { Database } from "../../db/client.js";
@@ -480,8 +480,6 @@ export async function planNextWake(
 // except to hand it to the kind's own preparation.
 // ---------------------------------------------------------------------------
 
-/** The most dead jobs Stuck work lists. */
-const STUCK_LIST_LIMIT = 200;
 /** What `retryDeadJob` records as the resolution. */
 const TRIED_AGAIN = "Tried again";
 
@@ -541,7 +539,7 @@ export async function listStuckWork(db: Database): Promise<Omit<StuckWork, "work
     FROM jobs j LEFT JOIN venues v ON v.id = j.venue_id
     WHERE j.state = 'dead'
     ORDER BY j.finished_at DESC NULLS LAST, j.id DESC
-    LIMIT ${STUCK_LIST_LIMIT}`);
+    LIMIT ${STUCK_JOBS_LIMIT}`);
   return {
     jobs: listed.rows.map((raw) => {
       const row = stuckRow.parse(raw);
@@ -599,11 +597,11 @@ export class JobRetryPreparationError extends Error {
  * Dead back to queued, due now, tries and lost claims reset, and who did it.
  * Runs the kind's `onManualRetry` (when it has one) in the same transaction as
  * the UPDATE, and only when this call's UPDATE changed the row: if the
- * preparation throws, the transaction rolls back, the job stays dead and the
- * error reaches the caller.
+ * preparation throws, the transaction rolls back, the job stays dead and a
+ * `JobRetryPreparationError` is thrown.
  *
- * `"not-dead"`: no such job, or it is not dead (another person got there
- * first). `"unreadable"`: it is dead, but no server of this release reads its
+ * `"not-found"`: no job has this id. `"not-dead"`: the job is not dead (another
+ * person got there first). `"unreadable"`: it is dead, but no server of this release reads its
  * kind or version, so putting it back would hide it from Stuck work and no one
  * would ever take it; it stays dead, to be closed with a note.
  */
@@ -657,4 +655,13 @@ export async function abandonDeadJob(
   // Nothing changed: one read says whether the job is there at all.
   const found = await db.execute(sql`SELECT 1 AS present FROM jobs WHERE id = ${id}::uuid`);
   return found.rows.length === 0 ? "not-found" : "not-dead";
+}
+
+const stateRow = z.object({ state: JobStateSchema });
+
+/** The state of one job, or `null` when no job has this id. One statement; it reads nothing else of the row. */
+export async function readJobState(executor: JobExecutor, id: string): Promise<JobState | null> {
+  const result = await executor.execute(sql`SELECT state FROM jobs WHERE id = ${id}::uuid`);
+  const [raw] = result.rows;
+  return raw === undefined ? null : stateRow.parse(raw).state;
 }
