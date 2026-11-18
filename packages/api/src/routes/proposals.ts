@@ -43,6 +43,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { outerColumn } from "../utils/outer-column.js";
+import { LIVE_QUOTE_STATUSES } from "../services/commercial-pipeline.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canManageCommercial, isVenueCommercialMember, roleReadsInternalEvents } from "../utils/query.js";
@@ -1594,9 +1595,10 @@ const QUOTE_MISMATCH = {
 } as const;
 
 /**
- * The quote a version names, as stored: this proposal's own, at its venue and
- * not deleted, with its lines in their order. Its row is held (FOR SHARE) so
- * a line added meanwhile is in both the lines and the totals or in neither.
+ * The quote a version names, as stored: this proposal's own, at its venue,
+ * live (not superseded, declined or expired) and not deleted, with its lines
+ * in their order. Its row is held (FOR SHARE) so a line added meanwhile is in
+ * both the lines and the totals or in neither.
  * Null when there is no such quote, or its rows do not make a valid snapshot.
  */
 async function storedQuoteSnapshot(tx: ProposalTransaction, quoteId: string, proposal: ProposalRecord): Promise<QuoteSnapshot | null> {
@@ -1604,7 +1606,7 @@ async function storedQuoteSnapshot(tx: ProposalTransaction, quoteId: string, pro
     id: quotes.id, currency: quotes.currency, subtotalMinor: quotes.subtotalMinor, totalMinor: quotes.totalMinor,
   }).from(quotes)
     .where(and(eq(quotes.id, quoteId), eq(quotes.proposalId, proposal.id), eq(quotes.venueId, proposal.venueId),
-      isNull(quotes.deletedAt)))
+      inArray(quotes.status, [...LIVE_QUOTE_STATUSES]), isNull(quotes.deletedAt)))
     .for("share");
   if (quote === undefined) return null;
   const lineItems = await tx.select({
