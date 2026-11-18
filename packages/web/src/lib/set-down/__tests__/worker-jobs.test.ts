@@ -10,6 +10,7 @@ import { renderRoomTail, tailOnsetSeconds } from "../tail.js";
 import { runSetDownJob, type SetDownJobResult } from "../worker-jobs.js";
 import {
   SET_DOWN_RATES_HZ,
+  isSetDownAnswer,
   isSetDownJob,
   setDownJobProblem,
   type SetDownRenderAnswer,
@@ -26,8 +27,17 @@ import { inputFor, sameSamples } from "./set-down-kit.js";
 // passes it, so what is rendered is what the Worker would receive.
 // ---------------------------------------------------------------------------
 
-/** Lets a test make the engine throw, as an allocation that fails on a phone would. */
-const engine = vi.hoisted(() => ({ fail: false }));
+/**
+ * How the mocked engine lays its channels out: as the engine does (each its own whole buffer), as views into the
+ * middle of one larger buffer, or as two views on one whole buffer.
+ */
+type Layout = "own" | "subarray" | "one-buffer";
+
+/** Lets a test make the engine throw, as an allocation that fails on a phone would, or lay its channels out otherwise. */
+const engine = vi.hoisted(() => {
+  const state: { fail: boolean; layout: Layout } = { fail: false, layout: "own" };
+  return state;
+});
 
 vi.mock("../render.js", async (importOriginal) => {
   const real = await importOriginal<typeof import("../render.js")>();
@@ -35,7 +45,19 @@ vi.mock("../render.js", async (importOriginal) => {
     ...real,
     renderSetDown: (input: SetDownInput) => {
       if (engine.fail) throw new RangeError("Array buffer allocation failed");
-      return real.renderSetDown(input);
+      const rendered = real.renderSetDown(input);
+      const n = rendered.left.length;
+      if (engine.layout === "subarray") {
+        const padded = new Float32Array(2 * n + 8);
+        padded.set(rendered.left, 4);
+        padded.set(rendered.right, n + 6);
+        return { ...rendered, left: padded.subarray(4, 4 + n), right: padded.subarray(n + 6, 2 * n + 6) };
+      }
+      if (engine.layout === "one-buffer") {
+        const shared = rendered.left.slice().buffer;
+        return { ...rendered, left: new Float32Array(shared), right: new Float32Array(shared) };
+      }
+      return rendered;
     },
   };
 });
@@ -142,6 +164,42 @@ describe("runSetDownJob renders what the engine renders", () => {
       expect(answer.right.byteLength).toBe(0);
       expect(received.left.byteLength).toBe(bytes);
       expect(sameSamples(new Float32Array(received.left), sentLeft)).toBe(true);
+    }
+  });
+
+  it("copies a channel that is a view into part of a larger buffer, so only its own samples are transferred", () => {
+    const job = chiavariJob();
+    const expected = renderSetDown(job.input);
+    engine.layout = "subarray";
+    try {
+      const { answer, transfer } = inWorker(job);
+      if (!answer.ok) throw new Error(answer.error);
+      expect(answer.left.byteLength).toBe(expected.left.byteLength);
+      expect(answer.right.byteLength).toBe(expected.right.byteLength);
+      expect(sameSamples(new Float32Array(answer.left), expected.left)).toBe(true);
+      expect(sameSamples(new Float32Array(answer.right), expected.right)).toBe(true);
+      expect(answer.left).not.toBe(answer.right);
+      expect(() => structuredClone(answer, { transfer })).not.toThrow();
+    } finally {
+      engine.layout = "own";
+    }
+  });
+
+  it("copies the second of two channels on one buffer, so the transfer names each buffer once", () => {
+    const job = chiavariJob();
+    const expected = renderSetDown(job.input);
+    engine.layout = "one-buffer";
+    try {
+      const { answer, transfer } = inWorker(job);
+      if (!answer.ok) throw new Error(answer.error);
+      expect(answer.left).not.toBe(answer.right);
+      expect(sameSamples(new Float32Array(answer.left), expected.left)).toBe(true);
+      expect(sameSamples(new Float32Array(answer.right), expected.left)).toBe(true);
+      // A buffer named twice in a transfer list is refused (DataCloneError).
+      expect(() => structuredClone(answer, { transfer })).not.toThrow();
+      expect(() => structuredClone(answer, { transfer: [answer.left, answer.left] })).toThrow();
+    } finally {
+      engine.layout = "own";
     }
   });
 
@@ -265,6 +323,30 @@ describe("isSetDownJob takes every job the planner can ask for", () => {
           expect(setDownJobProblem(job)).toBeNull();
         }
       }
+    }
+  });
+});
+
+describe("the Worker's shell (set-down.worker.ts)", () => {
+  it("posts one ready message as it evaluates (ruling R99), then answers each job with its two buffers transferred", async () => {
+    const posted: unknown[][] = [];
+    const post = vi.spyOn(self, "postMessage").mockImplementation((...args: unknown[]) => { posted.push(args); });
+    try {
+      await import("../set-down.worker.js");
+      expect(posted).toEqual([[{ kind: "ready" }]]);
+
+      const handler = self.onmessage;
+      if (handler === null) throw new Error("the Worker set no onmessage");
+      handler.call(self, new MessageEvent("message", { data: structuredClone(chiavariJob(11)) }));
+      expect(posted).toHaveLength(2);
+      const [answer, options] = posted[1] ?? [];
+      if (!isSetDownAnswer(answer) || !answer.ok) throw new Error(`expected an answer, got ${JSON.stringify(answer)}`);
+      expect(answer).toMatchObject({ kind: "render", id: 11 });
+      const transfer: unknown = Reflect.get(Object(options), "transfer");
+      expect(Array.isArray(transfer) && transfer.length === 2 && transfer[0] === answer.left && transfer[1] === answer.right).toBe(true);
+    } finally {
+      post.mockRestore();
+      self.onmessage = null;
     }
   });
 });

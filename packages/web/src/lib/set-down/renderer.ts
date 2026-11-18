@@ -14,14 +14,22 @@
 //   finishes.
 // - Every promise settles. A job dropped by `cancel`, replaced, or pending at
 //   `dispose` rejects with SetDownCancelled, so a caller can tell a
-//   cancellation from a failure. A Worker error, or no answer within
-//   ANSWER_WITHIN_MS of a post, rejects every pending job with
-//   SetDownRendererBroken naming the cause; the renderer is then broken, its
-//   Worker terminated, and later calls reject at once.
+//   cancellation from a failure. A Worker error, a Worker that has not said it
+//   is ready within LOAD_WITHIN_MS, or a running job not answered within
+//   ANSWER_WITHIN_MS, rejects every pending job with SetDownRendererBroken
+//   naming the cause; the renderer is then broken, its Worker terminated, and
+//   later calls reject at once.
+// - The watches count only time the Worker could have worked (ruling R99). A
+//   job's ANSWER_WITHIN_MS starts once the Worker has posted its ready message
+//   (its script loaded and evaluated), so a slow first load on a weak
+//   connection is the load watch's, not the job's. Both watches stop while the
+//   page is hidden (a locked phone, another app or tab, where the Worker may
+//   be frozen with the page), and start afresh when it is visible again.
 // - Each answer is checked, for its shape (worker-protocol.ts) and against the
 //   job it answers. One that fails is an error for that job alone, and the
-//   next job runs. Since one job runs at a time, every message from the Worker
-//   answers the running job.
+//   next job runs. One job runs at a time, so an answer is the running job's,
+//   except one naming another job by its id: that is ignored, and the running
+//   job keeps its watch.
 // - The channels come back as the Worker's own buffers, transferred, and the
 //   Float32Arrays handed out are views on exactly those buffers: no copy.
 //
@@ -35,8 +43,8 @@ import type { SetDownInput, SetDownRender } from "./render.js";
 import type { Stereo } from "./tail.js";
 import {
   isSetDownAnswer,
+  isSetDownReady,
   setDownAnswerProblem,
-  type SetDownAnswer,
   type SetDownJob,
   type SetDownRenderAnswer,
   type SetDownRenderJob,
@@ -45,8 +53,19 @@ import {
   type TailOptions,
 } from "./worker-protocol.js";
 
-/** How long a posted job's answer is waited for, milliseconds, before the Worker is taken to have stopped. */
+/**
+ * How long the running job's answer is waited for, milliseconds, before the
+ * Worker is taken to have stopped: counted from its post, or from the Worker's
+ * ready message if that comes later, and only while the page is visible.
+ */
 export const ANSWER_WITHIN_MS = 10_000;
+
+/**
+ * How long the Worker's ready message is waited for, milliseconds, while the
+ * page is visible: a script that fails to load fires an error at once, so this
+ * catches one that never evaluates, with room for a slow first load.
+ */
+export const LOAD_WITHIN_MS = 30_000;
 
 export type SetDownPriority = "exact" | "ahead";
 
@@ -161,21 +180,79 @@ function named(job: SetDownJob): string {
   return `${job.kind} "${job.key}"`;
 }
 
+/** Whether the page is hidden (a locked phone, another app or tab), where the Worker may be frozen with it. */
+function pageHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
+/** Whether a message from the Worker names, by a numeric id, a job other than the running one, `id`. */
+function answersAnotherJob(data: unknown, id: number): boolean {
+  if (typeof data !== "object" || data === null) return false;
+  const answered: unknown = Reflect.get(data, "id");
+  return typeof answered === "number" && answered !== id;
+}
+
 function rendererOn(worker: WorkerLike): SetDownRenderer {
   const exact: Waiting[] = [];
   const ahead: Waiting[] = [];
   let running: Waiting | null = null;
-  let watch: ReturnType<typeof setTimeout> | null = null;
+  /** The running job's watch: armed only while the Worker is ready and the page visible. */
+  let jobWatch: ReturnType<typeof setTimeout> | null = null;
+  /** The watch on the Worker's ready message: armed only until it comes, and only while the page is visible. */
+  let loadWatch: ReturnType<typeof setTimeout> | null = null;
+  let ready = false;
   let brokenBy: SetDownRendererBroken | null = null;
   let disposed = false;
   let stopped = false;
   let lastId = 0;
+  const page = typeof document === "undefined" ? null : document;
+
+  const clearJobWatch = (): void => {
+    if (jobWatch !== null) clearTimeout(jobWatch);
+    jobWatch = null;
+  };
+
+  const clearLoadWatch = (): void => {
+    if (loadWatch !== null) clearTimeout(loadWatch);
+    loadWatch = null;
+  };
+
+  /** Gives the running job a fresh ANSWER_WITHIN_MS, if it can be watched now: the Worker ready, the page visible. */
+  const watchRunning = (): void => {
+    clearJobWatch();
+    const watched = running;
+    if (watched === null || !ready || pageHidden()) return;
+    jobWatch = setTimeout(() => {
+      if (running === watched) breakDown(new SetDownRendererBroken(`The set-down Worker did not answer ${named(watched.job)} within ${String(ANSWER_WITHIN_MS / 1000)} s`));
+    }, ANSWER_WITHIN_MS);
+  };
+
+  /** Gives the Worker a fresh LOAD_WITHIN_MS to say it is ready, unless it has, or the page is hidden. */
+  const watchLoad = (): void => {
+    clearLoadWatch();
+    if (ready || pageHidden()) return;
+    loadWatch = setTimeout(() => {
+      breakDown(new SetDownRendererBroken(`The set-down Worker did not load within ${String(LOAD_WITHIN_MS / 1000)} s`));
+    }, LOAD_WITHIN_MS);
+  };
+
+  /** Hidden: no watch runs. Visible again: each starts afresh. */
+  const onVisibility = (): void => {
+    if (pageHidden()) {
+      clearJobWatch();
+      clearLoadWatch();
+      return;
+    }
+    watchLoad();
+    watchRunning();
+  };
 
   const stopWorker = (): void => {
-    if (watch !== null) clearTimeout(watch);
-    watch = null;
+    clearJobWatch();
+    clearLoadWatch();
     if (stopped) return;
     stopped = true;
+    page?.removeEventListener("visibilitychange", onVisibility);
     worker.onmessage = null;
     worker.onerror = null;
     worker.onmessageerror = null;
@@ -201,8 +278,7 @@ function rendererOn(worker: WorkerLike): SetDownRenderer {
   /** The running job is over: its watch is cleared and the next job may run. */
   const finishRunning = (): Waiting | null => {
     const current = running;
-    if (watch !== null) clearTimeout(watch);
-    watch = null;
+    clearJobWatch();
     running = null;
     return current;
   };
@@ -220,18 +296,29 @@ function rendererOn(worker: WorkerLike): SetDownRenderer {
         next.reject(new Error(`The set-down Worker could not be sent ${named(next.job)}`, { cause: error }));
         continue;
       }
-      watch = setTimeout(() => {
-        if (running === next) breakDown(new SetDownRendererBroken(`The set-down Worker did not answer ${named(next.job)} within ${String(ANSWER_WITHIN_MS / 1000)} s`));
-      }, ANSWER_WITHIN_MS);
+      watchRunning();
     }
   };
 
   worker.onmessage = (event) => {
-    const current = finishRunning();
+    const data = event.data;
+    // The Worker's one ready message comes before any answer and answers no job: from it on, jobs are watched.
+    if (isSetDownReady(data)) {
+      if (!ready) {
+        ready = true;
+        clearLoadWatch();
+        watchRunning();
+      }
+      return;
+    }
+    const current = running;
     // Nothing runs only once the renderer has stopped listening; no message is expected then.
     if (current === null) return;
+    // An answer naming another job (none should come) leaves the running job, and its watch, as they are.
+    if (answersAnotherJob(data, current.job.id)) return;
+    finishRunning();
     try {
-      current.answered(event.data);
+      current.answered(data);
     } catch (error) {
       current.reject(new Error(`The set-down Worker's answer to ${named(current.job)} could not be taken`, { cause: error }));
     }
@@ -252,6 +339,9 @@ function rendererOn(worker: WorkerLike): SetDownRenderer {
     const why = typeof message === "string" && message !== "" ? message : "its script did not load or run";
     breakDown(new SetDownRendererBroken(`The set-down Worker stopped: ${why}`, { cause: event }));
   };
+
+  page?.addEventListener("visibilitychange", onVisibility);
+  watchLoad();
 
   /** Why a new job cannot be taken, or null when it can. */
   const refusal = (): Error | null => {
@@ -336,14 +426,15 @@ function rendererOn(worker: WorkerLike): SetDownRenderer {
 
 // --- Reading answers -------------------------------------------------------------------
 
-/** The answer, if its shape is sound, answers `job` and is not a refusal; otherwise the error that rejects the job. */
+/**
+ * The answer, if its shape is sound and it is not a refusal; otherwise the
+ * error that rejects `job`. An answer naming another job by its id never
+ * reaches here (answersAnotherJob); a refusal with no id (of a message the
+ * Worker could not read as a job) is the running job's.
+ */
 function answerTo(job: SetDownJob, data: unknown): SetDownRenderAnswer | SetDownTailAnswer | Error {
   if (!isSetDownAnswer(data)) return new Error(`The set-down Worker's answer to ${named(job)} is malformed: ${setDownAnswerProblem(data) ?? "unreadable"}`);
-  const answer: SetDownAnswer = data;
-  if (answer.id !== job.id) {
-    const which = answer.id === null ? "a message that was not a job" : `job ${String(answer.id)}`;
-    return new Error(`The set-down Worker answered ${which} while ${named(job)} (job ${String(job.id)}) ran`);
-  }
+  const answer = data;
   if (!answer.ok) return new Error(`The set-down Worker refused ${named(job)}: ${answer.error}`, { cause: answer.error });
   return answer;
 }

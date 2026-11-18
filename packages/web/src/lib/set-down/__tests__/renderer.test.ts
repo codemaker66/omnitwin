@@ -3,6 +3,7 @@ import type { BandValues } from "../bands.js";
 import { renderSetDown } from "../render.js";
 import {
   ANSWER_WITHIN_MS,
+  LOAD_WITHIN_MS,
   SetDownCancelled,
   SetDownRendererBroken,
   createSetDownRenderer,
@@ -17,7 +18,8 @@ import { inputFor, sameSamples } from "./set-down-kit.js";
 // The main thread's client of the set-down Worker, against a fake Worker
 // (happy-dom has none) that answers when the test says: one job at a time,
 // exact renders first, every promise settled, answers checked, buffers handed
-// out without a copy, and a broken Worker failing fast.
+// out without a copy, a job watched only while the Worker is ready and the
+// page visible (ruling R99), and a broken Worker failing fast.
 // ---------------------------------------------------------------------------
 
 /** A module Worker that keeps what it is posted and answers when the test says. */
@@ -49,6 +51,11 @@ class FakeSetDownWorker implements WorkerLike {
   /** Delivers `data` as the Worker's next message. */
   send(data: unknown): void {
     this.onmessage?.(new MessageEvent("message", { data }));
+  }
+
+  /** Says the Worker's module has evaluated, as set-down.worker.ts does once. */
+  ready(): void {
+    this.send({ kind: "ready" });
   }
 
   /** Answers the running job as the Worker would, with buffers of `frames` samples. */
@@ -111,11 +118,28 @@ function made(): { readonly renderer: SetDownRenderer; readonly worker: FakeSetD
   return { renderer, worker };
 }
 
+let visibility: DocumentVisibilityState = "visible";
+
+/** Makes the page read as `state`, without telling anyone. */
+function stubVisibility(state: DocumentVisibilityState): void {
+  visibility = state;
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+}
+
+/** Makes the page read as `state` and fires visibilitychange, as hiding or showing the tab does. */
+function changeVisibility(state: DocumentVisibilityState): void {
+  stubVisibility(state);
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
 afterEach(() => {
   for (const renderer of renderers) renderer.dispose();
   renderers = [];
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(document, "visibilityState");
+  visibility = "visible";
 });
 
 describe("one job at a time, exact renders first", () => {
@@ -265,13 +289,13 @@ describe("answers", () => {
     const job = (): SetDownJob => worker.running();
     const faults: readonly (readonly [string, () => unknown, RegExp])[] = [
       ["not an object", () => "rendered", /malformed/],
-      ["another job's id", () => ({ ...answerFor(job()), id: job().id + 100 }), /answered job/],
       ["the other kind", () => answerFor({ kind: "tail", id: job().id, key: "x", rt: RT, ...TAIL }), /tail/],
       ["channels of unequal length", () => ({ ...answerFor(job()), right: new Float32Array(3).buffer }), /length/],
       ["a channel that is not an ArrayBuffer", () => ({ ...answerFor(job()), left: new Float32Array(4) }), /answer\.left/],
       ["a channel not whole samples", () => ({ ...answerFor(job()), left: new ArrayBuffer(10), right: new ArrayBuffer(10) }), /whole/],
       ["another sample rate", () => ({ ...answerFor(job()), sampleRate: 44100 }), /44100/],
       ["a refusal", () => ({ kind: "render", id: job().id, ok: false, error: "job.input.seed is not a whole number" }), /job\.input\.seed/],
+      ["a refusal of what was not a job, with no id", () => ({ kind: null, id: null, ok: false, error: "the job is not an object: null" }), /refused render "chair": the job is not an object/],
     ];
     const outcomes: Tracked<unknown>[] = [];
     for (const [, makeAnswer] of faults) {
@@ -293,6 +317,44 @@ describe("answers", () => {
     expect(last.status).toBe("resolved");
     expect(renderer.broken).toBe(false);
     expect(worker.terminated).toBe(false);
+  });
+
+  it("ignore an answer to another job: the running job resolves on its own answer, then the next runs alone", async () => {
+    const { renderer, worker } = made();
+    const a = track(renderer.render(INPUT, "exact", "a"));
+    const b = track(renderer.render(INPUT, "exact", "b"));
+    const jobA = worker.running();
+    worker.send({ ...answerFor(jobA), id: jobA.id + 100 });
+    await flush();
+    expect(a.status).toBe("pending");
+    expect(worker.posted.map((job) => job.key)).toEqual(["a"]);
+
+    const sent = worker.answer(5);
+    await flush();
+    expect(a.status).toBe("resolved");
+    expect(a.value?.left.buffer).toBe(sent.left);
+    expect(worker.posted.map((job) => job.key)).toEqual(["a", "b"]);
+    expect(b.status).toBe("pending");
+    worker.answer();
+    await flush();
+    expect(b.status).toBe("resolved");
+    expect(worker.posted).toHaveLength(2);
+  });
+
+  it("leave the running job under its own watch when another job's answer arrives", async () => {
+    vi.useFakeTimers();
+    const { renderer, worker } = made();
+    worker.ready();
+    const a = track(renderer.render(INPUT, "exact", "a"));
+    vi.advanceTimersByTime(4_000);
+    worker.send({ ...answerFor(worker.running()), id: worker.running().id + 1 });
+    vi.advanceTimersByTime(ANSWER_WITHIN_MS - 4_000 - 1);
+    await flush();
+    expect(a.status).toBe("pending");
+    vi.advanceTimersByTime(1);
+    await flush();
+    expect(a.reason).toBeInstanceOf(SetDownRendererBroken);
+    expect(String(a.reason)).toMatch(/did not answer render "a" within 10 s/);
   });
 
   it("reject the running job when its answer cannot be read, and the next job runs", async () => {
@@ -364,9 +426,13 @@ describe("a broken Worker fails fast", () => {
     }
   });
 
-  it("no answer within 10 s of posting rejects everything pending and breaks it", async () => {
+  it("no answer within 10 s of posting to a ready Worker rejects everything pending and breaks it", async () => {
     vi.useFakeTimers();
     const { renderer, worker } = made();
+    worker.ready();
+    // Time with nothing to do counts for nothing.
+    vi.advanceTimersByTime(LOAD_WITHIN_MS * 2);
+    expect(renderer.broken).toBe(false);
     const running = track(renderer.render(INPUT, "exact", "chair"));
     const queued = track(renderer.tail(RT, TAIL, "room"));
     vi.advanceTimersByTime(ANSWER_WITHIN_MS - 1);
@@ -392,6 +458,7 @@ describe("a broken Worker fails fast", () => {
   it("counts the 10 s from each post, not from the first", async () => {
     vi.useFakeTimers();
     const { renderer, worker } = made();
+    worker.ready();
     const first = track(renderer.render(INPUT, "exact", "first"));
     const second = track(renderer.render(INPUT, "exact", "second"));
     vi.advanceTimersByTime(9_000);
@@ -407,6 +474,135 @@ describe("a broken Worker fails fast", () => {
     expect(second.status).toBe("resolved");
     expect(renderer.broken).toBe(false);
     expect(worker.terminated).toBe(false);
+  });
+});
+
+describe("the watches: a ready Worker, a visible page (ruling R99)", () => {
+  it("starts a job's 10 s only once the Worker says it is ready, and takes the ready message as no job's answer", async () => {
+    vi.useFakeTimers();
+    const { renderer, worker } = made();
+    const job = track(renderer.render(INPUT, "exact", "chair"));
+    vi.advanceTimersByTime(LOAD_WITHIN_MS - 5_000);
+    await flush();
+    expect(job.status).toBe("pending");
+
+    worker.ready();
+    await flush();
+    expect(job.status).toBe("pending");
+    expect(worker.posted).toHaveLength(1);
+    vi.advanceTimersByTime(ANSWER_WITHIN_MS - 1);
+    await flush();
+    expect(renderer.broken).toBe(false);
+    vi.advanceTimersByTime(1);
+    await flush();
+    expect(job.reason).toBeInstanceOf(SetDownRendererBroken);
+    expect(String(job.reason)).toMatch(/did not answer render "chair" within 10 s/);
+  });
+
+  it("restarts nothing on a second ready message", async () => {
+    vi.useFakeTimers();
+    const { renderer, worker } = made();
+    worker.ready();
+    const job = track(renderer.render(INPUT, "exact", "chair"));
+    vi.advanceTimersByTime(ANSWER_WITHIN_MS - 1_000);
+    worker.ready();
+    vi.advanceTimersByTime(1_000);
+    await flush();
+    expect(job.reason).toBeInstanceOf(SetDownRendererBroken);
+  });
+
+  it("stops while the page is hidden, and gives the running job a fresh 10 s when it is visible again", async () => {
+    vi.useFakeTimers();
+    const { renderer, worker } = made();
+    worker.ready();
+    const job = track(renderer.render(INPUT, "exact", "chair"));
+    vi.advanceTimersByTime(6_000);
+    changeVisibility("hidden");
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(10 * 60_000);
+    await flush();
+    expect(job.status).toBe("pending");
+    expect(renderer.broken).toBe(false);
+
+    changeVisibility("visible");
+    // Fresh: the 4 s left before the page hid would have run out here.
+    vi.advanceTimersByTime(ANSWER_WITHIN_MS - 1);
+    await flush();
+    expect(renderer.broken).toBe(false);
+    const sent = worker.answer();
+    await flush();
+    expect(job.status).toBe("resolved");
+    expect(job.value?.left.buffer).toBe(sent.left);
+  });
+
+  it("watches nothing for a job posted while the page is hidden until it is visible", async () => {
+    vi.useFakeTimers();
+    const { renderer, worker } = made();
+    worker.ready();
+    changeVisibility("hidden");
+    const job = track(renderer.render(INPUT, "exact", "chair"));
+    vi.advanceTimersByTime(60_000);
+    await flush();
+    expect(job.status).toBe("pending");
+    changeVisibility("visible");
+    vi.advanceTimersByTime(ANSWER_WITHIN_MS);
+    await flush();
+    expect(job.reason).toBeInstanceOf(SetDownRendererBroken);
+  });
+
+  it("breaks a Worker that never loads within 30 s of visible time, rejecting what waits", async () => {
+    vi.useFakeTimers();
+    const { renderer, worker } = made();
+    const job = track(renderer.render(INPUT, "exact", "chair"));
+    vi.advanceTimersByTime(10_000);
+    changeVisibility("hidden");
+    vi.advanceTimersByTime(5 * 60_000);
+    changeVisibility("visible");
+    vi.advanceTimersByTime(LOAD_WITHIN_MS - 1);
+    await flush();
+    expect(LOAD_WITHIN_MS).toBe(30_000);
+    expect(renderer.broken).toBe(false);
+    vi.advanceTimersByTime(1);
+    await flush();
+    expect(renderer.broken).toBe(true);
+    expect(job.reason).toBeInstanceOf(SetDownRendererBroken);
+    expect(String(job.reason)).toMatch(/did not load within 30 s/);
+    expect(worker.terminated).toBe(true);
+  });
+
+  it("starts no load watch while the page is hidden at creation", async () => {
+    vi.useFakeTimers();
+    stubVisibility("hidden");
+    const { renderer } = made();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(5 * 60_000);
+    changeVisibility("visible");
+    vi.advanceTimersByTime(LOAD_WITHIN_MS);
+    await flush();
+    expect(renderer.broken).toBe(true);
+  });
+
+  it("lets go of the page's visibility on dispose and on a break", () => {
+    vi.useFakeTimers();
+    const added = vi.spyOn(document, "addEventListener");
+    const removed = vi.spyOn(document, "removeEventListener");
+    const listenerOf = (): unknown => added.mock.calls.filter(([type]) => type === "visibilitychange").at(-1)?.[1];
+
+    const disposed = made();
+    const disposedListener = listenerOf();
+    expect(disposedListener).toBeTypeOf("function");
+    disposed.renderer.dispose();
+    expect(removed).toHaveBeenCalledWith("visibilitychange", disposedListener);
+
+    const broken = made();
+    const brokenListener = listenerOf();
+    expect(brokenListener).not.toBe(disposedListener);
+    broken.worker.onerror?.(new ErrorEvent("error", { message: "boom" }));
+    expect(removed).toHaveBeenCalledWith("visibilitychange", brokenListener);
+
+    changeVisibility("hidden");
+    changeVisibility("visible");
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
@@ -429,8 +625,9 @@ describe("dispose", () => {
     const later = track(renderer.render(INPUT, "exact", "later"));
     await flush();
     expect(later.reason).toMatchObject({ name: "SetDownCancelled", reason: "disposed" });
-    // Its watch on the posted job went with it: nothing breaks later, and a late answer is ignored.
-    vi.advanceTimersByTime(ANSWER_WITHIN_MS * 2);
+    // Its watches went with it: nothing breaks later, and a late answer is ignored.
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(LOAD_WITHIN_MS * 2);
     expect(renderer.broken).toBe(false);
     expect(() => { worker.send(answerFor(worker.running())); }).not.toThrow();
     expect(() => { renderer.dispose(); }).not.toThrow();
@@ -445,6 +642,38 @@ describe("where it runs", () => {
   it("is null where there is no Worker at all, as in happy-dom", () => {
     expect(typeof Worker).toBe("undefined");
     expect(createSetDownRenderer()).toBeNull();
+  });
+
+  it("starts its own module Worker from set-down.worker.ts by default, after probing for module Workers", () => {
+    const started: { readonly url: string; readonly type: WorkerType | undefined; readonly posted: unknown[] }[] = [];
+    class RecordingWorker {
+      onmessage: unknown = null;
+      onerror: unknown = null;
+      onmessageerror: unknown = null;
+      readonly posted: unknown[] = [];
+      constructor(url: string | URL, options?: WorkerOptions) {
+        // Reading the type is how a browser that runs module Workers shows it.
+        started.push({ url: String(url), type: options?.type, posted: this.posted });
+      }
+      postMessage(job: unknown): void {
+        this.posted.push(job);
+      }
+      terminate(): void {
+        // Nothing runs.
+      }
+    }
+    vi.stubGlobal("Worker", RecordingWorker);
+    const renderer = createSetDownRenderer();
+    if (renderer === null) throw new Error("expected a renderer");
+    renderers.push(renderer);
+
+    expect(started).toHaveLength(2);
+    expect(started[0]).toMatchObject({ url: "blob://", type: "module" });
+    const worker = started[1];
+    expect(new URL(worker?.url ?? "").pathname).toMatch(/\/set-down\.worker\.ts$/);
+    expect(worker?.type).toBe("module");
+    track(renderer.render(INPUT, "exact", "chair"));
+    expect(worker?.posted).toEqual([expect.objectContaining({ kind: "render", key: "chair" })]);
   });
 
   it("is null where Workers run but module Workers do not", () => {

@@ -92,6 +92,16 @@ export interface SetDownRefusal {
 
 export type SetDownAnswer = SetDownRenderAnswer | SetDownTailAnswer | SetDownRefusal;
 
+/**
+ * The Worker's first message, posted once as its module evaluates: from then
+ * on it takes jobs, and the client watches each job's answer (ruling R99).
+ */
+export interface SetDownReady {
+  readonly kind: "ready";
+}
+
+export const SET_DOWN_READY: SetDownReady = { kind: "ready" };
+
 // --- Checks --------------------------------------------------------------------
 
 /** What is wrong with a value, by its path in the message, or null when nothing is. */
@@ -309,4 +319,11 @@ export function setDownAnswerProblem(value: unknown): string | null {
 
 export function isSetDownAnswer(value: unknown): value is SetDownAnswer {
   return setDownAnswerProblem(value) === null;
+}
+
+const ready = shape<SetDownReady>({ kind: exactly("ready") });
+
+/** Whether a message from the Worker is its ready message. */
+export function isSetDownReady(value: unknown): value is SetDownReady {
+  return ready(value, "message") === null;
 }
