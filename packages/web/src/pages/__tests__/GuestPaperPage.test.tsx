@@ -694,6 +694,78 @@ describe("the guest paper page: printing", () => {
     expect(kept.kind === "ready" ? kept.list.paperVersion : null).toBe(3);
   });
 
+  it("prints the newest list kept on this device: a change made in another tab is taken up first, and nothing is lost", async () => {
+    const backend = memoryBackend();
+    const store = createGuestListStore(withBackend<unknown>(backend));
+    const opened = list180();
+    expect(await store.save(opened, null)).toBe("saved");
+    printSpy.mockImplementation(() => {
+      expect(text(document.querySelector(".gp-leaf__title"))).toBe("Fraser and Okafor, at last");
+    });
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+
+    // The list, changed in a second tab after this one opened it.
+    const otherTab = createGuestListStore(withBackend<unknown>(backend));
+    const changed = { ...opened, title: "Fraser and Okafor, at last", changedSincePrint: true, updatedAt: "2026-11-14T10:00:00.000Z" };
+    expect(await otherTab.save(changed, opened.updatedAt)).toBe("saved");
+
+    fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
+    await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
+    await act(async () => {
+      await state().flush();
+    });
+    const kept = await otherTab.open(PLAN_ID);
+    if (kept.kind !== "ready") throw new Error("the list was not kept");
+    expect(kept.list.title).toBe("Fraser and Okafor, at last");
+    expect(kept.list.paperVersion).toBe(1);
+    expect(within(tools()).queryByText("This list was also changed in another tab. This tab's version was kept.")).toBeNull();
+  });
+
+  it("takes up another tab's print when the window gains focus, so the next print never goes back a version", async () => {
+    const backend = memoryBackend();
+    const store = createGuestListStore(withBackend<unknown>(backend));
+    const opened = list180();
+    expect(await store.save(opened, null)).toBe("saved");
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+
+    const otherTab = createGuestListStore(withBackend<unknown>(backend));
+    const printedThere = { ...opened, paperVersion: 4, changedSincePrint: false, printedAt: "2026-11-14T10:00:00.000Z", updatedAt: "2026-11-14T10:00:00.000Z" };
+    expect(await otherTab.save(printedThere, opened.updatedAt)).toBe("saved");
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    await waitFor(() => { expect(text(within(tools()).getByText(/^Version 4/))).toMatch(/^Version 4 · printed /); });
+  });
+
+  it("says in its tools when another tab changed the list and this tab's version was kept, and the notice closes", async () => {
+    const backend = memoryBackend();
+    const store = createGuestListStore(withBackend<unknown>(backend));
+    const opened = list180();
+    expect(await store.save(opened, null)).toBe("saved");
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    const notices = tools().querySelector(".gp-tools__notices");
+    expect(notices).not.toBeNull();
+
+    // A change here, unsaved, while another tab keeps a newer copy: this tab's print keeps its own.
+    const fonts = deferred<undefined>();
+    fontsReady(fonts.promise);
+    fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
+    const otherTab = createGuestListStore(withBackend<unknown>(backend));
+    expect(await otherTab.save({ ...opened, title: "Theirs", updatedAt: "2026-11-14T10:00:00.000Z" }, opened.updatedAt)).toBe("saved");
+    state().apply((list) => ({ ...list, title: "Ours", changedSincePrint: true }));
+    fonts.resolve(undefined);
+    await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
+
+    const words = await within(tools()).findByText("This list was also changed in another tab. This tab's version was kept.");
+    expect(tools().querySelector(".gp-tools__notices")).toBe(notices);
+    fireEvent.click(within(words.closest("[data-notice]") ?? tools()).getByRole("button", { name: "Close" }));
+    expect(within(tools()).queryByText("This list was also changed in another tab. This tab's version was kept.")).toBeNull();
+  });
+
   it("a print is not a change undo steps back through", async () => {
     open(`${PAPER}?kit=on`, await storeHolding(list180()));
     await paper("table-plan");

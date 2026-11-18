@@ -82,6 +82,9 @@ export const NOT_KEPT =
 export const NOT_OPENED =
   "The list kept here for this plan could not be opened just now. Reload the page to try again. Anything added here is not being kept.";
 
+/** A save found a newer copy kept by another tab, and kept this tab's over it. */
+export const OTHER_TAB = "This list was also changed in another tab. This tab's version was kept.";
+
 /** "180 names found. Only names and parties are taken. 1 other column is left on your computer." */
 export function foundWords(found: number, droppedColumns: number): string {
   if (found === 0) return "No names were found in what was pasted.";

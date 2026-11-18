@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode }
 import { flushSync } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import { KitGate } from "../components/guest-list/KitGate.js";
-import { calendarDay, counted, NOT_KEPT, NOT_OPENED, weekday } from "../components/guest-list/words.js";
+import { calendarDay, counted, NOT_KEPT, NOT_OPENED, OTHER_TAB, weekday } from "../components/guest-list/words.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import { KIT_PARAM } from "../lib/guest-list/kit-switch.js";
 import type { GuestList } from "../lib/guest-list/model.js";
@@ -128,11 +128,28 @@ function useOpenedList(planId: string, store: GuestListStore): void {
   }, [planId, store]);
 }
 
+/** When the page is seen again, or its window gains focus, another tab's newer list is taken up. */
+function useTakeUpOtherTabs(): void {
+  useEffect(() => {
+    const takeUp = (): void => { void useGuestListStore.getState().refresh(); };
+    const onVisibility = (): void => {
+      if (document.visibilityState === "visible") takeUp();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", takeUp);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", takeUp);
+    };
+  }, []);
+}
+
 function GuestPaper({ planId, store }: { readonly planId: string; readonly store: GuestListStore }): ReactElement {
   const openPlan = useGuestListStore((s) => s.planId);
   const phase = useGuestListStore((s) => s.phase);
   const list = useGuestListStore((s) => s.list);
   useOpenedList(planId, store);
+  useTakeUpOtherTabs();
 
   let body: ReactElement;
   if (openPlan !== planId || phase === "opening" || (phase === "ready" && list === null)) {
@@ -217,6 +234,9 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
     try {
       await fontsLoaded();
       if (!stillHere()) return;
+      // A print is of the newest list kept on this device: another tab's change is taken up first.
+      await useGuestListStore.getState().refresh();
+      if (!stillHere()) return;
       recordPrint();
       await useGuestListStore.getState().flush();
       if (stillHere()) window.print();
@@ -244,17 +264,25 @@ function ReadyPaper({ planId, list }: { readonly planId: string; readonly list: 
   const { search } = useLocation();
   const kept = useGuestListStore((s) => s.kept);
   const unread = useGuestListStore((s) => s.unread);
+  const notice = useGuestListStore((s) => s.notice);
   const { printing, print } = usePrint();
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const sheet = sheetFrom(search);
   const label = SHEETS.find((entry) => entry.sheet === sheet)?.label ?? "Table plan";
   const plan = tablePlanAZ(list);
   const seated = list.guests.length - plan.notSeated;
 
+  /** Its Close goes with the notice, so the focus goes to the tools' heading. */
+  const closeNotice = (): void => {
+    useGuestListStore.getState().dismissNotice();
+    headingRef.current?.focus();
+  };
+
   return (
     <div className="gp-desk">
       <header className="gp-tools" data-testid="guest-paper-tools">
         <div className="gp-tools__head">
-          <h1 className="gp-tools__title">{label}</h1>
+          <h1 className="gp-tools__title" ref={headingRef} tabIndex={-1}>{label}</h1>
           <p className="gp-tools__count">{countWords(sheet, seated)}</p>
           <p className="gp-tools__version">{versionLine(list)}</p>
           {plan.notSeated > 0 && (
@@ -263,9 +291,17 @@ function ReadyPaper({ planId, list }: { readonly planId: string; readonly list: 
             </p>
           )}
         </div>
-        {unread
-          ? <p className="gp-tools__notice" role="alert">{NOT_OPENED}</p>
-          : !kept && <p className="gp-tools__notice">{NOT_KEPT}</p>}
+        <div className="gp-tools__notices">
+          {unread
+            ? <p className="gp-tools__notice" role="alert">{NOT_OPENED}</p>
+            : !kept && <p className="gp-tools__notice">{NOT_KEPT}</p>}
+          {notice?.kind === "other-tab" && (
+            <div className="gp-tools__notice" data-notice="other-tab" data-tone="attention">
+              <p>{OTHER_TAB}</p>
+              <button type="button" className="gp-link" onClick={closeNotice}>Close</button>
+            </div>
+          )}
+        </div>
         <div className="gp-tools__row">
           <nav aria-label="Sheets">
             <ul className="gp-sheets">

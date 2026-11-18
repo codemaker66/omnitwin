@@ -656,6 +656,47 @@ describe("the guest list page: what the device says", () => {
     expect(await screen.findByText("This list was also changed in another tab. This tab's version was kept.")).toBeTruthy();
   });
 
+  it("takes up another tab's print when the page is seen again, so a change here never lowers the paper's version", async () => {
+    const opened = listOf({ tables: [table(1)], guests: [guest(1, "Ailsa Fraser", uuid(1), 1), guest(2, "Chidi Okafor")] });
+    const { store, backend } = await storeHolding(opened);
+    open(PAGE, store);
+    await desk();
+
+    // The paper, printed in a second tab: version 1.
+    const printed = { ...opened, paperVersion: 1, changedSincePrint: false, printedAt: new Date().toISOString(), updatedAt: new Date(Date.now() + 60_000).toISOString() };
+    expect(await memoryStore(backend).save(printed, opened.updatedAt)).toBe("saved");
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    await waitFor(() => { expect(currentList().paperVersion).toBe(1); });
+
+    fireEvent.click(screen.getByRole("button", { name: "Seat everyone" }));
+    await flush();
+    const kept = await store.open(PLAN_ID);
+    if (kept.kind !== "ready") throw new Error("the list was not kept");
+    expect(kept.list.paperVersion).toBe(1);
+    expect(kept.list.changedSincePrint).toBe(true);
+    expect(kept.list.guests.every((g) => g.seat !== null)).toBe(true);
+    expect(screen.queryByText("This list was also changed in another tab. This tab's version was kept.")).toBeNull();
+  });
+
+  it("takes up another tab's change when the page becomes visible again", async () => {
+    const opened = listOf({ guests: [guest(1, "Ailsa Fraser")] });
+    const { store, backend } = await storeHolding(opened);
+    open(PAGE, store);
+    await desk();
+    const changed = { ...opened, guests: [...opened.guests, guest(2, "Chidi Okafor")], updatedAt: new Date(Date.now() + 60_000).toISOString() };
+    expect(await memoryStore(backend).save(changed, opened.updatedAt)).toBe("saved");
+
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("0 of 2 guests have a seat.")).toBeTruthy();
+  });
+
   it("removes a list past its removal day on opening, rather than showing it", async () => {
     const { store } = await storeHolding(listOf({ eventDate: "2020-01-01", guests: [guest(1, "Ailsa Fraser")] }));
     open(PAGE, store);

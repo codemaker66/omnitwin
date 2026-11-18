@@ -36,9 +36,14 @@
   pointer-events: none;
 }
 
-.gp :is(a, button):focus-visible {
+.gp :is(a, button):focus-visible,
+.gp [tabindex="-1"]:focus-visible {
   outline: var(--vv-focus-ring);
   outline-offset: 2px;
+}
+
+.gp [tabindex="-1"]:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .gp-sr-only {
@@ -128,6 +133,16 @@
   font-weight: 500;
 }
 
+/* Always in the page, so a notice that appears in it is announced. */
+.gp-tools__notices {
+  display: grid;
+  gap: 8px;
+}
+
+.gp-tools__notices:empty {
+  display: none;
+}
+
 .gp-tools__notice {
   margin: 0;
   padding: 10px 14px;
@@ -135,6 +150,36 @@
   background: var(--reg-raised);
   color: var(--reg-text-1);
   font-size: 15px;
+}
+
+.gp-tools__notice[data-tone="attention"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding-block: 4px;
+  border-left-color: var(--house-copper-dot);
+}
+
+.gp-tools__notice p {
+  max-width: 70ch;
+  margin: 6px 0;
+}
+
+.gp-link {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--reg-text-1);
+  font: 500 14px/1.3 var(--house-sans);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
 }
 
 .gp-tools__row {

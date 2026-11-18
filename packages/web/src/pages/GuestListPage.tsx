@@ -5,7 +5,7 @@ import { GuestPaste, type PastedGuest } from "../components/guest-list/GuestPast
 import { GuestRows, type GuestFilter } from "../components/guest-list/GuestRows.js";
 import { GuestTables } from "../components/guest-list/GuestTables.js";
 import { KitGate } from "../components/guest-list/KitGate.js";
-import { counted, DATE_REFUSED, NOT_KEPT, NOT_OPENED, seatedSentence, toSeatSentence } from "../components/guest-list/words.js";
+import { counted, DATE_REFUSED, NOT_KEPT, NOT_OPENED, OTHER_TAB, seatedSentence, toSeatSentence } from "../components/guest-list/words.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import {
   earliestEventDate,
@@ -94,14 +94,24 @@ function useRoom(planId: string): RoomState {
   return room;
 }
 
-/** A change waiting to be kept is kept as the tab goes out of sight. */
+/**
+ * A change waiting to be kept is kept as the tab goes out of sight. When the
+ * page is seen again, or its window gains focus, another tab's newer list is
+ * taken up, unless a change here is still unsaved.
+ */
 function useKeepWhenHidden(): void {
   useEffect(() => {
+    const takeUp = (): void => { void useGuestListStore.getState().refresh(); };
     const onVisibility = (): void => {
       if (document.visibilityState === "hidden") void useGuestListStore.getState().flush();
+      else takeUp();
     };
     document.addEventListener("visibilitychange", onVisibility);
-    return () => { document.removeEventListener("visibilitychange", onVisibility); };
+    window.addEventListener("focus", takeUp);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", takeUp);
+    };
   }, []);
 }
 
@@ -605,7 +615,7 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
               <p>
                 {notice.kind === "repaired"
                   ? `${counted(notice.unseated, "guest was", "guests were")} sent back to seat, because their table or seat was no longer there.`
-                  : "This list was also changed in another tab. This tab's version was kept."}
+                  : OTHER_TAB}
               </p>
               <button type="button" className="gl-link" onClick={() => { closeAndRefocus(closeNotice, null); }}>Close</button>
             </div>
