@@ -31,7 +31,6 @@ import {
   enquiries,
   configurations,
   events,
-  handoffPacks,
   opportunities,
   contacts,
   quotes,
@@ -52,6 +51,7 @@ import { generateUniqueShortCode } from "../services/shortcode.js";
 import { clientEvent, clientFacts, layoutChange, nextVersionBasis, takenAtSave } from "../services/proposal-taken.js";
 import { patchLinkRequest, resolveProposalLinks, type ProposalLinkRefusal } from "../services/proposal-links.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
+import { newestHandoffPack } from "../services/newest-handoff-pack.js";
 import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam, notifyVenueRoles } from "../services/commercial-notifications.js";
 import { clientAnswerNotice, proposalDeskPath } from "../services/client-answer-notice.js";
 import { canRenderPersistedLayout } from "../services/layout-coordinate-space.js";
@@ -311,12 +311,10 @@ export async function loadProposalEventContext(db: Database, proposal: ProposalR
 
   if (linkedEvent === undefined) return null;
 
-  const [pack] = await db
-    .select({ id: handoffPacks.id })
-    .from(handoffPacks)
-    .where(eq(handoffPacks.eventId, linkedEvent.eventId))
-    .orderBy(desc(handoffPacks.compiledAt))
-    .limit(1);
+  // The pack that stands for the event, as the Event Day board shows it: a
+  // change is recorded against it and the hallkeeper asked to acknowledge
+  // it, never against a deleted layout's pack (T-695 review K1, I5).
+  const pack = await newestHandoffPack(db, { eventId: linkedEvent.eventId, venueId: linkedEvent.venueId });
 
   return {
     eventId: linkedEvent.eventId,

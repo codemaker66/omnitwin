@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TradesHouseLeafletPage } from "../pages/TradesHouseLeafletPage.js";
 
 // ---------------------------------------------------------------------------
@@ -167,7 +167,17 @@ describe("the leaflet's links to other sites", () => {
     render(<TradesHouseLeafletPage />);
     const src = screen.getByTitle("Trades House Glasgow two-sided leaflet").getAttribute("src") ?? "";
     const html = readFileSync(join(root, "public", ...src.split("/").filter((part) => part !== "")), "utf8");
-    const leaflet = new DOMParser().parseFromString(html, "text/html");
+    // Review of #405, Q6: parsing the leaflet whole made happy-dom try its
+    // Google Fonts stylesheet and print a stack trace in every CI run. Only
+    // its links are read here, so its <link> elements (the fonts' stylesheet
+    // and their preconnects) are taken out first and the parse reaches for
+    // nothing. happy-dom reports a refused load on the console it was made
+    // with, which writes to the process's own standard error.
+    const complaints = vi.spyOn(process.stderr, "write");
+    const leaflet = new DOMParser().parseFromString(html.replace(/<link\b[^>]*>/giu, ""), "text/html");
+    const said = complaints.mock.calls.map(([chunk]) => String(chunk));
+    complaints.mockRestore();
+    expect(said.filter((line) => line.includes("stylesheet")), "parsing the leaflet reaches for no stylesheet").toEqual([]);
     // Where the leaflet is served; the host is a stand-in for this site's own.
     const here = new URL(src, "https://this-site.invalid");
     const outbound = [...leaflet.querySelectorAll("a[href], area[href]")].filter((link) => {

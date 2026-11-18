@@ -13,9 +13,11 @@ import {
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
 } from "@omnitwin/types/enquiry";
 import { ActivityIndicator } from "../components/shared/Activity.js";
+import { EnquiryTrapField, useEnquiryTrap } from "../components/shared/EnquiryTrap.js";
 import { submitGuestEnquiry } from "../api/configurations.js";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
 import { isValidEmail } from "../lib/email-validation.js";
+import { guestToday } from "../lib/guest-today.js";
 import { messageLengthProblem } from "../lib/enquiry-message-length.js";
 import {
   TWIN_ENQUIRE_CLOSE,
@@ -65,9 +67,19 @@ export function TwinEnquiryModal({
   const [submitted, setSubmitted] = useState(false);
   /** Counts Sends; the alert below is a new one each Send (review of #405, F1). */
   const [sends, setSends] = useState(0);
+  /** Whether a Send has held the message for its length; from then on the
+   *  sentence beside it follows the message as the guest edits it. */
+  const [messageChecked, setMessageChecked] = useState(false);
+  /** Counts the Sends that held the message since the guest last edited it:
+   *  each says the sentence again and takes focus there. */
+  const [messageHolds, setMessageHolds] = useState(0);
   const emailRef = useRef<HTMLInputElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const messageProblemRef = useRef<HTMLParagraphElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
+  /** The hidden field no person reaches, and how long the form is open. */
+  const { inputRef: hiddenFieldRef, read: readHiddenTrap } = useEnquiryTrap();
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -78,8 +90,19 @@ export function TwinEnquiryModal({
     };
   }, []);
 
+  // A held message: focus goes to it once its sentence is drawn beside it,
+  // and the sentence is brought into view with it (review of #405, Q1).
+  useEffect(() => {
+    if (messageHolds === 0) return;
+    messageRef.current?.focus();
+    messageProblemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [messageHolds]);
+
   const emailValid = isValidEmail(email);
   const showEmailHint = emailTouched && email.trim().length > 0 && !emailValid;
+  // Recomputed as the guest edits, so the number is never one they have
+  // already cut (review of #405, Q2).
+  const messageProblem = messageChecked ? messageLengthProblem(message) : null;
 
   const onSubmit = useCallback(
     (event: FormEvent): void => {
@@ -93,11 +116,10 @@ export function TwinEnquiryModal({
         return;
       }
       // A message longer than the API takes is kept, never cut, and held
-      // here with the reason (review of #405, F5).
-      const messageProblem = messageLengthProblem(message);
-      if (messageProblem !== null) {
-        setError(messageProblem);
-        messageRef.current?.focus();
+      // here with the reason beside it (review of #405, F5, Q1).
+      if (messageLengthProblem(message) !== null) {
+        setMessageChecked(true);
+        setMessageHolds((count) => count + 1);
         return;
       }
       const parsedGuests =
@@ -118,6 +140,7 @@ export function TwinEnquiryModal({
         eventType: eventType !== "" ? eventType : undefined,
         guestCount: guests,
         message: message.trim() !== "" ? message.trim() : undefined,
+        ...readHiddenTrap(),
       })
         .then(() => {
           setSubmitted(true);
@@ -129,7 +152,7 @@ export function TwinEnquiryModal({
           setIsSubmitting(false);
         });
     },
-    [email, phone, name, eventDate, eventType, guestCount, message, emailValid],
+    [email, phone, name, eventDate, eventType, guestCount, message, emailValid, readHiddenTrap],
   );
 
   const onKeyDown = useCallback(
@@ -281,9 +304,13 @@ export function TwinEnquiryModal({
               <label className="vv-twin-enq-label" htmlFor="tw-enq-date">
                 Event date
               </label>
+              {/* No date before the guest's own today (Blake, 13 November
+                  2026): the browser refuses one in its own words. */}
               <input
+                ref={dateRef}
                 id="tw-enq-date"
                 type="date"
+                min={guestToday()}
                 max={GUEST_ENQUIRY_LATEST_EVENT_DATE}
                 className="vv-twin-enq-input"
                 value={eventDate}
@@ -334,18 +361,50 @@ export function TwinEnquiryModal({
           <label className="vv-twin-enq-label" htmlFor="tw-enq-message">
             Anything else?
           </label>
+          {/* Beside the message, where focus lands, never only above the
+              form, which a phone has scrolled out of view (review of #405,
+              Q1). An alert at each Send that holds it; a plain line, its
+              number following the message, once the guest edits (Q2). */}
+          {messageProblem !== null && (
+            <p
+              key={messageHolds}
+              ref={messageProblemRef}
+              id="tw-enq-message-problem"
+              className="vv-twin-enq-error vv-twin-enq-error--field"
+              role={messageHolds > 0 ? "alert" : undefined}
+            >
+              {messageProblem}
+            </p>
+          )}
           <textarea
             ref={messageRef}
             id="tw-enq-message"
             className="vv-twin-enq-input vv-twin-enq-textarea"
             value={message}
+            aria-invalid={messageProblem !== null}
+            aria-describedby={messageProblem !== null ? "tw-enq-message-problem" : undefined}
             onChange={(event) => {
               setMessage(event.target.value);
+              setMessageHolds(0);
             }}
             placeholder="Tell us about your event"
           />
 
-          <button type="submit" className="vv-twin-enq-submit" disabled={isSubmitting} aria-busy={isSubmitting}>
+          <EnquiryTrapField inputRef={hiddenFieldRef} />
+
+          <button
+            type="submit"
+            className="vv-twin-enq-submit"
+            disabled={isSubmitting}
+            aria-busy={isSubmitting}
+            onClick={() => {
+              // Today is read as Send checks the form, never only when it was
+              // drawn: a form left open past midnight takes the new day. The
+              // click comes before the browser checks the fields (Enter in a
+              // field clicks this button too).
+              if (dateRef.current !== null) dateRef.current.min = guestToday();
+            }}
+          >
             {isSubmitting && <ActivityIndicator size={18} />}
             {isSubmitting ? TWIN_ENQUIRE_SENDING : TWIN_ENQUIRE_CTA}
           </button>
