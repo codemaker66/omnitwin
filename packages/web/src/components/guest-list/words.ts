@@ -70,6 +70,10 @@ export function keepingLine(list: GuestList): string {
   return `These names are kept only in this browser, on this device. Nothing is sent to Venviewer. They are removed on ${calendarDay(dateIso)}, ${why}.`;
 }
 
+/** Beside the date field, when a date is refused because the list would be removed at once. */
+export const DATE_REFUSED =
+  `That date would remove this list straight away: a list is removed ${String(KEEP_DAYS_AFTER_EVENT)} days after its event. Check the year.`;
+
 export const NOT_KEPT =
   "This browser is not keeping the list. It will be gone when you close this tab. Download it before you leave.";
 

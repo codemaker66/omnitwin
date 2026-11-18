@@ -155,9 +155,8 @@ export function deleteAfter(
   list: GuestList,
 ): { readonly dateIso: string; readonly rule: "event" | "change" } {
   if (list.eventDate !== null) {
-    const start = Date.parse(`${list.eventDate}T00:00:00.000Z`);
     return {
-      dateIso: new Date(start + KEEP_DAYS_AFTER_EVENT * MS_PER_DAY).toISOString().slice(0, 10),
+      dateIso: new Date(removedFromAfterEvent(list.eventDate)).toISOString().slice(0, 10),
       rule: "event",
     };
   }
@@ -166,4 +165,27 @@ export function deleteAfter(
     dateIso: new Date(start + KEEP_DAYS_AFTER_CHANGE * MS_PER_DAY).toISOString().slice(0, 10),
     rule: "change",
   };
+}
+
+/** The moment a list dated `eventDate` is removed: 00:00 UTC, 30 days after the event. */
+function removedFromAfterEvent(eventDate: string): number {
+  return Date.parse(`${eventDate}T00:00:00.000Z`) + KEEP_DAYS_AFTER_EVENT * MS_PER_DAY;
+}
+
+/**
+ * Whether an event date is refused: a list with that date would be removed at
+ * once, because its removal day (30 days after the event, from 00:00 UTC, as
+ * the sweep counts it) is today or earlier. A year typed wrong, or as two
+ * digits (a date field holds "27" as year 0027), is refused rather than let
+ * the next opening of the page remove the whole list. A value that cannot be
+ * read as a date is refused too.
+ */
+export function eventDateRefused(eventDate: string, nowMs: number): boolean {
+  return !(nowMs < removedFromAfterEvent(eventDate));
+}
+
+/** The earliest event date accepted at `nowMs` ("YYYY-MM-DD", UTC): 29 days before today. */
+export function earliestEventDate(nowMs: number): string {
+  const today = Math.floor(nowMs / MS_PER_DAY) * MS_PER_DAY;
+  return new Date(today - (KEEP_DAYS_AFTER_EVENT - 1) * MS_PER_DAY).toISOString().slice(0, 10);
 }

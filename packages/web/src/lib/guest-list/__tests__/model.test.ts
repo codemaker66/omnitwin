@@ -16,6 +16,8 @@ import {
   emptyGuestList,
   repairGuestList,
   deleteAfter,
+  earliestEventDate,
+  eventDateRefused,
   type Guest,
   type GuestList,
   type KitTable,
@@ -273,5 +275,52 @@ describe("deleteAfter", () => {
     expect(deleteAfter({ ...list, eventDate: "2028-02-10" }).dateIso).toBe("2028-03-11");
     expect(deleteAfter({ ...list, eventDate: null, updatedAt: "2026-11-13T23:59:59.000Z" }).dateIso).toBe("2027-02-11");
     expect(deleteAfter({ ...list, eventDate: null, updatedAt: "2026-11-13T00:00:00.000Z" }).dateIso).toBe("2027-02-11");
+  });
+});
+
+describe("eventDateRefused and earliestEventDate", () => {
+  const nowMs = Date.parse(NOW); // 13 November 2026, 10:00 UTC
+
+  it("accepts an event 29 days ago and refuses one 30 days ago, whose list would be removed today", () => {
+    expect(eventDateRefused("2026-10-15", nowMs)).toBe(false);
+    expect(eventDateRefused("2026-10-14", nowMs)).toBe(true);
+    expect(eventDateRefused("2025-11-13", nowMs)).toBe(true);
+  });
+
+  it("accepts today and any later day", () => {
+    expect(eventDateRefused("2026-11-13", nowMs)).toBe(false);
+    expect(eventDateRefused("2027-06-12", nowMs)).toBe(false);
+    expect(eventDateRefused("9999-12-31", nowMs)).toBe(false);
+  });
+
+  it("refuses a year typed as two digits, which a date field holds as year 0027", () => {
+    expect(GuestListSchema.shape.eventDate.safeParse("0027-06-12").success).toBe(true);
+    expect(eventDateRefused("0027-06-12", nowMs)).toBe(true);
+    expect(eventDateRefused("0002-06-12", nowMs)).toBe(true);
+  });
+
+  it("draws the line where the sweep does: at 00:00 UTC of the removal day", () => {
+    const dayStart = Date.parse("2026-11-13T00:00:00.000Z");
+    const dayEnd = Date.parse("2026-11-13T23:59:59.999Z");
+    expect(eventDateRefused("2026-10-14", dayStart)).toBe(true);
+    expect(eventDateRefused("2026-10-15", dayEnd)).toBe(false);
+    for (const eventDate of ["2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16", "0027-06-12"]) {
+      for (const at of [dayStart, nowMs, dayEnd]) {
+        const removeFrom = Date.parse(`${deleteAfter({ ...list, eventDate }).dateIso}T00:00:00.000Z`);
+        expect(eventDateRefused(eventDate, at)).toBe(at >= removeFrom);
+      }
+    }
+  });
+
+  it("refuses a value that is not a date, rather than let it through", () => {
+    expect(eventDateRefused("not a date", nowMs)).toBe(true);
+  });
+
+  it("names the earliest day accepted today: 29 days ago", () => {
+    expect(earliestEventDate(nowMs)).toBe("2026-10-15");
+    expect(eventDateRefused(earliestEventDate(nowMs), nowMs)).toBe(false);
+    expect(earliestEventDate(Date.parse("2026-11-13T00:00:00.000Z"))).toBe("2026-10-15");
+    expect(earliestEventDate(Date.parse("2026-11-13T23:59:59.999Z"))).toBe("2026-10-15");
+    expect(earliestEventDate(Date.parse("2027-03-01T08:00:00.000Z"))).toBe("2027-01-31");
   });
 });

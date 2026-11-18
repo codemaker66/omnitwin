@@ -6,7 +6,7 @@ import type { Configuration, PlacedObject } from "../../api/configurations.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { memoryBackend, withBackend, type CacheBackend } from "../../lib/idb-cache.js";
 import { KIT_STORAGE_KEY } from "../../lib/guest-list/kit-switch.js";
-import { deleteAfter, emptyGuestList, type Guest, type GuestList, type KitTable } from "../../lib/guest-list/model.js";
+import { deleteAfter, earliestEventDate, emptyGuestList, type Guest, type GuestList, type KitTable } from "../../lib/guest-list/model.js";
 import { createGuestListStore, type GuestListStore, type Opened } from "../../lib/guest-list/store.js";
 import { useGuestListStore } from "../../stores/guest-list-store.js";
 import { GuestListPage } from "../GuestListPage.js";
@@ -642,6 +642,146 @@ describe("the guest list page: what the device says", () => {
     open(PAGE, (await storeHolding(undated)).store);
     await desk();
     expect(screen.getByText(`These names are kept only in this browser, on this device. Nothing is sent to Venviewer. They are removed on ${day}, 90 days after your last change.`)).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The event's date: kept when the field is left, and never one that would
+// remove the list at once
+// ---------------------------------------------------------------------------
+
+const DATE_REFUSED = "That date would remove this list straight away: a list is removed 30 days after its event. Check the year.";
+
+function dateField(): HTMLInputElement {
+  return screen.getByLabelText<HTMLInputElement>("Date of the event");
+}
+
+/** The calendar day `days` days before now, in UTC, as the model keeps days. */
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+describe("the guest list page: the event's date", () => {
+  it("keeps the date when the field is left, never while a year is half typed", async () => {
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    const field = dateField();
+    field.focus();
+    // A date field holds each keystroke of a four-digit year as a whole date: 0002, 0020, 0209, 2099.
+    for (const typed of ["0002-06-12", "0020-06-12", "0209-06-12", "2099-06-12"]) {
+      fireEvent.change(field, { target: { value: typed } });
+      expect(currentList().eventDate).toBeNull();
+    }
+    expect(state().canUndo).toBe(false);
+    fireEvent.blur(field);
+    expect(currentList().eventDate).toBe("2099-06-12");
+    await flush();
+    const kept = await store.open(PLAN_ID);
+    expect(kept.kind === "ready" ? kept.list.eventDate : null).toBe("2099-06-12");
+  });
+
+  it("keeps the date on Enter, and Escape puts the kept date back", async () => {
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    const field = dateField();
+    field.focus();
+    fireEvent.change(field, { target: { value: "2099-06-12" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(currentList().eventDate).toBe("2099-06-12");
+
+    fireEvent.change(field, { target: { value: "2099-07-01" } });
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(field.value).toBe("2099-06-12");
+    fireEvent.blur(field);
+    expect(currentList().eventDate).toBe("2099-06-12");
+  });
+
+  it("refuses a date that would remove the list at once, says so beside the field, and changes nothing", async () => {
+    const { store } = await storeHolding(listOf({ eventDate: "2099-06-12", guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    const field = dateField();
+    for (const typed of ["0027-06-12", daysAgo(30), "2020-01-01"]) {
+      field.focus();
+      fireEvent.change(field, { target: { value: typed } });
+      fireEvent.blur(field);
+      expect(currentList().eventDate).toBe("2099-06-12");
+      expect(field.value).toBe("2099-06-12");
+      const alert = screen.getByText(DATE_REFUSED);
+      expect(alert.getAttribute("role")).toBe("alert");
+      expect(field.closest(".gl-date")?.contains(alert)).toBe(true);
+    }
+    expect(state().canUndo).toBe(false);
+    await flush();
+    const kept = await store.open(PLAN_ID);
+    expect(kept.kind === "ready" ? kept.list.eventDate : null).toBe("2099-06-12");
+
+    // The next date that can stand clears the words.
+    field.focus();
+    fireEvent.change(field, { target: { value: daysAgo(29) } });
+    fireEvent.blur(field);
+    expect(currentList().eventDate).toBe(daysAgo(29));
+    expect(screen.queryByText(DATE_REFUSED)).toBeNull();
+
+    // So does clearing the date.
+    field.focus();
+    fireEvent.change(field, { target: { value: "0027-06-12" } });
+    fireEvent.blur(field);
+    expect(screen.getByText(DATE_REFUSED)).toBeTruthy();
+    field.focus();
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.blur(field);
+    expect(currentList().eventDate).toBeNull();
+    expect(screen.queryByText(DATE_REFUSED)).toBeNull();
+  });
+
+  it("clearing the date sets none, and a date left half typed changes nothing", async () => {
+    const { store } = await storeHolding(listOf({ eventDate: "2099-06-12", guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    const field = dateField();
+
+    // A browser reads a half-typed date as empty, with bad input.
+    field.focus();
+    Object.defineProperty(field, "validity", { configurable: true, value: { badInput: true } });
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.blur(field);
+    expect(currentList().eventDate).toBe("2099-06-12");
+    expect(field.value).toBe("2099-06-12");
+    expect(state().canUndo).toBe(false);
+
+    Object.defineProperty(field, "validity", { configurable: true, value: { badInput: false } });
+    field.focus();
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.blur(field);
+    expect(currentList().eventDate).toBeNull();
+    expect(screen.queryByText(DATE_REFUSED)).toBeNull();
+  });
+
+  it("one visit to the field is one undo step", async () => {
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    const field = dateField();
+    field.focus();
+    fireEvent.change(field, { target: { value: "2099-06-12" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    fireEvent.change(field, { target: { value: "2099-06-13" } });
+    fireEvent.blur(field);
+    expect(currentList().eventDate).toBe("2099-06-13");
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(currentList().eventDate).toBeNull();
+    expect(field.value).toBe("");
+    expect(state().canUndo).toBe(false);
+  });
+
+  it("offers the earliest date it would take today as the field's least value, as a help", async () => {
+    open(PAGE, memoryStore());
+    await desk();
+    expect(dateField().getAttribute("min")).toBe(earliestEventDate(Date.now()));
   });
 });
 

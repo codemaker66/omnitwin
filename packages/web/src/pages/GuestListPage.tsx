@@ -1,13 +1,21 @@
-import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactElement } from "react";
+import { useEffect, useId, useRef, useState, type ChangeEvent, type KeyboardEvent as KeyEvent, type ReactElement } from "react";
 import { getPublicConfig } from "../api/configurations.js";
 import { GuestPanel, type RoomState } from "../components/guest-list/GuestPanel.js";
 import { GuestPaste, type PastedGuest } from "../components/guest-list/GuestPaste.js";
 import { GuestRows, type GuestFilter } from "../components/guest-list/GuestRows.js";
 import { GuestTables } from "../components/guest-list/GuestTables.js";
 import { KitGate } from "../components/guest-list/KitGate.js";
-import { counted, NOT_KEPT, seatedSentence, toSeatSentence } from "../components/guest-list/words.js";
+import { counted, DATE_REFUSED, NOT_KEPT, seatedSentence, toSeatSentence } from "../components/guest-list/words.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
-import { GuestListSchema, GUESTS_MAX, SEATS_DEFAULT, TABLES_MAX, type GuestList } from "../lib/guest-list/model.js";
+import {
+  earliestEventDate,
+  eventDateRefused,
+  GuestListSchema,
+  GUESTS_MAX,
+  SEATS_DEFAULT,
+  TABLES_MAX,
+  type GuestList,
+} from "../lib/guest-list/model.js";
 import { planTables, tablesDiffer } from "../lib/guest-list/plan-tables.js";
 import { addGuests, moveGuest, seatEveryone, setTables, setTableSeats, summary, type MoveRefusal } from "../lib/guest-list/seating.js";
 import { guestListStore, type GuestListStore } from "../lib/guest-list/store.js";
@@ -243,8 +251,16 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
   const tablesFieldRef = useRef<HTMLInputElement | null>(null);
   /** The control focused when the table notice appeared, for its Close to return to. */
   const tableNoticeFrom = useRef<HTMLElement | null>(null);
-  // Typing in the title or the date is one change for undo: the first keystroke of each visit to the field.
+  // Typing in the title, or keeping a date, is one change for undo: the first of each visit to the field.
   const fieldVisit = useRef(false);
+  /** The date field's value while it is worked in; kept to the list when the field is left, or on Enter. */
+  const [dateDraft, setDateDraft] = useState(list.eventDate ?? "");
+  /** A date was refused because the list would be removed at once; said beside the field. */
+  const [dateRefused, setDateRefused] = useState(false);
+  const dateRef = useRef<HTMLInputElement>(null);
+
+  // A change from elsewhere (undo) shows in the field.
+  useEffect(() => { setDateDraft(list.eventDate ?? ""); }, [list.eventDate]);
 
   const focusOn = (target: FocusTarget): void => {
     setFocusAsk((was) => ({ target, n: (was?.n ?? 0) + 1 }));
@@ -439,12 +455,54 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
     editField((l) => ({ ...l, title, changedSincePrint: true }));
   };
 
-  const onDate = (event: ChangeEvent<HTMLInputElement>): void => {
-    const value = event.target.value;
-    // A date half typed reads as empty and as bad input: it changes nothing until it is whole.
-    if (value === "" && event.target.validity.badInput) return;
-    if (value !== "" && !GuestListSchema.shape.eventDate.safeParse(value).success) return;
-    editField((l) => ({ ...l, eventDate: value === "" ? null : value, changedSincePrint: true }));
+  /** The field shows the kept date again. */
+  const showKeptDate = (): void => {
+    const kept = list.eventDate ?? "";
+    setDateDraft(kept);
+    // A date half typed is not the field's value to React, so it is cleared here too.
+    if (dateRef.current !== null) dateRef.current.value = kept;
+  };
+
+  /**
+   * Keeps the date in the field, when it is left or on Enter. A date half
+   * typed changes nothing; a date that would have the list removed at once
+   * (its removal day is today or earlier) is refused and said so; clearing the
+   * field sets no date.
+   */
+  const keepDate = (): void => {
+    const typed = dateDraft;
+    const kept = list.eventDate;
+    if (typed === "") {
+      // A date half typed reads as empty and as bad input.
+      if (dateRef.current?.validity.badInput === true) {
+        showKeptDate();
+        return;
+      }
+      setDateRefused(false);
+      if (kept !== null) editField((l) => ({ ...l, eventDate: null, changedSincePrint: true }));
+      return;
+    }
+    if (typed === kept) return;
+    if (!GuestListSchema.shape.eventDate.safeParse(typed).success) {
+      showKeptDate();
+      return;
+    }
+    if (eventDateRefused(typed, Date.now())) {
+      setDateRefused(true);
+      showKeptDate();
+      return;
+    }
+    setDateRefused(false);
+    editField((l) => ({ ...l, eventDate: typed, changedSincePrint: true }));
+  };
+
+  const onDateKey = (event: KeyEvent<HTMLInputElement>): void => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      keepDate();
+    } else if (event.key === "Escape") {
+      showKeptDate();
+    }
   };
 
   const roomName = room.status === "ready" ? room.name.trim() : "";
@@ -484,13 +542,21 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
           <div className="gl-date">
             <label className="gl-date__label" htmlFor={`${id}-date`}>Date of the event</label>
             <input
+              ref={dateRef}
               id={`${id}-date`}
               className="gl-input gl-date__input"
               type="date"
-              value={list.eventDate ?? ""}
-              onChange={onDate}
-              onBlur={() => { fieldVisit.current = false; }}
+              min={earliestEventDate(Date.now())}
+              value={dateDraft}
+              aria-describedby={dateRefused ? `${id}-date-refused` : undefined}
+              onChange={(event) => { setDateDraft(event.target.value); }}
+              onKeyDown={onDateKey}
+              onBlur={() => {
+                keepDate();
+                fieldVisit.current = false;
+              }}
             />
+            {dateRefused && <p className="gl-date__refusal" id={`${id}-date-refused`} role="alert">{DATE_REFUSED}</p>}
           </div>
           <p className="gl-lede">
             {counts.guests === 0 ? (
