@@ -73,6 +73,9 @@ const roomOutline = z.object({
     height: z.number(),
     regions: z.array(z.object({ id: z.string(), height: z.number(), outline: z.array(point).min(3) })),
   }),
+  openings: z.array(
+    z.object({ id: z.string(), kind: z.string(), width: z.number(), sill: z.number(), head: z.number() }),
+  ),
 });
 
 /** T-662's measured outline of the Robert Adam Room (#442), validated. */
@@ -224,7 +227,7 @@ describe("Trades Hall rooms", () => {
     // section's.
     const alcove = Math.abs(vertexAt(vertices, ids.indexOf("alcove-w"))[0] - vertexAt(vertices, ids.indexOf("alcove-e"))[0]);
     const firstRiserZ = Math.min(...(level("step-1")?.outline ?? []).map((corner) => corner[1]));
-    expect(alcove * (riserZ - firstRiserZ)).toBeCloseTo(3.064, 3);
+    expect(ROBERT_ADAM.lower.stepsM2).toBeCloseTo(alcove * (riserZ - firstRiserZ), 3);
 
     // Walls: each one's length (the screen wall's arc) times its measured
     // height above its section's floor; the lift's gate up to the bay's ceiling.
@@ -240,11 +243,46 @@ describe("Trades Hall rooms", () => {
     });
     expectWithinOutline(ROBERT_ADAM.lower.wallM2, lowerWalls);
     expectWithinOutline(ROBERT_ADAM.upper.wallM2, upperWalls);
+
+    // The arch: its width between the jambs' faces; its head at the jambs'
+    // measured heights (the upper ceiling's, within 5 mm); the wall over it up
+    // to the alcove's raised panel.
+    const archWidth = Math.abs(vertexAt(vertices, lastUpper + 1)[0] - vertexAt(vertices, firstUpper)[0]);
+    expect(ROBERT_ADAM.arch.widthM).toBeCloseTo(archWidth, 3);
+    for (const jamb of ["archjamb-e", "archjamb-w"]) {
+      const height = segments.find((segment) => segment.id === jamb)?.height ?? Number.NaN;
+      expect(Math.abs(height - ROBERT_ADAM.arch.headM)).toBeLessThan(0.005);
+    }
+    const alcovePanel = outline.ceiling.regions.find((entry) => entry.id === "panel-alcove")?.height ?? Number.NaN;
+    expect(ROBERT_ADAM.arch.alcoveCeilingM).toBeCloseTo(alcovePanel, 9);
     const overArch = ROBERT_ADAM.arch.widthM * (ROBERT_ADAM.arch.alcoveCeilingM - ROBERT_ADAM.arch.headM);
-    expect(overArch).toBeCloseTo(1.0, 3);
     const extent = areaOfRole(room, "wall") + areaOfRole(room, "opening");
     expectWithinOutline(extent, lowerWalls + upperWalls + overArch);
     expect(room.surfaces.some((surface) => surface.material === "velour-drape")).toBe(false);
+
+    // Openings: every one the outline holds, at its size. The windows and the
+    // glazed entrance screen are its windows, the doors its doors; the way to
+    // the lift's landing is the only other, and is counted as wall.
+    const size = (id: string): readonly number[] => {
+      const opening = outline.openings.find((entry) => entry.id === id);
+      if (opening === undefined) throw new Error(`the outline has no opening ${id}`);
+      return [opening.width, opening.sill, opening.head];
+    };
+    const windows = ["window-west", "window-east"];
+    const doors = ["door-lobby", "door-west", "door-corridor", "door-north-east", "door-north-west"];
+    expect(ROBERT_ADAM.windows).toEqual(windows.map(size));
+    expect(ROBERT_ADAM.entranceScreen).toEqual(size("entrance-screen"));
+    expect(ROBERT_ADAM.doors).toEqual(doors.map(size));
+    const ofKind = (kind: string) =>
+      outline.openings
+        .filter((entry) => entry.kind === kind)
+        .map((entry) => entry.id)
+        .sort();
+    expect(ofKind("window")).toEqual([...windows, "entrance-screen"].sort());
+    expect(ofKind("door")).toEqual([...doors].sort());
+    expect(outline.openings.map((entry) => entry.id).sort()).toEqual(
+      [...windows, "entrance-screen", ...doors, "lift-landing"].sort(),
+    );
 
     // Air: each section's ceiling regions over its floor, by polygons. The
     // lower section's undrawn ceiling is the beams' soffit; the upper's is its

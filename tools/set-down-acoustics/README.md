@@ -186,7 +186,7 @@ For each room and band: calibration = tracer empty T20 ÷ Eyring empty (uncalibr
 
 R29's second, dressed factor was not needed. With the empty calibration alone, the four big rooms' half and dressed states stay within 8.4 % of the tracer from 250 Hz to 8 kHz: the Robert Adam Room up to 8.4 % (half, 250 Hz) and 4.0 % dressed; the other three within 1.9 % (tables below). R29 does not apply to the galleries (ruling R32).
 
-The Robert Adam Room's 250 Hz factor sits at the clamp: there its tracer reads 1.319 x Eyring empty, so the empty model is 1.4 % under the tracer, not equal to it. Like the galleries' 8 kHz (below), the band keeps the 15 % bound, which it meets in every dressing (1.4 % empty, 8.4 % half, 4.0 % dressed), and needs no exception.
+The Robert Adam Room's 250 Hz factor sits at the clamp: there its tracer reads 1.319 x Eyring empty, so the empty model is 1.4 % under the tracer, not equal to it. Like the galleries' 8 kHz (below), the band keeps the 15 % bound, which it meets in every dressing (1.4 % empty, 8.4 % half, 4.0 % dressed), and needs no exception. Reaching the clamp may partly come from the box's shape, a 43.7 x 3.8 m corridor in place of the room's two sections (ruling R98); follow-up F-RA-1 would trace the surveyed outlines as prisms and refit.
 
 T20 per octave band in seconds, from seed 1. "Model" is the planner's figure: uncalibrated Eyring times the calibration. Seed 2's empty and dressed traces sit under each table.
 

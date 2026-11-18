@@ -293,6 +293,9 @@ function openingM2([width, sill, head]: OpeningSize): number {
   return width * (head - sill);
 }
 
+/** The Robert Adam Room's steps, m2 (ROBERT_ADAM.lower.stepsM2 says how it is found). */
+const ROBERT_ADAM_STEPS_M2 = 3.064;
+
 /**
  * The Robert Adam Room as T-662 measured it from the July scan (#442, ruling
  * R96). "The outline" is tools/surveyed-rooms/robert-adam-room.room.json: 64
@@ -305,15 +308,19 @@ function openingM2([width, sill, head]: OpeningSize): number {
 export const ROBERT_ADAM = {
   lower: {
     /**
-     * The outline south of the top riser's line (E57 Y 0.376, the wall the
-     * arch is in): 108.996 m2 with the street recess, the lift bay and the
-     * alcove (README, "Lower section, area": 109.0 m2), plus the steps: the
-     * alcove's 3.360 m width from the first riser to the top one, 0.912 m,
-     * 3.064 m2 (README, "Steps": 3.1 m2). The steps stand south of that line
-     * under the alcove's raised panel, so their floor and air are the lower
-     * section's, and not the upper's.
+     * The steps: the alcove's 3.360 m width between its walls, from the first
+     * riser to the top one, 0.912 m (the outline; README, "Steps": 3.1 m2). They
+     * stand south of the top riser's line under the alcove's raised panel, so
+     * their floor and air are the lower section's, and not the upper's.
      */
-    floorM2: 108.996 + 3.064,
+    stepsM2: ROBERT_ADAM_STEPS_M2,
+    /**
+     * The outline south of the top riser's line (E57 Y 0.376, the wall the arch
+     * is in), 112.060 m2: 108.996 m2 of floor with the street recess, the lift
+     * bay and the alcove (README, "Lower section, area": 109.0 m2) and the
+     * steps' 3.064 m2 (README, "Steps": 3.1 m2).
+     */
+    floorM2: 108.996 + ROBERT_ADAM_STEPS_M2,
     /**
      * The area mean of the air's height over that floor, from the outline: its
      * ceiling regions (eleven raised panels at 3.173-3.216 m, the side aisles'
@@ -397,9 +404,13 @@ export const ROBERT_ADAM = {
  * 2.375 m wide: 164.52 m2 of floor (README, "Whole room": 164.5 m2) and
  * 452.9 m3 of air. ROBERT_ADAM gives each figure's source. How they are
  * combined:
- * - Floor and ceiling: each section's plan area. The beams' and panels' sides
- *   (the coffers), the risers and the plinths' faces are not counted, as the
- *   Grand Hall's coffers are not.
+ * - Floor and ceiling: each section's plan area. The coffers' sides, the
+ *   vertical faces round the panels, beams, lintels and raised field, come to
+ *   42 m2 by the outline's ceiling regions (52 m2 counting the edges along the
+ *   walls too, an upper bound), and would add about 5.5-7 % to the room's
+ *   absorption at 1 kHz as plaster on masonry or on lath; they are left out,
+ *   as the Grand Hall's coffers are, and so are the risers' and the plinths'
+ *   faces.
  * - Volume: each section's floor area times its area-mean height.
  * - Walls: each section's walls at their measured heights, and over the arch's
  *   head 2.375 x (3.191 - 2.77) = 1.0 m2 more. Nothing is counted across the
