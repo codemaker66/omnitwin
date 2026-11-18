@@ -51,10 +51,13 @@ Do not mark T-060, T-061, or T-062 complete from documentation alone. They close
 
 ### API (Railway)
 
-1. **Railway watches `/packages/api/**` only.** If your change is elsewhere
-   (Dockerfile, railway.json, root configs) the watcher ignores it.
-   Workaround: bump `packages/api/package.json` version to force a deploy,
-   or trigger manually via `railway up` / the dashboard "Redeploy" button.
+1. **Railway rebuilds the API only when a watched path changes.** The paths
+   live in `.railway/watch-patterns.json` and are applied to Railway's stored
+   settings: the `Dockerfile`, `.railwayignore`, the root manifests and
+   lockfile, and the packages and tools the image is built from. A change
+   elsewhere (docs, the web package) deploys nothing on Railway. To deploy
+   anyway, deploy the latest commit from Railway's dashboard. (Until
+   2 September 2026 only `/packages/api/**` was watched.)
 2. First build is slow (~2-3 min: Docker multi-stage + pnpm install +
    tsc build). Subsequent builds with cached layers: ~45-60s.
 3. Deploy status: `railway status`, or via Claude
@@ -322,5 +325,5 @@ per-confirmation.
 
 - **Railway cache-mount BuildKit error** — `Cache mount ID is not prefixed with cache key`. Means the Dockerfile uses `--mount=type=cache,id=xxx` with an unprefixed id. Railway requires `s/<service-id>-...`. Workaround: drop the cache mount.
 - **Corepack signature verification** — `Cannot find matching keyid`. Node's bundled corepack in 22.12 has stale keys. Use `npm install -g pnpm@<version>` instead of `corepack prepare`.
-- **Railway watchPatterns scoping** — the service only watches `/packages/api/**`. Pure-infra changes (Dockerfile, railway.json, root configs) don't trigger builds. Workaround: bump `packages/api/package.json` version alongside the infra change.
-- **railway.json `startCommand` vs Dockerfile `CMD`** — `startCommand` in `railway.json` overrides the Dockerfile's `CMD`. After `pnpm deploy`, the runtime image is flattened to `/app/{package.json, dist/, node_modules/}`, so the correct start command is `node dist/index.js` (not `node packages/api/dist/index.js`).
+- **Railway watchPatterns scoping (historical, fixed on 2 September 2026)** — until then the service watched only `/packages/api/**`, so pure-infra changes (Dockerfile, root configs) did not trigger builds. The watch list now covers every file the image depends on: see `.railway/watch-patterns.json`.
+- **Railway's start command vs Dockerfile `CMD`** — Railway's stored start command, declared in `.railway/railway.ts` (`railway.json`'s `startCommand` until T-722), overrides the Dockerfile's `CMD`. After `pnpm deploy`, the runtime image is flattened to `/app/{package.json, dist/, node_modules/}`, so the start command is `node --conditions=omnitwin-dist dist/index.js`: not `node packages/api/dist/index.js`, and never without `--conditions=omnitwin-dist`, without which the foundry packages resolve to TypeScript source and the API cannot boot.
