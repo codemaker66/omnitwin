@@ -242,11 +242,15 @@ async function startBrowserSentry(config: BrowserSentryConfig): Promise<void> {
     // source says). The privacy page says we run no third-party analytics, so
     // Sentry hears from a browser only when something goes wrong (Blake,
     // 13 November 2026: "Turn sessions off").
+    // No culture context either: that default integration adds the visitor's
+    // locale, time zone and calendar to every error. None of the three is the
+    // application's state, which is what the privacy page's "Error
+    // diagnostics" entry describes (#355's review, WY3, 18 November 2026).
     // The SDK wraps every animation frame callback and event listener to tag
     // what they throw: 1.5-2 % of the planner's main thread on a slowed phone
     // (perf study, 25 Oct 2026). The global error handler still reports them.
     integrations: (defaults) => defaults
-      .filter((integration) => integration.name !== "BrowserSession")
+      .filter((integration) => integration.name !== "BrowserSession" && integration.name !== "CultureContext")
       .map((integration) => (integration.name === "BrowserApiErrors"
         ? Sentry.browserApiErrorsIntegration({ requestAnimationFrame: false, eventTarget: false })
         : integration)),

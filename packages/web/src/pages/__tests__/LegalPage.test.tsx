@@ -312,12 +312,44 @@ describe("the privacy policy", () => {
       const button = screen.getByRole("button", { name: "Don't measure my visits" });
       expect(button.getAttribute("aria-pressed")).toBe("true");
       expect(screen.getByRole("status").textContent).toBe(STORAGE_REFUSED);
+      // #355's review (WZ9, 18 November 2026): a press that changed nothing
+      // said nothing to a screen reader, so the switch says it is unavailable,
+      // with the status line as its description.
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      const described = button.getAttribute("aria-describedby") ?? "";
+      expect(document.getElementById(described)).toBe(screen.getByRole("status"));
       fireEvent.click(button);
       expect(button.getAttribute("aria-pressed")).toBe("true");
       expect(screen.getByRole("status").textContent).toBe(STORAGE_REFUSED);
     } finally {
       Object.defineProperty(window, "localStorage", { configurable: true, value: real });
       setMeasurementDeclined(false);
+    }
+  });
+
+  it("leaves the switch available, with no description, wherever the browser keeps the choice", () => {
+    render(<LegalPage type="privacy" />);
+    const button = screen.getByRole("button", { name: "Don't measure my visits" });
+    expect(button.hasAttribute("aria-disabled")).toBe(false);
+    expect(button.hasAttribute("aria-describedby")).toBe(false);
+    fireEvent.click(button);
+    expect(button.hasAttribute("aria-disabled")).toBe(false);
+    expect(measurementDeclined()).toBe(true);
+  });
+
+  // #355's review (WZ9): the sentences that say to use the switch (its own
+  // paragraph, the lawful basis, the cookies paragraph and the storage list)
+  // link to it, and every such link on every document has its target there.
+  it.each(TYPES)("links each mention of the switch to the switch on the same page — %s", (type) => {
+    const page = textOf(type);
+    const mentions = page.split("\"Don't measure my visits\" switch").length - 1;
+    const links = [...document.querySelectorAll<HTMLAnchorElement>("a[href^='#']")]
+      .filter((link) => link.textContent === "\"Don't measure my visits\" switch");
+    expect(links).toHaveLength(mentions);
+    if (type === "privacy") expect(mentions).toBeGreaterThanOrEqual(4);
+    for (const link of links) {
+      const target = document.getElementById(link.getAttribute("href")?.slice(1) ?? "");
+      expect(target).toBe(screen.getByRole("button", { name: "Don't measure my visits" }));
     }
   });
 

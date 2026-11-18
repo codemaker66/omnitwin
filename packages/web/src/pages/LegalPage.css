@@ -292,6 +292,9 @@
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: background-color 160ms var(--lg-ease), color 160ms var(--lg-ease);
+  /* The sentences that send a visitor here link to the switch (#355's
+     review, WZ9): it lands clear of the window's top edge, as a section does. */
+  scroll-margin-top: 24px;
 }
 .lg-choice-button:hover {
   background: var(--lg-green-soft);
@@ -300,9 +303,27 @@
   background: var(--lg-green);
   color: var(--lg-paper);
 }
+/* Where the browser refuses its storage, pressing changes nothing. */
+.lg-choice-button[aria-disabled="true"] {
+  cursor: not-allowed;
+}
 .lg-choice-button:focus-visible {
   outline: 2px solid var(--lg-green);
   outline-offset: 3px;
+}
+/* Forced colours (Windows contrast themes) replace the fill that shows the
+   switch pressed, so pressed takes the system's own colours for a selected
+   control, and its focus ring the page's text colour (#355's review, WZ9). */
+@media (forced-colors: active) {
+  .lg-choice-button[aria-pressed="true"] {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+  }
+  .lg-choice-button[aria-pressed="true"]:focus-visible {
+    outline-color: CanvasText;
+  }
 }
 .lg-choice-state {
   font-family: var(--lg-ui);

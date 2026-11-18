@@ -280,18 +280,18 @@ page links to, not in every footer.
 2. merge #355, the privacy page's paragraph ("How fast our pages are", below) and the
    "Don't measure my visits" switch, a way to object that works on an iPhone
    (above), re-dating the policy to the day it goes live;
-3. have the solicitor's reply (Blake, 13 November 2026: "Wait for their reply
-   (Recommended)"): their confirmation of our reading of PECR Schedule A1 paragraph 5,
-   and their answer on whether a visitor's first page may be measured before they can
-   reach the switch. The note for them promises the measurement stays off until then;
+3. have the solicitor's reply, which Blake chose to wait for (13 November 2026:
+   "Wait for their reply (Recommended)"). What was put to them is kept in a note
+   outside this repository (#355's review, 18 November 2026), and that note promises
+   the measurement stays off until then;
 4. set `WEB_VITALS_COLLECTION=on` on the API;
 5. build the web with a sample rate **below 1** (0.5 to start): the page says a
    browser "may" measure a page load, so only a sample of them is measured, and the
    code treats 1 or more as off. Measuring every page load needs that description
    changed first.
 
-The privacy page's paragraph. Blake approved the first wording on 6 November 2026 and
-the solicitor approved it (Blake, 12 November). On 12 November a check of every claim
+The privacy page's paragraph. Blake approved the first wording on 6 November 2026.
+On 12 November a check of every claim
 against the code found sentences untrue of the real system (the hosting provider's
 request logs record every request's address; Safari clears the stored choice; one of
 the four is a layout-shift score, not a time) and corrected the switch's status line
@@ -318,9 +318,10 @@ tests; every claim against the code and PECR's text) led to four more of Blake's
 answers. "Strip browser details, say so (Recommended)": the API sent Sentry a timing
 record (a transaction) for about one request in ten, whether or not anything failed,
 with the request's headers and the user agent; `scrubTransaction`
-(`packages/api/src/observability/redact.ts`) now keeps no request header, and both of
-the page's Sentry entries say what such a record carries. "Wait for their reply
-(Recommended)": switching on waits for the solicitor (step 3 above). "Change both
+(`packages/api/src/observability/redact.ts`) now keeps no browser-supplied header
+beyond the host and content length, and both of the page's Sentry entries say what
+such a record carries. "Wait for their reply (Recommended)": switching on waits for
+that reply (step 3 above). "Change both
 (Recommended)": the switch says where the browser blocks storage that "your visits in
 this browser are never measured", and why. "Name every condition (Recommended)": the
 cookies section names each of paragraph 5's conditions, not a part of them.
@@ -352,8 +353,9 @@ Verification workflows that night (each finding put to three skeptics) found mor
   (`tracePropagationTargets: []`), which also stops telling Clerk, Stripe, Resend and
   R2 our trace ids and route names. A record no route matched (a malformed URL's 400,
   say; an unknown path's 404 is never sent, as the SDK itself drops records of 401
-  to 404) has no pattern, so its own path has the segment rules alone, a code spelled
-  only in letters being the gap.
+  to 404) has no pattern, so its own path had the segment rules alone, a code spelled
+  only in letters being the gap, until the release lead's review (below) stopped
+  such records being sent.
 - The fifth (two lenses, 14 November) found that the late-part test could not fail if
   such a record were sent, since the segment rules replaced its call's id anyway (it
   now looks for the record's own span id and the request's own path, and checks that
@@ -379,6 +381,23 @@ Verification workflows that night (each finding put to three skeptics) found mor
   second round could not fail, as its CLS of 500 is one the report schema refuses. A
   last review, of the delta to 3475d20a, found only wording. At 3475d20a every check
   passed and every one of 38 mutations was caught by a test.
+- The release lead's review of 33db2ba1 (18 November) found that gap wider than said:
+  the API limits a path no route matches on the same budget as the rest
+  (`limitUnmatchedPaths`, `packages/api/src/index.ts`), so once an address passes 100
+  requests a minute an unknown path is answered with a 429, a status the SDK does not
+  drop, and an email-shaped segment or a phone number in that path would have been
+  sent. No record of a request no route matched is sent now (`isUnroutedRequest`,
+  `packages/api/src/observability/sentry.ts`: an `http.server` record whose
+  `http.route` is missing or names no path), which a real-SDK test shows with the
+  limiter itself, on a budget of one. The review also asked that a record keep no
+  user, tags or extra data, whatever adds them; that any user and password in a URL's
+  origin be cut; that "no request header" say what it means (no browser-supplied
+  header beyond the host and content length: the server's own host name and a body's
+  length stay); that browser errors carry no locale or time zone (the `CultureContext`
+  integration is dropped beside `BrowserSession`); and that the switch say it is
+  unavailable where the browser refuses its storage, show as pressed in forced
+  colours, and be linked from the sentences that send a visitor to it. All of these
+  are done.
 
 The paragraph now reads:
 

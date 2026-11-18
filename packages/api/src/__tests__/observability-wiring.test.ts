@@ -11,7 +11,7 @@ import {
   scrubTransaction,
   type ScrubbableTransaction,
 } from "../observability/redact.js";
-import { WEB_VITALS_TRANSACTION, buildSentryOptions, hasParentSpan } from "../observability/sentry.js";
+import { WEB_VITALS_TRANSACTION, buildSentryOptions, hasParentSpan, isUnroutedRequest } from "../observability/sentry.js";
 
 // ---------------------------------------------------------------------------
 // The wiring: the redaction in observability/redact.ts reaches the server only
@@ -105,6 +105,28 @@ describe("the API's Sentry options", () => {
     expect(options.beforeSendTransaction?.(parented, {})).toBeNull();
     expect(options.beforeSendTransaction?.(own, {})).not.toBeNull();
     expect(options.tracePropagationTargets).toEqual([]);
+  });
+
+  // #355's review at 33db2ba1 (WX1, 18 November 2026): a request no route
+  // matched (an unknown path's rate-limited 429, a malformed URL's 400) has
+  // only the segment rules for its own path, which keep an email-shaped
+  // segment or a phone number, so its record is never sent.
+  it("send no timing record of a request no route matched, and judge only a request's own record", () => {
+    const trace = { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001" };
+    const request = (data: Record<string, unknown>): ScrubbableTransaction => ({
+      type: "transaction",
+      request: { url: "https://api.example.test/old-path/someone@example.test" },
+      contexts: { trace: { ...trace, op: "http.server", data } },
+    });
+    const limited = request({ "http.response.status_code": 429 });
+    const caughtAll = request({ "http.route": "*", "http.response.status_code": 204 });
+    const routed = request({ "http.route": "/venues/:venueId", "http.response.status_code": 200 });
+    const otherWork: ScrubbableTransaction = { type: "transaction", contexts: { trace: { ...trace, op: "db", data: {} } } };
+    expect([limited, caughtAll, routed, otherWork].map(isUnroutedRequest)).toEqual([true, true, false, false]);
+    expect(options.beforeSendTransaction?.(limited, {})).toBeNull();
+    expect(options.beforeSendTransaction?.(caughtAll, {})).toBeNull();
+    expect(options.beforeSendTransaction?.(routed, {})).not.toBeNull();
+    expect(options.beforeSendTransaction?.(otherWork, {})).not.toBeNull();
   });
 
   it("name SENTRY_ENVIRONMENT over NODE_ENV when it is set", () => {

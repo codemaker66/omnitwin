@@ -58,6 +58,27 @@ export function hasParentSpan(event: ScrubbableTransaction): boolean {
 }
 
 /**
+ * Whether a request's timing record has no route of its own: Fastify matched
+ * no route, so `http.route` is missing or names no path ("*", its catch-all).
+ * Such requests still get records: an unknown path's 429 from the limiter on
+ * unmatched paths (index.ts), a malformed URL's 400, a request answered
+ * before routing. The request's own path could then go only through the
+ * segment rules, which keep an email-shaped segment, a phone number, a short
+ * booking number and much else, so none of these is sent; a request no route
+ * matched has almost no timing worth keeping. (An unknown path's 404 never
+ * reaches here: the SDK drops records of 401 to 404 itself.) Only a request's
+ * own record (op http.server) is judged; other work's records have no
+ * request path. (#355's review at 33db2ba1, WX1, 18 November 2026.)
+ */
+export function isUnroutedRequest(event: ScrubbableTransaction): boolean {
+  const trace = event.contexts?.trace;
+  if (trace?.op !== "http.server") return false;
+  // Sentry types a trace context's attribute bag as `{ [key: string]: any }`: read as unknown, then narrowed.
+  const route: unknown = trace.data?.["http.route"];
+  return typeof route !== "string" || !route.startsWith("/");
+}
+
+/**
  * The options `initSentry` hands to `Sentry.init`. Pure, so a test can
  * assert the redaction hooks without initialising the SDK.
  *
@@ -67,11 +88,15 @@ export function hasParentSpan(event: ScrubbableTransaction): boolean {
  *     query parameters in exception values (`./redact.ts`), then any guest
  *     allergy note left in a message or breadcrumb (`./health-redaction.ts`);
  *   - beforeSendTransaction: the timing records carry no address, identifier
- *     or browser details (`scrubTransaction`: no request header, breadcrumb,
- *     query, body or token, and no segment that looks like a record's id in
- *     any URL), as the privacy page says, and one with a parent span is not
- *     sent (`hasParentSpan`);
+ *     or browser details (`scrubTransaction`: no request header, user, tag,
+ *     breadcrumb, query, body or token, and no segment that looks like a
+ *     record's id in any URL), as the privacy page says; one with a parent
+ *     span is not sent (`hasParentSpan`), nor is a request's record that no
+ *     route matched (`isUnroutedRequest`);
  *   - beforeBreadcrumb: the query in http breadcrumbs.
+ * Leave `dataCollection` unset: in @sentry/core 10.60 any key in it switches
+ * its base to collect everything (the user's address, cookies, every body),
+ * which the scrubbers would then have to undo (#355's review, WX3).
  */
 export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
   return {
@@ -91,7 +116,7 @@ export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
     // failure still reaches Sentry through the error normaliser's capture.
     ignoreTransactions: [WEB_VITALS_TRANSACTION],
     beforeSend: (event) => scrubApiSentryEvent(scrubErrorEvent(event)),
-    beforeSendTransaction: (event) => (hasParentSpan(event) ? null : scrubTransaction(event)),
+    beforeSendTransaction: (event) => (hasParentSpan(event) || isUnroutedRequest(event) ? null : scrubTransaction(event)),
     beforeBreadcrumb: scrubBreadcrumb,
   };
 }

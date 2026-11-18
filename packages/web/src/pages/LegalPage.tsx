@@ -18,7 +18,7 @@
 //   - Every processor named below is one actually in use.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useSyncExternalStore, type ReactElement } from "react";
+import { Fragment, useEffect, useSyncExternalStore, type ReactElement } from "react";
 import { CONTRACT_CONSENT_STATEMENT, DIETARY_MEMORY_CONSENT, DIETARY_MEMORY_MONTHS_UNUSED, DIETARY_NOTE_RETENTION } from "@omnitwin/types";
 import { REMEMBERED_NOTES_PATH } from "../lib/dietary-memory.js";
 import { ROUTE_DOCUMENTS } from "../lib/route-documents.js";
@@ -1118,22 +1118,61 @@ const MEASUREMENT_CHOICE_STATUS: Readonly<Record<MeasurementChoiceState, string>
   "storage-refused": "This browser blocks our site's storage, so your visits in this browser are never measured.",
 };
 
+/** The switch's id, which the sentences that send a visitor to it link to,
+ *  and its status line's (#355's review, WZ9, 18 November 2026). */
+const MEASUREMENT_SWITCH_ID = "dont-measure-my-visits";
+const MEASUREMENT_STATUS_ID = "dont-measure-my-visits-status";
+
+/** How the documents name the switch. */
+const MEASUREMENT_SWITCH_NAME = "\"Don't measure my visits\" switch";
+
 /** "Don't measure my visits" (observability/measurement-choice.ts). It shows
  *  the choice as it stands, read from the choice itself: on a return to this
  *  page, and when another tab of this browser changes it. */
 function MeasurementChoice(): ReactElement {
   const state = useSyncExternalStore(subscribeMeasurementChoice, measurementChoiceState);
   const declined = state !== "measured";
-  // Where the browser refuses its storage the press changes nothing: the
-  // visitor stays declined, and the status says what holds.
-  const toggle = (): void => { setMeasurementDeclined(!declined); };
+  // Where the browser refuses its storage the visitor stays declined whatever
+  // they press, so the switch says it is unavailable and why, the status line
+  // being its description: a press that changed nothing said nothing to a
+  // screen reader (#355's review, WZ9).
+  const refused = state === "storage-refused";
+  const toggle = (): void => {
+    if (!refused) setMeasurementDeclined(!declined);
+  };
   return (
     <p className="lg-p lg-choice">
-      <button type="button" className="lg-choice-button" aria-pressed={declined} onClick={toggle}>
+      <button
+        type="button"
+        id={MEASUREMENT_SWITCH_ID}
+        className="lg-choice-button"
+        aria-pressed={declined}
+        aria-disabled={refused ? true : undefined}
+        aria-describedby={refused ? MEASUREMENT_STATUS_ID : undefined}
+        onClick={toggle}
+      >
         {"Don't measure my visits"}
       </button>
-      <span className="lg-choice-state" role="status">{MEASUREMENT_CHOICE_STATUS[state]}</span>
+      <span id={MEASUREMENT_STATUS_ID} className="lg-choice-state" role="status">{MEASUREMENT_CHOICE_STATUS[state]}</span>
     </p>
+  );
+}
+
+/** A document's text, where each mention of the switch links to it: the
+ *  sentences that say to use it take the visitor there, and following the
+ *  link focuses it. Only the privacy policy names it, and shows it. */
+function LegalText({ text }: { readonly text: string }): ReactElement {
+  const [first, ...rest] = text.split(MEASUREMENT_SWITCH_NAME);
+  return (
+    <>
+      {first}
+      {rest.map((after, index) => (
+        <Fragment key={index}>
+          <a href={`#${MEASUREMENT_SWITCH_ID}`}>{MEASUREMENT_SWITCH_NAME}</a>
+          {after}
+        </Fragment>
+      ))}
+    </>
   );
 }
 
@@ -1142,12 +1181,12 @@ function LegalBlockView({ block }: { readonly block: LegalBlock }): ReactElement
     case "measurement-choice":
       return <MeasurementChoice />;
     case "p":
-      return <p className="lg-p">{block.text}</p>;
+      return <p className="lg-p"><LegalText text={block.text} /></p>;
     case "list":
       return (
         <ul className="lg-list">
           {block.items.map((item) => (
-            <li key={item}>{item}</li>
+            <li key={item}><LegalText text={item} /></li>
           ))}
         </ul>
       );
@@ -1157,7 +1196,7 @@ function LegalBlockView({ block }: { readonly block: LegalBlock }): ReactElement
           {block.items.map((item) => (
             <div className="lg-def" key={item.term}>
               <dt>{item.term}</dt>
-              <dd>{item.detail}</dd>
+              <dd><LegalText text={item.detail} /></dd>
             </div>
           ))}
         </dl>

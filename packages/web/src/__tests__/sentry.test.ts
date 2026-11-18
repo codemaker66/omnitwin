@@ -359,13 +359,13 @@ describe("browser Sentry loading", () => {
     }));
   });
 
-  it("stops wrapping animation frames and event listeners, sends no sessions, and keeps every other default", async () => {
+  it("stops wrapping animation frames and event listeners, sends no sessions or locale, and keeps every other default", async () => {
     const { sentry, sdk } = await loadWithSdk();
 
     await sentry.initBrowserSentry({ MODE: "production", VITE_SENTRY_DSN: DSN });
 
     const options = sdk.init.mock.calls[0]?.[0] as { integrations: (defaults: { name: string }[]) => { name: string }[] };
-    const defaults = [{ name: "InboundFilters" }, { name: "BrowserApiErrors" }, { name: "Breadcrumbs" }, { name: "BrowserSession" }];
+    const defaults = [{ name: "InboundFilters" }, { name: "BrowserApiErrors" }, { name: "Breadcrumbs" }, { name: "BrowserSession" }, { name: "CultureContext" }];
     const chosen = options.integrations(defaults);
     expect(chosen.map((integration) => integration.name)).toEqual(["InboundFilters", "BrowserApiErrors", "Breadcrumbs"]);
     expect(sdk.browserApiErrorsIntegration).toHaveBeenCalledWith({ requestAnimationFrame: false, eventTarget: false });
@@ -375,13 +375,14 @@ describe("browser Sentry loading", () => {
   });
 
   // The privacy page says we run no third-party analytics product, and the
-  // SDK's browser sessions are page views by another name (13 November 2026).
-  // The SDK's own default list, not a copy of it: a renamed integration would
-  // fail here rather than quietly start sending sessions.
-  it("leaves out the session the SDK would send on every page load and every move between pages", async () => {
+  // SDK's browser sessions are page views by another name (13 November 2026);
+  // nor does an error carry the visitor's locale and time zone (#355's
+  // review, WY3, 18 November 2026). The SDK's own default list, not a copy of
+  // it: a renamed integration would fail here rather than quietly come back.
+  it("leaves out the session the SDK would send on every page load and every move between pages, and the visitor's locale", async () => {
     const { getDefaultIntegrations } = await import("@sentry/react");
     const real = getDefaultIntegrations({});
-    expect(real.map((integration) => integration.name)).toContain("BrowserSession");
+    expect(real.map((integration) => integration.name)).toEqual(expect.arrayContaining(["BrowserSession", "CultureContext"]));
     const { sentry, sdk } = await loadWithSdk();
 
     await sentry.initBrowserSentry({ MODE: "production", VITE_SENTRY_DSN: DSN });
@@ -389,7 +390,8 @@ describe("browser Sentry loading", () => {
     const options = sdk.init.mock.calls[0]?.[0] as { integrations: (defaults: { name: string }[]) => { name: string }[] };
     const chosen = options.integrations(real);
     expect(chosen.map((integration) => integration.name)).not.toContain("BrowserSession");
-    expect(chosen).toHaveLength(real.length - 1);
+    expect(chosen.map((integration) => integration.name)).not.toContain("CultureContext");
+    expect(chosen).toHaveLength(real.length - 2);
   });
 
   it("reports boundary errors with a trimmed component stack", async () => {

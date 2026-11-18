@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { gunzipSync } from "node:zlib";
+import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { initSentry } from "../observability/sentry.js";
@@ -19,7 +20,8 @@ import { initSentry } from "../observability/sentry.js";
 // postprocessEvent hook (so the test cannot pass for want of the details),
 // and what the SDK sent is read from the stand-in ingest. The tests' own
 // requests carry no trace headers: the API's options send none
-// (tracePropagationTargets), so they reach it as a browser's do.
+// (tracePropagationTargets), so they reach it as a browser's do. A path no
+// route matches meets the API's own limiter on such paths, as in index.ts.
 // ---------------------------------------------------------------------------
 
 const MARKED_AGENT = "ProbeBrowser/9.9 (timing-record-marker-5ad1)";
@@ -32,6 +34,8 @@ const CODE = "qwertyzx";
 const PROVIDER_ID = "user_2NNEqL2nrIRdJ194ndJqAHwEfxC";
 /** An id in the URL of a call a route starts that ends after its reply. */
 const LATE_ID = "late_9QwErTy2uIoP";
+/** An email-shaped segment in a path no route matches: no segment rule takes it out. */
+const UNMATCHED_MARKER = "visitor.name@example.test";
 /** A caller's trace and its baggage, as another Sentry-instrumented service would send. */
 const CALLER_TRACE_ID = "0123456789abcdef0123456789abcdef";
 const CALLER_SPAN_ID = "0123456789abcdef";
@@ -149,6 +153,14 @@ describe("the API's timing records (the real SDK and server)", () => {
       // Work the route started that ends after its reply, as a push or an email would.
       void fetch(`${providerBase}/v1/late/${LATE_ID}`).then((call) => call.arrayBuffer(), () => undefined);
     });
+    // As index.ts: a path no route matches draws on the limiter's budget, and
+    // past it is answered 429, a code the SDK does not drop. A budget of one,
+    // and for those paths alone, so the routes above are not limited.
+    await server.register(rateLimit, { global: false, max: 1, timeWindow: "1 minute" });
+    const limitUnmatched = server.rateLimit();
+    server.addHook("onRequest", async function limitUnmatchedPaths(request, reply) {
+      if (request.is404) await limitUnmatched.call(this, request, reply);
+    });
     await server.listen({ port: 0, host: "127.0.0.1" });
     base = `http://127.0.0.1:${String((server.server.address() as AddressInfo).port)}`;
   }, 60_000);
@@ -232,5 +244,25 @@ describe("the API's timing records (the real SDK and server)", () => {
     // No record that reached the ingest has a parent span, this file's others included.
     expect(envelopes.flatMap(transactionsIn).filter((event) => event.contexts?.trace?.parent_span_id !== undefined)
       .map((event) => event.transaction)).toEqual([]);
+  }, 30_000);
+
+  // #355's review at 33db2ba1 (WX1, 18 November 2026): a request no route
+  // matched still gets a record when its answer is not 401 to 404 (the
+  // limiter on unmatched paths answers 429), and only the segment rules
+  // could cover its path, which keep an email-shaped segment: never sent.
+  it("sends no record of a request no route matched", async () => {
+    // The first is answered 404, a record the SDK drops itself; the second
+    // is past the limiter's budget.
+    for (const status of [404, 429]) {
+      const response = await fetch(`${base}/old-route/${UNMATCHED_MARKER}`);
+      await response.arrayBuffer();
+      expect(response.status).toBe(status);
+    }
+    // Not vacuous: the SDK built its record, with the path in it.
+    await vi.waitFor(() => {
+      expect(built.filter((event) => event.includes(UNMATCHED_MARKER))).not.toEqual([]);
+    }, { timeout: 10_000 });
+    expect(await flush(5_000)).toBe(true);
+    expect(envelopes.join("\n")).not.toContain(UNMATCHED_MARKER);
   }, 30_000);
 });

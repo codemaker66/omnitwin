@@ -746,6 +746,35 @@ describe("scrubTransaction", () => {
     expect(out.request?.url).toBe("https://api.example.test/runtime-package-previews/:runtimePackageVersionId");
   });
 
+  // #355's review at 33db2ba1 (WX3, WX4; 18 November 2026): fail closed on
+  // what the SDK would add were its data collection widened, and cut any
+  // user[:password]@ from a URL's origin.
+  it("keeps no user, tags or extra data, and no user or password in any URL's origin", () => {
+    const out = scrubTransaction({
+      type: "transaction",
+      transaction: "GET /venues/:venueId",
+      user: { ip_address: "203.0.113.9", id: "user_2NNEqL2nrIRdJ194ndJqAHwEfxC" },
+      tags: { "route.url": "/venues/:venueId", visitor: "returning" },
+      extra: { note: "Severe peanut allergy" },
+      request: { url: "https://api.example.test/venues/qwertyzx", method: "GET" },
+      contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", data: { "http.route": "/venues/:venueId" } } },
+      spans: [{
+        trace_id: "00000000000000000000000000000001",
+        span_id: "0000000000000002",
+        start_timestamp: 1,
+        description: "GET https://ops:secret-9f@files.example.test/v1/report",
+        data: { "url.full": "https://ops:secret-9f@files.example.test/v1/report" },
+      }],
+    });
+    expect(out.user).toBeUndefined();
+    expect(out.tags).toBeUndefined();
+    expect(out.extra).toBeUndefined();
+    expect(out.spans?.[0]?.description).toBe("GET https://files.example.test/v1/report");
+    expect(out.spans?.[0]?.data).toEqual({ "url.full": "https://files.example.test/v1/report" });
+    const text = JSON.stringify(out);
+    for (const marker of ["203.0.113.9", "user_2NNEqL2nrIRdJ194ndJqAHwEfxC", "returning", "peanut", "secret-9f", "ops:"]) expect(text).not.toContain(marker);
+  });
+
   it("finds the request's own path in its trace where the record has no request, and cuts fragments", () => {
     const out = scrubTransaction({
       type: "transaction",

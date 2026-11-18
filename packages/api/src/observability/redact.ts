@@ -470,17 +470,18 @@ function templateUrlsDeep<T>(value: T, template: (url: string) => string): T {
 
 /**
  * `beforeSendTransaction`: removes `request.query_string`, the body, the
- * cookies, every request header and the breadcrumbs, drops the address,
- * credential and browser attributes from the trace context and every span,
- * and then puts every URL and path left anywhere in the record, whatever its
- * key, through one rule: the request's own path (a string whose path is the
- * request's, as `url`, `url.path` on Fastify's own span and the rest carry it)
- * on its route's pattern (`http.route`, as Fastify matched it), and every
- * other with its query and fragment cut and each segment that looks like a
- * record's id replaced. A record no route matched (a malformed URL's 400,
- * say; an unknown path's 404 is never sent, as the SDK itself drops records
- * of 401 to 404) has no pattern, so its own path goes through those segment
- * rules alone.
+ * cookies, every request header, the user, the tags, the extra data and the
+ * breadcrumbs, drops the address, credential and browser attributes from the
+ * trace context and every span (the server's own host name and a body's
+ * length stay), and then puts every URL and path left anywhere in the record,
+ * whatever its key, through one rule: the request's own path (a string whose
+ * path is the request's, as `url`, `url.path` on Fastify's own span and the
+ * rest carry it) on its route's pattern (`http.route`, as Fastify matched it),
+ * and every other with its query, fragment and any user[:password]@ cut and
+ * each segment that looks like a record's id replaced. A request's record
+ * that no route matched is never sent (`isUnroutedRequest`, sentry.ts), nor
+ * is a 404's (the SDK drops records of 401 to 404); the record of other work,
+ * with no request of its own, has the segment rules alone for any URL in it.
  * A transaction is the timing record the API sends for a sample of requests
  * whether or not anything failed, and the privacy page says it carries no
  * address, identifier or browser details (Blake, 13 November 2026: "Strip
@@ -505,13 +506,21 @@ export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransa
     delete event.request.headers;
   }
   delete event.breadcrumbs;
+  // Fail closed: a timing record needs no user, tags or extra data. The SDK
+  // fills the user's address from X-Forwarded-For once `dataCollection` is
+  // set at all (@sentry/core 10.60), and tags or extra set on a request's
+  // scope would ride along (#355's review, WX3, 18 November 2026).
+  delete event.user;
+  delete event.tags;
+  delete event.extra;
   for (const data of [traceData, ...(event.spans ?? []).map((span) => span.data)]) {
     scrubAttributes(data);
     dropBrowserDetails(data);
   }
   const template = (url: string): string => {
-    // The query (its marker left) and any fragment go.
-    const cut = withoutQuery(url).replace(/#[\s\S]*$/u, "");
+    // The query (its marker left) and any fragment go, and so does any
+    // user[:password]@ in an origin: none is sent today (#355's review, WX4).
+    const cut = withoutQuery(url).replace(/#[\s\S]*$/u, "").replace(/^([a-z][a-z\d+.-]*:\/\/)[^/?#@]*@/iu, "$1");
     if (route !== undefined && requestPath !== undefined && pathOf(cut) === requestPath) return onRoute(cut, route);
     return withoutIdentifiers(cut);
   };
