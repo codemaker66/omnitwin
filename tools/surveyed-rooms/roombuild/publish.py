@@ -47,10 +47,20 @@ ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # A path on some machine: a drive letter and a slash or backslash, a UNC start, or a leading slash and
 # a name. A URL (https://...), a relative name and a lone "/" are not.
 MACHINE_PATH = re.compile(r"^(?:[A-Za-z]:[/\\]|\\\\|/[^\s/])")
+# And a drive path inside a longer string (a note, a command line, a file URL): one letter that is
+# not the end of a word, then ":/" or ":\". A URL's scheme is a word, so "https://" is not one.
+DRIVE_PATH_WITHIN = re.compile(r"(?<![A-Za-z])[A-Za-z]:[/\\]")
 LINKED_KEYS = ("how", "sha256")   # what survey.json keeps of a build/linked.json entry
 WALL_KINDS = ("solid", "partition", "screen", "open")
 WALL_LENGTH_TOLERANCE = 0.002   # metres between a wall's length and its outline segment
 ATLAS_ROW_TOLERANCE = 1         # texels between atlas.row and vRange x ppm
+# The reader's OVERHEAD_EXTENT_TOLERANCE: how far the outline may reach past the rectangle an overhead
+# photograph covers. Not slack to tighten: floor_extent() below lays the floor in whole texels, so its
+# extent stops up to half a texel (4.17 mm at 120 px/m) short of the outline's box on two sides.
+OVERHEAD_EXTENT_TOLERANCE = 0.005
+# The reader's HEIGHT_TOLERANCE: a wall above the heights the atlas's strips cover, and a ceiling
+# drawn flat (one without a relief) from the tallest wall's top.
+HEIGHT_TOLERANCE = 0.005
 
 
 def sha256(path):
@@ -119,7 +129,8 @@ def linked_inputs():
 
 
 def machine_paths(node, where=""):
-    """(where, string) for every string key or value in a JSON value that is a path on some machine."""
+    """(where, string) for every string key or value in a JSON value that is a path on some machine,
+    or holds a drive path somewhere inside it."""
     if isinstance(node, dict):
         for key, value in node.items():
             yield from machine_paths(key, f"{where}[key {key!r}]")
@@ -127,7 +138,7 @@ def machine_paths(node, where=""):
     elif isinstance(node, list):
         for i, value in enumerate(node):
             yield from machine_paths(value, f"{where}[{i}]")
-    elif isinstance(node, str) and MACHINE_PATH.match(node):
+    elif isinstance(node, str) and (MACHINE_PATH.match(node) or DRIVE_PATH_WITHIN.search(node)):
         yield where, node
 
 
@@ -217,6 +228,9 @@ def record_faults(record):
             out.append(f"{name} has no strip in the atlas and no relief (an open segment has no elevation): "
                        "the reader needs both for every outline segment")
             continue
+        if isinstance(w.get("height"), (int, float)) and w["height"] > atlas["vRange"][1] + HEIGHT_TOLERANCE:
+            out.append(f"{name} is {w['height']} m high, but the atlas's strips cover heights up to {atlas['vRange'][1]} m "
+                       f"(vRange), more than {HEIGHT_TOLERANCE * 1000:g} mm short of it")
         if not RELIEF_ID.match(w["reliefId"]):
             out.append(f"{name}: relief id {w['reliefId']!r} is not 1 to 12 printable ASCII characters")
         x, y, width, height = w["atlas"]
@@ -252,13 +266,31 @@ def record_faults(record):
             if larger in files and smaller in files and files[smaller]["bytes"] > files[larger]["bytes"]:
                 out.append(f"{part}.files must list the largest image first, but {smaller!r} ({files[smaller]['bytes']} bytes) "
                            f"follows {larger!r} ({files[larger]['bytes']} bytes)")
+    reach = dict(x=[p[0] for p in outline], z=[p[1] for p in outline]) if len(outline) >= 3 else None
     for part in ("ceiling", "floor"):
         extent = record[part]["extent"]
         if not (extent["x"][1] > extent["x"][0] and extent["z"][1] > extent["z"][0]):
             out.append(f"{part}.extent {extent} does not increase")
+        elif reach is not None:
+            # The floor and a flat ceiling are the outline wearing a photograph laid over its extent:
+            # where the outline reaches past it, the photograph's edge is smeared over the rest.
+            for axis in ("x", "z"):
+                low, high = extent[axis]
+                least, most = min(reach[axis]), max(reach[axis])
+                if least < low - OVERHEAD_EXTENT_TOLERANCE or most > high + OVERHEAD_EXTENT_TOLERANCE:
+                    out.append(f"{part}.extent.{axis} covers {low} m to {high} m, but the outline runs from {least} m to {most} m "
+                               f"along {axis}, more than {OVERHEAD_EXTENT_TOLERANCE * 1000:g} mm outside it")
         if record[part].get("orientation", OVERHEAD_ORIENTATION) != OVERHEAD_ORIENTATION:
             out.append(f"{part}.orientation is {record[part]['orientation']!r}")
-    out += [f"{where} is the absolute path {value!r}: a published record names nothing on the build machine"
+    # A ceiling without a relief is drawn flat at the room's ceiling height, which must then be where
+    # the walls end. With a relief it is drawn from its measured heights and the room's is a reference.
+    heights = [w["height"] for w in walls if isinstance(w.get("height"), (int, float))]
+    if not record["ceiling"].get("relief") and heights and isinstance(room.get("ceilingHeight"), (int, float)) \
+            and abs(room["ceilingHeight"] - max(heights)) > HEIGHT_TOLERANCE:
+        out.append(f"room.ceilingHeight is {room['ceilingHeight']} m, but the tallest wall is {max(heights)} m high and the ceiling "
+                   f"has no relief: a flat ceiling must meet the walls' tops to within {HEIGHT_TOLERANCE * 1000:g} mm")
+    out += [f"{where} is the absolute path {value!r}: a published record names nothing on the build machine" if MACHINE_PATH.match(value)
+            else f"{where} holds an absolute path ({value!r}): a published record names nothing on the build machine"
             for where, value in machine_paths(record)]
     return out
 

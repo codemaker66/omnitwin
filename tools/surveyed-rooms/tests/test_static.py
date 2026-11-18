@@ -568,11 +568,63 @@ class SurveyRecord(unittest.TestCase):
         self.assertIn("orientation", faults(lambda r: r["floor"].__setitem__("orientation", "rows from planner -z")))
         self.assertIn("does not increase", faults(lambda r: r["floor"]["extent"]["x"].reverse()))
 
+    def test_record_faults_hold_the_photographs_and_heights_to_the_room(self):
+        """The reader's later refusals (its SR1 and SR3): an overhead photograph covers the outline, a
+        wall stands no higher than the atlas's strips, and a ceiling drawn flat meets the walls' tops."""
+        import copy
+        from roombuild import publish
+        _, _, good = self.record(SALOON, "record-reach")
+        self.assertEqual(publish.record_faults(good), [])
+
+        def faults(change):
+            record = copy.deepcopy(good)
+            change(record)
+            return " | ".join(publish.record_faults(record))
+
+        def extent(part, axis, low, high):
+            return lambda r: r[part]["extent"].__setitem__(axis, [low, high])
+
+        xs, zs = [p[0] for p in good["room"]["outline"]], [p[1] for p in good["room"]["outline"]]
+        # The floor's photograph is laid in whole texels of 1/120 m, so a true extent can stop up to
+        # 4.17 mm short of the outline's box: 5 mm is allowed, and no more.
+        self.assertEqual(faults(extent("floor", "z", min(zs) + 0.004, max(zs) - 0.004)), "")
+        self.assertIn("floor.extent.z", faults(extent("floor", "z", min(zs) + 0.006, max(zs))))
+        self.assertIn("floor.extent.x", faults(extent("floor", "x", min(xs), max(xs) - 0.006)))
+        # A floor photograph cropped to the room's main rectangle, its bays left off.
+        cropped = faults(extent("floor", "z", min(zs) + 0.24, max(zs) - 0.225))
+        self.assertIn("floor.extent.z", cropped)
+        self.assertIn("outline runs from", cropped)
+        self.assertEqual(faults(extent("floor", "x", min(xs) - 1.0, max(xs) + 1.0)), "")        # larger is no fault
+        self.assertIn("ceiling.extent.x", faults(extent("ceiling", "x", min(xs) + 0.006, max(xs))))
+        self.assertEqual(faults(extent("ceiling", "x", min(xs) + 0.004, max(xs))), "")
+        # An extent that does not increase has its own fault, and only that one.
+        self.assertEqual(faults(lambda r: r["floor"]["extent"]["z"].reverse()).count("floor.extent"), 1)
+
+        top = good["atlas"]["vRange"][1]
+        self.assertEqual(faults(lambda r: r["walls"][0].__setitem__("height", top + 0.004)), "")
+        taller = faults(lambda r: r["walls"][0].__setitem__("height", top + 0.006))
+        self.assertIn(f"wall {good['walls'][0]['id']!r}", taller)
+        self.assertIn("vRange", taller)
+
+        def flat(height):
+            def change(r):
+                r["ceiling"].pop("relief")
+                r["room"]["ceilingHeight"] = height
+            return change
+
+        tallest = max(w["height"] for w in good["walls"])
+        self.assertEqual(faults(flat(tallest + 0.004)), "")
+        self.assertIn("room.ceilingHeight", faults(flat(tallest + 0.006)))
+        self.assertIn("room.ceilingHeight", faults(flat(tallest - 0.3)))
+        # With a relief the ceiling is drawn from its measured heights, and the room's height is only its reference.
+        self.assertEqual(faults(lambda r: r["room"].__setitem__("ceilingHeight", tallest - 0.3)), "")
+
     @staticmethod
     def machine_paths(record):
         """Every string key or value anywhere in a record that is a path on some machine: a drive
-        letter and a slash or backslash, a UNC start, or a leading '/' and a name (the shapes the fault
-        looks for, written out again so the test does not trust the fault's own pattern)."""
+        letter and a slash or backslash (at its start or inside it), a UNC start, or a leading '/' and
+        a name (the shapes the fault looks for, written out again so the test does not trust the
+        fault's own pattern)."""
         found = []
 
         def walk(node, where):
@@ -583,7 +635,7 @@ class SurveyRecord(unittest.TestCase):
             elif isinstance(node, list):
                 for i, value in enumerate(node):
                     walk(value, where + [str(i)])
-            elif isinstance(node, str) and (re.match(r"^[A-Za-z]:[/\\]", node) or node.startswith("\\\\") or re.match(r"^/[^\s/]", node)):
+            elif isinstance(node, str) and (re.search(r"(?:^|[^A-Za-z])[A-Za-z]:[/\\]", node) or node.startswith("\\\\") or re.match(r"^/[^\s/]", node)):
                 found.append((".".join(where), node))
         walk(record, [])
         return found
@@ -647,10 +699,18 @@ class SurveyRecord(unittest.TestCase):
         self.assertIn("relief.order[", " | ".join(faults(lambda r: r["relief"]["order"].append("X:/elsewhere"))))
         self.assertIn("openings", " | ".join(faults(lambda r: r["openings"].append(dict(id="a", deep=["/srv/a"])))))
         self.assertIn("linkedInputs", " | ".join(faults(lambda r: r["linkedInputs"].__setitem__("X:/elsewhere/tree/a", dict(how="copy")))))
-        # Ordinary values are not machine paths: URLs, relative names, text that merely contains a
-        # slash or a colon, a lone slash, and a leading slash before a space.
+        # A drive path inside a longer string is one too: a note, a command line, a file URL.
+        for value in ("linked from X:/elsewhere/tree", "python X:\\elsewhere\\build.py --out y", "file:///X:/elsewhere/a.json",
+                      "(x:/elsewhere)", "two: X:/elsewhere and Y:/other"):
+            found = faults(lambda r: r["tools"].__setitem__("where", value))
+            self.assertEqual(len(found), 1, (value, found))
+            self.assertIn("tools.where", found[0])
+            self.assertIn("absolute path", found[0])
+        # Ordinary values are not machine paths: URLs (alone or in a sentence), relative names, text
+        # that merely contains a slash or a colon, a lone slash, and a leading slash before a space.
         for value in ("https://example.org/a/b", "http://localhost:3000/x", "detail/index.json", "data/mesh/tex/000.webp",
-                      "a:b", "AB:/x", "255 - 127 * glass", "u = planner x, v = planner z, y = reference - depth", "/", "/ 2", "", "scheme:rest"):
+                      "a:b", "AB:/x", "255 - 127 * glass", "u = planner x, v = planner z, y = reference - depth", "/", "/ 2", "", "scheme:rest",
+                      "see https://example.org/a and http://localhost:3000/b", "at 1:/2 scale", "rows 3:\\4"):
             found = faults(lambda r: r["tools"].__setitem__("where", value))
             self.assertEqual(found, [], (value, found))
 
