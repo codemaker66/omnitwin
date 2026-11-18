@@ -346,7 +346,7 @@ describe("the tail's synthesis frame (rulings R46 and R93)", () => {
 /**
  * Rates between the common ones. Rounding the frame's exponent to the nearest gave them 31.25 Hz bins, which left the
  * 250 Hz octave two bins of its own time instead of four and read the Reception Room's 250 Hz decay 5.3 % short at
- * 32 kHz (#416's review, NA3; ruling R93).
+ * 32 kHz empty, and 6.6 % laid for dinner (#416's review, NA3; ruling R93).
  */
 const OFF_GRID_RATES = [32000, 64000] as const;
 const OFF_GRID_CASES = OFF_GRID_RATES.flatMap((rate) => PROFILES.map((profile) => ({ ...profile, rate })));
