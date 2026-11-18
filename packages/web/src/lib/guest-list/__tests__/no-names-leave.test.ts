@@ -4,6 +4,7 @@ import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { foundWords, keepingLine, leftOutWords, seatedSentence, toSeatSentence } from "../../../components/guest-list/words.js";
 import { memoryBackend, withBackend, type CacheBackend } from "../../idb-cache.js";
+import { NEVER_REPORTED_PAGES } from "../../../observability/web-vitals.js";
 import { useGuestListStore } from "../../../stores/guest-list-store.js";
 import { toCsv } from "../export.js";
 import { GUESTS_MAX, emptyGuestList, repairGuestList, type GuestList } from "../model.js";
@@ -768,6 +769,29 @@ describe("the kit's source, read as text", () => {
     expect(unresolved).toEqual([]);
     expect([...reached].filter((path) => path.startsWith("api/"))).toEqual([]);
     expect(reached.size).toBeGreaterThan(PATHS.length);
+  });
+
+  it("every route of the router whose page is a kit page never reports web vitals, so no kit page can be added that does", () => {
+    const routerPath = "router.tsx";
+    const router = parseSource(readFileSync(join(SRC, routerPath), "utf8"), routerPath);
+    const kitRoutes: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isObjectLiteralExpression(node)) {
+        const property = (name: string): ts.Expression | undefined => {
+          const assignment = node.properties.find((p) => ts.isPropertyAssignment(p) && p.name.getText(router) === name);
+          return assignment !== undefined && ts.isPropertyAssignment(assignment) ? assignment.initializer : undefined;
+        };
+        const element = property("element");
+        const path = property("path");
+        if (element !== undefined && /<(?:GuestListPage|GuestPaperPage)\b/.test(element.getText(router))) {
+          kitRoutes.push(path !== undefined && ts.isStringLiteral(path) ? path.text : `(a path that is not a plain string: ${path?.getText(router) ?? "none"})`);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(router);
+    expect(kitRoutes.sort()).toEqual(["/plan/:code/guests", "/plan/:code/guests/paper"]);
+    for (const route of kitRoutes) expect(NEVER_REPORTED_PAGES, `${route} is a kit page`).toContain(route);
   });
 });
 

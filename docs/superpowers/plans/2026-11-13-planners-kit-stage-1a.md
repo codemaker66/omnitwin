@@ -20,8 +20,10 @@ plan builds its stage 1 as far as "works on the planner's own device with no acc
 
 ## Global Constraints
 
-- **No name leaves the device.** No request carries a guest's name, party, table or seat. The only request these
-  pages make is the existing read of the plan, `getPublicConfig(planId, signal)`.
+- **No name leaves the device.** No request carries a guest's name, party, table or seat. The pages make one request
+  of their own, the existing read of the plan, `getPublicConfig(planId, signal)`. They report no web vitals. If a
+  page crashes, the app's own error report is sent as for any other page; it carries no name, because no kit error
+  is built from data.
 - **A guest is a name, a party, a table and a seat. Nothing else.** No email, telephone, notes, diet or access
   field, on screen or in storage. Every other pasted column is dropped in the browser and the page says so.
 - Limits, exact: a name at most **80** characters; a party at most **60**; at most **600** guests a list; at
@@ -552,7 +554,7 @@ it("sets noindex and no-referrer in the head and removes them on leaving", () =>
 **Words, exact:**
 - After a paste, before adding: "180 names found. Only names and parties are taken. 1 other column is left on your computer." Then the button "Add 180 guests".
 - Skipped rows: "3 rows were left out: 1 name over 80 characters, 2 beyond the 600 a list can hold."
-- Keeping line: "These names are kept only in this browser, on this device. Nothing is sent to Venviewer. They are removed on 12 July 2027, 30 days after the event." (or "... 90 days after your last change.")
+- Keeping line: "These names are kept only in this browser, on this device. None of them is sent to Venviewer. They are removed on 12 July 2027, 30 days after the event." (or "... 90 days after your last change.")
 - Storage refused: "This browser is not keeping the list. It will be gone when you close this tab. Download it before you leave."
 - Unreadable: "A list was kept here for this plan, but it cannot be read." with "Start a new list".
 - Repaired: "3 guests were sent back to seat, because their table or seat was no longer there."

@@ -727,7 +727,7 @@ describe("the guest list page: what the device says", () => {
     const { store } = await storeHolding(dated);
     const view = open(PAGE, store);
     await desk();
-    expect(screen.getByText("These names are kept only in this browser, on this device. Nothing is sent to Venviewer. They are removed on 12 July 2099, 30 days after the event.")).toBeTruthy();
+    expect(screen.getByText("These names are kept only in this browser, on this device. None of them is sent to Venviewer. They are removed on 12 July 2099, 30 days after the event.")).toBeTruthy();
     view.unmount();
     state().reset();
 
@@ -736,7 +736,7 @@ describe("the guest list page: what the device says", () => {
       .format(Date.parse(`${deleteAfter(undated).dateIso}T00:00:00.000Z`));
     open(PAGE, (await storeHolding(undated)).store);
     await desk();
-    expect(screen.getByText(`These names are kept only in this browser, on this device. Nothing is sent to Venviewer. They are removed on ${day}, 90 days after your last change.`)).toBeTruthy();
+    expect(screen.getByText(`These names are kept only in this browser, on this device. None of them is sent to Venviewer. They are removed on ${day}, 90 days after your last change.`)).toBeTruthy();
   });
 });
 

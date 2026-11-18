@@ -7,7 +7,7 @@ import { webVitalsSampleRate } from "../web-vitals-rate.js";
 import { recordLandingRoute, type AppRoutes, type LandingRoute } from "../landing-route.js";
 import { MEASUREMENT_DECLINED_KEY, setMeasurementDeclined } from "../measurement-choice.js";
 import {
-  createWebVitalsReporter, deviceClass, followLandingPage, routePattern, sendWebVitals, shouldReportWebVitals, startWebVitals,
+  createWebVitalsReporter, deviceClass, followLandingPage, NEVER_REPORTED_PAGES, routePattern, sendWebVitals, shouldReportWebVitals, startWebVitals,
 } from "../web-vitals.js";
 
 // ---------------------------------------------------------------------------
@@ -265,6 +265,20 @@ describe("the reporter", () => {
     expect(sentReports(send)[0]?.page).toBe("/");
   });
 
+  it("drops what it holds once silenced, and sends nothing after, a late first byte included", () => {
+    const send = vi.fn<(body: string) => void>();
+    const reporter = createWebVitalsReporter("/", "phone", send);
+    reporter.add(metric("LCP", 2_400));
+    reporter.add(metric("INP", 120));
+    reporter.silence();
+    reporter.flush();
+    reporter.add(metric("TTFB", 350));
+    reporter.add(metric("CLS", 0.01, "good", "v6-1761650000001-CLS"));
+    reporter.relabel("/hallkeeper");
+    reporter.flush();
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("reports under a redirect's target once relabelled", () => {
     const send = vi.fn<(body: string) => void>();
     const reporter = createWebVitalsReporter("/hallkeeper", "tablet", send);
@@ -343,6 +357,37 @@ describe("the landing page", () => {
     reporter.add(metric("CLS", 0.3, "poor"));
     reporter.flush();
     expect(sentReports(send)[0]).toMatchObject({ page: "/venues/:venueSlug/twin", metrics: [{ name: "CLS", value: 0.02 }] });
+  });
+
+  it.each(NEVER_REPORTED_PAGES.map((page) => [page] as const))("drops what it holds and sends nothing once the visitor moves to %s, which never reports", (page) => {
+    const router = fakeRouter(["/"]);
+    const target = new EventTarget();
+    const { send, reporter } = follow(recordLandingRoute(router, target));
+    reporter.add(metric("LCP", 900));
+    reporter.add(metric("INP", 110));
+    target.dispatchEvent(new Event("pointerdown"));
+    router.move([undefined, page], "PUSH");
+    // A first byte that arrives late is dropped too, and so is anything after.
+    reporter.add(metric("TTFB", 200));
+    router.move(["/"], "PUSH");
+    reporter.add(metric("CLS", 0.01));
+    reporter.flush();
+    expect(send).not.toHaveBeenCalled();
+    expect(router.listeners).toBe(0);
+  });
+
+  it.each(NEVER_REPORTED_PAGES.map((page) => [page] as const))("silences a redirect onto %s too, and never relabels to it", (page) => {
+    const router = fakeRouter([undefined, "/plan/:code"]);
+    const { send, reporter } = follow(recordLandingRoute(router, new EventTarget()));
+    const relabel = vi.spyOn(reporter, "relabel");
+    reporter.add(metric("LCP", 900));
+    // A replace before the visitor touched anything: a redirect.
+    router.move([undefined, page], "REPLACE");
+    reporter.add(metric("TTFB", 200));
+    reporter.flush();
+    expect(relabel).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(router.listeners).toBe(0);
   });
 
   it("replays the moves made before the reporter loaded", () => {
@@ -473,6 +518,20 @@ describe("starting on a page load", () => {
       setVisibility("visible");
       window.localStorage.removeItem(MEASUREMENT_DECLINED_KEY);
     }
+  });
+
+  it.each(NEVER_REPORTED_PAGES.map((page) => [page] as const))("measures nothing on landing on %s, before sampling or loading the library, and stops recording the route", async (page) => {
+    const send = vi.fn<(body: string) => void>();
+    const random = vi.fn<() => number>(() => 0);
+    ordinaryBrowser();
+    const router = fakeRouter([undefined, page]);
+    expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "0.5" }, landing: recordLandingRoute(router, new EventTarget()), random, send })).toBe(false);
+    expect(random).not.toHaveBeenCalled();
+    expect(vitals.callbacks.size).toBe(0);
+    expect(router.listeners).toBe(0);
+    setVisibility("hidden");
+    expect(send).not.toHaveBeenCalled();
+    setVisibility("visible");
   });
 
   it("is in no build that does not sample: the entry's condition is one the bundler can decide", () => {

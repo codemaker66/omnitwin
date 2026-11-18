@@ -67,7 +67,7 @@ export function keepingLine(list: GuestList): string {
   const why = rule === "event"
     ? `${String(KEEP_DAYS_AFTER_EVENT)} days after the event`
     : `${String(KEEP_DAYS_AFTER_CHANGE)} days after your last change`;
-  return `These names are kept only in this browser, on this device. Nothing is sent to Venviewer. They are removed on ${calendarDay(dateIso)}, ${why}.`;
+  return `These names are kept only in this browser, on this device. None of them is sent to Venviewer. They are removed on ${calendarDay(dateIso)}, ${why}.`;
 }
 
 /** Beside the date field, when a date is refused because the list would be removed at once. */
