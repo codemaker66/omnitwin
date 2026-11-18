@@ -33,6 +33,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/event-spine-bind-postgres.test.ts",
   // ...and the count: records without their event, nine numbers that must read zero.
   "src/__tests__/event-spine-invariant-postgres.test.ts",
+  // ...and the operator's read the deploy and nightly runs make: the join, both counts, one line of JSON.
+  "src/__tests__/event-rules-check-postgres.test.ts",
   "src/__tests__/enquiry-bookings-postgres.test.ts",
   // A booking stored with an empty title keeps its venue's Diary range readable (API-9).
   "src/__tests__/calendar-untitled-booking-postgres.test.ts",
