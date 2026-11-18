@@ -3,7 +3,7 @@
 Design, 14 November 2026; revised on 15 November after a builder's check, and after the release lead's review of 16
 November; both are answered here. Nothing Blake decided is changed.
 Status: **approved by Blake on 16 November 2026**, by button: "Approve it (Recommended)". His answers to its
-decisions are recorded word for word in section 14; one decision (4) has not been put to him yet.
+decisions are recorded word for word in section 14; decision 4 was answered on 18 November 2026.
 Piece A of the platform plan (`docs/superpowers/specs/2026-11-13-platform-plan-design.md`, section 5.2), ledger row
 T-703. Branch `claude/platform-diary-design`. Code was read at master `7c3461e7`; every `path:line` below is from the
 repository root at that commit, and the cited lines are unchanged at master `e138dc00`. The two approved designs this
@@ -55,8 +55,8 @@ plan's "done when". Lapsed holds, rooms sold together, set-up time and terms do 
 2. The reminder trial run happens on the real holds, once they are in.
 3. A room's dates may show on the public page after the thirty Saturdays are ticked and the venue's admin or
    manager records it.
-4. Still to ask you: what the public page shows for a room that is part of a booked combination. We recommend:
-   Booked, or Held. It decides only one line of stage 2.
+4. A room that is part of a booked combination shows Booked, or Held, on the public page, whenever the whole
+   combination is. You decided this on 18 November 2026. It decides only one line of stage 2.
 5. A seller may not place a provisional hold. Your 10 October decision stands: only staff and admin write the
    Diary, and sellers ask the office to hold a date.
 
@@ -570,7 +570,7 @@ crosses a confirmed booking through a part gets today's warning that it cannot b
 | A layout's review facts (`packages/api/src/services/pending-review-facts.ts:95`, `:117`) | Finds a combined booking from a part's layout, as the sheet does | 2 |
 | The Pricing desk and the occupancy report (`packages/api/src/services/pricing-desk-data.ts:196-199`, `packages/api/src/routes/revenue-analytics.ts:379`) | Read claims, so a combined booking is demand on every room it uses | 2 |
 | What one booking shows a client or a supplier: the client's schedule (`packages/api/src/services/client-event-schedule.ts:129`), passes (`packages/api/src/services/supplier-passes.ts:99-101`), a client's request (`packages/api/src/services/requests.ts:448-450`), an observation (`packages/api/src/services/observations.ts:80`) | Stays on the lead room, where the booking is filed; where a room's name is shown, a combined booking shows its combination's name | 2 |
-| The public read (`packages/api/src/services/public-discovery.ts:627`) | Counts a booking against every room it uses, as Blake decides (decision 4) | 2, last |
+| The public read (`packages/api/src/services/public-discovery.ts:627`) | Counts a booking against every room it uses: a part shows booked or held as the combination is (decision 4) | 2, last |
 | The Day Board (#361 to #365) | Shows a combined booking on its lead room only, until its owner reads claims | its owner |
 
 **Defining combinations** is a venue admin's task, beside the rooms (`/venues/:venueId/room-combinations`: list,
@@ -689,7 +689,7 @@ releasing a hold or a refund waits for one tap by a named person"
   works as today. One sentence is added: recording it means every new booking for this room goes into Venviewer first.
 - **What the public page says:** unchanged words. Before, "Ask the team"; after, its dates as today: Booked, Held, or
   "Nothing on our diary, the team confirms" (`packages/types/src/booking.ts:164-185`). A part of a booked combination
-  shows what Blake decides (decision 4). Set-up and breakdown do not change a day's public answer.
+  shows booked or held, as the combination is (decision 4). Set-up and breakdown do not change a day's public answer.
 - **The staff Diary** says "Nothing on Venviewer's diary" instead of "Free" for a room whose record does not stand, so
   staff and the public page agree; once it stands, "Free" returns.
 
@@ -849,7 +849,7 @@ At most one database change for each stage. Each stage is useful by itself.
 | Stage | Database | What it does | Waits for |
 |---|---|---|---|
 | 1. Lapsed holds and honest words | No | The Lapsed list with one-tap Release, its promotions checked; the read-only line corrected; "Free" only for rooms whose record stands. No change for sellers (decision 5: no) | Nothing |
-| 2. Rooms sold together, and set-up | Change 1 | Combinations, claims, set-up and breakdown; part locks, the room delete, refusal words and deadlocks; the readers of 6.3 | #400, for the Diary's lane read, the conflict engine, time moves and the sheet; Blake's decision 4, for the public read; the Day Board stack (#361 to #365) to land or rebase, since both touch `booking-mutations.ts` |
+| 2. Rooms sold together, and set-up | Change 1 | Combinations, claims, set-up and breakdown; part locks, the room delete, refusal words and deadlocks; the readers of 6.3 | #400, for the Diary's lane read, the conflict engine, time moves and the sheet; Blake's decision 4, for the public read (made on 18 November 2026); the Day Board stack (#361 to #365) to land or rebase, since both touch `booking-mutations.ts` |
 | 3. The import's place, and the dry run | Change 2 | The converter's frame, staging, the matching and its signature, the plan and its page; abandoned batches emptied (4.8) | Stage 2 (rooms and set-up must exist to match to) |
 | 4. Apply, undo and the check | No | Apply through the bind, people and clients, undo, run again, the thirty-Saturday page, rooms shown as ready, the control's refusal | The spine's first migration (client account key pinned; its list of joins), for production. The read-only login, for the converter and the matching's values |
 | 5. A regular hirer's term | Change 3 | Terms with their exceptions; a term lapses and is listed as one; `seriesId` out of the public schemas; the sheet shows the next night | Stage 2 (the combination key and the set-up columns it copies); #400 and its owner, for the sheet |
@@ -860,15 +860,16 @@ Stage 5 does not depend on stages 3 and 4 and may be built beside them; only its
 
 ## 14. What only Blake decides
 
-**His answers, 16 November 2026, by button, word for word.** The questions were put to him in the merge
-coordinator's question form, with this design in front of him.
+**His answers, by button, word for word.** Decisions 1, 2, 3 and 5 on 16 November 2026; decision 4 on
+18 November 2026. The questions were put to him in the merge coordinator's question form, with this design in
+front of him.
 
 | Decision | His answer | What it means |
 |---|---|---|
 | 1. This design | "Approve it (Recommended)" | Approved. Building may start with the stages that do not wait on the read-only login |
 | 2. The reminder trial run | "On the real holds (Recommended)" | After the import, he sees for every live hold the mornings its reminders would go and to whom. Reminders go on only after his yes |
 | 3. When a room's dates may show publicly | "After thirty Saturdays (Recommended)" | A room can be opened only once the latest import is clean for it and the thirty Saturdays stand as "Same"; the venue's admin or manager then records it |
-| 4. A part of a booked combination on the public page | Not yet asked | Open. It decides one line of stage 2 (the public read) and nothing else |
+| 4. A part of a booked combination on the public page | "Booked, or Held (Recommended)", on 18 November 2026 | A part shows booked or held whenever the whole combination is, so a room never looks free while it is sold. It decides one line of stage 2 (the public read) and nothing else |
 | 5. May a seller place a provisional hold | "No, keep it to the office" | His 10 October decision stands: only staff and admin write the Diary. Sellers ask the office to hold a date. Nothing in this piece changes for sellers, and stage 1 carries no seller change |
 
 The options as they were put to him are kept below for the record.
