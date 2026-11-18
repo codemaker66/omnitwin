@@ -20,6 +20,7 @@
 //   6. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
 //      0100): the enquiry funnel keeps them no longer than the privacy page
 //      keeps an enquiry, whether or not their enquiry or proposal remains.
+//   7. Field web vitals older than WEB_VITAL_RETENTION_DAYS (goal 07).
 //
 // The note passes and the people pass run on the schedule, not only when
 // someone calls POST /admin/cleanup, because the product promises them. Their
@@ -40,6 +41,7 @@ import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
 import { eraseLapsedPeople } from "../services/people-retention.js";
+import { removeExpiredWebVitalSamples } from "../services/web-vitals.js";
 import { sqlStateOf } from "../utils/sql-state.js";
 
 export interface ScheduledCleanupResult {
@@ -62,6 +64,7 @@ export interface ScheduledCleanupResult {
   /** Person or enquiry steps that failed, to be tried again next night. */
   readonly peopleStepsFailed: number;
   readonly engagementEventsRemoved: number;
+  readonly webVitalSamplesRemoved: number;
 }
 
 /** The SQLSTATE a failure carries: its own (the retention errors keep it on
@@ -88,8 +91,9 @@ export function describeFailure(failure: unknown): string {
 /**
  * Every scheduled pass, in order. Each log line carries counts only. A pass
  * runs even when one before it failed, so one broken pass never holds back
- * another's retention promise; the job still fails, after the last pass, with
- * the failure (or, when several failed, an AggregateError of them all).
+ * another's retention promise (the allergy notes', the web vitals' 90 days);
+ * the job still fails, after the last pass, with the failure (or, when
+ * several failed, an AggregateError of them all).
  */
 export async function runScheduledCleanup(
   db: Database,
@@ -150,6 +154,12 @@ export async function runScheduledCleanup(
     return count;
   });
 
+  const webVitalSamplesRemoved = await pass("web vital retention", async () => {
+    const count = await removeExpiredWebVitalSamples(db);
+    log(`[cleanup] Removed ${String(count)} web vital sample(s) past their retention period`);
+    return count;
+  });
+
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1) throw new AggregateError(failures, `${String(failures.length)} cleanup passes failed`);
 
@@ -168,6 +178,7 @@ export async function runScheduledCleanup(
     peopleDeferred: (lapsedPeople?.deferred.people ?? 0) + (lapsedPeople?.deferred.enquiries ?? 0),
     peopleStepsFailed: lapsedPeople?.failed ?? 0,
     engagementEventsRemoved: engagementEventsRemoved ?? 0,
+    webVitalSamplesRemoved: webVitalSamplesRemoved ?? 0,
   };
 }
 

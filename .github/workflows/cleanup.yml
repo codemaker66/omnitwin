@@ -11,6 +11,7 @@
 #      privacy page promises (services/people-retention.ts): erased, at most
 #      100 people and 200 enquiries a night, no new step after 150 s
 #   6. Engagement events older than the privacy page keeps an enquiry
+#   7. Field web vitals older than 90 days (goal 07, migration 0109)
 #
 # Every pass runs even when one before it fails; the job then fails. The log
 # is public with the repository: every line carries counts and SQLSTATEs only,
