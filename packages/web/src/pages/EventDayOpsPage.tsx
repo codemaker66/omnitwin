@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { AlertCircle, Bell, Check, CircleDashed, Clock, NotebookPen, RefreshCw, Send, ShieldAlert, Truck } from "lucide-react";
 import {
   eventDisplayName,
+  MAX_EARLIER_PRESS_KEYS,
   UpdateOpsTaskStatusConflictSchema,
   type ChangeFeedItem, type EventDayIssue, type EventDayIssueSeverity, type EventDayIssueStatus,
   type EventDayOpsBoard, type OpsTask, type OpsTaskStatus, type SupplierInstruction, type UpdateOpsTaskStatusInput,
@@ -276,10 +277,31 @@ function expectedStatusFor(presses: TaskPresses, opsTaskId: string, press: TaskP
     .status;
 }
 
-/** What is queued for a press: its status and key, and the status it is
- *  replayed against. */
+/** What is queued for a press: its status and key, the status it is
+ *  replayed against, and the keys of this page's earlier presses for the
+ *  task that the server may hold as its last write (on their way, failed,
+ *  or landed; not refused). The queue adds the keys the replaced row
+ *  carried, so a press of this page before a reload, or another tab's,
+ *  counts too (#418, ruling A). */
 function queuedInput(presses: TaskPresses, opsTaskId: string, press: TaskPress): UpdateOpsTaskStatusInput {
-  return { ...press.input, expectedStatus: expectedStatusFor(presses, opsTaskId, press) };
+  const own = presses.get(opsTaskId) ?? [];
+  const earlierPressKeys = own.slice(0, Math.max(own.indexOf(press), 0))
+    .filter((earlier) => earlier.outcome !== "refused")
+    .map((earlier) => earlier.input.idempotencyKey);
+  return {
+    ...press.input,
+    expectedStatus: expectedStatusFor(presses, opsTaskId, press),
+    ...(earlierPressKeys.length === 0 ? {} : { earlierPressKeys }),
+  };
+}
+
+/** A press's input with the earlier-press keys its queued row gathered as
+ *  well, each once, the newest MAX_EARLIER_PRESS_KEYS kept. */
+function withRowKeys(input: UpdateOpsTaskStatusInput, row: UpdateOpsTaskStatusInput): UpdateOpsTaskStatusInput {
+  const earlierPressKeys = [...new Set([...(row.earlierPressKeys ?? []), ...(input.earlierPressKeys ?? [])])]
+    .filter((key) => key !== input.idempotencyKey)
+    .slice(-MAX_EARLIER_PRESS_KEYS);
+  return { ...input, ...(earlierPressKeys.length === 0 ? {} : { earlierPressKeys }) };
 }
 
 /** Once a press here has landed, a status queued for its task before it was
@@ -322,7 +344,9 @@ function movedOnTo(err: ApiError): OpsTask | null {
 }
 
 /** An API from before replays carried expectedStatus answers it with a 400
- *  that names it as a key it does not know (its body schema is strict). */
+ *  that names it as a key it does not know (its body schema is strict).
+ *  Only that answer: any other 400 is a refusal like any other (#418,
+ *  ruling C). */
 function refusedAsUnknownField(err: unknown): boolean {
   if (!(err instanceof ApiError) || err.status !== 400 || err.code !== "VALIDATION_ERROR") return false;
   const issues: unknown = err.details;
@@ -331,15 +355,18 @@ function refusedAsUnknownField(err: unknown): boolean {
     && "keys" in issue && Array.isArray(issue.keys) && issue.keys.includes("expectedStatus"));
 }
 
-/** Sends a queued status. Until the API catches up with the status a replay
- *  was pressed against, it refuses the field; the replay is then sent as it
- *  used to be, under the same key, and applied as before. */
+/** Sends a queued status. A bridge for deploy skew (#418, ruling C; the API
+ *  deploys first): until the API knows the status a replay was pressed
+ *  against, it refuses that field and the earlier-press keys with it, and
+ *  the replay is sent once more as it used to be, under the same key, and
+ *  applied as before. To be removed once the API that knows both fields is
+ *  live (task T-733). */
 async function sendQueuedStatus(opsTaskId: string, input: UpdateOpsTaskStatusInput): Promise<OpsTask> {
   try {
     return await updateOpsTaskStatus(opsTaskId, input);
   } catch (err) {
     if (input.expectedStatus === undefined || !refusedAsUnknownField(err)) throw err;
-    const { expectedStatus: _unknownToTheOlderApi, ...asBefore } = input;
+    const { expectedStatus: _unknownToTheOlderApi, earlierPressKeys: _alsoUnknown, ...asBefore } = input;
     return updateOpsTaskStatus(opsTaskId, asBefore);
   }
 }
@@ -364,7 +391,9 @@ async function replayQueuedTaskStatus(presses: TaskPresses, op: QueuedTaskStatus
     return undefined;
   }
   if (press !== undefined && own.slice(0, own.indexOf(press)).some((earlier) => earlier.outcome === "sending")) return undefined;
-  const input = press === undefined ? op.input : queuedInput(presses, op.opsTaskId, press);
+  // This page's own press goes against the status recomputed now, with the
+  // keys its row gathered (other tabs', a mount before a reload) and its own.
+  const input = press === undefined ? op.input : withRowKeys(queuedInput(presses, op.opsTaskId, press), op.input);
   if (press !== undefined) press.outcome = "sending";
   let answer: OpsTask;
   try {

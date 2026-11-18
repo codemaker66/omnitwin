@@ -1273,17 +1273,19 @@ describe("EventDayOpsPage", () => {
     /** The API, as services/event-day-ops.ts answers a status (#418): a key
      *  already recorded changes nothing and answers the task as it stands; a
      *  status replayed against one the task no longer holds is refused, 409
-     *  with the task as it stands, and changes nothing; a status the task
-     *  already holds changes nothing; anything else is written and moves the
-     *  task's updatedAt on. A key meets its fate the first time it is sent: it
-     *  lands, fails before it reaches the server, is refused (403), or is lost
-     *  (written, and its answer never comes back). A key sent again (a
-     *  replay) lands. A request is decided when it is sent, except a replay
-     *  held back (lateReplay), decided when it is answered. Another device
-     *  writes as it presses. */
+     *  with the task as it stands, and changes nothing, unless the task's last
+     *  write was made under one of its earlier-press keys (round four, ruling
+     *  A); a status the task already holds changes nothing; anything else is
+     *  written and moves the task's updatedAt on. A key meets its fate the
+     *  first time it is sent: it lands, fails before it reaches the server, is
+     *  refused (403), or is lost (written, and its answer never comes back). A
+     *  key sent again (a replay) lands. A request is decided when it is sent,
+     *  except a replay held back (lateReplay), decided when it is answered.
+     *  Another device writes as it presses. */
     function fakeServer(options: { readonly fateOf?: (status: string) => Fate; readonly lateReplay?: boolean } = {}) {
       let status: OpsTask["status"] = "todo";
       let writes = 0;
+      let lastKey: string | null = null;
       const current = (): OpsTask => ({ ...task(status), updatedAt: new Date(Date.parse(NOW) + writes * 1000).toISOString() });
       const recorded = new Set<string>();
       const sentOnce = new Set<string>();
@@ -1292,12 +1294,14 @@ describe("EventDayOpsPage", () => {
         if (next === status) return;
         status = next;
         writes += 1;
+        lastKey = key;
         recorded.add(key);
       };
       const decide = (input: UpdateOpsTaskStatusInput): OpsTask | ApiError => {
         const key = input.idempotencyKey ?? "";
         if (recorded.has(key)) return current();
-        if (input.expectedStatus !== undefined && input.expectedStatus !== status) {
+        const followsOwnWrite = lastKey !== null && (input.earlierPressKeys ?? []).includes(lastKey);
+        if (input.expectedStatus !== undefined && input.expectedStatus !== status && !followsOwnWrite) {
           return new ApiError(409, "This task moved on before this status arrived.", "TASK_STATUS_CONFLICT", { task: current() });
         }
         write(key, input.status);
@@ -1582,8 +1586,10 @@ describe("EventDayOpsPage", () => {
     // is answered, after any later press that landed meanwhile. At the end
     // the connection is back for good. In every order the server must end on
     // the latest status pressed that it did not refuse, with nothing sent
-    // again under a new key and nothing left in the queue; the orders that
-    // do not are picked out by knownLimit and run as expected to fail.
+    // again under a new key and nothing left in the queue. (Round four: the
+    // 39 orders with a lost answer before a later press that failed, run as
+    // expected failures in round three, now pass: the later press names the
+    // lost one's key.)
     describe("every order of presses, answers and a replay", () => {
       interface Order {
         readonly fates: readonly Fate[];
@@ -1656,31 +1662,6 @@ describe("EventDayOpsPage", () => {
           .at(-1) ?? "todo";
       }
 
-      /** The orders that end on an earlier press (#418, a known limit,
-       *  reported and not fixed here; 39 of the 640, measured on the first
-       *  run). The last standing press failed and was queued, and the write
-       *  before it on the server is a press whose answer was lost: the page
-       *  took that press for unsent, so the later one is replayed against
-       *  the status before the lost write and refused. The page escapes only
-       *  when it has read what the lost press wrote before it replays: by
-       *  coming online after the lost answer and before the later press (the
-       *  lost press's own replay answers from its recorded key), or, with a
-       *  replay decided when answered, from an earlier lost press's replay
-       *  answered after the lost write. */
-      function knownLimit(order: Order): boolean {
-        const at = (event: string): number => order.schedule.indexOf(event);
-        const indices = order.fates.map((_fate, index) => index);
-        const last = indices.filter((index) => order.fates[index] !== "refused").at(-1);
-        if (last === undefined || order.fates[last] !== "fails") return false;
-        const writer = indices.filter((index) => index < last && (order.fates[index] === "lost" || order.fates[index] === "lands")).at(-1);
-        if (writer === undefined || order.fates[writer] !== "lost") return false;
-        const readOnline = at(`a${String(writer)}`) < at("d") && at("d") < at(`p${String(last)}`);
-        const earlierLost = indices.filter((index) => index < writer && order.fates[index] === "lost").at(-1);
-        const readFromEarlierReplay = order.lateReplay && earlierLost !== undefined
-          && at(`a${String(earlierLost)}`) < at("d") && at("d") < at(`p${String(writer)}`) && at(`p${String(writer)}`) < at("r");
-        return !readOnline && !readFromEarlierReplay;
-      }
-
       /** Plays an order through the page and the stand-in server, then lets
        *  the connection back for good. */
       async function runOrder(order: Order): Promise<{
@@ -1714,7 +1695,6 @@ describe("EventDayOpsPage", () => {
       it("runs every order", () => {
         expect(schedules(2)).toHaveLength(12);
         expect(ORDERS).toHaveLength(2 * (16 * 12 + 64 * 2));
-        expect(ORDERS.filter(knownLimit)).toHaveLength(39);
       });
 
       const ends = async (order: Order): Promise<void> => {
@@ -1725,15 +1705,9 @@ describe("EventDayOpsPage", () => {
         expect(server.keys()).toBe(order.fates.length);
         expect(await queue.list()).toEqual([]);
       };
-      it.each(ORDERS.filter((order) => !knownLimit(order)).map((order) => [nameOf(order), order] as const))("%s", async (_name, order) => {
+      it.each(ORDERS.map((order) => [nameOf(order), order] as const))("%s", async (_name, order) => {
         await ends(order);
       });
-      const limited = ORDERS.filter(knownLimit);
-      if (limited.length > 0) {
-        it.fails.each(limited.map((order) => [nameOf(order), order] as const))("KNOWN LIMIT %s", async (_name, order) => {
-          await ends(order);
-        });
-      }
     });
 
     // #418, beyond one page that never reloads: the server decides, so a
@@ -1983,10 +1957,11 @@ describe("EventDayOpsPage", () => {
         expect(await queue.list()).toEqual([]);
       });
 
-      // As P1, but Start was still on its way when Done failed; Start then
-      // landed and the board reloaded before Sync. The row was queued
-      // against To do and the reloaded page cannot know Start landed.
-      it("KNOWN LIMIT: refuses a later press queued while an earlier one was on its way, when the board reloads before Sync", async () => {
+      // Order 4 (round four, ruling A): Start was still on its way when Done
+      // failed and was queued against To do; Start then landed and the board
+      // reloaded before Sync. The row carries Start's key, and Start wrote
+      // the task last, so Done is written.
+      it("ends on Done when Done was queued while Start was on its way, Start landed and the board reloaded before Sync (order 4)", async () => {
         const queue = await realQueue();
         const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "lands" : "fails") });
         renderPage();
@@ -2000,22 +1975,124 @@ describe("EventDayOpsPage", () => {
         await syncOn();
         await answer(server.answerAll);
 
-        // The last press was Done; the server keeps In progress.
+        expect(server.status()).toBe("done");
+        expect(server.keys()).toBe(2);
+        expect(await queue.list()).toEqual([]);
+        expect(shownStatus()).toBe("Done");
+      });
+
+      // Order 1 (round four, ruling A): the hallkeeper's ordinary day on venue
+      // Wi-Fi. Start reaches the server and its answer is lost; Done is
+      // pressed before the board has read Start, fails, and is queued against
+      // To do. It names Start's key, Start wrote the task last, so Done is written.
+      it("ends on Done when Start's answer was lost and Done, pressed before the board read Start, was queued (order 1)", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "lost" : "fails") });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+        await pressOn("Done");
+        await answer(server.answerAll);
+
+        await syncOn();
+        await answer(server.answerAll);
+
+        const [start, , replay] = mockUpdateOpsTaskStatus.mock.calls.map(([, input]) => input as UpdateOpsTaskStatusInput);
+        expect(replay).toEqual(expect.objectContaining({ status: "done", expectedStatus: "todo", earlierPressKeys: [start?.idempotencyKey] }));
+        expect(server.status()).toBe("done");
+        expect(server.keys()).toBe(2);
+        expect(await queue.list()).toEqual([]);
+        expect(shownStatus()).toBe("Done");
+      });
+
+      it("ends on Done for order 1 across a reload: the queued row keeps Start's key", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "lost" : "fails") });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+        await pressOn("Done");
+        await answer(server.answerAll);
+
+        await remount();
+        await syncOn();
+        await answer(server.answerAll);
+
+        expect(server.status()).toBe("done");
+        expect(await queue.list()).toEqual([]);
+      });
+
+      // Order 5, an accepted limit: another device moves the task on and back
+      // to the status the queued press was made against, and the older press
+      // is written although the other device pressed last.
+      it("KNOWN LIMIT: writes a queued press over another device that moved the task on and back to the status it expected (order 5)", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "fails" : "lands") });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+        server.writeAs("blocked");
+        server.writeAs("todo");
+
+        await syncOn();
+        await answer(server.answerAll);
+
+        // The last press anywhere was the other device's To do; the server holds In progress.
         expect(server.status()).toBe("in_progress");
         expect(await queue.list()).toEqual([]);
       });
     });
 
-    it("sends a replay as it used to while the API has not caught up with the status it was pressed against", async () => {
+    it("sends a replay as it used to while the API has not caught up with the fields it was pressed with", async () => {
       const queue = await realQueue();
       mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
       mockUpdateOpsTaskStatus
         .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
-        // The API before #418: its body schema is strict, and names the key it does not know.
+        .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
+        // The API before #418: its body schema is strict, and names the keys it does not know.
         .mockRejectedValueOnce(new ApiError(400, "Validation failed", "VALIDATION_ERROR", [
-          { code: "unrecognized_keys", keys: ["expectedStatus"], path: [], message: "Unrecognized key: \"expectedStatus\"" },
+          { code: "unrecognized_keys", keys: ["expectedStatus", "earlierPressKeys"], path: [], message: "Unrecognized keys: \"expectedStatus\", \"earlierPressKeys\"" },
         ]))
-        .mockResolvedValueOnce(task("in_progress"));
+        .mockResolvedValueOnce(task("done"));
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+      fireEvent.click(screen.getByRole("button", { name: "Start" }));
+      await screen.findByText("Task saved on this device and will sync when the connection returns.");
+      fireEvent.click(screen.getByRole("button", { name: "Done" }));
+      await waitFor(() => { expect(mockUpdateOpsTaskStatus).toHaveBeenCalledTimes(2); });
+      await waitFor(() => { expect(screen.queryByText("Saving event-day changes…")).toBeNull(); });
+
+      await replayQueue();
+
+      const [start, , replay, asBefore] = mockUpdateOpsTaskStatus.mock.calls.map(([, input]) => input as UpdateOpsTaskStatusInput);
+      expect(replay).toEqual({ status: "done", idempotencyKey: replay?.idempotencyKey, expectedStatus: "todo", earlierPressKeys: [start?.idempotencyKey] });
+      expect(asBefore).toEqual({ status: "done", idempotencyKey: replay?.idempotencyKey });
+      expect(mockUpdateOpsTaskStatus).toHaveBeenCalledTimes(4);
+      expect(await queue.list()).toEqual([]);
+    });
+
+    // Ruling C: the bridge fires on nothing but the older API's own refusal.
+    it.each([
+      ["another kind of issue about the field", new ApiError(400, "Validation failed", "VALIDATION_ERROR", [
+        { code: "invalid_value", path: ["expectedStatus"], message: "Invalid option" },
+      ])],
+      ["the unknown-key issue under another code", new ApiError(400, "Bad request", "BAD_REQUEST", [
+        { code: "unrecognized_keys", keys: ["expectedStatus"], path: [], message: "Unrecognized key: \"expectedStatus\"" },
+      ])],
+      ["unknown keys that are not the field", new ApiError(400, "Validation failed", "VALIDATION_ERROR", [
+        { code: "unrecognized_keys", keys: ["earlierPressKeys"], path: [], message: "Unrecognized key: \"earlierPressKeys\"" },
+      ])],
+      ["no issues at all", new ApiError(400, "Validation failed", "VALIDATION_ERROR")],
+    ])("does not send a replay again on any other 400: %s", async (_case, refusal) => {
+      const queue = await realQueue();
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      mockUpdateOpsTaskStatus
+        .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
+        .mockRejectedValueOnce(refusal)
+        .mockResolvedValue(task("in_progress"));
       renderPage();
       await screen.findByText("Set 12 x Round Table");
       fireEvent.click(screen.getByRole("button", { name: "Start" }));
@@ -2023,9 +2100,8 @@ describe("EventDayOpsPage", () => {
 
       await replayQueue();
 
-      const [, replay, asBefore] = mockUpdateOpsTaskStatus.mock.calls.map(([, input]) => input as UpdateOpsTaskStatusInput);
-      expect(replay).toEqual({ status: "in_progress", idempotencyKey: replay?.idempotencyKey, expectedStatus: "todo" });
-      expect(asBefore).toEqual({ status: "in_progress", idempotencyKey: replay?.idempotencyKey });
+      expect(mockUpdateOpsTaskStatus).toHaveBeenCalledTimes(2);
+      // Refused like any other refusal: acked, and the press has no word.
       expect(await queue.list()).toEqual([]);
     });
 

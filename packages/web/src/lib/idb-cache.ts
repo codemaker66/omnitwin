@@ -40,6 +40,10 @@ export interface CacheBackend {
    *  and deleted as one step: no other write (another tab's included) can
    *  come between the compare and the delete. Resolves whether it deleted. */
   deleteIf(key: string, matches: (value: unknown) => boolean): Promise<boolean>;
+  /** Writes the entry `compute` makes from what the key stores now
+   *  (undefined for nothing), read and written as one step: no other write
+   *  (another tab's included) can come between the read and the write. */
+  upsert(key: string, compute: (value: unknown) => unknown): Promise<void>;
   list(): Promise<{ key: string; value: unknown }[]>;
 }
 
@@ -50,6 +54,9 @@ export interface CacheHandle<T> {
   /** Deletes the entry only while it still matches, compared and deleted as
    *  one step of the store. Resolves whether it deleted. */
   deleteIf(key: string, matches: (stored: StoredValue<T>) => boolean): Promise<boolean>;
+  /** Writes the value `compute` makes from the entry the key holds now (null
+   *  for none), read and written as one step of the store. */
+  upsert(key: string, compute: (stored: StoredValue<T> | null) => T): Promise<void>;
   list(): Promise<{ key: string; stored: StoredValue<T> }[]>;
 }
 
@@ -79,6 +86,11 @@ export function memoryBackend(): CacheBackend {
       if (!store.has(key) || !matches(store.get(key))) return false;
       store.delete(key);
       return true;
+    },
+    // The read and the write in one step of the event loop.
+    upsert(key, compute) {
+      store.set(key, compute(store.get(key)));
+      return Promise.resolve();
     },
     // eslint-disable-next-line @typescript-eslint/require-await
     async list() {
@@ -168,6 +180,30 @@ function idbBackend(dbName: string, storeName: string): CacheBackend {
         };
       });
     },
+    // The read and the write share one readwrite transaction, as deleteIf's
+    // do: no other write can land between them. `compute` runs inside the
+    // read's success callback, while the transaction is still active; if it
+    // throws, the transaction aborts and nothing is written.
+    async upsert(key, compute) {
+      const db = await openDb();
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(storeName, "readwrite");
+        const store = transaction.objectStore(storeName);
+        const read = store.get(key) as IDBRequest<unknown>;
+        read.onsuccess = () => {
+          store.put(compute(read.result), key);
+        };
+        transaction.oncomplete = () => {
+          resolve();
+        };
+        transaction.onerror = () => {
+          reject(transaction.error ?? new Error("indexedDB update failed"));
+        };
+        transaction.onabort = () => {
+          reject(transaction.error ?? new Error("indexedDB update aborted"));
+        };
+      });
+    },
     async list() {
       const db = await openDb();
       return new Promise((resolve, reject) => {
@@ -243,6 +279,12 @@ export function withBackend<T>(backend: CacheBackend): CacheHandle<T> {
         const stored = asStoredValue<T>(raw);
         return stored !== null && matches(stored);
       });
+    },
+    async upsert(key, compute) {
+      await backend.upsert(key, (raw): StoredValue<T> => ({
+        storedAt: new Date().toISOString(),
+        value: compute(asStoredValue<T>(raw)),
+      }));
     },
     async list() {
       const rows = await backend.list();

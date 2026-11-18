@@ -285,4 +285,59 @@ describe("event-day offline queue", () => {
       expect(await statusesQueued(q)).toEqual(["issue_create"]);
     });
   });
+
+  // #418 round four, ruling A: a later press that replaces the task's row
+  // keeps the replaced press's key, and the keys it carried, so its replay
+  // can follow the device's own earlier write (a lost answer, or a press
+  // that landed while it sat queued), whichever tab or mount wrote the row.
+  describe("keeping the device's earlier presses with the task's row", () => {
+    const earlierKeys = async (q: ReturnType<typeof queue>): Promise<readonly string[] | undefined> => {
+      const [row] = await q.list();
+      return row?.kind === "task_status" ? row.input.earlierPressKeys : undefined;
+    };
+
+    it("keeps the replaced press's key and the keys it carried, with the ones the page names", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start", expectedStatus: "todo" });
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done", expectedStatus: "todo", earlierPressKeys: ["sent-from-this-page"] });
+      expect(await earlierKeys(q)).toEqual(["start", "sent-from-this-page"]);
+
+      await q.enqueueTaskStatus("task-1", { status: "blocked", idempotencyKey: "block", expectedStatus: "todo", earlierPressKeys: ["start"] });
+      expect(await earlierKeys(q)).toEqual(["start", "sent-from-this-page", "done"]);
+    });
+
+    it("keeps the newest twenty, and never the row's own key", async () => {
+      const q = queue();
+      for (let press = 0; press < 25; press += 1) {
+        await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: `press-${String(press)}`, expectedStatus: "todo", earlierPressKeys: [`press-${String(press)}`] });
+      }
+      expect(await earlierKeys(q)).toEqual(Array.from({ length: 20 }, (_, index) => `press-${String(index + 4)}`));
+    });
+
+    it("writes a first press's row with no keys, as round three did, and keeps none for a row with no expectedStatus", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done", expectedStatus: "todo" });
+      expect(await earlierKeys(q)).toBeUndefined();
+      await q.enqueueTaskStatus("task-1", { status: "blocked", idempotencyKey: "older-page" });
+      expect((await q.list())[0]).toMatchObject({ input: { status: "blocked", idempotencyKey: "older-page" } });
+      expect(await earlierKeys(q)).toBeUndefined();
+    });
+
+    it("reads the replaced row and writes the new one in the store's one step, never a read and then a write", async () => {
+      // Another tab's write must not fall between reading the row it
+      // replaces and writing it: with the plain read and write refused,
+      // only the store's one-step update can do it (one readwrite
+      // transaction on IndexedDB).
+      const inner = memoryBackend();
+      const backend: CacheBackend = {
+        ...inner,
+        get: () => Promise.reject(new Error("a read apart from the write")),
+        put: () => Promise.reject(new Error("a write apart from the read")),
+      };
+      const q = createEventDayQueue(withBackend<QueuedEventDayOp>(backend));
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start", expectedStatus: "todo" });
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done", expectedStatus: "todo" });
+      expect(await earlierKeys(q)).toEqual(["start"]);
+    });
+  });
 });
