@@ -511,10 +511,14 @@ export function PlannerScene(): ReactElement {
   const photographed = hallDrawn || (surveyedRoom !== null && meshVisible);
   // Its opening view is the planner's own from far enough back to hold the room as surveyed (room-opening-view.ts).
   // Held while the survey is the room's, whichever layer shows, as the hall's is: a pose that came and went with
-  // the layer would open the camera afresh at every change of layer.
+  // the layer would open the camera afresh at every change of layer. One object for as long as the room and its
+  // data's numbers stand, as the rig steadies its own dimensions: a space set again as an equal object (another
+  // layout of the room, a reload after a save conflict) must not hand the rig a new pose to open on.
+  const { width: roomWidth, length: roomLength, height: roomHeight } = dimensions;
   const surveyedOpening = useMemo(
-    () => (surveyedRoom === null ? null : surveyedRoomOpeningPose(surveyedRoom.geometry, dimensions, PLANNER_CAMERA_FOV)),
-    [dimensions, surveyedRoom],
+    () => (surveyedRoom === null ? null
+      : surveyedRoomOpeningPose(surveyedRoom.geometry, { width: roomWidth, length: roomLength, height: roomHeight }, PLANNER_CAMERA_FOV)),
+    [roomHeight, roomLength, roomWidth, surveyedRoom],
   );
   // The real sun, moon and sky over the drawn hall, where this device asks for them.
   const hallSkyAsked = useMemo(() => typeof window !== "undefined" && hallSkyRequested(window.location.search), []);

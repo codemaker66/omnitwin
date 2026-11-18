@@ -105,6 +105,7 @@ function serveSaloon(missing: string | null = null): Mock<FetchFn> {
   return fake;
 }
 
+/** Sets the planner's room: a new space object each time, as the editor's store sets one on every load. */
 function chooseRoom(name: string, slug: string): void {
   const id = "00000000-0000-4000-8000-000000000662";
   useEditorStore.setState({ configId: id, space: SpaceSchema.parse({
@@ -228,6 +229,29 @@ describe("PlannerScene with a surveyed room", () => {
     expect(surveyedRoomCaption(useSurveyedRoomStore.getState().status)).toBeNull();
     // The pose is the same object through those renders: a new one would open the camera afresh (CameraRig).
     expect(sceneComponent("CameraRig")?.props.defaultPose).toBe(opening);
+  });
+
+  it("keeps the opening pose when the room's space is set again as an equal object: the camera is not opened afresh (SM3)", async () => {
+    serveSaloon();
+    openPlanner(STAGED);
+    chooseRoom("Saloon", "saloon");
+    render(<PlannerScene />);
+    await waitFor(() => { expect(sceneComponent("SurveyedRoomModel")).toBeDefined(); });
+    const opening: unknown = sceneComponent("CameraRig")?.props.defaultPose;
+    expect(opening).not.toBeNull();
+    const room: unknown = sceneComponent("SurveyedRoomModel")?.props.room;
+    const fetched = vi.mocked(fetch).mock.calls.length;
+    // Another layout of the same room, or a reload after a save conflict, sets the space again: a new object with
+    // the same numbers (editor-store's loadSpace). The rig opens the camera afresh for a new pose object, so the
+    // pose must follow the room's numbers, as the rig's own dimensions do, and not the object that carries them.
+    const before = useEditorStore.getState().space;
+    act(() => { chooseRoom("Saloon", "saloon"); });
+    expect(useEditorStore.getState().space).not.toBe(before);
+    expect(useEditorStore.getState().space).toEqual(before);
+    expect(sceneComponent("CameraRig")?.props.defaultPose).toBe(opening);
+    // And the room is the one already loaded: nothing is fetched again.
+    expect(sceneComponent("SurveyedRoomModel")?.props.room).toBe(room);
+    expect(vi.mocked(fetch).mock.calls.length).toBe(fetched);
   });
 
   it("keeps the shell and says so when the survey cannot be loaded", async () => {
