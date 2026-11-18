@@ -248,7 +248,8 @@ class FakeCompressor extends FakeNode {
   readonly knee = new FakeParam();
 }
 class FakeContext {
-  state: "running" | "suspended" = "running";
+  /** "interrupted" is Safari's: a call or another app took the audio. */
+  state: "running" | "suspended" | "interrupted" = "running";
   currentTime = 2;
   readonly sampleRate = 48000;
   readonly destination = new FakeNode();
@@ -347,6 +348,18 @@ describe("the engine", () => {
     playPlannerSound("planner-cue");
     const cueGain = context.started[1]?.connections[0];
     expect(cueGain instanceof FakeGain ? cueGain.connections.length : 0, "dry only").toBe(1);
+  });
+
+  it("resumes the context on a play in any state but running, Safari's interrupted too", () => {
+    setPlannerSoundMode("quiet");
+    armPlannerSound();
+    const resume = vi.spyOn(context, "resume");
+    context.state = "interrupted";
+    expect(playPlannerSound("planner-refuse")).toBe(true);
+    expect(resume).toHaveBeenCalledOnce();
+    vi.spyOn(performance, "now").mockReturnValue(performance.now() + 1000);
+    expect(playPlannerSound("planner-cue")).toBe(true);
+    expect(resume, "running: nothing to resume").toHaveBeenCalledOnce();
   });
 
   it("suspends the context after 20 s of silence", () => {

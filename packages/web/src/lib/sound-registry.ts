@@ -1051,7 +1051,8 @@ export function playPlannerSound(id: PlannerSoundId, variation: PlannerSoundVari
   const verdict = plannerPolicy.decide(id, { mode, armed: graph !== null, hidden: plannerSoundHidden(), nowMs });
   if (verdict !== "play" || graph === null || plannerLive === null) return false;
   const { context } = plannerLive;
-  if (context.state === "suspended") void context.resume();
+  // Suspended, or Safari's "interrupted" (a call took the audio): the play resumes it.
+  if (context.state !== "running") void context.resume();
   const at = context.currentTime;
   const recipe = PLANNER_SOUND_RECIPES[id];
   let played = recipe;
