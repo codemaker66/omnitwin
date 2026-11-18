@@ -13,7 +13,7 @@ import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { useOnlineStatus } from "../../hooks/use-online-status.js";
-import { EventKindName } from "../planner-chrome/EventKindPicker.js";
+import { EventKindName } from "./event-kind/EventKindPicker.js";
 
 interface MobilePlannerTopBarProps {
   readonly mode: "3d" | "2d";

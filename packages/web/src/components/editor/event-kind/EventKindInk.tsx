@@ -1,5 +1,5 @@
 import { memo, type ReactElement } from "react";
-import type { PlannerEventKind } from "../../stores/planner-event-store.js";
+import type { PlannerEventKind } from "../../../stores/planner-event-store.js";
 
 // ---------------------------------------------------------------------------
 // The event-kind picker's drawings: each kind's room as the planner sets it,

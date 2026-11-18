@@ -2,13 +2,13 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { createPortal } from "react-dom";
 import { PencilLine } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
-import { useEditorStore } from "../../stores/editor-store.js";
-import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
-import type { PlannerEventKind } from "../../stores/planner-event-store.js";
-import type { SpringConfig } from "../../lib/springs.js";
-import { useSpringCssVariable } from "../../lib/use-spring-value.js";
-import { prefersReducedMotion } from "../../lib/reduced-motion.js";
-import { useEscapeLayer } from "../../lib/planner-keys.js";
+import { useEditorStore } from "../../../stores/editor-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
+import type { PlannerEventKind } from "../../../stores/planner-event-store.js";
+import type { SpringConfig } from "../../../lib/springs.js";
+import { useSpringCssVariable } from "../../../lib/use-spring-value.js";
+import { prefersReducedMotion } from "../../../lib/reduced-motion.js";
+import { useEscapeLayer } from "../../../lib/planner-keys.js";
 import {
   EVENT_KIND_WORDS,
   PLANNER_EVENT_KINDS,
@@ -21,7 +21,7 @@ import {
   settleEventKindQuestion,
   shouldAskEventKind,
   useEventKindQuestion,
-} from "../../lib/event-kind-record.js";
+} from "../../../lib/event-kind-record.js";
 import { EventKindInk } from "./EventKindInk.js";
 import "./event-kind-picker.css";
 

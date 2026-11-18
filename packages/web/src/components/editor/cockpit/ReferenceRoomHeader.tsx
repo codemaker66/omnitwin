@@ -11,7 +11,7 @@ import { canReadInternalEventData, customerEventPath, isCustomerRole } from "../
 import { useOnlineStatus } from "../../../hooks/use-online-status.js";
 import { useChromePresenceStore } from "../../../stores/chrome-presence-store.js";
 import { CrestLabel, useCrestLabel } from "./CrestLabel.js";
-import { EventKindName } from "../../planner-chrome/EventKindPicker.js";
+import { EventKindName } from "../event-kind/EventKindPicker.js";
 
 interface HeaderSaveState {
   readonly configId: string | null;

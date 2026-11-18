@@ -14,7 +14,7 @@ vi.mock("../App.js", () => ({ App: () => <div data-testid="mock-editor-3d" /> })
 vi.mock("../components/editor/cockpit/PlannerCockpit.js", () => ({ PlannerCockpit: () => <div data-testid="planner-cockpit" /> }));
 vi.mock("../pages/BlueprintPage.js", () => ({ BlueprintPage: () => <div data-testid="mock-blueprint" /> }));
 vi.mock("../components/editor/MobilePlannerTopBar.js", async () => {
-  const { EventKindName } = await import("../components/planner-chrome/EventKindPicker.js");
+  const { EventKindName } = await import("../components/editor/event-kind/EventKindPicker.js");
   return {
     MobilePlannerTopBar: ({ mode, onModeChange }: { mode: "3d" | "2d"; onModeChange: (mode: "2d" | "3d") => void }) => (
       <div data-testid="mock-top-bar" data-mode={mode}>

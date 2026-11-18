@@ -14,7 +14,7 @@ import { PlannerLeavingNotes } from "../components/editor/PlannerLeavingNotes.js
 import { EditorBridge } from "../components/editor/EditorBridge.js";
 import { LayoutLiveLayer } from "../components/editor/LayoutLiveLayer.js";
 import { PlannerCockpit } from "../components/editor/cockpit/PlannerCockpit.js";
-import { EventKindPicker } from "../components/planner-chrome/EventKindPicker.js";
+import { EventKindPicker } from "../components/editor/event-kind/EventKindPicker.js";
 import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
 import { EventDetailsPanel } from "../components/editor/EventDetailsPanel.js";
 import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";

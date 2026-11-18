@@ -8,10 +8,10 @@ import {
   rememberDeviceEventKind,
   resetEventKindQuestionForTesting,
   useEventKindQuestion,
-} from "../../../lib/event-kind-record.js";
-import { registerKeyBindings } from "../../../lib/planner-keys.js";
-import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
-import { useEditorStore, type EditorObject } from "../../../stores/editor-store.js";
+} from "../../../../lib/event-kind-record.js";
+import { registerKeyBindings } from "../../../../lib/planner-keys.js";
+import { usePlannerEventStore } from "../../../../stores/planner-event-store.js";
+import { useEditorStore, type EditorObject } from "../../../../stores/editor-store.js";
 
 // ---------------------------------------------------------------------------
 // "What are you planning?" (T-674): the first open of a new, empty layout
