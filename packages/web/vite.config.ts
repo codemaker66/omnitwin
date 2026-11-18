@@ -115,6 +115,8 @@ export default defineConfig(({ mode }) => {
       // listed too: on a freshly started server these (the Assembly, the
       // capture layer, its loader and its two workers' graphs) were the only
       // modules the first captured-room navigation still had to transform.
+      // The set-down Worker's graph (the sound engine, T-700) is listed so
+      // the planner's first set-down does not wait on its transform.
       warmup: {
         clientFiles: [
           "./src/pages/EditorPage.tsx",
@@ -123,6 +125,7 @@ export default defineConfig(({ mode }) => {
           "./src/lib/native-splat-loader.ts",
           "./src/lib/native-splat-worker.ts",
           "./src/lib/native-cpu-sort-worker.ts",
+          "./src/lib/set-down/set-down.worker.ts",
         ],
       },
     },
