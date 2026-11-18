@@ -33,7 +33,7 @@
 // materials keep out of the pass's normal target (hall-section.ts).
 // ---------------------------------------------------------------------------
 
-import { BackSide, Color, FrontSide, SRGBColorSpace, type Side } from "three";
+import { BackSide, Color, FrontSide, LessEqualDepth, SRGBColorSpace, type Side } from "three";
 import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
 import {
   Discard, Fn, If, attribute, cameraProjectionMatrix, float, frontFacing, length, min, mix, normalize, positionView, positionWorld,
@@ -153,6 +153,9 @@ export function createFrontMaterials(sun: HallSun, maps: StreetLightMaps, preset
   // faces away before they are shaded.
   const share = min(float(CUT_EYEWARD), float(CUT_EYEWARD_MAX).div(length(positionView)));
   cut.vertexNode = cameraProjectionMatrix.mul(vec4(positionView.mul(float(1).sub(share)), 1));
+  // Past the cap's reach an exact tie is still the cut's: it draws after the outside, and its depth test passes equal
+  // depths. Set here, not left to three's default, so a change of default cannot hand those ties back.
+  cut.depthFunc = LessEqualDepth;
   cut.name = "grand-hall-front-cut";
   return { outside, cut };
 }

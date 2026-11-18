@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BoxGeometry, Float32BufferAttribute, type BufferGeometry } from "three";
-import { buildHallFront, DOORWAY_FILL, FRONT_DETAIL_FULL, FRONT_DETAIL_LIGHT, FRONT_PART, frontPoint, LET_IN, type HallFrontJoin } from "../hall-exterior.js";
+import { buildHallFront, DOORWAY_FILL, FRONT_DETAIL_FULL, FRONT_DETAIL_LIGHT, FRONT_PART, frontPoint, LET_IN, openingOutline, outsetLoop, type HallFrontJoin } from "../hall-exterior.js";
 import { BALUSTRADES, FRONT_AXIS_X, FRONT_BAYS, FRONT_FACE_Z, FRONT_LEVELS, FRONT_PAVEMENT_Y, GROUND_OPENINGS, LINK_FACE_PROUD, TEMPLE } from "../hall-exterior-spec.js";
 import { CUT_EYEWARD, CUT_EYEWARD_MAX } from "../hall-exterior-material.js";
 import { buildWallBody } from "../hall-wall-body.js";
@@ -393,19 +393,64 @@ describe("the cut pass along the seams of pieces that touch", () => {
       return Math.abs(along - join.at) < 1e-5 && across > join.from - 1e-6 && across < join.to + 1e-6 && proud > join.back - 1e-6 && proud < join.front + 1e-6;
     })).length;
     expect(build.joins.filter((join) => facesIn(join) > 0)).toEqual([]);
-    // The same count finds a row's own foot on its sill, where it has faces: each pavilion doorway's.
+    // The same count finds a row's own foot on its sill and its own outer end, where it has faces, across a z plane and
+    // across a u plane: each pavilion doorway's.
     for (const join of build.joins.filter((j) => j.axis === "z")) {
       const opening = pavilionDoorways.find((o) => Math.abs(o.top - join.at) < 1e-9);
       expect(opening).toBeDefined();
       expect(facesIn({ ...join, at: (opening?.bottom ?? Number.NaN) - LET_IN })).toBeGreaterThan(0);
+      expect(facesIn({ axis: "u", at: join.from, from: (opening?.bottom ?? Number.NaN) - LET_IN, to: join.at, back: join.back, front: join.front })).toBeGreaterThan(0);
     }
+  });
+  it.each(DETAILS)("lets each fanlight's glass into what holds it at the crown: the front door's into the stone, the pavilion doorways' into their frames ($name)", ({ detail }) => {
+    const front = buildHallFront(detail).geometry;
+    const parts = front.getAttribute("aPart");
+    const glass = triangles(front).filter((t) => Math.round(parts.getX(t.vertex)) === GLASS);
+    // The highest glass of an opening's own (within its width, and no higher than 10 cm over its crown: the attics'
+    // windows stand over the pavilion doorways), over the pavement.
+    const glassTop = (opening: (typeof GROUND_OPENINGS)[number]): number => Math.max(...glass.filter((t) => {
+      const [p, q, r] = t.corners;
+      const z = (p[1] + q[1] + r[1]) / 3 - FRONT_PAVEMENT_Y;
+      return Math.abs(FRONT_AXIS_X - (p[0] + q[0] + r[0]) / 3 - opening.u) < opening.width / 2 + 0.02 && z < opening.top + opening.rise + 0.1;
+    }).flatMap((t) => t.corners.map((corner) => corner[1] - FRONT_PAVEMENT_Y)));
+    const door = GROUND_OPENINGS.find((opening) => opening.fill === "front-door");
+    expect(door).toBeDefined();
+    if (door !== undefined) expect(glassTop(door)).toBeGreaterThanOrEqual(door.top + door.rise + LET_IN - 1e-5);
+    // The pavilion doorways' glass stops in the frame's band round the crown, LET_IN or more from both of its edges.
+    for (const opening of pavilionDoorways) {
+      const crown = opening.top + opening.rise;
+      expect(glassTop(opening)).toBeLessThanOrEqual(crown + 1e-5);
+      expect(glassTop(opening)).toBeGreaterThanOrEqual(crown - DOORWAY_FILL.frame + LET_IN - 1e-5);
+    }
+  });
+  it("grows a pavilion doorway's outline exactly, every edge LET_IN out and parallel, and refuses an outline it cannot grow exactly", () => {
+    const opening = pavilionDoorways[0];
+    expect(opening).toBeDefined();
+    if (opening === undefined) return;
+    const outline = openingOutline(opening.u, opening.width / 2, opening.bottom, opening.top, opening.rise);
+    const grown = outsetLoop(outline, LET_IN);
+    expect(grown).toHaveLength(outline.length);
+    // Each grown edge's two ends lie LET_IN out along the edge's own outward normal (the outline runs counter-clockwise).
+    outline.forEach((a, i) => {
+      const b = outline[(i + 1) % outline.length] ?? a;
+      const [ga, gb] = [grown[i] ?? a, grown[(i + 1) % grown.length] ?? b];
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const [nu, nz] = [(b[1] - a[1]) / length, -(b[0] - a[0]) / length];
+      expect((ga[0] - a[0]) * nu + (ga[1] - a[1]) * nz).toBeCloseTo(LET_IN, 12);
+      expect((gb[0] - b[0]) * nu + (gb[1] - b[1]) * nz).toBeCloseTo(LET_IN, 12);
+    });
+    // A notch, a doubled point and a sharp spike have no exact outset.
+    expect(() => outsetLoop([[0, 0], [2, 0], [2, 2], [1, 1], [0, 2]], LET_IN)).toThrow();
+    expect(() => outsetLoop([[0, 0], [1, 0], [1, 0], [1, 1], [0, 1]], LET_IN)).toThrow();
+    expect(() => outsetLoop([[0, 0], [1, 0], [0.5, 0.1]], LET_IN)).toThrow();
   });
 });
 
 /**
- * Each triangle's solid: triangles joined along shared edges, their corners welded to ten micrometres, so that each
- * pavilion doorway's row and frame, whose foot dips a micrometre under the transom, read as the one solid they are.
- * A closed solid's faces meet edge to edge; two solids that touch, or are let into each other, do not.
+ * Each triangle's solid: triangles joined along the edges they share. A closed solid's faces meet edge to edge; two
+ * solids that touch, or are let into each other, do not. Corners are keyed on a ten-micrometre grid, which only absorbs
+ * float noise (the front's largest coordinate is about 24 m, whose float32 step is 1.9 µm): each pavilion doorway's row
+ * and frame are one solid by the exact edges their sides share at the transom's two ends.
  */
 function solidsOf(list: readonly Triangle[]): number[] {
   const parent = list.map((_, i) => i);

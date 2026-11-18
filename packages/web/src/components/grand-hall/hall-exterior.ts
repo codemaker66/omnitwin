@@ -107,10 +107,23 @@ function orient(loop: readonly V2[], ccw: boolean): V2[] {
  * A convex loop grown outward by `by`, each edge moved along its own normal and
  * neighbours met at a mitre, so every edge keeps exactly `by` from its original
  * (an arch's chords stay parallel to the stone's, where an arc of a larger
- * circle would come within a chord's sagitta of it).
+ * circle would come within a chord's sagitta of it). It takes a strictly convex
+ * loop with no repeated point and no corner sharper than 60° (an opening's
+ * outline), and throws on anything else: a notch, a doubled point or a spike has
+ * no exact outset, and a sharper corner's mitre runs out more than twice `by`.
  */
 export function outsetLoop(loop: readonly V2[], by: number): V2[] {
   const ring = orient(loop, true);
+  ring.forEach((point, i) => {
+    const before = ring[(i + ring.length - 1) % ring.length] ?? point;
+    const after = ring[(i + 1) % ring.length] ?? point;
+    const [du0, dz0, du1, dz1] = [point[0] - before[0], point[1] - before[1], after[0] - point[0], after[1] - point[1]];
+    const [l0, l1] = [Math.hypot(du0, dz0), Math.hypot(du1, dz1)];
+    // The turn at the point (left, for a convex loop counter-clockwise), and the angle between the two edges' normals.
+    const turn = l0 < 1e-9 || l1 < 1e-9 ? 0 : (du0 * dz1 - dz0 * du1) / (l0 * l1);
+    const facing = l0 < 1e-9 || l1 < 1e-9 ? -1 : (du0 * du1 + dz0 * dz1) / (l0 * l1);
+    if (!(turn > 1e-9) || facing < -0.5) throw new Error("outsetLoop takes a strictly convex loop with no repeated point and no corner sharper than 60°");
+  });
   const normal = (a: V2, b: V2): V2 => {
     const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
     return [(b[1] - a[1]) / length, -(b[0] - a[0]) / length];
@@ -567,7 +580,8 @@ function doorway(front: FrontBuilder, opening: GroundOpening, face: number): voi
   const reach = radius - frame + LET_IN + bar;
   for (let i = 1; i < bars; i++) {
     const angle = Math.PI * (i / bars);
-    const r0 = 0.16;
+    // From 15 cm out along the ray, inside the hub's twelve facets (15.5 cm from its centre, 2 cm over the transom).
+    const r0 = 0.15;
     const c = Math.cos(angle);
     const s = Math.sin(angle);
     // Where the ray from the hub (u, transom) meets the circle of radius `reach` about the arch's centre.
@@ -615,10 +629,10 @@ function frontDoor(front: FrontBuilder, opening: GroundOpening, face: number): v
     const r1 = radius - 0.08;
     front.mesh.tube([frontPoint(opening.u + 0.14 * Math.cos(angle), transom + 0.06 + 0.14 * Math.sin(angle), frontFace - 0.02), frontPoint(opening.u + r1 * Math.cos(angle), centreZ + r1 * Math.sin(angle), frontFace - 0.02)], [0.01, 0.01], 4, true);
   }
-  // The glass let into the transom bar under it, below the frame's foot so the two never share a plane, and into the
-  // stone each side.
+  // The glass let into the transom bar under it, below the frame's foot so the two never share a plane, into the stone
+  // each side and over the crown, where the wall stands 42 cm higher.
   front.as("glass");
-  front.box(opening.u - half - LET_IN, opening.u + half + LET_IN, transom + 0.04 - 2 * LET_IN, transom + opening.rise, back + 0.02, back + 0.035);
+  front.box(opening.u - half - LET_IN, opening.u + half + LET_IN, transom + 0.04 - 2 * LET_IN, transom + opening.rise + LET_IN, back + 0.02, back + 0.035);
   // The moulded arch round the door, its keystone plaque, and the bracket lamps (P).
   front.as("stone");
   const band = FRONT_DOOR.archBand;
@@ -787,12 +801,14 @@ function domeGroup(front: FrontBuilder, segments: number): void {
   }
   dome.push([0, top]);
   front.lathe(d.u, proud, dome, segments);
-  // Ribs along the dome's meridians, a little proud of its skin.
+  // Ribs along the dome's meridians, a little proud of its skin, their feet let into the drum's cornice: LET_IN, and the
+  // 7 mm their end caps tilt with the meridian, below its top.
+  const ribFoot = startZ - LET_IN - 0.007;
   for (let k = 0; k < d.ribs; k++) {
     const angle = (2 * Math.PI * k) / d.ribs;
     const path: V3[] = [];
     for (let i = 0; i <= 8; i++) {
-      const z = startZ + ((top - startZ - 0.25) * i) / 8;
+      const z = ribFoot + ((top - 0.25 - ribFoot) * i) / 8;
       const r = Math.sqrt(Math.max(0, d.domeRadius * d.domeRadius - (z - d.domeSpring) * (z - d.domeSpring))) + 0.02;
       const point = frontPoint(d.u + r * Math.cos(angle), z, proud + r * Math.sin(angle));
       path.push(point);

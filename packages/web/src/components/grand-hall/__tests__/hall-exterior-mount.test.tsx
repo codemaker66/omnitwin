@@ -161,9 +161,10 @@ describe("the measured front as drawn", () => {
       expect(dx / dw).toBeCloseTo(px / pw, 12);
       expect(dy / dw).toBeCloseTo(py / pw, 12);
       expect(dz / dw).toBeLessThan(pz / pw);
-      // The pull itself, read back from the depth the GPU tests (z / w, through the projection's z row to the eye's
-      // depth): the drawn point lies nearer by exactly that much. w alone would pass a stage that scales the whole
-      // clip vector, which moves nothing.
+      // What that means, read back from the depth the GPU tests (z / w, through the projection's z row to the eye's
+      // depth): the drawn point lies nearer by exactly the pull. The element-by-element check above is the one that
+      // decides (every mutation of the stage fails there first); this and the w read-back follow from it, and w alone
+      // would pass a stage that scales the whole clip vector, which moves nothing.
       const [zz, zw] = [projection[10] ?? Number.NaN, projection[14] ?? Number.NaN];
       const eyeDepth = (ndc: number): number => -zw / (ndc + zz);
       expect(eye * (1 - eyeDepth(dz / dw) / eyeDepth(pz / pw))).toBeCloseTo(pull, 8);
