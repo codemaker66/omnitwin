@@ -284,4 +284,41 @@ describe.skipIf(testUrl === undefined)("analytics authority on isolated PostgreS
       enquiryConversionPercent: 50, proposalStatusCounts: { archived: 2 },
     });
   });
+
+  // A platform admin may move an accepted proposal back to declined,
+  // withdrawn or sent (state-machines/proposal.ts); a venue role can only
+  // archive it. The history row to accepted stays, but the acceptance was
+  // reversed, so only an archived proposal keeps counting by its history.
+  it("no longer counts an acceptance a platform admin reversed", async () => {
+    await pool.query(
+      "INSERT INTO enquiries (venue_id, name, email) VALUES ($1, 'Web enquiry', 'web@example.test'), ($1, 'Phone enquiry', 'phone@example.test')",
+      [VENUE],
+    );
+    const moved = async (title: string, moves: readonly (readonly [string, string])[]): Promise<void> => {
+      const status = moves[moves.length - 1]?.[1] ?? "draft";
+      const { rows } = await pool.query<{ id: string }>(
+        "INSERT INTO proposals (venue_id, title, status) VALUES ($1, $2, $3) RETURNING id", [VENUE, title, status],
+      );
+      for (const [index, [from, to]] of moves.entries()) {
+        await pool.query(
+          "INSERT INTO proposal_status_history (proposal_id, from_status, to_status, created_at) VALUES ($1, $2, $3, $4)",
+          [rows[0]?.id, from, to, new Date(Date.UTC(2026, 9, 1 + index))],
+        );
+      }
+    };
+    await moved("Guild supper", [["draft", "sent"], ["sent", "accepted"]]);
+    await moved("Henderson wedding", [["draft", "sent"], ["sent", "accepted"], ["accepted", "declined"]]);
+    await moved("Merchants' dinner", [["draft", "sent"], ["sent", "accepted"], ["accepted", "withdrawn"]]);
+    await moved("Bakers' lunch", [["draft", "sent"], ["sent", "accepted"], ["accepted", "sent"]]);
+
+    const pipeline = await server.inject({ method: "GET", url: PRICED_ROUTES[0], headers: headers("staff") });
+    expect(pipeline.statusCode, pipeline.body).toBe(200);
+    expect(pipeline.json<{ data: Record<string, unknown> }>().data).toMatchObject({
+      enquiryCount: 2, proposalCount: 4, acceptedProposalCount: 1, conversionPercent: 50,
+      proposalStatusCounts: { accepted: 1, declined: 1, withdrawn: 1, sent: 1 },
+    });
+    const dashboard = await server.inject({ method: "GET", url: PRICED_ROUTES[1], headers: headers("staff") });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    expect(dashboard.json<{ data: Record<string, unknown> }>().data).toMatchObject({ enquiryConversionPercent: 50 });
+  });
 });

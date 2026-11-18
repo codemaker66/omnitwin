@@ -356,10 +356,12 @@ async function loadPipelineSummary(db: Database, venueId: string) {
     db.select({ count: sql<number>`count(*)`.mapWith(Number) }).from(enquiries).where(eq(enquiries.venueId, venueId)),
     // Accepted, now or before the office filed it with Archive: archiving
     // keeps the record an acceptance made (routes/proposals.ts everAccepted).
+    // Only an archived proposal counts by its history: one a platform admin
+    // moved out of accepted to declined, withdrawn or sent was reversed.
     db.select({ count: sql<number>`count(*)`.mapWith(Number) }).from(proposals).where(and(live, or(
       eq(proposals.status, "accepted"),
-      sql`EXISTS (SELECT 1 FROM ${proposalStatusHistory}
-        WHERE ${proposalStatusHistory.proposalId} = ${outerColumn(proposals.id)} AND ${proposalStatusHistory.toStatus} = 'accepted')`,
+      and(eq(proposals.status, "archived"), sql`EXISTS (SELECT 1 FROM ${proposalStatusHistory}
+        WHERE ${proposalStatusHistory.proposalId} = ${outerColumn(proposals.id)} AND ${proposalStatusHistory.toStatus} = 'accepted')`),
     ))),
   ]);
   return buildPipelineSummary({
