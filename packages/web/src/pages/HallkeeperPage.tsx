@@ -930,7 +930,7 @@ export function HallkeeperPage(): React.ReactElement {
       <h1>{data.space.name}</h1><h2>{data.config.name}</h2><p>{data.venue.name} · {formatDims(data.space)} · {data.config.guestCount} guests · {formatLayoutStyle(data.config.layoutStyle)}</p>
       <p className="hk-print-version">{paperCopyLine(data, printedAt)}</p>
       {standing !== null && <SheetStandingMark standing={standing} />}
-      {data.timing !== null && <p>{formatSheetTimes(data.timing, data.venue.timezone)}</p>}
+      {data.timing !== null && <p>{formatSheetTimes({ timing: data.timing, instructions: data.instructions }, data.venue.timezone)}</p>}
       <HallkeeperStatusBanner key={data.config.id} configId={data.config.id} timeZone={data.venue.timezone} />
       {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}
       <p>{progressUnavailable ? "Shared checks unavailable" : `${String(counts.checkedRows)} of ${String(counts.totalRows)} setup rows checked`}</p>

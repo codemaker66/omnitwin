@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ManifestRowV2Schema, PhaseSchema, type HallkeeperSheetV2 } from "@omnitwin/types";
+import { EventInstructionsSchema, ManifestRowV2Schema, PhaseSchema, type HallkeeperSheetV2 } from "@omnitwin/types";
 import { summarizeSheet } from "../lib/hallkeeper-summary.js";
 
 // ---------------------------------------------------------------------------
@@ -30,32 +30,40 @@ const timing: HallkeeperSheetV2["timing"] = {
 };
 
 describe("summarizeSheet", () => {
-  it("counts every row across phases and zones, and those checked", () => {
-    expect(summarizeSheet(CONFIG, { phases, timing }, ["furniture|Centre|Round table|0", "dress|Centre|Tablecloth|1"])).toEqual({
+  // timing.setupBy is when setup STARTS (the name is historical): the board's
+  // "Ready by" is the sheet's, the planner's final time or else guests in.
+  it("counts every row across phases and zones, and those checked, ready when guests come in", () => {
+    expect(summarizeSheet(CONFIG, { phases, timing, instructions: null }, ["furniture|Centre|Round table|0", "dress|Centre|Tablecloth|1"])).toEqual({
       configId: CONFIG,
-      readyBy: "2026-10-03T15:00:00.000Z",
+      readyBy: "2026-10-03T17:30:00.000Z",
       eventStart: "2026-10-03T17:30:00.000Z",
       total: 4,
       checked: 2,
     });
   });
 
+  it("gives the planner's final time as the ready-by time", () => {
+    const instructions = EventInstructionsSchema.parse({ phaseDeadlines: [{ phase: "final", deadline: "2026-10-03T17:00:00.000Z" }] });
+    expect(summarizeSheet(CONFIG, { phases, timing, instructions }, []).readyBy).toBe("2026-10-03T17:00:00.000Z");
+  });
+
   it("does not count a mark left on a row a re-save removed, or the same mark twice", () => {
-    const summary = summarizeSheet(CONFIG, { phases, timing }, [
+    const summary = summarizeSheet(CONFIG, { phases, timing, instructions: null }, [
       "furniture|Centre|Chair|0", "furniture|Centre|Chair|0", "furniture|Centre|Trestle table|0",
     ]);
     expect(summary.checked).toBe(1);
     expect(summary.total).toBe(4);
   });
 
-  it("gives no ready-by time where no changeover rule sets one, and none without timing", () => {
-    expect(summarizeSheet(CONFIG, { phases, timing: { ...timing, setupBy: null, bufferMinutes: null } }, []).readyBy).toBeNull();
-    const untimed = summarizeSheet(CONFIG, { phases, timing: null }, []);
+  it("is ready when guests come in where no changeover rule opens the setup, and has no time without timing", () => {
+    expect(summarizeSheet(CONFIG, { phases, timing: { ...timing, setupBy: null, bufferMinutes: null }, instructions: null }, []).readyBy)
+      .toBe("2026-10-03T17:30:00.000Z");
+    const untimed = summarizeSheet(CONFIG, { phases, timing: null, instructions: null }, []);
     expect(untimed.readyBy).toBeNull();
     expect(untimed.eventStart).toBeNull();
   });
 
   it("reads nothing placed as none of none", () => {
-    expect(summarizeSheet(CONFIG, { phases: [], timing }, ["furniture|Centre|Chair|0"])).toMatchObject({ total: 0, checked: 0 });
+    expect(summarizeSheet(CONFIG, { phases: [], timing, instructions: null }, ["furniture|Centre|Chair|0"])).toMatchObject({ total: 0, checked: 0 });
   });
 });

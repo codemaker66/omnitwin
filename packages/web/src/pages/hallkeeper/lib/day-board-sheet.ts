@@ -1,4 +1,4 @@
-import type { BookingKind, HallkeeperSheetSummary } from "@omnitwin/types";
+import { sheetDurationWords, type BookingKind, type HallkeeperSheetSummary } from "@omnitwin/types";
 import type { LinkedLayoutChoice } from "../../../lib/event-linked-layouts.js";
 import { formatWallTime } from "../../diary/lib/board-time.js";
 
@@ -129,14 +129,20 @@ export function describeSlotSheet(input: SlotSheetInput): SlotSheetState {
 }
 
 /**
- * The line under a sheet's door: when setup must be done, on the venue's
+ * The line under a sheet's door: when the room must be ready, on the venue's
  * clock, and how far the checklist has got. "Ready by 16:00 · 12 of 43
  * checked", "Ready by not set · All 43 checked", "… · Nothing placed yet".
+ * Ready by is the printed sheet's (sheetTimes, sent by the API's summary):
+ * the planner's final time, else guests in; one after guests come in is
+ * said, "Ready by 18:15, 15 min after guests come in".
  */
 export function sheetProgressLine(summary: HallkeeperSheetSummary, timeZone: string): string {
-  const ready = summary.readyBy === null
+  const readyMs = summary.readyBy === null ? null : Date.parse(summary.readyBy);
+  const guestsMs = summary.eventStart === null ? null : Date.parse(summary.eventStart);
+  const afterMinutes = readyMs === null || guestsMs === null ? 0 : Math.round((readyMs - guestsMs) / 60_000);
+  const ready = readyMs === null
     ? "Ready by not set"
-    : `Ready by ${formatWallTime(Date.parse(summary.readyBy), timeZone)}`;
+    : `Ready by ${formatWallTime(readyMs, timeZone)}${afterMinutes > 0 ? `, ${sheetDurationWords(afterMinutes)} after guests come in` : ""}`;
   const checks = summary.total === 0
     ? "Nothing placed yet"
     : summary.checked === summary.total

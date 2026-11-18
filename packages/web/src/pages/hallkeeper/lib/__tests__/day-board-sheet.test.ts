@@ -109,4 +109,12 @@ describe("sheetProgressLine", () => {
     expect(sheetProgressLine({ ...summary, checked: 43 }, "Europe/London")).toBe("Ready by 15:00 · All 43 checked");
     expect(sheetProgressLine({ ...summary, total: 0, checked: 0 }, "Europe/London")).toBe("Ready by 15:00 · Nothing placed yet");
   });
+
+  // The sheet's Ready by is the planner's final time, else guests in (Blake,
+  // 18 Nov 2026): a final time after the doors is shown, never hidden.
+  it("says when the ready-by time is after guests come in", () => {
+    expect(sheetProgressLine({ ...summary, readyBy: "2026-12-12T18:15:00.000Z" }, "Europe/London"))
+      .toBe("Ready by 18:15, 15 min after guests come in · 12 of 43 checked");
+    expect(sheetProgressLine({ ...summary, readyBy: "2026-12-12T18:00:00.000Z" }, "Europe/London")).toBe("Ready by 18:00 · 12 of 43 checked");
+  });
 });

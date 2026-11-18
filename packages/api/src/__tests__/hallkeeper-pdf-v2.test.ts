@@ -2,8 +2,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import PDFDocument from "pdfkit";
-import type { EventInstructions, HallkeeperFloorPlan, HallkeeperSheetV2 } from "@omnitwin/types";
+import { crowdedTradesHallDay, type EventInstructions, type HallkeeperFloorPlan, type HallkeeperSheetV2 } from "@omnitwin/types";
 import { generateSheetPdfV2, sheetCopyLine, sheetQrTarget } from "../services/hallkeeper-pdf-v2.js";
+import { resolveTurnaroundRule } from "../services/calendar-conflicts.js";
+import { deriveSheetTiming } from "../services/hallkeeper-sheet-v2-data.js";
 import { brief, martynsLaw, setupPage } from "../services/sheet-pdf/blocks.js";
 import { Flow, PAGE_OPTIONS } from "../services/sheet-pdf/flow.js";
 import { planLabel } from "../services/sheet-pdf/plan-drawing.js";
@@ -118,13 +120,16 @@ describe("the four fixtures, laid out", () => {
     expectInsideMargins(pages);
   });
 
-  it("puts the day on page 1: ready-by time, guests, keep in view, the day in order and the store", async () => {
+  it("puts the day on page 1: setup and ready-by times, guests, keep in view, the day in order and the store", async () => {
+    // The day gained "08:00 Setup starts" (18 Nov 2026), so page 1 no longer
+    // has room to point to the planner's words: they open page 2, under its
+    // head (see "leads the setup page with the planner's words").
     const pages = pdfPages(await generateSheetPdfV2(await withPaperCheck(weddingSheet(), true)));
     const first = textOf(pages[0] ?? []);
-    for (const words of ["HALLKEEPER SHEET · TRADES HALL GLASGOW", "Mackenzie–Ross wedding breakfast", "READY BY", "13:30", "14:30", "120",
+    for (const words of ["HALLKEEPER SHEET · TRADES HALL GLASGOW", "Mackenzie–Ross wedding breakfast", "SETUP FROM 08:00", "READY BY 13:30", "GUESTS IN 14:30", "120",
       "KEEP IN VIEW", "Hearing loop in Centre", "2 nut-free", "Kirsty Mackenzie", "07700 900412",
-      "THE DAY, IN ORDER", "Room ready", "Event starts", "Sun 25 Oct", "Team briefing",
-      "FROM THE STORE", "Chiavari Wedding Chair", "FROM THE PLANNER"]) {
+      "THE DAY, IN ORDER", "08:00 Setup starts", "13:30 Room ready", "14:30 Event starts", "Sun 25 Oct", "Team briefing",
+      "FROM THE STORE", "Chiavari Wedding Chair"]) {
       expect(first, words).toContain(words);
     }
     expect(first).toContain("Approved by Fiona Grant · v3, issued 22 Oct 16:12, printed 24 Oct 07:42");
@@ -443,24 +448,27 @@ describe("times are the venue's", () => {
   const factsOf = async (timezone: string): Promise<string> =>
     textOf((pdfPages(await generateSheetPdfV2({ ...timed, venue: { ...timed.venue, timezone } }))[0] ?? []));
 
-  it("prints the venue's wall clock for the ready-by time and the start", async () => {
+  it("prints the venue's wall clock for setup, the ready-by time and the start", async () => {
+    // setupBy opens the setup window (its name is historical); with no final
+    // time from the planner the room is ready when guests come in.
     const text = await factsOf("Europe/London");
-    expect(text).toMatch(/READY BY 17:00/u);
+    expect(text).toMatch(/SETUP FROM 17:00 90 min to set the room/u);
+    expect(text).toMatch(/READY BY 18:30 when guests come in/u);
     expect(text).toMatch(/GUESTS IN 18:30/u);
-    // Measured from when guests come in, the fact beside it, not a "start" the sheet no longer names.
-    expect(text).toContain("90 min before guests come in");
   });
 
   it("prints a different venue's wall clock for the same instant and names its zone", async () => {
     const text = await factsOf("America/New_York");
-    expect(text).toMatch(/READY BY 12:00/u);
+    expect(text).toMatch(/SETUP FROM 12:00/u);
+    expect(text).toMatch(/READY BY 13:30/u);
     expect(text).toMatch(/GUESTS IN 13:30/u);
     expect(text).toContain("Eastern time");
   });
 
-  it("names the reason when the ready-by time cannot be derived", async () => {
+  it("names the reason when the setup time cannot be derived, and is still ready when guests come in", async () => {
     const text = pdfText(await generateSheetPdfV2({ ...BASE_SHEET, timing: { eventStart: "2026-06-15T17:30:00.000Z", setupBy: null, bufferMinutes: null } }));
     expect(text).toContain("No changeover time for this room");
+    expect(text).toMatch(/READY BY 18:30 when guests come in/u);
     expect(text).toMatch(/GUESTS IN 18:30/u);
     expect(text).not.toContain("min before guests come in");
   });
@@ -469,6 +477,64 @@ describe("times are the venue's", () => {
     const text = pdfText(await generateSheetPdfV2({ ...BASE_SHEET, timing: null }));
     expect(text).toContain("No booking holds this room yet");
     expect(text).toContain("Confirm the time first");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Setup from, then Ready by (Blake, 18 November 2026: "Setup from + Ready by").
+// The crowded day's Grand Hall breakfast books the room from 08:00 with its
+// Setup phase from 07:00: the sheet used to print "Ready by 07:00", an hour
+// before it had to be.
+// ---------------------------------------------------------------------------
+
+describe("Setup from, then Ready by (T-696)", () => {
+  /** The breakfast's timing as the data layer derives it: booking, room phase, the hall's changeover rule. */
+  function crowdedBreakfastSheet(instructions: EventInstructions | null): HallkeeperSheetV2 {
+    const day = crowdedTradesHallDay();
+    const booking = day.calendar.entries.find((entry) => entry.entryType === "booking" && entry.title === "Merchants' Breakfast Briefing");
+    if (booking?.entryType !== "booking") throw new Error("the crowded day has a Grand Hall breakfast");
+    const setup = day.calendar.entries.find((entry) => entry.entryType === "phase" && entry.eventId === booking.eventId && entry.spaceId === booking.spaceId);
+    if (setup?.entryType !== "phase") throw new Error("the breakfast has a Setup phase in its room");
+    const rule = resolveTurnaroundRule(day.calendar.turnaroundRules ?? [], booking.spaceId, booking.eventType);
+    const timing = deriveSheetTiming(new Date(booking.startsAt), new Date(setup.startsAt), rule?.minutes ?? null);
+    return { ...BASE_SHEET, config: { ...BASE_SHEET.config, name: booking.title }, timing, instructions };
+  }
+  const firstPage = async (sheet: HallkeeperSheetV2): Promise<string> => textOf(pdfPages(await generateSheetPdfV2(sheet))[0] ?? []);
+  const finalAt = (deadline: string, reason = ""): EventInstructions => ({ ...EMPTY_INSTRUCTIONS, phaseDeadlines: [{ phase: "final", deadline, reason }] });
+
+  it("heads the breakfast with setup from 07:00 and ready by 08:00, when guests come in", async () => {
+    const text = await firstPage(crowdedBreakfastSheet(null));
+    expect(text).toMatch(/SETUP FROM 07:00 60 min to set the room/u);
+    expect(text).toMatch(/READY BY 08:00 when guests come in/u);
+    expect(text).toMatch(/GUESTS IN 08:00/u);
+    expect(text).not.toMatch(/READY BY 07:00/u);
+  });
+
+  it("lists setup starting at 07:00 and the room ready as guests come in at 08:00, never ready at 07:00", async () => {
+    const text = await firstPage(crowdedBreakfastSheet(null));
+    expect(text).toContain("07:00 Setup starts");
+    expect(text).toContain("08:00 Room ready, guests in");
+    expect(text).not.toMatch(/07:00 Room ready/u);
+  });
+
+  it("takes the planner's final time as Ready by, measured before guests come in", async () => {
+    const text = await firstPage(crowdedBreakfastSheet(finalAt("2026-11-14T07:45:00.000Z", "Speakers' table dressed")));
+    expect(text).toMatch(/READY BY 07:45 15 min before guests come in/u);
+    expect(text).toContain("07:45 Room ready · Speakers' table dressed");
+    expect(text).toContain("08:00 Event starts");
+  });
+
+  it("shows a planner's final time after guests come in, in brick, and says so in the day", async () => {
+    const late = await generateSheetPdfV2(crowdedBreakfastSheet(finalAt("2026-11-14T08:15:00.000Z")));
+    const text = textOf(pdfPages(late)[0] ?? []);
+    expect(text).toMatch(/READY BY 08:15 15 min after guests come in/u);
+    expect(text).toMatch(/08:00 Event starts 08:15 Room ready After guests come in/u);
+    // pdfkit's fill colour for brick (#8a3522), as it writes it: the late copy sets
+    // more of page 1 in brick than the same sheet ready before guests come in.
+    const BRICK_FILL = "0.5411764705882353 0.20784313725490197 0.13333333333333333 scn";
+    const onTime = await generateSheetPdfV2(crowdedBreakfastSheet(finalAt("2026-11-14T07:45:00.000Z")));
+    const brick = (pdf: Buffer): number => (pdfPageContents(pdf)[0] ?? "").split(BRICK_FILL).length - 1;
+    expect(brick(late)).toBeGreaterThan(brick(onTime));
   });
 });
 
@@ -716,7 +782,11 @@ describe("A, then D (T-696): the brief with the room, then the setup to tick", (
   });
 
   it("opens the setup with the planner's words when page 1 is full, and page 1 says where they are", async () => {
-    const [first, second] = pdfPages(await render()).map((page) => textOf(page));
+    // The wedding less the service door's 18:00 locking: one day line fewer, the
+    // line "08:00 Setup starts" took (18 Nov 2026), so page 1 has room to point.
+    const sheet = weddingWith((instructions) => ({ ...instructions, doorSchedule: { entries: (instructions.doorSchedule?.entries ?? []).map((entry) =>
+      entry.label === "Service door" ? { ...entry, events: entry.events.filter((event) => event.kind === "open") } : entry) } }));
+    const [first, second] = pdfPages(await generateSheetPdfV2(await withPaperCheck(sheet, true))).map((page) => textOf(page));
     expect(first).toContain("FROM THE PLANNER On page 2, above the setup's steps.");
     expect(first).not.toContain("Petals only on the stairs");
     let at = 0;
@@ -986,14 +1056,18 @@ describe("what #415's review found (T-696)", () => {
   });
 
   it("dates a rail time due on another day, and marks one due after the room is ready", async () => {
+    // The planner's final-touches time is the room's ready-by time (Blake, 18 Nov
+    // 2026), so the step due after it is the technical check moved past 13:30.
     const sheet = weddingWith((instructions) => ({ ...instructions, phaseDeadlines: instructions.phaseDeadlines.map((deadline) =>
       deadline.phase === "structure" ? { ...deadline, deadline: bst(16, 0, -1) }
-        : deadline.phase === "final" ? { ...deadline, deadline: bst(13, 45) } : deadline) }));
+        : deadline.phase === "technical" ? { ...deadline, deadline: bst(13, 45) } : deadline) }));
     const second = textOf((await pagesOf(sheet))[1] ?? []);
     const rail = second.slice(second.indexOf("SETUP, IN ORDER"), second.indexOf("Guests in"));
     expect(rail).toContain("Structure Fri 16:00");
     expect(rail).toContain("Furniture 11:00");
-    expect(rail).toContain("Final touches 13:45 late");
+    expect(rail).toContain("Technical 13:45 late");
+    expect(rail).toContain("Final touches 13:30");
+    expect(rail).not.toContain("13:30 late");
     expect(rail).not.toContain("11:00 late");
   });
 
@@ -1035,10 +1109,12 @@ describe("what #415's review found (T-696)", () => {
   });
 
   it("leads the setup page with the planner's words, under its head, when page 1 has no room even to point to them", async () => {
-    // Structure the day before and final touches after the ready-by time: the late line stacks, one line taller.
+    // Structure the day before and the technical check after the ready-by time (the planner's final
+    // touches, 13:30): the late line stacks, one line taller. The wedding itself has been one of these
+    // since its day gained "08:00 Setup starts" (18 Nov 2026).
     const dayBefore = weddingWith((instructions) => ({ ...instructions, phaseDeadlines: instructions.phaseDeadlines.map((deadline) =>
-      deadline.phase === "structure" ? { ...deadline, deadline: bst(16, 0, -1) } : deadline.phase === "final" ? { ...deadline, deadline: bst(13, 45) } : deadline) }));
-    for (const [name, sheet] of [["two more door times", weddingWithDoorTimes(2)], ["structure the day before, final touches late", dayBefore]] as const) {
+      deadline.phase === "structure" ? { ...deadline, deadline: bst(16, 0, -1) } : deadline.phase === "technical" ? { ...deadline, deadline: bst(13, 45) } : deadline) }));
+    for (const [name, sheet] of [["the wedding", weddingSheet()], ["two more door times", weddingWithDoorTimes(2)], ["structure the day before, technical late", dayBefore]] as const) {
       const pages = (await pagesOf(sheet)).map((page) => textOf(page));
       expect(pages[0], name).not.toContain("FROM THE PLANNER");
       const second = pages[1] ?? "";
@@ -1288,7 +1364,9 @@ describe("what #415's review found (T-696)", () => {
   });
 
   it("sets 'late' whole under its time, in brick, for a step on another day too, on rails of five and of three steps", async () => {
-    // Technical and final touches both fall on the Sunday, after Saturday's ready-by time.
+    // Technical and final touches both fall on the Sunday. The planner's final touches (Sun 00:10) are
+    // the room's ready-by time, after Saturday's guests come in, so Room ready is late; the technical
+    // check (Sun 09:00) is after that ready-by time, so its step is late.
     const late = weddingWith((instructions) => ({ ...instructions, phaseDeadlines: instructions.phaseDeadlines.map((deadline) =>
       deadline.phase === "technical" ? { ...deadline, deadline: bst(9, 0, 1) } : deadline.phase === "final" ? { ...deadline, deadline: bst(0, 10, 1) } : deadline) }));
     const three: HallkeeperSheetV2 = { ...late, phases: late.phases.filter((phase) => phase.phase !== "structure" && phase.phase !== "dress") };

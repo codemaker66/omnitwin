@@ -25,6 +25,99 @@ function venueDay(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 }
 
+// -------------------------------------------------------------- the times --
+//
+// Blake, 18 November 2026: "Setup from + Ready by". One rule, read by the
+// printed sheet, the phone card and the Day Board's line alike:
+//
+//   Setup from  the snapshot's timing.setupBy. Its name is historical: both
+//               of its sources START a window (the earliest room phase before
+//               the booking, as the Day Board reads setup; or the booking less
+//               the room's changeover time).
+//   Guests in   the booking's start, timing.eventStart: the Day Board's doors
+//               and the Diary's "Doors in".
+//   Ready by    the planner's typed final-touches time when they gave one,
+//               otherwise when guests come in.
+//
+// Frozen snapshots already hold every field this reads, so no stored shape
+// changes. A planner's final time after guests come in is kept, never moved
+// or hidden: every surface says it is after guests come in.
+
+/** The sheet's times on one rule. Instants are ISO strings, printed on the venue's clock. */
+export interface SheetTimes {
+  /** When the room's setup window opens; null when no room phase or changeover time sets it. */
+  readonly setupFrom: string | null;
+  /** When the room must be ready: the planner's final-touches time, else guests in. Null only when neither is known. */
+  readonly readyBy: string | null;
+  /** When guests come in (the booking's start); null when no booking holds the room. */
+  readonly guestsIn: string | null;
+  /** Ready by is the planner's own final-touches time. */
+  readonly readyFromPlanner: boolean;
+  /** Whole minutes from Ready by to guests in: positive before, negative after, 0 as they come in. Null without both. */
+  readonly readyBeforeGuestsMinutes: number | null;
+  /** Whole minutes from Setup from to Ready by; null without both. Zero or less leaves no time to set the room. */
+  readonly setupMinutes: number | null;
+}
+
+const MINUTE_MS = 60_000;
+
+function instantMs(iso: string | null | undefined): number | null {
+  if (iso === null || iso === undefined) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+type SheetInstructions = HallkeeperSheetV2["instructions"];
+
+/** The planner's final-touches deadline: the first one with a readable time. */
+function plannerFinal(instructions: SheetInstructions): NonNullable<SheetInstructions>["phaseDeadlines"][number] | null {
+  return instructions?.phaseDeadlines.find((deadline) => deadline.phase === "final" && instantMs(deadline.deadline) !== null) ?? null;
+}
+
+const minutesBetween = (fromMs: number, toMs: number): number => Math.round((toMs - fromMs) / MINUTE_MS);
+
+export function sheetTimes(sheet: Pick<HallkeeperSheetV2, "timing" | "instructions">): SheetTimes {
+  const timing = sheet.timing;
+  const guestsMs = instantMs(timing?.eventStart);
+  const guestsIn = guestsMs === null ? null : timing?.eventStart ?? null;
+  const setupMs = guestsMs === null ? null : instantMs(timing?.setupBy);
+  const setupFrom = setupMs === null ? null : timing?.setupBy ?? null;
+  const final = plannerFinal(sheet.instructions);
+  const readyBy = final?.deadline ?? guestsIn;
+  const readyMs = instantMs(readyBy);
+  return {
+    setupFrom,
+    readyBy,
+    guestsIn,
+    readyFromPlanner: final !== null,
+    readyBeforeGuestsMinutes: readyMs === null || guestsMs === null ? null : minutesBetween(readyMs, guestsMs),
+    setupMinutes: setupMs === null || readyMs === null ? null : minutesBetween(setupMs, readyMs),
+  };
+}
+
+/** "45 min", "2 h", "2 h 30 min": minutes under two hours stay minutes, as the sheet has always said them. */
+export function sheetDurationWords(minutes: number): string {
+  const whole = Math.abs(Math.round(minutes));
+  if (whole < 120) return `${String(whole)} min`;
+  const rest = whole % 60;
+  return `${String(Math.floor(whole / 60))} h${rest === 0 ? "" : ` ${String(rest)} min`}`;
+}
+
+/** How Ready by stands to guests coming in: "when guests come in", "15 min before guests come in" or "15 min after guests come in"; null without both times. */
+export function readyByWords(times: SheetTimes): string | null {
+  const minutes = times.readyBeforeGuestsMinutes;
+  if (minutes === null) return null;
+  if (minutes === 0) return "when guests come in";
+  return `${sheetDurationWords(minutes)} ${minutes > 0 ? "before" : "after"} guests come in`;
+}
+
+/** The setup window in words: "60 min to set the room", or that it leaves none; null without both times. */
+export function setupFromWords(times: SheetTimes): string | null {
+  const minutes = times.setupMinutes;
+  if (minutes === null) return null;
+  return minutes > 0 ? `${sheetDurationWords(minutes)} to set the room` : "Not before the room's ready-by time";
+}
+
 // ---------------------------------------------------------------- the day --
 
 export interface DayLine {
@@ -34,8 +127,10 @@ export interface DayLine {
   readonly detail: string | null;
   /** Room ready and Event starts: the two times the day turns on. */
   readonly emphasis: boolean;
-  /** A planner's phase deadline later than the room's ready-by time. */
+  /** Falls after the time it must come before: a phase deadline after the room's ready-by time, or Room ready after guests come in. */
   readonly late: boolean;
+  /** Room ready falls after guests come in (a planner's final time after the doors). */
+  readonly afterGuests: boolean;
   /** Falls on another venue-local day than the event starts (the night before, after midnight). */
   readonly otherDay: boolean;
 }
@@ -43,34 +138,35 @@ export interface DayLine {
 const BRIEFING_DETAIL = "Evacuation, invacuation, lockdown and communication";
 
 /**
- * Every time on the sheet in one sequence: phase deadlines, the ready-by
- * time, the start, each door's opening and locking, and the team briefing.
- * A final-touches deadline at the ready-by time is the same moment, so it
- * folds into "Room ready" and lends it its reason.
+ * Every time on the sheet in one sequence: setup starting, phase deadlines,
+ * the room ready, guests coming in, each door's opening and locking, and the
+ * team briefing. The planner's final-touches time is the room's ready-by time
+ * (sheetTimes), so it folds into "Room ready" and lends it its reason; and a
+ * room ready as guests come in is one moment, printed once as "Room ready,
+ * guests in".
  */
 export function sheetRunningOrder(sheet: HallkeeperSheetV2): DayLine[] {
   const timeZone = sheet.venue.timezone;
   const ins = sheet.instructions;
-  const setupBy = sheet.timing?.setupBy ?? null;
-  const setupByMs = setupBy === null ? null : Date.parse(setupBy);
+  const times = sheetTimes(sheet);
+  const readyMs = instantMs(times.readyBy);
+  const final = plannerFinal(ins);
   const eventDay = sheet.timing === null ? null : venueDay(sheet.timing.eventStart, timeZone);
   const lines: (DayLine & { readonly ms: number })[] = [];
-  const add = (at: string, title: string, detail: string | null, emphasis = false, late = false): void => {
-    lines.push({ at, ms: Date.parse(at), title, detail, emphasis, late, otherDay: eventDay !== null && venueDay(at, timeZone) !== eventDay });
+  const add = (at: string, title: string, detail: string | null, emphasis = false, late = false, afterGuests = false): void => {
+    lines.push({ at, ms: Date.parse(at), title, detail, emphasis, late, afterGuests, otherDay: eventDay !== null && venueDay(at, timeZone) !== eventDay });
   };
   const text = (value: string): string | null => (value.trim().length > 0 ? value.trim() : null);
 
-  let readyDetail: string | null = null;
+  if (times.setupFrom !== null) add(times.setupFrom, "Setup starts", null);
   for (const deadline of ins?.phaseDeadlines ?? []) {
-    const ms = Date.parse(deadline.deadline);
-    if (deadline.phase === "final" && setupByMs !== null && ms === setupByMs) {
-      readyDetail = text(deadline.reason);
-      continue;
-    }
-    add(deadline.deadline, `${phaseLabel(deadline.phase)} done`, text(deadline.reason), false, setupByMs !== null && ms > setupByMs);
+    if (deadline === final) continue;
+    add(deadline.deadline, `${phaseLabel(deadline.phase)} done`, text(deadline.reason), false, readyMs !== null && Date.parse(deadline.deadline) > readyMs);
   }
-  if (setupBy !== null) add(setupBy, "Room ready", readyDetail, true);
-  if (sheet.timing !== null) add(sheet.timing.eventStart, "Event starts", null, true);
+  const together = times.readyBeforeGuestsMinutes === 0;
+  const afterGuests = times.readyBeforeGuestsMinutes !== null && times.readyBeforeGuestsMinutes < 0;
+  if (times.readyBy !== null) add(times.readyBy, together ? "Room ready, guests in" : "Room ready", final === null ? null : text(final.reason), true, afterGuests, afterGuests);
+  if (times.guestsIn !== null && !together) add(times.guestsIn, "Event starts", null, true);
   for (const door of ins?.doorSchedule?.entries ?? []) {
     for (const event of door.events) add(event.at, `${door.label} ${event.kind === "open" ? "opens" : "locks"}`, text(event.note));
   }
@@ -250,7 +346,9 @@ interface ItemDraft {
  * allergy on a table does not repeat on its linen.
  */
 export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
-  const setupBy = sheet.timing?.setupBy ?? null;
+  // Late means after the room's ready-by time (sheetTimes), never after the
+  // setup window merely opens: a step due at 07:30 for 08:00 doors is on time.
+  const readyMs = instantMs(sheetTimes(sheet).readyBy);
   const timeZone = sheet.venue.timezone;
   const eventDay = sheet.timing === null ? null : venueDay(sheet.timing.eventStart, timeZone);
   const seenNotes = new Set<string>();
@@ -295,7 +393,7 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
       deadline: deadline === null ? null : {
         at: deadline.deadline,
         reason: deadline.reason.trim().length > 0 ? deadline.reason.trim() : null,
-        late: setupBy !== null && Date.parse(deadline.deadline) > Date.parse(setupBy),
+        late: readyMs !== null && Date.parse(deadline.deadline) > readyMs,
         otherDay: eventDay !== null && venueDay(deadline.deadline, timeZone) !== eventDay,
       },
       items: [...drafts.values()].map((draft) => ({

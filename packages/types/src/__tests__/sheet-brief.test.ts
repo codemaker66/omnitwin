@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { HallkeeperSheetV2, ManifestRowV2 } from "../hallkeeper-v2.js";
+import type { HallkeeperSheetV2, ManifestRowV2, Timing } from "../hallkeeper-v2.js";
 import type { EventInstructions } from "../hallkeeper-instructions.js";
+import { crowdedTradesHallDay } from "../crowded-day.js";
 import {
   careTables,
   formatTableLabels,
   accessNeeds,
   allergyFacts,
   otherMeals,
+  readyByWords,
   sheetNoteMarkers,
   sheetRunningOrder,
   sheetSetupSteps,
   sheetStoreList,
+  sheetTimes,
   venueZoneLabel,
 } from "../sheet-brief.js";
 
@@ -36,7 +39,8 @@ function sheet(partial: Partial<HallkeeperSheetV2> = {}): HallkeeperSheetV2 {
     config: { id: "6d1f8a52-3c1b-4f6e-9b1a-0a4c2b7e9d10", name: "Wedding", guestCount: 120, layoutStyle: "dinner-rounds" },
     venue: { name: "Trades Hall Glasgow", address: "85 Glassford Street", logoUrl: null, timezone: "Europe/London" },
     space: { name: "Grand Hall", widthM: 21, lengthM: 10.5, heightM: 7 },
-    timing: { eventStart: bst(14, 30), setupBy: bst(13, 30), bufferMinutes: 60 },
+    // setupBy is when the setup window opens (the field's name is historical).
+    timing: { eventStart: bst(14, 30), setupBy: bst(8), bufferMinutes: 390 },
     instructions: null,
     phases: [],
     totals: { entries: [], totalRows: 0, totalItems: 0 },
@@ -74,7 +78,7 @@ describe("sheetRunningOrder", () => {
 
   it("puts every time of the day in order", () => {
     expect(day.map((line) => line.title)).toEqual([
-      "Service door opens", "Structure done", "Team briefing", "Room ready", "Technical done", "Event starts", "Service door locks",
+      "Setup starts", "Service door opens", "Structure done", "Team briefing", "Room ready", "Technical done", "Event starts", "Service door locks",
     ]);
   });
 
@@ -105,6 +109,146 @@ describe("sheetRunningOrder", () => {
 
   it("has nothing to say without times or instructions", () => {
     expect(sheetRunningOrder(sheet({ timing: null }))).toEqual([]);
+  });
+});
+
+// ------------------------------------------------- setup from, ready by ----
+// Blake, 18 November 2026: "Setup from + Ready by". The sheet's timing.setupBy
+// is when the setup window OPENS (the earliest room phase before the booking,
+// or the booking start less the room's changeover time), and the booking's
+// start is when guests come in, as the Day Board and the Diary read them.
+// Ready by is the planner's typed final-touches time, else when guests come in.
+
+/** GMT on Saturday 14 November 2026, the crowded day's default date. */
+const gmt = (hour: number, minute = 0): string => new Date(Date.UTC(2026, 10, 14, hour, minute)).toISOString();
+
+/** The crowded day's Grand Hall breakfast, timed as the sheet's data layer times it: the booking's
+ *  start, and its Setup phase, which opens before the booking (07:00 for 08:00 doors). */
+function crowdedBreakfastTiming(): Timing {
+  const day = crowdedTradesHallDay();
+  const booking = day.calendar.entries.find((entry) => entry.entryType === "booking" && entry.title === "Merchants' Breakfast Briefing");
+  if (booking?.entryType !== "booking") throw new Error("the crowded day has a Grand Hall breakfast");
+  const setup = day.calendar.entries.find((entry) => entry.entryType === "phase" && entry.eventId === booking.eventId && entry.spaceId === booking.spaceId);
+  if (setup?.entryType !== "phase") throw new Error("the breakfast has a Setup phase in its room");
+  return { eventStart: booking.startsAt, setupBy: setup.startsAt, bufferMinutes: 60 };
+}
+
+const final = (deadline: string, reason = ""): EventInstructions => ({ ...EMPTY_INSTRUCTIONS, phaseDeadlines: [{ phase: "final", deadline, reason }] });
+
+describe("sheetTimes: one rule for every surface", () => {
+  it("reads the crowded day's breakfast as setup from 07:00 and ready by 08:00, when guests come in", () => {
+    const timing = crowdedBreakfastTiming();
+    expect(timing).toEqual({ eventStart: gmt(8), setupBy: gmt(7), bufferMinutes: 60 });
+    expect(sheetTimes({ timing, instructions: null })).toEqual({
+      setupFrom: gmt(7), readyBy: gmt(8), guestsIn: gmt(8), readyFromPlanner: false, readyBeforeGuestsMinutes: 0, setupMinutes: 60,
+    });
+  });
+
+  it("takes the planner's typed final-touches time as Ready by", () => {
+    expect(sheetTimes({ timing: crowdedBreakfastTiming(), instructions: final(gmt(7, 45), "Speakers' table dressed") })).toEqual({
+      setupFrom: gmt(7), readyBy: gmt(7, 45), guestsIn: gmt(8), readyFromPlanner: true, readyBeforeGuestsMinutes: 15, setupMinutes: 45,
+    });
+  });
+
+  it("keeps a planner's final time later than guests come in, and says how much later", () => {
+    const times = sheetTimes({ timing: crowdedBreakfastTiming(), instructions: final(gmt(8, 15)) });
+    expect(times).toMatchObject({ readyBy: gmt(8, 15), guestsIn: gmt(8), readyFromPlanner: true, readyBeforeGuestsMinutes: -15 });
+  });
+
+  it("is ready when guests come in, with no setup time, when no phase or changeover time opens the window", () => {
+    expect(sheetTimes({ timing: { eventStart: gmt(8), setupBy: null, bufferMinutes: null }, instructions: null })).toEqual({
+      setupFrom: null, readyBy: gmt(8), guestsIn: gmt(8), readyFromPlanner: false, readyBeforeGuestsMinutes: 0, setupMinutes: null,
+    });
+  });
+
+  it("knows no time without a booking, except a final time the planner typed", () => {
+    expect(sheetTimes({ timing: null, instructions: null })).toEqual({
+      setupFrom: null, readyBy: null, guestsIn: null, readyFromPlanner: false, readyBeforeGuestsMinutes: null, setupMinutes: null,
+    });
+    expect(sheetTimes({ timing: null, instructions: final(gmt(7, 45)) })).toEqual({
+      setupFrom: null, readyBy: gmt(7, 45), guestsIn: null, readyFromPlanner: true, readyBeforeGuestsMinutes: null, setupMinutes: null,
+    });
+  });
+
+  it("ignores the planner's other phases when finding Ready by", () => {
+    const instructions: EventInstructions = { ...EMPTY_INSTRUCTIONS, phaseDeadlines: [{ phase: "technical", deadline: gmt(7, 50), reason: "" }] };
+    expect(sheetTimes({ timing: crowdedBreakfastTiming(), instructions })).toMatchObject({ readyBy: gmt(8), readyFromPlanner: false });
+  });
+
+  it("words Ready by against guests coming in", () => {
+    const at = (instructions: EventInstructions | null): string | null => readyByWords(sheetTimes({ timing: crowdedBreakfastTiming(), instructions }));
+    expect(at(null)).toBe("when guests come in");
+    expect(at(final(gmt(7, 45)))).toBe("15 min before guests come in");
+    expect(at(final(gmt(8, 15)))).toBe("15 min after guests come in");
+    expect(at(final(gmt(5, 30)))).toBe("2 h 30 min before guests come in");
+    expect(at(final(gmt(6)))).toBe("2 h before guests come in");
+    expect(readyByWords(sheetTimes({ timing: null, instructions: final(gmt(7, 45)) }))).toBeNull();
+  });
+});
+
+describe("sheetRunningOrder: setup starts, then the room is ready", () => {
+  const breakfast = (instructions: EventInstructions | null): HallkeeperSheetV2 => sheet({ timing: crowdedBreakfastTiming(), instructions });
+  const timed = (lines: ReturnType<typeof sheetRunningOrder>): string[] => lines.map((line) => `${line.at} ${line.title}`);
+
+  it("prints the breakfast's setup at 07:00 and the room ready as guests come in at 08:00, never ready at 07:00", () => {
+    const day = sheetRunningOrder(breakfast(null));
+    expect(timed(day)).toEqual([`${gmt(7)} Setup starts`, `${gmt(8)} Room ready, guests in`]);
+    expect(day[0]).toMatchObject({ emphasis: false, late: false });
+    expect(day[1]).toMatchObject({ emphasis: true, late: false, afterGuests: false });
+  });
+
+  it("does not call a deadline before guests come in late, though it is after setup starts", () => {
+    const day = sheetRunningOrder(breakfast({ ...EMPTY_INSTRUCTIONS, phaseDeadlines: [{ phase: "furniture", deadline: gmt(7, 30), reason: "" }] }));
+    expect(day.find((line) => line.title === "Furniture done")).toMatchObject({ late: false });
+  });
+
+  it("puts the room ready at the planner's final time, and calls a deadline after it late", () => {
+    const day = sheetRunningOrder(breakfast({ ...EMPTY_INSTRUCTIONS, phaseDeadlines: [
+      { phase: "furniture", deadline: gmt(7, 30), reason: "" },
+      { phase: "technical", deadline: gmt(7, 50), reason: "" },
+      { phase: "final", deadline: gmt(7, 45), reason: "Speakers' table dressed" },
+    ] }));
+    expect(timed(day)).toEqual([
+      `${gmt(7)} Setup starts`, `${gmt(7, 30)} Furniture done`, `${gmt(7, 45)} Room ready`, `${gmt(7, 50)} Technical done`, `${gmt(8)} Event starts`,
+    ]);
+    expect(day.find((line) => line.title === "Room ready")).toMatchObject({ detail: "Speakers' table dressed", emphasis: true, late: false });
+    expect(day.find((line) => line.title === "Furniture done")?.late).toBe(false);
+    expect(day.find((line) => line.title === "Technical done")?.late).toBe(true);
+  });
+
+  it("shows a planner's final time after guests come in where it falls, marked late against them", () => {
+    const day = sheetRunningOrder(breakfast(final(gmt(8, 15))));
+    expect(timed(day)).toEqual([`${gmt(7)} Setup starts`, `${gmt(8)} Event starts`, `${gmt(8, 15)} Room ready`]);
+    expect(day[2]).toMatchObject({ late: true, afterGuests: true, emphasis: true });
+  });
+
+  it("is ready as guests come in, with no setup line, when no changeover time is recorded", () => {
+    const day = sheetRunningOrder(sheet({ timing: { eventStart: gmt(8), setupBy: null, bufferMinutes: null } }));
+    expect(timed(day)).toEqual([`${gmt(8)} Room ready, guests in`]);
+  });
+});
+
+describe("sheetSetupSteps: late against Ready by", () => {
+  const steps = (instructions: EventInstructions): ReturnType<typeof sheetSetupSteps> => sheetSetupSteps(sheet({
+    timing: crowdedBreakfastTiming(),
+    instructions,
+    phases: [
+      { phase: "furniture", zones: [{ zone: "Centre", rows: [row({ name: "6ft Round Table", qty: 12 })] }] },
+      { phase: "technical", zones: [{ zone: "North wall", rows: [row({ name: "Lectern", category: "lectern", qty: 1 })] }] },
+    ],
+  }));
+
+  it("does not mark a step due between setup starting and guests coming in late", () => {
+    expect(steps({ ...EMPTY_INSTRUCTIONS, phaseDeadlines: [{ phase: "furniture", deadline: gmt(7, 30), reason: "" }] })[0]?.deadline?.late).toBe(false);
+  });
+
+  it("marks a step due after the planner's final time late", () => {
+    const due = steps({ ...EMPTY_INSTRUCTIONS, phaseDeadlines: [
+      { phase: "furniture", deadline: gmt(7, 30), reason: "" },
+      { phase: "technical", deadline: gmt(7, 50), reason: "" },
+      { phase: "final", deadline: gmt(7, 45), reason: "" },
+    ] });
+    expect(due.map((step) => step.deadline?.late)).toEqual([false, true]);
   });
 });
 

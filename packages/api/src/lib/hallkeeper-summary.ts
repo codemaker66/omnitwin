@@ -1,5 +1,6 @@
 import {
   HallkeeperSheetSummarySchema,
+  sheetTimes,
   type HallkeeperSheetSummary,
   type HallkeeperSheetV2,
 } from "@omnitwin/types";
@@ -12,19 +13,24 @@ import {
 // key carries a check mark. Marks left on keys a re-save removed are not
 // counted, because the sheet does not show them. Pure, so the count is
 // tested without a database.
+//
+// Its Ready by is the printed sheet's (sheetTimes): the planner's final-touches
+// time, else when guests come in. It used to send timing.setupBy, which is
+// when setup STARTS, so the board told the room to be ready an hour early.
 // ---------------------------------------------------------------------------
 
 export function summarizeSheet(
   configId: string,
-  sheet: Pick<HallkeeperSheetV2, "phases" | "timing">,
+  sheet: Pick<HallkeeperSheetV2, "phases" | "timing" | "instructions">,
   checkedKeys: Iterable<string>,
 ): HallkeeperSheetSummary {
   const marked = new Set(checkedKeys);
   const rows = sheet.phases.flatMap((phase) => phase.zones.flatMap((zone) => zone.rows));
+  const times = sheetTimes(sheet);
   return HallkeeperSheetSummarySchema.parse({
     configId,
-    readyBy: sheet.timing?.setupBy ?? null,
-    eventStart: sheet.timing?.eventStart ?? null,
+    readyBy: times.readyBy,
+    eventStart: times.guestsIn,
     total: rows.length,
     checked: rows.filter((row) => marked.has(row.key)).length,
   });

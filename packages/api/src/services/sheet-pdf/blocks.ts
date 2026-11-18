@@ -5,10 +5,13 @@ import {
   careTables,
   formatTableLabels,
   otherMeals,
+  readyByWords,
+  setupFromWords,
   sheetNoteMarkers,
   sheetRunningOrder,
   sheetSetupSteps,
   sheetStoreList,
+  sheetTimes,
   venueZoneLabel,
   type DayLine,
   type HallkeeperSheetV2,
@@ -137,15 +140,43 @@ interface Fact {
   readonly name?: boolean;
 }
 
+/** A time's caption, led by its day when that is not the day guests come in ("Fri 13 Nov · 13 h to set the room"). */
+function onGuestsDay(iso: string, words: string, guestsIn: string | null, timeZone: string): string {
+  if (guestsIn === null || shortDay(iso, timeZone) === shortDay(guestsIn, timeZone)) return words;
+  return words.length === 0 ? shortDay(iso, timeZone) : `${shortDay(iso, timeZone)} · ${words}`;
+}
+
+/**
+ * The header's facts (Blake, 18 November 2026: "Setup from + Ready by"):
+ * when the setup window opens, when the room must be ready (the planner's
+ * final time, else when guests come in, sheetTimes), when guests come in, how
+ * many and where. A ready-by time after guests come in is set in brick and says
+ * so; it is the planner's time and is never moved.
+ */
 function factsOf(sheet: HallkeeperSheetV2): Fact[] {
   const timeZone = sheet.venue.timezone;
   const timing = sheet.timing;
-  const ready: Fact = timing === null
+  const times = sheetTimes(sheet);
+  const setup: Fact = times.setupFrom === null
+    ? { label: "Setup from", value: "—", caption: timing === null ? "" : "No changeover time for this room", tone: timing === null ? "plain" : "alert" }
+    : {
+      label: "Setup from",
+      value: clock(times.setupFrom, timeZone),
+      caption: onGuestsDay(times.setupFrom, setupFromWords(times) ?? "", times.guestsIn, timeZone),
+      tone: times.setupMinutes !== null && times.setupMinutes <= 0 ? "alert" : "plain",
+    };
+  const ready: Fact = times.readyBy === null
     ? { label: "Ready by", value: "—", caption: "No booking holds this room yet", tone: "alert" }
-    : timing.setupBy === null
-      ? { label: "Ready by", value: "—", caption: "No changeover time for this room", tone: "alert" }
-      : { label: "Ready by", value: clock(timing.setupBy, timeZone), caption: timing.bufferMinutes === null ? "" : `${String(timing.bufferMinutes)} min before guests come in`, tone: "accent" };
+    : timing === null
+      ? { label: "Ready by", value: clock(times.readyBy, timeZone), caption: "The planner's time · no booking holds this room yet", tone: "alert" }
+      : {
+        label: "Ready by",
+        value: clock(times.readyBy, timeZone),
+        caption: onGuestsDay(times.readyBy, readyByWords(times) ?? "", times.guestsIn, timeZone),
+        tone: (times.readyBeforeGuestsMinutes ?? 0) < 0 ? "alert" : "accent",
+      };
   return [
+    setup,
     ready,
     timing === null
       ? { label: "Guests in", value: "—", caption: "Confirm the time first", tone: "plain" }
@@ -155,18 +186,31 @@ function factsOf(sheet: HallkeeperSheetV2): Fact[] {
   ];
 }
 
+/**
+ * Each fact's width in points, sized so the usual captions keep to one line
+ * (measured in the sheet's own fonts, 18 Nov 2026): a time's numeral is 79 pt;
+ * "6 h 30 min to set the room" 93 pt; "60 min before guests come in" 106 pt;
+ * "Sat 24 Oct · UK time" 72 pt; "Dinner rounds" 50 pt; "21 × 10.5 m · 7 m high"
+ * 76 pt. The room takes the rest, and its name shrinks to fit as before.
+ */
+const FACT_WIDTHS = [108, 126, 96, 74] as const;
+/** Space either side of the rule between two facts. */
+const FACT_GAP = 10;
+
 export function facts(flow: Flow, sheet: HallkeeperSheetV2): void {
   const { doc } = flow;
   const top = flow.y;
-  const cellW = W / 4;
   const numeralTop = top + 18;
   const captionTop = numeralTop + TYPE.numeral.size + 2;
   hairline(doc, X, top, X + W, INK.ruleStrong, 0.7);
   let bottom = captionTop;
+  let cellX = X;
   for (const [index, fact] of factsOf(sheet).entries()) {
-    const x = X + index * cellW + (index === 0 ? 0 : 12);
-    const width = cellW - (index === 0 ? 14 : 26);
-    if (index > 0) upright(doc, X + index * cellW, top + 8, captionTop + 10);
+    const cellW = FACT_WIDTHS[index] ?? X + W - cellX;
+    const x = cellX + (index === 0 ? 0 : FACT_GAP);
+    const width = cellW - (index === 0 ? FACT_GAP : FACT_GAP * 2);
+    if (index > 0) upright(doc, cellX, top + 8, captionTop + 10);
+    cellX += cellW;
     drawLine(doc, fact.tone === "alert" ? TYPE.overlineAlert : TYPE.overline, fact.label, x, top + 9);
     if (fact.name === true) {
       let size: number = TYPE.factName.size;
@@ -376,6 +420,9 @@ function contactsUnit(doc: Doc, sheet: HallkeeperSheetV2, x: number, width: numb
 
 const TIME_W = 38;
 const LATE = "After the room's ready-by time";
+/** Under a Room ready line that falls after guests come in: the planner's time, kept and said. */
+const LATE_GUESTS = "After guests come in";
+const lateWords = (line: DayLine): string => (line.afterGuests ? LATE_GUESTS : LATE);
 /** A day line's date and detail when they share its title's line: the title's size, so one baseline. */
 const DAY_DATE_INLINE: TextStyle = { ...TYPE.dayTitle, face: "Inter-Medium", color: INK.accent };
 const DAY_DETAIL_INLINE: TextStyle = { ...TYPE.dayTitle, color: INK.secondary };
@@ -395,7 +442,7 @@ function dayLineHeight(doc: Doc, line: DayLine, timeZone: string, width: number)
   let height = blockHeight(doc, line.emphasis ? TYPE.dayTitleStrong : TYPE.dayTitle, line.title, textW);
   if (line.otherDay) height += lineHeight(doc, TYPE.detailAccent);
   if (line.detail !== null) height += 0.5 + blockHeight(doc, TYPE.detail, line.detail, textW);
-  if (line.late) height += 0.5 + blockHeight(doc, TYPE.detailAlert, LATE, textW);
+  if (line.late) height += 0.5 + blockHeight(doc, TYPE.detailAlert, lateWords(line), textW);
   return Math.max(height, lineHeight(doc, TYPE.time)) + 4;
 }
 
@@ -414,7 +461,7 @@ function drawDayLine(doc: Doc, line: DayLine, timeZone: string, x: number, y: nu
   let cursor = drawBlock(doc, line.emphasis ? TYPE.dayTitleStrong : TYPE.dayTitle, line.title, x + TIME_W, y, textW);
   if (line.otherDay) cursor = drawLine(doc, TYPE.detailAccent, shortDay(line.at, timeZone), x + TIME_W, cursor);
   if (line.detail !== null) cursor = drawBlock(doc, TYPE.detail, line.detail, x + TIME_W, cursor + 0.5, textW);
-  if (line.late) drawBlock(doc, TYPE.detailAlert, LATE, x + TIME_W, cursor + 0.5, textW);
+  if (line.late) drawBlock(doc, TYPE.detailAlert, lateWords(line), x + TIME_W, cursor + 0.5, textW);
 }
 
 const QTY_W = 26;
@@ -896,7 +943,7 @@ function stepUnits(doc: Doc, sheet: HallkeeperSheetV2, steps: readonly SetupStep
   ];
 }
 
-/** A ring on the setup's rail: its mark, its name, its time, and whether that time is after the room's ready-by time. */
+/** A ring on the setup's rail: its mark, its name, its time, and whether that time falls after the one it must precede (a step after the room's ready-by time; Room ready after guests come in). */
 interface Station { readonly kind: "step" | "ready" | "guests"; readonly mark: string; readonly label: string; readonly time: string; readonly late: boolean }
 
 /** A step's time on the rail, as its head gives it: with the weekday when it falls on another day ("Fri 16:00"). */
@@ -905,16 +952,25 @@ function railTime(deadline: NonNullable<SetupStep["deadline"]>, timeZone: string
   return `${day}${clock(deadline.at, timeZone)}`;
 }
 
+/** A time on the rail with its weekday when it falls on another day than guests come in ("Sun 00:10"), as a step's time is. */
+function dayClock(iso: string, guestsIn: string | null, timeZone: string): string {
+  const weekday = (at: string): string => new Date(at).toLocaleDateString("en-GB", { weekday: "short", timeZone });
+  const sameDay = guestsIn === null || shortDay(iso, timeZone) === shortDay(guestsIn, timeZone);
+  return sameDay ? clock(iso, timeZone) : `${weekday(iso)} ${clock(iso, timeZone)}`;
+}
+
 function railStations(sheet: HallkeeperSheetV2, steps: readonly SetupStep[]): Station[] {
   const timeZone = sheet.venue.timezone;
-  const timing = sheet.timing;
+  const times = sheetTimes(sheet);
   return [
     ...steps.map((step, index): Station => ({
       kind: "step", mark: String(index + 1), label: step.label,
       time: step.deadline === null ? "" : railTime(step.deadline, timeZone), late: step.deadline?.late === true,
     })),
-    { kind: "ready", mark: "", label: "Room ready", time: timing === null || timing.setupBy === null ? "—" : clock(timing.setupBy, timeZone), late: false },
-    { kind: "guests", mark: "", label: "Guests in", time: timing === null ? "—" : clock(timing.eventStart, timeZone), late: false },
+    // Room ready is the sheet's ready-by time (sheetTimes), never setup's start;
+    // a planner's final time after guests come in is marked late on the rail.
+    { kind: "ready", mark: "", label: "Room ready", time: times.readyBy === null ? "—" : dayClock(times.readyBy, times.guestsIn, timeZone), late: (times.readyBeforeGuestsMinutes ?? 0) < 0 },
+    { kind: "guests", mark: "", label: "Guests in", time: times.guestsIn === null ? "—" : clock(times.guestsIn, timeZone), late: false },
   ];
 }
 

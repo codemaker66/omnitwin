@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { sheetTimes } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { configurationReviewRoutes } from "../routes/configuration-reviews.js";
 import { configurationRoutes } from "../routes/configurations.js";
@@ -371,8 +372,9 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(response.statusCode).toBe(200);
     expect(response.json<{ data: unknown }>().data).toEqual({
       configId: f.configId,
-      readyBy: f.frozen.timing?.setupBy ?? null,
-      eventStart: f.frozen.timing?.eventStart ?? null,
+      // The sheet's Ready by (sheetTimes), not timing.setupBy: that is when setup starts.
+      readyBy: sheetTimes(f.frozen).readyBy,
+      eventStart: sheetTimes(f.frozen).guestsIn,
       total: rows.length,
       checked: 1,
     });

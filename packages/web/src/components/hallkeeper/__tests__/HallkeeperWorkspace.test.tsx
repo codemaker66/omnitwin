@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import { EventPhaseGraphSchema, HallkeeperSheetV2Schema, type EventPhaseGraph } from "@omnitwin/types";
+import { EventInstructionsSchema, EventPhaseGraphSchema, HallkeeperSheetV2Schema, type EventPhaseGraph } from "@omnitwin/types";
 import { HallkeeperWorkspace, type HallkeeperWorkspaceProps } from "../HallkeeperWorkspace.js";
 import { useHallkeeperContext, type HallkeeperVerifiedContext } from "../useHallkeeperContext.js";
 import { useSheetReviewStatus } from "../useSheetReviewStatus.js";
@@ -297,18 +297,37 @@ describe("HallkeeperWorkspace event time", () => {
   it("shows the Diary's hour even when the event row disagrees", () => {
     withGraphStart("2026-09-19T12:00:00.000Z"); // 13:00 London — the drifted row
     mount({ data: { ...sheet, timing: diaryTiming } });
-    expect(screen.getByText("Starts")).toBeTruthy();
-    expect(screen.getByText("09:00")).toBeTruthy();
+    expect(screen.getByText("Guests in").nextElementSibling?.textContent).toBe("09:00");
     expect(screen.queryByText("13:00")).toBeNull();
   });
 
-  it("sets the hour the room must be ready beside the hour the event starts (roadmap N4)", () => {
+  it("sets when setup starts, when the room must be ready and when guests come in (roadmap N4)", () => {
+    // timing.setupBy opens the setup window (its name is historical); with no
+    // final time from the planner the room is ready when guests come in.
     withGraphStart("2026-09-19T12:00:00.000Z");
     mount({ data: { ...sheet, timing: diaryTiming } });
     const times = screen.getByText("Ready by").closest("dl");
-    expect(times?.textContent).toBe("Ready by07:30Starts09:00");
+    expect(times?.textContent).toBe("Setup from07:30Ready by09:00Guests in09:00");
+    expect(screen.queryByText(/after guests come in/u)).toBeNull();
     // The zone is named in words, and only for a device on another clock.
     expect(screen.queryByText(/Europe\/London/u)).toBeNull();
+  });
+
+  it("takes the planner's final time as Ready by", () => {
+    withGraphStart("2026-09-19T12:00:00.000Z");
+    const instructions = EventInstructionsSchema.parse({ phaseDeadlines: [{ phase: "final", deadline: "2026-09-19T07:45:00.000Z" }] });
+    mount({ data: { ...sheet, timing: diaryTiming, instructions } });
+    expect(screen.getByText("Ready by").closest("dl")?.textContent).toBe("Setup from07:30Ready by08:45Guests in09:00");
+    expect(screen.queryByText(/after guests come in/u)).toBeNull();
+  });
+
+  it("says so when the planner's final time is after guests come in", () => {
+    withGraphStart("2026-09-19T12:00:00.000Z");
+    const instructions = EventInstructionsSchema.parse({ phaseDeadlines: [{ phase: "final", deadline: "2026-09-19T08:15:00.000Z" }] });
+    mount({ data: { ...sheet, timing: diaryTiming, instructions } });
+    expect(screen.getByText("Ready by").closest("dl")?.textContent).toBe("Setup from07:30Ready by09:15Guests in09:00");
+    expect(screen.getByText("The planner’s ready time is 15 min after guests come in.")).toBeTruthy();
+    expect(screen.getByText("Ready by").nextElementSibling?.classList.contains("hkf-time-late")).toBe(true);
   });
 
   it("says the event is not in the Diary rather than inventing an hour", () => {
@@ -323,9 +342,8 @@ describe("HallkeeperWorkspace event time", () => {
     // silent and not invent a constant.
     withGraphStart("2026-09-19T12:00:00.000Z");
     mount({ data: { ...sheet, timing: { ...diaryTiming, setupBy: null, bufferMinutes: null } } });
-    expect(screen.getByText("Starts")).toBeTruthy();
-    expect(screen.getByText("09:00")).toBeTruthy();
-    expect(screen.getByText("Ready by").closest("dl")?.textContent).toBe("Ready byNot setStarts09:00");
+    expect(screen.getByText("Guests in").nextElementSibling?.textContent).toBe("09:00");
+    expect(screen.getByText("Ready by").closest("dl")?.textContent).toBe("Setup fromNot setReady by09:00Guests in09:00");
     expect(screen.getByText("No changeover time is recorded for this room.")).toBeTruthy();
   });
 });
