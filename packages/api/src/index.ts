@@ -50,6 +50,7 @@ import { clientRoutes } from "./routes/clients.js";
 import { dietaryMemoryRoutes } from "./routes/dietary-memory.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
+import { adminJobsRoutes } from "./routes/admin-jobs.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { stripeWebhookRoutes } from "./routes/stripe-webhook.js";
 import { proposalDepositRoutes, proposalShareDepositRoutes } from "./routes/deposits.js";
@@ -551,6 +552,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // A client's remembered allergy notes, for their own account only.
   await server.register(dietaryMemoryRoutes, { db, prefix: "/account/dietary-notes" });
   await server.register(adminRoutes, { db, prefix: "/admin" });
+  // Stuck work (T-702): the dead jobs of the job list, for platform administrators.
+  await server.register(adminJobsRoutes, { db, registry: jobs.registry, prefix: "/admin/jobs" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(runtimePackagePreviewRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(adminReconstructionFoundryRoutes, {

@@ -1,3 +1,4 @@
+import type { JobWorkerStatus } from "@omnitwin/types";
 import type { Database } from "../../db/client.js";
 import type { JobAlerts } from "./alerts.js";
 import {
@@ -70,16 +71,8 @@ export interface JobWorkerDeps {
   readonly yieldToLoop?: () => Promise<void>;   // default: setImmediate
 }
 
-export interface JobWorkerStatus {
-  readonly started: boolean;
-  readonly lastPassAt: number | null;          // epoch ms of the last pass that finished
-  readonly nextWakeAt: number | null;
-  readonly currentJob: { readonly id: string; readonly kind: string; readonly since: number } | null;
-  readonly abandonedHandlers: number;
-  readonly fault: "database" | "loop" | null;
-  /** A pass is running, or has been asked for and begins at once. */
-  readonly passRunning: boolean;
-}
+/** The one definition lives in `@omnitwin/types` (`JobWorkerStatusSchema`), which Stuck work also answers with. */
+export type { JobWorkerStatus };
 
 const DEFAULT_SLEEP_MINUTES = 60;
 const DEFAULT_DB_CALL_TIMEOUT_MS = 10_000;

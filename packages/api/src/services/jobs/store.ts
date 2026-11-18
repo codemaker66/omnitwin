@@ -1,3 +1,4 @@
+import type { StuckWork } from "@omnitwin/types";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import type { Database } from "../../db/client.js";
@@ -467,4 +468,159 @@ export async function planNextWake(
   const row = planRow.parse(raw);
   // The database's own now, as a value: no clock of this server's is read.
   return { dueInSeconds: row.due_in_seconds, boundaryInSeconds: row.boundary_in_seconds, now: new Date(row.now_ms) };
+}
+
+// ---------------------------------------------------------------------------
+// Stuck work: what a platform administrator sees and does about dead jobs.
+//
+// `retryDeadJob` and `abandonDeadJob` are each one conditional UPDATE naming
+// `state = 'dead'`: of two people pressing the button at once, the statement
+// that reaches the row second waits for the first, re-reads the row, finds it
+// no longer dead and changes nothing. None of these read or return a payload
+// except to hand it to the kind's own preparation.
+// ---------------------------------------------------------------------------
+
+/** The most dead jobs Stuck work lists. */
+const STUCK_LIST_LIMIT = 200;
+/** What `retryDeadJob` records as the resolution. */
+const TRIED_AGAIN = "Tried again";
+
+const stuckRow = z.object({
+  id: z.string(),
+  kind: z.string(),
+  venue_id: z.string().nullable(),
+  venue_name: z.string().nullable(),
+  attempts: z.number().int(),
+  lost_claims: z.number().int(),
+  reason: z.string().nullable(),
+  due_ms: z.number(),
+  gave_up_ms: z.number(),
+});
+
+const stuckCountsRow = z.object({
+  queued: z.number().int(),
+  running: z.number().int(),
+  dead: z.number().int(),
+  old_pending_sends: z.number().int(),
+});
+
+const retriedRow = z.object({ kind: z.string(), payload: z.unknown() });
+const classifiedRow = z.object({ state: z.string(), readable: z.boolean() });
+
+function isoFromMs(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+/**
+ * The newest 200 dead jobs, each with its venue's name (a platform job has
+ * none), and the whole table's counts. The counts are one statement and the
+ * list another, so a job can move between them; the page is a look, not a lock.
+ *
+ * Newest first by when the list gave up (`finished_at`), then by `id` so two
+ * jobs that gave up at the same instant keep one order from one read to the
+ * next (the id is arbitrary, not a time). A dead job's `finished_at` is always
+ * set by the code that kills it; `coalesce` only keeps a hand-written row from
+ * failing the page. `oldPendingSends` is a send still `pending` after a day.
+ * The database's clock decides every age.
+ */
+export async function listStuckWork(db: Database): Promise<Omit<StuckWork, "worker">> {
+  const counts = await db.execute(sql`
+    SELECT
+      (SELECT count(*) FROM jobs WHERE state = 'queued')::int AS queued,
+      (SELECT count(*) FROM jobs WHERE state = 'running')::int AS running,
+      (SELECT count(*) FROM jobs WHERE state = 'dead')::int AS dead,
+      (SELECT count(*) FROM email_sends WHERE status = 'pending' AND created_at < now() - interval '1 day')::int AS old_pending_sends`);
+  const [countsRaw] = counts.rows;
+  if (countsRaw === undefined) throw new Error("The stuck work counts returned no row");
+  const total = stuckCountsRow.parse(countsRaw);
+
+  const listed = await db.execute(sql`
+    SELECT j.id, j.kind, j.venue_id, v.name AS venue_name, j.attempts, j.lost_claims, j.last_error AS reason,
+      (extract(epoch from j.run_at) * 1000)::double precision AS due_ms,
+      (extract(epoch from coalesce(j.finished_at, j.updated_at)) * 1000)::double precision AS gave_up_ms
+    FROM jobs j LEFT JOIN venues v ON v.id = j.venue_id
+    WHERE j.state = 'dead'
+    ORDER BY j.finished_at DESC NULLS LAST, j.id DESC
+    LIMIT ${STUCK_LIST_LIMIT}`);
+  return {
+    jobs: listed.rows.map((raw) => {
+      const row = stuckRow.parse(raw);
+      return {
+        id: row.id,
+        kind: row.kind,
+        venueId: row.venue_id,
+        venueName: row.venue_name,
+        attempts: row.attempts,
+        lostClaims: row.lost_claims,
+        reason: row.reason,
+        dueAt: isoFromMs(row.due_ms),
+        gaveUpAt: isoFromMs(row.gave_up_ms),
+      };
+    }),
+    counts: { queued: total.queued, running: total.running, dead: total.dead, oldPendingSends: total.old_pending_sends },
+  };
+}
+
+/**
+ * Whether job `j` is of a kind and version this registry reads: the rule
+ * `claimNextJob` takes a job by (it joins the same `knownJobs` rows). An empty
+ * registry reads nothing.
+ */
+function readableBy(registry: JobRegistry): SQL {
+  const known = knownJobs(registry);
+  if (known === null) return sql`false`;
+  return sql`EXISTS (SELECT 1 FROM (VALUES ${known}) AS known(kind, version, lease_seconds)
+    WHERE known.kind = j.kind AND known.version = j.version)`;
+}
+
+export type RetryOutcome = "retried" | "not-dead" | "unreadable";
+
+/**
+ * Dead back to queued, due now, tries and lost claims reset, and who did it.
+ * Runs the kind's `onManualRetry` (when it has one) in the same transaction as
+ * the UPDATE, and only when this call's UPDATE changed the row: if the
+ * preparation throws, the transaction rolls back, the job stays dead and the
+ * error reaches the caller.
+ *
+ * `"not-dead"`: no such job, or it is not dead (another person got there
+ * first). `"unreadable"`: it is dead, but no server of this release reads its
+ * kind or version, so putting it back would hide it from Stuck work and no one
+ * would ever take it; it stays dead, to be closed with a note.
+ */
+export async function retryDeadJob(db: Database, registry: JobRegistry, id: string, byUserId: string): Promise<RetryOutcome> {
+  return db.transaction(async (tx) => {
+    const moved = await tx.execute(sql`
+      UPDATE jobs AS j SET state = 'queued', run_at = now(), attempts = 0, lost_claims = 0, finished_at = NULL,
+        resolved_by = ${byUserId}::uuid, resolved_at = now(), resolution = ${TRIED_AGAIN}::text, updated_at = now()
+      WHERE j.id = ${id}::uuid AND j.state = 'dead' AND ${readableBy(registry)}
+      RETURNING j.kind, j.payload`);
+    const [movedRaw] = moved.rows;
+    if (movedRaw !== undefined) {
+      const row = retriedRow.parse(movedRaw);
+      await registry.get(row.kind)?.onManualRetry?.(tx, row.payload);
+      return "retried";
+    }
+    // Nothing changed: say why. Another person's UPDATE that committed while
+    // this one waited has made the job queued, and that is `not-dead` too.
+    const found = await tx.execute(sql`
+      SELECT j.state, ${readableBy(registry)} AS readable FROM jobs j WHERE j.id = ${id}::uuid`);
+    const [foundRaw] = found.rows;
+    if (foundRaw === undefined) return "not-dead";
+    const row = classifiedRow.parse(foundRaw);
+    return row.state === "dead" && !row.readable ? "unreadable" : "not-dead";
+  });
+}
+
+/**
+ * Dead to abandoned, with who, when and the note. False if the job was not
+ * dead. Works for any kind, readable or not. The note is the caller's, already
+ * trimmed and checked (`CloseStuckJobSchema`).
+ */
+export async function abandonDeadJob(db: Database, id: string, byUserId: string, note: string): Promise<boolean> {
+  const result = await db.execute(sql`
+    UPDATE jobs SET state = 'abandoned', resolved_by = ${byUserId}::uuid, resolved_at = now(),
+      resolution = ${note}::text, updated_at = now()
+    WHERE id = ${id}::uuid AND state = 'dead'
+    RETURNING id`);
+  return result.rows.length === 1;
 }
