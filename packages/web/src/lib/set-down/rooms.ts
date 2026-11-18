@@ -439,7 +439,7 @@ export const ROBERT_ADAM = {
  *   README its glass is 2.27 m of its 2.72 m width, the rest timber framing),
  *   as the Reception Room's glazed doors are. The published figures' model had
  *   three 1.6 x 2.0 m windows and two 1.6 x 2.6 m doors (EST).
- * - No curtain. That model hung 2 x 2.2 m of velour at the arch (EST), on the
+ * - No curtain (ruling R97). That model hung 2 x 2.2 m of velour at the arch (EST), on the
  *   17 October survey's reading of a red curtain there from station 112, which
  *   it marked as inferred. #442 finds the arch lined in timber and records no
  *   curtain in the room (README, "The room, in words" and "Inventory"); the
