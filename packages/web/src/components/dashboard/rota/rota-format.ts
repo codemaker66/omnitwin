@@ -111,7 +111,21 @@ export interface WeekSummary {
   readonly hours: number;
 }
 
-export function weekSummary(week: Pick<RotaWeek, "shifts">): WeekSummary {
+/** Whether a shift is the week's own: it starts in the week. The week is
+ *  read by overlap, so last week's overnight shift also shows on Monday, but
+ *  a week publishes only the shifts that start in it (services/rota.ts
+ *  publishRotaWeek). */
+function startsInWeek(shift: RotaShift, week: Pick<RotaWeek, "from" | "to">): boolean {
+  const startMs = Date.parse(shift.startsAt);
+  return startMs >= Date.parse(week.from) && startMs < Date.parse(week.to);
+}
+
+/**
+ * The week in numbers. "In draft" counts the week's own drafts, the ones its
+ * Publish deals with, so the two always agree; a draft from last week that
+ * runs into Monday is published from last week (T-695 review D7).
+ */
+export function weekSummary(week: Pick<RotaWeek, "shifts" | "from" | "to">): WeekSummary {
   const live = week.shifts.filter((shift) => shift.status !== "cancelled");
   const minutes = live.reduce((sum, shift) => sum + (Date.parse(shift.endsAt) - Date.parse(shift.startsAt)) / 60_000 - shift.breakMinutes, 0);
   return {
@@ -119,9 +133,23 @@ export function weekSummary(week: Pick<RotaWeek, "shifts">): WeekSummary {
     people: new Set(live.flatMap((shift) => shift.staffMemberId === null ? [] : [shift.staffMemberId])).size,
     unfilled: live.filter((shift) => shift.staffMemberId === null).length,
     withWarnings: live.filter((shift) => openIssues(shift).length > 0).length,
-    drafts: live.filter((shift) => shift.status === "draft").length,
+    drafts: live.filter((shift) => shift.status === "draft" && startsInWeek(shift, week)).length,
     hours: Math.round(minutes / 60),
   };
+}
+
+/** Drafts from an earlier week that run into this one: shown on its days,
+ *  published from their own week. */
+export function carriedDrafts(week: Pick<RotaWeek, "shifts" | "from">): readonly RotaShift[] {
+  const fromMs = Date.parse(week.from);
+  return week.shifts.filter((shift) => shift.status === "draft" && Date.parse(shift.startsAt) < fromMs);
+}
+
+/** The line under Publish that points to last week for its overnight drafts. */
+export function carriedDraftsWords(count: number): string {
+  return count === 1
+    ? "1 overnight draft from last week: publish it from last week."
+    : `${String(count)} overnight drafts from last week: publish them from last week.`;
 }
 
 /** "Callum", "Callum and Aileen", "Callum, Aileen and Jo". */
@@ -154,9 +182,16 @@ export interface PublishPlan {
  * What "Publish this week" would do, said before it is done: which shifts,
  * who is told in the app, who has to be told another way, and what stays in
  * draft for a legal reason.
+ *
+ * Only the week's own shifts, those that start in it: the week is read by
+ * overlap, so last week's overnight shift shows on Monday, but a week
+ * publishes the shifts that start in it (services/rota.ts publishRotaWeek),
+ * and sending another refused the whole week as changed (T-695
+ * api-requests-suppliers-rota-2). That shift is published with its own week.
  */
-export function publishPlan(week: Pick<RotaWeek, "shifts" | "people">): PublishPlan {
-  const drafts = week.shifts.filter((shift) => shift.status === "draft");
+export function publishPlan(week: Pick<RotaWeek, "shifts" | "people" | "from" | "to">): PublishPlan {
+  const own = week.shifts.filter((shift) => startsInWeek(shift, week));
+  const drafts = own.filter((shift) => shift.status === "draft");
   const publishable = drafts.filter((shift) => !hasBlock(shift));
   const blocked = drafts.filter(hasBlock);
   const byId = new Map(week.people.map((person) => [person.id, person]));
@@ -173,7 +208,7 @@ export function publishPlan(week: Pick<RotaWeek, "shifts" | "people">): PublishP
   let consequence: string;
   if (publishable.length === 0) {
     // With only held-back drafts left, the reason below is the whole story.
-    consequence = drafts.length > 0 ? "" : week.shifts.length > 0 ? "Every shift this week is published." : "Nothing to publish yet.";
+    consequence = drafts.length > 0 ? "" : own.length > 0 ? "Every shift this week is published." : "Nothing to publish yet.";
   } else {
     const shifts = plural(publishable.length, "shift", "shifts");
     const unfilledWords = unfilled === 0 ? "" : unfilled === publishable.length

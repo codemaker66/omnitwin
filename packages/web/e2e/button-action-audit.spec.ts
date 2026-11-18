@@ -23,6 +23,7 @@ import type { PricingRule } from "../src/api/pricing.js";
 import type { PublicProposal, PublicProposalPayload } from "../src/api/proposals.js";
 import type { ProposalCommentRow, ProposalHistoryEntry, StaffProposal, StaffProposalVersion } from "../src/api/proposals.js";
 import type { Space } from "../src/api/spaces.js";
+import { visibleControlsInPage, type VisibleControlSnapshot } from "../src/test/in-page-controls.js";
 
 // Installed into the page by exposeFunction("buttonAuditPrintCalled", …) below;
 // evaluate() closures read it off window.
@@ -58,16 +59,6 @@ const UPLOADED_FILE_ID = "00000000-0000-4000-8000-000000004032";
 const SHARE_CODE = "abcdef";
 const SHARE_TOKEN = "button-audit-share";
 const HASH = "b".repeat(64);
-
-interface VisibleControlSnapshot {
-  readonly tagName: string;
-  readonly role: string | null;
-  readonly label: string;
-  readonly rawHref: string | null;
-  readonly disabled: boolean;
-  readonly width: number;
-  readonly height: number;
-}
 
 interface PageProblems {
   readonly pageErrors: readonly string[];
@@ -1912,90 +1903,8 @@ async function setupRouteMocks(page: Page, routeName: string): Promise<void> {
 }
 
 async function visibleControls(page: Page): Promise<readonly VisibleControlSnapshot[]> {
-  return page.evaluate((): VisibleControlSnapshot[] => {
-    const selector = [
-      "button",
-      "a[href]",
-      "[role='button']",
-      "[role='tab']",
-      "[role='menuitem']",
-      "[role='menuitemcheckbox']",
-      "[role='checkbox']",
-      "input:not([type='hidden'])",
-      "select",
-      "textarea",
-      "summary",
-    ].join(",");
-
-    function textFromLabelledBy(element: Element): string {
-      const labelledBy = element.getAttribute("aria-labelledby");
-      if (labelledBy === null) return "";
-      return labelledBy
-        .split(/\s+/u)
-        .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
-        .filter((text) => text.length > 0)
-        .join(" ");
-    }
-
-    function textFromAssociatedLabel(element: Element): string {
-      if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
-        return "";
-      }
-      if (element.labels !== null && element.labels.length > 0) {
-        return Array.from(element.labels)
-          .map((label) => label.textContent?.trim() ?? "")
-          .filter((text) => text.length > 0)
-          .join(" ");
-      }
-      return "";
-    }
-
-    function controlLabel(element: Element): string {
-      return [
-        element.getAttribute("aria-label"),
-        textFromLabelledBy(element),
-        textFromAssociatedLabel(element),
-        element.getAttribute("title"),
-        element.getAttribute("placeholder"),
-        element instanceof HTMLInputElement ? element.value : null,
-        element.textContent,
-      ]
-        .map((value) => value?.replace(/\s+/gu, " ").trim() ?? "")
-        .find((value) => value.length > 0) ?? "";
-    }
-
-    function isVisibleControl(element: Element): boolean {
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 &&
-        rect.height > 0 &&
-        style.display !== "none" &&
-        style.visibility !== "hidden" &&
-        Number(style.opacity) !== 0;
-    }
-
-    return Array.from(document.querySelectorAll(selector))
-      .filter(isVisibleControl)
-      .map((element) => {
-        const rect = element.getBoundingClientRect();
-        const disabled = element instanceof HTMLButtonElement ||
-          element instanceof HTMLInputElement ||
-          element instanceof HTMLSelectElement ||
-          element instanceof HTMLTextAreaElement
-          ? element.disabled
-          : element.getAttribute("aria-disabled") === "true";
-        return {
-          tagName: element.tagName.toLowerCase(),
-          role: element.getAttribute("role"),
-          label: controlLabel(element),
-          rawHref: element instanceof HTMLAnchorElement ? element.getAttribute("href") : null,
-          disabled,
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-        };
-      });
-  });
+  // The reader runs in the page and is unit-tested where it lives.
+  return page.evaluate(visibleControlsInPage);
 }
 
 function describeControl(control: VisibleControlSnapshot): string {
