@@ -1644,6 +1644,26 @@ describe("EventDayOpsPage", () => {
         ...IN_SEND_ORDER.map((order): Order => ({ ...order, lateReplay: true })),
       ];
 
+      // Ruling D (#411's treatment): every pull request runs a smaller table,
+      // each fate combination once, with the schedules and both replay modes
+      // taken in turn so each appears; the named orders (a reload, another
+      // device, two pages, orders 1 and 4) are cases of their own below.
+      // VENVIEWER_FULL_SWEEPS=1 runs all 640.
+      const FULL_SWEEPS = process.env["VENVIEWER_FULL_SWEEPS"] === "1";
+      const TWO_PRESS_SCHEDULES = schedules(2);
+      const THREE_PRESS_SCHEDULES = [...new Set(IN_SEND_ORDER.filter((order) => order.fates.length === 3).map((order) => order.schedule.join()))]
+        .map((schedule) => schedule.split(","));
+      const PER_PULL_REQUEST: readonly Order[] = [
+        ...product([FATES, FATES]).map((fates, index): Order => ({
+          fates, schedule: TWO_PRESS_SCHEDULES[index % TWO_PRESS_SCHEDULES.length] ?? [], lateReplay: index % 2 === 1,
+        })),
+        ...product([FATES, FATES, FATES]).map((fates, index): Order => ({
+          fates, schedule: THREE_PRESS_SCHEDULES[index % THREE_PRESS_SCHEDULES.length] ?? [], lateReplay: Math.floor(index / 2) % 2 === 1,
+        })),
+      ];
+      const TABLE = FULL_SWEEPS ? ORDERS : PER_PULL_REQUEST;
+      let judged = 0;
+
       function nameOf(order: Order): string {
         const words = (event: string): string => {
           const label = PRESSES[Number(event.slice(1))]?.label ?? "?";
@@ -1692,9 +1712,14 @@ describe("EventDayOpsPage", () => {
         return { server, queue };
       }
 
-      it("runs every order", () => {
+      it("runs every fate combination, every schedule and both replay modes (all 640 orders with VENVIEWER_FULL_SWEEPS=1)", () => {
         expect(schedules(2)).toHaveLength(12);
         expect(ORDERS).toHaveLength(2 * (16 * 12 + 64 * 2));
+        expect(TABLE).toHaveLength(FULL_SWEEPS ? 640 : 16 + 64);
+        const seen = (pick: (order: Order) => string): ReadonlySet<string> => new Set(TABLE.map(pick));
+        expect(seen((order) => order.fates.join())).toEqual(new Set(IN_SEND_ORDER.map((order) => order.fates.join())));
+        expect(seen((order) => order.schedule.join())).toEqual(new Set(IN_SEND_ORDER.map((order) => order.schedule.join())));
+        expect(seen((order) => String(order.lateReplay))).toEqual(new Set(["false", "true"]));
       });
 
       const ends = async (order: Order): Promise<void> => {
@@ -1704,9 +1729,15 @@ describe("EventDayOpsPage", () => {
         // Nothing is sent again under a new key: one key per press.
         expect(server.keys()).toBe(order.fates.length);
         expect(await queue.list()).toEqual([]);
+        judged += 1;
       };
-      it.each(ORDERS.map((order) => [nameOf(order), order] as const))("%s", async (_name, order) => {
+      it.each(TABLE.map((order) => [nameOf(order), order] as const))("%s", async (_name, order) => {
         await ends(order);
+      });
+      // Runs after every order above: a table that judged nothing, or fewer
+      // than it holds, fails here.
+      it("judged every order of this run's table", () => {
+        expect(judged).toBe(TABLE.length);
       });
     });
 
