@@ -468,8 +468,8 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: inside the API", () => {
     }, 60_000);
 
     it("with JOBS_WORKER on the worker runs, and the health route reports it without a statement", async () => {
-      const target = server;
-      if (target === null) throw new Error("No server");
+      if (server === null) throw new Error("No server");
+      const target: FastifyInstance = server;
       const worker = installedJobWorker();
       if (worker === null) throw new Error("No worker is installed");
       const wake = (): string => JSON.stringify([worker.status().lastPassAt, worker.status().nextWakeAt]);

@@ -625,12 +625,13 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
       if (jobsTestUrl === undefined) throw new Error("VENVIEWER_JOBS_TEST_DATABASE_URL is required");
       process.env["JWT_SECRET"] = JWT_SECRET;
       const { buildServer } = await import("../index.js");
-      whole = await buildServer(validateEnv({
+      const built = await buildServer(validateEnv({
         NODE_ENV: "test",
         DATABASE_URL: wholeServerUrl(jobsTestUrl),
         JWT_SECRET,
       }));
-      await whole.ready();
+      whole = built;
+      await built.ready();
     }, 600_000);
 
     afterAll(async () => {
@@ -639,6 +640,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
 
     it("registers the four routes under /admin/jobs, for platform administrators only", async () => {
       if (whole === null) throw new Error("No server");
+      const target: FastifyInstance = whole;
       const deadId = await seed({ state: "dead", attempts: 6 });
       const routes: readonly { readonly method: Method; readonly url: string }[] = [
         { method: "GET", url: "/admin/jobs/stuck" },
@@ -647,12 +649,12 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
         { method: "POST", url: "/admin/jobs/selftest" },
       ];
       for (const route of routes) {
-        expect((await whole.inject(route)).statusCode, route.url).toBe(401);
+        expect((await target.inject(route)).statusCode, route.url).toBe(401);
         for (const role of USER_ROLES) {
-          expect((await whole.inject({ ...route, headers: { authorization: `Bearer ${withRole(role)}` } })).statusCode, `${route.url} as ${role}`).toBe(403);
+          expect((await target.inject({ ...route, headers: { authorization: `Bearer ${withRole(role)}` } })).statusCode, `${route.url} as ${role}`).toBe(403);
         }
       }
-      const listed = await whole.inject({ method: "GET", url: "/admin/jobs/stuck", headers: { authorization: `Bearer ${platformAdmin}` } });
+      const listed = await target.inject({ method: "GET", url: "/admin/jobs/stuck", headers: { authorization: `Bearer ${platformAdmin}` } });
       expect(listed.statusCode).toBe(200);
       const body = stuckBody(listed).data;
       expect(body.jobs.map((job) => job.id)).toEqual([deadId]);
