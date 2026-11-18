@@ -37,7 +37,8 @@ describe("planner features: everyone's switches", () => {
 
   it("has lane P's touch arbiter and lean motion pipeline, and Blake's answered decisions, on for everyone, and every other slice off", () => {
     // Blake, 4 Nov: decisions 2 (the faint, judged ghost), 4 (Alt-click hides a wall, in 450 ms) and 5 (lenses by role).
-    const on = new Set(["touchArbiter", "leanMotionPipeline", "truthfulGhost", "wallClickAlt", "wallsQuick", "lensesByRole"]);
+    // roomCallouts is no new slice: it names the words every screen already had over the room, which only the HUD turns off, for itself.
+    const on = new Set(["touchArbiter", "leanMotionPipeline", "truthfulGhost", "wallClickAlt", "wallsQuick", "lensesByRole", "roomCallouts"]);
     for (const [key, enabled] of Object.entries(plannerFeatures())) expect(enabled, key).toBe(on.has(key));
   });
 
@@ -45,9 +46,9 @@ describe("planner features: everyone's switches", () => {
     for (const spec of Object.values(PLANNER_FEATURE_SPECS)) {
       // Read as the spec's field types, so a lane no key uses yet still compares.
       const { lane, item }: { readonly lane: string; readonly item: string } = spec;
-      expect(["E", "P", "planner-qol"]).toContain(lane);
-      // planner-qol's items are its own (PQ-N); a Blake decision is an item too (D-N).
-      expect(item).toMatch(lane === "planner-qol" ? /^(?:PQ-\d{1,2}|D\d)$/u : /^(?:Q-\d{2}[ab]?|D\d)$/u);
+      expect(["E", "P", "planner-qol", "hud"]).toContain(lane);
+      // planner-qol's items are its own (PQ-N); a Blake decision is an item too (D-N); the HUD's lane names its task's row (T-NNN).
+      expect(item).toMatch(lane === "planner-qol" ? /^(?:PQ-\d{1,2}|D\d)$/u : lane === "hud" ? /^T-\d{3}$/u : /^(?:Q-\d{2}[ab]?|D\d)$/u);
     }
   });
 
