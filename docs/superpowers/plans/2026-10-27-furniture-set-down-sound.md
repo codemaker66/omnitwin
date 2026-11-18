@@ -1069,6 +1069,10 @@ This task does not wait on the gate.
 
 ### Task 16: Browser evidence, then open PR 3
 
+- [ ] **Step 0 (ruling R97): Blake re-listens to the Robert Adam Room before PR 3 opens.** His ear test of 14 November does not cover it.
+  - #449 gave the room its measured outline and took away the curtain at the arch, which the scan shows bare.
+  - Its echo is now 11–14 % longer at 1 kHz, above the ~5 % just-noticeable difference.
+  - Build the listening page with #449's model, put it where he can open it, and ask him how the room sounds. Record his answer in the PR body.
 - [ ] **Step 1:** Write `sound-live.mjs`, a script kept outside the repo, from the furniture rebuild's batch 4 live script (also kept outside the repo).
   - **Its safety:** every non-GET request is aborted, and the guest draft (POST `/public/configurations`) and its reads are answered locally.
   - **The browser:** Playwright with `channel: "chrome"`, headed. The browser pane draws no frames off screen, and the planner's demand loop needs frames for touchdowns.
