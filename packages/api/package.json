@@ -20,6 +20,7 @@
     "dev": "tsx watch src/index.ts",
     "eval:event-briefs": "tsx src/scripts/run-event-brief-eval.ts",
     "cleanup": "tsx src/scripts/run-cleanup.ts",
+    "web-vitals:report": "tsx src/scripts/web-vitals-report.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:verify-tail": "tsx src/scripts/verify-migration-tail-readiness.ts",

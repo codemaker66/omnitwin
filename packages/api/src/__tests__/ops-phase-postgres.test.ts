@@ -88,7 +88,7 @@ describe.skipIf(explicitUrl === undefined)("persisted event phases in Ops", () =
     // Exercise both independent DB serializers, not an already-parsed graph fixture.
     const before = await getEventDayOpsBoard(db, event);
     expect(before.phases).toMatchObject([{ id: phaseId, spaceId: assigned ? roomId : null }]);
-    const pack = await compileOpsHandoffPackFromConfiguration(db, { configId, eventId, actorUserId: userId, clientNotes: "DEMO ONLY" });
+    const { bundle: pack } = await compileOpsHandoffPackFromConfiguration(db, { configId, eventId, actorUserId: userId, clientNotes: "DEMO ONLY" });
     const stored = await db.select().from(schema.handoffPacks).where(eq(schema.handoffPacks.id, pack.pack.id));
     expect(stored).toMatchObject([{ eventId, configId, snapshotId }]);
     const reopened = await getEventDayOpsBoard(db, event);
@@ -146,7 +146,7 @@ describe.skipIf(explicitUrl === undefined)("persisted event phases in Ops", () =
     const links = await db.select().from(schema.eventConfigurationLinks).where(eq(schema.eventConfigurationLinks.eventId, eventId));
     expect(links).toHaveLength(1);
 
-    const pack = await compileOpsHandoffPackFromConfiguration(db, { configId, eventId, actorUserId: userId, clientNotes: null });
+    const { bundle: pack } = await compileOpsHandoffPackFromConfiguration(db, { configId, eventId, actorUserId: userId, clientNotes: null });
     const stored = await db.select().from(schema.handoffPacks).where(eq(schema.handoffPacks.id, pack.pack.id));
     expect(stored).toMatchObject([{ eventId, configId }]);
     const board = await getEventDayOpsBoard(db, event);

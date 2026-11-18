@@ -190,6 +190,13 @@ rooms and on every room's bar, and a slot opened under its own room to its sheet
 (`day-board.spec.ts`). The other three Day Board cases keep their identities.
 The totals are unchanged.
 
+After it, a case written on 6 November 2026 adds one ordinary case for the new
+chrome cleared away (T-680 in T-671's chrome, behind `?chrome=v2`): `\` and the slate's crest
+hide every zone but the crest, which stays where it stood; one Esc brings the
+tools back; the room takes the pointer where the chrome has gone; and L and `/`
+open their panels with the tools back (`planner-chrome-v2-clear.spec.ts`); this
+changes the inventory from 421 to 422 and the CPU partition from 416 to 417.
+
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
 layout cases retire with that public experience. Seven ordinary game cases in
