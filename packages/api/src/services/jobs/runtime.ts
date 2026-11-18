@@ -6,7 +6,7 @@ import type { Env } from "../../env.js";
 import { buildJobAlerts, logJobAlerts, type JobAlerts } from "./alerts.js";
 import { dailyJob } from "./kinds/daily.js";
 import { selfTestJob } from "./kinds/selftest.js";
-import { buildJobRegistry, type JobKind, type JobLogger, type JobRegistry } from "./kinds.js";
+import { buildJobRegistry, jobErrorText, type JobKind, type JobLogger, type JobRegistry } from "./kinds.js";
 import { ensureNextRuns, type RepeatingJob } from "./repeating.js";
 import { installedJobWorker, installJobWorker } from "./wake.js";
 import { JobWorker } from "./worker.js";
@@ -18,8 +18,8 @@ import { JobWorker } from "./worker.js";
 // by the server after its database connection is made: it always builds the
 // registry (the admin routes read it), and only with JOBS_WORKER=on does it
 // make a worker, install it for `pokeJobWorker` and the health route, and
-// start it. With the switch off (the default) it sends no statement, sets no
-// timer, imports nothing and installs nothing.
+// start it. With the switch off or unset (the default) it sends no statement,
+// sets no timer, imports nothing and installs nothing.
 // ---------------------------------------------------------------------------
 
 /** Every kind this build knows, and which of them repeat. The one place a new kind is added. */
@@ -52,7 +52,8 @@ function serverIdentity(): string {
  *
  * `stop` takes nothing new, waits up to `graceMs` for the running job, hands
  * back what is unfinished, and then uninstalls the worker. Every call is the
- * same stop. With no worker it does nothing.
+ * same stop, and it never rejects: a failure is logged once at error level.
+ * With no worker it does nothing.
  */
 export async function startJobs(deps: { readonly db: Database; readonly env: Env; readonly logger: JobLogger }): Promise<{
   readonly worker: JobWorker | null;
@@ -75,17 +76,30 @@ export async function startJobs(deps: { readonly db: Database; readonly env: Env
     serverId: serverIdentity(),
     logger,
     alerts,
-    sleepMinutes: env.JOBS_MAX_SLEEP_MINUTES,
+    // Only when set: unset, the worker's own default (60) is the one default.
+    ...(env.JOBS_MAX_SLEEP_MINUTES === undefined ? {} : { sleepMinutes: env.JOBS_MAX_SLEEP_MINUTES }),
     afterPass: (now) => ensureNextRuns(db, repeating, now),
   });
   installJobWorker(worker);
   worker.start();
 
+  const uninstall = (): void => {
+    if (installedJobWorker() === worker) installJobWorker(null);
+  };
   let stopped: Promise<void> | null = null;
+  // Never rejects: the server begins it in preClose without waiting, and the
+  // API has no handler for a stray rejection, which would end the process.
   const stop = (graceMs: number): Promise<void> => {
-    stopped ??= worker.stop(graceMs).then(() => {
-      if (installedJobWorker() === worker) installJobWorker(null);
-    });
+    stopped ??= Promise.resolve()
+      .then(() => worker.stop(graceMs))
+      .then(uninstall, (error: unknown) => {
+        uninstall();
+        try {
+          logger.error({ error: jobErrorText(error) }, "the job worker did not stop cleanly");
+        } catch {
+          // A logger that throws must not turn a finished stop into a rejection.
+        }
+      });
     return stopped;
   };
   return { worker, registry, stop };

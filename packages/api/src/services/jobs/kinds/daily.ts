@@ -39,14 +39,20 @@ type DailyPayload = z.infer<typeof DAILY_PAYLOAD>;
 
 const deletedRow = z.object({ deleted: z.number().int() });
 
-/** One bounded statement: at most TIDY_BATCH rows, skipping any another statement holds. */
+/**
+ * One bounded statement: at most TIDY_BATCH rows, skipping any another
+ * statement holds. A row's age runs from the LATER of when it finished and
+ * when a person closed it (GREATEST skips NULLs), so a dead job closed with a
+ * note long after it died keeps that note for 90 days from the closing. No
+ * order: ids are random, so any order means nothing, and without one the scan
+ * stops at the batch's last match.
+ */
 async function tidyFinishedJobs(db: Database): Promise<number> {
   const result = await db.execute(sql`
     WITH old AS (
       SELECT id FROM jobs
       WHERE state IN ('done', 'abandoned')
-        AND COALESCE(finished_at, resolved_at) < now() - interval '90 days'
-      ORDER BY id
+        AND GREATEST(finished_at, resolved_at) < now() - interval '90 days'
       LIMIT ${TIDY_BATCH}
       FOR UPDATE SKIP LOCKED
     ),

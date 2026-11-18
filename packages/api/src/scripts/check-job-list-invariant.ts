@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { createDbConnection } from "../db/client.js";
 import { logJobAlerts } from "../services/jobs/alerts.js";
 import { isHealthy, readJobListInvariant } from "../services/jobs/invariant.js";
-import { buildJobRegistry } from "../services/jobs/kinds.js";
+import { buildJobRegistry, jobErrorText } from "../services/jobs/kinds.js";
 import { buildJobKinds } from "../services/jobs/runtime.js";
 
 // ---------------------------------------------------------------------------
@@ -47,8 +47,10 @@ try {
   console.log(JSON.stringify(invariant));
   if (!isHealthy(invariant)) process.exitCode = 1;
 } catch (error: unknown) {
-  // The message only: a driver error can carry connection details.
-  console.error("[job-list-invariant] the read failed:", error instanceof Error ? error.message : "unknown error");
+  // Scrubbed by jobErrorText: a driver's message can quote query parameters or
+  // a connection string, and both go (anything shaped like user@host does).
+  // A bare role or host name in the driver's own words is not removed.
+  console.error("[job-list-invariant] the read failed:", jobErrorText(error));
   process.exitCode = 2;
 } finally {
   await connection.close();

@@ -122,7 +122,7 @@ describe("jobs: the Sentry reporter", () => {
     expect(sent[0]?.tags).toEqual({ "job.kind": "jobs.daily", "job.id": "j4" });
   });
 
-  it("a worker fault is an error grouped by what failed, and its recovery is info in the same group", () => {
+  it("a worker fault is an error grouped by what failed, and its recovery is info in a group of its own", () => {
     const { client, sent } = captureSentry();
     const alerts = sentryJobAlerts(client, recordingLogger());
     alerts.workerFault("database", "claimNextJob failed: connection refused for ada@example.org");
@@ -130,8 +130,10 @@ describe("jobs: the Sentry reporter", () => {
     alerts.workerFault("loop", "the pass threw");
     expect(sent[0]).toMatchObject({ level: "error", tags: { "job.worker.fault": "database" } });
     expect(sent[1]).toMatchObject({ level: "info", tags: { "job.worker.fault": "database" } });
-    expect(sent[0]?.fingerprint).toEqual(sent[1]?.fingerprint);
-    expect(sent[2]?.fingerprint).not.toEqual(sent[0]?.fingerprint);
+    // A recovery never lands in the fault's group, where it would reopen a resolved issue.
+    expect(sent[0]?.fingerprint).toEqual(["job.worker-fault", "database"]);
+    expect(sent[1]?.fingerprint).toEqual(["job.worker-recovered", "database"]);
+    expect(sent[2]?.fingerprint).toEqual(["job.worker-fault", "loop"]);
     expect(JSON.stringify(sent)).not.toContain("@");
   });
 

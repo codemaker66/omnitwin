@@ -116,7 +116,15 @@ import { registerMetrics } from "./observability/metrics.js";
 import { registerJobWorkerHealth } from "./services/jobs/health.js";
 import { jobLoggerFrom, startJobs } from "./services/jobs/runtime.js";
 
-/** How long the job worker waits for its running job when the server stops, inside the shutdown's 25 seconds. */
+/**
+ * How long the job worker waits for its running HANDLER when the server stops.
+ * Every handler's own limit is at most 15 seconds, so this grace is never what
+ * ends one: a handler that does not answer is ended by its limit and recorded
+ * as a failed try. Recording a result afterwards can take up to the worker's
+ * database-call limit (10 seconds, and once more on its retry), so on a
+ * database slower than that the shutdown's hard stop (SHUTDOWN_GRACE_MS, 25
+ * seconds) can come first; the job then comes back as a lost claim.
+ */
 const JOB_WORKER_STOP_GRACE_MS = 18_000;
 
 // ---------------------------------------------------------------------------
@@ -406,7 +414,7 @@ export async function buildServer(env: Env = validateEnv(), options: BuildServer
   server.addHook("onClose", async () => { await connection.close(); });
 
   // --- The job list (T-702) ---
-  // Behind JOBS_WORKER, which ships off: then this builds the list of kinds,
+  // Behind JOBS_WORKER, which ships unset (off): then this builds the list of kinds,
   // adds no hook and runs nothing. On, the worker must stop before the pool
   // closes, so that what it writes for the job it is running (done, a failed
   // try, or the job handed back) still reaches the database. Fastify 5.12
@@ -415,8 +423,8 @@ export async function buildServer(env: Env = validateEnv(), options: BuildServer
   // begins. It runs preClose hooks before it stops listening, so the stop
   // begins there, while requests still drain; a preClose hook on the root
   // runs once (each plugin context starts with its own empty list), and a
-  // second call of `stop` is the same stop. 18 seconds leaves room inside the
-  // shutdown's own 25 (SHUTDOWN_GRACE_MS below).
+  // second call of `stop` is the same stop. `stop` never rejects, so the hook
+  // may leave it running. The grace is explained at JOB_WORKER_STOP_GRACE_MS.
   const jobs = await startJobs({ db, env, logger: jobLoggerFrom(server.log) });
   if (jobs.worker !== null) {
     server.addHook("preClose", (done) => {

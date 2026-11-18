@@ -50,6 +50,11 @@ interface LogEntry {
 
 const JWT_SECRET = "test-jwt-secret-that-is-at-least-32-characters-long";
 const DAILY_MONITOR = "job-list-daily";
+/**
+ * Made once per run of this file and added to every server's application_name,
+ * so a server left behind by an aborted run is never counted as one of these.
+ */
+const RUN = randomUUID().slice(0, 8);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
@@ -263,6 +268,11 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: inside the API", () => {
       await seedFinished({ key: "abandoned-91", state: "abandoned", finishedAt: sql`now() - interval '91 days'` });
       await seedFinished({ key: "done-89", state: "done", finishedAt: sql`now() - interval '89 days'` });
       await seedFinished({ key: "dead-91", state: "dead", finishedAt: sql`now() - interval '91 days'` });
+      // Died 100 days ago, closed by a person with a note yesterday: its age runs from the closing.
+      await pool.query(`
+        INSERT INTO jobs (kind, version, key, scope, payload, max_attempts, state, attempts, finished_at, resolved_at, resolution)
+        VALUES ('jobs.selftest', 1, 'closed-yesterday', 'platform', '{"nonce": "closed-yesterday"}'::jsonb, 6, 'abandoned', 6,
+                now() - interval '100 days', now() - interval '1 day', 'Looked at and closed.')`);
       await seedDailyRun("2020-01-01T03:00:00.000Z");
       const alerts = recordingJobAlerts();
       const logger = recordingLogger();
@@ -271,8 +281,9 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: inside the API", () => {
 
       expect(await jobByKey("done-91")).toBeUndefined();
       expect(await jobByKey("abandoned-91")).toBeUndefined();
-      // Newer than 90 days, or dead (kept for a person to look at): left alone.
+      // Newer than 90 days, closed lately, or dead (kept for a person to look at): left alone.
       expect((await jobByKey("done-89"))?.state).toBe("done");
+      expect((await jobByKey("closed-yesterday"))?.state).toBe("abandoned");
       expect((await jobByKey("dead-91"))?.state).toBe("dead");
       expect((await jobByKey("2020-01-01T03:00:00.000Z"))?.state).toBe("done");
       // Healthy: no fault, one check-in, and no further run asked for.
@@ -334,10 +345,15 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: inside the API", () => {
   // ---- The switch ---------------------------------------------------------
 
   describe("the switch", () => {
-    it("JOBS_WORKER ships off and JOBS_MAX_SLEEP_MINUTES at 60; anything else is refused", () => {
-      const env = serverEnv("jobs_runtime_env", undefined);
-      expect(env.JOBS_WORKER).toBe("off");
-      expect(env.JOBS_MAX_SLEEP_MINUTES).toBe(60);
+    it("JOBS_WORKER and JOBS_MAX_SLEEP_MINUTES ship unset; on, off and 1 to 360 are read; anything else is refused", () => {
+      // Unset: no worker (startJobs reads only "on"), and the worker's own default of 60 minutes.
+      const env = serverEnv(`jobs_runtime_env_${RUN}`, undefined);
+      expect(env.JOBS_WORKER).toBeUndefined();
+      expect(env.JOBS_MAX_SLEEP_MINUTES).toBeUndefined();
+      expect(validateEnv({ DATABASE_URL: serverUrl("x"), JOBS_WORKER: "off", JOBS_MAX_SLEEP_MINUTES: "1" })).toMatchObject({
+        JOBS_WORKER: "off",
+        JOBS_MAX_SLEEP_MINUTES: 1,
+      });
       expect(validateEnv({ DATABASE_URL: serverUrl("x"), JOBS_WORKER: "on", JOBS_MAX_SLEEP_MINUTES: "360" })).toMatchObject({
         JOBS_WORKER: "on",
         JOBS_MAX_SLEEP_MINUTES: 360,
@@ -362,11 +378,14 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: inside the API", () => {
       ];
       const logger = recordingLogger();
       try {
-        const started = await startJobs({ db: untouchable, env: serverEnv("jobs_runtime_off_unit", "off"), logger });
-        expect(started.worker).toBeNull();
-        expect([...started.registry.keys()].sort()).toEqual(["jobs.daily", "jobs.selftest"]);
-        expect(installedJobWorker()).toBeNull();
-        await started.stop(18_000);
+        // "off", and unset (as it ships).
+        for (const setting of ["off", undefined] as const) {
+          const started = await startJobs({ db: untouchable, env: serverEnv(`jobs_runtime_off_unit_${RUN}`, setting), logger });
+          expect(started.worker).toBeNull();
+          expect([...started.registry.keys()].sort()).toEqual(["jobs.daily", "jobs.selftest"]);
+          expect(installedJobWorker()).toBeNull();
+          await started.stop(18_000);
+        }
         for (const timer of timers) expect(timer).not.toHaveBeenCalled();
       } finally {
         for (const timer of timers) timer.mockRestore();
@@ -374,12 +393,35 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: inside the API", () => {
       expect(touched).toEqual([]);
       expect(logger.entries).toEqual([]);
     });
+
+    it("a stop that fails never rejects: it is logged once, scrubbed, and the worker is uninstalled", async () => {
+      const logger = recordingLogger();
+      const started = await startJobs({ db, env: serverEnv(`jobs_runtime_stop_unit_${RUN}`, "on"), logger });
+      const worker = started.worker;
+      if (worker === null) throw new Error("No worker was started");
+      await idle(worker);
+      expect(installedJobWorker()).toBe(worker);
+      // The smallest seam there is, without changing worker.ts: the worker's own stop rejects.
+      const failing = vi.spyOn(JobWorker.prototype, "stop").mockRejectedValue(new Error("refused ada@example.org"));
+      try {
+        await expect(started.stop(1000)).resolves.toBeUndefined();
+        await expect(started.stop(1000)).resolves.toBeUndefined();
+        const errors = logger.entries.filter((entry) => entry.level === "error");
+        expect(errors).toEqual([{ level: "error", obj: { error: "refused [email address]" }, msg: "the job worker did not stop cleanly" }]);
+        expect(failing).toHaveBeenCalledTimes(1);
+        expect(installedJobWorker()).toBeNull();
+      } finally {
+        failing.mockRestore();
+        // The real stop, so the worker leaves nothing behind.
+        await worker.stop(1000);
+      }
+    });
   });
 
   // ---- Through the whole server -------------------------------------------
 
   describe("a server with JOBS_WORKER off", () => {
-    const APP = "jobs_runtime_off";
+    const APP = `jobs_runtime_off_${RUN}`;
     let server: FastifyInstance | null = null;
 
     beforeAll(async () => {
@@ -402,7 +444,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: inside the API", () => {
   });
 
   describe("a server with JOBS_WORKER on", () => {
-    const APP = "jobs_runtime_on";
+    const APP = `jobs_runtime_on_${RUN}`;
     let server: FastifyInstance | null = null;
     /** What the first pass left queued for the daily kind, read before the next test empties the list. */
     let firstDailyRuns: { readonly key: string; readonly run_at: Date }[] = [];
@@ -426,18 +468,38 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: inside the API", () => {
     }, 60_000);
 
     it("with JOBS_WORKER on the worker runs, and the health route reports it without a statement", async () => {
-      if (server === null) throw new Error("No server");
-      await quiet(APP);
-      const before = await databaseNow();
-      const response = await server.inject({ method: "GET", url: "/health/worker" });
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({ started: true, fault: null, passRunning: false, currentJob: null });
-      expect(typeof response.json<{ readonly lastPassAt: unknown }>().lastPassAt).toBe("number");
-      expect(await statementsSince(APP, before)).toEqual([]);
+      const target = server;
+      if (target === null) throw new Error("No server");
+      const worker = installedJobWorker();
+      if (worker === null) throw new Error("No worker is installed");
+      const wake = (): string => JSON.stringify([worker.status().lastPassAt, worker.status().nextWakeAt]);
+
+      /** One quiet window round one request, and whether the worker's own timed wake fell inside it. */
+      async function measure(): Promise<{ readonly statusCode: number; readonly body: unknown; readonly sent: string[]; readonly woke: boolean }> {
+        await quiet(APP);
+        const wakeBefore = wake();
+        const before = await databaseNow();
+        const response = await target.inject({ method: "GET", url: "/health/worker" });
+        const sent = await statementsSince(APP, before);
+        return { statusCode: response.statusCode, body: response.json<unknown>(), sent, woke: wake() !== wakeBefore };
+      }
+
+      // The worker wakes on its own each UTC hour and at 03:00 UTC; a wake that
+      // falls inside the window sends statements that are not the route's. If
+      // the worker's last pass or next wake changed during the window, the
+      // window is taken once more, once only (no loop): two timed wakes cannot
+      // fall in two half-second windows taken back to back.
+      let taken = await measure();
+      if (taken.woke) taken = await measure();
+      expect(taken.woke).toBe(false);
+      expect(taken.statusCode).toBe(200);
+      expect(taken.body).toMatchObject({ started: true, fault: null, passRunning: false, currentJob: null });
+      expect(typeof (taken.body as { readonly lastPassAt?: unknown }).lastPassAt).toBe("number");
+      expect(taken.sent).toEqual([]);
 
       // The count does see a statement when one is sent: the database probe sends one.
       const probed = await databaseNow();
-      expect((await server.inject({ method: "GET", url: "/health/db" })).statusCode).toBe(200);
+      expect((await target.inject({ method: "GET", url: "/health/db" })).statusCode).toBe(200);
       expect(await statementsSince(APP, probed)).toContain("SELECT 1");
     }, 60_000);
 
@@ -456,7 +518,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: inside the API", () => {
   });
 
   describe("closing a server with JOBS_WORKER on", () => {
-    const APP = "jobs_runtime_close";
+    const APP = `jobs_runtime_close_${RUN}`;
 
     it("closing the server stops the worker before the database pool closes", async () => {
       await resetJobs(pool);

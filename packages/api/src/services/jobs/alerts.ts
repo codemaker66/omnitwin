@@ -113,8 +113,9 @@ function recoveredReport(what: WorkerFault): AlertReport {
     level: "info",
     message: `The job worker has recovered from its ${what} fault`,
     tags: { "job.worker.fault": what },
-    // The same group as the fault it ends.
-    fingerprint: ["job.worker-fault", what],
+    // A group of its own: an info event in the fault's group would reopen a
+    // resolved fault in Sentry as a regression.
+    fingerprint: ["job.worker-recovered", what],
     extra: {},
   };
 }
