@@ -185,6 +185,17 @@ describe("the paper page's stylesheet, on paper", () => {
     }
   });
 
+  it("sets the paper's notes in ink, never in copper: copper marks a state with a dot and carries no text", () => {
+    // Copper text on the sheet is 5.5:1 and on paper-white 6.1:1, under the client bar of 7:1.
+    expect(cascaded(screen, ".gp-tools__gap").get("color")).toBe("var(--reg-text-1)");
+    expect(cascaded(screen, ".gp-az__letter").get("color")).toBe("var(--reg-text-1)");
+    expect(cascaded(screen, ".gp-tools__gap::before").get("background")).toBe("var(--house-copper-dot)");
+    for (const rule of [...screen, ...print]) {
+      const color = rule.declarations.get("color") ?? "";
+      expect(color, `${rule.selectors.join(", ")} sets text in copper`).not.toMatch(/--reg-attention|--house-copper/u);
+    }
+  });
+
   it("sets the names at a size a guest can read at the door", () => {
     expect(pt(cascaded(print, ".gp-az").get("font-size"))).toBeGreaterThanOrEqual(12);
     expect(pt(cascaded(print, ".gp-table__seats li").get("font-size"))).toBeGreaterThanOrEqual(11);

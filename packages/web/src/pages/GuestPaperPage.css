@@ -127,10 +127,22 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Set in ink: copper marks the state with a dot before the line and carries no text. */
 .gp-tools__gap {
   margin: 0;
-  color: var(--reg-attention);
+  color: var(--reg-text-1);
   font-weight: 500;
+}
+
+.gp-tools__gap::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 8px 2px 0;
+  border-radius: 50%;
+  background: var(--house-copper-dot);
+  vertical-align: middle;
 }
 
 /* Always in the page, so a notice that appears in it is announced. */
@@ -376,7 +388,7 @@
 
 .gp-az__letter {
   margin: 0 0 6px;
-  color: var(--reg-attention);
+  color: var(--reg-text-1);
   font: 600 14px/1 var(--house-sans);
   letter-spacing: 0.12em;
 }
