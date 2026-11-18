@@ -90,10 +90,10 @@ const TERMS_UPDATED = { text: "11 November 2026", iso: "2026-11-11" } as const;
 
 /** The accessibility statement's own date: it changed on 8 November, when it
  *  listed the planner's single-key shortcuts and the hints cut off in its
- *  "More planner tools" panel (v1.0 final review), and on 13 November, when
+ *  "More planner tools" panel (v1.0 final review), and on 18 November, when
  *  those hints were drawn outside the panel, read in full, and left the list
  *  (planner lane E, E23). */
-const ACCESSIBILITY_UPDATED = { text: "13 November 2026", iso: "2026-11-13" } as const;
+const ACCESSIBILITY_UPDATED = { text: "18 November 2026", iso: "2026-11-18" } as const;
 
 /** The privacy policy's own date: it changed when the dietary note gained its
  *  retention rule (fix-first item 18) and, the same day, the choice to have

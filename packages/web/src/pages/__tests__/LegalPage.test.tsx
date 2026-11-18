@@ -81,12 +81,12 @@ describe("every document", () => {
     const time = document.querySelector("time");
     // Each document carries its own date: the privacy policy changed in the
     // v1.0 final review; the terms on 11 November, when the Grand Hall's
-    // dimensions became measured; the accessibility statement on 13 November,
+    // dimensions became measured; the accessibility statement on 18 November,
     // when the tool hints its More panel cut off left its known problems.
     const expected = type === "terms"
       ? { iso: "2026-11-11", text: "11 November 2026" }
       : type === "accessibility"
-        ? { iso: "2026-11-13", text: "13 November 2026" }
+        ? { iso: "2026-11-18", text: "18 November 2026" }
         : { iso: "2026-11-08", text: "8 November 2026" };
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
