@@ -601,13 +601,14 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
           ))}
         </dl>
 
-        <div className="gl-notices">
+        {/* Always on the page, so a notice that appears in it is announced; the two that warn of losing work are alerts. */}
+        <div className="gl-notices" role="status">
           {unread ? (
             <div className="gl-notice" data-notice="unread" data-tone="alert" role="alert">
               <p>{NOT_OPENED}</p>
             </div>
           ) : !kept && (
-            <div className="gl-notice" data-notice="not-kept" data-tone="alert">
+            <div className="gl-notice" data-notice="not-kept" data-tone="alert" role="alert">
               <p>{NOT_KEPT}</p>
             </div>
           )}
@@ -726,7 +727,11 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
         onCloseTablesForm={cancelTablesForm}
         onSetTables={setTablesTo}
         onSeatEveryone={seatAll}
-        onUndo={undoLast}
+        onUndo={() => {
+          undoLast();
+          // What the status line said (where a guest sits, how many were added) may no longer be true.
+          setSaid("");
+        }}
         onErase={onErase}
       />
     </div>

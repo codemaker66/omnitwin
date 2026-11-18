@@ -484,6 +484,23 @@ describe("the guest list page: the desk", () => {
     expect(screen.getByText(words)).toBeTruthy();
   });
 
+  it("announces its notices: they appear in a status region always on the page, and the list not being kept is an alert", async () => {
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    const view = open(PAGE, store);
+    await desk();
+    const notices = document.querySelector(".gl-notices");
+    expect(notices?.getAttribute("role")).toBe("status");
+    expect(notices?.children).toHaveLength(0);
+    view.unmount();
+    state().reset();
+
+    open(PAGE, { ...memoryStore(refusingBackend()), open: () => Promise.resolve({ kind: "no-storage" }) });
+    await desk();
+    const notKept = screen.getByText(NOT_KEPT_WORDS).closest("[data-notice]");
+    expect(notKept?.getAttribute("role")).toBe("alert");
+    expect(notKept?.parentElement?.getAttribute("role")).toBe("status");
+  });
+
   it("says, as an alert, when the list kept here could not be opened, offers no delete, and never erases it", async () => {
     const kept = listOf({ guests: [guest(1, "Ailsa Fraser"), guest(2, "Chidi Okafor"), guest(3, "Morag Kerr")] });
     const { backend } = await storeHolding(kept);
@@ -926,6 +943,22 @@ describe("the guest list page: the next step and what is still needed", () => {
     await waitFor(() => {
       expect(screen.getByText("0 of 1 guest has a seat.")).toBeTruthy();
     });
+  });
+
+  it("undo clears the status line that said where a guest sits, which is no longer true", async () => {
+    const { store } = await storeHolding(listOf({ tables: [table(1)], guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    fireEvent.click(screen.getByRole("button", { name: "To seat 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fraser, Ailsa" }));
+    fireEvent.click(screen.getByRole("button", { name: "Seat here at table 1" }));
+    const said = screen.getByText("Ailsa Fraser is at table 1, seat 1.");
+    expect(said.getAttribute("role")).toBe("status");
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(currentList().guests[0]?.seat).toBeNull();
+    expect(said.textContent).toBe("");
+    expect(screen.queryByText("Ailsa Fraser is at table 1, seat 1.")).toBeNull();
   });
 
   it("downloads the list as a file made in the browser", async () => {

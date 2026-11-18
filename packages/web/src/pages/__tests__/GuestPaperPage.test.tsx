@@ -783,9 +783,21 @@ describe("the guest paper page: printing", () => {
     };
     open(`${PAPER}?kit=on`, refusing);
     await paper("table-plan");
-    expect(within(tools()).getByText(
+    const words = within(tools()).getByText(
       "This browser is not keeping the list. It will be gone when you close this tab. Download it before you leave.",
-    )).toBeTruthy();
+    );
+    // Announced: an alert, in the tools' status region that is always on the page.
+    expect(words.getAttribute("role")).toBe("alert");
+    expect(words.parentElement?.getAttribute("role")).toBe("status");
+    expect(words.parentElement?.classList.contains("gp-tools__notices")).toBe(true);
+  });
+
+  it("keeps the tools' notices region on the page, announced as a status, while it holds no notice", async () => {
+    open(`${PAPER}?kit=on`, await storeHolding(list180()));
+    await paper("table-plan");
+    const notices = tools().querySelector(".gp-tools__notices");
+    expect(notices?.getAttribute("role")).toBe("status");
+    expect(notices?.children).toHaveLength(0);
   });
 
   it("says, as an alert, when the list kept here could not be opened just now", async () => {

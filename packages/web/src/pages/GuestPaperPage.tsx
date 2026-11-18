@@ -291,10 +291,11 @@ function ReadyPaper({ planId, list }: { readonly planId: string; readonly list: 
             </p>
           )}
         </div>
-        <div className="gp-tools__notices">
+        {/* Always on the page, so a notice that appears in it is announced; the two that warn of losing work are alerts. */}
+        <div className="gp-tools__notices" role="status">
           {unread
             ? <p className="gp-tools__notice" role="alert">{NOT_OPENED}</p>
-            : !kept && <p className="gp-tools__notice">{NOT_KEPT}</p>}
+            : !kept && <p className="gp-tools__notice" role="alert">{NOT_KEPT}</p>}
           {notice?.kind === "other-tab" && (
             <div className="gp-tools__notice" data-notice="other-tab" data-tone="attention">
               <p>{OTHER_TAB}</p>
