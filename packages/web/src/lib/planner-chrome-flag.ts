@@ -7,14 +7,21 @@
 // the default and deletes v1, by changing DEFAULT_PLANNER_CHROME alone.
 // ---------------------------------------------------------------------------
 
-export type PlannerChrome = "v1" | "v2";
+//
+// `?chrome=hud` is the third: the hall as one picture over one shelf, with the
+// furniture as a hand of cards (docs/superpowers/specs/2026-11-13-planner-hud-design.md),
+// the redesign Blake asked for on 13 Nov 2026. It becomes the default by the
+// same one-line change.
+// ---------------------------------------------------------------------------
+
+export type PlannerChrome = "v1" | "v2" | "hud";
 
 export const PLANNER_CHROME_STORAGE_KEY = "venviewer.planner-chrome";
 
 const DEFAULT_PLANNER_CHROME: PlannerChrome = "v1";
 
 function isPlannerChrome(value: string | null): value is PlannerChrome {
-  return value === "v1" || value === "v2";
+  return value === "v1" || value === "v2" || value === "hud";
 }
 
 /** The chrome this device asks for, from the address or the last choice here. */
@@ -30,4 +37,23 @@ export function plannerChromeRequested(search: string): PlannerChrome {
   } catch {
     return DEFAULT_PLANNER_CHROME;
   }
+}
+
+/**
+ * The chrome on screen: the one the planner's page mounted. Code that must
+ * agree with what is mounted (which chrome has a dialog to show a thing in)
+ * asks this, and never the address or the device's memory at that moment:
+ * another tab can change the memory after this page chose, and this page keeps
+ * the chrome it has until it is opened again.
+ */
+let mounted: PlannerChrome | null = null;
+
+/** The planner's page says which chrome it has mounted, and takes that back (null) as it leaves. */
+export function setMountedPlannerChrome(chrome: PlannerChrome | null): void {
+  mounted = chrome;
+}
+
+/** The chrome on screen; today's where no page has said (the scene mounted on its own). */
+export function mountedPlannerChrome(): PlannerChrome {
+  return mounted ?? DEFAULT_PLANNER_CHROME;
 }
