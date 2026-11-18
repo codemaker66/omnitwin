@@ -1,13 +1,15 @@
 # The Diary holds the whole book: design
 
-Design, 14 November 2026; revised on 15 November after a builder's check, whose findings are answered here.
+Design, 14 November 2026; revised on 15 November after a builder's check, and after the release lead's review of 16
+November; both are answered here. Nothing Blake decided is changed.
 Status: **approved by Blake on 16 November 2026**, by button: "Approve it (Recommended)". His answers to its
 decisions are recorded word for word in section 14; one decision (4) has not been put to him yet.
 Piece A of the platform plan (`docs/superpowers/specs/2026-11-13-platform-plan-design.md`, section 5.2), ledger row
 T-703. Branch `claude/platform-diary-design`. Code was read at master `7c3461e7`; every `path:line` below is from the
-repository root at that commit. The two approved designs this piece meets are read from their branches: the spine
-(pull request #427, `docs/superpowers/specs/2026-11-13-the-spine-design.md`) and the plumbing (pull request #425,
-`docs/superpowers/specs/2026-11-13-the-plumbing-design.md`).
+repository root at that commit, and the cited lines are unchanged at master `e138dc00`. The two approved designs this
+piece meets are on master: the spine (`docs/superpowers/specs/2026-11-13-the-spine-design.md`, pull request #427) and
+the plumbing (`docs/superpowers/specs/2026-11-13-the-plumbing-design.md`, pull request #425). First read on their
+branches, they were checked again on master `a3fdff12`, unchanged where cited.
 
 **Section 1 is the one screen for Blake. Sections 2 to 19 are for whoever builds and reviews it.**
 
@@ -89,7 +91,7 @@ rule against double booking, `bookings_ink_no_overlap`, keeps two live confirmed
 back allowed (`packages/api/drizzle/0050_diary_bookings.sql:61-76`); holds, house blocks and viewings are outside it.
 A refusal becomes `409 INK_SLOT_TAKEN`, chosen by the error code alone
 (`packages/api/src/services/booking-mutations.ts:107-118`, `:177-183`). Hold hygiene (decision date, owner, next
-action and its date) is an API rule (`:299-314`); an edit to a hold that lacks one is refused (`:530`).
+action and its date) is an API rule (`:299-314`); an edit that leaves a live hold without one is refused (`:530`).
 
 **The bind.** A hold or confirmed booking cannot exist without its event, of the same venue
 (`bookings_bound_to_event`, `packages/api/src/db/schema.ts:3901-3906`). `insertBoundBookings` was written for "the
@@ -105,10 +107,11 @@ bookings, then the enquiry, then the event, taken `FOR NO KEY UPDATE`
 (`packages/api/src/services/event-binding.ts:41-45`, `:337-350`).
 
 **Rooms.** `spaces` has no idea of a combination or of rooms that cannot be sold together
-(`packages/api/src/db/schema.ts:181-202`); the October roadmap leaves the question open
+(`packages/api/src/db/schema.ts:181-202`); the platform roadmap of 26 September leaves the question open
 (`docs/design/platform-2026-09-26/roadmap.md:1420`). The cores lock only the booking's own room
-(`packages/api/src/services/booking-mutations.ts:353`, `:504`), and a room's delete counts only the bookings filed
-under it (`packages/api/src/routes/spaces.ts:304-305`). Every reader that works room by room is listed in 6.3.
+(`packages/api/src/services/booking-mutations.ts:353`, `:504`, `:713`), and a room's delete counts only the bookings
+filed under it (`packages/api/src/routes/spaces.ts:304-305`). 6.3 lists the readers that learn combinations and those
+left on the lead room; any reader it does not name sees a combined booking on its lead room, where it is filed.
 
 **Set-up and breakdown.** Nothing on the booking. Changeover rules between bookings are guidance only
 (`packages/api/src/db/schema.ts:3960-3994`; `packages/api/src/services/calendar-conflicts.ts:135-142`); an event's
@@ -169,7 +172,7 @@ where the venue's people cannot see them, and the check and the undo need record
 
 **C. A place in the database for each run, worked through API routes (chosen).** The rows kept as they came; the
 matching kept as a signed record; a plan reported row by row; the signed plan written in small steps through the
-bind, each row's result recorded; an undo that reads those records. *Costs:* five new tables and three columns each
+bind, each row's result recorded; an undo that reads those records. *Costs:* six new tables and three columns each
 on bookings and events. It is the shape of the People Book's own import
 (`docs/superpowers/specs/2026-10-18-people-book-design.md:191-200`), which can use the same tables later.
 
@@ -212,8 +215,9 @@ refused with a reason, never cut.
 
 1. **Stage.** The page sends the file's rows to the API a few hundred at a time (4.6). Each line becomes a staged row:
    each cell as read, the line's number and a fingerprint of its contents. A row whose client is a person since
-   erased is blanked as it is staged (4.8). Nothing else is written. The batch records the file's name and
-   fingerprint and the converter's version.
+   erased, or that is already known to be left out (ended before today, or marked deleted), has its personal cells
+   blanked as it is staged (4.8). Nothing else is written. The batch records the file's name and fingerprint and the
+   converter's version.
 2. **Plan, the dry run.** The plan reads the staged rows, the current matching and the Diary as it stands, in one
    read-only transaction, and gives every row one outcome, with a plain reason:
    - **make**: a new booking will be written;
@@ -298,9 +302,8 @@ Each step of the apply, in this order:
    (`packages/api/src/services/people-records.ts:131`). A possible duplicate is made as new and appears on the People
    Book's list of suggestions. Nothing merges silently.
 2. **Then the bookings, one small transaction per step,** its rows sorted by room and start. Lock every room the step
-   writes to, every part of a combination included, in id order, with `lockLiveRoom`. Read the bind's counts
-   (`readBindInvariant`, `packages/api/src/services/event-binding.ts:517-548`). For each occasion: find its event by
-   its old id (following a merge to the event it now belongs to), else make one with
+   writes to, every part of a combination included, in id order, with `lockLiveRoom`. For each occasion: find its
+   event by its old id (following a merge to the event it now belongs to), else make one with
    `bindBookingToEvent(tx, seed, { join: "new" })` (`packages/api/src/services/event-binding.ts:155-195`), passing
    the client's name, which the seed accepts (`:59-60`), and record the occasion's old id on the event. Then call
    `insertBoundBookings` with every new row naming its event and carrying its source and batch, so the bind only
@@ -310,30 +313,34 @@ Each step of the apply, in this order:
 3. **Last, the event's client account,** where it is empty, from the import's own named source: after
    `insertBoundBookings` and its status sync, so the step takes the event after its bookings, as every writer does.
    This needs the spine's first migration, which pins that key to the venue first.
-4. **Before commit,** the bind's counts are read again, and the step may not raise any of them. Comparing before and
-   after, rather than demanding zero for the whole venue, keeps the import from being stopped by an unrelated fault,
-   or by the spine's list of joins to check while it is not yet empty (spine, section 6).
+4. **Before commit,** the bind's two counts (`readBindInvariant`,
+   `packages/api/src/services/event-binding.ts:517-548`) are read over only the bookings and events the step
+   touched, and both must be zero. Counting nothing else keeps the step from being stopped by an unrelated fault at
+   the venue, by a record another writer commits meanwhile, or by the spine's list of joins while it is not yet empty
+   (spine, section 6). The count gains a scope of ids beside its venue scope (`:517-519`), added in stage 4 after the
+   spine's first stage, which edits that file.
 
 If the database refuses a step (another person confirmed the same room a moment earlier, or two writers met in a
 deadlock, `40P01`), the step is rolled back and written again one row at a time, each in its own savepoint, an
 occasion's new event made inside its first row's savepoint: a refused row is named, leaves no empty event, and the
-rest go in. **Lock order:** rooms (a shared key lock on every part, in id order), then bookings, then the event, as
-the cores and the bind already do; the import names no enquiry, so it takes no enquiry lock.
+rest go in. **Locks** follow the full order in 6.2: the batch's row first, then its rooms, then its bookings, the
+event last. The import names no enquiry, so it takes no enquiry lock.
 
-**Owners.** Every live hold must leave the import with its four hygiene fields, or nobody could edit it afterwards
-(`packages/api/src/services/booking-mutations.ts:530`). Its owner comes from the signed matching, or its default
-owner, and must work at the venue (`:145-152`). A confirmed booking or house block whose owner has no match comes in
-with no owner: only holds need one (`:299-314`). The decision date comes from the row; a hold without one is refused.
-The next action comes from the row, else the venue's default wording (section 15, question 6), due on the row's date,
-else the decision date. **Option numbers** come in as the old diary has them; duplicates are flagged, and the ladder
-repairs itself on the next exit, as today. **Not written:** no enquiry (it would count in the funnel and the People
-Book), no status history for a new booking (the cores write none for a create), nothing about money.
+**Owners.** Every live hold must leave the import with its four hygiene fields, or every later edit would first
+have to supply them (`packages/api/src/services/booking-mutations.ts:530`). Its owner comes from the signed
+matching, or its default owner, and must work at the venue (`:145-152`). A confirmed booking or house block whose
+owner has no match comes in with no owner: only holds need one (`:299-314`). The decision date comes from the row; a
+hold without one is refused. The next action comes from the row, else the venue's default wording (section 15,
+question 6), due on the row's date, else the decision date. **Option numbers** come in as the old diary has them;
+duplicates are flagged, and the ladder repairs itself on the next exit, as today. **Not written:** no enquiry (it
+would count in the funnel and the People Book), no status history for a new booking (the cores write none for a
+create), nothing about money.
 
 ### 4.5 The places in the database
 
 - `import_batches`: the venue, source system, file name and fingerprint, converter version, state (staged, planned,
-  signed, applying, applied, undone), the signed matching version and plan fingerprint, who signed and when, who
-  applied, the backup recorded, who undid, and counts. Never a personal detail.
+  signed, applying, applied, undone, abandoned: 4.8), the signed matching version and plan fingerprint, who signed
+  and when, who applied, the backup recorded, who undid, and counts. Never a personal detail.
 - `import_rows`: the batch, venue, line number, old id, cells as they came and their fingerprint, the plan's outcome
   and reason, a person's choice for a held row, the booking made, matched or linked, the id of the person matched, a
   fingerprint of what the import wrote (so a later edit here can be seen), the values an update replaced (for undo),
@@ -342,13 +349,16 @@ Book), no status history for a new booking (the cores write none for a create), 
   owners, the default owner, the default wording), who wrote it, who signed it and when. A signed version cannot change.
 - `import_people`: for each old person or organisation id met, a hash of the venue, source system and old id, and the
   person or organisation matched or made. It names nobody by itself, and it outlives an erasure (4.8).
-- `import_day_checks`: the Saturday ticks (4.7).
+- `import_checks`: one for each venue, naming its sales lead (`sales_lead_user_id`), who named them and when, and
+  the check's first Saturday (section 15, question 11). `import_day_checks`: the Saturday ticks (4.7).
 - `bookings` and `events` each gain `source_system`, `source_id` (both or neither, as on people) and
   `import_batch_id`; the pair is unique per venue among rows not deleted, so one old row cannot become two live
   bookings or two events.
 
 Every table carries its venue and uses the house's `(id, venue_id)` keys, so a batch of one venue cannot point at
-another venue's room, booking or owner.
+another venue's room or booking. A user row has no such key (`packages/api/src/db/schema.ts:208-233`), so an owner
+or sales lead is checked as a hold's owner is: a user of the venue in a hold-owner role
+(`packages/api/src/services/booking-mutations.ts:143-152`), when named and again when written or counted.
 
 ### 4.6 Routes and screens
 
@@ -368,7 +378,7 @@ production address, and the API's checks and logs apply, as for the reminder wor
 | `POST /batches/:batchId/sign` | Sign the matching's version and the plan's fingerprint | admin, manager |
 | `POST /batches/:batchId/apply` | Apply the next step; called until done | staff, admin |
 | `POST /batches/:batchId/undo` | Undo the next step; called until done | admin |
-| `PUT /sales-lead` | Name the person whose ticks count for the check | admin, manager |
+| `PUT /sales-lead` | Name the person whose ticks count for the check: a user of the venue in a hold-owner role | admin, manager |
 | `GET /saturdays`, `POST /saturdays/:date` | The thirty Saturdays; a tick, "Same" or "Something differs" with a note | read: as the report; tick: admin, manager, staff, sales |
 | `POST /admin/diary-import/batches/:batchId/backup` | Record the backup taken before the apply | Venviewer operator |
 
@@ -397,9 +407,16 @@ converter would pass. Her eyes on the old system are the outside proof.
 
 ### 4.8 Personal data
 
-- Staged rows keep names, emails and phones only while they are needed. At signing, the personal cells of every row
-  the matching leaves out (lost, turned down, past, deleted) are emptied; the rest are emptied once the switch is
-  complete (piece K), leaving the old ids and the outcomes. No notes and no money are ever sent (4.2).
+- Staged rows keep names, emails and phones only while they are needed. A row already known to be left out (ended
+  before today, or marked deleted) is blanked as it is staged; at signing, every other row the matching leaves out
+  (lost, turned down) is emptied. The rest are emptied once a newer batch for the source is applied, or the switch
+  is complete (piece K). What stays is the old ids, the fingerprints and the outcomes. No notes and no money are
+  ever sent (4.2).
+- **Abandoned batches.** Signing a batch abandons every earlier batch for its source that is staged, planned or
+  signed and not yet applying. The nightly cleanup abandons a batch not signed within the venue's limit (section 15,
+  question 10), with a count only in its public log, as its allergy-note passes do
+  (`packages/api/src/scripts/run-cleanup.ts:21-25`). An abandoned batch cannot be planned, signed or applied, and
+  its personal cells are emptied as it is abandoned.
 - An erased person never comes back: a staged row whose client's old id leads, through `import_people`, to a person
   since erased or no longer there is blanked as it is staged, and refused, whatever the erasure did to the person's
   own source columns.
@@ -454,19 +471,21 @@ in an hour the clocks skip or repeat is shown to the person entering the term, w
   event and the rest name it.
 - **The hallkeeper's sheet** takes the earliest live booking of the event in its room
   (`packages/api/src/services/hallkeeper-sheet-v2-data.ts:513-524`), so a term would show its first night for ever.
-  The fix takes the earliest that has not ended. #400 changes that file, `linkedEventIds` included, so the fix lands
-  after #400 and is agreed with #400's owner.
+  The fix takes the earliest not yet ended, after #400, which changes that file (6.3, 16).
 - **Changing it.** From any night's drawer: "Change this night only" (an ordinary edit, shown as changed from the
   term); "Change this and later nights" (later nights that still match move in one transaction; nights changed by
   hand are listed and left); "Skip this night" (cancelled, or released if provisional); "Finish the term early"
   (later nights listed, then ended in one transaction). "Confirm the term" confirms every live provisional night in
   one transaction, or none, naming any night in the way. A provisional term lapses and is released as one (8.3).
+- **The term is the only writer of its hold fields.** A provisional night's decision date, owner and next action
+  are the term's: `updateBookingCore` and `transitionBookingCore` refuse a change to any of them on a night, and the
+  term's own change ("Extend a week" included) writes the term and every live night in one transaction.
 - **Who sees what.** Those who write the Diary enter and change terms, as for any booking. The sales lead sees the
   term in its own panel: its pattern, each night, and which nights differ. The hallkeeper sees each night as an
   ordinary booking, marked "Weekly, 4 of 12".
 - **Routes.** `POST /bookings/series` (with `preview: true`, the preview; without, the save) and
-  `POST /bookings/series/:seriesId/change` (this and later, skip, finish early, confirm, release). Saving is a new
-  Diary command, `series.save`, beside create, update and transition
+  `POST /bookings/series/:seriesId/change` (this and later, skip, finish early, confirm, extend, release). Saving is
+  a new Diary command, `series.save`, beside create, update and transition
   (`packages/api/src/services/diary-commands.ts:176-182`), so it takes the same `Idempotency-Key` and ledger
   (`packages/api/src/routes/bookings.ts:115-121`): a double tap saves once, and the open boards are told once.
 
@@ -511,8 +530,19 @@ breakdown (section 7). *Costs:* a table and a trigger on `bookings`, and the roo
   the Diary's commands rely on a refusal arriving inside the core's savepoint
   (`packages/api/src/services/diary-commands.ts:101-108`, `:168-185`).
 - **Every part is locked.** Every writer of a combined booking takes every part with `lockLiveRoom`, in id order,
-  before it writes (the cores take only the booking's own room today). A room's delete counts the live claims on it
-  as well as the bookings filed under it, so a part cannot be deleted under a confirmed combined booking.
+  before it writes. A room's delete counts the live claims on it as well as the bookings filed under it, so a part
+  cannot be deleted under a confirmed combined booking.
+- **The full lock order,** for every writer: (1) an import batch's row; (2) bookings, a ladder in id order
+  (`packages/api/src/services/booking-mutations.ts:679-691`) or many rows sorted by room and start; (3) the
+  combination, `FOR SHARE`, in the claims trigger as each booking is written; (4) a term's row; (5) the proposal,
+  the enquiry and the deal, in the spine's order (spine, section 5.4); (6) the event, last, with the status sync's
+  lock (`packages/api/src/services/event-binding.ts:41-45`). Rooms stand outside it, taken `FOR KEY SHARE`
+  (`packages/api/src/services/room-liveness.ts:19-24`): before the bookings in a create and an import step, after
+  them in an update and a transition (in `packages/api/src/services/booking-mutations.ts`: `:353`; `:442` then
+  `:504`; `:679-703` then `:713`). Both are safe: key-share locks never wait for each other, and the one stronger
+  room lock, a room's delete, takes the room `FOR UPDATE` and then only counts
+  (`packages/api/src/routes/spaces.ts:297-317`). A parts change or retirement takes the combination `FOR UPDATE` and
+  only reads bookings, so it closes no cycle either.
 - **Many rows at once.** A term's save, "Change this and later", "Confirm the term" and an import step write their
   confirmed rows sorted by room and start. Every writer treats a deadlock (`40P01`) as a clash: a writer of many rows
   tries once more, then names the night; the cores answer 409 "try again", not a 500, since today they catch only
@@ -522,7 +552,7 @@ breakdown (section 7). *Costs:* a table and a trigger on `bookings`, and the roo
   reported as someone else confirming first.
 - House blocks and holds get claims but do not block, as today.
 
-### 6.3 Holds, ladders and every reader that works room by room
+### 6.3 Holds, ladders and the readers that work room by room
 
 A hold on the whole sits on its lead room's ladder, a hold on a part on the part's: the ladders stay by room, as
 today (`packages/api/src/services/booking-mutations.ts:674-691`, `packages/api/src/services/window-proposals.ts:96`,
@@ -537,6 +567,9 @@ crosses a confirmed booking through a part gets today's warning that it cannot b
 | The room's day on the When ribbon (`packages/api/src/services/room-day.ts:94`) | Shows a combined booking on each part | 2 |
 | A room's delete (`packages/api/src/routes/spaces.ts:304-305`) | Counts live claims | 2 |
 | The hallkeeper's sheet timing (`packages/api/src/services/hallkeeper-sheet-v2-data.ts:513-521`) | Finds a combined booking from a part's layout; for a term, the next night (5.4) | 2 and 5, after #400, agreed with its owner |
+| A layout's review facts (`packages/api/src/services/pending-review-facts.ts:95`, `:117`) | Finds a combined booking from a part's layout, as the sheet does | 2 |
+| The Pricing desk and the occupancy report (`packages/api/src/services/pricing-desk-data.ts:196-199`, `packages/api/src/routes/revenue-analytics.ts:379`) | Read claims, so a combined booking is demand on every room it uses | 2 |
+| What one booking shows a client or a supplier: the client's schedule (`packages/api/src/services/client-event-schedule.ts:129`), passes (`packages/api/src/services/supplier-passes.ts:99-101`), a client's request (`packages/api/src/services/requests.ts:448-450`), an observation (`packages/api/src/services/observations.ts:80`) | Stays on the lead room, where the booking is filed; where a room's name is shown, a combined booking shows its combination's name | 2 |
 | The public read (`packages/api/src/services/public-discovery.ts:627`) | Counts a booking against every room it uses, as Blake decides (decision 4) | 2, last |
 | The Day Board (#361 to #365) | Shows a combined booking on its lead room only, until its owner reads claims | its owner |
 
@@ -602,16 +635,19 @@ releasing a hold or a refund waits for one tap by a named person"
 1. **The moment the decision date passes,** the hold appears at the top of the Diary's Decisions due list under
    "Lapsed". Nothing is needed for this but a read; it can ship first.
 2. **Each line says what one tap will do,** before it is tapped: "Release: the Fraser wedding becomes 1st option;
-   Alex is told, with a draft to send." Then two buttons: **Release** and **Extend a week** (the Diary's existing
-   extension, `packages/web/src/pages/diary/lib/extend-decision.ts:4-10`; with a reason if the venue's rule needs
-   one). The sentence beside the button is the confirmation; there is no second box.
-3. **The tap sends the promotions the person read.** Release records the hold as lapsed, by the person who tapped,
-   through the existing transition (`packages/api/src/services/booking-mutations.ts:664-669`). Under the ladder's
+   Alex is told, with a draft to send." (made-up names). Then two buttons: **Release** and **Extend a week** (the
+   Diary's existing extension, `packages/web/src/pages/diary/lib/extend-decision.ts:4-10`; with a reason if the
+   venue's rule needs one). The sentence beside the button is the confirmation; there is no second box.
+3. **The tap sends the promotions the person read.** Release records the hold as `released`, as the drawer's Release
+   does (`packages/web/src/pages/diary/board-copy.ts:466`), by the person who tapped, through the existing
+   transition, which staff and admin may make (`packages/api/src/state-machines/booking.ts:46`;
+   `packages/api/src/services/booking-mutations.ts:664-669`). The history's note, written by the server from the
+   hold, says it had lapsed: its decision date had passed (`packages/api/src/db/schema.ts:3954`). Under the ladder's
    locks it works the promotions out again; if they differ from those sent, it writes nothing and answers "This
-   changed: here is what Release will do now". Otherwise the ladder moves up in the same transaction and the next in
-   line's owner is told in the app, with a drafted email to send, exactly as built
-   (`packages/api/src/services/hold-promotion.ts:30-46`); for an imported hold, the draft goes to the client
-   account's main contact the import recorded (4.4).
+   changed: here is what Release will do now". Otherwise the ladder moves up in the same transaction, as for any
+   exit, and the next in line's owner is told in the app that the hold was released, with a drafted email to send,
+   exactly as built (`packages/api/src/services/hold-promotion.ts:30-46`, `:113-117`); for an imported hold, the
+   draft goes to the client account's main contact the import recorded (4.4).
 4. **A release and a confirmation at the same moment:** the existing check on the row's state lets one through and
    tells the other that the booking has just changed (`packages/api/src/services/booking-mutations.ts:703-708`).
 5. **The next morning,** once the plumbing's list exists, the morning job tells the hold's owner in the app that it
@@ -619,8 +655,9 @@ releasing a hold or a refund waits for one tap by a named person"
    promotion notices already use (`packages/api/src/services/hold-promotion.ts:208-225`). No email.
 6. **A provisional term is one hold to the people working it:** one line on the Lapsed and Decisions due lists, one
    lapse notice, one reminder each morning one is due; "Release the term" exits every live night in one transaction,
-   sorted by room and start, with one promotion notice for each term or single hold that moves up.
-7. **Nothing is ever released by a timer.** No code but a person's transition records a hold as lapsed (test 34).
+   sorted by room and start, with one promotion notice for each term or single hold that moves up; "Extend a week"
+   moves the term's decision date and every live night's in one transaction (5.4).
+7. **Nothing is ever released by a timer.** No code but a person's transition ends a hold (test 34).
 8. **Who may tap:** those who write the Diary at the venue: staff and admin. Sellers do not (decision 5, answered
    no on 16 November).
 
@@ -628,7 +665,8 @@ releasing a hold or a refund waits for one tap by a named person"
 
 - **The day, not the hour.** A reminder goes "on the morning seven days before the decision date, by the venue's
   calendar", not "exactly 168 hours before": from one morning run, an instant later in the day, or moved by a clock
-  change, would go a day late (test 39). The plumbing leaves this choice to this piece (plumbing, section 8, test 11).
+  change, would go a day late (test 39). The plumbing leaves this choice to this piece; stage 7 replaces the
+  plumbing's test 11 (exactly 168 hours) with test 39, and asks for its section 5.2 reminder row to name a term's key.
   A reminder whose morning has passed is not sent late. Each key stays as it is
   (`packages/api/src/services/hold-reminders.ts:165-170`), so nothing sent is sent again; a term's is keyed by the term.
 - **The trial run is on the real holds.** Today's dry run lists only what is due at the moment it runs
@@ -639,8 +677,6 @@ releasing a hold or a refund waits for one tap by a named person"
 - **Then the schedule.** On Blake's yes, reminders become a second daily kind on the plumbing's list, at the
   office's morning; GitHub's commented-out schedule is never switched on (plumbing, section 6, step 5). Until the
   list exists, only the Lapsed list runs, and the workflow is a dry run by hand.
-- Open pull request #400 changes `hold-reminders.ts` (owners who have left are no longer emailed); this piece's
-  reminder changes land after it, and the trial run is run with it in place.
 
 ## 9. The public door
 
@@ -662,20 +698,22 @@ releasing a hold or a refund waits for one tap by a named person"
 | Rule | In the database | The check |
 |---|---|---|
 | An old row cannot become two live bookings, nor an occasion two events | Unique `(venue_id, source_system, source_id)` on bookings and on events, among rows not deleted; source pair both or neither | Test 18 |
-| An import names its venue's rooms, owners and batches only | `(id, venue_id)` keys from every import table and from the new booking columns | Test 28 |
+| An import names its venue's rooms, bookings, batches, owners and sales lead only | `(id, venue_id)` keys from every import table and from the new booking columns; owners and the sales lead by the owner check (4.5), since a user row has no such key | Test 28 |
 | A signed matching cannot change | A trigger refuses an update to a signed version | Test 29 |
 | An erased person is not made again | `import_people` keeps a hash of each old id and the person's id | Test 27 |
+| Staged personal cells are kept only while needed | Blanked at staging or signing; an abandoned or superseded batch emptied (4.8) | Test 27 |
 | A combined booking is filed under its combination's lead room | Key from `(combination_id, space_id)` to the combination's id and lead room | Filing it under another part is refused |
 | A combination's parts are its venue's rooms, unchanged under a live booking; a retired one takes no booking | `(space_id, venue_id)` keys; the claims trigger takes the combination `FOR SHARE`, a change takes it `FOR UPDATE` | Tests 6 and 7 |
 | No room is taken twice by confirmed booked time, whole or part | Exclusion constraint on blocking claims of booked time | Tests 1 and 2 |
 | No set-up or breakdown overlaps another event's confirmed booking or band | Exclusion constraint on blocking claims, with the event | Tests 3 and 4 |
 | A claim's time is never empty | A check on the claim's range | A booking that would make one is refused |
 | One night of a term once | Unique `(series_id, series_date)` among rows not deleted; `series_id` a key to the term, pinned to the venue | Test 12 |
+| A provisional term's nights carry its hold fields | An API rule: the term's own change is their only writer (5.4) | Test 16 |
 | Set-up and breakdown are sensible | 0 to 1,440 minutes | 1,441 is refused |
 | One lapse notice for each hold and decision date | Unique record of each notice | Test 34 |
 | A hold's later decision date has its reason, where the venue has a rule | An API rule, beside the existing hold hygiene; the database does not know the rule's start | Test 38 |
 | Nothing is released by the clock | No code path but a person's transition writes a hold's exit | Test 34 |
-| Every hold and booking keeps its event | Unchanged: `bookings_bound_to_event`; no import step may raise the bind's counts | Test 31 |
+| Every hold and booking keeps its event | Unchanged: `bookings_bound_to_event`; an import step leaves the bind's counts at zero on what it touched | Test 31 |
 
 ## 11. Tests first
 
@@ -701,7 +739,8 @@ substitute bank holidays (gov.uk, read 14 November 2026). Fixtures use made-up n
 6. Claims stay true when a booking moves room, time, event or combination, or is released, cancelled or deleted. A
    booking naming a retired combination is refused. A parts change racing a new combined booking waits, and is
    refused once the booking commits. A part cannot be deleted under a confirmed combined booking.
-7. Tenancy: a combination of venue A naming venue B's room is refused by the database.
+7. Tenancy: a combination of venue A naming venue B's room is refused by the database; through the routes, venue B's
+   admin cannot list, make or retire venue A's combinations.
 8. Two confirmed terms saved at once, crossing on two nights in opposite order: one saves, the other is told which
    night; never a 500.
 
@@ -723,7 +762,10 @@ substitute bank holidays (gov.uk, read 14 November 2026). Fixtures use made-up n
 15. Confirming a provisional term is all or nothing, naming any night in the way.
 16. A provisional term of twelve nights: one reminder each morning one is due, one Decisions due line, one lapse
     notice; "Release the term" exits all twelve in one transaction, one promotion notice per term or hold moved up.
-17. A public create or edit that sends a `seriesId` is refused.
+    A change to one night's decision date, owner or next action is refused; "Extend a week" moves the term's date
+    and all twelve nights' in one transaction.
+17. A public create or edit that sends a `seriesId` is refused. Venue B's staff cannot preview, save or change venue
+    A's term through the term routes.
 
 **The import.**
 
@@ -746,23 +788,29 @@ substitute bank holidays (gov.uk, read 14 November 2026). Fixtures use made-up n
     "2027-03-28T01:30" is refused as not happening. A title of 201 characters is refused, never cut.
 27. People: one old contact twice makes one person; an email held by one person links; by two, a new person and a
     suggestion; an erased person's old id is never made again, even once the erasure clears their source columns,
-    and their row is blanked at staging; at signing, left-out rows' personal cells are emptied.
+    and their row is blanked at staging. A row ended before today or marked deleted is blanked at staging, other
+    left-out rows at signing. An unsigned batch older than the limit, or one a newer signed batch supersedes, is
+    abandoned and holds no personal cell; an applied batch holds none once a newer one is applied.
 28. Tenancy: venue B's admin cannot stage, sign, apply or undo venue A's batch; a matching cannot name venue B's room
-    or owner; a platform admin with no role at the venue cannot sign; a hallkeeper cannot read the staged cells.
+    or owner; a platform admin with no role at the venue cannot sign; a hallkeeper cannot read the staged cells. The
+    sales lead must be a user of the venue in a hold-owner role; naming venue B's user is refused, and one who has
+    left no longer meets the check.
 29. Editing a signed matching is refused. A stored plan that no longer matches the signed fingerprint: apply is
     refused before its first step. A booking changed after signing: that row is refused and listed, the rest applied.
 30. A provisional hold with no decision date is refused and listed; every hold that comes in has all four hygiene
     fields and can be edited; a confirmed booking whose owner has no match comes in with no owner.
-31. No apply or undo step raises the bind's counts; an unrelated contradicting event at the venue does not stop it.
+31. No apply or undo step leaves the bind's counts above zero on what it touched; an unrelated contradicting event
+    at the venue, or another writer committing a contradicting record there during the step, does not stop it.
 
 **A hold that lapses, and reminders.**
 
 32. A Release tap and a confirmation of the same hold at once: exactly one; the other is told it changed.
-33. Releasing a lapsed 1st option moves the 2nd up and tells its owner; the draft goes to the imported client
-    account's main contact, or the enquirer when there is no account.
+33. Releasing a lapsed 1st option records `released`, the history's note saying its decision date had passed; it
+    moves the 2nd up and tells its owner; the draft goes to the imported client account's main contact, or the
+    enquirer when there is no account.
 34. The morning job leaves every lapsed hold live and writes one notice each, a second run none; an imported hold
     already past its date gets one; a hold moved back into a day already run gets one; an owner in sales is told by
-    name; a hold whose owner has left goes to the office.
+    name; a hold whose owner has left goes to the office; nobody outside the hold's venue is ever told.
 35. Release after the ladder changed (a new 2nd option, or the 2nd released meanwhile): refused with the new sentence.
 36. A decision moved later: the morning run that would have noticed it does nothing.
 37. Two servers, one reminder (the plumbing's own test, used here).
@@ -784,16 +832,15 @@ substitute bank holidays (gov.uk, read 14 November 2026). Fixtures use made-up n
 
 Four database changes, each in its own merge slot, numbered by orchestration at merge. Every one adds; none removes.
 The project has no down migrations; each change has a written undo and the backup as the last resort. Production
-holds no live bookings yet, so every backfill is small.
+held very few records when the spine counted it on 13 November (spine, section 3); bookings were not counted, so no
+backfill here relies on being small.
 
 | Change | Adds | Backfill | To undo |
 |---|---|---|---|
 | 1. Rooms together, and set-up | `room_combinations`, `room_combination_parts`, `booking_room_claims` with its two constraints and trigger; on bookings `combination_id`, `setup_minutes`, `breakdown_minutes`; on rooms the two standard minutes | Claims for every live hold, confirmed booking and house block. With no combinations and no set-up yet, the confirmed claims are exactly today's rule, so the backfill cannot fail on data today's rule accepts | Drop the trigger, the claims and the new tables and columns while no combination is in use. Today's rule is never touched |
-| 2. The import's place | `import_batches`, `import_rows`, `import_mappings`, `import_people`, `import_day_checks`; on bookings and events `source_system`, `source_id`, `import_batch_id` | None: every new column starts empty | Undo every applied batch, then drop. Before any batch is applied, simply drop |
-| 3. A regular hirer's term | `booking_series`; `bookings.series_date`; `series_id` becomes a key | A term row for each distinct `series_id` already set, if any: the API writes any id a caller sends until this stage takes it out of the public schemas, and the web sends none | Drop the key and the new column and table; `series_id` is a bare column again |
+| 2. The import's place | `import_batches`, `import_rows`, `import_mappings`, `import_people`, `import_checks`, `import_day_checks`; on bookings and events `source_system`, `source_id`, `import_batch_id` | None: every new column starts empty | Before any batch is applied, drop. Once one is applied, disable the import's routes and keep the tables and columns: undo reverses only the latest batch, and piece K needs the old ids |
+| 3. A regular hirer's term | `booking_series`; `bookings.series_date`; `series_id` becomes a key | None invented: if any row has a `series_id` (the API writes one only when a caller sends it; the web sends none), the migration stops and reports the count | Drop the key and the new column and table; `series_id` is a bare column again |
 | 4. The venue's hold rule, and lapse notices | `venue_settings.hold_days` and the office's morning (`packages/api/src/db/schema.ts:6364-6384`; a venue with no row reads 07:00, since a row cannot be made without its escalation window, `:6367`); on bookings `decision_reason` and who gave it; the record of lapse notices | None | Drop the columns and the table |
-
-The import itself is reversed by its own undo (4.3), with a backup recorded before each apply.
 
 ## 13. Build order
 
@@ -803,7 +850,7 @@ At most one database change for each stage. Each stage is useful by itself.
 |---|---|---|---|
 | 1. Lapsed holds and honest words | No | The Lapsed list with one-tap Release, its promotions checked; the read-only line corrected; "Free" only for rooms whose record stands. No change for sellers (decision 5: no) | Nothing |
 | 2. Rooms sold together, and set-up | Change 1 | Combinations, claims, set-up and breakdown; part locks, the room delete, refusal words and deadlocks; the readers of 6.3 | #400, for the Diary's lane read, the conflict engine, time moves and the sheet; Blake's decision 4, for the public read; the Day Board stack (#361 to #365) to land or rebase, since both touch `booking-mutations.ts` |
-| 3. The import's place, and the dry run | Change 2 | The converter's frame, staging, the matching and its signature, the plan and its page | Stage 2 (rooms and set-up must exist to match to) |
+| 3. The import's place, and the dry run | Change 2 | The converter's frame, staging, the matching and its signature, the plan and its page; abandoned batches emptied (4.8) | Stage 2 (rooms and set-up must exist to match to) |
 | 4. Apply, undo and the check | No | Apply through the bind, people and clients, undo, run again, the thirty-Saturday page, rooms shown as ready, the control's refusal | The spine's first migration (client account key pinned; its list of joins), for production. The read-only login, for the converter and the matching's values |
 | 5. A regular hirer's term | Change 3 | Terms with their exceptions; a term lapses and is listed as one; `seriesId` out of the public schemas; the sheet shows the next night | Stage 2 (the combination key and the set-up columns it copies); #400 and its owner, for the sheet |
 | 6. The venue's hold rule, and the morning notice | Change 4 | The rule and its reason; the office's morning; the morning job that tells owners a hold has lapsed | The plumbing's first stage |
@@ -884,21 +931,23 @@ person rather than guessing.
    so an unmatched hold is refused; the next step reads "Confirm or release", due on its decision date.
 7. **While both diaries run, where is a new booking entered first?** *Default:* in the old diary until a room's
    forward-book record stands, then in Venviewer first; one keyed into both is caught as "may already be here".
-8. **A row with a date and no times.** *Default:* listed for a person to give times; it does not come in until then.
+8. **A row with a date and no times.** *Default:* refused and listed; the office adds times in the old diary, and the
+   next export brings it in.
 9. **When the office's day starts,** for the morning notices and reminders. *Default:* 07:00 by the hall's clock (the
    reminders' existing schedule starts at 07:00 universal time, `.github/workflows/diary-hold-reminders.yml:49-55`).
-10. **Who signs the matching, and whose ticks count.** *Default:* the venue's admin signs; only the ticks of the
-    person the venue names as its sales lead meet the check.
+10. **Who signs the matching, whose ticks count, and how long an unsigned run may wait.** *Default:* the venue's
+    admin or manager signs; only the ticks of the person the venue names as its sales lead meet the check; a run not
+    signed within 14 days is abandoned and its personal cells emptied (4.8).
 11. **Which thirty Saturdays.** *Default:* the next thirty from the day the check starts.
 
 ## 16. Neighbours and open pull requests
 
-**The spine (pull request #427).** The import goes through `insertBoundBookings` unchanged, wrapped (4.4), and is
-the first writer of the event's client account, after the spine's first migration pins that key, last in each step.
-Doubtful occasions go on the spine's list of joins to check; since a step may not raise the bind's counts, that list
-never stops an import. Events gain source columns: a merge leaves them on the event merged away, and the import
-follows the merge. Claims carry each booking's event and follow a merge. No new table points at events (the term
-stores none), so the merge guard needs no new entry.
+**The spine (pull request #427).** The import wraps `insertBoundBookings` unchanged and is the first writer of the
+event's client account, last in each step (4.4). Doubtful occasions go on the spine's list of joins, which never
+stops an import (4.4 step 4). Events gain source columns and claims carry each booking's event; a merge leaves the
+first on the event merged away, the import follows it, and claims follow it. No new table points at events, so the
+merge guard needs no new entry. **Asked of the spine's owner:** amend the spine's section 5.4 to the full lock order
+of 6.2 here. This design does not edit the spine's text.
 
 **The plumbing (pull request #425).** Two daily kinds for each venue at the office's morning: lapse notices, done
 exactly once since they only change our database, and later reminders, through the outbox. Ids only in the job; each
@@ -906,12 +955,12 @@ run reads again. Needs its first stage only.
 
 **Open pull requests, which stay with their owners:**
 
-- **#400** changes, among others, `hold-reminders.ts`, `calendar-conflicts.ts`, `routes/calendar.ts`, `decisions.ts`
-  and `hallkeeper-sheet-v2-data.ts`. This piece's changes to them land after it; the sheet's timing fix (5.4, 6.3)
-  is agreed with #400's owner; the trial run waits for it.
-- **#361 to #365** (the Day Board) change `booking-mutations.ts`, as stages 2, 5 and 6 do; whichever lands second
-  rebases. The Day Board shows a combined booking on its lead room only until its owner
-  reads claims; set-up and breakdown are on the booking for it to show.
+- **#400** changes, among others, `hold-reminders.ts` (owners who have left are no longer emailed),
+  `calendar-conflicts.ts`, `routes/calendar.ts`, `decisions.ts` and `hallkeeper-sheet-v2-data.ts`. This piece's
+  changes to them land after it; the sheet's timing fix (5.4, 6.3) is agreed with #400's owner; the trial run waits
+  for it and runs with it in place.
+- **#361 to #365** (the Day Board) change `booking-mutations.ts`, as stages 1, 2, 5 and 6 do; whichever lands second
+  rebases. The Day Board shows a combined booking on its lead room only until its owner reads claims.
 - **#415** (the sheet PDF): not touched; its files are the PDF's, not the sheet's data.
 - **#247** (erase a person): staged rows are a new store of personal data, carrying their venue and the person
   matched, and erasure must reach them; the import never depends on #247 keeping a person's old id (4.8). An
