@@ -67,6 +67,11 @@ The slot must be done by 27 November 2026 at the latest. If it has not been
 done by then, hold every pull request that touches a watched path until it is:
 after 1 December such a merge would deploy with Railway's old stored settings.
 
+On the slot's day, before step 1: merge master into pull request 2 and wait for
+its checks to pass. From then until step 7 is done, the merge coordinator holds
+every merge that touches a watched path or `.railway/`. Otherwise pull request 2
+falls behind master, its checks must run again, and it cannot merge at once.
+
 1. On Railway's dashboard, check that the environment has no pending staged
    changes. If it has, stop.
 2. From a clean checkout of master, run `railway config plan --json --out <file>`,
@@ -82,9 +87,11 @@ after 1 December such a merge would deploy with Railway's old stored settings.
    `/health/ready` passed, it is serving.
 6. Run `railway config plan --detailed-exit-code`. It must exit 0. If it does not,
    stop: `railway.json` is still there and still read.
-7. Merge pull request 2 at once and watch its deploy. If no deployment starts
-   within ten minutes, deploy the latest commit from Railway's dashboard, so the
-   first deploy without the file happens while it is watched.
+7. Merge pull request 2 at once and watch its deploy. It changes the `Dockerfile`
+   (a comment), a watched path, so the merge should start a deploy by itself. As
+   a backstop: if no deployment starts within ten minutes, deploy the latest
+   commit from Railway's dashboard, so the first deploy without the file happens
+   while it is watched.
 
 ## The proof
 
