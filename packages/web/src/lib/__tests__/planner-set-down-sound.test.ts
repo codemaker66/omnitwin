@@ -228,13 +228,31 @@ describe("a batch of set-downs", () => {
     });
   });
 
-  it("holds every voice until the limiter has run 0.25 s (R63)", () => {
-    context.currentTime = 0;
+  it("holds a cascade in the limiter's first 0.25 s back as a whole, keeping its spacing, as the page does (R63, R75)", () => {
+    // A Lay out pressed just after arming: the first contact at context time 0.1,
+    // a 4.7 ms lead, and voices 0, 95 and 190 ms on, each played at its own contact.
+    context.currentTime = 0.1;
     armPlannerSound();
     const batch = beginSetDownBatch(3);
-    for (const startAt of [0.011, 0.1, 0.3]) expect(batch?.play(voice({ startAt }))).toBe(true);
+    const lead = 0.0047;
+    for (const offset of [0, 0.095, 0.19]) {
+      context.currentTime = 0.1 + offset;
+      nowMs += offset * 1000;
+      expect(batch?.play(voice({ startAt: context.currentTime + lead }))).toBe(true);
+    }
     expect(PLANNER_LIMITER_WARMUP_SECONDS).toBe(0.25);
-    expect(context.started.map((source) => source.startedAt)).toEqual([0.25, 0.25, 0.3]);
+    // page.ts: now = max(currentTime, 0.25) = 0.25, then start = now + lead + offset.
+    const starts = context.started.map((source) => source.startedAt ?? Number.NaN);
+    expect(starts).toHaveLength(3);
+    [0.2547, 0.3497, 0.4447].forEach((expected, index) => { expect(starts[index]).toBeCloseTo(expected, 9); });
+  });
+
+  it("keeps the warm-up floor for a voice aimed before it on a context already past it", () => {
+    context.currentTime = 0;
+    armPlannerSound();
+    context.currentTime = 0.3;
+    expect(beginSetDownBatch(1)?.play(voice({ startAt: 0.2 }))).toBe(true);
+    expect(context.started.map((source) => source.startedAt)).toEqual([0.25]);
   });
 
   it("refuses a second batch 30 ms after the first: a set-down waits 45 ms after itself", () => {
@@ -253,6 +271,32 @@ describe("a batch of set-downs", () => {
     expect(beginSetDownBatch(1), "too many in a second").toBeNull();
     nowMs += 701;
     expect(beginSetDownBatch(1), "a second and a millisecond after the eight").not.toBeNull();
+  });
+
+  /** How many of `count` voices a batch admitted now will play. */
+  function admitted(count: number): number {
+    const batch = beginSetDownBatch(count);
+    let played = 0;
+    while (batch?.play(voice({ startAt: 1.1 + played * 0.1 })) === true) played += 1;
+    return played;
+  }
+
+  it("admits no more than eight plays in a second across batches: 2, then 8 at 46 ms, plays 6 of the 8", () => {
+    armPlannerSound();
+    expect(admitted(2)).toBe(2);
+    nowMs += 46;
+    expect(admitted(8)).toBe(6);
+    expect(context.started).toHaveLength(8);
+  });
+
+  it("admits no more than eight plays in a second across batches: 7, then 8 at 251 ms, plays 1 of the 8", () => {
+    armPlannerSound();
+    expect(admitted(7)).toBe(7);
+    nowMs += 251;
+    expect(admitted(8)).toBe(1);
+    expect(context.started).toHaveLength(8);
+    nowMs += 100;
+    expect(beginSetDownBatch(1), "eight in the last second").toBeNull();
   });
 
   it("plays its own count, at most eight, for 1.5 s", () => {
@@ -461,6 +505,25 @@ describe("the clock, arming and the tap", () => {
     } finally {
       stop();
     }
+  });
+
+  it("tells a listener added after arming the rate at once, in the subscribe call", () => {
+    context = new FakeContext(44100);
+    armPlannerSound();
+    const heard: number[] = [];
+    const stop = subscribePlannerSoundArmed((sampleRate) => { heard.push(sampleRate); });
+    expect(heard, "synchronously, before subscribe returns").toEqual([44100]);
+    armPlannerSound();
+    expect(heard, "once").toEqual([44100]);
+    stop();
+  });
+
+  it("tells an unsubscribed listener nothing", () => {
+    const heard: number[] = [];
+    const stop = subscribePlannerSoundArmed((sampleRate) => { heard.push(sampleRate); });
+    stop();
+    armPlannerSound();
+    expect(heard).toEqual([]);
   });
 
   it("asks for the ambient audio session where the browser has one", () => {

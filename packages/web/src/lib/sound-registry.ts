@@ -769,6 +769,13 @@ export class PlannerSoundPolicy {
     this.lastPlayed.set(id, nowMs);
     for (let i = 0; i < count; i += 1) this.played.push(nowMs);
   }
+
+  /** How many more may play in the second up to `nowMs`: eight, less those already in it. */
+  playsLeftThisSecond(nowMs: number): number {
+    let recent = 0;
+    for (const at of this.played) if (nowMs - at < 1000) recent += 1;
+    return Math.max(0, PLANNER_SOUND_MAX_PER_SECOND - recent);
+  }
 }
 
 // The audio itself. The context and its graph exist only once someone has
@@ -942,9 +949,14 @@ export function armPlannerSound(): boolean {
   return true;
 }
 
-/** Hears the context's sample rate once, when the first gesture makes it. */
+/**
+ * Hears the context's sample rate once: when the first gesture makes the
+ * context, or, when it is made already, at once and synchronously, inside this
+ * call, so a listener added after arming still learns the rate.
+ */
 export function subscribePlannerSoundArmed(listener: (sampleRate: number) => void): () => void {
   plannerArmedListeners.add(listener);
+  if (plannerLive !== null) listener(plannerLive.context.sampleRate);
   return () => { plannerArmedListeners.delete(listener); };
 }
 
@@ -1046,7 +1058,10 @@ export function playPlannerSound(id: PlannerSoundId, variation: PlannerSoundVari
 export interface SetDownVoice {
   /** A unit-gain SetDownRender (R57): the distance is directGain's alone. */
   readonly render: Stereo & { readonly onsetSeconds: number };
-  /** Context seconds (setDownStartTime); held to the limiter's warm-up (R63). */
+  /**
+   * Context seconds (setDownStartTime). A batch that begins inside the
+   * limiter's first 0.25 s is held back as a whole, its spacing kept (R63).
+   */
   readonly startAt: number;
   /** The cascade's step, dB; the registry adds the session's fatigue (R26). */
   readonly levelDb: number;
@@ -1071,15 +1086,16 @@ export interface SetDownBatch {
 const SET_DOWN_BATCH_MS = 1500;
 
 /**
- * Admits a landing's set-downs as one decision of the policy, counted as
- * min(count, 8) plays: the 45 ms gap, eight a second and the burst of three
- * hold between landings, and the cascade (lib/set-down/cascade.ts) spaces the
- * voices within one. Null when refused: sound Off, nothing armed, a hidden tab,
- * a rate rule, or no voices.
+ * Admits a landing's set-downs as one decision of the policy, counted as the
+ * plays it admits: as many voices as asked, but no more than leave eight in
+ * the last second across every batch (Review Focus 2). The 45 ms gap and the
+ * burst of three hold between landings, and the cascade
+ * (lib/set-down/cascade.ts) spaces the voices within one. Null when refused:
+ * sound Off, nothing armed, a hidden tab, a rate rule, or no voices.
  */
 export function beginSetDownBatch(count: number): SetDownBatch | null {
-  const allowed = Math.min(Math.floor(count), PLANNER_SOUND_MAX_PER_SECOND);
-  if (!(allowed >= 1) || !admit("planner-set-down")) return null;
+  const wanted = Math.floor(count);
+  if (!(wanted >= 1) || !admit("planner-set-down")) return null;
   const live = plannerLive;
   const nowMs = performance.now();
   const verdict = plannerPolicy.decide("planner-set-down", {
@@ -1089,17 +1105,24 @@ export function beginSetDownBatch(count: number): SetDownBatch | null {
     nowMs,
   });
   if (verdict !== "play" || live === null) return null;
+  const allowed = Math.min(wanted, plannerPolicy.playsLeftThisSecond(nowMs));
+  if (allowed < 1) return null;
   plannerPolicy.record("planner-set-down", nowMs, allowed);
   restartPlannerSilenceTimer();
   const lapsesAtMs = nowMs + SET_DOWN_BATCH_MS;
   let left = allowed;
+  // Set at the batch's first play: a batch that begins inside the limiter's
+  // warm-up waits it out as a whole, as the listening page does (page.ts
+  // playVoices), so a cascade keeps its spacing (R63, R75).
+  let warmupShift: number | null = null;
   return {
     play(voice: SetDownVoice): boolean {
       const playMs = performance.now();
       if (left <= 0 || playMs > lapsesAtMs || plannerLive !== live) return false;
       if (getPlannerSoundSettings().mode === "off" || plannerSoundHidden()) return false;
       left -= 1;
-      playSetDownVoice(live, voice, playMs);
+      warmupShift ??= Math.max(0, PLANNER_LIMITER_WARMUP_SECONDS - live.context.currentTime);
+      playSetDownVoice(live, voice, voice.startAt + warmupShift, playMs);
       return true;
     },
   };
@@ -1116,18 +1139,19 @@ function resumePlannerContext(context: AudioContext): Promise<void> {
   return plannerResuming;
 }
 
-function playSetDownVoice(live: PlannerLive, voice: SetDownVoice, nowMs: number): void {
+/** Plays one admitted voice, aimed at `aimedAt` context seconds; `nowMs` is when it was played. */
+function playSetDownVoice(live: PlannerLive, voice: SetDownVoice, aimedAt: number, nowMs: number): void {
   plannerFatigue.record(nowMs, 1);
   const levelDb = voice.levelDb + plannerFatigue.levelDb(nowMs);
   restartPlannerSilenceTimer();
   const { context } = live;
   if (context.state === "running") {
-    startSetDownVoice(live.graph, voice, levelDb, voice.startAt);
+    startSetDownVoice(live.graph, voice, levelDb, aimedAt);
     return;
   }
   // A stopped clock (the 20 s silence rule): wait for it to run again, then keep
   // what is left of the voice's lead on the resumed clock (Review Focus 1).
-  const leadSeconds = voice.startAt - context.currentTime;
+  const leadSeconds = aimedAt - context.currentTime;
   resumePlannerContext(context).then(() => {
     if (plannerLive !== live || getPlannerSoundSettings().mode === "off") return;
     const waitedSeconds = (performance.now() - nowMs) / 1000;
