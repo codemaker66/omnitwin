@@ -122,7 +122,8 @@ that fails without it:
   4 & 5", "4 or 5"), for "Table 4" labels too. A further name joins a run only where the run goes on or its clause
   ends after it; a word after it makes it a count ("Table 7, 1 coeliac", "table 4 and 2 more guests"), and a time
   is never a table ("Table 4, 10:30 cake"). A time is a clock's two-digit minutes after a colon or point, so
-  shorthand with no space after a table's colon still names it ("Table 5:2 coeliacs" rings 5). After "tables" and
+  shorthand with no space after a table's colon still names it ("Table 5:2 coeliacs" rings 5); #443's review
+  reads any digit after a point as a decimal (below). After "tables" and
   an "and", "or" or "&" the run is meant ("Tables 4
   and 5 are nut-free"), but a comma never carries a run into a number a word follows ("Tables 4 and 5, 2
   coeliacs" rings 4 and 5). "And a guest" names no table A.
@@ -137,23 +138,69 @@ rounds · 10 at the top table"), and both page 2 re-testers of 12 November asked
 branch `claude/hallkeeper-chairs-line`, for its own PR after #415:
 
 - On the setup's own page the tables that seat chairs lead their step, as a crew sets a room, and a line of the
-  chairs set at them follows: "120 Chiavari Wedding Chair · 110 at Tables 1–11, 10 each · 10 at Top table". The
+  chairs set at them follows: "120 Chiavari Wedding Chair · 110 at Tables 1–11 (10 each) · 10 at Top table". The
   tables' own lines drop "10 chairs each".
 - Its name is the plan's chair model when the chairs the plan seats are all one model and as many as the tables'
   lines count, which is how the store counts them; otherwise "Chairs for the tables", the store's words for chairs
   known only by count. Its count is the tables' lines' own total.
-- Its place names the tables as their lines do (the planner's names, else the table's own name), with "N each"
-  when every table there seats the same.
+- Its place names the tables by the planner's names only when they name every table its line counts, else by the
+  line's own name with the count ("110 at 11 × 6ft Round Table (10 each)"); "(N each)" only where the place holds
+  more than one table and every one seats the same. See "As built: the review of #443".
 - The seated chairs' notes print under that line, where the crew sets those chairs, so "Notes on the plan" keeps
   only the notes no line carries.
 - Only a table's line seats chairs, as the store already rules: an old copy's "Table Centrepiece with 10 chairs"
   adds none.
 - A setup short enough to sit under the brief on page 1 keeps "10 chairs each" on each table's line and no chairs
-  line, so a short sheet stays one page; the seated chairs' notes are then among the plan's notes after the steps.
-  The line's 20 pt had put two short sheets' Martyn's Law prompts overleaf.
+  line, so a short sheet stays one page. Page 1 keeps the tables-first order too: the tables that seat chairs lead
+  their step there as on the setup's own page (zone order before this branch). With no chairs line to claim them,
+  the seated chairs' notes go to the next line that carries them (an older copy's chair sash), else among the
+  plan's notes after the steps. The line's 20 pt had put two short sheets' Martyn's Law prompts overleaf.
 - Glance test of page 2 (two fresh Opus testers, the brief verbatim): 8 / 8 / 8. Both found the chair total and
   its split. Their next asks were every access need in Keep in view with its place, the store's pull on the setup
   page, and the duty manager's phone, which the data does not hold.
+
+### As built: the review of #443 (18 November)
+
+The release lead's review of `68da0373` (two lenses, three skeptics per finding) held one major and seven minors
+or nits on the chairs line and on H8 and H9; HG1, HG4 and HH2 were refuted. Its rulings, as built, each test seen
+to fail first:
+
+- **A place names only tables its line counts** (HG2). The planner saves only the names typed in, so eleven
+  rounds with Table 5 alone named read "110 at Table 5, 10 each". A place now uses the planner's names only when
+  they name every table the line counts, counted by piece, not by name; otherwise it is the line's own name with
+  its count, "110 at 11 × 6ft Round Table (10 each)", or the bare name for one table. The count is tied to "×" by
+  a no-break space, so a line never ends "at 11" (read as Table 11).
+  - A name covers the unnamed pieces of its kind set end to end with the named one, in one line across the room
+    or down it, within 0.15 m and sides within 0.05 m, as the plan already sets a top table's name along its
+    trestles. The wedding names only its middle trestle "Top table", so this is what keeps "10 at Top table"; the
+    same three trestles set apart read "10 at 3 × Trestle Table (White Cloth)". Round tables never form such a
+    line. Without a plan that lists every piece, the names count only when each piece has its own.
+  - The board meeting's line changes with this: one trestle of six is named "Chair", so "10 at Chair" (the
+    finding's own defect) is now "10 at 6 × 6ft Trestle Table".
+- **The count at each table** (HG3) is in brackets after its last table, where no list's comma can claim it:
+  "24 at Tables 12, 14–15 (8 each)", not "…, 14–15, 8 each" (read as Table 8). It is tied to that table by
+  no-break spaces (U+00A0), and the sheet's wrap now breaks only at a plain space (U+0020; a pasted tab still
+  breaks, read as a space first), so "(8 each)" never starts or leaves a line. Inter's U+00A0 is its own space
+  glyph, as wide as a space, and reads back as U+00A0. "(N each)" prints only where the place holds more than one
+  table, each its own piece: one table's chairs are all at it ("10 at Top table"), and four at each trestle of a
+  top table is not four at the table.
+- **A decimal is never a table** (HH1). After "table", a number followed by a point and any digit is a measurement
+  or a clock time ("a table 1.2 m from the fire exit", "12.30"); after a colon only a clock's two-digit minutes are
+  a time, so "Table 5:2 coeliacs" still rings 5. The "Table N" labels' whole-phrase match takes the same decimal
+  guard, so both label styles ring nothing for "Seat her at a table 1.2 m from the fire exit" or "Move table 2.5 m
+  back". "Table 5.2 coeliacs" no longer rings either.
+- **A name above or below its piece is set on its glyphs** (HH3). Its line goes where the nearest glyph's ink sits
+  1.5 pt from the piece: straight down or up for a glyph over the piece, by the gap's reach for one just beside it,
+  so a letter off a narrow piece never comes nearer than 1.5 pt either. "Easel: seating plan" over the board's
+  projector had its letters over the piece 2.93 pt from it, with a neighbour allowed at 3.0; now 1.5. Clearance
+  stays on the whole name's ink box, grown by 3 pt. The white under the name stops at its piece's edge, since
+  descenders or capitals off the piece may now reach past that edge beside it. Right and left are unchanged.
+- **The chairs line claims its chairs' notes only where it prints** (HG7): `sheetSetupSteps(sheet, { chairsLine:
+  false })` gives the setup under the brief, where an older copy's chair sash carries a seated chair's note again
+  and a one-page sheet cannot grow by a "Notes on the plan" heading.
+- **The paper-reading helper** (HG5) takes the form from the page layout ("Setup, in order" on page 1 or not),
+  demands exactly that form, and reads the chairs line's count and places from the PDF's own runs: they must add up,
+  match what the phone's table rows seat kind by kind, and a place's "(N each)" times its tables must be its entry.
 
 ## F: the day at the venue (its own PR, after A and D)
 

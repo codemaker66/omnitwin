@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import PDFDocument from "pdfkit";
 import { registerSheetFonts } from "../services/sheet-pdf/fonts.js";
-import { TYPE, balancedLines, drawLine, textWidth, wrapLines } from "../services/sheet-pdf/style.js";
+import { PAGE, TYPE, balancedLines, drawLine, textWidth, wrapLines } from "../services/sheet-pdf/style.js";
 import { pdfPages } from "./helpers/pdf-text.js";
 
 // The sheet wraps its own text, so a planner's pasted link or a paragraph of
@@ -101,6 +101,32 @@ describe("lines a reader takes in at a glance", () => {
         expect(line.trimStart().startsWith("·"), `${String(width)} pt: "${line}"`).toBe(false);
       }
     }
+    d.end();
+  });
+});
+
+describe("a count kept to its tables (#443's review, HG3)", () => {
+  // The setup page's place column: the steps' lane beside the rail, less the step numerals' indent, a third of it.
+  const placeW = Math.min(150, (PAGE.contentWidth - Math.round(PAGE.contentWidth * 0.29) - 16 - 30) * 0.32);
+
+  it("breaks a seat note only at a plain space, so a no-break space keeps the count at each with its last table", () => {
+    const d = doc();
+    const text = "80 at Tables 1–4, 6–9, 13\u00A0(10\u00A0each) · 10 at Top table";
+    expect(placeW).toBeCloseTo(102.49, 2);
+    expect(wrapLines(d, TYPE.where, text, placeW).length).toBeGreaterThan(1);
+    for (let width = 60; width <= 200; width += 0.5) {
+      const lines = wrapLines(d, TYPE.where, text, width);
+      expect(lines.join(" "), `${String(width)} pt`).toBe(text);
+      expect(lines.some((line) => line.includes("13\u00A0(10\u00A0each)")), `${String(width)} pt: ${JSON.stringify(lines)}`).toBe(true);
+      for (const line of lines) expect(/^(?:each|\(|·)/u.test(line), `${String(width)} pt: "${line}"`).toBe(false);
+    }
+    d.end();
+  });
+
+  it("still breaks at a tab as at a space", () => {
+    const d = doc();
+    expect(textWidth(d, TYPE.where, "Tables")).toBeLessThan(32);
+    expect(wrapLines(d, TYPE.where, "Tables\t1–11", 32)).toEqual(["Tables", "1–11"]);
     d.end();
   });
 });

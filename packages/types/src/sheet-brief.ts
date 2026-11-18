@@ -153,8 +153,10 @@ export function sheetStoreList(sheet: HallkeeperSheetV2): StoreGroup[] {
 
 /**
  * Chairs set at the tables of one of a step's lines: how many, how many at
- * each table when every table there seats the same, and the tables, as their
- * line names them ("Tables 1–11", "Top table").
+ * each table when the place holds more than one table and every one seats the
+ * same, and the tables: by the planner's names when they name every table the
+ * line counts ("Tables 1–11", "Top table"), else the line's own name with its
+ * count ("11 × 6ft Round Table", the count tied to its sign by a no-break space).
  */
 export interface SeatsAt {
   readonly qty: number;
@@ -262,6 +264,8 @@ interface ItemDraft {
   notes: string[];
   accessory: boolean;
   labels: string[];
+  /** The plan pieces its rows list, by id. */
+  pieces: string[];
 }
 
 /** The chairs at each of an item's tables, when every one seats the same; null when they differ or some seat none. */
@@ -296,21 +300,99 @@ function tableWithChairs(row: { readonly name: string; readonly category: string
   return seated?.[1] === undefined || seated[2] === undefined ? null : { name: seated[1], each: Number(seated[2]) };
 }
 
+type PlanPiece = NonNullable<HallkeeperSheetV2["floorPlan"]>["objects"][number];
+
+/** A piece's ground in metres, square to the room: x across it, z down it (its turned corners' box). */
+function groundOf(piece: PlanPiece): { readonly left: number; readonly right: number; readonly front: number; readonly back: number } {
+  const halfW = piece.widthM * piece.scale / 2;
+  const halfD = piece.depthM * piece.scale / 2;
+  const reachX = Math.abs(Math.cos(piece.rotationY)) * halfW + Math.abs(Math.sin(piece.rotationY)) * halfD;
+  const reachZ = Math.abs(Math.sin(piece.rotationY)) * halfW + Math.abs(Math.cos(piece.rotationY)) * halfD;
+  return { left: piece.x - reachX, right: piece.x + reachX, front: piece.z - reachZ, back: piece.z + reachZ };
+}
+
+/** How far two pieces in one line may stand apart, and still set end to end, in metres. */
+const END_TO_END_M = 0.15;
+/** How far their sides may differ and still stand in one line, in metres. */
+const IN_LINE_M = 0.05;
+
+/** Two box pieces set end to end: in one line across the room or down it, touching (a top table's trestles). */
+function endToEnd(a: PlanPiece, b: PlanPiece): boolean {
+  if (a.collisionType !== "box" || b.collisionType !== "box") return false;
+  const p = groundOf(a);
+  const q = groundOf(b);
+  const across = Math.abs(p.front - q.front) < IN_LINE_M && Math.abs(p.back - q.back) < IN_LINE_M
+    && Math.max(p.left - q.right, q.left - p.right) <= END_TO_END_M;
+  const down = Math.abs(p.left - q.left) < IN_LINE_M && Math.abs(p.right - q.right) < IN_LINE_M
+    && Math.max(p.front - q.back, q.front - p.back) <= END_TO_END_M;
+  return across || down;
+}
+
+/**
+ * How many of an item's tables the planner's names cover: each named piece,
+ * and the unnamed pieces of the item standing end to end with one (the plan
+ * sets a top table's name along its trestles). Without a plan that lists every
+ * piece, only as many as the names themselves, each naming at least one.
+ */
+function namedTables(draft: ItemDraft, names: readonly string[], plan: ReadonlyMap<string, PlanPiece> | null): number {
+  const pieces = plan === null ? [] : draft.pieces.flatMap((id) => { const piece = plan.get(id); return piece === undefined ? [] : [piece]; });
+  if (pieces.length !== draft.qty) return names.length;
+  const named = new Set(pieces.filter((piece) => (piece.label?.trim() ?? "").length > 0));
+  for (let grown = true; grown;) {
+    grown = false;
+    for (const piece of pieces) {
+      if (named.has(piece) || ![...named].some((other) => endToEnd(piece, other))) continue;
+      named.add(piece);
+      grown = true;
+    }
+  }
+  return named.size;
+}
+
+/**
+ * Where one item's tables seat their chairs: the tables by the planner's
+ * names only when they cover every table the line counts, so a line of eleven
+ * with Table 5 named reads "11 × 6ft Round Table", never "Table 5". The count
+ * at each table only where the place holds more than one table, each its own
+ * piece: one table's chairs are all at it, and four at each trestle of a top
+ * table is not four at the table.
+ */
+function seatsAt(draft: ItemDraft, plan: ReadonlyMap<string, PlanPiece> | null): SeatsAt {
+  const names = [...new Set(draft.labels.map((label) => label.trim()).filter((label) => label.length > 0))];
+  const named = names.length > 0 && namedTables(draft, names, plan) === draft.qty;
+  const tables = named ? formatTableLabels(names) : draft.qty > 1 ? `${String(draft.qty)}\u00A0× ${draft.name}` : draft.name;
+  const several = named ? names.length > 1 && names.length === draft.qty : draft.qty > 1;
+  return { qty: draft.chairTotal, each: several ? chairsEach(draft) : null, tables };
+}
+
+export interface SetupStepsOptions {
+  /**
+   * Whether the chairs at a step's tables get a line of their own (the
+   * setup's own page) and claim their chairs' notes. False for a setup short
+   * enough to sit under the brief on page 1, which keeps each table's chairs
+   * on its own line: there the chairs' notes go to the next line that carries
+   * them, or among the plan's notes.
+   */
+  readonly chairsLine?: boolean;
+}
+
 /**
  * The phases a room is built in, each item merged across the zones it is
  * set in (one dance floor is one line, not three), with the planner's
- * deadline for the phase. The tables that seat chairs lead their step, and a
- * line of their own follows them with the chairs: how many go to which
- * tables, with the seated chairs' notes. A note prints once, where it first belongs, so an
- * allergy on a table does not repeat on its linen.
+ * deadline for the phase. The tables that seat chairs lead their step, and
+ * (unless `chairsLine` is false) a line of their own follows them with the
+ * chairs: how many go to which tables, with the seated chairs' notes. A note
+ * prints once, where it first belongs, so an allergy on a table does not
+ * repeat on its linen.
  */
-export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
+export function sheetSetupSteps(sheet: HallkeeperSheetV2, { chairsLine = true }: SetupStepsOptions = {}): SetupStep[] {
   const setupBy = sheet.timing?.setupBy ?? null;
   const timeZone = sheet.venue.timezone;
   const eventDay = sheet.timing === null ? null : venueDay(sheet.timing.eventStart, timeZone);
   const seenNotes = new Set<string>();
   const planNotes = new Map<string, string>();
   for (const object of sheet.floorPlan?.objects ?? []) if (object.note !== undefined) planNotes.set(object.objectId, object.note);
+  const plan = sheet.floorPlan === null || sheet.floorPlan === undefined ? null : new Map(sheet.floorPlan.objects.map((object) => [object.objectId, object]));
   let seatedTotal = 0;
   for (const phase of sheet.phases) for (const zone of phase.zones) for (const row of zone.rows) {
     seatedTotal += row.qty * (tableWithChairs(row)?.each ?? 0);
@@ -330,9 +412,10 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
       const table = tableWithChairs(row);
       const name = table?.name ?? row.name;
       const key = `${name}|${String(row.afterDepth)}|${String(row.isAccessory)}`;
-      const draft = drafts.get(key) ?? { name, qty: 0, chairTotal: 0, chairEach: new Set<number>(), someBare: false, where: new Map<Zone, number>(), notes: [], accessory: row.isAccessory, labels: [] };
+      const draft = drafts.get(key) ?? { name, qty: 0, chairTotal: 0, chairEach: new Set<number>(), someBare: false, where: new Map<Zone, number>(), notes: [], accessory: row.isAccessory, labels: [], pieces: [] };
       draft.qty += row.qty;
       draft.labels.push(...(row.labels ?? []));
+      draft.pieces.push(...row.positions.map((position) => position.objectId));
       if (table === null) {
         draft.someBare = true;
       } else {
@@ -360,7 +443,8 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
       accessory: draft.accessory,
       labels: draft.labels,
     }));
-    if (seatingTables.length > 0) {
+    // The chairs' notes are claimed only where their line prints, so under the brief a later line still carries them.
+    if (chairsLine && seatingTables.length > 0) {
       const notes: string[] = [];
       for (const note of chairs.notes) {
         if (seenNotes.has(note)) continue;
@@ -371,10 +455,7 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
         name: chairs.name,
         qty: seatingTables.reduce((sum, draft) => sum + draft.chairTotal, 0),
         chairs: null,
-        seats: seatingTables.map((draft) => {
-          const named = formatTableLabels(draft.labels);
-          return { qty: draft.chairTotal, each: chairsEach(draft), tables: named.length > 0 ? named : draft.name };
-        }),
+        seats: seatingTables.map((draft) => seatsAt(draft, plan)),
         where: [],
         notes,
         accessory: false,
@@ -483,29 +564,35 @@ function bareLabel(label: string): boolean {
   return /^\p{N}+$/u.test(label) || label.length < 2;
 }
 
-/** A label as a pattern that matches it only as a whole phrase, in any case. */
+/**
+ * A label as a pattern that matches it only as a whole phrase, in any case,
+ * and never as the whole part of a decimal ("a table 1.2 m from the exit" does
+ * not name Table 1), as the runs below read a name.
+ */
 function wholePhrase(label: string): RegExp {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}]|\\.\\d)`, "iu");
 }
 
 // A run of tables' names after "table" or "tables", as the setup's own lines
 // write one ("Tables 1–3, 5, 7–8") or as people do ("tables 4 and 5", "table
 // A & B"). A name is a range of numbers, a number or a code with one ("12",
-// "4b", "A1"), or one letter, never a clock time: a number with two-digit
-// minutes after a colon or point ("10:30", "12.30"). Shorthand with no space
-// after a table's colon still names it ("Table 5:2 coeliacs"). The names after the
+// "4b", "A1"), or one letter, never a clock time or a decimal: a number with
+// two-digit minutes after a colon ("10:30"), or with any digit after a point
+// ("12.30", "a table 1.2 m from the exit"). Shorthand with no space after a
+// table's colon still names it when no clock's minutes follow ("Table 5:2
+// coeliacs"). The names after the
 // first are joined by a comma, "and", "or" or "&", and are of the first one's
 // kind. Each joins only where the run goes on or its clause ends after it: a
 // word after it makes it a count ("Table 7, 1 coeliac", "table 4 and 2 guests").
 // After "tables" and an "and", "or" or "&" the run is meant ("Tables 4 and 5
 // are nut-free"); a comma never carries one into a number a word follows.
 const TABLE_WORD = /(?<![\p{L}\p{N}])(tables?)\s+/giu;
-const FIRST_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{L}))(?![\p{L}\p{N}]|[:.][0-5]\d(?!\d))/yu;
+const FIRST_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{L}))(?![\p{L}\p{N}]|:[0-5]\d(?!\d)|\.\d)/yu;
 /** What joins a further name to a run: a comma, "and", "or" or "&", alone or after a comma. */
 const JOINER = /\s*,\s*(?:(?:and|or|AND|OR)\s+|&\s*)?|\s*&\s*|\s+(?:and|or|AND|OR)\s+/yu;
 /** A further name in the run; a letter only as a capital, so "and a guest" adds no table A. */
-const NEXT_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{Lu}))(?![\p{L}\p{N}]|[:.][0-5]\d(?!\d))/yu;
+const NEXT_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{Lu}))(?![\p{L}\p{N}]|:[0-5]\d(?!\d)|\.\d)/yu;
 /** What may follow a name that joins a run: another joiner, or the end of its clause. */
 const RUN_GOES_ON = /[ \t]*(?:[,&:;.)!?–—\n]|-[ \t]|(?:and|or|AND|OR)(?![\p{L}\p{N}])|$)/yu;
 

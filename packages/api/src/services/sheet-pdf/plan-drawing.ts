@@ -1,6 +1,6 @@
 import type { HallkeeperFloorPlan } from "@omnitwin/types";
 import { projectHallkeeperFloorPlan, type PlanViewport } from "../hallkeeper-floor-plan.js";
-import { INK, TYPE, drawLine, inkBox, textWidth, type Doc, type TextStyle } from "./style.js";
+import { INK, TYPE, drawLine, inkBox, inkGlyphs, textWidth, type Doc, type InkRect, type TextStyle } from "./style.js";
 
 // ---------------------------------------------------------------------------
 // The room drawn from the layout's frozen catalogue footprints: one uniform
@@ -146,6 +146,29 @@ function rowAround(piece: PlanPiece, pieces: readonly PlanPiece[]): { readonly e
 }
 
 /**
+ * Where a line's top goes for a name below (or above) its piece, read glyph by
+ * glyph: each glyph that comes within BESIDE_GAP of a host (the piece, and the
+ * row it stands in) across the page keeps that gap from it, straight down (or
+ * up) where it stands over the host, the rest of the gap's reach where it
+ * stands just beside. So the ink over a narrow piece sits BESIDE_GAP from it
+ * even where letters off the piece reach deeper or higher. Null when no glyph
+ * comes that near across (the piece under a gap between words).
+ */
+function lineBeside(glyphs: readonly InkRect[], x: number, hosts: readonly Rect[], side: "below" | "above"): number | null {
+  let line: number | null = null;
+  for (const host of hosts) {
+    for (const glyph of glyphs) {
+      const across = Math.max(host.left - (x + glyph.right), 0, x + glyph.left - host.right);
+      if (across >= BESIDE_GAP) continue;
+      const reach = Math.sqrt(BESIDE_GAP ** 2 - across ** 2);
+      const y = side === "below" ? host.bottom + reach - glyph.top : host.top - reach - glyph.bottom;
+      line = line === null ? y : side === "below" ? Math.max(line, y) : Math.min(line, y);
+    }
+  }
+  return line;
+}
+
+/**
  * Where each planner's name prints. A name sits on its piece when it fits
  * there across the page, as names always run (bandOnBox), else along the
  * row its piece stands in (rowAround), still centred
@@ -216,29 +239,43 @@ function placeNames(doc: Doc, drawing: PlanDrawing, markers: ReadonlyMap<string,
     // Measured on the name's own ink, not the white under it nor the face's
     // tallest and deepest letters: a name with no descenders above its piece
     // sits as near it as one with them, BESIDE_GAP from the piece's own edge.
+    // Below and above, the ink is read glyph by glyph (lineBeside), so the
+    // letters over a narrow piece keep that gap, not only the whole name's box.
     const size = BESIDE_STYLE.size;
     const ink = inkBox(doc, BESIDE_STYLE, text) ?? {
       left: 0, right: textWidth(doc, BESIDE_STYLE, text),
       top: (INTER_SEMIBOLD.ascender - INTER_SEMIBOLD.capHeight) * size, bottom: (INTER_SEMIBOLD.ascender + INTER_SEMIBOLD.descender) * size,
     };
+    const glyphs = inkGlyphs(doc, BESIDE_STYLE, text) ?? [ink];
     const own = extentOf(piece);
+    const ownRow: ReadonlySet<PlanPiece> = row?.members ?? new Set([piece]);
+    const hosts = [...ownRow].map(extentOf);
     const middle = (own.left + own.right) / 2;
     const level = (own.top + own.bottom) / 2;
     const inkMiddle = (ink.left + ink.right) / 2;
     const inkLevel = (ink.top + ink.bottom) / 2;
+    const centred = middle - inkMiddle;
     // Where the line's top-left goes for its ink to sit below, above, right or left of the piece.
-    const corners: readonly { readonly x: number; readonly y: number }[] = [
-      { x: middle - inkMiddle, y: own.bottom + BESIDE_GAP - ink.top },
-      { x: middle - inkMiddle, y: own.top - BESIDE_GAP - ink.bottom },
-      { x: own.right + BESIDE_GAP - ink.left, y: level - inkLevel },
-      { x: own.left - BESIDE_GAP - ink.right, y: level - inkLevel },
+    const corners: readonly { readonly x: number; readonly y: number; readonly side: "below" | "above" | "right" | "left" }[] = [
+      { x: centred, y: lineBeside(glyphs, centred, hosts, "below") ?? own.bottom + BESIDE_GAP - ink.top, side: "below" },
+      { x: centred, y: lineBeside(glyphs, centred, hosts, "above") ?? own.top - BESIDE_GAP - ink.bottom, side: "above" },
+      { x: own.right + BESIDE_GAP - ink.left, y: level - inkLevel, side: "right" },
+      { x: own.left - BESIDE_GAP - ink.right, y: level - inkLevel, side: "left" },
     ];
+    // The white under a name below or above stops at its piece's edge: letters
+    // off a narrow piece may reach past that edge beside it, never onto it.
+    const edgeBelow = Math.max(...hosts.map((host) => host.bottom));
+    const edgeAbove = Math.min(...hosts.map((host) => host.top));
     // Touching nothing, with clear floor round its ink but for its own piece
     // and the row it stands in: the full BESIDE_CLEAR, as overlaps forgives a touch.
-    const ownRow: ReadonlySet<PlanPiece> = row?.members ?? new Set([piece]);
     const choice = corners.map((at) => {
       const letters: Rect = { left: at.x + ink.left, top: at.y + ink.top, right: at.x + ink.right, bottom: at.y + ink.bottom };
-      const backing: Rect = { left: letters.left - BACKING_PAD.x, top: letters.top - BACKING_PAD.y, right: letters.right + BACKING_PAD.x, bottom: letters.bottom + BACKING_PAD.y };
+      const backing: Rect = {
+        left: letters.left - BACKING_PAD.x,
+        top: at.side === "below" ? Math.max(letters.top - BACKING_PAD.y, edgeBelow) : letters.top - BACKING_PAD.y,
+        right: letters.right + BACKING_PAD.x,
+        bottom: at.side === "above" ? Math.min(letters.bottom + BACKING_PAD.y, edgeAbove) : letters.bottom + BACKING_PAD.y,
+      };
       return { at, letters, backing };
     }).find(({ letters, backing }) => backing.left >= floor.left && backing.right <= floor.right && backing.top >= floor.top && backing.bottom <= floor.bottom
       && clear(backing, NONE) && clear(grown(letters, BESIDE_CLEAR + TOUCH), ownRow));

@@ -754,11 +754,13 @@ function rowGeometry(x: number, width: number): RowGeometry {
 /**
  * Where a line's pieces go: its zones, then the planner's table numbers or a
  * laid floor's size. For the chairs at the tables, how many go to which
- * tables ("110 at Tables 1–11, 10 each · 10 at Top table").
+ * tables ("110 at Tables 1–11 (10 each) · 10 at Top table"): the count at each
+ * table in brackets, where no comma of a list of tables can claim it, tied to
+ * the last table by no-break spaces so a wrap never parts them.
  */
 function whereText(item: SetupItem): string {
   if (item.seats !== null) {
-    return item.seats.map((seats) => `${String(seats.qty)} at ${seats.tables}${seats.each === null ? "" : `, ${String(seats.each)} each`}`).join(" · ");
+    return item.seats.map((seats) => `${String(seats.qty)} at ${seats.tables}${seats.each === null ? "" : `\u00A0(${String(seats.each)}\u00A0each)`}`).join(" · ");
   }
   const zones = item.where.map((place) => (item.where.length === 1 ? place.zone : `${place.zone} ${String(place.qty)}`)).join(" · ");
   const names = formatTableLabels(item.labels);
@@ -894,9 +896,10 @@ function planNoteUnits(doc: Doc, steps: readonly SetupStep[], markers: ReadonlyM
  * The setup's steps as units. On the setup's own page the chairs at a step's
  * tables have a line of their own after those tables (study D), and the
  * tables' lines leave the chairs to it. A setup short enough to sit under the
- * brief on page 1 (`compact`) keeps each table's chairs on its own line
- * instead, so a short sheet stays one page; the seated chairs' notes are then
- * among the plan's notes after the steps.
+ * brief on page 1 (`compact`, given the steps without the chairs line) keeps
+ * each table's chairs on its own line instead, so a short sheet stays one
+ * page; the seated chairs' notes then go to the next line that carries them,
+ * or among the plan's notes after the steps.
  */
 function stepUnits(doc: Doc, sheet: HallkeeperSheetV2, setup: readonly SetupStep[], x: number, width: number, compact = false): Unit[] {
   const markers = sheetNoteMarkers(sheet);
@@ -1049,7 +1052,8 @@ export function setupPage(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string
     }
     return;
   }
-  const whole = stepUnits(doc, sheet, steps, X, W, true);
+  // Under the brief there is no chairs line, so it claims none of its chairs' notes (sheetSetupSteps).
+  const whole = stepUnits(doc, sheet, sheetSetupSteps(sheet, { chairsLine: false }), X, W, true);
   if (plannerNotes === "none" && doc.bufferedPageRange().count === 1 && flow.y + railHeight(sheet, steps) + unitsHeight(whole) <= flow.bottom) {
     ruleAbove(flow);
     progressRail(flow, sheet, steps);

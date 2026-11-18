@@ -174,12 +174,19 @@ export function textWidth(doc: Doc, style: TextStyle, text: string): number {
   return doc.widthOfString(value, options(style));
 }
 
+/** A box in font units, y up, as fontkit gives a glyph's or a run's. */
+interface FontBox { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number }
+
 /** The part of pdfkit's EmbeddedFont that reads glyph outlines: fontkit's font, and where the baseline sits. */
 interface EmbeddedOutlines {
   readonly ascender: number;
   readonly font: {
     readonly unitsPerEm: number;
-    layout(text: string, features?: readonly string[]): { readonly bbox: { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number } };
+    layout(text: string, features?: readonly string[]): {
+      readonly bbox: FontBox;
+      readonly glyphs: readonly { readonly bbox: FontBox; readonly codePoints: readonly number[] }[];
+      readonly positions: readonly { readonly xAdvance: number; readonly xOffset: number; readonly yOffset: number }[];
+    };
   };
 }
 
@@ -210,6 +217,49 @@ export function inkBox(doc: Doc, style: TextStyle, text: string): { readonly lef
   // Tracking moves each later glyph along by its spacing, counted as pdfkit counts it (the string's length).
   const tracking = (style.tracking ?? 0) * Math.max(0, value.length - 1);
   return { left: box.minX * scale, top: baseline - box.maxY * scale, right: box.maxX * scale + tracking, bottom: baseline - box.minY * scale };
+}
+
+/** One glyph's ink: its box against the line's left edge and top, y down the page. */
+export interface InkRect { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
+
+/**
+ * The ink of one line glyph by glyph, as inkBox reads the whole line: each
+ * inked glyph's box from its own outline, where the run sets it, at inkBox's
+ * scale and baseline, each later glyph moved along by the tracking pdfkit
+ * counts before it. A glyph with nothing to ink (a space) has no box. Null
+ * for a face with no outlines to read, or nothing to ink.
+ */
+export function inkGlyphs(doc: Doc, style: TextStyle, text: string): readonly InkRect[] | null {
+  const value = printed(style, text);
+  apply(doc, style, value);
+  // pdfkit keeps the selected font on a private field; read it as unknown.
+  const font: unknown = Reflect.get(doc, "_font");
+  if (!isEmbeddedOutlines(font)) return null;
+  const run = font.font.layout(value, style.tnum === true ? ["tnum"] : undefined);
+  // The layout's shape is pdfkit's fontkit's, read at run time: glyphs and their positions, one for one.
+  const shapes: readonly unknown[] = [run.glyphs, run.positions];
+  if (!shapes.every((list) => Array.isArray(list)) || run.glyphs.length !== run.positions.length) return null;
+  const scale = style.size / font.font.unitsPerEm;
+  const baseline = font.ascender / 1000 * style.size;
+  const tracking = style.tracking ?? 0;
+  const glyphs: InkRect[] = [];
+  let x = 0;
+  let units = 0;
+  for (const [index, glyph] of run.glyphs.entries()) {
+    const at = run.positions[index];
+    if (at === undefined) return null;
+    const box = glyph.bbox;
+    if ([box.minX, box.minY, box.maxX, box.maxY].every(Number.isFinite) && box.maxX > box.minX) {
+      const shift = tracking * units;
+      glyphs.push({
+        left: (x + at.xOffset + box.minX) * scale + shift, top: baseline - (at.yOffset + box.maxY) * scale,
+        right: (x + at.xOffset + box.maxX) * scale + shift, bottom: baseline - (at.yOffset + box.minY) * scale,
+      });
+    }
+    x += at.xAdvance;
+    units += glyph.codePoints.reduce((sum, point) => sum + (point > 0xFFFF ? 2 : 1), 0);
+  }
+  return glyphs.length === 0 ? null : glyphs;
 }
 
 /** One wrapped line's advance: the face's line height plus the style's gap. */
@@ -256,6 +306,9 @@ function breakWord(doc: Doc, style: TextStyle, word: string, width: number): { l
 /** Wrapped lines per document, so a block measured and then drawn wraps once. */
 const wrapped = new WeakMap<Doc, Map<string, readonly string[]>>();
 
+/** Whitespace a line may break at, other than the plain space: \s less the no-break spaces (U+00A0, U+2007, U+202F). */
+const BREAKING_SPACE = /[^\S \u00A0\u2007\u202F]/gu;
+
 /**
  * Greedy wrap at spaces, keeping the writer's own line breaks; a word wider
  * than the line (an email address, a link) breaks between characters.
@@ -270,9 +323,12 @@ export function wrapLines(doc: Doc, style: TextStyle, text: string, width: numbe
   const out: string[] = [];
   const fits = (candidate: string): boolean => textWidth(doc, style, candidate) <= width;
   for (const paragraph of printed(style, text).split(/\r?\n/u)) {
+    // Lines break only at a plain space (U+0020), so a no-break space holds what
+    // it ties ("13 (10 each)"); JavaScript's \s would match U+00A0. Any other
+    // breaking space (a pasted tab) is read as a plain one first.
     // A middle dot keeps to the word before it, so no line starts with one.
     const words: string[] = [];
-    for (const word of paragraph.split(/\s+/u).filter((part) => part.length > 0)) {
+    for (const word of paragraph.replace(BREAKING_SPACE, " ").split(/ +/u).filter((part) => part.length > 0)) {
       if (word === "·" && words.length > 0) words[words.length - 1] = `${words[words.length - 1] ?? ""} ·`;
       else words.push(word);
     }

@@ -12,7 +12,8 @@ import { INK, PAGE } from "../services/sheet-pdf/style.js";
 import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
 import { renderMetrics, __resetMetricsForTests } from "../observability/metrics.js";
 import { boardMeetingSheet, emptyDraftSheet, longTextSheet, weddingSheet } from "./fixtures/hallkeeper-sheet-fixtures.js";
-import { pdfImageCount, pdfPageContents, pdfPages, pdfRules, pdfText, type PdfLine } from "./helpers/pdf-text.js";
+import { pdfImageCount, pdfPageContents, pdfPages, pdfRules, pdfText, plainSpaces, type PdfLine } from "./helpers/pdf-text.js";
+import { printedSetupLines, roomDisagreements, setupForm } from "./helpers/sheet-paper-reading.js";
 
 // ---------------------------------------------------------------------------
 // The hallkeeper sheet PDF, "the brief, then the room" (design:
@@ -55,7 +56,7 @@ async function withPaperCheck(sheet: HallkeeperSheetV2, issued: boolean): Promis
   return paperCheck === null ? sheet : { ...sheet, paperCheck };
 }
 
-const textOf = (lines: readonly PdfLine[]): string => lines.map((line) => line.text).join(" ").replace(/\s+/gu, " ");
+const textOf = (lines: readonly PdfLine[]): string => lines.map((line) => plainSpaces(line.text)).join(" ").replace(/\s+/gu, " ");
 /** Footer runs sit on one baseline about 23 pt above the page's foot. */
 const isFooter = (line: PdfLine): boolean => line.y > 18 && line.y < 30;
 /** Body text keeps clear of the footer band: baselines at least 44 pt up. */
@@ -140,8 +141,9 @@ describe("the four fixtures, laid out", () => {
     expect(text.match(/Parquet Dance Floor Panel/gu)).toHaveLength(2); // store list and one setup line
     // One laid floor is one line, at the floor's middle (planner-qol E-13).
     expect(text).toContain("30 Parquet Dance Floor Panel Perimeter · Laid as one floor");
-    // The chairs at the tables are a line of their own after the tables, as study D sets them.
-    expect(text).toContain("120 Chiavari Wedding Chair 110 at Tables 1–11, 10 each · 10 at Top table");
+    // The chairs at the tables are a line of their own after the tables, as study D sets them; the count at each table
+    // in brackets, where no list's comma can claim it, and none for the one top table (#443's review, HG3).
+    expect(text).toContain("120 Chiavari Wedding Chair 110 at Tables 1–11 (10 each) · 10 at Top table");
     expect(text).not.toContain("chairs each");
     expect(text).toContain("Structure by 10:00 Band loads in at 10:15");
     expect(text).toContain("Final touches");
@@ -873,9 +875,12 @@ function standsAt(object: { readonly x: number; readonly z: number }, x: number,
 /** A box on the page, y growing down the page as pdfkit draws. */
 interface Box { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
 interface PlanShape extends Box { readonly fill: string; readonly stroke: string; readonly round: boolean }
-/** A name on the plan: its line, the box its ink takes, its baseline, and the middle of its capitals. */
-interface PlanName { readonly line: PdfLine; readonly box: Box; readonly baseline: number; readonly x: number; readonly y: number }
+/** A name on the plan: its line, the box its ink takes, each glyph's own ink box, its baseline, and the middle of its capitals. */
+interface PlanName { readonly line: PdfLine; readonly box: Box; readonly glyphs: readonly Box[]; readonly baseline: number; readonly x: number; readonly y: number }
 interface PlanReading { readonly floor: Box; readonly pieces: readonly PlanShape[]; readonly markers: readonly PlanShape[]; readonly names: readonly PlanName[] }
+
+/** A sweep renders a sheet once per step, 30 to 40 times: on a busy machine that runs past Vitest's 10 s default. */
+const SWEEP_TIMEOUT = 60_000;
 
 const NUM = String.raw`(-?[\d.]+)`;
 const BOX_PIECE = new RegExp(String.raw`${NUM} ${NUM} m\n${NUM} ${NUM} l\n${NUM} ${NUM} l\n${NUM} ${NUM} l\nh\n\/DeviceRGB cs\n([\d.]+ [\d.]+ [\d.]+) scn\n\/DeviceRGB CS\n([\d.]+ [\d.]+ [\d.]+) SCN\nB\n`, "gu");
@@ -903,8 +908,17 @@ function gapBetween(box: Box, shape: Box): number {
   return Math.hypot(Math.max(shape.left - box.right, 0, box.left - shape.right), Math.max(shape.top - box.bottom, 0, box.top - shape.bottom));
 }
 
-/** A face's glyph outlines as fontkit reads them, in font units with y up. */
-interface GlyphOutlines { readonly unitsPerEm: number; layout(text: string): { readonly bbox: { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number } } }
+/** A box in font units, y up, as fontkit gives a glyph's or a run's. */
+interface FontBox { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number }
+/** A face's glyph outlines as fontkit reads them, in font units with y up: a run's box, and each glyph's with where it stands. */
+interface GlyphOutlines {
+  readonly unitsPerEm: number;
+  layout(text: string): {
+    readonly bbox: FontBox;
+    readonly glyphs: readonly { readonly bbox: FontBox }[];
+    readonly positions: readonly { readonly xAdvance: number; readonly xOffset: number; readonly yOffset: number }[];
+  };
+}
 
 function isGlyphOutlines(value: unknown): value is GlyphOutlines {
   if (typeof value !== "object" || value === null) return false;
@@ -928,6 +942,24 @@ function inkOf(text: string, size: number): Box {
   const box = NAME_FACE.layout(text).bbox;
   const scale = size / NAME_FACE.unitsPerEm;
   return { left: box.minX * scale, top: -box.maxY * scale, right: box.maxX * scale, bottom: -box.minY * scale };
+}
+
+/** Each of a name's glyphs' ink, against its line's left edge and its baseline, y down the page: a space inks nothing. */
+function glyphInkOf(text: string, size: number): Box[] {
+  const run = NAME_FACE.layout(text);
+  const scale = size / NAME_FACE.unitsPerEm;
+  const boxes: Box[] = [];
+  let x = 0;
+  for (const [index, glyph] of run.glyphs.entries()) {
+    const at = run.positions[index];
+    if (at === undefined) throw new Error("fontkit gives every glyph a position");
+    const box = glyph.bbox;
+    if ([box.minX, box.minY, box.maxX, box.maxY].every(Number.isFinite) && box.maxX > box.minX) {
+      boxes.push({ left: (x + at.xOffset + box.minX) * scale, top: -(at.yOffset + box.maxY) * scale, right: (x + at.xOffset + box.maxX) * scale, bottom: -(at.yOffset + box.minY) * scale });
+    }
+    x += at.xAdvance;
+  }
+  return boxes;
 }
 
 /** Each page's plan as it prints, or null on a page that draws none. */
@@ -959,7 +991,8 @@ function plansOn(buf: Buffer): (PlanReading | null)[] {
       if (!(x > floor.left && x < floor.right && y > floor.top && y < floor.bottom) || markers.some((marker) => holds(marker, x, y))) return [];
       // The ink its glyphs cover, from Inter SemiBold's own outlines: descenders only where the name has them.
       const ink = inkOf(line.text, line.size);
-      return [{ line, box: { left: line.x + ink.left, top: baseline + ink.top, right: line.x + ink.right, bottom: baseline + ink.bottom }, baseline, x, y }];
+      const glyphs = glyphInkOf(line.text, line.size).map((glyph) => ({ left: line.x + glyph.left, top: baseline + glyph.top, right: line.x + glyph.right, bottom: baseline + glyph.bottom }));
+      return [{ line, box: { left: line.x + ink.left, top: baseline + ink.top, right: line.x + ink.right, bottom: baseline + ink.bottom }, glyphs, baseline, x, y }];
     });
     return { floor, pieces: shapes.filter((shape) => shape.stroke !== INK.accent), markers, names };
   });
@@ -1172,7 +1205,7 @@ describe("what #415's review found (T-696)", () => {
     }
     // The rule was met near its edge, not only with the floor wide open.
     expect(nearThreshold).toBeGreaterThan(0);
-  });
+  }, SWEEP_TIMEOUT);
 
   it("keeps a name above its piece as near it as one below, a neighbour closing in from the north", async () => {
     const base = boardWithProjectorNamed();
@@ -1206,7 +1239,7 @@ describe("what #415's review found (T-696)", () => {
     // The name stood above its piece, and the neighbour came near the rule's edge while it did.
     expect(above).toBeGreaterThan(0);
     expect(nearThreshold).toBeGreaterThan(0);
-  });
+  }, SWEEP_TIMEOUT);
 
   it("sets a name too wide for its piece beside it on clear floor, nearer its own piece than anything else", async () => {
     const buf = await generateSheetPdfV2(await withPaperCheck(boardWithProjectorNamed(), false));
@@ -1474,5 +1507,324 @@ describe("what #415's review found (T-696)", () => {
     const third = pages[2] ?? "";
     expect(third.indexOf("Mackenzie–Ross wedding breakfast")).toBeGreaterThanOrEqual(0);
     expect(third.indexOf("Mackenzie–Ross wedding breakfast")).toBeLessThan(third.indexOf("SETUP, IN ORDER"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What #443's review found (18 November 2026): the chairs line's places and
+// counts as printed, the paper-reading helper, the notes a one-page sheet's
+// chairs carry, and the names set beside their pieces read glyph by glyph.
+// ---------------------------------------------------------------------------
+
+/** The wedding with its round tables' names changed (by the name each has now), each row's names read again from its pieces, as the generator gathers them. */
+function withRoundNames(base: HallkeeperSheetV2, rename: (label: string) => string | undefined): HallkeeperSheetV2 {
+  const plan = base.floorPlan;
+  if (plan === null || plan === undefined) throw new Error("the sheet has a plan");
+  const objects: HallkeeperFloorPlan["objects"] = plan.objects.map((object) => {
+    if (object.name !== "6ft Round Table" || object.label === undefined) return object;
+    const { label: _was, ...piece } = object;
+    const label = rename(object.label);
+    return label === undefined ? piece : { ...piece, label };
+  });
+  const labelOf = new Map(objects.map((object) => [object.objectId, object.label]));
+  const named = (label: string | undefined): label is string => label !== undefined;
+  const phases = base.phases.map((phase) => ({ ...phase, zones: phase.zones.map((zone) => ({ ...zone, rows: zone.rows.map((row) => {
+    if (row.labels === undefined) return row;
+    const { labels: _was, ...rest } = row;
+    const labels = row.positions.length > 0
+      ? [...new Set(row.positions.map((position) => labelOf.get(position.objectId)).filter(named))]
+      : row.labels.map((label) => (/^Table \d+$/u.test(label) ? rename(label) : label)).filter(named);
+    return labels.length === 0 ? rest : { ...rest, labels };
+  }) })) }));
+  return { ...base, floorPlan: { ...plan, objects }, phases };
+}
+
+/** A fixture id in a range of its own: 00000000-0000-4000-8000-0000000f… */
+const reviewId = (n: number): string => `00000000-0000-4000-8000-0000000f${n.toString(16).padStart(4, "0")}`;
+
+/** The wedding with three more rounds, of another model, seating eight each and named as given, their chairs on the plan. */
+function weddingWithRoundsOfEight(labels: readonly [string, string, string]): HallkeeperSheetV2 {
+  const base = weddingSheet();
+  const plan = base.floorPlan;
+  const template = plan?.objects.find((object) => object.name === "6ft Round Table");
+  const chairTemplate = plan?.objects.find((object) => object.category === "chair");
+  if (plan === null || plan === undefined || template === undefined || chairTemplate === undefined) throw new Error("the wedding has rounds and chairs");
+  const rounds = labels.map((label, n) => ({ ...template, objectId: reviewId(1 + n), name: "Banquet Round Table", x: 5 + n * 2.6, z: 3.9, label, note: undefined }));
+  const chairs = rounds.flatMap((round, n) => Array.from({ length: 8 }, (_, seat) => ({
+    ...chairTemplate, objectId: reviewId(100 + n * 8 + seat), note: undefined,
+    x: round.x + Math.cos(seat * Math.PI / 4) * 1.1, z: round.z + Math.sin(seat * Math.PI / 4) * 1.1,
+  })));
+  const row = {
+    key: "furniture|South wall|Banquet Round Table with 8 chairs|0", name: "Banquet Round Table with 8 chairs", category: "table", qty: 3,
+    afterDepth: 0, isAccessory: false, notes: "", positions: rounds.map(({ objectId, x, z }) => ({ objectId, x, z, rotationY: 0 })), labels: [...labels],
+  };
+  const phases = base.phases.map((phase) => phase.phase !== "furniture" ? phase
+    : { ...phase, zones: phase.zones.map((zone, index) => (index === phase.zones.length - 1 ? { ...zone, rows: [...zone.rows, row] } : zone)) });
+  return { ...base, phases, floorPlan: { ...plan, objects: [...plan.objects, ...rounds, ...chairs] } };
+}
+
+const SEAT_NOTE = "Seat 3: wheelchair user, aisle side";
+
+/** A short sheet with a plan of a long, narrow room: eight rounds of ten in a line, one seated chair carrying a note, and with `sash` a sash on every chair carrying it too. */
+function shortSheetWithSeatNote(sash: boolean): HallkeeperSheetV2 {
+  const rounds = Array.from({ length: 8 }, (_, n) => ({
+    objectId: reviewId(200 + n), assetDefinitionId: "22222222-2222-4222-8222-222222222222", name: "6ft Round Table", category: "table",
+    x: -8.4 + n * 2.4, z: 0, rotationY: 0, scale: 1, widthM: 1.83, depthM: 1.83, collisionType: "cylinder" as const,
+  }));
+  const chairs = rounds.flatMap((round, n) => Array.from({ length: 10 }, (_, seat) => ({
+    objectId: reviewId(300 + n * 10 + seat), assetDefinitionId: "33333333-3333-4333-8333-333333333333", name: "Chiavari Wedding Chair", category: "chair",
+    x: round.x + Math.cos(seat * Math.PI / 5) * 1.25, z: round.z + Math.sin(seat * Math.PI / 5) * 1.25, rotationY: 0, scale: 1, widthM: 0.42, depthM: 0.42,
+    collisionType: "box" as const, ...(n === 0 && seat === 2 ? { note: SEAT_NOTE } : {}),
+  })));
+  const rows = [{ key: "furniture|Centre|6ft Round Table with 10 chairs|0", name: "6ft Round Table with 10 chairs", category: "table", qty: 8, afterDepth: 0,
+    isAccessory: false, notes: "", positions: rounds.map(({ objectId, x, z }) => ({ objectId, x, z, rotationY: 0 })) }];
+  // An older frozen copy's sash: the generator copied the noted chair's words onto its accessory row.
+  const sashes = [{ key: "dress|Centre|Gold Chair Sash|1", name: "Gold Chair Sash", category: "decor", qty: 80, afterDepth: 1, isAccessory: true, notes: SEAT_NOTE, positions: [] }];
+  return {
+    ...BASE_SHEET,
+    phases: [{ phase: "furniture", zones: [{ zone: "Centre", rows }] }, ...(sash ? [{ phase: "dress" as const, zones: [{ zone: "Centre" as const, rows: sashes }] }] : [])],
+    floorPlan: { coordinateSpace: "real_m_v1", outline: [{ x: -10.5, z: -2 }, { x: 10.5, z: -2 }, { x: 10.5, z: 2 }, { x: -10.5, z: 2 }], objects: [...rounds, ...chairs] },
+  };
+}
+
+/** Where a plan prints a point given in metres, and its scale: read from the room's outline as drawn. */
+function pageAt(drawn: PlanReading, plan: HallkeeperFloorPlan, x: number, z: number): { readonly x: number; readonly y: number; readonly ppm: number } {
+  const xs = plan.outline.map((point) => point.x);
+  const zs = plan.outline.map((point) => point.z);
+  const ppm = (drawn.floor.right - drawn.floor.left) / (Math.max(...xs) - Math.min(...xs));
+  return { x: drawn.floor.left + (x - Math.min(...xs)) * ppm, y: drawn.floor.top + (z - Math.min(...zs)) * ppm, ppm };
+}
+
+/** A shaped run as fontkit gives it: each glyph's characters and advance, and where each stands. */
+interface ShapedRun {
+  readonly glyphs: readonly { readonly codePoints: readonly number[]; readonly advanceWidth: number }[];
+  readonly positions: readonly { readonly xAdvance: number }[];
+}
+
+function isShapedRun(value: unknown): value is ShapedRun {
+  if (typeof value !== "object" || value === null) return false;
+  const run = value as { glyphs?: unknown; positions?: unknown };
+  return Array.isArray(run.glyphs) && Array.isArray(run.positions);
+}
+
+/** No printed line of a place starts with its count at each, its bracket, a middle dot or a times sign: each entry's count keeps to its tables. */
+function expectEntriesWhole(lines: readonly string[], what: string): void {
+  for (const line of lines) {
+    expect(/^(?:each|\(\d|·|×)/u.test(line), `${what}: "${line}"`).toBe(false);
+    // A bracket's count at each never parts from its "each", nor from the table before it.
+    for (const open of line.matchAll(/\((?=\d)/gu)) expect(line.slice(open.index), `${what}: "${line}"`).toMatch(/^\(\d+ each\)/u);
+  }
+}
+
+describe("what #443's review found (T-696)", () => {
+  it("names the rounds by their line, with its count, when the planner named one of eleven, five of eleven or none (HG2)", async () => {
+    for (const [what, kept] of [["one of eleven", ["Table 5"]], ["five of eleven", ["Table 1", "Table 2", "Table 3", "Table 4", "Table 5"]], ["none", []]] as const) {
+      const sheet = withRoundNames(weddingSheet(), (label) => ((kept as readonly string[]).includes(label) ? label : undefined));
+      const pdf = await generateSheetPdfV2(sheet);
+      expect(pdfText(pdf), what).toContain("120 Chiavari Wedding Chair 110 at 11 × 6ft Round Table (10 each) · 10 at Top table");
+      expect(roomDisagreements(sheet, pdf), what).toEqual([]);
+    }
+  });
+
+  it("keeps a gapped run's count at each table in brackets with its last table, on the line it prints on (HG3)", async () => {
+    const sheet = weddingWithRoundsOfEight(["Table 12", "Table 14", "Table 15"]);
+    const pdf = await generateSheetPdfV2(sheet);
+    const seats = printedSetupLines(pdf).filter((line) => /^\d+ at /u.test(line.place));
+    expect(seats.map((line) => [line.qty, line.name, line.place])).toEqual([
+      [144, "Chiavari Wedding Chair", "110 at Tables 1–11 (10 each) · 10 at Top table · 24 at Tables 12, 14–15 (8 each)"],
+    ]);
+    const lines = seats[0]?.placeLines ?? [];
+    expect(lines.length).toBeGreaterThan(1);
+    expectEntriesWhole(lines, "gapped");
+    expect(lines.find((line) => line.includes("(8 each)"))).toMatch(/14–15 \(8 each\)/u);
+    expect(lines.find((line) => line.includes("(10 each)"))).toMatch(/1–11 \(10 each\)/u);
+    expect(roomDisagreements(sheet, pdf)).toEqual([]);
+  });
+
+  it("keeps a long place's count at each with its last table wherever the narrow column wraps it (HG3)", async () => {
+    const numbers = [1, 2, 3, 4, 6, 7, 8, 9, 13, 14, 15];
+    const sheet = withRoundNames(weddingSheet(), (label) => `Table ${String(numbers[Number(label.replace("Table ", "")) - 1] ?? 0)}`);
+    const pdf = await generateSheetPdfV2(sheet);
+    const seat = printedSetupLines(pdf).find((line) => /^\d+ at /u.test(line.place));
+    expect(seat?.place).toBe("110 at Tables 1–4, 6–9, 13–15 (10 each) · 10 at Top table");
+    const lines = seat?.placeLines ?? [];
+    expect(lines.length).toBeGreaterThan(1);
+    expectEntriesWhole(lines, "long");
+    expect(lines.find((line) => line.includes("(10 each)"))).toMatch(/13–15 \(10 each\)/u);
+    expect(roomDisagreements(sheet, pdf)).toEqual([]);
+  });
+
+  it("prints the no-break space that ties a count to its tables as Inter's own space, as wide as a space (HG3)", async () => {
+    // The glyph pdfkit sets for U+00A0 in the place column's face, read from the embedded font itself.
+    const doc = new PDFDocument({ size: "A4" });
+    registerSheetFonts(doc);
+    doc.font("Inter-Regular");
+    const embedded: unknown = Reflect.get(doc, "_font");
+    const face: unknown = typeof embedded === "object" && embedded !== null ? Reflect.get(embedded, "font") : undefined;
+    if (!isGlyphOutlines(face)) throw new Error("pdfkit embeds Inter Regular with its glyphs");
+    const shaped = (text: string): ShapedRun => {
+      const run: unknown = face.layout(text);
+      if (!isShapedRun(run)) throw new Error("fontkit shapes a run into glyphs and positions");
+      return run;
+    };
+    const tied = shaped("1–11\u00A0(10\u00A0each)");
+    const spaced = shaped("1–11 (10 each)");
+    const nbsp = tied.glyphs.filter((glyph) => glyph.codePoints.includes(0xA0));
+    const space = spaced.glyphs.find((glyph) => glyph.codePoints.includes(0x20));
+    expect(nbsp).toHaveLength(2);
+    expect(space?.advanceWidth ?? 0).toBeGreaterThan(0);
+    for (const glyph of nbsp) expect(glyph.advanceWidth).toBe(space?.advanceWidth);
+    expect(tied.positions.map((at) => at.xAdvance)).toEqual(spaced.positions.map((at) => at.xAdvance));
+    // On the paper: the place's run carries U+00A0 there, as the font's ToUnicode map reads it back.
+    const runs = pdfPages(await generateSheetPdfV2(weddingSheet())).flat().map((line) => line.text);
+    expect(runs.some((text) => text.includes("1–11\u00A0(10\u00A0each)"))).toBe(true);
+  });
+
+  it("finds the paper's chairs line missing from a setup on its own page, or disagreeing with the phone's tables (HG5)", async () => {
+    const phone = weddingSheet();
+    const rewrite = (seats: (name: string) => string): HallkeeperSheetV2 => ({ ...phone, phases: phone.phases.map((phase) => ({ ...phase,
+      zones: phase.zones.map((zone) => ({ ...zone, rows: zone.rows.map((row) => (row.category === "table" ? { ...row, name: seats(row.name) } : row)) })) })) });
+    // Printed from rows that lost their chairs: no chairs line, though the setup has a page of its own.
+    const lost = await generateSheetPdfV2(rewrite((name) => /^(.*) with \d+ chairs?$/u.exec(name)?.[1] ?? name));
+    expect(setupForm(lost)).toBe("own-page");
+    expect(roomDisagreements(phone, lost).join("\n")).toMatch(/chairs line/u);
+    // Printed from rows that seat nine at each round, where the phone's seat ten.
+    const nine = await generateSheetPdfV2(rewrite((name) => (name === "6ft Round Table with 10 chairs" ? "6ft Round Table with 9 chairs" : name)));
+    expect(roomDisagreements(phone, nine).join("\n")).toMatch(/chairs line/u);
+    // The paper printed from the phone's own rows agrees.
+    expect(roomDisagreements(phone, await generateSheetPdfV2(phone))).toEqual([]);
+  });
+
+  it("reads mixed chair kinds at the tables as one chairs line, the store counting each kind (HG5)", async () => {
+    const sheet = weddingWithPlan((objects) => objects.map((object) => (object.category === "chair" && Math.abs(object.z + 4.85) < 0.01 ? { ...object, name: "Red-gold Gallery Chair" } : object)));
+    const pdf = await generateSheetPdfV2(sheet);
+    const text = pdfText(pdf);
+    expect(text).toContain("120 Chairs for the tables 110 at Tables 1–11 (10 each) · 10 at Top table");
+    expect(text).toContain("10 Red-gold Gallery Chair");
+    expect(roomDisagreements(sheet, pdf)).toEqual([]);
+  });
+
+  it("lists a seated chair's note under the plan's notes on a one-page sheet, which keeps each table's chairs on its line (HG5)", async () => {
+    const sheet = shortSheetWithSeatNote(false);
+    const pdf = await generateSheetPdfV2(sheet);
+    const pages = pdfPages(pdf);
+    expect(pages).toHaveLength(1);
+    expect(setupForm(pdf)).toBe("under-brief");
+    const text = textOf(pages[0] ?? []);
+    const setup = text.slice(text.indexOf("SETUP, IN ORDER"));
+    expect(setup).toContain("8 6ft Round Table 10 chairs each");
+    expect(setup.indexOf(SEAT_NOTE)).toBeGreaterThan(setup.indexOf("NOTES ON THE PLAN"));
+    expect(setup.indexOf("NOTES ON THE PLAN")).toBeGreaterThan(setup.indexOf("8 6ft Round Table"));
+    expect(roomDisagreements(sheet, pdf)).toEqual([]);
+  });
+
+  it("leaves a seated chair's note to the next line that carries it on a one-page sheet, not among the plan's notes (HG7)", async () => {
+    const sheet = shortSheetWithSeatNote(true);
+    const pdf = await generateSheetPdfV2(sheet);
+    // The setup sits under the brief on page 1 (Martyn's Law's prompts run overleaf).
+    expect(setupForm(pdf)).toBe("under-brief");
+    const text = textOf(pdfPages(pdf)[0] ?? []);
+    const setup = text.slice(text.indexOf("SETUP, IN ORDER"));
+    expect(setup).not.toContain("NOTES ON THE PLAN");
+    expect(setup.indexOf(SEAT_NOTE)).toBeGreaterThan(setup.indexOf("80 Gold Chair Sash"));
+    expect(roomDisagreements(sheet, pdf)).toEqual([]);
+  });
+
+  it("sets a name above its piece with the ink over the piece 1.5 pt from it, glyph by glyph, a neighbour closing in from the north (HH3)", async () => {
+    const LABEL = "Easel: seating plan";
+    const base = boardWithProjectorNamed(LABEL);
+    const plan = base.floorPlan;
+    const projector = plan?.objects.find((object) => object.name === "Laser Projector");
+    if (plan === null || plan === undefined || projector === undefined) throw new Error("the board has its projector");
+    // On open floor: the projector and the screen alone, the projector moved clear of the walls, a copy just south of it.
+    const own = { ...projector, x: -2, z: 0 };
+    const kept = plan.objects.filter((object) => object.name === "Projector Screen");
+    const blocker = { ...own, objectId: reviewId(400), z: own.z + 0.45, label: undefined };
+    let above = 0;
+    let nearThreshold = 0;
+    for (let step = 0; step <= 36; step++) {
+      const away = 1.2 - step * 0.025;
+      const neighbour = { ...own, objectId: reviewId(401 + step), z: own.z - away, label: undefined };
+      const sheet: HallkeeperSheetV2 = { ...base, floorPlan: { ...plan, objects: [...kept, own, blocker, neighbour] } };
+      const drawn = plansOn(await generateSheetPdfV2(await withPaperCheck(sheet, false)))[0];
+      const name = drawn?.names.find((candidate) => candidate.line.text === LABEL);
+      if (drawn === null || drawn === undefined || name === undefined) continue;
+      const [north, piece] = columnOf(drawn, 3);
+      if (north === undefined || piece === undefined) throw new Error("the plan has all three copies");
+      const what = `${away.toFixed(3)} m`;
+      // Every glyph's own ink: none on any piece, and inside the room.
+      for (const glyph of name.glyphs) {
+        expect(drawn.pieces.filter((other) => touches(glyph, other)), `${what}: a glyph meets a piece`).toEqual([]);
+        expect(within(glyph, drawn.floor), `${what}: a glyph leaves the room`).toBe(true);
+      }
+      // Above its piece: glyphs over the piece, all of them above it (right or left of it, none is over it).
+      const over = name.glyphs.filter((glyph) => glyph.right > piece.left && glyph.left < piece.right);
+      if (over.length === 0 || !over.every((glyph) => glyph.bottom <= piece.top)) continue;
+      above += 1;
+      const ownGap = Math.min(...name.glyphs.map((glyph) => gapBetween(glyph, piece)));
+      expect(Math.min(...over.map((glyph) => piece.top - glyph.bottom)), `${what}: the ink over the piece`).toBeCloseTo(1.5, 1);
+      expect(ownGap, `${what}: the nearest ink to its own piece`).toBeCloseTo(1.5, 1);
+      const nextGap = Math.min(...drawn.pieces.filter((other) => other !== piece).flatMap((other) => name.glyphs.map((glyph) => gapBetween(glyph, other))));
+      expect(nextGap, `${what}: every other piece against twice the gap to its own`).toBeGreaterThanOrEqual(2 * ownGap - 0.05);
+      if (Math.min(...name.glyphs.map((glyph) => gapBetween(glyph, north))) < 3 * ownGap) nearThreshold += 1;
+    }
+    expect(above).toBeGreaterThan(0);
+    expect(nearThreshold).toBeGreaterThan(0);
+  }, SWEEP_TIMEOUT);
+
+  it("sets a name above its piece with a neighbour 3.1 pt from its ink, and not with one 2.9 pt away (HH4)", async () => {
+    const base = boardWithProjectorNamed();
+    const plan = base.floorPlan;
+    const projector = plan?.objects.find((object) => object.name === "Laser Projector");
+    if (plan === null || plan === undefined || projector === undefined) throw new Error("the board has its projector");
+    const blocker = { ...projector, objectId: reviewId(500), z: projector.z + 0.45, label: undefined };
+    const drawnWith = async (extra: HallkeeperFloorPlan["objects"]): Promise<PlanReading> => {
+      const drawn = plansOn(await generateSheetPdfV2(await withPaperCheck({ ...base, floorPlan: { ...plan, objects: [...plan.objects, ...extra] } }, false)))[0];
+      if (drawn === null || drawn === undefined) throw new Error("page 1 draws the room");
+      return drawn;
+    };
+    // With the floor north of it open, "Slides" stands above its projector.
+    const open = await drawnWith([blocker]);
+    const first = open.names.find((candidate) => candidate.line.text === "Slides");
+    const [ownOpen] = columnOf(open, 2);
+    if (first === undefined || ownOpen === undefined) throw new Error("page 1 names the projector");
+    expect(first.box.bottom).toBeLessThanOrEqual(ownOpen.top);
+    // Pt per metre from the drawn room; a copy north of the projector, its south edge `gap` from the name's ink.
+    const { ppm } = pageAt(open, plan, 0, 0);
+    for (const [gap, standsAbove] of [[3.1, true], [2.9, false]] as const) {
+      const z = projector.z - (ownOpen.bottom - (first.box.top - gap)) / ppm;
+      const drawn = await drawnWith([blocker, { ...projector, objectId: reviewId(501 + Math.round(gap * 10)), z, label: undefined }]);
+      const [north, own] = columnOf(drawn, 3);
+      if (north === undefined || own === undefined) throw new Error("the plan has all three copies");
+      expect(first.box.top - north.bottom, `${String(gap)} pt: the neighbour stands where it was put`).toBeCloseTo(gap, 1);
+      const name = drawn.names.find((candidate) => candidate.line.text === "Slides");
+      const isAbove = name !== undefined && name.box.bottom <= own.top && name.x > own.left && name.x < own.right;
+      expect(isAbove, `${String(gap)} pt: "Slides" above its projector`).toBe(standsAbove);
+      if (name !== undefined && isAbove) expect(gapBetween(name.box, north)).toBeGreaterThanOrEqual(3 - 0.05);
+    }
+  });
+
+  it("sets a name right or left of its piece 1.5 pt from it, every other piece at least twice as far (HH4)", async () => {
+    const sheet = boardWithScreenNamed();
+    const plan = sheet.floorPlan;
+    const screen = plan?.objects.find((object) => object.name === "Projector Screen");
+    if (plan === null || plan === undefined || screen === undefined) throw new Error("the board has its screen");
+    const drawn = plansOn(await generateSheetPdfV2(await withPaperCheck(sheet, false)))[0];
+    const name = drawn?.names.find((candidate) => candidate.line.text === "Screen");
+    if (drawn === null || drawn === undefined || name === undefined) throw new Error("page 1 names the screen beside it");
+    // The screen by where the plan puts it (turned a quarter round: its depth across the page), not by which piece is nearest.
+    const centre = pageAt(drawn, plan, screen.x, screen.z);
+    const across = screen.depthM * screen.scale * centre.ppm / 2;
+    const down = screen.widthM * screen.scale * centre.ppm / 2;
+    const own = drawn.pieces.find((piece) => Math.abs(piece.left - (centre.x - across)) < 0.5 && Math.abs(piece.right - (centre.x + across)) < 0.5
+      && Math.abs(piece.top - (centre.y - down)) < 0.5 && Math.abs(piece.bottom - (centre.y + down)) < 0.5);
+    if (own === undefined) throw new Error("the plan draws the screen where it stands");
+    // Right or left of it, level with it.
+    expect(name.box.left >= own.right || name.box.right <= own.left).toBe(true);
+    expect(name.y).toBeGreaterThan(own.top);
+    expect(name.y).toBeLessThan(own.bottom);
+    const ownGap = gapBetween(name.box, own);
+    expect(ownGap).toBeCloseTo(1.5, 1);
+    for (const other of drawn.pieces.filter((piece) => piece !== own)) expect(gapBetween(name.box, other)).toBeGreaterThanOrEqual(2 * ownGap - 0.05);
   });
 });
