@@ -123,9 +123,12 @@ share) is never made to try.
     while the browser was offline, or refused with a status that is tried again. The count is cleared when one of the
     tab's writes lands, and starts afresh when the layout is read with nothing of this tab's unsent or on its way,
     since that read follows every write it sent. Reopened, the layout keeps the unsent answer while it holds nothing,
-    what this tab knew, or one of those answers. If it holds the unsent answer itself, the write landed; if it holds any other, someone
-    answered elsewhere since, and that answer stands. The check compares answers, not versions: an answer changed and
-    changed back elsewhere reads as unchanged.
+    what this tab knew, or one of those answers. If it holds the unsent answer itself, the write landed; if it holds
+    any other, someone answered elsewhere since, and that answer stands, unless a write of this tab's for the layout is
+    still on its way: that write lands over it and the open layout then shows it, while an unsent answer dropped at
+    that reopen stays dropped. The check compares answers, not versions: an answer changed and changed back elsewhere
+    reads as unchanged. Nor does a reopen know when its read was taken: a load that began before one of this tab's
+    writes landed, and is applied after it, shows the layout as that load read it (a race older than these rules).
   - **Every write is last-writer-wins.** A write or a retry, with the layout open or not, writes over whatever the
     layout holds by then, as everywhere in the PATCH. Only a reopen looks first.
   - **It belongs to the person who gave it.** It is never written as anyone else. Once someone else signs in, the last
