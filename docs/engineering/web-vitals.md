@@ -149,7 +149,7 @@ trailing spaces to the same 512 bytes (`WEB_VITALS_REPORT_BYTES`, below):
     earlier day can no longer grow and is dropped. When the API stops, what reaches
     ten is written and the rest is dropped; a crash loses all that is held. At each
     deploy Railway sends the old deployment SIGTERM, then SIGKILL `drainingSeconds`
-    later: 30 seconds, set in `railway.json` (#420), which covers the API's own
+    later: 30 seconds, set by #420 (now in `.railway/railway.ts`), which covers the API's own
     25-second close. That close lets requests in flight finish first, then runs the
     write, so the write has its full 15 seconds when they finish within about ten
     seconds of SIGTERM, less when one runs longer, and none past 25. A drain that
