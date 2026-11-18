@@ -214,6 +214,29 @@ describe("nav offers are reachable", () => {
     }
   });
 
+  it("offers Stuck work to platform admins alone", () => {
+    // routes/admin-jobs.ts answers platform administrators only, so no venue
+    // role, at any venue, is led to a refusal.
+    const stuckWork = NAV_ITEMS.find((item) => item.view === "stuckWork");
+    expect(stuckWork?.label).toBe("Stuck work");
+    if (stuckWork === undefined) throw new Error("Stuck work entry missing");
+    expect(dashboardViewFromSearchValue("stuckWork")).toBe("stuckWork");
+    for (const role of ["admin", "manager", "staff"]) {
+      expect(canShowNavItem(stuckWork, role, "admin"), `${role} as platform admin`).toBe(true);
+    }
+    for (const role of ["admin", "manager", "staff", "sales", "hallkeeper", "planner"]) {
+      expect(canShowNavItem(stuckWork, role, "none"), `${role} is offered Stuck work`).toBe(false);
+      expect(canOpenDashboardView("stuckWork", role, "none"), `${role} opens Stuck work`).toBe(false);
+    }
+    expect(canShowNavItem(stuckWork, "admin", "operator")).toBe(false);
+    for (const role of ALL_ROLES) {
+      for (const platformRole of ["none", "operator", "admin"] as const) {
+        expect(canShowNavItem(stuckWork, role, platformRole), `${String(role)} (platformRole ${platformRole})`)
+          .toBe(canOpenDashboardView("stuckWork", role, platformRole));
+      }
+    }
+  });
+
   it("hides the Event Architect entry for R1", () => {
     // Goal 18 §6 decision 8. The route survives; only the way in is closed.
     expect(NAV_ITEMS.some((item) => item.label.includes("Event Architect"))).toBe(false);

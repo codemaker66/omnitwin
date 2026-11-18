@@ -14,6 +14,7 @@ import { clientRefFromSearchValue, clientRefToSearchValue, type ClientRef } from
 import { LoadoutsView } from "../components/dashboard/LoadoutsView.js";
 import { VenueSettings } from "../components/dashboard/VenueSettings.js";
 import { AdminPanel } from "../components/dashboard/AdminPanel.js";
+import { StuckWork } from "../components/dashboard/StuckWork.js";
 import { InventoryPanel } from "../components/dashboard/inventory/InventoryPanel.js";
 import { ExecutiveAnalyticsView } from "../components/dashboard/ExecutiveAnalyticsView.js";
 import { ProposalsDesk } from "../components/dashboard/ProposalsDesk.js";
@@ -57,6 +58,7 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
   "rota",
   "onboarding",
   "admin",
+  "stuckWork",
 ];
 
 // Pipeline is PipelineDesk, which reads api/crm.js (routes/crm.ts
@@ -86,9 +88,9 @@ const PRICING_VIEWS = new Set<DashboardView>(["pricing"]);
 // administrators, and platform admins through the shortcut above. See
 // lib/role-capabilities.ts TEAM_TAB_ROLES.
 const TEAM_VIEWS = new Set<DashboardView>(["team"]);
-const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
+const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin", "stuckWork"]);
 /** The views of one venue's work: all but the platform's own. */
-type VenueView = Exclude<DashboardView, "onboarding" | "admin">;
+type VenueView = Exclude<DashboardView, "onboarding" | "admin" | "stuckWork">;
 function isVenueView(view: DashboardView): view is VenueView {
   return !ADMIN_ONLY_VIEWS.has(view);
 }
@@ -451,6 +453,8 @@ export function DashboardPage(): React.ReactElement {
         return <OnboardingView />;
       case "admin":
         return <AdminPanel />;
+      case "stuckWork":
+        return <StuckWork />;
     }
   };
 
