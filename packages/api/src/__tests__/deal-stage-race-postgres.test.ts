@@ -230,7 +230,9 @@ describe.skipIf(PLATFORM_TARGET === undefined)("deal stage moves on the migrated
   // it called a deal that is only waiting on the client overdue.
   it("gives a moved deal its new stage's step with no date, so a deal only waiting is not overdue", async () => {
     const id = await dealWithStep("new", "TEST ONLY Call the client back", daysFromNow(-2));
-    expect((await due()).overdue).toBe(1);
+    // Read beside the venue's other deals, so only this deal's change counts.
+    const overdueBefore = (await due()).overdue;
+    expect(overdueBefore).toBeGreaterThanOrEqual(1);
 
     const moved = await send(id, "staff", { stage: "qualified" });
 
@@ -241,7 +243,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("deal stage moves on the migrated
       nextActionDueAt: null,
       history: [{ from_stage: "new", to_stage: "qualified", note: null }],
     });
-    expect((await due()).overdue).toBe(0);
+    expect((await due()).overdue).toBe(overdueBefore - 1);
   });
 
   it("keeps the date a move is sent with", async () => {
