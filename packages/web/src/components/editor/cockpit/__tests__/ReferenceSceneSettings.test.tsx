@@ -138,12 +138,14 @@ describe("ReferenceSceneSettings", () => {
     disclose("Scene overlays");
     disclose("Model section height");
     disclose("Recorded evidence");
+    disclose("Sound");
     await waitFor(() => { expect(screen.getByText(summary.source)).toBeTruthy(); });
+    expect(screen.getAllByRole("slider"), "the section's slider and Sound's Level before the lock").toHaveLength(2);
     act(() => { useLayoutTimelinePreviewStore.getState().showPending("Opening frozen phase"); });
     expect(screen.getByRole("status").textContent).toContain("Return to the saved plan");
     expect(screen.queryByRole("checkbox")).toBeNull();
-    // Sound's own Level slider is a device setting, and stays (the next test).
-    expect(screen.queryByRole("slider", { name: "Section plane height" })).toBeNull();
+    // The one slider left is Sound's Level, a device setting (the next test).
+    expect(screen.getAllByRole("slider")).toEqual([screen.getByRole("slider", { name: "Level" })]);
     expect(screen.queryByTestId("cockpit-truth-rail")).toBeNull();
     expect(useSectionStore.getState().height).toBe(7);
     expect(useCockpitStore.getState().overlayVisibility.guestFlow).toBe(true);

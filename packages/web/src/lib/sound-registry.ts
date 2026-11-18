@@ -948,21 +948,41 @@ export function armPlannerSound(): boolean {
     plannerLive = { context, graph };
     askForAmbientAudioSession();
     if (soundTapWanted()) installSoundTap(context, graph.master);
-    for (const listener of [...plannerArmedListeners]) listener(context.sampleRate);
+    for (const listener of [...plannerArmedListeners]) tellArmedListener(listener, context.sampleRate);
   }
-  if (plannerLive.context.state === "suspended") void plannerLive.context.resume();
+  // Suspended, or Safari's "interrupted" (a call took the audio): the gesture resumes it.
+  if (plannerLive.context.state !== "running") void plannerLive.context.resume();
   return true;
 }
 
 /**
  * Hears the context's sample rate once: when the first gesture makes the
  * context, or, when it is made already, at once and synchronously, inside this
- * call, so a listener added after arming still learns the rate.
+ * call, so a listener added after arming still learns the rate. A listener
+ * that throws is reported and stays subscribed, and the unsubscribe is always
+ * returned.
  */
 export function subscribePlannerSoundArmed(listener: (sampleRate: number) => void): () => void {
   plannerArmedListeners.add(listener);
-  if (plannerLive !== null) listener(plannerLive.context.sampleRate);
+  if (plannerLive !== null) tellArmedListener(listener, plannerLive.context.sampleRate);
   return () => { plannerArmedListeners.delete(listener); };
+}
+
+/**
+ * Tells one armed listener the rate. One that throws is reported, never
+ * swallowed, and stops neither arming nor the other listeners nor its own
+ * subscribe call, as the landings' listeners are shielded (R86): the error goes
+ * to the page's error reporting, or is thrown again on a microtask where there
+ * is none.
+ */
+function tellArmedListener(listener: (sampleRate: number) => void, sampleRate: number): void {
+  try {
+    listener(sampleRate);
+  } catch (error: unknown) {
+    const host: { reportError?: (error: unknown) => void } = globalThis;
+    if (typeof host.reportError === "function") host.reportError(error);
+    else queueMicrotask(() => { throw error; });
+  }
 }
 
 /** While mounted, the first press or key anywhere arms the planner's sound. */
@@ -1035,20 +1055,12 @@ export function playPlannerSound(id: PlannerSoundId, variation: PlannerSoundVari
   const at = context.currentTime;
   const recipe = PLANNER_SOUND_RECIPES[id];
   let played = recipe;
-  let levelDb = 0;
   let cacheKey: string | null = id;
-  if (recipe.vary !== null) {
-    // A recipe that varies is a little different each play, in pitch and in level.
-    played = varyRecipe(recipe, { pitchScale: 1 + (Math.random() * 2 - 1) * recipe.vary.pitch });
-    levelDb = (Math.random() * 2 - 1) * recipe.vary.levelDb;
-    cacheKey = null;
-  }
   if (variation.pitchScale !== undefined || variation.glide !== undefined) {
-    played = varyRecipe(played, variation);
+    played = varyRecipe(recipe, variation);
     cacheKey = null;
   }
-  levelDb += variation.levelDb ?? 0;
-  startPlannerSound(graph, played, at, levelDb, cacheKey, Math.floor(Math.random() * 0xffffffff));
+  startPlannerSound(graph, played, at, variation.levelDb ?? 0, cacheKey, Math.floor(Math.random() * 0xffffffff));
   plannerPolicy.record(id, nowMs);
   restartPlannerSilenceTimer();
   return true;
@@ -1097,6 +1109,12 @@ const SET_DOWN_BATCH_MS = 1500;
  * burst of three hold between landings, and the cascade
  * (lib/set-down/cascade.ts) spaces the voices within one. Null when refused:
  * sound Off, nothing armed, a hidden tab, a rate rule, or no voices.
+ *
+ * The admitted count is recorded at once, so a slot the batch never plays
+ * (sound turned Off, the tab hidden, the 1.5 s run out, fewer voices played
+ * than asked for) still counts toward the shared eight a second until the
+ * second has passed. That can only over-count, holding a later landing back,
+ * never let more than eight play, so it is safe.
  */
 export function beginSetDownBatch(count: number): SetDownBatch | null {
   const wanted = Math.floor(count);
@@ -1116,21 +1134,44 @@ export function beginSetDownBatch(count: number): SetDownBatch | null {
   restartPlannerSilenceTimer();
   const lapsesAtMs = nowMs + SET_DOWN_BATCH_MS;
   let left = allowed;
-  // Set at the batch's first play: a batch that begins inside the limiter's
-  // warm-up waits it out as a whole, as the listening page does (page.ts
-  // playVoices), so a cascade keeps its spacing (R63, R75).
+  // A batch that begins inside the limiter's warm-up waits it out as a whole,
+  // as the listening page does (page.ts playVoices), so a cascade keeps its
+  // spacing (R63, R75). The shift is measured once, when the batch's first
+  // voice can actually start: at its play on a running clock, exactly as the
+  // page does, or, when that play found the clock stopped (a context made
+  // suspended, as Safari makes it), once the resume has settled. Then the
+  // resumed clock is read back to the first play, as if it had run through the
+  // wait, so a slow first resume does not bunch the early voices at 0.25 s. A
+  // clock already past 0.25 s at the first play has nothing to wait out.
+  let firstPlay: { readonly atMs: number; readonly clock: number } | null = null;
   let warmupShift: number | null = null;
+  const warmup: BatchWarmup = {
+    shiftAt(currentTime: number, atMs: number): number {
+      if (warmupShift === null) {
+        const first = firstPlay ?? { atMs, clock: currentTime };
+        const clockAtFirstPlay = currentTime - (atMs - first.atMs) / 1000;
+        warmupShift = first.clock >= PLANNER_LIMITER_WARMUP_SECONDS ? 0 : Math.max(0, PLANNER_LIMITER_WARMUP_SECONDS - clockAtFirstPlay);
+      }
+      return warmupShift;
+    },
+  };
   return {
     play(voice: SetDownVoice): boolean {
       const playMs = performance.now();
       if (left <= 0 || playMs > lapsesAtMs || plannerLive !== live) return false;
       if (getPlannerSoundSettings().mode === "off" || plannerSoundHidden()) return false;
       left -= 1;
-      warmupShift ??= Math.max(0, PLANNER_LIMITER_WARMUP_SECONDS - live.context.currentTime);
-      playSetDownVoice(live, voice, voice.startAt + warmupShift, playMs);
+      firstPlay ??= { atMs: playMs, clock: live.context.currentTime };
+      playSetDownVoice(live, voice, warmup, playMs);
       return true;
     },
   };
+}
+
+/** A batch's one warm-up shift (R63), measured when its first voice can start. */
+interface BatchWarmup {
+  /** The shift, measured now (context seconds `currentTime`, page time `atMs`) unless it is measured already. */
+  shiftAt(currentTime: number, atMs: number): number;
 }
 
 /** Every wake and every waiting play share one resume. */
@@ -1152,33 +1193,39 @@ function waitingVoiceMiss(waitedMs: number): SetDownMiss | null {
   return null;
 }
 
-/** Plays one admitted voice, aimed at `aimedAt` context seconds; `nowMs` is when it was played. */
-function playSetDownVoice(live: PlannerLive, voice: SetDownVoice, aimedAt: number, nowMs: number): void {
+/**
+ * Plays one admitted voice at its startAt plus its batch's warm-up shift;
+ * `nowMs` is when it was played.
+ */
+function playSetDownVoice(live: PlannerLive, voice: SetDownVoice, warmup: BatchWarmup, nowMs: number): void {
   plannerFatigue.record(nowMs, 1);
   const levelDb = voice.levelDb + plannerFatigue.levelDb(nowMs);
   restartPlannerSilenceTimer();
   const { context } = live;
   if (context.state === "running") {
-    startSetDownVoice(live.graph, voice, levelDb, aimedAt);
+    startSetDownVoice(live.graph, voice, levelDb, voice.startAt + warmup.shiftAt(context.currentTime, nowMs));
     return;
   }
-  // A stopped clock (the 20 s silence rule): wait for it to run again, then keep
-  // what is left of the voice's lead on the resumed clock (Review Focus 1). A
-  // voice the answer comes too late for, or finds Off or hidden, is dropped and
-  // logged on the tap as a miss.
-  const leadSeconds = aimedAt - context.currentTime;
+  // A stopped clock (the 20 s silence rule, or a context made suspended): wait
+  // for it to run again, then keep what is left of the voice's lead, and its
+  // batch's warm-up shift, on the resumed clock (Review Focus 1). A voice the
+  // answer comes too late for, or finds Off or hidden, is dropped and logged on
+  // the tap as a miss.
+  const leadSeconds = voice.startAt - context.currentTime;
   resumePlannerContext(context).then(() => {
     if (plannerLive !== live) return;
-    const waitedMs = performance.now() - nowMs;
+    const settledMs = performance.now();
+    const shift = warmup.shiftAt(context.currentTime, settledMs);
+    const waitedMs = settledMs - nowMs;
     const miss = waitingVoiceMiss(waitedMs);
     if (miss !== null) {
-      logSetDownMiss(voice, levelDb, aimedAt, miss);
+      logSetDownMiss(voice, levelDb, voice.startAt + shift, miss);
       return;
     }
-    startSetDownVoice(live.graph, voice, levelDb, context.currentTime + Math.max(0, leadSeconds - waitedMs / 1000));
+    startSetDownVoice(live.graph, voice, levelDb, context.currentTime + Math.max(0, leadSeconds + shift - waitedMs / 1000));
   }, () => {
-    // The device would not resume, so nothing can play.
-    if (plannerLive === live) logSetDownMiss(voice, levelDb, aimedAt, "resume-rejected");
+    // The device would not resume, so nothing can play; the miss is logged where the voice was aimed on the stopped clock.
+    if (plannerLive === live) logSetDownMiss(voice, levelDb, voice.startAt, "resume-rejected");
   });
 }
 

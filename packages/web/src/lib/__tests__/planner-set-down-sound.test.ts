@@ -86,7 +86,8 @@ class FakeCompressor extends FakeNode {
 class FakeStreamDestination extends FakeNode { readonly stream = {}; }
 
 class FakeContext {
-  state: "running" | "suspended" = "running";
+  /** "interrupted" is Safari's: a call or another app took the audio. */
+  state: "running" | "suspended" | "interrupted" = "running";
   currentTime = 1;
   outputLatency: number | undefined = 0.012;
   baseLatency: number | undefined = 0.005;
@@ -254,6 +255,66 @@ describe("a batch of set-downs", () => {
     const starts = context.started.map((source) => source.startedAt ?? Number.NaN);
     expect(starts).toHaveLength(3);
     [0.2547, 0.3497, 0.4447].forEach((expected, index) => { expect(starts[index]).toBeCloseTo(expected, 9); });
+  });
+
+  it("measures a made-suspended context's warm-up once its first resume settles, so a slow resume keeps the cascade's spacing (R63, R75)", async () => {
+    // Safari makes the context suspended, and its clock stands at 0 until the
+    // first resume settles. The same Lay out: a 4.7 ms lead and voices 0, 95
+    // and 190 ms on, each played at its own contact, on the frozen clock.
+    context.state = "suspended";
+    context.currentTime = 0;
+    armPlannerSound();
+    const batch = beginSetDownBatch(3);
+    const lead = 0.0047;
+    for (const offset of [0, 0.095, 0.19]) {
+      nowMs = 10_000 + offset * 1000;
+      expect(batch?.play(voice({ startAt: context.currentTime + lead }))).toBe(true);
+    }
+    expect(context.started, "nothing is scheduled on a stopped clock").toHaveLength(0);
+    // A slow first resume: it settles 300 ms after the first contact, the clock 4 ms on.
+    nowMs = 10_300;
+    context.finishResume(0.004);
+    await flushPromises();
+    // As the page on a running clock: max(currentTime, 0.25) + lead + offset.
+    const starts = context.started.map((source) => source.startedAt ?? Number.NaN);
+    expect(starts).toHaveLength(3);
+    [0.2547, 0.3497, 0.4447].forEach((expected, index) => { expect(starts[index]).toBeCloseTo(expected, 9); });
+  });
+
+  it("keeps the spacing when a made-suspended context's resume settles mid-batch, for the voices played after it too", async () => {
+    context.state = "suspended";
+    context.currentTime = 0;
+    armPlannerSound();
+    const batch = beginSetDownBatch(3);
+    const lead = 0.0047;
+    for (const offset of [0, 0.095]) {
+      nowMs = 10_000 + offset * 1000;
+      expect(batch?.play(voice({ startAt: context.currentTime + lead }))).toBe(true);
+    }
+    nowMs = 10_150;
+    context.finishResume(0.004);
+    await flushPromises();
+    // The third contact, 40 ms after the resume, on the running clock.
+    nowMs = 10_190;
+    context.currentTime = 0.044;
+    expect(batch?.play(voice({ startAt: context.currentTime + lead }))).toBe(true);
+    const starts = context.started.map((source) => source.startedAt ?? Number.NaN);
+    expect(starts).toHaveLength(3);
+    [0.2547, 0.3497, 0.4447].forEach((expected, index) => { expect(starts[index]).toBeCloseTo(expected, 9); });
+  });
+
+  it("adds no warm-up for the wait when the clock had passed 0.25 s before it stopped: each voice keeps what is left of its lead, as before", async () => {
+    context.currentTime = 0.3;
+    armPlannerSound();
+    context.state = "interrupted";
+    const batch = beginSetDownBatch(2);
+    expect(batch?.play(voice({ startAt: 0.3047 }))).toBe(true);
+    nowMs += 900;
+    expect(batch?.play(voice({ startAt: 0.3047 }))).toBe(true);
+    nowMs += 100;
+    context.finishResume();
+    await flushPromises();
+    expect(context.started.map((source) => source.startedAt)).toEqual([0.3, 0.3]);
   });
 
   it("keeps the warm-up floor for a voice aimed before it on a context already past it", () => {
@@ -599,12 +660,78 @@ describe("the clock, arming and the tap", () => {
     expect(heard).toEqual([]);
   });
 
+  describe("a listener that throws (R86, as the landings' listeners)", () => {
+    const failure = new Error("a listener failed");
+
+    it("is reported, not thrown, when it hears the rate in the subscribe call, and its caller still gets the unsubscribe", () => {
+      const reportError = vi.fn();
+      vi.stubGlobal("reportError", reportError);
+      armPlannerSound();
+      let stop: unknown = null;
+      expect(() => { stop = subscribePlannerSoundArmed(() => { throw failure; }); }).not.toThrow();
+      expect(typeof stop).toBe("function");
+      expect(reportError).toHaveBeenCalledOnce();
+      expect(reportError).toHaveBeenCalledWith(failure);
+      if (typeof stop === "function") stop();
+    });
+
+    it("is reported, not thrown, when the first gesture makes the context: the listeners after it hear the rate, and arming finishes", () => {
+      const reportError = vi.fn();
+      vi.stubGlobal("reportError", reportError);
+      context.state = "suspended";
+      const heard: number[] = [];
+      const stopThrowing = subscribePlannerSoundArmed(() => { throw failure; });
+      const stop = subscribePlannerSoundArmed((sampleRate) => { heard.push(sampleRate); });
+      try {
+        expect(armPlannerSound()).toBe(true);
+        expect(heard).toEqual([48000]);
+        expect(reportError).toHaveBeenCalledOnce();
+        expect(reportError).toHaveBeenCalledWith(failure);
+        expect(context.resumes, "arming went on to resume the context").toBe(1);
+        expect(plannerAudioClock()).not.toBeNull();
+      } finally {
+        stopThrowing();
+        stop();
+      }
+    });
+
+    it("throws the error again on a microtask where the page has no reportError", () => {
+      armPlannerSound();
+      const queued: (() => void)[] = [];
+      vi.stubGlobal("reportError", undefined);
+      vi.stubGlobal("queueMicrotask", (task: () => void) => { queued.push(task); });
+      let stop: () => void = () => {};
+      try {
+        stop = subscribePlannerSoundArmed(() => { throw failure; });
+      } finally {
+        vi.unstubAllGlobals();
+      }
+      stop();
+      expect(queued).toHaveLength(1);
+      const [rethrow] = queued;
+      expect(() => { rethrow?.(); }).toThrow(failure);
+    });
+  });
+
   it("forgets every listener when the tests reset it", () => {
     const heard: number[] = [];
     subscribePlannerSoundArmed((sampleRate) => { heard.push(sampleRate); });
     __resetPlannerSoundForTests();
     armPlannerSound();
     expect(heard).toEqual([]);
+  });
+
+  it("resumes the context on arming in any state but running, Safari's interrupted too", () => {
+    context.state = "interrupted";
+    expect(armPlannerSound()).toBe(true);
+    expect(context.resumes, "made interrupted").toBe(1);
+    context.finishResume();
+    armPlannerSound();
+    expect(context.resumes, "running: nothing to resume").toBe(1);
+    // A call takes the audio; the next gesture brings it back.
+    context.state = "interrupted";
+    armPlannerSound();
+    expect(context.resumes).toBe(2);
   });
 
   it("asks for the ambient audio session where the browser has one", () => {

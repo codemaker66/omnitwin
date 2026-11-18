@@ -1,4 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import { useEffect, type ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -255,5 +257,77 @@ describe("no button on screen", () => {
     const panel = screen.getByRole("dialog", { name: "The event and the room" });
     expect(within(panel).getByRole("radiogroup", { name: "Sound" })).toBeTruthy();
     expect(speakers()).toEqual([]);
+  });
+});
+
+// The checks above render the planners with some regions stood in for, where a
+// speaker could hide. This one reads the source instead: SoundControl, the
+// speaker, is named only where it is defined and on the chrome's fixture page.
+// SoundSettings, the menus' content from the same module, is free to use, and
+// tests may mount the speaker to check it.
+
+/** Every .ts and .tsx file under `dir`, leaving out tests. */
+function appSources(dir: string): string[] {
+  const found: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) {
+      if (name === "__tests__" || name === "node_modules") continue;
+      found.push(...appSources(path));
+    } else if (/\.(ts|tsx)$/u.test(name) && !/\.test\.(ts|tsx)$/u.test(name)) {
+      found.push(path);
+    }
+  }
+  return found;
+}
+
+/**
+ * The speaker named as a value: `<SoundControl`, an import or re-export of it
+ * (`{ SoundControl }`, `SoundControl as Speaker`), or `module.SoundControl`.
+ * Not the module's path (`…/SoundControl.js`), not SoundControlProps, and not
+ * SoundSettings.
+ */
+const SPEAKER_USE = /(?<![\w/])SoundControl(?![\w])(?!\.(?:js|jsx|ts|tsx)\b)(?!["'`])/u;
+
+/** The module that defines the speaker, and the one page that mounts it. */
+const SPEAKER_ALLOWED: ReadonlySet<string> = new Set([
+  "components/planner-chrome/SoundControl.tsx",
+  "pages/PlannerChromeFixturePage.tsx",
+]);
+
+function speakerUsers(srcRoot: string): string[] {
+  return appSources(srcRoot)
+    .map((file) => relative(srcRoot, file).split(sep).join("/"))
+    .filter((file) => SPEAKER_USE.test(readFileSync(join(srcRoot, file), "utf8")));
+}
+
+describe("no speaker in the source", () => {
+  const srcRoot = join(__dirname, "..", "..", "..");
+
+  it("the scan recognises every way a file could mount the speaker, and leaves the menus' setting alone", () => {
+    for (const line of [
+      "return <SoundControl />;",
+      "<SoundControl align=\"start\" tooltipSide=\"above\" />",
+      "import { SoundControl } from \"../planner-chrome/SoundControl.js\";",
+      "import { SoundSettings, SoundControl } from \"./SoundControl.js\";",
+      "import { SoundControl as Speaker } from \"./SoundControl.js\";",
+      "export { SoundControl } from \"./SoundControl.js\";",
+      "const Speaker = lazy(() => import(\"./SoundControl.js\").then((module) => ({ default: module.SoundControl })));",
+    ]) expect(SPEAKER_USE.test(line), line).toBe(true);
+    for (const line of [
+      "import { SoundSettings } from \"../../planner-chrome/SoundControl.js\";",
+      "import { SoundSettings } from \"./SoundControl\";",
+      "<div><SoundSettings /></div>",
+      "const props: SoundControlProps = { align: \"end\" };",
+    ]) expect(SPEAKER_USE.test(line), line).toBe(false);
+  });
+
+  it("finds the speaker named only where it is defined and on the fixture page", () => {
+    expect(speakerUsers(srcRoot).filter((file) => !SPEAKER_ALLOWED.has(file))).toEqual([]);
+  });
+
+  it("names no allowed file that no longer has the speaker", () => {
+    const users = new Set(speakerUsers(srcRoot));
+    expect([...SPEAKER_ALLOWED].filter((file) => !users.has(file))).toEqual([]);
   });
 });

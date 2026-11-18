@@ -185,11 +185,14 @@ function pageHidden(): boolean {
   return typeof document !== "undefined" && document.visibilityState === "hidden";
 }
 
-/** Whether a message from the Worker names, by a numeric id, a job other than the running one, `id`. */
+/**
+ * Whether a message from the Worker is a well-formed answer naming, by its id,
+ * a job other than the running one, `id`. Only such a stray is ignored: a
+ * malformed message, whatever id it carries, is the running job's, and
+ * rejects it as malformed (answerTo).
+ */
 function answersAnotherJob(data: unknown, id: number): boolean {
-  if (typeof data !== "object" || data === null) return false;
-  const answered: unknown = Reflect.get(data, "id");
-  return typeof answered === "number" && answered !== id;
+  return isSetDownAnswer(data) && data.id !== null && data.id !== id;
 }
 
 function rendererOn(worker: WorkerLike): SetDownRenderer {
@@ -428,9 +431,10 @@ function rendererOn(worker: WorkerLike): SetDownRenderer {
 
 /**
  * The answer, if its shape is sound and it is not a refusal; otherwise the
- * error that rejects `job`. An answer naming another job by its id never
- * reaches here (answersAnotherJob); a refusal with no id (of a message the
- * Worker could not read as a job) is the running job's.
+ * error that rejects `job`. A well-formed answer naming another job by its id
+ * never reaches here (answersAnotherJob), but a malformed message does,
+ * whatever its id; a refusal with no id (of a message the Worker could not
+ * read as a job) is the running job's.
  */
 function answerTo(job: SetDownJob, data: unknown): SetDownRenderAnswer | SetDownTailAnswer | Error {
   if (!isSetDownAnswer(data)) return new Error(`The set-down Worker's answer to ${named(job)} is malformed: ${setDownAnswerProblem(data) ?? "unreadable"}`);

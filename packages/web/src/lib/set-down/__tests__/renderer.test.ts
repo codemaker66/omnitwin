@@ -357,6 +357,21 @@ describe("answers", () => {
     expect(String(a.reason)).toMatch(/did not answer render "a" within 10 s/);
   });
 
+  it("ignore only a well-formed answer to another job: a malformed message naming another id rejects the running job, and the next runs", async () => {
+    const { renderer, worker } = made();
+    const a = track(renderer.render(INPUT, "exact", "a"));
+    const b = track(renderer.render(INPUT, "exact", "b"));
+    const jobA = worker.running();
+    worker.send({ kind: "render", id: jobA.id + 100, ok: true });
+    await flush();
+    expect(a.status).toBe("rejected");
+    expect(String(a.reason)).toMatch(/answer to render "a" is malformed/);
+    expect(worker.running().key).toBe("b");
+    worker.answer();
+    await flush();
+    expect(b.status).toBe("resolved");
+  });
+
   it("reject the running job when its answer cannot be read, and the next job runs", async () => {
     const { renderer, worker } = made();
     const lost = track(renderer.render(INPUT, "exact", "lost"));

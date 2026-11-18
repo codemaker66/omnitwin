@@ -84,8 +84,6 @@ export interface PlannerSoundRecipe {
   readonly gapMs: number;
   /** The synthesised hall under the dry sound, in dB, for the rare moments only. */
   readonly hallSendDb: number | null;
-  /** ± variation each play, pitch as a fraction and level in dB. */
-  readonly vary: { readonly pitch: number; readonly levelDb: number } | null;
   readonly voices: readonly PlannerSoundVoice[];
 }
 
@@ -125,7 +123,6 @@ export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSound
     // At most once in 600 ms, and never for a form's own checking.
     gapMs: 600,
     hallSendDb: null,
-    vary: null,
     voices: [
       { kind: "tone", wave: "sine", hz: 196, toHz: 185, glideMs: 140, peakDb: -24, attackMs: 4, decayMs: 216, floor: 0.001, filter: { type: "lowpass", hz: 900, q: 0.71 } },
     ],
@@ -138,7 +135,6 @@ export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSound
     lengthMs: 35,
     gapMs: PLANNER_SOUND_MIN_GAP_MS,
     hallSendDb: null,
-    vary: null,
     voices: [
       { kind: "tone", wave: "sine", hz: 440, peakDb: -28, attackMs: 2, decayMs: 33, floor: 0.001 },
       { kind: "noise", colour: "white", peakDb: -34, attackMs: 1, lengthMs: 6, filter: { type: "bandpass", hz: 1200, q: 0.9 } },
@@ -152,7 +148,6 @@ export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSound
     lengthMs: 700,
     gapMs: PLANNER_SOUND_MIN_GAP_MS,
     hallSendDb: -10,
-    vary: null,
     voices: [
       { kind: "tone", wave: "sine", hz: 147, peakDb: -30, attackMs: 80, decayMs: 620, floor: 0.001, filter: { type: "lowpass", hz: 1200, q: 0.71 } },
       { kind: "tone", wave: "sine", hz: 220, peakDb: -30, attackMs: 80, decayMs: 620, floor: 0.001, filter: { type: "lowpass", hz: 1200, q: 0.71 } },
@@ -166,7 +161,6 @@ export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSound
     lengthMs: 1100,
     gapMs: PLANNER_SOUND_MIN_GAP_MS,
     hallSendDb: -8,
-    vary: null,
     voices: [
       ...bell(523, -21.5, 0, 894),
       { kind: "tone", wave: "sine", hz: 784, peakDb: -27.5, startMs: 110, attackMs: 6, decayMs: 594, floor: 0.001 },
@@ -180,7 +174,6 @@ export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSound
     lengthMs: 1400,
     gapMs: PLANNER_SOUND_MIN_GAP_MS,
     hallSendDb: -8,
-    vary: null,
     voices: [
       { kind: "noise", colour: "brown", peakDb: -30, attackMs: 600, lengthMs: 1400, filter: { type: "lowpass", hz: 200, toHz: 900, q: 0.71 } },
       { kind: "tone", wave: "sine", hz: 110, peakDb: -29, attackMs: 900, decayMs: 500, floor: 0.001 },
@@ -196,7 +189,6 @@ export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSound
     lengthMs: 600,
     gapMs: PLANNER_SOUND_MIN_GAP_MS,
     hallSendDb: -10,
-    vary: null,
     voices: [
       { kind: "tone", wave: "sine", hz: 523, peakDb: -26, attackMs: 6, decayMs: 594, floor: 0.001 },
     ],
@@ -209,7 +201,6 @@ export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSound
     lengthMs: 50,
     gapMs: PLANNER_SOUND_MIN_GAP_MS,
     hallSendDb: null,
-    vary: null,
     voices: [
       { kind: "noise", colour: "white", peakDb: -34, attackMs: 5, lengthMs: 45, filter: { type: "bandpass", hz: 1400, toHz: 1800, q: 0.7 } },
     ],
@@ -223,7 +214,6 @@ export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSound
     // At most eight a second.
     gapMs: 125,
     hallSendDb: null,
-    vary: null,
     voices: [
       { kind: "tone", wave: "triangle", hz: 1000, peakDb: -27, attackMs: 2, decayMs: 38, floor: 0.0001 },
     ],
@@ -236,7 +226,6 @@ export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSound
     lengthMs: 230,
     gapMs: PLANNER_SOUND_MIN_GAP_MS,
     hallSendDb: null,
-    vary: null,
     voices: [
       { kind: "tone", wave: "sine", hz: 659, peakDb: -26, attackMs: 3, decayMs: 157, floor: 0.001 },
       { kind: "tone", wave: "sine", hz: 988, peakDb: -28, startMs: 70, attackMs: 3, decayMs: 157, floor: 0.001 },
@@ -251,7 +240,6 @@ export const PLANNER_SOUND_RECIPES: Readonly<Record<PlannerSoundId, PlannerSound
     // At most one in 90 ms; silent for keys (the caller's rule).
     gapMs: 90,
     hallSendDb: null,
-    vary: null,
     voices: [
       // 330 Hz is the sun on the horizon; the caller raises it to 660 Hz overhead.
       { kind: "tone", wave: "sine", hz: 330, peakDb: -30, attackMs: 2, decayMs: 33, floor: 0.001 },
