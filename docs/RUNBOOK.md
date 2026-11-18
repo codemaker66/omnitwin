@@ -154,7 +154,8 @@ applies one by hand.**
 
 Two things apply pending migrations, and both write the ledger:
 
-- Railway's pre-deploy command (`railway.json`:
+- Railway's pre-deploy command (declared in `.railway/railway.ts`, applied to
+  Railway's stored settings:
   `node --conditions=omnitwin-dist dist/scripts/migrate-before-deploy.js`)
   runs inside the new image before traffic switches. A failed gate or a failed
   migration fails the deployment, and the previous container keeps serving.
