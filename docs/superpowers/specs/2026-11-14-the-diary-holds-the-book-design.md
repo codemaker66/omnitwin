@@ -824,7 +824,8 @@ substitute bank holidays (gov.uk, read 14 November 2026). Fixtures use made-up n
 
 **The public door and the words.**
 
-40. A part of a confirmed combination answers as Blake decides once its room's record stands; "Ask the team" before.
+40. A part of a confirmed combination answers booked, and a part of a held one answers held, once its room's
+    record stands; "Ask the team" before.
 41. No staff screen says "Free" for a room whose forward-book record does not stand.
 42. At a venue with an import, the forward-book control refuses a room the import page shows as not ready.
 
