@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   CreateEventDayIssueInputSchema,
   EventDayChangesSinceLastHandoffSchema,
@@ -384,20 +384,49 @@ async function recordedStatusAnswer(
   };
 }
 
+/** When a completion event is written: the database's own clock as the row
+ *  is inserted. Every status write first takes the task's row lock (the
+ *  UPDATE, or the replay's SELECT … FOR UPDATE) and inserts its event while
+ *  holding it, so these times follow the order the writes were made in.
+ *  The column's default, now(), is the time the transaction began, which
+ *  two writes waiting on one another can take in the other order. */
+const WRITTEN_UNDER_THE_ROW_LOCK = sql`clock_timestamp()`;
+
+/** Whether the task's last write was made under one of these keys: the
+ *  latest completion event of the task, by the database's own order, left
+ *  the status the task holds and carries one of them. Only the latest
+ *  counts: an earlier write under one of the keys, followed by anyone
+ *  else's, does not. Read while the task's row is held. */
+async function lastWriteMadeUnder(
+  tx: DatabaseOrTransaction,
+  task: OpsTaskRow,
+  keys: readonly string[],
+): Promise<boolean> {
+  if (keys.length === 0) return false;
+  const [last] = await tx.select({ idempotencyKey: taskCompletionEvents.idempotencyKey, toStatus: taskCompletionEvents.toStatus })
+    .from(taskCompletionEvents)
+    .where(eq(taskCompletionEvents.opsTaskId, task.id))
+    .orderBy(desc(taskCompletionEvents.createdAt), desc(taskCompletionEvents.id))
+    .limit(1);
+  return last !== undefined && last.toStatus === task.status
+    && last.idempotencyKey !== null && keys.includes(last.idempotencyKey);
+}
+
 /**
  * A status the event-day board queued on the device and replays now, pressed
  * while the task held `expectedStatus` (#418): written only while the task
- * still holds it, so a stale replay never undoes a later press.
+ * still holds it, or while the task's last write was made under one of
+ * `earlierPressKeys`, the device's own earlier presses (round four, ruling
+ * A: a press whose answer was lost, or that landed while this one sat
+ * queued). Otherwise it is refused, so a stale replay never undoes a later
+ * press.
  *
- * The comparison is the UPDATE's own condition, so PostgreSQL decides it
- * under the row lock the write takes; nothing is read first and written
- * later. If another write holds the row (a second replay, a live press),
- * this UPDATE waits for it to commit and then, under READ COMMITTED, checks
- * its condition again against the row as committed: a status moved
- * meanwhile means nothing is written. (A live press is unconditional: it
- * waits for this one the same way, then writes as pressed.) A replay that
- * writes nothing gets the recorded answer if its key was written meanwhile,
- * and is otherwise refused with the task as it stands: no completion event,
+ * One decision under the task's row lock: the SELECT … FOR UPDATE holds the
+ * row from the comparison, through the look at the task's last write, to
+ * the write and its completion event. A second replay or a live press that
+ * reaches the row meanwhile waits for this transaction to commit, and a
+ * replay that waited reads the row as committed. A key recorded meanwhile
+ * gets its recorded answer; a refusal writes nothing: no completion event,
  * board line or recorded key.
  */
 async function updateOpsTaskStatusIfStillHeld(
@@ -408,35 +437,34 @@ async function updateOpsTaskStatusIfStillHeld(
 ): Promise<UpdateOpsTaskStatusResult> {
   const expected = parsed.expectedStatus;
   return db.transaction(async (tx) => {
-    // Pressed against the very status it sets: nothing to write, only to compare.
-    const written = parsed.status === expected
-      ? []
-      : await tx.update(opsTasks)
-        .set({ status: parsed.status, updatedAt: new Date() })
-        .where(and(eq(opsTasks.id, joined.task.id), eq(opsTasks.status, expected)))
-        .returning();
-    const [updatedTask] = written;
-    if (updatedTask === undefined) {
-      const [current] = await tx.select().from(opsTasks).where(eq(opsTasks.id, joined.task.id)).limit(1);
-      if (current === undefined) throw new EventDayTaskNotFoundError(joined.task.id);
-      if (parsed.status === expected && current.status === expected) {
-        return { task: serializeOpsTask(current), completionEvent: null, idempotentReplay: parsed.idempotencyKey !== undefined };
-      }
-      const recorded = parsed.idempotencyKey === undefined
-        ? null
-        : await recordedStatusAnswer(tx, current, parsed.idempotencyKey);
-      if (recorded !== null) return recorded;
-      throw new EventDayTaskStatusConflictError(serializeOpsTask(current));
+    const [current] = await tx.select().from(opsTasks).where(eq(opsTasks.id, joined.task.id)).limit(1).for("update");
+    if (current === undefined) throw new EventDayTaskNotFoundError(joined.task.id);
+    const recorded = parsed.idempotencyKey === undefined
+      ? null
+      : await recordedStatusAnswer(tx, current, parsed.idempotencyKey);
+    if (recorded !== null) return recorded;
+    const follows = current.status === expected || await lastWriteMadeUnder(tx, current, parsed.earlierPressKeys ?? []);
+    if (!follows) throw new EventDayTaskStatusConflictError(serializeOpsTask(current));
+    const fromStatus = serializeOpsTask(current).status;
+    if (fromStatus === parsed.status) {
+      return { task: serializeOpsTask(current), completionEvent: null, idempotentReplay: parsed.idempotencyKey !== undefined };
     }
+
+    const [updatedTask] = await tx.update(opsTasks)
+      .set({ status: parsed.status, updatedAt: new Date() })
+      .where(eq(opsTasks.id, current.id))
+      .returning();
+    if (updatedTask === undefined) throw new EventDayTaskNotFoundError(joined.task.id);
 
     const [completion] = await tx.insert(taskCompletionEvents).values({
       opsTaskId: joined.task.id,
       eventId: joined.event.id,
       actorUserId,
-      fromStatus: expected,
+      fromStatus,
       toStatus: parsed.status,
       idempotencyKey: parsed.idempotencyKey ?? null,
       note: parsed.note ?? null,
+      createdAt: WRITTEN_UNDER_THE_ROW_LOCK,
     }).returning();
     if (completion === undefined) throw new Error("Task completion event insertion returned no row.");
 
@@ -444,7 +472,7 @@ async function updateOpsTaskStatusIfStillHeld(
       eventId: joined.event.id,
       phaseId: updatedTask.phaseId,
       kind: parsed.status === "blocked" ? "escalation" : "setup",
-      message: safeEventDayText(`Task "${updatedTask.title}" moved from ${expected} to ${parsed.status}.`, 500),
+      message: safeEventDayText(`Task "${updatedTask.title}" moved from ${fromStatus} to ${parsed.status}.`, 500),
       createdBy: actorUserId,
     });
 
@@ -468,6 +496,7 @@ export async function updateOpsTaskStatus(
     idempotencyKey: input.idempotencyKey,
     note: input.note,
     expectedStatus: input.expectedStatus,
+    earlierPressKeys: input.earlierPressKeys,
   });
   const joined = await loadTaskWithEvent(db, input.opsTaskId);
   if (joined === null) throw new EventDayTaskNotFoundError(input.opsTaskId);
@@ -505,6 +534,7 @@ export async function updateOpsTaskStatus(
       toStatus: transition.toStatus,
       idempotencyKey: parsed.idempotencyKey ?? null,
       note: parsed.note ?? null,
+      createdAt: WRITTEN_UNDER_THE_ROW_LOCK,
     }).returning();
     if (completion === undefined) throw new Error("Task completion event insertion returned no row.");
 

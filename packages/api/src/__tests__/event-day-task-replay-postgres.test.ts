@@ -42,6 +42,7 @@ interface StatusBody {
   readonly status: Status;
   readonly idempotencyKey?: string;
   readonly expectedStatus?: string;
+  readonly earlierPressKeys?: readonly string[];
 }
 
 interface Answer {
@@ -144,9 +145,11 @@ describe.skipIf(target === undefined)("a queued task status replayed on the migr
     };
   }
 
-  /** Waits until this many of the route's connections are queued on a lock. */
+  /** Waits until this many of the route's connections are queued on a lock.
+   *  On a loaded machine both replays took more than five seconds to reach
+   *  it, so the wait allows twenty. */
   async function lockWaiters(expected: number): Promise<void> {
-    const deadline = Date.now() + 5_000;
+    const deadline = Date.now() + 20_000;
     for (;;) {
       const result = await lockPool.query<{ n: number }>(
         "SELECT count(*)::int AS n FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
@@ -253,6 +256,97 @@ describe.skipIf(target === undefined)("a queued task status replayed on the migr
     expect(await recorded(taskId, eventId)).toEqual(before);
   });
 
+  // Round four, ruling A: a replay also names the keys of this device's
+  // earlier presses for the task. It is written while the task holds the
+  // status it was pressed against, or while the task's last write was made
+  // under one of those keys: a press of this device whose answer was lost
+  // (order 1), or one that landed while the later press sat queued and the
+  // board reloaded (order 4).
+  it("applies a replay pressed after this device's own press whose answer was lost (order 1)", async () => {
+    const { taskId, eventId } = await newTask();
+    // Start reaches the server; its answer never comes back to the tablet.
+    expect((await send(taskId, { status: "in_progress", idempotencyKey: `start-${taskId}` })).statusCode).toBe(200);
+
+    // Done was pressed offline while the board still showed To do, and names Start's key.
+    const replay = await send(taskId, {
+      status: "done", idempotencyKey: `done-${taskId}`, expectedStatus: "todo", earlierPressKeys: [`start-${taskId}`],
+    });
+
+    expect(replay.statusCode).toBe(200);
+    expect(replay.body.data?.status).toBe("done");
+    const after = await recorded(taskId, eventId);
+    expect(after.status).toBe("done");
+    expect(after.completions).toEqual([
+      { fromStatus: "todo", toStatus: "in_progress", idempotencyKey: `start-${taskId}` },
+      { fromStatus: "in_progress", toStatus: "done", idempotencyKey: `done-${taskId}` },
+    ]);
+    expect(after.planChanges).toBe(2);
+  });
+
+  it("applies a replay queued while this device's earlier press was still on its way, which landed before the board reloaded (order 4)", async () => {
+    const { taskId, eventId } = await newTask();
+    // Start was on its way when Done failed and was queued; Start then landed.
+    expect((await send(taskId, { status: "in_progress", idempotencyKey: `start-${taskId}` })).statusCode).toBe(200);
+
+    // After the reload, Done replays: still against To do, and naming every earlier press of the device.
+    const replay = await send(taskId, {
+      status: "done", idempotencyKey: `done-${taskId}`, expectedStatus: "todo",
+      earlierPressKeys: [`never-sent-${taskId}`, `start-${taskId}`],
+    });
+
+    expect(replay.statusCode).toBe(200);
+    expect((await recorded(taskId, eventId)).status).toBe("done");
+  });
+
+  it("still refuses a replay when the task's last write was made under none of its keys", async () => {
+    const { taskId, eventId } = await newTask();
+    // Another device starts the task.
+    expect((await send(taskId, { status: "in_progress", idempotencyKey: `elsewhere-${taskId}` })).statusCode).toBe(200);
+    const before = await recorded(taskId, eventId);
+
+    const replay = await send(taskId, {
+      status: "done", idempotencyKey: `done-${taskId}`, expectedStatus: "todo", earlierPressKeys: [`start-${taskId}`],
+    });
+    const empty = await send(taskId, {
+      status: "done", idempotencyKey: `done-again-${taskId}`, expectedStatus: "todo", earlierPressKeys: [],
+    });
+
+    expect(replay.statusCode).toBe(409);
+    expect(replay.body.details).toEqual({ task: await taskAsServed(taskId) });
+    expect(empty.statusCode).toBe(409);
+    expect(await recorded(taskId, eventId)).toEqual(before);
+  });
+
+  it("refuses a replay whose key made an earlier write but not the last one", async () => {
+    const { taskId, eventId } = await newTask();
+    expect((await send(taskId, { status: "in_progress", idempotencyKey: `start-${taskId}` })).statusCode).toBe(200);
+    // Another device blocks the task after this device's Start.
+    expect((await send(taskId, { status: "blocked", idempotencyKey: `elsewhere-${taskId}` })).statusCode).toBe(200);
+    const before = await recorded(taskId, eventId);
+
+    const replay = await send(taskId, {
+      status: "done", idempotencyKey: `done-${taskId}`, expectedStatus: "todo", earlierPressKeys: [`start-${taskId}`],
+    });
+
+    expect(replay.statusCode).toBe(409);
+    expect(await recorded(taskId, eventId)).toEqual(before);
+  });
+
+  it("refuses more earlier keys than a device keeps, or a key longer than any it makes", async () => {
+    const { taskId, eventId } = await newTask();
+    const before = await recorded(taskId, eventId);
+    const tooMany = await send(taskId, {
+      status: "done", idempotencyKey: `done-${taskId}`, expectedStatus: "todo",
+      earlierPressKeys: Array.from({ length: 21 }, (_, index) => `press-${String(index)}-${taskId}`),
+    });
+    const tooLong = await send(taskId, {
+      status: "done", idempotencyKey: `done-${taskId}`, expectedStatus: "todo", earlierPressKeys: ["k".repeat(161)],
+    });
+    expect(tooMany.statusCode).toBe(400);
+    expect(tooLong.statusCode).toBe(400);
+    expect(await recorded(taskId, eventId)).toEqual(before);
+  });
+
   it("lets exactly one of two replays that expect the same status write, when they reach the row at the same moment", async () => {
     const { taskId, eventId } = await newTask();
     const holder = await lockPool.connect();
@@ -289,5 +383,5 @@ describe.skipIf(target === undefined)("a queued task status replayed on the migr
       if (!committed) await holder.query("ROLLBACK");
       holder.release();
     }
-  }, 30000);
+  }, 60000);
 });

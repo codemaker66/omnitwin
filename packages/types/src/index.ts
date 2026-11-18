@@ -393,6 +393,7 @@ export {
   EventDayOpsBoardSchema,
   UpdateOpsTaskStatusInputSchema,
   UpdateOpsTaskStatusConflictSchema,
+  MAX_EARLIER_PRESS_KEYS,
   CreateEventDayIssueInputSchema,
   UpdateEventDayIssueInputSchema,
   type EventDayIssueId,

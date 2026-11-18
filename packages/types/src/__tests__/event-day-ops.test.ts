@@ -4,6 +4,7 @@ import {
   EventDayOpsBoardSchema,
   EventDaySafeTextSchema,
   UpdateEventDayIssueInputSchema,
+  MAX_EARLIER_PRESS_KEYS,
   UpdateOpsTaskStatusConflictSchema,
   UpdateOpsTaskStatusInputSchema,
   type EventDayOpsBoard,
@@ -97,6 +98,18 @@ describe("event-day ops contracts", () => {
     }).success).toBe(true);
     expect(UpdateOpsTaskStatusInputSchema.parse({ status: "done" }).expectedStatus).toBeUndefined();
     expect(UpdateOpsTaskStatusInputSchema.safeParse({ status: "done", expectedStatus: "fire approved" }).success).toBe(false);
+  });
+
+  // #418 round four, ruling A: and the keys of the device's earlier presses
+  // for the task, at most MAX_EARLIER_PRESS_KEYS, each a key as the device makes them.
+  it("carries, optionally, up to twenty earlier press keys, each a key as the device makes them", () => {
+    const keys = Array.from({ length: MAX_EARLIER_PRESS_KEYS }, (_, index) => `event-day:task:done:${String(index)}`);
+    expect(MAX_EARLIER_PRESS_KEYS).toBe(20);
+    expect(UpdateOpsTaskStatusInputSchema.safeParse({ status: "done", expectedStatus: "todo", earlierPressKeys: keys }).success).toBe(true);
+    expect(UpdateOpsTaskStatusInputSchema.safeParse({ status: "done", expectedStatus: "todo", earlierPressKeys: [] }).success).toBe(true);
+    expect(UpdateOpsTaskStatusInputSchema.safeParse({ status: "done", earlierPressKeys: [...keys, "one-more"] }).success).toBe(false);
+    expect(UpdateOpsTaskStatusInputSchema.safeParse({ status: "done", earlierPressKeys: ["k".repeat(161)] }).success).toBe(false);
+    expect(UpdateOpsTaskStatusInputSchema.safeParse({ status: "done", earlierPressKeys: [" "] }).success).toBe(false);
   });
 
   it("answers a refused replay with the task as it stands, and nothing else", () => {
