@@ -28,8 +28,10 @@ import type { AudioClock } from "./set-down/timing.js";
 // replaces lib/toolbar-sounds.ts, components/requests/arrival-chime.ts,
 // components/editor/cockpit/when-ribbon-tick.ts and pages/landing/useRoomTone.ts.
 //
-// Sound is opt-in everywhere (goal 01 section 5). Each entry below names one
-// sound, says how a person turns it on, and where that choice is kept. Every
+// Sound is opt-in (goal 01 section 5), but for the planner's Quiet set, which
+// Blake's decision D1 turns on by default; even that waits for the first
+// deliberate gesture. Each entry below names one sound, says how a person
+// turns it on, and where that choice is kept. Every
 // sound is played through `admit`, which refuses an id that is not listed
 // here, so a new sound cannot slip in without being registered and without
 // the opt-in being stated. Audio off loses nothing: no sound here is the only
@@ -39,7 +41,10 @@ import type { AudioClock } from "./set-down/timing.js";
 export type SoundOptIn =
   /** Muted when the page loads; a control unmutes it for this page only. */
   | "session-toggle"
-  /** Off until the person turns it on; the choice is kept on this device. */
+  /**
+   * A choice kept on this device: off until the person turns it on, except the
+   * planner's palette, which starts at Quiet (PLANNER_SOUND_DEFAULT_MODE, D1).
+   */
   | "device-toggle";
 
 export interface SoundDefinition {
@@ -1139,6 +1144,14 @@ function resumePlannerContext(context: AudioContext): Promise<void> {
   return plannerResuming;
 }
 
+/** Why a voice that waited for the context did not play when it answered, if it did not. */
+function waitingVoiceMiss(waitedMs: number): SetDownMiss | null {
+  if (getPlannerSoundSettings().mode === "off") return "off";
+  if (plannerSoundHidden()) return "hidden";
+  if (waitedMs > SET_DOWN_BATCH_MS) return "expired";
+  return null;
+}
+
 /** Plays one admitted voice, aimed at `aimedAt` context seconds; `nowMs` is when it was played. */
 function playSetDownVoice(live: PlannerLive, voice: SetDownVoice, aimedAt: number, nowMs: number): void {
   plannerFatigue.record(nowMs, 1);
@@ -1150,15 +1163,27 @@ function playSetDownVoice(live: PlannerLive, voice: SetDownVoice, aimedAt: numbe
     return;
   }
   // A stopped clock (the 20 s silence rule): wait for it to run again, then keep
-  // what is left of the voice's lead on the resumed clock (Review Focus 1).
+  // what is left of the voice's lead on the resumed clock (Review Focus 1). A
+  // voice the answer comes too late for, or finds Off or hidden, is dropped and
+  // logged on the tap as a miss.
   const leadSeconds = aimedAt - context.currentTime;
   resumePlannerContext(context).then(() => {
-    if (plannerLive !== live || getPlannerSoundSettings().mode === "off") return;
-    const waitedSeconds = (performance.now() - nowMs) / 1000;
-    startSetDownVoice(live.graph, voice, levelDb, context.currentTime + Math.max(0, leadSeconds - waitedSeconds));
+    if (plannerLive !== live) return;
+    const waitedMs = performance.now() - nowMs;
+    const miss = waitingVoiceMiss(waitedMs);
+    if (miss !== null) {
+      logSetDownMiss(voice, levelDb, aimedAt, miss);
+      return;
+    }
+    startSetDownVoice(live.graph, voice, levelDb, context.currentTime + Math.max(0, leadSeconds - waitedMs / 1000));
   }, () => {
     // The device would not resume, so nothing can play.
+    if (plannerLive === live) logSetDownMiss(voice, levelDb, aimedAt, "resume-rejected");
   });
+}
+
+function logSetDownMiss(voice: SetDownVoice, levelDb: number, aimedAt: number, miss: SetDownMiss): void {
+  plannerTap?.log.push({ startAt: aimedAt, levelDb, directGain: voice.directGain, send: voice.send, ...voice.tap, miss });
 }
 
 /** One voice: its level, then a dry gain into the master and a send into the room bus. */
@@ -1194,8 +1219,10 @@ function startSetDownVoice(graph: PlannerGraph, voice: SetDownVoice, levelDb: nu
 
 /**
  * Puts a room's tail on the room bus, fading it in over 0.1 s while the tail
- * before it fades out, and letting that one go after 0.15 s (R62). False before
- * the first gesture, or for a tail at another rate than the context's (a
+ * before it fades out, and letting that one go after 0.15 s (R62). While the
+ * context is not running nothing rings and its clock has stopped, so the new
+ * tail goes in at once and the old one is let go at once. False before the
+ * first gesture, or for a tail at another rate than the context's (a
  * ConvolverNode takes no other): the room keeps the tail it has.
  */
 export function setPlannerRoomTail(tail: Stereo, key: string): boolean {
@@ -1214,22 +1241,25 @@ export function setPlannerRoomTail(tail: Stereo, key: string): boolean {
   fade.connect(graph.master);
   const old = graph.wet;
   const now = context.currentTime;
-  if (old === null) {
+  if (old === null || context.state !== "running") {
     fade.gain.value = 1;
+    if (old !== null) releaseRoomWet(graph, old);
   } else {
     fade.gain.setValueAtTime(0, now);
     fade.gain.linearRampToValueAtTime(1, now + PLANNER_ROOM_CROSSFADE_SECONDS);
     old.fade.gain.cancelScheduledValues(now);
     old.fade.gain.setValueAtTime(old.fade.gain.value, now);
     old.fade.gain.linearRampToValueAtTime(0, now + PLANNER_ROOM_CROSSFADE_SECONDS);
-    window.setTimeout(() => {
-      graph.room.disconnect(old.convolver);
-      old.convolver.disconnect();
-      old.fade.disconnect();
-    }, PLANNER_ROOM_RELEASE_SECONDS * 1000);
+    window.setTimeout(() => { releaseRoomWet(graph, old); }, PLANNER_ROOM_RELEASE_SECONDS * 1000);
   }
   graph.wet = { convolver, fade, key };
   return true;
+}
+
+function releaseRoomWet(graph: PlannerGraph, wet: PlannerRoomWet): void {
+  graph.room.disconnect(wet.convolver);
+  wet.convolver.disconnect();
+  wet.fade.disconnect();
 }
 
 /** The context's clock for timing a set-down to its frame; null before the first gesture. */
@@ -1261,9 +1291,12 @@ export function wakePlannerSound(): void {
 
 // --- The sound tap (?soundtap=1), for the browser evidence ----------------------
 
+/** Why an admitted voice was dropped while it waited for the context to resume. */
+export type SetDownMiss = "resume-rejected" | "off" | "hidden" | "expired";
+
 /** One voice as the tap logs it. */
 export interface VenSoundTapEntry {
-  /** Context seconds it started at. */
+  /** Context seconds it started at; for a miss, where it was aimed. */
   readonly startAt: number;
   /** Its level as played: the cascade's step and the session's fatigue, dB. */
   readonly levelDb: number;
@@ -1273,6 +1306,8 @@ export interface VenSoundTapEntry {
   readonly surface?: string;
   readonly rtMid?: number;
   readonly contactMs?: number;
+  /** Set only when the voice was dropped rather than played. */
+  readonly miss?: SetDownMiss;
 }
 
 export interface VenSoundTap {
@@ -1358,6 +1393,7 @@ export function __resetPlannerSoundForTests(): void {
   plannerBufferCache.clear();
   plannerFatigue = new SetDownFatigue();
   plannerResuming = null;
+  plannerArmedListeners.clear();
   plannerTap = null;
   if (typeof window !== "undefined") delete window.__venSoundTap;
 }

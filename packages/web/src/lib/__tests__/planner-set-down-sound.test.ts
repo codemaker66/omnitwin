@@ -97,6 +97,7 @@ class FakeContext {
   readonly streams: FakeStreamDestination[] = [];
   resumes = 0;
   private answerResume: (() => void) | null = null;
+  private refuseResume: ((reason: Error) => void) | null = null;
   constructor(readonly sampleRate = 48000) {}
   createGain(): FakeGain { const gain = new FakeGain(); this.gains.push(gain); return gain; }
   createBuffer(channels: number, length: number, rate: number): FakeBuffer { return new FakeBuffer(channels, length, rate); }
@@ -107,8 +108,9 @@ class FakeContext {
   /** The device answers when the test says so (finishResume). */
   resume(): Promise<void> {
     this.resumes += 1;
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       this.answerResume = () => { this.state = "running"; resolve(); };
+      this.refuseResume = reject;
     });
   }
   /** The device answers the pending resume; its clock runs on from where it stopped, `advance` later. */
@@ -116,6 +118,13 @@ class FakeContext {
     this.currentTime += advance;
     this.answerResume?.();
     this.answerResume = null;
+    this.refuseResume = null;
+  }
+  /** The device refuses the pending resume. */
+  failResume(): void {
+    this.refuseResume?.(new Error("the device would not resume"));
+    this.answerResume = null;
+    this.refuseResume = null;
   }
   suspend(): Promise<void> { this.state = "suspended"; return Promise.resolve(); }
 }
@@ -409,14 +418,59 @@ describe("a suspended context", () => {
     expect(context.started.map((source) => source.startedAt)).toEqual([1.004]);
   });
 
-  it("drops a waiting set-down if sound is turned off before the context answers", async () => {
+  it("drops a waiting set-down if sound is turned off before the context answers, and logs it as a miss", async () => {
+    window.history.replaceState(null, "", "/plan/stub?soundtap=1");
     armPlannerSound();
     context.state = "suspended";
-    expect(beginSetDownBatch(1)?.play(voice())).toBe(true);
+    expect(beginSetDownBatch(1)?.play(voice({ startAt: 1.011 }))).toBe(true);
     setPlannerSoundMode("off");
     context.finishResume();
     await flushPromises();
     expect(context.started).toHaveLength(0);
+    expect(window.__venSoundTap?.log).toEqual([expect.objectContaining({ startAt: 1.011, miss: "off" })]);
+  });
+
+  it("drops a waiting set-down if the tab is hidden when the context answers, and logs it as a miss", async () => {
+    window.history.replaceState(null, "", "/plan/stub?soundtap=1");
+    armPlannerSound();
+    context.state = "suspended";
+    expect(beginSetDownBatch(1)?.play(voice({ startAt: 1.011 }))).toBe(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    context.finishResume();
+    await flushPromises();
+    expect(context.started).toHaveLength(0);
+    expect(window.__venSoundTap?.log).toEqual([expect.objectContaining({ startAt: 1.011, miss: "hidden" })]);
+  });
+
+  it("drops a set-down that waited longer than its batch's 1.5 s for the context, and logs it as a miss", async () => {
+    window.history.replaceState(null, "", "/plan/stub?soundtap=1");
+    armPlannerSound();
+    context.state = "suspended";
+    const batch = beginSetDownBatch(2);
+    expect(batch?.play(voice({ startAt: 1.011 }))).toBe(true);
+    nowMs += 1000;
+    expect(batch?.play(voice({ startAt: 1.2 }))).toBe(true);
+    nowMs += 501;
+    context.finishResume();
+    await flushPromises();
+    expect(context.started.map((source) => source.startedAt), "the second waited 0.501 s and still plays").toHaveLength(1);
+    expect(window.__venSoundTap?.log).toEqual([
+      expect.objectContaining({ startAt: 1.011, miss: "expired" }),
+      expect.not.objectContaining({ miss: expect.anything() }),
+    ]);
+  });
+
+  it("drops the waiting set-downs when the device refuses to resume, and logs each as a miss", async () => {
+    window.history.replaceState(null, "", "/plan/stub?soundtap=1");
+    armPlannerSound();
+    context.state = "suspended";
+    const batch = beginSetDownBatch(2);
+    expect(batch?.play(voice({ startAt: 1.011 }))).toBe(true);
+    expect(batch?.play(voice({ startAt: 1.1 }))).toBe(true);
+    context.failResume();
+    await flushPromises();
+    expect(context.started).toHaveLength(0);
+    expect(window.__venSoundTap?.log.map((entry) => entry.miss)).toEqual(["resume-rejected", "resume-rejected"]);
   });
 });
 
@@ -467,6 +521,25 @@ describe("the room's tail", () => {
     expect(firstFade.disconnections).toEqual(["all"]);
     expect(secondConvolver?.disconnections).toEqual([]);
     expect(secondFade.disconnections).toEqual([]);
+  });
+
+  it("swaps the tail at once while the context is suspended, with no fade or timer on its stopped clock", () => {
+    vi.useFakeTimers();
+    armPlannerSound();
+    expect(setPlannerRoomTail(stereo(48000, 5, 128), "grand-hall/empty")).toBe(true);
+    const firstConvolver = context.convolvers[1];
+    const firstFade = fadeAfter(firstConvolver);
+    const roomBus = feeding(firstConvolver);
+    context.state = "suspended";
+    expect(setPlannerRoomTail(stereo(48000, 6, 128), "saloon/empty")).toBe(true);
+    const secondFade = fadeAfter(context.convolvers[2]);
+    expect(secondFade.gain.value, "the new tail is in at once").toBe(1);
+    expect(secondFade.gain.events, "no ramp on a stopped clock").toEqual([]);
+    expect(firstFade.gain.events).toEqual([]);
+    expect(roomBus.disconnections, "the old tail is let go at once").toEqual([firstConvolver]);
+    expect(firstConvolver?.disconnections).toEqual(["all"]);
+    expect(firstFade.disconnections).toEqual(["all"]);
+    expect(vi.getTimerCount(), "no release timer").toBe(0);
   });
 
   it("refuses a tail at another rate than the context's and keeps the one it has", () => {
@@ -522,6 +595,14 @@ describe("the clock, arming and the tap", () => {
     const heard: number[] = [];
     const stop = subscribePlannerSoundArmed((sampleRate) => { heard.push(sampleRate); });
     stop();
+    armPlannerSound();
+    expect(heard).toEqual([]);
+  });
+
+  it("forgets every listener when the tests reset it", () => {
+    const heard: number[] = [];
+    subscribePlannerSoundArmed((sampleRate) => { heard.push(sampleRate); });
+    __resetPlannerSoundForTests();
     armPlannerSound();
     expect(heard).toEqual([]);
   });
