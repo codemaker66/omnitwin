@@ -11,6 +11,7 @@ import { ActivityIndicator } from "../shared/Activity.js";
 import { Segmented } from "./Controls.js";
 import { QuietKey } from "./Keys.js";
 import { Popover, type PopoverState } from "./Popover.js";
+import { SoundSettings } from "./SoundControl.js";
 import "./chrome.css";
 import "./slate.css";
 
@@ -19,9 +20,10 @@ import "./slate.css";
 // the slate's title. The six published rooms with their seated-dinner
 // capacities as one grid, the current one ringed; this event's layouts, and
 // for staff each act's layout with "Use this layout for {act}" (what the
-// function sheet reads); Event details; the walls, Cut or Full; and the Diary
-// for staff. It is a popover: the room stays lit behind it, Esc gives focus
-// back to the title.
+// function sheet reads); Event details; the walls, Cut or Full; the Diary for
+// staff; and the device's sound, Off · Quiet · Full, a setting here and never a
+// button on the screen (T-700). It is a popover: the room stays lit behind it,
+// Esc gives focus back to the title.
 // ---------------------------------------------------------------------------
 
 export interface SlateMenuRoom {
@@ -209,6 +211,11 @@ export function SlateMenu({
           </li>
         ) : null}
       </ul>
+
+      <div className="pc-slate-menu__section" role="group" aria-label="Sound">
+        <div className="pc-slate-menu__head" aria-hidden="true"><span className="pc-caps">Sound</span></div>
+        <SoundSettings />
+      </div>
     </Popover>
   );
 }

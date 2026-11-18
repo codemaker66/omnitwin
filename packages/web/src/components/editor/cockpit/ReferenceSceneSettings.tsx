@@ -1,9 +1,10 @@
 import { useState, type ReactElement } from "react";
-import { ChevronDown, Layers3, Map, ScanLine, ShieldQuestion } from "lucide-react";
+import { ChevronDown, Layers3, Map, ScanLine, ShieldQuestion, Volume2 } from "lucide-react";
 import { COCKPIT_OVERLAY_KEYS, type CockpitOverlayKey } from "../../../lib/cockpit-modes.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { SectionSlider } from "../../SectionSlider.js";
+import { SoundSettings } from "../../planner-chrome/SoundControl.js";
 import { CockpitTruthRail } from "./CockpitTruthRail.js";
 import { CockpitMinimap } from "./CockpitMinimap.js";
 import "./ReferenceSceneSettings.css";
@@ -17,7 +18,13 @@ const OVERLAY_LABELS: Readonly<Record<CockpitOverlayKey, string>> = {
   agentReplay: "Agents replay",
 };
 
-/** Existing scene settings, disclosed within the reference viewer's More menu. */
+/**
+ * Existing scene settings, disclosed within the reference viewer's More menu,
+ * and Sound, the planner's one device setting: Off, Quiet or Full, with the
+ * level. Sound is a setting and never a button on the screen (T-700, Blake's
+ * D1), so it lives here. A frozen preview withdraws the scene's settings and
+ * leaves Sound, which is the device's and not the scene's.
+ */
 export function ReferenceSceneSettings({ className = "" }: { readonly className?: string }): ReactElement {
   const overlays = useCockpitStore((state) => state.overlayVisibility);
   const previewLocked = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
@@ -55,5 +62,9 @@ export function ReferenceSceneSettings({ className = "" }: { readonly className?
         {evidenceOpen && <CockpitTruthRail />}
       </details>
     </>}
+    <details>
+      <summary><Volume2 size={15} aria-hidden />Sound<ChevronDown size={13} aria-hidden /></summary>
+      <div className="reference-scene-settings__body"><SoundSettings /></div>
+    </details>
   </section>;
 }

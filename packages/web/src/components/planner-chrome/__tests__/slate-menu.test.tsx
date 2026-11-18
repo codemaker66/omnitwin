@@ -1,8 +1,14 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useEffect, type ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TRADES_HALL_ROOM_CAPACITIES } from "@omnitwin/types";
+import {
+  PLANNER_SOUND_STORAGE_KEY,
+  __resetPlannerSoundForTests,
+  __setPlannerContextFactoryForTests,
+  getPlannerSoundSettings,
+} from "../../../lib/sound-registry.js";
 import { usePopoverState } from "../Popover.js";
 import { SlateMenu, slateMenuRooms, type SlateMenuProps } from "../SlateMenu.js";
 
@@ -10,10 +16,24 @@ import { SlateMenu, slateMenuRooms, type SlateMenuProps } from "../SlateMenu.js"
 // The slate's menu (T-671 slice 7; spec 6.15, frame 19): the six rooms with
 // their seated-dinner capacities as one grid, the current one ringed; this
 // event's layouts, and for staff each act's layout; Event details; the walls,
-// Cut or Full; and the Diary for staff. It never dims the room.
+// Cut or Full; and the Diary for staff; and the device's sound, Off · Quiet ·
+// Full, as a setting in the menu and never a button on the screen. It never
+// dims the room.
 // ---------------------------------------------------------------------------
 
-afterEach(cleanup);
+beforeEach(() => {
+  localStorage.clear();
+  __resetPlannerSoundForTests();
+  // Choosing a set arms the planner's one context; the engine has its own tests.
+  __setPlannerContextFactoryForTests(() => null);
+});
+
+afterEach(() => {
+  cleanup();
+  __setPlannerContextFactoryForTests(null);
+  __resetPlannerSoundForTests();
+  localStorage.clear();
+});
 
 type Patch = Partial<Omit<SlateMenuProps, "state">>;
 
@@ -139,5 +159,36 @@ describe("the rest of the menu", () => {
     const staff = menu({ eventHref: "/ops/events/e1", diaryHref: "/diary?date=2026-11-28" });
     expect(within(staff).getByRole("link", { name: "Event details" }).getAttribute("href")).toBe("/ops/events/e1");
     expect(within(staff).getByRole("link", { name: "Open in the Diary" }).getAttribute("href")).toBe("/diary?date=2026-11-28");
+  });
+});
+
+describe("the sound setting", () => {
+  it("is a group of its own, Off · Quiet · Full with the level, Quiet chosen on a new device", () => {
+    const panel = menu();
+    const sound = within(panel).getByRole("group", { name: "Sound" });
+    const modes = within(sound).getByRole("radiogroup", { name: "Sound" });
+    expect(within(modes).getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["Off", "Quiet", "Full"]);
+    expect(within(modes).getByRole("radio", { name: "Quiet" }).getAttribute("aria-checked")).toBe("true");
+    expect(within(sound).getByRole("slider", { name: "Level" })).toBeTruthy();
+    expect(within(sound).getByText("mutes and unmutes")).toBeTruthy();
+    expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY)).toBeNull();
+  });
+
+  it("comes after the walls, the menu's last row, and is no button on the screen", () => {
+    const panel = menu();
+    const sound = within(panel).getByRole("group", { name: "Sound" });
+    const walls = within(panel).getByRole("radiogroup", { name: "Walls" });
+    expect(walls.compareDocumentPosition(sound) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(panel).queryByRole("button", { name: /^Sound: / })).toBeNull();
+  });
+
+  it("keeps a choice on the device and leaves the menu open", () => {
+    const panel = menu();
+    const modes = within(within(panel).getByRole("group", { name: "Sound" })).getByRole("radiogroup", { name: "Sound" });
+    fireEvent.click(within(modes).getByRole("radio", { name: "Off" }));
+    expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY)).toBe("off");
+    expect(getPlannerSoundSettings().mode).toBe("off");
+    expect(within(modes).getByRole("radio", { name: "Off" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("dialog", { name: "The event and the room" })).toBe(panel);
   });
 });
