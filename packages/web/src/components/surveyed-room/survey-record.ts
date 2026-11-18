@@ -55,8 +55,7 @@ export const WALL_LENGTH_TOLERANCE = 0.002;
  * tools must therefore never publish such a record. Their side of this is in
  * tools/surveyed-rooms/roombuild/publish.py: `floor_extent`, which lays the
  * extent, and `record_faults`, which repeats this refusal before anything is
- * published. Neither is in this repository yet: they arrive with the tools'
- * pull request that follows #442.
+ * published. They arrive with #452.
  *
  * 5 mm is also what a relief may reach outside its record (room-geometry.ts
  * RELIEF_BOUNDS_TOLERANCE).
@@ -383,10 +382,10 @@ export function parseSurveyRecord(json: unknown): SurveyRecord {
   if (typeof json !== "object" || json === null || Array.isArray(json)) throw new SurveyRecordError(["is not a JSON object"]);
   const version: unknown = (json as { readonly schemaVersion?: unknown }).schemaVersion;
   if (version !== SURVEY_SCHEMA_VERSION) {
-    // No advice to "republish with the current tools": the tools in this repository (tools/surveyed-rooms, since
-    // #442) still write version 1, and would write it again. Their version 2 publish step follows in its own pull request.
+    // No advice to "republish with the current tools": tools from before #452 write version 1 and would write it
+    // again. The message names the change that cures it, so it holds whichever of that and this reader lands first.
     const versionOne = version === 1
-      ? " (version 1 is what the survey tools in this repository write until their version 2 publish step lands; it has none of the room, wall heights, atlas images or floor this reader needs, so the room must be built again once the tools write version 2)"
+      ? " (the survey tools write version 2 from #452 on; a version 1 record has none of the room, wall heights, atlas images or floor this reader needs, so the room must be built again with tools that include #452)"
       : "";
     throw new SurveyRecordError([
       `schemaVersion is ${version === undefined ? "missing" : JSON.stringify(version)}; this reader reads version ${String(SURVEY_SCHEMA_VERSION)} only${versionOne}`,

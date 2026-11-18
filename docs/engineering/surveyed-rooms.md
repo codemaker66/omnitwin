@@ -273,10 +273,9 @@ none applied). It exits 1 if the page threw an uncaught error.
 ## The `survey.json` contract (schema version 2)
 
 `tools/surveyed-rooms` publishes `survey.json` beside a room's files (`roombuild/publish.py` writes
-the record). The tools are in this repository since #442, and what they write there is still
-version 1: the publish step that writes version 2 follows in the tools' next pull request.
-`parseSurveyRecord` reads version 2 only and names every fault it finds. Keys the web does not use
-are dropped.
+the record). The tools are in this repository since #442 and write version 2 from #452 on; before
+#452 their publish step wrote version 1. `parseSurveyRecord` reads version 2 only and names every
+fault it finds. Keys the web does not use are dropped.
 
 | Key | Meaning | Checked |
 | --- | --- | --- |
@@ -296,13 +295,12 @@ are dropped.
 | `ceiling.orientation`, `floor.orientation` | optional statement of how the image lies | if present, must be `"columns planner +x, rows from planner +z"` |
 | `files` | every published file's `bytes` and `sha256` | every file the record points at is listed |
 
-Version 2 adds to version 1, which the tools in this repository write until their version 2
-publish step lands: `room`, each wall's `height` and `kind`, `atlas.files`, the whole `floor` block
-and the largest-first rule. A version 1 record is refused saying what it is, that the tools here
-still write it, and that the room must be built again once they write version 2; it does not
-advise republishing, since tools that write version 1 would write it again. No version 2 record
-has been published yet. Two things are assumptions the tools have yet to state, and the reader
-holds them:
+Version 2 adds to version 1, which the tools wrote before #452: `room`, each wall's `height` and
+`kind`, `atlas.files`, the whole `floor` block and the largest-first rule. A version 1 record is
+refused saying that the tools write version 2 from #452 on, what a version 1 record lacks, and that
+the room must be built again with tools that include #452; it does not advise republishing, since
+tools from before #452 would write version 1 again. No version 2 record has been published yet.
+Two things are assumptions the tools have yet to state, and the reader holds them:
 
 - **The floor photograph's orientation.** The ceiling photograph has its columns along planner +x
   and its rows from planner +z (the image's top row is the extent's highest z; the tools' ceiling
