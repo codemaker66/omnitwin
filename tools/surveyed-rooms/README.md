@@ -150,7 +150,7 @@ folder. `roombuild/walls.py` points the Grand Hall scripts' own globals at the r
 | The script reads | From the config |
 | --- | --- |
 | `project.VIEWS`, `project.STATION_IDS`, `project.CHANDELIERS` | the work directory's `views/`, `stations`, `occluders` |
-| `bestview.WALLS`, `SRC_TOP`, `FLOOR`, `COS_MIN`, `MAX_DIST` | each wall's survey name, anchor, u axis, normal and length; `wallViews.heightRange[1]`; `transform.floorZ`; `projection.walls.cosMin` and `maxDist` |
+| `bestview.WALLS`, `SRC_TOP`, `FLOOR`, `COS_MIN`, `MAX_DIST`, `OCCLUDER_MARGIN` | each wall's survey name, anchor, u axis, normal and length; `wallViews.heightRange[1]`; `transform.floorZ`; `projection.walls.cosMin` and `maxDist`; `projection.walls.occluderMargin` (0.0 without the key: no margin, gate B25) |
 | `project-walls.NORMALS` (its wall names) | the walls in order |
 | `canvasveil.CANVASES`, `PITCH` | the `canvas` edits; one elevation texel |
 | `project-detail` and `pack-detail`: `TEXEL`, `TILE`, `GUTTER`, `PPM`, `V_MIN`, `V_MAX`, `ROW`, `LENGTH`, `PATCHES`, `SRC_COLUMNS`, `NAME`, `ATLAS`, `GLASS_STRIPS` | `survey.detail`, the atlas's layout, the photo patches, the walls with narrow tiles (B23), the wall ids, `outputs.walls[0]`, the strips of the walls with clear glazing |
@@ -296,10 +296,12 @@ Both are recorded in the ledger, and `--publish` refuses either. `survey.json` r
 meshoptimizer version that simplified each GHR1 file. `--publish` also refuses glass that the
 scan disagrees with.
 
-The Grand Hall's scripts in `tools/grand-hall-survey` still build it with `build.sh`. Four of them
+The Grand Hall's scripts in `tools/grand-hall-survey` still build it with `build.sh`. Five of them
 carry a seam for this driver, each with its old value as the default: `project.py` (`VIEWS`, the
 folder `load_views` reads; `STATION_IDS`, a room's stations in place of scan 0 to 48), `bestview.py`
-(`COS_MIN`, `MAX_DIST`, the two limits `visibility` held as literals), `pack-detail.py` (`ATLAS`,
+(`COS_MIN`, `MAX_DIST`, the two limits `visibility` held as literals; `OCCLUDER_MARGIN`, 0.0, with
+the functions that apply it), `label-views.py` (its statistics and texel labels read
+`bestview.OCCLUDER_MARGIN`: at 0.0 they run as written, B25), `pack-detail.py` (`ATLAS`,
 the atlas file's name; `GLASS_STRIPS`, the glazed walls' strips, where it assumed the window wall
 at the atlas's origin; its wall loop reads `LENGTH`) and `project-detail.py` (`SRC_COLUMNS`, empty:
 the orthophoto columns of a wall whose tiles are narrower than its rounded length, B23). The steps import `project.py`, run the
@@ -331,12 +333,14 @@ gates a config opens, computed before any work; `--plan` prints them and writes 
 | B20 | a `copy` patch | the patch is taken from another wall, after every wall's own edits, in the atlas (which then holds every wall's orthophoto at once) and in the detail images (`roombuild/walls.py`) |
 | B23 | a wall's tiles are narrower than its rounded length | each tile's width is rounded on its own, so the tiles can add up to fewer columns than `round(length x ppm)` (the Saloon's fireplace wall: 1556 against 1557). The Grand Hall's scripts count the wall's right end, its relief's width and its atlas crop from the rounded length, which lies inside its tiles (4227 of 4228); such a wall ends at its tiles' last column instead, in the corners, the relief, the atlas and the detail's mapping onto the atlas |
 | B24 | `survey.wallViews.strayTexels` is set | the corners step leaves out of each elevation tile (uncovered, as where the mesh has a hole) the covered texels whose rendered point lies more than 1 mm from the texel's own centre, up to that many a tile, and lists them in `build/stray-texels.json`; a tile with more stops the build. `render.mjs` draws a surface seen edge-on (the floor under a wall) as a sliver less than a texel high and can extrapolate along it, so the point it writes lies metres off the view's slab and millimetres off the texel. The labels and the photographs place every texel at its centre and refuse a tile with one elsewhere (`bestview.Grid`, as before): that check is unchanged and still runs on what the corners step wrote |
+| B25 | `survey.projection.walls.occluderMargin` is set | the walls' labels count a station's view of a texel only where nothing nearer stands within that margin of the ray, measured at the occluder (`bestview.OCCLUDER_MARGIN`, `occluder_cube`, `clear_of_occluders`; `label-views.py`). The scan's mesh outlines a thing standing proud of a wall smaller than the panoramas show it, so along the edge of the zone it hides from a station, the station's photograph still shows the thing on wall the mesh says is in view; one station a block prints that rim sharply, far from the thing. A surface counts as an occluder when it is nearer than the texel by more than the visibility test's tolerance plus what the wall's own slope explains over the margin; the margin reaches at most 16 cubemap texels from the ray. A texel no ranked station sees clear keeps the first view that saw it at all, so nothing becomes a hole; `labels-<wall>.json` counts those under `occluder_margin` |
 | B21 | `SURVEYED_ROOMS_TEST_DEPTH_SIZE` is set | test-sized depth maps (never published) |
 | B22 | `SURVEYED_ROOMS_NODE_ROOT` is set | another checkout's meshoptimizer meshes the relief (never published) |
 
 The Grand Hall opens none. The Saloon opens B5 (4 returns), B8 (4 returns), B6 and B9 (8 reflex
-ends), B7, B10 (3 bays), B14 (a 4096 × 2304 atlas), B16, B17, B18, B23 (the fireplace wall) and
-B24 (up to 8 texels a tile; its renders hold two, both in `wall-fireplace-0`).
+ends), B7, B10 (3 bays), B14 (a 4096 × 2304 atlas), B16, B17, B18, B23 (the fireplace wall),
+B24 (up to 8 texels a tile; its renders hold two, both in `wall-fireplace-0`) and B25 (a margin of
+50 mm).
 
 ## Proofs
 
@@ -415,6 +419,67 @@ with `detail/index.json` put back among `files` ("Invalid key in record"). The p
 record only: that the files it names are the ones in the folder, with those sizes, is the
 loader's to check in a browser, and that record was built with a borrowed meshoptimizer (gate
 B22), so it is a proof of the record's form and not a published room.
+
+Real data, the ghosts above the Saloon's pediments (16 November 2026). The best-view walls of the
+Saloon carried, in the plain plaster above every pediment, outlines like a displaced copy of the
+pediment's top; the blend's plaster was clean there. Measured on the fireplace wall's 5 mm
+orthophoto, in sRGB levels of luminance, over plaster only (relief under 10 mm): round the middle
+pediment (u 2.72 to 5.08 m, v 2.92 to 4.12 m; 83,183 texels) the mean step between neighbouring
+texels was 0.807 against the blend's 0.177, and 23.4 of every 1,000 neighbouring pairs stepped by
+more than 4 levels against 1.3; over the plaster above all three pediments (u 0.3 to 7.5 m, v 3.3
+to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
+
+- Where: the pediment stands 90 to 322 mm proud of the plaster. Three stations 1.4 to 1.65 m off
+  the wall and 1.46 m high label 85% of the box; from them the pediment's top hides the plaster
+  up to half a metre above it, which is where the outlines are.
+- Not the visibility test. Rays from each of eight stations to the box's 113,190 texels against
+  the mesh dump (Moeller-Trumbore, the measuring scripts' `cast`; no depth map) agree with
+  `bestview.visibility` on 98 to 99% of them. The rest are the test's own allowances: 376 to 2,645
+  texels passed though a ray is blocked, by 21 to 124 mm and always under its tolerance, on the
+  pediment's own mouldings; 872 to 2,413 hidden by its 3 x 3 minimum. The 1024-texel depth maps say
+  what the mesh says.
+- Not the seam levelling. Coloured again from the same labels with the global adjustment and the
+  local blend off, the box's plaster kept its outlines: 23.3 pairs in 1,000, mean step 0.739.
+- The mesh's outline. The scan's mesh (330,200 triangles for the building, about 800 in reach of
+  the box) draws the pediment smaller than the panoramas show it. From each of the three near
+  stations, 1,186 to 1,424 plaster texels that the station sees by the mesh show in its panorama
+  the pediment's dark edge (under 85% of the station's own clean plaster), on both flanks of the
+  arch, so it is not a shifted pose; from the two stations 3.5 m off, 54 and 60; from one 5.7 m
+  off, none. Every one lies within 9 cubemap texels of the pediment's outline in its station's
+  depth map (99% within 7). Another 193 to 920 a near station show the glow of the lamp on the
+  pediment (within 13 texels).
+- Why one station a block prints it. On the plaster blocks a near station covers that carry its
+  rim, its Laplacian energy is 7.7 to 12.8 against 0.29 to 0.38 on its other plaster blocks, so its
+  data cost there is the least of any station's (median 0.0), and the labels' occluder test, which
+  compares block means, kept it in 72 of 74 such blocks. The blend's consensus pass weighs the same
+  texels down in each of some twenty stations, whose rims fall in different places.
+- The cure is gate B25, and the Saloon's margin is 50 mm. Measured on the box with the gate's own
+  functions: a margin of 20 mm still leaves 6, 0 and 16 of the three near stations' rim texels and
+  388, 111 and 3 of their glow texels; 30 mm leaves no rim texel and 178, 19 and 0 of the glow;
+  40 mm leaves 33, 0 and 0; 50 mm leaves none. So 30 mm is the least that clears the pediment's
+  edge and 50 mm the least that also clears the lamp's glow. At 50 mm the margin takes 10,349 to
+  11,952 clean plaster texels out of each near station's 63,000 to 67,239 on the box (5,412 to
+  6,257 at 30 mm), which other stations then colour.
+- After, the fireplace wall labelled again at 50 mm (27 stations, 1,737,186 valid texels). Of the
+  rim texels of the seven stations measured, the labels gave 705 to their own station before and
+  none after; of their glow texels, 404 and none. The box coloured straight from the labels (each
+  texel from its label's station, one sample, no feather and no levelling, so that only the labels
+  differ): the mean step on its plaster fell from 0.876 to 0.316 and the pairs stepping by more
+  than 4 levels from 19.6 to 6.7 in 1,000; what is left lies along the unlevelled seams and
+  within some 15 cm of the pediment itself, where no station has a clear view. 3,617 texels of the
+  wall (0.21%) took a doubtful view, 555 of them in the box. The statistics took 109.1 s against
+  80.5 s (the step 2.9 minutes against 2.3), at the same peak memory (784 MB against 788).
+- The lettering is not worse. The margin also takes views beside everything else that stands
+  proud (the columns between the boards, the shelf above them, the mantel clock: 7 to 13 cm), so
+  17.8% of the wall's texels changed station. The commonweal board coloured from each set of
+  labels as `project-walls.py` samples it (2.5 mm, no feather, no levelling): over its lettering
+  (u 3.60 to 4.10 m, v 2.33 to 2.75 m) the mean |Laplacian| of luminance is 39.29 before and 39.32
+  after, the mean step 13.12 and 13.14, and 0.75% of the samples differ (one block); over the
+  whole board (to v 1.75 m) 23.57 and 22.94, the difference lying round the clock at its foot.
+- The Grand Hall: its config gives `bestview.OCCLUDER_MARGIN` the script's own 0.0 and its plan
+  still prints an empty ledger. T0, T1 and T4 together on this change: 90 tests, none failing, one
+  skipped (a GHR1 comparison, for want of meshoptimizer in the checkout that ran them); T0's static
+  proofs ran against the twin's manifest. T2 and T3 were not run on it.
 
 Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
@@ -495,6 +560,12 @@ T4 builds a small room for each gate that neither the Grand Hall nor T3 opens:
 - two texels rendered off their own centres: refused by the labels without the allowance, left out
   by the corners step with it (the wall is then labelled and coloured), and refused again when
   there are more than allowed or the whole grid is in the wrong place (B24);
+- a box 0.3 m proud of a plain wall, which the mesh draws 6 cm smaller on every side than the
+  panoramas show it (a rim one block wide on the test's 1 cm grid, as the Saloon's is on its 5 mm
+  grid): without the margin the box's dark edge is printed in the plain wall a third of a metre
+  above it (1,280 texels); with `occluderMargin` (80 mm) the plain wall is clean, no texel loses
+  its colour (2,182 keep a doubtful view), and the labels' files hold the views seen, the views
+  clear and the doubtful ones given; the key is refused on any surface but the walls (B25);
 - a wall no station sees: the labels step and the photographs stop at it by name, and a wall that
   is seen is labelled and coloured as ever;
 - the floor refills' roll along z and along x (B19);
