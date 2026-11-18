@@ -1,0 +1,127 @@
+/* ---------------------------------------------------------------------------
+ * THE FIRST SCREEN (FirstOpen.tsx): "What are you planning?" on the shelf,
+ * risen (the HUD's design note, "The first screen is the same: the question and three
+ * photographs on the risen shelf").
+ *
+ * The same surface as the shelf, grown upward over it to at most --hud-rise,
+ * with the shelf's own contents standing aside beneath it. Three answers as
+ * three square photographs, each with a name and one line, and one quiet way
+ * past them. Its measures are hud.css's tokens; it rises as a sheet does.
+ * ------------------------------------------------------------------------- */
+
+/* While it shows, the shelf's own contents stand aside: the top bar stays. */
+.hud-root[data-first-open="true"] :is(.hud-shelf__edge, .hud-shelf__status, .hud-shelf__words, .hud-cards, .hud-piece, .hud-shelf__act) {
+  visibility: hidden;
+}
+
+.hud-first-open {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  max-height: var(--hud-rise);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--hud-sheet-pad) var(--hud-gutter);
+  background: var(--hud-ground);
+  animation: hud-rise var(--hud-move-ms) var(--hud-ease);
+}
+
+.hud-first-open__stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--hud-sheet-pad);
+}
+
+.hud-first-open__title {
+  margin: 0;
+  font-size: var(--hud-xl);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-xl-lh);
+  text-align: center;
+}
+
+.hud-first-open__answers {
+  display: flex;
+  justify-content: center;
+  gap: var(--hud-gap-group);
+}
+
+.hud-first-open__answer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--hud-gap);
+  width: var(--hud-answer-w);
+  padding: 0;
+  border: 0;
+  border-radius: var(--hud-radius);
+  background: none;
+  color: var(--hud-ink);
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  transition: scale var(--hud-press-ms) var(--hud-ease);
+}
+
+.hud-first-open__answer:active {
+  scale: var(--hud-pressed);
+}
+
+/*
+ * The renders are square, and the question stands close over them: no empty
+ * head of a taller frame between. Said with the screen's own class as well,
+ * because this sheet reaches the page before hud.css, whose 2:3 for every
+ * photograph would otherwise be the later word.
+ */
+.hud-first-open .hud-first-open__art {
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.hud-first-open__words {
+  display: flex;
+  flex-direction: column;
+}
+
+.hud-first-open__name {
+  font-size: var(--hud-l);
+  font-weight: var(--hud-medium);
+  line-height: var(--hud-l-lh);
+}
+
+.hud-first-open__line {
+  color: var(--hud-ink-2);
+  text-wrap: balance;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hud-first-open__answer:hover .hud-first-open__line {
+    color: var(--hud-ink);
+  }
+}
+
+/* -- Phones: the three answers stay in one row, smaller --------------------------- */
+
+/* Their width on a phone (--hud-answer-w) is set with the phone's other measures in hud.css, which is the later sheet. */
+@media (max-width: 767px) {
+  .hud-first-open {
+    padding-bottom: calc(var(--hud-sheet-pad) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .hud-first-open__answers {
+    gap: var(--hud-gap-wide);
+  }
+
+  /* A size down, so "Something else" keeps to one line as the other two names do, and the three stand level. */
+  .hud-first-open__name {
+    font-size: var(--hud-m);
+    line-height: var(--hud-m-lh);
+  }
+}

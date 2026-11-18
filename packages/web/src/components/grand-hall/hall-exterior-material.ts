@@ -21,12 +21,19 @@
 // hair toward the eye (CUT_EYEWARD, CUT_EYEWARD_MAX): where two blocks touch,
 // one block's face seen from inside and its neighbour's outer face lie on one
 // plane, and the cut, which is what a section shows there, wins that tie every
-// frame instead of the two taking turns. Normals come from the geometry's own attribute (it
+// frame instead of the two taking turns. That holds inside the stone. Where a
+// face seen from inside ends at the outside, the pull shows it there across
+// about a tenth of a pixel, so every piece of paint, glass, timber, metal,
+// copper and lead is let into what holds it (LET_IN), or built as one solid
+// with what it is flush with (hall-exterior.ts). A solid's own right-angled
+// edge whose side faces away still shows it, and so do the masonry's own
+// joints, stone on stone, flush at a jamb, a bay's return or the split at the
+// hall's floor, or a member stacked on another (T-725). Normals come from the geometry's own attribute (it
 // is built in world space), never normalWorld, which the section's unlit
 // materials keep out of the pass's normal target (hall-section.ts).
 // ---------------------------------------------------------------------------
 
-import { BackSide, Color, FrontSide, SRGBColorSpace, type Side } from "three";
+import { BackSide, Color, FrontSide, LessEqualDepth, SRGBColorSpace, type Side } from "three";
 import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
 import {
   Discard, Fn, If, attribute, cameraProjectionMatrix, float, frontFacing, length, min, mix, normalize, positionView, positionWorld,
@@ -90,8 +97,9 @@ function partColour(part: Node<"float">, palette: Palette): Node<"vec3"> {
 /**
  * How far the cut's faces are drawn toward the eye, as a share of their
  * distance from it: a quarter of a millimetre a metre, up to CUT_EYEWARD_MAX.
- * Within 10 m that is at least 40 steps of the depth buffer (near plane
- * 0.1 m), enough to win every tie with a face on the same plane. At a
+ * At 10 m that is about 40 steps of the depth buffer (near plane 0.1 m;
+ * fewer, still over 30, inside a long triangle that straddles 10 m), enough
+ * to win every tie with a face on the same plane. At a
  * right-angled edge, where a solid's outside and inside meet, the cut shows
  * across about a tenth of a pixel on a 900-pixel-high canvas, scaling with
  * the canvas's height (about a quarter at 2,000 pixels).
@@ -112,11 +120,16 @@ export const CUT_EYEWARD = 2.5e-4;
  * outside. The cap holds from 10 m: about ten depth steps at 20 m, five at
  * 30 m and one at 65 m, about as far as the orbit sees the cut from while
  * its target is held (CameraRig holds it for the keyboard's pan, not the
- * mouse's or two fingers', which reach the far plane, 900 m under the sky).
+ * mouse's or two fingers', which reach the far plane, 900 m under the sky;
+ * T-724).
  * Past that a tie whose depths round equal is still the cut's: it draws
  * after the outside (HallExterior) and the depth test passes equal depths
- * (three's LessEqualDepth). From about 140 m some of the thinnest glass
- * below the cut is drawn in the cut's colour.
+ * (three's LessEqualDepth). From about 115-140 m some of the thinnest glass
+ * below the cut is drawn in the cut's colour (the street side measured at
+ * 140 m; the hall side, which sees the end bays' panes face-on, not measured).
+ * A let-in keeps LET_IN less the pull, 2.5 mm, behind its holder's face: about
+ * 1.2 depth steps at 59 m and one at 65 m, so let-ins seen from farther off
+ * than that hold by the depths' rounding, not by the margin.
  */
 export const CUT_EYEWARD_MAX = LET_IN / 2;
 
@@ -140,6 +153,9 @@ export function createFrontMaterials(sun: HallSun, maps: StreetLightMaps, preset
   // faces away before they are shaded.
   const share = min(float(CUT_EYEWARD), float(CUT_EYEWARD_MAX).div(length(positionView)));
   cut.vertexNode = cameraProjectionMatrix.mul(vec4(positionView.mul(float(1).sub(share)), 1));
+  // Past the cap's reach an exact tie is still the cut's: it draws after the outside, and its depth test passes equal
+  // depths. Set here, not left to three's default, so a change of default cannot hand those ties back.
+  cut.depthFunc = LessEqualDepth;
   cut.name = "grand-hall-front-cut";
   return { outside, cut };
 }
