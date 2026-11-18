@@ -1069,7 +1069,7 @@ This task does not wait on the gate.
 
 ### Task 16: Browser evidence, then open PR 3
 
-- [ ] **Step 0 (ruling R97): Blake re-listens to the Robert Adam Room before PR 3 opens.** His ear test of 14 November does not cover it.
+- [x] **Step 0 (ruling R97): Blake re-listens to the Robert Adam Room before PR 3 opens.** His ear test of 14 November does not cover it. **Done on 18 November:** he played it on a page built with #449's model and judged it right.
   - #449 gave the room its measured outline and took away the curtain at the arch, which the scan shows bare.
   - Its echo is now 11–14 % longer at 1 kHz, above the ~5 % just-noticeable difference.
   - Build the listening page with #449's model, put it where he can open it, and ask him how the room sounds. Record his answer in the PR body.
