@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { SPRING_PRESETS, isSpringSettled, stepSpring, type SpringState } from "../springs.js";
+import { SHEET_SETTLE } from "../../components/planner-chrome/sheet-motion.js";
+import { SPRING_PRESETS, isSpringSettled, stepSpring, type SpringConfig, type SpringState } from "../springs.js";
 
 // ---------------------------------------------------------------------------
 // The shared spring core. The load-bearing claim: every ship-listed preset is
@@ -90,15 +91,16 @@ describe("the planner chrome's springs", () => {
   });
 
   it("sheetSettle lands a released sheet within 0.4 s, overshooting it by under 0.5 %", () => {
-    const step = unitStep(SPRING_PRESETS.sheetSettle);
+    const step = unitStep(SHEET_SETTLE);
     expect(step.settleSeconds).toBeLessThanOrEqual(0.4);
     expect(step.overshootPercent).toBeLessThan(0.5);
   });
 
   it("each keeps its character at a loaded machine's 60 fps", () => {
-    for (const name of ["detent", "dialGlide", "sheetSettle"] as const) {
-      const at240 = unitStep(SPRING_PRESETS[name], 240);
-      const at60 = unitStep(SPRING_PRESETS[name], 60);
+    const chrome: Readonly<Record<string, SpringConfig>> = { detent: SPRING_PRESETS.detent, dialGlide: SPRING_PRESETS.dialGlide, sheetSettle: SHEET_SETTLE };
+    for (const [name, config] of Object.entries(chrome)) {
+      const at240 = unitStep(config, 240);
+      const at60 = unitStep(config, 60);
       expect(Math.abs(at60.settleSeconds - at240.settleSeconds), name).toBeLessThan(0.03);
       expect(Math.abs(at60.overshootPercent - at240.overshootPercent), name).toBeLessThan(0.05);
     }
