@@ -795,7 +795,7 @@ Render-at-drop in a Worker is confirmed only if light and table pieces render in
   3. Lay out to 80.
 
   It reads `__venSoundTap.log` after each step, records 4 s around the first placement with `__venSoundTap.record(4)`, writes the WAV and a JSON report under a local `evidence/<phase>/` folder outside the repo, and takes screenshots of the three menus.
-- [ ] **Step 2:** Run `wait-memory.sh 8704 6656 4`. When it allows, start the worktree's Vite dev server: add an entry for E:/claude/furniture-sound on port 5262 to the app's launch registry (the release-path memory's "Dev servers for worktrees") and use `preview_start`, then close its pane tab. Run `node sound-live.mjs http://localhost:5262 local`.
+- [ ] **Step 2:** Run `wait-memory.sh 8704 6656 4`. When it allows, start the worktree's Vite dev server: add an entry for the worktree on port 5262 to the app's launch registry (the house's notes on dev servers for worktrees) and use `preview_start`, then close its pane tab. Run `node sound-live.mjs http://localhost:5262 local`.
 
   Expected:
   - the log shows 1 entry, then the group's batch, then ≤ 8 entries for Lay out, with `rtMid` falling after each;
@@ -817,7 +817,7 @@ Render-at-drop in a Worker is confirmed only if light and table pieces render in
 - [ ] **Step 1:** Write the three documents. Check the links (`node tools/check-doc-links.mjs` if it exists, otherwise `grep -o "](.*)"` and test each path).
 - [ ] **Step 2:** Commit them on PR 3's branch before it merges, or as a docs PR if PR 3 has merged, with the message "Record the furniture set-down sound in the engineering notes and the day's log (T-700)".
 - [ ] **Step 3:** After PR 3 merges and Vercel's production deployment for its SHA is READY (`gh api repos/codemaker66/omnitwin/deployments?sha=<sha>`):
-  - run `node D:/claude/furniture-sound-20261027/live/sound-live.mjs https://venviewer.com prod-grand-hall`, then again with the Saloon's stub (`prod-saloon`). Production is read-only for agents, and the script's aborts keep it so;
+  - run Step 1's script, `node sound-live.mjs https://venviewer.com prod-grand-hall` (kept outside the repo), then again with the Saloon's stub (`prod-saloon`). Production is read-only for agents, and the script's aborts keep it so;
   - check the production chunk carries the engine: the served JavaScript contains `planner-set-down`;
   - on a device day after part 3, run the same flow on a phone, checking the budgets, the iPhone silent switch, and sound with sight at touchdown.
 - [ ] **Step 4:** Report the evidence to Blake and the planner lead. State each item as tested, measured, deployed or accepted, and name anything not measured on a device.
