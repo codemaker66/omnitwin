@@ -355,6 +355,68 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
     });
   });
 
+  // A version naming its quote is written from the quote row and its lines as
+  // stored (routes/proposals.ts storedQuoteSnapshot), the row held FOR SHARE
+  // so a line added at that moment is in both the lines and the totals.
+  function createVersionWithQuote(): Promise<{ statusCode: number; body: string }> {
+    return server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/versions`, headers: headers(), payload: {
+      schemaVersion: "venviewer.proposal-version.v1", title: "Fixture", clientMessage: null,
+      configurationId: null, layoutRevision: null, capacityNote: null,
+      quote: { quoteId: QUOTE, currency: "GBP", lineItems: [{ description: "Base", quantity: 1, unitAmountMinor: 10000, lineTotalMinor: 10000 }],
+        subtotalMinor: 10000, totalMinor: 10000 },
+    } }).then((r) => r);
+  }
+  async function appendLineAndTotals(client: PoolClient): Promise<void> {
+    await client.query("INSERT INTO quote_line_items (quote_id, description, quantity, unit_amount_minor, line_total_minor, sort_order) VALUES ($1, 'Additional', 1, 2000, 2000, 1)", [QUOTE]);
+    await client.query("UPDATE quotes SET subtotal_minor = 12000, total_minor = 12000 WHERE id = $1", [QUOTE]);
+  }
+  async function storedVersionQuote(): Promise<unknown> {
+    const result = await pool.query<{ quote: unknown }>("SELECT payload->'quote' AS quote FROM proposal_versions WHERE proposal_id = $1", [PROPOSAL]);
+    return result.rows.map((row) => row.quote);
+  }
+  const APPENDED_QUOTE = {
+    quoteId: QUOTE, currency: "GBP", subtotalMinor: 12000, totalMinor: 12000,
+    lineItems: [
+      { description: "Base", quantity: 1, unitAmountMinor: 10000, lineTotalMinor: 10000 },
+      { description: "Additional", quantity: 1, unitAmountMinor: 2000, lineTotalMinor: 2000 },
+    ],
+  };
+
+  it("waits for a line being added to the version's quote, and keeps both the line and the new totals", async () => {
+    await pool.query("UPDATE quotes SET proposal_id = $1, currency = 'GBP' WHERE id = $2", [PROPOSAL, QUOTE]);
+    await withBlocker(async (client) => {
+      // As POST /quotes/:id/line-items does: the quote row, then a line and the totals.
+      await client.query("SELECT id FROM quotes WHERE id = $1 FOR UPDATE", [QUOTE]);
+      await appendLineAndTotals(client);
+      const response = createVersionWithQuote();
+      await waitForBlockedQueries(1);
+      await client.query("COMMIT");
+      const answered = await response;
+      expect(answered.statusCode, answered.body).toBe(201);
+      expect(await storedVersionQuote()).toEqual([APPENDED_QUOTE]);
+    });
+  });
+
+  // The harm the lock prevents: the quote row read before a line is committed
+  // and its lines read after. The line table is held here only to place that
+  // commit between the two reads; without the row lock the totals are the old
+  // ones, the lines the new ones, and the save is refused for a quote that was
+  // never wrong.
+  it("never reads a version's quote totals before a line commits and its lines after", async () => {
+    await pool.query("UPDATE quotes SET proposal_id = $1, currency = 'GBP' WHERE id = $2", [PROPOSAL, QUOTE]);
+    await withBlocker(async (client) => {
+      await client.query("SELECT id FROM quotes WHERE id = $1 FOR UPDATE", [QUOTE]);
+      await client.query("LOCK TABLE quote_line_items IN ACCESS EXCLUSIVE MODE");
+      await appendLineAndTotals(client);
+      const response = createVersionWithQuote();
+      await waitForBlockedQueries(1);
+      await client.query("COMMIT");
+      const answered = await response;
+      expect(answered.statusCode, answered.body).toBe(201);
+      expect(await storedVersionQuote()).toEqual([APPENDED_QUOTE]);
+    });
+  });
+
   it.each(["", "one", "-1", "1.5", "1e3", "9999999999"])("refuses a version basis of %j before anything is kept", async (basedOn) => {
     const response = await createVersion(basedOn);
     expect(response.statusCode).toBe(400);
