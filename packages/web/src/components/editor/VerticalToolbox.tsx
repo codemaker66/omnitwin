@@ -28,6 +28,7 @@ import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { putDownPieceInHand } from "../../lib/planner-keymap.js";
 import { useLensRail, useShownLens } from "../../lib/use-lens-rail.js";
 import { ReferenceSceneSettings } from "./cockpit/ReferenceSceneSettings.js";
+import { SoundSettings } from "../planner-chrome/SoundControl.js";
 import { HallViewSheetControls } from "./cockpit/CanvasLayerControls.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
 import { FurnitureCataloguePreview } from "../shared/FurnitureCataloguePreview.js";
@@ -1277,6 +1278,15 @@ const mobileSheetTitleStyle: React.CSSProperties = {
   marginBottom: 3,
 };
 
+// The chrome's controls are inked for a dark ground, so the sound setting sits on
+// the dock's own graphite within the ivory sheet.
+const mobileSoundPanelStyle: React.CSSProperties = {
+  borderRadius: 16,
+  background: "linear-gradient(145deg, rgba(11, 10, 9, 0.94), rgba(27, 22, 15, 0.92))",
+  border: "1px solid rgba(246, 232, 201, 0.16)",
+  color: "var(--house-forest-ink-1)",
+};
+
 const mobileSheetDetailStyle: React.CSSProperties = {
   color: "rgba(36,25,19,0.62)",
   fontSize: 12,
@@ -1458,6 +1468,9 @@ function MobilePlannerDock({
             <MobileDockButton label="Sheet" onClick={onGenerateSheet} icon={<FileText size={20} />} />
             <MobileDockButton label={isAuthenticated ? "Account" : "Sign In"} onClick={onAuth} icon={<User size={20} />} />
           </div>
+          {/* The device's sound is a setting here, never a button on the screen (T-700, D1). */}
+          <div style={mobileSheetTitleStyle}>Sound</div>
+          <div style={mobileSoundPanelStyle}><SoundSettings /></div>
         </div>
       ) : null}
 

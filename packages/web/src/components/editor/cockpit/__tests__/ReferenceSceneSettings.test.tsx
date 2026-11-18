@@ -8,6 +8,12 @@ import { useSectionStore } from "../../../../stores/section-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 import { getTruthModeSummary } from "../../../../api/truth-mode.js";
+import {
+  PLANNER_SOUND_STORAGE_KEY,
+  __resetPlannerSoundForTests,
+  __setPlannerContextFactoryForTests,
+  getPlannerSoundSettings,
+} from "../../../../lib/sound-registry.js";
 
 vi.mock("../../../../api/truth-mode.js", () => ({ getTruthModeSummary: vi.fn() }));
 vi.mock("../../../../hooks/use-cockpit-replay.js", () => ({
@@ -37,8 +43,18 @@ beforeEach(() => {
   useSectionStore.setState({ height: 7, maxHeight: 7 });
   useEditorStore.setState({ configId: "cfg-settings" });
   useLayoutTimelinePreviewStore.getState().clear();
+  localStorage.clear();
+  __resetPlannerSoundForTests();
+  // Choosing a set arms the planner's one context; the engine has its own tests.
+  __setPlannerContextFactoryForTests(() => null);
 });
-afterEach(() => { cleanup(); useLayoutTimelinePreviewStore.getState().clear(); });
+afterEach(() => {
+  cleanup();
+  useLayoutTimelinePreviewStore.getState().clear();
+  __setPlannerContextFactoryForTests(null);
+  __resetPlannerSoundForTests();
+  localStorage.clear();
+});
 
 describe("ReferenceSceneSettings", () => {
   it("discloses genuine embedded plan navigation and withdraws it during preview", () => {
@@ -126,10 +142,29 @@ describe("ReferenceSceneSettings", () => {
     act(() => { useLayoutTimelinePreviewStore.getState().showPending("Opening frozen phase"); });
     expect(screen.getByRole("status").textContent).toContain("Return to the saved plan");
     expect(screen.queryByRole("checkbox")).toBeNull();
-    expect(screen.queryByRole("slider")).toBeNull();
+    // Sound's own Level slider is a device setting, and stays (the next test).
+    expect(screen.queryByRole("slider", { name: "Section plane height" })).toBeNull();
     expect(screen.queryByTestId("cockpit-truth-rail")).toBeNull();
     expect(useSectionStore.getState().height).toBe(7);
     expect(useCockpitStore.getState().overlayVisibility.guestFlow).toBe(true);
+  });
+
+  it("keeps Sound, a device setting, outside the preview lock, at Quiet until it is changed", () => {
+    render(<ReferenceSceneSettings />);
+    disclose("Sound");
+    const group = screen.getByRole("radiogroup", { name: "Sound" });
+    expect(Array.from(group.querySelectorAll("[role='radio']"), (radio) => radio.textContent)).toEqual(["Off", "Quiet", "Full"]);
+    expect(screen.getByRole("radio", { name: "Quiet" }).getAttribute("aria-checked")).toBe("true");
+    expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY)).toBeNull();
+    act(() => { useLayoutTimelinePreviewStore.getState().showPending("Opening frozen phase"); });
+    // The scene's settings are withdrawn; the device's are not.
+    expect(screen.getByRole("status").textContent).toContain("Return to the saved plan");
+    expect(screen.queryByText("Scene overlays")).toBeNull();
+    expect(screen.getByRole("radiogroup", { name: "Sound" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Off" }));
+    expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY)).toBe("off");
+    expect(getPlannerSoundSettings().mode).toBe("off");
+    expect(screen.getByRole("radio", { name: "Off" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("preserves the standalone slider and blocks a preview-era change event", () => {
