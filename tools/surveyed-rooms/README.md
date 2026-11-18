@@ -269,7 +269,11 @@ everything a reader needs to place the published files, and more that it drops.
 - **The floor's extent** is the rectangle its texels cover, not the bounding box: the floor
   projection lays whole texels of 1 / `floorPhoto.ppm` from the box's lowest x and highest z, so the
   photograph ends up to half a texel short of or past the other two sides (the Saloon's reaches
-  x 6.095667 for the outline's 6.095 and z -3.736 for -3.734).
+  x 6.095667 for the outline's 6.095 and z -3.736 for -3.734). The web's reader, and
+  `record_faults` with it, lets a photograph stop 5 mm short of the outline. That is more than half
+  a texel only from 100 texels per metre up (4.17 mm at the 120 all four rooms use), so a coarser
+  floor photograph can be refused though it is whole: keep `floorPhoto.ppm` at 100 or more for a
+  room that publishes a record.
 - **Largest first** is by pixel count, whatever order the config lists the sizes in.
 - **`files` holds plain names only.** The detail tiles' index lives in the detail folder, so it is
   in `detail.index` (version 1 listed it in `files` as `detail/index.json`, which the reader's rule
@@ -477,9 +481,13 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
   after, the mean step 13.12 and 13.14, and 0.75% of the samples differ (one block); over the
   whole board (to v 1.75 m) 23.57 and 22.94, the difference lying round the clock at its foot.
 - The Grand Hall: its config gives `bestview.OCCLUDER_MARGIN` the script's own 0.0 and its plan
-  still prints an empty ledger. T0, T1 and T4 together on this change: 90 tests, none failing, one
-  skipped (a GHR1 comparison, for want of meshoptimizer in the checkout that ran them); T0's static
-  proofs ran against the twin's manifest. T2 and T3 were not run on it.
+  still prints an empty ledger. On real data, 18 November, with this change's code: the driver's
+  labels and then its photographs of the hall's END wall were run again on the twin's panoramas
+  and distance maps, and compared with what master's scripts gave before any seam: 23 files, 49
+  arrays, none different (every array bit for bit; the run reports less their timings and memory).
+  The same day on the reference machine, with the twin's manifest and an installed checkout's
+  meshoptimizer: T0 52 tests, T1 and T4 54, T3 16, none failing and none skipped. T2 was not run
+  again; the real END wall is the stronger form of what its label stage shows.
 
 Not yet proven, because it needs the whole build twice (hours of sub-commands on the shared PC):
 identity on the real panoramas and mesh, end to end, including the depth renderer
