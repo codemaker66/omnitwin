@@ -504,7 +504,7 @@ const stuckCountsRow = z.object({
   old_pending_sends: z.number().int(),
 });
 
-const retriedRow = z.object({ kind: z.string(), payload: z.unknown() });
+const retriedRow = z.object({ kind: z.string(), venue_id: z.string().nullable(), payload: z.unknown() });
 const classifiedRow = z.object({ state: z.string(), readable: z.boolean() });
 
 function isoFromMs(ms: number): string {
@@ -573,7 +573,27 @@ function readableBy(registry: JobRegistry): SQL {
     WHERE known.kind = j.kind AND known.version = j.version)`;
 }
 
-export type RetryOutcome = "retried" | "not-dead" | "unreadable";
+export type RetryOutcome = "retried" | "not-dead" | "not-found" | "unreadable";
+
+/**
+ * A kind's own preparation for Try again failed. It names the kind, the job
+ * and its venue, and carries the cause's text as `jobErrorText` gives it (no
+ * query parameters, no address), never the cause itself: whatever the
+ * preparation threw (a database error, a ZodError from the kind's own parse of
+ * a stored payload) is one error to the caller, who logs these fields only.
+ * Thrown inside the retry's transaction, so the row goes back to dead.
+ */
+export class JobRetryPreparationError extends Error {
+  constructor(
+    readonly kind: string,
+    readonly jobId: string,
+    readonly venueId: string | null,
+    text: string,
+  ) {
+    super(text);
+    this.name = "JobRetryPreparationError";
+  }
+}
 
 /**
  * Dead back to queued, due now, tries and lost claims reset, and who did it.
@@ -593,11 +613,16 @@ export async function retryDeadJob(db: Database, registry: JobRegistry, id: stri
       UPDATE jobs AS j SET state = 'queued', run_at = now(), attempts = 0, lost_claims = 0, finished_at = NULL,
         resolved_by = ${byUserId}::uuid, resolved_at = now(), resolution = ${TRIED_AGAIN}::text, updated_at = now()
       WHERE j.id = ${id}::uuid AND j.state = 'dead' AND ${readableBy(registry)}
-      RETURNING j.kind, j.payload`);
+      RETURNING j.kind, j.venue_id, j.payload`);
     const [movedRaw] = moved.rows;
     if (movedRaw !== undefined) {
       const row = retriedRow.parse(movedRaw);
-      await registry.get(row.kind)?.onManualRetry?.(tx, row.payload);
+      try {
+        await registry.get(row.kind)?.onManualRetry?.(tx, row.payload);
+      } catch (cause) {
+        // Only the preparation is wrapped: the UPDATE's and the SELECT's own failures keep the normal path.
+        throw new JobRetryPreparationError(row.kind, id, row.venue_id, jobErrorText(cause));
+      }
       return "retried";
     }
     // Nothing changed: say why. Another person's UPDATE that committed while
@@ -605,22 +630,31 @@ export async function retryDeadJob(db: Database, registry: JobRegistry, id: stri
     const found = await tx.execute(sql`
       SELECT j.state, ${readableBy(registry)} AS readable FROM jobs j WHERE j.id = ${id}::uuid`);
     const [foundRaw] = found.rows;
-    if (foundRaw === undefined) return "not-dead";
+    if (foundRaw === undefined) return "not-found";
     const row = classifiedRow.parse(foundRaw);
     return row.state === "dead" && !row.readable ? "unreadable" : "not-dead";
   });
 }
 
 /**
- * Dead to abandoned, with who, when and the note. False if the job was not
- * dead. Works for any kind, readable or not. The note is the caller's, already
- * trimmed and checked (`CloseStuckJobSchema`).
+ * Dead to abandoned, with who, when and the note. `"not-dead"` if the job
+ * exists and was not dead, `"not-found"` if no job has this id. Works for any
+ * kind, readable or not. The note is the caller's, already trimmed and checked
+ * (`CloseStuckJobSchema`).
  */
-export async function abandonDeadJob(db: Database, id: string, byUserId: string, note: string): Promise<boolean> {
+export async function abandonDeadJob(
+  db: Database,
+  id: string,
+  byUserId: string,
+  note: string,
+): Promise<"closed" | "not-dead" | "not-found"> {
   const result = await db.execute(sql`
     UPDATE jobs SET state = 'abandoned', resolved_by = ${byUserId}::uuid, resolved_at = now(),
       resolution = ${note}::text, updated_at = now()
     WHERE id = ${id}::uuid AND state = 'dead'
     RETURNING id`);
-  return result.rows.length === 1;
+  if (result.rows.length === 1) return "closed";
+  // Nothing changed: one read says whether the job is there at all.
+  const found = await db.execute(sql`SELECT 1 AS present FROM jobs WHERE id = ${id}::uuid`);
+  return found.rows.length === 0 ? "not-found" : "not-dead";
 }

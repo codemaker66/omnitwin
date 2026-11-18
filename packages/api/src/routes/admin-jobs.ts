@@ -6,7 +6,7 @@ import type { Database } from "../db/client.js";
 import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
 import type { JobRegistry } from "../services/jobs/kinds.js";
 import { selfTestJob } from "../services/jobs/kinds/selftest.js";
-import { abandonDeadJob, enqueueJob, listStuckWork, retryDeadJob } from "../services/jobs/store.js";
+import { abandonDeadJob, enqueueJob, JobRetryPreparationError, listStuckWork, retryDeadJob } from "../services/jobs/store.js";
 import { installedJobWorker, pokeJobWorker } from "../services/jobs/wake.js";
 
 // ---------------------------------------------------------------------------
@@ -27,6 +27,16 @@ const JobIdParams = z.object({ id: z.uuid() });
 const NOT_STUCK = {
   error: "This job is already back on the list.",
   code: "JOB_NOT_STUCK",
+} as const;
+
+const NOT_FOUND = {
+  error: "There is no such job.",
+  code: "JOB_NOT_FOUND",
+} as const;
+
+const PREPARATION_FAILED = {
+  error: "This job could not be made ready for another try. It is still stuck.",
+  code: "JOB_RETRY_PREPARATION_FAILED",
 } as const;
 
 const KIND_UNREADABLE = {
@@ -63,9 +73,22 @@ export async function adminJobsRoutes(
   server.post("/:id/retry", { preHandler }, async (request, reply) => {
     const params = JobIdParams.safeParse(request.params);
     if (!params.success) return invalid(reply, params.error, "Invalid job id");
-    // An error from the kind's own preparation is not caught: the job stays
-    // dead and the server's normal error path answers 500.
-    const outcome = await retryDeadJob(db, registry, params.data.id, request.user.id);
+    let outcome: Awaited<ReturnType<typeof retryDeadJob>>;
+    try {
+      outcome = await retryDeadJob(db, registry, params.data.id, request.user.id);
+    } catch (error) {
+      // Only the kind's own preparation is answered here (the job stays dead,
+      // its row rolled back with it). Any other error, the database's
+      // included, keeps the server's normal error path. What is logged is the
+      // kind, the job and its venue and text that went through jobErrorText.
+      if (!(error instanceof JobRetryPreparationError)) throw error;
+      request.log.error(
+        { kind: error.kind, jobId: error.jobId, venueId: error.venueId, reason: error.message },
+        "A job's own preparation for Try again failed",
+      );
+      return reply.status(500).send(PREPARATION_FAILED);
+    }
+    if (outcome === "not-found") return reply.status(404).send(NOT_FOUND);
     if (outcome === "not-dead") return reply.status(409).send(NOT_STUCK);
     if (outcome === "unreadable") return reply.status(409).send(KIND_UNREADABLE);
     pokeJobWorker();
@@ -79,7 +102,8 @@ export async function adminJobsRoutes(
     const body = CloseStuckJobSchema.safeParse(request.body ?? {});
     if (!body.success) return invalid(reply, body.error, "Invalid body");
     const closed = await abandonDeadJob(db, params.data.id, request.user.id, body.data.note);
-    if (!closed) return reply.status(409).send(NOT_STUCK);
+    if (closed === "not-found") return reply.status(404).send(NOT_FOUND);
+    if (closed === "not-dead") return reply.status(409).send(NOT_STUCK);
     const data: StuckJobAction = { id: params.data.id };
     return { data };
   });

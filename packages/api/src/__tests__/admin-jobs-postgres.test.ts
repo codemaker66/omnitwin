@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { StuckJobActionSchema, StuckJobSchema, StuckWorkSchema, type StuckJob } from "@omnitwin/types";
+import { StuckJobActionSchema, StuckJobSchema, StuckWorkSchema, USER_ROLES, type StuckJob } from "@omnitwin/types";
 import { sql } from "drizzle-orm";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Pool } from "pg";
@@ -11,6 +11,7 @@ import { adminJobsRoutes } from "../routes/admin-jobs.js";
 import { recordingJobAlerts } from "../services/jobs/alerts.js";
 import { buildJobRegistry, defineJobKind, type JobLogger } from "../services/jobs/kinds.js";
 import { buildJobKinds } from "../services/jobs/runtime.js";
+import { JobRetryPreparationError, retryDeadJob } from "../services/jobs/store.js";
 import { installJobWorker } from "../services/jobs/wake.js";
 import { JobWorker } from "../services/jobs/worker.js";
 import { ensureEffectsTable, jobsTestUrl, openJobsDatabase, resetJobs } from "./helpers/jobs-db.js";
@@ -20,10 +21,11 @@ import { ensureEffectsTable, jobsTestUrl, openJobsDatabase, resetJobs } from "./
 // The plugin is mounted on its own small server against the explicit
 // throwaway database, with the real `authenticate` and `authorizePlatformAdmin`
 // and a registry that adds three test kinds (one for a venue, one with a
-// preparation for Try again, one whose preparation throws). One test builds
+// preparation for Try again, three whose preparation throws). One test builds
 // the whole server to prove the plugin is registered there. Identities are the
 // test-mode tokens `admin.test.ts` uses (read only when NODE_ENV is "test").
-// Fixtures use example.org.
+// Fixtures use example.org. The small server logs to a captured stream, so a
+// test can read what the route logged.
 process.env["NODE_ENV"] = "test";
 
 const JWT_SECRET = "test-jwt-secret-that-is-at-least-32-characters-long";
@@ -64,6 +66,38 @@ const failingKind = defineJobKind({
     await tx.execute(sql`INSERT INTO job_test_effects (key, server) VALUES (${payload.nonce}, 'prepared')`);
     throw new Error("The preparation failed");
   },
+});
+
+const PREPARATION_FAILED = {
+  error: "This job could not be made ready for another try. It is still stuck.",
+  code: "JOB_RETRY_PREPARATION_FAILED",
+};
+const NOT_FOUND = { error: "There is no such job.", code: "JOB_NOT_FOUND" };
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+/** Its preparation fails in the kind's own parse of a stored payload, as a changed shape would. */
+const zodFailingKind = defineJobKind({
+  kind: "test.prep-zod",
+  version: 1,
+  scope: "platform",
+  timeoutMs: 1000,
+  payload: z.object({ nonce: z.string() }).strict(),
+  handler: (): Promise<void> => Promise.resolve(),
+  onManualRetry: (_tx, payload) => {
+    z.number().parse(payload.nonce);
+    return Promise.resolve();
+  },
+});
+
+/** Its preparation fails with a message that holds an address and a query parameter. */
+const addressFailingKind = defineJobKind({
+  kind: "test.prep-address",
+  version: 1,
+  scope: "platform",
+  timeoutMs: 1000,
+  payload: z.object({ nonce: z.string() }).strict(),
+  handler: (): Promise<void> => Promise.resolve(),
+  onManualRetry: () => Promise.reject(new Error("could not write to someone@example.org?token=abc")),
 });
 
 type JobState = "queued" | "running" | "done" | "dead" | "abandoned";
@@ -109,10 +143,19 @@ function actionId(response: { json: () => unknown }): string {
   return z.object({ data: StuckJobActionSchema }).parse(response.json()).data.id;
 }
 
+/** The throwaway database's url, marked with the whole server's name; any query the url already has stays. */
+function wholeServerUrl(base: string): string {
+  const url = new URL(base);
+  url.searchParams.set("application_name", "admin_jobs_whole");
+  return url.toString();
+}
+
 describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () => {
   let pool: Pool;
   let db: Database;
   let server: FastifyInstance;
+  /** What the small server logged, one JSON line each. */
+  const logged: string[] = [];
   const adminId = randomUUID();
   const venueId = randomUUID();
   const suffix = randomUUID().slice(0, 8);
@@ -122,11 +165,13 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     venueKind,
     preparedKind,
     failingKind,
+    zodFailingKind,
+    addressFailingKind,
   ]);
 
   const platformAdmin = JSON.stringify({ id: adminId, email: `admin-${suffix}@example.org`, role: "admin", platformRole: "admin", venueId: null });
-  const venueAdmin = (): string => JSON.stringify({ id: randomUUID(), email: `venue-admin-${suffix}@example.org`, role: "admin", platformRole: "none", venueId });
-  const hallkeeper = (): string => JSON.stringify({ id: randomUUID(), email: `hallkeeper-${suffix}@example.org`, role: "hallkeeper", platformRole: "none", venueId });
+  /** A signed-in person of this role who is not a platform administrator. */
+  const withRole = (role: string): string => JSON.stringify({ id: randomUUID(), email: `${role}-${suffix}@example.org`, role, platformRole: "none", venueId });
 
   beforeAll(async () => {
     ({ pool, db } = await openJobsDatabase(`admin_jobs_${randomUUID()}`));
@@ -138,7 +183,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
       "INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Test Hall', $2, '1 Test Street')",
       [venueId, `test-hall-${suffix}`],
     );
-    server = Fastify();
+    server = Fastify({ logger: { level: "error", stream: { write: (line: string) => { logged.push(line); } } } });
     await server.register(adminJobsRoutes, { db, registry, prefix: "/admin/jobs" });
     await server.ready();
   }, 180_000);
@@ -147,6 +192,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     await resetJobs(pool);
     await ensureEffectsTable(pool);
     await pool.query("DELETE FROM email_sends");
+    logged.length = 0;
   });
 
   afterAll(async () => {
@@ -205,8 +251,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
 
   /** Every job row, as a value: for "a refused call changed nothing". */
   async function wholeTable(): Promise<unknown[]> {
-    const { rows }: { rows: unknown[] } = await pool.query("SELECT * FROM jobs ORDER BY id");
-    return rows;
+    return (await pool.query<Record<string, unknown>>("SELECT * FROM jobs ORDER BY id")).rows;
   }
 
   async function effects(): Promise<string[]> {
@@ -223,7 +268,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
 
   // ---- Who may use it -------------------------------------------------------
 
-  it("a venue's admin, a hallkeeper and a signed-out caller are refused on all four routes, and nothing changes", async () => {
+  it("every role that is not a platform administrator, and a signed-out caller, are refused on all four routes, and nothing changes", async () => {
     const deadId = await seed({ state: "dead", attempts: 6, lastError: "no" });
     await seed({ state: "queued" });
     const before = await wholeTable();
@@ -233,16 +278,17 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
       { method: "POST", url: `/admin/jobs/${deadId}/close`, body: { note: "Closed by someone who may not" } },
       { method: "POST", url: "/admin/jobs/selftest" },
     ];
-    let refusals = 0;
+    // The roles come from the vocabulary, so a role added to it is covered here without anyone remembering this file.
     for (const route of routes) {
       expect((await call(route.method, route.url, undefined, route.body)).statusCode, `${route.url} signed out`).toBe(401);
-      expect((await call(route.method, route.url, venueAdmin(), route.body)).statusCode, `${route.url} venue admin`).toBe(403);
-      expect((await call(route.method, route.url, hallkeeper(), route.body)).statusCode, `${route.url} hallkeeper`).toBe(403);
-      refusals += 3;
+      for (const role of USER_ROLES) {
+        expect((await call(route.method, route.url, withRole(role), route.body)).statusCode, `${route.url} as ${role}`).toBe(403);
+      }
     }
-    expect(refusals).toBe(12);
     expect(await wholeTable()).toEqual(before);
     expect(await effects()).toEqual([]);
+    // The control: the same server lets a platform administrator in, so the loop above cannot pass because every request fails.
+    expect((await asPlatformAdmin("GET", "/admin/jobs/stuck")).statusCode).toBe(200);
   });
 
   // ---- The list ---------------------------------------------------------------
@@ -284,6 +330,9 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     for (const job of body.jobs) expect(StuckJobSchema.strict().safeParse(job).success).toBe(true);
     expect(response.body).not.toContain("a-secret-nonce-value");
     expect(response.body).not.toContain("example.org");
+    // Nor the seeded person's name (the administrator's user row) or the venue's street address.
+    expect(response.body).not.toContain("Test Admin");
+    expect(response.body).not.toContain("1 Test Street");
   });
 
   it("counts every queued, running and dead job in the table", async () => {
@@ -332,7 +381,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     });
     expect(row.resolved_at).not.toBeNull();
     // A queued job holds no claim (the table's own rule, jobs_claim, accepted the row).
-    const [claim] = (await pool.query("SELECT claim_token, claimed_by, claim_expires_at FROM jobs WHERE id = $1", [deadId])).rows;
+    const [claim] = (await pool.query<Record<string, unknown>>("SELECT claim_token, claimed_by, claim_expires_at FROM jobs WHERE id = $1", [deadId])).rows;
     expect(claim).toEqual({ claim_token: null, claimed_by: null, claim_expires_at: null });
   });
 
@@ -350,10 +399,46 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     const failingId = await seed({ kind: "test.prep-fails", state: "dead", attempts: 6, lastError: "no", nonce: "never-kept" });
     const refused = await asPlatformAdmin("POST", `/admin/jobs/${failingId}/retry`);
     expect(refused.statusCode).toBe(500);
+    expect(refused.json()).toEqual(PREPARATION_FAILED);
     expect(await rowOf(failingId)).toMatchObject({
       state: "dead", attempts: 6, lost_claims: 0, resolved_by: null, resolution: null, last_error: "no",
     });
     expect(await effects()).toEqual(["prepared-by-retry"]);
+    // Logged once, with the kind, the job and the venue (none here) and the text, and nothing else.
+    expect(logged).toHaveLength(1);
+    expect(JSON.parse(logged[0] ?? "{}")).toMatchObject({
+      level: 50, kind: "test.prep-fails", jobId: failingId, venueId: null, reason: "The preparation failed",
+    });
+    expect(logged[0]).not.toContain("never-kept");
+  });
+
+  it("a preparation that fails in the kind's own parse is the same 500, not a 400, and the job stays dead", async () => {
+    const zodId = await seed({ kind: "test.prep-zod", state: "dead", attempts: 6, lastError: "no", nonce: "not-a-number" });
+    const response = await asPlatformAdmin("POST", `/admin/jobs/${zodId}/retry`);
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual(PREPARATION_FAILED);
+    expect(await rowOf(zodId)).toMatchObject({ state: "dead", attempts: 6, resolved_by: null, resolution: null, last_error: "no" });
+    expect(logged).toHaveLength(1);
+    expect(JSON.parse(logged[0] ?? "{}")).toMatchObject({ kind: "test.prep-zod", jobId: zodId });
+  });
+
+  it("the text of a failed preparation holds no address and no query parameter, in the error or in the log", async () => {
+    const id = await seed({ kind: "test.prep-address", state: "dead", attempts: 6, lastError: "no" });
+    const error: unknown = await retryDeadJob(db, registry, id, adminId).then(() => null, (cause: unknown) => cause);
+    expect(error).toBeInstanceOf(JobRetryPreparationError);
+    if (!(error instanceof JobRetryPreparationError)) throw new Error("No preparation error");
+    expect(error).toMatchObject({ kind: "test.prep-address", jobId: id, venueId: null });
+    expect(error.message).toContain("could not write to");
+    expect(error.message).not.toContain("example.org");
+    expect(error.message).not.toContain("token=abc");
+    expect((await rowOf(id)).state).toBe("dead");
+
+    const response = await asPlatformAdmin("POST", `/admin/jobs/${id}/retry`);
+    expect(response.statusCode).toBe(500);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).not.toContain("example.org");
+    expect(logged[0]).not.toContain("token=abc");
+    expect(response.body).not.toContain("example.org");
   });
 
   it("two admins pressing Try again at the same moment: one 200, one 409, and the preparation runs once", async () => {
@@ -411,7 +496,9 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     }
     expect((await rowOf(deadId)).state).toBe("dead");
 
-    expect((await asPlatformAdmin("POST", `/admin/jobs/${deadId}/close`, { note: "  Sent by hand  " })).statusCode).toBe(200);
+    const closing = await asPlatformAdmin("POST", `/admin/jobs/${deadId}/close`, { note: "  Sent by hand  " });
+    expect(closing.statusCode).toBe(200);
+    expect(closing.json()).toEqual({ data: { id: deadId } });
     const closed = await rowOf(deadId);
     expect(closed).toMatchObject({ state: "abandoned", resolution: "Sent by hand", resolved_by: adminId, last_error: "no" });
     expect(closed.resolved_at).not.toBeNull();
@@ -436,13 +523,12 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
 
   // ---- What is refused --------------------------------------------------------
 
-  it("a job that is not dead, or not there, cannot be tried again or closed, and is left as it was", async () => {
+  it("a job that is not dead cannot be tried again or closed, and is left as it was", async () => {
     const ids = [
       await seed({ state: "queued" }),
       await seed({ state: "running" }),
       await seed({ state: "done" }),
       await seed({ state: "abandoned" }),
-      randomUUID(),
     ];
     const before = await wholeTable();
     for (const id of ids) {
@@ -453,6 +539,19 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
       expect(close.statusCode, `close ${id}`).toBe(409);
       expect(close.json()).toEqual({ error: "This job is already back on the list.", code: "JOB_NOT_STUCK" });
     }
+    expect(await wholeTable()).toEqual(before);
+  });
+
+  it("an id that names no job is a 404, for Try again and for Close", async () => {
+    await seed({ state: "dead" });
+    const before = await wholeTable();
+    const nobody = randomUUID();
+    const retry = await asPlatformAdmin("POST", `/admin/jobs/${nobody}/retry`);
+    expect(retry.statusCode).toBe(404);
+    expect(retry.json()).toEqual(NOT_FOUND);
+    const close = await asPlatformAdmin("POST", `/admin/jobs/${nobody}/close`, { note: "A note" });
+    expect(close.statusCode).toBe(404);
+    expect(close.json()).toEqual(NOT_FOUND);
     expect(await wholeTable()).toEqual(before);
   });
 
@@ -476,6 +575,17 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
       installJobWorker(null);
     });
 
+    it("with no worker installed it still writes the job, queued, and answers its id", async () => {
+      installJobWorker(null);
+      const response = await asPlatformAdmin("POST", "/admin/jobs/selftest");
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ data: { id: expect.any(String) as string } });
+      const id = actionId(response);
+      expect(id).toMatch(UUID_SHAPE);
+      const rows = (await pool.query<{ id: string; kind: string; state: string }>("SELECT id, kind, state FROM jobs")).rows;
+      expect(rows).toEqual([{ id, kind: "jobs.selftest", state: "queued" }]);
+    });
+
     it("writes one job and pokes the worker", async () => {
       const worker = new JobWorker({ db, registry, serverId: "admin-jobs-test", logger: quietLogger, alerts: recordingJobAlerts() });
       const poke = vi.spyOn(worker, "poke");
@@ -483,8 +593,9 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
 
       const response = await asPlatformAdmin("POST", "/admin/jobs/selftest");
       expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ data: { id: expect.any(String) as string } });
       const data = { id: actionId(response) };
-      expect(Object.keys(data)).toEqual(["id"]);
+      expect(data.id).toMatch(UUID_SHAPE);
       expect(poke).toHaveBeenCalledTimes(1);
       const rows = (await pool.query<{ id: string; kind: string; state: string; scope: string; payload: { nonce: string } }>(
         "SELECT id, kind, state, scope, payload FROM jobs",
@@ -516,7 +627,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
       const { buildServer } = await import("../index.js");
       whole = await buildServer(validateEnv({
         NODE_ENV: "test",
-        DATABASE_URL: `${jobsTestUrl}?application_name=admin_jobs_whole`,
+        DATABASE_URL: wholeServerUrl(jobsTestUrl),
         JWT_SECRET,
       }));
       await whole.ready();
@@ -537,7 +648,9 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
       ];
       for (const route of routes) {
         expect((await whole.inject(route)).statusCode, route.url).toBe(401);
-        expect((await whole.inject({ ...route, headers: { authorization: `Bearer ${venueAdmin()}` } })).statusCode, route.url).toBe(403);
+        for (const role of USER_ROLES) {
+          expect((await whole.inject({ ...route, headers: { authorization: `Bearer ${withRole(role)}` } })).statusCode, `${route.url} as ${role}`).toBe(403);
+        }
       }
       const listed = await whole.inject({ method: "GET", url: "/admin/jobs/stuck", headers: { authorization: `Bearer ${platformAdmin}` } });
       expect(listed.statusCode).toBe(200);
