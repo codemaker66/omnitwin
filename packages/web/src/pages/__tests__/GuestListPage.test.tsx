@@ -891,7 +891,11 @@ describe("the guest list page: the next step and what is still needed", () => {
     const panel = screen.getByRole("complementary", { name: "The event" });
     expect(within(panel).getByRole("button", { name: "Paste a list" })).toBeTruthy();
     expect(within(panel).getByText("There are no tables yet")).toBeTruthy();
-    expect(within(panel).getByText("The table plan has not been printed")).toBeTruthy();
+    // The version belongs to the paper as a whole, so the panel speaks of the paper, in the paper page's own words.
+    expect(within(panel).getByText("The paper is not yet printed")).toBeTruthy();
+    expect(within(within(panel).getByRole("link", { name: "Table plan for the door" }).closest("li") ?? panel).getByText("Not yet printed")).toBeTruthy();
+    expect(within(panel).queryByText(/table plan has/i)).toBeNull();
+    expect(within(panel).queryByText(/Not printed yet/)).toBeNull();
   });
 
   it("names the guests with no seat, and the print that is out of date", async () => {
@@ -906,7 +910,7 @@ describe("the guest list page: the next step and what is still needed", () => {
     await desk();
     const panel = screen.getByRole("complementary", { name: "The event" });
     expect(within(panel).getByText("1 guest has no seat")).toBeTruthy();
-    expect(within(panel).getByText("The table plan has changed since it was printed")).toBeTruthy();
+    expect(within(panel).getByText("The paper has changed since it was printed")).toBeTruthy();
     expect(within(panel).getByText("Printed 10 November")).toBeTruthy();
     // The one table is full, so seating everyone would seat nobody: the next step is the paper.
     expect(within(panel).getByRole("link", { name: "Print the table plan" })).toBeTruthy();
@@ -975,13 +979,20 @@ describe("the guest list page: the next step and what is still needed", () => {
     });
     open(PAGE, store);
     await desk();
-    fireEvent.click(screen.getByRole("button", { name: "Download the list" }));
-    expect(createSpy).toHaveBeenCalledTimes(1);
-    expect(clicked).toEqual(["guest-list.csv"]);
-    expect(await made[0]?.text()).toContain('"Ailsa Fraser","Fraser family","",""');
-    await waitFor(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Download the list" }));
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      expect(clicked).toEqual(["guest-list.csv"]);
+      // The file's address is kept for ten seconds, so a browser that reads it after the click still has it.
+      vi.advanceTimersByTime(9_999);
+      expect(revokeSpy).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
       expect(revokeSpy).toHaveBeenCalledWith("blob:guest-list");
-    });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await made[0]?.text()).toContain('"Ailsa Fraser","Fraser family","",""');
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

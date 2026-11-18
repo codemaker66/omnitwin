@@ -82,6 +82,9 @@ export const NOT_KEPT =
 export const NOT_OPENED =
   "The list kept here for this plan could not be opened just now. Reload the page to try again. Anything added here is not being kept.";
 
+/** The paper before its first print: one wording on both pages. */
+export const NOT_YET_PRINTED = "Not yet printed";
+
 /** A save found a newer copy kept by another tab, and kept this tab's over it. */
 export const OTHER_TAB = "This list was also changed in another tab. This tab's version was kept.";
 

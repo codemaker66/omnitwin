@@ -1014,7 +1014,7 @@ const TABLE_A = uuid(101);
 const TABLE_B = uuid(102);
 const NOW = "2026-11-14T10:00:00.000Z";
 
-const PASTE = ["Name\tParty", `${CANARY}\tThe Canaries`, "Ailsa Fraser\tThe Canaries", "Bram Stoker\tStokers"].join("\n");
+const PASTE = ["Name\tParty", `${CANARY}\tThe Canaries`, "Ailsa Fraser\tThe Canaries", "Tamsin Wexcombe\tWexcombes"].join("\n");
 
 /** Where a canary appears in a value, as paths like "groups[0].entries[0].label". */
 function canaryPaths(value: unknown, path = ""): string[] {
@@ -1079,7 +1079,7 @@ describe("a canary name through the kit", () => {
     const parsed = noThrow(() => parsePaste(PASTE));
     expect(parsed.hadHeader).toBe(true);
     const taken = noThrow(() => takeNames(parsed, pickFrom(parsed), GUESTS_MAX));
-    expect(taken.guests.map((guest) => guest.name)).toEqual([CANARY, "Ailsa Fraser", "Bram Stoker"]);
+    expect(taken.guests.map((guest) => guest.name)).toEqual([CANARY, "Ailsa Fraser", "Tamsin Wexcombe"]);
     expect(canaryPaths(taken)).toEqual(["guests[0].name"]);
 
     // Over the name limit: refused and counted, and the result holds only counts.

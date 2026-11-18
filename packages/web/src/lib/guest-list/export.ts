@@ -10,7 +10,7 @@
 import type { GuestList } from "./model.js";
 import { seatedGuests } from "./paper.js";
 
-const BYTE_ORDER_MARK = "﻿";
+const BYTE_ORDER_MARK = "\uFEFF";
 const LINE_END = "\r\n";
 const HEADER = ["Name", "Party", "Table", "Seat"] as const;
 const FORMULA_START = /^[=+\-@\t\r]/;

@@ -6,7 +6,7 @@ import type { Sheet } from "../../lib/guest-list/paper.js";
 import type { PlanTables } from "../../lib/guest-list/plan-tables.js";
 import { seatEveryone, summary } from "../../lib/guest-list/seating.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
-import { counted, keepingLine, printedOn, shortDay, weekday } from "./words.js";
+import { counted, keepingLine, NOT_YET_PRINTED, printedOn, shortDay, weekday } from "./words.js";
 
 // ---------------------------------------------------------------------------
 // The forest panel beside the sheet: the event's three facts, the one next
@@ -50,6 +50,9 @@ export function paperAddress(planId: string, sheet: Sheet): string {
   return `/plan/${planId}/guests/paper?kit=on&sheet=${sheet}`;
 }
 
+/** How long the downloaded file's address is kept before it is let go. */
+const DOWNLOAD_ADDRESS_KEPT_MS = 10_000;
+
 /** The list as a file the planner keeps: made here, handed over, never sent. */
 function download(list: GuestList): void {
   const url = URL.createObjectURL(new Blob([toCsv(list)], { type: "text/csv;charset=utf-8" }));
@@ -59,7 +62,8 @@ function download(list: GuestList): void {
   document.body.append(link);
   link.click();
   link.remove();
-  window.setTimeout(() => { URL.revokeObjectURL(url); }, 0);
+  // Some browsers (Safari) read the file after the click returns: its address is let go only after a while.
+  window.setTimeout(() => { URL.revokeObjectURL(url); }, DOWNLOAD_ADDRESS_KEPT_MS);
 }
 
 export interface GuestPanelProps {
@@ -96,14 +100,15 @@ export function GuestPanel(props: GuestPanelProps): ReactElement {
   const owed: { readonly text: string; readonly aside?: string }[] = [];
   if (counts.toSeat > 0) owed.push({ text: `${counted(counts.toSeat, "guest has", "guests have")} no seat` });
   if (counts.tables === 0) owed.push({ text: "There are no tables yet" });
+  // The version belongs to the paper as a whole (all four sheets), so these speak of the paper.
   if (list.paperVersion === 0 || list.printedAt === null) {
-    owed.push({ text: "The table plan has not been printed" });
+    owed.push({ text: "The paper is not yet printed" });
   } else if (list.changedSincePrint) {
-    owed.push({ text: "The table plan has changed since it was printed", aside: printedOn(list.printedAt) });
+    owed.push({ text: "The paper has changed since it was printed", aside: printedOn(list.printedAt) });
   }
 
   const sheets: readonly { readonly sheet: Sheet; readonly label: string; readonly aside: string }[] = [
-    { sheet: "table-plan", label: "Table plan for the door", aside: list.paperVersion > 0 ? `Version ${String(list.paperVersion)}` : "Not printed yet" },
+    { sheet: "table-plan", label: "Table plan for the door", aside: list.paperVersion > 0 ? `Version ${String(list.paperVersion)}` : NOT_YET_PRINTED },
     { sheet: "by-table", label: "Guests by table", aside: counted(counts.tables, "table", "tables") },
     { sheet: "place-cards", label: "Place cards", aside: counted(counts.seated, "card", "cards") },
     { sheet: "covers", label: "Covers by table, for the caterer", aside: "No names" },

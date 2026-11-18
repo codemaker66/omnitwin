@@ -559,9 +559,10 @@ it("sets noindex and no-referrer in the head and removes them on leaving", () =>
 - Other tab: "This list was also changed in another tab. This tab's version was kept."
 - Room gone: "The room for this plan could not be opened, so its tables were not counted. Your list is unaffected."
 - Tables differ: "The room has 17 tables; your list has 18."
-- Still needed, one line each, only while true: "8 guests have no seat"; "There are no tables yet"; "The table
-  plan has changed since it was printed" with "Printed 10 November" beside it; "The table plan has not been
-  printed". With none true: "Nothing else is needed for the paper."
+- Still needed, one line each, only while true: "8 guests have no seat"; "There are no tables yet"; "The paper
+  has changed since it was printed" with "Printed 10 November" beside it; "The paper is not yet printed" (the
+  version belongs to all four sheets, so these speak of the paper; the table plan's line in the panel's sheet list says
+  "Not yet printed", as the paper page does). With none true: "Nothing else is needed for the paper."
 - Opening: `<ActivityStatus variant="panel">Opening your guest list…</ActivityStatus>`.
 
 - [ ] **Step 1: Write the failing tests** (Review Focus 2 and 4 are shown here). Mock only `../../api/configurations.js` (`getPublicConfig`) and inject a memory store, as `PlanViewPage.test.tsx` mocks its one network module.

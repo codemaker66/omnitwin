@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode }
 import { flushSync } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import { KitGate } from "../components/guest-list/KitGate.js";
-import { calendarDay, counted, NOT_KEPT, NOT_OPENED, OTHER_TAB, weekday } from "../components/guest-list/words.js";
+import { calendarDay, counted, NOT_KEPT, NOT_OPENED, NOT_YET_PRINTED, OTHER_TAB, weekday } from "../components/guest-list/words.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import { KIT_PARAM } from "../lib/guest-list/kit-switch.js";
 import type { GuestList } from "../lib/guest-list/model.js";
@@ -82,7 +82,7 @@ function eventDay(list: GuestList): string | null {
  * formatter is made each time so it follows the device's zone as it is now.
  */
 function versionLine(list: GuestList): string {
-  if (list.paperVersion === 0 || list.printedAt === null) return "Not yet printed";
+  if (list.paperVersion === 0 || list.printedAt === null) return NOT_YET_PRINTED;
   const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
   return `Version ${String(list.paperVersion)} · printed ${day.format(Date.parse(list.printedAt))}`;
 }

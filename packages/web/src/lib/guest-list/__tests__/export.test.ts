@@ -4,7 +4,7 @@ import { toCsv } from "../export.js";
 
 const PLAN_ID = "5b0a6f0e-7f0b-4d7e-9c3a-2f6f6f0a1b11";
 const NOW = "2026-11-13T10:00:00.000Z";
-const BOM = "﻿";
+const BOM = "\uFEFF";
 
 function uuid(n: number): string {
   return `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
