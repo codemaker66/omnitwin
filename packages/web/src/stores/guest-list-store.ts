@@ -47,6 +47,14 @@ export interface GuestListState {
   eraseList(): Promise<void>;
   /** Saves now if anything is unsaved; resolves when no save is waiting or running. */
   flush(): Promise<void>;
+  /**
+   * Takes up another tab's changes. When nothing here is unsaved and no save
+   * is running, reads the device again and takes the stored list if it is
+   * newer than the copy last opened or saved here; undo is cleared then, as
+   * its steps belong to the older list. With a change unsaved, nothing is
+   * read: the save says if another tab had kept a newer copy, as before.
+   */
+  refresh(): Promise<void>;
   reset(): void;
 }
 
@@ -131,6 +139,8 @@ function clearTimer(session: Session): void {
 export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create<GuestListState>()(
   (set, get) => {
     const isCurrent = (session: Session): boolean => session.live && current === session;
+    /** Nothing here is waiting to be kept, being kept or being erased. */
+    const quiet = (session: Session): boolean => !session.unsaved && session.running === null && !session.erasing;
 
     /**
      * Saves one at a time, in order, always the latest list, until nothing is
@@ -352,6 +362,40 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         clearTimer(session);
         if (session.running !== null) await session.running;
         if (session.unsaved) await saveLoop(session);
+      },
+
+      async refresh() {
+        const session = current;
+        if (session === null || get().phase !== "ready" || !quiet(session)) return;
+        const opened = await openSafely(session.store, session.planId);
+        // A change made here while reading goes first; so do a reset and another plan.
+        if (!isCurrent(session) || get().phase !== "ready" || !quiet(session)) return;
+        if (opened.kind === "new") {
+          if (session.unread) {
+            // Nothing is stored: the device has been read after all.
+            session.unread = false;
+            session.loadedUpdatedAt = null;
+            set({ unread: false, kept: true });
+          }
+          return;
+        }
+        if (opened.kind !== "ready") return;
+        const loaded = session.loadedUpdatedAt;
+        if (loaded !== null && !(Date.parse(opened.list.updatedAt) > Date.parse(loaded))) return;
+        session.unread = false;
+        session.loadedUpdatedAt = opened.list.updatedAt;
+        session.undo = [];
+        set({
+          list: opened.list,
+          kept: true,
+          unread: false,
+          canUndo: false,
+          notice: opened.repaired > 0 ? { kind: "repaired", unseated: opened.repaired } : get().notice,
+        });
+        if (opened.repaired > 0) {
+          session.unsaved = true;
+          void saveLoop(session);
+        }
       },
 
       reset() {

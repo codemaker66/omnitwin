@@ -190,7 +190,10 @@ export function placeCards(list: GuestList): readonly { readonly name: string; r
  * Record a print. The print time is set every time. The paper's version goes up
  * by one when the list changed since the last print, and on a first print (so
  * the first sheet is always version 1); printing again unchanged keeps it.
- * `updatedAt` is left alone: printing is not an edit.
+ * `updatedAt` is not set here. A print changes the stored list (its version
+ * and print time), so the page state stamps `updatedAt` as for any change, and
+ * the 90 days of a list with no date count from the last change, a print
+ * included. A print takes no undo step.
  */
 export function markPrinted(list: GuestList, nowIso: string): GuestList {
   const next = list.changedSincePrint || list.paperVersion === 0 ? list.paperVersion + 1 : list.paperVersion;

@@ -300,7 +300,7 @@ export function covers(list: GuestList): { readonly tables: readonly { readonly 
 export function placeCards(list: GuestList): readonly { readonly name: string; readonly table: number }[];
 export function markPrinted(list: GuestList, nowIso: string): GuestList;   // printedAt = nowIso always; paperVersion + 1 if changedSincePrint
                                                                            // or paperVersion is 0 (a first print is version 1); then
-                                                                           // changedSincePrint = false; updatedAt untouched
+                                                                           // changedSincePrint = false; updatedAt untouched here: the page state stamps it as for any change, so the 90 days count from the last change, a print included
 export function toCsv(list: GuestList): string;                             // name, party, table, seat
 ```
 
@@ -448,6 +448,7 @@ export interface GuestListState {
   readonly phase: KitPhase;
   readonly list: GuestList | null;
   readonly kept: boolean;          // false while the device is not keeping the list
+  readonly unread: boolean;        // the device could not be read at open: nothing writes to it or erases it
   readonly notice: KitNotice;
   readonly canUndo: boolean;
   open(planId: string, store: GuestListStore, now?: () => string): Promise<void>;
@@ -457,6 +458,7 @@ export interface GuestListState {
   startAgain(): Promise<void>;     // for "unreadable": erase and begin a new list
   eraseList(): Promise<void>;
   flush(): Promise<void>;
+  refresh(): Promise<void>;        // takes up another tab's newer stored list when nothing here is unsaved
   reset(): void;
 }
 export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>>;
@@ -471,6 +473,7 @@ Behaviour:
 - `undo()`: restores the previous list's guests, tables, title, eventDate and sortBy, but KEEPS the current `paperVersion` and `printedAt`, sets `changedSincePrint` true and `updatedAt: now()`, and schedules a save. `canUndo` is false when the stack is empty.
 - `startAgain()`: only when "unreadable": erases the stored value, then begins a new empty list (phase "ready").
 - `eraseList()`: cancels any pending save, waits for a running one, erases the stored list, and leaves a new empty list in memory with the undo stack and notice cleared. While the session is unread it clears memory only and never touches the device, and the page does not offer Delete.
+- `refresh()`: when nothing is unsaved and no save is running, reads the device again and takes the stored list if its `updatedAt` is newer than the copy last opened or saved (undo cleared); with a change unsaved it reads nothing and the save's other-tab notice stands. An unread session that reads a list takes it and is read; one that finds nothing stored is read and kept. A print stamps `updatedAt` like any other change.
 - `flush()`: saves now if anything is unsaved, and resolves when no save is pending or running. It never rejects. The pages call it before leaving and before printing.
 - `reset()`: cancels timers and returns to the initial state (`planId` null, phase "opening", list null, `kept` true, notice null, `canUndo` false). Tests call it between cases.
 - No action rejects or throws to its caller, and nothing puts a guest's name into an error, a log line or a thrown value.

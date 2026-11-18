@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { memoryBackend, withBackend, type CacheBackend } from "../../lib/idb-cache.js";
 import { emptyGuestList, type Guest, type GuestList } from "../../lib/guest-list/model.js";
+import { markPrinted } from "../../lib/guest-list/paper.js";
 import {
   createGuestListStore,
   type GuestListStore,
@@ -725,6 +726,161 @@ describe("guest list page state: a list the device could not read is never overw
   });
 });
 
+describe("guest list page state: another tab's changes are taken up", () => {
+  /** What another tab of the same browser writes: a later copy of the list, from the copy it had. */
+  async function otherTabSaves(backend: CacheBackend, patch: Partial<GuestList>, updatedAt: string): Promise<GuestList> {
+    const before = await reopened(backend, PLAN_A);
+    if (before.kind !== "ready") throw new Error("nothing stored to change");
+    const theirs = { ...before.list, ...patch, updatedAt };
+    expect(await createGuestListStore(withBackend<unknown>(backend)).save(theirs, before.list.updatedAt)).toBe("saved");
+    return theirs;
+  }
+
+  it("takes a newer stored list when nothing is unsaved, clears undo, and saves the next change quietly", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Ours"));
+    await state().flush();
+    expect(state().canUndo).toBe(true);
+
+    await otherTabSaves(backend, { title: "Theirs", guests: [guest(1)] }, "2026-11-14T09:00:00.000Z");
+    await state().refresh();
+    expect(state().list?.title).toBe("Theirs");
+    expect(state().list?.guests).toEqual([guest(1)]);
+    expect(state().list?.updatedAt).toBe("2026-11-14T09:00:00.000Z");
+    expect(state().canUndo).toBe(false);
+
+    state().apply((list) => ({ ...list, guests: [...list.guests, guest(2)] }));
+    await state().flush();
+    expect(state().notice).toBeNull();
+    const kept = await reopened(backend, PLAN_A);
+    expect(kept.kind === "ready" ? kept.list.guests : null).toEqual([guest(1), guest(2)]);
+    expect(storedTitle(kept)).toBe("Theirs");
+  });
+
+  it("a print stamps updatedAt like any other change, so the 90 days count from it, and takes no undo step", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+    const before = state().list?.updatedAt;
+    state().reset();
+
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => markPrinted(list, "2026-11-14T09:00:00.000Z"), { undo: false });
+    expect(state().canUndo).toBe(false);
+    expect(state().list?.updatedAt).not.toBe(before);
+    await state().flush();
+    const kept = await reopened(backend, PLAN_A);
+    expect(kept.kind === "ready" ? [kept.list.paperVersion, kept.list.updatedAt] : null).toEqual([1, state().list?.updatedAt]);
+  });
+
+  it("takes nothing when the stored list is the one last opened or saved", async () => {
+    const { store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Ours"));
+    await state().flush();
+    const before = state().list;
+    await state().refresh();
+    expect(state().list).toBe(before);
+    expect(state().canUndo).toBe(true);
+  });
+
+  it("with a change unsaved, reads nothing and keeps this tab's change; the save then says another tab changed it", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Ours"));
+    await state().flush();
+    await otherTabSaves(backend, { title: "Theirs" }, "2026-11-14T09:00:00.000Z");
+
+    state().apply(titled("Ours again"));
+    const open = vi.spyOn(store, "open");
+    await state().refresh();
+    expect(open).not.toHaveBeenCalled();
+    expect(state().list?.title).toBe("Ours again");
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "other-tab" });
+    expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Ours again");
+  });
+
+  it("a change made while the device is read goes first: the stored list is not taken", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Ours"));
+    await state().flush();
+    const theirs = await otherTabSaves(backend, { title: "Theirs" }, "2026-11-14T09:00:00.000Z");
+
+    const slow = deferred<Opened>();
+    vi.spyOn(store, "open").mockImplementationOnce(() => slow.promise);
+    const refreshing = state().refresh();
+    state().apply(titled("Typed meanwhile"));
+    slow.resolve({ kind: "ready", list: theirs, repaired: 0 });
+    await refreshing;
+    expect(state().list?.title).toBe("Typed meanwhile");
+    expect(state().canUndo).toBe(true);
+  });
+
+  it("never lowers the paper's version: a print in another tab, then a change here", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+
+    // The other tab prints: version 1, printed, unchanged since.
+    await otherTabSaves(backend, { paperVersion: 1, changedSincePrint: false, printedAt: "2026-11-14T09:00:00.000Z" }, "2026-11-14T09:00:00.000Z");
+    await state().refresh();
+    state().apply((list) => ({ ...list, guests: [...list.guests, guest(2)], changedSincePrint: true }));
+    await state().flush();
+
+    const kept = await reopened(backend, PLAN_A);
+    if (kept.kind !== "ready") throw new Error("the list was not kept");
+    expect(kept.list.paperVersion).toBe(1);
+    expect(kept.list.printedAt).toBe("2026-11-14T09:00:00.000Z");
+    expect(kept.list.changedSincePrint).toBe(true);
+    expect(kept.list.guests).toEqual([guest(1), guest(2)]);
+  });
+
+  it("an unread session takes the stored list once a read works, and is then read and kept", async () => {
+    const inner = memoryBackend();
+    const stored = { ...emptyGuestList(PLAN_A, START), title: "Kept dinner", guests: [guest(1)] };
+    await withBackend<unknown>(inner).put(PLAN_A, stored);
+    const store = createGuestListStore(withBackend<unknown>(readsRefusedAtFirst(inner, 1)));
+    await state().open(PLAN_A, store, clock());
+    expect(state().unread).toBe(true);
+
+    await state().refresh();
+    expect(state().unread).toBe(false);
+    expect(state().kept).toBe(true);
+    expect(state().list?.title).toBe("Kept dinner");
+
+    // Nothing stored at all: the session is read, and the next change is kept.
+    state().reset();
+    const empty = createGuestListStore(withBackend<unknown>(readsRefusedAtFirst(memoryBackend(), 1)));
+    await state().open(PLAN_A, empty, clock());
+    expect(state().unread).toBe(true);
+    await state().refresh();
+    expect(state().unread).toBe(false);
+    expect(state().kept).toBe(true);
+  });
+
+  it("changes nothing when the read answers after reset or after another plan is opened", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Ours"));
+    await state().flush();
+    const theirs = await otherTabSaves(backend, { title: "Theirs" }, "2026-11-14T09:00:00.000Z");
+
+    const slow = deferred<Opened>();
+    vi.spyOn(store, "open").mockImplementationOnce(() => slow.promise);
+    const refreshing = state().refresh();
+    state().reset();
+    slow.resolve({ kind: "ready", list: theirs, repaired: 0 });
+    await refreshing;
+    expect(state().planId).toBeNull();
+    expect(state().list).toBeNull();
+  });
+});
+
 describe("guest list page state: nothing rejects and no name escapes", () => {
   it("resolves every action when every store call rejects, and logs nothing", async () => {
     const reject = (): Promise<never> => Promise.reject(new Error(`refused ${CANARY}`));
@@ -745,6 +901,7 @@ describe("guest list page state: nothing rejects and no name escapes", () => {
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
     await expect(state().flush()).resolves.toBeUndefined();
     expect(state().kept).toBe(false);
+    await expect(state().refresh()).resolves.toBeUndefined();
     await expect(state().eraseList()).resolves.toBeUndefined();
 
     for (const log of logs) expect(log).not.toHaveBeenCalled();
