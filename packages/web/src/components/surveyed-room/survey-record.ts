@@ -383,9 +383,10 @@ export function parseSurveyRecord(json: unknown): SurveyRecord {
   if (typeof json !== "object" || json === null || Array.isArray(json)) throw new SurveyRecordError(["is not a JSON object"]);
   const version: unknown = (json as { readonly schemaVersion?: unknown }).schemaVersion;
   if (version !== SURVEY_SCHEMA_VERSION) {
-    // No advice to "republish with the current tools": tools that write version 1 would write it again.
+    // No advice to "republish with the current tools": the tools in this repository (tools/surveyed-rooms, since
+    // #442) still write version 1, and would write it again. Their version 2 publish step follows in its own pull request.
     const versionOne = version === 1
-      ? " (version 1 is what the survey tools wrote before their publish step wrote version 2, without the room, wall heights, atlas images or floor this reader needs: the room must be built again by tools that write version 2)"
+      ? " (version 1 is what the survey tools in this repository write until their version 2 publish step lands; it has none of the room, wall heights, atlas images or floor this reader needs, so the room must be built again once the tools write version 2)"
       : "";
     throw new SurveyRecordError([
       `schemaVersion is ${version === undefined ? "missing" : JSON.stringify(version)}; this reader reads version ${String(SURVEY_SCHEMA_VERSION)} only${versionOne}`,

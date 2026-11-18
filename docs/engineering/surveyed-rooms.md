@@ -229,9 +229,11 @@ none applied). It exits 1 if the page threw an uncaught error.
 
 ## The `survey.json` contract (schema version 2)
 
-`tools/surveyed-rooms` publishes `survey.json` beside a room's files (the tools arrive with their
-own branch; `roombuild/publish.py` writes the record). `parseSurveyRecord` reads version 2 only and
-names every fault it finds. Keys the web does not use are dropped.
+`tools/surveyed-rooms` publishes `survey.json` beside a room's files (`roombuild/publish.py` writes
+the record). The tools are in this repository since #442, and what they write there is still
+version 1: the publish step that writes version 2 follows in the tools' next pull request.
+`parseSurveyRecord` reads version 2 only and names every fault it finds. Keys the web does not use
+are dropped.
 
 | Key | Meaning | Checked |
 | --- | --- | --- |
@@ -251,13 +253,13 @@ names every fault it finds. Keys the web does not use are dropped.
 | `ceiling.orientation`, `floor.orientation` | optional statement of how the image lies | if present, must be `"columns planner +x, rows from planner +z"` |
 | `files` | every published file's `bytes` and `sha256` | every file the record points at is listed |
 
-Version 2 adds to version 1, which the tools' `publish.py` wrote until its publish step was changed
-to write version 2 (that change follows the tools on their own branch): `room`, each wall's
-`height` and `kind`, `atlas.files`, the whole `floor` block and the largest-first rule. A version 1
-record is refused saying what it is and that the room must be built again by tools that write
-version 2; it does not advise republishing, since tools that wrote version 1 would write it again.
-No version 2 record has been published yet. Two things are assumptions the tools have yet to
-state, and the reader holds them:
+Version 2 adds to version 1, which the tools in this repository write until their version 2
+publish step lands: `room`, each wall's `height` and `kind`, `atlas.files`, the whole `floor` block
+and the largest-first rule. A version 1 record is refused saying what it is, that the tools here
+still write it, and that the room must be built again once they write version 2; it does not
+advise republishing, since tools that write version 1 would write it again. No version 2 record
+has been published yet. Two things are assumptions the tools have yet to state, and the reader
+holds them:
 
 - **The floor photograph's orientation.** The ceiling photograph has its columns along planner +x
   and its rows from planner +z (the image's top row is the extent's highest z; the tools' ceiling

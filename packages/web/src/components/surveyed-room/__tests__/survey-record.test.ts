@@ -77,10 +77,12 @@ describe("survey.json, schema version 2", () => {
   it("refuses another version with one plain reason", () => {
     const old = saloon();
     old.schemaVersion = 1;
-    // Says what a version 1 record is and what would cure it, never to republish with tools that would write version 1 again.
+    // Says what a version 1 record is and what would cure it, never to republish with tools that would write version 1
+    // again; and in the present tense, since the tools in this repository do still write version 1.
     expect(faults(old)).toEqual([
-      "schemaVersion is 1; this reader reads version 2 only (version 1 is what the survey tools wrote before their publish step wrote version 2, without the room, wall heights, atlas images or floor this reader needs: the room must be built again by tools that write version 2)",
+      "schemaVersion is 1; this reader reads version 2 only (version 1 is what the survey tools in this repository write until their version 2 publish step lands; it has none of the room, wall heights, atlas images or floor this reader needs, so the room must be built again once the tools write version 2)",
     ]);
+    expect(faults(old).join(" ")).not.toMatch(/\bwrote\b|republish/);
     const newer = saloon();
     newer.schemaVersion = 3;
     expect(faults(newer)).toEqual(["schemaVersion is 3; this reader reads version 2 only"]);
