@@ -99,6 +99,30 @@ describe.skipIf(paymentsTestUrl === undefined)("deposits through the routes on m
     id: session, payment_status: "paid", amount_total: 50_000, currency: "gbp", payment_intent: intent, metadata,
   });
 
+  async function requestEvent(requestId: string): Promise<string | null | undefined> {
+    const { rows } = await pool.query<{ event_id: string | null }>("SELECT event_id FROM proposal_deposit_requests WHERE id = $1", [requestId]);
+    return rows[0]?.event_id;
+  }
+
+  describe("the event a request is for", () => {
+    it("is its proposal's own event, not the event its plan is linked to", async () => {
+      const f = await accepted();
+      const res = await ask(f, { basis: "amount", amountMinor: 50_000 });
+      expect(res.status).toBe(201);
+      const eventId = await requestEvent(res.body.data?.id ?? "");
+      expect(eventId).toBe(f.proposalEventId);
+      expect(eventId).not.toBe(f.eventId);
+    });
+
+    it("is none while its proposal has none, even when the proposal's plan is linked to an event", async () => {
+      const f = await accepted({ ownEvent: false });
+      expect(f.proposalEventId).toBeNull();
+      const res = await ask(f, { basis: "amount", amountMinor: 50_000 });
+      expect(res.status).toBe(201);
+      expect(await requestEvent(res.body.data?.id ?? "")).toBeNull();
+    });
+  });
+
   describe("the venue asks", () => {
     it("for a percentage of the accepted quote, in whole pence, against the proposal's event", async () => {
       const f = await accepted({ totalMinor: 333_333 });
@@ -106,7 +130,7 @@ describe.skipIf(paymentsTestUrl === undefined)("deposits through the routes on m
       expect(res.status).toBe(201);
       expect(res.body.data).toMatchObject({ state: "requested", basis: "percent", percentBasisPoints: 2_500, amountMinor: 83_333, quoteTotalMinor: 333_333, proposalVersion: 1 });
       const { rows } = await pool.query("SELECT event_id, proposal_version_hash FROM proposal_deposit_requests WHERE proposal_id = $1", [f.proposalId]);
-      expect(rows[0]).toEqual({ event_id: f.eventId, proposal_version_hash: proposalVersionPayloadDigest(f.payload) });
+      expect(rows[0]).toEqual({ event_id: f.proposalEventId, proposal_version_hash: proposalVersionPayloadDigest(f.payload) });
       const view = await call<StaffDepositView>("GET", `/proposals/${f.proposalId}/deposit`, f.staff);
       expect(view.body.data?.availability).toBe("test");
       expect(view.body.data?.requests).toHaveLength(1);

@@ -115,7 +115,10 @@ export interface AcceptedProposalFixture {
   readonly venueId: string;
   readonly otherVenueId: string;
   readonly proposalId: string;
+  /** The event the proposal's plan (its layout) is linked to. */
   readonly eventId: string;
+  /** The proposal's own event, a different one on purpose; null when made without one. */
+  readonly proposalEventId: string | null;
   readonly token: string;
   readonly shareTokenId: string;
   readonly clientEmail: string;
@@ -133,18 +136,23 @@ function bearer(user: { readonly id: string; readonly role: string; readonly ven
 /**
  * A venue (with the slug deposits are configured for, unless told otherwise),
  * a room, a layout that belongs to an event, an enquiry with the client's
- * email, and a proposal accepted on version 1 through a share link.
+ * email, and a proposal accepted on version 1 through a share link. The
+ * proposal holds an event of its own, not the one its layout belongs to, so
+ * a test can tell which of the two a record took; `ownEvent: false` leaves
+ * the proposal without one (as a proposal not yet joined is).
  */
 export async function seedAcceptedProposal(pool: Pool, options: {
   readonly venueSlug?: string;
   readonly totalMinor?: number;
   readonly status?: "accepted" | "sent";
+  readonly ownEvent?: boolean;
 } = {}): Promise<AcceptedProposalFixture> {
   const venueId = randomUUID();
   const otherVenueId = randomUUID();
   const spaceId = randomUUID();
   const configurationId = randomUUID();
   const eventId = randomUUID();
+  const proposalEventId = options.ownEvent === false ? null : randomUUID();
   const enquiryId = randomUUID();
   const proposalId = randomUUID();
   const users = { staff: randomUUID(), otherStaff: randomUUID(), hallkeeper: randomUUID(), platformAdmin: randomUUID() };
@@ -167,6 +175,9 @@ export async function seedAcceptedProposal(pool: Pool, options: {
   await pool.query("INSERT INTO configurations (id, space_id, venue_id, name, layout_style) VALUES ($1, $2, $3, 'Autumn gala', 'dinner-rounds')", [configurationId, spaceId, venueId]);
   await pool.query("INSERT INTO events (id, venue_id, name) VALUES ($1, $2, 'Autumn gala')", [eventId, venueId]);
   await pool.query("INSERT INTO event_configuration_links (event_id, configuration_id, link_type) VALUES ($1, $2, 'source_configuration')", [eventId, configurationId]);
+  if (proposalEventId !== null) {
+    await pool.query("INSERT INTO events (id, venue_id, name) VALUES ($1, $2, 'Autumn gala, as proposed')", [proposalEventId, venueId]);
+  }
   await pool.query("INSERT INTO enquiries (id, venue_id, space_id, name, email) VALUES ($1, $2, $3, 'Ada Client', $4)", [enquiryId, venueId, spaceId, clientEmail]);
   const payload: ProposalVersionPayload = {
     schemaVersion: PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION,
@@ -184,9 +195,9 @@ export async function seedAcceptedProposal(pool: Pool, options: {
   };
   const status = options.status ?? "accepted";
   await pool.query(
-    `INSERT INTO proposals (id, venue_id, enquiry_id, configuration_id, title, status, current_version, sent_version, sent_at, accepted_name)
-     VALUES ($1, $2, $3, $4, 'Autumn gala', $5, 1, 1, now(), $6)`,
-    [proposalId, venueId, enquiryId, configurationId, status, status === "accepted" ? "Ada Client" : null],
+    `INSERT INTO proposals (id, venue_id, enquiry_id, configuration_id, event_id, title, status, current_version, sent_version, sent_at, accepted_name)
+     VALUES ($1, $2, $3, $4, $5, 'Autumn gala', $6, 1, 1, now(), $7)`,
+    [proposalId, venueId, enquiryId, configurationId, proposalEventId, status, status === "accepted" ? "Ada Client" : null],
   );
   await pool.query("INSERT INTO proposal_versions (proposal_id, version, payload, source_hash) VALUES ($1, 1, $2, $3)",
     [proposalId, JSON.stringify(payload), proposalVersionPayloadDigest(payload)]);
@@ -195,7 +206,7 @@ export async function seedAcceptedProposal(pool: Pool, options: {
   await pool.query("INSERT INTO proposal_share_tokens (id, proposal_id, token_hash, token_prefix) VALUES ($1, $2, $3, $4)",
     [shareTokenId, proposalId, createHash("sha256").update(token, "utf8").digest("hex"), token.slice(0, 8)]);
   return {
-    venueId, otherVenueId, proposalId, eventId, token, shareTokenId, clientEmail, payload,
+    venueId, otherVenueId, proposalId, eventId, proposalEventId, token, shareTokenId, clientEmail, payload,
     staff: bearer({ id: users.staff, role: "staff", venueId }),
     otherStaff: bearer({ id: users.otherStaff, role: "staff", venueId: otherVenueId }),
     hallkeeper: bearer({ id: users.hallkeeper, role: "hallkeeper", venueId }),
