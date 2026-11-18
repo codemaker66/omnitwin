@@ -885,6 +885,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. The case replaces the retired identity 1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918 one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+      },
+      {
+      "date": "2026-11-06",
+      "reason": "The new chrome cleared away (T-680 in T-671’s chrome, behind ?chrome=v2), route-mocked: \\ and the slate’s crest hide every zone but the crest, which stays exactly where it stood, with the first-use note’s words beside it; once nothing else is under way one Esc brings the tools back; the room takes the pointer where the slate’s words and the door notice’s card were while the crest keeps it; L and / open Lay out and the catalogue’s search with the tools back, and what is typed goes into the search; the painted chrome is measured both ways.",
+      "sourceCommit": "206225f9579bf3bcee86c47b4018e724890f535b",
+      "sourceFile": "packages/web/e2e/planner-chrome-v2-clear.spec.ts",
+      "sourceFileGitBlobSha256": "0ede92444f9508f6847d622b6caa6592b60a52cb6c4bb02025e12d1b988febe5",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/planner-chrome-v2-clear.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "b18980ec5b4b0fb5c263fc350eca6f28c4766e7004311b70a8dcf9cf9d32e730",
+      "caseIds": [
+        "df731816584c275999c2-303f9888e47935db3be0"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; it answers the API from the planner’s in-memory test server and draws the room with software WebGL, so it proves the chrome’s states, the pointer, the Escape order and focus, not frame time, a real GPU or a phone; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -5380,6 +5394,16 @@
       "suitePath": [
         "living-timetable-offline-steps.spec.ts",
         "A request step pressed with no connection"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "df731816584c275999c2-303f9888e47935db3be0",
+      "file": "planner-chrome-v2-clear.spec.ts",
+      "title": "the crest and \\ clear the new chrome to the hall, and \\, Esc or the crest bring it back",
+      "suitePath": [
+        "planner-chrome-v2-clear.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
