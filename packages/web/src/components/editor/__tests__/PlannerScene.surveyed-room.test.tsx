@@ -1,6 +1,6 @@
 vi.mock("../../scene/NativeCanvas.js", async () => ({ NativeCanvas: (await import("@react-three/fiber")).Canvas }));
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock, type MockInstance } from "vitest";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { SpaceSchema, type SpaceDimensions } from "@omnitwin/types";
@@ -45,15 +45,18 @@ vi.mock("../../../hooks/use-chunk-arrivals.js", () => ({
 const venue = vi.hoisted(() => ({ tradesHall: true as boolean | null }));
 vi.mock("../../../hooks/use-trades-hall-venue.js", () => ({
   useTradesHallVenue: () => venue.tradesHall,
+  // As the surveyed room's own code asks: read and Trades Hall's, read and another's, or still being read.
+  useTradesHallVenueStatus: () => (venue.tradesHall === null ? "reading" : venue.tradesHall ? "trades-hall" : "other"),
   isTradesHallVenueSlug: (slug: string) => slug === "trades-hall" || slug === "trades-hall-glasgow",
 }));
 
 const { PlannerScene } = await import("../PlannerScene.js");
+const { surveyedRoomCode } = await import("../../surveyed-room/use-planner-surveyed-room.js");
 const { useCockpitStore } = await import("../../../stores/cockpit-store.js");
 const { useEditorStore } = await import("../../../stores/editor-store.js");
 const { useLayoutTimelinePreviewStore } = await import("../../../stores/layout-timeline-preview-store.js");
 const { useSurveyedRoomStore } = await import("../../../stores/surveyed-room-store.js");
-const { surveyedRoomCaption } = await import("../../surveyed-room/room-status.js");
+const { surveyedRoomCaption, surveyedRoomWorking } = await import("../../surveyed-room/room-status.js");
 const { resolveRoomGeometry } = await import("../../../data/room-geometries.js");
 const { computeCameraTarget, computeDefaultCameraPosition } = await import("../../../lib/camera-rig.js");
 const { surveyedRoomOpeningPose } = await import("../../surveyed-room/room-opening-view.js");
@@ -140,6 +143,9 @@ const PLAIN_SHELL = {
   shell: true, surveyed: false, hall: false, ink: true, background: "#eee9de", fog: true, photographedRoom: false, lighting: "polygon",
 };
 
+/** Each asking for the surveyed room's code (the one dynamic import). Left alone it is the real import. */
+let codeAsked: MockInstance<(typeof surveyedRoomCode)["load"]>;
+
 beforeEach(() => {
   three.scene = new Scene();
   three.camera = new PerspectiveCamera();
@@ -147,10 +153,12 @@ beforeEach(() => {
   useEditorStore.setState({ space: null, configId: null });
   useLayoutTimelinePreviewStore.getState().clear();
   venue.tradesHall = true;
+  codeAsked = vi.spyOn(surveyedRoomCode, "load");
 });
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.clearAllMocks();
@@ -158,29 +166,88 @@ afterEach(() => {
   window.localStorage.removeItem("venviewer.surveyed-rooms");
 });
 
+/** Lets promises already settled, and the effects they lead to, run. */
+async function settle(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 describe("PlannerScene with a surveyed room", () => {
-  it("draws the plain shell exactly as today where the device has not turned the switch on, and asks for nothing", () => {
+  it("draws the plain shell exactly as today where the device has not turned the switch on, and asks for nothing", async () => {
     const fake = serveSaloon();
     openPlanner(`?roomsBase=${FOLDER}&roomsRev=1`);
     chooseRoom("Saloon", "saloon");
     render(<PlannerScene />);
+    await settle();
     expect(drawing()).toEqual(PLAIN_SHELL);
     expect(sceneComponent("RoomMesh")?.props).toEqual({ geometry: resolveRoomGeometry({ name: "Saloon", heightM: "5.4", floorPlanOutline: [] }), variant: "generic", includeLighting: false });
     expect(String(sceneComponent("PlannerScenePrecompiler")?.props.signature)).toContain(":generic:");
     // And opens on the planner's own view of it: no pose of the room's own.
     expect(sceneComponent("CameraRig")?.props.defaultPose).toBeNull();
+    // Nothing of a surveyed room is asked for: not its code, not a file.
+    expect(codeAsked).not.toHaveBeenCalled();
     expect(fake).not.toHaveBeenCalled();
     expect(useSurveyedRoomStore.getState().status).toBeNull();
   });
 
-  it("draws the plain shell where the switch is on and the room has no survey", () => {
+  it("draws the plain shell where the switch is on and the room has no survey, and asks for no code", async () => {
     const fake = serveSaloon();
     openPlanner("?rooms=surveyed");
     chooseRoom("Saloon", "saloon");
     render(<PlannerScene />);
+    await settle();
     expect(drawing()).toEqual(PLAIN_SHELL);
+    expect(codeAsked).not.toHaveBeenCalled();
     expect(fake).not.toHaveBeenCalled();
     expect(useSurveyedRoomStore.getState().status).toBeNull();
+  });
+
+  it("keeps the shell, and says the room is arriving, for as long as the surveyed room's code is on its way", async () => {
+    const fake = serveSaloon();
+    openPlanner(STAGED);
+    chooseRoom("Saloon", "saloon");
+    let arrive: (code: Awaited<ReturnType<typeof surveyedRoomCode.load>>) => void = () => undefined;
+    const download = new Promise<Awaited<ReturnType<typeof surveyedRoomCode.load>>>((resolve) => { arrive = resolve; });
+    codeAsked.mockImplementation(() => download);
+    render(<PlannerScene />);
+    await settle();
+    expect(codeAsked).toHaveBeenCalled();
+    // The code's download is part of the room's arrival: the shell stands, the caption shows work under way,
+    // and the status is not settled, so nothing takes this for the finished room. Nothing of the survey is fetched yet.
+    expect(drawing()).toEqual(PLAIN_SHELL);
+    expect(sceneComponent("CameraRig")?.props.defaultPose).toBeNull();
+    expect(useSurveyedRoomStore.getState().status).toMatchObject({ roomName: "Saloon", phase: "loading", photos: null });
+    expect(surveyedRoomCaption(useSurveyedRoomStore.getState().status)).toBe("Loading the Saloon as surveyed");
+    expect(surveyedRoomWorking(useSurveyedRoomStore.getState().status)).toBe(true);
+    expect(fake).not.toHaveBeenCalled();
+    // It arrives, late: the survey loads and the room takes the shell's place.
+    const code = await import("../../surveyed-room/PlannerSurveyedRoom.js");
+    await act(async () => {
+      arrive(code);
+      await download;
+    });
+    await waitFor(() => { expect(sceneComponent("SurveyedRoomModel")).toBeDefined(); });
+    expect(drawing()).toMatchObject({ shell: false, surveyed: true, background: "#120e0b", photographedRoom: true });
+    expect(useSurveyedRoomStore.getState().status?.phase).toBe("ready");
+  });
+
+  it("keeps the shell and says so when the surveyed room's code cannot be fetched: no blank canvas, nothing left arriving", async () => {
+    const fake = serveSaloon();
+    openPlanner(STAGED);
+    chooseRoom("Saloon", "saloon");
+    codeAsked.mockImplementation(() => Promise.reject(new TypeError("Failed to fetch dynamically imported module")));
+    render(<PlannerScene />);
+    await waitFor(() => { expect(useSurveyedRoomStore.getState().status?.phase).toBe("failed"); });
+    // The plain room is drawn, with the planner's own opening, and the canvas is still the scene's.
+    expect(drawing()).toEqual(PLAIN_SHELL);
+    expect(sceneComponent("CameraRig")?.props.defaultPose).toBeNull();
+    expect(screen.getByTestId("r3f-canvas")).toBeDefined();
+    expect(surveyedRoomCaption(useSurveyedRoomStore.getState().status)).toBe("The surveyed Saloon could not load, so the room is drawn plainly. Planning is unaffected.");
+    expect(surveyedRoomWorking(useSurveyedRoomStore.getState().status)).toBe(false);
+    expect(useSurveyedRoomStore.getState().status?.failure).toBe("the room's code (import): Failed to fetch dynamically imported module");
+    expect(fake).not.toHaveBeenCalled();
   });
 
   it("keeps the shell while the survey loads, then draws the surveyed room in its place", async () => {
@@ -273,10 +340,14 @@ describe("PlannerScene with a surveyed room", () => {
     openPlanner(STAGED);
     chooseRoom("Saloon", "saloon");
     render(<PlannerScene />);
-    await act(async () => { await Promise.resolve(); });
+    // A survey is asked for by the room's slug, and its code reads the venue: until that is known the room is
+    // said to be arriving. Once it is known to be another venue's, nothing is said and nothing was fetched.
+    expect(useSurveyedRoomStore.getState().status?.phase).toBe("loading");
+    await waitFor(() => { expect(useSurveyedRoomStore.getState().status).toBeNull(); });
+    expect(codeAsked).toHaveBeenCalled();
     expect(drawing()).toEqual(PLAIN_SHELL);
+    expect(sceneComponent("CameraRig")?.props.defaultPose).toBeNull();
     expect(fake).not.toHaveBeenCalled();
-    expect(useSurveyedRoomStore.getState().status).toBeNull();
   });
 
   it("ignores a staged folder in a production build", async () => {
@@ -285,9 +356,11 @@ describe("PlannerScene with a surveyed room", () => {
     openPlanner(STAGED);
     chooseRoom("Saloon", "saloon");
     render(<PlannerScene />);
-    await act(async () => { await Promise.resolve(); });
+    await settle();
     expect(drawing()).toEqual(PLAIN_SHELL);
+    expect(codeAsked).not.toHaveBeenCalled();
     expect(fake).not.toHaveBeenCalled();
+    expect(useSurveyedRoomStore.getState().status).toBeNull();
   });
 
   it("leaves the Grand Hall to its own model, whatever the switch and the address say", async () => {
@@ -295,9 +368,10 @@ describe("PlannerScene with a surveyed room", () => {
     openPlanner(STAGED);
     chooseRoom("Grand Hall", "grand-hall");
     render(<PlannerScene />);
-    await act(async () => { await Promise.resolve(); });
+    await settle();
     expect(drawing()).toMatchObject({ shell: false, surveyed: false, hall: true, ink: false, background: "#120e0b", fog: false, photographedRoom: true });
     expect(sceneComponent("CameraRig")?.props.defaultPose).toBe(HALL_VIEW_POSES.room);
+    expect(codeAsked).not.toHaveBeenCalled();
     expect(fake).not.toHaveBeenCalled();
     expect(useSurveyedRoomStore.getState().status).toBeNull();
   });

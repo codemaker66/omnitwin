@@ -4,7 +4,6 @@ import {
   surveyedRoomFor,
   surveyedRoomsBySlug,
   surveyedRoomsEnabled,
-  surveyFileUrl,
   type SurveyedRoomEntry,
 } from "../room-registry.js";
 
@@ -42,11 +41,6 @@ describe("surveyed room registry", () => {
     expect(surveyedRoomFor("", "saloon", ROOMS)).toBeNull();
     expect(surveyedRoomFor("trades-hall", "grand-hall", ROOMS)).toBeNull();
     expect(surveyedRoomFor("trades-hall", "constructor", ROOMS)).toBeNull();
-  });
-
-  it("builds a file's URL at the entry's revision", () => {
-    expect(surveyFileUrl(SALOON, "survey.json")).toBe("/rooms/saloon/survey-2026-07-11/survey.json?r=3");
-    expect(surveyFileUrl(SALOON, "walls-4096.webp")).toBe("/rooms/saloon/survey-2026-07-11/walls-4096.webp?r=3");
   });
 });
 

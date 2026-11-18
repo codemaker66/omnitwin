@@ -1,18 +1,29 @@
 // ---------------------------------------------------------------------------
-// The planner's surveyed room
+// The planner's surveyed room: what is asked, and where its code is asked for
 //
 // The planner draws a room as surveyed when three things hold: this device
 // has asked for surveyed rooms (room-registry.ts, `?rooms=surveyed`), the
 // room is listed in the registry by its space's slug, and the space is Trades
 // Hall's (another venue's room of the same slug is never drawn as Trades
-// Hall's). The survey is then loaded (use-surveyed-room.ts) and, once ready,
-// handed to the scene to draw in place of the plain shell. Until then, and
-// if it cannot be loaded, the hook hands back null and the shell stays; how
-// the load stands is published for the planner's caption either way
-// (stores/surveyed-room-store.ts), so a failure is never silent.
+// Hall's).
 //
-// Nothing is asked of anyone for a device that has not turned the switch on,
-// or for a room without a survey: no venue is read and nothing is fetched.
+// This file is the seam: all of that the planner itself carries, for every
+// visitor. It reads the switch, finds the room's survey and, only where there
+// is one, asks for the code that loads and draws it (PlannerSurveyedRoom.tsx,
+// and through it the venue read, the survey's reader, its geometry, its
+// materials and the model). Nothing here imports that code: `surveyedRoomCode`
+// is the one place it is asked for, on demand, and
+// src/__tests__/bundle-splitting.test.ts holds that. A device that has not
+// turned the switch on, or a room without a survey, asks for nothing: no
+// code, no venue and no file.
+//
+// From the moment a survey is asked for, the room is arriving, and the
+// planner's caption says so (stores/surveyed-room-store.ts): the code's own
+// download is the first part of that. The code then says how the survey's
+// files stand and hands back the room to draw with the camera's opening pose
+// for it. Until it does, and if anything cannot be had (the code included),
+// the scene is handed nothing, the plain shell stays, and the caption says
+// why: a failure is never silent, and never a blank canvas.
 //
 // Presentation only. Where furniture may stand, the room's bounds, snapping
 // and what is saved come from the room's data, not from how it is drawn.
@@ -25,11 +36,12 @@
 // ignore both parameters.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo } from "react";
-import { useTradesHallVenue } from "../../hooks/use-trades-hall-venue.js";
+import { createElement, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState, type ReactElement } from "react";
+import type { SpaceDimensions } from "@omnitwin/types";
 import { useSurveyedRoomStore } from "../../stores/surveyed-room-store.js";
+import type { RoomOpeningPose } from "./room-opening-view.js";
 import { publicSurveyFolder, SURVEYED_ROOMS, surveyedRoomsEnabled, type SurveyedRoomEntry } from "./room-registry.js";
-import { useSurveyedRoom, type SurveyedRoom } from "./use-surveyed-room.js";
+import type { SurveyedRoomModelProps } from "./SurveyedRoomModel.js";
 
 /** What this device has asked for, read once from the page's address. */
 export interface PlannerSurveyedRoomAsk {
@@ -40,8 +52,8 @@ export interface PlannerSurveyedRoomAsk {
 }
 
 const NOTHING_ASKED: PlannerSurveyedRoomAsk = { enabled: false, staged: null };
-/** A load that has ended, either way, counts no files in. */
-const FILES_DONE_WITH = { settled: 0, expected: null } as const;
+/** No files counted: before the record has said how many there are, and after a load has ended. */
+const NO_FILES_COUNTED = { settled: 0, expected: null } as const;
 
 /**
  * Reads the switch and, where `development` is true, a staged folder. A
@@ -80,38 +92,125 @@ export interface PlannerRoomSpace {
 }
 
 /**
- * The surveyed room to draw for the planner's space, or null while there is
- * none to draw: none asked for, still loading, or failed (the plain shell
- * stays). `eligible` is false for a room drawn by other code (the Grand
- * Hall), which is then never asked about.
+ * A survey asked for the room of one venue. The planner holds one such object
+ * for as long as both stand, and the room's code answers to it by identity: a
+ * room handed back for an earlier request is never drawn.
  */
-export function usePlannerSurveyedRoom(space: PlannerRoomSpace | null, eligible: boolean): SurveyedRoom | null {
+export interface PlannerSurveyedRoomRequest {
+  readonly entry: SurveyedRoomEntry;
+  /** The space's venue, which the code reads before anything is fetched: only Trades Hall's rooms are drawn as surveyed. */
+  readonly venueId: string;
+}
+
+/** A surveyed room loaded and ready to draw, as its code hands it to the planner's scene. */
+export interface PlannerSurveyedRoomDrawn {
+  /** The request it answers. */
+  readonly request: PlannerSurveyedRoomRequest;
+  /** The camera's opening pose for the room (room-opening-view.ts): one object while the room and its data's numbers stand. */
+  readonly opening: RoomOpeningPose;
+  /** The room itself, for the scene to place inside its canvas. */
+  readonly model: ReactElement<SurveyedRoomModelProps>;
+}
+
+/** What the planner's scene is handed. */
+export interface PlannerSurveyedRoomSeam {
+  /**
+   * The surveyed room to draw in place of the plain shell, or null while there
+   * is none: none asked for, still arriving, or failed (the shell stays).
+   */
+  readonly model: ReactElement<SurveyedRoomModelProps> | null;
+  /** The camera's opening pose while that room is the one to draw; null otherwise, and the planner's own opening stands. */
+  readonly opening: RoomOpeningPose | null;
+  /**
+   * What loads the survey, to mount once beside the canvas (it draws nothing):
+   * null where no survey is asked for, and until its code has arrived.
+   */
+  readonly loader: ReactElement | null;
+}
+
+type SurveyedRoomCode = typeof import("./PlannerSurveyedRoom.js");
+
+/**
+ * Where the surveyed room's code comes from: a seam for tests, the one dynamic
+ * import otherwise. It resolves with nothing where the fetch failed and the
+ * page took its one reload for a newer build (Vite's import helper swallows
+ * the failure the page's handler claimed, route-error-boundary.tsx).
+ */
+export const surveyedRoomCode = {
+  load(): Promise<SurveyedRoomCode | undefined> {
+    return import("./PlannerSurveyedRoom.js");
+  },
+};
+
+/** The code's component, as React.lazy takes one; a failure where the code did not arrive. */
+function componentOf(code: SurveyedRoomCode | undefined): { readonly default: SurveyedRoomCode["PlannerSurveyedRoom"] } {
+  if (code === undefined) throw new Error("it did not arrive, and the page is reloading for a newer build");
+  return { default: code.PlannerSurveyedRoom };
+}
+
+/**
+ * Mounted only once the seam's own request for the code has come back with it
+ * (below), so this never suspends on a download that fails or never ends.
+ */
+const PlannerSurveyedRoom = lazy(() => surveyedRoomCode.load().then(componentOf));
+
+/**
+ * The planner's surveyed room for its space: what to draw, the camera's
+ * opening pose for it, and the loader to mount beside the canvas. `eligible`
+ * is false for a room drawn by other code (the Grand Hall), which is then
+ * never asked about. `dimensions` is the room's data as the planner sizes it
+ * and `fovDeg` the planner camera's vertical field of view: what the opening
+ * pose is worked out from, by the room's code.
+ */
+export function usePlannerSurveyedRoom(
+  space: PlannerRoomSpace | null, eligible: boolean, dimensions: SpaceDimensions, fovDeg: number,
+): PlannerSurveyedRoomSeam {
   const ask = useMemo(
     () => (typeof window === "undefined" ? NOTHING_ASKED : plannerSurveyedRoomAsk(window.location.search, import.meta.env.DEV)),
     [],
   );
   const slug = eligible && space !== null ? space.slug : null;
   const entry = useMemo(() => plannerSurveyedRoomEntry(ask, slug), [ask, slug]);
-  // The venue is read only for a room that has a survey to draw.
-  const tradesHall = useTradesHallVenue(entry !== null && space !== null ? space.venueId : null);
-  const state = useSurveyedRoom(tradesHall === true ? entry : null);
-
+  const venueId = space?.venueId ?? null;
+  const request = useMemo<PlannerSurveyedRoomRequest | null>(
+    () => (entry === null || venueId === null ? null : { entry, venueId }),
+    [entry, venueId],
+  );
   const roomName = space?.name ?? null;
-  const publish = useSurveyedRoomStore((store) => store.publish);
-  useEffect(() => {
-    if (roomName === null || state.status === "idle") {
-      publish(null);
-      return;
-    }
-    if (state.status === "loading") publish({ roomName, phase: "loading", files: { settled: state.settled, expected: state.expected }, failure: null });
-    else if (state.status === "ready") publish({ roomName, phase: "ready", files: FILES_DONE_WITH, failure: null });
-    else {
-      const { file, reason, detail } = state.failure;
-      publish({ roomName, phase: "failed", files: FILES_DONE_WITH, failure: `${file} (${reason}): ${detail}` });
-    }
-  }, [publish, roomName, state]);
-  // Nothing is left said of a scene that has gone.
-  useEffect(() => () => { publish(null); }, [publish]);
 
-  return state.status === "ready" ? state.room : null;
+  const publish = useSurveyedRoomStore((store) => store.publish);
+  // Said in the pass that asks, before anything has arrived: from here the room is arriving, its code first, so
+  // the caption shows work under way and nothing reads the room as settled while its code is still on the way.
+  useLayoutEffect(() => {
+    if (request === null || roomName === null) return undefined;
+    publish({ roomName, phase: "loading", files: NO_FILES_COUNTED, failure: null });
+    // Nothing is left said of a survey no longer asked for, or of a scene that has gone.
+    return () => { publish(null); };
+  }, [publish, request, roomName]);
+
+  // The code, asked for only here. If it cannot be had the room has failed as any survey fails: the shell stays
+  // and the caption says so. Nothing of it is mounted until it is in hand.
+  const [codeReady, setCodeReady] = useState(false);
+  useEffect(() => {
+    if (request === null || roomName === null) return undefined;
+    let current = true;
+    surveyedRoomCode.load().then(componentOf).then(
+      () => { if (current) setCodeReady(true); },
+      (error: unknown) => {
+        if (!current) return;
+        const detail = error instanceof Error ? error.message : String(error);
+        publish({ roomName, phase: "failed", files: NO_FILES_COUNTED, failure: `the room's code (import): ${detail}` });
+      },
+    );
+    return () => { current = false; };
+  }, [publish, request, roomName]);
+
+  const [drawn, setDrawn] = useState<PlannerSurveyedRoomDrawn | null>(null);
+  // Only a room that answers what is asked now: one in hand for an earlier request (another room, another
+  // venue's room of the same slug) is not drawn, from the first pass that asks for something else.
+  const mine = drawn !== null && drawn.request === request ? drawn : null;
+  const loader = request === null || roomName === null || !codeReady ? null
+    : createElement(Suspense, { fallback: null }, createElement(PlannerSurveyedRoom, { request, roomName, dimensions, fovDeg, onDrawn: setDrawn }));
+
+  return { model: mine?.model ?? null, opening: mine?.opening ?? null, loader };
 }

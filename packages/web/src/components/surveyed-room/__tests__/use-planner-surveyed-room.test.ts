@@ -1,27 +1,36 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
+import { act, cleanup, render, waitFor, type RenderResult } from "@testing-library/react";
+import { createElement, type ReactElement } from "react";
+import type { SpaceDimensions } from "@omnitwin/types";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock, type MockInstance } from "vitest";
+import type { TradesHallVenueStatus } from "../../../hooks/use-trades-hall-venue.js";
 import { useSurveyedRoomStore } from "../../../stores/surveyed-room-store.js";
+import { surveyedRoomOpeningPose } from "../room-opening-view.js";
 import type { SurveyedRoomEntry } from "../room-registry.js";
 import { surveyedRoomCaption, surveyedRoomTrouble, surveyedRoomWorking, type SurveyedRoomStatus } from "../room-status.js";
+import type { PlannerRoomSpace, PlannerSurveyedRoomSeam } from "../use-planner-surveyed-room.js";
 import { encodeReliefFile, flatCeilingEntry, flatWallEntry } from "./fixtures/relief-file.js";
 
-// Whether a space's venue is Trades Hall is read from the API; here it is set, and each asking is kept.
-const venue = vi.hoisted(() => ({ tradesHall: true as boolean | null, asked: [] as (string | null)[] }));
+// How a space's venue stands is read from the API; here it is set, and each asking is kept.
+const venue = vi.hoisted(() => ({ status: "trades-hall" as TradesHallVenueStatus, asked: [] as (string | null)[] }));
 vi.mock("../../../hooks/use-trades-hall-venue.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../hooks/use-trades-hall-venue.js")>()),
-  useTradesHallVenue: (venueId: string | null) => {
+  useTradesHallVenueStatus: (venueId: string | null) => {
     venue.asked.push(venueId);
-    return venue.tradesHall;
+    return venue.status;
   },
 }));
 
-const { plannerSurveyedRoomAsk, plannerSurveyedRoomEntry, usePlannerSurveyedRoom } = await import("../use-planner-surveyed-room.js");
+const { plannerSurveyedRoomAsk, plannerSurveyedRoomEntry, surveyedRoomCode, usePlannerSurveyedRoom } = await import("../use-planner-surveyed-room.js");
 
 const FOLDER = "/rooms/saloon/survey-2026-07-11";
 const STAGED = `?rooms=surveyed&roomsBase=${FOLDER}&roomsRev=1`;
-const SALOON_SPACE = { slug: "saloon", name: "Saloon", venueId: "00000000-0000-4000-8000-000000000099" };
+const SALOON_SPACE: PlannerRoomSpace = { slug: "saloon", name: "Saloon", venueId: "00000000-0000-4000-8000-000000000099" };
+/** The planner's own data for the Saloon, which is not the surveyed room's (room-opening-view.test.ts). */
+const DIMENSIONS: SpaceDimensions = { width: 13.1, length: 6.9, height: 5.4 };
+const FOV = 55;
+const NOTHING: PlannerSurveyedRoomSeam = { model: null, opening: null, loader: null };
 const FIXTURE_TEXT = readFileSync(path.resolve("src/components/surveyed-room/__tests__/fixtures/saloon-survey.fixture.json"), "utf-8");
 
 interface RawSaloon {
@@ -61,14 +70,66 @@ function status(): SurveyedRoomStatus | null {
   return useSurveyedRoomStore.getState().status;
 }
 
+interface PlannerProps {
+  readonly space: PlannerRoomSpace | null;
+  readonly eligible?: boolean;
+  readonly dimensions?: SpaceDimensions;
+}
+
+/** What the seam last handed the planner, and what it handed at every render (the venue asked for, and whether a room was to be drawn). */
+let seam: PlannerSurveyedRoomSeam = NOTHING;
+const renders: { readonly venueId: string | null; readonly drawn: boolean }[] = [];
+
+/** Stands where the planner's scene does: reads the seam, and mounts its loader beside the canvas. */
+function Planner({ space, eligible = true, dimensions = DIMENSIONS }: PlannerProps): ReactElement | null {
+  seam = usePlannerSurveyedRoom(space, eligible, dimensions, FOV);
+  renders.push({ venueId: space?.venueId ?? null, drawn: seam.model !== null });
+  return seam.loader;
+}
+
+function plan(props: PlannerProps): RenderResult {
+  return render(createElement(Planner, props));
+}
+
+/** Lets promises already settled, and the effects they lead to, run. */
+async function settle(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+type SurveyedRoomCode = Awaited<ReturnType<typeof surveyedRoomCode.load>>;
+
+/** A promise settled by hand: the code's download, held back or failed when a test says. */
+function held<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void; readonly reject: (reason: unknown) => void } {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (reason: unknown) => void = () => undefined;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Each asking for the surveyed room's code. Left alone it is the real import. */
+let load: MockInstance<(typeof surveyedRoomCode)["load"]>;
+
+beforeEach(() => {
+  load = vi.spyOn(surveyedRoomCode, "load");
+});
+
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   window.history.replaceState(null, "", "/");
   window.localStorage.removeItem("venviewer.surveyed-rooms");
-  venue.tradesHall = true;
+  venue.status = "trades-hall";
   venue.asked.length = 0;
+  seam = NOTHING;
+  renders.length = 0;
 });
 
 describe("what a device has asked for", () => {
@@ -123,60 +184,144 @@ describe("the survey the planner's room has", () => {
   });
 });
 
-describe("usePlannerSurveyedRoom", () => {
-  it("asks nothing of anyone where the switch is off: no venue read, no fetch, nothing published", () => {
+describe("usePlannerSurveyedRoom, where no survey is asked for", () => {
+  /** Nothing of a surveyed room: none to draw, no loader to mount, no code asked for, no venue read, no file fetched, nothing said. */
+  async function expectNothingAsked(fake: Mock<FetchFn>): Promise<void> {
+    await settle();
+    expect(seam).toEqual(NOTHING);
+    expect(load).not.toHaveBeenCalled();
+    expect(venue.asked).toEqual([]);
+    expect(fake).not.toHaveBeenCalled();
+    expect(status()).toBeNull();
+  }
+
+  it("asks nothing of anyone where the switch is off: no code, no venue read, no fetch, nothing published", async () => {
     const fake = serveSaloon();
     openPlanner(`?roomsBase=${FOLDER}&roomsRev=1`);
-    const { result } = renderHook(() => usePlannerSurveyedRoom(SALOON_SPACE, true));
-    expect(result.current).toBeNull();
-    expect(venue.asked.every((venueId) => venueId === null)).toBe(true);
-    expect(fake).not.toHaveBeenCalled();
-    expect(status()).toBeNull();
+    plan({ space: SALOON_SPACE });
+    await expectNothingAsked(fake);
   });
 
-  it("asks nothing for a room without a survey, the switch on", () => {
+  it("asks nothing for a room without a survey, the switch on", async () => {
     const fake = serveSaloon();
     openPlanner("?rooms=surveyed");
-    const { result } = renderHook(() => usePlannerSurveyedRoom(SALOON_SPACE, true));
-    expect(result.current).toBeNull();
-    expect(venue.asked.every((venueId) => venueId === null)).toBe(true);
-    expect(fake).not.toHaveBeenCalled();
-    expect(status()).toBeNull();
+    plan({ space: SALOON_SPACE });
+    await expectNothingAsked(fake);
   });
 
-  it("ignores a staged folder in a production build", () => {
+  it("ignores a staged folder in a production build", async () => {
     vi.stubEnv("DEV", false);
     const fake = serveSaloon();
     openPlanner(STAGED);
-    const { result } = renderHook(() => usePlannerSurveyedRoom(SALOON_SPACE, true));
-    expect(result.current).toBeNull();
-    expect(venue.asked.every((venueId) => venueId === null)).toBe(true);
-    expect(fake).not.toHaveBeenCalled();
-    expect(status()).toBeNull();
+    plan({ space: SALOON_SPACE });
+    await expectNothingAsked(fake);
   });
 
-  it("loads a staged survey for a Trades Hall room, saying so until it hands the room over", async () => {
+  it("is never asked about a room drawn by other code, or before the planner has a room", async () => {
     const fake = serveSaloon();
     openPlanner(STAGED);
-    const { result } = renderHook(() => usePlannerSurveyedRoom(SALOON_SPACE, true));
-    // Until it is ready there is no room to draw, and the planner is told one is loading.
-    expect(result.current).toBeNull();
-    expect(venue.asked).toContain(SALOON_SPACE.venueId);
-    expect(status()).toMatchObject({ roomName: "Saloon", phase: "loading", photos: null });
+    const view = plan({ space: { ...SALOON_SPACE, slug: "grand-hall", name: "Grand Hall" }, eligible: false });
+    await expectNothingAsked(fake);
+    view.rerender(createElement(Planner, { space: null }));
+    await expectNothingAsked(fake);
+  });
+});
+
+describe("usePlannerSurveyedRoom, where a survey is asked for", () => {
+  it("says the room is arriving at once, then loads a staged survey for a Trades Hall room and hands it over with its opening pose", async () => {
+    const fake = serveSaloon();
+    openPlanner(STAGED);
+    plan({ space: SALOON_SPACE });
+    // In the pass that asks for the survey, before any of its code or files has come: nothing to draw, and
+    // the planner is told one is arriving.
+    expect(seam.model).toBeNull();
+    expect(seam.opening).toBeNull();
+    expect(status()).toMatchObject({ roomName: "Saloon", phase: "loading", files: { settled: 0, expected: null }, photos: null });
     expect(surveyedRoomCaption(status())).toBe("Loading the Saloon as surveyed");
-    await waitFor(() => { expect(result.current).not.toBeNull(); });
-    expect(result.current?.record.slug).toBe("saloon");
-    expect(result.current?.entry).toEqual({ slug: "saloon", base: FOLDER, revision: 1 });
+    expect(surveyedRoomWorking(status())).toBe(true);
+    expect(load).toHaveBeenCalled();
+    await waitFor(() => { expect(seam.model).not.toBeNull(); });
+    const room = seam.model?.props.room;
+    if (room === undefined) throw new Error("no room was handed over");
+    expect(room.record.slug).toBe("saloon");
+    expect(room.entry).toEqual({ slug: "saloon", base: FOLDER, revision: 1 });
+    expect(venue.asked).toContain(SALOON_SPACE.venueId);
     expect(fake.mock.calls.map((call) => call[0])).toEqual([`${FOLDER}/survey.json?r=1`, `${FOLDER}/walls-relief.bin?r=1`, `${FOLDER}/ceiling-relief.bin?r=1`]);
     expect(status()).toMatchObject({ roomName: "Saloon", phase: "ready", failure: null });
+    // The planner's own view of the room's data, from as far back as holds the room as surveyed.
+    expect(seam.opening).toEqual(surveyedRoomOpeningPose(room.geometry, DIMENSIONS, FOV));
+    // The drawn room's photograph reports reach the caption.
+    act(() => { seam.model?.props.onPhotoProgress?.({ expected: 3, settled: 1, failed: [] }); });
+    expect(surveyedRoomCaption(status())).toBe("Loading the Saloon's photographs · 1 of 3");
+  });
+
+  it("counts the code's own download as part of the room's arrival: nothing is read, fetched or drawn until it has come", async () => {
+    const fake = serveSaloon();
+    openPlanner(STAGED);
+    const download = held<SurveyedRoomCode>();
+    load.mockImplementation(() => download.promise);
+    plan({ space: SALOON_SPACE });
+    await settle();
+    expect(load).toHaveBeenCalled();
+    // Still arriving, with working motion: never settled, so nothing is photographed as a finished room.
+    expect(status()).toMatchObject({ roomName: "Saloon", phase: "loading", files: { settled: 0, expected: null } });
+    expect(surveyedRoomWorking(status())).toBe(true);
+    expect(seam).toEqual(NOTHING);
+    expect(venue.asked).toEqual([]);
+    expect(fake).not.toHaveBeenCalled();
+    // It arrives, late.
+    const code = await import("../PlannerSurveyedRoom.js");
+    await act(async () => {
+      download.resolve(code);
+      await download.promise;
+    });
+    await waitFor(() => { expect(seam.model).not.toBeNull(); });
+    expect(status()).toMatchObject({ roomName: "Saloon", phase: "ready", failure: null });
+    expect(fake).toHaveBeenCalledTimes(3);
+  });
+
+  it("ends as the survey's failure when its code cannot be had: the reason kept, the shell left standing, and the next room asks again", async () => {
+    const fake = serveSaloon();
+    openPlanner(STAGED);
+    load.mockImplementation(() => Promise.reject(new TypeError("Failed to fetch dynamically imported module: /assets/PlannerSurveyedRoom.js")));
+    const view = plan({ space: SALOON_SPACE });
+    await waitFor(() => { expect(status()?.phase).toBe("failed"); });
+    expect(status()?.failure).toBe("the room's code (import): Failed to fetch dynamically imported module: /assets/PlannerSurveyedRoom.js");
+    expect(surveyedRoomCaption(status())).toBe("The surveyed Saloon could not load, so the room is drawn plainly. Planning is unaffected.");
+    expect(surveyedRoomWorking(status())).toBe(false);
+    expect(surveyedRoomTrouble(status())).toBe(true);
+    // Nothing of it is mounted, so nothing can suspend or throw; and nothing was read or fetched for it.
+    expect(seam).toEqual(NOTHING);
+    expect(venue.asked).toEqual([]);
+    expect(fake).not.toHaveBeenCalled();
+    // A failure is not kept: another room asks for the code afresh, and gets it.
+    load.mockRestore();
+    load = vi.spyOn(surveyedRoomCode, "load");
+    view.rerender(createElement(Planner, { space: { ...SALOON_SPACE, venueId: "00000000-0000-4000-8000-000000000100" } }));
+    expect(status()?.phase).toBe("loading");
+    await waitFor(() => { expect(seam.model).not.toBeNull(); });
+    expect(load).toHaveBeenCalled();
+    expect(status()?.phase).toBe("ready");
+  });
+
+  it("treats a download that came back with nothing as a failure: the page is reloading for a newer build", async () => {
+    // Vite's import helper resolves with nothing when a chunk's fetch failed and the page claimed its one reload.
+    serveSaloon();
+    openPlanner(STAGED);
+    load.mockImplementation(() => Promise.resolve(undefined));
+    plan({ space: SALOON_SPACE });
+    await waitFor(() => { expect(status()?.phase).toBe("failed"); });
+    expect(status()?.failure).toMatch(/^the room's code \(import\): /);
+    expect(seam).toEqual(NOTHING);
   });
 
   it("hands over no room when the survey cannot be loaded, and says so with the reason kept", async () => {
     serveSaloon("walls-relief.bin");
     openPlanner(STAGED);
-    const { result } = renderHook(() => usePlannerSurveyedRoom(SALOON_SPACE, true));
+    plan({ space: SALOON_SPACE });
     await waitFor(() => { expect(status()?.phase).toBe("failed"); });
-    expect(result.current).toBeNull();
+    expect(seam.model).toBeNull();
+    expect(seam.opening).toBeNull();
     expect(status()?.failure).toMatch(/^walls-relief\.bin \(http\): HTTP 404/);
     expect(surveyedRoomCaption(status())).toBe("The surveyed Saloon could not load, so the room is drawn plainly. Planning is unaffected.");
   });
@@ -184,34 +329,86 @@ describe("usePlannerSurveyedRoom", () => {
   it("refuses a staged folder that holds another room's survey", async () => {
     serveSaloon();
     openPlanner(STAGED);
-    const { result } = renderHook(() => usePlannerSurveyedRoom({ ...SALOON_SPACE, slug: "reception-room", name: "Reception Room" }, true));
+    plan({ space: { ...SALOON_SPACE, slug: "reception-room", name: "Reception Room" } });
     await waitFor(() => { expect(status()?.phase).toBe("failed"); });
-    expect(result.current).toBeNull();
+    expect(seam.model).toBeNull();
     expect(status()?.failure).toMatch(/^survey\.json \(room\): the record is of "saloon"/);
   });
 
-  it.each<[boolean | null, string]>([[false, "another venue's"], [null, "a venue not yet read, or that could not be read"]])(
-    "never loads Trades Hall's survey for a room of the same slug where the venue is %s (%s)", (tradesHall) => {
-      venue.tradesHall = tradesHall;
+  it.each<[TradesHallVenueStatus, string]>([["other", "another venue's"], ["unknown", "a venue that could not be read"]])(
+    "never loads Trades Hall's survey for a room of the same slug where the venue is %s (%s), and stops saying one is arriving", async (venueStatus) => {
+      venue.status = venueStatus;
       const fake = serveSaloon();
       openPlanner(STAGED);
-      const { result } = renderHook(() => usePlannerSurveyedRoom(SALOON_SPACE, true));
-      expect(result.current).toBeNull();
+      plan({ space: SALOON_SPACE });
+      // A survey is asked for by the room's slug, so until its venue is read the room is said to be arriving.
+      expect(status()?.phase).toBe("loading");
+      await waitFor(() => { expect(status()).toBeNull(); });
+      expect(venue.asked).toContain(SALOON_SPACE.venueId);
+      expect(seam.model).toBeNull();
       expect(fake).not.toHaveBeenCalled();
-      expect(status()).toBeNull();
     },
   );
 
-  it("is never asked about a room drawn by other code, and leaves nothing said when the scene goes", async () => {
+  it("goes on saying the room is arriving while its venue is still being read, and fetches nothing yet", async () => {
+    venue.status = "reading";
     const fake = serveSaloon();
     openPlanner(STAGED);
-    const hall = renderHook(() => usePlannerSurveyedRoom({ ...SALOON_SPACE, slug: "grand-hall", name: "Grand Hall" }, false));
-    expect(hall.result.current).toBeNull();
+    plan({ space: SALOON_SPACE });
+    await waitFor(() => { expect(venue.asked).toContain(SALOON_SPACE.venueId); });
+    await settle();
+    expect(status()).toMatchObject({ roomName: "Saloon", phase: "loading", files: { settled: 0, expected: null } });
+    expect(seam.model).toBeNull();
     expect(fake).not.toHaveBeenCalled();
-    hall.unmount();
-    const saloon = renderHook(() => usePlannerSurveyedRoom(SALOON_SPACE, true));
+  });
+
+  it("hands over one opening pose for as long as the room and its data's numbers stand, and a new one when they change (SM3)", async () => {
+    const fake = serveSaloon();
+    openPlanner(STAGED);
+    const view = plan({ space: SALOON_SPACE });
+    await waitFor(() => { expect(seam.model).not.toBeNull(); });
+    const { opening, model } = seam;
+    const room = model?.props.room;
+    if (room === undefined || opening === null) throw new Error("no room was handed over");
+    const fetched = fake.mock.calls.length;
+    // The space read again and found equal: new objects, the same numbers. The rig opens the camera afresh for a
+    // new pose object, so the pose, and the room, must be the ones already handed over.
+    view.rerender(createElement(Planner, { space: { ...SALOON_SPACE }, dimensions: { ...DIMENSIONS } }));
+    expect(seam.opening).toBe(opening);
+    expect(seam.model).toBe(model);
+    // The room's data grows taller: the planner's own view of it moves, and the opening with it. The survey does not load again.
+    const taller: SpaceDimensions = { ...DIMENSIONS, height: 6.4 };
+    view.rerender(createElement(Planner, { space: SALOON_SPACE, dimensions: taller }));
+    expect(seam.opening).not.toBe(opening);
+    expect(seam.opening).toEqual(surveyedRoomOpeningPose(room.geometry, taller, FOV));
+    expect(seam.opening).not.toEqual(opening);
+    expect(seam.model).toBe(model);
+    expect(fake.mock.calls.length).toBe(fetched);
+  });
+
+  it("never draws a room handed over for an earlier request: another venue's room of the same slug has its shell from its first pass", async () => {
+    serveSaloon();
+    openPlanner(STAGED);
+    const view = plan({ space: SALOON_SPACE });
+    await waitFor(() => { expect(seam.model).not.toBeNull(); });
+    const elsewhere = "00000000-0000-4000-8000-000000000100";
+    venue.status = "other";
+    view.rerender(createElement(Planner, { space: { ...SALOON_SPACE, venueId: elsewhere } }));
+    // Not in any pass for that venue's room, the first included: the room in hand was Trades Hall's.
+    const passes = renders.filter((pass) => pass.venueId === elsewhere);
+    expect(passes.length).toBeGreaterThan(0);
+    expect(passes.every((pass) => !pass.drawn)).toBe(true);
+    expect(seam.model).toBeNull();
+    expect(seam.opening).toBeNull();
+    await waitFor(() => { expect(status()).toBeNull(); });
+  });
+
+  it("leaves nothing said when the scene goes", async () => {
+    serveSaloon();
+    openPlanner(STAGED);
+    const view = plan({ space: SALOON_SPACE });
     await waitFor(() => { expect(status()?.phase).toBe("ready"); });
-    saloon.unmount();
+    view.unmount();
     expect(status()).toBeNull();
   });
 });

@@ -41,11 +41,16 @@ import { buildRoomFrame, type RoomFrame } from "./room-frame.js";
 import {
   buildCeilingGeometry, buildFloorGeometry, buildWallsGeometry, holdCeilingToWalls, type RoomGeometry, type RoomReliefs,
 } from "./room-geometry.js";
-import { surveyFileUrl, type SurveyedRoomEntry } from "./room-registry.js";
+import type { SurveyedRoomEntry } from "./room-registry.js";
 import type { SurveyRecord } from "./survey-record.js";
 
 /** The record's file name in every survey folder. */
 export const SURVEY_RECORD_FILE = "survey.json";
+
+/** A survey file's URL, at the entry's revision. */
+export function surveyFileUrl(entry: SurveyedRoomEntry, file: string): string {
+  return `${entry.base}/${file}?r=${String(entry.revision)}`;
+}
 
 export type SurveyedRoomFailureReason = SurveyLoadFailure | "room" | "revision" | "format" | "integrity" | "geometry" | "unexpected";
 

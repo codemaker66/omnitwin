@@ -89,10 +89,7 @@ import { HallContext } from "../grand-hall/HallContext.js";
 import { HallOpeningHour } from "../grand-hall/HallOpeningHour.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
-import { SurveyedRoomModel } from "../surveyed-room/SurveyedRoomModel.js";
-import { surveyedRoomOpeningPose } from "../surveyed-room/room-opening-view.js";
 import { usePlannerSurveyedRoom } from "../surveyed-room/use-planner-surveyed-room.js";
-import { reportSurveyedRoomPhotos } from "../../stores/surveyed-room-store.js";
 import { assemblyMode } from "../../floor/assembly/flag.js";
 import { hasSeenLayout, useAssemblyRecall } from "../../floor/assembly/recall.js";
 import { AssemblyReplay } from "../../floor/assembly/AssemblyReplay.js";
@@ -505,21 +502,14 @@ export function PlannerScene(): ReactElement {
   const captureDrawn = splatActive && loadedChunks > 0;
   // The drawn hall stands in a dark room; everything else on parchment.
   const hallDrawn = realHall && meshVisible;
-  // Another Trades Hall room drawn as surveyed, where this device asks for it (components/surveyed-room):
-  // null while it loads or if it cannot, and the plain shell stays. Its photographs stand as the hall's do.
-  const surveyedRoom = usePlannerSurveyedRoom(space, !realHall);
-  const photographed = hallDrawn || (surveyedRoom !== null && meshVisible);
-  // Its opening view is the planner's own from far enough back to hold the room as surveyed (room-opening-view.ts).
-  // Held while the survey is the room's, whichever layer shows, as the hall's is: a pose that came and went with
-  // the layer would open the camera afresh at every change of layer. One object for as long as the room and its
-  // data's numbers stand, as the rig steadies its own dimensions: a space set again as an equal object (another
-  // layout of the room, a reload after a save conflict) must not hand the rig a new pose to open on.
-  const { width: roomWidth, length: roomLength, height: roomHeight } = dimensions;
-  const surveyedOpening = useMemo(
-    () => (surveyedRoom === null ? null
-      : surveyedRoomOpeningPose(surveyedRoom.geometry, { width: roomWidth, length: roomLength, height: roomHeight }, PLANNER_CAMERA_FOV)),
-    [roomHeight, roomLength, roomWidth, surveyedRoom],
-  );
+  // Another Trades Hall room drawn as surveyed, where this device asks for it. Only the seam is imported here
+  // (surveyed-room/use-planner-surveyed-room.ts): the code that loads and draws a room is fetched where a survey
+  // is asked for, and hands back the room's model and its opening view (the planner's own from far enough back
+  // to hold the room as surveyed). Both are null while it arrives or if it cannot, and the plain shell stays.
+  // Its photographs stand as the hall's do, and its pose is held while the survey is the room's, whichever
+  // layer shows, as the hall's is: one that came and went with the layer would open the camera afresh each time.
+  const surveyedRoom = usePlannerSurveyedRoom(space, !realHall, dimensions, PLANNER_CAMERA_FOV);
+  const photographed = hallDrawn || (surveyedRoom.model !== null && meshVisible);
   // The real sun, moon and sky over the drawn hall, where this device asks for them.
   const hallSkyAsked = useMemo(() => typeof window !== "undefined" && hallSkyRequested(window.location.search), []);
   const skyLit = hallSkyAsked && hallDrawn && !timelinePreviewActive;
@@ -587,7 +577,7 @@ export function PlannerScene(): ReactElement {
   const cameraInteractionClearTimer = useRef<number | null>(null);
   const sceneWarmupSignature = timelinePreviewActive
     ? `frozen:${frozenRoom?.envelopeKey ?? "unavailable"}`
-    : `${space?.id ?? "fallback-grand-hall"}:${surveyedRoom !== null ? "surveyed" : roomVariant}:${sceneLayerMode}:${String(hasAsset)}:shell:${String(meshVisible)}`;
+    : `${space?.id ?? "fallback-grand-hall"}:${surveyedRoom.model !== null ? "surveyed" : roomVariant}:${sceneLayerMode}:${String(hasAsset)}:shell:${String(meshVisible)}`;
 
   const clearCameraInteractionTimer = useCallback((): void => {
     if (cameraInteractionClearTimer.current === null) return;
@@ -684,8 +674,8 @@ export function PlannerScene(): ReactElement {
           )}
           {meshVisible && (realHall ? (
             <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} sunlit={skyLit} multisampled={governed.profile.sceneSamples > 0} />
-          ) : surveyedRoom !== null ? (
-            <SurveyedRoomModel room={surveyedRoom} onPhotoProgress={reportSurveyedRoomPhotos} />
+          ) : surveyedRoom.model !== null ? (
+            surveyedRoom.model
           ) : roomGeometry !== null ? (
             <RoomMesh geometry={roomGeometry} variant={roomVariant} includeLighting={false} />
           ) : (
@@ -753,7 +743,7 @@ export function PlannerScene(): ReactElement {
           {realHall && !timelinePreviewActive && <HallViewDirector />}
           <CockpitPlanningCamera suspended={timelinePreviewActive || assemblyCamera} />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive || assemblyCamera}
-            defaultPose={realHall ? HALL_VIEW_POSES.room : surveyedOpening}
+            defaultPose={realHall ? HALL_VIEW_POSES.room : surveyedRoom.opening}
             onOpeningPose={realHall ? markHallOpeningPose : undefined}
             captureUnavailableKey={captureFailed && captureInUse ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
           {walkMode && interiorWalk !== null && !walkCameraDisabled && (!captureFailed || !captureInUse) && (
@@ -783,6 +773,8 @@ export function PlannerScene(): ReactElement {
         </Canvas>
         {assemblyStage && <AssemblyReplay />}
       </div>
+      {/* The survey's loader, where one is asked for: beside the canvas, drawing nothing. */}
+      {surveyedRoom.loader}
       {showArrival && <PlannerArrival onEnter={enterRoom} />}
     </PlannerCanvasBoundary>
   );

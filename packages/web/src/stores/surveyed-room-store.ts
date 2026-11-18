@@ -4,11 +4,16 @@ import type { SurveyedRoomPhotosStatus, SurveyedRoomStatus } from "../components
 // ---------------------------------------------------------------------------
 // Surveyed room store — how the planner's surveyed room stands
 //
-// The planner's scene loads a surveyed room where this device asks for one
-// (components/surveyed-room/use-planner-surveyed-room.ts) and publishes how
-// that is going here, for the quiet caption that tells the planner and for
-// the development lab. Null whenever no surveyed room is asked for: the
-// switch is off, the room has no survey, or it is not Trades Hall's.
+// The planner's scene asks for a surveyed room where this device wants one
+// (components/surveyed-room/use-planner-surveyed-room.ts), and how that is
+// going is published here, for the quiet caption that tells the planner and
+// for the development lab: by the scene's seam from the moment it asks (the
+// room is arriving, its code first), then by the room's code as its files
+// come in (PlannerSurveyedRoom.tsx). Null whenever no surveyed room is asked
+// for: the switch is off, the room has no survey, or it is not Trades Hall's.
+//
+// Part of what the planner carries for every visitor, so it holds the status
+// and nothing of the code that loads or draws a room.
 // ---------------------------------------------------------------------------
 
 /** What the scene knows of the survey's data; the photographs are the model's to report. */
@@ -39,8 +44,3 @@ export const useSurveyedRoomStore = create<SurveyedRoomStore>()((set) => ({
     set((state) => (state.status === null || samePhotos(state.status.photos, photos) ? state : { status: { ...state.status, photos } }));
   },
 }));
-
-/** A surveyed room model's photograph report (SurveyedRoomModel's `onPhotoProgress`), kept for the caption. */
-export function reportSurveyedRoomPhotos(progress: { readonly expected: number; readonly settled: number; readonly failed: readonly string[] }): void {
-  useSurveyedRoomStore.getState().reportPhotos({ expected: progress.expected, settled: progress.settled, failed: progress.failed.length });
-}

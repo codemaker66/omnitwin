@@ -23,7 +23,8 @@ switch ([In the planner](#in-the-planner)). No room is listed in the registry ye
 | `room-visibility.ts` | Which walls, and whether the ceiling, the camera's side lets it see | no |
 | `room-status.ts` | How the planner's surveyed room stands, and the caption's words for it | no |
 | `room-opening-view.ts` | The planner's opening view of a surveyed room | no |
-| `use-planner-surveyed-room.ts` | Which survey the planner's room has, loaded and published | no |
+| `use-planner-surveyed-room.ts` | The planner's seam: which survey its room has, and the one place the rest of this folder's code is asked for | no |
+| `PlannerSurveyedRoom.tsx` | The code that seam asks for: reads the venue, loads the survey, says how it stands, hands the scene the room and its opening pose | no |
 | `load-survey.ts` | Fetches and checks one record, with typed failures | no |
 | `room-geometry.ts` | Walls, ceiling and floor as plain typed arrays | no |
 | `use-surveyed-room.ts` | Loads record and reliefs, builds the surfaces, one typed state | no |
@@ -113,7 +114,7 @@ whatever order the frame's subscribers run in.
 ## In the planner
 
 `components/editor/PlannerScene.tsx` draws a surveyed room in place of the plain shell when all of
-these hold (`use-planner-surveyed-room.ts`):
+these hold:
 
 - this device has asked for surveyed rooms: `?rooms=surveyed`, remembered; `?rooms=plain` turns
   it off again;
@@ -123,11 +124,43 @@ these hold (`use-planner-surveyed-room.ts`):
   its own model.)
 
 Where the switch is off, or the room has no survey, nothing changes and nothing is asked of
-anyone: no venue is read and nothing is fetched.
+anyone: no code is fetched, no venue is read and no file is fetched.
 
-- **Loading.** The plain shell stays, on its parchment, until the survey's record and reliefs have
-  loaded and its surfaces are built; then the surveyed room takes its place in one step, in a plain
-  tone, and its photographs follow. The room never blanks.
+### What the planner carries for everyone, and what only a survey brings
+
+The house rule for code behind a switch is that the planner every visitor loads pays for the
+switch's seam and nothing else. So the folder is in two parts, and
+`src/__tests__/bundle-splitting.test.ts` holds the line between them:
+
+- **The seam, in the planner's own file.** `use-planner-surveyed-room.ts` (the switch, the staged
+  folder, the registry's entry for the room, and the hook the scene calls), `room-registry.ts`,
+  `room-status.ts` and `stores/surveyed-room-store.ts` (the caption's words and what they are said
+  of). The scene imports nothing else of this folder.
+- **Everything else, in a file of its own**, asked for through one dynamic import
+  (`surveyedRoomCode.load` in the seam, behind `React.lazy`) and only once a survey is asked for:
+  `PlannerSurveyedRoom.tsx` and what it reads (the venue read, `use-surveyed-room.ts` with the
+  record's schema, the relief reader and the geometry, `room-opening-view.ts`, and
+  `SurveyedRoomModel.tsx` with its buffers, materials and photographs).
+
+How the two meet. The scene calls `usePlannerSurveyedRoom(space, eligible, dimensions, fov)` and
+gets back three things: `model` (the room to draw, a `SurveyedRoomModel` element, or null),
+`opening` (the camera's pose for it, or null) and `loader` (an element to mount once beside the
+canvas, or null). The loader is the lazy `PlannerSurveyedRoom`: it draws nothing, loads the survey
+and hands the room and the pose back through a stable callback. It is mounted outside the canvas
+so the survey loads whether or not the canvas is up yet, and is kept when a canvas is rebuilt. The
+seam draws a room only while it answers the request the planner is making now (the survey and the
+space's venue, one object while both stand), so a room handed back for an earlier request is never
+drawn, not for one pass.
+
+- **Loading.** From the moment a survey is asked for the room is arriving, and the caption says so
+  with the shared Activity motion: first its code (the caption reads "Loading the Saloon as
+  surveyed" before anything of the survey has been fetched), then its files, counted. The status
+  is set in the same pass that asks, so nothing reads the room as settled while its code is still
+  on the way (`window.__plannerLab.ready()` included). The plain shell stays, on its parchment,
+  until the survey's record and reliefs have loaded and its surfaces are built; then the surveyed
+  room takes its place in one step, in a plain tone, and its photographs follow. The room never
+  blanks. A room whose venue turns out not to be Trades Hall's, or cannot be read, stops being
+  said to arrive once that is known: the caption falls quiet and the shell stays.
 - **Failing.** If the survey cannot be loaded the shell stays and the planner says so through its
   quiet caption (`editor/cockpit/RoomResolveCaption.tsx`, the one that speaks for a capture and for
   the Grand Hall's surfaces): "The surveyed Saloon could not load, so the room is drawn plainly.
@@ -135,6 +168,13 @@ anyone: no venue is read and nothing is fetched.
   developer. The same caption counts the files and then the photographs in, with the shared
   Activity motion only while something is arriving, and keeps a still note if a photograph failed.
   On a phone, where the caption is otherwise kept off the stage, a failure still shows.
+- **Failing to fetch the code.** The same failure, with the reason kept as "the room's code
+  (import): ...". The lazy component is mounted only after the seam's own request for the code
+  has come back with it, so a failed download can neither suspend the scene without end nor throw
+  into it. A failed request is not remembered: the next room asks again. One case comes first:
+  the page takes one reload for a chunk that will not load (`route-error-boundary.tsx`, for a
+  build replaced by a deploy), and Vite's import helper then resolves with nothing. That too is
+  treated as a failure, never as code to mount.
 - **Surround, fog, camera response.** A surveyed room stands as the Grand Hall does: the dark
   surround (`#120e0b`), no fog, and the Neutral tone curve that leaves photographs as taken
   (`CaptureToneMapping`'s `photographedRoom`; under the planner's default film curve they would be
@@ -163,7 +203,10 @@ anyone: no venue is read and nothing is fetched.
   room's; a portrait screen keeps the planner's interior angle. The rig opens the camera afresh
   when a room's pose changes, so the camera moves to this view at the step the surveyed room
   replaces the shell, also where a hand had already moved it while the survey loaded. While the
-  shell stands (loading, failed) the opening is the planner's own.
+  shell stands (loading, failed) the opening is the planner's own. The pose is one object for as
+  long as the room and the numbers of its data stand (`PlannerSurveyedRoom.tsx` keys it on the
+  width, length and height, as the rig steadies its own dimensions): the editor sets a freshly
+  read space on every configuration load, and an equal one must not open the camera afresh.
 - **Not wired to a surveyed room in this version:** the walls' Cut and Full control and a wall's
   click (the plain shell's), the section plane's cut, and the shell's metre grid on the floor.
 
@@ -445,11 +488,20 @@ script recorded neither until 16 November. A capture taken since says both.
 - `__tests__/room-sight.test.ts`: writes only on a change of side, says when the camera has moved
   on since, reads the camera in the room's own frame; the buffers' draw ranges, the index's upload,
   and that a wall or ceiling not drawn is not met by a ray.
-- `__tests__/SurveyedRoomModel.test.tsx` also drives real frames: the ranges follow the camera, and
-  a camera moved after the room's turn gets exactly one more frame.
-- `__tests__/use-planner-surveyed-room.test.ts`: the switch, the registry's injectable table, the
-  staged folder and that a production build ignores it, the venue, a failure, another room's
-  survey, and the caption's words.
+- `__tests__/SurveyedRoomModel.test.tsx` also drives real frames: the ranges follow the camera, a
+  camera moved after the room's turn gets exactly one more frame, and a ceiling taken away is not
+  drawn at all (its mesh is not visible, its draw range stays empty so a ray still passes, and a
+  room that takes another's place does not inherit a hidden ceiling).
+- `__tests__/use-planner-surveyed-room.test.ts`: the seam and, through its loader, the room's
+  code. The switch, the registry's injectable table, the staged folder and that a production build
+  ignores it. Where no survey is asked for, nothing is: the code's import is not called, no venue
+  is read, nothing is fetched or said. Where one is: the room is said to be arriving in the pass
+  that asks; a download of the code that comes late (nothing is read, fetched or drawn until it
+  has, then the room loads), one that is rejected and one that comes back with nothing (both end
+  as the survey's failure with the reason kept, nothing mounted, and the next room asks again);
+  the venue still being read, another's and unreadable; a survey that fails; another room's
+  survey; one opening pose for as long as the room and its data's numbers stand and a new one
+  when they change; a room handed back for an earlier request never drawn; and the caption's words.
 - `__tests__/room-opening-view.test.ts`: the opening view against three's own camera: the
   planner's own opening does not hold the Saloon as surveyed; the fitted one keeps the planner's
   target and line of sight and holds every corner of the room's drawn box inside the margin at
@@ -462,8 +514,16 @@ script recorded neither until 16 November. A capture taken since says both.
   what the scene draws: the shell exactly as today with the switch off or no survey, the shell
   until ready and the surveyed room after, the shell and the note on failure, another venue's room,
   a production build, the Grand Hall left alone, a history preview; and the opening pose the camera
-  rig is handed: none while the shell stands, the fitted one (one object through re-renders) once
-  the surveyed room is drawn, the hall's own for the hall.
+  rig is handed: none while the shell stands, the fitted one (one object through re-renders, and
+  through the room's space being set again as an equal object) once the surveyed room is drawn,
+  the hall's own for the hall. Also the code's download as the scene sees it: not asked for
+  without a survey; while it is on its way the shell stands and the room is said to be arriving;
+  if it fails the shell stands, the canvas is still the scene's and the caption says so.
+- `src/__tests__/bundle-splitting.test.ts` (its last section): from the planner's page, static
+  imports reach only the seam's three files of this folder, and nothing of it from the app's
+  entry; the code's one dynamic import is in the seam and nowhere else, behind `React.lazy`; the
+  scene names nothing of this folder but the seam; and the code takes nothing of the seam's files
+  at run time.
 
 Seen in the planner's scene, twice. A capture of the staged Saloon through `planner-lab.mjs` on
 15 November 2026, taken before the opening view was fitted, is where the opening's fault was seen.

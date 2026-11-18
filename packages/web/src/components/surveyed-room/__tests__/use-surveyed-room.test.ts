@@ -6,6 +6,7 @@ import type { SurveyedRoomEntry } from "../room-registry.js";
 import {
   loadSurveyedRoom,
   SurveyedRoomLoadError,
+  surveyFileUrl,
   useSurveyedRoom,
   type SurveyedRoomFailure,
   type SurveyedRoomProgress,
@@ -101,6 +102,12 @@ afterEach(() => {
 });
 
 describe("loading a surveyed room", () => {
+  it("builds a file's URL at the entry's revision", () => {
+    const third: SurveyedRoomEntry = { ...SALOON, revision: 3 };
+    expect(surveyFileUrl(third, "survey.json")).toBe("/rooms/saloon/survey-2026-07-11/survey.json?r=3");
+    expect(surveyFileUrl(third, "walls-4096.webp")).toBe("/rooms/saloon/survey-2026-07-11/walls-4096.webp?r=3");
+  });
+
   it("reads the record and both reliefs at the entry's revision, and builds the room's surfaces", async () => {
     const files = saloonFiles();
     const fake = serveSaloon(files);
