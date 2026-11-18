@@ -1,0 +1,66 @@
+/* ---------------------------------------------------------------------------
+ * THE DOCK (T-671, slice 8′; spec 4.1, 5.1, 6.3; card-dock spec §2).
+ *
+ * One lacquer bar, 56 px tall, bottom centre, keys 40 px; thin rules between
+ * the groups. The view group's copper underline slides on detent (KeyRow).
+ * The rail and its meter join the top edge in slice 12′.
+ * ------------------------------------------------------------------------- */
+
+.pc-dock {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 56px;
+  padding: 0 8px;
+  pointer-events: auto;
+}
+
+.pc-dock__group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+@media (max-width: 767px) {
+  .pc-dock { max-width: calc(100vw - 24px); overflow-x: auto; }
+}
+
+/* -- Lay out, in the right zone ----------------------------------------------- */
+.pc-layout-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  pointer-events: auto;
+}
+
+.pc-layout-panel__heading { margin: 0; color: var(--house-forest-ink-3); }
+
+.pc-layout-panel__choices { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.pc-layout-panel__line,
+.pc-layout-panel__result p { margin: 0; color: var(--house-forest-ink-2); }
+
+/* -- The stack: the rail joined to the dock's top edge, one width ---------- */
+.pc-dockstack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  max-width: min(1068px, calc(100vw - 480px));
+  pointer-events: auto;
+}
+
+.pc-dockstack > .pc-dock { justify-content: center; }
+
+/* Staff's third line ("×22 in store") widens the cards by about 2 px each: eight still fit at 1600 [measured: 986 of 970]. */
+.pc-dockstack:has(.pc-railcard__store) { max-width: min(1100px, calc(100vw - 480px)); }
+
+.pc-dockstack > .pc-rail-wrap ~ .pc-dock {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+@media (max-width: 767px) {
+  .pc-dockstack { max-width: none; }
+}

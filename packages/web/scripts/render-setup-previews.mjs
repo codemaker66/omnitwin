@@ -8,7 +8,7 @@
 // either.
 //
 // Files go to public/models/furniture/setup-<card>/<SETUP_PREVIEW_VERSION>/
-// <look>.webp (src/lib/crafted-furniture.ts). That folder is served
+// <look>.webp (src/lib/setup-card-previews.ts). That folder is served
 // immutable, so a change to how a look reads needs a new version, not new
 // bytes in the old folder; the script refuses to replace a picture that
 // exists unless OVERWRITE=1 is set, which is only right before that version

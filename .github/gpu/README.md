@@ -190,6 +190,13 @@ rooms and on every room's bar, and a slot opened under its own room to its sheet
 (`day-board.spec.ts`). The other three Day Board cases keep their identities.
 The totals are unchanged.
 
+After it, a case written on 6 November 2026 adds one ordinary case for the new
+chrome cleared away (T-680 in T-671's chrome, behind `?chrome=v2`): `\` and the slate's crest
+hide every zone but the crest, which stays where it stood; one Esc brings the
+tools back; the room takes the pointer where the chrome has gone; and L and `/`
+open their panels with the tools back (`planner-chrome-v2-clear.spec.ts`); this
+changes the inventory from 421 to 422 and the CPU partition from 416 to 417.
+
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
 layout cases retire with that public experience. Seven ordinary game cases in
@@ -233,6 +240,13 @@ On 16 October 2026 Blake approved the same re-pin from 6.18.40.1 to 6.18.54.1
 after WSL updated itself again; the rest of the runtime was unchanged, and the
 five cases passed on the new kernel (CI run 38873316500, attempt 1, PR #88's
 merge ref 1f53ab8f) before publication refused the runtime.
+
+On 14 November 2026 Blake approved the same re-pin from 6.18.54.1 to 6.18.58.1
+after WSL updated itself overnight (the last gate on 6.18.54.1 passed at 01:20 UTC;
+the operator refused PR #388's gate at 16:54 on the new kernel). Node 22.23.2,
+Playwright's Chromium 147.0.7727.15, NVIDIA 616.92 and the renderer were unchanged.
+The five cases passed on the new kernel (CI run 43624511341, attempt 2, PR #411's
+merge ref 235b6843; 5 passed in 55.1 s) before publication refused the runtime.
 
 ## One explicitly admitted local run
 

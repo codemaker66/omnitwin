@@ -2,7 +2,8 @@ import { seatBaseSlug } from "@omnitwin/types";
 import { getCatalogueItem, type CatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { createGhostWorld, judgeGhost, obstacleAt, refusalChip, type GhostObstacle, type GhostWorld } from "./ghost-truth.js";
-import { footprintBounds, selectionUnits, wholeSelection } from "./placement-edit.js";
+import { footprintBounds, wholeSelection } from "./placement-edit.js";
+import { selectionUnits } from "./placement-moves.js";
 import { generatePlacedId, settleMovedOnSurfaces, type PlacedItem } from "./placement.js";
 import {
   cardMainItem,

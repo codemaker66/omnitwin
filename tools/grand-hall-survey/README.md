@@ -32,7 +32,15 @@ Playwright from `packages/web` and `packages/reconstruction-foundry`); Chromium 
 measuring page (Playwright's own, or set `CHROMIUM_PATH`). The work directory needs about 3 GB.
 On four cores the walls' labels take about 40 minutes and their photographs about 8, each step
 under 1.3 GB of memory; the ceiling, dome and floor's projection takes most of the rest of the
-build's two hours. Two runs of the walls give byte-identical labels, orthophotos and atlases. The
+build's two hours. Two runs of the walls give byte-identical labels, orthophotos and atlases.
+`label-views.py` runs each station's bands on four threads (`SURVEY_THREADS`) and holds BLAS to one
+thread: it sets `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS` and `MKL_NUM_THREADS` to 1 before numpy
+loads, and `build.sh` sets the same. With BLAS running threads of its own under the four bands, their
+concurrent matrix products deadlocked or crashed on Windows (OpenBLAS 0.3.31: three runs of four on
+the end wall, 13-14 November 2026, the stall inside `project.depth_lookup`), and the extra threads
+only oversubscribed the cores. The labels do not depend on either count: on a region of the end
+wall round its portrait (u 2.5 to 8.1 m, v 1.5 to 5.0 m), four BLAS threads under one band thread
+and one BLAS thread under four band threads gave identical arrays. The
 walls' 2 mm detail takes about 15 minutes more (2.5 to 5.3 a wall, at most 1.25 GB), and two runs give
 byte-identical tiles. The portraits' varnish veil takes about a minute and a quarter a canvas (each
 panorama that saw it read once, under 0.8 GB); two runs give byte-identical corrections.
@@ -437,7 +445,7 @@ and raise the `?r=` revision in `CONTEXT_MODEL_URL` (`hall-context.ts`), for the
 `HALL_SURVEY_REVISION` above.
 
 **v3, the city round the measured front (`--front-cut`, 4 November 2026).** Where the planner draws Trades
-Hall's own Glassford Street front (`hall-exterior-spec.ts`, `?facade=1`), the city must not draw the DSM's: its
+Hall's own Glassford Street front (`hall-exterior-spec.ts`; off only where a device chose `?facade=0`), the city must not draw the DSM's: its
 traced front stands 1.0-1.2 m out from the scanned faces (the LiDAR shadow of a front facing away from the
 aircraft, filled), and its raster stair-steps stood in front of the modelled one. v3 is v2 in v2's frame and
 registration (the hall's E57 scan, matched to the DSM's edges of the walls across Glassford, Garth and Hutcheson
@@ -502,7 +510,7 @@ the script's default) the best similarity is 1.0015 with a shift under 1 px. The
 Chrome 156, the RTX 4090), the render's edges over the front lie a median 0.95 px from the photograph's (75% within
 1.9 px, 86% within 3 px; 37.1 px a metre at the links' face, so about 2.6 cm), and the skyline's lines sit within
 1-4 px (end bays' balustrade +1, links' +4, the rosette attic -1, the pavilions' parapets -3). The other way, the
-photograph's edges lie a median 2.9 px from the render's, since the stone's joints, the carving, the signs and the
+photograph's edges lie a median 3.3 px from the render's, since the stone's joints, the carving, the signs and the
 street have no edges in the model.
 
 Diagnostics, not part of the build: `context/probe.py <dsm>` shows that in the grid's documented
