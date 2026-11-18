@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SHEET_SETTLE } from "../../components/planner-chrome/sheet-motion.js";
 import { SPRING_PRESETS } from "../springs.js";
 import {
   createSpringDriver,
@@ -115,7 +116,7 @@ describe("createSpringDriver", () => {
   it("under reduced motion writes a new target directly and asks for no frame", () => {
     const clock = new FakeClock();
     const out = recorder();
-    const driver = createSpringDriver({ initial: 0, config: SPRING_PRESETS.sheetSettle, write: out.write, clock, reducedMotion: () => true });
+    const driver = createSpringDriver({ initial: 0, config: SHEET_SETTLE, write: out.write, clock, reducedMotion: () => true });
 
     driver.setTarget(100);
 
@@ -205,7 +206,7 @@ describe("useSpringValue", () => {
   it("stops its frame loop when the component unmounts", () => {
     const clock = new FakeClock();
     const out = recorder();
-    const { rerender, unmount } = renderHook(({ target }) => { useSpringValue(target, SPRING_PRESETS.sheetSettle, out.write, { clock }); }, { initialProps: { target: 0 } });
+    const { rerender, unmount } = renderHook(({ target }) => { useSpringValue(target, SHEET_SETTLE, out.write, { clock }); }, { initialProps: { target: 0 } });
 
     rerender({ target: 300 });
     expect(clock.pending).toBe(1);

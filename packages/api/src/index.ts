@@ -45,6 +45,7 @@ import { drizzleQuizRunStore, publicQuizRunRoutes } from "./routes/public-quiz-r
 import { publicSheetCheckRoutes } from "./routes/public-sheet-check.js";
 import { resolveSheetPaperCheck } from "./services/sheet-paper-check.js";
 import { publicMcpRoutes } from "./routes/public-mcp.js";
+import { publicWebVitalsRoutes, type PublicWebVitalsOptions } from "./routes/public-web-vitals.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
 import { dietaryMemoryRoutes } from "./routes/dietary-memory.js";
@@ -106,7 +107,7 @@ import { registerAutoSave } from "./ws/auto-save.js";
 import { registerDiaryLive } from "./ws/diary-live.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
-import { apiLoggerOptions } from "./observability/health-redaction.js";
+import { apiLoggerOptions, type LogLineStream } from "./observability/health-redaction.js";
 import { registerDefaultSubscribers } from "./observability/subscribers.js";
 import { registerSecurityHeaders } from "./middleware/security-headers.js";
 import { registerRequestId } from "./middleware/request-id.js";
@@ -122,10 +123,19 @@ const JOB_WORKER_STOP_GRACE_MS = 18_000;
 // OMNITWIN API — Fastify server entry point
 // ---------------------------------------------------------------------------
 
+export interface BuildServerOptions {
+  /** Tests only: the production logger, writing its lines here, so a test
+   *  reads what the server would log in production (no logger otherwise). */
+  readonly logStream?: LogLineStream;
+  /** Tests only: the field web vitals route's batch (to write on demand) and
+   *  how often it writes. */
+  readonly webVitals?: Pick<PublicWebVitalsOptions, "batch" | "flushEveryMs">;
+}
+
 /** Builds and configures the Fastify instance (exported for testing).
  *  Accepts a pre-validated Env so the direct-run entry point can validate
  *  once and pass the result in, avoiding the double-validation on startup. */
-export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<typeof Fastify>> {
+export async function buildServer(env: Env = validateEnv(), options: BuildServerOptions = {}): Promise<ReturnType<typeof Fastify>> {
 
   // Initialise Sentry BEFORE Fastify so its HTTP instrumentation
   // patches the global fetch/http layer before any request handler
@@ -170,7 +180,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     // logs request urls without their query string (a client's name, email or
     // phone on the search routes) and errors without query parameters or pg
     // `detail`/`where` (observability/health-redaction.ts and redact.ts).
-    logger: apiLoggerOptions(isDev ? "development" : isTest ? "test" : "production"),
+    logger: options.logStream === undefined
+      ? apiLoggerOptions(isDev ? "development" : isTest ? "test" : "production")
+      : apiLoggerOptions("production", options.logStream),
     bodyLimit: 2_000_000,
     connectionTimeout: 30_000,
     requestTimeout: 60_000,
@@ -216,7 +228,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // Rate limiting — per-user where authenticated, per-IP otherwise.
   // Global 100/min is the baseline; individual routes tighten or
   // relax via their own `config.rateLimit` option, which inherits this
-  // keyGenerator.
+  // keyGenerator unless it names its own (POST /public/web-vitals keys by
+  // an HMAC of the address, never the address; routes/public-web-vitals.ts).
   //
   // The limiter keys each request at onRequest, before any route's
   // `authenticate` preHandler runs, so it cannot read `request.user`.
@@ -535,6 +548,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(publicPlanViewRoutes, { db, prefix: "/public" });
   await server.register(layoutRoutes, { db, prefix: "/layouts" });
   await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
+  await server.register(publicWebVitalsRoutes, { db, prefix: "/public", ...options.webVitals });
   await server.register(publicQuizRunRoutes, { store: drizzleQuizRunStore(db), prefix: "/public" });
   // One Living Record: a printed sheet's QR asks "is this copy current?" —
   // version state only, no sign-in, no content.
@@ -670,6 +684,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
 
 // --- Start server (only when run directly, not imported) ---
 
+/** The API's hard stop after SIGTERM or SIGINT: past it the process exits 1,
+ *  whatever is still closing (Railway's own kill waits 30 s, #420). Exported
+ *  so a test can hold the web vitals batch's closing write, and the time it
+ *  leaves requests in flight, inside it (web-vitals-postgres.test.ts). */
+export const SHUTDOWN_GRACE_MS = 25_000;
+
 const isDirectRun = process.argv[1]?.endsWith("index.ts") === true ||
                     process.argv[1]?.endsWith("index.js") === true;
 
@@ -701,12 +721,12 @@ if (isDirectRun) {
   //      deployment events.
   //   2. Call `server.close()` — stops accepting new connections and
   //      drains in-flight requests using Fastify's internal tracking.
-  //   3. Hard-abort after 25s so a stuck request doesn't block the
-  //      platform's KILL timer (orchestrators typically give 30s).
+  //   3. Hard-abort after SHUTDOWN_GRACE_MS (25 s) so a stuck request
+  //      doesn't block the platform's KILL timer (orchestrators typically
+  //      give 30s).
   //   4. Re-raise the exit code so container runtimes see the expected
   //      signal exit.
   // ---------------------------------------------------------------------------
-  const SHUTDOWN_GRACE_MS = 25_000;
   let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals): void => {
     if (shuttingDown) return;

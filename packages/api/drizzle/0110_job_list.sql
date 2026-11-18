@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- 0109 — the job list (T-702, the plumbing's piece 0)
+-- 0110 — the job list (T-702, the plumbing's piece 0)
 --
 -- jobs: the list of work the API carries out later, in PostgreSQL, so that
 -- work asked for in a request survives a restart and is tried again when it
@@ -24,7 +24,7 @@
 -- row once; a stray old status would fail the migration, so production's
 -- distinct statuses are read before this lands.
 --
--- Written as 0109 (journal idx 106) on the plumbing branch; the number is
+-- Written as 0110 (journal idx 107) on the plumbing branch; the number is
 -- fixed again at merge. Running code reads none of this until the next
 -- release. The keys briefly hold writes to venues, events and enquiries; a
 -- busy moment waits up to ten seconds a lock, then fails the deploy rather

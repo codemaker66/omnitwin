@@ -747,8 +747,15 @@
     {
       "idx": 106,
       "version": "7",
-      "when": 1794513600000,
-      "tag": "0109_job_list",
+      "when": 1794553200000,
+      "tag": "0109_web_vital_samples",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1794556800000,
+      "tag": "0110_job_list",
       "breakpoints": true
     }
   ]

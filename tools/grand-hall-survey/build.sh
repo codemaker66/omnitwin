@@ -42,8 +42,13 @@ node "$SURVEY/render.mjs" "$SURVEY/views-ceiling.json" out-walls
 step "Walls: the corners' fins moved back onto their walls"
 python3 "$SURVEY/fix-corners.py" --positions-only
 
+# label-views.py runs each station's bands on four threads, each calling BLAS: BLAS is held to one
+# thread there (the script also does so itself). With BLAS threaded as well, the bands' concurrent
+# calls deadlocked on Windows.
 step "Walls: each 40 mm block's sharpest station, and the depth where the best views agree"
-for wall in window door end fire; do python3 "$SURVEY/label-views.py" "$wall"; done
+for wall in window door end fire; do
+  OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 python3 "$SURVEY/label-views.py" "$wall"
+done
 
 step "Walls: coloured from those stations, seams levelled (2.5 mm and 5 mm orthophotos)"
 for wall in window door end fire; do python3 "$SURVEY/project-walls.py" "$wall" --labels; done

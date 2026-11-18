@@ -39,6 +39,8 @@ import type {
   AgentTrajectory,
   BookingLostReason,
   EngagementEventKind,
+  WebVitalDeviceClass,
+  WebVitalName,
   FirstResponseChannel,
   CaptureInclude,
   CaptureSourceKind,
@@ -1309,7 +1311,7 @@ export const emailSends = pgTable("email_sends", {
   sentAt: timestamp("sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  // T-702, migration 0109: what a queued send needs. Unused until the next
+  // T-702, migration 0110: what a queued send needs. Unused until the next
   // piece. A send names the venue it belongs to, and an event or enquiry only
   // under that same venue.
   venueId: uuid("venue_id").references(() => venues.id),
@@ -6924,7 +6926,39 @@ export const decisionEvents = pgTable("decision_events", {
   check("decision_events_detail", sql`jsonb_typeof(${table.detail}) = 'object'`),
 ]);
 
-// T-702, migration 0109: the job list. Work the API carries out later, kept in
+// ---------------------------------------------------------------------------
+// Migration 0109: field web vitals (goal 07).
+//
+// One row per vital of a sampled page load: the route's pattern (never an
+// address), a device class, the value on its vital's step (WEB_VITAL_STEPS, so
+// its precision names no browser) and the rating it earns; not how the page
+// was reached. Nothing about the visitor. Only the UTC day it arrived, not the
+// moment, and written in shuffled hourly batches of at least ten samples of
+// one vital, page, device class and day (createWebVitalsBatch), so neither row
+// order, xmin nor restore history pairs a row with a host's request log. Kept
+// WEB_VITAL_RETENTION_DAYS, then removed by the nightly
+// cleanup. Written only by routes/public-web-vitals.ts, through its batch.
+// ---------------------------------------------------------------------------
+
+export const webVitalSamples = pgTable("web_vital_samples", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).default(sql`date_trunc('day', now(), 'UTC')`).notNull(),
+  page: varchar("page", { length: 160 }).notNull(),
+  device: varchar("device", { length: 10 }).$type<WebVitalDeviceClass>().notNull(),
+  metric: varchar("metric", { length: 8 }).$type<WebVitalName>().notNull(),
+  value: doublePrecision("value").notNull(),
+  rating: varchar("rating", { length: 20 }).notNull(),
+}, (table) => [
+  check("web_vital_samples_page_shape", sql`${table.page} ~ '^/$|^(/([a-z][a-z-]{0,39}|:[A-Za-z]{1,40}|\\*))+$'`),
+  check("web_vital_samples_device_check", sql`${table.device} IN ('phone', 'tablet', 'desktop')`),
+  check("web_vital_samples_metric_check", sql`${table.metric} IN ('LCP', 'INP', 'CLS', 'TTFB')`),
+  check("web_vital_samples_rating_check", sql`${table.rating} IN ('good', 'needs-improvement', 'poor')`),
+  check("web_vital_samples_value_check", sql`${table.value} >= 0`),
+  // The cleanup and the p75 report both read by day alone.
+  index("web_vital_samples_recorded_idx").on(table.recordedAt),
+]);
+
+// T-702, migration 0110: the job list. Work the API carries out later, kept in
 // PostgreSQL so that it survives a restart and is tried again when it fails.
 // A job carries ids, never facts (`payload` is at most 2,048 bytes); `kind`
 // and `key` together name it, so the same work asked for twice is one job. A
