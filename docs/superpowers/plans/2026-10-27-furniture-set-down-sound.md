@@ -567,6 +567,18 @@ Values as planned; their primary sources are cited in `modes.ts`:
 - **R83 (Q9).** A browser without module Workers plays no set-downs, because the main thread never renders them (R48).
 - **R84 (Q10).** Under reduced motion the render is posted at the in-place announcement, and it plays when it returns.
 
+Rulings made on 18 November that bind part 3:
+- **R94.** Task 14a was built before the phone timings, because its Worker serves every outcome of them.
+- **R95.** There is no idle-slice tail on the main thread. With no module Workers there are no set-downs (R83), so such a tail would have no listener.
+- **R97.** The Robert Adam Room's arch is bare (#449). Blake re-listened on 18 November and judged it right (Task 16, Step 0).
+- **R99.** The Worker posts a ready message when it starts.
+  - Each job's 10 s watch starts only at ready, with a 30 s limit on the load.
+  - Every watch pauses while the page is hidden.
+- **R100.** A per-device adaptive render policy (Task 14b) replaces the phone-timings gate on Task 14b. The release lead accepted it on four conditions.
+  - It supersedes, for 14b, the gate that answered #416's review item T1 (R48, R79).
+  - Blake's phone timings become Task 16's evidence (Step 0b).
+- **Exposure.** Under D1, Quiet is sound on, so a shipped part 3 reaches every visitor. Part 3's release is therefore held until Task 16's real-phone evidence (R100, condition 4).
+
 ### 1. The seams: what the plan assumed, what master has, what changes
 
 | # | Plan assumption (Oct) | Today's master (7c3461e7) | What changes in the plan |
@@ -624,6 +636,8 @@ The scan (`gh pr view <n> --json files`) covered all 44 open PRs against the sea
 | #431 surveyed rooms, web (T-662) | draft | a dev page only | — | No collision now. When T-662 draws the galleries from the survey, the reflections follow with no change here (spec section 4). |
 
 ### 5. The gate before Tasks 14a and 14b (rulings R48 and R79)
+
+**Superseded on 18 November 2026:** by R94 for Task 14a, and by R100 for Task 14b. The text below is kept as the gate that was planned. Blake's phone timings are now Task 16's evidence.
 
 Tasks 14a and 14b, the render at the drop, do not start until the listening page has timed renders on real phones (ruling R79). Tasks 12 and 13 do not wait. The page keeps each render's time on the device that ran it (`ArtifactData` list, "timings"). The gate needs:
 - the median and worst render times, with the Grand Hall's 18 early reflections, for a Chiavari, a 6 ft round and a staging deck, on the phones Blake uses;
@@ -1013,6 +1027,26 @@ export function createSetDownRenderer(options?: { readonly createWorker?: () => 
   - A voice's `send` is `RoomState.send` (R58), never scaled by distance (R11).
 - **Unmount** unsubscribes everything, cancels the debounce and the idle slices, and disposes the renderer.
 - **Never on the main thread.** Nothing in this component or the driver calls `renderSetDown` or `renderRoomTail`.
+- **The adaptive render policy (ruling R100, which replaces the phone-timings gate).** Per class (light, table, heavy), the driver keeps two records:
+  - the live `workMs` of the Worker's answers;
+  - at each contact, whether the voice was on time, late within R80's 45 ms, or a miss.
+- **Render-ahead.** In render-ahead mode a class's pieces are rendered ahead:
+  - at pickup, for carried pieces, as heavy pieces already are;
+  - while the placement ghost shows, for new pieces.
+
+  The exact render is still requested at drop start, and plays if it arrives in time.
+- **A fast first switch (condition 1).**
+  - A class that misses 2 of its first 5 contacts switches to render-ahead at once. After that, a rolling window decides.
+  - The device's mode per class is kept in localStorage: the class and its mode only, nothing personal, with every read and write in try/catch. The next visit starts in the right mode.
+  - A cold start on a slow fake renderer is tested.
+- **A bounded cost (condition 2).**
+  - At most one render ahead is in flight per class.
+  - It is cancelled when the piece is put back, or when the ghost leaves without a placement.
+  - Moving the ghost does not render again unless the render depends on position, that is, on the surfaces under it.
+  - CPU and battery: render-ahead adds at most one Worker render per gesture per class, off the main thread. On the build desktop a render took 7.5–23.9 ms (medians, with the Grand Hall's 18 reflections), and a phone is about 3–5 times slower. The cost is bounded by gestures, not by frames.
+- **Stable in both directions (condition 3).**
+  - Hysteresis: a class switches back to exact renders only after 10 on-time contacts in a row, each render's `workMs` well inside its window. A device near the threshold therefore does not flap.
+  - Tests drive the switch on and off through a fake renderer's `workMs`.
 
 **The receipt.**
 - Shift M shows "Sound off · Shift M" or "Sound on · Shift M" for 2.4 s.
@@ -1073,6 +1107,12 @@ This task does not wait on the gate.
   - #449 gave the room its measured outline and took away the curtain at the arch, which the scan shows bare.
   - Its echo is now 11–14 % longer at 1 kHz, above the ~5 % just-noticeable difference.
   - Build the listening page with #449's model, put it where he can open it, and ask him how the room sounds. Record his answer in the PR body.
+- [ ] **Step 0b (ruling R100, condition 4): real-phone evidence before part 3 ships.** On at least one real low-end phone (Blake's, when it comes, or another real device), with `?soundtap=1`, show three things:
+  - the adaptive switch engages for the slow class;
+  - after warm-up (each class's first 5 contacts), misses are under 5 % of contacts, over at least 40 contacts;
+  - nothing plays later than R80's 45 ms window.
+
+  This holds part 3's release, not 14b's build.
 - [ ] **Step 1:** Write `sound-live.mjs`, a script kept outside the repo, from the furniture rebuild's batch 4 live script (also kept outside the repo).
   - **Its safety:** every non-GET request is aborted, and the guest draft (POST `/public/configurations`) and its reads are answered locally.
   - **The browser:** Playwright with `channel: "chrome"`, headed. The browser pane draws no frames off screen, and the planner's demand loop needs frames for touchdowns.
