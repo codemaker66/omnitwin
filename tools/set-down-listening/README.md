@@ -12,20 +12,31 @@ spec's budgets (section 9: 2 ms a set-down, 150 ms a tail).
 ## Build and check
 
 ```sh
-node tools/set-down-listening/build.mjs                 # writes D:/claude/furniture-sound-20261027/listening/index.html
-node tools/set-down-listening/page.check.mjs            # Playwright check of that file, screenshots beside it
+pnpm --filter @omnitwin/web exec playwright install chromium   # once: the browser the check drives
+node tools/set-down-listening/build.mjs                          # writes tools/set-down-listening/out/index.html
+node tools/set-down-listening/page.check.mjs                     # Playwright check of that file, screenshots beside it
+node tools/set-down-listening/build.mjs --out <folder>           # or build into <folder>/index.html
+node tools/set-down-listening/page.check.mjs --out <folder>      # and check that folder's page
 ```
 
-`build.mjs` bundles `page.ts` with Vite's own esbuild (resolved through
-`createRequire`) into one IIFE and inlines it into `page.html`. The output is
-page content only, as the Artifact host expects: the host adds the document,
-the charset and the viewport. On this PC, run the check through the browser
-hold after `wait-memory.sh`, and type-check and lint through the heavy hold:
+`out/` is ignored by Git. `build.mjs` bundles `page.ts` with Vite's own
+esbuild (resolved through `createRequire`) into one IIFE and inlines it into
+`page.html`. The output is page content only, as the Artifact host expects:
+the host adds the document, the charset and the viewport.
+
+Type-check and lint the page with:
 
 ```sh
 node packages/web/node_modules/typescript/bin/tsc -p tools/set-down-listening/tsconfig.json
 node_modules/.bin/eslint tools/set-down-listening/page.ts
 ```
+
+CI runs both, in its Typecheck and Lint jobs. They are the only checks CI makes
+on the page: the folder has no package of its own, so `pnpm -r` skips it, and
+the browser check stays a local step. On a machine short of memory, run the
+check, the type-check and the lint one at a time, when the machine has a few
+gigabytes free and no other heavy job or browser run is going; the check starts
+Chromium and renders every room's tail.
 
 The page is published as a private claude.ai artifact with
 `capabilities: { db: {} }`.
@@ -76,6 +87,14 @@ or for the limiter says so, in ms.
   listener at the room's end (Task 12's ear rule, at least 2 m), on the
   room's floor. The ear stays 1.6 m up for every voice; only its place on the
   floor follows that line (R61).
+- **The limiter chain, copied by hand.** `sound-registry.ts` does not export
+  its planner graph's output chain, so the page rebuilds it: the master, a
+  compressor with `PLANNER_LIMITER`'s settings (knee 0), then the trim that
+  takes back its makeup gain (`limiterMakeupDb`). Part 3 exports the
+  chain-building code, and the page imports it.
+- **The limiter's warm-up, copied by hand.** The page's 0.25 s wait before the
+  first play mirrors the registry's unexported
+  `PLANNER_LIMITER_WARMUP_SECONDS`. Part 3 exports it, and the page imports it.
 - **The galleries' walls.** The planner draws the galleries from the
   space's outline in the database; the web package has no drawn geometry for
   them, so their reflections come off the surveyed 11.5 × 4.1 × 2.8 m room.

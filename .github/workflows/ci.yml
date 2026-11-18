@@ -91,6 +91,10 @@ jobs:
       - name: Lint (ESLint)
         run: pnpm -r lint
 
+      # The set-down listening page has no package of its own, so pnpm -r skips it.
+      - name: Lint the set-down listening page
+        run: pnpm exec eslint tools/set-down-listening/page.ts
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -114,6 +118,11 @@ jobs:
 
       - name: Typecheck (tsc --noEmit)
         run: pnpm -r typecheck
+
+      # The set-down listening page has no package of its own, so pnpm -r skips it; this is CI's only check on it
+      # besides the lint (tools/set-down-listening/README.md).
+      - name: Typecheck the set-down listening page
+        run: node packages/web/node_modules/typescript/bin/tsc -p tools/set-down-listening/tsconfig.json
 
   # A gate that never compiles the product is not a gate. Until this job
   # existed, Vercel was the first thing to discover a broken bundle —

@@ -1,7 +1,7 @@
 // Builds the listening page: page.ts, with the set-down engine it imports, bundled by Vite's own esbuild into
 // one IIFE and inlined into page.html, so the page is a single self-contained file.
-//   node tools/set-down-listening/build.mjs [out.html]
-// The default output is D:/claude/furniture-sound-20261027/listening/index.html.
+//   node tools/set-down-listening/build.mjs [--out <folder>]
+// It writes <folder>/index.html. The default folder is tools/set-down-listening/out/, which Git ignores.
 import { createRequire } from "node:module";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -9,7 +9,10 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const out = process.argv[2] ?? "D:/claude/furniture-sound-20261027/listening/index.html";
+const outFlag = process.argv.indexOf("--out");
+const outFolder = outFlag >= 0 ? process.argv[outFlag + 1] : join(here, "out");
+if (outFolder === undefined || outFolder.startsWith("--")) throw new Error("--out needs a folder");
+const out = join(outFolder, "index.html");
 const MARKER = "/*__PAGE_SCRIPT__*/";
 /** The Artifact host's limit for a page. */
 const LIMIT_BYTES = 16 * 1024 * 1024;
