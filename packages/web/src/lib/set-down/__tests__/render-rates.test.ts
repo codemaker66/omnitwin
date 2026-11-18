@@ -60,15 +60,23 @@ const BRIGHTNESS_SEEDS_44K = Array.from({ length: 40 }, (_, i) => i + 1);
  * seeds 1-10 to 3 %: the mic stand read +2.98 % there, 0.02 % inside the bound (the review took the comment's older
  * +2.1 % and put the margin at 0.8 %), and its seeds 31-40 read -3.3 %, while over seeds 1-40 it reads -0.04 %:
  * noise, not the rate. 5 % over 40 seeds sits about 2.6 of that scatter away from no change, so a re-roll of the
- * noise does not fail it, and a rate-dependent filter or constant that moves the brightness by more does.
+ * noise does not fail it.
+ *
+ * Its reach: it catches a rate fault that moves a piece's median brightness over seeds 1-40 beyond its margin,
+ * about -2.95 points for the deck, +-5 for the chair and the mic stand, and -6.2 or +3.8 for the round table. A
+ * filter fault at 4-14 kHz, or one confined to the rattle or the puff, is below what it can resolve: on 16 November
+ * three such faults (the ceiling's shelf and low-pass, the rattle's band-pass and the puff's low-pass, each designed
+ * at 48 kHz whatever the rate) moved it by 1.37 points at most, and none failed it. A fault in the modes is expected
+ * to show, but that is inferred, not run.
  */
 const BRIGHTNESS_44K = 0.05;
 
 describe("a set-down at 44.1 kHz against 48 kHz (ruling R52)", () => {
   // This holds by construction: the renderer levels every play to a loudness set by its speed alone (render.ts,
   // rulings R36 and R45), read by the same momentary measure as this, so with the limiter idle the two rates agree
-  // whatever the rate does to the sound. What it checks is that a seed draws the same speed at both rates. The guard
-  // against a rate-dependent filter or constant is the brightness check below (#416's review, NC9).
+  // whatever the rate does to the sound. What it checks is that a seed draws the same speed at both rates. The
+  // brightness check below guards against a rate fault large enough to move a play's brightness, within the reach
+  // its comment states (#416's review, NC9).
   it.each(AT_44K)("plays %s within 0.1 dB of loudness, seed by seed: the leveller's own target, so the same speed drawn at both rates", (slug) => {
     for (const seed of SEEDS_44K) {
       const at44 = setDown(slug, "oak-boards-joists", { seed, sampleRate: 44100 });
