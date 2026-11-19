@@ -22,7 +22,7 @@
 
 **Task number.** This is T-700, renumbered on 13 Nov 2026 (the repository's T-677 is the foundry's shared-lock migration). Commits made before then say T-677; the branch names keep `t677`. The #416 review's rulings R46–R53 (`docs/sessions/2026-11-13.md`) amend this plan where noted.
 
-Paths below are relative to `packages/web/src/` unless they start with `tools/`, `docs/` or `packages/`. The worktree is `E:/claude/furniture-sound`, on branch `claude/furniture-sound-t677`.
+Paths below are relative to `packages/web/src/` unless they start with `tools/`, `docs/` or `packages/`. The branch is `claude/furniture-sound-t677`.
 
 ## Global Constraints
 
@@ -50,9 +50,9 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
   | The tail | idle slices of ≤ 4 ms each, ≤ 150 ms in total; 1.2 x the longest band's reverberation time in seconds at any rate, its memory per rate stated in `tail.ts` (R46; the plan's first cap was 2 MB) |
   | Voices at once | ≤ 8 |
   | Engine and data | ≤ 25 KB gzipped, lazy with the planner |
-- **This PC is short of memory** (system commit at 92–97 %). Run Vitest on single files (`pnpm --filter @omnitwin/web exec vitest run <file>`). CI runs the full suites. Check free memory before the ray tracer and any browser run (`D:/claude/furniture-rebuild-20261026/tools/wait-memory.sh`).
+- **This PC is short of memory** (system commit at 92–97 %). Run Vitest on single files (`pnpm --filter @omnitwin/web exec vitest run <file>`). CI runs the full suites. Check free memory before the ray tracer and any browser run (the house's `wait-memory.sh`, kept outside the repo).
 - **No edits** to `components/meshes/crafted/*` or `crafted-furniture.test.ts`: four T-675 PRs are open on them.
-- **Commits.** Commit with explicit pathspecs. Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never commit in `C:/Users/blake/omnitwin2`.
+- **Commits.** Commit with explicit pathspecs. Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never commit in the shared checkout that other sessions work in.
 
 ## Review Focus
 
@@ -785,7 +785,7 @@ Render-at-drop in a Worker is confirmed only if light and table pieces render in
 
 ### Task 16: Browser evidence, then open PR 3
 
-- [ ] **Step 1:** Write `D:/claude/furniture-sound-20261027/live/sound-live.mjs` (outside the repo), adapted from `D:/claude/furniture-rebuild-20261026/live/batch4-live.mjs`. It keeps that script's safety:
+- [ ] **Step 1:** Write `sound-live.mjs`, a script kept outside the repo, adapted from the furniture rebuild's live check (`batch4-live.mjs`, also outside it). It keeps that script's safety:
   - every non-GET request is aborted;
   - the guest draft (POST `/public/configurations`) and its reads are answered locally, so nothing is written anywhere.
 
@@ -794,8 +794,8 @@ Render-at-drop in a Worker is confirmed only if light and table pieces render in
   2. a 6 ft round with its chairs;
   3. Lay out to 80.
 
-  It reads `__venSoundTap.log` after each step, records 4 s around the first placement with `__venSoundTap.record(4)`, writes the WAV and a JSON report under `D:/claude/furniture-sound-20261027/evidence/<phase>/`, and takes screenshots of the three menus.
-- [ ] **Step 2:** Run `wait-memory.sh 8704 6656 4`. When it allows, start the worktree's Vite dev server: add an entry for E:/claude/furniture-sound on port 5262 to the app's launch registry (the release-path memory's "Dev servers for worktrees") and use `preview_start`, then close its pane tab. Run `node sound-live.mjs http://localhost:5262 local`.
+  It reads `__venSoundTap.log` after each step, records 4 s around the first placement with `__venSoundTap.record(4)`, writes the WAV and a JSON report under a local `evidence/<phase>/` folder outside the repo, and takes screenshots of the three menus.
+- [ ] **Step 2:** Run `wait-memory.sh 8704 6656 4`. When it allows, start the worktree's Vite dev server: add an entry for the worktree on port 5262 to the app's launch registry (the house's notes on dev servers for worktrees) and use `preview_start`, then close its pane tab. Run `node sound-live.mjs http://localhost:5262 local`.
 
   Expected:
   - the log shows 1 entry, then the group's batch, then ≤ 8 entries for Lay out, with `rtMid` falling after each;
@@ -817,7 +817,7 @@ Render-at-drop in a Worker is confirmed only if light and table pieces render in
 - [ ] **Step 1:** Write the three documents. Check the links (`node tools/check-doc-links.mjs` if it exists, otherwise `grep -o "](.*)"` and test each path).
 - [ ] **Step 2:** Commit them on PR 3's branch before it merges, or as a docs PR if PR 3 has merged, with the message "Record the furniture set-down sound in the engineering notes and the day's log (T-700)".
 - [ ] **Step 3:** After PR 3 merges and Vercel's production deployment for its SHA is READY (`gh api repos/codemaker66/omnitwin/deployments?sha=<sha>`):
-  - run `node D:/claude/furniture-sound-20261027/live/sound-live.mjs https://venviewer.com prod-grand-hall`, then again with the Saloon's stub (`prod-saloon`). Production is read-only for agents, and the script's aborts keep it so;
+  - run Step 1's script, `node sound-live.mjs https://venviewer.com prod-grand-hall` (kept outside the repo), then again with the Saloon's stub (`prod-saloon`). Production is read-only for agents, and the script's aborts keep it so;
   - check the production chunk carries the engine: the served JavaScript contains `planner-set-down`;
   - on a device day after part 3, run the same flow on a phone, checking the budgets, the iPhone silent switch, and sound with sight at touchdown.
 - [ ] **Step 4:** Report the evidence to Blake and the planner lead. State each item as tested, measured, deployed or accepted, and name anything not measured on a device.
