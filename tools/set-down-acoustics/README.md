@@ -41,9 +41,9 @@ The tracer proves itself on textbook cases first. Then it traces each room empty
 
 **On the Trades Hall build PC only**, which is short of memory and shared with GPU gates:
 
-- Wrap step 1 and step 4 as `bash D:/claude/gpu-queue/heavy-hold.sh "<session> <what>" <command>`.
-- Before step 2, wait for memory with `bash D:/claude/furniture-rebuild-20261026/tools/wait-memory.sh 2048 1024 1`.
-- Add `--pause-while D:/claude/planner-polish-20261018/quiet` to the trace, so that it waits between batches while a gate runs.
+- Wrap step 1 and step 4 in the house's heavy hold, `heavy-hold.sh "<session> <what>" <command>`, which waits for memory and for any GPU gate.
+- Before step 2, wait for memory with the house's `wait-memory.sh 2048 1024 1`: 2 GB of commit headroom and 1 GB free, waiting up to an hour.
+- Add `--pause-while <file>` to the trace, naming the quiet-flag file the house's CI gates create while they run, so that it waits between batches while a gate runs.
 
 None of these exist elsewhere, and none is needed elsewhere.
 
@@ -51,7 +51,7 @@ None of these exist elsewhere, and none is needed elsewhere.
 - The tracer works in batches of 50,000 rays. Measured on the build PC: a peak working set of 63 MB and a peak commit of 84 MB.
   - The low commit comes from holding numpy's OpenBLAS to one thread, which the tracer does before importing numpy.
   - Unpinned, OpenBLAS reserved about 0.5 GB of commit at import for its 16 threads.
-  - The traces are identical either way. Two of results.json's traces were rerun pinned and matched it bit for bit, and so did a small trace run twice (log: `D:/claude/furniture-sound-20261027/task7/bit-for-bit.txt`).
+  - The traces are identical either way. Two of results.json's traces were rerun pinned and matched it bit for bit, and so did a small trace run twice (the run's log is kept with the build's local records, outside the repo).
 - The full run takes about 40 minutes of tracing on that PC, most of it in the galleries (about 3.5 minutes a trace at 2,000,000 rays).
 - results.json is written only if every check passes: the self-test, the dome check, the seed agreement, and a T20 fit in every band.
 
