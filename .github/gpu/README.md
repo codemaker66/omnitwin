@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 421 cases. Four hosted CPU shards execute
-416 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 427 cases. Four hosted CPU shards execute
+422 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -196,6 +196,22 @@ hide every zone but the crest, which stays where it stood; one Esc brings the
 tools back; the room takes the pointer where the chrome has gone; and L and `/`
 open their panels with the tools back (`planner-chrome-v2-clear.spec.ts`); this
 changes the inventory from 421 to 422 and the CPU partition from 416 to 417.
+
+On 13 November 2026 the planner's first-open event question is admitted again,
+with five cases (PR #253, T-674; first admitted on that branch on 26 October,
+against 405, again with three on 12 November, and placed after the clear-all
+case above on 17 November). Five ordinary cases: a new, empty layout on a booted
+planner with the API stubbed asks what the event is, the 2 key answers a
+corporate event and Lay out then starts from theatre rows; a wedding picked with
+a click is kept on the device, so a reload opens the layout without asking and
+names its event; on the Grand Hall the welcome hands the question back with the
+first panel in hand and showing it; an Escape that dismisses that welcome on a
+page nobody has touched leaves the question asking, and Enter answers it; and a
+signed-in planner's own layout writes its answer into the layout's metadata, the
+PATCH body asserted (`plan-event-kind.spec.ts`). The rest of the suite runs on a
+device told not to ask, through the default `storageState` in
+`playwright.config.ts`, so no other identity or status changes; this changes the
+inventory from 422 to 427 and the CPU partition from 417 to 422.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
