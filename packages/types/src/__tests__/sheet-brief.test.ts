@@ -13,6 +13,7 @@ import {
   sheetRunningOrder,
   sheetSetupSteps,
   sheetStoreList,
+  setupFromWords,
   sheetTimes,
   venueZoneLabel,
 } from "../sheet-brief.js";
@@ -183,6 +184,19 @@ describe("sheetTimes: one rule for every surface", () => {
     expect(at(final(gmt(5, 30)))).toBe("2 h 30 min before guests come in");
     expect(at(final(gmt(6)))).toBe("2 h before guests come in");
     expect(readyByWords(sheetTimes({ timing: null, instructions: final(gmt(7, 45)) }))).toBeNull();
+  });
+});
+
+describe("setupFromWords: the setup window in words", () => {
+  it("gives the window's length, and says plainly when it leaves no time to set the room", () => {
+    const at = (instructions: EventInstructions | null): string | null => setupFromWords(sheetTimes({ timing: crowdedBreakfastTiming(), instructions }));
+    expect(at(null)).toBe("60 min to set the room");
+    expect(at(final(gmt(7, 45)))).toBe("45 min to set the room");
+    // A planner's final time at or before the window opens leaves no time: a
+    // statement of fact in brick, never words a crew could take as an instruction.
+    expect(at(final(gmt(7)))).toBe("Leaves no time to set the room");
+    expect(at(final(gmt(6, 45)))).toBe("Leaves no time to set the room");
+    expect(setupFromWords(sheetTimes({ timing: { eventStart: gmt(8), setupBy: null, bufferMinutes: null }, instructions: null }))).toBeNull();
   });
 });
 

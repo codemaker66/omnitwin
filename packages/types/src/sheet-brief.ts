@@ -115,7 +115,9 @@ export function readyByWords(times: SheetTimes): string | null {
 export function setupFromWords(times: SheetTimes): string | null {
   const minutes = times.setupMinutes;
   if (minutes === null) return null;
-  return minutes > 0 ? `${sheetDurationWords(minutes)} to set the room` : "Not before the room's ready-by time";
+  // A window that opens at or after Ready by is said as the fact it is, never
+  // in words a crew could read as an instruction.
+  return minutes > 0 ? `${sheetDurationWords(minutes)} to set the room` : "Leaves no time to set the room";
 }
 
 // ---------------------------------------------------------------- the day --
