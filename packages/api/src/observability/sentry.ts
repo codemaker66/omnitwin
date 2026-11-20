@@ -24,6 +24,9 @@ import { scrubBreadcrumb, scrubErrorEvent, scrubTransaction } from "./redact.js"
 //      Fastify integration keeps tracing and captures nothing.
 // ---------------------------------------------------------------------------
 
+/** The page-speed reports' route: API tracing leaves it out (buildSentryOptions). */
+export const WEB_VITALS_TRANSACTION = "/public/web-vitals";
+
 /** The settings the Sentry options are built from. */
 export type SentryOptionsEnv = Pick<Env, "SENTRY_DSN" | "SENTRY_ENVIRONMENT" | "NODE_ENV" | "SENTRY_TRACES_SAMPLE_RATE">;
 
@@ -44,6 +47,12 @@ export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
     dsn: env.SENTRY_DSN,
     environment: env.SENTRY_ENVIRONMENT ?? env.NODE_ENV,
     tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+    // A page-speed report is traced by no one: the privacy page says the
+    // server keeps only the timings and logs nothing for them, and a trace
+    // would carry the visitor's user agent (T-685, 12 November 2026). A
+    // string here matches any transaction whose name contains it; a failure
+    // still reaches Sentry through the error normaliser's capture.
+    ignoreTransactions: [WEB_VITALS_TRANSACTION],
     beforeSend: (event) => scrubApiSentryEvent(scrubErrorEvent(event)),
     beforeSendTransaction: scrubTransaction,
     beforeBreadcrumb: scrubBreadcrumb,
