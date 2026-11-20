@@ -19,7 +19,8 @@ Two kinds exist today, in `services/jobs/kinds/`: `jobs.selftest` (does nothing,
 **At least once, never exactly once.** A handler must be safe to repeat. A job runs
 twice when:
 
-- its server dies or hangs and the claim runs out, so the job is put back;
+- its server dies or hangs and the job's claim (the hold a worker takes on it while it
+  runs) runs out, so the job is put back;
 - its handler passes its time limit, the worker records a failed try, and the handler
   later finishes anyway (Node cannot stop a running function);
 - a person presses Try again on Stuck work.
@@ -54,7 +55,10 @@ decides what is due and whose claim has run out; no comparison uses `Date.now()`
    `defineJobKind` throws for a name, version, limit or attempt count outside these.
 
 2. Add it to the array in `buildJobKinds` (`services/jobs/runtime.ts`), the one place a
-   kind is added. Two kinds with one name throw when the registry is built.
+   kind is added. Two kinds with one name throw when the registry is built. A kind
+   that repeats (see Work that repeats) is registered there too, but as a
+   `RepeatingJob` in the `repeating` list; its kind joins the registry from that list,
+   so it is not added to the array a second time.
 
 3. Write the job in the transaction that makes it necessary, and poke the worker after
    that transaction commits:
@@ -74,8 +78,9 @@ decides what is due and whose claim has run out; no comparison uses `Date.now()`
 
    - **The key names the thing.** A second write of the same kind and key changes
      nothing and answers `created: false` with the first job's id. A key is 1 to 300
-     characters. A job keeps its key while it exists: 90 days after it is `done` or
-     `abandoned`, and until someone closes it if it is `dead`. A key you want to use
+     characters. A job keeps its key while it exists. A `dead` job keeps it until a
+     person closes the job, and the daily tidy deletes a `done` or `abandoned` job 90
+     days after it finished or was closed, whichever was later. A key you want to use
      again later must carry what makes the work new (a date, a version).
    - **Poke after the commit.** A poke inside the transaction can wake the worker before
      the job is visible. `pokeJobWorker()` wakes this process's worker only, and does
@@ -84,9 +89,10 @@ decides what is due and whose claim has run out; no comparison uses `Date.now()`
    - **`enqueueJob` refuses before it sends a statement**, with `JobInputError`, because
      a failed statement would abort your transaction and with it your own work. It
      refuses a key or payload text PostgreSQL cannot store, a venue id on a platform
-     kind or none on a venue kind, a run time that is not a date, and a payload that
-     does not fit the schema, is not an object, or is over 2,048 bytes as PostgreSQL
-     prints it (jsonb puts a space after every `:` and `,`).
+     kind or none on a venue kind, a venue id that is not shaped like an id, a run time
+     that is not a date, and a payload that does not fit the schema, is not an object,
+     holds a number written with an exponent (jsonb prints it in full), or is over
+     2,048 bytes as PostgreSQL prints it (jsonb puts a space after every `:` and `,`).
    - **One refusal it cannot make.** A venue id with the shape of an id that names no
      venue fails the table's foreign key and aborts your transaction. Pass a venue you
      read in that transaction, never an id taken on trust. A venue's job goes when the
@@ -107,8 +113,10 @@ not carry the job's version.
 - **Throw:** a failed try (see Retries). `PermanentJobError` makes the job `dead` at
   once. `RetryJobIn(seconds, message)` asks for its own wait instead of the usual one;
   the worker holds it between 1 second and 7 days, and the try still counts.
-- **Pass `ctx.signal` to every outside call.** It is aborted at the kind's limit and
-  when the server is stopping.
+- **Pass `ctx.signal` to every outside call.** It is aborted when the kind's limit
+  passes. On a stop it is aborted only if the handler is still running when the stop's
+  allowance (18 seconds) runs out, and no limit is over 15 seconds, so a handler cannot
+  rely on the signal to learn that the server is stopping.
 
 ## The seven rules
 
@@ -196,13 +204,16 @@ A repeating kind is a `RepeatingJob` (`services/jobs/repeating.ts`): its kind an
 run. At the end of every pass the worker calls `ensureNextRuns` with the database's now,
 so the next run is written as soon as the current one is taken, and a run that ends
 `dead` does not end the series. Every server asks for the same run; the (kind, key)
-rule lets one write succeed.
+rule lets one write succeed. To add one, build it as `jobs.daily` is built
+(`dailyJob` returns a `RepeatingJob`) and add it to the `repeating` list in
+`buildJobKinds`.
 
 Repeating kinds belong to the platform, not to a venue, in this stage: a run carries no
 venue id, so `enqueueJob` refuses a venue kind. `jobs.daily` runs at 03:00 UTC
-(`kinds/daily.ts`). It deletes up to 1,000 `done` or `abandoned` jobs that finished
-more than 90 days ago (`dead` jobs stay), reads the invariant below, and checks in to
-the Sentry monitor `job-list-daily`.
+(`kinds/daily.ts`). It deletes up to 1,000 `done` or `abandoned` jobs whose age, from
+the later of finishing and closing, is over 90 days (`dead` jobs stay). A run that
+deleted a full 1,000 asks for one more run at once. It then reads the invariant below,
+and checks in to the Sentry monitor `job-list-daily`.
 
 ## The invariant
 
@@ -214,8 +225,9 @@ same read by hand against a database after a release that changes a kind:
 pnpm --filter @omnitwin/api exec tsx src/scripts/check-job-list-invariant.ts
 ```
 
-It runs from the checkout you are in, so run it from the commit that is deployed. It
-prints one line of JSON and exits 0 (healthy), 1 (not healthy) or 2 (could not run).
+It reads `DATABASE_URL`, opens one read-only transaction and writes nothing. It runs
+from the checkout you are in, so run it from the commit that is deployed. It prints one
+line of JSON and exits 0 (healthy), 1 (not healthy) or 2 (could not run).
 
 | Count | Meaning |
 | --- | --- |
@@ -226,14 +238,14 @@ prints one line of JSON and exits 0 (healthy), 1 (not healthy) or 2 (could not r
 
 ## How the worker runs
 
-Each API process starts one worker after its database connection is made
-(`startJobs` in `runtime.ts`). A pass puts back expired claims, takes and runs one due
-job at a time until none is due, writes the next run of each repeating kind, and sets
-one timer for the earlier of the next due job (or claim about to run out) and the next
-boundary. The boundary is the next whole multiple of `JOBS_MAX_SLEEP_MINUTES` since the
-epoch: with 60, the top of the hour. The worker does not poll. It asks the database when its timer fires, when it
-starts, and when this process pokes it; pokes that arrive during a pass fold into one
-more pass.
+A worker starts only when `JOBS_WORKER=on`. Each API process then starts one, after its
+database connection is made (`startJobs` in `runtime.ts`). A pass puts back expired
+claims, takes and runs one due job at a time until none is due, writes the next run of
+each repeating kind, and sets one timer for the earlier of the next due job (or claim
+about to run out) and the next boundary. The boundary is the next whole multiple of
+`JOBS_MAX_SLEEP_MINUTES` since the epoch: with 60, the top of the hour. The worker does
+not poll. It asks the database when its timer fires, when it starts, and when this
+process pokes it; pokes that arrive during a pass fold into one more pass.
 
 Every wait on the database is bounded (10 seconds by default). A pass that fails sets a
 fault (`database` or `loop`), raises one alert for the outage, and tries again after 60
@@ -245,9 +257,9 @@ Stuck work is for platform administrators: Dashboard, "Stuck work"
 (`packages/web/src/components/dashboard/StuckWork.tsx`, view `stuckWork`). It reads the
 list when it opens and after each action, never on a timer. It shows one summary line,
 for example "2 jobs gave up. 1 is waiting. The worker last ran 3 minutes ago.", and a
-table of the newest 200 dead jobs: What kind, Venue ("The platform" for a platform
-job), Gave up, Tries and Reason, which is the error text the server stored. The counts
-cover the whole table, not the 200.
+table of the newest 200 dead jobs (`STUCK_JOBS_LIMIT` in `@omnitwin/types`): What
+kind, Venue ("The platform" for a platform job), Gave up, Tries and Reason, which is
+the error text the server stored. The counts cover the whole table, not the 200.
 
 The worker sentence is one of "The worker is switched off.", "The worker cannot reach
 the database.", "The worker has stopped after an error.", "The worker has not run yet."
@@ -262,8 +274,23 @@ failed." counts `email_sends` still `pending` after a day.
   characters. It works for any kind. Use it when the work is no longer wanted, or when
   the kind cannot be read. Abandoned jobs are deleted by the daily job 90 days after
   they were closed.
-- **Run the self-test** writes one `jobs.selftest` job. With the worker off it stays
-  queued; the page then says "The self-test did not finish. It is on the list above."
+- **Run the self-test** writes one `jobs.selftest` job and says what became of it.
+  When a worker runs in the server that took the request, the route waits for the job,
+  at most 5 seconds in all: it reads the job's state after each of six gaps (100, 200,
+  400, 800, 1,500 and 2,000 ms) and stops at the first `done`, `dead` or `abandoned`,
+  or when the caller has gone. With no worker in that server it does not wait: it
+  reads the state once (another server's worker may already have taken the job). The
+  answer is `{ data: { id, state } }`, the job's state when the server stopped waiting.
+  The page reads the list again, then says one of:
+  - `done`: "The self-test ran."
+  - `dead` or `abandoned`: "The self-test did not finish. It is on the list above."
+  - `queued` or `running`, when the newest reading says the worker is off: "The
+    self-test is waiting. The worker is switched off."
+  - `queued` or `running` otherwise: "The self-test has not run yet. It is still
+    waiting."
+
+  If the request fails, the page shows the server's words, or "The self-test could not
+  be started."
 
 The routes behind it are in `routes/admin-jobs.ts`, mounted at `/admin/jobs`. All four
 are for platform administrators only, and none returns a job's payload.
@@ -273,7 +300,7 @@ are for platform administrators only, and none returns a job's payload.
 | `GET /admin/jobs/stuck` | the dead jobs, the counts and the worker's status |
 | `POST /admin/jobs/:id/retry` | Try again |
 | `POST /admin/jobs/:id/close` | Close; body `{ "note": "…" }` |
-| `POST /admin/jobs/selftest` | one `jobs.selftest` job |
+| `POST /admin/jobs/selftest` | one `jobs.selftest` job; answers `{ data: { id, state } }` |
 
 | Refusal | When | Words |
 | --- | --- | --- |
@@ -301,9 +328,10 @@ started), `fault` and `passRunning`. The status is 503 when:
 
 The worker raises an alert when a job goes `dead` (`job.dead`), when a claim runs out
 (`job.claim-lost`; a second lost claim is `job.dead`), and when it faults or recovers
-(`job.worker-fault`, `job.worker-recovered`). Each carries the kind, the job's id and the venue's id, with
-any text passed through `jobErrorText`. With `SENTRY_DSN` set they go to Sentry; without
-it they go to the log. The daily job checks in each day, and Sentry alerts if a day
+(`job.worker-fault`, `job.worker-recovered`). A job's alert carries the kind, the job's
+id and, for a venue's job, the venue's id; a fault or recovery alert names which part
+failed (`database` or `loop`). Any text passes through `jobErrorText`. With
+`SENTRY_DSN` set they go to Sentry; without it they go to the log. The daily job checks in each day, and Sentry alerts if a day
 passes without one.
 
 ## The two switches

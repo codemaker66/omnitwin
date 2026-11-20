@@ -168,9 +168,11 @@ anything is sent.**
 
 - No auto-remediation — every rollback and cleanup is a human decision
   with the checklist open.
-- The job list owns timing; the code owns being safe to repeat
-  (`docs/engineering/the-job-list.md`). The request-escalation wake still runs by
-  itself until it moves onto the list.
+- The job list (`docs/engineering/the-job-list.md`) is to own timing, and the code
+  owns being safe to repeat. Until its worker is switched on and the work moves onto
+  it, the hold-reminder workflow above (its schedule is still committed off, so it
+  runs by hand), the request-escalation wake and the clean-up passes still run outside
+  the list.
 - No compliance or delivery-guarantee claims: reminders are a planning
   nudge; the smoke suite is planning-support verification. Decisions stay
   with people.
