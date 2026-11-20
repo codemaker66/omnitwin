@@ -529,11 +529,19 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
   after, the mean step 13.12 and 13.14, and 0.75% of the samples differ (one block); over the
   whole board (to v 1.75 m) 23.57 and 22.94, the difference lying round the clock at its foot.
 - The Grand Hall: its config gives `bestview.OCCLUDER_MARGIN` the script's own 0.0 and its plan
-  still prints an empty ledger. On real data, 18 November, with this change's code: the driver's
-  labels and then its photographs of the hall's END wall were run again on the twin's panoramas
-  and distance maps, and compared with what master's scripts gave before any seam: 23 files, 49
-  arrays, none different (every array bit for bit; the run reports less their timings and memory).
-  The same day on the reference machine, with the twin's manifest and an installed checkout's
+  still prints an empty ledger. On real data, 18 November, with this change's code as it then
+  stood: the driver's labels and then its photographs of the hall's END wall were run again on
+  the twin's panoramas and distance maps. That computed 7 files and 31 arrays anew (the labels'
+  report and their file of 21 arrays; the photographs' report and the two tiles' 2.5 mm and 5 mm
+  orthophotos, 10 arrays). They were compared with what master's scripts gave before any seam,
+  together with 16 earlier files from steps this change does not touch (the 12 corner files of
+  13 November, and the canvas's and the 2 mm image's reports and arrays of 15 November): 23 files,
+  49 arrays, none different (every array bit for bit; the run reports less their timings and
+  memory). After the review's changes to the margin's labels (19 November), `label-views.py` was
+  set against the reviewed one on a synthetic wall with 7 stations, with the margin absent and
+  with an explicit 0.0: the same 21 arrays and report, and the same bytes in the file. The real
+  END wall has not been run again with them.
+  On 18 November on the reference machine, with the twin's manifest and an installed checkout's
   meshoptimizer: T0 52 tests, T1 and T4 54, T3 16, none failing and none skipped. T2 was not run
   again; the real END wall is the stronger form of what its label stage shows.
 
