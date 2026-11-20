@@ -10,6 +10,7 @@ import {
   type WebVitalSample,
 } from "@omnitwin/types";
 import type { LandingRoute } from "./landing-route.js";
+import { measurementDeclined } from "./measurement-choice.js";
 import { webVitalsSampleRate, type WebVitalsEnv } from "./web-vitals-rate.js";
 
 // ---------------------------------------------------------------------------
@@ -26,12 +27,16 @@ import { webVitalsSampleRate, type WebVitalsEnv } from "./web-vitals-rate.js";
 // id cannot travel), a device class and the four numbers. The vitals stop at
 // the first move to another page in the app, so a room walk's interactions are
 // never credited to the front door. No cookie, credential or referrer rides
-// with it, nothing is stored on the device, and nothing identifies or follows
-// the visitor. It is off unless the build sets VITE_WEB_VITALS_SAMPLE_RATE to
-// a decimal below 1 (web-vitals-rate.ts), off in tests and under automation,
-// off where the browser asks not to be tracked (Global Privacy Control, Do Not
-// Track), and the server keeps nothing unless WEB_VITALS_COLLECTION=on, which
-// waits for the privacy page (docs/engineering/web-vitals.md).
+// with it, nothing about the measurement is stored on the device (only the
+// visitor's own "Don't measure my visits" choice is), and nothing identifies
+// or follows the visitor. It is off unless the build sets
+// VITE_WEB_VITALS_SAMPLE_RATE to a decimal below 1 (web-vitals-rate.ts), off
+// in tests and under automation, off where the browser asks not to be tracked
+// (Global Privacy Control, Do Not Track), off where the visitor chose "Don't
+// measure my visits" or the browser will not let the site read its storage
+// (measurement-choice.ts), and the server keeps nothing unless
+// WEB_VITALS_COLLECTION=on, which waits for the privacy page
+// (docs/engineering/web-vitals.md).
 // ---------------------------------------------------------------------------
 
 /** What a browser says of its visitor's wishes and its own driver. */
@@ -39,6 +44,8 @@ export interface ReportingBrowser {
   readonly webdriver?: boolean;
   readonly doNotTrack?: string | null;
   readonly globalPrivacyControl?: boolean;
+  /** "Don't measure my visits", chosen on the privacy page and kept on this device. */
+  readonly measurementDeclined?: boolean;
 }
 
 /** Whether this page load reports: sampled in, not automated, not objected to. */
@@ -47,6 +54,8 @@ export function shouldReportWebVitals(rate: number, browser: ReportingBrowser, r
   // Playwright and other drivers measure the test machine, not a visitor.
   if (browser.webdriver === true) return false;
   if (browser.globalPrivacyControl === true || browser.doNotTrack === "1") return false;
+  // The way to object on any browser, Safari's included (measurement-choice.ts).
+  if (browser.measurementDeclined === true) return false;
   return random() < rate;
 }
 
@@ -203,7 +212,13 @@ export interface StartWebVitalsOptions {
 
 /** Starts measuring this page load if it reports at all. Returns whether it does. */
 export async function startWebVitals(options: StartWebVitalsOptions): Promise<boolean> {
-  const browser = navigator as Navigator & ReportingBrowser;
+  const signals = navigator as Navigator & ReportingBrowser;
+  const browser: ReportingBrowser = {
+    webdriver: signals.webdriver,
+    doNotTrack: signals.doNotTrack,
+    globalPrivacyControl: signals.globalPrivacyControl,
+    measurementDeclined: measurementDeclined(),
+  };
   if (!shouldReportWebVitals(webVitalsSampleRate(options.env), browser, options.random)) {
     options.landing.stop();
     return false;
@@ -222,7 +237,24 @@ export async function startWebVitals(options: StartWebVitalsOptions): Promise<bo
   onCLS(reporter.add, { reportAllChanges: true });
   onTTFB(reporter.add);
   // The library settles its vitals when the page is hidden, which is also the
-  // last moment a phone reliably runs anything; send then.
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") reporter.flush(); });
+  // last moment a phone reliably runs anything; send then, and only then (a
+  // later hide sends what arrived since). The visitor may have pressed "Don't
+  // measure my visits" while this load was measured (on the privacy page
+  // itself) or in another tab (a press the browser kept: one it would not
+  // keep reaches no tab already open): the choice is read again here, before every
+  // send. At the first hide after it is set, nothing is sent, this load's
+  // values included, and this listener and the route's following stop. The
+  // library's own observers cannot be stopped (web-vitals 6 returns no way
+  // to), so they keep updating the four values held, which are never sent.
+  const onHidden = (): void => {
+    if (document.visibilityState !== "hidden") return;
+    if (measurementDeclined()) {
+      document.removeEventListener("visibilitychange", onHidden);
+      options.landing.stop();
+      return;
+    }
+    reporter.flush();
+  };
+  document.addEventListener("visibilitychange", onHidden);
   return true;
 }
