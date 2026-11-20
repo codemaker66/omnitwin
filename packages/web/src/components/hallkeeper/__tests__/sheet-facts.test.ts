@@ -68,6 +68,14 @@ describe("the printed sheet's times", () => {
     expect(formatSheetTimes({ timing, instructions: final("2026-10-03T15:00:00.000Z") }, LONDON))
       .toBe("Setup from 16:00 · Ready by 16:00 · No time to set the room · Guests in 18:30 · Sat, 3 Oct 2026");
   });
+
+  // #454 round 2 (ZB2): with no booking the print line says what the PDF, the
+  // phone card and the Day Board say, where it used to print nothing.
+  it("prints a planner's time with no booking as Ready by, saying whose time it is, and with neither that no booking holds the room", () => {
+    expect(formatSheetTimes({ timing: null, instructions: final("2026-10-03T16:30:00.000Z") }, LONDON))
+      .toBe("Ready by 17:30 · The planner's time · no booking holds this room yet");
+    expect(formatSheetTimes({ timing: null, instructions: null }, LONDON)).toBe("No booking holds this room yet");
+  });
 });
 
 describe("the planner's next deadline", () => {

@@ -1,12 +1,12 @@
 # Hallkeeper sheet: A, then D, with F as the day's cover (T-696)
 
-Blake chose on 6 November 2026, asked as a button after six studies made in Sunburst Studio
-([gallery](https://claude.ai/artifact/WboGUWt6ZzqjDoDhZi5y4s)): "A + D, F as cover". Page 1 becomes A (the brief
-with the room), page 2 becomes D (the five steps to tick), and F prints as a once-a-day cover.
+Blake chose on 6 November 2026, asked as a button after six studies made in Sunburst Studio: "A + D, F as cover".
+Page 1 becomes A (the brief with the room), page 2 becomes D (the five steps to tick), and F prints as a once-a-day
+cover.
 
 Evidence: two blind reviewers per page (one look, the ten questions a hallkeeper asks; calm / glance / finish).
-Today's sheet 8 / 7.5 / 8; A 8 / 9 / 8; D 8 / 9 / 8.5; F 8 / 8 / 8. Studies, prompts and reviews:
-`D:/claude/hallkeeper-sheet-alternatives-20261106/`.
+Today's sheet 8 / 7.5 / 8; A 8 / 9 / 8; D 8 / 9 / 8.5; F 8 / 8 / 8. The studies, prompts, reviews and gallery are
+kept outside the repo.
 
 The task was first noted here as T-687. That number went to the redesigned planner (#358), so this work is T-696.
 
@@ -249,14 +249,24 @@ day's Grand Hall breakfast (Setup phase 07:00, doors 08:00) printed "Room ready 
   the setup start as guests in.
 - **The header has five facts:** Setup from (with "60 min to set the room"), Ready by ("when guests come in", or "15
   min before guests come in"), Guests in (day and zone), Guests, Room. Widths start at 108, 126, 96 and 74 pt, the
-  room the rest (a time's numeral is 79 pt). No one set of widths holds on one line every caption a sheet can print:
-  measured in the sheet's fonts over every day of 2026-27 and every setup and ready-by offset up to a day, "Wed 30
-  Sept · UK time" is 80.1 pt, "Dinner banquet" 54.6, "104 min before guests come in" 108.8 and "No changeover time
-  for this room" 118.7. A sheet prints one caption a fact, so its widths follow its own captions: a caption wider than
-  its cell borrows what the other facts leave beyond their own widest line (overline, numeral, the room's name at its
-  first size, caption), the smallest shortfall first; one that still cannot get a whole line (a time on another day,
-  the planner's time with no booking) wraps, evened out so no word sits alone, and the rules between the facts reach
-  its last line. A sheet whose captions fit keeps the header's widths and height (#454 review, round 1).
+  room the rest (a time's numeral is 79 pt), with 8 pt either side of each rule. No one set of widths holds on one
+  line every caption a sheet can print: measured in the sheet's fonts over every day of 2026-27 and every setup and
+  ready-by offset up to a day, "Wed 30 Sept · UK time" is 80.1 pt, "Dinner banquet" 54.6, "4 h 44 min before guests
+  come in" 119.3, "20 h 44 min before guests come in" 123.8 and "No changeover time for this room" 118.7. A sheet
+  prints one caption a fact, so its widths follow its own captions: a caption wider than its cell borrows what the
+  other facts leave beyond their own widest line (overline, numeral, the room's name at its first size, caption), the
+  smallest shortfall first; one that still cannot get a whole line parts after its middle dot when both parts fit, and
+  otherwise wraps, evened out so no word sits alone, and the rules between the facts reach its last line. A sheet
+  whose captions fit keeps the header's widths and height (#454 review, round 1).
+- **What keeps to one line** (#454 review, round 2, measured on the composition itself in each of the venue's rooms,
+  beside the widest date and layout words of 2026-27): Setup from and Ready by, whenever both are in minutes or
+  single-figure hours. So the release lead's wedding (setup from 08:00, final touches 13:30, guests in at 16:00: "5 h
+  30 min to set the room", "2 h 30 min before guests come in") keeps one line, where at 10 pt beside the rules its
+  Ready by parted on every day in every room but the Saloon; the gaps closed to 8 pt for it, and the numerals stand at
+  least 7 pt clear of the rules. Still parting, evened out: a caption in two-figure hours (a setup window of 10 h or
+  more, or a Ready by 10 h or more before guests come in) in the Robert Adam Room and the North Gallery, and in the
+  Reception Room when both are; "No changeover time for this room" beside a planner's ready-by time; a time on another
+  day; the planner's time with no booking.
 - **The day** opens with "Setup starts" (the header's label is "Setup from"; the day's lines are events) and names
   guests coming in "Guests in", as the header does. The planner's final-touches time is the room's ready-by time, so it
   always folds into "Room ready" and lends it its reason. A room ready as guests come in is one moment and prints
@@ -275,11 +285,13 @@ day's Grand Hall breakfast (Setup phase 07:00, doors 08:00) printed "Room ready 
   in brick (`sheetTimes`' `noTimeToSet`: Setup from at or after Ready by): Setup from's caption on the PDF and under
   the day's Room ready, with its time in brick; Setup from in brick and the note on the phone card; on the print line
   and the Day Board's line (the summary carries `setupFrom` when the board asks, with `setupFrom=true`, because older
-  web code reads the summary with a strict schema and a Day Board left open on it must keep its line). The words state the fact and never read as an
-  instruction to the crew; they replaced "Not before the room's ready-by time" (`d0cae047`, then #454's review).
+  web code reads the summary with a strict schema and a Day Board left open on it must keep its line). The words
+  state the fact and never read as an instruction to the crew; they replaced "Not before the room's ready-by time"
+  (`d0cae047`, then #454's review).
 - **Missing data:** no booking keeps "No booking holds this room yet" and "Confirm the time first"; a planner's final
   time without a booking is still Ready by, in brick, "The planner's time · no booking holds this room yet", in those
-  words on the phone card and the Day Board's line too. No setup start shows Setup from "—" with "No changeover time
+  words on the phone card, the print line and the Day Board's line too; with neither, the print line says "No booking
+  holds this room yet" (#454 review, round 2). No setup start shows Setup from "—" with "No changeover time
   for this room", and Ready by at guests in.
 - A time on another day than guests come in carries its day: the PDF's captions ("Fri 13 Nov · 13 h to set the
   room"), and its rail, the phone card, the print line and the Day Board's line through `sheetClock` ("Fri 16:00").

@@ -44,7 +44,11 @@ export function summarizeSheet(
   const times = sheetTimes(sheet);
   return HallkeeperSheetSummarySchema.parse({
     configId,
-    readyBy: times.readyBy,
+    // Ready by can be the planner's final time as written in the layout's
+    // metadata, which a row written outside the API may give with a UTC offset
+    // the schema refuses (sheetTimes takes any time it can read). The board
+    // gets the same instant, in UTC, as its other times come.
+    readyBy: times.readyBy === null ? null : new Date(times.readyBy).toISOString(),
     eventStart: times.guestsIn,
     ...(options.setupFrom === true ? { setupFrom: times.setupFrom } : {}),
     total: rows.length,

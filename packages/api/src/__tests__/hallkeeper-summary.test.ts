@@ -70,6 +70,17 @@ describe("summarizeSheet", () => {
     expect(summarizeSheet(CONFIG, { phases, timing, instructions }, []).readyBy).toBe("2026-10-03T17:00:00.000Z");
   });
 
+  // #454 round 2 (ZC3): a final time written into a layout's metadata outside the
+  // API can carry a UTC offset. The sheet and the PDF read it; so must the board's
+  // line, as the same instant, never as a refused summary and a 500.
+  it("gives a planner's final time written with a UTC offset as the same instant", () => {
+    const instructions: HallkeeperSheetV2["instructions"] = {
+      ...EventInstructionsSchema.parse({}),
+      phaseDeadlines: [{ phase: "final", deadline: "2026-10-03T18:00:00+01:00", reason: "" }],
+    };
+    expect(summarizeSheet(CONFIG, { phases, timing, instructions }, []).readyBy).toBe("2026-10-03T17:00:00.000Z");
+  });
+
   it("does not count a mark left on a row a re-save removed, or the same mark twice", () => {
     const summary = summarizeSheet(CONFIG, { phases, timing, instructions: null }, [
       "furniture|Centre|Chair|0", "furniture|Centre|Chair|0", "furniture|Centre|Trestle table|0",

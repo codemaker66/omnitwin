@@ -541,11 +541,12 @@ describe("Setup from, then Ready by (T-696)", () => {
     expect(brick(late)).toBeGreaterThan(brick(onTime));
   });
 
-  // -------------------------------------------- #454 review, round 1 ----
-  // The release lead's round-1 findings: the header's captions keep to one line
-  // where they fit (YB1); the new branches are tested in words and colour
+  // ------------------------------------------------------ #454 review ----
+  // The release lead's findings. Round 1: the header's captions keep to one
+  // line where they fit (YB1); the new branches are tested in words and colour
   // (YB11); one rule on every surface (YA5, YB5, YB6, and the rail's order).
-  describe("#454 round 1", () => {
+  // Round 2: a Ready by in hours keeps to one line in every room (ZA1).
+  describe("#454 review", () => {
     const page1 = async (sheet: HallkeeperSheetV2): Promise<readonly PdfLine[]> => pdfPages(await generateSheetPdfV2(sheet))[0] ?? [];
     /** A fact's caption as printed: the label-size lines under its numeral, in the column its overline heads. */
     const captionOf = (lines: readonly PdfLine[], overline: string): readonly PdfLine[] => {
@@ -562,7 +563,7 @@ describe("Setup from, then Ready by (T-696)", () => {
       timing: { eventStart: "2026-09-30T17:00:00.000Z", setupBy: "2026-09-30T14:00:00.000Z", bufferMinutes: 180 },
     };
 
-    it("prints the widest realistic captions on one line each: a Wednesday 30 September dinner banquet ready 105 min before guests come in (YB1)", async () => {
+    it("prints the widest date and layout words on one line each, beside a Ready by in minutes: a Wednesday 30 September dinner banquet ready 105 min before guests come in (YB1)", async () => {
       const lines = await page1({ ...SEPT, instructions: finalAt("2026-09-30T15:15:00.000Z") });
       for (const [overline, caption] of [["SETUP FROM", "75 min to set the room"], ["READY BY", "105 min before guests come in"],
         ["GUESTS IN", "Wed 30 Sept · UK time"], ["GUESTS", "Dinner banquet"], ["ROOM", "21 × 10.5 m · 7 m high"]] as const) {
@@ -571,12 +572,47 @@ describe("Setup from, then Ready by (T-696)", () => {
       expect(lines.find((line) => line.text === "Grand Hall" && line.size > 18)?.size, "the room's name at full size").toBe(18.6);
     });
 
+    /** Trades Hall's rooms at the sizes the seed gives them. */
+    const ROOMS: readonly HallkeeperSheetV2["space"][] = [
+      { name: "Grand Hall", widthM: 21.14, lengthM: 10.59, heightM: 6.7 },
+      { name: "Saloon", widthM: 12, lengthM: 7, heightM: 5.4 },
+      { name: "Reception Room", widthM: 13.4, lengthM: 11.2, heightM: 3.2 },
+      { name: "Robert Adam Room", widthM: 9.7, lengthM: 5.6, heightM: 2.18 },
+      { name: "North Gallery", widthM: 8, lengthM: 4, heightM: 3 },
+    ];
+
+    it("prints a Ready by in hours and minutes on one line beside a setup in hours, in every room: final touches 2 h 30 min before 16:00 doors, setup from 08:00 (ZA1)", async () => {
+      // Saturday 24 October 2026, on British Summer Time: setup from 08:00, the planner's final touches at 13:30, guests in at 16:00.
+      for (const space of ROOMS) {
+        const lines = await page1({ ...BASE_SHEET, space, timing: { eventStart: "2026-10-24T15:00:00.000Z", setupBy: "2026-10-24T07:00:00.000Z", bufferMinutes: 480 },
+          instructions: finalAt("2026-10-24T12:30:00.000Z") });
+        expect(captionOf(lines, "SETUP FROM").map((line) => line.text), space.name).toEqual(["5 h 30 min to set the room"]);
+        expect(captionOf(lines, "READY BY").map((line) => line.text), space.name).toEqual(["2 h 30 min before guests come in"]);
+        for (const overline of ["GUESTS IN", "GUESTS", "ROOM"]) expect(captionOf(lines, overline), `${space.name}, ${overline}`).toHaveLength(1);
+      }
+    });
+
+    it("prints the widest captions in single-figure hours on one line in every room, beside the widest date and layout words: 4 h 44 min to set the room, 4 h 44 min before guests come in (ZA1)", async () => {
+      // Wednesday 30 September 2026, on British Summer Time: setup from 10:12, the planner's final touches at 14:56, guests in at 19:40.
+      for (const space of ROOMS) {
+        const lines = await page1({ ...SEPT, space, timing: { eventStart: "2026-09-30T18:40:00.000Z", setupBy: "2026-09-30T09:12:00.000Z", bufferMinutes: 568 },
+          instructions: finalAt("2026-09-30T13:56:00.000Z") });
+        for (const [overline, caption] of [["SETUP FROM", "4 h 44 min to set the room"], ["READY BY", "4 h 44 min before guests come in"],
+          ["GUESTS IN", "Wed 30 Sept · UK time"], ["GUESTS", "Dinner banquet"]] as const) {
+          expect(captionOf(lines, overline).map((line) => line.text), `${space.name}, ${overline}`).toEqual([caption]);
+        }
+        expect(captionOf(lines, "ROOM"), `${space.name}, ROOM`).toHaveLength(1);
+      }
+    });
+
     it("keeps the header's height when every caption fits one line: page 1 goes on where a June dinner's does (YB1)", async () => {
       const dayHead = (lines: readonly PdfLine[]): number => lines.find((line) => line.text === "THE DAY, IN ORDER")?.y ?? Number.NaN;
       expect(dayHead(await page1(SEPT))).toBeCloseTo(dayHead(await page1(BASE_SHEET)), 3);
     });
 
     it("keeps a short sheet dated Wednesday 30 September on one page (YB1)", async () => {
+      // A smoke check (ZA2): page 1 leaves about 85 pt below its last line, so a header a caption line taller would
+      // still keep one page. The header-height test above is what guards the band.
       expect(pdfPages(await generateSheetPdfV2(SEPT))).toHaveLength(1);
       expect(pdfPages(await generateSheetPdfV2({ ...SEPT, instructions: finalAt("2026-09-30T15:15:00.000Z") }))).toHaveLength(1);
     });
@@ -586,7 +622,8 @@ describe("Setup from, then Ready by (T-696)", () => {
       const buf = await generateSheetPdfV2({ ...BASE_SHEET, timing: { eventStart: "2026-06-15T18:00:00.000Z", setupBy: "2026-06-14T15:00:00.000Z", bufferMinutes: 1620 },
         instructions: finalAt("2026-06-14T21:00:00.000Z") });
       const lines = pdfPages(buf)[0] ?? [];
-      expect(captionOf(lines, "SETUP FROM").map((line) => line.text)).toEqual(["Sun 14 Jun ·", "6 h to set the room"]);
+      // Setup from's caption has stood whole since the gaps beside the rules closed to 8 pt (ZA1); Ready by's still parts.
+      expect(captionOf(lines, "SETUP FROM").map((line) => line.text)).toEqual(["Sun 14 Jun · 6 h to set the room"]);
       expect(captionOf(lines, "READY BY").map((line) => line.text)).toEqual(["Sun 14 Jun ·", "21 h before guests come in"]);
       const wrapped = captionOf(lines, "READY BY");
       for (const line of wrapped) expect(line.text.split(" ").length, line.text).toBeGreaterThan(1);

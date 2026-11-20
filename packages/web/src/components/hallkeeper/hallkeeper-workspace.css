@@ -307,7 +307,9 @@
   max-width: 28ch;
   margin-top: 4px;
 }
-/* A planner's ready time after guests come in: kept, and set in brick. */
+/* A warning on the card, set in brick: a ready time after guests come in, no
+   time to set the room, or a planner's time with no booking. The words beside
+   it carry the meaning. */
 .hkf-time-card .hkf-time-late {
   color: var(--house-brick-strong);
 }

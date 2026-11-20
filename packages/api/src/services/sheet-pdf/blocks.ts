@@ -197,14 +197,23 @@ function factsOf(sheet: HallkeeperSheetV2): Fact[] {
  * "Sat 24 Oct · UK time" 72 pt; "Dinner rounds" 50 pt; "21 × 10.5 m · 7 m high"
  * 76 pt. The room takes the rest, and its name shrinks to fit as before.
  * No one set of widths holds every caption a sheet can print on one line
- * (#454 round 1, measured over 2026-27: "Wed 30 Sept · UK time" 80.1 pt,
- * "Dinner banquet" 54.6, "104 min before guests come in" 108.8, "No changeover
+ * (#454 review, measured over 2026-27: "Wed 30 Sept · UK time" 80.1 pt,
+ * "Dinner banquet" 54.6, "4 h 44 min before guests come in" 119.3, in
+ * two-figure hours "20 h 44 min before guests come in" 123.8, "No changeover
  * time for this room" 118.7), but a sheet prints one caption a fact, so
  * factCells lends each caption that needs it the room the others leave.
  */
 const FACT_WIDTHS = [108, 126, 96, 74] as const;
-/** Space either side of the rule between two facts. */
-const FACT_GAP = 10;
+/**
+ * Space either side of the rule between two facts. At 8 pt (it was 10), every
+ * Setup from and Ready by caption in single-figure hours keeps to one line in
+ * each of the venue's rooms, beside the widest date and layout words of
+ * 2026-27. In two-figure hours a caption can still part in a room whose name
+ * fills its cell, and "No changeover time for this room" can part beside a
+ * planner's ready-by time (#454 review, round 2, measured on the composition
+ * itself).
+ */
+const FACT_GAP = 8;
 
 const captionStyle = (fact: Fact): TextStyle => (fact.tone === "alert" ? TYPE.labelAlert : TYPE.label);
 const numeralStyle = (fact: Fact): TextStyle => (fact.tone === "alert" ? TYPE.numeralAlert : fact.tone === "accent" ? TYPE.numeralAccent : TYPE.numeral);
