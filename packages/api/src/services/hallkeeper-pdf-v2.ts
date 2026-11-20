@@ -8,6 +8,7 @@ import { incrementCounter, observeHistogram } from "../observability/metrics.js"
 import { brief, facts, footers, header, martynsLaw, setupPage, signOff, type CopyMarks } from "./sheet-pdf/blocks.js";
 import { Flow, PAGE_OPTIONS } from "./sheet-pdf/flow.js";
 import { registerSheetFonts } from "./sheet-pdf/fonts.js";
+import { spacesAsPrinted } from "./sheet-pdf/style.js";
 
 // ---------------------------------------------------------------------------
 // The hallkeeper sheet, portrait A4: A, then D (Blake's choice of 6 November
@@ -27,10 +28,14 @@ import { registerSheetFonts } from "./sheet-pdf/fonts.js";
 // the sheet can carry allergy and access notes.
 // ---------------------------------------------------------------------------
 
-export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffer> {
+export async function generateSheetPdfV2(sheet: HallkeeperSheetV2): Promise<Buffer> {
   // Business-level metric: render count + duration histogram. Labels are
   // low-cardinality (approved / draft).
   const renderStart = process.hrtime.bigint();
+  // The planner's words as they print: any run of spaces, pasted no-break and
+  // narrow no-break spaces among them, one plain space. So the only ties on the
+  // paper are the sheet's own (sheet-pdf/style.ts).
+  const data = spacesAsPrinted(sheet);
   const approvalLabel = data.approval !== null ? "approved" : "draft";
 
   const PDFDocument = (await import("pdfkit")).default;
