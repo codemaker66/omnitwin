@@ -532,30 +532,35 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       from 75 to 53. Where one doubtful view became another (12,340) they rose from 1,021 to 1,495,
       the texels more than 12 levels off from 1,631 to 3,168, and 5,228 texels moved farther from
       their surroundings against 3,429 nearer, on all eight walls the step touched. A new dark
-      band 37 cm by 4.5 cm stood on the window wall's plaster where the first build was clean. The
-      measure is loose beside mouldings, where it calls 18 in 100 clean texels dark and 24 in 100
-      off: these are the same texels against the same surroundings in two builds, not absolute
-      counts.
+      band about 38 cm by 5 cm (466 texels) stood on the window wall's plaster where the first
+      build was clean. The measure is loose beside mouldings, where it calls 14 in 100 clean
+      texels dark and 26 in 100 off: these are the same texels against the same surroundings in
+      two builds, not absolute counts.
     - The noise. The same texels as pairs (worse / better / as they were, with the exact sign
       test on those that changed), where one doubtful view became another: dark 841 / 367 /
       11,132, off 2,295 / 758 / 9,287, farther from their surroundings by more than 2 levels
       5,228 / 3,429 / 3,683. A patch of texels that changes station changes together, so texels
-      are not independent pairs and those counts overstate the evidence. With the connected patch
-      as the unit (387 patches; one is worse where more of its texels turned worse than better):
-      dark 50 / 33 / 304 (p 0.08), off 139 / 72 / 176 (p 0.000005), farther 198 / 133 / 56
-      (p 0.0004). So what is beyond chance is that the step pushed texels off their surroundings,
-      patch after patch; the rise in dark texels is within chance by patch, and 495 of its 841
-      are the window wall's. Wall by wall the patches are few (9 to 123) and four of the eight
-      walls pass 0.05 on a judgement or two: the fireplace wall (off 43 / 18, farther 65 / 37),
-      its front end (farther 8 / 0), its rear end (off 10 / 1, farther 11 / 2) and the window
-      wall (off 24 / 11); on no wall is the second build the better beyond chance. Where a
-      doubtful view became a clear one (the first step; 131 patches): dark 4 / 13 / 114 (p 0.05),
-      off 18 / 25 / 88 (p 0.4), farther 40 / 62 / 29 (p 0.04). And what two builds do to a texel
-      that neither moved: of 150,919 clean texels beside the changed ones, whose station is the
-      same in both, 491 turned dark and 526 stopped being (p 0.3), 469 turned off and 703 stopped
-      being, 2,272 moved farther and 3,198 nearer. The second build's untouched wall is, if
-      anything, slightly nearer its surroundings, so the changed texels' loss is not a drift of
-      the whole photograph.
+      are not independent pairs and those counts overstate the evidence. With the patch as the
+      unit (the connected patches of every texel whose label differs, 313 of which hold such a
+      texel; a patch is worse where more of its texels of this kind turned worse than better):
+      dark 48 / 31 / 234 (p 0.07), off 123 / 51 / 139 (p 0.00000005), farther 171 / 98 / 44
+      (p 0.00001). So what is beyond chance is that the step pushed texels off their
+      surroundings, patch after patch; the rise in dark texels is within chance by patch, and 495
+      of its 841 are the window wall's. Wall by wall the patches are few (8 to 118) and five of
+      the eight walls pass 0.05 on a judgement or two: the fireplace wall (off 41 / 17, farther
+      62 / 35), its front end (farther 7 / 0), its rear end (off 10 / 1, farther 11 / 2), the
+      window wall (off 22 / 8) and its rear end (farther 10 / 2); on no wall is the second build
+      the better beyond chance. Where a doubtful view became a clear one (the first step; 65
+      patches): dark 4 / 11 / 50 (p 0.12), off 9 / 13 / 43 (p 0.5), farther 22 / 33 / 10 (p 0.2).
+      That is a gain by texel (dark 15 worse, 37 better) which by patch is within chance. And the
+      control, what two builds do to a texel that neither moved: of 139,547 clean texels within
+      reach of the texels judged, whose station is the same in both, 270 turned dark and 253
+      stopped being (p 0.5), 396 turned off and 643 stopped being, 2,093 moved farther and 2,987
+      nearer. The second build's untouched wall is, if anything, slightly nearer its
+      surroundings, so the changed texels' loss is not a drift of the whole photograph. Wall by
+      wall the control does lean (the rear wall's untouched texels moved farther, 263 against
+      169; the window wall's nearer, 458 against 198): the two builds level a wall a little
+      differently, so a wall's split is to be read beside its own control's.
     - What the study supports. Every doubtful texel was then sampled from every station that saw
       it, and each view judged against its own station's clean wall beside it, which leaves
       exposure out (`measure/walls/doubtful_rules.py`; 28,250 doubtful texels left to be seen,
@@ -656,8 +661,11 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
   49 arrays, none different (every array bit for bit; the run reports less their timings and
   memory). After the review's changes to the margin's labels (19 November), `label-views.py` was
   set against the reviewed one on a synthetic wall with 7 stations, with the margin absent and
-  with an explicit 0.0: the same 21 arrays and report, and the same bytes in the file. The real
-  END wall has not been run again with them.
+  with an explicit 0.0: the same 21 arrays and report, and the same bytes in the file. On 20
+  November the real END wall was run again twice, its labels and then its photographs: with
+  those changes, and with the doubtful view settled as it now is (T-739; on the synthetic wall
+  that rule's labels file is the same bytes once more, the margin absent or 0.0). Each time:
+  23 files, 49 arrays, none different, after the labels and again after the photographs.
   On 18 November on the reference machine, with the twin's manifest and an installed checkout's
   meshoptimizer: T0 52 tests, T1 and T4 54, T3 16, none failing and none skipped. T2 was not run
   again; the real END wall is the stronger form of what its label stage shows.

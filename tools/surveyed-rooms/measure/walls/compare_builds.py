@@ -19,11 +19,17 @@ which the measure calls a CLEAN texel beside them dark or off, against which eve
 The noise. Each judgement (dark; off; farther from the surroundings by more than 2 levels) is also given as pairs,
 not as two rates: the texels that turned worse, that turned better and that are as they were, with the exact sign
 test on the first two (wallviews.py). A patch of texels that changes station changes together, so the same is
-counted with the connected patch as the unit: a patch is worse where more of its texels turned worse than better.
-And the clean texels beside them, whose station is the same in both builds, are counted the same way: that is what
-two builds do to a texel neither of them moved. At the end a wall is named worse only where more patches turned
-worse than better and the sign test by patch is under 0.05. That is a dozen walls by three judgements, so one or
-two names would be chance alone: read the counts, not only the names.
+counted with the patch as the unit: the connected patches of ALL the texels whose label differs, so that a patch
+is one unit even where some of its texels are not judged or are of another kind, and a patch is worse where more
+of its texels in the group counted turned worse than better. And the control: clean texels within reach of a
+judged texel left to be seen, left to be seen themselves, whose station is the same in both builds, counted the
+same way. That is what two builds do to a texel neither of them moved.
+
+At the end a wall is named worse only where more patches turned worse than better and the sign test by patch is
+under 0.05. The sign test asks whether the split is even; where a wall's control leans one way itself (the two
+builds level that wall differently), the split to compare with is the control's, which is printed with each wall
+named. And a dozen walls by three judgements means one or two names would be chance alone: read the counts, not
+only the names.
 
 Read-only on both folders. A rule for which view a texel takes is judged on this before it is changed: gate
 B25's second step was chosen on a synthetic wall alone in November 2026 and printed a new dark band on a real
@@ -62,6 +68,7 @@ for name in walls:
         raise SystemExit(f'{name}: the two builds do not have the same stations')
     old, new = z1['texel_label'], z2['texel_label']
     clearbits = z2['clearbits']
+    first_bits = z1['clearbits'] if 'clearbits' in z1.files else clearbits     # the first build's own, where it kept them
     grid = B.Grid(name)
     rgb1, ok1 = wv.photograph(first, name)
     rgb2, ok2 = wv.photograph(second, name)
@@ -69,14 +76,16 @@ for name in walls:
         raise SystemExit(f'{name}: the two builds are not of the same grid')
     L1, L2 = wv.levels(rgb1), wv.levels(rgb2)
     depth = grid.depth.astype(np.float32)
-    # Clean: the same station in both builds, which saw the texel clear, coloured in both.
+    # Clean: the same station in both builds, which saw the texel clear by each build's own statistics, coloured in both.
     r, c = np.nonzero((new >= 0) & (new == old))
     own = np.zeros(new.shape, bool)
-    own[r, c] = wv.bit(clearbits, new[r, c].astype(np.int64), r, c)
+    own[r, c] = wv.bit(clearbits, new[r, c].astype(np.int64), r, c) & wv.bit(first_bits, new[r, c].astype(np.int64), r, c)
     clean = own & ok1 & ok2 & grid.valid
     covered = wv.under_a_patch(room, grid, name)
+    patch_of, _ = wv.patch_image(new != old)             # every texel whose label differs, a hole that took a view among them
 
     r, c = np.nonzero((new != old) & (new >= 0) & (old >= 0) & ok1 & ok2)
+    patch = patch_of[r, c]
     ref1, n1 = wv.surroundings(L1, clean, depth, r, c)
     ref2, n2 = wv.surroundings(L2, clean, depth, r, c)
     have = (n1 >= wv.FEW) & (n2 >= wv.FEW)
@@ -85,24 +94,20 @@ for name in walls:
     dark2, off2 = judged(a2, ref2)
     dev1, dev2 = np.abs(a1 - ref1), np.abs(a2 - ref2)
     seen = have & ~covered[r, c]
-    was_clear = wv.bit(clearbits, old[r, c].astype(np.int64), r, c)
+    was_clear = wv.bit(first_bits, old[r, c].astype(np.int64), r, c)
     now_clear = wv.bit(clearbits, new[r, c].astype(np.int64), r, c)
     # Each of JUDGEMENTS as pairs: (its name, the texels that turned worse, the texels that turned better).
     judgements = (('dark', ~dark1 & dark2, dark1 & ~dark2), ('off', ~off1 & off2, off1 & ~off2),
                   ('distance', dev2 > dev1 + 2, dev2 < dev1 - 2))
 
     def by_patch(m):
-        """The pairs again with the connected patch of changed texels as the unit, since a patch changes together:
-        a patch is worse where more of its texels turned worse than better."""
-        img = np.zeros(old.shape, bool)
-        img[r[m], c[m]] = True
-        lab, n = ndimage.label(img, structure=np.ones((3, 3)))
-        patch = lab[r[m], c[m]]
-        out = dict(patches=int(n))
+        """The pairs again with the patch as the unit (wallviews.patch_counts): of the patches that hold a texel of
+        `m`, how many turned worse, how many better, how many neither."""
+        out = dict(patches=0)
         for key, worse, better in judgements:
-            net = np.bincount(patch, weights=worse[m].astype(np.float64) - better[m], minlength=n + 1)[1:]
-            w, b = int((net > 0).sum()), int((net < 0).sum())
-            out[key] = dict(worse=w, better=b, unchanged=int(n) - w - b, p_exact=wv.sign_test(w, b))
+            counts = wv.patch_counts(patch, worse, better, m)
+            out['patches'] = counts.pop('patches')
+            out[key] = counts
         return out
 
     def tally(m):
@@ -133,11 +138,12 @@ for name in walls:
                             v=[round(float(grid.vrow[rr.max()]), 3), round(float(grid.vrow[rr.min()]), 3)]))
         return out
 
-    # How often the measure calls a clean texel bad, where it is used: clean texels within the reach of a changed one.
+    # The control, and how often the measure calls a clean texel bad where it is used: clean texels within the reach
+    # of a changed texel that is judged and left to be seen, themselves left to be seen.
     beside = np.zeros(old.shape, bool)
-    beside[r, c] = True
+    beside[r[seen], c[seen]] = True
     beside = ndimage.binary_dilation(beside, structure=np.ones((3, 3)), iterations=wv.REACH)
-    br, bc = np.nonzero(clean & beside)
+    br, bc = np.nonzero(clean & beside & ~covered)
     pick = rng.choice(len(br), size=min(20000, len(br)), replace=False) if len(br) else np.zeros(0, np.int64)
     bref, bn = wv.surroundings(L2, clean, depth, br[pick], bc[pick])
     bhave = bn >= wv.FEW
@@ -202,7 +208,12 @@ t = max(total('clean_texels_beside', 'texels'), 1)
 print(f"the measure on clean texels beside them: {100 * total('clean_texels_beside', 'dark') / t:.1f}% called dark, {100 * total('clean_texels_beside', 'off') / t:.1f}% called off"
       f" ({total('clean_texels_beside', 'texels')} texels): read every count above against that")
 print(f"the same clean texels as pairs, worse/better/as they were: {pairs(pairs_over_the_walls('clean_texels_beside', 'paired'))}: what two builds do to a texel neither moved")
-named = [f"{row['wall']} ({key})" for row in rows for key in JUDGEMENTS
-         if row['left_to_be_seen'].get('texels') and row['left_to_be_seen']['paired_by_patch'][key]['worse'] > row['left_to_be_seen']['paired_by_patch'][key]['better']
-         and row['left_to_be_seen']['paired_by_patch'][key]['p_exact'] < 0.05]
-print('worse in the second build beyond chance, by patch (more patches worse than better, sign test under 0.05): ' + (', '.join(named) or 'no wall'))
+named = []
+for row in rows:
+    if not row['left_to_be_seen'].get('texels'):
+        continue
+    for key in JUDGEMENTS:
+        t, k = row['left_to_be_seen']['paired_by_patch'][key], row['clean_texels_beside']['paired'][key]
+        if t['worse'] > t['better'] and t['p_exact'] < 0.05:
+            named.append(f"{row['wall']} ({key}: {t['worse']} patches worse, {t['better']} better, p {t['p_exact']:.2g}; its clean texels beside: {k['worse']} worse, {k['better']} better)")
+print('worse in the second build beyond chance, by patch (more patches worse than better, sign test under 0.05): ' + ('; '.join(named) or 'no wall'))

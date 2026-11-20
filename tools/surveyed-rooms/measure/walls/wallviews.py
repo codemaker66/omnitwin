@@ -7,7 +7,7 @@ on the same surface. With fewer than FEW such neighbours a texel is not judged. 
 85% of its surroundings (the measure of 16 November 2026 for an occluder's rim printed on plaster) and OFF where
 it is more than 12 sRGB levels from them either way.
 
-It is a loose measure beside mouldings: on the Saloon it calls 18 in 100 clean texels dark and 24 in 100 off
+It is a loose measure beside mouldings: on the Saloon it calls 14 in 100 clean texels dark and 26 in 100 off
 there, because a real shadow or a moulding's edge also differs from the wall beside it. So it is for COMPARING the
 same texels in two builds, or two views of one texel, never for an absolute count; compare_builds.py prints the
 rate on clean texels beside the ones it judges, so that every count can be read against it.
@@ -84,12 +84,15 @@ def photograph(work, wall):
 
 def surroundings(L, clean, depth, r, c):
     """For texels (r, c): the median of L over their clean neighbours on their own surface, and how many there
-    were. L is a whole wall (NaN where unknown), clean its mask, depth the wall's relief (metres)."""
+    were. L is a whole wall (NaN where unknown), clean its mask, depth the wall's relief (metres). A texel is
+    never its own surroundings, clean or not: a clean texel judged as a control is then judged exactly as a
+    changed one is, which has no place in `clean`."""
     Lp = np.pad(L, REACH, constant_values=np.nan)
     cp = np.pad(clean, REACH, constant_values=False)
     dp = np.pad(depth, REACH, constant_values=np.inf)
     dy, dx = np.mgrid[-REACH:REACH + 1, -REACH:REACH + 1]
-    dy, dx = dy.ravel(), dx.ravel()
+    others = (dy != 0) | (dx != 0)
+    dy, dx = dy[others], dx[others]
     ref = np.full(len(r), np.nan, np.float32)
     count = np.zeros(len(r), np.int32)
     for a in range(0, len(r), 2000):
@@ -108,6 +111,7 @@ def sign_test(worse, better):
     """How likely a split at least this lopsided is, were each thing that changed as likely to have turned worse
     as better: the exact two-sided sign test on the changed pairs alone (McNemar's exact test). 1.0 where nothing
     changed, or as many turned each way."""
+    worse, better = int(worse), int(better)                # a numpy integer would wrap round in the sums below, silently
     n, k = worse + better, min(worse, better)
     term = total = 1                                       # C(n, 0); whole numbers, so nothing is rounded before the end
     for i in range(k):
@@ -121,6 +125,29 @@ def paired_counts(worse, better, among):
     how many turned worse, how many better and how many are as they were, with the sign test on the first two."""
     w, b = int((worse & among).sum()), int((better & among).sum())
     return dict(worse=w, better=b, unchanged=int(among.sum()) - w - b, p_exact=sign_test(w, b))
+
+
+def patch_image(mask):
+    """The connected patches (8 neighbours) of a wall's texels in `mask`, numbered from 1, and how many there are.
+    Texels that change station together are one patch: patch_counts' unit."""
+    from scipy import ndimage  # noqa: PLC0415 - the comparing script alone needs it
+    return ndimage.label(mask, structure=np.ones((3, 3)))
+
+
+def patch_counts(patch, worse, better, among):
+    """paired_counts with the patch as the unit, since a patch's texels are not independent pairs. `patch` is each
+    texel's patch in a numbering of ALL the texels that changed (patch_image), so that a patch is not cut in two
+    where some of its texels are left out of `among` (not judged, or of another kind). Of the patches that hold a
+    texel of `among`: how many turned worse (more of those texels worse than better), how many better, how many
+    neither, with the sign test on the first two."""
+    ids = patch[among]
+    if not len(ids):
+        return dict(patches=0, worse=0, better=0, unchanged=0, p_exact=1.0)
+    top = int(patch.max()) + 1
+    held = np.bincount(ids, minlength=top) > 0
+    net = np.bincount(ids, weights=worse[among].astype(np.float64) - better[among], minlength=top)
+    n, w, b = int(held.sum()), int((net[held] > 0).sum()), int((net[held] < 0).sum())
+    return dict(patches=n, worse=w, better=b, unchanged=n - w - b, p_exact=sign_test(w, b))
 
 
 def under_a_patch(room, grid, wall):
