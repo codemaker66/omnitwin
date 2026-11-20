@@ -107,6 +107,48 @@ describe("SheetCheckPage without signal", () => {
     expect(checkSheetPaper).toHaveBeenCalledTimes(2);
   });
 
+  it("hears the signal return from the moment it says there is none, even when a slow frame delays React's effects", async () => {
+    // T-736. React's scheduler hands the event loop back once a task has run 5 ms. On a loaded
+    // runner that can fall between committing "no signal" and running the effects, so the page
+    // must already be listening by then. This clock reads 6 ms later at every call, so the
+    // scheduler yields at that point every time instead of now and then.
+    const realNow = performance.now.bind(performance);
+    let skew = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => { skew += 6; return realNow() + skew; });
+    // The signal returns at the first moment anything outside React can see "no signal".
+    let signalled = false;
+    const observer = new MutationObserver(() => {
+      if (signalled || document.querySelector("h1")?.textContent !== "Can't check: no signal.") return;
+      signalled = true;
+      window.dispatchEvent(new Event("online"));
+    });
+    vi.mocked(checkSheetPaper)
+      .mockRejectedValueOnce(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"))
+      .mockResolvedValueOnce({ state: "current", version: 7 });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    try {
+      mount(ISSUED);
+      expect(await screen.findByRole("heading", { name: "This is the current sheet." })).toBeTruthy();
+    } finally {
+      observer.disconnect();
+      clock.mockRestore();
+    }
+    expect(signalled).toBe(true);
+    expect(checkSheetPaper).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks once per returning signal, never in a loop while the network still fails", async () => {
+    const offline = new ApiError(0, "Network error — check your connection", "NETWORK_ERROR");
+    vi.mocked(checkSheetPaper).mockRejectedValue(offline);
+    mount(ISSUED);
+    expect(await screen.findByRole("heading", { name: "Can't check: no signal." })).toBeTruthy();
+    await act(async () => { window.dispatchEvent(new Event("online")); await Promise.resolve(); });
+    expect(await screen.findByRole("heading", { name: "Can't check: no signal." })).toBeTruthy();
+    await act(async () => { await new Promise((done) => { setTimeout(done, 50); }); });
+    expect(checkSheetPaper).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
   it("offers Try again when the check fails for another reason", async () => {
     vi.mocked(checkSheetPaper)
       .mockRejectedValueOnce(new ApiError(429, "Too many requests — please slow down.", "RATE_LIMITED"))
