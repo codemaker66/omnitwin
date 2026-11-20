@@ -314,6 +314,12 @@ class CheckRoom(unittest.TestCase):
         for value in ("2026-18-11", "2026-02-30", "2026-13-45", "2026-07-11\n", "２０２６-07-11", "0000-01-01"):
             said = self.errors(lambda r: r["source"].__setitem__("captured", value))
             self.assertIn("schema $.source.captured", said, repr(value))
+            # A well-formed date that is on no calendar gets the calendar's message, which says what is asked
+            # and does not speak for the reader: the reader takes the year 0000, refused here and by publish
+            # alone (the safe side). The others fail the pattern first and are told so.
+            if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+                self.assertIn("from the year 0001", said, repr(value))
+            self.assertNotIn("refuses any other", said, repr(value))
         self.assertEqual(self.errors(lambda r: r["source"].__setitem__("captured", "2024-02-29")), "")
 
     def test_a_revision_the_reader_refuses_fails_before_a_build(self):
@@ -351,7 +357,10 @@ class CheckRoom(unittest.TestCase):
         said = problems(SALOON, ppm(100, 6.089), "saloon-ppm100.room.json")
         self.assertIn("survey.floorPhoto.ppm 100", said)
         self.assertIn("floor.extent.x", said)
-        self.assertIn("more than 100", said)
+        # The advice names a resolution that is always enough: just above 100 the extent's rounding to a
+        # micrometre can still lose the half texel (the review found outlines refused at 100.0001 and 100.001).
+        self.assertIn("101 or more", said)
+        self.assertNotIn("give floorPhoto.ppm more than 100", said)
         self.assertEqual(problems(SALOON, ppm(101, 6.089), "saloon-ppm101.room.json"), "")
         self.assertIn("survey.floorPhoto.ppm 60", problems(SALOON, ppm(60), "saloon-ppm60.room.json"))    # 7.67 mm short
         # A floor that happens to fit is no fault at any resolution (the Saloon's own outline at 100: 1 mm and 3 mm).
@@ -667,6 +676,10 @@ class SurveyRecord(unittest.TestCase):
         self.assertIn("kind", faults(lambda r: r["walls"][0].__setitem__("kind", "glass")))
         self.assertIn("orientation", faults(lambda r: r["floor"].__setitem__("orientation", "rows from planner -z")))
         self.assertIn("does not increase", faults(lambda r: r["floor"]["extent"]["x"].reverse()))
+        # A vertex past any room is a fault like any other and never a traceback: Python's `**` raises on a
+        # float that overflows, where the reader's Math.hypot gives a number and refuses the record.
+        for far in (1e160, 1e200):
+            self.assertIn("outline segment", faults(lambda r, far=far: r["room"]["outline"][0].__setitem__(0, far)), far)
 
     def test_record_faults_refuse_what_the_readers_shapes_refuse(self):
         """The reader's Zod shapes, value by value: a whole-string match (JavaScript's `$` is the

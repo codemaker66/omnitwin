@@ -273,7 +273,9 @@ everything a reader needs to place the published files, and more that it drops.
   `record_faults` with it, lets a photograph stop 5 mm short of the outline. That is more than half
   a texel only above 100 texels per metre (4.17 mm at the 120 all four rooms use; at exactly 100 half
   a texel is 5 mm, and float rounding decides), so a coarser floor photograph can be refused though
-  it is whole: keep `floorPhoto.ppm` at more than 100 for a room that publishes a record. The extent
+  it is whole: keep `floorPhoto.ppm` at 101 or more for a room that publishes a record (just above 100
+  is not enough: the extent is rounded to a micrometre, and outlines on a micrometre grid were found
+  refused at 100.0001 and 100.001, none from 100.01 up). The extent
   depends only on the outline and `floorPhoto.ppm`, so the build's check lays it as publish will and
   refuses such a room's config, before any build, when the reader would refuse its floor.
 - **Largest first** is by pixel count, whatever order the config lists the sizes in.
