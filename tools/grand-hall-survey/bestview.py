@@ -369,7 +369,11 @@ def occluder_limit(dist, cos):
 
 def clear_of_occluders(near, v, dist, cos):
     """Whether points along v from a station (N, 3; their distances and cosines of incidence) are clear of every
-    occluder's margin: nothing in `near` (occluder_cube) stands nearer than occluder_limit()."""
+    occluder's margin: nothing in `near` (occluder_cube) stands nearer than occluder_limit().
+    The allowance is for the wall the point lies on. Another surface that meets it in a concave junction (the floor,
+    the ceiling, a side wall, a pilaster's flank) also stands nearer beside the ray, by what its own slope explains,
+    and counts as an occluder: a station that faces the wall loses its view within about the margin of such a
+    junction, though nothing hides anything there. A known cost of the margin (tools/surveyed-rooms/README.md, B25)."""
     return cube_texel(near, v) >= occluder_limit(dist, cos)
 
 
