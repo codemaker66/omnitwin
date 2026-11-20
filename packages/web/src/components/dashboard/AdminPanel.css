@@ -300,6 +300,12 @@
   white-space: nowrap;
 }
 
+/* A cell of running text (a job's reason) wraps instead of stretching the table. */
+.admin-panel-table td.admin-panel-table-cell--wrap {
+  min-width: 16rem;
+  white-space: normal;
+}
+
 .admin-panel-table th {
   color: #68d8d2;
   font-size: 0.72rem;

@@ -23,6 +23,14 @@ vi.mock("../../components/dashboard/DashboardLayout.js", async (importOriginal) 
   };
 });
 
+const jobsApi = vi.hoisted(() => ({ getStuckWork: vi.fn() }));
+vi.mock("../../api/jobs.js", () => ({
+  getStuckWork: jobsApi.getStuckWork,
+  retryStuckJob: vi.fn(),
+  closeStuckJob: vi.fn(),
+  runSelfTest: vi.fn(),
+}));
+
 function stub(name: string): () => ReactNode {
   return () => <p data-testid="view">{name}</p>;
 }
@@ -101,5 +109,15 @@ describe("accounts with no venue by design", () => {
     open("enquiries", { ...UNPLACED, role: "planner" });
     expect(screen.getByTestId("view").textContent).toBe("enquiries");
     expect(screen.queryByTestId("venue-not-connected")).toBeNull();
+  });
+});
+
+describe("a typed address for a platform-only view", () => {
+  it("shows a venue admin no Stuck work page, and reads nothing", () => {
+    open("stuckWork", { ...UNPLACED, venueId: "venue-1" });
+    expect(screen.getByRole("alert")).toBeDefined();
+    expect(screen.getByRole("heading", { level: 1, name: "That dashboard surface is not available for this role" })).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Stuck work" })).toBeNull();
+    expect(jobsApi.getStuckWork).not.toHaveBeenCalled();
   });
 });

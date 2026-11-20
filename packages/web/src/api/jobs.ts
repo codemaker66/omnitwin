@@ -1,4 +1,4 @@
-import { StuckJobActionSchema, StuckWorkSchema, type StuckWork } from "@omnitwin/types";
+import { SelfTestResultSchema, StuckJobActionSchema, StuckWorkSchema, type SelfTestResult, type StuckWork } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -21,7 +21,7 @@ export async function closeStuckJob(id: string, note: string): Promise<void> {
   await api.post(`/admin/jobs/${id}/close`, { note }, undefined, StuckJobActionSchema);
 }
 
-/** Put a harmless job on the list, to see the worker run one. Its id comes back. */
-export async function runSelfTest(): Promise<{ readonly id: string }> {
-  return api.post("/admin/jobs/selftest", undefined, undefined, StuckJobActionSchema);
+/** Put a harmless job on the list. The answer is its id and the state it had reached when the server stopped waiting. */
+export function runSelfTest(): Promise<SelfTestResult> {
+  return api.post("/admin/jobs/selftest", undefined, undefined, SelfTestResultSchema);
 }
