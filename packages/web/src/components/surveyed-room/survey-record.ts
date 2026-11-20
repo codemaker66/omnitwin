@@ -33,6 +33,12 @@ import { isReliefId, RELIEF_ID_BYTES } from "./relief-container.js";
 import { outlineBounds, outlineFault, segmentLength, type PlanPoint } from "./room-frame.js";
 
 export const SURVEY_SCHEMA_VERSION = 2;
+// The four tolerances below have a copy in the survey tools' publish step
+// (tools/surveyed-rooms/roombuild/publish.py), so that it refuses, before
+// anything is published, what this reader would refuse. Change the two
+// together, and keep each as `export const NAME = <number>;`: the tools' test
+// ReaderTolerances reads them out of this file's text, and CI's "Survey
+// tools" job runs whenever this file changes.
 /** How far a wall's recorded length may differ from its outline segment, metres. */
 export const WALL_LENGTH_TOLERANCE = 0.002;
 /**
