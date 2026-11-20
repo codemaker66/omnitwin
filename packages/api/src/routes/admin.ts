@@ -12,7 +12,7 @@ import {
 import { runHoldReminderPass } from "../services/hold-reminders.js";
 import { isEmailDeliveryConfigured } from "../services/email.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
-import { eraseLapsedPeople } from "../services/people-retention.js";
+import { describePeopleRetentionStart, eraseLapsedPeople, PEOPLE_RETENTION_START_VARIABLE } from "../services/people-retention.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { runPageChecks } from "../services/competitor-watch-data.js";
 import { createHttpsPageFetcher, type PageFetcher } from "../services/page-check.js";
@@ -109,7 +109,7 @@ export async function adminRoutes(
           + `; removed the notes on single pieces from ${String(dietaryNotes.pieceNotes.layouts)} layout(s)`
           + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`
           + (people.off
-            ? "; the 24-month people pass is off until its first day is set"
+            ? `; the 24-month people pass is off (${describePeopleRetentionStart(process.env[PEOPLE_RETENTION_START_VARIABLE])})`
             : `; erased ${String(people.people)} person(s) and ${String(people.enquiries)} enquiry(ies) 24 months after the last contact`
               + `, leaving ${String(people.deferred.people + people.deferred.enquiries)} for another run`),
       },
@@ -133,7 +133,13 @@ export async function adminRoutes(
   // hand, docs/operations/erasure-requests.md); the nightly log carries counts.
   server.post("/retention/people", {
     preHandler: [authenticate, authorizePlatformAdmin()],
-  }, async () => ({ data: await eraseLapsedPeople(db, { dryRun: true }) }));
+  }, async () => ({
+    data: {
+      ...await eraseLapsedPeople(db, { dryRun: true }),
+      // What a real run would do tonight: off, or the day it starts.
+      firstDay: describePeopleRetentionStart(process.env[PEOPLE_RETENTION_START_VARIABLE]),
+    },
+  }));
 
   // -------------------------------------------------------------------------
   // POST /admin/prune-snapshots — retention for `configuration_sheet_snapshots`

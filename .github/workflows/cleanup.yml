@@ -21,7 +21,9 @@
 #
 # Can also be triggered manually from the GitHub Actions UI (workflow_dispatch).
 #
-# Requires the DATABASE_URL secret to be set in the repository settings.
+# Requires the DATABASE_URL secret to be set in the repository settings. The
+# optional PEOPLE_RETENTION_STARTS_ON variable (YYYY-MM-DD) starts the 24-month
+# pass; unset, it is off.
 # =============================================================================
 
 name: Scheduled Cleanup
@@ -58,6 +60,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           # The 24-month pass erases nothing until this repository variable
-          # holds its first day (YYYY-MM-DD); unset, it is off.
+          # holds its first day (YYYY-MM-DD; from 00:00 UTC that day); unset, it
+          # is off.
           PEOPLE_RETENTION_STARTS_ON: ${{ vars.PEOPLE_RETENTION_STARTS_ON }}
         run: pnpm --filter @omnitwin/api cleanup

@@ -80,7 +80,18 @@ export const PEOPLE_PASS_BUDGET_MS = 150_000;
  */
 export const PEOPLE_RETENTION_START_VARIABLE = "PEOPLE_RETENTION_STARTS_ON";
 
-/** The first day the 24-month pass erases, or null while it is off. */
+/** The switch as an operator reads it: unset, not a date, or the day the
+ *  pass starts (from 00:00 UTC that day; the nightly job runs at 02:00). */
+export function describePeopleRetentionStart(value: string | undefined): string {
+  if ((value?.trim() ?? "") === "") return `${PEOPLE_RETENTION_START_VARIABLE} is unset`;
+  const day = peopleRetentionStartsOn(value);
+  return day === null
+    ? `${PEOPLE_RETENTION_START_VARIABLE} is not a YYYY-MM-DD date`
+    : `it starts on ${day.toISOString().slice(0, 10)} at 00:00 UTC`;
+}
+
+/** The first day the 24-month pass erases (from 00:00 UTC), or null while
+ *  it is off. */
 export function peopleRetentionStartsOn(value: string | undefined): Date | null {
   const text = value?.trim() ?? "";
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(text)) return null;
@@ -440,7 +451,10 @@ async function runPass(db: Database, options: PeopleRetentionOptions): Promise<P
   const startsOn = options.startsOn === undefined
     ? peopleRetentionStartsOn(process.env[PEOPLE_RETENTION_START_VARIABLE])
     : options.startsOn;
-  if (!dryRun && (startsOn === null || now.getTime() < startsOn.getTime())) return OFF;
+  // Off unless both instants are real and the first day has come: an
+  // invalid date can only ever keep it off, the reversible direction.
+  if (!dryRun && (startsOn === null || !Number.isFinite(startsOn.getTime()) || !Number.isFinite(now.getTime())
+    || now.getTime() < startsOn.getTime())) return OFF;
   const limits: PeopleRetentionLimits = { ...PEOPLE_PASS_LIMITS, ...options.limits };
   const cutoff = await cutoffFor(db, now);
   const deadline = Date.now() + (options.budgetMs ?? PEOPLE_PASS_BUDGET_MS);

@@ -1274,10 +1274,18 @@ export async function compileOpsHandoffPackFromConfiguration(
     // the event's newest pack as the first left it.
     const scopeKey = input.eventId === null ? `configuration:${input.configId}` : `event:${input.eventId}`;
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`ops-handoff:${scopeKey}`}, 0))`);
+    // The house order the erasure keeps (people-erasure.ts): the event and the
+    // layout before the sheet. KEY SHARE, which the pack's foreign keys take
+    // anyway, waits only on a writer holding them FOR UPDATE (an approval, an
+    // erasure) and holds up no edit of the layout.
+    if (input.eventId !== null) {
+      await tx.select({ id: events.id }).from(events).where(eq(events.id, input.eventId)).for("key share");
+    }
+    await tx.select({ id: configurations.id }).from(configurations).where(eq(configurations.id, input.configId)).for("key share");
     // And one compile of this approved snapshot at a time, whichever event it
     // is for, as the version below is counted per snapshot. NO KEY UPDATE, so
     // rows that only reference the snapshot (a new pack among them) are not
-    // held up. Always taken after the event's lock, so the two never cross.
+    // held up. Always taken after the event and the layout, so none cross.
     await tx.select({ id: configurationSheetSnapshots.id })
       .from(configurationSheetSnapshots)
       .where(eq(configurationSheetSnapshots.id, snapshot.id))

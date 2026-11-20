@@ -27,7 +27,8 @@
 // someone calls POST /admin/cleanup, because the product promises them. Their
 // errors carry a SQLSTATE only, never the note or the person: this job's log
 // is public with the repository. None touches object storage (PR #130 stopped
-// storing sheet PDFs), so the job needs only DATABASE_URL.
+// storing sheet PDFs), so the job needs only DATABASE_URL, and
+// PEOPLE_RETENTION_STARTS_ON (optional, YYYY-MM-DD) to start the 24-month pass.
 //
 // Each pass runs even when an earlier one fails, and the job then exits 1.
 //
@@ -41,7 +42,7 @@ import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
-import { eraseLapsedPeople, PEOPLE_RETENTION_START_VARIABLE } from "../services/people-retention.js";
+import { describePeopleRetentionStart, eraseLapsedPeople, PEOPLE_RETENTION_START_VARIABLE } from "../services/people-retention.js";
 import { removeExpiredWebVitalSamples } from "../services/web-vitals.js";
 import { sqlStateOf } from "../utils/sql-state.js";
 
@@ -140,7 +141,7 @@ export async function runScheduledCleanup(
   const lapsedPeople = await pass("24-month people", async () => {
     const result = await eraseLapsedPeople(db);
     if (result.off) {
-      log(`[cleanup] The 24-month people pass is off until ${PEOPLE_RETENTION_START_VARIABLE} names its first day; nothing was looked at or erased`);
+      log(`[cleanup] The 24-month people pass is off (${describePeopleRetentionStart(process.env[PEOPLE_RETENTION_START_VARIABLE])}); nothing was looked at or erased`);
       return result;
     }
     const deferred = result.deferred.people + result.deferred.enquiries;

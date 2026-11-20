@@ -7,7 +7,11 @@ import * as schema from "../db/schema.js";
 import { eventRoutes } from "../routes/events.js";
 import { peopleRoutes } from "../routes/people.js";
 import { proposalRoutes, proposalShareRoutes } from "../routes/proposals.js";
+import { eventDayEventRoutes } from "../routes/event-day-ops.js";
+import { opsHandoffRoutes } from "../routes/ops-handoff.js";
 import { insertBoundBookings } from "../services/event-binding.js";
+import { guestLeadLockKey } from "../services/guest-lead-lock.js";
+import { approveSnapshot, createSnapshot } from "../services/sheet-snapshot.js";
 import { eraseLockedPerson } from "../services/people-erasure.js";
 import { lockPerson } from "../services/people-records.js";
 import { eraseLapsedPeople, PEOPLE_RETENTION_START_VARIABLE } from "../services/people-retention.js";
@@ -30,7 +34,10 @@ function only<T>(rows: readonly T[], what: string): T {
 
 const deskPath = (proposalId: string): string => `/dashboard?view=proposals&proposal=${proposalId}`;
 
-describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated disposable database", () => {
+// Thirty seconds a case: the two-connection cases wait on several locks in
+// turn (each wait polls up to ten seconds), which the default ten-second case
+// budget can cut short on a loaded machine.
+describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated disposable database", { timeout: 30_000 }, () => {
   let f: PeopleFixture;
   let spaceId: string;
   let otherSpaceId: string;
@@ -40,6 +47,8 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
       await server.register(proposalRoutes, { db, prefix: "/proposals" });
       await server.register(eventRoutes, { db, prefix: "/events" });
+      await server.register(eventDayEventRoutes, { db, prefix: "/events" });
+      await server.register(opsHandoffRoutes, { db, prefix: "/ops" });
     });
     const room = (venueId: string) => ({ id: randomUUID(), venueId, name: "TEST ONLY Saloon", slug: `saloon-${randomUUID()}`,
       widthM: "8", lengthM: "12", heightM: "4", floorPlanOutline: [{ x: 0, y: 0 }, { x: 8, y: 0 }, { x: 8, y: 12 }, { x: 0, y: 12 }] });
@@ -63,6 +72,8 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       await f.pool.query("DELETE FROM email_sends WHERE idempotency_key = ANY($1::text[])", [receiptKeys]);
       await f.pool.query("DELETE FROM guest_leads WHERE email = ANY($1::text[])", [leadEmails]);
       await f.pool.query("DELETE FROM general_audit_log WHERE target_id = ANY($1::text[])", [peopleIds]);
+      // The sheet approval and the pack compile record their actor.
+      await f.pool.query("DELETE FROM general_audit_log WHERE actor_user_id = ANY($1::uuid[])", [Object.values(f.users)]);
     }
     await f?.close();
   });
@@ -1208,6 +1219,121 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     }
   });
 
+  it("compiles a handoff pack beside her erasure in the house order: the compile waits on her event, never in a circle", async () => {
+    const email = `isla.compiled-${randomUUID().slice(0, 8)}@example.test`;
+    const person = await f.addPerson({ name: "Isla Compiled", emails: [email] });
+    peopleIds.push(person);
+    leadEmails.push(email);
+    const asked = await enquiry({ email, contactId: person, name: "Isla Compiled" });
+    const hold = await bound({ enquiryId: asked, kind: "hold", title: "TEST ONLY Isla's released hold" });
+    await f.pool.query("UPDATE bookings SET status = 'released' WHERE id = $1", [hold.id]);
+    // Her approved layout, a table and two chairs, linked to her event.
+    const plan = await layout("TEST ONLY her dinner plan");
+    const [table, chair] = await f.db.insert(schema.assetDefinitions).values([
+      { name: "TEST ONLY round table", category: "table", widthM: "1.8", depthM: "1.8", heightM: "0.76", collisionType: "cylinder" },
+      { name: "TEST ONLY chair", category: "chair", widthM: "0.45", depthM: "0.45", heightM: "0.9", collisionType: "box" },
+    ]).returning({ id: schema.assetDefinitions.id });
+    if (table === undefined || chair === undefined) throw new Error("No assets");
+    const tableId = randomUUID();
+    await f.db.insert(schema.placedObjects).values([
+      { id: tableId, configurationId: plan, assetDefinitionId: table.id, positionX: "1", positionY: "0", positionZ: "1", metadata: { groupId: tableId } },
+      { configurationId: plan, assetDefinitionId: chair.id, positionX: "1", positionY: "0", positionZ: "0", metadata: { groupId: tableId } },
+      { configurationId: plan, assetDefinitionId: chair.id, positionX: "1", positionY: "0", positionZ: "2", metadata: { groupId: tableId } },
+    ].map((piece) => ({ ...piece, coordinateSpace: "real_m_v1" as const, coordinateWriteToken: randomUUID() })));
+    await laidOutFrom(hold.eventId, plan);
+    const created = await createSnapshot(f.db, { configId: plan, createdBy: f.users.admin, baseUrl: "http://localhost:3009" });
+    await approveSnapshot(f.db, created.snapshot.id, f.users.admin);
+    // Something holds her layout, so the erasure stops there holding her
+    // event; the compile for that event arrives and must wait on the event.
+    if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
+    const stopper = new Client({ connectionString: PLATFORM_TARGET });
+    await stopper.connect();
+    try {
+      await stopper.query("BEGIN");
+      await stopper.query("SELECT id FROM configurations WHERE id = $1 FOR SHARE", [plan]);
+      const erasing = post(`/people/${person}/erase`, "admin");
+      await waitForLockWait("configurations");
+      const compiling = post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", { eventId: hold.eventId });
+      await waitForLockWait("events", "for key share");
+      await stopper.query("COMMIT");
+      const erased = await erasing;
+      expect(erased.statusCode, erased.body).toBe(200);
+      const compiled = await compiling;
+      expect(compiled.statusCode, compiled.body).toBe(201);
+    } finally {
+      await stopper.query("ROLLBACK").catch(() => undefined);
+      await stopper.end();
+    }
+  });
+
+  it("keeps an issue reworded when its update waited on her erasure: the update writes only what it names", async () => {
+    const email = `isla.issued-${randomUUID().slice(0, 8)}@example.test`;
+    const person = await f.addPerson({ name: "Isla Issued", emails: [email] });
+    peopleIds.push(person);
+    leadEmails.push(email);
+    const asked = await enquiry({ email, contactId: person, name: "Isla Issued" });
+    const hold = await bound({ enquiryId: asked, kind: "hold", title: "TEST ONLY Isla's released hold" });
+    await f.pool.query("UPDATE bookings SET status = 'released' WHERE id = $1", [hold.id]);
+    const issue = only(await f.db.insert(schema.eventDayIssues).values({ eventId: hold.eventId, title: "Isla Issued's cake is late",
+      detail: "TEST ONLY Isla Issued is waiting at the door", escalationNote: "TEST ONLY told Isla Issued's mother" })
+      .returning({ id: schema.eventDayIssues.id }), "issue").id;
+    // Her address's lead lock is held, so the erasure stops after rewording
+    // the issue and before it commits; the hallkeeper's update then reads the
+    // old text and waits on the row.
+    if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
+    const holder = new Client({ connectionString: PLATFORM_TARGET });
+    await holder.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [guestLeadLockKey(email)]);
+      const erasing = post(`/people/${person}/erase`, "admin");
+      await waitForStatement("%pg_advisory_xact_lock%", "the erasure at her address's lead lock");
+      const patching = f.server.inject({ method: "PATCH", url: `/events/${hold.eventId}/issues/${issue}`,
+        headers: f.bearer("admin"), payload: { status: "resolved" } });
+      await waitForStatement('%update "event_day_issues"%', "the issue update behind the erasure");
+      await holder.query("COMMIT");
+      const erased = await erasing;
+      expect(erased.statusCode, erased.body).toBe(200);
+      const patched = await patching;
+      expect(patched.statusCode, patched.body).toBe(200);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      await holder.end();
+    }
+    expect(await value("SELECT row_to_json(i) AS value FROM (SELECT title, detail, escalation_note, status FROM event_day_issues WHERE id = $1) i",
+      [issue])).toEqual({ title: "Erased's cake is late", detail: "TEST ONLY Erased is waiting at the door",
+      escalation_note: "TEST ONLY told Erased's mother", status: "resolved" });
+    expect(await value("SELECT message AS value FROM ops_status_updates WHERE event_id = $1", [hold.eventId]))
+      .toBe("Issue \"Erased's cake is late\" updated to resolved.");
+  });
+
+  it("takes a layout's pieces before its sheets, as the piece-note retention does: a sheet written after a piece never waits", async () => {
+    const email = `isla.pieced-${randomUUID().slice(0, 8)}@example.test`;
+    const person = await f.addPerson({ name: "Isla Pieced", emails: [email] });
+    peopleIds.push(person);
+    leadEmails.push(email);
+    const asked = await enquiry({ email, contactId: person, name: "Isla Pieced" });
+    const plan = await layout("TEST ONLY her plan");
+    await proposal({ enquiryId: asked, layoutId: plan, title: "TEST ONLY her quote" });
+    const piece = only((await f.pool.query<{ id: string }>(`INSERT INTO placed_objects (configuration_id, asset_definition_id, position_x,
+      position_y, position_z, coordinate_write_token, metadata)
+      VALUES ($1, (SELECT id FROM asset_definitions ORDER BY id LIMIT 1), 1, 0, 1, $2, $3::jsonb) RETURNING id`,
+      [plan, randomUUID(), JSON.stringify({ notes: "Isla Pieced's grandparents" })])).rows, "piece").id;
+    const sheet = only(await f.db.insert(schema.configurationSheetSnapshots).values({ configurationId: plan, version: 1,
+      payload: { config: { name: "TEST ONLY her plan" } }, sourceHash: "2".repeat(64) })
+      .returning({ id: schema.configurationSheetSnapshots.id }), "sheet").id;
+    const outcome = await beside({
+      // The retention updates the noted piece...
+      first: async (writer) => { await writer.query("UPDATE placed_objects SET metadata = metadata WHERE id = $1", [piece]); },
+      erase: () => post(`/people/${person}/erase`, "admin"),
+      table: "placed_objects",
+      // ...then the layout's sheet, which the erasure has not taken.
+      then: async (writer) => { await writer.query("UPDATE configuration_sheet_snapshots SET payload = payload WHERE id = $1", [sheet]); },
+    }) as LightMyRequestResponse;
+    expect(outcome.statusCode, outcome.body).toBe(200);
+    expect(await value("SELECT metadata AS value FROM placed_objects WHERE id = $1", [piece])).toEqual({ notes: "Erased's grandparents" });
+  });
+
   it("takes the person out of what the venue keeps: household, deal, proposal, Diary, change feed and notices", async () => {
     const tag = randomUUID().slice(0, 8);
     const current = `isla.now-${tag}@example.test`;
@@ -1271,6 +1397,9 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     const message = only(await f.db.insert(schema.messages).values({ threadId: thread, venueId: f.venueId, kind: "text",
       authorUserId: f.users.staff, idempotencyKey: randomUUID(), authorName: "TEST ONLY staff", authorRole: "staff",
       body: "Isla Erasable called about the menu" }).returning({ id: schema.messages.id }), "message").id;
+    const herMessage = only(await f.db.insert(schema.messages).values({ threadId: thread, venueId: f.venueId, kind: "text",
+      authorUserId: f.users.staff, idempotencyKey: randomUUID(), authorName: "ISLA ERASABLE", authorRole: "staff",
+      body: "TEST ONLY passed on by phone" }).returning({ id: schema.messages.id }), "her message").id;
     const asking = only(await f.db.insert(schema.requests).values({ venueId: f.venueId, bookingId: hold.id, roomId: spaceId, kind: "other",
       urgency: "routine", requestedByName: "TEST ONLY staff", requestedByRole: "staff", audienceRoles: ["staff"], idempotencyKey: randomUUID(),
       detail: "Isla Erasable wants a later start" }).returning({ id: schema.requests.id }), "request").id;
@@ -1365,7 +1494,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     expect(erased.statusCode, erased.body).toBe(200);
     expect(erased.json<{ data: { counts: unknown } }>().data.counts).toEqual({
       people: 1, contactPoints: 2, mergeSnapshots: 0, households: 1,
-      enquiries: 1, guestLeads: 1, emailReceipts: 0, comments: 2, changeCopies: 2, notices: 2, proposals: 2, reworded: 42,
+      enquiries: 1, guestLeads: 1, emailReceipts: 0, comments: 2, changeCopies: 2, notices: 2, proposals: 2, reworded: 43,
     });
 
     // Her household keeps its row, without her.
@@ -1397,6 +1526,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     // The team's conversation and request about her hold.
     expect(await value("SELECT title AS value FROM threads WHERE id = $1", [thread])).toBe("Erased called");
     expect(await value("SELECT body AS value FROM messages WHERE id = $1", [message])).toBe("Erased called about the menu");
+    expect(await value("SELECT author_name AS value FROM messages WHERE id = $1", [herMessage])).toBe("Erased");
     expect(await value("SELECT detail AS value FROM requests WHERE id = $1", [asking])).toBe("Erased wants a later start");
     expect(await value("SELECT row_to_json(i) AS value FROM (SELECT title, detail FROM event_day_issues WHERE id = $1) i", [issue]))
       .toEqual({ title: "Erased's mother fell at the door", detail: "TEST ONLY Erased called the hallkeeper" });

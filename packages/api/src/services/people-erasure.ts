@@ -73,8 +73,8 @@ import { liveContact, type PeopleTx } from "./people-records.js";
 // of it is deleted, and only the erased person's names leave its text.
 // Those rows are found with plain reads and then locked before anything is
 // changed, in the house order the other writers take the same rows
-// (decisions, bookings, proposals, enquiries, deals, events, layouts, sheets:
-// see around()), so a hold pencilled or a contract prepared at the same moment
+// (decisions, bookings, proposals, enquiries, deals, events, layouts, the
+// layouts' pieces and revisions that name them, sheets: see around()), so a hold pencilled or a contract prepared at the same moment
 // waits for the erasure or is seen by it. Residues the doc names: a decision
 // prepared on one of their bookings in the same moment keeps its reason; an
 // answer on someone else's proposal written after the reads counts as written
@@ -247,6 +247,9 @@ export interface ErasureRecords extends WorkRecords {
   /** The layouts of their enquiries and of the proposals around them (their
    *  own and nearby): the day-of contact and notes there name people. */
   readonly layoutIds: readonly string[];
+  /** Of those layouts, the pieces and saved revisions whose text names them. */
+  readonly pieceIds: readonly string[];
+  readonly revisionIds: readonly string[];
   /** Their phone numbers, as written, to find them as a layout's day-of contact. */
   readonly phones: readonly string[];
   /** Their names and addresses, to take out of the text of kept rows; none
@@ -478,7 +481,7 @@ async function ownHouseholds(
   return { householdIds, sharedHouseholdIds, handedOver };
 }
 
-type RecordsBase = Omit<ErasureRecords, keyof WorkRecords | "nearby" | "layoutIds" | "elsewhere" | "decisionIds">;
+type RecordsBase = Omit<ErasureRecords, keyof WorkRecords | "nearby" | "layoutIds" | "pieceIds" | "revisionIds" | "elsewhere" | "decisionIds">;
 
 function idsOf(rows: readonly { readonly id: string | null }[]): readonly string[] {
   return distinct(rows.flatMap((row) => (row.id === null ? [] : [row.id])));
@@ -509,7 +512,8 @@ export class ErasureMovedOn extends Error {
 /** Locks the rows FOR UPDATE, in id order. */
 async function lockRows(
   tx: PeopleTx,
-  table: "decisions" | "bookings" | "proposals" | "enquiries" | "opportunities" | "events" | "configuration_sheet_snapshots" | "configurations",
+  table: "decisions" | "bookings" | "proposals" | "enquiries" | "opportunities" | "events" | "configuration_sheet_snapshots" | "configurations"
+    | "placed_objects" | "configuration_layout_revisions",
   ids: readonly string[],
 ): Promise<void> {
   if (ids.length === 0) return;
@@ -612,10 +616,14 @@ async function findAnswersElsewhere(
  *   - a layout link or a phase freeze the event, then the layout
  *     (routes/events.ts, phase-layout-snapshots.ts);
  *   - a sheet's approval or a submission the layout, then its sheets
- *     (configuration-reviews.ts), and the handoff compile likewise
- *     (ops-compiler.ts, through its pack's foreign keys).
+ *     (configuration-reviews.ts); the handoff compile the event and the
+ *     layout, then the sheet (ops-compiler.ts); a hallkeeper's sheet tick the
+ *     event, then the layout (hallkeeper-sheet.ts);
+ *   - the planner and the piece-note retention a layout's pieces and saved
+ *     revisions before its sheets (placed-objects, piece-note-retention.ts).
  * So: decisions, bookings, proposals (theirs, the nearby ones and those they
- * answered on), enquiries, deals, events, layouts, sheets. A booking written
+ * answered on), enquiries, deals, events, layouts, the layouts' pieces and
+ * revisions whose text names them, sheets. A booking written
  * meanwhile from one of their enquiries, or onto one of their events, waits
  * on those locks; one written between the reads and the locks would be
  * locked out of order, so the erasure answers RETRY (ErasureMovedOn).
@@ -700,6 +708,25 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
   const layoutIds = distinct([...proposalLayoutIds, ...eventLayouts.map((row) => row.id)]);
   const sheetIds = layoutIds.length === 0 ? [] : (await tx.select({ id: configurationSheetSnapshots.id })
     .from(configurationSheetSnapshots).where(inArray(configurationSheetSnapshots.configurationId, layoutIds))).map((row) => row.id);
+  // Their names, with every casing they typed on someone else's proposal.
+  const erasedNames = elsewhere.typedNames.length === 0 ? base.names : namesToErase([...base.names, ...elsewhere.typedNames]);
+  // The pieces placed on those layouts and their saved revisions whose text
+  // names them (a piece's note or label; a revision holds every piece), found
+  // in SQL so a layout with many autosaved revisions is never read or held
+  // whole. A revision holding a day-of contact is taken while they have a
+  // phone to find it by.
+  const patterns = mentionPatterns(erasedNames);
+  const naming = (text: SQL): SQL => or(...patterns.map((pattern) => sql`lower(${text}) like lower(${pattern})`)) ?? sql`false`;
+  const pieceIds = layoutIds.length === 0 || patterns.length === 0 ? [] : (await tx.select({ id: placedObjects.id }).from(placedObjects)
+    .where(allOf(inArray(placedObjects.configurationId, layoutIds), naming(sql`${placedObjects.metadata}::text`)))).map((row) => row.id);
+  const revisionIds = layoutIds.length === 0 ? [] : (await tx.select({ id: configurationLayoutRevisions.id }).from(configurationLayoutRevisions)
+    .where(allOf(
+      inArray(configurationLayoutRevisions.configurationId, layoutIds),
+      or(
+        naming(sql`${configurationLayoutRevisions.payload}::text`),
+        base.phones.length === 0 ? sql`false` : sql`${configurationLayoutRevisions.payload}::text like '%"dayOfContact"%'`,
+      ) ?? sql`false`,
+    ))).map((row) => row.id);
 
   if (options.lock) {
     // Locked in the other writers' order (see above).
@@ -710,6 +737,8 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
     await lockRows(tx, "opportunities", [...dealIds, ...nearDealIds]);
     await lockRows(tx, "events", [...eventIds, ...nearEventIds]);
     await lockRows(tx, "configurations", layoutIds);
+    await lockRows(tx, "placed_objects", pieceIds);
+    await lockRows(tx, "configuration_layout_revisions", revisionIds);
     await lockRows(tx, "configuration_sheet_snapshots", sheetIds);
   }
   // With their enquiries and events held, no booking can start from or on
@@ -727,9 +756,11 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
     eventIds,
     bookingIds: [...ownBookingIds],
     layoutIds,
+    pieceIds,
+    revisionIds,
     elsewhere,
     decisionIds: decided,
-    names: elsewhere.typedNames.length === 0 ? base.names : namesToErase([...base.names, ...elsewhere.typedNames]),
+    names: erasedNames,
     nearby: {
       dealIds: nearDealIds,
       proposalIds: nearProposalIds,
@@ -1232,10 +1263,9 @@ function documentWithoutThem<T>(document: T, names: readonly string[], phones: r
  * payload changes loses its legacy public PDF address too, which rendered the
  * old text; as the allergy-note retention does (dietary-retention.ts), it
  * keeps its source hash, which names the layout's version, not its text.
- * Taken as the other writers take them: the layout (locked in around()),
- * then its pieces and revisions (the planner holds the layout first), then
- * its sheets (a sheet's approval and the handoff compile hold the layout
- * first). Returns the rows changed.
+ * The rows were locked in around() as the other writers take them: the
+ * layout, then the pieces and revisions that name them, then its sheets.
+ * Returns the rows changed.
  */
 async function rewordLayouts(tx: PeopleTx, records: ErasureRecords, names: readonly string[]): Promise<readonly string[]> {
   if (records.layoutIds.length === 0 || (names.length === 0 && records.phones.length === 0)) return [];
@@ -1250,16 +1280,17 @@ async function rewordLayouts(tx: PeopleTx, records: ErasureRecords, names: reado
     await tx.update(configurations).set({ name, metadata }).where(eq(configurations.id, layout.id));
     changed.push(`configurations:${layout.id}`);
   }
-  const pieces = await tx.select({ id: placedObjects.id, metadata: placedObjects.metadata }).from(placedObjects)
-    .where(allOf(inArray(placedObjects.configurationId, layoutIds), isNotNull(placedObjects.metadata))).for("no key update");
+  const pieces = records.pieceIds.length === 0 ? [] : await tx.select({ id: placedObjects.id, metadata: placedObjects.metadata })
+    .from(placedObjects).where(inArray(placedObjects.id, [...records.pieceIds])).for("no key update");
   for (const piece of pieces) {
     const metadata = deepWithoutNames(piece.metadata, names);
     if (metadata === piece.metadata) continue;
     await tx.update(placedObjects).set({ metadata }).where(eq(placedObjects.id, piece.id));
     changed.push(`placed_objects:${piece.id}`);
   }
-  const revisions = await tx.select({ id: configurationLayoutRevisions.id, payload: configurationLayoutRevisions.payload })
-    .from(configurationLayoutRevisions).where(inArray(configurationLayoutRevisions.configurationId, layoutIds)).for("no key update");
+  const revisions = records.revisionIds.length === 0 ? [] : await tx
+    .select({ id: configurationLayoutRevisions.id, payload: configurationLayoutRevisions.payload })
+    .from(configurationLayoutRevisions).where(inArray(configurationLayoutRevisions.id, [...records.revisionIds])).for("no key update");
   for (const revision of revisions) {
     const payload = documentWithoutThem(revision.payload, names, records.phones);
     if (payload === revision.payload) continue;

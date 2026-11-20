@@ -276,7 +276,7 @@ describe("the 24-month pass's switch (Blake, 18 Nov 2026: off until a first day 
     const lines: string[] = [];
     const result = await runScheduledCleanup(db, (line) => { lines.push(line); });
     expect(lines).toContain(
-      "[cleanup] The 24-month people pass is off until PEOPLE_RETENTION_STARTS_ON names its first day; nothing was looked at or erased");
+      "[cleanup] The 24-month people pass is off (PEOPLE_RETENTION_STARTS_ON is unset); nothing was looked at or erased");
     expect(lines.some((line) => line.includes("24 months after the last contact"))).toBe(false);
     expect(result).toMatchObject({ peopleErased: 0, peopleKeptForBooking: 0, enquiriesErased: 0, peopleDeferred: 0, peopleStepsFailed: 0 });
   });

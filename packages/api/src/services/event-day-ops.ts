@@ -509,13 +509,17 @@ export async function updateEventDayIssue(
     : null;
 
   return db.transaction(async (tx) => {
+    // Only the columns the change names: the rest keep what the row holds
+    // when this runs, not what was read before (an erasure that rewrote the
+    // text meanwhile stays done), and the status line quotes the title as
+    // the update returns it.
     const [updated] = await tx.update(eventDayIssues).set({
-      title: parsed.title ?? existing.title,
-      detail: parsed.detail ?? existing.detail,
-      severity: parsed.severity ?? existing.severity,
+      ...(parsed.title === undefined ? {} : { title: parsed.title }),
+      ...(parsed.detail === undefined ? {} : { detail: parsed.detail }),
+      ...(parsed.severity === undefined ? {} : { severity: parsed.severity }),
       status: nextStatus,
-      assignedTo: parsed.assignedTo === undefined ? existing.assignedTo : parsed.assignedTo,
-      escalationNote: parsed.escalationNote === undefined ? existing.escalationNote : parsed.escalationNote,
+      ...(parsed.assignedTo === undefined ? {} : { assignedTo: parsed.assignedTo }),
+      ...(parsed.escalationNote === undefined ? {} : { escalationNote: parsed.escalationNote }),
       resolvedAt,
       updatedAt: new Date(),
     }).where(eq(eventDayIssues.id, existing.id)).returning();

@@ -26,7 +26,8 @@ vi.mock("../services/dietary-memory.js", async (importOriginal) => ({
   removeUnusedRememberedNotes: (...args: unknown[]) => removeUnusedRememberedNotes(...args) as unknown,
 }));
 const eraseLapsedPeople = vi.fn();
-vi.mock("../services/people-retention.js", () => ({
+vi.mock("../services/people-retention.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../services/people-retention.js")>(),
   eraseLapsedPeople: (...args: unknown[]) => eraseLapsedPeople(...args) as unknown,
 }));
 vi.mock("../services/cleanup.js", () => ({
@@ -43,7 +44,7 @@ beforeEach(() => {
   removeLapsedDietaryNotes.mockReset();
   removeUnusedRememberedNotes.mockReset();
   eraseLapsedPeople.mockReset();
-  eraseLapsedPeople.mockResolvedValue({ dryRun: false, people: 2, keptForBooking: 1, enquiries: 3, deferred: { people: 4, enquiries: 1 }, outOfTime: false });
+  eraseLapsedPeople.mockResolvedValue({ dryRun: false, off: false, people: 2, keptForBooking: 1, enquiries: 3, deferred: { people: 4, enquiries: 1 }, outOfTime: false });
 });
 
 const token = (payload: Record<string, unknown>): string => JSON.stringify(payload);
@@ -72,7 +73,9 @@ describe("POST /admin/retention/dietary-notes (the rehearsal)", () => {
       method: "POST", url: "/admin/retention/people", headers: { authorization: `Bearer ${platformAdmin}` },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json<{ data: unknown }>().data).toEqual({ dryRun: true, people: 4, keptForBooking: 1, enquiries: 6 });
+    // With what a real run would do tonight: here, off.
+    expect(res.json<{ data: unknown }>().data).toEqual({ dryRun: true, people: 4, keptForBooking: 1, enquiries: 6,
+      firstDay: "PEOPLE_RETENTION_STARTS_ON is unset" });
     expect(eraseLapsedPeople.mock.calls[0]?.[1]).toEqual({ dryRun: true });
   });
 
@@ -110,5 +113,19 @@ describe("POST /admin/cleanup", () => {
     expect(removeUnusedRememberedNotes.mock.calls[0]?.[1]).toBeUndefined();
     // The real pass: no dry run and no storage step.
     expect(removeLapsedDietaryNotes.mock.calls[0]?.[1]).toBeUndefined();
+  });
+
+  it("says the 24-month pass is off, and why, while no first day has come", async () => {
+    removeLapsedDietaryNotes.mockResolvedValueOnce(RESULT);
+    removeUnusedRememberedNotes.mockResolvedValueOnce({ dryRun: false, removed: 0 });
+    eraseLapsedPeople.mockResolvedValueOnce({ dryRun: false, off: true, people: 0, keptForBooking: 0, enquiries: 0,
+      deferred: { people: 0, enquiries: 0 }, outOfTime: false });
+    const res = await server.inject({
+      method: "POST", url: "/admin/cleanup", headers: { authorization: `Bearer ${platformAdmin}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const message = res.json<{ data: { message: string } }>().data.message;
+    expect(message).toContain("the 24-month people pass is off (PEOPLE_RETENTION_STARTS_ON is unset)");
+    expect(message).not.toContain("24 months after the last contact");
   });
 });

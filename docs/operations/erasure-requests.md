@@ -165,9 +165,11 @@ It refuses, changing nothing:
 - `RETRY`: someone changed one of their records at the same moment; try again.
 
 The erasure finds what is theirs with plain reads, then locks it in the house order the other writers use for the
-same rows: decisions, bookings, proposals, enquiries, deals, events, layouts, sheets (as a decision's approval, a
-Diary transition, a proposal's send, save, acceptance, contract or deposit, a layout link, a phase freeze, a
-sheet's submission or approval and the handoff compile each take them). A client's comment or acceptance that
+same rows: decisions, bookings, proposals, enquiries, deals, events, layouts, the layouts' pieces and saved revisions
+whose text names them, sheets (as a decision's approval, a Diary transition, a proposal's send, save, acceptance,
+contract or deposit, a layout link, a phase freeze, a sheet's submission or approval, the handoff compile, a
+hallkeeper's sheet tick, the planner and the piece-note retention each take them). A hallkeeper's update of an
+issue writes only what it changes, so one that waited on the erasure leaves its words reworded. A client's comment or acceptance that
 waited on the erasure finds their link revoked and is refused. Every announcement of a proposal's change (the change
 feed, the team's notices) is written in a transaction that first holds the proposal. One whose change committed a
 moment before the erasure took the proposal waits for the erasure, then is written with the proposal's title as it
@@ -203,10 +205,13 @@ or erase it by hand. Read the step 2 stores' text before replying.
 
 **Off until the venue names its first day.** Blake decided on 18 November 2026 to merge with the pass off until a
 start date is picked: erasure on request is live at merge, and the 24-month pass erases nothing until
-`PEOPLE_RETENTION_STARTS_ON` holds a date (YYYY-MM-DD) that has come. Set it as a repository variable (Settings,
+`PEOPLE_RETENTION_STARTS_ON` holds a date (YYYY-MM-DD): it erases from 00:00 UTC that day (the nightly job runs
+at 02:00 UTC). Set it as a repository variable (Settings,
 Secrets and variables, Actions, Variables) for the nightly job, and in the API's environment for `POST /admin/cleanup`.
-Unset, empty or not a real date, the pass is off: the night's log says so, and nothing is read or changed.
-`POST /admin/retention/people` still rehearses it and counts what it would do, to choose the date by.
+Unset, empty or not a real date, the pass is off and nothing is read or changed; the night's log and the admin
+route say which (unset, not a date, or the day it starts).
+`POST /admin/retention/people` still rehearses it and counts what it would do, with what a real run would do
+tonight (`firstDay`), to choose the date by.
 
 The nightly cleanup (`scripts/run-cleanup.ts`, `services/people-retention.ts`) runs the same erasure:
 - for every person we have not been in touch with for 24 calendar months (the run's time minus 24 months, counted
