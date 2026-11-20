@@ -165,7 +165,7 @@ jobs:
         # here instead (T-685).
         env:
           REQUIRE_WEB_DIST: "1"
-        run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/twin-chunk-budget.test.ts src/__tests__/public-copy-sweep.test.ts
+        run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/twin-chunk-budget.test.ts src/__tests__/public-copy-sweep.test.ts src/__tests__/hud-chunk-isolation.test.ts
 
   native-image:
     name: API Native Image

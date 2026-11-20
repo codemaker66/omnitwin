@@ -21,6 +21,7 @@
 // assertions cover the configuration that produces the size win.
 // ---------------------------------------------------------------------------
 
+import { posix } from "node:path";
 import { describe, it, expect } from "vitest";
 
 async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
@@ -451,4 +452,415 @@ describe("the new chrome stays behind its lazy import (T-671)", () => {
       expect(reached.filter((file) => V2_ONLY_LIB.includes(file))).toEqual([]);
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// The planner HUD stays behind its flag (T-723)
+//
+// The HUD is one of three chromes, shown only for `?chrome=hud` until it is
+// made the default. A planner that does not ask for it must download none of
+// it, and nothing more because of it (the release lead's ruling on flag-only
+// code, 13 Nov 2026). Three things are held here, all read from the sources:
+//
+// 1. Its own modules are reached by two imports on demand and by nothing
+//    else: the screen from EditorPage, and its parts of the room's scene from
+//    PlannerScene. Whatever a module every planner loads imports statically
+//    rides in that planner's files.
+// 2. It is not the only production reader of anything in a shared module. The
+//    bundler leaves out of a shared module whatever nothing in production
+//    reads, and the first reader puts it back, into the file that module is
+//    built into, for every page that fetches that file; a reader fetched on
+//    demand does it as surely as any other. Building this branch and master
+//    from one tree (14 Nov 2026) found three such reads. So every name the HUD
+//    imports from a module the default planner already holds must be imported
+//    by other production code too, or be on the short list of seams below.
+//    The same holds for a package path: one only the HUD imports is built
+//    into a vendor file everyone fetches.
+// 3. It imports no shared table. The bundler keeps a table's entries one by
+//    one, and a read of one can be written too many ways to tell from the
+//    import (an alias, a destructuring), so the HUD keeps its own copies, each
+//    held to the table by a test beside it.
+//
+// These read sources, so they are tripwires: they see imports, not what the
+// bundler makes of them. What is built is checked from the build itself in
+// hud-chunk-isolation.test.ts (the Build job), and the proof is two builds
+// compared module by module, which is run by hand
+// (docs/sessions/2026-11-13.md).
+// ---------------------------------------------------------------------------
+
+describe("the planner HUD stays behind its flag (T-723)", () => {
+  /** The HUD's own modules, as paths from src/ with their .js ending. */
+  const HUD_ONLY: readonly RegExp[] = [
+    /^components\/planner-hud\//,
+    /^lib\/hud\//,
+    /^stores\/planner-hud-store\.js$/,
+    /^components\/grand-hall\/HallStage\.js$/,
+    /^components\/grand-hall\/hall-stage\.js$/,
+    /^lib\/lens-shift\.js$/,
+    /^components\/editor\/ChosenMarks\.js$/,
+    /^lib\/chosen-mark\.js$/,
+  ];
+
+  /**
+   * What the HUD alone imports from shared modules, on purpose, as "module name": each with what it is and what it
+   * costs everyone. The two-build reading counts these as the flag's seams. Anything the HUD alone imports that is
+   * not here fails the test below.
+   */
+  const SEAMS: ReadonlyMap<string, string> = new Map([
+    ["lib/planner-features.js setPlannerChromeFeatures", "the chrome's own switches, set as it mounts and cleared as it leaves: about 70 bytes of the shared runtime file"],
+    // (The seat line's spring hook, useSpringCssVariable, was listed here until 16 Nov 2026. The other new chrome
+    // imports it in production since #357, so the HUD is no longer its only reader, and the last check below said so.)
+  ]);
+
+  function mentions(code: string, name: string): boolean {
+    return new RegExp(`(?<![.\\w$])${name.replace(/[$]/g, "\\$&")}(?![\\w$])`).test(code);
+  }
+
+  /**
+   * The names of a module that are built whatever the HUD does: those the rest of production imports, and whatever
+   * those use in turn, down through the module's own top-level declarations. Importing one of these adds no code:
+   * at most the name itself, to the list its file exports. A name that only a DROPPED part of the module uses is
+   * not one of them (the picture version read only by the picture rule nobody else called): importing that brings
+   * it back.
+   *
+   * Read from the text, so by the house's layout: a top-level declaration starts its line, and runs to the next.
+   */
+  function builtWithoutTheHud(code: string, importedElsewhere: ReadonlySet<string>): ReadonlySet<string> {
+    const starts = [...code.matchAll(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\*?|const|let|var|class|enum)\s+([\w$]+)/gm)];
+    const declared = starts.map((match, index) => ({ name: match[1] ?? "", text: code.slice(match.index, starts[index + 1]?.index ?? code.length) }));
+    const built = new Set<string>();
+    const pending = declared.map((one) => one.name).filter((name) => importedElsewhere.has(name));
+    while (pending.length > 0) {
+      const name = pending.pop();
+      if (name === undefined || built.has(name)) continue;
+      built.add(name);
+      for (const user of declared) {
+        if (user.name !== name) continue;
+        for (const other of declared) if (!built.has(other.name) && mentions(user.text, other.name)) pending.push(other.name);
+      }
+    }
+    return built;
+  }
+
+  it("tells what a module builds anyway from what only a dropped part of it uses", () => {
+    const code = [
+      'import { thing } from "./thing.js";',
+      "",
+      'export const VERSION = "v2";',
+      "const HIDDEN = 3;",
+      "",
+      "function helper(value: number): number {",
+      "  return value * HIDDEN;",
+      "}",
+      "",
+      "export function used(value: number): number {",
+      "  return helper(value) + thing;",
+      "}",
+      "",
+      "export function unused(): string {",
+      "  return `picture-${VERSION}`;",
+      "}",
+      "",
+      "export function alone(): number {",
+      "  return 1;",
+      "}",
+    ].join("\n");
+    // Production imports `used`: it, its helper and what the helper reads are built. `VERSION` is read only by
+    // `unused`, which nobody imports, so neither is built; `alone` is simply not imported.
+    expect([...builtWithoutTheHud(code, new Set(["used"]))].sort()).toEqual(["HIDDEN", "helper", "used"]);
+    expect([...builtWithoutTheHud(code, new Set(["unused", "nothing-of-this-module"]))].sort()).toEqual(["VERSION", "unused"]);
+    expect([...builtWithoutTheHud(code, new Set())]).toEqual([]);
+  });
+
+  /** Shared tables whose entries the bundler keeps one by one. The HUD imports none of them. */
+  const TABLES: readonly string[] = ["SPRING_PRESETS"];
+
+  function isHudOnly(modulePath: string): boolean {
+    return HUD_ONLY.some((pattern) => pattern.test(modulePath));
+  }
+
+  interface Imported {
+    readonly specifier: string;
+    /** The names brought in: "default"; "*" for a whole namespace or an import on demand; none for a bare `import "x"`. */
+    readonly names: readonly string[];
+    readonly onDemand: boolean;
+  }
+
+  /**
+   * Every import and re-export in `code` that brings a module in at run time, wherever on a line it stands. A
+   * type-only import brings nothing, and neither does the type query `typeof import("x")`.
+   */
+  function importsIn(code: string): Imported[] {
+    const found: Imported[] = [];
+    for (const match of code.matchAll(/(?<![.\w$])(import|export)\s+(?!type\b)([^;'"()=]*?)\s*\bfrom\s*["']([^"']+)["']/g)) {
+      const clause = match[2] ?? "";
+      const names: string[] = [];
+      for (const item of (/\{([^}]*)\}/.exec(clause)?.[1] ?? "").split(",")) {
+        const words = item.trim().split(/\s+/);
+        const first = words[0] ?? "";
+        if (first !== "" && first !== "type") names.push(first);
+      }
+      const outsideBraces = clause.replace(/\{[^}]*\}/, "");
+      if (outsideBraces.includes("*")) names.push("*");
+      else if (match[1] === "import" && /[\w$]/.test(outsideBraces)) names.push("default");
+      found.push({ specifier: match[3] ?? "", names, onDemand: false });
+    }
+    for (const match of code.matchAll(/(?<![.\w$])import\s*["']([^"']+)["']/g)) found.push({ specifier: match[1] ?? "", names: [], onDemand: false });
+    for (const match of code.matchAll(/(?<!typeof\s)(?<![.\w$])import\(\s*["']([^"']+)["']\s*\)/g)) found.push({ specifier: match[1] ?? "", names: ["*"], onDemand: true });
+    return found;
+  }
+
+  /** A relative specifier as a module's path from src/ (queries dropped); null for a package. */
+  function resolved(from: string, specifier: string): string | null {
+    if (!specifier.startsWith(".")) return null;
+    return posix.normalize(posix.join(posix.dirname(from), specifier.replace(/\?.*$/, "")));
+  }
+
+  it("reads imports the way the bundler does: wherever they stand, with their names, and not types", () => {
+    const code = [
+      'import { a } from "./a.js"; import { Hand, type Card as C, deal as d } from "../planner-hud/Hand.js";',
+      "import {",
+      "  b,",
+      '} from "../b.js";',
+      'import "./side-effect.css";',
+      'export { c } from "./c.js";',
+      'export * from "./all.js";',
+      'import React, { useState } from "react";',
+      'import * as THREE from "three";',
+      'import type { D } from "./types.js";',
+      'export type { E } from "./types.js";',
+      'const lazy = () => import("./lazy.js");',
+      'void import("../planner-hud/PlannerHud.js");',
+      'type F = typeof import("./never.js");',
+      "const notOne = thing.import(\"./property.js\"); const reimport = 1;",
+    ].join("\n");
+    expect(importsIn(code)).toEqual([
+      { specifier: "./a.js", names: ["a"], onDemand: false },
+      { specifier: "../planner-hud/Hand.js", names: ["Hand", "deal"], onDemand: false },
+      { specifier: "../b.js", names: ["b"], onDemand: false },
+      { specifier: "./c.js", names: ["c"], onDemand: false },
+      { specifier: "./all.js", names: ["*"], onDemand: false },
+      { specifier: "react", names: ["useState", "default"], onDemand: false },
+      { specifier: "three", names: ["*"], onDemand: false },
+      { specifier: "./side-effect.css", names: [], onDemand: false },
+      { specifier: "./lazy.js", names: ["*"], onDemand: true },
+      { specifier: "../planner-hud/PlannerHud.js", names: ["*"], onDemand: true },
+    ]);
+  });
+
+  /** The pages the router builds only in development: the imports on demand inside devFixtureRoutes, as modules. */
+  async function developmentOnlyPages(): Promise<readonly string[]> {
+    const router = await readSource("src/router.tsx");
+    // The gate that keeps them out of every production build.
+    expect(router.codeOnly).toMatch(/import\.meta\.env\.DEV\s*\?\s*devFixtureRoutes\(\)\s*:\s*\[\]/);
+    const body = /function devFixtureRoutes\(\)[^{]*\{([\s\S]*?)\n\}/.exec(router.codeOnly)?.[1] ?? "";
+    return Array.from(body.matchAll(/import\(["']\.\/(pages\/[^"']+\.js)["']\)/g), (match) => match[1] ?? "");
+  }
+
+  interface Sources {
+    /** Every module of the app, not its tests, by its path from src/ with a .js ending, with what it imports. */
+    readonly modules: ReadonlyMap<string, readonly Imported[]>;
+    /** The pages no production build contains. */
+    readonly devOnly: ReadonlySet<string>;
+    /**
+     * Every module a browser can be sent without the HUD: reached from the entry by imports, on demand or not, never
+     * through a development page and never into the HUD.
+     */
+    readonly production: ReadonlySet<string>;
+    /** Each module's own code, comments out. */
+    readonly code: ReadonlyMap<string, string>;
+  }
+
+  let read: Promise<Sources> | null = null;
+  function sources(): Promise<Sources> {
+    read ??= (async (): Promise<Sources> => {
+      const fs = await import("node:fs/promises");
+      const path = await import("node:path");
+      const modules = new Map<string, readonly Imported[]>();
+      const code = new Map<string, string>();
+      for (const entry of await fs.readdir(path.resolve("src"), { recursive: true })) {
+        const file = entry.replace(/\\/g, "/");
+        if (!/\.tsx?$/.test(file) || /\.d\.ts$/.test(file) || /(^|\/)__tests__\//.test(file) || /\.test\.tsx?$/.test(file)) continue;
+        const { codeOnly } = await readSource(`src/${file}`);
+        modules.set(file.replace(/\.tsx?$/, ".js"), importsIn(codeOnly));
+        code.set(file.replace(/\.tsx?$/, ".js"), codeOnly);
+      }
+      const devOnly = new Set(await developmentOnlyPages());
+      const production = new Set<string>();
+      const pending = ["main.js"];
+      while (pending.length > 0) {
+        const module = pending.pop();
+        if (module === undefined || production.has(module)) continue;
+        const imports = modules.get(module);
+        if (imports === undefined) continue;
+        production.add(module);
+        for (const { specifier } of imports) {
+          const target = resolved(module, specifier);
+          if (target !== null && !devOnly.has(target) && !isHudOnly(target)) pending.push(target);
+        }
+      }
+      return { modules, devOnly, production, code };
+    })();
+    return read;
+  }
+
+  it("reads the whole app: its entry, its pages and its planner, and no development page", async () => {
+    const { modules, devOnly, production } = await sources();
+    expect(modules.size).toBeGreaterThan(500);
+    // The three lab pages are development's, and that is why their reads of shared code count for nothing below.
+    for (const page of ["pages/PlannerLabPage.js", "pages/FurnitureLabPage.js", "pages/GrandHallLabPage.js"]) expect(devOnly.has(page), page).toBe(true);
+    for (const reached of ["main.js", "router.js", "pages/EditorPage.js", "components/editor/PlannerScene.js", "components/SelectionSystem.js", "lib/springs.js", "lib/crafted-furniture.js", "components/grand-hall/hall-mood.js"]) {
+      expect(production.has(reached), reached).toBe(true);
+    }
+    expect(production.size).toBeGreaterThan(400);
+    expect([...production].filter((module) => devOnly.has(module) || isHudOnly(module))).toEqual([]);
+    // Every relative import of a script was found: a reader that lost some would call their modules unread.
+    const lost: string[] = [];
+    for (const [module, imports] of modules) {
+      for (const { specifier } of imports) {
+        const target = resolved(module, specifier);
+        if (target !== null && /\.js$/.test(target) && !modules.has(target)) lost.push(`${module} -> ${specifier}`);
+      }
+    }
+    expect(lost).toEqual([]);
+  });
+
+  it("lets nothing outside the HUD import its modules, but the two imports on demand that fetch it", async () => {
+    const { modules, devOnly } = await sources();
+    const always: string[] = [];
+    const onDemand: string[] = [];
+    for (const [module, imports] of modules) {
+      if (isHudOnly(module) || devOnly.has(module)) continue;
+      for (const one of imports) {
+        const target = resolved(module, one.specifier);
+        if (target !== null && isHudOnly(target)) (one.onDemand ? onDemand : always).push(`${module} -> ${target}`);
+      }
+    }
+    expect(always).toEqual([]);
+    // A third import on demand (a warm-up, say) would fetch the screen for a planner that never asked for it.
+    expect(onDemand.sort()).toEqual([
+      "components/editor/PlannerScene.js -> components/planner-hud/hud-scene.js",
+      "pages/EditorPage.js -> components/planner-hud/PlannerHud.js",
+    ]);
+  });
+
+  it("fetches its parts of the scene only where a screen has asked for the stage or the mark", async () => {
+    const scene = await readSource("src/components/editor/PlannerScene.tsx");
+    expect(scene.codeOnly).toMatch(/=>\s*import\(["']\.\.\/planner-hud\/hud-scene\.js["']\)/);
+    expect(scene.codeOnly).toMatch(/if\s*\(!hudSceneAsked\)\s*return/);
+    expect(scene.codeOnly).toMatch(/const hudSceneAsked = hallStageAsked \|\| plannerFeatureEnabled\("chosenMark"\);/);
+  });
+
+  it("keeps the stage's measurements and lens out of what the hall's model, its views and the camera rig import", async () => {
+    for (const file of ["src/components/grand-hall/GrandHallModel.tsx", "src/components/grand-hall/HallViewDirector.tsx", "src/stores/hall-view-store.ts", "src/components/CameraRig.tsx"]) {
+      const { codeOnly } = await readSource(file);
+      expect(codeOnly, file).not.toMatch(/from\s+["'][^"']*\/(?:hall-stage|HallStage|lens-shift|chosen-mark|ChosenMarks)\.js["']/);
+    }
+    // The two heights the hall's model does need are a module of their own.
+    const model = await readSource("src/components/grand-hall/GrandHallModel.tsx");
+    expect(model.codeOnly).toMatch(/from\s+["']\.\/hall-stage-cuts\.js["']/);
+  });
+
+  it("is not the only production reader of anything it imports from code the default planner already holds", async () => {
+    const { modules, production, code } = await sources();
+    // What the rest of production imports, by module or package path: its names, or "*" where it takes the lot.
+    const readElsewhere = new Map<string, Set<string>>();
+    for (const module of production) {
+      for (const one of modules.get(module) ?? []) {
+        const from = resolved(module, one.specifier) ?? one.specifier;
+        const names = readElsewhere.get(from) ?? new Set<string>();
+        for (const name of one.names) names.add(name);
+        readElsewhere.set(from, names);
+      }
+    }
+    const offenders: string[] = [];
+    const seamsMet = new Set<string>();
+    let hudModules = 0;
+    let checked = 0;
+    let builtAnyway = 0;
+    for (const [module, imports] of modules) {
+      if (!isHudOnly(module)) continue;
+      hudModules += 1;
+      for (const one of imports) {
+        const target = resolved(module, one.specifier);
+        const from = target ?? one.specifier;
+        // Its own modules; and stylesheets and pictures, which are not scripts with names to keep or drop.
+        if (target !== null && (isHudOnly(target) || !modules.has(target))) continue;
+        const elsewhere = readElsewhere.get(from);
+        if (elsewhere === undefined) {
+          // Nothing else in production imports it. A module of the app then rides whole in the HUD's own files; a
+          // package path is built into a vendor file everyone fetches.
+          if (target === null) offenders.push(`${module}: the package path "${from}", which nothing else in production imports`);
+          continue;
+        }
+        if (elsewhere.has("*")) continue;
+        for (const name of one.names) {
+          checked += 1;
+          if (elsewhere.has(name)) continue;
+          // A name the rest of production already builds, through what it imports, adds no code when the HUD imports it too.
+          if (target !== null && builtWithoutTheHud(code.get(target) ?? "", elsewhere).has(name)) {
+            builtAnyway += 1;
+            continue;
+          }
+          const seam = `${from} ${name}`;
+          if (SEAMS.has(seam)) seamsMet.add(seam);
+          else offenders.push(`${module}: ${name === "*" ? "all of" : name} from ${from}, which nothing else in production imports`);
+        }
+      }
+    }
+    // The walk found the HUD's modules and weighed their imports (a wrong root would pass by reading nothing).
+    expect(hudModules).toBeGreaterThanOrEqual(20);
+    expect(checked).toBeGreaterThan(100);
+    // Some of what it alone imports is built anyway (the piece's verbs are the keymap's own, used by its keys); the
+    // check that lets those through is at work, and not letting everything through.
+    expect(builtAnyway).toBeGreaterThan(0);
+    expect(builtAnyway).toBeLessThan(20);
+    expect(offenders).toEqual([]);
+    // And the list of seams names nothing that is no longer one.
+    expect([...SEAMS.keys()].filter((seam) => !seamsMet.has(seam))).toEqual([]);
+  });
+
+  it("imports no shared table whose entries the bundler keeps one by one", async () => {
+    const { modules } = await sources();
+    const offenders: string[] = [];
+    for (const [module, imports] of modules) {
+      if (!isHudOnly(module)) continue;
+      for (const one of imports) {
+        for (const table of TABLES) if (one.names.includes(table)) offenders.push(`${module} imports ${table} from ${one.specifier}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+    // The table is still where this says it is, and others still read it: or this guards nothing.
+    const springs = await readSource("src/lib/springs.ts");
+    expect(springs.codeOnly).toMatch(/export const SPRING_PRESETS = \{/);
+    const { production } = await sources();
+    expect([...production].some((module) => (modules.get(module) ?? []).some((one) => one.names.includes("SPRING_PRESETS")))).toBe(true);
+  });
+
+  /**
+   * What the HUD takes from the other new chrome's folder, on purpose: the plaque (that chrome's slate), the
+   * slate's audience, the host of its tooltips, and the base stylesheet they are drawn in. That chrome's own room
+   * frame, its caption and its tools are not this screen's. The frame was mounted here until it began to carry
+   * that chrome's caption over a chosen piece (#357, 16 Nov 2026), which this screen then showed too: it frames the
+   * scene itself now (planner-hud/HudRoom.tsx). Anything more taken from that folder is to be chosen, not caught.
+   */
+  const FROM_THE_OTHER_CHROME: readonly string[] = [
+    "components/planner-chrome/Slate.js",
+    "components/planner-chrome/Tooltip.js",
+    "components/planner-chrome/chrome.css",
+    "components/planner-chrome/slate-data.js",
+  ];
+
+  it("takes from the other new chrome's folder only what it reuses on purpose", async () => {
+    const { modules } = await sources();
+    const taken = new Set<string>();
+    for (const [module, imports] of modules) {
+      if (!isHudOnly(module)) continue;
+      for (const one of imports) {
+        const target = resolved(module, one.specifier);
+        if (target?.startsWith("components/planner-chrome/") === true) taken.add(target);
+      }
+    }
+    expect([...taken].sort()).toEqual([...FROM_THE_OTHER_CHROME].sort());
+  });
 });

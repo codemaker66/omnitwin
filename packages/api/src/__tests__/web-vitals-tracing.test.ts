@@ -36,8 +36,9 @@ function transactionsIn(envelope: string): string[] {
 describe("API tracing of the page-speed reports (the real SDK, route and server)", () => {
   const savedSwitch = process.env["WEB_VITALS_COLLECTION"];
   const envelopes: string[] = [];
-  /** Every transaction the SDK built, before its own filters ran. */
-  const seen: string[] = [];
+  /** Every transaction the SDK built, before its own filters ran: its name,
+   *  and its parent span if it continued a trace. */
+  const seen: { readonly name: string; readonly parent: unknown }[] = [];
   let ingest: Server;
   let connection: DatabaseConnection;
   let server: FastifyInstance;
@@ -67,7 +68,9 @@ describe("API tracing of the page-speed reports (the real SDK, route and server)
     const Sentry = await import("@sentry/node");
     flush = Sentry.flush;
     Sentry.getClient()?.on("preprocessEvent", (event) => {
-      if (event.type === "transaction" && event.transaction !== undefined) seen.push(event.transaction);
+      if (event.type === "transaction" && event.transaction !== undefined) {
+        seen.push({ name: event.transaction, parent: event.contexts?.trace?.parent_span_id });
+      }
     });
 
     // Never connected: nothing here is held, so nothing reaches a database.
@@ -109,8 +112,16 @@ describe("API tracing of the page-speed reports (the real SDK, route and server)
     }, { timeout: 10_000 });
     // Both requests were traced, each named by its route's pattern: the
     // instrumentation ran, so nothing below passes for want of a trace.
-    expect(seen).toContain("POST /public/web-vitals");
-    expect(seen).toContain("POST /public/control/:slug");
+    const names = seen.map((record) => record.name);
+    expect(names).toContain("POST /public/web-vitals");
+    expect(names).toContain("POST /public/control/:slug");
+    // Both came as a browser's do, with no trace of their own (the API sends
+    // no trace headers, its own requests in this process included): the
+    // control's record was sent for itself, and the report's was kept out by
+    // the SDK's filter, not by a parent span (#355's verification at
+    // 48004a5b, 14 November 2026).
+    expect(seen.filter((record) => record.name.startsWith("POST /public/")).map((record) => record.parent))
+      .toEqual([undefined, undefined]);
     // The SDK's own filter, given the API's options, kept the report's out.
     expect(envelopes.flatMap(transactionsIn).filter((name) => name.includes("web-vitals"))).toEqual([]);
   }, 30_000);

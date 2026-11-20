@@ -18,10 +18,16 @@
 //   - Every processor named below is one actually in use.
 // ---------------------------------------------------------------------------
 
-import { useEffect, type ReactElement } from "react";
+import { Fragment, useEffect, useSyncExternalStore, type ReactElement } from "react";
 import { CONTRACT_CONSENT_STATEMENT, DIETARY_MEMORY_CONSENT, DIETARY_MEMORY_MONTHS_UNUSED, DIETARY_NOTE_RETENTION } from "@omnitwin/types";
 import { REMEMBERED_NOTES_PATH } from "../lib/dietary-memory.js";
 import { ROUTE_DOCUMENTS } from "../lib/route-documents.js";
+import {
+  measurementChoiceState,
+  setMeasurementDeclined,
+  subscribeMeasurementChoice,
+  type MeasurementChoiceState,
+} from "../observability/measurement-choice.js";
 import "./LegalPage.css";
 
 interface LegalPageProps {
@@ -49,7 +55,9 @@ type LegalBlock =
   | { readonly kind: "p"; readonly text: string }
   | { readonly kind: "list"; readonly items: readonly string[] }
   | { readonly kind: "defs"; readonly items: readonly LegalDefinition[] }
-  | { readonly kind: "links"; readonly items: readonly LegalLink[] };
+  | { readonly kind: "links"; readonly items: readonly LegalLink[] }
+  /** The "Don't measure my visits" switch the page-speed paragraph promises. */
+  | { readonly kind: "measurement-choice" };
 
 interface LegalSection {
   readonly id: string;
@@ -90,8 +98,10 @@ const TERMS_UPDATED = { text: "11 November 2026", iso: "2026-11-11" } as const;
 
 /** The accessibility statement's own date: it changed on 8 November, when it
  *  listed the planner's single-key shortcuts and the hints cut off in its
- *  "More planner tools" panel (v1.0 final review). */
-const ACCESSIBILITY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as const;
+ *  "More planner tools" panel (v1.0 final review), and on 18 November, when
+ *  those hints were drawn outside the panel, read in full, and left the list
+ *  (planner lane E, E23). */
+const ACCESSIBILITY_UPDATED = { text: "18 November 2026", iso: "2026-11-18" } as const;
 
 /** The privacy policy's own date: it changed when the dietary note gained its
  *  retention rule (fix-first item 18) and, the same day, the choice to have
@@ -102,8 +112,15 @@ const ACCESSIBILITY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as 
  *  for deposits, and said what a contract's signature record keeps (Plan 19 L5);
  *  and on 8 November, when it said that clients and planners sign in as well as
  *  venue staff, that the site serves its own typefaces, and that Resend also
- *  carries the acknowledgement sent to the guest (v1.0 final review). */
-const PRIVACY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as const;
+ *  carries the acknowledgement sent to the guest (v1.0 final review); and on
+ *  20 November, the day it went live (written from 12 November, planned for
+ *  18 November), when it described the page-speed measurements, their lawful
+ *  basis, how long they are kept and why they need no consent, added the
+ *  "Don't measure my visits" switch, narrowed "What we do not do" to
+ *  third-party analytics, and said what the error monitor's timing records
+ *  carry (T-685). This is the day that goes live: re-date it, and the
+ *  sitemap's /privacy date, if the merge slips to another day. */
+const PRIVACY_UPDATED = { text: "20 November 2026", iso: "2026-11-20" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
  *  retention pass and the planner also read. */
@@ -261,8 +278,23 @@ const PRIVACY: LegalDocument = {
             {
               term: "Error diagnostics",
               detail:
-                "When something goes wrong in the browser or on the server, our error-monitoring service records technical details about the failure. That can include the page you were on and the technical state of the application at the time.",
+                "When something goes wrong in the browser or on the server, our error-monitoring service records technical details about the failure. That can include the page you were on and the technical state of the application at the time. "
+                + "Our server also sends it a timing record for about one request in ten, saying which kind of request it was and how long it took, with no address, identifier or browser details.",
             },
+            {
+              term: "How fast our pages are",
+              detail:
+                "When you open one of our pages, your browser may measure how quickly it loaded and responded, and how much its content shifted while it was open (four measurements, each rated good, needs improvement or poor), and send them to us with the kind of page (for example \"a proposal\") and whether it was opened on a phone, tablet or computer. "
+                + "It does not send the address of the page you opened, anything you typed, or any identifier, and nothing is stored on your device for it. Like any request, it reaches us from your internet address. We do not keep that with the measurements, and our own server does not log it; our hosting provider's standard request logs record it, as they do for every request (see \"Server and request logs\"). "
+                + "We keep each measurement with only the kind of page, the kind of device and the day it arrived (not the time). We use them only to make the site faster, and delete them after 90 days. "
+                + "If your browser sends Global Privacy Control or Do Not Track, your visit is not measured, and anything that arrives with either signal is discarded. On any browser you can also turn it off with the \"Don't measure my visits\" switch on this page. That choice is kept in this browser on this device until the browser clears our site's data (Safari does this after about a week without a visit), so you may need to set it again.",
+            },
+          ],
+        },
+        { kind: "measurement-choice" },
+        {
+          kind: "defs",
+          items: [
             {
               term: "Dietary and allergy notes for an event",
               detail:
@@ -331,6 +363,11 @@ const PRIVACY: LegalDocument = {
                 "Article 6(1)(f), legitimate interests: protecting the site from abuse, spam and bulk harvesting, and diagnosing faults so that the service stays available.",
             },
             {
+              term: "Measuring how fast our pages are",
+              detail:
+                "Article 6(1)(f): our legitimate interest in a fast, working site. You can object at any time with the \"Don't measure my visits\" switch (see \"How fast our pages are\").",
+            },
+            {
               term: "Venue staff accounts",
               detail:
                 "Article 6(1)(b) where an account is part of someone's contract with the venue, and Article 6(1)(f) — our legitimate interest in controlling who can see enquiry records — otherwise.",
@@ -348,7 +385,7 @@ const PRIVACY: LegalDocument = {
           items: [
             "We do not sell, rent or trade personal information.",
             "We do not use your enquiry to add you to a marketing list, and this service sends no marketing email. If that ever changes we would ask for your consent first, and you could withdraw it at any time.",
-            "We run no analytics product and set no advertising or tracking cookies. There are no advertising networks in this site.",
+            "We run no third-party analytics product and set no advertising or tracking cookies. There are no advertising networks in this site.",
             "We make no decisions about you by automated means that produce legal effects or similarly significant effects, and we do not profile you.",
           ],
         },
@@ -360,7 +397,7 @@ const PRIVACY: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: "There is no cookie consent banner on this site, because there is nothing here to consent to: we set no analytics cookies and no advertising cookies. Under the Privacy and Electronic Communications Regulations, consent is not required for storage that is strictly necessary to provide the service you asked for. What the site does use is listed below.",
+          text: "There is no cookie consent banner on this site, because there is nothing here to consent to: we set no analytics cookies and no advertising cookies. Under the Privacy and Electronic Communications Regulations, consent is not required for storage that is strictly necessary to provide the service you asked for. Nor is consent required for measuring how fast our pages are: the same Regulations allow it when it is done only to collect statistics about how the site is used so that we can improve it, the information is shared with no one except to help us improve the site, you are given clear and comprehensive information about its purpose, and you have a simple, free way to object and have not used it, such as the \"Don't measure my visits\" switch (see \"How fast our pages are\"). What the site does use is listed below.",
         },
         {
           kind: "defs",
@@ -374,6 +411,11 @@ const PRIVACY: LegalDocument = {
               term: "Local storage preferences",
               detail:
                 "Your light or dark theme choice, and similar view preferences, are stored by your browser on your own device. They are not transmitted to us and are not used to identify you.",
+            },
+            {
+              term: "Your page-speed choice",
+              detail:
+                "If you use the \"Don't measure my visits\" switch, your browser keeps that choice on your device so we can respect it on later visits (see \"How fast our pages are\"). It is never sent to us.",
             },
             {
               // Self-hosted since 777e3985 (index.html, src/styles/fonts). The
@@ -427,7 +469,7 @@ const PRIVACY: LegalDocument = {
             {
               term: "Sentry",
               detail:
-                "Error monitoring. It records technical diagnostics when something in the site fails, so that we can fix it.",
+                "Error monitoring. It records technical diagnostics when something in the site fails, so that we can fix it, and a timing record for about one request in ten, with no address, identifier or browser details.",
             },
             {
               term: "Cloudflare R2",
@@ -505,6 +547,10 @@ const PRIVACY: LegalDocument = {
               term: "Signed contracts and deposit records",
               detail:
                 "Kept with the booking's records: for the life of the booking and for six years after the end of the financial year in which the event took place, the same period as a booking, because they are the record of what was agreed and paid. A contract you did not sign is kept on the same rule.",
+            },
+            {
+              term: "Page-speed measurements",
+              detail: "Deleted 90 days after the day they arrived.",
             },
             {
               term: "Logs and error diagnostics",
@@ -949,13 +995,6 @@ const ACCESSIBILITY: LegalDocument = {
               detail:
                 "With a keyboard, the planner acts on single letter keys pressed on their own, such as V to select and A to add furniture. There is no way to turn these shortcuts off, which fails WCAG success criterion 2.1.4, Character Key Shortcuts. That can get in the way of people who use speech input, or who press keys by accident.",
             },
-            // The panel is 238px wide and scrolls (ReferenceViewer.css); each
-            // hint opens 58px to the right of its tool (VerticalToolbox.tsx).
-            {
-              term: "Hints in the planner's tools panel",
-              detail:
-                "On a computer, the planner keeps some of its tools in a panel behind a button marked with three dots, named \"More planner tools\" for screen readers. The hint that appears beside each tool in that panel is cut off at the panel's edge, so it cannot be read in full.",
-            },
             {
               term: "Untested areas",
               detail:
@@ -1065,15 +1104,84 @@ function storedTheme(): "dark" | "light" | undefined {
 // Rendering
 // ---------------------------------------------------------------------------
 
+/** The switch's status line for each state of the choice. */
+const MEASUREMENT_CHOICE_STATUS: Readonly<Record<MeasurementChoiceState, string>> = {
+  measured: "Your visits may be measured, as described above.",
+  declined: "Your visits in this browser are not measured.",
+  "declined-this-tab": "This browser would not let us keep your choice, so it holds only in this tab, until you close it.",
+  "declined-this-page": "This browser would not let us keep your choice, so it holds only until you leave this page.",
+  "storage-refused": "This browser blocks our site's storage, so your visits in this browser are never measured.",
+};
+
+/** The switch's id, which the sentences that send a visitor to it link to,
+ *  and its status line's (#355's review, WZ9, 18 November 2026). */
+const MEASUREMENT_SWITCH_ID = "dont-measure-my-visits";
+const MEASUREMENT_STATUS_ID = "dont-measure-my-visits-status";
+
+/** How the documents name the switch. */
+const MEASUREMENT_SWITCH_NAME = "\"Don't measure my visits\" switch";
+
+/** "Don't measure my visits" (observability/measurement-choice.ts). It shows
+ *  the choice as it stands, read from the choice itself: on a return to this
+ *  page, and when another tab of this browser changes it. */
+function MeasurementChoice(): ReactElement {
+  const state = useSyncExternalStore(subscribeMeasurementChoice, measurementChoiceState);
+  const declined = state !== "measured";
+  // Where the browser refuses its storage the visitor stays declined whatever
+  // they press, so the switch says it is unavailable and why, the status line
+  // being its description: a press that changed nothing said nothing to a
+  // screen reader (#355's review, WZ9).
+  const refused = state === "storage-refused";
+  const toggle = (): void => {
+    if (!refused) setMeasurementDeclined(!declined);
+  };
+  return (
+    <p className="lg-p lg-choice">
+      <button
+        type="button"
+        id={MEASUREMENT_SWITCH_ID}
+        className="lg-choice-button"
+        aria-pressed={declined}
+        aria-disabled={refused ? true : undefined}
+        aria-describedby={refused ? MEASUREMENT_STATUS_ID : undefined}
+        onClick={toggle}
+      >
+        {"Don't measure my visits"}
+      </button>
+      <span id={MEASUREMENT_STATUS_ID} className="lg-choice-state" role="status">{MEASUREMENT_CHOICE_STATUS[state]}</span>
+    </p>
+  );
+}
+
+/** A document's text, where each mention of the switch links to it: the
+ *  sentences that say to use it take the visitor there, and following the
+ *  link focuses it. Only the privacy policy names it, and shows it. */
+function LegalText({ text }: { readonly text: string }): ReactElement {
+  const [first, ...rest] = text.split(MEASUREMENT_SWITCH_NAME);
+  return (
+    <>
+      {first}
+      {rest.map((after, index) => (
+        <Fragment key={index}>
+          <a href={`#${MEASUREMENT_SWITCH_ID}`}>{MEASUREMENT_SWITCH_NAME}</a>
+          {after}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
 function LegalBlockView({ block }: { readonly block: LegalBlock }): ReactElement {
   switch (block.kind) {
+    case "measurement-choice":
+      return <MeasurementChoice />;
     case "p":
-      return <p className="lg-p">{block.text}</p>;
+      return <p className="lg-p"><LegalText text={block.text} /></p>;
     case "list":
       return (
         <ul className="lg-list">
           {block.items.map((item) => (
-            <li key={item}>{item}</li>
+            <li key={item}><LegalText text={item} /></li>
           ))}
         </ul>
       );
@@ -1083,7 +1191,7 @@ function LegalBlockView({ block }: { readonly block: LegalBlock }): ReactElement
           {block.items.map((item) => (
             <div className="lg-def" key={item.term}>
               <dt>{item.term}</dt>
-              <dd>{item.detail}</dd>
+              <dd><LegalText text={item.detail} /></dd>
             </div>
           ))}
         </dl>
