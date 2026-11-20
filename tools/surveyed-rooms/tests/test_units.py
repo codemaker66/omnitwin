@@ -257,6 +257,76 @@ class MarginViews(unittest.TestCase):
     def margin(self, metres):
         return mock.patch.object(self.B, "OCCLUDER_MARGIN", metres)
 
+    @staticmethod
+    def old_order(D, keep, cover, label):
+        """One block's order in the first form of the first step (whole_order, now gone), by the key ranked_lists
+        uses: the label, the other candidates by data cost, then the other stations by how much of the block they
+        saw clear; a block without a label, every station by how much of it it saw clear. D, keep and cover are the
+        block's (stations,) arrays. Here only to show that a test tells the two rules apart."""
+        if label < 0:
+            key = np.where(cover > 0, -cover, np.inf)
+        else:
+            key = np.minimum(np.where(keep, D, np.inf), np.where(~keep & (cover > 0), 100 + (1 - cover), np.inf))
+            key[label] = -1.0
+        return [int(s) for s in np.argsort(key, kind="stable") if np.isfinite(key[s])]
+
+    def first_step(self, D, keep, label, seen, clear):
+        """The labels' chain on (stations, H, W) views: ranked_lists (clear cover from `clear`), texel_labels,
+        block_sequence and clear_views. Returns the ranking, the sequence, the ranking's texel labels and the step's."""
+        lv, B = self.lv, self.B
+        S, H, W = clear.shape
+        nby, nbx = label.shape
+        cover = np.moveaxis(B.block_sum(np.moveaxis(clear, 0, -1).astype(np.float32), nby, nbx), -1, 0) / B.BLOCK ** 2
+        ranked = lv.ranked_lists(D, label, keep, cover)
+        tlab = lv.texel_labels(ranked, B.pack_bits(clear), np.ones((H, W), bool), (0, nby, 0, nbx))
+        sequence = lv.block_sequence(ranked, label, B.pack_bits(seen), W)
+        out, _ = lv.clear_views(sequence, tlab, B.pack_bits(clear))
+        return ranked, sequence, tlab, out
+
+    def doubtful(self, tlab, seen, clear, sequence):
+        """doubtful_views on (stations, H, W) views, every view's clearance 0 (it is reported and decides nothing).
+        Returns the texel labels and the bits to colour from, unpacked."""
+        lv, B = self.lv, self.B
+        S, H, W = seen.shape
+        grid = mock.Mock(depth=np.zeros((H, W), np.float32), n=np.array([0.0, 0.0, 1.0]),
+                         points=lambda r, c, d: np.stack([r, c, d], -1).astype(np.float64))
+        stats = dict(visbits=B.pack_bits(clear), seenbits=B.pack_bits(seen))
+        with mock.patch.object(lv.P, "load_depth", lambda sid: sid), \
+                mock.patch.object(B, "occluder_clearance", lambda cube, v, dist, cos: np.zeros(len(v), np.float32)):
+            out, bits, _ = lv.doubtful_views(grid, [dict(id=k, t=np.zeros(3)) for k in range(S)], tlab, stats, sequence)
+        return out, B.unpack_bits(bits, W)
+
+    def ranked_six(self, S=8):
+        """One block and S stations. Stations 0 to 5 are candidates (station s: data cost 0.1 s) that saw the whole
+        block, all of it clear but texel (0, 0), which they saw within a margin: they are its ranking, and (0, 0)
+        asks the block's sequence. The other stations saw nothing yet."""
+        n = self.B.BLOCK
+        D = (0.1 * np.arange(S)).reshape(S, 1, 1)
+        keep = np.zeros((S, 1, 1), bool)
+        keep[:6] = True
+        seen = np.zeros((S, n, n), bool)
+        seen[:6] = True
+        clear = seen.copy()
+        clear[:6, 0, 0] = False
+        return D, keep, np.array([[0]]), seen, clear
+
+    def random_wall(self, seed):
+        """Three rows of four blocks and seven stations, each seeing a random share of each block at all and about
+        60% of that clear; one block no station saw. keep stands in for candidates() (a clear cover of 0.4 or more),
+        the label is the kept station of least data cost, and two blocks a station saw clear are left without one."""
+        rng = np.random.default_rng(seed)
+        S, nby, nbx, n = 7, 3, 4, self.B.BLOCK
+        share = rng.choice([0.0, 0.2, 0.6, 1.0], size=(S, nby, nbx))
+        share[:, 1, 2] = 0.0
+        seen = rng.random((S, nby * n, nbx * n)) < np.kron(share, np.ones((n, n)))
+        clear = seen & (rng.random(seen.shape) < 0.6)
+        cover = np.moveaxis(self.B.block_sum(np.moveaxis(clear, 0, -1).astype(np.float32), nby, nbx), -1, 0) / n ** 2
+        keep = cover >= 0.4
+        D = rng.uniform(0.0, 2.0, (S, nby, nbx))
+        label = np.where(keep.any(axis=0), np.argmin(np.where(keep, D, np.inf), axis=0), -1)
+        label[0, 1] = label[2, 3] = -1
+        return D, keep, label, seen, clear
+
     def test_clearance_says_what_the_gate_says(self):
         B = self.B
         rng = np.random.default_rng(452)
@@ -318,6 +388,7 @@ class MarginViews(unittest.TestCase):
         keep[:, 0, 1] = False                                        # the second block: no station passed for a candidate
         cover = np.full((S, 1, 2), 0.97, np.float32)
         cover[:, 0, 1] = 0.0
+        cover[3, 0, 1], cover[7, 0, 1] = 5 / 8, 7 / 8                # what stations 3 and 7 saw of it clear (below)
         label = np.array([[0, -1]])                                  # so it has no label, and ranked_lists gives it no list
         ranked = lv.ranked_lists(D, label, keep, cover)
         self.assertEqual(ranked[0, 0].tolist(), [0, 1, 2, 3, 4, 5])
@@ -346,12 +417,20 @@ class MarginViews(unittest.TestCase):
         self.assertTrue(np.all(tlab[:, second:] == -1))              # the ranking alone leaves the whole second block without a station
         out, outside = lv.clear_views(sequence, tlab, bits)
         # Columns 2 and 3: three stations outside the ranking saw them clear. The one that saw most of the block at
-        # all is taken (8), not the one with the least data cost (6), which the first form of this step took.
+        # all is taken (8), not the one with the least data cost (6), which the first form of this step took: its
+        # order went on past the ranked six with the block's other candidates by data cost.
         self.assertTrue(np.all(out[:, :2] == 0) and np.all(out[:, 2:4] == 8) and np.all(out[:, 4:6] == 8))
         self.assertTrue(np.all(out[:, 6:second] == -1))              # no station saw the first block's other columns clear
         # The block without a label: a texel a station saw clear takes one all the same, a station of the borrowed
         # ranking first (3 stands in it), then the sequence's other half. What no station saw clear stays as it was.
+        # The first form of this step ordered such a block by how much of it each station saw clear, so it gave
+        # columns 2 to 4 station 7 (seven columns clear, against station 3's five); now the borrowed ranking leads.
         self.assertTrue(np.all(out[:, second:second + 5] == 3) and np.all(out[:, second + 5:second + 7] == 7))
+        old = [self.old_order(D[:, 0, b], keep[:, 0, b], cover[:, 0, b], label[0, b]) for b in (0, 1)]
+        self.assertEqual(old[0], list(range(S)))                     # the label, then every other candidate by data cost
+        self.assertEqual(old[1], [7, 3])                             # without a label: by clear cover, most first
+        self.assertEqual(next(s for s in old[0] if clear[s, 0, 2]), 6)
+        self.assertEqual(next(s for s in old[1] if clear[s, 0, second + 2]), 7)
         self.assertTrue(np.all(out[:, second + 7:] == -1))
         self.assertEqual(outside, 4 * B.BLOCK + 7 * B.BLOCK)
         self.assertTrue(np.array_equal(tlab, lv.texel_labels(ranked, bits, valid, (0, 1, 0, 2))))   # the input is not written to
@@ -422,6 +501,123 @@ class MarginViews(unittest.TestCase):
         self.assertGreater(S - 1, lv.RANKED)
         seq = lv.block_sequence(ranked, label, B.pack_bits(many), n)
         self.assertEqual(seq[0, 0, lv.RANKED:].tolist(), [8, 7, 6, 5, 4, 3, 2, 1, -1])
+        # The middle block is as near to block 0 as to block 2, and which ranking it borrows is SciPy's choice
+        # (block_sequence's docstring): not pinned here, so either is accepted above.
+
+    def test_past_the_ranking_a_clear_view_goes_by_what_a_station_saw_at_all_not_by_data_cost(self):
+        """T-739, (1). A seventh candidate (station 6, data cost 0.6) and a station that is no candidate (7) both saw
+        texel (0, 0) clear. The first form of this step asked the block's remaining candidates by data cost and took
+        6; the one sequence asks by how much of the block each saw at all and takes 7, which saw all of it."""
+        lv, B = self.lv, self.B
+        for six_saw in (3, 62):     # 6 saw 3 texels (keep is given, as in the review's case), or 62: a candidate by COVER_MIN
+            D, keep, label, seen, clear = self.ranked_six()
+            keep[6] = True
+            seen[6].flat[:six_saw] = clear[6].flat[:six_saw] = True      # texels (0, 0) onwards, all of them clear
+            seen[7] = True                                               # 7 saw the whole block at all,
+            clear[7, 0, :6] = True                                       # and about a tenth of it clear (6 of 64)
+            ranked, sequence, tlab, out = self.first_step(D, keep, label, seen, clear)
+            self.assertEqual(ranked[0, 0].tolist(), [0, 1, 2, 3, 4, 5])
+            self.assertEqual(sequence[0, 0].tolist(), [0, 1, 2, 3, 4, 5] + [0, 1, 2, 3, 4, 5, 7, 6], six_saw)
+            self.assertEqual(tlab[0, 0], -1)                             # no ranked station saw it clear
+            self.assertEqual(out[0, 0], 7, six_saw)
+            cover = clear.reshape(len(clear), -1).mean(axis=1)
+            old = self.old_order(D[:, 0, 0], keep[:, 0, 0], cover, 0)
+            self.assertEqual(old, list(range(8)))
+            self.assertEqual(next(s for s in old if clear[s, 0, 0]), 6, six_saw)      # the old order took 6
+            self.assertTrue(np.all(out.ravel()[1:] == tlab.ravel()[1:]))              # the rest kept its ranked station
+
+    def test_past_the_ranking_a_clear_view_goes_by_what_a_station_saw_at_all_not_by_what_it_saw_clear(self):
+        """T-739, (2). Two stations that are no candidates saw texel (0, 0) clear. Station 6 saw more of the block
+        clear (20 texels against 5), station 7 more of it at all (64 against 20): 7 is taken; the old order, by
+        clear cover, took 6."""
+        D, keep, label, seen, clear = self.ranked_six()
+        seen[6].flat[:20] = clear[6].flat[:20] = True
+        seen[7] = True
+        clear[7, 0, :5] = True
+        _, sequence, _, out = self.first_step(D, keep, label, seen, clear)
+        self.assertEqual(sequence[0, 0, self.lv.RANKED:].tolist(), [0, 1, 2, 3, 4, 5, 7, 6])
+        self.assertEqual(out[0, 0], 7)
+        cover = clear.reshape(len(clear), -1).mean(axis=1)
+        old = self.old_order(D[:, 0, 0], keep[:, 0, 0], cover, 0)
+        self.assertEqual(old, [0, 1, 2, 3, 4, 5, 6, 7])
+        self.assertEqual(next(s for s in old if clear[s, 0, 0]), 6)
+
+    def test_a_texel_a_ranked_station_saw_only_within_a_margin_takes_the_clear_view_of_another(self):
+        """T-739, (3). Station 0 leads the block's sequence and saw texel (0, 0), but within a margin; station 7,
+        outside the ranking, saw it clear. clear_views gives it 7 (asking for a clear view, not for any view), and
+        doubtful_views then leaves it alone: it gives a doubtful view only where no station saw the texel clear."""
+        D, keep, label, seen, clear = self.ranked_six()
+        seen[7, 0, :2] = True
+        clear[7, 0, 0] = True                                        # 7 saw (0, 0) clear and (0, 1) within a margin,
+        clear[:6, 0, 1] = False                                      # as did the ranked six: no station saw (0, 1) clear
+        _, sequence, tlab, out = self.first_step(D, keep, label, seen, clear)
+        self.assertEqual(sequence[0, 0, 0], 0)
+        self.assertTrue(seen[0, 0, 0])                               # the first of the sequence saw it at all ...
+        self.assertEqual(out[0, :2].tolist(), [7, -1])               # ... yet the clear view is taken
+        final, used = self.doubtful(out, seen, clear, sequence)
+        self.assertEqual(final[0, :2].tolist(), [7, 0])              # (0, 0) is left alone; (0, 1) takes a doubtful view
+        self.assertTrue(np.array_equal(final[1:], out[1:]) and np.array_equal(final[0, 2:], out[0, 2:]))
+        self.assertEqual(sorted(zip(*(a.tolist() for a in np.nonzero(used & ~clear)))), [(0, 0, 1)])   # station, row, column
+
+    def test_of_stations_that_saw_as_much_of_the_block_the_earlier_is_asked_first(self):
+        """T-739, (4). Stations 6 and 7, no candidates, saw 32 texels of the block each at all, and both saw texel
+        (0, 0) clear: the earlier station, 6, is taken, though 7 saw far more of the block clear (32 against 1),
+        which the old order went by."""
+        D, keep, label, seen, clear = self.ranked_six()
+        seen[6, :4, :] = True                                        # rows 0 to 3,
+        seen[7, :, :4] = True                                        # columns 0 to 3: both hold (0, 0)
+        clear[6, 0, 0] = True
+        clear[7, :, :4] = True
+        _, sequence, _, out = self.first_step(D, keep, label, seen, clear)
+        self.assertEqual(sequence[0, 0, self.lv.RANKED:].tolist(), [0, 1, 2, 3, 4, 5, 6, 7])
+        self.assertEqual(out[0, 0], 6)
+        cover = clear.reshape(len(clear), -1).mean(axis=1)
+        self.assertEqual(self.old_order(D[:, 0, 0], keep[:, 0, 0], cover, 0)[6:], [7, 6])
+
+    def test_a_ranked_station_asked_again_in_the_second_half_changes_no_view(self):
+        """T-739, (5). A ranked station that saw much of its block stands in both halves of the sequence; asking it
+        again changes nothing, because the first place counts. (In a labelled block clear_views finds no clear view
+        among the ranked stations at all, since a texel comes to it only when none saw it clear; but in a block
+        without a label the borrowed stations were never asked by texel_labels and can give one, so there, as in
+        doubtful_views, the first place is what keeps the repeat from mattering.) Checked on random walls against
+        the same sequences with every repeated station struck from the second half."""
+        lv = self.lv
+        R = lv.RANKED
+        for seed in (5, 6, 7):
+            D, keep, label, seen, clear = self.random_wall(seed)
+            _, sequence, tlab, out = self.first_step(D, keep, label, seen, clear)
+            again = (sequence[..., R:, None] == sequence[..., None, :R]).any(-1) & (sequence[..., R:] >= 0)
+            self.assertGreater(int(again.sum()), 0, seed)            # ranked stations do stand in both halves
+            struck = sequence.copy()
+            struck[..., R:][again] = -1
+            out_struck, _ = lv.clear_views(struck, tlab, self.B.pack_bits(clear))
+            self.assertTrue(np.array_equal(out, out_struck), seed)
+            self.assertGreater(int(((tlab < 0) & (out >= 0)).sum()), 0, seed)        # the step gave views
+            final, used = self.doubtful(out, seen, clear, sequence)
+            final_struck, used_struck = self.doubtful(out, seen, clear, struck)
+            self.assertTrue(np.array_equal(final, final_struck) and np.array_equal(used, used_struck), seed)
+            self.assertGreater(int(((out < 0) & (final >= 0)).sum()), 0, seed)       # so did the doubtful step
+
+    def test_every_texel_a_station_saw_clear_takes_a_clear_view(self):
+        """T-739, (6). With no guard of its own: after the ranking and clear_views, a texel has a station exactly
+        where some station saw it clear, on random walls with blocks that have no label, and on one where no block
+        has a label. A block without a label is served because it borrows the nearest labelled block's ranking, and
+        because the sequence's second half lists every station that saw any of the block, which every station that
+        saw a texel of it clear did."""
+        lv, B = self.lv, self.B
+        for seed in (1, 2, 3, 4):
+            D, keep, label, seen, clear = self.random_wall(seed)
+            for labels in (label, np.full_like(label, -1)):
+                _, sequence, tlab, out = self.first_step(D, keep, labels, seen, clear)
+                served = np.kron((sequence >= 0).any(axis=-1), np.ones((B.BLOCK, B.BLOCK))).astype(bool)
+                any_clear = clear.any(axis=0)
+                self.assertTrue(np.all(served[any_clear]), seed)                         # the sequence serves every such block
+                self.assertTrue(np.array_equal(out >= 0, any_clear & served), seed)
+                r, c = np.nonzero(out >= 0)
+                self.assertTrue(np.all(clear[out[r, c], r, c]), seed)                    # each from a station that saw it clear
+                none = np.kron(labels < 0, np.ones((B.BLOCK, B.BLOCK))).astype(bool)
+                self.assertGreater(int((none & any_clear).sum()), 0, seed)
+                self.assertTrue(np.all(out[none & any_clear] >= 0), seed)               # blocks without a label among them
 
     def test_a_statistics_cache_is_good_for_its_own_margin_alone(self):
         lv = self.lv
