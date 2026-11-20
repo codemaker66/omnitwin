@@ -75,17 +75,17 @@ Each room is a box (a prism of a rectangle). Its height is the model's volume (l
 |---|---|---|
 | Grand Hall | 21.135 x 10.590 x 6.700 m, plus the dome | its plan |
 | Saloon | 11.800 x 7.100 x 5.600 m | its plan |
-| Robert Adam Room | 22.927 x 6.106 x 2.705 m | two-part room |
+| Robert Adam Room | 43.728 x 3.762 x 2.753 m | two-part room |
 | Reception Room | 14.138 x 7.073 x 2.890 m | two-part room |
 | North and South Galleries | 11.500 x 4.100 x 2.800 m | its plan |
 
 **The two-part rooms.**
 
 - The Reception Room's traced L becomes a rectangle of equal area (100 m²) that also keeps the L's perimeter, so its wall area stays the model's.
-- The Robert Adam Room's two sections (11.2 x 7.6 m under a 3.03 m mean ceiling, open to 9.8 x 5.6 x 2.2 m) are treated the same way. `ROOM_PLANS` holds only the main part of each of these rooms, and a prism of that part alone would lose about a quarter of the Robert Adam Room's surface.
-- So the rectangle has the floor's area (140 m²) and the walls' perimeter.
+- The Robert Adam Room is treated the same way. Since ruling R96 its model is T-662's measured outline (`robertAdamRoom` in `rooms.ts`): a lower section of 112.06 m² with the steps, at a 3.003 m mean height, and four risers up behind it an upper section of 52.46 m² at 2.219 m, joined by an arch 2.375 m wide. Its 64 walls run 97.4 m. `ROOM_PLANS` holds only the main part of each of these rooms, and a prism of that part alone (the Robert Adam Room's 11.2 x 7.6 m front) would hold about half of its floor.
+- So the rectangle has the floor's area (164.52 m²) and the walls' perimeter at the prism's height (94.98 m).
 - In both rooms, volume, floor, ceiling and wall areas are the model's.
-- What is lost is each room's real outline: the arm of the L, and the step between the Adam Room's two ceilings.
+- What is lost is each room's real outline: the arm of the L, and the Robert Adam Room's two sections, the step between their ceilings, and the piers, recesses and casings that fold 97 m of wall round 164.5 m² of floor. A rectangle with that much wall for that floor is long and narrow: 43.7 x 3.8 m, where the published figures' two rectangles gave 22.9 x 6.1 m.
 
 **The Grand Hall's dome** is a spherical cap over the ceiling's opening (ruling R28), in place of the plan's older cylinder and hemisphere:
 
@@ -135,7 +135,7 @@ Reflection is hybrid: with probability s it is Lambertian (cosine-weighted about
 
 ## Self-test
 
-`python raytrace.py --selftest` exits non-zero on any failure. Figures from the 13 November run that wrote results.json, the same to every printed digit as the 28 October self-test's (both of that day's runs printed them alike):
+`python raytrace.py --selftest` exits non-zero on any failure. Figures from the 13 November run that wrote results.json, the same to every printed digit as the 28 October self-test's and the 18 November one's (each day's runs printed them alike):
 
 1. **Uniform diffuse cube** (10 m, α 0.2 on every face, s 1, no air, 20,000 rays).
    - T20 1.2489 s against Eyring's 0.161V ÷ (−S ln(1 − α)) = 1.2025 s: **+3.86 %** (limit 5 %). r² 0.99927 (limit 0.99).
@@ -169,22 +169,24 @@ For each room and band: calibration = tracer empty T20 ÷ Eyring empty (uncalibr
   - Below the Schroeder frequency a room's response is a set of separate modes, and rays say nothing about it.
   - Only the Grand Hall is big enough to keep its 125 Hz fit:
 
-    | Room | Schroeder frequency (13 Nov trace) |
+    | Room | Schroeder frequency (13 Nov trace; the Robert Adam Room's 18 Nov) |
     |---|---|
     | Grand Hall | 61.2 Hz |
     | Saloon | 92.4 Hz |
     | Reception Room | 92.5 Hz |
+    | Robert Adam Room | 117.5 Hz (124.5 Hz before its measured outline) |
     | North and South Galleries | 121.7 Hz |
-    | Robert Adam Room | 124.5 Hz |
 
   - `fittedCalibration` (`tracer-results.ts`) and `calibration_factor` (`raytrace.py`) apply the same rule, and `calibration.test.ts` tests it.
-  - In the tables below, the model's 125 Hz in those rooms is therefore Eyring's own figure: 2.0–8.8 % under the tracer (3.5–8.8 % empty), and 30 % under it in the Robert Adam Room, whose box is far from diffuse at 125 Hz (absorbing floor and ceiling between hard walls). The test does not hold that band.
+  - In the tables below, the model's 125 Hz in those rooms is therefore Eyring's own figure: 2.0–8.8 % under the tracer (3.5–8.8 % empty), and 26–35 % under it in the Robert Adam Room (35 % empty), whose box is far from diffuse at 125 Hz (absorbing floor and ceiling between hard walls). The test does not hold that band.
 - The factors are in `rooms.ts` (`TRACER_CALIBRATION`). `room-acoustics.test.ts` checks that they equal the fit from results.json.
 - **Fitted on empty; within 15 % half and fully laid.** Because each factor is tracer empty ÷ Eyring empty, the empty model meets the tracer by construction: to the factor's rounding, under 0.1 %, wherever the clamp does not bind. `calibration.test.ts` says so in a test of its own. The real checks, 250 Hz to 8 kHz, are:
   - the model within 15 % of the tracer half and fully laid in every band, except the galleries' non-diffuse bands below;
   - its change with fullness, the model's half or dressed ÷ empty against the tracer's, within 15 % in every room and band, the galleries' included.
 
-R29's second, dressed factor was not needed. With the empty calibration alone, the four big rooms' half and dressed states stay within 5.1 % of the tracer from 250 Hz to 8 kHz: the Robert Adam Room up to 5.1 % (half, 250 Hz) and 3.5 % dressed; the other three within 1.9 % (tables below). R29 does not apply to the galleries (ruling R32).
+R29's second, dressed factor was not needed. With the empty calibration alone, the four big rooms' half and dressed states stay within 8.4 % of the tracer from 250 Hz to 8 kHz: the Robert Adam Room up to 8.4 % (half, 250 Hz) and 4.0 % dressed; the other three within 1.9 % (tables below). R29 does not apply to the galleries (ruling R32).
+
+The Robert Adam Room's 250 Hz factor sits at the clamp: there its tracer reads 1.319 x Eyring empty, so the empty model is 1.4 % under the tracer, not equal to it. Like the galleries' 8 kHz (below), the band keeps the 15 % bound, which it meets in every dressing (1.4 % empty, 8.4 % half, 4.0 % dressed), and needs no exception. Reaching the clamp may partly come from the box's shape, a 43.7 x 3.8 m corridor in place of the room's two sections (ruling R98); follow-up F-RA-1 would trace the surveyed outlines as prisms and refit.
 
 T20 per octave band in seconds, from seed 1. "Model" is the planner's figure: uncalibrated Eyring times the calibration. Seed 2's empty and dressed traces sit under each table.
 
@@ -244,29 +246,29 @@ T20 per octave band in seconds, from seed 1. "Model" is the planner's figure: un
 
 ### Robert Adam Room
 
-200,000 rays a band. Calibration: 1.000, 1.261, 1.156, 1.062, 1.049, 1.042, 1.026.
+200,000 rays a band. Calibration: 1.000, 1.300, 1.196, 1.089, 1.071, 1.053, 1.031.
 
 | Dressing | | 125 | 250 | 500 | 1k | 2k | 4k | 8k |
 |---|---|---|---|---|---|---|---|---|
-| empty | tracer T20 (s) | 1.466 | 1.683 | 1.782 | 2.132 | 1.990 | 1.582 | 0.900 |
-| | model (s) | 1.021 | 1.683 | 1.782 | 2.133 | 1.991 | 1.582 | 0.900 |
-| | model / tracer | -30.4 % | -0.0 % | -0.0 % | +0.0 % | +0.0 % | -0.0 % | +0.0 % |
-| | Eyring, uncalibrated (s) | 1.021 | 1.334 | 1.541 | 2.008 | 1.898 | 1.518 | 0.878 |
-| | r² | 0.9995 | 0.9998 | 0.9999 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| half | tracer T20 (s) | 1.323 | 1.523 | 1.574 | 1.789 | 1.652 | 1.360 | 0.822 |
-| | model (s) | 0.993 | 1.601 | 1.608 | 1.790 | 1.644 | 1.353 | 0.820 |
-| | model / tracer | -25.0 % | +5.1 % | +2.1 % | +0.1 % | -0.5 % | -0.5 % | -0.2 % |
-| | Eyring, uncalibrated (s) | 0.993 | 1.269 | 1.391 | 1.686 | 1.568 | 1.298 | 0.799 |
-| | r² | 0.9993 | 0.9998 | 0.9999 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| dressed | tracer T20 (s) | 1.296 | 1.475 | 1.468 | 1.578 | 1.440 | 1.210 | 0.761 |
-| | model (s) | 0.966 | 1.526 | 1.464 | 1.540 | 1.397 | 1.179 | 0.751 |
-| | model / tracer | -25.5 % | +3.5 % | -0.3 % | -2.4 % | -3.0 % | -2.5 % | -1.3 % |
-| | Eyring, uncalibrated (s) | 0.966 | 1.210 | 1.266 | 1.450 | 1.332 | 1.132 | 0.732 |
-| | r² | 0.9992 | 0.9996 | 0.9998 | 0.9999 | 0.9999 | 1.0000 | 1.0000 |
-| empty, seed 2 | T20 (s) | 1.482 | 1.694 | 1.787 | 2.129 | 1.988 | 1.582 | 0.895 |
-| | seed 2 / seed 1 | 1.05 % | 0.64 % | 0.27 % | 0.17 % | 0.12 % | 0.01 % | 0.59 % |
-| dressed, seed 2 | T20 (s) | 1.323 | 1.493 | 1.482 | 1.587 | 1.448 | 1.215 | 0.762 |
-| | seed 2 / seed 1 | 2.07 % | 1.22 % | 0.93 % | 0.54 % | 0.58 % | 0.45 % | 0.16 % |
+| empty | tracer T20 (s) | 1.563 | 1.785 | 1.956 | 2.365 | 2.134 | 1.655 | 0.916 |
+| | model (s) | 1.009 | 1.759 | 1.956 | 2.364 | 2.135 | 1.655 | 0.916 |
+| | model / tracer | -35.4 % | -1.4 % | -0.0 % | -0.0 % | +0.0 % | +0.0 % | +0.0 % |
+| | Eyring, uncalibrated (s) | 1.009 | 1.353 | 1.635 | 2.171 | 1.993 | 1.572 | 0.888 |
+| | r² | 0.9948 | 0.9981 | 0.9994 | 0.9999 | 0.9999 | 1.0000 | 1.0000 |
+| half | tracer T20 (s) | 1.334 | 1.556 | 1.696 | 1.981 | 1.784 | 1.439 | 0.845 |
+| | model (s) | 0.986 | 1.687 | 1.787 | 2.020 | 1.804 | 1.446 | 0.846 |
+| | model / tracer | -26.1 % | +8.4 % | +5.4 % | +1.9 % | +1.1 % | +0.5 % | +0.1 % |
+| | Eyring, uncalibrated (s) | 0.986 | 1.298 | 1.494 | 1.855 | 1.685 | 1.373 | 0.821 |
+| | r² | 0.9984 | 0.9996 | 0.9998 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| dressed | tracer T20 (s) | 1.374 | 1.559 | 1.627 | 1.784 | 1.596 | 1.310 | 0.791 |
+| | model (s) | 0.964 | 1.621 | 1.644 | 1.761 | 1.560 | 1.282 | 0.786 |
+| | model / tracer | -29.9 % | +4.0 % | +1.1 % | -1.3 % | -2.2 % | -2.1 % | -0.7 % |
+| | Eyring, uncalibrated (s) | 0.964 | 1.247 | 1.375 | 1.617 | 1.457 | 1.217 | 0.762 |
+| | r² | 0.9968 | 0.9988 | 0.9995 | 0.9998 | 0.9999 | 0.9999 | 0.9999 |
+| empty, seed 2 | T20 (s) | 1.614 | 1.806 | 1.976 | 2.361 | 2.140 | 1.666 | 0.920 |
+| | seed 2 / seed 1 | 3.28 % | 1.20 % | 1.00 % | 0.17 % | 0.28 % | 0.65 % | 0.51 % |
+| dressed, seed 2 | T20 (s) | 1.373 | 1.540 | 1.613 | 1.771 | 1.589 | 1.300 | 0.793 |
+| | seed 2 / seed 1 | 0.11 % | 1.21 % | 0.85 % | 0.73 % | 0.40 % | 0.71 % | 0.29 % |
 
 
 ### Reception Room
@@ -366,7 +368,7 @@ The calibration stops at its 1.3 clamp, so in those bands the planner's model si
 
 No reverberation time has been measured in any Trades Hall room. So each room is set beside the nearest measured room found, in the state that room was measured in, with the model in the matching state where there is one. The rows whose states match are tested in `calibration.test.ts`. Where they cannot be matched, the gap is recorded in numbers. What stays uncertain is named for Blake's ear test at the end.
 
-"Mid" is the mean of 500 Hz, 1 kHz and 2 kHz, as these papers report a room. The model's figures are the calibrated ones of the 13 November trace.
+"Mid" is the mean of 500 Hz, 1 kHz and 2 kHz, as these papers report a room. The model's figures are the calibrated ones of the 13 November trace, the Robert Adam Room's of the 18 November trace.
 
 | Room | Comparator: source and state | The model, matching state | Tolerance | Verdict |
 |---|---|---|---|---|
@@ -374,7 +376,7 @@ No reverberation time has been measured in any Trades Hall room. So each room is
 | | **Sanssouci, the marble hall** (1747): 1,150 m³, oval, Carrara marble and a stucco dome. **Two people present**: T30 mid 2.4 s (Lorenz-Kierakiewitz, DAS-DAGA 2025, Tables 1 and 2). | Empty: mid 2.38 s. | Not tested: harder finishes, a smaller room and a different state. | Consistent: a smaller, harder room measures about the hall's model. |
 | Saloon, 469 m³ | **Schloss Benrath, the western and eastern Gartensaal** (mid-18th century): parquet floors and wood-panelled walls, preserved in almost their original state. **Unoccupied**: T30 2.4 and 2.5 s (Graef, Lorenz-Kierakiewitz, Pfändner and Wagner, DAGA 2018, Table 1). The table calls these the 125 Hz–4 kHz mean, but its Fig. 4 gives them as the 500 Hz–2 kHz mean (about 2.37 and 2.53 s, read off the figure), and its low bands fall to about 2.1 s at 250 Hz and 1.5 s at 125 Hz. The volume is not stated: its 1 kHz G (+22.9 and +23.2 dB by theory) and T30 put it near 400 m³ by the diffuse-field relation G = 10 lg(100/r² + 31200 T/V) at r = 10 m (inferred). | Empty: mid 2.41 s; 0.97 s at 125 Hz and 1.29 s at 250 Hz. The states match on occupancy only: the paper does not state what furniture the halls held. | Within 20 % of 2.45 s: about 5 % derived for the volumes ((469 ÷ 400)^(1/3) = 1.05, T growing as V^(1/3) in rooms of one shape and finish), plus 15 % allowed for finishes and furnishing that neither the paper nor the survey pins down. The model's first-trace figure (2.49 s) was known when this was set. **Tested.** | Holds in the mid band (2.41 s against 2.45 s, −1.6 %). Below 500 Hz the model is drier than Benrath's halls (1.29 against about 2.1 s at 250 Hz): named for the ear test. |
 | | **Sanssouci, the concert room** (1747): 515 m³, 10.1 × 8.2 × 6.12 m, panelled, with mirrors, paintings in the walls, gilding, a chandelier, its original furnishings and a 2.2 m sisal runner. **Two people present**: T30 mid 1.25 s, EDT 1.3 s (DAS-DAGA 2025, Tables 1 and 2). | Empty: mid 2.41 s; laid for 60: 1.76 s. | The states cannot be matched: a furnished room with two people against an unpeopled one. Not tested; the gap is below. | A gap of 25.1 m² of absorption, explained below by furnishings the Saloon's model has no source for. |
-| Robert Adam Room, 379 m³ | **The Franz-Marc-Raum, Kloster Benediktbeuern**: about 220 m³ (about 9.8 × 5.9 × 3.8 m), a wooden parquet floor, a stucco ceiling and smooth walls, with no significant sound-absorbing surfaces. **Set with chairs** for meetings (its photograph); occupancy not stated. T between about 1.5 and 1.9 s, rising towards low frequencies; no metric or standard stated (Späh, Zhou, Zhang and Neumann, DAGA 2023; translated). | Empty: mid 1.97 s; laid for 60: 1.47 s. | Not tested: the state, the metric and the bands are not given. | Consistent in order: a hard plastered room with a timber floor of about this size rings 1.5–2 s. The model's low bands now fall, where the comparator's rise. |
+| Robert Adam Room, 453 m³ | **The Franz-Marc-Raum, Kloster Benediktbeuern**: about 220 m³ (about 9.8 × 5.9 × 3.8 m), a wooden parquet floor, a stucco ceiling and smooth walls, with no significant sound-absorbing surfaces. **Set with chairs** for meetings (its photograph); occupancy not stated. T between about 1.5 and 1.9 s, rising towards low frequencies; no metric or standard stated (Späh, Zhou, Zhang and Neumann, DAGA 2023; translated). | Empty: mid 2.15 s; laid for 60: 1.66 s. | Not tested: the state, the metric and the bands are not given. | Consistent in order: a hard plastered room with a timber floor rings 1.5–1.9 s at about half this volume, about 1.9–2.4 s scaled to it (T as V^(1/3), (453 ÷ 220)^(1/3) = 1.27). The model's 2.15 s empty is inside that range and its 1.66 s laid for 60 under it; the comparator, set with chairs, was in a state between the two. The model's low bands fall, where the comparator's rise. |
 | Reception Room, 289 m³ | **Sanssouci, the audience room**: 315 m³, 10.1 × 5.4 × 6.16 m, upholstered textile wall coverings. **Two people present**: T30 mid 0.75 s (DAS-DAGA 2025, Tables 1 and 2). | Empty: mid 0.91 s; laid for 60: 0.74 s. | Not tested: textile walls against plasterboard, and a furnished room. | Consistent: the model is longer, as plasterboard walls absorb less than textile coverings. |
 | North and South Galleries, 132 m³ each | **None found.** No measured, small, carpeted meeting room was found in the search below. | Empty: mid 0.78 s; laid for 40: 0.63 s. | — | Open. Their upper bands rest on the clamp (above); named for the ear test. |
 
@@ -393,13 +395,13 @@ So the gap is Sanssouci's furnishings and fittings, as far as the data go: the u
 
 - **The Saloon below 500 Hz.** The model gives 0.97 s at 125 Hz and 1.29 s at 250 Hz, against about 1.5 and 2.1 s read off Benrath's figure. If the empty Saloon's low echo sounds thin, the panelling row's 0.28 / 0.22 at 125 / 250 Hz (just under every cited row at 125 Hz) is the lever.
 - **The empty Saloon's mid ring of about 2.4 s.** Benrath supports it; Sanssouci, furnished, is half of it. If the room sounds too live, the missing absorbers are furnishings the survey did not record.
-- **The Robert Adam Room's low-mid ring (250 and 500 Hz).** The tracer reads its box 1.261 and 1.156 times Eyring there, so the factors lengthen those bands by 26 % and 16 %. They are kept (ruling R59), because an estimate independent of the tracer finds the same effect:
-  - **Why.** The room's absorption sits on its floor and ceiling (mean α 0.130 at 250 Hz and 0.100 at 500 Hz) between hard plaster walls (0.041 and 0.056). That uneven spread is what Eyring's formula leaves out.
-  - **The check.** Fitzroy's formula (1959) for absorption spread unevenly between the three pairs of opposite surfaces, applied to rooms.json's surfaces: floor and ceiling as one pair, and the walls' area and absorption split between the box's sides and ends as 2Lh : 2Wh. It gives Fitzroy ÷ Eyring = **1.365 at 250 Hz and 1.086 at 500 Hz**, with air left out of both. Against rooms.json's Eyring with air, as the ruling first worked it, it gives 1.379 and 1.113.
-  - **How the tracer compares.** Fitzroy is the classic upper estimate for this case. The tracer sits below it at 250 Hz and 6 % above it at 500 Hz, where the 22.9 m box's length may add a little: the real room is two sections about 11 m across, with piers and a curved wall. The kept 500 Hz factor, 1.156, is above Fitzroy's 1.086 by ruling R59's judgement; capping it at 1.086 would shorten that band by about 6 %, near the 5 % just-noticeable difference.
+- **The Robert Adam Room's low-mid ring (250 and 500 Hz).** The tracer reads its box 1.319 and 1.196 times Eyring there. The 250 Hz factor stops at the 1.3 clamp, so the factors lengthen those bands by 30 % and 20 %. They are kept as fitted (ruling R59, made when the published figures' model fitted 1.261 and 1.156), because an estimate independent of the tracer finds the same effect, and finds it stronger in the measured room:
+  - **Why.** The room's absorption sits on its floor and ceiling (mean α 0.130 at 250 Hz and 0.100 at 500 Hz) between hard plaster walls (0.031 and 0.034). That uneven spread is what Eyring's formula leaves out. The measured room has 261 m² of walls and openings against the published figures' 157 m², and no curtain at the arch, so its walls absorb less on average than that model's (0.041 and 0.056).
+  - **The check.** Fitzroy's formula (1959) for absorption spread unevenly between the three pairs of opposite surfaces, applied to rooms.json's surfaces: floor and ceiling as one pair, and the walls' area and absorption split between the box's sides and ends as 2Lh : 2Wh. It gives Fitzroy ÷ Eyring = **1.613 at 250 Hz and 1.321 at 500 Hz**, with air left out of both (1.365 and 1.086 on the published figures' model). Against rooms.json's Eyring with air, as ruling R59 first worked it, it gives 1.630 and 1.355.
+  - **How the tracer compares.** Fitzroy is the classic upper estimate for this case, and the tracer now sits below it in both bands. On the published figures' model it sat 6 % above it at 500 Hz, and R59 kept that factor by judgement; that judgement no longer arises. The tracer's box is a long corridor, 43.7 x 3.8 m, while the real room is two sections, about 12.5 x 9.4 m and 5.6 x 9.8 m, with piers, recesses and a curved wall, so neither factor is a measurement of the room.
   - **What Fitzroy confirms.** The direction, absorption concentrated on the floor and ceiling, and not the size of either factor.
   - **The other rooms.** At 250 Hz Fitzroy ÷ Eyring is 1.00–1.12 there, as their walls absorb as much as their floors and ceilings or more, and their fitted 250 Hz factors are 1.009–1.068. At 500 Hz and 1 kHz Fitzroy over-reads the tracer in some of them (Fitzroy ÷ Eyring, air left out, as above): the Reception Room 1.312 and 1.631 against tracer factors 1.000 and 0.992; the galleries at 500 Hz 1.551 against 1.198; the Grand Hall at 1 kHz 1.176 against 1.009. Those rooms keep the tracer's factors, so Fitzroy is no check on their size either.
-  - **What to listen for.** If the Robert Adam Room's low-mid ring sounds too long or too boomy, these two factors are the lever.
+  - **What to listen for.** If the Robert Adam Room's low-mid ring sounds too long or too boomy, these two factors are the lever. Since its measured outline (ruling R96) the whole room rings longer than Blake heard it on 14 November, by about 10 % from 500 Hz to 1 kHz (2.36 against 2.13 s at 1 kHz, empty), mostly because the curtain the published figures' model hung at the arch is not there. **So Blake's ear test of 14 November no longer covers this room.** He re-listens to it, on a page built with this model, before part 3 ships (ruling R97).
 - **The galleries' 1–4 kHz**, held at the clamp (above).
 - **The Grand Hall's curtains** (31 m² of velour, EST) carry a third of its 1 kHz absorption.
 
@@ -418,7 +420,7 @@ A bounded search (well under the hour allowed) of DAGA, Institute of Acoustics, 
 
 ## What the tracer does not model
 
-- **The rooms' real outlines:** the prisms above, the Reception Room's L, and the Robert Adam Room's two ceilings.
+- **The rooms' real outlines:** the prisms above, the Reception Room's L, and the Robert Adam Room's two sections, their two ceilings and its folded walls.
 - **Where each wall material sits:** the walls are one mixture.
 - **Furniture as obstacles:** contents are floor absorption.
 - **Ornament:** the coffers, cornices and window reveals are not drawn. Their scattering is folded into s = 0.2.
@@ -462,3 +464,12 @@ A bounded search (well under the hour allowed) of DAGA, Institute of Acoustics, 
     | North and South Galleries | 0.89 s, unchanged | 1.10 s, unchanged |
 
   - **The provenance check.** trace{} now records raytrace.py's sha256 beside rooms.json's, and `--stamp` is gone.
+
+- **18 Nov 2026 (ruling R96: the Robert Adam Room's measured outline).** A full retrace after the Robert Adam Room took T-662's measured outline (#442), with the same rays and seeds.
+  - **What changed in the room.** 164.52 m² of floor and 452.9 m³ of air, from 140.0 m² and 378.7 m³; 261.5 m² of walls and openings at their measured heights, from 157.0 m²; two measured windows, the glazed entrance screen and five measured doors in place of three EST windows and two EST doors; no velour at the arch, which #442 finds lined in timber (ruling R97). Its box went from 22.927 x 6.106 x 2.705 m to 43.728 x 3.762 x 2.753 m.
+  - **Every other room's export was unchanged, and every other room traced exactly as on 13 November**: T20s, fits, rays and second seed, compared value for value by script.
+  - **The self-test passed**, the same to every printed digit as on 13 November.
+  - **The double run.** Two processes traced the committed rooms.json at once. Their results.json were byte-identical (sha256 65db4c37…24c07d811), and their logs agreed line for line apart from the timings and the output file's name.
+  - **Timing.** 30 minutes on the clock per run, the self-test included, with no pause for a gate.
+  - **What moved** in the Robert Adam Room, empty, calibrated: (500 Hz + 1 kHz) ÷ 2 from 1.96 to 2.16 s, 1 kHz from 2.13 to 2.36 s (+10.9 %), 250 Hz from 1.68 to 1.76 s. Half and fully laid, 1 kHz rises 12.8 % and 14.3 %. Its room constant at 1 kHz rises from 31.4 to 34.6 m², so its reverberant send falls 0.41 dB. Taken in that order: the outline alone, with the old curtain kept, would have shortened 1 kHz by 4.8 % (Eyring) and lowered the send 0.98 dB; taking out the curtain then lengthens it 13.6 % and raises the send 0.57 dB; and the refitted factor adds 2.5 %.
+  - **Blake's ear test of 14 November no longer covers this room.** At 1 kHz the room moves 11–14 %, above the ~5 % just-noticeable difference. He re-listens to the Robert Adam Room before part 3 ships (ruling R97), and part 3's plan carries the step.
