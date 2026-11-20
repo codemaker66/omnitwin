@@ -51,6 +51,7 @@ import { clientRoutes } from "./routes/clients.js";
 import { dietaryMemoryRoutes } from "./routes/dietary-memory.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
+import { adminJobsRoutes } from "./routes/admin-jobs.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { stripeWebhookRoutes } from "./routes/stripe-webhook.js";
 import { proposalDepositRoutes, proposalShareDepositRoutes } from "./routes/deposits.js";
@@ -112,6 +113,19 @@ import { registerSecurityHeaders } from "./middleware/security-headers.js";
 import { registerRequestId } from "./middleware/request-id.js";
 import { registerErrorNormalizer } from "./middleware/error-normalizer.js";
 import { registerMetrics } from "./observability/metrics.js";
+import { registerJobWorkerHealth } from "./services/jobs/health.js";
+import { jobLoggerFrom, startJobs } from "./services/jobs/runtime.js";
+
+/**
+ * How long the job worker waits for its running HANDLER when the server stops.
+ * Every handler's own limit is at most 15 seconds, so this grace is never what
+ * ends one: a handler that does not answer is ended by its limit and recorded
+ * as a failed try. Recording a result afterwards can take up to the worker's
+ * database-call limit (10 seconds, and once more on its retry), so on a
+ * database slower than that the shutdown's hard stop (SHUTDOWN_GRACE_MS, 25
+ * seconds) can come first; the job then comes back as a lost claim.
+ */
+const JOB_WORKER_STOP_GRACE_MS = 18_000;
 
 // ---------------------------------------------------------------------------
 // OMNITWIN API — Fastify server entry point
@@ -253,7 +267,8 @@ export async function buildServer(env: Env = validateEnv(), options: BuildServer
         u === "/health/ready" ||
         u === "/health/db" ||
         u === "/health/version" ||
-        u === "/health/observability"
+        u === "/health/observability" ||
+        u === "/health/worker"
       );
     },
     // The plugin throws this object; without `statusCode` the error
@@ -397,6 +412,28 @@ export async function buildServer(env: Env = validateEnv(), options: BuildServer
   const connection = createDbConnection(env.DATABASE_URL);
   const db = connection.db;
   server.addHook("onClose", async () => { await connection.close(); });
+
+  // --- The job list (T-702) ---
+  // Behind JOBS_WORKER, which ships unset (off): then this builds the list of kinds,
+  // adds no hook and runs nothing. On, the worker must stop before the pool
+  // closes, so that what it writes for the job it is running (done, a failed
+  // try, or the job handed back) still reaches the database. Fastify 5.12
+  // runs onClose hooks through avvio, last registered first and one at a
+  // time, so this hook, added after the pool's, ends before the pool's
+  // begins. It runs preClose hooks before it stops listening, so the stop
+  // begins there, while requests still drain; a preClose hook on the root
+  // runs once (each plugin context starts with its own empty list), and a
+  // second call of `stop` is the same stop. `stop` never rejects, so the hook
+  // may leave it running. The grace is explained at JOB_WORKER_STOP_GRACE_MS.
+  const jobs = await startJobs({ db, env, logger: jobLoggerFrom(server.log) });
+  if (jobs.worker !== null) {
+    server.addHook("preClose", (done) => {
+      void jobs.stop(JOB_WORKER_STOP_GRACE_MS);
+      done();
+    });
+    server.addHook("onClose", async () => { await jobs.stop(JOB_WORKER_STOP_GRACE_MS); });
+  }
+
   const reconstructionFoundryService = createReconstructionFoundryService(db, env);
   const foundryDerivativeRightsCustodyService =
     new FoundryDerivativeRightsCustodyService(db);
@@ -466,6 +503,12 @@ export async function buildServer(env: Env = validateEnv(), options: BuildServer
   };
   server.get("/health/ready", readinessProbe);
 
+  // --- The job list's worker, from memory (T-702) ---
+  // GET /health/worker: 200 { worker: "off" } while JOBS_WORKER is off; with
+  // it on, the worker's status, 503 when it has a fault, has overslept its
+  // wake or is stuck in a handler. Never touches the database.
+  registerJobWorkerHealth(server);
+
   // Inject DB into auth middleware for Clerk user lookups
   setAuthDb(db);
 
@@ -531,6 +574,8 @@ export async function buildServer(env: Env = validateEnv(), options: BuildServer
   // A client's remembered allergy notes, for their own account only.
   await server.register(dietaryMemoryRoutes, { db, prefix: "/account/dietary-notes" });
   await server.register(adminRoutes, { db, prefix: "/admin" });
+  // Stuck work (T-702): the dead jobs of the job list, for platform administrators.
+  await server.register(adminJobsRoutes, { db, registry: jobs.registry, prefix: "/admin/jobs" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(runtimePackagePreviewRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(adminReconstructionFoundryRoutes, {

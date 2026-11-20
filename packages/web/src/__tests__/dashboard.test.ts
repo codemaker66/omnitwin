@@ -385,6 +385,7 @@ describe("DashboardPage", () => {
     const { dashboardViewFromSearchValue } = await import("../pages/DashboardPage.js");
     expect(dashboardViewFromSearchValue("settings")).toBe("settings");
     expect(dashboardViewFromSearchValue("onboarding")).toBe("onboarding");
+    expect(dashboardViewFromSearchValue("stuckWork")).toBe("stuckWork");
     expect(dashboardViewFromSearchValue("made-up-view")).toBeNull();
     expect(dashboardViewFromSearchValue(null)).toBeNull();
   });
@@ -395,6 +396,15 @@ describe("DashboardPage", () => {
     expect(canOpenDashboardView("onboarding", "admin", "none")).toBe(false);
     expect(canOpenDashboardView("onboarding", "staff")).toBe(false);
     expect(canOpenDashboardView("admin", "hallkeeper")).toBe(false);
+    // Stuck work is the platform's own, like Admin and Clients & access: no
+    // venue role opens it, whatever the role, and an operator does not either.
+    expect(canOpenDashboardView("stuckWork", "admin", "admin")).toBe(true);
+    expect(canOpenDashboardView("stuckWork", "staff", "admin")).toBe(true);
+    for (const role of ["admin", "manager", "staff", "sales", "hallkeeper", "planner", "caterer"]) {
+      expect(canOpenDashboardView("stuckWork", role, "none"), `stuckWork for ${role}`).toBe(false);
+    }
+    expect(canOpenDashboardView("stuckWork", "admin", "operator")).toBe(false);
+    expect(canOpenDashboardView("stuckWork", null, "admin")).toBe(false);
     expect(canOpenDashboardView("pipeline", "staff")).toBe(true);
     expect(canOpenDashboardView("pipeline", "planner", "admin")).toBe(true);
     expect(canOpenDashboardView("pipeline", "hallkeeper")).toBe(false);

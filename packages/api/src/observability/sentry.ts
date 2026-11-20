@@ -20,8 +20,12 @@ import { requestUrlOf, scrubBreadcrumb, scrubErrorEvent, scrubTransaction, type 
 //      breadcrumbs, transactions and their spans), because the search
 //      routes carry a name, email or phone in `?q=` and a share link's
 //      token opens what it shares.
-//   4. One capture path: the error normaliser's 5xx hook. The SDK's own
-//      Fastify integration keeps tracing and captures nothing.
+//   4. Two capture paths. A failed request reaches Sentry only through the
+//      error normaliser's 5xx hook; the SDK's own Fastify integration keeps
+//      tracing and captures nothing. Work that has no request (the job
+//      list, T-702) reports through `services/jobs/alerts.ts`: a message
+//      tagged with the job's kind, id and venue id, never an address, and a
+//      daily check-in. The scrubbing `initSentry` sets up applies to both.
 // ---------------------------------------------------------------------------
 
 /** The page-speed reports' route: API tracing leaves it out (buildSentryOptions). */
@@ -148,7 +152,8 @@ export interface FastifyIntegrationOptions {
  * event lacked the hook's route tags (seen 18 Oct 2026); and it captured the
  * errors that answer 400 or 404, which the normaliser keeps out on purpose.
  * The normaliser's 5xx hook (`buildSentryCapture`) is the API's one capture
- * path; the integration keeps its tracing and captures nothing.
+ * path for a failed request; the integration keeps its tracing and captures
+ * nothing.
  */
 export function withOneCapturePath(
   makeFastifyIntegration: (options: FastifyIntegrationOptions) => Integration,
