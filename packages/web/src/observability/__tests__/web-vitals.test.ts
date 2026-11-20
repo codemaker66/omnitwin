@@ -5,6 +5,7 @@ import type { Metric } from "web-vitals";
 import { WEB_VITALS_REPORT_BYTES, WEB_VITAL_RATING_BOUNDS } from "@omnitwin/types";
 import { webVitalsSampleRate } from "../web-vitals-rate.js";
 import { recordLandingRoute, type AppRoutes, type LandingRoute } from "../landing-route.js";
+import { MEASUREMENT_DECLINED_KEY, setMeasurementDeclined } from "../measurement-choice.js";
 import {
   createWebVitalsReporter, deviceClass, followLandingPage, routePattern, sendWebVitals, shouldReportWebVitals, startWebVitals,
 } from "../web-vitals.js";
@@ -13,8 +14,8 @@ import {
 // Field web vitals (goal 07) from the browser: a route's pattern, a device
 // class and four numbers leave a sampled page load, each measurement once and
 // only for the page it landed on, and nothing else ever does. Off unless
-// sampled; off in tests, under automation and where the browser asks not to
-// be tracked.
+// sampled; off in tests, under automation, where the browser asks not to be
+// tracked, and where the visitor chose "Don't measure my visits".
 // ---------------------------------------------------------------------------
 
 interface Registered { readonly callback: (metric: Metric) => void; readonly reportAllChanges: boolean }
@@ -406,6 +407,72 @@ describe("starting on a page load", () => {
     expect(vitals.callbacks.size).toBe(0);
     expect(router.listeners).toBe(0);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  // T-685: Safari sends neither signal above, so the privacy page's switch is
+  // the way to object that works on every browser.
+  it("measures nothing for a visitor who chose \"Don't measure my visits\", and stops recording the route", async () => {
+    const send = vi.fn<(body: string) => void>();
+    ordinaryBrowser();
+    setMeasurementDeclined(true);
+    try {
+      const router = fakeRouter(["/"]);
+      expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "0.5" }, landing: recordLandingRoute(router, new EventTarget()), random: () => 0, send })).toBe(false);
+      expect(vitals.callbacks.size).toBe(0);
+      expect(router.listeners).toBe(0);
+      expect(send).not.toHaveBeenCalled();
+      expect(shouldReportWebVitals(1, { measurementDeclined: true }, () => 0)).toBe(false);
+    } finally {
+      setMeasurementDeclined(false);
+    }
+  });
+
+  // The switch lives on the privacy page, which is itself measured: a visitor
+  // who presses it there must not send that very page load (12 November 2026).
+  it("sends nothing once the visitor chooses \"Don't measure my visits\" while the load is measured", async () => {
+    const send = vi.fn<(body: string) => void>();
+    ordinaryBrowser();
+    const router = fakeRouter(["/privacy"]);
+    try {
+      expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "0.5" }, landing: recordLandingRoute(router, new EventTarget()), random: () => 0, send })).toBe(true);
+      for (const [name, entry] of vitals.callbacks) entry.callback(metric(name as Metric["name"], name === "CLS" ? 0.02 : 300));
+      setMeasurementDeclined(true);
+      setVisibility("hidden");
+      expect(send).not.toHaveBeenCalled();
+      // It stops following the route and listening for hides: a later hide
+      // sends nothing, even once the choice is undone, as this load is over.
+      // The later values are ones the server would take (a CLS of 500 made
+      // the report one it refuses, so nothing was sent either way: #355's
+      // mutation check, 14 November 2026), so a hide still listened to would
+      // send them.
+      expect(router.listeners).toBe(0);
+      setMeasurementDeclined(false);
+      setVisibility("visible");
+      for (const [name, entry] of vitals.callbacks) entry.callback(metric(name as Metric["name"], name === "CLS" ? 0.05 : 500, "good", `v6-1761650099999-${name}`));
+      setVisibility("hidden");
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      setVisibility("visible");
+      setMeasurementDeclined(false);
+    }
+  });
+
+  it("sends nothing once another tab has chosen \"Don't measure my visits\" before this one is hidden", async () => {
+    const send = vi.fn<(body: string) => void>();
+    ordinaryBrowser();
+    const router = fakeRouter(["/"]);
+    try {
+      expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "0.5" }, landing: recordLandingRoute(router, new EventTarget()), random: () => 0, send })).toBe(true);
+      for (const [name, entry] of vitals.callbacks) entry.callback(metric(name as Metric["name"], name === "CLS" ? 0.02 : 300));
+      // Another tab writes the choice; this module's own flag never changes.
+      window.localStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
+      setVisibility("hidden");
+      expect(send).not.toHaveBeenCalled();
+      expect(router.listeners).toBe(0);
+    } finally {
+      setVisibility("visible");
+      window.localStorage.removeItem(MEASUREMENT_DECLINED_KEY);
+    }
   });
 
   it("is in no build that does not sample: the entry's condition is one the bundler can decide", () => {
