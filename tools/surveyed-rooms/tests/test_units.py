@@ -600,6 +600,118 @@ class WallMeasure(unittest.TestCase):
         self.assertEqual(wv.patch_counts(patch, worse, better, every), dict(patches=10, worse=8, better=1, unchanged=1, p_exact=2 * (1 + 9) / 512, p_worse=(1 + 9) / 512))
 
 
+class CompareBuilds(unittest.TestCase):
+    """measure/walls/compare_builds.py: its per-wall computation (compare_wall) and its bar (wall_tests), on tiny
+    made-up walls. Each wall starts as grey plaster at 100 levels on one surface, every texel on station 0 in both
+    builds, seen clear by it and coloured in both photographs; each test changes what it needs."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util  # noqa: PLC0415
+        walls = os.path.join(ROOMS, "measure", "walls")
+        blas = {k: os.environ.get(k) for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")}
+        spec = importlib.util.spec_from_file_location("wallviews", os.path.join(walls, "wallviews.py"))
+        cls.wv = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.wv)
+        before = sys.modules.get("wallviews")
+        sys.modules["wallviews"] = cls.wv                           # compare_builds imports it by name, as it does beside it
+        try:
+            spec = importlib.util.spec_from_file_location("compare_builds", os.path.join(walls, "compare_builds.py"))
+            cls.cb = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(cls.cb)                         # reads no argument and no file: that is all main()'s
+        finally:
+            if before is None:
+                sys.modules.pop("wallviews", None)
+            else:
+                sys.modules["wallviews"] = before
+        for k, v in blas.items():                                   # wallviews asks for one BLAS thread for its own runs: not this process's
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+    @staticmethod
+    def wall(H, W, stations=3):
+        return dict(old=np.zeros((H, W), np.int32), new=np.zeros((H, W), np.int32),
+                    clear1=np.ones((stations, H, W), bool), clear2=np.ones((stations, H, W), bool),
+                    L1=np.full((H, W), 100.0, np.float32), L2=np.full((H, W), 100.0, np.float32),
+                    ok1=np.ones((H, W), bool), ok2=np.ones((H, W), bool), valid=np.ones((H, W), bool),
+                    depth=np.zeros((H, W), np.float32), covered=np.zeros((H, W), bool), reference=None, filled1=None)
+
+    @staticmethod
+    def copy(w):
+        return {k: v.copy() if isinstance(v, np.ndarray) else v for k, v in w.items()}
+
+    def compare(self, w):
+        H, W = w["old"].shape
+        return self.cb.compare_wall("made-up", w["old"], w["new"], np.packbits(w["clear2"], axis=-1), np.packbits(w["clear1"], axis=-1),
+                                    w["L1"], w["L2"], w["ok1"], w["ok2"], w["valid"], w["depth"], w["covered"],
+                                    0.005 * np.arange(W), 3.0 - 0.005 * np.arange(H), np.random.default_rng(7), w["reference"], w["filled1"])
+
+    def test_a_changed_patch_is_one_unit_where_its_middle_cannot_be_judged(self):
+        # Guards 37266a83 through the whole computation: patches made of the counted texels alone cut this patch in
+        # two at its middle column (two units, and a p too small). By patch it is one patch of every texel whose
+        # label differs; by own patch, one patch of every texel of its class, judged or not.
+        one = dict(worse=1, better=0, unchanged=0, p_exact=1.0, p_worse=0.5)
+        for how in ("under a photo patch", "not coloured in the first build"):
+            with self.subTest(how):
+                w = self.wall(48, 48)
+                w["new"][20:23, 20:25] = 1                          # one patch of 3 x 5 texels takes station 1
+                w["L2"][20:23, 20:25] = 40.0                        # and every texel of it turns dark
+                if how == "under a photo patch":
+                    w["covered"][20:23, 22] = True
+                else:
+                    w["ok1"][20:23, 22] = False
+                row, masks = self.compare(w)
+                part = row["left_to_be_seen"]
+                self.assertEqual(part["texels"], 12)                # the middle column is not judged
+                self.assertFalse(masks["left_to_be_seen"][:, 22].any())
+                self.assertEqual(part["paired"]["dark"], dict(worse=12, better=0, unchanged=0, p_exact=2 / 4096, p_worse=1 / 4096))
+                for unit in ("paired_by_patch", "paired_by_own_patch"):
+                    self.assertEqual(part[unit]["patches"], 1, unit)
+                    self.assertEqual(part[unit]["dark"], one, unit)
+
+    def test_a_class_s_own_patches_do_not_move_with_another_class(self):
+        # Guards the own patch, the unit of a test stated in advance on one class (SG4): the connected patches of
+        # every texel of that class, judged or not. Two blobs of doubtful-to-clear texels a column apart are two own
+        # patches whether or not the column between them changes station as another class (clear to clear), which
+        # joins them into one patch of all the changed texels; on the Saloon the same texels gave 8 or 42 units by
+        # what else changed. A column of the class itself that cannot be judged (under a photo patch) does join
+        # them: it is kept in its component.
+        alone = self.wall(40, 48)
+        blobs = np.zeros((40, 48), bool)
+        blobs[18:21, 20:23] = blobs[18:21, 24:27] = True
+        gap = np.zeros((40, 48), bool)
+        gap[18:21, 23] = True
+        alone["new"][blobs] = 1
+        alone["L2"][blobs] = 40.0                                   # every texel of both blobs turns dark
+        alone["clear1"][0][blobs] = False                           # the first build's station saw them doubtfully: doubtful to clear
+
+        def units(w):
+            row, masks = self.compare(w)
+            self.assertTrue(np.array_equal(masks["doubtful_to_clear"], blobs))      # the same judged texels every time
+            part = row["doubtful_to_clear"]
+            return part["paired_by_own_patch"], part["paired_by_patch"]
+
+        own, shared = units(alone)
+        two = dict(worse=2, better=0, unchanged=0, p_exact=0.5, p_worse=0.25)
+        self.assertEqual((own["patches"], own["dark"]), (2, two))
+        self.assertEqual(shared["patches"], 2)
+        beside = self.copy(alone)
+        beside["new"][gap] = 2                                      # clear to clear: both builds' stations saw it clear
+        own_beside, shared_beside = units(beside)
+        self.assertEqual(own_beside, own)                           # the own unit and every verdict by it: unchanged
+        self.assertEqual(shared_beside["patches"], 1)               # the shared unit moves with the other class
+        hidden = self.copy(alone)
+        hidden["new"][gap] = 1
+        hidden["clear1"][0][gap] = False                            # the class's own, doubtful to clear
+        hidden["covered"][gap] = True                               # and not to be seen: not judged
+        own_hidden, _ = units(hidden)
+        self.assertEqual((own_hidden["patches"], own_hidden["dark"]), (1, dict(worse=1, better=0, unchanged=0, p_exact=1.0, p_worse=0.5)))
+        # Pooled over walls, the own patches are summed as the patches are, and printed beside them with p_worse.
+        rows = [self.compare(w)[0] for w in (alone, beside)]
+        pooled = self.cb.pairs_over_the_walls(rows, "doubtful_to_clear", "paired_by_own_patch")
+        self.assertEqual(self.cb.total(rows, "doubtful_to_clear", "paired_by_own_patch", "patches"), 4)
+        self.assertEqual(pooled["dark"], dict(worse=4, better=0, unchanged=0, p_exact=2 / 16, p_worse=1 / 16))
+
+
 class Windows(unittest.TestCase):
     def test_tops_match_window_relief(self):
         wr = legacy.window_relief()
