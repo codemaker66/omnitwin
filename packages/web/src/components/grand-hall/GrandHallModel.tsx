@@ -302,18 +302,18 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const glazing = new HallGlazingUniforms();
   // Without slots (a software rasteriser) the walls' shaders leave the detail out entirely.
   const fine = detail.enabled ? detail : null;
-  // A view that asks for a toe of its own (`?toe=` in its address) has the
-  // photographs give back what the curve's toe takes (lib/film-toe.ts).
-  const toe = photographToeFor(window.location.search);
-  if (toe !== null) setFilmToe(toe);
+  // The photographs give back what the curve's toe takes (lib/film-toe.ts):
+  // all of it by default, so they are on the screen as scanned, or as much as
+  // the view's address asks for (`?toe=0.04` is the hall under Neutral alone).
+  setFilmToe(photographToeFor(window.location.search));
   const materials = createHallMaterials(textures, photos, mood, section, sun, {
-    glazing, alphaToCoverage: multisampled, detail: fine, photographToe: toe !== null,
+    glazing, alphaToCoverage: multisampled, detail: fine,
     // A near wall's slivers of moulding past its cut take the section's room line (hall-materials.ts outsideSliver).
     sliverColour: sectionRoomLine(sectionPreset, mood, sun !== null, sun),
   });
   const casters = sun === null ? null : createHallCasterMaterials(photos);
   const doorSwing = new DoorSwingUniforms();
-  const doorMaterials = createDoorLeafMaterials(textures, photos, mood, section, doorSwing, sun, { card: sectionPreset.leaves === "card", detail: fine, photographToe: toe !== null });
+  const doorMaterials = createDoorLeafMaterials(textures, photos, mood, section, doorSwing, sun, { card: sectionPreset.leaves === "card", detail: fine });
   const beyond = createBeyondResources(sectionPreset, { mood, swing: doorSwing, section, sun }, textures, shared.beyondPhotos);
 
   // As scanned: pale silver-gilt fittings on dark bronze stems, and white

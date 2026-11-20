@@ -51,6 +51,7 @@ import type { HallSun } from "./hall-sun.js";
 import type { HallTextures } from "./hall-textures.js";
 import { CITY_SITE_CUT } from "./hall-context.js";
 import { HallSectionProfile, NO_SECTION, SECTION_BIN, SECTION_PROFILE_SPANS, SECTION_PROFILE_WIDTH } from "./hall-relief-section.js";
+import { photographLift } from "../../lib/film-toe.js";
 
 /** A wall's main thickness: how far its outer face lies behind its scanned face, metres. */
 export function wallThickness(wall: HallWall): number {
@@ -995,10 +996,15 @@ export function createWallBodyMaterial(
   const beyond = extras.beyond ?? null;
   let doorLining = plainLining;
   if (preset.liningPhotos && beyond !== null && !card) {
-    // The end and main doors' linings as photographed, relit like the hall's photographs.
+    // The end and main doors' linings as photographed, relit like the hall's
+    // photographs, and like them giving back what the curve's toe takes
+    // (lib/film-toe.ts): a lining is the same mahogany as the door surround
+    // beside it, which is the walls' photograph. Every other finish of this
+    // material keeps the toe.
     const photo = liningPhoto(beyond);
     const k = float(0.06);
-    doorLining = photo.has.select(photo.colour.mul(room.add(k).div(scanIrradiance().add(k))), plainLining);
+    const relit: Node<"vec3"> = photo.colour.mul(room.add(k).div(scanIrradiance().add(k)));
+    doorLining = photo.has.select(photographLift(relit), plainLining);
   }
   const windowLining = card ? cardOf(linear(preset.windowLining))
     : linear(preset.windowLining).mul(room.add(mood.daylight.rgb.mul(mood.daylightIntensity).mul(REVEAL_SKY_VIEW)));
