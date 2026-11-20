@@ -24,7 +24,8 @@
 //   format     a relief file is not a GHR1 container, or holds other entries
 //              than the record names
 //   integrity  a relief file is not the size the record lists for it
-//   geometry   the surfaces cannot be built (a relief wound inside out)
+//   geometry   the surfaces cannot be built (a relief wound inside out, a flat
+//              ceiling that does not stand at the walls' tops)
 //   unexpected anything else, kept with its message
 //
 // The photographs are not loaded here: they belong to the renderer and its
@@ -38,13 +39,18 @@ import { fetchSurveyRecord, SurveyLoadError, type SurveyLoadFailure } from "./lo
 import { assertReliefIds, parseReliefContainer, type ReliefMesh } from "./relief-container.js";
 import { buildRoomFrame, type RoomFrame } from "./room-frame.js";
 import {
-  buildCeilingGeometry, buildFloorGeometry, buildWallsGeometry, type RoomGeometry, type RoomReliefs,
+  buildCeilingGeometry, buildFloorGeometry, buildWallsGeometry, holdCeilingToWalls, type RoomGeometry, type RoomReliefs,
 } from "./room-geometry.js";
-import { surveyFileUrl, type SurveyedRoomEntry } from "./room-registry.js";
+import type { SurveyedRoomEntry } from "./room-registry.js";
 import type { SurveyRecord } from "./survey-record.js";
 
 /** The record's file name in every survey folder. */
 export const SURVEY_RECORD_FILE = "survey.json";
+
+/** A survey file's URL, at the entry's revision. */
+export function surveyFileUrl(entry: SurveyedRoomEntry, file: string): string {
+  return `${entry.base}/${file}?r=${String(entry.revision)}`;
+}
 
 export type SurveyedRoomFailureReason = SurveyLoadFailure | "room" | "revision" | "format" | "integrity" | "geometry" | "unexpected";
 
@@ -202,6 +208,9 @@ async function load(entry: SurveyedRoomEntry, signal: AbortSignal, onProgress: (
     ceiling: built(entry, ceilingRelief?.file ?? SURVEY_RECORD_FILE, () => buildCeilingGeometry(record, frame, ceiling)),
     floor: built(entry, SURVEY_RECORD_FILE, () => buildFloorGeometry(record, frame)),
   };
+  // A flat ceiling against the walls as measured. The record's own heights already agree
+  // (survey-record.ts), so what disagrees here is the walls' relief.
+  built(entry, record.relief.file, () => { holdCeilingToWalls(record, geometry.walls, geometry.ceiling); });
   return { entry, record, frame, reliefs, geometry };
 }
 

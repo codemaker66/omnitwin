@@ -10,7 +10,8 @@
 #   native-image — actual Linux API image and native decoder boundary checks
 #   test       — required migrated PostgreSQL regressions and workspace Vitest
 #   e2e        — four CPU shards, with the exact GPU file excluded before sharding
-#   gate-tooling — receipt, inventory, source and worker boundary regressions
+#   gate-tooling — receipt, inventory, source and worker boundary regressions,
+#                  and the Railway watch list checked against railway.json
 #   gpu-scope    — decides whether the change reaches the renderer, tour or benchmark
 #   gpu-required — authenticated, bounded hardware run of all five Twin cases,
 #                  only for changes in the GPU scope (Blake, 26 September 2026)
@@ -91,6 +92,10 @@ jobs:
       - name: Lint (ESLint)
         run: pnpm -r lint
 
+      # The set-down listening page has no package of its own, so pnpm -r skips it.
+      - name: Lint the set-down listening page
+        run: pnpm exec eslint tools/set-down-listening/page.ts
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -114,6 +119,11 @@ jobs:
 
       - name: Typecheck (tsc --noEmit)
         run: pnpm -r typecheck
+
+      # The set-down listening page has no package of its own, so pnpm -r skips it; this is CI's only check on it
+      # besides the lint (tools/set-down-listening/README.md).
+      - name: Typecheck the set-down listening page
+        run: node packages/web/node_modules/typescript/bin/tsc -p tools/set-down-listening/tsconfig.json
 
   # A gate that never compiles the product is not a gate. Until this job
   # existed, Vercel was the first thing to discover a broken bundle —
@@ -619,6 +629,45 @@ jobs:
           sys.exit(0 if result.wasSuccessful() else 1)
           PY
 
+      - name: Railway watch list matches railway.json while both exist
+        # .railway/watch-patterns.json is the one list of paths that make
+        # Railway rebuild the API; .railway/railway.ts and the production
+        # receipt read it. Until railway.json is deleted, Railway reads that
+        # file's build.watchPatterns, so the two must be identical, in the
+        # same order. Once railway.json is gone there is nothing to compare.
+        # A list file that is missing, is not JSON or is not a non-empty list
+        # of paths fails the step with an annotation on that file.
+        run: |
+          node --input-type=module <<'JS'
+          import { existsSync, readFileSync } from 'node:fs';
+          const readJson = (file) => {
+            try {
+              return JSON.parse(readFileSync(file, 'utf8'));
+            } catch (error) {
+              console.log(`::error file=${file}::is missing or is not valid JSON`);
+              console.log(String(error));
+              process.exit(1);
+            }
+          };
+          const list = readJson('.railway/watch-patterns.json');
+          if (!Array.isArray(list) || list.length === 0 || !list.every((path) => typeof path === 'string' && path !== '')) {
+            console.log('::error file=.railway/watch-patterns.json::must be a non-empty list of paths');
+            process.exit(1);
+          }
+          if (!existsSync('railway.json')) {
+            console.log('railway.json is absent: nothing to compare.');
+            process.exit(0);
+          }
+          const old = readJson('railway.json')?.build?.watchPatterns;
+          if (JSON.stringify(old) !== JSON.stringify(list)) {
+            console.log('::error file=.railway/watch-patterns.json::differs from build.watchPatterns in railway.json, which Railway reads until it is deleted');
+            console.log(`railway.json:        ${JSON.stringify(old)}`);
+            console.log(`watch-patterns.json: ${JSON.stringify(list)}`);
+            process.exit(1);
+          }
+          console.log(`The ${list.length} watch paths match railway.json.`);
+          JS
+
   survey-tools:
     name: Survey tools
     # tools/surveyed-rooms builds a room's survey files by running the Grand
@@ -627,7 +676,12 @@ jobs:
     # tests (T0, T1, T4) run on made-up inputs and need no scan data; the
     # three cases that need the twin's manifest skip themselves. On a hosted
     # runner that is half a minute of tests after a minute of installs, which
-    # only a change to either folder needs to pay. Like the GPU scope
+    # only a change to either folder needs to pay. One file outside them
+    # counts as theirs: the web reader's record checks (survey-record.ts),
+    # whose tolerances the publish step holds a copy of. T0 compares the two,
+    # so a change to that file runs these tests as well; without that, a drift
+    # that began in the reader would show only when someone next touched the
+    # tools. Like the GPU scope
     # job, the comparison reads two snapshots, never history: on a pull request
     # the merge commit's first parent (exactly this change), on a push the
     # previous head. Any doubt (no base, a base that cannot be fetched, a
@@ -640,7 +694,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Did the survey tools change?
+      - name: Did the survey tools, or the reader they copy, change?
         id: scope
         env:
           EVENT_BEFORE: ${{ github.event.before }}
@@ -655,11 +709,12 @@ jobs:
           if printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$' \
             && [ "$BASE_SHA" != 0000000000000000000000000000000000000000 ] \
             && git fetch --no-tags --depth=1 origin "$BASE_SHA" \
-            && git diff --quiet "$BASE_SHA" HEAD -- tools/surveyed-rooms tools/grand-hall-survey; then
+            && git diff --quiet "$BASE_SHA" HEAD -- tools/surveyed-rooms tools/grand-hall-survey \
+              packages/web/src/components/surveyed-room/survey-record.ts; then
             RUN=false
-            echo "The survey tools are as they were at $BASE_SHA: their tests are not run."
+            echo "The survey tools and the web reader they copy are as they were at $BASE_SHA: their tests are not run."
           else
-            echo "The survey tools changed, or no base could be compared: their tests run."
+            echo "The survey tools or the web reader changed, or no base could be compared: their tests run."
           fi
           echo "run=$RUN" >> "$GITHUB_OUTPUT"
 

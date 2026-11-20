@@ -900,16 +900,26 @@ function rowGeometry(x: number, width: number): RowGeometry {
   return { left, right, nameX, nameW: right - whereW - 10 - nameX, whereX: right - whereW, whereW };
 }
 
+/**
+ * Where a line's pieces go: its zones, then the planner's table numbers or a
+ * laid floor's size. For the chairs at the tables, how many go to which
+ * tables ("110 at Tables 1–11 (10 each) · 10 at Top table"): the count at each
+ * table in brackets, where no comma of a list of tables can claim it, tied to
+ * the last table by no-break spaces so a wrap never parts them.
+ */
+function whereText(item: SetupItem): string {
+  if (item.seats !== null) {
+    return item.seats.map((seats) => `${String(seats.qty)} at ${seats.tables}${seats.each === null ? "" : `\u00A0(${String(seats.each)}\u00A0each)`}`).join(" · ");
+  }
+  const zones = item.where.map((place) => (item.where.length === 1 ? place.zone : `${place.zone} ${String(place.qty)}`)).join(" · ");
+  const names = formatTableLabels(item.labels);
+  return names.length === 0 ? zones : `${zones} · ${names}`;
+}
+
+/** The chairs at a table's line, where a setup short enough to sit under the brief prints them. */
 function chairsText(item: SetupItem): string | null {
   if (item.chairs === null) return null;
   return item.chairs.each === null ? `${String(item.chairs.total)} chairs in all` : `${String(item.chairs.each)} chairs each`;
-}
-
-function whereText(item: SetupItem): string {
-  const zones = item.where.map((place) => (item.where.length === 1 ? place.zone : `${place.zone} ${String(place.qty)}`)).join(" · ");
-  // The planner's table numbers, or a laid floor's size, beside where they go.
-  const names = formatTableLabels(item.labels);
-  return names.length === 0 ? zones : `${zones} · ${names}`;
 }
 
 const CHAIRS_STYLE: TextStyle = { face: "Inter-Regular", size: 8.4, color: INK.quiet };
@@ -1034,9 +1044,22 @@ function planNoteUnits(doc: Doc, steps: readonly SetupStep[], markers: ReadonlyM
   return [heading, ...loose.flatMap(([note, number]) => [...noteLineUnits(doc, note, number, geometry), { height: 4, draw: () => undefined }])];
 }
 
-function stepUnits(doc: Doc, sheet: HallkeeperSheetV2, steps: readonly SetupStep[], x: number, width: number): Unit[] {
+/**
+ * The setup's steps as units. On the setup's own page the chairs at a step's
+ * tables have a line of their own after those tables (study D), and the
+ * tables' lines leave the chairs to it. A setup short enough to sit under the
+ * brief on page 1 (`compact`, given the steps without the chairs line) keeps
+ * each table's chairs on its own line instead, so a short sheet stays one
+ * page; the seated chairs' notes then go to the next line that carries them,
+ * or among the plan's notes after the steps.
+ */
+function stepUnits(doc: Doc, sheet: HallkeeperSheetV2, setup: readonly SetupStep[], x: number, width: number, compact = false): Unit[] {
   const markers = sheetNoteMarkers(sheet);
   const geometry = rowGeometry(x, width);
+  const steps = setup.map((step) => ({ ...step, items: step.items.flatMap((item): SetupItem[] => {
+    if (compact) return item.seats === null ? [item] : [];
+    return [item.seats === null ? { ...item, chairs: null } : item];
+  }) }));
   return [
     ...steps.flatMap((step, index): Unit[] => {
       const rows = step.items.flatMap((item) => rowUnits(doc, item, geometry, markers));
@@ -1186,7 +1209,8 @@ export function setupPage(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string
     }
     return;
   }
-  const whole = stepUnits(doc, sheet, steps, X, W);
+  // Under the brief there is no chairs line, so it claims none of its chairs' notes (sheetSetupSteps).
+  const whole = stepUnits(doc, sheet, sheetSetupSteps(sheet, { chairsLine: false }), X, W, true);
   if (plannerNotes === "none" && doc.bufferedPageRange().count === 1 && flow.y + railHeight(sheet, steps) + unitsHeight(whole) <= flow.bottom) {
     ruleAbove(flow);
     progressRail(flow, sheet, steps);

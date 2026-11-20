@@ -864,3 +864,88 @@ describe("the planner HUD stays behind its flag (T-723)", () => {
     expect([...taken].sort()).toEqual([...FROM_THE_OTHER_CHROME].sort());
   });
 });
+
+// ---------------------------------------------------------------------------
+// A surveyed room's code stays out of the planner every visitor loads (T-662)
+//
+// The planner draws a room as surveyed only where a device has turned the
+// switch on (`?rooms=surveyed`) and the room has a survey. The mount first
+// imported the model, the survey's loader and the opening fit into
+// PlannerScene directly: measured from CI's build of #444, that put 33.24 kB
+// (12.63 kB gzip) of survey parsing, relief decoding, geometry and materials
+// into the EditorPage file for every planner visit, the switch off.
+//
+// The planner now keeps only the seam: what is asked and where the code is
+// asked for (use-planner-surveyed-room.ts, with the registry it reads), and
+// how the room stands (room-status.ts and its store, which the caption
+// reads). Everything else arrives through one dynamic import, made only where
+// a survey is asked for. These pin both halves, as the sections above do for
+// other code a flag or a rare action brings.
+// ---------------------------------------------------------------------------
+
+describe("a surveyed room's code stays out of the default planner (T-662)", () => {
+  const ROOM_FOLDER = "src/components/surveyed-room/";
+  const SEAM = [
+    "src/components/surveyed-room/room-registry.ts",
+    "src/components/surveyed-room/room-status.ts",
+    "src/components/surveyed-room/use-planner-surveyed-room.ts",
+  ];
+  const CODE = "src/components/surveyed-room/PlannerSurveyedRoom.tsx";
+
+  async function reachedUnder(entry: string, folder: string): Promise<string[]> {
+    const path = await import("node:path");
+    const reached = await staticImportClosure(entry);
+    return [...reached].map((file) => path.relative(path.resolve("."), file).split(path.sep).join("/")).filter((file) => file.startsWith(folder)).sort();
+  }
+
+  it("reaches only the seam from the planner's page by static imports", async () => {
+    const path = await import("node:path");
+    const reached = await staticImportClosure("src/pages/EditorPage.tsx");
+    // The scene and the caption's store are in that closure: what is read below is the planner that ships.
+    expect(reached.has(path.resolve("src/components/editor/PlannerScene.tsx"))).toBe(true);
+    expect(reached.has(path.resolve("src/stores/surveyed-room-store.ts"))).toBe(true);
+    expect(await reachedUnder("src/pages/EditorPage.tsx", ROOM_FOLDER)).toEqual(SEAM);
+    // And nothing of a surveyed room is in the script every route loads.
+    expect(await reachedUnder("src/main.tsx", ROOM_FOLDER)).toEqual([]);
+  });
+
+  it("asks for the rest in one place, on demand, through React.lazy", async () => {
+    const dynamicImporters: string[] = [];
+    const walk = async (directory: string): Promise<void> => {
+      const fs = await import("node:fs/promises");
+      const path = await import("node:path");
+      for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+        const entryPath = path.join(directory, entry.name).replace(/\\/g, "/");
+        if (entry.isDirectory()) {
+          if (entry.name !== "__tests__") await walk(entryPath);
+        } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          const { codeOnly } = await readSource(entryPath);
+          if (/import\(\s*["'][^"']*\/PlannerSurveyedRoom\.js["']\s*\)/.test(codeOnly)) dynamicImporters.push(entryPath);
+        }
+      }
+    };
+    await walk("src");
+    expect(dynamicImporters).toEqual(["src/components/surveyed-room/use-planner-surveyed-room.ts"]);
+    const { codeOnly: seam } = await readSource("src/components/surveyed-room/use-planner-surveyed-room.ts");
+    expect(seam).toMatch(/import\s+\{[^}]*\blazy\b[^}]*\}\s+from\s+["']react["']/);
+    expect(seam).toMatch(/\blazy\(/);
+    // The scene itself names nothing of a surveyed room but the seam.
+    const { codeOnly: scene } = await readSource("src/components/editor/PlannerScene.tsx");
+    const named = [...scene.matchAll(/from\s+["']\.\.\/surveyed-room\/([^"']+)["']/g)].map((match) => match[1]);
+    expect(named).toEqual(["use-planner-surveyed-room.js"]);
+  });
+
+  it("brings the model, the survey's loader and the opening fit with that import", async () => {
+    // What the import carries: were one of these to move, or the code to stop reaching it, the list above would
+    // be pinning nothing.
+    const carried = await reachedUnder(CODE, ROOM_FOLDER);
+    for (const file of ["SurveyedRoomModel.tsx", "use-surveyed-room.ts", "survey-record.ts", "room-geometry.ts", "room-materials.ts", "room-opening-view.ts"]) {
+      expect(carried).toContain(`${ROOM_FOLDER}${file}`);
+    }
+    // The seam never reads the code. And the code takes nothing of the seam's folder at run time, only types:
+    // a module is built whole into one file, so whatever the code read from a seam module would be kept in the
+    // planner's own file for everyone (a survey file's URL was, until it moved to the survey's loader).
+    for (const seamFile of SEAM) expect(await reachedUnder(seamFile, ROOM_FOLDER)).not.toContain(CODE);
+    expect(carried.filter((file) => SEAM.includes(file))).toEqual([]);
+  });
+});
