@@ -12,7 +12,12 @@ import {
 import { runHoldReminderPass } from "../services/hold-reminders.js";
 import { isEmailDeliveryConfigured } from "../services/email.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
-import { describePeopleRetentionStart, eraseLapsedPeople, PEOPLE_RETENTION_START_VARIABLE } from "../services/people-retention.js";
+import {
+  describePeopleRetentionStart,
+  eraseLapsedPeople,
+  PEOPLE_RETENTION_START_VARIABLE,
+  peopleRetentionSwitch,
+} from "../services/people-retention.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { runPageChecks } from "../services/competitor-watch-data.js";
 import { createHttpsPageFetcher, type PageFetcher } from "../services/page-check.js";
@@ -136,8 +141,10 @@ export async function adminRoutes(
   }, async () => ({
     data: {
       ...await eraseLapsedPeople(db, { dryRun: true }),
-      // What a real run would do tonight: off, or the day it starts.
-      firstDay: describePeopleRetentionStart(process.env[PEOPLE_RETENTION_START_VARIABLE]),
+      // POST /admin/cleanup's own setting, from the API's environment: the
+      // first day, whether a real run here erases now, and why. The nightly
+      // job reads the repository variable instead, and its log says its own.
+      firstDay: peopleRetentionSwitch(process.env[PEOPLE_RETENTION_START_VARIABLE], new Date()),
     },
   }));
 

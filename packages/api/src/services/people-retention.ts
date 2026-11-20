@@ -82,12 +82,22 @@ export const PEOPLE_RETENTION_START_VARIABLE = "PEOPLE_RETENTION_STARTS_ON";
 
 /** The switch as an operator reads it: unset, not a date, or the day the
  *  pass starts (from 00:00 UTC that day; the nightly job runs at 02:00). */
-export function describePeopleRetentionStart(value: string | undefined): string {
-  if ((value?.trim() ?? "") === "") return `${PEOPLE_RETENTION_START_VARIABLE} is unset`;
+export function describePeopleRetentionStart(value: string | undefined, now: Date = new Date()): string {
+  return peopleRetentionSwitch(value, now).reason;
+}
+
+/** The switch's state at `now`: the first day (YYYY-MM-DD) or null, whether
+ *  a real run then erases, and why. */
+export function peopleRetentionSwitch(
+  value: string | undefined,
+  now: Date,
+): { readonly startsOn: string | null; readonly on: boolean; readonly reason: string } {
+  if ((value?.trim() ?? "") === "") return { startsOn: null, on: false, reason: `${PEOPLE_RETENTION_START_VARIABLE} is unset` };
   const day = peopleRetentionStartsOn(value);
-  return day === null
-    ? `${PEOPLE_RETENTION_START_VARIABLE} is not a YYYY-MM-DD date`
-    : `it starts on ${day.toISOString().slice(0, 10)} at 00:00 UTC`;
+  if (day === null) return { startsOn: null, on: false, reason: `${PEOPLE_RETENTION_START_VARIABLE} is not a real YYYY-MM-DD date` };
+  const startsOn = day.toISOString().slice(0, 10);
+  const on = Number.isFinite(now.getTime()) && now.getTime() >= day.getTime();
+  return { startsOn, on, reason: on ? `it has been on since ${startsOn} at 00:00 UTC` : `it starts on ${startsOn} at 00:00 UTC` };
 }
 
 /** The first day the 24-month pass erases (from 00:00 UTC), or null while

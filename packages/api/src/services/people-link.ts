@@ -29,9 +29,13 @@ import {
 // enquiry that points at them.
 //
 // The public enquiry route inserts its enquiry before this lock is taken.
-// That is safe only because the new row is invisible to every other
-// transaction until commit, so no one can wait on it; it is not a precedent
-// for taking a row lock before an advisory lock. The route runs this function
+// The new row is invisible to every other transaction until commit, so no
+// one can wait on it; but its foreign keys take visible KEY SHARE locks on
+// the layout, room and venue it names. An erasure of the person holds their
+// record and later asks for their layouts, so an enquiry they send from
+// their own public-preview layout can meet it in a circle, and one side
+// answers RETRY (people-erasure.ts). It is not a precedent for taking a row
+// lock before an advisory lock. The route runs this function
 // in a savepoint: should it throw, the savepoint is rolled back and the
 // transaction-level advisory lock taken inside it is released with it, which
 // is safe, because nothing the lock guarded was written.

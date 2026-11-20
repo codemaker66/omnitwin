@@ -5,6 +5,7 @@ import {
   eraseLapsedPeople,
   PEOPLE_RETENTION_START_VARIABLE,
   PeopleRetentionError,
+  peopleRetentionSwitch,
 } from "../services/people-retention.js";
 
 // ---------------------------------------------------------------------------
@@ -93,7 +94,16 @@ describe("the 24-month pass's switch, read from PEOPLE_RETENTION_STARTS_ON", () 
   it("says which way it is off, or the day it starts", () => {
     expect(describePeopleRetentionStart(undefined)).toBe("PEOPLE_RETENTION_STARTS_ON is unset");
     expect(describePeopleRetentionStart(" ")).toBe("PEOPLE_RETENTION_STARTS_ON is unset");
-    expect(describePeopleRetentionStart("2027-6-1")).toBe("PEOPLE_RETENTION_STARTS_ON is not a YYYY-MM-DD date");
-    expect(describePeopleRetentionStart("2027-06-01")).toBe("it starts on 2027-06-01 at 00:00 UTC");
+    expect(describePeopleRetentionStart("2027-6-1")).toBe("PEOPLE_RETENTION_STARTS_ON is not a real YYYY-MM-DD date");
+    expect(describePeopleRetentionStart("2027-02-30")).toBe("PEOPLE_RETENTION_STARTS_ON is not a real YYYY-MM-DD date");
+    expect(describePeopleRetentionStart("2027-06-01", new Date("2027-05-31T23:59:59.999Z"))).toBe("it starts on 2027-06-01 at 00:00 UTC");
+    expect(describePeopleRetentionStart("2027-06-01", new Date("2027-06-01T00:00:00.000Z"))).toBe("it has been on since 2027-06-01 at 00:00 UTC");
+  });
+
+  it("gives its state: the first day, whether a real run then erases, and why", () => {
+    expect(peopleRetentionSwitch(undefined, now)).toEqual({ startsOn: null, on: false, reason: "PEOPLE_RETENTION_STARTS_ON is unset" });
+    expect(peopleRetentionSwitch("2027-06-02", now)).toEqual({ startsOn: "2027-06-02", on: false, reason: "it starts on 2027-06-02 at 00:00 UTC" });
+    expect(peopleRetentionSwitch("2027-06-01", now))
+      .toEqual({ startsOn: "2027-06-01", on: true, reason: "it has been on since 2027-06-01 at 00:00 UTC" });
   });
 });

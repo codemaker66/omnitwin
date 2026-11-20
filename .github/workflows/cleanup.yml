@@ -10,7 +10,8 @@
 #   5. People and lone enquiries 24 months after our last contact, as the
 #      privacy page promises (services/people-retention.ts): erased, at most
 #      100 people and 200 enquiries a night, no new step after 150 s; off
-#      until the PEOPLE_RETENTION_STARTS_ON variable names its first day
+#      until the first day the PEOPLE_RETENTION_STARTS_ON variable names has
+#      come (from 00:00 UTC)
 #   6. Engagement events older than the privacy page keeps an enquiry
 #   7. Field web vitals older than 90 days (goal 07, migration 0109)
 #

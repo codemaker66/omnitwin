@@ -71,6 +71,13 @@ export function mentionPatterns(names: readonly string[]): readonly string[] {
   return names.map((name) => `%${name.replace(/[\\%_]/gu, "\\$&").replace(/ /gu, "%")}%`);
 }
 
+/** LIKE patterns for the names inside JSON text (a jsonb value cast to text),
+ *  where a double quote or a backslash in a name is escaped: each name as
+ *  written and as JSON writes it. */
+export function jsonTextPatterns(names: readonly string[]): readonly string[] {
+  return [...new Set([...mentionPatterns(names), ...mentionPatterns(names.map((name) => JSON.stringify(name).slice(1, -1)))])];
+}
+
 function wholeWords(names: readonly string[], flags: string): RegExp | null {
   if (names.length === 0) return null;
   const alternatives = names.map((name) => escapeForPattern(name).replace(/ /gu, "\\s+")).join("|");

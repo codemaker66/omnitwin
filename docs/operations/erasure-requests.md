@@ -177,10 +177,13 @@ now reads; a client's copy is left out, because their link is revoked or what th
 written before the erasure takes the proposal is found by it. A client's answer on someone else's proposal that
 commits after the erasure's reads counts as made after the erasure.
 
-What can still meet the erasure in a circle answers `RETRY` (nothing is half-done; try again): a booking written
-between its reads and its locks; two erasures of one household's members at the same moment (erase household members
-one after the other); the demo layout review; and a hallkeeper's task tick, issue update or acknowledgement on one of
-their events, or a nearby one, at that moment (the hallkeeper's screen answers `RETRY` too).
+What can still meet the erasure in a circle is a real deadlock, which PostgreSQL ends by rolling one side back; the
+erasure then answers `RETRY` (nothing is half-done; try again): a booking written between its reads and its locks;
+two erasures of one household's members at the same moment (erase household members one after the other); the demo
+layout review; and an enquiry the person sends from their own public-preview layout at that moment. A hallkeeper's
+task tick, issue update or acknowledgement, a sheet tick, a handoff compile and the piece-note retention take the
+event or the layout first, so they wait for the erasure and then read what it left (an acknowledgement of a change
+the erasure deleted answers that the change is not found).
 
 Then erase by hand what the booking or the contract does not need (section 3).
 
@@ -210,8 +213,9 @@ at 02:00 UTC). Set it as a repository variable (Settings,
 Secrets and variables, Actions, Variables) for the nightly job, and in the API's environment for `POST /admin/cleanup`.
 Unset, empty or not a real date, the pass is off and nothing is read or changed; the night's log and the admin
 route say which (unset, not a date, or the day it starts).
-`POST /admin/retention/people` still rehearses it and counts what it would do, with what a real run would do
-tonight (`firstDay`), to choose the date by.
+`POST /admin/retention/people` still rehearses it and counts what it would do, with `POST /admin/cleanup`'s own setting
+(`firstDay`: the first day, whether a run there erases now, and why), to choose the date by; the nightly job reads the
+repository variable, and its log says its own state.
 
 The nightly cleanup (`scripts/run-cleanup.ts`, `services/people-retention.ts`) runs the same erasure:
 - for every person we have not been in touch with for 24 calendar months (the run's time minus 24 months, counted

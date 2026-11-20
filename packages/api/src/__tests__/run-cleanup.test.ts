@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
 
 // The daily scheduled cleanup (.github/workflows/cleanup.yml runs
@@ -60,7 +60,10 @@ function peopleResult(overrides: Record<string, unknown> = {}): Record<string, u
 
 const db = {} as Database;
 
+// The 24-month switch unset here, whatever the developer's own environment says.
+afterEach(() => { vi.unstubAllEnvs(); });
 beforeEach(() => {
+  vi.stubEnv("PEOPLE_RETENTION_STARTS_ON", "");
   vi.clearAllMocks();
   previewMock.mockResolvedValue(2);
   orphanMock.mockResolvedValue(1);

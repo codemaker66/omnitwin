@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mentionPatterns, namesToErase, withoutNames } from "../services/people-erasure-text.js";
+import { jsonTextPatterns, mentionPatterns, namesToErase, withoutNames } from "../services/people-erasure-text.js";
 
 describe("taking an erased person's names out of kept text", () => {
   const morag = namesToErase(["Morag Smith", "Morag", "Smith", "morag@example.test"]);
@@ -54,5 +54,30 @@ describe("taking an erased person's names out of kept text", () => {
 
   it("builds a pre-filter that every match passes, with LIKE's own characters escaped and the case left to the database", () => {
     expect(mentionPatterns(["Morag Smith", "100%_jo@x.test"])).toEqual(["%Morag%Smith%","%100\\%\\_jo@x.test%"]);
+  });
+});
+
+/** LIKE, case-insensitive, with backslash escapes, as PostgreSQL reads it. */
+function like(text: string, pattern: string): boolean {
+  const special = /[.*+?^${}()|[\]\\]/gu;
+  let source = "";
+  for (let at = 0; at < pattern.length; at += 1) {
+    const char = pattern.charAt(at);
+    if (char === "\\") { at += 1; source += pattern.charAt(at).replace(special, "\\$&"); }
+    else if (char === "%") source += "[\\s\\S]*";
+    else if (char === "_") source += "[\\s\\S]";
+    else source += char.replace(special, "\\$&");
+  }
+  return new RegExp(`^${source}$`, "iu").test(text);
+}
+
+describe("jsonTextPatterns", () => {
+  it("finds a name with a double quote or a backslash inside JSON text, as jsonb writes it", () => {
+    for (const name of ['Isla "Izzy" Erasable', "Isla Back\\slash Erasable"]) {
+      const text = JSON.stringify({ notes: `${name}'s table` });
+      expect(jsonTextPatterns([name]).some((pattern) => like(text, pattern)), name).toBe(true);
+      expect(mentionPatterns([name]).some((pattern) => like(text, pattern)), name).toBe(false);
+    }
+    expect(jsonTextPatterns(["Isla Erasable"]).some((pattern) => like(JSON.stringify({ notes: "isla erasable's table" }), pattern))).toBe(true);
   });
 });

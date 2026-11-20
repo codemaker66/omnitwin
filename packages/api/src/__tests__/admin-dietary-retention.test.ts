@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 
 // ---------------------------------------------------------------------------
@@ -40,7 +40,10 @@ const { buildServer } = await import("../index.js");
 let server: FastifyInstance;
 beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
+// The 24-month switch unset here, whatever the developer's own .env says.
+afterEach(() => { vi.unstubAllEnvs(); });
 beforeEach(() => {
+  vi.stubEnv("PEOPLE_RETENTION_STARTS_ON", "");
   removeLapsedDietaryNotes.mockReset();
   removeUnusedRememberedNotes.mockReset();
   eraseLapsedPeople.mockReset();
@@ -73,9 +76,9 @@ describe("POST /admin/retention/dietary-notes (the rehearsal)", () => {
       method: "POST", url: "/admin/retention/people", headers: { authorization: `Bearer ${platformAdmin}` },
     });
     expect(res.statusCode).toBe(200);
-    // With what a real run would do tonight: here, off.
+    // With POST /admin/cleanup's own setting: here, off.
     expect(res.json<{ data: unknown }>().data).toEqual({ dryRun: true, people: 4, keptForBooking: 1, enquiries: 6,
-      firstDay: "PEOPLE_RETENTION_STARTS_ON is unset" });
+      firstDay: { startsOn: null, on: false, reason: "PEOPLE_RETENTION_STARTS_ON is unset" } });
     expect(eraseLapsedPeople.mock.calls[0]?.[1]).toEqual({ dryRun: true });
   });
 

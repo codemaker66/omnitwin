@@ -38,7 +38,7 @@ import {
 } from "../db/schema.js";
 import { outerColumn } from "../utils/outer-column.js";
 import { lockGuestLead } from "./guest-lead-lock.js";
-import { ERASED_TEXT, isAddress, isOnlyName, mentionPatterns, namesToErase, withoutNames } from "./people-erasure-text.js";
+import { ERASED_TEXT, isAddress, isOnlyName, jsonTextPatterns, mentionPatterns, namesToErase, withoutNames } from "./people-erasure-text.js";
 import { liveContact, type PeopleTx } from "./people-records.js";
 
 // ---------------------------------------------------------------------------
@@ -81,8 +81,8 @@ import { liveContact, type PeopleTx } from "./people-records.js";
 // after the erasure; a booking written between the reads and the locks makes
 // the erasure answer RETRY; and these can still meet it in a circle (RETRY):
 // two erasures of one household's members at once, the demo layout review,
-// and a hallkeeper's task tick, issue update or acknowledgement on one of
-// their events or the nearby ones.
+// and an enquiry the person sends from their own public-preview layout
+// (its foreign key holds the layout while it waits for their record).
 //
 // Refused, changing nothing:
 //   - a confirmed booking, or a provisional one still live (the privacy
@@ -714,19 +714,24 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
   // names them (a piece's note or label; a revision holds every piece), found
   // in SQL so a layout with many autosaved revisions is never read or held
   // whole. A revision holding a day-of contact is taken while they have a
-  // phone to find it by.
-  const patterns = mentionPatterns(erasedNames);
+  // phone to find it by. Read after the layouts are locked (below): every
+  // writer of pieces and revisions holds the layout first, so none can add one
+  // that names them once this has read.
+  const patterns = jsonTextPatterns(erasedNames);
   const naming = (text: SQL): SQL => or(...patterns.map((pattern) => sql`lower(${text}) like lower(${pattern})`)) ?? sql`false`;
-  const pieceIds = layoutIds.length === 0 || patterns.length === 0 ? [] : (await tx.select({ id: placedObjects.id }).from(placedObjects)
-    .where(allOf(inArray(placedObjects.configurationId, layoutIds), naming(sql`${placedObjects.metadata}::text`)))).map((row) => row.id);
-  const revisionIds = layoutIds.length === 0 ? [] : (await tx.select({ id: configurationLayoutRevisions.id }).from(configurationLayoutRevisions)
-    .where(allOf(
-      inArray(configurationLayoutRevisions.configurationId, layoutIds),
-      or(
-        naming(sql`${configurationLayoutRevisions.payload}::text`),
-        base.phones.length === 0 ? sql`false` : sql`${configurationLayoutRevisions.payload}::text like '%"dayOfContact"%'`,
-      ) ?? sql`false`,
-    ))).map((row) => row.id);
+  const findNamed = async (): Promise<{ readonly pieceIds: readonly string[]; readonly revisionIds: readonly string[] }> => ({
+    pieceIds: layoutIds.length === 0 || patterns.length === 0 ? [] : (await tx.select({ id: placedObjects.id }).from(placedObjects)
+      .where(allOf(inArray(placedObjects.configurationId, layoutIds), naming(sql`${placedObjects.metadata}::text`)))).map((row) => row.id),
+    revisionIds: layoutIds.length === 0 ? [] : (await tx.select({ id: configurationLayoutRevisions.id }).from(configurationLayoutRevisions)
+      .where(allOf(
+        inArray(configurationLayoutRevisions.configurationId, layoutIds),
+        or(
+          naming(sql`${configurationLayoutRevisions.payload}::text`),
+          base.phones.length === 0 ? sql`false` : sql`${configurationLayoutRevisions.payload}::text like '%"dayOfContact"%'`,
+        ) ?? sql`false`,
+      ))).map((row) => row.id),
+  });
+  let named: { readonly pieceIds: readonly string[]; readonly revisionIds: readonly string[] } = { pieceIds: [], revisionIds: [] };
 
   if (options.lock) {
     // Locked in the other writers' order (see above).
@@ -737,9 +742,12 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
     await lockRows(tx, "opportunities", [...dealIds, ...nearDealIds]);
     await lockRows(tx, "events", [...eventIds, ...nearEventIds]);
     await lockRows(tx, "configurations", layoutIds);
-    await lockRows(tx, "placed_objects", pieceIds);
-    await lockRows(tx, "configuration_layout_revisions", revisionIds);
+    named = await findNamed();
+    await lockRows(tx, "placed_objects", named.pieceIds);
+    await lockRows(tx, "configuration_layout_revisions", named.revisionIds);
     await lockRows(tx, "configuration_sheet_snapshots", sheetIds);
+  } else {
+    named = await findNamed();
   }
   // With their enquiries and events held, no booking can start from or on
   // them any more. One written between the reads and the locks would be
@@ -756,8 +764,8 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
     eventIds,
     bookingIds: [...ownBookingIds],
     layoutIds,
-    pieceIds,
-    revisionIds,
+    pieceIds: named.pieceIds,
+    revisionIds: named.revisionIds,
     elsewhere,
     decisionIds: decided,
     names: erasedNames,
