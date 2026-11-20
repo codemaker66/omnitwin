@@ -2253,7 +2253,7 @@
       "wall": "front",
       "u": [
         0.855,
-        1.992
+        2.09
       ],
       "v": [
         0.0,
@@ -2265,7 +2265,7 @@
         "photo",
         "relief"
       ],
-      "note": "The lobby door stood open in the scan, and through it the elevation holds the lobby beyond and nothing at all. Its opening (u 0.855 to 1.992 between the jambs, read off the relief) takes the picture and the relief of the store door's leaf, this wall's other door, closed, mirrored about the point midway between the two (u 3.469: the store door's leaf runs from u 4.93 to 6.10), so the knob falls on the side the open leaf's does. The store door's small brass plate arrives mirrored. Replaces the plain recess proposed on 18 October (its closed leaf was to be modelled by the web)."
+      "note": "The lobby door stood open in the scan, and through it the elevation holds the lobby beyond and nothing at all. Its opening (u 0.855 to 1.992 between the jambs, read off the relief) takes the picture and the relief of the store door's leaf, this wall's other door, closed, mirrored about the point midway between the two (u 3.469: the store door's leaf runs from u 4.93 to 6.10), so the knob falls on the side the open leaf's does. The store door's small brass plate arrives mirrored. The patch runs on past the jamb to u 2.09, under the architrave's own patch (the next edit, applied after this one). A patch's photograph is feathered over its seams (survey.atlas.featherTexels, 5 cm here), and while this one ended at the jamb (until 20 November) the lobby seen through the open door, pale against the dark leaf, showed through the last centimetres of the shut door's edge. Both patches' feathered seams now lie on patched wood. The relief is copied without a feather, and the architrave's patch replaces it from u 1.99 as before. Replaces the plain recess proposed on 18 October (its closed leaf was to be modelled by the web)."
     },
     {
       "type": "patch",
