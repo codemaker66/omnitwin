@@ -129,6 +129,31 @@ describe("a count kept to its tables (#443's review, HG3)", () => {
     expect(wrapLines(d, TYPE.where, "Tables\t1–11", 32)).toEqual(["Tables", "1–11"]);
     d.end();
   });
+
+  it("ties only at U+00A0, so a narrow no-break or figure space, which no House face sets, breaks as a space (#443's second review, HI1)", () => {
+    const d = doc();
+    expect(wrapLines(d, TYPE.where, "Tables\u202F1–11", 32)).toEqual(["Tables", "1–11"]);
+    expect(wrapLines(d, TYPE.where, "Tables\u20071–11", 32)).toEqual(["Tables", "1–11"]);
+    expect(wrapLines(d, TYPE.where, "Tables\u00A01–11", 32).join("")).not.toContain(" ");
+    d.end();
+  });
+
+  it("breaks a tied place wider than its line at its own no-break spaces, the bracket whole, between characters only as the last resort (HI4)", () => {
+    const d = doc();
+    const text = "16 at Bridesmaids-and-ushers, Family-of-the-groom\u00A0(8\u00A0each)";
+    const lines = wrapLines(d, TYPE.where, text, placeW);
+    expect(textWidth(d, TYPE.where, "Family-of-the-groom\u00A0(8\u00A0each)")).toBeGreaterThan(placeW);
+    // Every word whole, the line broken before the bracket.
+    expect(lines.flatMap((line) => line.split(/[ \u00A0]/u))).toEqual(text.split(/[ \u00A0]/u));
+    expect(lines.slice(-2)).toEqual(["Family-of-the-groom", "(8\u00A0each)"]);
+    // A name with nowhere to break is cut between its characters, its bracket still whole after it.
+    const unbroken = `16 at ${"Grandparents".repeat(4)}\u00A0(8\u00A0each)`;
+    const cut = wrapLines(d, TYPE.where, unbroken, placeW);
+    expect(cut.join("").split(/[ \u00A0]/u).join("")).toBe(unbroken.split(/[ \u00A0]/u).join(""));
+    expect(cut[cut.length - 1]).toBe("(8\u00A0each)");
+    for (const line of cut) expect(textWidth(d, TYPE.where, line), line).toBeLessThanOrEqual(placeW);
+    d.end();
+  });
 });
 
 describe("characters no House face sets", () => {

@@ -908,6 +908,30 @@ function gapBetween(box: Box, shape: Box): number {
   return Math.hypot(Math.max(shape.left - box.right, 0, box.left - shape.right), Math.max(shape.top - box.bottom, 0, box.top - shape.bottom));
 }
 
+// A white box as pdfkit fills one (a name's backing, the code's ground): its rect, then the fill. A box piece's
+// outline: the line width set just before its four corners' path.
+const WHITE_BOX = new RegExp(String.raw`${NUM} ${NUM} ${NUM} ${NUM} re\n\/DeviceRGB cs\n1 1 1 scn\nf\n`, "gu");
+const OUTLINED_BOX = new RegExp(String.raw`([\d.]+) w\n${NUM} ${NUM} m\n${NUM} ${NUM} l\n${NUM} ${NUM} l\n${NUM} ${NUM} l\nh\n`, "gu");
+
+/** The white boxes a page fills, y down the page as pdfkit draws. */
+function whiteBoxes(content: string): Box[] {
+  return [...content.matchAll(WHITE_BOX)].map((match) => {
+    const [x, y, w, h] = [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])];
+    return { left: x, top: y, right: x + w, bottom: y + h };
+  });
+}
+
+/** The width a box piece's outline is stroked at, read where the page draws that piece. */
+function outlineWeight(content: string, piece: Box): number {
+  for (const match of content.matchAll(OUTLINED_BOX)) {
+    const xs = [match[2], match[4], match[6], match[8]].map(Number);
+    const ys = [match[3], match[5], match[7], match[9]].map(Number);
+    const at = [Math.min(...xs) - piece.left, Math.max(...xs) - piece.right, Math.min(...ys) - piece.top, Math.max(...ys) - piece.bottom];
+    if (at.every((difference) => Math.abs(difference) < 0.001)) return Number(match[1]);
+  }
+  throw new Error("the page strokes the piece at a width of its own");
+}
+
 /** A box in font units, y up, as fontkit gives a glyph's or a run's. */
 interface FontBox { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number }
 /** A face's glyph outlines as fontkit reads them, in font units with y up: a run's box, and each glyph's with where it stands. */
@@ -1730,7 +1754,7 @@ describe("what #443's review found (T-696)", () => {
     expect(roomDisagreements(sheet, pdf)).toEqual([]);
   });
 
-  it("sets a name above its piece with the ink over the piece 1.5 pt from it, glyph by glyph, a neighbour closing in from the north (HH3)", async () => {
+  it("sets a name above its piece with the glyph nearest its piece 1.5 pt from it, a neighbour closing in from the north, its white short of the piece's outline (HH3, HJ1)", async () => {
     const LABEL = "Easel: seating plan";
     const base = boardWithProjectorNamed(LABEL);
     const plan = base.floorPlan;
@@ -1746,7 +1770,8 @@ describe("what #443's review found (T-696)", () => {
       const away = 1.2 - step * 0.025;
       const neighbour = { ...own, objectId: reviewId(401 + step), z: own.z - away, label: undefined };
       const sheet: HallkeeperSheetV2 = { ...base, floorPlan: { ...plan, objects: [...kept, own, blocker, neighbour] } };
-      const drawn = plansOn(await generateSheetPdfV2(await withPaperCheck(sheet, false)))[0];
+      const pdf = await generateSheetPdfV2(await withPaperCheck(sheet, false));
+      const drawn = plansOn(pdf)[0];
       const name = drawn?.names.find((candidate) => candidate.line.text === LABEL);
       if (drawn === null || drawn === undefined || name === undefined) continue;
       const [north, piece] = columnOf(drawn, 3);
@@ -1762,17 +1787,25 @@ describe("what #443's review found (T-696)", () => {
       if (over.length === 0 || !over.every((glyph) => glyph.bottom <= piece.top)) continue;
       above += 1;
       const ownGap = Math.min(...name.glyphs.map((glyph) => gapBetween(glyph, piece)));
+      // For this name at this width a letter over the piece is the nearest. The rule bounds only the nearest glyph:
+      // where a deeper letter stands just beside a narrow piece, the letters over it may sit up to about 3.4 pt away (HJ5).
       expect(Math.min(...over.map((glyph) => piece.top - glyph.bottom)), `${what}: the ink over the piece`).toBeCloseTo(1.5, 1);
       expect(ownGap, `${what}: the nearest ink to its own piece`).toBeCloseTo(1.5, 1);
       const nextGap = Math.min(...drawn.pieces.filter((other) => other !== piece).flatMap((other) => name.glyphs.map((glyph) => gapBetween(glyph, other))));
       expect(nextGap, `${what}: every other piece against twice the gap to its own`).toBeGreaterThanOrEqual(2 * ownGap - 0.05);
       if (Math.min(...name.glyphs.map((glyph) => gapBetween(glyph, north))) < 3 * ownGap) nearThreshold += 1;
+      // The white under the name, read from the page: it stops half its piece's outline short of the piece's edge,
+      // so the outline, stroked astride that edge, prints whole (HJ1).
+      const content = pdfPageContents(pdf)[0] ?? "";
+      const backing = whiteBoxes(content).find((box) => boxesMeet(box, name.box));
+      if (backing === undefined) throw new Error(`${what}: the name prints on a white of its own`);
+      expect(piece.top - backing.bottom, `${what}: the white's edge from the piece's`).toBeGreaterThanOrEqual(outlineWeight(content, piece) / 2 - 0.001);
     }
     expect(above).toBeGreaterThan(0);
     expect(nearThreshold).toBeGreaterThan(0);
   }, SWEEP_TIMEOUT);
 
-  it("sets a name above its piece with a neighbour 3.1 pt from its ink, and not with one 2.9 pt away (HH4)", async () => {
+  it("sets a name above its piece with a neighbour 3.03 pt from its ink, and not with one 2.97 pt away (HH4, HJ4)", async () => {
     const base = boardWithProjectorNamed();
     const plan = base.floorPlan;
     const projector = plan?.objects.find((object) => object.name === "Laser Projector");
@@ -1789,14 +1822,15 @@ describe("what #443's review found (T-696)", () => {
     const [ownOpen] = columnOf(open, 2);
     if (first === undefined || ownOpen === undefined) throw new Error("page 1 names the projector");
     expect(first.box.bottom).toBeLessThanOrEqual(ownOpen.top);
-    // Pt per metre from the drawn room; a copy north of the projector, its south edge `gap` from the name's ink.
+    // Pt per metre from the drawn room; a copy north of the projector, its south edge `gap` from the name's ink. The
+    // pairs either side of 3 pt by 0.03 pin the clearance to within that (#443's second review, HJ4).
     const { ppm } = pageAt(open, plan, 0, 0);
-    for (const [gap, standsAbove] of [[3.1, true], [2.9, false]] as const) {
+    for (const [gap, standsAbove] of [[3.1, true], [3.03, true], [2.97, false], [2.9, false]] as const) {
       const z = projector.z - (ownOpen.bottom - (first.box.top - gap)) / ppm;
-      const drawn = await drawnWith([blocker, { ...projector, objectId: reviewId(501 + Math.round(gap * 10)), z, label: undefined }]);
+      const drawn = await drawnWith([blocker, { ...projector, objectId: reviewId(600 + Math.round(gap * 100)), z, label: undefined }]);
       const [north, own] = columnOf(drawn, 3);
       if (north === undefined || own === undefined) throw new Error("the plan has all three copies");
-      expect(first.box.top - north.bottom, `${String(gap)} pt: the neighbour stands where it was put`).toBeCloseTo(gap, 1);
+      expect(first.box.top - north.bottom, `${String(gap)} pt: the neighbour stands where it was put`).toBeCloseTo(gap, 2);
       const name = drawn.names.find((candidate) => candidate.line.text === "Slides");
       const isAbove = name !== undefined && name.box.bottom <= own.top && name.x > own.left && name.x < own.right;
       expect(isAbove, `${String(gap)} pt: "Slides" above its projector`).toBe(standsAbove);
@@ -1826,5 +1860,92 @@ describe("what #443's review found (T-696)", () => {
     const ownGap = gapBetween(name.box, own);
     expect(ownGap).toBeCloseTo(1.5, 1);
     for (const other of drawn.pieces.filter((piece) => piece !== own)) expect(gapBetween(name.box, other)).toBeGreaterThanOrEqual(2 * ownGap - 0.05);
+    // The copper numbers and the other names keep the same distance (#443's second review, HJ4): the chair's trestle carries a note.
+    expect(drawn.markers.length).toBeGreaterThan(0);
+    for (const marker of drawn.markers) expect(gapBetween(name.box, marker), "a copper number").toBeGreaterThanOrEqual(2 * ownGap - 0.05);
+    for (const other of drawn.names.filter((candidate) => candidate !== name)) expect(gapBetween(name.box, other.box), `"${other.line.text}"`).toBeGreaterThanOrEqual(2 * ownGap - 0.05);
+  });
+});
+
+/** The board meeting with its chair's trestle's note (on the plan and on its line) as given, and the trestle named as given. */
+function boardWithChairNote(note: string, label = "Chair"): HallkeeperSheetV2 {
+  const base = boardMeetingSheet();
+  const plan = base.floorPlan;
+  const was = plan?.objects.find((object) => object.label === "Chair")?.note;
+  if (plan === null || plan === undefined || was === undefined) throw new Error("the board's chair trestle carries a note");
+  const objects = plan.objects.map((object) => (object.label === "Chair" ? { ...object, label, note } : object));
+  const phases = base.phases.map((phase) => ({ ...phase, zones: phase.zones.map((zone) => ({ ...zone, rows: zone.rows.map((row) => ({
+    ...row, notes: row.notes.split(was).join(note), ...(row.labels === undefined ? {} : { labels: row.labels.map((name) => (name === "Chair" ? label : name)) }),
+  })) })) }));
+  return { ...base, phases, floorPlan: { ...plan, objects } };
+}
+
+/** Every run a sheet prints, page by page: its face (less pdfkit's subset tag), size, place and text exactly as drawn. */
+async function printedRuns(sheet: HallkeeperSheetV2): Promise<string[]> {
+  return pdfPages(await generateSheetPdfV2(sheet)).flatMap((page, index) => page.map((run) =>
+    `p${String(index + 1)} ${run.font.replace(/^[A-Z]{6}\+/u, "")} ${run.size.toFixed(2)} ${run.x.toFixed(2)},${run.y.toFixed(2)} ${run.text}`));
+}
+
+/** A chair's note long enough to wrap under its line, spaced with plain spaces only. */
+const PLAIN_NOTE = "Chair's place: name card and water jug. The florist brings the easel at 10:30 AM and the seating plan at 2:15 PM; keep 1 200 mm clear behind the chair for the wheelchair user.";
+
+describe("what #443's second review found (T-696)", () => {
+  it("prints a planner's narrow no-break and figure spaces as plain ones, the note in its own face and no missing-glyph box (HI1)", async () => {
+    // As a calendar pastes a time (U+202F before AM and PM) and a figure space in a measure (U+2007).
+    const pasted = PLAIN_NOTE.split("10:30 AM").join("10:30\u202FAM").split("2:15 PM").join("2:15\u202FPM").split("1 200").join("1\u2007200");
+    const runs = pdfPages(await generateSheetPdfV2(boardWithChairNote(pasted))).flat();
+    // A glyph the face lacks reads back as U+0000 (pdfkit maps its missing glyph so), or as U+FFFD with no map at all.
+    expect(runs.filter((run) => run.text.includes("\u0000") || run.text.includes("�")).map((run) => run.text)).toEqual([]);
+    const timed = runs.filter((run) => /10:30|2:15|1.200/u.test(run.text));
+    expect(timed.length).toBeGreaterThan(0);
+    for (const run of timed) {
+      expect(run.font, run.text).toMatch(/\+Newsreader\w*-Italic$/u);
+      expect(run.text, run.text).not.toMatch(/[\u00A0\u2007\u202F]/u);
+    }
+    expect(await printedRuns(boardWithChairNote(pasted))).toEqual(await printedRuns(boardWithChairNote(PLAIN_NOTE)));
+  });
+
+  it("wraps a note spaced with no-break spaces as the same note spaced with plain ones, never cutting a word (HI1)", async () => {
+    // The note runs over more than one line under its line.
+    const lines = pdfPages(await generateSheetPdfV2(boardWithChairNote(PLAIN_NOTE))).flat()
+      .filter((run) => /\+Newsreader\w*-Italic$/u.test(run.font) && run.text.trim().length > 8 && PLAIN_NOTE.includes(run.text.trim()));
+    expect(lines.length).toBeGreaterThan(1);
+    expect(await printedRuns(boardWithChairNote(PLAIN_NOTE.split(" ").join("\u00A0")))).toEqual(await printedRuns(boardWithChairNote(PLAIN_NOTE)));
+  });
+
+  it("prints any run of spaces in a planner's words as one space, wrapped or not (HI1)", async () => {
+    // A doubled space, an HTML no-break space beside a plain one, and both kinds of narrow space together; the
+    // trestle's name, set unwrapped on the plan, doubled too.
+    const words = PLAIN_NOTE.split(" ");
+    const runsOf = [" ", "  ", " \u00A0", "\u00A0 ", "\u202F\u00A0", "\t "];
+    const doubled = words.map((word, n) => (n === 0 ? word : `${runsOf[n % runsOf.length] ?? " "}${word}`)).join("");
+    expect(await printedRuns(boardWithChairNote(doubled, "The  chair"))).toEqual(await printedRuns(boardWithChairNote(PLAIN_NOTE, "The chair")));
+  });
+
+  it("prints the board meeting's chairs by its tables' line, its rows apart or set back to back, never 'at Chair' (ruling 1)", async () => {
+    const board = boardMeetingSheet();
+    const plan = board.floorPlan;
+    if (plan === null || plan === undefined) throw new Error("the board meeting has a plan");
+    // Its two rows of three trestles moved back to back, a solid block, the chair's trestle still named "Chair".
+    const solid: HallkeeperSheetV2 = { ...board, floorPlan: { ...plan, objects: plan.objects.map((object) => (object.name === "6ft Trestle Table" ? { ...object, z: Math.sign(object.z) * 0.38 } : object)) } };
+    for (const [what, sheet] of [["rows 0.84 m apart", board], ["rows back to back", solid]] as const) {
+      const pdf = await generateSheetPdfV2(sheet);
+      const seats = printedSetupLines(pdf).filter((line) => /^\d+ at /u.test(line.place));
+      expect(seats.map((line) => [line.qty, line.name, line.place]), what).toEqual([[10, "Banquet Chair", "10 at 6 × 6ft Trestle Table"]]);
+      expect(roomDisagreements(sheet, pdf), what).toEqual([]);
+    }
+  });
+
+  it("breaks a place too wide for its column at its own no-break space before the bracket, cutting no word, the bracket whole (HI4)", async () => {
+    // The last name and its count at each, tied, are wider than the setup page's place column together; each alone fits.
+    const sheet = weddingWithRoundsOfEight(["Bridesmaids-and-ushers", "Cousins", "Family-of-the-groom"]);
+    const pdf = await generateSheetPdfV2(sheet);
+    const seat = printedSetupLines(pdf).find((line) => /^\d+ at /u.test(line.place));
+    const lines = seat?.placeLines ?? [];
+    expect(lines.join(" ")).toBe("110 at Tables 1–11 (10 each) · 10 at Top table · 24 at Bridesmaids-and-ushers, Cousins, Family-of-the-groom (8 each)");
+    const before = lines.findIndex((line) => line.endsWith("Family-of-the-groom"));
+    expect(before, JSON.stringify(lines)).toBeGreaterThanOrEqual(0);
+    expect(lines[before + 1], JSON.stringify(lines)).toMatch(/^\(8 each\)/u);
+    expect(roomDisagreements(sheet, pdf)).toEqual([]);
   });
 });

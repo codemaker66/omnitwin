@@ -170,37 +170,65 @@ to fail first:
   they name every table the line counts, counted by piece, not by name; otherwise it is the line's own name with
   its count, "110 at 11 × 6ft Round Table (10 each)", or the bare name for one table. The count is tied to "×" by
   a no-break space, so a line never ends "at 11" (read as Table 11).
-  - A name covers the unnamed pieces of its kind set end to end with the named one, in one line across the room
-    or down it, within 0.15 m and sides within 0.05 m, as the plan already sets a top table's name along its
-    trestles. The wedding names only its middle trestle "Top table", so this is what keeps "10 at Top table"; the
-    same three trestles set apart read "10 at 3 × Trestle Table (White Cloth)". Round tables never form such a
-    line. Without a plan that lists every piece, the names count only when each piece has its own.
+  - A name covers the unnamed pieces of its kind set end to end with the named one along both pieces' own long
+    sides, whichever way they are turned (a square piece either way): measured in each piece's own frame, the
+    other's long sides within 0.05 m of its own and their ends within 0.15 m, both inclusive. This is the seat
+    note's own rule, in metres: the plan's, which sets a top table's name along its trestles, joins on the page,
+    across it only, by category, and only when a name does not fit its piece. The wedding names only its middle
+    trestle "Top table", so this is what keeps "10 at Top table"; the same three trestles set apart read "10 at 3 ×
+    Trestle Table (White Cloth)", and a top table set on the slant keeps its name. Rows set back to back, and a
+    chevron's tables turned alike side by side, stand side to side, so a solid boardroom with its head trestle
+    named "Chair" keeps the count form.
+    Round tables never form such a line. A name typed on two pieces apart ("Table 5" twice) covers neither, so the
+    place takes the count form. Without a plan that lists every piece, the names count only when each piece has
+    its own. (Ruling (1) and HI5 of the second review, below.)
   - The board meeting's line changes with this: one trestle of six is named "Chair", so "10 at Chair" (the
     finding's own defect) is now "10 at 6 × 6ft Trestle Table".
 - **The count at each table** (HG3) is in brackets after its last table, where no list's comma can claim it:
   "24 at Tables 12, 14–15 (8 each)", not "…, 14–15, 8 each" (read as Table 8). It is tied to that table by
   no-break spaces (U+00A0), and the sheet's wrap now breaks only at a plain space (U+0020; a pasted tab still
-  breaks, read as a space first), so "(8 each)" never starts or leaves a line. Inter's U+00A0 is its own space
+  breaks, read as a space first), so "(8 each)" stays on its last table's line. Only where that table's name and
+  "(8 each)" together are wider than the column does the line break at the no-break space before the bracket,
+  which stays whole; a word is cut between its characters only where it alone is wider than the column (the
+  second review's HI4). Inter's U+00A0 is its own space
   glyph, as wide as a space, and reads back as U+00A0. "(N each)" prints only where the place holds more than one
   table, each its own piece: one table's chairs are all at it ("10 at Top table"), and four at each trestle of a
   top table is not four at the table.
 - **A decimal is never a table** (HH1). After "table", a number followed by a point and any digit is a measurement
   or a clock time ("a table 1.2 m from the fire exit", "12.30"); after a colon only a clock's two-digit minutes are
   a time, so "Table 5:2 coeliacs" still rings 5. The "Table N" labels' whole-phrase match takes the same decimal
-  guard, so both label styles ring nothing for "Seat her at a table 1.2 m from the fire exit" or "Move table 2.5 m
-  back". "Table 5.2 coeliacs" no longer rings either.
+  guard, and since the second review (HJ2) the same clock guard, so both label styles ring nothing for "Seat her at
+  a table 1.2 m from the fire exit", "Move table 2.5 m back" or "Cake on the buffet table 2:30pm". "Table 5.2
+  coeliacs" no longer rings either; "Coeliacs at the end of Table 5." and "Table 5. Two coeliacs" still ring 5.
 - **A name above or below its piece is set on its glyphs** (HH3). Its line goes where the nearest glyph's ink sits
   1.5 pt from the piece: straight down or up for a glyph over the piece, by the gap's reach for one just beside it,
   so a letter off a narrow piece never comes nearer than 1.5 pt either. "Easel: seating plan" over the board's
-  projector had its letters over the piece 2.93 pt from it, with a neighbour allowed at 3.0; now 1.5. Clearance
-  stays on the whole name's ink box, grown by 3 pt. The white under the name stops at its piece's edge, since
-  descenders or capitals off the piece may now reach past that edge beside it. Right and left are unchanged.
+  projector had its letters over the piece 2.93 pt from it, with a neighbour allowed at 3.0; now 1.5. The rule
+  bounds the nearest glyph only: where a deeper letter stands just beside a narrow piece, the letters over it may
+  sit up to about 3.4 pt away. Clearance stays on the whole name's ink box, grown by 3 pt. The white under the
+  name stops short of its piece, since descenders or capitals off the piece may now reach past that edge beside
+  it: half the piece's outline short of the edge (0.275 pt for a 0.55 pt outline), so the outline, stroked astride
+  the edge, prints whole (the second review's HJ1). Right and left are unchanged.
 - **The chairs line claims its chairs' notes only where it prints** (HG7): `sheetSetupSteps(sheet, { chairsLine:
   false })` gives the setup under the brief, where an older copy's chair sash carries a seated chair's note again
   and a one-page sheet cannot grow by a "Notes on the plan" heading.
 - **The paper-reading helper** (HG5) takes the form from the page layout ("Setup, in order" on page 1 or not),
   demands exactly that form, and reads the chairs line's count and places from the PDF's own runs: they must add up,
   match what the phone's table rows seat kind by kind, and a place's "(N each)" times its tables must be its entry.
+
+### As built: the second review of #443 (20 November)
+
+The release lead held `0663a223` for two regressions from the first round (HI1, HJ1) and a ruling on the seat
+note's rule; the rest were nits. Each change was seen to fail first (the HJ3 and HJ4 tests, which pin what
+already held, through deliberate breaks); the bullets above carry ruling (1), HI4, HI5, HJ1, HJ2 and HJ5 where they
+belong. One more:
+
+- **A planner's spaces print as spaces** (HI1). Planner text is read where the sheet's data comes in
+  (`generateSheetPdfV2`): any run of spaces, a pasted no-break, figure or narrow no-break space among them, prints
+  and wraps as one plain space. No House face sets U+2007 or U+202F (a calendar's "10:30 AM" carries U+202F), so
+  the first round's wrap, which kept them, printed a missing-glyph box and dropped the note out of Newsreader
+  Italic. So the only ties on the paper are the sheet's own no-break spaces, the seat note's; the wrap ties at
+  U+00A0 alone.
 
 ## F: the day at the venue (its own PR, after A and D)
 

@@ -302,64 +302,119 @@ function tableWithChairs(row: { readonly name: string; readonly category: string
 
 type PlanPiece = NonNullable<HallkeeperSheetV2["floorPlan"]>["objects"][number];
 
-/** A piece's ground in metres, square to the room: x across it, z down it (its turned corners' box). */
-function groundOf(piece: PlanPiece): { readonly left: number; readonly right: number; readonly front: number; readonly back: number } {
+/** A point or a direction on the floor, in metres: x across the room, z down it. */
+interface FloorPoint { readonly x: number; readonly z: number }
+
+/** A piece's corners on the floor, turned as the plan turns it (the API's footprintCorners). */
+function cornersOf(piece: PlanPiece): readonly FloorPoint[] {
   const halfW = piece.widthM * piece.scale / 2;
   const halfD = piece.depthM * piece.scale / 2;
-  const reachX = Math.abs(Math.cos(piece.rotationY)) * halfW + Math.abs(Math.sin(piece.rotationY)) * halfD;
-  const reachZ = Math.abs(Math.sin(piece.rotationY)) * halfW + Math.abs(Math.cos(piece.rotationY)) * halfD;
-  return { left: piece.x - reachX, right: piece.x + reachX, front: piece.z - reachZ, back: piece.z + reachZ };
+  const c = Math.cos(piece.rotationY);
+  const s = Math.sin(piece.rotationY);
+  return [[-halfW, -halfD], [halfW, -halfD], [halfW, halfD], [-halfW, halfD]]
+    .map(([u = 0, v = 0]) => ({ x: piece.x + c * u + s * v, z: piece.z - s * u + c * v }));
 }
 
 /** How far two pieces in one line may stand apart, and still set end to end, in metres. */
 const END_TO_END_M = 0.15;
 /** How far their sides may differ and still stand in one line, in metres. */
 const IN_LINE_M = 0.05;
+/** The float error every edge forgives, so each holds inclusively wherever the pieces stand (a 0.15 m gap joins at any x), in metres. */
+const EDGE_M = 1e-6;
 
-/** Two box pieces set end to end: in one line across the room or down it, touching (a top table's trestles). */
-function endToEnd(a: PlanPiece, b: PlanPiece): boolean {
-  if (a.collisionType !== "box" || b.collisionType !== "box") return false;
-  const p = groundOf(a);
-  const q = groundOf(b);
-  const across = Math.abs(p.front - q.front) < IN_LINE_M && Math.abs(p.back - q.back) < IN_LINE_M
-    && Math.max(p.left - q.right, q.left - p.right) <= END_TO_END_M;
-  const down = Math.abs(p.left - q.left) < IN_LINE_M && Math.abs(p.right - q.right) < IN_LINE_M
-    && Math.max(p.front - q.back, q.front - p.back) <= END_TO_END_M;
-  return across || down;
+/**
+ * The ways a piece's own long side runs, whichever way it is turned: a unit
+ * direction on the floor, with the piece's half-length that way and its
+ * half-width across it. Its width's way when it is longer than deep, its
+ * depth's when deeper; both for a square piece.
+ */
+function longSides(piece: PlanPiece): readonly { readonly way: FloorPoint; readonly halfLength: number; readonly halfWidth: number }[] {
+  const halfW = piece.widthM * piece.scale / 2;
+  const halfD = piece.depthM * piece.scale / 2;
+  const c = Math.cos(piece.rotationY);
+  const s = Math.sin(piece.rotationY);
+  const widthWay = { way: { x: c, z: -s }, halfLength: halfW, halfWidth: halfD };
+  const depthWay = { way: { x: s, z: c }, halfLength: halfD, halfWidth: halfW };
+  if (Math.abs(halfW - halfD) <= EDGE_M) return [widthWay, depthWay];
+  return halfW > halfD ? [widthWay] : [depthWay];
 }
 
 /**
- * How many of an item's tables the planner's names cover: each named piece,
- * and the unnamed pieces of the item standing end to end with one (the plan
- * sets a top table's name along its trestles). Without a plan that lists every
- * piece, only as many as the names themselves, each naming at least one.
+ * Whether `other` stands end to end with `piece` along one of `piece`'s own
+ * long sides, measured in that frame: its two long sides at most IN_LINE_M
+ * from `piece`'s, and its nearer end at most END_TO_END_M beyond `piece`'s
+ * end, each edge inclusive.
  */
-function namedTables(draft: ItemDraft, names: readonly string[], plan: ReadonlyMap<string, PlanPiece> | null): number {
+function inLineWith(piece: PlanPiece, other: PlanPiece): boolean {
+  const corners = cornersOf(other);
+  return longSides(piece).some(({ way, halfLength, halfWidth }) => {
+    const along = corners.map((corner) => (corner.x - piece.x) * way.x + (corner.z - piece.z) * way.z);
+    const across = corners.map((corner) => (corner.z - piece.z) * way.x - (corner.x - piece.x) * way.z);
+    const sides = Math.abs(Math.min(...across) + halfWidth) <= IN_LINE_M + EDGE_M
+      && Math.abs(Math.max(...across) - halfWidth) <= IN_LINE_M + EDGE_M;
+    const gap = Math.max(Math.min(...along) - halfLength, -halfLength - Math.max(...along));
+    return sides && gap <= END_TO_END_M + EDGE_M;
+  });
+}
+
+/**
+ * Two box pieces set end to end along their own long sides, whichever way
+ * they are turned (a top table's trestles across the room, down it or on the
+ * slant): each in line with the other, measured in its own frame. Rows set
+ * back to back, and a chevron's tables side by side, stand side to side, not
+ * end to end.
+ */
+function endToEnd(a: PlanPiece, b: PlanPiece): boolean {
+  return a.collisionType === "box" && b.collisionType === "box" && inLineWith(a, b) && inLineWith(b, a);
+}
+
+/**
+ * Whether the planner's names cover every one of an item's tables, each name
+ * one run of pieces: a name covers the pieces it is typed on and the unnamed
+ * pieces of the item set end to end with one of them (endToEnd), and all the
+ * pieces it is typed on must be in that one run, so "Table 5" typed on two
+ * tables apart names neither. This is the seat note's own rule, in metres. It
+ * is not the plan's, which joins on the page, across it only, by category, and
+ * only when a name does not fit its piece. Without a plan that lists every
+ * piece, the names cover the tables only when there is one for each.
+ */
+function namesCover(draft: ItemDraft, names: readonly string[], plan: ReadonlyMap<string, PlanPiece> | null): boolean {
   const pieces = plan === null ? [] : draft.pieces.flatMap((id) => { const piece = plan.get(id); return piece === undefined ? [] : [piece]; });
-  if (pieces.length !== draft.qty) return names.length;
-  const named = new Set(pieces.filter((piece) => (piece.label?.trim() ?? "").length > 0));
-  for (let grown = true; grown;) {
-    grown = false;
-    for (const piece of pieces) {
-      if (named.has(piece) || ![...named].some((other) => endToEnd(piece, other))) continue;
-      named.add(piece);
-      grown = true;
+  if (pieces.length !== draft.qty) return names.length === draft.qty;
+  const nameOf = (piece: PlanPiece): string => piece.label?.trim() ?? "";
+  const covered = new Set<PlanPiece>();
+  for (const name of new Set(pieces.map(nameOf).filter((label) => label.length > 0))) {
+    const typedOn = pieces.filter((piece) => nameOf(piece) === name);
+    const [first] = typedOn;
+    if (first === undefined) continue;
+    // Its run: from the first piece it is typed on, through pieces of that name or of none, each end to end with one in it.
+    const run = new Set([first]);
+    for (let grown = true; grown;) {
+      grown = false;
+      for (const piece of pieces) {
+        const own = nameOf(piece);
+        if (run.has(piece) || (own.length > 0 && own !== name) || ![...run].some((member) => endToEnd(piece, member))) continue;
+        run.add(piece);
+        grown = true;
+      }
     }
+    if (typedOn.some((piece) => !run.has(piece))) return false;
+    for (const piece of run) covered.add(piece);
   }
-  return named.size;
+  return covered.size === draft.qty;
 }
 
 /**
  * Where one item's tables seat their chairs: the tables by the planner's
- * names only when they cover every table the line counts, so a line of eleven
- * with Table 5 named reads "11 × 6ft Round Table", never "Table 5". The count
- * at each table only where the place holds more than one table, each its own
- * piece: one table's chairs are all at it, and four at each trestle of a top
- * table is not four at the table.
+ * names only when they cover every table the line counts, each name one run
+ * of pieces, so a line of eleven with Table 5 named reads "11 × 6ft Round
+ * Table", never "Table 5". The count at each table only where the place holds
+ * more than one table, each its own piece: one table's chairs are all at it,
+ * and four at each trestle of a top table is not four at the table.
  */
 function seatsAt(draft: ItemDraft, plan: ReadonlyMap<string, PlanPiece> | null): SeatsAt {
   const names = [...new Set(draft.labels.map((label) => label.trim()).filter((label) => label.length > 0))];
-  const named = names.length > 0 && namedTables(draft, names, plan) === draft.qty;
+  const named = names.length > 0 && namesCover(draft, names, plan);
   const tables = named ? formatTableLabels(names) : draft.qty > 1 ? `${String(draft.qty)}\u00A0× ${draft.name}` : draft.name;
   const several = named ? names.length > 1 && names.length === draft.qty : draft.qty > 1;
   return { qty: draft.chairTotal, each: several ? chairsEach(draft) : null, tables };
@@ -566,12 +621,13 @@ function bareLabel(label: string): boolean {
 
 /**
  * A label as a pattern that matches it only as a whole phrase, in any case,
- * and never as the whole part of a decimal ("a table 1.2 m from the exit" does
- * not name Table 1), as the runs below read a name.
+ * and never as the hours of a clock time or the whole part of a decimal ("the
+ * buffet table 2:30pm" does not name Table 2, nor "a table 1.2 m from the exit"
+ * Table 1), as the runs below read a name.
  */
 function wholePhrase(label: string): RegExp {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}]|\\.\\d)`, "iu");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}]|:[0-5]\\d(?!\\d)|\\.\\d)`, "iu");
 }
 
 // A run of tables' names after "table" or "tables", as the setup's own lines

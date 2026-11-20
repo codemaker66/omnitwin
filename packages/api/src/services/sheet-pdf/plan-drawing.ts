@@ -150,9 +150,11 @@ function rowAround(piece: PlanPiece, pieces: readonly PlanPiece[]): { readonly e
  * glyph: each glyph that comes within BESIDE_GAP of a host (the piece, and the
  * row it stands in) across the page keeps that gap from it, straight down (or
  * up) where it stands over the host, the rest of the gap's reach where it
- * stands just beside. So the ink over a narrow piece sits BESIDE_GAP from it
- * even where letters off the piece reach deeper or higher. Null when no glyph
- * comes that near across (the piece under a gap between words).
+ * stands just beside. So no glyph comes nearer the host than BESIDE_GAP and
+ * the nearest sits exactly that far: the letters over a narrow piece, unless a
+ * deeper (or taller) letter just beside it is the nearest, when they may sit
+ * up to about 3.4 pt from it. Null when no glyph comes that near across (the
+ * piece under a gap between words).
  */
 function lineBeside(glyphs: readonly InkRect[], x: number, hosts: readonly Rect[], side: "below" | "above"): number | null {
   let line: number | null = null;
@@ -240,7 +242,8 @@ function placeNames(doc: Doc, drawing: PlanDrawing, markers: ReadonlyMap<string,
     // tallest and deepest letters: a name with no descenders above its piece
     // sits as near it as one with them, BESIDE_GAP from the piece's own edge.
     // Below and above, the ink is read glyph by glyph (lineBeside), so the
-    // letters over a narrow piece keep that gap, not only the whole name's box.
+    // nearest letter, over a narrow piece or just beside it, keeps that gap,
+    // not only the whole name's box.
     const size = BESIDE_STYLE.size;
     const ink = inkBox(doc, BESIDE_STYLE, text) ?? {
       left: 0, right: textWidth(doc, BESIDE_STYLE, text),
@@ -262,10 +265,14 @@ function placeNames(doc: Doc, drawing: PlanDrawing, markers: ReadonlyMap<string,
       { x: own.right + BESIDE_GAP - ink.left, y: level - inkLevel, side: "right" },
       { x: own.left - BESIDE_GAP - ink.right, y: level - inkLevel, side: "left" },
     ];
-    // The white under a name below or above stops at its piece's edge: letters
-    // off a narrow piece may reach past that edge beside it, never onto it.
-    const edgeBelow = Math.max(...hosts.map((host) => host.bottom));
-    const edgeAbove = Math.min(...hosts.map((host) => host.top));
+    // The white under a name below or above stops short of its piece: letters
+    // off a narrow piece may reach past the piece's edge beside it, never onto
+    // it. It stops half the piece's outline short of the edge, since the
+    // outline is stroked astride the edge and the white fills after it (#443's
+    // second review, HJ1).
+    const outline = Math.max(...[...ownRow].map((member) => pieceStyle(member.object.category).weight));
+    const edgeBelow = Math.max(...hosts.map((host) => host.bottom)) + outline / 2;
+    const edgeAbove = Math.min(...hosts.map((host) => host.top)) - outline / 2;
     // Touching nothing, with clear floor round its ink but for its own piece
     // and the row it stands in: the full BESIDE_CLEAR, as overlaps forgives a touch.
     const choice = corners.map((at) => {

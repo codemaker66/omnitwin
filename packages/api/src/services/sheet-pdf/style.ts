@@ -303,15 +303,74 @@ function breakWord(doc: Doc, style: TextStyle, word: string, width: number): { l
   }
 }
 
+/** The no-break space that ties what the sheet keeps on one line ("13 (10 each)"). */
+const TIE = "\u00A0";
+
+/**
+ * Break a tied unit wider than the line ("Family-of-the-groom (8 each)", its
+ * parts tied by no-break spaces) at its own ties first: its end stays whole as
+ * far as it fits on a line (the count at each, in its brackets), and what comes
+ * before breaks the same way. Only a part still wider than the line breaks
+ * between characters (breakWord), the last resort.
+ */
+function breakTied(doc: Doc, style: TextStyle, word: string, width: number): { lines: string[]; rest: string } {
+  const parts = word.split(TIE);
+  if (parts.length < 2) return breakWord(doc, style, word, width);
+  const fits = (text: string): boolean => textWidth(doc, style, text) <= width;
+  // The longest end that fits a line of its own; at least the last part, fitting or not.
+  let from = parts.length - 1;
+  while (from > 1 && fits(parts.slice(from - 1).join(TIE))) from--;
+  const head = parts.slice(0, from).join(TIE);
+  const tail = parts.slice(from).join(TIE);
+  const lines: string[] = [];
+  if (fits(head)) {
+    if (head.length > 0) lines.push(head);
+  } else {
+    const broken = breakTied(doc, style, head, width);
+    lines.push(...broken.lines, broken.rest);
+  }
+  if (fits(tail)) return { lines, rest: tail };
+  const broken = breakWord(doc, style, tail, width);
+  return { lines: [...lines, ...broken.lines], rest: broken.rest };
+}
+
 /** Wrapped lines per document, so a block measured and then drawn wraps once. */
 const wrapped = new WeakMap<Doc, Map<string, readonly string[]>>();
 
-/** Whitespace a line may break at, other than the plain space: \s less the no-break spaces (U+00A0, U+2007, U+202F). */
-const BREAKING_SPACE = /[^\S \u00A0\u2007\u202F]/gu;
+/** Whitespace a line may break at, other than the plain space: \s less the tie (U+00A0). */
+const BREAKING_SPACE = /[^\S \u00A0]/gu;
+
+/** A run of spaces of any kind (a tab, a no-break, figure or narrow no-break space, a doubled space), short of a line break. */
+const SPACE_RUN = /[^\S\r\n]+/gu;
 
 /**
- * Greedy wrap at spaces, keeping the writer's own line breaks; a word wider
- * than the line (an email address, a link) breaks between characters.
+ * The sheet's data as it prints: every run of spaces in its words read as the
+ * one plain space it prints as, the writer's line breaks kept. A planner's
+ * text comes from calendars, word processors and web pages: a narrow no-break
+ * space before "AM", which no House face sets (a missing-glyph box, and the
+ * line drops out of its face); a no-break space for every space, one word the
+ * wrap cannot break; an HTML double space. Read so where the sheet's data comes
+ * in (generateSheetPdfV2), the only ties a sheet prints are the ones it sets
+ * itself (the seat note's). The data is a validated sheet, plain JSON: each
+ * string is read again, nothing else changes.
+ */
+export function spacesAsPrinted<T>(data: T): T {
+  return plainSpacedValue(data) as T;
+}
+
+function plainSpacedValue(value: unknown): unknown {
+  if (typeof value === "string") return value.replace(SPACE_RUN, " ");
+  if (Array.isArray(value)) return value.map(plainSpacedValue);
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, plainSpacedValue(item)]));
+  }
+  return value;
+}
+
+/**
+ * Greedy wrap at spaces, keeping the writer's own line breaks. A word wider
+ * than the line (an email address, a link) breaks between characters; a tied
+ * unit wider than the line breaks at its own ties first (breakTied).
  */
 export function wrapLines(doc: Doc, style: TextStyle, text: string, width: number): readonly string[] {
   const key = `${style.face}|${String(style.size)}|${String(style.tracking ?? 0)}|${style.upper === true ? "U" : ""}${style.tnum === true ? "T" : ""}|${String(width)}|${text}`;
@@ -323,9 +382,11 @@ export function wrapLines(doc: Doc, style: TextStyle, text: string, width: numbe
   const out: string[] = [];
   const fits = (candidate: string): boolean => textWidth(doc, style, candidate) <= width;
   for (const paragraph of printed(style, text).split(/\r?\n/u)) {
-    // Lines break only at a plain space (U+0020), so a no-break space holds what
-    // it ties ("13 (10 each)"); JavaScript's \s would match U+00A0. Any other
-    // breaking space (a pasted tab) is read as a plain one first.
+    // Lines break only at a plain space (U+0020), so a no-break space (U+00A0)
+    // holds what it ties ("13 (10 each)"); JavaScript's \s would match it. By
+    // here the sheet's own ties are the only ones (spacesAsPrinted reads a
+    // planner's as plain spaces where the data comes in). Any other space (a
+    // tab, a narrow no-break space no House face sets) breaks as a plain one.
     // A middle dot keeps to the word before it, so no line starts with one.
     const words: string[] = [];
     for (const word of paragraph.replace(BREAKING_SPACE, " ").split(/ +/u).filter((part) => part.length > 0)) {
@@ -338,11 +399,12 @@ export function wrapLines(doc: Doc, style: TextStyle, text: string, width: numbe
       if (fits(candidate)) { line = candidate; continue; }
       if (line.length > 0) out.push(line);
       if (fits(word)) { line = word; continue; }
-      // A word too long for the line breaks between characters; a middle dot
-      // kept with it stays on its last piece, so it cannot start a line.
+      // A word too long for the line breaks at its own ties, else between
+      // characters; a middle dot kept with it stays on its last piece, so it
+      // cannot start a line.
       const dotted = word.endsWith(" ·");
       const bare = dotted ? word.slice(0, -2) : word;
-      const broken = breakWord(doc, style, bare, dotted ? Math.max(1, width - textWidth(doc, style, " ·")) : width);
+      const broken = breakTied(doc, style, bare, dotted ? Math.max(1, width - textWidth(doc, style, " ·")) : width);
       out.push(...broken.lines);
       line = dotted ? `${broken.rest} ·` : broken.rest;
     }

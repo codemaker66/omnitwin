@@ -350,6 +350,77 @@ describe("sheetSetupSteps: where the chairs go names every table it counts", () 
     expect(seatsOf(apart, rows(apart))).toEqual([{ qty: 10, each: null, tables: "3\u00A0× Trestle Table (White Cloth)" }]);
   });
 
+  // #443's second review, ruling (1): the seat note's own rule, in metres (not the plan's, which works on the page).
+  /** A trestle standing where given, turned `rotationY` from across the room, named when `label` is given. */
+  const trestleAt = (id: number, x: number, z: number, label?: string, rotationY = 0): Planned => ({ ...trestle(id, x, label), z, rotationY });
+  /** Seat entries for trestles that seat four each, their names gathered as the generator gathers a row's. */
+  const fourEach = (pieces: readonly Planned[]) => seatsOf(pieces, [row({
+    name: "Trestle Table (White Cloth) with 4 chairs", qty: pieces.length, positions: at(pieces),
+    labels: [...new Set(pieces.flatMap((piece) => (piece.label === undefined ? [] : [piece.label])))],
+  })]);
+  const coveredByName = (qty: number, name = "Top table") => [{ qty: qty * 4, each: null, tables: name }];
+  const countForm = (qty: number) => [{ qty: qty * 4, each: 4, tables: `${String(qty)}\u00A0× Trestle Table (White Cloth)` }];
+
+  it("joins two trestles at a gap of up to 0.15 m and sides up to 0.05 m out, both inclusive, wherever they stand (ruling 1)", () => {
+    // A named trestle and an unnamed one east of it, each 1.83 m long, `gap` apart, the second `out` further south.
+    const pair = (x: number, z: number, gap: number, out: number) => fourEach([trestleAt(30, x, z, "Top table"), trestleAt(31, x + 1.83 + gap, z + out)]);
+    for (const [x, z] of [[0, 0], [3.7, 2.3], [-5.55, -4.2], [12.95, 1.1]] as const) {
+      const where = `at x ${String(x)}, z ${String(z)}`;
+      expect(pair(x, z, 0.14, 0), `0.14 m apart ${where}`).toEqual(coveredByName(2));
+      expect(pair(x, z, 0.15, 0), `0.15 m apart ${where}`).toEqual(coveredByName(2));
+      expect(pair(x, z, 0.16, 0), `0.16 m apart ${where}`).toEqual(countForm(2));
+      expect(pair(x, z, 0.02, 0.04), `0.04 m out ${where}`).toEqual(coveredByName(2));
+      expect(pair(x, z, 0.02, 0.05), `0.05 m out ${where}`).toEqual(coveredByName(2));
+      expect(pair(x, z, 0.02, 0.06), `0.06 m out ${where}`).toEqual(countForm(2));
+    }
+  });
+
+  it("joins only along the pieces' own long sides: a top table turned down the room, never rows set back to back nor trestles side by side (ruling 1)", () => {
+    // A top table of three trestles turned a quarter round, end to end down the room, the middle one named.
+    const downTheRoom = [-1.85, 0, 1.85].map((z, n) => trestleAt(40 + n, 0, z, n === 1 ? "Top table" : undefined, Math.PI / 2));
+    expect(fourEach(downTheRoom)).toEqual(coveredByName(3));
+    // A boardroom's solid block: two rows of three set back to back, the chair's trestle named. The name covers its own row only.
+    const block = [-0.38, 0.38].flatMap((z, side) => [-1.83, 0, 1.83].map((x, n) => trestleAt(50 + side * 3 + n, x, z, side === 0 && n === 1 ? "Chair" : undefined)));
+    expect(fourEach(block)).toEqual(countForm(6));
+    // The same rows 0.84 m apart, as the board meeting sets them: the same.
+    expect(fourEach(block.map((piece) => ({ ...piece, z: piece.z < 0 ? -0.8 : 0.8 })))).toEqual(countForm(6));
+    // Two trestles turned 45 degrees side by side, the boxes they take on the floor in line and 0.05 m apart: not end to end.
+    const reach = (1.83 / 2 + 0.76 / 2) * Math.SQRT1_2 * 2;
+    expect(fourEach([trestleAt(63, 0, 0, "Top table", Math.PI / 4), trestleAt(64, reach + 0.05, 0, undefined, Math.PI / 4)])).toEqual(countForm(2));
+    // Square tables join either way: three end to end down the room, the middle one named.
+    const squares = [-1.2, 0, 1.2].map((z, n) => ({ ...trestleAt(70 + n, 0, z, n === 1 ? "Top table" : undefined), name: "Square Table", widthM: 1.2, depthM: 1.2 }));
+    expect(seatsOf(squares, [row({ name: "Square Table with 4 chairs", qty: 3, labels: ["Top table"], positions: at(squares) })])).toEqual(coveredByName(3));
+  });
+
+  it("measures a join in each piece's own frame, so a top table on the slant keeps its name and a chevron's tables side by side never join (ruling 1)", () => {
+    /** Three trestles end to end along their own long sides, 0.02 m apart, turned `degrees`, the middle one named. */
+    const slanted = (degrees: number) => {
+      const turn = degrees * Math.PI / 180;
+      // Each 1.85 m further along its width's way, as the plan turns a piece: (cos, -sin).
+      return [-1, 0, 1].map((k, n) => trestleAt(100 + n, k * 1.85 * Math.cos(turn), -k * 1.85 * Math.sin(turn), n === 1 ? "Top table" : undefined, turn));
+    };
+    for (const degrees of [2, 30, 45, 60, 135]) expect(fourEach(slanted(degrees)), `a top table turned ${String(degrees)} degrees`).toEqual(coveredByName(3));
+    // A chevron: two trestles turned alike side by side across the room, the boxes they take on the floor in line and 0.05 m apart.
+    for (const degrees of [30, 40]) {
+      const turn = degrees * Math.PI / 180;
+      const reach = (1.83 / 2) * Math.cos(turn) + (0.76 / 2) * Math.sin(turn);
+      expect(fourEach([trestleAt(110, 0, 0, "Top table", turn), trestleAt(111, 2 * reach + 0.05, 0, undefined, turn)]), `a chevron at ${String(degrees)} degrees`)
+        .toEqual(countForm(2));
+    }
+  });
+
+  it("names the tables only when each name covers one run of pieces, so a name typed on two tables apart takes the line's count (HI5)", () => {
+    // Eleven rounds, the seventh typed "Table 5" again: ten names for eleven tables.
+    const pieces = Array.from({ length: 11 }, (_, n) => round(80 + n, n * 3, `Table ${String(n === 6 ? 5 : n + 1)}`));
+    const labels = [...new Set(pieces.flatMap((piece) => (piece.label === undefined ? [] : [piece.label])))];
+    expect(seatsOf(pieces, [row({ name: "6ft Round Table with 10 chairs", qty: 11, labels, positions: at(pieces) })]))
+      .toEqual([{ qty: 110, each: 10, tables: "11\u00A0× 6ft Round Table" }]);
+    // One name typed on every trestle of a top table set end to end is one run: it names them.
+    expect(fourEach([-1.85, 0, 1.85].map((x, n) => trestleAt(90 + n, x, -4, "Top table")))).toEqual(coveredByName(3));
+    // The same name on two top tables set apart is two runs: the line counts them.
+    expect(fourEach([trestleAt(93, 0, -4, "Top table"), trestleAt(94, 1.85, -4), trestleAt(95, 8, -4, "Top table"), trestleAt(96, 9.85, -4)])).toEqual(countForm(4));
+  });
+
   it("gives the count at each table only where the place holds more than one table, each seating it", () => {
     // One table: its chairs are all at it, so "each" says nothing more.
     const top = round(1, 0, "Top table");
@@ -616,7 +687,7 @@ describe("careTables: the tables the care words name, for the plan to ring", () 
     expect(ringed("Table 5:2 coeliacs")).toEqual(["5"]);
     expect(ringed("Table 12:3 vegans, table 4:1 nut allergy")).toEqual(["12", "4"]);
     expect(ringed("Tables 4 and 5:2 coeliacs")).toEqual(["4", "5"]);
-    // A clock time is still never a table: two-digit minutes after a colon or a point.
+    // A clock time is still never a table: two-digit minutes after a colon, any digit after a point.
     expect(ringed("Table 4, 10:30 cake")).toEqual(["4"]);
     expect(ringed("Table 4 or 12.30 delivery")).toEqual(["4"]);
     // The same for tables labelled as the planner numbers them.
@@ -635,6 +706,31 @@ describe("careTables: the tables the care words name, for the plan to ring", () 
       }
       // A table written hard against its count after a colon still rings.
       expect([...careTables(careSheet("", "Seat her at a table 1.2 m from the fire exit. Table 5:2 coeliacs", labels))]).toEqual([labels === bare ? "5" : "Table 5"]);
+    }
+  });
+
+  it("never takes a clock time after 'table' for a table, in either label style (#443 HJ2)", () => {
+    const bare = ["1", "2", "4", "5", "10", "12"];
+    const numbered = ["Table 1", "Table 2", "Table 4", "Table 5", "Table 10", "Table 12"];
+    for (const labels of [bare, numbered]) {
+      for (const words of ["Cake on the buffet table 2:30pm", "Clear the gift table 1:00 onwards", "Reset table 10:15", "Table 12:30pm toast"]) {
+        expect([...careTables(careSheet(words, "", labels))], `${words} (${labels[0] ?? ""}…)`).toEqual([]);
+        expect([...careTables(careSheet("", words, labels))], `${words} (${labels[0] ?? ""}…)`).toEqual([]);
+      }
+      // A table written hard against its count after a colon still rings.
+      expect([...careTables(careSheet("", "Cake on the buffet table 2:30pm. Table 5:2 coeliacs", labels))]).toEqual([labels === bare ? "5" : "Table 5"]);
+    }
+  });
+
+  it("reads a point after a table's number as a decimal only where a digit follows it, in either label style (#443 HJ3)", () => {
+    const bare = ["2", "5", "10"];
+    const numbered = ["Table 2", "Table 5", "Table 10"];
+    for (const labels of [bare, numbered]) {
+      const five = labels === bare ? "5" : "Table 5";
+      const ringed = (words: string): string[] => [...careTables(careSheet("", words, labels))];
+      expect(ringed("Table 5.2 coeliacs"), `${five}: a decimal`).toEqual([]);
+      expect(ringed("Coeliacs at the end of Table 5."), `${five}: a sentence's end`).toEqual([five]);
+      expect(ringed("Table 5. Two coeliacs"), `${five}: a sentence's end`).toEqual([five]);
     }
   });
 
