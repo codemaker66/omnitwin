@@ -760,6 +760,65 @@ def slab_distance(origin, dirs, lo, hi):
     return np.where((leave >= enter) & (leave > 0), np.maximum(enter, 0.0), np.inf)
 
 
+def proud_room(name, margin, thing, short, stations, depth, pano=(2048, 1024)):
+    """A T4 room with `thing` (u, v, d: as the mesh draws it) standing proud of its south wall, which the panoramas
+    show `short` larger on every side; its south wall labelled and photographed with
+    survey.projection.walls.occluderMargin = margin (0: without the key). Returns the room, the wall's grid (U, V)
+    and its points in E57, the stations' positions, the thing as the panoramas show it (a cuboid in E57), the
+    labels and their report, and the photograph's luminance and coverage."""
+    work = os.path.join(T4, name)
+    cfg = config(RECT, ["east", "south", "west", "north"])
+    cfg["stations"] = [{"id": sid, "role": "room"} for sid, _, _ in stations]
+    if margin:
+        cfg["survey"]["projection"]["walls"] = dict(cfg["survey"]["projection"]["walls"], occluderMargin=margin)
+    room = write_room(work, cfg)
+    wall = room.wmap["south"]
+    (cX, cY), (uX, uY), (nX, nY) = wall["cornerE57"], wall["uE57"], wall["normalE57"]
+
+    def e57(u, off, z):
+        return np.array([cX + u * uX + off * nX, cY + u * uY + off * nY, z])
+
+    def cuboid(grow):
+        pts = np.array([e57(u, d, v) for u in (thing["u"][0] - grow, thing["u"][1] + grow)
+                        for v in (thing["v"][0] - grow, thing["v"][1] + grow) for d in (-0.5, thing["d"])])
+        return pts.min(axis=0), pts.max(axis=0)
+
+    def relief(U, V):
+        inside = (U >= thing["u"][0]) & (U <= thing["u"][1]) & (V >= thing["v"][0]) & (V <= thing["v"][1])
+        return np.where(inside, thing["d"], 0.0), np.ones(U.shape, bool)
+
+    U = V = points = None
+    for w in room.walls:
+        out = write_wall(room, work, w, relief if w is wall else flat)
+        if w is wall:
+            U, V, points = out
+    at = [dict(id=sid, t=list(e57(u, off, 1.5)), gain=1.0) for sid, u, off in stations]
+    box = (CENTRE[0] - 2.0, CENTRE[0] + 2.0, CENTRE[1] - 3.0, CENTRE[1] + 3.0, 0.0, 3.0)
+    mesh, real = cuboid(0.0), cuboid(short)
+    data = os.path.join(work, "data")
+    synth.write_manifest(data, at)
+    synth.write_depth_maps(data, at, depth,
+                           lambda o, d: np.minimum(synth.box_distance(o, d, box), slab_distance(o, d, *mesh)))
+
+    def colour(s, dirs):
+        o = np.asarray(s["t"], float)
+        grain = np.random.default_rng(20261116 + int(s["id"][5:])).random(dirs.shape[:2]) - 0.5
+        plaster = np.array([0.50, 0.47, 0.42]) * (1 + 0.08 * grain[..., None])
+        hit = slab_distance(o, dirs, *real) < synth.box_distance(o, dirs, box)
+        return np.where(hit[..., None], np.array([0.03, 0.02, 0.015]), plaster)
+
+    synth.write_panoramas(data, at, *pano, colour)
+    step(work, "labels", "south", depth=depth)
+    step(work, "wall-photo", "south", depth=depth)
+    (v,) = room.tiles(wall)
+    npz = np.load(os.path.join(work, "proj", f"{v['name']}.npz"))
+    labels = np.load(os.path.join(work, "proj", "labels-south.npz"))
+    with open(os.path.join(work, "proj", "labels-south.json"), encoding="utf-8") as f:
+        report = json.load(f)
+    return dict(room=room, U=U, V=V, points=points[..., :3].astype(np.float64), stations=[np.asarray(s["t"], float) for s in at],
+                real=real, labels=labels, report=report, lum=npz["rgb"] @ np.array([0.2126, 0.7152, 0.0722]), coloured=npz["weight"] > 0)
+
+
 class OccluderMargin(unittest.TestCase):
     """A box stands 0.3 m proud of a plain wall. The mesh (the position tiles and the distance cubemaps) draws it
     smaller on every side than the panoramas show it, as the scan's mesh draws the Saloon's pediments (0.3 m proud,
@@ -773,64 +832,15 @@ class OccluderMargin(unittest.TestCase):
 
     @classmethod
     def build(cls, name, margin):
-        work = os.path.join(T4, name)
-        cfg = config(RECT, ["east", "south", "west", "north"])
-        cfg["stations"] = [{"id": sid, "role": "room"} for sid, _, _ in PROUD_STATIONS]
-        if margin:
-            cfg["survey"]["projection"]["walls"] = dict(cfg["survey"]["projection"]["walls"], occluderMargin=margin)
-        room = write_room(work, cfg)
-        wall = room.wmap["south"]
-        (cX, cY), (uX, uY), (nX, nY) = wall["cornerE57"], wall["uE57"], wall["normalE57"]
-
-        def e57(u, off, z):
-            return np.array([cX + u * uX + off * nX, cY + u * uY + off * nY, z])
-
-        def cuboid(grow):
-            pts = np.array([e57(u, d, v) for u in (PROUD["u"][0] - grow, PROUD["u"][1] + grow)
-                            for v in (PROUD["v"][0] - grow, PROUD["v"][1] + grow) for d in (-0.5, PROUD["d"])])
-            return pts.min(axis=0), pts.max(axis=0)
-
-        def relief(U, V):
-            inside = (U >= PROUD["u"][0]) & (U <= PROUD["u"][1]) & (V >= PROUD["v"][0]) & (V <= PROUD["v"][1])
-            return np.where(inside, PROUD["d"], 0.0), np.ones(U.shape, bool)
-
-        U = V = None
-        for w in room.walls:
-            out = write_wall(room, work, w, relief if w is wall else flat)
-            if w is wall:
-                U, V, _ = out
-        stations = [dict(id=sid, t=list(e57(u, off, 1.5)), gain=1.0) for sid, u, off in PROUD_STATIONS]
-        box = (CENTRE[0] - 2.0, CENTRE[0] + 2.0, CENTRE[1] - 3.0, CENTRE[1] + 3.0, 0.0, 3.0)
-        mesh, real = cuboid(0.0), cuboid(PROUD_SHORT)
-        data = os.path.join(work, "data")
-        synth.write_manifest(data, stations)
-        synth.write_depth_maps(data, stations, PROUD_DEPTH,
-                               lambda o, d: np.minimum(synth.box_distance(o, d, box), slab_distance(o, d, *mesh)))
-
-        def colour(s, dirs):
-            o = np.asarray(s["t"], float)
-            grain = np.random.default_rng(20261116 + int(s["id"][5:])).random(dirs.shape[:2]) - 0.5
-            plaster = np.array([0.50, 0.47, 0.42]) * (1 + 0.08 * grain[..., None])
-            hit = slab_distance(o, dirs, *real) < synth.box_distance(o, dirs, box)
-            return np.where(hit[..., None], np.array([0.03, 0.02, 0.015]), plaster)
-
-        synth.write_panoramas(data, stations, 2048, 1024, colour)
-        step(work, "labels", "south", depth=PROUD_DEPTH)
-        step(work, "wall-photo", "south", depth=PROUD_DEPTH)
-        (v,) = room.tiles(wall)
-        npz = np.load(os.path.join(work, "proj", f"{v['name']}.npz"))
-        lum = npz["rgb"] @ np.array([0.2126, 0.7152, 0.0722])
+        c = proud_room(name, margin, PROUD, PROUD_SHORT, PROUD_STATIONS, PROUD_DEPTH)
+        U, V = c["U"], c["V"]
         # plain wall that some station truly sees: more than 20 cm from the mesh's outline of the box (the far
         # station's view of the real box hides the wall up to 15 cm above it)
         du = np.maximum(np.maximum(PROUD["u"][0] - U, U - PROUD["u"][1]), 0)
         dv = np.maximum(np.maximum(PROUD["v"][0] - V, V - PROUD["v"][1]), 0)
         plain = (np.hypot(du, dv) > 0.20) & (V > 0.2) & (V < 2.9)
-        coloured = npz["weight"] > 0
-        ghost = plain & coloured & (lum < 0.25)                   # the box's dark picture (0.02) on plaster (0.47)
-        labels = np.load(os.path.join(work, "proj", "labels-south.npz"))
-        with open(os.path.join(work, "proj", "labels-south.json"), encoding="utf-8") as f:
-            report = json.load(f)
-        return dict(room=room, ghost=ghost, plain=plain, coloured=coloured, labels=labels, report=report, V=V, U=U)
+        ghost = plain & c["coloured"] & (c["lum"] < 0.25)         # the box's dark picture (0.02) on plaster (0.47)
+        return dict(c, ghost=ghost, plain=plain)
 
     @classmethod
     def setUpClass(cls):
@@ -873,6 +883,11 @@ class OccluderMargin(unittest.TestCase):
         taken = int(np.unpackbits(seen & ~clear).sum())
         self.assertGreater(taken, 1000)                                                 # the margin took views out
         self.assertLess(given, taken / 4)                                               # and few texels had no other
+        self.assertEqual(margin["texels_given_a_clear_view_from_outside_the_ranking"], 0)   # three stations: a block ranks them all
+        # a doubtful view is taken only where no station has a clear one
+        self.assertEqual(given, int(np.unpackbits(np.bitwise_or.reduce(seen, axis=0) & ~np.bitwise_or.reduce(clear, axis=0)).sum()))
+        near = margin["doubtful_view_clearance_mm"]
+        self.assertTrue(0 < near["least"] <= near["median"] <= near["greatest"] <= PROUD_MARGIN * 1000 + 0.05, near)
 
     def test_4_the_margin_is_the_walls_alone(self):
         cfg = json.loads(json.dumps(self.open["room"].cfg))
@@ -886,6 +901,100 @@ class OccluderMargin(unittest.TestCase):
         self.assertEqual([path for path, _ in errors], ["$.ceiling"], errors)
         self.assertEqual(check_room.validate(self.open["room"].cfg["survey"]["projection"],
                                              schema["$defs"]["survey"]["properties"]["projection"], schema), [])
+
+
+PIER = dict(u=(2.29, 3.07), v=(-0.5, 3.5), d=0.2)  # as the mesh draws it: the wall's whole height, each flank three columns into a block
+PIER_SHORT = 0.03                                 # the panoramas show it this much wider at each flank
+PIER_MARGIN = 0.03
+PIER_DEPTH = 512                                  # cubemap texels: 4 to 5 mm at the pier from the near stations
+PIER_STATIONS = (("scan_100", 2.95, 1.2), ("scan_101", 2.84, 1.3), ("scan_102", 2.73, 1.1), ("scan_103", 2.63, 1.25),
+                 ("scan_104", 2.52, 1.15), ("scan_105", 2.41, 1.2),              # six in front of the pier, a little over a metre off
+                 ("scan_106", 3.10, 3.4), ("scan_107", 2.26, 3.4))               # two 3.4 m off, each facing the wall beside a flank
+
+
+class OccluderMarginManyStations(unittest.TestCase):
+    """More stations than a block ranks (label-views.py's RANKED, 6), and a pier that stands 0.2 m proud over the
+    wall's whole height, which the mesh draws 3 cm narrow at each flank. Six stations stand in front of the pier, a
+    little over a metre off, and two 3.4 m off, each facing the plain wall beside a flank. The block at a flank
+    holds three columns of the pier's face and five of the wall beside it. All six near stations see the face
+    clear, so they are the block's candidates and, being the sharpest, its whole ranking; the far station, which
+    alone sees the wall beside the pier clear, comes seventh. The near station by the flank sees that wall too, past
+    the pier's edge and within its margin, and its panorama shows the pier there. Labels that ask only the six
+    ranked stations print that station's picture of the pier on the plain wall, 1 to 2 cm from the pier itself:
+    the outline the margin exists to remove, in the band the box's test above leaves out. With every station
+    asked, those texels take the far station's clear view; a doubtful view is left for the texels no station sees
+    clear, and of those views it is the one that passes farthest from the pier's edge."""
+
+    @classmethod
+    def build(cls, name, margin):
+        c = proud_room(name, margin, PIER, PIER_SHORT, PIER_STATIONS, PIER_DEPTH, pano=(1024, 512))
+        U, V, tl = c["U"], c["V"], c["labels"]["texel_label"]
+        beside = np.maximum(np.maximum(PIER["u"][0] - U, U - PIER["u"][1]), 0)     # metres from the mesh's outline of the pier
+        plain = (beside > PIER_SHORT) & (V > 0) & (V < 3.0)                        # wall the pier does not cover, inside the room
+        # where each station's panorama shows the pier: it stands between the station and the texel
+        shows = []
+        for o in c["stations"]:
+            ray = c["points"] - o
+            dist = np.linalg.norm(ray, axis=-1)
+            shows.append(slab_distance(o, ray / dist[..., None], *c["real"]) < dist - 1e-3)
+        ghost = (tl >= 0) & plain & np.take_along_axis(np.array(shows), np.maximum(tl, 0)[None].astype(np.int64), 0)[0]
+        return dict(c, ghost=ghost, band=beside <= 0.20, tl=tl)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.closed = cls.build("margin-pier-closed", 0)
+        cls.open = cls.build("margin-pier-open", PIER_MARGIN)
+        lb = cls.open["labels"]
+        width = cls.open["U"].shape[1]
+        cls.clear = np.unpackbits(lb["clearbits"], axis=-1, count=width).astype(bool)
+        cls.seen = np.unpackbits(lb["seenbits"], axis=-1, count=width).astype(bool)
+        cls.used = np.unpackbits(lb["visbits"], axis=-1, count=width).astype(bool)
+        tl = cls.open["tl"]
+        ii, jj = np.indices(tl.shape)
+        cls.ranked = np.moveaxis(lb["ranked"][ii // 8, jj // 8], -1, 0).astype(np.int64)      # (RANKED, H, W): each texel's block's ranking
+        cls.own = np.take_along_axis(cls.clear, np.maximum(tl, 0)[None].astype(np.int64), 0)[0] & (tl >= 0)   # labelled by a clear view
+
+    def test_1_texels_only_a_station_outside_the_ranking_sees_clear_take_its_view(self):
+        o, tl = self.open, self.open["tl"]
+        self.assertGreater(len(PIER_STATIONS), len(self.ranked))
+        ranked_clear = (np.take_along_axis(self.clear, np.maximum(self.ranked, 0), 0) & (self.ranked >= 0)).any(axis=0)
+        beyond = self.clear.any(axis=0) & ~ranked_clear
+        self.assertGreater(int(beyond.sum()), 1000, "no texel is clear only to a station outside its block's ranking: the test proves nothing")
+        self.assertTrue(np.all(beyond <= o["band"]))                                    # all beside the pier
+        self.assertTrue(np.all(self.own[beyond]), f"{int((~self.own[beyond]).sum())} of {int(beyond.sum())} such texels did not take a clear view")
+        self.assertFalse((self.ranked == tl[None])[:, beyond].any())                    # and from outside the ranking
+        self.assertEqual(o["report"]["occluder_margin"]["texels_given_a_clear_view_from_outside_the_ranking"], int(beyond.sum()))
+
+    def test_2_a_doubtful_view_is_given_only_where_no_station_sees_clear(self):
+        o, tl = self.open, self.open["tl"]
+        margin = o["report"]["occluder_margin"]
+        doubtful = (tl >= 0) & ~self.own
+        self.assertGreater(int(doubtful.sum()), 100)
+        self.assertEqual(int((doubtful & self.clear.any(axis=0)).sum()), 0, "a texel some station saw clear took a doubtful view")
+        self.assertTrue(np.array_equal(doubtful, self.seen.any(axis=0) & ~self.clear.any(axis=0)))
+        self.assertTrue(np.array_equal(tl >= 0, self.seen.any(axis=0)))                 # no hole where a station saw the texel, none filled where none did
+        self.assertEqual(margin["texels_given_a_doubtful_view"], int(doubtful.sum()))
+        self.assertEqual(margin["texels_labelled_clear"], int(self.own.sum()))
+        # visbits: the clear views and, for each doubtful texel, the one view given
+        self.assertTrue(np.array_equal(self.used & ~self.clear, (np.arange(len(PIER_STATIONS))[:, None, None] == tl[None]) & doubtful[None]))
+        self.assertTrue(np.all(self.used <= self.seen))
+        near = margin["doubtful_view_clearance_mm"]
+        self.assertTrue(0 < near["least"] <= near["median"] <= near["greatest"] <= PIER_MARGIN * 1000 + 0.05, near)
+
+    def test_3_the_pier_is_not_printed_beside_itself(self):
+        c, o = self.closed, self.open
+        without = int((c["ghost"] & c["band"]).sum())
+        self.assertGreater(without, 1000, "the fault did not occur without the margin: the test proves nothing")
+        self.assertEqual(int((c["ghost"] & ~c["band"]).sum()), 0)                       # here the outlines all lie within 20 cm of the pier
+        left = int(o["ghost"].sum())
+        self.assertLessEqual(left, without // 50, f"{left} texels of plain wall still take a view that shows the pier ({without} without the margin)")
+
+    def test_4_the_photographs_take_labels_from_outside_the_ranking(self):
+        o = self.open
+        self.assertTrue(np.all(o["coloured"][o["tl"] >= 0]))                            # every labelled texel is coloured
+        self.assertGreaterEqual(int(o["coloured"].sum()), int(self.closed["coloured"].sum()))
+        with open(os.path.join(T4, "margin-pier-open", "proj", "composite-south.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["stations_used"], len(np.unique(o["tl"][o["tl"] >= 0])))
 
 
 # --- B19: the floor refills' roll direction -------------------------------------------------------------------

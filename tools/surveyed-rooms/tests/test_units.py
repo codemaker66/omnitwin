@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -237,6 +238,124 @@ class Projection(unittest.TestCase):
             self.assertEqual(pj.blocked_by_chandelier(S_low, np.array([[cx + 2.0, cy, 2.1]])).tolist(), [False])
         finally:
             pj.CHANDELIERS = saved
+
+
+class MarginViews(unittest.TestCase):
+    """Gate B25's own functions (bestview.py, label-views.py) on small arrays: how far a ray passes from its nearest
+    occluder, and which station a texel takes when none of its block's ranked stations saw it clear."""
+
+    @classmethod
+    def setUpClass(cls):
+        legacy.project()
+        import bestview  # noqa: PLC0415 - after project.py, as the steps import it
+        cls.B = bestview
+        blas = {k: os.environ.get(k) for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")}
+        cls.lv = legacy.label_views()               # sets one BLAS thread for its own process: not this one's children
+        for k, v in blas.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+    def margin(self, metres):
+        return mock.patch.object(self.B, "OCCLUDER_MARGIN", metres)
+
+    def test_clearance_says_what_the_gate_says(self):
+        B = self.B
+        rng = np.random.default_rng(452)
+        size = 64
+        cube = rng.uniform(0.5, 6.0, (6, size, size)).astype(np.float32)
+        cube[0, 20:30, 20:40] = 0.8
+        cube[2, 40:44, 10:60] = 1.1
+        v = rng.normal(size=(20000, 3))
+        dist, cos = rng.uniform(0.6, 6.0, 20000), rng.uniform(0.2, 1.0, 20000)
+        for metres in (0.01, 0.03, 0.05, 0.2):
+            with self.margin(metres):
+                clear = B.clear_of_occluders(B.occluder_cube(cube), v, dist, cos)
+                away = B.occluder_clearance(cube, v, dist, cos)
+            self.assertEqual(away.dtype, np.float32)
+            self.assertGreater(int(clear.sum()), 200, metres)
+            self.assertGreater(int((~clear).sum()), 200, metres)
+            # clear of the margin exactly where the nearest occluder stands farther off than the margin
+            self.assertTrue(np.array_equal(clear, away > np.float32(metres)), metres)
+        with self.margin(0.05):                                     # points on the only surface there is: no occluder
+            flat = B.occluder_clearance(np.full((6, size, size), 3.0, np.float32), v, np.full(20000, 3.0), np.ones(20000))
+        self.assertTrue(np.all(np.isinf(flat)))
+
+    def test_clearance_is_the_distance_from_the_occluders_outline(self):
+        B = self.B
+        size = 64
+        cube = np.full((6, size, size), 3.0, np.float32)
+        cube[0, :, :30] = 2.0                                       # an occluder 2 m off over one face's columns 0 to 29
+        dirs = synth.cube_directions(size)[0, 32, 30:50]            # rays through row 32, 1 to 20 texels beyond its edge
+        self.assertEqual(B.cube_texel(np.broadcast_to(np.arange(size, dtype=np.float32), (6, size, size)), dirs).tolist(),
+                         list(range(30, 50)))
+        dist, cos = np.full(20, 3.0), np.ones(20)                   # the wall behind, seen head-on
+        with self.margin(0.05):
+            away = B.occluder_clearance(cube, dirs, dist, cos)
+        texels = np.arange(1, 21)
+        expected = 2.0 * texels * B.texel_angle(size)[32, 30:50]    # its distance x texels from the ray x the texel's angle
+        self.assertTrue(np.allclose(away[:16], expected[:16], rtol=1e-6, atol=0))
+        self.assertTrue(np.all(np.diff(away[:16]) > 0))             # the farther from the outline, the more clearance
+        self.assertTrue(np.all(np.isinf(away[16:])))                # beyond MARGIN_TEXELS nothing is looked for
+        self.assertEqual(B.MARGIN_TEXELS, 16)
+
+    def test_a_clear_view_is_taken_from_any_station_in_the_blocks_order(self):
+        lv, B = self.lv, self.B
+        S, n = 9, 2 * B.BLOCK
+        self.assertGreater(S, lv.RANKED)
+        D = np.tile((0.1 * np.arange(S)).reshape(S, 1, 1), (1, 1, 2))        # one row of two blocks; station 0 the best, 8 the worst
+        keep = np.ones((S, 1, 2), bool)
+        keep[8] = False                                              # station 8: not a candidate, ranked after them by its cover
+        cover = np.full((S, 1, 2), 0.97, np.float32)
+        label = np.array([[0, -1]])                                  # the second block has no label: no order at all
+        ranked = lv.ranked_lists(D, label, keep, cover)
+        order = lv.ranked_lists(D, label, keep, cover, None)
+        self.assertEqual(ranked[0, 0].tolist(), [0, 1, 2, 3, 4, 5])
+        self.assertEqual(order[0, 0].tolist(), list(range(S)))       # every station, the ranking first
+        self.assertTrue(np.all(order[0, 1] == -1))
+        clear = np.zeros((S, B.BLOCK, n), bool)
+        clear[:, :, :2] = True                                       # columns 0 and 1: every station
+        clear[6:, :, 2:4] = True                                     # columns 2 and 3: stations 6, 7 and 8, none of them ranked
+        clear[8, :, 4:6] = True                                      # columns 4 and 5: station 8 alone
+        clear[3, :, B.BLOCK:] = True                                 # the block without a label: left alone
+        bits = B.pack_bits(clear)
+        valid = np.ones((B.BLOCK, n), bool)
+        tlab = lv.texel_labels(ranked, bits, valid, (0, 1, 0, 2))
+        self.assertEqual(sorted(np.unique(tlab).tolist()), [-1, 0])
+        out, outside = lv.clear_views(order, tlab, bits)
+        self.assertTrue(np.all(out[:, :2] == 0) and np.all(out[:, 2:4] == 6) and np.all(out[:, 4:6] == 8))
+        self.assertTrue(np.all(out[:, 6:] == -1))                    # no station saw columns 6 and 7; the second block has no order
+        self.assertEqual(outside, 4 * B.BLOCK)
+        self.assertTrue(np.array_equal(tlab, lv.texel_labels(ranked, bits, valid, (0, 1, 0, 2))))   # the input is not written to
+
+    def test_a_doubtful_view_is_the_one_with_the_most_clearance(self):
+        lv, B = self.lv, self.B
+        H = W = B.BLOCK
+        seen, clear = np.zeros((3, H, W), bool), np.zeros((3, H, W), bool)
+        away = np.zeros((3, H, W), np.float32)
+        seen[:, 0, 0] = True; away[:, 0, 0] = (0.01, 0.03, 0.02)    # no station clear: station 1 passes farthest from the occluder
+        seen[(0, 2), 0, 1] = True; away[(0, 2), 0, 1] = 0.02        # equal: the earlier station
+        seen[2, 0, 2] = True; away[2, 0, 2] = 0.004                 # one station saw it
+        seen[(0, 1), 0, 3] = True; clear[1, 0, 3] = True            # station 1 saw it clear, and it has that label
+        seen[(0, 2), 0, 4] = True; clear[2, 0, 4] = True            # a station saw it clear: no doubtful view, whatever its label
+        tlab = np.full((H, W), -1, np.int16)
+        tlab[0, 3] = 1
+        grid = mock.Mock(depth=np.zeros((H, W), np.float32), n=np.array([0.0, 0.0, 1.0]),
+                         points=lambda r, c, d: np.stack([r, c, d], -1).astype(np.float64))
+        stations = [dict(id=k, t=np.zeros(3)) for k in range(3)]
+
+        def clearance(cube, v, dist, cos):                           # `cube` is the station (load_depth below); v is (row, column, 0)
+            return away[cube, v[:, 0].astype(int), v[:, 1].astype(int)]
+
+        stats = dict(visbits=B.pack_bits(clear), seenbits=B.pack_bits(seen))
+        with mock.patch.object(lv.P, "load_depth", lambda sid: sid), mock.patch.object(B, "occluder_clearance", clearance):
+            out, bits, given = lv.doubtful_views(grid, stations, tlab, stats)
+        self.assertEqual(out[0, :6].tolist(), [1, 0, 2, 1, -1, -1])
+        self.assertTrue(np.all(out[1:] == -1))
+        self.assertTrue(np.allclose(given, [0.03, 0.02, 0.004]))
+        used = B.unpack_bits(bits, W)
+        extra = used & ~clear
+        self.assertTrue(np.all(clear <= used))
+        self.assertEqual(sorted(zip(*(a.tolist() for a in np.nonzero(extra)))), [(0, 0, 1), (1, 0, 0), (2, 0, 2)])   # station, row, column
+        self.assertTrue(np.array_equal(stats["visbits"], B.pack_bits(clear)))     # the clear views are not written to
 
 
 class Windows(unittest.TestCase):

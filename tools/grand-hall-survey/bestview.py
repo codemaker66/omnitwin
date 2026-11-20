@@ -348,14 +348,52 @@ def occluder_cube(depthcube):
     return near
 
 
-def clear_of_occluders(near, v, dist, cos):
-    """Whether points along v from a station (N, 3; their distances and cosines of incidence) are clear of every
-    occluder's margin: nothing in `near` (occluder_cube) stands nearer than the point by more than visibility()'s
-    tolerance and what the surface's own slope explains over the margin (the wall itself is nearer on one side of the
-    ray, by the margin x the tangent of incidence)."""
+def occluder_limit(dist, cos):
+    """The distance below which a surface beside a ray counts as an occluder of the point the ray ends at (the point's
+    distance and cosine of incidence): nearer than the point by more than visibility()'s tolerance and what the
+    surface's own slope explains over the margin (the wall itself is nearer on one side of the ray, by the margin x
+    the tangent of incidence)."""
     tol = 0.035 + 0.008 * dist / np.maximum(cos, 0.25)
     slope = OCCLUDER_MARGIN * np.sqrt(np.maximum(1.0 - cos * cos, 0.0)) / np.maximum(cos, 1e-6)
-    return cube_texel(near, v) >= dist - tol - slope
+    return dist - tol - slope
+
+
+def clear_of_occluders(near, v, dist, cos):
+    """Whether points along v from a station (N, 3; their distances and cosines of incidence) are clear of every
+    occluder's margin: nothing in `near` (occluder_cube) stands nearer than occluder_limit()."""
+    return cube_texel(near, v) >= occluder_limit(dist, cos)
+
+
+def occluder_clearance(depthcube, v, dist, cos):
+    """How far from each ray its nearest occluder stands (metres), for points along v from a station (N, 3; their
+    distances and cosines of incidence): the least, over the surfaces within MARGIN_TEXELS texels of the ray's own
+    texel that stand nearer than occluder_limit(), of the surface's distance x its texels from the ray (m, as
+    occluder_cube counts them) x the texel's angle. Infinite where there is none.
+    A view is clear of the margin exactly where this exceeds OCCLUDER_MARGIN (clear_of_occluders on occluder_cube says
+    the same of every view). Of two views that are not clear, the one with the greater clearance passes farther from
+    the occluder's outline in the mesh. The mesh draws the occluder a few centimetres smaller than the photograph
+    shows it, whichever station looks, so that view's photograph is the less likely to show the occluder's edge."""
+    pad, size = MARGIN_TEXELS, depthcube.shape[-1]
+    cube = padded_cube(depthcube, pad)
+    angle = texel_angle(size)
+    side = np.arange(2 * pad + 1)
+    m = np.maximum(np.maximum(np.abs(side - pad)[:, None], np.abs(side - pad)[None, :]), 1).astype(np.float32)
+    limit = occluder_limit(dist, cos)
+    face = np.argmax(v @ P.DIRS.T, axis=1)
+    out = np.full(len(v), np.inf, np.float32)
+    for f, (x, y, z) in enumerate(P.BASES):
+        on_face = np.nonzero(face == f)[0]
+        for k in range(0, len(on_face), 2048):              # 2048 neighbourhoods of 33 x 33 texels: 9 MB
+            i = on_face[k:k + 2048]
+            vv = v[i]
+            pz = vv @ z
+            col = np.clip((((vv @ x) / -pz + 1) / 2 * size).astype(int), 0, size - 1)
+            row = np.clip((((vv @ y) / -pz + 1) / 2 * size).astype(int), 0, size - 1)
+            s = cube[f][(row[:, None] + side[None, :])[:, :, None], (col[:, None] + side[None, :])[:, None, :]]
+            away = s * (m[None] * angle[row, col][:, None, None])
+            away[s >= limit[i][:, None, None]] = np.inf
+            out[i] = away.min(axis=(1, 2))
+    return out
 
 
 class Pano:
