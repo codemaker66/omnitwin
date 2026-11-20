@@ -107,12 +107,18 @@ out), and every existing event whose status changed, with the status it had
   that changes nothing).
 - `packages/api/src/__tests__/booking-event-bind.test.ts`: the migration text,
   the Drizzle schema and the types agree.
-- Production, once after 0090 deploys (read only):
+- Production (read only without `--join`):
   `pnpm --filter @omnitwin/api exec tsx src/scripts/check-booking-event-bind.ts`
   prints `unboundBookings`, `contradictingEvents` (both must be 0) and the
-  review list's size by reason.
+  review list's size by reason, beside the spine's nine counts. Since the
+  spine's links it runs every night with `--join`, and by hand: see
+  [the spine's links](the-spine.md#where-it-runs).
 
 ## Not in this slice
+
+Proposals, deals and enquiries can now carry their event too; the links stay
+nullable and their count may read above zero until a later stage tightens them:
+see [the spine's links](the-spine.md).
 
 The "join which event?" question for a second hold that may be the same
 occasion under a different enquiry; showing lost events and their reasons in

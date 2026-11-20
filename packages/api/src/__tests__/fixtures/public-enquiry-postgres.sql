@@ -89,6 +89,8 @@ CREATE TABLE enquiries (
   utm_medium varchar(100),
   utm_campaign varchar(100),
   acquisition_channel varchar(20),
+  -- 0110: the event the venue files it under; its key needs events, absent here.
+  event_id uuid,
   CONSTRAINT enquiries_state_check CHECK (state IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn', 'archived')),
   CONSTRAINT enquiries_source_check CHECK (source IS NULL OR source IN ('website', 'walkthrough', 'planner', 'phone', 'email', 'listing', 'assistant'))
 );
