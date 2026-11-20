@@ -487,6 +487,7 @@ class UnseenWall(unittest.TestCase):
         self.assertIn("wall screened: no station labels any block of it", said)
         self.assertIn("2 stations tried", said)
         self.assertNotIn("Traceback", said)
+        self.assertNotIn("B25", said)                           # no occluder margin here: the stop does not speak of one
 
     def test_1_the_labels_step_stops_at_the_wall_by_name(self):
         self.refused(self.run_step("labels", "screened"))
@@ -998,6 +999,76 @@ class OccluderMarginManyStations(unittest.TestCase):
         self.assertGreaterEqual(int(o["coloured"].sum()), int(self.closed["coloured"].sum()))
         with open(os.path.join(T4, "margin-pier-open", "proj", "composite-south.json"), encoding="utf-8") as f:
             self.assertEqual(json.load(f)["stations_used"], len(np.unique(o["tl"][o["tl"] >= 0])))
+
+
+class MarginLeavesAWallUnlabelled(unittest.TestCase):
+    """A screen stands 0.3 m in front of the south wall, with a gap of 8 cm. Two stations face the gap and see a
+    strip of the wall through it, every texel of it past a screen's edge and within 8 cm of that edge. Without a
+    margin the strip is labelled, and the wall has blocks to photograph it from. With a margin of 8 cm none of
+    those views counts towards a label: the wall has no labelled block, and the build stops as it does at a wall
+    no station sees. There the cause may be the margin and not the stations, so the stop says that the margin is
+    set, and how many texels the stations did see."""
+
+    GAP = (2.96, 3.04)
+
+    @classmethod
+    def build(cls, name, margin):
+        work = os.path.join(T4, name)
+        cfg = config(RECT, ["east", "south", "west", "north"])
+        if margin:
+            cfg["survey"]["projection"]["walls"] = dict(cfg["survey"]["projection"]["walls"], occluderMargin=margin)
+        room = write_room(work, cfg)
+        for w in room.walls:
+            write_wall(room, work, w, flat)
+        wall = room.wmap["south"]
+        (cX, cY), (uX, uY), (nX, nY) = wall["cornerE57"], wall["uE57"], wall["normalE57"]
+
+        def e57(u, off, z):
+            return np.array([cX + u * uX + off * nX, cY + u * uY + off * nY, z])
+
+        def panel(u0, u1):
+            pts = np.array([e57(u, off, z) for u in (u0, u1) for off in (0.29, 0.30) for z in (-0.5, 3.5)])
+            return pts.min(axis=0), pts.max(axis=0)
+
+        panels = [panel(-0.5, cls.GAP[0]), panel(cls.GAP[1], 6.5)]
+        stations = [dict(id="scan_100", t=list(e57(3.0, 1.5, 1.5)), gain=1.0), dict(id="scan_101", t=list(e57(3.0, 2.5, 1.5)), gain=1.0)]
+        box = (CENTRE[0] - 2.0, CENTRE[0] + 2.0, CENTRE[1] - 3.0, CENTRE[1] + 3.0, 0.0, 3.0)
+        data = os.path.join(work, "data")
+        synth.write_manifest(data, stations)
+        synth.write_depth_maps(data, stations, PROUD_DEPTH, lambda o, d: np.minimum(
+            synth.box_distance(o, d, box), np.minimum(slab_distance(o, d, *panels[0]), slab_distance(o, d, *panels[1]))))
+        synth.write_panoramas(data, stations, 128, 64, synth.gh_sky)
+        return work
+
+    def report(self, work):
+        with open(os.path.join(work, "proj", "labels-south.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_1_without_a_margin_the_strip_labels_the_wall(self):
+        work = self.build("margin-gap-closed", 0)
+        step(work, "labels", "south", depth=PROUD_DEPTH)
+        report = self.report(work)
+        self.assertGreater(report["labelled_blocks"], 20)
+        self.assertGreater(report["texels_labelled"], 1500)
+
+    def test_2_with_the_margin_the_stop_says_what_the_margin_left_out(self):
+        work = self.build("margin-gap-open", PROUD_MARGIN)
+        with self.assertRaises(AssertionError) as stopped:
+            step(work, "labels", "south", depth=PROUD_DEPTH)
+        said = str(stopped.exception)
+        report = self.report(work)                                  # the report stays, for whoever looks
+        given = report["occluder_margin"]["texels_given_a_doubtful_view"]
+        self.assertEqual((report["labelled_blocks"], report["occluder_margin"]["texels_labelled_clear"]), (0, 0))
+        self.assertGreater(given, 1500)                             # the stations saw the strip all the same
+        self.assertEqual(report["texels_labelled"], given)
+        self.assertIn("wall south: no station labels any block of it", said)
+        self.assertIn("survey.projection.walls.occluderMargin (gate B25): a view that passes within 80 mm of anything nearer "
+                      f"does not count towards a label, and {given} of this wall's texels were seen only in such views", said)
+        self.assertIn("a smaller margin would label the wall", said)
+        self.assertNotIn("Traceback", said)
+        with self.assertRaises(AssertionError) as again:            # the photographs stop at it too, saying the same
+            step(work, "wall-photo", "south", depth=PROUD_DEPTH)
+        self.assertIn(f"and {given} of this wall's texels were seen only in such views", str(again.exception))
 
 
 # --- B19: the floor refills' roll direction -------------------------------------------------------------------

@@ -640,6 +640,10 @@ T4 builds a small room for each gate that neither the Grand Hall nor T3 opens:
   (B25; labels that ask only the ranked stations leave the pier on 1,200 of them);
 - a wall no station sees: the labels step and the photographs stop at it by name, and a wall that
   is seen is labelled and coloured as ever;
+- a wall seen only through a gap of 8 cm in a screen 0.3 m in front of it: without a margin its
+  strip is labelled (40 blocks); with a margin of 80 mm every view of it is within the margin of
+  the screen's edge, no block is labelled, and the stop at that wall says that the margin is set
+  and that 2,464 texels were seen only in views it does not count (B25);
 - the floor refills' roll along z and along x (B19);
 - the ceiling relief's fallback height, padding and spacing.
 

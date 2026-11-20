@@ -27,7 +27,9 @@ def refuse_unlabelled(room, name, bestview):
     wall from its labelled blocks: with none it ends in its own statistics (an IndexError), and a
     strip of the atlas with no photograph would be drawn as a blank wall. The label step's own
     report (proj/labels-<name>.json) says how many blocks it labelled; a wall not yet labelled is
-    project-walls.py's to refuse."""
+    project-walls.py's to refuse. With an occluder margin (gate B25) a block is labelled from clear
+    views alone, so the margin can be what left the wall without one: the stop then says so, and
+    how many texels the stations did see."""
     path = os.path.join('proj', f'labels-{name}.json')
     if not os.path.exists(path):
         return
@@ -35,14 +37,20 @@ def refuse_unlabelled(room, name, bestview):
         report = json.load(f)
     if report['labelled_blocks'] > 0:
         return
+    margin = report.get('occluder_margin')
+    by_the_margin = '' if margin is None else (
+        f" This room sets survey.projection.walls.occluderMargin (gate B25): a view that passes within "
+        f"{margin['metres'] * 1000:g} mm of anything nearer does not count towards a label, and "
+        f"{margin['texels_given_a_doubtful_view']} of this wall's texels were seen only in such views (each took a "
+        "doubtful one). If that is most of what was seen, a smaller margin would label the wall.")
     raise SystemExit(
         f"wall {name}: no station labels any block of it, so there is nothing to photograph it from "
         f"({report['texels_valid']} of its texels were rendered; {len(room.station_ids())} stations tried). "
         f"A station labels a block it sees within {bestview.MAX_DIST:g} m, at more than "
         f"{math.degrees(math.asin(bestview.COS_MIN)):.0f} degrees to the wall's face, with nothing in its depth map "
-        "in front. Give the room a station that sees this wall, join the wall to a neighbour that is seen, or "
-        "leave it out of survey.wallViews.order (it then gets no elevation, and the room cannot publish a record "
-        "until the web's reader takes a wall without one).")
+        f"in front.{by_the_margin} Give the room a station that sees this wall, join the wall to a neighbour that is "
+        "seen, or leave it out of survey.wallViews.order (it then gets no elevation, and the room cannot publish a "
+        "record until the web's reader takes a wall without one).")
 
 
 def labels(room, name):
