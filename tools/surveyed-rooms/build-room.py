@@ -35,7 +35,9 @@ then hash-checks the manifest's files against it); its depth maps only with --re
 default the depth step renders every map and an identity run compares them. Every linked path
 is listed in build/linked.json, and prove-build-identity.py reports those as linked, not as
 identical. --from/--to run a span of steps (check always runs). --plan prints the gates the
-config opens and the steps, and writes nothing. --expect-legacy refuses to run unless the ledger
+config opens, the checker's warnings (a wall no station has a line to in plan, when the work
+directory or --inputs-from holds the manifest) and the steps, and writes nothing. --expect-legacy
+refuses to run unless the ledger
 is empty (the Grand Hall's identity run). --publish refuses test-sized depth maps (B21), another
 checkout's node modules (B22) and glass the scan disagrees with (build/glass.json).
 
@@ -153,16 +155,20 @@ def commands(room, dest=None, relief="keep"):
     return out
 
 
-def describe_plan(room, problems, ledger):
+def describe_plan(room, problems, ledger, warnings=()):
+    """The plan's lines: the room, its refusals or its ledger, the checker's warnings (a wall no
+    station has a line to, among them), the atlas, the outputs and the sub-commands."""
     lines = [f"{room.cfg['name']} ({room.cfg['slug']}), config sha256 {room.sha256[:16]}, method revision {room.revision}"]
     lines.append(f"  {len(room.station_ids())} stations, {len(room.order)} walls, {len(roomlib.wall_views(room.cfg))} wall tiles")
     if problems:
         lines.append("  REFUSED:")
         lines += [f"    {p}" for p in problems]
+        lines += [f"  WARNING {w}" for w in warnings]
         return lines
     lines.append(f"  ledger: {'empty (every step is the Grand Hall code path)' if not ledger else f'{len(ledger)} gates'}")
     for row in ledger:
         lines.append(f"    {row['gate']:<4} {row['where']:<36} {row['what']}{' (' + row['note'] + ')' if row['note'] else ''}")
+    lines += [f"  WARNING {w}" for w in warnings]
     lay = atlas_step.layout(room)
     lines.append(f"  atlas {lay['width']} x {lay['height']}, strips {lay['row']} high, {lay['ppm']:.3f} px/m, {lay['packing']}")
     for strip in lay["strips"]:
@@ -261,6 +267,17 @@ def shown(argv):
     return " ".join(os.path.relpath(a, HERE) if os.path.isabs(a) and a.startswith(os.path.dirname(HERE)) else a for a in words)
 
 
+def same_command(recorded, now):
+    """Whether a recorded command is the one to be run now: word for word, except that two absolute
+    paths are the same word wherever the file system holds them to be the same file's name. Windows
+    names one interpreter python.exe to one shell and python.EXE to another, and a build begun from
+    the first is not to run again from its start when it is picked up from the second. (os.path.normcase
+    changes nothing where the case of a name matters.)"""
+    return len(recorded) == len(now) and all(
+        a == b or (os.path.isabs(a) and os.path.isabs(b) and os.path.normcase(a) == os.path.normcase(b))
+        for a, b in zip(recorded, now))
+
+
 def fresh(rec, subs, index, config):
     """(True, "") when sub-command `index` need not run again: its last record ended with exit 0
     for this command and this config, nothing it may depend on has run since (any earlier step's
@@ -272,7 +289,7 @@ def fresh(rec, subs, index, config):
         return False, "not run yet"
     if row["exit"] != 0:
         return False, f"its last run failed (exit {row['exit']})"
-    if row["argv"] != sub["argv"]:
+    if not same_command(row["argv"], sub["argv"]):
         return False, "its command changed"
     if row.get("config") != config:
         return False, "the config changed since it ran"
@@ -452,7 +469,7 @@ def main():
     room, rep = open_room(args.room, work, manifest)
     problems, ledger, rep = check_step(room, work, manifest, write=False, rep=rep)
     if args.plan:
-        print("\n".join(describe_plan(room, problems, ledger)))
+        print("\n".join(describe_plan(room, problems, ledger, rep.warnings)))
         sys.exit(1 if problems else 0)
     if problems:
         refuse(problems)
