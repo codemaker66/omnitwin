@@ -59,7 +59,8 @@ function boundedPercent(part: number, whole: number): number {
 }
 
 /** Inputs are the venue's aggregates (open pipeline value, enquiry count,
- *  proposals per status), computed by the database rather than from every row. */
+ *  proposals per status, proposals ever accepted), computed by the database
+ *  rather than from every row. */
 export function buildPipelineSummary(input: {
   /** Resolved by services/commercial-pipeline.ts — the single definition of
    *  pipeline value that the Pipeline tab and this dashboard both read. It is
@@ -67,9 +68,14 @@ export function buildPipelineSummary(input: {
   readonly pipelineValueMinor: number;
   readonly enquiryCount: number;
   readonly proposalStatusCounts: Readonly<Record<string, number>>;
+  /** Proposals accepted, now or before the office archived them: an
+   *  acceptance filed with Archive is still one (routes/proposals.ts
+   *  everAccepted). Not proposalStatusCounts.accepted, which reads only the
+   *  statuses the proposals have now. */
+  readonly acceptedProposalCount: number;
 }): PipelineSummary {
   const proposalStatusCounts = { ...input.proposalStatusCounts };
-  const acceptedProposalCount = proposalStatusCounts["accepted"] ?? 0;
+  const acceptedProposalCount = input.acceptedProposalCount;
   // Proposals need no enquiry (a deal from a phone call has none), so accepted
   // proposals can outnumber enquiries; the counts beside it stay exact.
   const conversionPercent = boundedPercent(acceptedProposalCount, input.enquiryCount);
