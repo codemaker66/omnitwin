@@ -12,7 +12,7 @@ interface RawRecord {
   atlas: { files?: string[]; [key: string]: unknown };
   walls: { id: string; reliefId: string; length: number; atlas: number[]; [key: string]: unknown }[];
   relief: { file: string; order: string[]; [key: string]: unknown };
-  ceiling: { files: string[]; orientation?: string; relief?: { file: string; [key: string]: unknown }; [key: string]: unknown };
+  ceiling: { files: string[]; extent?: RawExtent; orientation?: string; relief?: { file: string; [key: string]: unknown }; [key: string]: unknown };
   floor: { files: string[]; extent?: RawExtent; orientation?: string };
   files: Record<string, { bytes: number; sha256: string }>;
 }
@@ -77,10 +77,19 @@ describe("survey.json, schema version 2", () => {
   it("refuses another version with one plain reason", () => {
     const old = saloon();
     old.schemaVersion = 1;
-    expect(faults(old)).toEqual([expect.stringMatching(/^schemaVersion is 1; this reader reads version 2/)]);
+    // Says what a version 1 record lacks and what would cure it, never to republish with tools that would write
+    // version 1 again; and names the change that cures it (#452) instead of a tense, so the message is true
+    // whether the tools' change or this reader is merged first.
+    expect(faults(old)).toEqual([
+      "schemaVersion is 1; this reader reads version 2 only (the survey tools write version 2 from #452 on; a version 1 record has none of the room, wall heights, atlas images or floor this reader needs, so the room must be built again with tools that include #452)",
+    ]);
+    expect(faults(old).join(" ")).not.toMatch(/\bwrote\b|\bstill\b|\buntil\b|republish/);
+    const newer = saloon();
+    newer.schemaVersion = 3;
+    expect(faults(newer)).toEqual(["schemaVersion is 3; this reader reads version 2 only"]);
     const unversioned = saloon();
     delete unversioned.schemaVersion;
-    expect(faults(unversioned)).toEqual([expect.stringMatching(/^schemaVersion is missing/)]);
+    expect(faults(unversioned)).toEqual(["schemaVersion is missing; this reader reads version 2 only"]);
     expect(() => parseSurveyRecord("survey")).toThrow(/is not a JSON object/);
   });
 
@@ -192,6 +201,44 @@ describe("survey.json, schema version 2", () => {
     expect(faults(twoOut)).toHaveLength(1);
   });
 
+  it("refuses a wall taller than the heights its strip of the atlas covers", () => {
+    // The Saloon's strips cover -0.02 m to 5.535 m.
+    const tall = saloon();
+    wallOf(tall, "rear").height = 6;
+    expect(faults(tall)).toEqual([
+      'walls[6].height: wall "rear" is 6 m high, but the atlas\'s strips cover heights up to 5.535 m (vRange), more than 5 mm short of it',
+    ]);
+    // To the strip's top and the 5 mm a relief may stand past it is a wall its strip covers.
+    const toTheTop = saloon();
+    wallOf(toTheTop, "rear").height = 5.539;
+    expect(parseSurveyRecord(toTheTop).walls[6]?.height).toBe(5.539);
+  });
+
+  it("refuses a flat ceiling that does not meet the tallest wall's top", () => {
+    const flat = (ceilingHeight: number): RawRecord => {
+      const record = saloon();
+      delete record.ceiling.relief;
+      delete record.files["ceiling-relief.bin"];
+      record.room.ceilingHeight = ceilingHeight;
+      return record;
+    };
+    // Above the walls a band of nothing would show; below their tops they would stand through it.
+    expect(faults(flat(6))).toEqual([
+      "room.ceilingHeight: is 6 m, but the tallest wall is 5.515 m high and the ceiling has no relief: a flat ceiling is drawn at this height, and must meet the walls' tops to within 5 mm",
+    ]);
+    expect(faults(flat(5.2))).toEqual([expect.stringMatching(/^room\.ceilingHeight: is 5\.2 m, but the tallest wall is 5\.515 m high/)]);
+    expect(parseSurveyRecord(flat(5.519)).room.ceilingHeight).toBe(5.519);
+    // It is the tallest wall it meets: a lower wall under it (a screen, a pier under a soffit) is no fault.
+    const screened = flat(5.515);
+    wallOf(screened, "window-front-return").height = 2.4;
+    expect(() => parseSurveyRecord(screened)).not.toThrow();
+    // A ceiling with a relief is drawn from its measured heights, whatever the walls' (a coffered
+    // ceiling's field stands below the tops of the walls that rise into its panels).
+    const coffered = saloon();
+    coffered.room.ceilingHeight = 5.1;
+    expect(parseSurveyRecord(coffered).room.ceilingHeight).toBe(5.1);
+  });
+
   it("refuses a relief order that is not exactly the walls' relief ids", () => {
     const missing = saloon();
     missing.relief.order.pop();
@@ -244,6 +291,45 @@ describe("survey.json, schema version 2", () => {
     const backwards = saloon();
     backwards.floor.extent = { x: [6.095, -6.096], z: [-3.734, 3.739] };
     expect(faults(backwards)).toEqual(["floor.extent.x: must increase ([low, high])"]);
+  });
+
+  it("refuses a floor or ceiling photograph that does not cover the outline", () => {
+    // The floor's photograph cropped to the Saloon's main rectangle: the recessed middles of its two
+    // long walls, 0.24 m and 0.225 m deep, would wear the photograph's edge rows smeared across them.
+    const cropped = saloon();
+    cropped.floor.extent = { x: [-6.096, 6.095], z: [-3.494, 3.514] };
+    expect(faults(cropped)).toEqual([
+      "floor.extent.z: covers -3.494 m to 3.514 m, but the outline runs from -3.734 m to 3.739 m along z, more than 5 mm outside it: the floor's photograph must cover the whole outline",
+    ]);
+    // The ceiling's the same, on either axis and at either end.
+    const narrow = saloon();
+    narrow.ceiling.extent = { x: [-6.09, 6.095], z: [-3.734, 3.739] };
+    expect(faults(narrow)).toEqual([
+      "ceiling.extent.x: covers -6.09 m to 6.095 m, but the outline runs from -6.096 m to 6.095 m along x, more than 5 mm outside it: the ceiling's photograph must cover the whole outline",
+    ]);
+    const both = saloon();
+    both.floor.extent = { x: [-6.096, 6], z: [-3, 3.739] };
+    expect(faults(both)).toEqual([
+      expect.stringMatching(/^floor\.extent\.x: covers -6\.096 m to 6 m, but the outline runs from -6\.096 m to 6\.095 m along x/),
+      expect.stringMatching(/^floor\.extent\.z: covers -3 m to 3\.739 m, but the outline runs from -3\.734 m to 3\.739 m along z/),
+    ]);
+  });
+
+  it("accepts a floor photograph half a texel short of the outline's box, and one larger than it", () => {
+    // The tools lay the floor's photograph in whole texels of 1/120 m from the box's lowest x and
+    // highest z, so its extent stops up to half a texel (4.17 mm) short of the other two sides.
+    const short = saloon();
+    short.floor.extent = { x: [-6.096, 6.091], z: [-3.73, 3.739] };
+    expect(parseSurveyRecord(short).floor.extent).toEqual({ x: [-6.096, 6.091], z: [-3.73, 3.739] });
+    // A millimetre past the tolerance is a photograph that does not cover its floor.
+    const shorter = saloon();
+    shorter.floor.extent = { x: [-6.096, 6.089], z: [-3.734, 3.739] };
+    expect(faults(shorter)).toEqual([expect.stringMatching(/^floor\.extent\.x: covers -6\.096 m to 6\.089 m/)]);
+    // Or runs past them, as the Saloon's own does; and a photograph of more than the room is no fault.
+    const past = saloon();
+    past.floor.extent = { x: [-6.096, 6.095833], z: [-3.736, 3.739] };
+    past.ceiling.extent = { x: [-7, 7], z: [-4.5, 4.5] };
+    expect(() => parseSurveyRecord(past)).not.toThrow();
   });
 
   it("accepts a ceiling and a floor that publish no photograph, and one size of each image", () => {

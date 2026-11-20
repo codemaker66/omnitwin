@@ -427,13 +427,34 @@ export function buildCeilingGeometry(
   return { ...placeRelief(relief, place, (x, z) => overheadUv(extent, x, z), label), measured: true };
 }
 
+/**
+ * Refuses a flat ceiling that does not stand where the walls end. It is drawn
+ * at the room's ceiling height, which nothing else ties to the walls as
+ * built: their reliefs are held to the atlas's heights, not to the ceiling.
+ * Higher than their tops, a band of nothing would show above them; lower,
+ * they would stand through it. A measured ceiling is held to its own recorded
+ * heights instead (buildCeilingGeometry), under walls of whatever heights.
+ */
+export function holdCeilingToWalls(
+  record: Pick<SurveyRecord, "room">, walls: Pick<SurfaceGeometry, "positions">, ceiling: Pick<CeilingGeometry, "measured">,
+): void {
+  if (ceiling.measured) return;
+  const top = surfaceBounds(walls).max[1];
+  const height = record.room.ceilingHeight;
+  if (Math.abs(height - top) <= RELIEF_BOUNDS_TOLERANCE) return;
+  throw new RoomGeometryError(
+    `the flat ceiling stands at ${String(height)} m but the walls rise to ${top.toFixed(3)} m, more than ${String(RELIEF_BOUNDS_TOLERANCE * 1000)} mm apart: ${
+      top < height ? "a band of nothing would show above the walls" : "the walls would stand through the ceiling"
+    }`,
+  );
+}
+
 /** Every surface of a room. */
 export function buildRoomGeometry(record: SurveyRecord, frame: RoomFrame, reliefs: RoomReliefs): RoomGeometry {
-  return {
-    walls: buildWallsGeometry(record, frame, reliefs.walls),
-    ceiling: buildCeilingGeometry(record, frame, reliefs.ceiling),
-    floor: buildFloorGeometry(record, frame),
-  };
+  const walls = buildWallsGeometry(record, frame, reliefs.walls);
+  const ceiling = buildCeilingGeometry(record, frame, reliefs.ceiling);
+  holdCeilingToWalls(record, walls, ceiling);
+  return { walls, ceiling, floor: buildFloorGeometry(record, frame) };
 }
 
 export interface SurfaceBounds {

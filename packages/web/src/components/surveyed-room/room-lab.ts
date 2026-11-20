@@ -19,7 +19,7 @@
 // ---------------------------------------------------------------------------
 
 import { pointOnWall, type RoomFrame, type Vec3 } from "./room-frame.js";
-import type { SurveyedRoomEntry } from "./room-registry.js";
+import { publicSurveyFolder, type SurveyedRoomEntry } from "./room-registry.js";
 
 export interface RoomLabQuery {
   /** The room asked for, or null when the query does not name one. */
@@ -29,9 +29,6 @@ export interface RoomLabQuery {
   /** A photograph quality forced by `?photos=`, or null for the device's own. */
   readonly photoQuality: number | null;
 }
-
-/** A public folder on this origin: a path of plain segments, nothing that climbs or leaves. */
-const PUBLIC_FOLDER = /^(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)+$/;
 
 /** A room's slug, as a survey's record writes it. */
 const ROOM_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -51,8 +48,8 @@ export function parseRoomLabQuery(search: string): RoomLabQuery {
   const none = (problem: string): RoomLabQuery => ({ entry: null, problem, photoQuality });
   const asked = params.get("base");
   if (asked === null || asked === "") return none("Add ?base=<public folder>&r=<revision>, for example ?base=/rooms/saloon/survey-2026-07-11&r=1.");
-  const base = asked.replace(/\/+$/, "");
-  if (!PUBLIC_FOLDER.test(base)) return none(`"${asked}" is not a public folder: give a path on this site, such as /rooms/saloon/survey-2026-07-11.`);
+  const base = publicSurveyFolder(asked);
+  if (base === null) return none(`"${asked}" is not a public folder: give a path on this site, such as /rooms/saloon/survey-2026-07-11.`);
   const slug = params.get("slug") ?? ROOM_FOLDER.exec(base)?.[1] ?? null;
   if (slug === null) return none(`Add &slug=<room>: "${base}" is not under /rooms/<room>/, so the room it should hold must be named.`);
   if (!ROOM_SLUG.test(slug)) return none(`"${slug}" is not a room: give its slug, such as saloon.`);

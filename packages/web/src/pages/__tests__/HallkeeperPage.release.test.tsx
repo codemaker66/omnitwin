@@ -207,8 +207,15 @@ describe("the phone lists the room the paper lists", () => {
         const item = /^(.*) with \d+ chairs?$/u.exec(row.name)?.[1] ?? row.name;
         onPhone.set(item, (onPhone.get(item) ?? 0) + row.qty);
       }
-      const onPaper = new Map(step.items.map((item) => [item.name, item.qty]));
+      // The paper's line of chairs at a step's tables (on the setup's own page) is what the phone's table rows seat:
+      // the phone keeps its own list, with each table's chairs on the table's row.
+      const onPaper = new Map(step.items.filter((item) => item.seats === null).map((item) => [item.name, item.qty]));
       expect(onPhone, step.phase).toEqual(onPaper);
+      const tableRows = V3.phases.filter((phase) => phase.phase === step.phase)
+        .flatMap((phase) => phase.zones.flatMap((zone) => zone.rows)).filter((row) => row.category === "table");
+      const seated = tableRows.reduce((sum, row) => sum + row.qty * Number(/ with (\d+) chairs?$/u.exec(row.name)?.[1] ?? 0), 0);
+      const chairsLine = step.items.filter((item) => item.seats !== null).reduce((sum, item) => sum + item.qty, 0);
+      expect(chairsLine, `${step.phase}: the paper's line of chairs against what the phone's tables seat`).toBe(seated);
     }
     expect(screen.getAllByText(`${String(V3.totals.totalItems)} pieces to set`).length).toBeGreaterThan(0);
   });
