@@ -941,7 +941,10 @@ class OccluderMarginManyStations(unittest.TestCase):
     margin, 211 with the first step missing, 51 with the farthest view and 113 with this rule. So by that count
     this rule is worse than the farthest view there, and worse than no margin: 69 of the 113 show the box without
     a margin too, from the same station, and the other 44 lie in blocks that the margin ranks differently (a
-    station's cover of a block is its clear cover). That count was the bar for the second step when it was
+    station's cover of a block is its clear cover). Of the 99 without a margin, 69 are carried over, 8 are cured
+    and 22 show the box from another station; 22 more are new. 41 of the 44, all 22 new ones among them, lie in
+    the 25 blocks where the labels' glare test changed the choice with the margin, on a wall that has no glare.
+    That count was the bar for the second step when it was
     written, and it is retired for it: a synthetic panorama is drawn from the true geometry with one exposure and
     exact poses, where another station's picture costs nothing, and the Saloon's photographs said otherwise."""
 

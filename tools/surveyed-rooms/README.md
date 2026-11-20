@@ -594,6 +594,32 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
     station of the stations' own order, so a build made again is the same build. Run on the two
     builds' own arrays, the rule gives the first build's view on every one of the 40,420
     doubtful texels that had one (of 40,520), and the second build's clear views everywhere else.
+    - The third build (20 November), made with this rule and the first step as merged. Its
+      labels against the first build's: 1,813 of 8,548,148 texels differ. 1,367 doubtful views
+      became clear ones (the first step), 209 clear views became another station's clear view,
+      137 holes took a clear view and 100 a doubtful one; no doubtful texel that had a view
+      changed it, and none is left unexplained. Against the second build 20,504 texels differ,
+      each one doubtful view for another: every clear view is the same. Its photographs against
+      the first build's, on the 570 changed texels left to be seen that can be judged (worse /
+      better / as they were): dark 15 / 39 / 516, by patch (138) 4 / 14 / 120 (p 0.03); off 70 /
+      64 / 436, by patch 30 / 25 / 83 (p 0.6); farther 229 / 214 / 127, by patch 51 / 64 / 23
+      (p 0.3). The control, 92,603 clean texels: dark 203 / 195, off 311 / 473, farther 1,466 /
+      2,222. The band on the window wall is gone: in its window no texel differs from the first
+      build's. One wall is worse by patch: the fireplace wall's front end, off, 8 patches
+      against 1 (p 0.04; by texel 22 of 30 against 2), while its own control leans the other way
+      (61 against 183). Eight walls by three judgements would name about one by chance, but this
+      is one kind of texel, and that kind is worse over the room (83 judged: off 26 / 4 / 53, by
+      patch 10 / 2 / 15, p 0.04). They are the 209 texels whose clear view changed station. None
+      of their block's six ranked stations saw them clear; the first build's sequence gave them
+      a clear view all the same (from the six that saw most of the block at all); the first step
+      gives them the first station of the block's whole order that saw them clear, and that
+      order is by how much of the block each station saw CLEAR. On the fireplace wall's front
+      end they are one row of 45 texels above a cornice, beside a band no station coloured.
+      Worked out on the label files, not built: were the first step to use the second step's
+      sequence (every station by how much of the block it saw at all), all 209 would keep the
+      first build's station, 1,130 of the 1,367 and 133 of the 137 would keep the third build's,
+      241 would take another clear station, and every other clear texel of the room would be as
+      it is. That would be one sequence for both steps.
     - The former holes. The first build's sequence stopped at the six stations that saw most of
       a block, and so left 100 texels that a station had seen, none clear, without a label
       (fireplace 10, fireplace-rear-end 6, fireplace-rear-return 1, front 17, rear 64,
@@ -605,7 +631,10 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       clean neighbours to be judged. On those the view is dark on 4 and off on 5, and so is the
       fill; the view lies 19.8 levels from its surroundings at the mean and the fill 34.7; the
       view is the nearer by more than 2 levels on 5 and the fill on 1. The fill wins on no wall,
-      so the longer sequence stays: on a sample of ten.
+      so the longer sequence stays: on a sample of ten (a sign test of 5 against 1 is p 0.2).
+      Looked at cluster by cluster, third build beside the first build's fill (nine clusters
+      hold the 36), neither draws the eye: each lies along a moulding's edge. The other 64 are
+      hidden only by the patches of the Saloon's edits; a build without them would show them.
     - The synthetic wall says the opposite, and its count is no bar for this step any more. The
       texels whose label's panorama shows a box are 113 with this rule, against 51 with the
       farthest view, 99 with no margin and 211 with the first step missing: by that count this
@@ -617,7 +646,18 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       clear cover: 251 of that wall's 475 blocks rank differently and 95 take another label,
       while 418 of the 499 doubtful texels keep the station they had without the margin. Of the
       99 without a margin, 69 are those carried over, 8 no longer show the box (2 by a clear
-      view, 6 by another doubtful one) and 22 show it from another station. That wall's
+      view, 6 by another doubtful one) and 22 show it from another station; another 22 are new.
+      Of the 44, 41 lie in the 25 blocks where the labels' glare test changed the choice with
+      the margin, all 22 new ones among them, on a wall that has no glare and where that test
+      changes nothing without a margin: it compares stations over their own clear texels of a
+      block, which a margin makes different texels. (On the Saloon, where there is glare, the
+      test rejects fewer views with the margin than a build of 15 November did without one,
+      188,951 against 209,555, so that is not followed here.) Elsewhere on the synthetic wall
+      the margin earns its keep: the labels' depth sweep is out by 0.0 mm at every percentile
+      with it, against a median of 1.2 mm and 3.9 mm at the 95th without, and the seams fall
+      from 91 to 71. (The Saloon's seams rise with the margin, 26,475 to 28,970 over its twelve
+      walls, and its sweep does not move: what the margin buys there is the clean plaster above
+      the pediments, measured above.) That wall's
       panoramas are drawn from the true geometry with one exposure and exact poses, so there
       another station's picture costs nothing and a view's clearance is all there is to choose
       by; on the Saloon's photographs the farthest view measured worse (above). The two worlds
