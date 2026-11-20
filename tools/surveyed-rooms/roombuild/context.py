@@ -402,4 +402,14 @@ class Room:
                 out.append("survey.outputs.relief is missing")
             if not outputs.get("detail"):
                 out.append("survey.outputs.detail is missing")
+        if outputs.get("manifest"):
+            out += self.record_problems()
+        return out
+
+    def record_problems(self):
+        """For a room that publishes its record (survey.outputs.manifest): what in the config the web's
+        reader would refuse in survey.json, found here rather than at publish, after the whole build."""
+        out = []
+        if "revision" not in self.survey.get("publish", {}):
+            out.append("survey.publish.revision is missing: survey.json's revision is that, and the web's reader needs one from 1")
         return out

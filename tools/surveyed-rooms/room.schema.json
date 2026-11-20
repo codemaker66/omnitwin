@@ -530,7 +530,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["folder"],
-          "properties": { "folder": { "type": "string" }, "revision": { "type": "integer", "minimum": 0 } }
+          "properties": { "folder": { "type": "string" }, "revision": { "type": "integer", "minimum": 1, "description": "The published survey's revision, survey.json's `revision`: the web's reader takes 1 and up. A room that publishes its record (survey.outputs.manifest) must give it." } }
         },
         "projection": {
           "type": "object",

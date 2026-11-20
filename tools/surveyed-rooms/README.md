@@ -298,7 +298,8 @@ named file listed, largest first by bytes). It judges the record as the publishe
 room that publishes its record, writing it prints any fault and `--publish` refuses it with nothing
 copied. A fault a config can carry is refused before any build: `check_room.py` matches the
 schema's patterns whole in the same way and holds every date (`source.captured` among them) to the
-calendar.
+calendar, and the schema takes `survey.publish.revision` from 1 only; for a room that publishes its
+record, the build's own check also refuses a config with no revision.
 The proof that the reader takes a real record is its own parser run over it: see Proofs.
 
 `SURVEYED_ROOMS_TEST_DEPTH_SIZE` (tests only) shrinks the depth maps (gate B21);

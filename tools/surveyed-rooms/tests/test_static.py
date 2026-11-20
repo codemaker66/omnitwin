@@ -287,6 +287,17 @@ class CheckRoom(unittest.TestCase):
             self.assertIn("schema $.source.captured", said, repr(value))
         self.assertEqual(self.errors(lambda r: r["source"].__setitem__("captured", "2024-02-29")), "")
 
+    def test_a_revision_the_reader_refuses_fails_before_a_build(self):
+        """survey.json's revision is survey.publish.revision, which the reader needs from 1: 0 fails
+        at check, and for a room that publishes its record so does none at all (the build's own
+        check). The Grand Hall publishes no record, and its config is as it was."""
+        self.assertIn("schema $.survey.publish.revision: 0 < minimum 1", self.errors(lambda r: r["survey"]["publish"].__setitem__("revision", 0)))
+        self.assertEqual(self.errors(lambda r: r["survey"]["publish"].__setitem__("revision", 1)), "")
+        path, _ = variant(SALOON, "saloon-no-revision.room.json", lambda r: r["survey"]["publish"].pop("revision"))
+        self.assertIn("survey.publish.revision is missing", "\n".join(Room(path, T0).build_problems()))
+        path, _ = variant(GH, "gh-no-revision.room.json", lambda r: r["survey"]["publish"].pop("revision"))
+        self.assertEqual(Room(path, T0).build_problems(), [])
+
     def test_a_schema_pattern_matches_the_whole_string_as_json_schema_reads_it(self):
         """A pattern is an ECMA-262 expression: its `$` is the string's end (Python's also matches
         before a final newline) and its \\d is ASCII (Python's takes any script's digits). A pattern
