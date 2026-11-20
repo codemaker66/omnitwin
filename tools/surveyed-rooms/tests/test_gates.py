@@ -883,6 +883,8 @@ class OccluderMargin(unittest.TestCase):
         taken = int(np.unpackbits(seen & ~clear).sum())
         self.assertGreater(taken, 1000)                                                 # the margin took views out
         self.assertLess(given, taken / 4)                                               # and few texels had no other
+        self.assertEqual(margin["views_left_out"], taken)
+        self.assertLessEqual(margin["views_left_out_where_the_margin_was_capped"], taken)
         self.assertEqual(margin["texels_given_a_clear_view_from_outside_the_ranking"], 0)   # three stations: a block ranks them all
         # a doubtful view is taken only where no station has a clear one
         self.assertEqual(given, int(np.unpackbits(np.bitwise_or.reduce(seen, axis=0) & ~np.bitwise_or.reduce(clear, axis=0)).sum()))
@@ -980,6 +982,7 @@ class OccluderMarginManyStations(unittest.TestCase):
         self.assertTrue(np.all(self.used <= self.seen))
         near = margin["doubtful_view_clearance_mm"]
         self.assertTrue(0 < near["least"] <= near["median"] <= near["greatest"] <= PIER_MARGIN * 1000 + 0.05, near)
+        self.assertEqual(margin["views_left_out"], int((self.seen & ~self.clear).sum()))
 
     def test_3_the_pier_is_not_printed_beside_itself(self):
         c, o = self.closed, self.open

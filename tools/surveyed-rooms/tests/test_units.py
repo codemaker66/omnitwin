@@ -296,6 +296,14 @@ class MarginViews(unittest.TestCase):
         self.assertTrue(np.all(np.diff(away[:16]) > 0))             # the farther from the outline, the more clearance
         self.assertTrue(np.all(np.isinf(away[16:])))                # beyond MARGIN_TEXELS nothing is looked for
         self.assertEqual(B.MARGIN_TEXELS, 16)
+        # Where the margin is capped. Sixteen 1/32 rad texels span half the surface's distance: 0.4 m at an occluder
+        # 0.8 m off, less than a margin of 0.5 m; beyond them the nearest surface is the wall, 3 m off (1.5 m).
+        cube[0, :, :30] = 0.8
+        with self.margin(0.5):
+            self.assertEqual(B.margin_capped(B.occluder_cube(cube), dirs).tolist(), [True] * 16 + [False] * 4)
+        with self.margin(0.05):                                     # 0.4 m is far more than 50 mm
+            self.assertFalse(B.margin_capped(B.occluder_cube(cube), dirs).any())
+        self.assertFalse(B.margin_capped(np.full((6, size, size), np.inf, np.float32), dirs).any())    # no surface within the margin
 
     def test_a_clear_view_is_taken_from_any_station_in_the_blocks_order(self):
         lv, B = self.lv, self.B

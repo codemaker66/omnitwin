@@ -127,7 +127,8 @@ SUBS = ((-0.25, -0.25), (-0.25, 0.25), (0.25, -0.25), (0.25, 0.25))
 def band_stats(grid, st, cube, pano, r0, r1, C0, C1, nb_c0, nb_c1, near=None):
     """One band's per-block sums for one station (rows r0..r1, columns C0..C1). With `near` (the station's
     bestview.occluder_cube: bestview.OCCLUDER_MARGIN is set) the sums count only the texels clear of every
-    occluder's margin, and the result ends with the band's texels the station saw at all (rows, columns)."""
+    occluder's margin, and the result ends with the band's texels the station saw at all (rows, columns), how many
+    of those views the margin left out, and for how many of them the margin was capped (bestview.margin_capped)."""
     depth, valid = grid.depth, grid.valid
     H = depth.shape[0]
     e0, e1 = max(r0 - 1, 0), min(r1 + 1, H)
@@ -141,8 +142,10 @@ def band_stats(grid, st, cube, pano, r0, r1, C0, C1, nb_c0, nb_c1, near=None):
     seen = ()
     if near is not None:
         at_all = vis & (rr >= r0) & (rr < r1)
-        seen = ((rr[at_all], cc[at_all]),)
-        vis = vis & B.clear_of_occluders(near, pts - st['t'], dist, cos)
+        v = pts - st['t']
+        vis = vis & B.clear_of_occluders(near, v, dist, cos)
+        out = at_all & ~vis
+        seen = ((rr[at_all], cc[at_all], int(out.sum()), int(B.margin_capped(near, v[out]).sum())),)
         if not vis.any():
             return seen if at_all.any() else None
     if not vis.any():
@@ -197,6 +200,7 @@ def statistics(grid, sts, rb):
     bands = list(range(R0, R1, CHUNK))
     margin = B.OCCLUDER_MARGIN > 0          # then visbits holds the texels seen clear of occluders, seenbits those seen at all
     seenbits = np.zeros_like(visbits) if margin else None
+    left_out = np.zeros(2, np.int64) if margin else None        # views the margin left out, and those of them for which it was capped
     with ThreadPoolExecutor(B.threads()) as pool:
         for si, st in enumerate(sts):
             if not B.station_faces_wall(st, wall):
@@ -215,7 +219,8 @@ def statistics(grid, sts, rb):
                 if res is None:
                     continue
                 if margin:
-                    seen_all[res[-1]] = True
+                    seen_all[res[-1][:2]] = True
+                    left_out += res[-1][2:]
                     res = res[:-1]
                     if not res:
                         continue
@@ -236,6 +241,7 @@ def statistics(grid, sts, rb):
     stats = dict(cover=cover, rgb=rgb, lap=lap, lum2=lum2, foot=foot, visbits=visbits, nvalid=nvalid)
     if margin:
         stats['seenbits'] = seenbits
+        stats['views_left_out'] = left_out
         stats['occluder_margin'] = np.float64(B.OCCLUDER_MARGIN)     # a --stats-cache is good for this margin alone
     return stats
 
@@ -741,8 +747,10 @@ def main():
         tlab, bits, clearance = doubtful_views(grid, sts, tlab, stats)
         extra = dict(seenbits=stats['seenbits'], clearbits=stats['visbits'])
         stats['visbits'] = bits
+        left_out, capped = (int(x) for x in stats['views_left_out'])
         mm = dict(least=float(clearance.min()), median=float(np.median(clearance)), greatest=float(clearance.max())) if len(clearance) else {}
         margin = dict(metres=B.OCCLUDER_MARGIN, cubemap_texels_at_most=B.MARGIN_TEXELS,
+                      views_left_out=left_out, views_left_out_where_the_margin_was_capped=capped,
                       texels_labelled_clear=clear, texels_given_a_clear_view_from_outside_the_ranking=outside,
                       texels_given_a_doubtful_view=len(clearance),
                       doubtful_view_clearance_mm={k: round(x * 1000, 1) for k, x in mm.items()})

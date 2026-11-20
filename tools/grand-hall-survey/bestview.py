@@ -17,6 +17,7 @@ Colours are worked in the panoramas' own sRGB encoding (0-255 floats), each stat
 manifest's gain and white balance) applied in linear light, as project.py applies it.
 """
 import ctypes
+import functools
 import json
 import os
 import sys
@@ -39,7 +40,7 @@ COS_MIN, MAX_DIST = 0.2, 16.0   # visibility(): the least cosine of incidence an
 # at the occluder). 0.0: no margin, as the Grand Hall is built. tools/surveyed-rooms sets it for a room (its gate B25);
 # label-views.py then counts only the views clear of that margin (occluder_cube, clear_of_occluders below).
 OCCLUDER_MARGIN = 0.0
-MARGIN_TEXELS = 16              # the margin reaches at most this many cubemap texels from a ray
+MARGIN_TEXELS = 16              # the margin reaches at most this many cubemap texels from a ray (occluder_cube says what that leaves of it)
 PIX_RAD = 2 * np.pi / 8192   # angular size of an 8K equirect pixel (its rows; columns are finer off the horizon)
 LUMA = np.array([0.2126, 0.7152, 0.0722], np.float32)
 # Each wall's frame in the E57 plan (X, Y), as wall-views.py placed the orthographic tiles: u = 0 at
@@ -299,11 +300,14 @@ def cube_texel(cube, v):
     return out
 
 
+@functools.lru_cache(maxsize=2)
 def texel_angle(size):
     """The angle (radians) each texel of a cubemap face spans, as the side of a square of its solid angle:
-    2 / size at the face's centre, 0.44 of that in a corner."""
+    2 / size at the face's centre, 0.59 of that at the middle of an edge and 0.44 in a corner. The array is kept between calls: read only."""
     n = (np.arange(size) + 0.5) / size * 2 - 1
-    return ((2.0 / size) * (1.0 + n[:, None] ** 2 + n[None, :] ** 2) ** -0.75).astype(np.float32)
+    angle = ((2.0 / size) * (1.0 + n[:, None] ** 2 + n[None, :] ** 2) ** -0.75).astype(np.float32)
+    angle.setflags(write=False)
+    return angle
 
 
 def padded_cube(cube, pad):
@@ -334,9 +338,14 @@ def _min3(a):
 
 def occluder_cube(depthcube):
     """For every texel of a station's distance cubemap, the nearest surface within OCCLUDER_MARGIN of its ray: the
-    least stored distance s among the texels up to m away (m = 1..MARGIN_TEXELS) with s x m x the texel's angle
-    <= OCCLUDER_MARGIN, that is, standing no farther than the margin from the ray where the surface is. Infinite
-    where there is none."""
+    least stored distance s among the texels of the squares round it, m = 1..MARGIN_TEXELS texels to each side, with
+    s x m x the texel's own angle <= OCCLUDER_MARGIN. Infinite where there is none.
+    Two limits. The neighbourhood is a square, measured with the centre texel's angle, so along its diagonals it
+    reaches up to 1.4 times the margin from the ray. And it is never wider than MARGIN_TEXELS texels, so the margin is
+    reached in full only where the surface stands at least OCCLUDER_MARGIN / (MARGIN_TEXELS x the texel's angle) from
+    the station: for 50 mm on 1024-texel faces, 1.6 m at a face's centre, 2.7 m at the middle of an edge and 3.65 m in
+    a corner. Nearer than that the margin is what MARGIN_TEXELS texels span there (at half a metre, 16 mm at a face's
+    centre and 7 mm in a corner): margin_capped() says where."""
     pad = MARGIN_TEXELS
     cur = padded_cube(depthcube, pad)
     angle = texel_angle(depthcube.shape[-1])
@@ -362,6 +371,14 @@ def clear_of_occluders(near, v, dist, cos):
     """Whether points along v from a station (N, 3; their distances and cosines of incidence) are clear of every
     occluder's margin: nothing in `near` (occluder_cube) stands nearer than occluder_limit()."""
     return cube_texel(near, v) >= occluder_limit(dist, cos)
+
+
+def margin_capped(near, v):
+    """Whether, along directions v (N, 3), the nearest surface within the margin (`near`, occluder_cube) stands so
+    near the station that MARGIN_TEXELS texels there span less than OCCLUDER_MARGIN: the margin applied round that
+    surface was narrower than the one asked for. False where no surface stands within the margin."""
+    span = np.broadcast_to(MARGIN_TEXELS * texel_angle(near.shape[-1]), near.shape)
+    return cube_texel(near, v) * cube_texel(span, v) < OCCLUDER_MARGIN
 
 
 def occluder_clearance(depthcube, v, dist, cos):
