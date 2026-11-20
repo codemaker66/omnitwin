@@ -23,7 +23,7 @@ build (`build-room.py`) reads every room fact from the config; the Grand Hall's 
 | `nodemods.mjs` | resolves meshoptimizer as `modules.mjs` does (`SURVEYED_ROOMS_NODE_ROOT` borrows another checkout's: gate B22) |
 | `prove-build-identity.py` | the Grand Hall's build identity: a static proof, a tree comparison, digests, a self-test |
 | `measure/saloon/` | the scripts that measured the Saloon (`32_glass_split.py`: where its glass changes plane) |
-| `measure/walls/` | measures of a finished build's wall photographs, for judging a change to how the walls are coloured on a real room: `compare_builds.py` (two builds, on the texels whose station changed), `doubtful_rules.py` (the rules for a doubtful view, each view against its own station's clean wall), `changed_crops.py` (where two builds' walls differ, to be looked at). They take the builds' work folders; no scan data is kept with them |
+| `measure/walls/` | measures of a finished build's wall photographs, for judging a change to how the walls are coloured on a real room: `compare_builds.py` (two builds, on the texels whose station changed: as rates, and as pairs that turned worse, turned better or stayed, by texel and by connected patch, beside the same count on clean texels), `doubtful_rules.py` (the rules for a doubtful view, each view against its own station's clean wall), `changed_crops.py` (where two builds' walls differ, to be looked at). They take the builds' work folders; no scan data is kept with them |
 | `tests/` | T0 static, T1 units, T2 the mini Grand Hall (old scripts against new steps), T3 an analytic room, T4 the gates neither opens |
 | `.gitattributes` | keeps the configs, the schema and the shell scripts LF on every checkout |
 
@@ -306,9 +306,15 @@ digits), `captured` is a day on the calendar, a number is finite and never a boo
 are whole numbers from 0 and sizes and counts whole numbers from 1. Then, on a record whose shapes
 hold, its cross-checks (one wall per segment and its length, the strips, the relief's order, every
 named file listed, largest first by bytes), with the reader's tolerances: a T0 test
-(`ReaderTolerances`) reads them out of `survey-record.ts` and compares, and skips, saying so, while
-the reader in the tree lacks one. It judges the record as the published JSON reads. For a room that
-publishes its record, writing it prints any fault and `--publish` refuses it with nothing copied.
+(`ReaderTolerances`) reads them out of `survey-record.ts` and compares. It never skips: a reader
+that is missing, or that no longer exports one of the four as a plain number on the one line that
+declares it (a rename, a dropped rule, an old value parked in a comment above the new one), fails
+it. Only those four are tied: the step's other copies of the reader's rules (the schema version,
+the patterns for a file's name, a slug and a hash, the twelve bytes of a relief's id) are compared
+by no test, and a change to one of them in the reader alone shows only when a record the tools
+wrote is read by the web's own parser. It judges the record as the published JSON reads. For a
+room that publishes its record, writing it prints any fault and `--publish` refuses it with
+nothing copied.
 A fault a config can carry is refused before any build: `check_room.py` matches the schema's
 patterns whole in the same way and holds every date (`source.captured` among them) to the
 calendar, and the schema takes `survey.publish.revision` from 1 only; for a room that publishes its
@@ -358,7 +364,7 @@ gates a config opens, computed before any work; `--plan` prints them and writes 
 | B20 | a `copy` patch | the patch is taken from another wall, after every wall's own edits, in the atlas (which then holds every wall's orthophoto at once) and in the detail images (`roombuild/walls.py`) |
 | B23 | a wall's tiles are narrower than its rounded length | each tile's width is rounded on its own, so the tiles can add up to fewer columns than `round(length x ppm)` (the Saloon's fireplace wall: 1556 against 1557). The Grand Hall's scripts count the wall's right end, its relief's width and its atlas crop from the rounded length, which lies inside its tiles (4227 of 4228); such a wall ends at its tiles' last column instead, in the corners, the relief, the atlas and the detail's mapping onto the atlas |
 | B24 | `survey.wallViews.strayTexels` is set | the corners step leaves out of each elevation tile (uncovered, as where the mesh has a hole) the covered texels whose rendered point lies more than 1 mm from the texel's own centre, up to that many a tile, and lists them in `build/stray-texels.json`; a tile with more stops the build. `render.mjs` draws a surface seen edge-on (the floor under a wall) as a sliver less than a texel high and can extrapolate along it, so the point it writes lies metres off the view's slab and millimetres off the texel. The labels and the photographs place every texel at its centre and refuse a tile with one elsewhere (`bestview.Grid`, as before): that check is unchanged and still runs on what the corners step wrote |
-| B25 | `survey.projection.walls.occluderMargin` is set | the walls' labels count a station's view of a texel only where nothing nearer stands within that margin of the ray, measured at the occluder (`bestview.OCCLUDER_MARGIN`, `occluder_cube`, `clear_of_occluders`; `label-views.py`). The scan's mesh outlines a thing standing proud of a wall smaller than the panoramas show it, so along the edge of the zone it hides from a station, the station's photograph still shows the thing on wall the mesh says is in view; one station a block prints that rim sharply, far from the thing. A surface counts as an occluder when it is nearer than the texel by more than the visibility test's tolerance plus what the wall's own slope explains over the margin. That allowance is the wall's alone, so a floor, a ceiling, a side wall or a pilaster's flank that meets the wall counts as an occluder of the texels beside it, though it hides nothing: a known cost, a band along every such junction about as wide as the margin, in which a station that faces the wall loses its view (0.50% of the views in an empty room at 50 mm, all within 5 cm of a junction; measured under "Real data, the ghosts above the Saloon's pediments"). The margin is looked for in a square of up to 16 cubemap texels round the ray, measured with the ray's own texel: along the square's diagonals it reaches up to 1.4 times the margin, and it reaches the margin in full only where the occluder stands far enough from the station (for 50 mm on 1024-texel depth maps, 1.6 m at a cube face's centre, 2.7 m at the middle of an edge and 3.65 m in a corner; nearer than that it is what 16 texels span there, at half a metre 16 mm at a face's centre and 7 mm in a corner). `labels-<wall>.json` counts the views the margin left out and those of them for which it was so capped; that second count is of views left out, and says nothing of the views the cap let through (a view whose occluder lies beyond the 16 texels, though within the margin, counts as clear). A texel none of its block's six ranked stations sees clear takes the first station of the block's whole order that does (`clear_views`); a texel that stations see, but none of them clear, takes a doubtful view, the first station of its block's sequence that saw it (`doubtful_views`; `doubtful_sequence`: the block's ranked stations, then every station by how much of the block it saw at all), so nothing a station saw becomes a hole; `labels-<wall>.json` counts both under `occluder_margin`, with how far the doubtful views given pass from the occluder's outline (`bestview.occluder_clearance`), which is reported and decides nothing |
+| B25 | `survey.projection.walls.occluderMargin` is set | the walls' labels count a station's view of a texel only where nothing nearer stands within that margin of the ray, measured at the occluder (`bestview.OCCLUDER_MARGIN`, `occluder_cube`, `clear_of_occluders`; `label-views.py`). The scan's mesh outlines a thing standing proud of a wall smaller than the panoramas show it, so along the edge of the zone it hides from a station, the station's photograph still shows the thing on wall the mesh says is in view; one station a block prints that rim sharply, far from the thing. A surface counts as an occluder when it is nearer than the texel by more than the visibility test's tolerance plus what the wall's own slope explains over the margin. That allowance is the wall's alone, so a floor, a ceiling, a side wall or a pilaster's flank that meets the wall counts as an occluder of the texels beside it, though it hides nothing: a known cost, a band along every such junction about as wide as the margin, in which a station that faces the wall loses its view (0.50% of the views in an empty room at 50 mm, all within 5 cm of a junction; measured under "Real data, the ghosts above the Saloon's pediments"). The margin is looked for in a square of up to 16 cubemap texels round the ray, measured with the ray's own texel: along the square's diagonals it reaches up to 1.4 times the margin, and it reaches the margin in full only where the occluder stands far enough from the station (for 50 mm on 1024-texel depth maps, 1.6 m at a cube face's centre, 2.7 m at the middle of an edge and 3.65 m in a corner; nearer than that it is what 16 texels span there, at half a metre 16 mm at a face's centre and 7 mm in a corner). `labels-<wall>.json` counts the views the margin left out and those of them for which it was so capped; that second count is of views left out, and says nothing of the views the cap let through (a view whose occluder lies beyond the 16 texels, though within the margin, counts as clear). A texel none of its block's six ranked stations sees clear takes the first station of the block's whole order that does (`clear_views`); a texel that stations see, but none of them clear, takes a doubtful view, the first station of its block's sequence that saw it (`doubtful_views`; `doubtful_sequence`: the block's ranked stations, then every station by how much of the block it saw at all, in a stable sort where a tie goes to the earlier station, so that a build made again is the same build), so nothing a station saw becomes a hole; `labels-<wall>.json` counts both under `occluder_margin`, with how far the doubtful views given pass from the occluder's outline (`bestview.occluder_clearance`), which is reported and decides nothing |
 | B26 | a `behind` edit | the corners step moves the covered texels of the edit's rectangle that stand more than 0.06 m before the wall back to where the wall is, as it moves a corner's fin: each row to the median depth of the strip of wall just beyond the rectangle on the named side (0.10 m wide; a row with no wall in the strip takes the nearest rows' depth), or every row to the one depth given. The labels, the photographs, the 2 mm detail and the relief all read those positions (`out-walls/<view>.fixed.f32`), so the wall behind is photographed from the stations whose distance maps show it past the thing, the station that faces the thing no longer counts there, and the relief has no lump. Texels that no station saw stay without a photograph, as anywhere: a patch covers those |
 | B21 | `SURVEYED_ROOMS_TEST_DEPTH_SIZE` is set | test-sized depth maps (never published) |
 | B22 | `SURVEYED_ROOMS_NODE_ROOT` is set | another checkout's meshoptimizer meshes the relief (never published) |
@@ -535,39 +541,141 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       from 75 to 53. Where one doubtful view became another (12,340) they rose from 1,021 to 1,495,
       the texels more than 12 levels off from 1,631 to 3,168, and 5,228 texels moved farther from
       their surroundings against 3,429 nearer, on all eight walls the step touched. A new dark
-      band 37 cm by 4.5 cm stood on the window wall's plaster where the first build was clean. The
-      measure is loose beside mouldings, where it calls 18 in 100 clean texels dark and 24 in 100
-      off: these are the same texels against the same surroundings in two builds, not absolute
-      counts.
-    - Why. Every doubtful texel was then sampled from every station that saw it, and each view
-      judged against its own station's clean wall beside it, which leaves exposure out
-      (`measure/walls/doubtful_rules.py`; 28,250 doubtful texels left to be seen, 15,974 of them
-      judged under every rule). Whichever rule picks the view, it shows the thing's edge about as
-      often: 50 dark in 1,000 for the first ranked station that saw the texel, 52 for the farthest
-      view, and 50 to 52 with a floor of 10, 20 or 30 mm of clearance. A view's clearance says
-      little on real walls (dark in 1,000 of all the views judged: 86 at 10 to 20 mm, 74 at 20 to
-      30, 63 at 30 to 40, 71 at 40 to 50). What differs is how many texels a rule takes from a
-      station other than their block's own: 5,365 for the ranked station, 12,221 for the farthest
-      view. Such a texel-sized island of another station's picture is not levelled with its
-      neighbours as a block is, and it shows. The band on the window wall is one: in the first
-      build 529 of its texels came from a station almost square to the wall (a ray of 6.1 m, cosine
-      0.96, 33 mm clear at the median), and in the second 539 came from one far along it (8.8 m,
-      cosine 0.79, 36 mm): a frontal view given up for three millimetres. And no rule of this kind
-      comes near the best choice a texel could have (31 dark in 1,000, the view nearest its own
-      station's clean wall): that would take a rule that reads the photographs, with the islands
-      levelled.
+      band about 38 cm by 5 cm (466 texels) stood on the window wall's plaster where the first
+      build was clean. The measure is loose beside mouldings, where it calls 14 in 100 clean
+      texels dark and 26 in 100 off: these are the same texels against the same surroundings in
+      two builds, not absolute counts.
+    - The noise. The same texels as pairs (worse / better / as they were, with the exact sign
+      test on those that changed), where one doubtful view became another: dark 841 / 367 /
+      11,132, off 2,295 / 758 / 9,287, farther from their surroundings by more than 2 levels
+      5,228 / 3,429 / 3,683. A patch of texels that changes station changes together, so texels
+      are not independent pairs and those counts overstate the evidence. With the patch as the
+      unit (the connected patches of every texel whose label differs, 313 of which hold such a
+      texel; a patch is worse where more of its texels of this kind turned worse than better):
+      dark 48 / 31 / 234 (p 0.07), off 123 / 51 / 139 (p 0.00000005), farther 171 / 98 / 44
+      (p 0.00001). So what is beyond chance is that the step pushed texels off their
+      surroundings, patch after patch; the rise in dark texels is within chance by patch, and 495
+      of its 841 are the window wall's. Wall by wall the patches are few (8 to 118) and five of
+      the eight walls pass 0.05 on a judgement or two: the fireplace wall (off 41 / 17, farther
+      62 / 35), its front end (farther 7 / 0), its rear end (off 10 / 1, farther 11 / 2), the
+      window wall (off 22 / 8) and its rear end (farther 10 / 2); on no wall is the second build
+      the better beyond chance. Where a doubtful view became a clear one (the first step; 65
+      patches): dark 4 / 11 / 50 (p 0.12), off 9 / 13 / 43 (p 0.5), farther 22 / 33 / 10 (p 0.2).
+      That is a gain by texel (dark 15 worse, 37 better) which by patch is within chance. And the
+      control, what two builds do to a texel that neither moved: of 139,547 clean texels within
+      reach of the texels judged, whose station is the same in both, 270 turned dark and 253
+      stopped being (p 0.5), 396 turned off and 643 stopped being, 2,093 moved farther and 2,987
+      nearer. The second build's untouched wall is, if anything, slightly nearer its
+      surroundings, so the changed texels' loss is not a drift of the whole photograph. Wall by
+      wall the control does lean (the rear wall's untouched texels moved farther, 263 against
+      169; the window wall's nearer, 458 against 198): the two builds level a wall a little
+      differently, so a wall's split is to be read beside its own control's.
+    - What the study supports. Every doubtful texel was then sampled from every station that saw
+      it, and each view judged against its own station's clean wall beside it, which leaves
+      exposure out (`measure/walls/doubtful_rules.py`; 28,250 doubtful texels left to be seen,
+      15,974 of them judged under every rule). Three things are measured. Whichever rule picks
+      the view, it shows the thing's edge about as often: 50 dark in 1,000 for the first ranked
+      station that saw the texel, 52 for the farthest view, and 50 to 52 with a floor of 10, 20
+      or 30 mm of clearance. A view's clearance says little above 10 mm (dark in 1,000 of all
+      the views judged: 309 under 10 mm, which is 427 views; 86 at 10 to 20 mm, 74 at 20 to 30,
+      63 at 30 to 40, 71 at 40 to 50), and a station's distance says far more: 604 from under
+      1.5 m, 525 at 1.5 to 2.5 m, 278 at 2.5 to 4 m, 105 at 4 to 6 m and 42 beyond 6 m (131,172
+      views). And the rules differ in how many texels they take from a station other than their
+      block's own: 5,365 for the ranked station, 12,221 for the farthest view. The reading these
+      support, which is a reading and not a thing measured: a texel-sized island of another
+      station's picture is not levelled with its neighbours as a block is, and that is what
+      shows. The band on the window wall fits it: in the first build 529 of its texels came from
+      a station almost square to the wall (a ray of 6.1 m, cosine 0.96, 33 mm clear at the
+      median), and in the second 539 came from one far along it (8.8 m, cosine 0.79, 36 mm), a
+      frontal view given up for three millimetres. Nobody has yet levelled the islands and
+      looked again, which is what would prove it. And no rule of this kind comes near the best
+      choice a texel could have (31 dark in 1,000 against 50: the view nearest its own station's
+      clean wall, which takes 13,856 texels from another station). That would take a rule that
+      reads the photographs, a vote across each texel's views with the seams levelled at the
+      scale of a texel: a later piece of work (T-740).
 
-    So the second step is the first build's own again, the simplest of the rules that are equal on
-    the rim: the first station of the block's sequence that saw the texel, its ranked stations
-    first and then every station by how much of the block it saw at all (`doubtful_sequence`; the
-    first build stopped at the six that saw most, and left 100 texels that a station had seen
-    without a label). Run on the builds' own arrays, it gives the first build's view on every one
-    of the 40,520 doubtful texels that had one, a view to each of those 100, and the second build's
-    clear views everywhere else. On the synthetic wall it shows a box in 113 texels where the
-    farthest view shows 51: that wall's panoramas are drawn from the true geometry with one
-    exposure and exact poses, so there a view's clearance is the whole truth and another station's
-    picture costs nothing, and neither holds in a real room. A rule for this step is to be judged
-    with those two scripts on a real room's builds before it is changed again.
+    So the second step is the first build's own again. The acceptance set for it (20 November)
+    was that among rules within noise of each other on real walls the simplest wins, and by the
+    study's count no simple rule is the better on the rim. A texel takes the first station of
+    its block's sequence that saw it (`doubtful_sequence`): the block's ranked stations (a block
+    without a label borrows the nearest labelled block's), then every station by how much of the
+    block it saw at all. That second part is a stable sort in which a tie goes to the earlier
+    station of the stations' own order, so a build made again is the same build. Run on the two
+    builds' own arrays, the rule gives the first build's view on every one of the 40,420
+    doubtful texels that had one (of 40,520), and the second build's clear views everywhere else.
+    - The third build (20 November), made with this rule and the first step as merged. Its
+      labels against the first build's: 1,813 of 8,548,148 texels differ. 1,367 doubtful views
+      became clear ones (the first step), 209 clear views became another station's clear view,
+      137 holes took a clear view and 100 a doubtful one; no doubtful texel that had a view
+      changed it, and none is left unexplained. Against the second build 20,504 texels differ,
+      each one doubtful view for another: every clear view is the same. Its photographs against
+      the first build's, on the 570 changed texels left to be seen that can be judged (worse /
+      better / as they were): dark 15 / 39 / 516, by patch (138) 4 / 14 / 120 (p 0.03); off 70 /
+      64 / 436, by patch 30 / 25 / 83 (p 0.6); farther 229 / 214 / 127, by patch 51 / 64 / 23
+      (p 0.3). The control, 92,603 clean texels: dark 203 / 195, off 311 / 473, farther 1,466 /
+      2,222. The band on the window wall is gone: in its window no texel differs from the first
+      build's. One wall is worse by patch: the fireplace wall's front end, off, 8 patches
+      against 1 (p 0.04; by texel 22 of 30 against 2), while its own control leans the other way
+      (61 against 183). Eight walls by three judgements would name about one by chance, but this
+      is one kind of texel, and that kind is worse over the room (83 judged: off 26 / 4 / 53, by
+      patch 10 / 2 / 15, p 0.04). They are the 209 texels whose clear view changed station. None
+      of their block's six ranked stations saw them clear; the first build's sequence gave them
+      a clear view all the same (from the six that saw most of the block at all); the first step
+      gives them the first station of the block's whole order that saw them clear, and that
+      order is by how much of the block each station saw CLEAR. On the fireplace wall's front
+      end they are one row of 45 texels above a cornice, beside a band no station coloured.
+      Worked out on the label files, not built: were the first step to use the second step's
+      sequence (every station by how much of the block it saw at all), all 209 would keep the
+      first build's station, 1,130 of the 1,367 and 133 of the 137 would keep the third build's,
+      241 would take another clear station, and every other clear texel of the room would be as
+      it is. That would be one sequence for both steps.
+    - The former holes. The first build's sequence stopped at the six stations that saw most of
+      a block, and so left 100 texels that a station had seen, none clear, without a label
+      (fireplace 10, fireplace-rear-end 6, fireplace-rear-return 1, front 17, rear 64,
+      window-front-end 2), which the atlas step filled from their neighbours. (A block's six
+      ranked stations do not see 6,169 of the 40,520; the six that saw most gave 6,069 of those
+      a view.) The longer sequence gives each of the 100 a view, from a station at place 12 or
+      later. View against fill, each set against the texel's clean surroundings: 64 of the 100
+      lie under a patch of the config and are never seen, and of the 36 left only 10 have enough
+      clean neighbours to be judged. On those the view is dark on 4 and off on 5, and so is the
+      fill; the view lies 19.8 levels from its surroundings at the mean and the fill 34.7; the
+      view is the nearer by more than 2 levels on 5 and the fill on 1. The fill wins on no wall,
+      so the longer sequence stays: on a sample of ten (a sign test of 5 against 1 is p 0.2).
+      Looked at cluster by cluster, third build beside the first build's fill (nine clusters
+      hold the 36), neither draws the eye: each lies along a moulding's edge. The other 64 are
+      hidden only by the patches of the Saloon's edits; a build without them would show them.
+    - The synthetic wall says the opposite, and its count is no bar for this step any more. The
+      texels whose label's panorama shows a box are 113 with this rule, against 51 with the
+      farthest view, 99 with no margin and 211 with the first step missing: by that count this
+      rule is worse than no margin at all. Texel by texel against no margin: 69 of the 113 show
+      the box there too, from the same station; the other 44 all lie in blocks that the margin
+      ranks differently (28 of them in blocks whose own label changed; 43 are doubtful views and
+      one a clear one). None was a hole without the margin and none is left unexplained. The
+      margin changes what a ranking is made from, since a station's cover of a block is its
+      clear cover: 251 of that wall's 475 blocks rank differently and 95 take another label,
+      while 418 of the 499 doubtful texels keep the station they had without the margin. Of the
+      99 without a margin, 69 are those carried over, 8 no longer show the box (2 by a clear
+      view, 6 by another doubtful one) and 22 show it from another station; another 22 are new.
+      Of the 44, 41 lie in the 25 blocks where the labels' glare test changed the choice with
+      the margin, all 22 new ones among them, on a wall that has no glare and where that test
+      changes nothing without a margin: it compares stations over their own clear texels of a
+      block, which a margin makes different texels. (On the Saloon, where there is glare, the
+      test rejects fewer views with the margin than a build of 15 November did without one,
+      188,951 against 209,555, so that is not followed here.) Elsewhere on the synthetic wall
+      the margin earns its keep: the labels' depth sweep is out by 0.0 mm at every percentile
+      with it, against a median of 1.2 mm and 3.9 mm at the 95th without, and the seams fall
+      from 91 to 71. (The Saloon's seams rise with the margin, 26,475 to 28,970 over its twelve
+      walls, and its sweep does not move: what the margin buys there is the clean plaster above
+      the pediments, measured above.) That wall's
+      panoramas are drawn from the true geometry with one exposure and exact poses, so there
+      another station's picture costs nothing and a view's clearance is all there is to choose
+      by; on the Saloon's photographs the farthest view measured worse (above). The two worlds
+      disagree and the real one decides. What the synthetic one can prove is kept, as gates and
+      with no bound loosened: no doubtful texel that any station saw clear, no plain texel that
+      shows the pier (exactly 0), and a margin of 0 that changes nothing.
+
+    A rule for this step is to be judged with those scripts on a real room's builds before it is
+    changed again.
 - A known cost: the junctions (found in this gate's review, 19 November 2026). The margin's
   allowance for slope is the wall's own. Where another surface meets the wall in a concave
   junction (the floor, the ceiling, a side wall, a pilaster's flank), that surface stands nearer
@@ -602,8 +710,11 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
   49 arrays, none different (every array bit for bit; the run reports less their timings and
   memory). After the review's changes to the margin's labels (19 November), `label-views.py` was
   set against the reviewed one on a synthetic wall with 7 stations, with the margin absent and
-  with an explicit 0.0: the same 21 arrays and report, and the same bytes in the file. The real
-  END wall has not been run again with them.
+  with an explicit 0.0: the same 21 arrays and report, and the same bytes in the file. On 20
+  November the real END wall was run again twice, its labels and then its photographs: with
+  those changes, and with the doubtful view settled as it now is (T-739; on the synthetic wall
+  that rule's labels file is the same bytes once more, the margin absent or 0.0). Each time:
+  23 files, 49 arrays, none different, after the labels and again after the photographs.
   On 18 November on the reference machine, with the twin's manifest and an installed checkout's
   meshoptimizer: T0 52 tests, T1 and T4 54, T3 16, none failing and none skipped. T2 was not run
   again; the real END wall is the stronger form of what its label stage shows.
@@ -660,7 +771,9 @@ at all when the record would be refused.
 
 CI runs T0, T1 and T4 in a job of their own ("Survey tools") whenever a change touches
 `tools/surveyed-rooms` or `tools/grand-hall-survey`, because the room build runs the hall's own
-scripts through seams and an edit to either folder can break the other. There the cases that
+scripts through seams and an edit to either folder can break the other, and whenever it touches
+the web reader's `survey-record.ts`, whose four tolerances `publish.py` copies and T0 compares
+(the step's other copies of the reader's rules are compared by nothing). There the cases that
 need the twin's manifest skip themselves, and the run takes about half a minute (a hosted Linux
 runner starts a process far faster than the Windows machine the times above were taken on). T2
 and T3 are run by hand: they take about twenty-five and four minutes there.

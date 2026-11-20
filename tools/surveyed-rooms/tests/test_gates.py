@@ -928,8 +928,26 @@ class OccluderMarginManyStations(unittest.TestCase):
     the outline the margin exists to remove, in the band the box's test above leaves out. With every station
     asked, those texels take the far station's clear view; a doubtful view is left for the texels no station sees
     clear, and of those views it is the first of the block's own sequence (its ranked stations, then the others by
-    how much of the block they saw at all), not the one that passes farthest from the pier's edge: on real walls
-    the farthest view showed the edge as often and put far more texels in another station's picture (T-739)."""
+    how much of the block they saw at all, ties to the earlier station), not the one that passes farthest from the
+    pier's edge: on the Saloon's walls the farthest view showed the edge as often and put far more texels in
+    another station's picture (T-739; the README has the numbers).
+
+    What this world can prove is asserted here and no threshold is loosened: no doubtful texel that any station
+    saw clear, and no plain texel left that shows the pier (exactly 0). That a margin of 0 changes nothing is
+    proved elsewhere: test_gh_scripts holds the hall's steps to its scripts as written, and when this rule was
+    settled the labels of a synthetic room and of the Grand Hall's real END wall were compared byte for byte at a
+    margin of 0 (runs, not tests; the README has the account). What this world cannot prove is which doubtful
+    view is the better one. On the review's own synthetic wall (a pediment 0.3 m proud and a pilaster 0.15 m proud, the mesh
+    2 cm short, 7 stations, 50 mm; not this pier), the texels whose label's panorama shows a box were 99 without a
+    margin, 211 with the first step missing, 51 with the farthest view and 113 with this rule. So by that count
+    this rule is worse than the farthest view there, and worse than no margin: 69 of the 113 show the box without
+    a margin too, from the same station, and the other 44 lie in blocks that the margin ranks differently (a
+    station's cover of a block is its clear cover). Of the 99 without a margin, 69 are carried over, 8 are cured
+    and 22 show the box from another station; 22 more are new. 41 of the 44, all 22 new ones among them, lie in
+    the 25 blocks where the labels' glare test changed the choice with the margin, on a wall that has no glare.
+    That count was the bar for the second step when it was
+    written, and it is retired for it: a synthetic panorama is drawn from the true geometry with one exposure and
+    exact poses, where another station's picture costs nothing, and the Saloon's photographs said otherwise."""
 
     @classmethod
     def build(cls, name, margin):

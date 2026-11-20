@@ -305,45 +305,53 @@ class MarginViews(unittest.TestCase):
             self.assertFalse(B.margin_capped(B.occluder_cube(cube), dirs).any())
         self.assertFalse(B.margin_capped(np.full((6, size, size), np.inf, np.float32), dirs).any())    # no surface within the margin
 
-    def test_a_clear_view_is_taken_from_any_station_in_the_blocks_order(self):
+    def test_a_clear_view_is_taken_from_the_first_station_of_the_blocks_sequence_that_has_one(self):
+        """T-739. One sequence serves both steps. A texel none of its block's ranked stations saw clear takes the
+        first station of the block's sequence that saw it clear, and beyond the ranking the sequence goes by how
+        much of the block a station saw at all, not by its data cost or by how much it saw clear: on the Saloon's
+        walls, of two clear views from outside a ranking, that one lay nearer its surroundings."""
         lv, B = self.lv, self.B
         S, n = 9, 2 * B.BLOCK
         self.assertGreater(S, lv.RANKED)
         D = np.tile((0.1 * np.arange(S)).reshape(S, 1, 1), (1, 1, 2))        # one row of two blocks; station 0 the best, 8 the worst
         keep = np.ones((S, 1, 2), bool)
-        keep[8] = False                                              # station 8: not a candidate, ranked after them by its cover
         keep[:, 0, 1] = False                                        # the second block: no station passed for a candidate
         cover = np.full((S, 1, 2), 0.97, np.float32)
         cover[:, 0, 1] = 0.0
-        cover[3, 0, 1], cover[7, 0, 1] = 0.02, 0.05                  # two stations saw a little of it clear, station 7 the more
         label = np.array([[0, -1]])                                  # so it has no label, and ranked_lists gives it no list
         ranked = lv.ranked_lists(D, label, keep, cover)
-        order = lv.whole_order(D, label, keep, cover)
         self.assertEqual(ranked[0, 0].tolist(), [0, 1, 2, 3, 4, 5])
         self.assertTrue(np.all(ranked[0, 1] == -1))
-        self.assertEqual(order[0, 0].tolist(), list(range(S)))       # every station, the ranking first
-        self.assertEqual(order[0, 1].tolist(), [7, 3] + [-1] * (S - 2))     # without a label: by how much each saw, most first
-        self.assertEqual(order.dtype, np.int16)
         clear = np.zeros((S, B.BLOCK, n), bool)
         clear[:, :, :2] = True                                       # columns 0 and 1: every station
         clear[6:, :, 2:4] = True                                     # columns 2 and 3: stations 6, 7 and 8, none of them ranked
         clear[8, :, 4:6] = True                                      # columns 4 and 5: station 8 alone
         second = B.BLOCK                                             # the block without a label begins at this column
         clear[3, :, second:second + 5] = True                        # its columns 0 to 4: station 3
-        clear[7, :, second + 2:second + 7] = True                    # its columns 2 to 6: station 7, which saw more of the block
+        clear[7, :, second + 2:second + 7] = True                    # its columns 2 to 6: station 7
+        seen = clear.copy()
+        seen[8, :, 6:8] = True                                       # station 8 saw the rest of the first block too, within a margin
+        seen[3, :, second:second + 8] = True                         # and station 3 the whole of the second
         bits = B.pack_bits(clear)
+        sequence = lv.block_sequence(ranked, label, B.pack_bits(seen), n)
+        # The first block: its ranking, then every station by how much of the block it saw at all. Station 8 saw all
+        # of it; 6 and 7 four columns each, the earlier first; the ranked six two columns each.
+        self.assertEqual(sequence[0, 0].tolist(), [0, 1, 2, 3, 4, 5] + [8, 6, 7, 0, 1, 2, 3, 4, 5])
+        # The second has no ranking and borrows its neighbour's; then the two stations that saw any of it.
+        self.assertEqual(sequence[0, 1].tolist(), [0, 1, 2, 3, 4, 5] + [3, 7] + [-1] * (S - 2))
+        self.assertEqual(sequence.dtype, np.int16)
         valid = np.ones((B.BLOCK, n), bool)
         tlab = lv.texel_labels(ranked, bits, valid, (0, 1, 0, 2))
         self.assertEqual(sorted(np.unique(tlab).tolist()), [-1, 0])
         self.assertTrue(np.all(tlab[:, second:] == -1))              # the ranking alone leaves the whole second block without a station
-        out, outside = lv.clear_views(order, tlab, bits)
-        self.assertTrue(np.all(out[:, :2] == 0) and np.all(out[:, 2:4] == 6) and np.all(out[:, 4:6] == 8))
-        self.assertTrue(np.all(out[:, 6:second] == -1))              # no station saw the first block's other columns
-        # The block without a label: a texel a station saw clear takes it all the same, and where two did, the one
-        # that saw more of the block. (label-views.py's main() cannot make such a block today: while candidates()
-        # keeps the station that covers a block best, a block without a label has no clear texel. This is the guard
-        # for the day that changes.) What no station saw clear stays as it was.
-        self.assertTrue(np.all(out[:, second:second + 2] == 3) and np.all(out[:, second + 2:second + 7] == 7))
+        out, outside = lv.clear_views(sequence, tlab, bits)
+        # Columns 2 and 3: three stations outside the ranking saw them clear. The one that saw most of the block at
+        # all is taken (8), not the one with the least data cost (6), which the first form of this step took.
+        self.assertTrue(np.all(out[:, :2] == 0) and np.all(out[:, 2:4] == 8) and np.all(out[:, 4:6] == 8))
+        self.assertTrue(np.all(out[:, 6:second] == -1))              # no station saw the first block's other columns clear
+        # The block without a label: a texel a station saw clear takes one all the same, a station of the borrowed
+        # ranking first (3 stands in it), then the sequence's other half. What no station saw clear stays as it was.
+        self.assertTrue(np.all(out[:, second:second + 5] == 3) and np.all(out[:, second + 5:second + 7] == 7))
         self.assertTrue(np.all(out[:, second + 7:] == -1))
         self.assertEqual(outside, 4 * B.BLOCK + 7 * B.BLOCK)
         self.assertTrue(np.array_equal(tlab, lv.texel_labels(ranked, bits, valid, (0, 1, 0, 2))))   # the input is not written to
@@ -384,7 +392,7 @@ class MarginViews(unittest.TestCase):
         self.assertEqual(sorted(zip(*(a.tolist() for a in np.nonzero(used & ~clear)))), [(1, 0, 1), (2, 0, 0), (3, 0, 2)])   # station, row, column
         self.assertTrue(np.array_equal(stats["visbits"], B.pack_bits(clear)))     # the clear views are not written to
 
-    def test_the_sequence_for_a_doubtful_view_is_the_ranking_then_every_station_by_what_it_saw(self):
+    def test_the_blocks_sequence_is_the_ranking_then_every_station_by_what_it_saw(self):
         """T-739. Per block: its ranked stations (a block without a label borrows the nearest labelled block's),
         then every station that saw any of the block at all, most first, so that a texel a station saw always
         finds a view; none that saw nothing of it."""
@@ -400,7 +408,7 @@ class MarginViews(unittest.TestCase):
         seen[4, :, :1] = True                                        # its own station one (it stands in both halves),
         seen[2, :, :2] = True                                        # and station 2 two as well: of equals, the earlier station
         seen[3, :, B.BLOCK:B.BLOCK + 3] = True                       # block 1: station 3 alone
-        seq = lv.doubtful_sequence(ranked, label, B.pack_bits(seen), n)
+        seq = lv.block_sequence(ranked, label, B.pack_bits(seen), n)
         self.assertEqual(seq.shape, (1, 3, lv.RANKED + S))
         self.assertEqual(seq.dtype, np.int16)
         self.assertEqual(seq[0, 0].tolist(), [4, 1, 0, 2, 3, 5] + [6, 2, 8, 4] + [-1] * 5)
@@ -412,7 +420,7 @@ class MarginViews(unittest.TestCase):
         for s in range(S):
             many[s, :, :s] = True                                    # station s saw s columns of block 0; station 0 none
         self.assertGreater(S - 1, lv.RANKED)
-        seq = lv.doubtful_sequence(ranked, label, B.pack_bits(many), n)
+        seq = lv.block_sequence(ranked, label, B.pack_bits(many), n)
         self.assertEqual(seq[0, 0, lv.RANKED:].tolist(), [8, 7, 6, 5, 4, 3, 2, 1, -1])
 
     def test_a_statistics_cache_is_good_for_its_own_margin_alone(self):
@@ -486,6 +494,110 @@ class WallMeasure(unittest.TestCase):
         bits = np.zeros((2, 1, 1), np.uint8)
         bits[1, 0, 0] = 0b01000000                                  # station 1 saw column 1
         self.assertEqual(wv.bit(bits, np.array([0, 1, 1]), np.array([0, 0, 0]), np.array([1, 1, 0])).tolist(), [False, True, False])
+
+    def test_a_clean_texel_is_not_its_own_surroundings(self):
+        # A changed texel is never among the clean ones, so it never votes on its own surroundings. A clean texel
+        # judged as a control must be judged the same way, or the control flatters itself (found in review).
+        wv = self.wv
+        H = W = 2 * wv.REACH + 1
+        mid = wv.REACH
+        L = np.full((H, W), 100.0, np.float32)
+        L[mid, mid] = 10.0                                          # one clean texel far darker than the wall round it
+        depth = np.zeros((H, W), np.float32)
+        ref, count = wv.surroundings(L, np.ones((H, W), bool), depth, np.array([mid]), np.array([mid]))
+        self.assertEqual((float(ref[0]), int(count[0])), (100.0, H * W - 1))
+        clean = np.zeros((H, W), bool)
+        clean[mid, mid - 1:mid + 2] = True                          # the texel and one clean neighbour on each side
+        L[mid, mid - 1], L[mid, mid + 1] = 0.0, 100.0
+        ref, count = wv.surroundings(L, clean, depth, np.array([mid]), np.array([mid]))
+        self.assertEqual((float(ref[0]), int(count[0])), (50.0, 2))  # of 0 and 100; with itself it would be its own 10
+
+    def test_two_builds_are_counted_as_pairs_with_an_exact_sign_test(self):
+        from fractions import Fraction  # noqa: PLC0415
+        from math import comb  # noqa: PLC0415
+        wv = self.wv
+
+        def exact(worse, better):                                   # the definition, in fractions: twice the smaller tail of a fair coin
+            n, k = worse + better, min(worse, better)
+            return float(min(Fraction(1), Fraction(2 * sum(comb(n, i) for i in range(k + 1)), 2 ** n)))
+
+        self.assertEqual(wv.sign_test(0, 0), 1.0)                   # nothing changed: no evidence either way
+        self.assertEqual(wv.sign_test(5, 5), 1.0)                   # as many each way
+        self.assertEqual(wv.sign_test(0, 5), 2 / 32)                # all five one way: both tails of (1/2)^5
+        self.assertEqual(wv.sign_test(9, 1), 2 * (1 + 10) / 1024)   # C(10, 0) + C(10, 1) of 2^10, both tails
+        self.assertEqual(wv.sign_test(1, 9), wv.sign_test(9, 1))    # which build is called worse does not change it
+        # Exact to the float, far out in a tail and near an even split: a normal curve is out by ten times in the first.
+        for worse, better in ((841, 367), (300, 330), (2, 61), (33, 30)):
+            self.assertEqual(wv.sign_test(worse, better), exact(worse, better), (worse, better))
+        self.assertTrue(2e-43 < wv.sign_test(841, 367) < 4e-43)     # the Saloon's second build, its dark texels: not chance
+        self.assertTrue(0.3 < wv.sign_test(6000, 6100) < 0.4)       # twelve thousand pairs neither overflow nor take long
+        self.assertEqual(wv.sign_test(0, 1200), 0.0)                # under the smallest float: nought, and no error
+        # A count straight from numpy: its integers wrap round where Python's grow, and gave a p below nought.
+        self.assertEqual(wv.sign_test(np.int64(30), np.int64(33)), exact(30, 33))
+        self.assertEqual(wv.sign_test(np.array([5]).sum(), np.int32(70)), exact(5, 70))
+        among = np.array([True] * 8 + [False] * 2)
+        worse = np.array([True] * 6 + [False] * 2 + [True, False])  # the ninth is worse, and is not among the texels counted
+        better = np.array([False] * 9 + [True])                     # nor is the tenth, which is better
+        self.assertEqual(wv.paired_counts(worse, better, among), dict(worse=6, better=0, unchanged=2, p_exact=2 / 64, p_worse=1 / 64))
+        better[6] = True                                            # one of the eight turns better
+        self.assertEqual(wv.paired_counts(worse, better, among),
+                         dict(worse=6, better=1, unchanged=1, p_exact=2 * (1 + 7) / 128, p_worse=(1 + 7) / 128))
+
+    def test_is_it_worse_is_one_sided_and_a_family_of_tests_is_corrected(self):
+        from fractions import Fraction  # noqa: PLC0415
+        from math import comb  # noqa: PLC0415
+        wv = self.wv
+
+        def tail(worse, better):                                    # the definition: at least `worse` heads of a fair coin
+            n = worse + better
+            return float(Fraction(sum(comb(n, i) for i in range(worse, n + 1)), 2 ** n))
+
+        self.assertEqual(wv.sign_test_worse(0, 0), 1.0)
+        self.assertEqual(wv.sign_test_worse(8, 1), 10 / 512)        # C(9, 8) + C(9, 9) of 2^9
+        self.assertEqual(wv.sign_test_worse(1, 8), 1 - 1 / 512)     # the better build is not called worse
+        self.assertEqual(wv.sign_test_worse(5, 5), tail(5, 5))      # an even split: a little over a half, not 1
+        for worse, better in ((841, 367), (30, 33), (0, 7), (7, 0), (13, 4)):
+            self.assertEqual(wv.sign_test_worse(worse, better), tail(worse, better), (worse, better))
+            if worse > better:                                      # where it is the worse, the two-sided p is twice the one-sided
+                self.assertEqual(wv.sign_test(worse, better), min(1.0, 2 * tail(worse, better)), (worse, better))
+        self.assertEqual(wv.sign_test_worse(np.int64(30), np.int64(33)), tail(30, 33))     # numpy's integers, as in sign_test
+        # Holm: the smallest p times the number of tests, the next times one fewer, never below the one before, each
+        # in its own place.
+        self.assertEqual(wv.holm([]), [])
+        self.assertEqual(wv.holm([0.03]), [0.03])
+        self.assertEqual(wv.holm([0.04, 0.01, 0.03]), [0.06, 0.03, 0.06])       # 0.01 x 3; 0.03 x 2; 0.04 x 1, raised to 0.06
+        self.assertEqual(wv.holm([0.5, 0.9, 0.001]), [1.0, 1.0, 0.003])         # capped at 1
+        raw = [0.039] + [0.5] * 23                                  # one wall of eight, on one judgement of three, at 0.039
+        self.assertGreater(wv.holm(raw)[0], 0.9)                    # is no finding among twenty-four tests
+
+    def test_a_patch_is_one_unit_whatever_is_left_out_of_it(self):
+        wv = self.wv
+        mask = np.zeros((40, 74), bool)
+        for k in range(10):                                         # ten patches of 3 x 5 texels, two columns apart
+            mask[10:13, 2 + 7 * k:7 + 7 * k] = True
+        lab, n = wv.patch_image(mask)
+        self.assertEqual(n, 10)
+        corner = np.zeros((3, 3), bool)
+        corner[0, 0] = corner[1, 1] = True
+        self.assertEqual(wv.patch_image(corner)[1], 1)              # texels that touch at a corner are one patch
+        r, c = np.nonzero(mask)
+        patch = lab[r, c]
+        k, i = (c - 2) // 7, (r - 10) * 5 + (c - 2) % 7             # which patch a texel is in, and which of its fifteen it is
+        every, none = np.ones(len(r), bool), np.zeros(len(r), bool)
+        ten = dict(patches=10, worse=10, better=0, unchanged=0, p_exact=2 / 1024, p_worse=1 / 1024)
+        self.assertEqual(wv.patch_counts(patch, every, none, every), ten)          # every texel turned worse
+        # Each patch's middle column is left out (not judged): still ten patches, not twenty halves. Found in review:
+        # patches made of the counted texels alone gave twenty units and a p a thousand times smaller.
+        judged = (c - 2) % 7 != 2
+        self.assertEqual(int(judged.sum()), 10 * 12)
+        self.assertEqual(wv.patch_counts(patch, every, none, judged), ten)
+        self.assertEqual(wv.patch_counts(patch, every, none, k < 3), dict(patches=3, worse=3, better=0, unchanged=0, p_exact=2 / 8, p_worse=1 / 8))
+        self.assertEqual(wv.patch_counts(patch, every, none, none), dict(patches=0, worse=0, better=0, unchanged=0, p_exact=1.0, p_worse=1.0))
+        # A patch is worse where more of its texels turned worse than better: 8 against 7 is worse, 7 against 8 better,
+        # 7 against 7 with one as it was is neither.
+        worse = np.where(k == 0, i < 8, np.where(k <= 2, i < 7, True))
+        better = np.where(k == 0, i >= 8, np.where(k == 1, i >= 7, np.where(k == 2, (i >= 7) & (i < 14), False)))
+        self.assertEqual(wv.patch_counts(patch, worse, better, every), dict(patches=10, worse=8, better=1, unchanged=1, p_exact=2 * (1 + 9) / 512, p_worse=(1 + 9) / 512))
 
 
 class Windows(unittest.TestCase):

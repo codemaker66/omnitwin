@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { fft, seededRandom } from "../../planner-sound-render.js";
 import { OCTAVE_BANDS_HZ, type BandValues } from "../bands.js";
@@ -6,6 +7,7 @@ import { ROOM_ACOUSTICS, UNCALIBRATED, isRoomSlug, type RoomAcoustics, type Room
 import {
   TAIL_STEP_SAMPLES,
   renderRoomTail,
+  tailFrameSize,
   tailOnsetSeconds,
   tailSlices,
   timeAtFrequency,
@@ -33,8 +35,8 @@ const TEN_SEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 /**
  * One reading of a decay of noise scatters by sigma_D (decayScatter: ISO 3382-2's form, from the octave's
  * bandwidth as read and its time), far more where an octave holds few time-frequency cells: sigma_D is 24 % for a
- * 0.4 s decay read from the 125 Hz octave's seven bins and 2 % for the same decay at 8 kHz. Every reading stays within
- * four of it (ruling R67), whatever the room.
+ * 0.4 s decay read from the 125 Hz octave's seven bins and 2 % for the same decay at 8 kHz. Every reading's decay
+ * rate stays within four of it (rulings R67 and R93; readingSigmas), whatever the room.
  */
 const READING_SIGMAS = 4;
 /** The readings of one band scatter no more than this many sigma_D over their realisations: frame, modulation or decorrelation faults would widen it. */
@@ -100,25 +102,63 @@ function standardDeviation(values: readonly number[]): number {
   return Math.sqrt(values.reduce((sum, v) => sum + (v - centre) ** 2, 0) / Math.max(1, values.length - 1));
 }
 
-/** One band's readings: each T20's error (read ÷ target − 1), one per channel read, and sigma_D for that band, time and rate. */
+/**
+ * One band's readings: each T20 read, one per channel read; its target; each T20's error (read ÷ target − 1), which
+ * the mean and scatter checks hold; and sigma_D for that band, time and rate.
+ */
 interface BandReadings {
+  readonly t20s: readonly number[];
+  readonly target: number;
   readonly errors: readonly number[];
   readonly sigma: number;
 }
 
 function readingsOf(decays: readonly (readonly BandDecay[])[], rt: BandValues): readonly BandReadings[] {
-  return OCTAVE_BANDS_HZ.map((_, band) => ({
-    errors: decays.map((channel) => (channel[band]?.t20 ?? 0) / (rt[band] ?? 1) - 1),
-    sigma: decayScatter(decays[0]?.[band]?.bandwidthHz ?? 0, rt[band] ?? 1),
-  }));
+  return OCTAVE_BANDS_HZ.map((_, band) => {
+    const target = rt[band] ?? 1;
+    const t20s = decays.map((channel) => channel[band]?.t20 ?? 0);
+    return {
+      t20s,
+      target,
+      errors: t20s.map((t20) => t20 / target - 1),
+      sigma: decayScatter(decays[0]?.[band]?.bandwidthHz ?? 0, target),
+    };
+  });
 }
 
-/** Every reading within READING_SIGMAS sigma_D of its target, labelled with its band. */
+/**
+ * How far one reading lies from its target, in sigma_D, measured on the decay rate: |target ÷ T20 − 1| ÷ sigma_D,
+ * and infinitely far for a failed read, a T20 that is not a finite positive number (ruling R93, after #416's review,
+ * NA2).
+ *
+ * T20 is −60 dB over a fitted slope, so where an octave holds few cells its error is skewed upward while the slope's
+ * is near-symmetric: over 600 readings of the alternating 0.4 s band at 125 Hz the T20 error ran −1.75 to +3.90
+ * sigma_D and the rate error within ±2.99 (the review's probe). Held on T, four sigma_D was in effect a one-sided
+ * two-sigma bound in rate, and a failed read (an error of −100 %) passed it once sigma_D topped 25 %. Held on the
+ * rate, four sigma_D means the same on both sides, and a failed read never passes. The rate's error cannot fall
+ * below −1, so the bound refuses a long T20 only while four sigma_D is under 1: expectBandWithin requires that.
+ */
+function readingSigmas(t20: number, target: number, sigma: number): number {
+  return Number.isFinite(t20) && t20 > 0 ? Math.abs(target / t20 - 1) / sigma : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Every reading of one band a decay, its rate within READING_SIGMAS sigma_D of its target's, on a band whose
+ * READING_SIGMAS sigma_D is under 1, so the bound holds on both sides (readingSigmas).
+ */
+function expectBandWithin({ t20s, target, sigma }: BandReadings, label: string): void {
+  expect(READING_SIGMAS * sigma, `${label}: four sigma_D under 1, or no long T20 is refused`).toBeLessThan(1);
+  for (const t20 of t20s) {
+    const at = `${label}: T20 ${t20.toFixed(3)} s for ${String(target)} s, sigma_D ${(100 * sigma).toFixed(1)} %`;
+    expect(t20, at).toBeGreaterThan(0);
+    expect(readingSigmas(t20, target, sigma), at).toBeLessThan(READING_SIGMAS);
+  }
+}
+
+/** Every band's readings within the bound, labelled with the band. */
 function expectEachWithin(readings: readonly BandReadings[], label: string): void {
-  readings.forEach(({ errors, sigma }, band) => {
-    for (const error of errors) {
-      expect(Math.abs(error) / sigma, `${String(OCTAVE_BANDS_HZ[band])} Hz${label}: ${(100 * error).toFixed(1)} % against sigma_D ${(100 * sigma).toFixed(1)} %`).toBeLessThan(READING_SIGMAS);
-    }
+  readings.forEach((band, index) => {
+    expectBandWithin(band, `${String(OCTAVE_BANDS_HZ[index])} Hz${label}`);
   });
 }
 
@@ -158,6 +198,31 @@ function decayingNoise(times: BandValues, sampleRate: number, seed: number): Flo
   for (let i = 0; i < fade; i += 1) out[i] = (out[i] ?? 0) * (0.5 - 0.5 * Math.cos((Math.PI * i) / fade));
   return Float32Array.from(out);
 }
+
+describe("one reading's distance from its target (ruling R93)", () => {
+  /** sigma_D of a 0.4 s decay read from the 125 Hz octave's seven bins at 48 kHz (41.0 Hz): 23.7 %. */
+  const sigma = decayScatter(7 * (48000 / 8192), 0.4);
+
+  it("never passes a failed read, however wide the band's scatter: a T20 of 0, not a number, or infinite", () => {
+    for (const wide of [sigma, 0.3, 0.5]) {
+      for (const failed of [0, Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(readingSigmas(failed, 0.4, wide), `T20 ${String(failed)} at sigma_D ${String(wide)}`).toBeGreaterThanOrEqual(READING_SIGMAS);
+      }
+    }
+  });
+
+  it("refuses an absurdly long T20 wherever four sigma_D is under 1, as every band read here is (expectBandWithin checks it)", () => {
+    // The rate's error cannot fall below −1, so where four sigma_D reaches 1 (sigma_D of 25 %, a 125 Hz band under
+    // about 0.36 s) no finite T20 above the target is refused: expectBandWithin requires four sigma_D under 1.
+    expect(READING_SIGMAS * sigma).toBeLessThan(1);
+    for (const long of [100, 1000, 1e6]) expect(readingSigmas(long * 0.4, 0.4, sigma), `${String(long)} x the target`).toBeGreaterThanOrEqual(READING_SIGMAS);
+  });
+
+  it("puts the alternating band's 3.90 sigma_D T20 (0.769 s for 0.4 s) about two sigma_D out in rate, and readings as far above and below the target's rate the same distance out", () => {
+    expect(readingSigmas(0.769, 0.4, sigma)).toBeCloseTo(2.03, 1);
+    expect(readingSigmas(0.4 / (1 - 0.48), 0.4, sigma)).toBeCloseTo(readingSigmas(0.4 / (1 + 0.48), 0.4, sigma), 12);
+  });
+});
 
 describe("the octave reader (rulings R53, R67)", () => {
   // At 96 kHz the reader's frame and this noise both double, and it reads the same values (measured); the proof runs
@@ -259,6 +324,63 @@ describe("renderRoomTail's decay in every band, read from inside each octave", (
       }
     },
     120_000,
+  );
+});
+
+/** The rates the frame rule is held at (ruling R93): telephone and hands-free rates, the common ones and a studio's. */
+const FRAME_RATES = [8000, 11025, 16000, 22050, 32000, 44100, 48000, 64000, 88200, 96000, 192000] as const;
+
+describe("the tail's synthesis frame (rulings R46 and R93)", () => {
+  it.each(FRAME_RATES)("keeps the bins at %i Hz no wider than 48 kHz's 23.4 Hz, on the smallest frame that does", (rate) => {
+    expect(rate / tailFrameSize(rate)).toBeLessThanOrEqual(23.5);
+    // Half the frame would make them wider than 48 kHz's.
+    expect(rate / (tailFrameSize(rate) / 2)).toBeGreaterThan(48000 / 2048);
+  });
+
+  it("keeps 44.1, 48, 88.2 and 96 kHz on the frames R46 gave them, and gives 8, 16, 32 and 64 kHz 15.6 Hz bins", () => {
+    expect([44100, 48000, 88200, 96000].map(tailFrameSize)).toEqual([2048, 2048, 4096, 4096]);
+    expect([8000, 16000, 32000, 64000].map((rate) => rate / tailFrameSize(rate))).toEqual([15.625, 15.625, 15.625, 15.625]);
+  });
+});
+
+/**
+ * Rates between the common ones. Rounding the frame's exponent to the nearest gave them 31.25 Hz bins, which left the
+ * 250 Hz octave two bins of its own time instead of four and read the Reception Room's 250 Hz decay 5.3 % short at
+ * 32 kHz empty, and 6.6 % laid for dinner (#416's review, NA3; ruling R93).
+ */
+const OFF_GRID_RATES = [32000, 64000] as const;
+const OFF_GRID_CASES = OFF_GRID_RATES.flatMap((rate) => PROFILES.map((profile) => ({ ...profile, rate })));
+/** OCTAVE_BANDS_HZ[1]. */
+const BAND_250_HZ = 1;
+
+describe("renderRoomTail's 250 Hz decay at 32 and 64 kHz (ruling R93)", () => {
+  const offGrid = new Map<string, BandReadings>();
+  const offGridKey = (rt: BandValues, rate: number): string => `${String(rate)}|${rt.join(",")}`;
+
+  beforeAll(() => {
+    for (const { rt, rate } of OFF_GRID_CASES) {
+      const key = offGridKey(rt, rate);
+      if (offGrid.has(key)) continue;
+      const decays: (readonly BandDecay[])[] = [];
+      for (const seed of TEN_SEEDS) {
+        const rendered = renderRoomTail(rt, { ...OPTIONS, sampleRate: rate, seed });
+        decays.push(...octaveDecays(rendered.left, rendered.right, rate));
+      }
+      const band = readingsOf(decays, rt)[BAND_250_HZ];
+      if (band !== undefined) offGrid.set(key, band);
+    }
+  }, 600_000);
+
+  it.each(OFF_GRID_CASES)(
+    "holds the 250 Hz octave to R67's bounds at $rate Hz, each reading within four sigma_D in rate, its scatter within 1.5 sigma_D and its mean within five percent: $name",
+    (c) => {
+      const band = offGrid.get(offGridKey(c.rt, c.rate));
+      expect(band?.t20s).toHaveLength(2 * TEN_SEEDS.length);
+      if (band === undefined) return;
+      expectBandWithin(band, "250 Hz");
+      expect(standardDeviation(band.errors) / band.sigma, "250 Hz scatter").toBeLessThanOrEqual(SCATTER_SIGMAS);
+      expect(Math.abs(mean(band.errors)), "250 Hz mean").toBeLessThan(MEAN_BOUND);
+    },
   );
 });
 
@@ -372,16 +494,40 @@ describe("timeAtFrequency", () => {
   });
 });
 
+/**
+ * SHA-256 of each channel's float32 bytes of the test hall's tail (RT, seed 7, a 30 ms onset) at each rate: a
+ * reference for what the synthesis renders that does not come from the code under test (ruling R93, after #416's
+ * review, NA5). Taken from tail.ts as #416 merged it (bfc4705a); NA3's frame rule keeps these rates' frames, and
+ * these bytes with them. A change to the synthesis that is meant to change the tail updates these and says why.
+ */
+const TAIL_SHA256: Readonly<Record<Rate, { readonly left: string; readonly right: string }>> = {
+  44100: { left: "164b4ba346571a0a70271b289d2bfca4ee0fe32522a53867a21a866bb28e16af", right: "0b650113d2769db177d4b5e7a88400d4788dacb782923c973a1e60ddfa25f41e" },
+  48000: { left: "a58678fe8a8766676a8f50033a4743c7507ada10c69df55df15ce4b04e09a940", right: "76d80fc5f3519d2862d15e839d58c66b68f59ec858f531a60a3ddbf3b04cd069" },
+  96000: { left: "ceac14f618733ef714634f05c90cc6824d0ded68e5080ae4dd205135a7297f51", right: "44a9db47f069c783f932b86085c92bb00ce3ad45be4f1134fa472a623587048b" },
+};
+
+function sha256(samples: Float32Array): string {
+  return createHash("sha256").update(Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength)).digest("hex");
+}
+
 describe("tailSlices", () => {
-  it.each(RATES)("works in bounded steps at %i Hz, the setup in steps of its own (two at 96 kHz), and returns the same tail as renderRoomTail", (rate) => {
+  it.each(RATES)("works in bounded steps at %i Hz, the setup in steps of its own (two at 96 kHz), and renders the pinned tail with another tail's steps between its own", (rate) => {
     const whole = rate === RATE ? tail : renderRoomTail(RT, { ...OPTIONS, sampleRate: rate });
     const slices = tailSlices(RT, { ...OPTIONS, sampleRate: rate });
+    // Another tail at the same rate, stepped between this one's steps: any state the two shared, even per frame size,
+    // would show in either.
+    const otherTimes = ALTERNATIONS[0] ?? RT;
+    const otherOptions = { sampleRate: rate, seed: 3, onsetSeconds: 0.05 };
+    const other = tailSlices(otherTimes, otherOptions);
     const steps: number[] = [];
     let step = slices.next();
+    let otherStep = other.next();
     while (step.done !== true) {
       steps.push(step.value);
+      if (otherStep.done !== true) otherStep = other.next();
       step = slices.next();
     }
+    while (otherStep.done !== true) otherStep = other.next();
     const sliced: Stereo = step.value;
     expect(steps.length).toBeGreaterThanOrEqual(7);
     // The first steps set the synthesis up, one for each 1,024 bins of its frame, and cover no samples (ruling R72):
@@ -394,8 +540,13 @@ describe("tailSlices", () => {
     }
     expect(TAIL_STEP_SAMPLES).toBe(8192);
     expect(sliced.sampleRate).toBe(rate);
-    expect(sameSamples(sliced.left, whole.left)).toBe(true);
-    expect(sameSamples(sliced.right, whole.right)).toBe(true);
+    expect(sha256(sliced.left)).toBe(TAIL_SHA256[rate].left);
+    expect(sha256(sliced.right)).toBe(TAIL_SHA256[rate].right);
+    expect(sha256(whole.left)).toBe(TAIL_SHA256[rate].left);
+    expect(sha256(whole.right)).toBe(TAIL_SHA256[rate].right);
+    const otherWhole = renderRoomTail(otherTimes, otherOptions);
+    expect(sameSamples(otherStep.value.left, otherWhole.left)).toBe(true);
+    expect(sameSamples(otherStep.value.right, otherWhole.right)).toBe(true);
   });
 });
 

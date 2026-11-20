@@ -11,7 +11,7 @@ the texels within 10 cm that this station saw clear, on the same surface (wallvi
 station for every texel, and is scored:
 
   sequence      the tools' rule: the first station of the block's sequence that saw the texel (label-views.py
-                doubtful_sequence: the block's ranked stations, then every station by how much of the block it saw)
+                block_sequence: the block's ranked stations, then every station by how much of the block it saw)
   farthest      the station whose ray passes farthest from the occluder's outline (bestview.occluder_clearance)
   floor-NN      the first station of the sequence whose ray passes NN mm or more from the outline; where none
                 does, the sequence's first
@@ -81,7 +81,7 @@ for name in walls:
                    near=ndimage.binary_dilation(todo, structure=np.ones((3, 3)), iterations=wv.REACH),
                    seen_ok=~wv.under_a_patch(room, grid, name)[r, c],
                    built=z['texel_label'][r, c].astype(np.int64),
-                   sequence=lv.doubtful_sequence(z['ranked'], label, seen, width)[r // B.BLOCK, c // B.BLOCK].astype(np.int64),
+                   sequence=lv.block_sequence(z['ranked'], label, seen, width)[r // B.BLOCK, c // B.BLOCK].astype(np.int64),
                    own=label[r // B.BLOCK, c // B.BLOCK],
                    L=np.full((n, S), np.nan, np.float32), ref=np.full((n, S), np.nan, np.float32),
                    cnt=np.zeros((n, S), np.int32), gap=np.full((n, S), np.nan, np.float32),

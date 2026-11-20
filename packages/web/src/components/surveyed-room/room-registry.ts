@@ -17,6 +17,11 @@
 // The switch is per device while surveyed rooms are reviewed: `?rooms=surveyed`
 // turns them on and remembers it; `?rooms=plain` turns them off again.
 // Presentation only: the layout is the same either way.
+//
+// This file is part of what the planner carries for every visitor (the seam,
+// use-planner-surveyed-room.ts), so it holds the table and the switch and
+// nothing a room needs only once it is being loaded: a survey file's URL is
+// worked out with the load (use-surveyed-room.ts).
 // ---------------------------------------------------------------------------
 
 import { isTradesHallVenueSlug } from "../../hooks/use-trades-hall-venue.js";
@@ -39,12 +44,25 @@ export interface SurveyedRoomEntry {
 /** Trades Hall's surveyed rooms. None is listed yet. */
 const LISTED: readonly SurveyedRoomEntry[] = [];
 
-/** The same rooms by space slug: each is filed under its own slug, so a key cannot name another room's entry. */
-export const SURVEYED_ROOMS: ReadonlyMap<string, SurveyedRoomEntry> = new Map(LISTED.map((entry) => [entry.slug, entry]));
+/** Rooms by space slug: each is filed under its own slug, so a key cannot name another room's entry. */
+export function surveyedRoomsBySlug(listed: readonly SurveyedRoomEntry[]): ReadonlyMap<string, SurveyedRoomEntry> {
+  return new Map(listed.map((entry) => [entry.slug, entry]));
+}
 
-/** A survey file's URL, at the entry's revision. */
-export function surveyFileUrl(entry: SurveyedRoomEntry, file: string): string {
-  return `${entry.base}/${file}?r=${String(entry.revision)}`;
+/** Trades Hall's surveyed rooms by space slug. */
+export const SURVEYED_ROOMS: ReadonlyMap<string, SurveyedRoomEntry> = surveyedRoomsBySlug(LISTED);
+
+/** A public folder on this origin: a path of plain segments, nothing that climbs or leaves. */
+const PUBLIC_FOLDER = /^(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)+$/;
+
+/**
+ * A survey's folder as a development page or parameter names one: the path
+ * without its trailing slashes, or null for anything but a plain path on
+ * this site (another origin, a query, a segment that climbs).
+ */
+export function publicSurveyFolder(asked: string): string | null {
+  const base = asked.replace(/\/+$/, "");
+  return PUBLIC_FOLDER.test(base) ? base : null;
 }
 
 /** The survey for a Trades Hall space, or null when the space is not drawn as surveyed. */
