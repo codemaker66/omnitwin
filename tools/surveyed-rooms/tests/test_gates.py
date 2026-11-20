@@ -925,11 +925,15 @@ class OccluderMarginManyStations(unittest.TestCase):
     the pier's edge and within its margin, and its panorama shows the pier there. Labels that ask only the six
     ranked stations print that station's picture of the pier on the plain wall, 1 to 2 cm from the pier itself:
     the outline the margin exists to remove, in the band the box's test above leaves out. With every station
-    asked, those texels take the far station's clear view; a doubtful view is left for the texels no station sees
-    clear, and of those views it is the first of the block's own sequence (its ranked stations, then the others by
-    how much of the block they saw at all, ties to the earlier station), not the one that passes farthest from the
-    pier's edge: on the Saloon's walls the farthest view showed the edge as often and put far more texels in
-    another station's picture (T-739; the README has the numbers).
+    asked, in the block's one sequence (its ranked stations, then the others by how much of the block they saw at
+    all, ties to the earlier station), those texels take a far station's clear view, the first of the sequence
+    that saw them clear. A doubtful view is left for the texels no station sees clear, and it is the first of the
+    same sequence that saw the texel at all, not the one that passes farthest from the pier's edge: on the
+    Saloon's walls the farthest view showed the edge as often and put far more texels in another station's
+    picture. Both steps ask one sequence because the Saloon's walls bore that out too: of two clear views from
+    outside a ranking, the one from the station that saw more of the block at all lay nearer its surroundings
+    than the one the first step's own order took (T-739; the README has the numbers). The order among the
+    stations beyond a ranking is held by a unit test (test_units.MarginViews), not here.
 
     What this world can prove is asserted here and no threshold is loosened: no doubtful texel that any station
     saw clear, and no plain texel left that shows the pier (exactly 0). That a margin of 0 changes nothing is
