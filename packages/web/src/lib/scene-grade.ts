@@ -69,7 +69,11 @@ export function cameraEye(colour: Node<"vec3">, balance: Node<"color">, saturati
  * inside that frame reads them set. Each is put back when its draw ends.
  */
 export const sceneOutput = {
-  /** 1 while the view's own frame is drawn, 0 for every other draw of the scene. */
+  /**
+   * 1 while the view's own frame is drawn and leaves through Khronos PBR
+   * Neutral (lib/native-renderer.ts withNativeRenderScope); 0 for every other
+   * draw of the scene, and under any other curve or none.
+   */
   main: uniform(0),
   /** The renderer's exposure for that frame. */
   exposure: uniform(1),
