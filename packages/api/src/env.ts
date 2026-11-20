@@ -86,6 +86,10 @@ const EnvSchema = z.object({
   // configured don't pay the cold-start cost.
   SENTRY_DSN: z.url().optional(),
   SENTRY_ENVIRONMENT: z.string().optional(),
+  // The share of requests sent to Sentry as timing records (transactions,
+  // with no address, identifier or browser details: observability/redact.ts
+  // scrubTransaction). The privacy page says "about one request in ten"
+  // (LegalPage.tsx, Error diagnostics and Sentry): change both together.
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
   // AI assistant — disabled unless explicitly enabled and fully configured.
   // Product code talks to an adapter abstraction; these vars configure the
