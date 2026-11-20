@@ -587,8 +587,8 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
     without a label borrows the nearest labelled block's), then every station by how much of the
     block it saw at all. That second part is a stable sort in which a tie goes to the earlier
     station of the stations' own order, so a build made again is the same build. Run on the two
-    builds' own arrays, the rule gives the first build's view on every one of the 40,520
-    doubtful texels that had one, and the second build's clear views everywhere else.
+    builds' own arrays, the rule gives the first build's view on every one of the 40,420
+    doubtful texels that had one (of 40,520), and the second build's clear views everywhere else.
     - The former holes. The first build's sequence stopped at the six stations that saw most of
       a block, and so left 100 texels that a station had seen, none clear, without a label
       (fireplace 10, fireplace-rear-end 6, fireplace-rear-return 1, front 17, rear 64,
