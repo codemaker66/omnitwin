@@ -296,10 +296,12 @@ reader's types: a string is a string matched whole as JavaScript matches it (no 
 digits), `captured` is a day on the calendar, a number is finite and never a bool, a strip's texels
 are whole numbers from 0 and sizes and counts whole numbers from 1. Then, on a record whose shapes
 hold, its cross-checks (one wall per segment and its length, the strips, the relief's order, every
-named file listed, largest first by bytes). It judges the record as the published JSON reads. For a
-room that publishes its record, writing it prints any fault and `--publish` refuses it with nothing
-copied. A fault a config can carry is refused before any build: `check_room.py` matches the
-schema's patterns whole in the same way and holds every date (`source.captured` among them) to the
+named file listed, largest first by bytes), with the reader's tolerances: a T0 test
+(`ReaderTolerances`) reads them out of `survey-record.ts` and compares, and skips, saying so, while
+the reader in the tree lacks one. It judges the record as the published JSON reads. For a room that
+publishes its record, writing it prints any fault and `--publish` refuses it with nothing copied.
+A fault a config can carry is refused before any build: `check_room.py` matches the schema's
+patterns whole in the same way and holds every date (`source.captured` among them) to the
 calendar, and the schema takes `survey.publish.revision` from 1 only; for a room that publishes its
 record, the build's own check also refuses a config with no revision.
 The proof that the reader takes a real record is its own parser run over it: see Proofs.

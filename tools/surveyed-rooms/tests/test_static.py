@@ -967,6 +967,44 @@ class SurveyRecord(unittest.TestCase):
         self.assertFalse(os.path.exists(dest))
 
 
+READER = os.environ.get("SURVEYED_ROOMS_READER") or os.path.join(
+    os.path.dirname(os.path.dirname(ROOMS)), "packages", "web", "src", "components", "surveyed-room", "survey-record.ts")
+TOLERANCES = ("WALL_LENGTH_TOLERANCE", "ATLAS_ROW_TOLERANCE", "OVERHEAD_EXTENT_TOLERANCE", "HEIGHT_TOLERANCE")
+
+
+def reader_tolerances(text):
+    """{name: value} of each of TOLERANCES that the reader's source exports as a plain number."""
+    found = {}
+    for name in TOLERANCES:
+        m = re.search(rf"^export const {name} = ([0-9]+(?:\.[0-9]+)?(?:e-?[0-9]+)?);", text, re.M)
+        if m:
+            found[name] = float(m.group(1))
+    return found
+
+
+class ReaderTolerances(unittest.TestCase):
+    """publish.py copies the web reader's tolerances (survey-record.ts), and no compiler ties the two
+    languages together: each one the reader exports must be publish's, or records that one side
+    takes the other refuses. SURVEYED_ROOMS_READER names another copy of the reader to compare with."""
+
+    def test_publish_holds_the_readers_tolerances(self):
+        from roombuild import publish
+        if not os.path.exists(READER):
+            self.skipTest(f"no reader at {READER}")
+        with open(READER, encoding="utf-8") as f:
+            text = f.read()
+        found = reader_tolerances(text)
+        for name, value in found.items():
+            self.assertEqual(getattr(publish, name), value, name)
+        # A name the file mentions but does not export as a plain number would otherwise skip in silence.
+        unread = [name for name in TOLERANCES if name not in found and name in text]
+        self.assertEqual(unread, [], "the reader names these tolerances, but not as `export const NAME = number;`")
+        absent = [name for name in TOLERANCES if name not in found]
+        if absent:
+            self.skipTest(f"the reader here has no {', '.join(absent)} (they come with the reader of #444, not yet merged; "
+                          f"until then publish refuses records this reader takes); compared {', '.join(found) or 'none'}")
+
+
 class OneBlasThread(unittest.TestCase):
     """The labels' band threads each call BLAS, and BLAS threads of its own under them deadlocked: every
     entry point holds BLAS to one thread for that step, before numpy loads."""
