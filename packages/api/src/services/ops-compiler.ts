@@ -1,4 +1,6 @@
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import type { FastifyBaseLogger } from "fastify";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { ZodError } from "zod";
 import {
   BeoDocumentSchema,
   EventArchitectCandidateSchema,
@@ -68,6 +70,7 @@ import {
   venues,
 } from "../db/schema.js";
 import { parseHallkeeperSnapshotPayload } from "./layout-coordinate-space.js";
+import { newestHandoffPack } from "./newest-handoff-pack.js";
 import {
   EventArchitectOpsReviewEvidenceIntegrityError,
   getEventArchitectOpsReviewGate,
@@ -433,6 +436,95 @@ function serializeSnapshotDiff(row: SnapshotDiffRow): SnapshotDiff {
   });
 }
 
+interface PieceCount {
+  readonly name: string;
+  readonly category: string;
+  readonly qty: number;
+}
+
+/**
+ * What the store sends out for a frozen plan (T-695 api-eventday-sheet-9):
+ * every placed piece counted by name and category from the frozen floor plan,
+ * a chair set at a table included although the manifest folds it into the
+ * table's row ("Round Table with 10 chairs"), plus the accessories the
+ * manifest implies, already multiplied per parent. A plan frozen without a
+ * floor plan has only the manifest's totals. The sheet's store list counts
+ * the same way (types sheet-brief.ts sheetStoreList), grouped for the store
+ * rather than by category.
+ */
+function placedCounts(payload: ConfigurationSheetSnapshot["payload"]): readonly PieceCount[] {
+  const plan = payload.floorPlan ?? null;
+  if (plan === null) return payload.totals.entries;
+  const counts = new Map<string, { readonly name: string; readonly category: string; qty: number }>();
+  const add = (name: string, category: string, qty: number): void => {
+    const key = itemKey({ name, category });
+    const existing = counts.get(key);
+    if (existing === undefined) counts.set(key, { name, category, qty });
+    else existing.qty += qty;
+  };
+  for (const object of plan.objects) add(object.name, object.category, 1);
+  for (const phase of payload.phases) {
+    for (const zone of phase.zones) {
+      for (const row of zone.rows) {
+        if (row.isAccessory) add(row.name, row.category, row.qty);
+      }
+    }
+  }
+  return [...counts.values()];
+}
+
+interface CountChanges {
+  readonly added: readonly string[];
+  readonly removed: readonly string[];
+  readonly changed: readonly string[];
+}
+
+/** What was added, removed or changed in quantity between two counts, in
+ *  the words the pack shows ("12 x Round Table", "Round Table: 10 -> 12"). */
+function countChanges(currentCounts: readonly PieceCount[], previousCounts: readonly PieceCount[]): CountChanges {
+  const current = new Map(currentCounts.map((entry) => [itemKey(entry), entry]));
+  const previous = new Map(previousCounts.map((entry) => [itemKey(entry), entry]));
+  const added: string[] = [];
+  const removed: string[] = [];
+  const changed: string[] = [];
+  for (const [key, entry] of current) {
+    const prior = previous.get(key);
+    if (prior === undefined) {
+      added.push(`${String(entry.qty)} x ${entry.name}`);
+    } else if (prior.qty !== entry.qty) {
+      changed.push(`${entry.name}: ${String(prior.qty)} -> ${String(entry.qty)}`);
+    }
+  }
+  for (const [key, entry] of previous) {
+    if (!current.has(key)) removed.push(`${String(entry.qty)} x ${entry.name}`);
+  }
+  return { added, removed, changed };
+}
+
+/** A table row with chairs set at it, as the manifest generator names it
+ *  ("Round Table with 10 chairs", manifest-generator-v2.ts generateManifestV2). */
+const SEATED_TABLE_ROW = / with \d+ chairs$/u;
+
+/** The manifest's rows of tables with chairs set at them. A bare table's row
+ *  is left out: it bears the table's own name, which the placed count uses
+ *  for every table of that kind, seated or not (T-695 review I3). */
+function seatedTableRows(payload: ConfigurationSheetSnapshot["payload"]): readonly PieceCount[] {
+  return payload.totals.entries.filter((entry) => entry.category === "table" && SEATED_TABLE_ROW.test(entry.name));
+}
+
+function hasChairsAtTables(payload: ConfigurationSheetSnapshot["payload"]): boolean {
+  return seatedTableRows(payload).length > 0;
+}
+
+/**
+ * What the changes say instead of a chairs line when either plan has no
+ * floor plan. That is what marks a plan frozen before 6 September 2026
+ * (466bee60 added the floor plan to every approved sheet; the payload schema
+ * leaves it absent in older ones): such a plan counts the chairs at each
+ * table in the table's row name, but never recorded which chairs they were.
+ */
+const CHAIRS_AT_TABLES_NOT_COMPARED = "Chairs at tables can't be compared with a plan frozen before 6 September 2026.";
+
 function compileSnapshotDiff(
   snapshot: ConfigurationSheetSnapshot,
   previousSnapshot: ConfigurationSheetSnapshot | null,
@@ -450,38 +542,43 @@ function compileSnapshotDiff(
     };
   }
 
-  const current = new Map(snapshot.payload.totals.entries.map((entry) => [itemKey(entry), entry]));
-  const previous = new Map(previousSnapshot.payload.totals.entries.map((entry) => [itemKey(entry), entry]));
-  const added: string[] = [];
-  const removed: string[] = [];
-  const changed: string[] = [];
-
-  for (const [key, entry] of current) {
-    const prior = previous.get(key);
-    if (prior === undefined) {
-      added.push(`${String(entry.qty)} x ${entry.name}`);
-    } else if (prior.qty !== entry.qty) {
-      changed.push(`${entry.name}: ${String(prior.qty)} -> ${String(entry.qty)}`);
-    }
-  }
-
-  for (const [key, entry] of previous) {
-    if (!current.has(key)) {
-      removed.push(`${String(entry.qty)} x ${entry.name}`);
-    }
-  }
+  // Like for like: placed pieces on both sides, or, when either plan was
+  // frozen before floor plans were kept, the manifest's totals on both, so a
+  // count of pieces is never reported as a change against a count of rows.
+  // With pieces on both sides, the rows of seated tables are compared too:
+  // they name the chairs set at each table ("Round Table with 4 chairs"), so
+  // a re-seating that keeps every count still shows (T-695 review C7). Their
+  // names never match a placed count's, so no name carries two counts (review
+  // I3, I4). One change can still show on two lines: a table added with its
+  // chairs is listed as a placed table and as a seated row (review Z3).
+  const piecesOnBoth = (snapshot.payload.floorPlan ?? null) !== null && (previousSnapshot.payload.floorPlan ?? null) !== null;
+  const lines = piecesOnBoth
+    ? [
+      countChanges(placedCounts(snapshot.payload), placedCounts(previousSnapshot.payload)),
+      countChanges(seatedTableRows(snapshot.payload), seatedTableRows(previousSnapshot.payload)),
+    ]
+    : [countChanges(snapshot.payload.totals.entries, previousSnapshot.payload.totals.entries)];
+  const merged = (pick: (changes: CountChanges) => readonly string[]): string[] =>
+    lines.flatMap(pick).sort((a, b) => a.localeCompare(b));
 
   const payload = SnapshotDiffPayloadSchema.parse({
-    added: added.sort((a, b) => a.localeCompare(b)),
-    removed: removed.sort((a, b) => a.localeCompare(b)),
-    changed: changed.sort((a, b) => a.localeCompare(b)),
+    added: merged((changes) => changes.added),
+    removed: merged((changes) => changes.removed),
+    changed: merged((changes) => changes.changed),
   });
   const changedCount = payload.changed.length;
   const addedCount = payload.added.length;
   const removedCount = payload.removed.length;
-  const summary = addedCount + removedCount + changedCount === 0
-    ? "No furniture count changes since the previous approved snapshot."
+  const counted = addedCount + removedCount + changedCount === 0
+    ? null
     : `${String(addedCount)} added, ${String(removedCount)} removed, ${String(changedCount)} quantity changed since the previous approved snapshot.`;
+  // Against a plan frozen without a floor plan, the model of the chairs set
+  // at its tables is unknown, so no comparison can say whether they changed:
+  // say so, never "No furniture count changes" (T-695 review C6).
+  const chairsNotCompared = !piecesOnBoth && (hasChairsAtTables(snapshot.payload) || hasChairsAtTables(previousSnapshot.payload));
+  const summary = chairsNotCompared
+    ? [counted, CHAIRS_AT_TABLES_NOT_COMPARED].filter((part): part is string => part !== null).join(" ")
+    : counted ?? "No furniture count changes since the previous approved snapshot.";
 
   return {
     previousSnapshotHash: previousSnapshot.sourceHash,
@@ -495,7 +592,7 @@ function compileSnapshotDiff(
 }
 
 function compilePickList(snapshot: ConfigurationSheetSnapshot): readonly DraftPickListItem[] {
-  return [...snapshot.payload.totals.entries]
+  return [...placedCounts(snapshot.payload)]
     .sort((a, b) => `${a.category}:${a.name}`.localeCompare(`${b.category}:${b.name}`))
     .map((entry, index) => ({
       name: safeOpsText(entry.name, 180),
@@ -545,7 +642,7 @@ function compileSetupTasks(snapshot: ConfigurationSheetSnapshot): readonly Draft
 }
 
 function compileBreakdownTasks(snapshot: ConfigurationSheetSnapshot): readonly DraftOpsTask[] {
-  return [...snapshot.payload.totals.entries]
+  return [...placedCounts(snapshot.payload)]
     .sort((a, b) => `${a.category}:${a.name}`.localeCompare(`${b.category}:${b.name}`))
     .map((entry, index) => ({
       groupKey: "breakdown",
@@ -671,7 +768,10 @@ function compileSupplierInstructions(snapshot: ConfigurationSheetSnapshot): read
 
 function compileRoomFlipPlans(eventGraph: EventPhaseGraph | null): readonly DraftRoomFlipPlan[] {
   if (eventGraph === null) return [];
-  const phases = [...eventGraph.phases].sort((a, b) => a.sortOrder - b.sortOrder);
+  // Phases can tie on sortOrder (two added at once); the id settles the
+  // order, so a flip's neighbours never depend on the order rows arrive in.
+  const phases = [...eventGraph.phases].sort((a, b) =>
+    a.sortOrder - b.sortOrder || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const plans: DraftRoomFlipPlan[] = [];
 
   phases.forEach((phase, index) => {
@@ -712,6 +812,7 @@ function compileBeoBody(input: {
   readonly eventGraph: EventPhaseGraph | null;
   readonly clientNotes: string | null;
   readonly digest: string;
+  readonly pickList: readonly DraftPickListItem[];
   readonly setupTaskCount: number;
   readonly supplierInstructionCount: number;
 }): string {
@@ -733,7 +834,7 @@ function compileBeoBody(input: {
     `Venue: ${payload.venue.name}; room: ${payload.space.name}.`,
     `Guest count from approved snapshot: ${String(payload.config.guestCount)}.`,
     `Snapshot: v${String(input.snapshot.version)}; hash ${input.snapshot.sourceHash}.`,
-    `Pick list items: ${String(payload.totals.entries.length)}; total quantity ${String(payload.totals.totalItems)}.`,
+    `Pick list items: ${String(input.pickList.length)}; total quantity ${String(input.pickList.reduce((sum, item) => sum + item.quantity, 0))}.`,
     `Setup tasks: ${String(input.setupTaskCount)}; supplier notes: ${String(input.supplierInstructionCount)}.`,
     specialLine,
     notes,
@@ -810,6 +911,7 @@ export function compileOpsHandoffDraft(input: {
       eventGraph: input.eventGraph,
       clientNotes: input.clientNotes,
       digest,
+      pickList: pickListItems,
       setupTaskCount: setupTasks.length,
       supplierInstructionCount: supplierInstructions.length,
     }),
@@ -871,7 +973,7 @@ async function loadEventGraph(db: Database, eventId: string): Promise<EventPhase
   if (eventRow === undefined) throw new OpsHandoffEventNotFoundError(eventId);
 
   const [phaseRows, scenarioRows, variantRows, linkRows, snapshotRows, venueRows] = await Promise.all([
-    db.select().from(eventPhases).where(eq(eventPhases.eventId, eventId)).orderBy(eventPhases.sortOrder),
+    db.select().from(eventPhases).where(eq(eventPhases.eventId, eventId)).orderBy(eventPhases.sortOrder, eventPhases.id),
     db.select().from(eventScenarios).where(eq(eventScenarios.eventId, eventId)).orderBy(eventScenarios.createdAt),
     db.select().from(layoutVariants).where(eq(layoutVariants.eventId, eventId)).orderBy(layoutVariants.createdAt),
     db.select().from(eventConfigurationLinks).where(eq(eventConfigurationLinks.eventId, eventId)).orderBy(eventConfigurationLinks.createdAt),
@@ -1023,6 +1125,107 @@ export async function getOpsHandoffPackBundle(
   });
 }
 
+
+/**
+ * What a pack tells the floor and the suppliers, without its ids, times or
+ * task progress. A compile whose draft reads exactly as the newest pack does
+ * would say nothing new, so it returns that pack instead of making another
+ * one (T-695 api-eventday-sheet-2).
+ */
+interface HandoffContent {
+  readonly pack: readonly [string, string];
+  readonly tasks: readonly (readonly [string, string | null, string, string, number, string | null, string | null])[];
+  readonly pickList: readonly [string, readonly (readonly [string, string, number, string | null, string | null, string | null, number])[]];
+  readonly suppliers: readonly (readonly [string | null, string, string, string, string | null, string | null, number])[];
+  readonly loadIn: readonly (readonly [number, string, string, number])[];
+  readonly breakdown: readonly (readonly [number, string, string, number])[];
+  /** Sorted: a pack's room flips are written together and read back unordered. */
+  readonly roomFlips: readonly string[];
+  readonly beo: readonly [string, string];
+  readonly diff: readonly [string | null, string, number, number, number, string, readonly string[], readonly string[], readonly string[]];
+}
+
+function roomFlipKey(plan: DraftRoomFlipPlan | RoomFlipPlan): string {
+  return JSON.stringify([plan.phaseId, plan.fromPhaseLabel, plan.toPhaseLabel, plan.durationMinutes, plan.taskCount, plan.reviewGateCount, plan.notes]);
+}
+
+function draftContent(draft: DraftOpsHandoff): HandoffContent {
+  const diff = draft.snapshotDiff;
+  return {
+    pack: [draft.summary, draft.sourceLabel],
+    tasks: draft.opsTasks.map((task) => [task.kind, task.phaseId, task.title, task.detail, task.sortOrder, task.dueLabel, task.sourceRef] as const),
+    pickList: [draft.pickListTitle, draft.pickListItems.map((item) =>
+      [item.name, item.category, item.quantity, item.sourcePhase, item.sourceZone, item.notes, item.sortOrder] as const)],
+    suppliers: draft.supplierInstructions.map((item) =>
+      [item.supplierId, item.category, item.title, item.detail, item.arrivalWindow, item.sourceRef, item.sortOrder] as const),
+    loadIn: draft.loadInSequence.map((step) => [step.stepNumber, step.title, step.detail, step.sortOrder] as const),
+    breakdown: draft.breakdownSequence.map((step) => [step.stepNumber, step.title, step.detail, step.sortOrder] as const),
+    roomFlips: draft.roomFlipPlans.map(roomFlipKey).sort(),
+    beo: [draft.beoTitle, draft.beoBody],
+    diff: [diff.previousSnapshotHash, diff.currentSnapshotHash, diff.addedCount, diff.removedCount, diff.changedCount, diff.summary,
+      diff.payload.added, diff.payload.removed, diff.payload.changed],
+  };
+}
+
+function bundleContent(bundle: OpsHandoffPackBundle): HandoffContent {
+  const diff = bundle.snapshotDiff;
+  return {
+    pack: [bundle.pack.summary, bundle.pack.sourceLabel],
+    tasks: bundle.opsTasks.map((task) => [task.kind, task.phaseId, task.title, task.detail, task.sortOrder, task.dueLabel, task.sourceRef] as const),
+    pickList: [bundle.furniturePickList.title, bundle.pickListItems.map((item) =>
+      [item.name, item.category, item.quantity, item.sourcePhase, item.sourceZone, item.notes, item.sortOrder] as const)],
+    suppliers: bundle.supplierInstructions.map((item) =>
+      [item.supplierId, item.category, item.title, item.detail, item.arrivalWindow, item.sourceRef, item.sortOrder] as const),
+    loadIn: bundle.loadInSequence.map((step) => [step.stepNumber, step.title, step.detail, step.sortOrder] as const),
+    breakdown: bundle.breakdownSequence.map((step) => [step.stepNumber, step.title, step.detail, step.sortOrder] as const),
+    roomFlips: bundle.roomFlipPlans.map(roomFlipKey).sort(),
+    beo: [bundle.beoDocument.title, bundle.beoDocument.body],
+    diff: [diff.previousSnapshotHash, diff.currentSnapshotHash, diff.addedCount, diff.removedCount, diff.changedCount, diff.summary,
+      diff.payload.added, diff.payload.removed, diff.payload.changed],
+  };
+}
+
+/** A stored pack as read for comparison: the pack (null if not found), or,
+ *  when the current schema no longer reads it, where the schema refused it. */
+type StoredPackRead =
+  | { readonly readable: true; readonly bundle: OpsHandoffPackBundle | null }
+  | { readonly readable: false; readonly issuePaths: readonly string[] };
+
+/**
+ * A stored pack for comparison, or the paths the current schema refuses in
+ * it (a phrase since refused, a limit since tightened). Such a pack cannot be
+ * what this compile would write, and the compile replaces it: if the read
+ * threw instead, every recompile of the plan would fail with it, where a
+ * recompile is the way to a pack the board can read again (T-695 review H8).
+ * The paths name fields, never their contents.
+ */
+async function readStoredPack(db: Database, handoffPackId: string): Promise<StoredPackRead> {
+  try {
+    return { readable: true, bundle: await getOpsHandoffPackBundle(db, handoffPackId) };
+  } catch (error: unknown) {
+    if (error instanceof ZodError) {
+      return { readable: false, issuePaths: error.issues.map((issue) => issue.path.map(String).join(".")) };
+    }
+    throw error;
+  }
+}
+
+export interface OpsHandoffCompileResult {
+  readonly bundle: OpsHandoffPackBundle;
+  /** False when the event's newest pack already said this and was returned. */
+  readonly created: boolean;
+}
+
+/**
+ * Compile the configuration's approved snapshot into the event's handoff
+ * pack. When the pack that stands for the event (newest-handoff-pack.ts) is
+ * already this configuration's, from the same approved snapshot, and says
+ * exactly what this compile would, it is returned: its tasks keep what the
+ * floor has marked, and no supplier pass is told the plan changed. Otherwise
+ * a new pack is made and becomes the event's: a new snapshot, a change to the
+ * event's own plan (its room flips, its name or status, the notes given), or
+ * another layout's pack standing for the event since.
+ */
 export async function compileOpsHandoffPackFromConfiguration(
   db: Database,
   input: {
@@ -1030,8 +1233,10 @@ export async function compileOpsHandoffPackFromConfiguration(
     readonly eventId: string | null;
     readonly clientNotes: string | null;
     readonly actorUserId: string | null;
+    /** The request's logger: told when an unreadable stored pack is replaced. */
+    readonly logger?: FastifyBaseLogger;
   },
-): Promise<OpsHandoffPackBundle> {
+): Promise<OpsHandoffCompileResult> {
   const [config] = await db.select({
     id: configurations.id,
     venueId: configurations.venueId,
@@ -1060,7 +1265,44 @@ export async function compileOpsHandoffPackFromConfiguration(
     clientNotes: input.clientNotes,
   });
 
-  return db.transaction(async (tx) => {
+  const { result, replaced } = await db.transaction(async (tx): Promise<{
+    readonly result: OpsHandoffCompileResult;
+    readonly replaced: { readonly packId: string; readonly issuePaths: readonly string[] } | null;
+  }> => {
+    // One compile of this event at a time, whichever of its layouts (with no
+    // event, one of this layout at a time): the second waits here, then reads
+    // the event's newest pack as the first left it.
+    const scopeKey = input.eventId === null ? `configuration:${input.configId}` : `event:${input.eventId}`;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`ops-handoff:${scopeKey}`}, 0))`);
+    // And one compile of this approved snapshot at a time, whichever event it
+    // is for, as the version below is counted per snapshot. NO KEY UPDATE, so
+    // rows that only reference the snapshot (a new pack among them) are not
+    // held up. Always taken after the event's lock, so the two never cross.
+    await tx.select({ id: configurationSheetSnapshots.id })
+      .from(configurationSheetSnapshots)
+      .where(eq(configurationSheetSnapshots.id, snapshot.id))
+      .for("no key update");
+
+    // The pack that stands for the event, as the Event Day board, the supplier
+    // passes and a proposal read it (newest-handoff-pack.ts). It is returned
+    // only when it is this layout's, from this snapshot, saying exactly what
+    // this compile would: a pack of another layout, or an older one of this
+    // layout, is not the event's, so the compile makes this layout current.
+    const standing = await newestHandoffPack(tx, input.eventId === null
+      ? { eventId: null, configId: input.configId }
+      : { eventId: input.eventId, venueId: config.venueId });
+    // A standing pack the schema no longer reads is replaced, and said so in
+    // the log and the new pack's audit row (review K3).
+    let replaced: { readonly packId: string; readonly issuePaths: readonly string[] } | null = null;
+    if (standing !== null && standing.configId === input.configId && standing.snapshotId === snapshot.id) {
+      const stored = await readStoredPack(tx, standing.id);
+      if (!stored.readable) {
+        replaced = { packId: standing.id, issuePaths: stored.issuePaths };
+      } else if (stored.bundle !== null && JSON.stringify(bundleContent(stored.bundle)) === JSON.stringify(draftContent(draft))) {
+        return { result: { bundle: stored.bundle, created: false }, replaced: null };
+      }
+    }
+
     const [latestPack] = await tx.select({ version: handoffPacks.version })
       .from(handoffPacks)
       .where(eq(handoffPacks.snapshotId, snapshot.id))
@@ -1199,11 +1441,21 @@ export async function compileOpsHandoffPackFromConfiguration(
         eventId: input.eventId,
         snapshotId: snapshot.id,
         digest: draft.digest,
+        ...(replaced === null ? {} : { replacedUnreadablePackId: replaced.packId, unreadableIssuePaths: replaced.issuePaths }),
       },
     });
 
     const bundle = await getOpsHandoffPackBundle(tx, pack.id);
     if (bundle === null) throw new Error("Handoff pack bundle could not be loaded after insertion.");
-    return bundle;
+    return { result: { bundle, created: true }, replaced };
   });
+  // Told once the new pack is kept: the pack's id and the paths the schema
+  // refused, never what the pack says (review K3).
+  if (replaced !== null) {
+    input.logger?.warn(
+      { handoffPackId: replaced.packId, replacedBy: result.bundle.pack.id, issuePaths: replaced.issuePaths },
+      "ops_handoff.stored_pack_unreadable",
+    );
+  }
+  return result;
 }
