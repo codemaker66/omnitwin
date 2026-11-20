@@ -28,6 +28,11 @@ _TO_PLANNER = {
     3: lambda X, Y: (Y, X),
 }
 
+# A `behind` edit with `like`: the width (metres) of the strip of wall, just beyond the edit's
+# rectangle on the named side, whose median depth each row of the rectangle takes (the corners
+# step, gate B26). check_room holds the strip to the wall.
+BEHIND_STRIP = 0.10
+
 
 def load(path):
     with open(path, encoding="utf-8") as f:

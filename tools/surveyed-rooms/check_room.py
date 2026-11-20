@@ -441,6 +441,19 @@ def check_edits(rep, room, wmap, openings):
         if e["type"] == "canvas":
             rep.fact(f"{label} {w['id']:<10} u {u0:7.3f}..{u1:7.3f}  v {v0}..{v1}  {e['id']}")
             continue
+        if e["type"] == "behind":
+            if "like" in e and "depth" in e:
+                rep.error(f"{label}: takes `like` or `depth`, not both")
+            elif "like" not in e and "depth" not in e:
+                rep.error(f"{label}: takes `like` or `depth`: the side whose wall gives each row its depth, or one depth before the face")
+            elif "like" in e:
+                s0, s1 = (u1, u1 + roomlib.BEHIND_STRIP) if e["like"] == "right" else (u0 - roomlib.BEHIND_STRIP, u0)
+                if s0 < -TOL or s1 > w["length"] + TOL:
+                    rep.error(f"{label}: the strip of wall beyond its {e['like']} (u {s0:.3f}..{s1:.3f}) runs outside wall {w['id']} "
+                              f"(0..{w['length']:.3f}): give `depth`, or take the other side")
+            how = f"like the wall beyond its {e['like']}" if "like" in e else f"at {e.get('depth')} m before the face"
+            rep.fact(f"{label} {w['id']:<10} u {u0:7.3f}..{u1:7.3f}  v {v0}..{v1}  {how}")
+            continue
         if e["type"] == "patch":
             src_wall = w
             if e["mode"] == "copy":
