@@ -48,7 +48,8 @@ names exists.
 
 Usage (in the work directory): python3 $SURVEY/label-views.py <window|door|end|fire>
     [--data DIR] [--out proj] [--region U0 U1 V0 V1] [--stats-cache FILE]
-(--region and --stats-cache are for development: one part of a wall, statistics kept between runs.)
+(--region and --stats-cache are for development: one part of a wall, statistics kept between runs; statistics kept
+with one occluder margin are refused with another.)
 Writes <out>/labels-<wall>.npz and <out>/labels-<wall>.json."""
 import os
 
@@ -235,6 +236,7 @@ def statistics(grid, sts, rb):
     stats = dict(cover=cover, rgb=rgb, lap=lap, lum2=lum2, foot=foot, visbits=visbits, nvalid=nvalid)
     if margin:
         stats['seenbits'] = seenbits
+        stats['occluder_margin'] = np.float64(B.OCCLUDER_MARGIN)     # a --stats-cache is good for this margin alone
     return stats
 
 
@@ -695,6 +697,16 @@ def depth_field(cost, todo):
 
 # ---------------------------------------------------------------- main
 
+def same_margin(path, stats):
+    """Refuses a --stats-cache made with another occluder margin than this run's: its views were counted by another
+    rule. Statistics made with a margin record it; statistics made without one hold none of the margin's arrays."""
+    made = float(stats['occluder_margin']) if 'occluder_margin' in stats else None if 'seenbits' in stats else 0.0
+    if made != B.OCCLUDER_MARGIN:
+        was = 'an occluder margin they do not record' if made is None else f'an occluder margin of {made:g} m'
+        raise SystemExit(f"{path}: these statistics were made with {was}; this run's is {B.OCCLUDER_MARGIN:g} m. "
+                         'Remove the file to have them made again.')
+
+
 def main():
     args = parse()
     B.below_normal_priority()
@@ -710,6 +722,7 @@ def main():
     if args.stats_cache and os.path.exists(args.stats_cache):
         z = np.load(args.stats_cache)
         stats = {k: z[k] for k in z.files}
+        same_margin(args.stats_cache, stats)
     else:
         stats = statistics(grid, sts, rb)
         if args.stats_cache:
@@ -721,7 +734,7 @@ def main():
     ranked = ranked_lists(cand['D'], label, cand['keep'], stats['cover'])
     tlab = texel_labels(ranked, stats['visbits'], valid, rb)
     extra, margin = {}, None
-    if 'seenbits' in stats:                 # bestview.OCCLUDER_MARGIN is set
+    if B.OCCLUDER_MARGIN > 0:               # then stats['visbits'] holds the clear views, and same_margin() has vouched for a cache
         order = ranked_lists(cand['D'], label, cand['keep'], stats['cover'], None)
         tlab, outside = clear_views(order, tlab, stats['visbits'])
         clear = int((tlab >= 0).sum())

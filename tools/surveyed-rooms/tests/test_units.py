@@ -357,6 +357,28 @@ class MarginViews(unittest.TestCase):
         self.assertEqual(sorted(zip(*(a.tolist() for a in np.nonzero(extra)))), [(0, 0, 1), (1, 0, 0), (2, 0, 2)])   # station, row, column
         self.assertTrue(np.array_equal(stats["visbits"], B.pack_bits(clear)))     # the clear views are not written to
 
+    def test_a_statistics_cache_is_good_for_its_own_margin_alone(self):
+        lv = self.lv
+        bits = np.zeros((1, 1, 1), np.uint8)
+        plain = dict(visbits=bits)                                                # made without a margin: none of its arrays
+        made_at_50 = dict(visbits=bits, seenbits=bits, occluder_margin=np.float64(0.05))
+        unrecorded = dict(visbits=bits, seenbits=bits)                            # the margin's arrays, from before it was recorded
+        with self.margin(0.0):
+            lv.same_margin("X:/elsewhere/stats.npz", plain)
+            with self.assertRaisesRegex(SystemExit, r"stats\.npz: these statistics were made with an occluder margin of 0\.05 m; this run's is 0 m"):
+                lv.same_margin("X:/elsewhere/stats.npz", made_at_50)
+            with self.assertRaisesRegex(SystemExit, "an occluder margin they do not record; this run's is 0 m"):
+                lv.same_margin("X:/elsewhere/stats.npz", unrecorded)
+        with self.margin(0.05):
+            lv.same_margin("X:/elsewhere/stats.npz", made_at_50)
+            with self.assertRaisesRegex(SystemExit, r"an occluder margin of 0 m; this run's is 0\.05 m\. Remove the file"):
+                lv.same_margin("X:/elsewhere/stats.npz", plain)                   # no margin's arrays, and a margin is set
+            with self.assertRaisesRegex(SystemExit, "do not record"):
+                lv.same_margin("X:/elsewhere/stats.npz", unrecorded)
+        with self.margin(0.08):
+            with self.assertRaisesRegex(SystemExit, r"an occluder margin of 0\.05 m; this run's is 0\.08 m"):
+                lv.same_margin("X:/elsewhere/stats.npz", made_at_50)
+
 
 class Windows(unittest.TestCase):
     def test_tops_match_window_relief(self):
