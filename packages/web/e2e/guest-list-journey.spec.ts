@@ -154,11 +154,11 @@ async function keepToTheDevice(context: BrowserContext, app: string): Promise<Tr
   return traffic;
 }
 
-/** Each request bound off the app's own origin, as "METHOD /path". */
+/** Each request bound off the app's own origin, as "METHOD /path?query": the query is compared too, so the one allowed read cannot carry anything on its end. */
 function awayFromTheApp(sent: readonly Sent[], app: string): string[] {
   return sent
     .filter((request) => /^https?:/u.test(request.url) && new URL(request.url).origin !== app)
-    .map((request) => `${request.method} ${new URL(request.url).pathname}`);
+    .map((request) => `${request.method} ${new URL(request.url).pathname}${new URL(request.url).search}`);
 }
 
 /**
