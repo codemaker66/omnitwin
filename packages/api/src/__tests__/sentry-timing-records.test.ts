@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { initSentry } from "../observability/sentry.js";
 
 // ---------------------------------------------------------------------------
-// The API's timing records carry no address, identifier or browser details.
+// The API's timing records carry no internet address, identifier or browser details.
 // Production samples one request in ten as a Sentry transaction whether or
 // not anything failed, and the privacy page says so (Blake, 13 November 2026:
 // "Strip browser details, say so"). The real SDK is started as the API starts

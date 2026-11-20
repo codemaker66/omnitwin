@@ -192,9 +192,12 @@ describe("the privacy policy", () => {
     expect(page).toContain("Nor is consent required for measuring how fast our pages are: the same Regulations allow it when it is done only to collect statistics about how the site is used so that we can improve it, the information is shared with no one except to help us improve the site, you are given clear and comprehensive information about its purpose, and you have a simple, free way to object and have not used it, such as the \"Don't measure my visits\" switch (see \"How fast our pages are\").");
     expect(page).not.toContain("you are told about it");
     // And (Blake: "Strip browser details, say so"): the error monitor's timing
-    // records, sent whether or not anything failed, in both places it is named.
-    expect(page).toContain("Our server also sends it a timing record for about one request in ten, saying which kind of request it was and how long it took, with no address, identifier or browser details.");
-    expect(page).toContain("Error monitoring. It records technical diagnostics when something in the site fails, so that we can fix it, and a timing record for about one request in ten, with no address, identifier or browser details.");
+    // records, sent whether or not anything failed, in both places it is named;
+    // "internet address", as the page also calls a page's URL its address
+    // (Blake, 20 November 2026: "Say "internet address"").
+    expect(page).toContain("Our server also sends it a timing record for about one request in ten, saying which kind of request it was and how long it took, with no internet address, identifier or browser details.");
+    expect(page).toContain("Error monitoring. It records technical diagnostics when something in the site fails, so that we can fix it, and a timing record for about one request in ten, with no internet address, identifier or browser details.");
+    expect(page).not.toContain("with no address, identifier");
     expect(page).toContain("your visit is not measured, and anything that arrives with either signal is discarded");
     expect(page).not.toContain("nothing is measured or sent");
     expect(page).toContain("Measuring how fast our pages are");

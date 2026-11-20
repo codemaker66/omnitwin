@@ -33,7 +33,7 @@
     "slug": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
     "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
     "note": { "type": "string" },
-    "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "format": "date", "description": "A day on the calendar, YYYY-MM-DD: check_room asserts the format, and the web's reader refuses survey.json's captured (source.captured) otherwise." },
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "positive": { "type": "number", "exclusiveMinimum": 0 },
     "nonNegative": { "type": "number", "minimum": 0 },
@@ -507,6 +507,19 @@
         "nadir": { "type": "boolean" }
       }
     },
+    "wallProjectionSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cosMin": { "type": "number" },
+        "pCos": { "type": "number" },
+        "qDist": { "type": "number" },
+        "maxDist": { "type": "number" },
+        "glare": { "type": "integer", "minimum": 0 },
+        "nadir": { "type": "boolean" },
+        "occluderMargin": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.2, "description": "Metres, measured at the occluder: a station's view of a wall texel is left out of the best-view labels where anything nearer stands within this margin of the ray, because the scan's mesh outlines things standing proud of a wall smaller than the panoramas show them. A texel no station sees clear of the margin keeps a doubtful view. Absent: no margin, as in the Grand Hall." }
+      }
+    },
     "survey": {
       "type": "object",
       "additionalProperties": false,
@@ -517,13 +530,13 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["folder"],
-          "properties": { "folder": { "type": "string" }, "revision": { "type": "integer", "minimum": 0 } }
+          "properties": { "folder": { "type": "string" }, "revision": { "type": "integer", "minimum": 1, "description": "The published survey's revision, survey.json's `revision`: the web's reader takes 1 and up. A room that publishes its record (survey.outputs.manifest) must give it." } }
         },
         "projection": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "walls": { "$ref": "#/$defs/projectionSettings" },
+            "walls": { "$ref": "#/$defs/wallProjectionSettings" },
             "ceiling": { "$ref": "#/$defs/projectionSettings" },
             "dome": { "$ref": "#/$defs/projectionSettings" },
             "floor": { "$ref": "#/$defs/projectionSettings" }

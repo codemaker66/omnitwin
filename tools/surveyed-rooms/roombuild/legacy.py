@@ -109,7 +109,9 @@ def best_view_values(room):
     wv = room.survey['wallViews']
     kw = room.projection('walls')
     values = dict(WALLS=room.wall_frames(), SRC_PPM=float(wv['ppm']), SRC_TOP=wv['heightRange'][1],
-                  FLOOR=room.cfg['transform']['floorZ'])
+                  FLOOR=room.cfg['transform']['floorZ'],
+                  # gate B25: 0.0 for a room without the key, which is bestview.py's own value (no margin)
+                  OCCLUDER_MARGIN=room.occluder_margin())
     if 'cos_min' in kw:
         values['COS_MIN'] = kw['cos_min']
     if 'max_dist' in kw:
