@@ -315,12 +315,12 @@ load and navigation, which neither "no third-party analytics product" nor the sw
 "not measured" would have survived (`observability/sentry.ts` now drops its
 `BrowserSession` integration). Two more reviews that evening (the switch's code and
 tests; every claim against the code and PECR's text) led to four more of Blake's
-answers. "Strip browser details, say so (Recommended)": the API sent Sentry a timing
-record (a transaction) for about one request in ten, whether or not anything failed,
-with the request's headers and the user agent; `scrubTransaction`
-(`packages/api/src/observability/redact.ts`) now keeps no browser-supplied header
-beyond the host and content length, and both of the page's Sentry entries say what
-such a record carries. "Wait for their reply (Recommended)": switching on waits for
+answers. "Strip browser details, say so (Recommended)": the API's timing records (a
+transaction for about one request in ten, whether or not anything failed) keep no
+browser-supplied header beyond the host and content length (`scrubTransaction`,
+`packages/api/src/observability/redact.ts`), and both of the page's Sentry entries
+say what such a record carries, with "no internet address" since 20 November (Blake:
+"Say "internet address" (Recommended)"). "Wait for their reply (Recommended)": switching on waits for
 that reply (step 3 above). "Change both
 (Recommended)": the switch says where the browser blocks storage that "your visits in
 this browser are never measured", and why. "Name every condition (Recommended)": the
