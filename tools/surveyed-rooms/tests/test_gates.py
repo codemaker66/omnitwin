@@ -926,7 +926,9 @@ class OccluderMarginManyStations(unittest.TestCase):
     ranked stations print that station's picture of the pier on the plain wall, 1 to 2 cm from the pier itself:
     the outline the margin exists to remove, in the band the box's test above leaves out. With every station
     asked, those texels take the far station's clear view; a doubtful view is left for the texels no station sees
-    clear, and of those views it is the one that passes farthest from the pier's edge."""
+    clear, and of those views it is the first of the block's own sequence (its ranked stations, then the others by
+    how much of the block they saw at all), not the one that passes farthest from the pier's edge: on real walls
+    the farthest view showed the edge as often and put far more texels in another station's picture (T-739)."""
 
     @classmethod
     def build(cls, name, margin):
@@ -991,7 +993,7 @@ class OccluderMarginManyStations(unittest.TestCase):
         self.assertGreater(without, 1000, "the fault did not occur without the margin: the test proves nothing")
         self.assertEqual(int((c["ghost"] & ~c["band"]).sum()), 0)                       # here the outlines all lie within 20 cm of the pier
         left = int(o["ghost"].sum())
-        self.assertLessEqual(left, without // 50, f"{left} texels of plain wall still take a view that shows the pier ({without} without the margin)")
+        self.assertEqual(left, 0, f"{left} texels of plain wall still take a view that shows the pier ({without} without the margin)")
 
     def test_4_the_photographs_take_labels_from_outside_the_ranking(self):
         o = self.open

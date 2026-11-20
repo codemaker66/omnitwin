@@ -340,43 +340,80 @@ class MarginViews(unittest.TestCase):
         self.assertTrue(np.all(out[:, :2] == 0) and np.all(out[:, 2:4] == 6) and np.all(out[:, 4:6] == 8))
         self.assertTrue(np.all(out[:, 6:second] == -1))              # no station saw the first block's other columns
         # The block without a label: a texel a station saw clear takes it all the same, and where two did, the one
-        # that saw more of the block. (The margin can itself leave a block without a label; its texels are not to
-        # become holes for that.) What no station saw clear stays as it was.
+        # that saw more of the block. (label-views.py's main() cannot make such a block today: while candidates()
+        # keeps the station that covers a block best, a block without a label has no clear texel. This is the guard
+        # for the day that changes.) What no station saw clear stays as it was.
         self.assertTrue(np.all(out[:, second:second + 2] == 3) and np.all(out[:, second + 2:second + 7] == 7))
         self.assertTrue(np.all(out[:, second + 7:] == -1))
         self.assertEqual(outside, 4 * B.BLOCK + 7 * B.BLOCK)
         self.assertTrue(np.array_equal(tlab, lv.texel_labels(ranked, bits, valid, (0, 1, 0, 2))))   # the input is not written to
 
-    def test_a_doubtful_view_is_the_one_with_the_most_clearance(self):
+    def test_a_doubtful_view_is_the_first_of_the_blocks_sequence_that_saw_the_texel(self):
+        """T-739. A texel that stations saw, and none clear, takes the first station of its block's sequence that
+        saw it: the block's own stations first, never the station that merely passes farthest from the occluder
+        (the rule this replaced, which the Saloon's real walls did not bear out)."""
         lv, B = self.lv, self.B
         H = W = B.BLOCK
-        seen, clear = np.zeros((3, H, W), bool), np.zeros((3, H, W), bool)
-        away = np.zeros((3, H, W), np.float32)
-        seen[:, 0, 0] = True; away[:, 0, 0] = (0.01, 0.03, 0.02)    # no station clear: station 1 passes farthest from the occluder
-        seen[(0, 2), 0, 1] = True; away[(0, 2), 0, 1] = 0.02        # equal: the earlier station
-        seen[2, 0, 2] = True; away[2, 0, 2] = 0.004                 # one station saw it
+        S = 4
+        seen, clear = np.zeros((S, H, W), bool), np.zeros((S, H, W), bool)
+        away = np.zeros((S, H, W), np.float32)
+        sequence = np.array([[[2, 0, 1, -1, 2, 3, -1]]], np.int16)   # the block's own station is 2; 3 comes last, 2 twice
+        seen[:, 0, 0] = True; away[:, 0, 0] = (0.035, 0.045, 0.010, 0.049)   # the block's own saw it: taken, though 3 passes farthest
+        seen[(1, 3), 0, 1] = True; away[(1, 3), 0, 1] = (0.020, 0.049)       # its own did not see it: the next of the sequence that did
+        seen[3, 0, 2] = True; away[3, 0, 2] = 0.004                  # only the last of the sequence saw it
         seen[(0, 1), 0, 3] = True; clear[1, 0, 3] = True            # station 1 saw it clear, and it has that label
         seen[(0, 2), 0, 4] = True; clear[2, 0, 4] = True            # a station saw it clear: no doubtful view, whatever its label
         tlab = np.full((H, W), -1, np.int16)
         tlab[0, 3] = 1
         grid = mock.Mock(depth=np.zeros((H, W), np.float32), n=np.array([0.0, 0.0, 1.0]),
                          points=lambda r, c, d: np.stack([r, c, d], -1).astype(np.float64))
-        stations = [dict(id=k, t=np.zeros(3)) for k in range(3)]
+        stations = [dict(id=k, t=np.zeros(3)) for k in range(S)]
 
         def clearance(cube, v, dist, cos):                           # `cube` is the station (load_depth below); v is (row, column, 0)
             return away[cube, v[:, 0].astype(int), v[:, 1].astype(int)]
 
         stats = dict(visbits=B.pack_bits(clear), seenbits=B.pack_bits(seen))
         with mock.patch.object(lv.P, "load_depth", lambda sid: sid), mock.patch.object(B, "occluder_clearance", clearance):
-            out, bits, given = lv.doubtful_views(grid, stations, tlab, stats)
-        self.assertEqual(out[0, :6].tolist(), [1, 0, 2, 1, -1, -1])
+            out, bits, given = lv.doubtful_views(grid, stations, tlab, stats, sequence)
+        self.assertEqual(out[0, :6].tolist(), [2, 1, 3, 1, -1, -1])
         self.assertTrue(np.all(out[1:] == -1))
-        self.assertTrue(np.allclose(given, [0.03, 0.02, 0.004]))
+        self.assertTrue(np.allclose(given, [0.010, 0.020, 0.004]))  # reported for each view given; it decides nothing
+        self.assertEqual(given.dtype, np.float32)
         used = B.unpack_bits(bits, W)
-        extra = used & ~clear
         self.assertTrue(np.all(clear <= used))
-        self.assertEqual(sorted(zip(*(a.tolist() for a in np.nonzero(extra)))), [(0, 0, 1), (1, 0, 0), (2, 0, 2)])   # station, row, column
+        self.assertEqual(sorted(zip(*(a.tolist() for a in np.nonzero(used & ~clear)))), [(1, 0, 1), (2, 0, 0), (3, 0, 2)])   # station, row, column
         self.assertTrue(np.array_equal(stats["visbits"], B.pack_bits(clear)))     # the clear views are not written to
+
+    def test_the_sequence_for_a_doubtful_view_is_the_ranking_then_every_station_by_what_it_saw(self):
+        """T-739. Per block: its ranked stations (a block without a label borrows the nearest labelled block's),
+        then every station that saw any of the block at all, most first, so that a texel a station saw always
+        finds a view; none that saw nothing of it."""
+        lv, B = self.lv, self.B
+        S, n = 9, 3 * B.BLOCK
+        ranked = np.full((1, 3, lv.RANKED), -1, np.int16)
+        ranked[0, 0] = [4, 1, 0, 2, 3, 5]
+        ranked[0, 2] = [7, 8, -1, -1, -1, -1]
+        label = np.array([[4, -1, 7]])                               # the middle block has no label: it borrows a neighbour's ranking
+        seen = np.zeros((S, B.BLOCK, n), bool)
+        seen[6, :, :5] = True                                        # block 0: station 6 saw five columns of it,
+        seen[8, :, :2] = True                                        # station 8 two,
+        seen[4, :, :1] = True                                        # its own station one (it stands in both halves),
+        seen[2, :, :2] = True                                        # and station 2 two as well: of equals, the earlier station
+        seen[3, :, B.BLOCK:B.BLOCK + 3] = True                       # block 1: station 3 alone
+        seq = lv.doubtful_sequence(ranked, label, B.pack_bits(seen), n)
+        self.assertEqual(seq.shape, (1, 3, lv.RANKED + S))
+        self.assertEqual(seq.dtype, np.int16)
+        self.assertEqual(seq[0, 0].tolist(), [4, 1, 0, 2, 3, 5] + [6, 2, 8, 4] + [-1] * 5)
+        self.assertIn(seq[0, 1, :lv.RANKED].tolist(), ([4, 1, 0, 2, 3, 5], [7, 8, -1, -1, -1, -1]))   # the nearest labelled block's
+        self.assertEqual(seq[0, 1, lv.RANKED:].tolist(), [3] + [-1] * 8)
+        self.assertEqual(seq[0, 2].tolist(), [7, 8] + [-1] * 13)     # nobody saw any of it at all: the ranking alone
+        # More stations than the ranking holds saw the block: every one of them is in the sequence.
+        many = np.zeros((S, B.BLOCK, n), bool)
+        for s in range(S):
+            many[s, :, :s] = True                                    # station s saw s columns of block 0; station 0 none
+        self.assertGreater(S - 1, lv.RANKED)
+        seq = lv.doubtful_sequence(ranked, label, B.pack_bits(many), n)
+        self.assertEqual(seq[0, 0, lv.RANKED:].tolist(), [8, 7, 6, 5, 4, 3, 2, 1, -1])
 
     def test_a_statistics_cache_is_good_for_its_own_margin_alone(self):
         lv = self.lv
@@ -399,6 +436,56 @@ class MarginViews(unittest.TestCase):
         with self.margin(0.08):
             with self.assertRaisesRegex(SystemExit, r"an occluder margin of 0\.05 m; this run's is 0\.08 m"):
                 lv.same_margin("X:/elsewhere/stats.npz", made_at_50)
+
+
+class WallMeasure(unittest.TestCase):
+    """measure/walls/wallviews.py: the measure the wall scripts share, on a small wall. A texel is set against the
+    clean texels within reach on its own surface, and against nothing else."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util  # noqa: PLC0415
+        blas = {k: os.environ.get(k) for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")}
+        spec = importlib.util.spec_from_file_location("wallviews", os.path.join(ROOMS, "measure", "walls", "wallviews.py"))
+        cls.wv = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.wv)
+        for k, v in blas.items():                                   # it asks for one BLAS thread for its own runs: not this process's
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+    def test_a_texel_is_set_against_its_clean_neighbours_on_its_own_surface(self):
+        wv = self.wv
+        H = W = 3 * wv.REACH
+        L = np.full((H, W), 100.0, np.float32)
+        depth = np.zeros((H, W), np.float32)
+        depth[:, W // 2:] = 0.05                                    # a thing 5 cm proud over the right half
+        L[:, W // 2:] = 40.0                                        # and darker
+        clean = np.ones((H, W), bool)
+        mid = H // 2
+        clean[mid, :] = False                                       # the row under test is not its own surroundings
+        r = np.array([mid, mid, mid])
+        c = np.array([W // 2 - 1, W // 2, 2])                       # the last plaster column, the thing's first, and one near the wall's end
+        ref, count = wv.surroundings(L, clean, depth, r, c)
+        self.assertEqual(ref.tolist(), [100.0, 40.0, 100.0])        # each against its own surface, though the other is a texel away
+        self.assertEqual(ref.dtype, np.float32)
+        rows = 2 * wv.REACH                                         # the rows within reach, less the texel's own
+        self.assertEqual(count.tolist(), [rows * (wv.REACH + 1), rows * (wv.REACH + 1), rows * (2 + wv.REACH + 1)])
+        # A neighbour that is not clean, or lies another surface away, never counts; a texel with none is not judged.
+        ref, count = wv.surroundings(L, np.zeros((H, W), bool), depth, r, c)
+        self.assertTrue(np.all(np.isnan(ref)) and np.all(count == 0))
+        depth[mid, 5] = 0.02                                        # a texel alone on its own level: nothing within 10 mm of it
+        ref, count = wv.surroundings(L, clean, depth, np.array([mid]), np.array([5]))
+        self.assertEqual(count.tolist(), [0])
+        self.assertLess(wv.NEAR_DEPTH, 0.02)
+
+    def test_luminance_is_in_srgb_levels(self):
+        wv = self.wv
+        rgb = np.array([[[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [0.2140, 0.2140, 0.2140]]], np.float32)
+        out = wv.levels(rgb)
+        self.assertEqual(out.shape, (1, 3))
+        self.assertTrue(np.allclose(out[0], [0.0, 255.0, 127.5], atol=0.3))   # linear 0.214 is sRGB's mid grey
+        bits = np.zeros((2, 1, 1), np.uint8)
+        bits[1, 0, 0] = 0b01000000                                  # station 1 saw column 1
+        self.assertEqual(wv.bit(bits, np.array([0, 1, 1]), np.array([0, 0, 0]), np.array([1, 1, 0])).tolist(), [False, True, False])
 
 
 class Windows(unittest.TestCase):
