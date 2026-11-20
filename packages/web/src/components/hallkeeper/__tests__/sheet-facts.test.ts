@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AccessibilityRequirementsSchema, DietarySummarySchema, PhaseDeadlineSchema } from "@omnitwin/types";
+import { AccessibilityRequirementsSchema, DietarySummarySchema, EventInstructionsSchema, PhaseDeadlineSchema } from "@omnitwin/types";
 import { accessNeeds, allergyFacts, deadlineWhen, formatSheetTimes, nextPhaseDeadline, telHref, venueDay, venueZoneLabel, zoneNote } from "../sheet-facts.js";
 
 const LONDON = "Europe/London";
@@ -25,17 +25,48 @@ describe("the venue's clock in words", () => {
 });
 
 describe("the printed sheet's times", () => {
-  it("prints the hour the room must be ready beside the start, on the venue's clock", () => {
-    expect(formatSheetTimes({ eventStart: "2026-10-03T17:30:00.000Z", setupBy: "2026-10-03T15:00:00.000Z", bufferMinutes: 150 }, LONDON))
-      .toBe("Ready by 16:00 · Starts 18:30 · Sat, 3 Oct 2026");
+  // timing.setupBy opens the setup window (its name is historical); Ready by is
+  // the planner's final time, else when guests come in (Blake, 18 Nov 2026).
+  const final = (deadline: string): ReturnType<typeof EventInstructionsSchema.parse> =>
+    EventInstructionsSchema.parse({ phaseDeadlines: [{ phase: "final", deadline }] });
+
+  it("prints when setup starts, when the room must be ready and when guests come in, on the venue's clock", () => {
+    expect(formatSheetTimes({ timing: { eventStart: "2026-10-03T17:30:00.000Z", setupBy: "2026-10-03T15:00:00.000Z", bufferMinutes: 150 }, instructions: null }, LONDON))
+      .toBe("Setup from 16:00 · Ready by 18:30 · Guests in 18:30 · Sat, 3 Oct 2026");
     // December keeps the same wall clock; the offset is the venue's, not UTC's.
-    expect(formatSheetTimes({ eventStart: "2026-12-12T18:30:00.000Z", setupBy: "2026-12-12T16:00:00.000Z", bufferMinutes: 150 }, LONDON))
-      .toBe("Ready by 16:00 · Starts 18:30 · Sat, 12 Dec 2026");
+    expect(formatSheetTimes({ timing: { eventStart: "2026-12-12T18:30:00.000Z", setupBy: "2026-12-12T16:00:00.000Z", bufferMinutes: 150 }, instructions: null }, LONDON))
+      .toBe("Setup from 16:00 · Ready by 18:30 · Guests in 18:30 · Sat, 12 Dec 2026");
   });
 
-  it("says why when no ready-by hour is set", () => {
-    expect(formatSheetTimes({ eventStart: "2026-10-03T17:30:00.000Z", setupBy: null, bufferMinutes: null }, LONDON))
-      .toBe("Ready by: not set, as no changeover time is recorded for this room · Starts 18:30 · Sat, 3 Oct 2026");
+  it("takes the planner's final time as Ready by, and says when it is after guests come in", () => {
+    const timing = { eventStart: "2026-10-03T17:30:00.000Z", setupBy: "2026-10-03T15:00:00.000Z", bufferMinutes: 150 };
+    expect(formatSheetTimes({ timing, instructions: final("2026-10-03T17:00:00.000Z") }, LONDON))
+      .toBe("Setup from 16:00 · Ready by 18:00 · Guests in 18:30 · Sat, 3 Oct 2026");
+    expect(formatSheetTimes({ timing, instructions: final("2026-10-03T17:45:00.000Z") }, LONDON))
+      .toBe("Setup from 16:00 · Ready by 18:45, 15 min after guests come in · Guests in 18:30 · Sat, 3 Oct 2026");
+  });
+
+  it("says why when no setup hour is set", () => {
+    expect(formatSheetTimes({ timing: { eventStart: "2026-10-03T17:30:00.000Z", setupBy: null, bufferMinutes: null }, instructions: null }, LONDON))
+      .toBe("Setup from: not set, as no changeover time is recorded for this room · Ready by 18:30 · Guests in 18:30 · Sat, 3 Oct 2026");
+  });
+
+  // #454 round 1: a time on another day than guests come in carries its
+  // weekday (YB3), and a window that leaves no time says so (YA5), as the PDF does.
+  it("leads a setup start the evening before with its weekday, so it never reads as the guests' day", () => {
+    // Saturday 3 October, guests in at 18:30; setup from Friday 17:00.
+    expect(formatSheetTimes({ timing: { eventStart: "2026-10-03T17:30:00.000Z", setupBy: "2026-10-02T16:00:00.000Z", bufferMinutes: 1530 }, instructions: null }, LONDON))
+      .toBe("Setup from Fri 17:00 · Ready by 18:30 · Guests in 18:30 · Sat, 3 Oct 2026");
+    expect(formatSheetTimes({ timing: { eventStart: "2026-10-03T17:30:00.000Z", setupBy: "2026-10-02T16:00:00.000Z", bufferMinutes: 1530 }, instructions: final("2026-10-02T21:00:00.000Z") }, LONDON))
+      .toBe("Setup from Fri 17:00 · Ready by Fri 22:00 · Guests in 18:30 · Sat, 3 Oct 2026");
+  });
+
+  it("says there is no time to set the room when the ready-by time is at or before setup starts", () => {
+    const timing = { eventStart: "2026-10-03T17:30:00.000Z", setupBy: "2026-10-03T15:00:00.000Z", bufferMinutes: 150 };
+    expect(formatSheetTimes({ timing, instructions: final("2026-10-03T14:45:00.000Z") }, LONDON))
+      .toBe("Setup from 16:00 · Ready by 15:45 · No time to set the room · Guests in 18:30 · Sat, 3 Oct 2026");
+    expect(formatSheetTimes({ timing, instructions: final("2026-10-03T15:00:00.000Z") }, LONDON))
+      .toBe("Setup from 16:00 · Ready by 16:00 · No time to set the room · Guests in 18:30 · Sat, 3 Oct 2026");
   });
 });
 

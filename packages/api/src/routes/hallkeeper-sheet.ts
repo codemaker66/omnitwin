@@ -59,6 +59,17 @@ function requestedEventId(query: unknown): string | null {
   const parsed = SheetEventQuery.safeParse(query);
   return parsed.success ? parsed.data.eventId ?? null : null;
 }
+
+/** The Day Board asks for when setup starts with `setupFrom=true` (#454). The
+ *  summary carries it only then: older web code reads the summary with a
+ *  strict schema, and a Day Board left open on it must keep reading its line.
+ *  Anything but "true" leaves it out, as an unparseable eventId is ignored. */
+const SummaryQuery = z.object({ setupFrom: z.enum(["true", "false"]).default("false") });
+
+function asksForSetupFrom(query: unknown): boolean {
+  const parsed = SummaryQuery.safeParse(query);
+  return parsed.success && parsed.data.setupFrom === "true";
+}
 // `checked` present → idempotent set-state (force the row); omitted → legacy
 // toggle (flip). Unknown keys are stripped, so older `{ rowKey }`-only clients
 // keep working and newer set-state clients are accepted by older servers.
@@ -285,7 +296,10 @@ export async function hallkeeperSheetRoutes(
       .from(hallkeeperProgress)
       .where(progressScope(params.data.configId, eventId));
 
-    return { data: summarizeSheet(params.data.configId, result.payload, marks.map((mark) => mark.rowKey)) };
+    return {
+      data: summarizeSheet(params.data.configId, result.payload, marks.map((mark) => mark.rowKey),
+        { setupFrom: asksForSetupFrom(request.query) }),
+    };
   });
 
   // -------------------------------------------------------------------------
