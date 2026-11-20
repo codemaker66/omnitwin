@@ -4,9 +4,13 @@ import {
   buildProtectedPremisesSummary,
   careTables,
   formatTableLabels,
+  NO_BOOKING,
+  NO_TIME_TO_SET,
   otherMeals,
+  PLANNER_TIME_NO_BOOKING,
   readyByWords,
   setupFromWords,
+  sheetClock,
   sheetNoteMarkers,
   sheetRunningOrder,
   sheetSetupSteps,
@@ -163,12 +167,12 @@ function factsOf(sheet: HallkeeperSheetV2): Fact[] {
       label: "Setup from",
       value: clock(times.setupFrom, timeZone),
       caption: onGuestsDay(times.setupFrom, setupFromWords(times) ?? "", times.guestsIn, timeZone),
-      tone: times.setupMinutes !== null && times.setupMinutes <= 0 ? "alert" : "plain",
+      tone: times.noTimeToSet ? "alert" : "plain",
     };
   const ready: Fact = times.readyBy === null
-    ? { label: "Ready by", value: "—", caption: "No booking holds this room yet", tone: "alert" }
+    ? { label: "Ready by", value: "—", caption: NO_BOOKING, tone: "alert" }
     : timing === null
-      ? { label: "Ready by", value: clock(times.readyBy, timeZone), caption: "The planner's time · no booking holds this room yet", tone: "alert" }
+      ? { label: "Ready by", value: clock(times.readyBy, timeZone), caption: PLANNER_TIME_NO_BOOKING, tone: "alert" }
       : {
         label: "Ready by",
         value: clock(times.readyBy, timeZone),
@@ -187,47 +191,134 @@ function factsOf(sheet: HallkeeperSheetV2): Fact[] {
 }
 
 /**
- * Each fact's width in points, sized so the usual captions keep to one line
- * (measured in the sheet's own fonts, 18 Nov 2026): a time's numeral is 79 pt;
+ * Each fact's width in points before a sheet's own captions are measured
+ * (in the sheet's own fonts, 18 Nov 2026): a time's numeral is 79 pt;
  * "6 h 30 min to set the room" 93 pt; "60 min before guests come in" 106 pt;
  * "Sat 24 Oct · UK time" 72 pt; "Dinner rounds" 50 pt; "21 × 10.5 m · 7 m high"
  * 76 pt. The room takes the rest, and its name shrinks to fit as before.
+ * No one set of widths holds every caption a sheet can print on one line
+ * (#454 round 1, measured over 2026-27: "Wed 30 Sept · UK time" 80.1 pt,
+ * "Dinner banquet" 54.6, "104 min before guests come in" 108.8, "No changeover
+ * time for this room" 118.7), but a sheet prints one caption a fact, so
+ * factCells lends each caption that needs it the room the others leave.
  */
 const FACT_WIDTHS = [108, 126, 96, 74] as const;
 /** Space either side of the rule between two facts. */
 const FACT_GAP = 10;
+
+const captionStyle = (fact: Fact): TextStyle => (fact.tone === "alert" ? TYPE.labelAlert : TYPE.label);
+const numeralStyle = (fact: Fact): TextStyle => (fact.tone === "alert" ? TYPE.numeralAlert : fact.tone === "accent" ? TYPE.numeralAccent : TYPE.numeral);
+
+/** The room's name at the largest size that fits `width`, shrinking in half points as it always has. */
+function nameStyle(doc: Doc, name: string, width: number): TextStyle {
+  let size: number = TYPE.factName.size;
+  while (size > 11 && textWidth(doc, { ...TYPE.factName, size }, name) > width) size -= 0.5;
+  return { ...TYPE.factName, size };
+}
+
+/** A fact's cell: where its rule stands, and where and how wide its words run. */
+interface FactCell { readonly ruleX: number; readonly x: number; readonly width: number }
+
+/** A caption parted after its first middle dot, where one fact ends and the next begins ("Sun 14 Jun ·", "6 h to set the room"); null without one. */
+function dotParts(caption: string): readonly [string, string] | null {
+  const at = caption.indexOf(" · ");
+  return at <= 0 ? null : [caption.slice(0, at + 2), caption.slice(at + 3)];
+}
+
+/**
+ * A caption's lines in `width`: one when it fits; else two, parted after its
+ * middle dot when both parts fit; else wrapped and evened out, so no word
+ * sits alone (balancedLines).
+ */
+function captionLines(doc: Doc, style: TextStyle, caption: string, width: number): readonly string[] {
+  if (caption.length === 0) return [];
+  if (textWidth(doc, style, caption) <= width) return [caption];
+  const parts = dotParts(caption);
+  if (parts !== null && parts.every((part) => textWidth(doc, style, part) <= width)) return parts;
+  return balancedLines(doc, style, caption, width);
+}
+
+/**
+ * The cells for this sheet's facts. Each starts at FACT_WIDTHS. A caption
+ * wider than its cell borrows the room the other facts leave beyond their
+ * own widest line (overline, numeral or name at its first size, caption),
+ * the smallest shortfall first, lent in proportion to what each can spare.
+ * A caption that cannot get a whole line may borrow for its two parts
+ * either side of its middle dot; failing that it keeps its cell and wraps,
+ * evened out. So a sheet whose captions fit keeps the widths it always had.
+ */
+function factCells(doc: Doc, all: readonly Fact[]): FactCell[] {
+  const fixed = FACT_WIDTHS.reduce((sum, width) => sum + width, 0);
+  const gaps = all.map((_, index) => (index === 0 ? FACT_GAP : FACT_GAP * 2));
+  const text = all.map((_, index) => (FACT_WIDTHS[index] ?? W - fixed) - (gaps[index] ?? 0));
+  const overline = (fact: Fact): number => textWidth(doc, fact.tone === "alert" ? TYPE.overlineAlert : TYPE.overline, fact.label);
+  const measure = (fact: Fact, words: string): number => textWidth(doc, captionStyle(fact), words);
+  // What a fact needs for its caption on one line; and what it keeps when it lends.
+  const wants = all.map((fact) => Math.max(overline(fact), fact.caption.length === 0 ? 0 : measure(fact, fact.caption)));
+  const keeps = all.map((fact, index) => Math.max(wants[index] ?? 0, fact.name === true
+    ? textWidth(doc, nameStyle(doc, fact.value, text[index] ?? 0), fact.value)
+    // A numeral is drawn a point left of its cell.
+    : textWidth(doc, numeralStyle(fact), fact.value) - 1));
+  const short = all.map((_, index) => index).filter((index) => (wants[index] ?? 0) > (text[index] ?? 0))
+    .sort((a, b) => ((wants[a] ?? 0) - (text[a] ?? 0)) - ((wants[b] ?? 0) - (text[b] ?? 0)));
+  const spare = all.map((_, index) => (short.includes(index) ? 0 : Math.max(0, (text[index] ?? 0) - (keeps[index] ?? 0))));
+  /** Widens a cell to `want` from the others' spare room, when there is enough of it. */
+  const borrow = (index: number, want: number): void => {
+    // A hundredth of a point over, so the caption measured is the caption that fits.
+    const need = want - (text[index] ?? 0) + 0.01;
+    const available = spare.reduce((sum, value) => sum + value, 0);
+    if (need <= 0.01 || need > available) return;
+    for (const [lender, value] of spare.entries()) {
+      const lent = value * need / available;
+      spare[lender] = value - lent;
+      text[lender] = (text[lender] ?? 0) - lent;
+    }
+    text[index] = (text[index] ?? 0) + need;
+  };
+  for (const index of short) borrow(index, wants[index] ?? 0);
+  for (const index of short) {
+    const fact = all[index];
+    const parts = fact === undefined ? null : dotParts(fact.caption);
+    if (fact === undefined || parts === null || (text[index] ?? 0) >= (wants[index] ?? 0)) continue;
+    borrow(index, Math.max(...parts.map((part) => measure(fact, part))));
+  }
+  let ruleX = X;
+  return all.map((_, index) => {
+    const cell = { ruleX, x: ruleX + (index === 0 ? 0 : FACT_GAP), width: text[index] ?? 0 };
+    ruleX += (text[index] ?? 0) + (gaps[index] ?? 0);
+    return cell;
+  });
+}
 
 export function facts(flow: Flow, sheet: HallkeeperSheetV2): void {
   const { doc } = flow;
   const top = flow.y;
   const numeralTop = top + 18;
   const captionTop = numeralTop + TYPE.numeral.size + 2;
+  const all = factsOf(sheet);
+  const cells = factCells(doc, all);
+  const captions = all.map((fact, index) => captionLines(doc, captionStyle(fact), fact.caption, cells[index]?.width ?? 0));
+  const bottom = all.reduce((lowest, fact, index) => Math.max(lowest, captionTop + (captions[index]?.length ?? 0) * lineHeight(doc, captionStyle(fact), fact.caption)), captionTop);
+  // The rules between the facts reach 10 pt below the captions' first line, and a line further for each more.
+  const ruleEnd = Math.max(captionTop + 10, bottom + 10 - lineHeight(doc, TYPE.label));
   hairline(doc, X, top, X + W, INK.ruleStrong, 0.7);
-  let bottom = captionTop;
-  let cellX = X;
-  for (const [index, fact] of factsOf(sheet).entries()) {
-    const cellW = FACT_WIDTHS[index] ?? X + W - cellX;
-    const x = cellX + (index === 0 ? 0 : FACT_GAP);
-    const width = cellW - (index === 0 ? FACT_GAP : FACT_GAP * 2);
-    if (index > 0) upright(doc, cellX, top + 8, captionTop + 10);
-    cellX += cellW;
-    drawLine(doc, fact.tone === "alert" ? TYPE.overlineAlert : TYPE.overline, fact.label, x, top + 9);
+  for (const [index, fact] of all.entries()) {
+    const cell = cells[index];
+    if (cell === undefined) continue;
+    if (index > 0) upright(doc, cell.ruleX, top + 8, ruleEnd);
+    drawLine(doc, fact.tone === "alert" ? TYPE.overlineAlert : TYPE.overline, fact.label, cell.x, top + 9);
     if (fact.name === true) {
-      let size: number = TYPE.factName.size;
-      while (size > 11 && textWidth(doc, { ...TYPE.factName, size }, fact.value) > width) size -= 0.5;
-      const style: TextStyle = { ...TYPE.factName, size };
-      drawLine(doc, style, oneLine(doc, style, fact.value, width), x, numeralTop + (TYPE.numeral.size - size) * 0.86);
+      const style = nameStyle(doc, fact.value, cell.width);
+      drawLine(doc, style, oneLine(doc, style, fact.value, cell.width), cell.x, numeralTop + (TYPE.numeral.size - style.size) * 0.86);
     } else {
-      const style = fact.tone === "alert" ? TYPE.numeralAlert : fact.tone === "accent" ? TYPE.numeralAccent : TYPE.numeral;
-      drawLine(doc, style, fact.value, x - 1, numeralTop);
+      drawLine(doc, numeralStyle(fact), fact.value, cell.x - 1, numeralTop);
     }
-    if (fact.caption.length > 0) {
-      bottom = Math.max(bottom, drawBlock(doc, fact.tone === "alert" ? TYPE.labelAlert : TYPE.label, fact.caption, x, captionTop, width));
-    }
+    const style = captionStyle(fact);
+    const step = lineHeight(doc, style, fact.caption);
+    for (const [line, words] of (captions[index] ?? []).entries()) drawLine(doc, style, words, cell.x, captionTop + line * step);
   }
-  bottom += 8;
-  hairline(doc, X, bottom, X + W, INK.ruleStrong, 0.7);
-  flow.y = bottom + 12;
+  hairline(doc, X, bottom + 8, X + W, INK.ruleStrong, 0.7);
+  flow.y = bottom + 20;
 }
 
 // ------------------------------------------------- what to keep in view ----
@@ -420,16 +511,24 @@ function contactsUnit(doc: Doc, sheet: HallkeeperSheetV2, x: number, width: numb
 
 const TIME_W = 38;
 const LATE = "After the room's ready-by time";
-/** Under a Room ready line that falls after guests come in: the planner's time, kept and said. */
+/** Under a line that falls after guests come in (Room ready at the planner's time, or a step before it): kept and said. */
 const LATE_GUESTS = "After guests come in";
-const lateWords = (line: DayLine): string => (line.afterGuests ? LATE_GUESTS : LATE);
+/** What a day line warns of, in brick under its title: late against the ready-by time or the doors, and no time to set the room. */
+function dayWarning(line: DayLine): string | null {
+  const words = [line.late ? (line.afterGuests ? LATE_GUESTS : LATE) : null, line.noTimeToSet ? NO_TIME_TO_SET : null];
+  const said = words.filter((part): part is string => part !== null);
+  return said.length === 0 ? null : said.join(" · ");
+}
+/** A warned line's time in brick, as the header and the rail set it; its weight as it would have been. */
+const TIME_ALERT: TextStyle = { ...TYPE.time, color: INK.alert };
+const TIME_ALERT_STRONG: TextStyle = { ...TYPE.timeAccent, color: INK.alert };
 /** A day line's date and detail when they share its title's line: the title's size, so one baseline. */
 const DAY_DATE_INLINE: TextStyle = { ...TYPE.dayTitle, face: "Inter-Medium", color: INK.accent };
 const DAY_DETAIL_INLINE: TextStyle = { ...TYPE.dayTitle, color: INK.secondary };
 
 /** The line's title, date and detail as runs on one line beside its time, or null when they do not fit there. */
 function dayRuns(doc: Doc, line: DayLine, timeZone: string, textW: number): readonly (readonly [TextStyle, string])[] | null {
-  if (line.late) return null;
+  if (dayWarning(line) !== null) return null;
   const runs: (readonly [TextStyle, string])[] = [[line.emphasis ? TYPE.dayTitleStrong : TYPE.dayTitle, line.title]];
   if (line.otherDay) runs.push([DAY_DATE_INLINE, ` · ${shortDay(line.at, timeZone)}`]);
   if (line.detail !== null) runs.push([DAY_DETAIL_INLINE, ` · ${line.detail}`]);
@@ -442,13 +541,16 @@ function dayLineHeight(doc: Doc, line: DayLine, timeZone: string, width: number)
   let height = blockHeight(doc, line.emphasis ? TYPE.dayTitleStrong : TYPE.dayTitle, line.title, textW);
   if (line.otherDay) height += lineHeight(doc, TYPE.detailAccent);
   if (line.detail !== null) height += 0.5 + blockHeight(doc, TYPE.detail, line.detail, textW);
-  if (line.late) height += 0.5 + blockHeight(doc, TYPE.detailAlert, lateWords(line), textW);
+  const warning = dayWarning(line);
+  if (warning !== null) height += 0.5 + blockHeight(doc, TYPE.detailAlert, warning, textW);
   return Math.max(height, lineHeight(doc, TYPE.time)) + 4;
 }
 
 function drawDayLine(doc: Doc, line: DayLine, timeZone: string, x: number, y: number, width: number): void {
   const textW = width - TIME_W;
-  drawLine(doc, line.emphasis ? TYPE.timeAccent : TYPE.time, clock(line.at, timeZone), x, y);
+  const warning = dayWarning(line);
+  const timeStyle = warning === null ? (line.emphasis ? TYPE.timeAccent : TYPE.time) : line.emphasis ? TIME_ALERT_STRONG : TIME_ALERT;
+  drawLine(doc, timeStyle, clock(line.at, timeZone), x, y);
   const runs = dayRuns(doc, line, timeZone, textW);
   if (runs !== null) {
     let left = x + TIME_W;
@@ -461,7 +563,7 @@ function drawDayLine(doc: Doc, line: DayLine, timeZone: string, x: number, y: nu
   let cursor = drawBlock(doc, line.emphasis ? TYPE.dayTitleStrong : TYPE.dayTitle, line.title, x + TIME_W, y, textW);
   if (line.otherDay) cursor = drawLine(doc, TYPE.detailAccent, shortDay(line.at, timeZone), x + TIME_W, cursor);
   if (line.detail !== null) cursor = drawBlock(doc, TYPE.detail, line.detail, x + TIME_W, cursor + 0.5, textW);
-  if (line.late) drawBlock(doc, TYPE.detailAlert, lateWords(line), x + TIME_W, cursor + 0.5, textW);
+  if (warning !== null) drawBlock(doc, TYPE.detailAlert, warning, x + TIME_W, cursor + 0.5, textW);
 }
 
 const QTY_W = 26;
@@ -887,6 +989,8 @@ function rowUnits(doc: Doc, item: SetupItem, geometry: RowGeometry, markers: Rea
 }
 
 const STEP_LATE = "after the room's ready-by time";
+/** A step due after the doors, though not after a planner's ready-by time later still: the day's reading, as Room ready's. */
+const STEP_AFTER_GUESTS = "after guests come in";
 
 function deadlineWords(deadline: NonNullable<SetupStep["deadline"]>, timeZone: string): string {
   return `by ${deadline.otherDay ? `${shortDay(deadline.at, timeZone)} ` : ""}${clock(deadline.at, timeZone)}`;
@@ -894,7 +998,8 @@ function deadlineWords(deadline: NonNullable<SetupStep["deadline"]>, timeZone: s
 
 /** A step's head: its numeral alone in the margin, its name, its deadline in copper, the reason beneath. */
 function stepHeadUnit(doc: Doc, step: SetupStep, index: number, timeZone: string, x: number, width: number, keep: number): Unit {
-  const reason = [step.deadline?.reason ?? null, step.deadline?.late === true ? STEP_LATE : null].filter((part): part is string => part !== null).join(" · ");
+  const late = step.deadline?.late === true ? (step.deadline.afterGuests ? STEP_AFTER_GUESTS : STEP_LATE) : null;
+  const reason = [step.deadline?.reason ?? null, late].filter((part): part is string => part !== null).join(" · ");
   const deadline = step.deadline === null ? null : deadlineWords(step.deadline, timeZone);
   const deadlineStyle = step.deadline?.late === true ? TYPE.stepDeadlineAlert : TYPE.stepDeadline;
   const reasonW = width - STEP_INDENT;
@@ -943,48 +1048,44 @@ function stepUnits(doc: Doc, sheet: HallkeeperSheetV2, steps: readonly SetupStep
   ];
 }
 
-/** A ring on the setup's rail: its mark, its name, its time, and whether that time falls after the one it must precede (a step after the room's ready-by time; Room ready after guests come in). */
-interface Station { readonly kind: "step" | "ready" | "guests"; readonly mark: string; readonly label: string; readonly time: string; readonly late: boolean }
-
-/** A step's time on the rail, as its head gives it: with the weekday when it falls on another day ("Fri 16:00"). */
-function railTime(deadline: NonNullable<SetupStep["deadline"]>, timeZone: string): string {
-  const day = deadline.otherDay ? `${new Date(deadline.at).toLocaleDateString("en-GB", { weekday: "short", timeZone })} ` : "";
-  return `${day}${clock(deadline.at, timeZone)}`;
-}
-
-/** A time on the rail with its weekday when it falls on another day than guests come in ("Sun 00:10"), as a step's time is. */
-function dayClock(iso: string, guestsIn: string | null, timeZone: string): string {
-  const weekday = (at: string): string => new Date(at).toLocaleDateString("en-GB", { weekday: "short", timeZone });
-  const sameDay = guestsIn === null || shortDay(iso, timeZone) === shortDay(guestsIn, timeZone);
-  return sameDay ? clock(iso, timeZone) : `${weekday(iso)} ${clock(iso, timeZone)}`;
-}
+/**
+ * A ring on the setup's rail: its mark, its name, its time, and the word under
+ * that time when it falls after the one it must precede: "late" for a step
+ * after the room's ready-by time; "after doors" for Room ready after guests
+ * come in, and for a step between the doors and that later ready-by time.
+ */
+interface Station { readonly kind: "step" | "ready" | "guests"; readonly mark: string; readonly label: string; readonly time: string; readonly flag: "late" | "after doors" | null }
 
 function railStations(sheet: HallkeeperSheetV2, steps: readonly SetupStep[]): Station[] {
   const timeZone = sheet.venue.timezone;
   const times = sheetTimes(sheet);
+  const afterDoors = (times.readyBeforeGuestsMinutes ?? 0) < 0;
+  // Room ready is the sheet's ready-by time (sheetTimes), never setup's start.
+  const ready: Station = { kind: "ready", mark: "", label: "Room ready", time: times.readyBy === null ? "—" : sheetClock(times.readyBy, times.guestsIn, timeZone), flag: afterDoors ? "after doors" : null };
+  const guests: Station = { kind: "guests", mark: "", label: "Guests in", time: times.guestsIn === null ? "—" : clock(times.guestsIn, timeZone), flag: null };
   return [
     ...steps.map((step, index): Station => ({
       kind: "step", mark: String(index + 1), label: step.label,
-      time: step.deadline === null ? "" : railTime(step.deadline, timeZone), late: step.deadline?.late === true,
+      time: step.deadline === null ? "" : sheetClock(step.deadline.at, times.guestsIn, timeZone),
+      flag: step.deadline?.late === true ? (step.deadline.afterGuests ? "after doors" : "late") : null,
     })),
-    // Room ready is the sheet's ready-by time (sheetTimes), never setup's start;
-    // a planner's final time after guests come in is marked late on the rail.
-    { kind: "ready", mark: "", label: "Room ready", time: times.readyBy === null ? "—" : dayClock(times.readyBy, times.guestsIn, timeZone), late: (times.readyBeforeGuestsMinutes ?? 0) < 0 },
-    { kind: "guests", mark: "", label: "Guests in", time: times.guestsIn === null ? "—" : clock(times.guestsIn, timeZone), late: false },
+    // The two stand in time order: Room ready leads at the same minute or
+    // before, and follows Guests in when the planner's time is after the doors.
+    ...(afterDoors ? [guests, ready] : [ready, guests]),
   ];
 }
 
-/** A step due after the room's ready-by time: its rail time in brick, and under it the word, which a mono print keeps. */
+/** A time after the one it must precede: brick on the rail, and under it the words, which a mono print keeps. */
 const RAIL_TIME_LATE: TextStyle = { ...TYPE.railTime, color: INK.alert };
 const RAIL_LATE: TextStyle = { ...TYPE.railLabel, face: "Inter-SemiBold", color: INK.alert };
 
 const RAIL_H = 80;
-/** The line "late" takes under the times, whole however long the time beside it ("Sun 08:00"). */
+/** The line "late" or "after doors" takes under the times, whole however long the time beside it ("Sun 08:00"). */
 const RAIL_LATE_H = 13;
 
-/** How tall the rail stands: a line more when any step is late. */
+/** How tall the rail stands: a line more when any time on it carries a word. */
 function railHeight(sheet: HallkeeperSheetV2, steps: readonly SetupStep[]): number {
-  return RAIL_H + (railStations(sheet, steps).some((station) => station.late) ? RAIL_LATE_H : 0);
+  return RAIL_H + (railStations(sheet, steps).some((station) => station.flag !== null) ? RAIL_LATE_H : 0);
 }
 
 /** The setup at a glance: a ring per step, then the room ready and the guests in. The rings are empty; nothing is done when the sheet prints. */
@@ -1006,9 +1107,9 @@ function progressRail(flow: Flow, sheet: HallkeeperSheetV2, steps: readonly Setu
     const labelStyle = station.kind === "ready" ? TYPE.railLabelAccent : TYPE.railLabel;
     drawLine(doc, labelStyle, oneLine(doc, labelStyle, station.label, span - 6), cx - span / 2, lineY + 17, { width: span, to: "center" });
     if (station.time.length > 0) {
-      const style = station.late ? RAIL_TIME_LATE : station.kind === "guests" ? TYPE.railTimeQuiet : TYPE.railTime;
+      const style = station.flag !== null ? RAIL_TIME_LATE : station.kind === "guests" ? TYPE.railTimeQuiet : TYPE.railTime;
       drawLine(doc, style, oneLine(doc, style, station.time, span - 4), cx - span / 2, lineY + 29, { width: span, to: "center" });
-      if (station.late) drawLine(doc, RAIL_LATE, "late", cx - span / 2, lineY + 43, { width: span, to: "center" });
+      if (station.flag !== null) drawLine(doc, RAIL_LATE, station.flag, cx - span / 2, lineY + 43, { width: span, to: "center" });
     }
   }
   const height = railHeight(sheet, steps);

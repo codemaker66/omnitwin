@@ -6,7 +6,6 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { sheetTimes } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { configurationReviewRoutes } from "../routes/configuration-reviews.js";
 import { configurationRoutes } from "../routes/configurations.js";
@@ -212,8 +211,15 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect((await state(venue)).config?.name).toBe("Fixed by the venue");
   });
 
-  async function approvedFixture() {
+  /** An approved sheet; `booked` books its room from 08:00 with a Setup phase there from 07:00 first. */
+  async function approvedFixture(options: { booked?: boolean } = {}) {
     const f = await fixture();
+    if (options.booked === true) {
+      await db.insert(schema.bookings).values({ venueId: f.venueId, spaceId: f.roomId, eventId: f.eventId, kind: "ink", status: "active",
+        title: "DEMO ONLY — booked rehearsal", startsAt: new Date("2026-11-14T08:00:00.000Z"), endsAt: new Date("2026-11-14T10:00:00.000Z") });
+      await db.insert(schema.eventPhases).values({ eventId: f.eventId, spaceId: f.roomId, name: "Setup", sortOrder: 0, durationMinutes: 60,
+        startsAt: new Date("2026-11-14T07:00:00.000Z") });
+    }
     expect((await post(f, "submit", { notifyTeam: false })).statusCode).toBe(200);
     expect((await post(f, "start-review")).statusCode).toBe(200);
     expect((await post(f, "approve", { notifyTeam: false })).statusCode).toBe(200);
@@ -358,7 +364,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
   });
 
   it("counts the approved sheet's rows and marks for the Day Board, whatever the live layout now holds", async () => {
-    const f = await approvedFixture();
+    const f = await approvedFixture({ booked: true });
     const rows = f.frozen.phases.flatMap((phase) => phase.zones.flatMap((zone) => zone.rows));
     const [first] = rows;
     if (first === undefined) throw new Error("The approved fixture must have a row");
@@ -372,9 +378,12 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(response.statusCode).toBe(200);
     expect(response.json<{ data: unknown }>().data).toEqual({
       configId: f.configId,
-      // The sheet's Ready by (sheetTimes), not timing.setupBy: that is when setup starts.
-      readyBy: sheetTimes(f.frozen).readyBy,
-      eventStart: sheetTimes(f.frozen).guestsIn,
+      // The booking's start is when guests come in, and with no planner's final
+      // time the room is ready then: never at 07:00, when the Setup phase opens
+      // the window (timing.setupBy), which the summary carries as setupFrom.
+      readyBy: "2026-11-14T08:00:00.000Z",
+      eventStart: "2026-11-14T08:00:00.000Z",
+      setupFrom: "2026-11-14T07:00:00.000Z",
       total: rows.length,
       checked: 1,
     });

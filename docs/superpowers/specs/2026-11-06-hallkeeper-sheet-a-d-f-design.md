@@ -144,26 +144,43 @@ day's Grand Hall breakfast (Setup phase 07:00, doors 08:00) printed "Room ready 
   left for its own ruling. For a booking whose inner handles were dragged on the ribbon, every surface still reads
   the setup start as guests in.
 - **The header has five facts:** Setup from (with "60 min to set the room"), Ready by ("when guests come in", or "15
-  min before guests come in"), Guests in (day and zone), Guests, Room. Widths were measured in the sheet's fonts so
-  the usual captions keep to one line (a time's numeral is 79 pt): 108, 126, 96 and 74 pt, the room the rest.
-- **The day** opens with "Setup starts" (the header's label is "Setup from"; the day's lines are events, as
-  "Event starts" is). The planner's final-touches time is the room's ready-by time, so it always folds into "Room
-  ready" and lends it its reason. A room ready as guests come in is one moment and prints once, "Room ready, guests
-  in", so a sheet without a planner's final time keeps its line count. A deadline is late only after Ready by.
+  min before guests come in"), Guests in (day and zone), Guests, Room. Widths start at 108, 126, 96 and 74 pt, the
+  room the rest (a time's numeral is 79 pt). No one set of widths holds on one line every caption a sheet can print:
+  measured in the sheet's fonts over every day of 2026-27 and every setup and ready-by offset up to a day, "Wed 30
+  Sept · UK time" is 80.1 pt, "Dinner banquet" 54.6, "104 min before guests come in" 108.8 and "No changeover time
+  for this room" 118.7. A sheet prints one caption a fact, so its widths follow its own captions: a caption wider than
+  its cell borrows what the other facts leave beyond their own widest line (overline, numeral, the room's name at its
+  first size, caption), the smallest shortfall first; one that still cannot get a whole line (a time on another day,
+  the planner's time with no booking) wraps, evened out so no word sits alone, and the rules between the facts reach
+  its last line. A sheet whose captions fit keeps the header's widths and height (#454 review, round 1).
+- **The day** opens with "Setup starts" (the header's label is "Setup from"; the day's lines are events) and names
+  guests coming in "Guests in", as the header does. The planner's final-touches time is the room's ready-by time, so it
+  always folds into "Room ready" and lends it its reason. A room ready as guests come in is one moment and prints
+  once, "Room ready, guests in", so a sheet without a planner's final time keeps its line count. A deadline is late
+  after Ready by. Minutes are counted between times floored to the minute, as the clock prints them; a phase given
+  twice counts its earliest readable time, and a time that cannot be read prints no line, as `sheetTimes` skips it.
 - **A planner's final time after guests come in is kept and said, never moved:** the Ready by figure and its caption
-  ("15 min after guests come in") in brick; in the day, Room ready after Event starts with "After guests come in" in
-  brick; on the rail, Room ready marked late (with its weekday when it is on another day); on the phone card, the
-  figure in brick and "The planner's ready time is 15 min after guests come in."; on the print line and the Day
-  Board's line, ", 15 min after guests come in". Cost if wrong: a planner who meant a later finish (candles lit once
-  guests are in) sees a warning on every surface.
-- **A final time before setup starts** is shown as entered, with Setup from's caption in brick: "Not before the
-  room's ready-by time".
+  ("15 min after guests come in") in brick; in the day, Room ready after Guests in, its time in brick with "After
+  guests come in"; on the rail, Room ready stands after Guests in, in time order, with "after doors" under it (at the
+  same minute or before, Room ready leads); on the phone card, the figure in brick and "The planner's ready time is
+  15 min after guests come in."; on the print line and the Day Board's line, ", 15 min after guests come in", in
+  words. A deadline between the doors and that later ready-by time reads the same way: "After guests come in" in the
+  day and under its step, "after doors" on the rail. Cost if wrong: a planner who meant a later finish (candles lit
+  once guests are in) sees a warning on every surface.
+- **A final time at or before setup starts** is shown as entered, and every surface says "No time to set the room"
+  in brick (`sheetTimes`' `noTimeToSet`: Setup from at or after Ready by): Setup from's caption on the PDF and under
+  the day's Room ready, with its time in brick; Setup from in brick and the note on the phone card; on the print line
+  and the Day Board's line (the summary carries `setupFrom`). The words state the fact and never read as an
+  instruction to the crew; they replaced "Not before the room's ready-by time" (`d0cae047`, then #454's review).
 - **Missing data:** no booking keeps "No booking holds this room yet" and "Confirm the time first"; a planner's final
-  time without a booking is still Ready by, in brick, "The planner's time · no booking holds this room yet". No
-  setup start shows Setup from "—" with "No changeover time for this room", and Ready by at guests in.
-- A time on another day than guests come in carries its day ("Fri 13 Nov · 13 h to set the room"). Durations under
-  two hours stay in minutes; longer ones read "2 h 30 min".
-- **Page counts hold:** the wedding 3, the board meeting 2, a short sheet 1, the breakfast 1. The wedding's day gains
+  time without a booking is still Ready by, in brick, "The planner's time · no booking holds this room yet", in those
+  words on the phone card and the Day Board's line too. No setup start shows Setup from "—" with "No changeover time
+  for this room", and Ready by at guests in.
+- A time on another day than guests come in carries its day: the PDF's captions ("Fri 13 Nov · 13 h to set the
+  room"), and its rail, the phone card, the print line and the Day Board's line through `sheetClock` ("Fri 16:00").
+  Durations under two hours stay in minutes; longer ones read "2 h 30 min".
+- **Page counts hold:** the wedding 3, the board meeting 2, a short sheet 1, the breakfast 1, and a short sheet
+  dated Wednesday 30 September 1. The wedding's day gains
   "08:00 Setup starts", page 1's last free line (its day now ends 752 pt from the top), so page 1 no longer points to
   the planner's words; they open page 2 under its head, the existing fallback. The wedding fixture's setup start
   moved from 13:30 to 08:00: under the field's meaning 13:30 contradicted its own 10:00 structure deadline.

@@ -1,4 +1,4 @@
-import { readyByWords, sheetTimes, venueZoneLabel, type HallkeeperSheetV2, type PhaseDeadline, type Timing } from "@omnitwin/types";
+import { NO_TIME_TO_SET, readyByWords, sheetClock, sheetTimes, venueZoneLabel, type HallkeeperSheetV2, type PhaseDeadline, type Timing } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // What a hallkeeper keeps in view (roadmap N4): the hour the room must be
@@ -34,16 +34,19 @@ export function venueDay(ms: number, timeZone: string): string {
 
 /** The printed sheet's times, as the screen's card gives them (sheetTimes,
  *  shared with the PDF): when setup starts, when the room must be ready, when
- *  guests come in and the day, on the venue's clock. A ready-by time after
- *  guests come in is the planner's and is said, never hidden. */
+ *  guests come in and the day, on the venue's clock. A time on another day
+ *  than guests come in leads with its weekday ("Fri 16:00"). A ready-by time
+ *  after guests come in is the planner's and is said, never hidden; so is a
+ *  window that leaves no time to set the room. */
 export function formatSheetTimes(sheet: { readonly timing: Timing; readonly instructions: HallkeeperSheetV2["instructions"] }, timeZone: string): string {
-  const time = (iso: string): string => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone });
   const times = sheetTimes(sheet);
+  const time = (iso: string): string => sheetClock(iso, times.guestsIn, timeZone);
   const day = new Date(sheet.timing.eventStart).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone });
   const setup = times.setupFrom === null ? "Setup from: not set, as no changeover time is recorded for this room" : `Setup from ${time(times.setupFrom)}`;
   const after = (times.readyBeforeGuestsMinutes ?? 0) < 0 ? `, ${readyByWords(times) ?? ""}` : "";
   const ready = times.readyBy === null ? "Ready by: not set" : `Ready by ${time(times.readyBy)}${after}`;
-  return `${setup} · ${ready} · Guests in ${time(sheet.timing.eventStart)} · ${day}`;
+  const noTime = times.noTimeToSet ? ` · ${NO_TIME_TO_SET}` : "";
+  return `${setup} · ${ready}${noTime} · Guests in ${time(sheet.timing.eventStart)} · ${day}`;
 }
 
 /** The planner's next phase deadline still ahead of `nowMs`, or null once

@@ -37,9 +37,21 @@ describe("summarizeSheet", () => {
       configId: CONFIG,
       readyBy: "2026-10-03T17:30:00.000Z",
       eventStart: "2026-10-03T17:30:00.000Z",
+      setupFrom: "2026-10-03T15:00:00.000Z",
       total: 4,
       checked: 2,
     });
+  });
+
+  // The Day Board says "No time to set the room" on the sheet's own rule
+  // (sheetIntervals), so the summary carries when setup starts (#454 YA5).
+  it("carries when setup starts, so the board can tell when the window leaves no time to set the room", () => {
+    const instructions = EventInstructionsSchema.parse({ phaseDeadlines: [{ phase: "final", deadline: "2026-10-03T14:30:00.000Z" }] });
+    expect(summarizeSheet(CONFIG, { phases, timing, instructions }, [])).toMatchObject({
+      setupFrom: "2026-10-03T15:00:00.000Z", readyBy: "2026-10-03T14:30:00.000Z", eventStart: "2026-10-03T17:30:00.000Z",
+    });
+    expect(summarizeSheet(CONFIG, { phases, timing: { ...timing, setupBy: null, bufferMinutes: null }, instructions: null }, []).setupFrom).toBeNull();
+    expect(summarizeSheet(CONFIG, { phases, timing: null, instructions: null }, []).setupFrom).toBeNull();
   });
 
   it("gives the planner's final time as the ready-by time", () => {

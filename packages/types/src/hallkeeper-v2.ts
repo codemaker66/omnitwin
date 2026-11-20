@@ -307,6 +307,13 @@ export const HallkeeperSheetSummarySchema = z.object({
   readyBy: z.iso.datetime().nullable(),
   /** When guests come in (the booking's start), or null when the sheet has no timing. */
   eventStart: z.iso.datetime().nullable(),
+  /**
+   * When the setup window opens (sheetTimes().setupFrom), or null when no room
+   * phase or changeover time sets it. With Ready by, it tells the board when
+   * the window leaves no time to set the room (sheetIntervals). Absent from
+   * servers older than #454's first review round.
+   */
+  setupFrom: z.iso.datetime().nullable().optional(),
   /** The sheet's rows. */
   total: z.number().int().nonnegative(),
   /** Of those rows, how many are checked. */

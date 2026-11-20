@@ -576,8 +576,9 @@ export async function resolveTiming(
 
   // Bound the phase search to the booking's own day. Without it the earliest
   // phase of a multi-day event — or of another event sharing the layout —
-  // became this sheet's set-up deadline, and `bufferMinutes` reported
-  // thousands of minutes as though that were a real buffer.
+  // became this sheet's setup start (timing.setupBy, when the setup window
+  // opens), and `bufferMinutes` reported thousands of minutes as though that
+  // were a real buffer.
   const dayStart = new Date(booking.startsAt.getTime() - 24 * 60 * 60_000);
   const [phase] = await db.select({ startsAt: eventPhases.startsAt })
     .from(eventPhases)

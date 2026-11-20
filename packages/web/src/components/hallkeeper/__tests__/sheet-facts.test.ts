@@ -50,6 +50,24 @@ describe("the printed sheet's times", () => {
     expect(formatSheetTimes({ timing: { eventStart: "2026-10-03T17:30:00.000Z", setupBy: null, bufferMinutes: null }, instructions: null }, LONDON))
       .toBe("Setup from: not set, as no changeover time is recorded for this room · Ready by 18:30 · Guests in 18:30 · Sat, 3 Oct 2026");
   });
+
+  // #454 round 1: a time on another day than guests come in carries its
+  // weekday (YB3), and a window that leaves no time says so (YA5), as the PDF does.
+  it("leads a setup start the evening before with its weekday, so it never reads as the guests' day", () => {
+    // Saturday 3 October, guests in at 18:30; setup from Friday 17:00.
+    expect(formatSheetTimes({ timing: { eventStart: "2026-10-03T17:30:00.000Z", setupBy: "2026-10-02T16:00:00.000Z", bufferMinutes: 1530 }, instructions: null }, LONDON))
+      .toBe("Setup from Fri 17:00 · Ready by 18:30 · Guests in 18:30 · Sat, 3 Oct 2026");
+    expect(formatSheetTimes({ timing: { eventStart: "2026-10-03T17:30:00.000Z", setupBy: "2026-10-02T16:00:00.000Z", bufferMinutes: 1530 }, instructions: final("2026-10-02T21:00:00.000Z") }, LONDON))
+      .toBe("Setup from Fri 17:00 · Ready by Fri 22:00 · Guests in 18:30 · Sat, 3 Oct 2026");
+  });
+
+  it("says there is no time to set the room when the ready-by time is at or before setup starts", () => {
+    const timing = { eventStart: "2026-10-03T17:30:00.000Z", setupBy: "2026-10-03T15:00:00.000Z", bufferMinutes: 150 };
+    expect(formatSheetTimes({ timing, instructions: final("2026-10-03T14:45:00.000Z") }, LONDON))
+      .toBe("Setup from 16:00 · Ready by 15:45 · No time to set the room · Guests in 18:30 · Sat, 3 Oct 2026");
+    expect(formatSheetTimes({ timing, instructions: final("2026-10-03T15:00:00.000Z") }, LONDON))
+      .toBe("Setup from 16:00 · Ready by 16:00 · No time to set the room · Guests in 18:30 · Sat, 3 Oct 2026");
+  });
 });
 
 describe("the planner's next deadline", () => {

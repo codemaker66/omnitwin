@@ -17,6 +17,8 @@ import {
 // Its Ready by is the printed sheet's (sheetTimes): the planner's final-touches
 // time, else when guests come in. It used to send timing.setupBy, which is
 // when setup STARTS, so the board told the room to be ready an hour early.
+// That start goes as setupFrom, so the board can say when the window leaves
+// no time to set the room, on the sheet's own rule (sheetIntervals).
 // ---------------------------------------------------------------------------
 
 export function summarizeSheet(
@@ -31,6 +33,7 @@ export function summarizeSheet(
     configId,
     readyBy: times.readyBy,
     eventStart: times.guestsIn,
+    setupFrom: times.setupFrom,
     total: rows.length,
     checked: rows.filter((row) => marked.has(row.key)).length,
   });

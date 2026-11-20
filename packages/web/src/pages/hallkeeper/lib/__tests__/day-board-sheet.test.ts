@@ -101,7 +101,8 @@ describe("sheetProgressLine", () => {
 
   it("gives the ready-by time on the venue's clock and the rows checked", () => {
     expect(sheetProgressLine(summary, "Europe/London")).toBe("Ready by 15:00 · 12 of 43 checked");
-    expect(sheetProgressLine({ ...summary, readyBy: "2026-06-12T15:00:00.000Z" }, "Europe/London")).toBe("Ready by 16:00 · 12 of 43 checked");
+    // June keeps British Summer Time; guests come in that day too, so no weekday leads the time.
+    expect(sheetProgressLine({ ...summary, readyBy: "2026-06-12T15:00:00.000Z", eventStart: "2026-06-12T18:00:00.000Z" }, "Europe/London")).toBe("Ready by 16:00 · 12 of 43 checked");
   });
 
   it("says when no rule sets the time, when every row is checked, and when nothing is placed", () => {
@@ -116,5 +117,26 @@ describe("sheetProgressLine", () => {
     expect(sheetProgressLine({ ...summary, readyBy: "2026-12-12T18:15:00.000Z" }, "Europe/London"))
       .toBe("Ready by 18:15, 15 min after guests come in · 12 of 43 checked");
     expect(sheetProgressLine({ ...summary, readyBy: "2026-12-12T18:00:00.000Z" }, "Europe/London")).toBe("Ready by 18:00 · 12 of 43 checked");
+  });
+
+  // #454 round 1: the PDF's warnings on the board's line too (YA5), and a
+  // ready-by time on another day than guests come in carries its weekday (YB3).
+  it("says there is no time to set the room when the ready-by time is at or before setup starts", () => {
+    expect(sheetProgressLine({ ...summary, setupFrom: "2026-12-12T15:30:00.000Z" }, "Europe/London"))
+      .toBe("Ready by 15:00 · No time to set the room · 12 of 43 checked");
+    expect(sheetProgressLine({ ...summary, setupFrom: "2026-12-12T15:00:00.000Z" }, "Europe/London"))
+      .toBe("Ready by 15:00 · No time to set the room · 12 of 43 checked");
+    expect(sheetProgressLine({ ...summary, setupFrom: "2026-12-12T14:00:00.000Z" }, "Europe/London")).toBe("Ready by 15:00 · 12 of 43 checked");
+    // A summary from an API older than setupFrom says what it always said.
+    expect(sheetProgressLine(summary, "Europe/London")).toBe("Ready by 15:00 · 12 of 43 checked");
+  });
+
+  it("leads a ready-by time on another day with its weekday", () => {
+    expect(sheetProgressLine({ ...summary, readyBy: "2026-12-11T21:00:00.000Z" }, "Europe/London")).toBe("Ready by Fri 21:00 · 12 of 43 checked");
+  });
+
+  it("says no booking holds the room when the ready-by time is the planner's alone", () => {
+    expect(sheetProgressLine({ ...summary, eventStart: null }, "Europe/London"))
+      .toBe("Ready by 15:00 · The planner's time · no booking holds this room yet · 12 of 43 checked");
   });
 });

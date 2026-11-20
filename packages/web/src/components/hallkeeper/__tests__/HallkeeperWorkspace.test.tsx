@@ -346,6 +346,33 @@ describe("HallkeeperWorkspace event time", () => {
     expect(screen.getByText("Ready by").closest("dl")?.textContent).toBe("Setup fromNot setReady by09:00Guests in09:00");
     expect(screen.getByText("No changeover time is recorded for this room.")).toBeTruthy();
   });
+
+  // #454 round 1: the PDF's warnings on the phone too (YA5), and a time on
+  // another day than guests come in carries its weekday (YB3).
+  it("says there is no time to set the room, in brick, when the ready-by time is at or before setup starts", () => {
+    withGraphStart("2026-09-19T12:00:00.000Z");
+    const instructions = EventInstructionsSchema.parse({ phaseDeadlines: [{ phase: "final", deadline: "2026-09-19T06:15:00.000Z" }] });
+    mount({ data: { ...sheet, timing: diaryTiming, instructions } });
+    expect(screen.getByText("Ready by").closest("dl")?.textContent).toBe("Setup from07:30Ready by07:15Guests in09:00");
+    const note = screen.getByText("No time to set the room.");
+    expect(note.classList.contains("hkf-time-late")).toBe(true);
+    expect(screen.getByText("Setup from").nextElementSibling?.classList.contains("hkf-time-late")).toBe(true);
+  });
+
+  it("leads a setup start the evening before with its weekday", () => {
+    withGraphStart("2026-09-19T12:00:00.000Z");
+    mount({ data: { ...sheet, timing: { ...diaryTiming, setupBy: "2026-09-18T17:00:00.000Z", bufferMinutes: 900 } } });
+    expect(screen.getByText("Ready by").closest("dl")?.textContent).toBe("Setup fromFri 18:00Ready by09:00Guests in09:00");
+    expect(screen.queryByText("No time to set the room.")).toBeNull();
+  });
+
+  it("shows a planner's ready-by time with no booking, and says no booking holds the room", () => {
+    const instructions = EventInstructionsSchema.parse({ phaseDeadlines: [{ phase: "final", deadline: "2026-09-19T07:45:00.000Z" }] });
+    mount({ data: { ...sheet, instructions } });
+    expect(screen.getByText("Not in the Diary yet")).toBeTruthy();
+    const note = screen.getByText("Ready by 08:45 · The planner's time · no booking holds this room yet");
+    expect(note.classList.contains("hkf-time-late")).toBe(true);
+  });
 });
 
 
