@@ -246,9 +246,17 @@ const NO_HEADER_GUESS: Guess = { nameColumn: 0, secondNameColumn: null, partyCol
 /** "Fraser, Ailsa": the name is column 2, then column 1, so "Ailsa Fraser" is added. */
 const SURNAME_FIRST_GUESS: Guess = { nameColumn: 1, secondNameColumn: 0, partyColumn: null };
 
-/** Two cells, each one word: a surname and a first name, as a list written by hand has them. */
+/**
+ * One name word: letters of any script (with their marks), and hyphens or
+ * apostrophes, straight or curly, only between letters. No digit, "@", full
+ * stop or other punctuation, so an email address, a telephone number or a
+ * number is never taken for a name.
+ */
+const NAME_WORD = /^\p{L}\p{M}*(?:[-‐‑'’]?\p{L}\p{M}*)*$/u;
+
+/** Two cells, each one name word: a surname and a first name, as a list written by hand has them. */
 function isTwoSingleWords(row: readonly string[]): boolean {
-  return row.length === 2 && row.every((cell) => cell !== "" && !cell.includes(" "));
+  return row.length === 2 && row.every((cell) => NAME_WORD.test(cell));
 }
 
 function guessColumns(header: readonly string[]): Guess {

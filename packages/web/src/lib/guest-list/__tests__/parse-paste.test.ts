@@ -215,6 +215,29 @@ describe("parsePaste: a list written surname first", () => {
     expect(guessOf("Fraser, Ailsa\nOkafor\tChidi")).toEqual([false, 0, null, null]);
   });
 
+  it("keeps today's guess when a second column holds an email address, a telephone number or a number", () => {
+    expect(guessOf("Fraser, ailsa@example.com\nOkafor, chidi@example.com")).toEqual([false, 0, null, null]);
+    expect(guessOf("Fraser, 07700900123\nOkafor, 07700900456")).toEqual([false, 0, null, null]);
+    expect(guessOf("Fraser, +447700900123\nOkafor, +447700900456")).toEqual([false, 0, null, null]);
+    expect(guessOf("Fraser, 3\nOkafor, 12")).toEqual([false, 0, null, null]);
+    expect(guessOf("Fraser, Ailsa\nOkafor, 12")).toEqual([false, 0, null, null]);
+  });
+
+  it("keeps today's guess when a cell has a full stop or other punctuation", () => {
+    expect(guessOf("Fraser, A.\nOkafor, Chidi")).toEqual([false, 0, null, null]);
+    expect(guessOf("Fraser, Ailsa!\nOkafor, Chidi")).toEqual([false, 0, null, null]);
+    expect(guessOf("Fraser, -Ailsa\nOkafor, Chidi")).toEqual([false, 0, null, null]);
+    expect(guessOf("Fraser, Ailsa'\nOkafor, Chidi")).toEqual([false, 0, null, null]);
+  });
+
+  it("still guesses for names with an apostrophe, straight or curly, or a hyphen, and names in other scripts", () => {
+    expect(guessOf("O'Neil, Ailsa\nOkafor, Chidi")).toEqual([false, 1, 0, null]);
+    expect(guessOf("O’Neil, Ailsa\nOkafor, Chidi")).toEqual([false, 1, 0, null]);
+    expect(guessOf("Smith-Jones, Ana\nOkafor, Chidi")).toEqual([false, 1, 0, null]);
+    expect(guessOf("Ørsted, Åsa\nНовак, Ольга")).toEqual([false, 1, 0, null]);
+    expect(guessOf("Sharma, प्रिया\nOkafor, Chidi")).toEqual([false, 1, 0, null]);
+  });
+
   it("leaves a heading row's guess as it was", () => {
     expect(guessOf("Name, Household\nAilsa, Frasers\nChidi, Okafors")).toEqual([true, 0, null, 1]);
   });
