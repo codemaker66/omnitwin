@@ -11,7 +11,7 @@
 // each frame is a spectrum of seeded random phases whose amplitude in every
 // bin is that bin's decay at the frame's centre, exp(-6.91 t / T(f)). The
 // frame is 2,048 points at 44.1 and 48 kHz and scales with the rate, so its
-// bins are 21.5-23.4 Hz wide at every common rate (ruling R46). The inverse
+// bins are never wider than 48 kHz's 23.4 Hz (rulings R46 and R93). The inverse
 // transform of each frame is Hann-windowed and overlap-added at a hop of a
 // quarter frame, where the windows' squares sum to a constant, so independent
 // frames add to a steady level.
@@ -92,16 +92,29 @@ interface Framing {
 }
 
 /**
- * The synthesis frame at `sampleRate` (ruling R46): 2,048 x 2^round(log2(sr /
- * 48 kHz)) points, so 1,024 at 22.05 kHz, 2,048 at 44.1 and 48, 4,096 at 88.2
- * and 96 and 8,192 at 192 kHz, each bin 21.5-23.4 Hz wide, and a quarter of
- * it per hop. A frame fixed at 2,048 points made the bins 46.9 Hz wide at
- * 96 kHz; the guard between bands (timeAtFrequency) grew with them, until the
- * 250 Hz octave held none of its own time.
+ * The synthesis frame at `sampleRate` (rulings R46 and R93): the smallest
+ * 2,048 x 2^k points whose bins are no wider than 48 kHz's 23.4 Hz, that is
+ * 2,048 x 2^ceil(log2(sr / 48 kHz)), and a quarter of it per hop. So 1,024
+ * points at 22.05 kHz, 2,048 at 44.1 and 48, 4,096 at 88.2 and 96 and 8,192
+ * at 192 kHz (bins 21.5-23.4 Hz), 512, 1,024, 2,048, 4,096 and 8,192 at 8,
+ * 16, 32, 64 and 128 kHz (15.6 Hz), and 4,096 at 50 kHz (12.2 Hz). A frame
+ * fixed at 2,048 points made the bins 46.9 Hz wide at 96 kHz; the guard
+ * between bands (timeAtFrequency) grew with them, until the 250 Hz octave held
+ * none of its own time. Rounding the exponent to the nearest, as R46 first
+ * did, gave wider bins wherever log2(sr / 48 kHz) has a fractional part
+ * strictly between 0 and one half: 8, 16, 32, 50, 64 and 128 kHz among the
+ * usual rates (31.25 Hz, or 24.4 Hz at 50 kHz). It read the 250 Hz decay up
+ * to 6.6 % short: the Reception Room laid for dinner at 32 kHz, 5.3 % empty
+ * (#416 review, NA3). The frame is held to 256-16,384 points (FRAME_OCTAVES),
+ * so the rule holds up to 384 kHz; above that the bins widen again.
  */
+export function tailFrameSize(sampleRate: number): number {
+  const octaves = Number.isFinite(sampleRate) && sampleRate > 0 ? Math.ceil(Math.log2(sampleRate / FRAME_RATE_HZ)) : 0;
+  return FRAME_AT_48K * 2 ** Math.min(FRAME_OCTAVES[1], Math.max(FRAME_OCTAVES[0], octaves));
+}
+
 function framing(sampleRate: number): Framing {
-  const octaves = Number.isFinite(sampleRate) && sampleRate > 0 ? Math.round(Math.log2(sampleRate / FRAME_RATE_HZ)) : 0;
-  const frame = FRAME_AT_48K * 2 ** Math.min(FRAME_OCTAVES[1], Math.max(FRAME_OCTAVES[0], octaves));
+  const frame = tailFrameSize(sampleRate);
   const hop = frame / HOPS_PER_FRAME;
   return {
     frame,

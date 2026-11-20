@@ -300,8 +300,9 @@ digits), `captured` is a day on the calendar, a number is finite and never a boo
 are whole numbers from 0 and sizes and counts whole numbers from 1. Then, on a record whose shapes
 hold, its cross-checks (one wall per segment and its length, the strips, the relief's order, every
 named file listed, largest first by bytes), with the reader's tolerances: a T0 test
-(`ReaderTolerances`) reads them out of `survey-record.ts` and compares, and skips, saying so, while
-the reader in the tree lacks one. It judges the record as the published JSON reads. For a room that
+(`ReaderTolerances`) reads them out of `survey-record.ts` and compares. It never skips: a reader
+that is missing, or that no longer exports one of the four as a plain number (a rename, a dropped
+rule), fails it. It judges the record as the published JSON reads. For a room that
 publishes its record, writing it prints any fault and `--publish` refuses it with nothing copied.
 A fault a config can carry is refused before any build: `check_room.py` matches the schema's
 patterns whole in the same way and holds every date (`source.captured` among them) to the
@@ -651,7 +652,8 @@ at all when the record would be refused.
 
 CI runs T0, T1 and T4 in a job of their own ("Survey tools") whenever a change touches
 `tools/surveyed-rooms` or `tools/grand-hall-survey`, because the room build runs the hall's own
-scripts through seams and an edit to either folder can break the other. There the cases that
+scripts through seams and an edit to either folder can break the other, and whenever it touches
+the web reader's `survey-record.ts`, whose tolerances `publish.py` copies. There the cases that
 need the twin's manifest skip themselves, and the run takes about half a minute (a hosted Linux
 runner starts a process far faster than the Windows machine the times above were taken on). T2
 and T3 are run by hand: they take about twenty-five and four minutes there.

@@ -118,8 +118,10 @@ const ACCESSIBILITY_UPDATED = { text: "18 November 2026", iso: "2026-11-18" } as
  *  basis, how long they are kept and why they need no consent, added the
  *  "Don't measure my visits" switch, narrowed "What we do not do" to
  *  third-party analytics, and said what the error monitor's timing records
- *  carry (T-685). This is the day that goes live: re-date it, and the
- *  sitemap's /privacy date, if the merge slips to another day. */
+ *  carry (T-685); and, the same day, said "internet address" for the address
+ *  those records leave out, as the page also calls a page's URL its address
+ *  (Blake, 20 November 2026: "Say "internet address""). Re-date it, and the
+ *  sitemap's /privacy date, to the day a change goes live. */
 const PRIVACY_UPDATED = { text: "20 November 2026", iso: "2026-11-20" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
@@ -279,7 +281,7 @@ const PRIVACY: LegalDocument = {
               term: "Error diagnostics",
               detail:
                 "When something goes wrong in the browser or on the server, our error-monitoring service records technical details about the failure. That can include the page you were on and the technical state of the application at the time. "
-                + "Our server also sends it a timing record for about one request in ten, saying which kind of request it was and how long it took, with no address, identifier or browser details.",
+                + "Our server also sends it a timing record for about one request in ten, saying which kind of request it was and how long it took, with no internet address, identifier or browser details.",
             },
             {
               term: "How fast our pages are",
@@ -469,7 +471,7 @@ const PRIVACY: LegalDocument = {
             {
               term: "Sentry",
               detail:
-                "Error monitoring. It records technical diagnostics when something in the site fails, so that we can fix it, and a timing record for about one request in ten, with no address, identifier or browser details.",
+                "Error monitoring. It records technical diagnostics when something in the site fails, so that we can fix it, and a timing record for about one request in ten, with no internet address, identifier or browser details.",
             },
             {
               term: "Cloudflare R2",
