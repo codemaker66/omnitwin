@@ -27,6 +27,8 @@ system. T-093 owns the gated v1 deploy orchestration.
 | Manual ops workflows | `.github/workflows/apply-migration-0018.yml`, `.github/workflows/backfill-layout-urls.yml`, and `.github/workflows/cleanup.yml` are manual or scheduled database operations, not general deploy orchestration. |
 | Health probes | The API exposes `/health`, `/health/live`, `/health/db`, `/health/ready`, and `/health/version`. |
 
+The API's Railway settings are also kept in `.railway/railway.ts`, Railway's new format, because Railway stops reading `railway.json` on 1 December 2026: [the Railway config move](railway-config-move.md).
+
 ## Current Flow
 
 1. A commit reaches `master`.
