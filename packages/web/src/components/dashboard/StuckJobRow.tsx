@@ -16,9 +16,18 @@ const WHEN_FORMAT = new Intl.DateTimeFormat("en-GB", {
 
 export type RowWork = "retry" | "close";
 
-/** A request, made once, to put focus back on one of a row's buttons. A new object is a new request. */
+/** Where focus goes back to: a row's Try again, its note box (a refused Close), or its Close with a note button (a Close that went through). */
+export type RefocusTarget = "retry" | "note" | "close-button";
+
+/** A request, used once, to put focus back on one of a row's controls. */
 export interface RefocusRequest {
-  readonly target: RowWork;
+  readonly target: RefocusTarget;
+}
+
+/** Focus has been lost: nothing holds it, as when the control that had it went away. The page moves focus only then, or when it is still in the row that acted. */
+export function focusIsLost(): boolean {
+  const focused = document.activeElement;
+  return focused === null || focused === document.body;
 }
 
 interface StuckJobRowProps {
@@ -28,18 +37,22 @@ interface StuckJobRowProps {
   /** The server's words for the last action on this job that was refused. */
   readonly failure: string | undefined;
   readonly refocus: RefocusRequest | undefined;
+  /** Told when the request has been honoured or dropped, so it is never used twice. */
+  readonly onRefocusHandled: () => void;
   readonly onTryAgain: () => void;
   /** Resolves true when the job was closed. */
   readonly onClose: (note: string) => Promise<boolean>;
 }
 
-export function StuckJobRow({ job, working, failure, refocus, onTryAgain, onClose }: StuckJobRowProps): ReactElement {
+export function StuckJobRow({ job, working, failure, refocus, onRefocusHandled, onTryAgain, onClose }: StuckJobRowProps): ReactElement {
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState("");
   const alive = useRef(true);
   const retryButton = useRef<HTMLButtonElement | null>(null);
   const closeButton = useRef<HTMLButtonElement | null>(null);
   const noteInput = useRef<HTMLInputElement | null>(null);
+  const mainRow = useRef<HTMLTableRowElement | null>(null);
+  const detailRow = useRef<HTMLTableRowElement | null>(null);
 
   useEffect(() => {
     alive.current = true;
@@ -52,10 +65,16 @@ export function StuckJobRow({ job, working, failure, refocus, onTryAgain, onClos
 
   useEffect(() => {
     if (refocus === undefined) return;
-    // A refused Close leaves its note open: the person is in the form, so they go back to it.
-    const target = refocus.target === "retry" ? retryButton.current : noteInput.current ?? closeButton.current;
-    target?.focus();
-  }, [refocus]);
+    const focused = document.activeElement;
+    const mine = focused !== null && (mainRow.current?.contains(focused) === true || detailRow.current?.contains(focused) === true);
+    if (focusIsLost() || mine) {
+      // A refused Close leaves its note open: the person is in the form, so they go back to it.
+      const target = refocus.target === "retry" ? retryButton.current
+        : refocus.target === "note" ? noteInput.current ?? closeButton.current : closeButton.current;
+      target?.focus();
+    }
+    onRefocusHandled();
+  }, [refocus, onRefocusHandled]);
 
   const parsedNote = CloseStuckJobSchema.safeParse({ note });
 
@@ -82,7 +101,7 @@ export function StuckJobRow({ job, working, failure, refocus, onTryAgain, onClos
 
   return (
     <>
-      <tr>
+      <tr ref={mainRow}>
         <td>{job.kind}</td>
         <td>{job.venueName ?? "The platform"}</td>
         <td><time dateTime={job.gaveUpAt}>{WHEN_FORMAT.format(new Date(job.gaveUpAt))}</time></td>
@@ -102,7 +121,7 @@ export function StuckJobRow({ job, working, failure, refocus, onTryAgain, onClos
         </td>
       </tr>
       {(working !== undefined || editing || failure !== undefined) && (
-        <tr>
+        <tr ref={detailRow}>
           <td colSpan={STUCK_JOB_COLUMN_COUNT}>
             {working !== undefined && (
               <ActivityStatus>{working === "retry" ? "Putting it back on the list…" : "Closing it…"}</ActivityStatus>

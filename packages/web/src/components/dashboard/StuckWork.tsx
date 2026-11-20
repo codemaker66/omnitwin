@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from "rea
 import type { SelfTestResult, StuckJob, StuckWork as StuckWorkReading } from "@omnitwin/types";
 import { closeStuckJob, getStuckWork, retryStuckJob, runSelfTest } from "../../api/jobs.js";
 import { ActivityStatus } from "../shared/Activity.js";
-import { StuckJobRow, type RefocusRequest, type RowWork } from "./StuckJobRow.js";
+import { focusIsLost, StuckJobRow, type RefocusRequest, type RowWork } from "./StuckJobRow.js";
 import "./AdminPanel.css";
 
 // ---------------------------------------------------------------------------
@@ -162,10 +162,7 @@ export function StuckWork(): ReactElement {
   // A row that went away took the focus with it: land on the heading instead of the page's top.
   useEffect(() => {
     if (headingRequests === 0) return;
-    const focused = document.activeElement;
-    if (focused === null || focused === document.body || (focused instanceof HTMLButtonElement && focused.disabled)) {
-      heading.current?.focus();
-    }
+    if (focusIsLost()) heading.current?.focus();
   }, [headingRequests]);
 
   const runRowAction = useCallback(async (job: StuckJob, work: RowWork, run: () => Promise<void>): Promise<boolean> => {
@@ -191,7 +188,7 @@ export function StuckWork(): ReactElement {
     if (!mounted()) return succeeded;
     setBusy((current) => without(current, job.id));
     if (result.status === "read") {
-      if (result.work.jobs.some((listed) => listed.id === job.id)) setRefocus({ id: job.id, request: { target: work } });
+      if (result.work.jobs.some((listed) => listed.id === job.id)) setRefocus({ id: job.id, request: { target: work === "retry" ? "retry" : succeeded ? "close-button" : "note" } });
       else setHeadingRequests((count) => count + 1);
     }
     return succeeded;
@@ -294,6 +291,7 @@ export function StuckWork(): ReactElement {
                   working={busy.get(job.id)}
                   failure={failures.get(job.id)?.message}
                   refocus={refocus?.id === job.id ? refocus.request : undefined}
+                  onRefocusHandled={() => { setRefocus((current) => current?.id === job.id ? null : current); }}
                   onTryAgain={() => { void runRowAction(job, "retry", () => retryStuckJob(job.id)); }}
                   onClose={(note) => runRowAction(job, "close", () => closeStuckJob(job.id, note))}
                 />

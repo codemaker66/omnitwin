@@ -380,44 +380,43 @@ describe("StuckWork", () => {
     expect(mocks.getStuckWork).toHaveBeenCalledTimes(1);
   });
 
-  it("does nothing more when it goes away with a Try again out: no read, no error", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  it("starts no read after the page has gone, when a Try again was out", async () => {
     const retrying = deferred<undefined>();
     mocks.getStuckWork.mockResolvedValue(stuck({ jobs: [job(J1)] }));
     mocks.retryStuckJob.mockReturnValue(retrying.promise);
     const view = render(<StuckWork />);
     fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    const readsBefore = mocks.getStuckWork.mock.calls.length;
     view.unmount();
     await act(async () => { retrying.resolve(undefined); await retrying.promise; });
-    expect(mocks.getStuckWork).toHaveBeenCalledTimes(1);
-    expect(consoleError).not.toHaveBeenCalled();
+    expect(mocks.getStuckWork).toHaveBeenCalledTimes(readsBefore);
   });
 
-  it("does nothing more when it goes away with a refused Try again out", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const retrying = deferred<undefined>();
+  it("starts no read after the page has gone, when a Close was out", async () => {
+    const closing = deferred<undefined>();
     mocks.getStuckWork.mockResolvedValue(stuck({ jobs: [job(J1)] }));
-    mocks.retryStuckJob.mockReturnValue(retrying.promise.then(() => { throw new ApiError(409, "This job is already back on the list.", "JOB_NOT_STUCK"); }));
+    mocks.closeStuckJob.mockReturnValue(closing.promise);
     const view = render(<StuckWork />);
-    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Close with a note" }));
+    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "Sent by hand" } });
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    const readsBefore = mocks.getStuckWork.mock.calls.length;
     view.unmount();
-    await act(async () => { retrying.resolve(undefined); await retrying.promise; });
-    expect(mocks.getStuckWork).toHaveBeenCalledTimes(1);
-    expect(consoleError).not.toHaveBeenCalled();
+    await act(async () => { closing.resolve(undefined); await closing.promise; });
+    expect(mocks.getStuckWork).toHaveBeenCalledTimes(readsBefore);
   });
 
-  it("does nothing more when it goes away with the self-test out", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  it("starts no read after the page has gone, when the self-test was out", async () => {
     const running = deferred<SelfTestResult>();
     mocks.getStuckWork.mockResolvedValue(stuck());
     mocks.runSelfTest.mockReturnValue(running.promise);
     const view = render(<StuckWork />);
     await screen.findByText("Nothing is stuck.");
     fireEvent.click(screen.getByRole("button", { name: "Run the self-test" }));
+    const readsBefore = mocks.getStuckWork.mock.calls.length;
     view.unmount();
     await act(async () => { running.resolve(selfTestAnswer("done")); await running.promise; });
-    expect(mocks.getStuckWork).toHaveBeenCalledTimes(1);
-    expect(consoleError).not.toHaveBeenCalled();
+    expect(mocks.getStuckWork).toHaveBeenCalledTimes(readsBefore);
   });
 
   it("sends one Try again however many times the button is pressed, and shows the work as it goes", async () => {
@@ -467,42 +466,190 @@ describe("StuckWork", () => {
     expect(within(screen.getByRole("row", { name: /beta\.send/ })).getByRole<HTMLButtonElement>("button", { name: "Try again" }).disabled).toBe(false);
   });
 
-  it("puts focus back on the button pressed when the job is still listed after a refusal", async () => {
+  it("puts focus back on the button pressed when focus was lost and the job is still listed after a refusal", async () => {
     mocks.getStuckWork.mockResolvedValue(stuck({ jobs: [job(J1)] }));
     mocks.retryStuckJob.mockRejectedValue(new ApiError(
       409, "This server can no longer run this kind of job. Close it with a note.", "JOB_KIND_UNREADABLE",
     ));
     render(<StuckWork />);
     const button = await screen.findByRole("button", { name: "Try again" });
-    button.focus();
+    // Focus is lost: nothing holds it, as when the pressed button goes disabled and the browser lets go.
+    expect(document.activeElement).toBe(document.body);
     fireEvent.click(button);
     await screen.findByText("This server can no longer run this kind of job. Close it with a note.");
     await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("button", { name: "Try again" })); });
-    expect(document.activeElement).not.toBe(screen.getByRole("heading", { name: "Stuck work" }));
   });
 
-  it("moves focus to the heading only when the row has gone", async () => {
+  it("moves focus to the heading only when it was lost and the row has gone", async () => {
     mocks.getStuckWork.mockResolvedValueOnce(stuck({ jobs: [job(J1)] })).mockResolvedValueOnce(stuck());
     mocks.retryStuckJob.mockResolvedValue(undefined);
     render(<StuckWork />);
     const button = await screen.findByRole("button", { name: "Try again" });
-    button.focus();
+    expect(document.activeElement).toBe(document.body);
     fireEvent.click(button);
     await screen.findByText("Nothing is stuck.");
     await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Stuck work" })); });
   });
 
-  it("moves focus nowhere when the list cannot be read again after an action", async () => {
+  it("moves focus nowhere when it was lost and the list cannot be read again after an action", async () => {
     mocks.getStuckWork
       .mockResolvedValueOnce(stuck({ jobs: [job(J1)] }))
       .mockRejectedValueOnce(new ApiError(500, "The list could not be read.", "X"));
     mocks.retryStuckJob.mockResolvedValue(undefined);
     render(<StuckWork />);
     const button = await screen.findByRole("button", { name: "Try again" });
-    button.focus();
+    expect(document.activeElement).toBe(document.body);
     fireEvent.click(button);
     await screen.findByText("The list could not be read.");
-    expect(document.activeElement).not.toBe(screen.getByRole("heading", { name: "Stuck work" }));
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("leaves the caret in another row's note when a Close that was out is refused", async () => {
+    const refused = deferred<undefined>();
+    const both = stuck({ jobs: [job(J1, { kind: "alpha.send" }), job(J2, { kind: "beta.send" })] });
+    mocks.getStuckWork.mockResolvedValue(both);
+    mocks.closeStuckJob.mockReturnValueOnce(refused.promise.then(() => {
+      throw new ApiError(409, "This job is already back on the list.", "JOB_NOT_STUCK");
+    }));
+    render(<StuckWork />);
+    const alpha = await screen.findByRole("row", { name: /alpha\.send/ });
+    const beta = screen.getByRole("row", { name: /beta\.send/ });
+    fireEvent.click(within(alpha).getByRole("button", { name: "Close with a note" }));
+    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "Alpha text" } });
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(within(beta).getByRole("button", { name: "Close with a note" }));
+    const [alphaNote, betaNote] = screen.getAllByLabelText<HTMLInputElement>("Note");
+    if (alphaNote === undefined || betaNote === undefined) throw new Error("both notes should be open");
+    fireEvent.change(betaNote, { target: { value: "Beta draft" } });
+    expect(document.activeElement).toBe(betaNote);
+
+    await act(async () => { refused.resolve(undefined); await refused.promise; });
+    await screen.findByText("This job is already back on the list.");
+    await waitFor(() => { expect(mocks.getStuckWork).toHaveBeenCalledTimes(2); });
+    expect(document.activeElement).toBe(betaNote);
+    expect(betaNote.value).toBe("Beta draft");
+    expect(alphaNote.value).toBe("Alpha text");
+  });
+
+  it("leaves the caret in another row's note when a Try again that was out finishes", async () => {
+    const retrying = deferred<undefined>();
+    const both = stuck({ jobs: [job(J1, { kind: "alpha.send" }), job(J2, { kind: "beta.send" })] });
+    mocks.getStuckWork.mockResolvedValue(both);
+    mocks.retryStuckJob.mockReturnValueOnce(retrying.promise);
+    render(<StuckWork />);
+    const alpha = await screen.findByRole("row", { name: /alpha\.send/ });
+    const beta = screen.getByRole("row", { name: /beta\.send/ });
+    fireEvent.click(within(alpha).getByRole("button", { name: "Try again" }));
+    fireEvent.click(within(beta).getByRole("button", { name: "Close with a note" }));
+    const betaNote = screen.getByLabelText<HTMLInputElement>("Note");
+    fireEvent.change(betaNote, { target: { value: "Beta draft" } });
+    expect(document.activeElement).toBe(betaNote);
+
+    await act(async () => { retrying.resolve(undefined); await retrying.promise; });
+    await waitFor(() => { expect(mocks.getStuckWork).toHaveBeenCalledTimes(2); });
+    await waitFor(() => {
+      expect(within(screen.getByRole("row", { name: /alpha\.send/ })).getByRole<HTMLButtonElement>("button", { name: "Try again" }).disabled).toBe(false);
+    });
+    expect(document.activeElement).toBe(betaNote);
+    expect(betaNote.value).toBe("Beta draft");
+  });
+
+  it("does not take focus from a button in another row when a row has gone", async () => {
+    const retrying = deferred<undefined>();
+    mocks.getStuckWork
+      .mockResolvedValueOnce(stuck({ jobs: [job(J1, { kind: "alpha.send" }), job(J2, { kind: "beta.send" })] }))
+      .mockResolvedValue(stuck({ jobs: [job(J2, { kind: "beta.send" })] }));
+    mocks.retryStuckJob.mockReturnValueOnce(retrying.promise).mockReturnValueOnce(new Promise<void>(() => undefined));
+    render(<StuckWork />);
+    const alpha = await screen.findByRole("row", { name: /alpha\.send/ });
+    const beta = screen.getByRole("row", { name: /beta\.send/ });
+    fireEvent.click(within(alpha).getByRole("button", { name: "Try again" }));
+    // Beta's own Try again is out and holds focus, disabled: that is not focus lost.
+    const betaButton = within(beta).getByRole<HTMLButtonElement>("button", { name: "Try again" });
+    betaButton.focus();
+    fireEvent.click(betaButton);
+    await act(async () => { retrying.resolve(undefined); await retrying.promise; });
+    await waitFor(() => { expect(screen.queryByRole("row", { name: /alpha\.send/ })).toBeNull(); });
+    expect(document.activeElement).toBe(betaButton);
+  });
+
+  it("sends focus to Close with a note after a Close that went through while the job is still listed", async () => {
+    mocks.getStuckWork.mockResolvedValue(stuck({ jobs: [job(J1)] }));
+    mocks.closeStuckJob.mockResolvedValue(undefined);
+    render(<StuckWork />);
+    fireEvent.click(await screen.findByRole("button", { name: "Close with a note" }));
+    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "Sent by hand" } });
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => { expect(screen.queryByLabelText("Note")).toBeNull(); });
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close with a note" })); });
+  });
+
+  it("uses a request to put focus back once: a row that goes and comes back is not focused again", async () => {
+    const jobA = job(J1, { kind: "alpha.send" });
+    mocks.getStuckWork
+      .mockResolvedValueOnce(stuck({ jobs: [jobA] }))
+      .mockResolvedValueOnce(stuck({ jobs: [jobA] }))
+      .mockResolvedValueOnce(stuck())
+      .mockResolvedValueOnce(stuck({ jobs: [jobA] }));
+    mocks.retryStuckJob.mockRejectedValue(new ApiError(409, "This job is already back on the list.", "JOB_NOT_STUCK"));
+    mocks.runSelfTest.mockResolvedValue(selfTestAnswer("done"));
+    render(<StuckWork />);
+    const button = await screen.findByRole("button", { name: "Try again" });
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.click(button);
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("button", { name: "Try again" })); });
+
+    // The person moves on; the list then drops the job and lists it again.
+    screen.getByRole("button", { name: "Try again" }).blur();
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.click(screen.getByRole("button", { name: "Run the self-test" }));
+    await screen.findByText("Nothing is stuck.");
+    await screen.findByText("The self-test ran.");
+    fireEvent.click(screen.getByRole("button", { name: "Run the self-test" }));
+    await screen.findByRole("row", { name: /alpha\.send/ });
+    await waitFor(() => { expect(mocks.getStuckWork).toHaveBeenCalledTimes(4); });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("keeps the newer list and shows no error when the older read fails last", async () => {
+    let failOlder: (reason: Error) => void = () => undefined;
+    const olderRead = new Promise<StuckWorkReading>((_resolve, reject) => { failOlder = reject; });
+    mocks.getStuckWork.mockReturnValueOnce(olderRead).mockResolvedValueOnce(stuck());
+    mocks.runSelfTest.mockResolvedValue(selfTestAnswer("done"));
+    render(<StuckWork />);
+    fireEvent.click(screen.getByRole("button", { name: "Run the self-test" }));
+    expect(await screen.findByText("The self-test ran.")).toBeDefined();
+    await act(async () => {
+      failOlder(new ApiError(500, "The older read failed.", "X"));
+      await olderRead.catch(() => undefined);
+    });
+    expect(screen.queryByText("The older read failed.")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("Nothing is stuck.")).toBeDefined();
+  });
+
+  it("gives the verdict when there has been no reading at all", async () => {
+    mocks.getStuckWork.mockRejectedValue(new ApiError(500, "The list could not be read.", "X"));
+    mocks.runSelfTest.mockResolvedValue(selfTestAnswer("queued"));
+    render(<StuckWork />);
+    await screen.findByText("The list could not be read.");
+    fireEvent.click(screen.getByRole("button", { name: "Run the self-test" }));
+    expect(await screen.findByText("The self-test has not run yet. It is still waiting.")).toBeDefined();
+  });
+
+  it("sends one self-test however many times the button is pressed", async () => {
+    const running = deferred<SelfTestResult>();
+    mocks.getStuckWork.mockResolvedValue(stuck());
+    mocks.runSelfTest.mockReturnValue(running.promise);
+    render(<StuckWork />);
+    await screen.findByText("Nothing is stuck.");
+    const button = screen.getByRole("button", { name: "Run the self-test" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(mocks.runSelfTest).toHaveBeenCalledTimes(1);
+    running.resolve(selfTestAnswer("done"));
+    expect(await screen.findByText("The self-test ran.")).toBeDefined();
+    expect(mocks.runSelfTest).toHaveBeenCalledTimes(1);
   });
 
   it("shows the self-test as running, and its verdict when it has run", async () => {
