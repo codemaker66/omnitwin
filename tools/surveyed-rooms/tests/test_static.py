@@ -273,6 +273,34 @@ class CheckRoom(unittest.TestCase):
         _, room = variant(SALOON, "saloon-check.room.json", change)
         return "\n".join(check(room, manifest).errors)
 
+    def test_every_config_passes(self):
+        for name in ("grand-hall", "saloon", "reception-room", "robert-adam-room"):
+            rep = check(roomlib.load(os.path.join(ROOMS, f"{name}.room.json")), manifest=False)
+            self.assertEqual(rep.errors, [], name)
+
+    def test_a_capture_date_not_on_the_calendar_fails_at_check(self):
+        """survey.json's captured is source.captured, and the web's reader refuses a date that is not
+        on the calendar: so does the check, before any build (day and month swapped, a 30 February,
+        a final newline, digits of another script)."""
+        for value in ("2026-18-11", "2026-02-30", "2026-13-45", "2026-07-11\n", "２０２６-07-11", "0000-01-01"):
+            said = self.errors(lambda r: r["source"].__setitem__("captured", value))
+            self.assertIn("schema $.source.captured", said, repr(value))
+        self.assertEqual(self.errors(lambda r: r["source"].__setitem__("captured", "2024-02-29")), "")
+
+    def test_a_schema_pattern_matches_the_whole_string_as_json_schema_reads_it(self):
+        """A pattern is an ECMA-262 expression: its `$` is the string's end (Python's also matches
+        before a final newline) and its \\d is ASCII (Python's takes any script's digits). A pattern
+        still matches anywhere unless anchored, and a `$` inside a class is a dollar."""
+        slug = {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"}
+        self.assertEqual(check_room.validate("saloon", slug, {}), [])
+        for value in ("saloon\n", "saloon\n\n", "Saloon"):
+            self.assertEqual(len(check_room.validate(value, slug, {})), 1, repr(value))
+        self.assertEqual(len(check_room.validate("１", {"type": "string", "pattern": "^\\d$"}, {})), 1)
+        self.assertEqual(check_room.validate("https://example.org/x", {"type": "string", "pattern": "^https://"}, {}), [])
+        self.assertEqual(check_room.validate("a$", {"type": "string", "pattern": "^a[$]$"}, {}), [])
+        self.assertIn("schema $.slug", self.errors(lambda r: r.__setitem__("slug", "saloon\n")))
+        self.assertIn("schema $.venue", self.errors(lambda r: r.__setitem__("venue", "trades-hall\n")))
+
     def test_long_relief_id(self):
         def drop(room):
             room["walls"]["segments"][1].pop("survey")
@@ -508,7 +536,7 @@ class SurveyRecord(unittest.TestCase):
         index = os.path.join(work, "proj", "detail", "index.json")
         self.assertEqual(record["detail"]["index"], dict(file="index.json", bytes=os.path.getsize(index), sha256=publish.sha256(index)))
         self.assertEqual(sorted(record["files"]), sorted(publish.output_files(room)))
-        self.assertTrue(all(publish.FILE_NAME.match(name) for name in record["files"]))
+        self.assertTrue(all(publish.FILE_NAME.fullmatch(name) for name in record["files"]))
         # Everything version 1 said is still said.
         for key in ("slug", "revision", "captured", "configSha256", "methodRevision", "tools", "linkedInputs", "glassScan", "openings", "relief"):
             self.assertIn(key, record)
@@ -567,6 +595,99 @@ class SurveyRecord(unittest.TestCase):
         self.assertIn("kind", faults(lambda r: r["walls"][0].__setitem__("kind", "glass")))
         self.assertIn("orientation", faults(lambda r: r["floor"].__setitem__("orientation", "rows from planner -z")))
         self.assertIn("does not increase", faults(lambda r: r["floor"]["extent"]["x"].reverse()))
+
+    def test_record_faults_refuse_what_the_readers_shapes_refuse(self):
+        """The reader's Zod shapes, value by value: a whole-string match (JavaScript's `$` is the
+        string's end and its `\\d` is ASCII; Python's `$` also matches before a final newline and its
+        `\\d` takes any script's digits), a date that is on the calendar, a string that is a string, a
+        number that is a finite number and not a bool (True is an int in Python), whole texels from 0
+        and positive integers from 1. Each change is refused for its own reason, alone."""
+        import copy
+        from roombuild import publish
+        _, _, good = self.record(SALOON, "record-shapes")
+        self.assertEqual(publish.record_faults(good), [])
+
+        def faults(change):
+            record = copy.deepcopy(good)
+            change(record)
+            return publish.record_faults(json.loads(json.dumps(record)))
+
+        def relief_id(value):
+            return lambda r: r["walls"][0].__setitem__("reliefId", value)
+
+        def order_entry(value):
+            return lambda r: r["relief"]["order"].__setitem__(0, value)
+
+        strip = good["walls"][0]["atlas"]
+        cases = (
+            # captured: z.iso.date()
+            ("captured month 13", lambda r: r.__setitem__("captured", "2026-13-45"), "captured"),
+            ("captured 30 February", lambda r: r.__setitem__("captured", "2026-02-30"), "captured"),
+            ("captured day and month swapped", lambda r: r.__setitem__("captured", "2026-18-11"), "captured"),
+            ("captured with a final newline", lambda r: r.__setitem__("captured", "2026-07-11\n"), "captured"),
+            ("captured in fullwidth digits", lambda r: r.__setitem__("captured", "２０２６-07-11"), "captured"),
+            ("captured a number", lambda r: r.__setitem__("captured", 20260711), "captured"),
+            # slugs, names and ids
+            ("slug with a final newline", lambda r: r.__setitem__("slug", "saloon\n"), "slug"),
+            ("slug a number", lambda r: r.__setitem__("slug", 5), "slug"),
+            ("venue with a final newline", lambda r: r["room"].__setitem__("venue", "trades-hall\n"), "room.venue"),
+            ("room name a number", lambda r: r["room"].__setitem__("name", 5), "room.name"),
+            ("room name empty", lambda r: r["room"].__setitem__("name", ""), "room.name"),
+            ("relief id with a final newline", relief_id(good["walls"][0]["reliefId"] + "\n"), "relief id"),
+            ("relief id in fullwidth letters", relief_id("ｆｒｏｎｔ"), "relief id"),
+            ("relief order entry with a final newline", order_entry(good["relief"]["order"][0] + "\n"), "relief.order[0]"),
+            ("wall id empty", lambda r: r["walls"][0].__setitem__("id", ""), "walls[0].id"),
+            ("ceiling relief id with a space", lambda r: r["ceiling"]["relief"].__setitem__("id", "ceil ing"), "ceiling.relief.id"),
+            ("ceiling relief id of 13 characters", lambda r: r["ceiling"]["relief"].__setitem__("id", "ceiling-relie"), "ceiling.relief.id"),
+            ("file name with a final newline", lambda r: r["files"].__setitem__("walls-4096.webp\n", r["files"]["walls-4096.webp"]), "not a plain file name"),
+            ("SHA-256 with a final newline", lambda r: r["files"]["walls-4096.webp"].__setitem__("sha256", r["files"]["walls-4096.webp"]["sha256"] + "\n"), "SHA-256"),
+            ("SHA-256 in capitals", lambda r: r["files"]["walls-4096.webp"].__setitem__("sha256", r["files"]["walls-4096.webp"]["sha256"].upper()), "SHA-256"),
+            # numbers: finite, not a bool
+            ("ceiling height true", lambda r: r["room"].__setitem__("ceilingHeight", True), "room.ceilingHeight"),
+            ("ceiling height a string", lambda r: r["room"].__setitem__("ceilingHeight", "5.515"), "room.ceilingHeight"),
+            ("ceiling height infinite", lambda r: r["room"].__setitem__("ceilingHeight", float("inf")), "room.ceilingHeight"),
+            ("wall height true", lambda r: r["walls"][0].__setitem__("height", True), "height"),
+            ("wall length a string", lambda r: r["walls"][0].__setitem__("length", str(r["walls"][0]["length"])), "length"),
+            ("wall length 0", lambda r: r["walls"][0].__setitem__("length", 0), "length"),
+            ("atlas ppm true", lambda r: r["atlas"].__setitem__("ppm", True), "atlas.ppm"),
+            ("atlas vRange decreasing", lambda r: r["atlas"]["vRange"].reverse(), "atlas.vRange"),
+            ("ceiling relief reference a string", lambda r: r["ceiling"]["relief"].__setitem__("reference", "5.515"), "ceiling.relief.reference"),
+            ("ceiling relief heightRange decreasing", lambda r: r["ceiling"]["relief"]["heightRange"].reverse(), "ceiling.relief.heightRange"),
+            ("an outline vertex a string", lambda r: r["room"]["outline"][0].__setitem__(0, "6.095"), "room.outline"),
+            ("an outline vertex of three numbers", lambda r: r["room"]["outline"][0].append(0.0), "room.outline"),
+            ("an outline segment of no length", lambda r: r["room"]["outline"].insert(1, list(r["room"]["outline"][1])), "no length"),
+            ("extent of one number", lambda r: r["floor"]["extent"].__setitem__("x", [0.0]), "floor.extent"),
+            # integers: texels from 0, sizes and counts from 1
+            ("strip x of -1", lambda r: r["walls"][0]["atlas"].__setitem__(0, -1), "walls[0].atlas"),
+            ("strip x and a half", lambda r: r["walls"][0]["atlas"].__setitem__(0, strip[0] + 0.5), "walls[0].atlas"),
+            ("strip y true", lambda r: r["walls"][0]["atlas"].__setitem__(1, True), "walls[0].atlas"),
+            ("strip width 0", lambda r: r["walls"][0]["atlas"].__setitem__(2, 0), "walls[0].atlas"),
+            ("strip of three numbers", lambda r: r["walls"][0]["atlas"].pop(), "walls[0].atlas"),
+            ("atlas size fractional", lambda r: r["atlas"]["size"].__setitem__(0, r["atlas"]["size"][0] + 0.5), "atlas.size"),
+            ("atlas row 0", lambda r: r["atlas"].__setitem__("row", 0), "atlas.row"),
+            ("revision true", lambda r: r.__setitem__("revision", True), "revision"),
+            ("file bytes negative", lambda r: r["files"]["walls-4096.webp"].__setitem__("bytes", -1), "bytes"),
+            ("file bytes fractional", lambda r: r["files"]["walls-4096.webp"].__setitem__("bytes", 1.5), "bytes"),
+            ("file bytes past 2^53", lambda r: r["files"]["walls-4096.webp"].__setitem__("bytes", 2 ** 53), "bytes"),
+        )
+        for label, change, want in cases:
+            with self.subTest(label):
+                found = faults(change)
+                self.assertEqual(len(found), 1, found)
+                self.assertIn(want, found[0])
+        # A whole number written with a point is the integer JSON.parse reads it as, so the reader takes it.
+        self.assertEqual(faults(lambda r: r.__setitem__("revision", 1.0)), [])
+        self.assertEqual(faults(lambda r: r["walls"][0]["atlas"].__setitem__(1, float(strip[1]))), [])
+        # A record that is not an object is refused as that, not by a traceback.
+        self.assertIn("not a JSON object", " | ".join(publish.record_faults([good])))
+
+    def test_every_rooms_record_is_what_the_reader_takes(self):
+        """The four configured rooms' records, built over stand-in files, are fault-free (the Grand
+        Hall publishes none, but its record is still written to build/ and must stay readable)."""
+        from roombuild import publish
+        for name in ("grand-hall", "saloon", "reception-room", "robert-adam-room"):
+            _, _, record = self.record(os.path.join(ROOMS, f"{name}.room.json"), f"record-room-{name}")
+            self.assertEqual(publish.record_faults(json.loads(json.dumps(record))), [], name)
 
     def test_record_faults_hold_the_photographs_and_heights_to_the_room(self):
         """The reader's later refusals (its SR1 and SR3): an overhead photograph covers the outline, a

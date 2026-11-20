@@ -13,6 +13,8 @@ views covering the walls. With --manifest, every station must exist, lie inside 
 Exit status 1 if anything is wrong; warnings do not fail.
 """
 import argparse
+import datetime
+import functools
 import json
 import math
 import os
@@ -41,7 +43,42 @@ SIGHT_BLOCKERS = ("solid", "partition")     # the kinds of wall a station does n
 ANNOTATIONS = {"$schema", "$id", "$defs", "$comment", "title", "description", "default", "examples"}
 KEYWORDS = {"type", "properties", "required", "additionalProperties", "items", "minItems", "maxItems", "enum",
             "const", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "pattern", "minLength", "$ref",
-            "anyOf", "oneOf"}
+            "anyOf", "oneOf", "format"}
+FORMATS = {"date"}   # "format" values this validator asserts (jsonschema only annotates them)
+
+
+@functools.lru_cache(maxsize=None)
+def ecma_pattern(pattern):
+    """A schema's `pattern` (an ECMA-262 regular expression, which matches anywhere unless anchored)
+    as Python reads it the same way: its `$` outside a [...] class becomes \\Z, since Python's `$`
+    also matches before a final newline and ECMA's (no m flag) only at the end; and re.ASCII, since
+    Python's \\d and \\w take any script's digits and letters and ECMA's take ASCII only."""
+    out, in_class, i = [], False, 0
+    while i < len(pattern):
+        c = pattern[i]
+        if c == "\\":
+            out.append(pattern[i:i + 2])
+            i += 2
+            continue
+        if c == "[":
+            in_class = True
+        elif c == "]":
+            in_class = False
+        out.append("\\Z" if c == "$" and not in_class else c)
+        i += 1
+    return re.compile("".join(out), re.ASCII)
+
+
+def is_calendar_date(value):
+    """YYYY-MM-DD in ASCII digits, and a day on the calendar (JSON Schema's "date" format, RFC 3339
+    full-date; Zod's z.iso.date(), which the web's reader holds survey.json's `captured` to)."""
+    if not ecma_pattern("^[0-9]{4}-[0-9]{2}-[0-9]{2}$").search(value):
+        return False
+    try:
+        datetime.date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _is_type(value, name):
@@ -81,6 +118,8 @@ def validate(value, schema, root, path="$"):
     unknown = set(schema) - KEYWORDS - ANNOTATIONS
     if unknown:
         raise ValueError(f"schema at {path} uses unsupported keywords {sorted(unknown)}")
+    if "format" in schema and schema["format"] not in FORMATS:
+        raise ValueError(f"schema at {path} uses unsupported format {schema['format']!r}")
     errors = []
     if "$ref" in schema:
         ref = schema["$ref"]
@@ -107,8 +146,10 @@ def validate(value, schema, root, path="$"):
     if isinstance(value, str):
         if "minLength" in schema and len(value) < schema["minLength"]:
             errors.append((path, f"shorter than {schema['minLength']}"))
-        if "pattern" in schema and not re.search(schema["pattern"], value):
+        if "pattern" in schema and not ecma_pattern(schema["pattern"]).search(value):
             errors.append((path, f"{value!r} does not match {schema['pattern']}"))
+        elif schema.get("format") == "date" and not is_calendar_date(value):
+            errors.append((path, f"{value!r} is not a date on the calendar (YYYY-MM-DD; the web's reader refuses any other)"))
     if isinstance(value, list):
         if "minItems" in schema and len(value) < schema["minItems"]:
             errors.append((path, f"fewer than {schema['minItems']} items"))
