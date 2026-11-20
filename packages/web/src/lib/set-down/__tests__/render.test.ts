@@ -350,10 +350,20 @@ describe("when the feet meet the floor (ruling R43)", () => {
 });
 
 describe("what each piece is made of", () => {
-  /** The energy in 1-3.2 kHz over 35-70 ms, where the legs rattle. */
-  const rattleBand = (render: SetDownRender): number => bandEnergy(render.left.subarray(Math.round(0.035 * SR), Math.round(0.07 * SR)), SR, 1000, 3200);
+  /**
+   * The energy of the 1 and 2 kHz octaves (0.7-2.8 kHz) over 35-70 ms, where the legs rattle: each octave cut from the
+   * whole render by octaveBandpassSteep, then summed over the window (ruling R93, after #416's review). The rectangular
+   * transform of a hard 35-70 ms cut that this replaced read the landing's low ring leaking from the cut's edges into
+   * the band, in both renders alike: where a play's last foot lands near 30 ms it hid the rattle (the projector
+   * screen's seed 11 read 0.58 dB on it, and 20.2 dB filtered).
+   */
+  const rattleBand = (render: SetDownRender): number => {
+    const from = Math.round(0.035 * SR);
+    const to = Math.round(0.07 * SR);
+    return energy(octaveBandpassSteep(render.left, 1000, SR).subarray(from, to)) + energy(octaveBandpassSteep(render.left, 2000, SR).subarray(from, to));
+  };
 
-  /** How far the rattle lifts 1-3.2 kHz over 35-70 ms, in dB, against the same set-down without it. */
+  /** How far the rattle lifts the 1 and 2 kHz octaves over 35-70 ms, in dB, against the same set-down without it. */
   const rattleRise = (slug: string, seed: number): number => {
     const input = inputFor(slug, "oak-boards-joists", { seed });
     expect(input.body.legRattle).toBe(true);
@@ -366,8 +376,8 @@ describe("what each piece is made of", () => {
     for (let seed = 1; seed <= 8; seed += 1) expect(rattleRise(slug, seed), `seed ${String(seed)}`).toBeGreaterThanOrEqual(6);
   });
 
-  it("rattles the projector screen's legs by a median of 6 dB and every seed by 3 dB, seeds 1-8 (ruling R69)", () => {
-    const rises = [1, 2, 3, 4, 5, 6, 7, 8].map((seed) => rattleRise("projector-screen", seed));
+  it("rattles the projector screen's legs by a median of 6 dB and every seed by 3 dB, seeds 1-20 (rulings R69 and R93)", () => {
+    const rises = Array.from({ length: 20 }, (_, i) => rattleRise("projector-screen", i + 1));
     for (const [i, rise] of rises.entries()) expect(rise, `seed ${String(i + 1)}`).toBeGreaterThanOrEqual(3);
     expect(median(rises)).toBeGreaterThanOrEqual(6);
   });
