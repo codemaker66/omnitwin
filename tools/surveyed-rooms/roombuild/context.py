@@ -409,7 +409,17 @@ class Room:
     def record_problems(self):
         """For a room that publishes its record (survey.outputs.manifest): what in the config the web's
         reader would refuse in survey.json, found here rather than at publish, after the whole build."""
+        from . import publish   # noqa: PLC0415 - the record's own rules; Room stays light to import
         out = []
         if "revision" not in self.survey.get("publish", {}):
             out.append("survey.publish.revision is missing: survey.json's revision is that, and the web's reader needs one from 1")
+        if "floorPhoto" in self.survey:
+            # The floor's extent is laid in whole texels (publish.floor_extent), so it can stop half a
+            # texel short of the outline; the reader allows OVERHEAD_EXTENT_TOLERANCE (5 mm). The extent
+            # depends on nothing but the outline and floorPhoto.ppm, so publish's verdict is known now.
+            ppm = self.survey["floorPhoto"]["ppm"]
+            out += [f"survey.floorPhoto.ppm {ppm:g}: {fault}, and the web's reader would refuse the record. The floor is laid in "
+                    f"whole texels of 1 / ppm metres, so it can stop half a texel short of the outline, and half a texel is under "
+                    f"{publish.OVERHEAD_EXTENT_TOLERANCE * 1000:g} mm only at more than 100 texels per metre: give floorPhoto.ppm more than 100"
+                    for fault in publish.overhead_reach_faults("floor", publish.floor_extent(self), self.cfg["walls"]["vertices"])]
         return out

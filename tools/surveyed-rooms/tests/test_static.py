@@ -298,6 +298,38 @@ class CheckRoom(unittest.TestCase):
         path, _ = variant(GH, "gh-no-revision.room.json", lambda r: r["survey"]["publish"].pop("revision"))
         self.assertEqual(Room(path, T0).build_problems(), [])
 
+    def test_a_floor_photograph_the_reader_would_refuse_fails_before_a_build(self):
+        """The floor is laid in whole texels of 1 / floorPhoto.ppm, so its photograph can stop half a
+        texel short of the outline, and the reader allows 5 mm: half a texel is under that only above
+        100 texels per metre. The build's check lays the floor's extent as publish will and refuses,
+        for a room that publishes its record, a floor the reader would refuse, before any build."""
+        def ppm(value, high_x=None):
+            def change(r):
+                r["survey"]["floorPhoto"]["ppm"] = value
+                if high_x is not None:
+                    top = max(p[0] for p in r["walls"]["vertices"])
+                    for p in r["walls"]["vertices"]:
+                        if p[0] == top:
+                            p[0] = high_x
+            return change
+
+        def problems(config, change, name):
+            path, _ = variant(config, name, change)
+            return "\n".join(Room(path, T0).build_problems())
+
+        # At exactly 100 half a texel is 5.000 mm, and float rounding then decides: an outline 12.185 m
+        # wide comes out 5.0000000000008 mm short, which the reader refuses (6.089 - 6.084 > 0.005).
+        said = problems(SALOON, ppm(100, 6.089), "saloon-ppm100.room.json")
+        self.assertIn("survey.floorPhoto.ppm 100", said)
+        self.assertIn("floor.extent.x", said)
+        self.assertIn("more than 100", said)
+        self.assertEqual(problems(SALOON, ppm(101, 6.089), "saloon-ppm101.room.json"), "")
+        self.assertIn("survey.floorPhoto.ppm 60", problems(SALOON, ppm(60), "saloon-ppm60.room.json"))    # 7.67 mm short
+        # A floor that happens to fit is no fault at any resolution (the Saloon's own outline at 100: 1 mm and 3 mm).
+        self.assertEqual(problems(SALOON, ppm(100), "saloon-ppm100-fits.room.json"), "")
+        # The Grand Hall publishes no record: at 60 its floor would fall 6.67 mm short, and nothing reads it.
+        self.assertEqual(problems(GH, ppm(60), "gh-ppm60.room.json"), "")
+
     def test_a_schema_pattern_matches_the_whole_string_as_json_schema_reads_it(self):
         """A pattern is an ECMA-262 expression: its `$` is the string's end (Python's also matches
         before a final newline) and its \\d is ASCII (Python's takes any script's digits). A pattern

@@ -271,9 +271,11 @@ everything a reader needs to place the published files, and more that it drops.
   photograph ends up to half a texel short of or past the other two sides (the Saloon's reaches
   x 6.095667 for the outline's 6.095 and z -3.736 for -3.734). The web's reader, and
   `record_faults` with it, lets a photograph stop 5 mm short of the outline. That is more than half
-  a texel only from 100 texels per metre up (4.17 mm at the 120 all four rooms use), so a coarser
-  floor photograph can be refused though it is whole: keep `floorPhoto.ppm` at 100 or more for a
-  room that publishes a record.
+  a texel only above 100 texels per metre (4.17 mm at the 120 all four rooms use; at exactly 100 half
+  a texel is 5 mm, and float rounding decides), so a coarser floor photograph can be refused though
+  it is whole: keep `floorPhoto.ppm` at more than 100 for a room that publishes a record. The extent
+  depends only on the outline and `floorPhoto.ppm`, so the build's check lays it as publish will and
+  refuses such a room's config, before any build, when the reader would refuse its floor.
 - **Largest first** is by pixel count, whatever order the config lists the sizes in.
 - **`files` holds plain names only.** The detail tiles' index lives in the detail folder, so it is
   in `detail.index` (version 1 listed it in `files` as `detail/index.json`, which the reader's rule
