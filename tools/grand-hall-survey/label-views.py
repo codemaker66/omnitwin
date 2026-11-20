@@ -35,11 +35,11 @@ here changes), a station's view of a texel counts in all of the above only where
 of its ray. The mesh outlines a thing standing proud of a wall smaller than the panoramas show it, so along the edge of
 the zone it hides, a station's picture of the thing reaches onto the wall the mesh says is in view; with one station a
 block that rim is printed sharply, and the Laplacian even prefers it on plain wall. A texel none of its block's RANKED
-stations saw clear takes the first station of the block's whole order that did (clear_views; whole_order: a block
-without a label asks its stations by how much of it they saw): a clear view like any
-other. A texel that stations saw, but none of them clear, takes a doubtful view so that it does not become a hole
-(doubtful_views): the first station of its block's sequence that saw it (doubtful_sequence: the block's ranked stations,
-then every station by how much of the block it saw at all). A texel no station saw stays one, as without the margin. The npz then
+stations saw clear asks the block's one sequence (block_sequence: the block's ranked stations, then every station by
+how much of the block it saw at all, most first and of equals the earlier station). It takes the first station of the
+sequence that saw it clear (clear_views): a clear view like any other. Where stations saw it, but none of them clear,
+it takes the first station of the same sequence that saw it at all (doubtful_views): a doubtful view, so that it does
+not become a hole. A texel no station saw stays one, as without the margin. The npz then
 also holds seenbits (seen at all) and clearbits (seen clear); visbits is clearbits plus the doubtful views given.
 
 Memory stays under 1.5 GB: statistics run in bands of 64 texel rows (one row of overlap each side,
@@ -462,14 +462,14 @@ def solve_labels(D, wr, wd):
     return label, method, log
 
 
-def ranked_lists(D, label, keep, cover, count=RANKED):
+def ranked_lists(D, label, keep, cover):
     """Per block, the stations to colour it from in order: its label, the other candidates by data
-    cost, then stations that saw some of it, most first. The first `count` of them (None: all)."""
+    cost, then stations that saw some of it, most first."""
     key = np.where(keep, D, np.inf)
     key = np.minimum(key, np.where(~keep & (cover > 0), 100 + (1 - cover), np.inf))
     lab = np.where(label >= 0, label, 0)
     np.put_along_axis(key, lab[None], -1.0, 0)
-    order = np.argsort(key, axis=0, kind='stable')[:count]
+    order = np.argsort(key, axis=0, kind='stable')[:RANKED]
     fin = np.isfinite(np.take_along_axis(key, order, 0))
     out = np.where(fin, order, -1).astype(np.int16)
     out[:, label < 0] = -1
@@ -500,33 +500,22 @@ def texel_labels(ranked, visbits, valid, rb):
     return lab
 
 
-def whole_order(D, label, keep, cover):
-    """With bestview.OCCLUDER_MARGIN set: per block, every station that saw some of it clear, in the order to ask
-    them for a clear view of a texel. Where the block has a label that is ranked_lists' own order with no station
-    left out: the label, the other candidates by data cost, then the rest by how much of the block they saw. Where
-    it has none, no station passed for a candidate and there is no data cost to go by, so the stations come by how
-    much of the block they saw, most first (ranked_lists gives such a block no list at all). That last is a guard
-    and no more: while candidates() keeps the station that covers a block best, a block without a label has no
-    clear texel at all (none of the Saloon's 5,825 has one), so nothing reaches it today. It is kept for the day
-    that rule changes, when a texel a station saw clear in such a block must not become a hole."""
-    order = ranked_lists(D, label, keep, cover, None)
-    most = np.argsort(-cover, axis=0, kind='stable')
-    most = np.moveaxis(np.where(np.take_along_axis(cover, most, 0) > 0, most, -1).astype(np.int16), 0, -1)
-    return np.where((label < 0)[..., None], most, order)
-
-
-def clear_views(order, tlab, clearbits):
+def clear_views(sequence, tlab, clearbits):
     """With bestview.OCCLUDER_MARGIN set: a texel none of its block's RANKED stations saw clear of an occluder's
-    margin takes the first station of the block's whole order that did (`order`: whole_order, every station).
-    Beside a thing that stands proud, the near, sharp stations that lead a block's ranking are the ones whose view
-    of the wall passes within its margin, and a station outside the ranking, farther off or on the thing's other
-    side, often saw the same texels clear. Such a view is a clear view like any other. A block without a label has
-    no ranking, and its texels take the first station of its order in the same way.
+    margin takes the first station of the block's sequence that did (`sequence`: block_sequence, every station
+    that saw any of the block). Beside a thing that stands proud, the near, sharp stations that lead a block's
+    ranking are the ones whose view of the wall passes within its margin, and a station outside the ranking,
+    farther off or on the thing's other side, often saw the same texels clear. Such a view is a clear view like
+    any other. The sequence is the one doubtful_views asks: a station comes by how much of the block it saw AT
+    ALL, not by how much it saw clear, because on the Saloon's walls the first of these was the better (T-739:
+    of two clear views from outside a ranking, the one from the station that saw more of the block lay nearer
+    its surroundings). A block without a label borrows the nearest labelled block's ranking in the sequence, so a
+    texel a station saw clear in such a block does not become a hole.
     Returns the texel labels and how many texels took a station from outside their block's ranking."""
     r, c = np.nonzero((tlab < 0) & B.unpack_bits(np.bitwise_or.reduce(clearbits, axis=0), tlab.shape[1]))
     out = tlab.copy()
     if len(r):
-        o = order[r // B.BLOCK, c // B.BLOCK]                    # (n, stations): each texel's block's order
+        o = sequence[r // B.BLOCK, c // B.BLOCK]                 # (n, places): each texel's block's sequence
         first = np.full(len(r), -1, np.int16)
         for k in range(o.shape[1]):                              # the ranked ones again (none of them saw it clear), then the rest
             s = o[:, k]
@@ -537,13 +526,14 @@ def clear_views(order, tlab, clearbits):
     return out, int((out[r, c] >= 0).sum())
 
 
-def doubtful_sequence(ranked, label, seenbits, width):
-    """With bestview.OCCLUDER_MARGIN set: per block, the stations to ask for a doubtful view, in sequence. First
-    the block's ranked stations, its own first (a block without a label has no ranking, and borrows the nearest
-    labelled block's). Then every station by how much of the block it saw at all, most first (of equals, the
-    earlier station), and none that saw nothing of it: the ranking is of clear views, and beside a thing that
-    stands proud a station can have seen part of a block only within the thing's margin. A station may stand in
-    both halves; the first place counts."""
+def block_sequence(ranked, label, seenbits, width):
+    """With bestview.OCCLUDER_MARGIN set: per block, the stations to ask, in sequence, for a view of a texel that
+    none of the block's ranked stations saw clear: first for a clear view (clear_views), and where no station has
+    one, for a doubtful view (doubtful_views). First the block's ranked stations, its own first (a block without
+    a label has no ranking, and borrows the nearest labelled block's). Then every station by how much of the
+    block it saw at all, most first (of equals, the earlier station), and none that saw nothing of it: the
+    ranking is of clear views, and beside a thing that stands proud a station can have seen part of a block only
+    within the thing's margin. A station may stand in both halves; the first place counts."""
     has = label >= 0
     filled = ranked
     if has.any() and not has.all():
@@ -559,7 +549,7 @@ def doubtful_sequence(ranked, label, seenbits, width):
 def doubtful_views(grid, sts, tlab, stats, sequence):
     """With bestview.OCCLUDER_MARGIN set: a texel that stations saw, but none of them clear of an occluder's margin,
     takes a doubtful view instead of becoming a hole, and counts as seen by that station: the first station of its
-    block's sequence that saw it (doubtful_sequence: the block's own stations first, then the others by how much
+    block's sequence that saw it (block_sequence: the block's own stations first, then the others by how much
     of the block they saw). Every station that saw the texel saw some of its block, so each such texel finds one.
     The block's own stations come first because real walls bear that out (T-739; tools/surveyed-rooms/README.md
     has the measurement). Whichever doubtful view is taken, its photograph shows the occluder's edge about as
@@ -782,9 +772,10 @@ def main():
     tlab = texel_labels(ranked, stats['visbits'], valid, rb)
     extra, margin = {}, None
     if B.OCCLUDER_MARGIN > 0:               # then stats['visbits'] holds the clear views, and same_margin() has vouched for a cache
-        tlab, outside = clear_views(whole_order(cand['D'], label, cand['keep'], stats['cover']), tlab, stats['visbits'])
+        sequence = block_sequence(ranked, label, stats['seenbits'], valid.shape[1])        # one sequence for both steps
+        tlab, outside = clear_views(sequence, tlab, stats['visbits'])
         clear = int((tlab >= 0).sum())
-        tlab, bits, clearance = doubtful_views(grid, sts, tlab, stats, doubtful_sequence(ranked, label, stats['seenbits'], valid.shape[1]))
+        tlab, bits, clearance = doubtful_views(grid, sts, tlab, stats, sequence)
         extra = dict(seenbits=stats['seenbits'], clearbits=stats['visbits'])
         stats['visbits'] = bits
         left_out, capped = (int(x) for x in stats['views_left_out'])
