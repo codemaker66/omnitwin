@@ -374,19 +374,34 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
       { configId: f.configId, eventId: f.eventId, rowKey: first.key, checkedBy: f.userId },
       { configId: f.configId, eventId: f.eventId, rowKey: "furniture|Centre|Removed trestle|0", checkedBy: f.userId },
     ]);
-    const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}`, headers: f.headers });
+    const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}&setupFrom=true`, headers: f.headers });
     expect(response.statusCode).toBe(200);
     expect(response.json<{ data: unknown }>().data).toEqual({
       configId: f.configId,
       // The booking's start is when guests come in, and with no planner's final
       // time the room is ready then: never at 07:00, when the Setup phase opens
-      // the window (timing.setupBy), which the summary carries as setupFrom.
+      // the window (timing.setupBy), which the summary carries as setupFrom
+      // when the Day Board asks for it.
       readyBy: "2026-11-14T08:00:00.000Z",
       eventStart: "2026-11-14T08:00:00.000Z",
       setupFrom: "2026-11-14T07:00:00.000Z",
       total: rows.length,
       checked: 1,
     });
+    // Unasked, or asked in words the route does not read, it answers in the
+    // shape older web code knows, key for key: that code's summary schema is
+    // strict, and a Day Board left open would otherwise freeze its line.
+    for (const query of ["", "&setupFrom=false", "&setupFrom=yes"]) {
+      const older = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}${query}`, headers: f.headers });
+      expect(older.statusCode, query).toBe(200);
+      expect(older.json<{ data: unknown }>().data, query).toEqual({
+        configId: f.configId,
+        readyBy: "2026-11-14T08:00:00.000Z",
+        eventStart: "2026-11-14T08:00:00.000Z",
+        total: rows.length,
+        checked: 1,
+      });
+    }
   });
 
   it("preserves authentication and tenant denial ahead of unavailable approved evidence", async () => {

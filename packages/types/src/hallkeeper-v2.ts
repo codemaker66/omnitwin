@@ -310,8 +310,10 @@ export const HallkeeperSheetSummarySchema = z.object({
   /**
    * When the setup window opens (sheetTimes().setupFrom), or null when no room
    * phase or changeover time sets it. With Ready by, it tells the board when
-   * the window leaves no time to set the room (sheetIntervals). Absent from
-   * servers older than #454's first review round.
+   * the window leaves no time to set the room (sheetIntervals). Sent only to a
+   * request that asks with `setupFrom=true`: older web code reads this schema
+   * strictly, so it must never meet the key. Absent from servers older than
+   * #454's first review round, too.
    */
   setupFrom: z.iso.datetime().nullable().optional(),
   /** The sheet's rows. */

@@ -170,7 +170,8 @@ day's Grand Hall breakfast (Setup phase 07:00, doors 08:00) printed "Room ready 
 - **A final time at or before setup starts** is shown as entered, and every surface says "No time to set the room"
   in brick (`sheetTimes`' `noTimeToSet`: Setup from at or after Ready by): Setup from's caption on the PDF and under
   the day's Room ready, with its time in brick; Setup from in brick and the note on the phone card; on the print line
-  and the Day Board's line (the summary carries `setupFrom`). The words state the fact and never read as an
+  and the Day Board's line (the summary carries `setupFrom` when the board asks, with `setupFrom=true`, because older
+  web code reads the summary with a strict schema and a Day Board left open on it must keep its line). The words state the fact and never read as an
   instruction to the crew; they replaced "Not before the room's ready-by time" (`d0cae047`, then #454's review).
 - **Missing data:** no booking keeps "No booking holds this room yet" and "Confirm the time first"; a planner's final
   time without a booking is still Ready by, in brick, "The planner's time · no booking holds this room yet", in those

@@ -32,26 +32,37 @@ const timing: HallkeeperSheetV2["timing"] = {
 describe("summarizeSheet", () => {
   // timing.setupBy is when setup STARTS (the name is historical): the board's
   // "Ready by" is the sheet's, the planner's final time or else guests in.
+  // Unasked, the summary keeps the shape it has always had, key for key: the
+  // web's summary schema is strict, so a Day Board still running older web
+  // code would refuse any key it does not know and freeze its line until
+  // reloaded (#454 round 1).
   it("counts every row across phases and zones, and those checked, ready when guests come in", () => {
     expect(summarizeSheet(CONFIG, { phases, timing, instructions: null }, ["furniture|Centre|Round table|0", "dress|Centre|Tablecloth|1"])).toEqual({
       configId: CONFIG,
       readyBy: "2026-10-03T17:30:00.000Z",
       eventStart: "2026-10-03T17:30:00.000Z",
-      setupFrom: "2026-10-03T15:00:00.000Z",
       total: 4,
       checked: 2,
     });
   });
 
   // The Day Board says "No time to set the room" on the sheet's own rule
-  // (sheetIntervals), so the summary carries when setup starts (#454 YA5).
-  it("carries when setup starts, so the board can tell when the window leaves no time to set the room", () => {
+  // (sheetIntervals), so the summary carries when setup starts when the board
+  // asks for it (#454 YA5).
+  it("carries when setup starts when asked, so the board can tell when the window leaves no time to set the room", () => {
     const instructions = EventInstructionsSchema.parse({ phaseDeadlines: [{ phase: "final", deadline: "2026-10-03T14:30:00.000Z" }] });
-    expect(summarizeSheet(CONFIG, { phases, timing, instructions }, [])).toMatchObject({
+    const asked = { setupFrom: true } as const;
+    expect(summarizeSheet(CONFIG, { phases, timing, instructions }, [], asked)).toMatchObject({
       setupFrom: "2026-10-03T15:00:00.000Z", readyBy: "2026-10-03T14:30:00.000Z", eventStart: "2026-10-03T17:30:00.000Z",
     });
-    expect(summarizeSheet(CONFIG, { phases, timing: { ...timing, setupBy: null, bufferMinutes: null }, instructions: null }, []).setupFrom).toBeNull();
-    expect(summarizeSheet(CONFIG, { phases, timing: null, instructions: null }, []).setupFrom).toBeNull();
+    expect(summarizeSheet(CONFIG, { phases, timing: { ...timing, setupBy: null, bufferMinutes: null }, instructions: null }, [], asked).setupFrom).toBeNull();
+    expect(summarizeSheet(CONFIG, { phases, timing: null, instructions: null }, [], asked).setupFrom).toBeNull();
+  });
+
+  it("leaves setupFrom out unless asked, even when setup has a start", () => {
+    const unasked = summarizeSheet(CONFIG, { phases, timing, instructions: null }, []);
+    expect(Object.keys(unasked).sort()).toEqual(["checked", "configId", "eventStart", "readyBy", "total"]);
+    expect(Object.keys(summarizeSheet(CONFIG, { phases, timing, instructions: null }, [], { setupFrom: false }))).not.toContain("setupFrom");
   });
 
   it("gives the planner's final time as the ready-by time", () => {
