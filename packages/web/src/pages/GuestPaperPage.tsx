@@ -2,7 +2,16 @@ import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode }
 import { flushSync } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import { KitGate } from "../components/guest-list/KitGate.js";
-import { calendarDay, counted, NOT_KEPT, NOT_OPENED, NOT_YET_PRINTED, OTHER_TAB, weekday } from "../components/guest-list/words.js";
+import {
+  calendarDay,
+  counted,
+  NOT_KEPT,
+  NOT_OPENED,
+  NOT_YET_PRINTED,
+  OTHER_TAB,
+  REMOVED_ELSEWHERE,
+  weekday,
+} from "../components/guest-list/words.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import { KIT_PARAM } from "../lib/guest-list/kit-switch.js";
 import type { GuestList } from "../lib/guest-list/model.js";
@@ -299,6 +308,12 @@ function ReadyPaper({ planId, list }: { readonly planId: string; readonly list: 
           {notice?.kind === "other-tab" && (
             <div className="gp-tools__notice" data-notice="other-tab" data-tone="attention">
               <p>{OTHER_TAB}</p>
+              <button type="button" className="gp-link" onClick={closeNotice}>Close</button>
+            </div>
+          )}
+          {notice?.kind === "removed-elsewhere" && (
+            <div className="gp-tools__notice" data-notice="removed-elsewhere" data-tone="attention">
+              <p>{REMOVED_ELSEWHERE}</p>
               <button type="button" className="gp-link" onClick={closeNotice}>Close</button>
             </div>
           )}

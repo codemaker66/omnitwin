@@ -5,7 +5,16 @@ import { GuestPaste, type PastedGuest } from "../components/guest-list/GuestPast
 import { GuestRows, type GuestFilter } from "../components/guest-list/GuestRows.js";
 import { GuestTables } from "../components/guest-list/GuestTables.js";
 import { KitGate } from "../components/guest-list/KitGate.js";
-import { counted, DATE_REFUSED, NOT_KEPT, NOT_OPENED, OTHER_TAB, seatedSentence, toSeatSentence } from "../components/guest-list/words.js";
+import {
+  counted,
+  DATE_REFUSED,
+  NOT_KEPT,
+  NOT_OPENED,
+  OTHER_TAB,
+  REMOVED_ELSEWHERE,
+  seatedSentence,
+  toSeatSentence,
+} from "../components/guest-list/words.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import {
   earliestEventDate,
@@ -234,6 +243,7 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
   const unread = useGuestListStore((s) => s.unread);
   const notice = useGuestListStore((s) => s.notice);
   const canUndo = useGuestListStore((s) => s.canUndo);
+  const takeUps = useGuestListStore((s) => s.takeUps);
   const counts = summary(list);
 
   const [view, setView] = useState<View>(() => (list.tables.length > 0 ? "tables" : "all"));
@@ -272,6 +282,12 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
 
   // A change from elsewhere (undo) shows in the field.
   useEffect(() => { setDateDraft(list.eventDate ?? ""); }, [list.eventDate]);
+
+  // A list taken up from another tab: the seat line and the date refusal spoke of the list before it.
+  useEffect(() => {
+    setSaid("");
+    setDateRefused(false);
+  }, [takeUps]);
 
   const focusOn = (target: FocusTarget): void => {
     setFocusAsk((was) => ({ target, n: (was?.n ?? 0) + 1 }));
@@ -617,7 +633,9 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
               <p>
                 {notice.kind === "repaired"
                   ? `${counted(notice.unseated, "guest was", "guests were")} sent back to seat, because their table or seat was no longer there.`
-                  : OTHER_TAB}
+                  : notice.kind === "removed-elsewhere"
+                    ? REMOVED_ELSEWHERE
+                    : OTHER_TAB}
               </p>
               <button type="button" className="gl-link" onClick={() => { closeAndRefocus(closeNotice, null); }}>Close</button>
             </div>

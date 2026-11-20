@@ -412,7 +412,7 @@ const ALLOWED_IN_ATTRIBUTES: Allowed = new Map<string, Allowance>([
   ["undefined", { why: "leaves the attribute off", files: null }],
   ["count.view", { why: "one of the list page's four fixed view words (all, seated, to-seat, tables), inside an id", files: ["pages/GuestListPage.tsx"] }],
   ["count.tone", { why: "a fixed tone word from the list page's own table (settled, owed) or nothing", files: ["pages/GuestListPage.tsx"] }],
-  ["notice.kind", { why: "the kind of a notice, a fixed word of the store's KitNotice type (repaired, other-tab)", files: ["pages/GuestListPage.tsx"] }],
+  ["notice.kind", { why: "the kind of a notice, a fixed word of the store's KitNotice type (repaired, other-tab, removed-elsewhere)", files: ["pages/GuestListPage.tsx"] }],
 ]);
 
 /** The names every address is built from. */

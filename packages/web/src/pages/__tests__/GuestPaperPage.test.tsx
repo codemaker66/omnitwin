@@ -766,6 +766,24 @@ describe("the guest paper page: printing", () => {
     expect(within(tools()).queryByText("This list was also changed in another tab. This tab's version was kept.")).toBeNull();
   });
 
+  it("says in its tools when another tab removed the list from this browser, and the notice closes", async () => {
+    const backend = memoryBackend();
+    const store = createGuestListStore(withBackend<unknown>(backend));
+    expect(await store.save(list180(), null)).toBe("saved");
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    await createGuestListStore(withBackend<unknown>(backend)).erase(PLAN_ID);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    const words = await within(tools()).findByText("This list was removed from this browser in another tab.");
+    expect(state().list?.guests).toEqual([]);
+    fireEvent.click(within(words.closest("[data-notice]") ?? tools()).getByRole("button", { name: "Close" }));
+    expect(within(tools()).queryByText("This list was removed from this browser in another tab.")).toBeNull();
+  });
+
   it("a print is not a change undo steps back through", async () => {
     open(`${PAPER}?kit=on`, await storeHolding(list180()));
     await paper("table-plan");

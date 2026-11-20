@@ -88,6 +88,9 @@ export const NOT_YET_PRINTED = "Not yet printed";
 /** A save found a newer copy kept by another tab, and kept this tab's over it. */
 export const OTHER_TAB = "This list was also changed in another tab. This tab's version was kept.";
 
+/** Another tab deleted the list from this device, so this tab took an empty one rather than write the names back. */
+export const REMOVED_ELSEWHERE = "This list was removed from this browser in another tab.";
+
 /** "180 names found. Only names and parties are taken. 1 other column is left on your computer." */
 export function foundWords(found: number, droppedColumns: number): string {
   if (found === 0) return "No names were found in what was pasted.";

@@ -22,7 +22,8 @@ export type KitPhase = "opening" | "ready" | "unreadable";
 export type KitNotice =
   | null
   | { readonly kind: "repaired"; readonly unseated: number }
-  | { readonly kind: "other-tab" };
+  | { readonly kind: "other-tab" }
+  | { readonly kind: "removed-elsewhere" };
 
 export interface GuestListState {
   readonly planId: string | null;
@@ -38,6 +39,11 @@ export interface GuestListState {
   readonly unread: boolean;
   readonly notice: KitNotice;
   readonly canUndo: boolean;
+  /**
+   * Counts the lists `refresh` has taken up from another tab (an empty one
+   * included), so a page can clear what it was saying about the list before.
+   */
+  readonly takeUps: number;
   open(planId: string, store: GuestListStore, now?: () => string): Promise<void>;
   apply(change: (list: GuestList) => GuestList, opts?: { readonly undo?: boolean }): void;
   undo(): void;
@@ -51,8 +57,11 @@ export interface GuestListState {
    * Takes up another tab's changes. When nothing here is unsaved and no save
    * is running, reads the device again and takes the stored list if it is
    * newer than the copy last opened or saved here; undo is cleared then, as
-   * its steps belong to the older list. With a change unsaved, nothing is
-   * read: the save says if another tab had kept a newer copy, as before.
+   * its steps belong to the older list. When nothing is stored any more and
+   * this session had opened or saved a list, another tab removed it: an empty
+   * list is taken, undo is cleared and the page says so, so the names are not
+   * written back. With a change unsaved, nothing is read: the save says if
+   * another tab had kept a newer copy, as before.
    */
   refresh(): Promise<void>;
   reset(): void;
@@ -97,6 +106,7 @@ const INITIAL = {
   unread: false,
   notice: null,
   canUndo: false,
+  takeUps: 0,
 } as const satisfies Partial<GuestListState>;
 
 const systemNow = (): string => new Date().toISOString();
@@ -376,6 +386,17 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             session.unread = false;
             session.loadedUpdatedAt = null;
             set({ unread: false, kept: true });
+          } else if (session.loadedUpdatedAt !== null) {
+            // This session opened or saved a list that is no longer stored: another tab removed it.
+            session.loadedUpdatedAt = null;
+            session.undo = [];
+            set({
+              list: emptyGuestList(session.planId, session.now()),
+              kept: true,
+              canUndo: false,
+              notice: { kind: "removed-elsewhere" },
+              takeUps: get().takeUps + 1,
+            });
           }
           return;
         }
@@ -391,6 +412,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           unread: false,
           canUndo: false,
           notice: opened.repaired > 0 ? { kind: "repaired", unseated: opened.repaired } : get().notice,
+          takeUps: get().takeUps + 1,
         });
         if (opened.repaired > 0) {
           session.unsaved = true;

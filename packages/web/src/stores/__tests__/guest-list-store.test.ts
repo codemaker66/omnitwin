@@ -863,6 +863,78 @@ describe("guest list page state: another tab's changes are taken up", () => {
     expect(state().kept).toBe(true);
   });
 
+  it("counts each take-up, so a page can clear what it was saying", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Ours"));
+    await state().flush();
+    expect(state().takeUps).toBe(0);
+
+    await state().refresh();
+    expect(state().takeUps).toBe(0);
+    await otherTabSaves(backend, { title: "Theirs" }, "2026-11-14T09:00:00.000Z");
+    await state().refresh();
+    expect(state().takeUps).toBe(1);
+    await otherTabSaves(backend, { title: "Theirs again" }, "2026-11-14T10:00:00.000Z");
+    await state().refresh();
+    expect(state().takeUps).toBe(2);
+  });
+
+  it("takes an empty list when another tab deleted it, clears undo, says so, and never writes the names back", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, title: "Ours", guests: [guest(1), guest(2)] }));
+    await state().flush();
+    expect(state().canUndo).toBe(true);
+
+    await createGuestListStore(withBackend<unknown>(backend)).erase(PLAN_A);
+    await state().refresh();
+    expect(state().list?.guests).toEqual([]);
+    expect(state().list?.title).toBe("");
+    expect(state().list?.planId).toBe(PLAN_A);
+    expect(state().canUndo).toBe(false);
+    expect(state().kept).toBe(true);
+    expect(state().notice).toEqual({ kind: "removed-elsewhere" });
+    expect(state().takeUps).toBe(1);
+    // Nothing is written by the take itself.
+    await state().flush();
+    expect((await reopened(backend, PLAN_A)).kind).toBe("new");
+
+    // The next change stores the empty list, not the names this tab had.
+    state().apply(titled("A new start"));
+    await state().flush();
+    const kept = await reopened(backend, PLAN_A);
+    expect(kept.kind === "ready" ? [kept.list.title, kept.list.guests] : null).toEqual(["A new start", []]);
+  });
+
+  it("with a change unsaved, a list deleted elsewhere is not read: this tab's list stands, as before", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+    await createGuestListStore(withBackend<unknown>(backend)).erase(PLAN_A);
+
+    state().apply(titled("Ours again"));
+    const open = vi.spyOn(store, "open");
+    await state().refresh();
+    expect(open).not.toHaveBeenCalled();
+    expect(state().list?.title).toBe("Ours again");
+    expect(state().list?.guests).toEqual([guest(1)]);
+    expect(state().canUndo).toBe(true);
+    expect(state().notice).toBeNull();
+    expect(state().takeUps).toBe(0);
+  });
+
+  it("a session that never opened or saved a list takes nothing when nothing is stored", async () => {
+    const { store } = device();
+    await state().open(PLAN_A, store, clock());
+    const before = state().list;
+    await state().refresh();
+    expect(state().list).toBe(before);
+    expect(state().notice).toBeNull();
+    expect(state().takeUps).toBe(0);
+  });
+
   it("changes nothing when the read answers after reset or after another plan is opened", async () => {
     const { backend, store } = device();
     await state().open(PLAN_A, store, clock());

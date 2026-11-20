@@ -714,6 +714,61 @@ describe("the guest list page: what the device says", () => {
     expect(await screen.findByText("0 of 2 guests have a seat.")).toBeTruthy();
   });
 
+  it("a list deleted in another tab is not written back: the page takes an empty list and says so", async () => {
+    const { store, backend } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor" } });
+    await flush();
+    await memoryStore(backend).erase(PLAN_ID);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    const words = await screen.findByText("This list was removed from this browser in another tab.");
+    expect(words.closest("[role='status']")).not.toBeNull();
+    expect(screen.getByText("There are no guests on this list yet.")).toBeTruthy();
+    expect(screen.queryByText(/Ailsa Fraser|Fraser, Ailsa/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Undo" }).hasAttribute("disabled")).toBe(true);
+    await flush();
+    expect((await store.open(PLAN_ID)).kind).toBe("new");
+
+    fireEvent.click(within(words.closest("[data-notice]") ?? document.body).getByRole("button", { name: "Close" }));
+    expect(screen.queryByText("This list was removed from this browser in another tab.")).toBeNull();
+  });
+
+  it("a take-up from another tab clears the seat line and the date refusal, which spoke of the list before", async () => {
+    const opened = listOf({ eventDate: "2099-06-12", tables: [table(1)], guests: [guest(1, "Ailsa Fraser")] });
+    const { store, backend } = await storeHolding(opened);
+    open(PAGE, store);
+    await desk();
+    fireEvent.click(screen.getByRole("button", { name: "To seat 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fraser, Ailsa" }));
+    fireEvent.click(screen.getByRole("button", { name: "Seat here at table 1" }));
+    const said = screen.getByText("Ailsa Fraser is at table 1, seat 1.");
+    await flush();
+    const field = screen.getByLabelText<HTMLInputElement>("Date of the event");
+    field.focus();
+    fireEvent.change(field, { target: { value: "0027-06-12" } });
+    fireEvent.blur(field);
+    const refusal = "That date would remove this list straight away: a list is removed 30 days after its event. Check the year.";
+    expect(screen.getByText(refusal)).toBeTruthy();
+    expect(said.textContent).toBe("Ailsa Fraser is at table 1, seat 1.");
+
+    const stored = await store.open(PLAN_ID);
+    if (stored.kind !== "ready") throw new Error("the list was not kept");
+    const theirs = { ...stored.list, guests: [{ ...guest(1, "Ailsa Fraser"), tableId: null, seat: null }], updatedAt: new Date(Date.parse(stored.list.updatedAt) + 60_000).toISOString() };
+    expect(await memoryStore(backend).save(theirs, stored.list.updatedAt)).toBe("saved");
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    await waitFor(() => { expect(currentList().guests[0]?.seat).toBeNull(); });
+    expect(said.textContent).toBe("");
+    expect(screen.queryByText(refusal)).toBeNull();
+  });
+
   it("removes a list past its removal day on opening, rather than showing it", async () => {
     const { store } = await storeHolding(listOf({ eventDate: "2020-01-01", guests: [guest(1, "Ailsa Fraser")] }));
     open(PAGE, store);
