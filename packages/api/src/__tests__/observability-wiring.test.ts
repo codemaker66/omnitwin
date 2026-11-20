@@ -129,7 +129,8 @@ describe("the API's Sentry options", () => {
     const caughtAll = request({ "http.route": "*", "http.response.status_code": 204 });
     const routed = request({ "http.route": "/venues/:venueId", "http.response.status_code": 200 });
     // Each sign alone: the SDK's request span, kept with no URL; and Fastify's
-    // own request span, with only its path.
+    // own request span, with only its path (a static-looking GET's record, or
+    // a WebSocket upgrade's).
     const bareServer: ScrubbableTransaction = { type: "transaction", contexts: { trace: { ...trace, op: "http.server", data: { "http.response.status_code": 400 } } } };
     const fastifyRoot = (data: Record<string, unknown>): ScrubbableTransaction => ({
       type: "transaction",

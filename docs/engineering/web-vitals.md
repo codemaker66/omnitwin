@@ -390,8 +390,9 @@ Verification workflows that night (each finding put to three skeptics) found mor
   matched is sent now (`isUnroutedRequest`, `packages/api/src/observability/sentry.ts`:
   any record that carries a request's URL or path and whose `http.route` is missing or
   names no path, whether the SDK's `http.server` span roots it or, for a GET whose
-  path looks like a static file, which the SDK gives no such span, Fastify's own
-  request span; the verification of the first fix found that second form). Real-SDK
+  path looks like a static file or a WebSocket upgrade, neither of which the SDK
+  gives such a span, Fastify's own request span; the verification of the first fix
+  found that second form). Real-SDK
   tests show both with the limiter itself, on a budget of one. The review also asked
   that a record keep no user, tags or extra data, whatever adds them; that any user
   and password in a URL's origin be cut; that "no request header" say what it means

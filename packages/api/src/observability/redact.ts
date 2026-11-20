@@ -472,7 +472,9 @@ function templateUrlsDeep<T>(value: T, template: (url: string) => string): T {
  * The request's own URL as a timing record carries it: the SDK's request
  * data, or an attribute of the span the record was built from (`url.path` on
  * Fastify's own request span, which roots the record of a GET whose path
- * looks like a static file). None for a record of other work.
+ * looks like a static file, or of a WebSocket upgrade). None for a record of
+ * work outside any request; the late part of a request repeats its URL, but
+ * has a parent and is never sent (`hasParentSpan`, sentry.ts).
  */
 export function requestUrlOf(event: ScrubbableTransaction): string | undefined {
   const traceData = event.contexts?.trace?.data;

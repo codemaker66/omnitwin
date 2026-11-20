@@ -61,10 +61,12 @@ export function hasParentSpan(event: ScrubbableTransaction): boolean {
  * Whether a record is a request's own and has no route: its `http.route` is
  * missing or names no path, and it is the SDK's `http.server` record or any
  * other that carries a request's URL or path (`requestUrlOf`, redact.ts).
- * Fastify's not-found handler gives no route at all; a "*" would come only
- * from a catch-all route, which the API has none of. A GET whose path looks
- * like a static file gets no `http.server` span from the SDK, so Fastify's
- * own request span roots its record, with the path in `url.path`. Requests no
+ * Fastify's not-found handler gives no route at all. The API's one catch-all
+ * route, @fastify/cors's OPTIONS "*", is never timed: the SDK's sampler
+ * refuses OPTIONS and HEAD requests. A GET whose path looks like a static
+ * file, and a WebSocket upgrade, get no `http.server` span from the SDK, so
+ * Fastify's own request span roots their records, with the path in
+ * `url.path`. Requests no
  * route matched still get records: an unknown path's 429 from the limiter on
  * unmatched paths (index.ts), a malformed URL's 400. Their own path could go
  * only through the segment rules, which keep an email-shaped segment, a phone
@@ -72,8 +74,10 @@ export function hasParentSpan(event: ScrubbableTransaction): boolean {
  * request has almost no timing worth keeping. (An unknown path's 404 never
  * reaches here: the SDK drops records of 401 to 404 itself.) The one routed
  * kind found without a route goes too: a request Fastify answers 503 while
- * closing, before any hook runs, which Fastify logs. A record of other work
- * carries no request URL and keeps the segment rules. (#355's review at
+ * closing, before any hook runs, which Fastify logs. A record of work outside
+ * any request carries no request URL and keeps the segment rules; the late
+ * part of a request repeats its URL, but has a parent and is never sent
+ * (`hasParentSpan`, judged first). (#355's review at
  * 33db2ba1, WX1, and the verification of its fix, 18 November 2026.)
  */
 export function isUnroutedRequest(event: ScrubbableTransaction): boolean {
