@@ -176,7 +176,9 @@ def floor_extent(room):
 
 def _segment_length(outline, i):
     (ax, az), (bx, bz) = outline[i], outline[(i + 1) % len(outline)]
-    return ((bx - ax) ** 2 + (bz - az) ** 2) ** 0.5
+    # hypot, as the reader's segmentLength: `**` raises OverflowError on a vertex past 1e154 m, and a
+    # record that far wrong is to come back as faults, like any other.
+    return math.hypot(bx - ax, bz - az)
 
 
 def _overlap(a, b):
