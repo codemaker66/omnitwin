@@ -127,7 +127,7 @@ describe("every document", () => {
     const expected = {
       terms: { iso: "2026-11-11", text: "11 November 2026" },
       accessibility: { iso: "2026-11-18", text: "18 November 2026" },
-      privacy: { iso: "2026-11-18", text: "18 November 2026" },
+      privacy: { iso: "2026-11-20", text: "20 November 2026" },
     }[type];
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
