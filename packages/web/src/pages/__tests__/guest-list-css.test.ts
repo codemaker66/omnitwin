@@ -102,6 +102,18 @@ function exactly(selector: string): (candidate: string) => boolean {
   return (candidate) => candidate === selector;
 }
 
+describe("GuestListPage.css: the notices region", () => {
+  it("stays in the page while empty, so a notice that arrives in it is announced, and takes no space then", () => {
+    const notices = [...TOP, ...narrow()].filter((rule) => rule.selectors.some((selector) => selector.startsWith(".gl-notices")));
+    expect(notices.length).toBeGreaterThan(0);
+    for (const rule of notices) {
+      expect(rule.declarations.get("display") ?? "").not.toMatch(/^none/u);
+      expect(rule.declarations.get("visibility") ?? "").not.toMatch(/^hidden/u);
+    }
+    expect(cascaded(TOP, exactly(".gl-notices:empty")).get("margin-top")).toBe("0");
+  });
+});
+
 describe("GuestListPage.css: keyboard focus", () => {
   it("draws the house ring on a focused count button itself, and on nothing else for it", () => {
     const ring = cascaded(TOP, (selector) => selector === SHARED_RING || /\.gl-count__button:focus-visible$/u.test(selector));

@@ -99,6 +99,21 @@ const print = printBlocks.flatMap(rules);
 /** Every rule outside the print blocks: what the screen shows. */
 const screen = rules(printBlocks.reduce((rest, body) => rest.replace(body, ""), CSS));
 
+describe("the paper page's stylesheet: the notices region", () => {
+  it("stays in the page while empty, so a notice that arrives in it is announced, out of the tools' flow", () => {
+    const notices = screen.filter((rule) => rule.selectors.some((selector) => selector.startsWith(".gp-tools__notices")));
+    expect(notices.length).toBeGreaterThan(0);
+    for (const rule of notices) expect(hides(rule)).toBe(false);
+    const empty = cascaded(screen, ".gp-tools__notices:empty");
+    // Out of flow, so the tools' gap does not open round it; visually hidden, yet in the accessibility tree.
+    expect(empty.get("position")).toBe("absolute");
+    expect(empty.get("width")).toBe("1px");
+    expect(empty.get("height")).toBe("1px");
+    expect(empty.get("overflow")).toBe("hidden");
+    expect(empty.get("clip-path")).toBe("inset(50%)");
+  });
+});
+
 describe("the paper page's stylesheet, on paper", () => {
   it("on paper the tools are hidden, the ground is white and a card never splits across pages", () => {
     expect(printBlock).toMatch(/\.gp-tools\s*\{[^}]*display:\s*none/);

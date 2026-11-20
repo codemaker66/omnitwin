@@ -293,8 +293,9 @@
   margin-top: 22px;
 }
 
+/* Empty, it stays in the page (and the accessibility tree) so a notice that arrives is announced; it takes no space. */
 .gl-notices:empty {
-  display: none;
+  margin-top: 0;
 }
 
 .gl-notice {

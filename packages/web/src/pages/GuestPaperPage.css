@@ -151,8 +151,17 @@
   gap: 8px;
 }
 
+/* Empty, it stays in the accessibility tree, visually hidden and out of the tools' flow, so their gap does not open round it. */
 .gp-tools__notices:empty {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .gp-tools__notice {
