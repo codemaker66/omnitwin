@@ -1,7 +1,7 @@
 """Two builds of one room's walls, compared where their labels differ: are the second build's photographs better
 or worse than the first's on the same texels?
 
-    python -X utf8 compare_builds.py <first_work> <second_work> <out.json> [<wall> ...]
+    python -X utf8 compare_builds.py [--apart-from <reference_work>] <first_work> <second_work> <out.json> [<wall> ...]
 
 The two work folders are builds of the same room config from the same inputs (the labels and walls steps have
 run in both); what differs is the tools' code or one setting. For each wall this reads both builds' labels
@@ -25,11 +25,21 @@ of its texels in the group counted turned worse than better. And the control: cl
 judged texel left to be seen, left to be seen themselves, whose station is the same in both builds, counted the
 same way. That is what two builds do to a texel neither of them moved.
 
-At the end a wall is named worse only where more patches turned worse than better and the sign test by patch is
-under 0.05. The sign test asks whether the split is even; where a wall's control leans one way itself (the two
-builds level that wall differently), the split to compare with is the control's, which is printed with each wall
-named. And a dozen walls by three judgements means one or two names would be chance alone: read the counts, not
-only the names.
+A texel the first build left without a station, and the second gives one, is a FORMER HOLE: in the first build
+it shows what the atlas step filled it with (wallviews.filled), so that fill is set against the second build's
+view. Former holes are counted as a class of their own and in `all_left_to_be_seen`; the other classes, and
+`left_to_be_seen`, are the texels that had a station in both builds, as before.
+
+With --apart-from, the changed texels are also split by whether the second build's station is the reference
+build's too: with a third build as the reference, the texels that went back to what it had, and the rest.
+
+The bar. A wall fails where more of its patches turned worse than better and the sign test by patch still passes
+0.05 after Holm's correction over every wall and judgement tested (raw, 24 tests at 0.05 name some wall four times
+in five by chance alone). That test has little power on a small wall, so each class of change is also tested with
+the walls pooled, by patch. The sign test asks whether the split is even; where a wall's control leans one way
+itself (the two builds level that wall differently), the split to compare with is the control's, printed beside
+it. p_worse is the one-sided companion: the chance of at least so many turning worse, for a question set
+beforehand as "is it worse?".
 
 Read-only on both folders. A rule for which view a texel takes is judged on this before it is changed: gate
 B25's second step was chosen on a synthetic wall alone in November 2026 and printed a new dark band on a real
@@ -42,8 +52,14 @@ import wallviews as wv
 import numpy as np
 from scipy import ndimage
 
-first, second, out_path = [os.path.abspath(a) for a in sys.argv[1:4]]
-walls = sys.argv[4:] or wv.walls_of(second)
+args = sys.argv[1:]
+reference = None
+if '--apart-from' in args:
+    at = args.index('--apart-from')
+    reference = os.path.abspath(args[at + 1])
+    del args[at:at + 2]
+first, second, out_path = [os.path.abspath(a) for a in args[:3]]
+walls = args[3:] or wv.walls_of(second)
 room, B, lv = wv.setup(second)
 rng = np.random.default_rng(20261120)
 
@@ -84,17 +100,24 @@ for name in walls:
     covered = wv.under_a_patch(room, grid, name)
     patch_of, _ = wv.patch_image(new != old)             # every texel whose label differs, a hole that took a view among them
 
-    r, c = np.nonzero((new != old) & (new >= 0) & (old >= 0) & ok1 & ok2)
+    # The changed texels: a station in both builds, or a hole in the first that the second gives a view. A hole
+    # shows, in the first build, what the atlas step filled it with.
+    hole = (old < 0) & (new >= 0) & ok2 & grid.valid
+    r, c = np.nonzero(((new != old) & (new >= 0) & (old >= 0) & ok1 & ok2) | hole)
+    was_hole = hole[r, c]
+    kept = ~was_hole                                         # a station in both builds
     patch = patch_of[r, c]
     ref1, n1 = wv.surroundings(L1, clean, depth, r, c)
     ref2, n2 = wv.surroundings(L2, clean, depth, r, c)
     have = (n1 >= wv.FEW) & (n2 >= wv.FEW)
     a1, a2 = L1[r, c], L2[r, c]
+    if was_hole.any():
+        a1 = np.where(was_hole, wv.levels(wv.filled(first, name, B.P))[r, c], a1)
     dark1, off1 = judged(a1, ref1)
     dark2, off2 = judged(a2, ref2)
     dev1, dev2 = np.abs(a1 - ref1), np.abs(a2 - ref2)
     seen = have & ~covered[r, c]
-    was_clear = wv.bit(first_bits, old[r, c].astype(np.int64), r, c)
+    was_clear = kept & wv.bit(first_bits, np.where(kept, old[r, c], 0).astype(np.int64), r, c)
     now_clear = wv.bit(clearbits, new[r, c].astype(np.int64), r, c)
     # Each of JUDGEMENTS as pairs: (its name, the texels that turned worse, the texels that turned better).
     judgements = (('dark', ~dark1 & dark2, dark1 & ~dark2), ('off', ~off1 & off2, off1 & ~off2),
@@ -141,7 +164,7 @@ for name in walls:
     # The control, and how often the measure calls a clean texel bad where it is used: clean texels within the reach
     # of a changed texel that is judged and left to be seen, themselves left to be seen.
     beside = np.zeros(old.shape, bool)
-    beside[r[seen], c[seen]] = True
+    beside[r[seen & kept], c[seen & kept]] = True
     beside = ndimage.binary_dilation(beside, structure=np.ones((3, 3)), iterations=wv.REACH)
     br, bc = np.nonzero(clean & beside & ~covered)
     pick = rng.choice(len(br), size=min(20000, len(br)), replace=False) if len(br) else np.zeros(0, np.int64)
@@ -156,12 +179,18 @@ for name in walls:
     control = dict(dark=wv.paired_counts(~bdark1 & bdark, bdark1 & ~bdark, bhave), off=wv.paired_counts(~boff1 & boff, boff1 & ~boff, bhave),
                    distance=wv.paired_counts(bdev2 > bdev1 + 2, bdev2 < bdev1 - 2, bhave))
 
-    row = dict(wall=name, station_changed=int(len(r)), with_surroundings=int(have.sum()),
-               all=tally(have), left_to_be_seen=tally(seen),
-               doubtful_to_clear=tally(seen & ~was_clear & now_clear), doubtful_to_doubtful=tally(seen & ~was_clear & ~now_clear),
-               clear_to_clear=tally(seen & was_clear & now_clear), clear_to_doubtful=tally(seen & was_clear & ~now_clear),
-               newly_dark_patches=patches(~dark1 & dark2 & seen), cured_dark_patches=patches(dark1 & ~dark2 & seen),
+    row = dict(wall=name, station_changed=int(kept.sum()), with_surroundings=int((have & kept).sum()),
+               all=tally(have & kept), left_to_be_seen=tally(seen & kept), all_left_to_be_seen=tally(seen),
+               doubtful_to_clear=tally(seen & kept & ~was_clear & now_clear), doubtful_to_doubtful=tally(seen & kept & ~was_clear & ~now_clear),
+               clear_to_clear=tally(seen & kept & was_clear & now_clear), clear_to_doubtful=tally(seen & kept & was_clear & ~now_clear),
+               former_holes=dict(tally(seen & was_hole), in_all=int(was_hole.sum()), under_a_patch=int((was_hole & covered[r, c]).sum()),
+                                 took_a_clear_view=int((was_hole & now_clear).sum())),
+               newly_dark_patches=patches(~dark1 & dark2 & seen & kept), cured_dark_patches=patches(dark1 & ~dark2 & seen & kept),
                clean_texels_beside=dict(texels=int(bhave.sum()), dark=int((bdark & bhave).sum()), off=int((boff & bhave).sum()), paired=control))
+    if reference:
+        like = new[r, c] == np.load(os.path.join(reference, 'proj', f'labels-{name}.npz'))['texel_label'][r, c]
+        row.update(as_the_reference=tally(seen & like), unlike_the_reference=tally(seen & ~like),
+                   as_the_reference_in_all=int(like.sum()), unlike_the_reference_in_all=int((~like).sum()))
     rows.append(row)
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(dict(reach_texels=wv.REACH, near_depth_m=wv.NEAR_DEPTH, dark_under=wv.DARK, off_levels=wv.OFF, walls=rows), f, indent=1)
@@ -182,7 +211,7 @@ for name in walls:
 def total(part, *keys):
     n = 0
     for row in rows:
-        v = row[part]
+        v = row.get(part, {})
         for k in keys:
             v = v.get(k, 0) if isinstance(v, dict) else 0
         n += v
@@ -193,27 +222,41 @@ def pairs_over_the_walls(part, *unit):
     out = {}
     for key in JUDGEMENTS:
         w, b, u = (total(part, *unit, key, k) for k in ('worse', 'better', 'unchanged'))
-        out[key] = dict(worse=w, better=b, unchanged=u, p_exact=wv.sign_test(w, b))
+        out[key] = dict(worse=w, better=b, unchanged=u, p_exact=wv.sign_test(w, b), p_worse=wv.sign_test_worse(w, b))
     return out
 
 
-for part in ('left_to_be_seen', 'doubtful_to_clear', 'doubtful_to_doubtful', 'clear_to_clear', 'clear_to_doubtful'):
+PARTS = ('left_to_be_seen', 'doubtful_to_clear', 'doubtful_to_doubtful', 'clear_to_clear', 'clear_to_doubtful', 'former_holes', 'all_left_to_be_seen')
+PARTS += ('as_the_reference', 'unlike_the_reference') if reference else ()
+pooled = {}
+for part in PARTS:
     print(f"TOTAL {part:22s} texels {total(part, 'texels'):6d} | dark {total(part, 'dark', 'first'):5d} -> {total(part, 'dark', 'second'):5d}"
           f" (cured {total(part, 'dark', 'cured'):5d}, new {total(part, 'dark', 'new'):5d}) | off {total(part, 'off', 'first'):5d} -> {total(part, 'off', 'second'):5d}"
           f" | nearer {total(part, 'nearer_by_2'):5d}, farther {total(part, 'farther_by_2'):5d}")
     if total(part, 'texels'):
-        print(f"      {'':22s} pairs, worse/better/as they were: {pairs(pairs_over_the_walls(part, 'paired'))}"
-              f" | by patch ({total(part, 'paired_by_patch', 'patches')}): {pairs(pairs_over_the_walls(part, 'paired_by_patch'))}")
+        by_texel, by_patch_ = pairs_over_the_walls(part, 'paired'), pairs_over_the_walls(part, 'paired_by_patch')
+        pooled[part] = dict(texels=total(part, 'texels'), patches=total(part, 'paired_by_patch', 'patches'), paired=by_texel, paired_by_patch=by_patch_)
+        is_it_worse = ', '.join(f"{key} p {by_patch_[key]['p_worse']:.2g}" for key in JUDGEMENTS)
+        print(f"      {'':22s} pairs, worse/better/as they were: {pairs(by_texel)}"
+              f" | by patch ({pooled[part]['patches']}): {pairs(by_patch_)} | is it worse, by patch: {is_it_worse}")
 t = max(total('clean_texels_beside', 'texels'), 1)
 print(f"the measure on clean texels beside them: {100 * total('clean_texels_beside', 'dark') / t:.1f}% called dark, {100 * total('clean_texels_beside', 'off') / t:.1f}% called off"
       f" ({total('clean_texels_beside', 'texels')} texels): read every count above against that")
 print(f"the same clean texels as pairs, worse/better/as they were: {pairs(pairs_over_the_walls('clean_texels_beside', 'paired'))}: what two builds do to a texel neither moved")
-named = []
-for row in rows:
-    if not row['left_to_be_seen'].get('texels'):
-        continue
-    for key in JUDGEMENTS:
-        t, k = row['left_to_be_seen']['paired_by_patch'][key], row['clean_texels_beside']['paired'][key]
-        if t['worse'] > t['better'] and t['p_exact'] < 0.05:
-            named.append(f"{row['wall']} ({key}: {t['worse']} patches worse, {t['better']} better, p {t['p_exact']:.2g}; its clean texels beside: {k['worse']} worse, {k['better']} better)")
-print('worse in the second build beyond chance, by patch (more patches worse than better, sign test under 0.05): ' + ('; '.join(named) or 'no wall'))
+# The bar: per wall and judgement, by patch, raw and after Holm's correction over the whole family.
+family = [(row, key) for row in rows if row['all_left_to_be_seen'].get('texels') for key in JUDGEMENTS]
+adjusted = wv.holm([row['all_left_to_be_seen']['paired_by_patch'][key]['p_exact'] for row, key in family])
+tests = []
+for (row, key), h in zip(family, adjusted):
+    t, k = row['all_left_to_be_seen']['paired_by_patch'][key], row['clean_texels_beside']['paired'][key]
+    tests.append(dict(wall=row['wall'], judgement=key, patches=row['all_left_to_be_seen']['paired_by_patch']['patches'], worse=t['worse'], better=t['better'],
+                      unchanged=t['unchanged'], p_exact=t['p_exact'], p_holm=h, fails=bool(t['worse'] > t['better'] and h < 0.05),
+                      control_worse=k['worse'], control_better=k['better']))
+print(f'per wall and judgement, by patch, every changed texel left to be seen ({len(tests)} tests; a wall fails where more turned worse and Holm p is under 0.05):')
+for x in tests:
+    if x['worse'] or x['better']:
+        print(f"  {x['wall']:24s} {x['judgement']:9s} {x['worse']:3d}/{x['better']:3d}/{x['unchanged']:3d}  raw p {x['p_exact']:.2g}  Holm p {x['p_holm']:.2g}"
+              f"  control {x['control_worse']}/{x['control_better']}{'  FAILS' if x['fails'] else ''}")
+print('walls that fail: ' + ('; '.join(f"{x['wall']} ({x['judgement']})" for x in tests if x['fails']) or 'none'))
+with open(out_path, 'w', encoding='utf-8') as f:
+    json.dump(dict(reach_texels=wv.REACH, near_depth_m=wv.NEAR_DEPTH, dark_under=wv.DARK, off_levels=wv.OFF, walls=rows, pooled=pooled, per_wall_tests=tests), f, indent=1)

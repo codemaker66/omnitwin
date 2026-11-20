@@ -538,9 +538,37 @@ class WallMeasure(unittest.TestCase):
         among = np.array([True] * 8 + [False] * 2)
         worse = np.array([True] * 6 + [False] * 2 + [True, False])  # the ninth is worse, and is not among the texels counted
         better = np.array([False] * 9 + [True])                     # nor is the tenth, which is better
-        self.assertEqual(wv.paired_counts(worse, better, among), dict(worse=6, better=0, unchanged=2, p_exact=2 / 64))
+        self.assertEqual(wv.paired_counts(worse, better, among), dict(worse=6, better=0, unchanged=2, p_exact=2 / 64, p_worse=1 / 64))
         better[6] = True                                            # one of the eight turns better
-        self.assertEqual(wv.paired_counts(worse, better, among), dict(worse=6, better=1, unchanged=1, p_exact=2 * (1 + 7) / 128))
+        self.assertEqual(wv.paired_counts(worse, better, among),
+                         dict(worse=6, better=1, unchanged=1, p_exact=2 * (1 + 7) / 128, p_worse=(1 + 7) / 128))
+
+    def test_is_it_worse_is_one_sided_and_a_family_of_tests_is_corrected(self):
+        from fractions import Fraction  # noqa: PLC0415
+        from math import comb  # noqa: PLC0415
+        wv = self.wv
+
+        def tail(worse, better):                                    # the definition: at least `worse` heads of a fair coin
+            n = worse + better
+            return float(Fraction(sum(comb(n, i) for i in range(worse, n + 1)), 2 ** n))
+
+        self.assertEqual(wv.sign_test_worse(0, 0), 1.0)
+        self.assertEqual(wv.sign_test_worse(8, 1), 10 / 512)        # C(9, 8) + C(9, 9) of 2^9
+        self.assertEqual(wv.sign_test_worse(1, 8), 1 - 1 / 512)     # the better build is not called worse
+        self.assertEqual(wv.sign_test_worse(5, 5), tail(5, 5))      # an even split: a little over a half, not 1
+        for worse, better in ((841, 367), (30, 33), (0, 7), (7, 0), (13, 4)):
+            self.assertEqual(wv.sign_test_worse(worse, better), tail(worse, better), (worse, better))
+            if worse > better:                                      # where it is the worse, the two-sided p is twice the one-sided
+                self.assertEqual(wv.sign_test(worse, better), min(1.0, 2 * tail(worse, better)), (worse, better))
+        self.assertEqual(wv.sign_test_worse(np.int64(30), np.int64(33)), tail(30, 33))     # numpy's integers, as in sign_test
+        # Holm: the smallest p times the number of tests, the next times one fewer, never below the one before, each
+        # in its own place.
+        self.assertEqual(wv.holm([]), [])
+        self.assertEqual(wv.holm([0.03]), [0.03])
+        self.assertEqual(wv.holm([0.04, 0.01, 0.03]), [0.06, 0.03, 0.06])       # 0.01 x 3; 0.03 x 2; 0.04 x 1, raised to 0.06
+        self.assertEqual(wv.holm([0.5, 0.9, 0.001]), [1.0, 1.0, 0.003])         # capped at 1
+        raw = [0.039] + [0.5] * 23                                  # one wall of eight, on one judgement of three, at 0.039
+        self.assertGreater(wv.holm(raw)[0], 0.9)                    # is no finding among twenty-four tests
 
     def test_a_patch_is_one_unit_whatever_is_left_out_of_it(self):
         wv = self.wv
@@ -556,20 +584,20 @@ class WallMeasure(unittest.TestCase):
         patch = lab[r, c]
         k, i = (c - 2) // 7, (r - 10) * 5 + (c - 2) % 7             # which patch a texel is in, and which of its fifteen it is
         every, none = np.ones(len(r), bool), np.zeros(len(r), bool)
-        ten = dict(patches=10, worse=10, better=0, unchanged=0, p_exact=2 / 1024)
+        ten = dict(patches=10, worse=10, better=0, unchanged=0, p_exact=2 / 1024, p_worse=1 / 1024)
         self.assertEqual(wv.patch_counts(patch, every, none, every), ten)          # every texel turned worse
         # Each patch's middle column is left out (not judged): still ten patches, not twenty halves. Found in review:
         # patches made of the counted texels alone gave twenty units and a p a thousand times smaller.
         judged = (c - 2) % 7 != 2
         self.assertEqual(int(judged.sum()), 10 * 12)
         self.assertEqual(wv.patch_counts(patch, every, none, judged), ten)
-        self.assertEqual(wv.patch_counts(patch, every, none, k < 3), dict(patches=3, worse=3, better=0, unchanged=0, p_exact=2 / 8))
-        self.assertEqual(wv.patch_counts(patch, every, none, none), dict(patches=0, worse=0, better=0, unchanged=0, p_exact=1.0))
+        self.assertEqual(wv.patch_counts(patch, every, none, k < 3), dict(patches=3, worse=3, better=0, unchanged=0, p_exact=2 / 8, p_worse=1 / 8))
+        self.assertEqual(wv.patch_counts(patch, every, none, none), dict(patches=0, worse=0, better=0, unchanged=0, p_exact=1.0, p_worse=1.0))
         # A patch is worse where more of its texels turned worse than better: 8 against 7 is worse, 7 against 8 better,
         # 7 against 7 with one as it was is neither.
         worse = np.where(k == 0, i < 8, np.where(k <= 2, i < 7, True))
         better = np.where(k == 0, i >= 8, np.where(k == 1, i >= 7, np.where(k == 2, (i >= 7) & (i < 14), False)))
-        self.assertEqual(wv.patch_counts(patch, worse, better, every), dict(patches=10, worse=8, better=1, unchanged=1, p_exact=2 * (1 + 9) / 512))
+        self.assertEqual(wv.patch_counts(patch, worse, better, every), dict(patches=10, worse=8, better=1, unchanged=1, p_exact=2 * (1 + 9) / 512, p_worse=(1 + 9) / 512))
 
 
 class Windows(unittest.TestCase):
