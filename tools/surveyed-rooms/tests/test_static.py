@@ -127,6 +127,35 @@ class Plans(unittest.TestCase):
         for wall in ("window-front-return", "window-rear-return", "fireplace-rear-return", "fireplace-front-return"):
             self.assertRegex(r.stdout, rf"B5 +wall {wall} ")
 
+    def test_the_plan_prints_the_checkers_warnings(self):
+        """--plan is the look before a build, so it shows what the checker warns of: with the stations
+        placed (a manifest in the work directory), the walls no station has a line to in plan; with
+        none, that the stations were not placed. It still writes nothing."""
+        # The Saloon with its room stations only, every one of them standing at one place in the
+        # room, from which three walls are out of sight.
+        path, cfg = variant(SALOON, "saloon-one-place.room.json",
+                            lambda r: r.__setitem__("stations", [s for s in r["stations"] if s["role"] == "room"]))
+        spot = (-5.0, 2.0)
+        unseen = check_room.out_of_sight(roomlib.walls(cfg), [spot], 16.0, 0.2)
+        self.assertEqual(unseen, ["window-rear-return", "fireplace-rear-return", "fireplace-front-end"])
+        X, Y = roomlib.to_e57(cfg, *spot)
+        work = os.path.join(T0, "plan-warn")
+        shutil.rmtree(work, ignore_errors=True)
+        os.makedirs(os.path.join(work, "data"))
+        manifest = {"nodes": [{"id": s["id"], "pose": {"t": [X, Y, cfg["transform"]["floorZ"] + 1.5]}} for s in cfg["stations"]],
+                    "contentHashes": {}}
+        with open(os.path.join(work, "data", "manifest.json"), "w", encoding="utf-8") as f:
+            json.dump(manifest, f)
+        r = py("build-room.py", path, work, "--plan")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        warned = re.findall(r"^  WARNING wall (\S+): no station has a clear line to it in plan", r.stdout, re.M)
+        self.assertEqual(warned, unseen, r.stdout[-3000:])
+        self.assertLess(r.stdout.index("  ledger:"), r.stdout.index("  WARNING"))
+        self.assertEqual(os.listdir(work), ["data"], "--plan wrote files")
+        self.assertEqual(os.listdir(os.path.join(work, "data")), ["manifest.json"], "--plan wrote files")
+        r = py("build-room.py", SALOON, os.path.join(T0, "plan-unplaced"), "--plan")
+        self.assertIn("  WARNING stations: not placed (no --manifest)", r.stdout)
+
     def test_expect_legacy_refuses_the_saloon(self):
         r = py("build-room.py", SALOON, os.path.join(T0, "legacy-saloon"), "--to", "check", "--expect-legacy")
         self.assertNotEqual(r.returncode, 0)
