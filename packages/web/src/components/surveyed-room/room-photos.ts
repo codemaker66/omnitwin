@@ -32,8 +32,9 @@ import {
   UnsignedByteType,
 } from "three";
 import { texture as textureNode } from "three/tsl";
-import { surveyFileUrl, type SurveyedRoomEntry } from "./room-registry.js";
+import type { SurveyedRoomEntry } from "./room-registry.js";
 import type { SurveyRecord } from "./survey-record.js";
+import { surveyFileUrl } from "./use-surveyed-room.js";
 
 export type RoomPhotoKind = "walls" | "ceiling" | "floor";
 

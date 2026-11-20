@@ -404,6 +404,30 @@ describe("a whole room", () => {
     expect(surfaceBounds(room.ceiling).min[1]).toBe(Math.fround(5.515));
     expect(surfaceBounds(room.floor).min).toEqual(surfaceBounds(room.walls).min);
   });
+
+  it("refuses a flat ceiling that does not stand at the tops of the walls as measured", () => {
+    /** Every wall's relief one flat rectangle to `top`, as a relief file would hold it. */
+    const reliefsTo = (top: number): Map<string, ReliefMesh> => new Map(SALOON.walls.map((wall): [string, ReliefMesh] => [wall.reliefId, {
+      id: wall.reliefId,
+      positions: Float32Array.from([0, 0, 0, wall.length, 0, 0, wall.length, top, 0, 0, top, 0]),
+      indices: Uint32Array.from([0, 1, 2, 0, 2, 3]),
+    }]));
+    const ceilingAt = (ceilingHeight: number): SurveyRecord => ({ ...SALOON, room: { ...SALOON.room, ceilingHeight } });
+    // The record says 5.515 m throughout, but the walls' reliefs stop at 5.05 m: a band of nothing above them.
+    expect(() => buildRoomGeometry(SALOON, SALOON_FRAME, { walls: reliefsTo(5.05), ceiling: null })).toThrow(RoomGeometryError);
+    expect(() => buildRoomGeometry(SALOON, SALOON_FRAME, { walls: reliefsTo(5.05), ceiling: null }))
+      .toThrow(/the flat ceiling stands at 5\.515 m but the walls rise to 5\.050 m, more than 5 mm apart: a band of nothing would show above the walls/);
+    // A ceiling below the walls' tops, which would stand through it.
+    expect(() => buildRoomGeometry(ceilingAt(5.2), SALOON_FRAME, { walls: reliefsTo(5.515), ceiling: null }))
+      .toThrow(/the flat ceiling stands at 5\.2 m but the walls rise to 5\.515 m, more than 5 mm apart: the walls would stand through the ceiling/);
+    // Flat walls stand to their recorded heights, and are held the same way.
+    expect(() => buildRoomGeometry(ceilingAt(6), SALOON_FRAME, { walls: null, ceiling: null })).toThrow(/the flat ceiling stands at 6 m but the walls rise to 5\.515 m/);
+    // Within the 5 mm a relief is simplified to, the ceiling meets the walls.
+    expect(buildRoomGeometry(SALOON, SALOON_FRAME, { walls: reliefsTo(5.511), ceiling: null }).ceiling.measured).toBe(false);
+    // A measured ceiling is held to its own recorded heights, not to the walls' tops.
+    const measured: ReliefMesh = { id: "ceiling", positions: Float32Array.from([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), indices: Uint32Array.from([0, 1, 2, 0, 2, 3]) };
+    expect(buildRoomGeometry(SALOON, SALOON_FRAME, { walls: reliefsTo(5.05), ceiling: measured }).ceiling.measured).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -557,21 +581,26 @@ describe("the Grand Hall's shipped relief through the room-driven path", () => {
         if (myTriangles.has(`${String(a)},${String(b)},${String(c)}`)) sameTriangles++;
       }
     }
-    // Measured 13 November 2026: of the hall's 19,938 vertices (it copies a vertex per material,
-    // neighbour and opening), 19,246 stand bit for bit where one of this path's 17,913 does, on the
-    // same wall; the other 692 are points its doorway cuts made. 196 of this path's vertices have no
-    // twin: the relief inside the doorways, which the hall's modelled doors replace.
-    expect(shared / hallVertices).toBeGreaterThan(0.95);
-    expect(matched.size / (walls.positions.length / 3)).toBeGreaterThan(0.98);
+    // The counts are pinned as measured on 13 November 2026, not held to a share: a change to the
+    // hall's doorway cuts, or to this path, that dropped a hundred shared vertices or a few hundred
+    // whole triangles would pass any ratio loose enough to be stable.
+    //
+    // Of the hall's 19,938 vertices (it copies a vertex per material, neighbour and opening), 19,246
+    // stand bit for bit where one of this path's 17,913 does, on the same wall; the other 692 are
+    // points its doorway cuts made. 196 of this path's vertices have no twin: the relief inside the
+    // doorways, which the hall's modelled doors replace.
+    expect({ hallVertices, shared, cutPoints: hallVertices - shared }).toEqual({ hallVertices: 19938, shared: 19246, cutPoints: 692 });
+    expect({ mine: walls.positions.length / 3, twinned: matched.size, untwinned: walls.positions.length / 3 - matched.size })
+      .toEqual({ mine: 17913, twinned: 17717, untwinned: 196 });
     // At every shared vertex the atlas coordinate is the same 32-bit number.
     expect(worstUv).toBe(0);
     // Of the hall's 35,099 triangles, the 34,600 whose corners all came from the file are each one
     // of this path's, wound the same way: what faces the room there faces it here.
-    expect(wholeTriangles / hallTriangles).toBeGreaterThan(0.97);
+    expect({ hallTriangles, wholeTriangles }).toEqual({ hallTriangles: 35099, wholeTriangles: 34600 });
     expect(sameTriangles).toBe(wholeTriangles);
     // The vertex normals agree too (19,033 of the 19,246 within a degree), except beside the
     // doorways, where the hall's normals leave out the triangles it cut away.
-    expect(sameNormals / shared).toBeGreaterThan(0.97);
+    expect(sameNormals).toBe(19033);
   });
 
   it("lays the hall's floor and ceiling photographs as the hall's own code does", () => {
