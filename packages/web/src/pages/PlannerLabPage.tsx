@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactElement } from "react";
 import { advance as advanceFrame, invalidate } from "@react-three/fiber";
 import { TRADES_HALL_GRAND_HALL_DIMENSIONS, type Space } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
@@ -10,12 +10,16 @@ import { useHallViewStore } from "../stores/hall-view-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { nativeFrameComposer } from "../lib/native-frame-composer.js";
-import { getNativeRenderer } from "../lib/native-renderer.js";
+import { getNativeRenderer, withNativeComposedFrame } from "../lib/native-renderer.js";
 import { nativePrecompileSettled } from "../lib/native-precompile.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../lib/catalogue.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
-import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
+import { plannerChromeRequested, setMountedPlannerChrome } from "../lib/planner-chrome-flag.js";
 import { ChromeShell } from "../components/planner-chrome/ChromeShell.js";
+import { HudFrame } from "../components/planner-hud/HudFrame.js";
+import { HudSheets } from "../components/planner-hud/HudSheets.js";
+import { Slate } from "../components/planner-chrome/Slate.js";
+import { TooltipHost } from "../components/planner-chrome/Tooltip.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { useToolStore } from "../stores/tool-store.js";
@@ -208,7 +212,11 @@ async function measure(frames = 120, pipeline = true): Promise<LabFrameStats> {
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld();
     const started = performance.now();
-    if (composer !== null) composer();
+    // Declared as the view's own frame, as the frame loop draws it
+    // (NativeCanvas): the pipeline's scene pass is this frame's main draw only
+    // inside withNativeComposedFrame, and the hall's photographs ask which draw
+    // they are in (lib/scene-grade.ts sceneOutput).
+    if (composer !== null) withNativeComposedFrame(gl, scene, camera, composer);
     else gl.render(scene, camera);
     // A frame is not over until the GPU has finished it.
     if (device !== null) await device.queue.onSubmittedWorkDone();
@@ -245,7 +253,7 @@ async function measureGpu(frames = 60): Promise<{ readonly frames: number; reado
   backend.trackTimestamp = true;
   try {
     for (let frame = 0; frame < frames; frame++) {
-      if (composer !== null) composer();
+      if (composer !== null) withNativeComposedFrame(native, perf.scene, perf.camera, composer);
       else native.render(perf.scene, perf.camera);
       const duration = await native.resolveTimestampsAsync("render");
       if (typeof duration === "number" && Number.isFinite(duration)) times.push(duration);
@@ -266,6 +274,11 @@ async function measureGpu(frames = 60): Promise<{ readonly frames: number; reado
 export function PlannerLabPage(): ReactElement {
   const [ready, setReady] = useState(false);
   const [chrome] = useState(() => plannerChromeRequested(window.location.search));
+  // As the planner's own page does: the scene asks which chrome is mounted.
+  useLayoutEffect(() => {
+    setMountedPlannerChrome(chrome);
+    return () => { setMountedPlannerChrome(null); };
+  }, [chrome]);
   usePlannerToolKeys();
 
   useEffect(() => {
@@ -340,6 +353,30 @@ export function PlannerLabPage(): ReactElement {
 
   // `?chrome=v2`: the scene under the new chrome's zones, as the planner shows it (T-671).
   if (chrome === "v2") return <ChromeShell room={ready ? <PlannerScene /> : null} />;
+
+  // `?chrome=hud`: the scene under the HUD (13 Nov 2026), with a stand-in plaque and no backend.
+  // `&plaque=slate` mounts the planner's own slate instead, to see it dressed for the top bar.
+  if (chrome === "hud") {
+    const slate = new URLSearchParams(window.location.search).get("plaque") === "slate";
+    return (
+      <HudFrame
+        room={ready ? <div className="venviewer-planner-shell hud-lab-room"><PlannerScene /></div> : null}
+        plaque={slate ? (
+          <div className="pc-root hud-plaque">
+            <Slate />
+            <TooltipHost />
+          </div>
+        ) : (
+          <div className="hud-lab-plaque">
+            <span className="hud-lab-plaque__title">The Morrison Wedding</span>
+            <span className="hud-lab-plaque__line"><span>Sat 13 Feb 2027</span><span>Grand Hall</span><span>Sample</span></span>
+          </div>
+        )}
+        eventGuests={null}
+        sheets={<HudSheets />}
+      />
+    );
+  }
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#0d0b09", display: "flex" }}>

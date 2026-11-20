@@ -47,15 +47,37 @@ function median(values: readonly number[]): number {
 /** The pieces held at 44.1 kHz (ruling R52): a chair, a deck, a steel stand and a folding round, the last two with rattling legs. */
 const AT_44K = ["chiavari-chair", "staging-deck-6x4", "mic-stand", "round-table-6ft-white"] as const;
 const SEEDS_44K = Array.from({ length: 10 }, (_, i) => i + 1);
+/** The seeds brightness is held over: a median over ten is too noisy to hold to a few percent (below). */
+const BRIGHTNESS_SEEDS_44K = Array.from({ length: 40 }, (_, i) => i + 1);
 /**
- * How far the median brightness of seeds 1-10 at 44.1 kHz may sit from 48 kHz's: a few percent. Measured as the
- * median of each seed's ratio: -0.6 % (Chiavari), -2.2 % (deck), +2.1 % (mic stand), +1.3 % (round table). One
- * seed alone moves further (-10..+13 % for the rattling pieces), as its noises are drawn sample by sample.
+ * How far the median brightness of seeds 1-40 at 44.1 kHz may sit from 48 kHz's: 5 % (ruling R93, after #416's
+ * review, NC9). Measured, the median at 44.1 kHz over the median at 48 kHz: -0.2 % (Chiavari), -2.1 % (deck),
+ * -0.0 % (mic stand), +1.2 % (round table), so 2.9 % of margin on the worst.
+ *
+ * One seed alone moves -5..+7 % for the chair and the deck and -14..+11 % for the rattling pieces, as its noises are
+ * drawn sample by sample, so a median of a few seeds is noisy itself: resampled from seeds 1-60, the 40-seed figure
+ * scatters by up to 1.9 % (the round table) and the 10-seed one by up to 2.7 %. Until 16 November this check held
+ * seeds 1-10 to 3 %: the mic stand read +2.98 % there, 0.02 % inside the bound (the review took the comment's older
+ * +2.1 % and put the margin at 0.8 %), and its seeds 31-40 read -3.3 %, while over seeds 1-40 it reads -0.04 %:
+ * noise, not the rate. 5 % over 40 seeds sits about 2.6 of that scatter away from no change, so a re-roll of the
+ * noise does not fail it.
+ *
+ * Its reach: it catches a rate fault that moves a piece's median brightness over seeds 1-40 beyond its margin,
+ * about -2.95 points for the deck, +-5 for the chair and the mic stand, and -6.2 or +3.8 for the round table. A
+ * filter fault at 4-14 kHz, or one confined to the rattle or the puff, is below what it can resolve: on 16 November
+ * three such faults (the ceiling's shelf and low-pass, the rattle's band-pass and the puff's low-pass, each designed
+ * at 48 kHz whatever the rate) moved it by 1.37 points at most, and none failed it. A fault in the modes is expected
+ * to show, but that is inferred, not run.
  */
-const BRIGHTNESS_44K = 0.03;
+const BRIGHTNESS_44K = 0.05;
 
 describe("a set-down at 44.1 kHz against 48 kHz (ruling R52)", () => {
-  it.each(AT_44K)("plays %s within 0.1 dB of loudness, seed by seed", (slug) => {
+  // This holds by construction: the renderer levels every play to a loudness set by its speed alone (render.ts,
+  // rulings R36 and R45), read by the same momentary measure as this, so with the limiter idle the two rates agree
+  // whatever the rate does to the sound. What it checks is that a seed draws the same speed at both rates. The
+  // brightness check below guards against a rate fault large enough to move a play's brightness, within the reach
+  // its comment states (#416's review, NC9).
+  it.each(AT_44K)("plays %s within 0.1 dB of loudness, seed by seed: the leveller's own target, so the same speed drawn at both rates", (slug) => {
     for (const seed of SEEDS_44K) {
       const at44 = setDown(slug, "oak-boards-joists", { seed, sampleRate: 44100 });
       const at48 = setDown(slug, "oak-boards-joists", { seed });
@@ -64,9 +86,9 @@ describe("a set-down at 44.1 kHz against 48 kHz (ruling R52)", () => {
     }
   });
 
-  it.each(AT_44K)("keeps %s's brightness: the median over seeds 1-10 of its power-weighted mean frequency within a few percent", (slug) => {
+  it.each(AT_44K)("keeps %s's brightness: the median over seeds 1-40 of its power-weighted mean frequency within five percent", (slug) => {
     const brightness = (sampleRate: number): number =>
-      median(SEEDS_44K.map((seed) => {
+      median(BRIGHTNESS_SEEDS_44K.map((seed) => {
         const render = setDown(slug, "oak-boards-joists", { seed, sampleRate });
         return brightnessHz(render.left, render.sampleRate);
       }));

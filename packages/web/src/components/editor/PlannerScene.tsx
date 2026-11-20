@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement, type ReactNode } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
@@ -97,6 +97,11 @@ import { AssemblyReplay } from "../../floor/assembly/AssemblyReplay.js";
 // may play, and fetched as soon as it may.
 const loadGrandAssembly = () => import("../../floor/assembly/GrandAssembly.js");
 const GrandAssembly = lazy(loadGrandAssembly);
+
+// The planner HUD's parts of this scene (the stage's hold on the camera, the line round what is chosen): one module,
+// fetched only where a screen has asked for them, so the planner without the HUD downloads none of it.
+type HudScene = typeof import("../planner-hud/hud-scene.js");
+const loadHudScene = (): Promise<HudScene> => import("../planner-hud/hud-scene.js");
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -272,7 +277,14 @@ const WHEEL_INTERACTION_SETTLE_MS = 450;
  * system (room geometry, furniture, selection, markup, circulation, camera).
  * Extracted from App so the planner cockpit can host it in its stage cell.
  */
-export function PlannerScene(): ReactElement {
+export function PlannerScene({ inCanvas }: {
+  /**
+   * Mounted inside the canvas beside the editing systems: the new chrome's
+   * screen anchors (its caption follows its piece), handed in by its
+   * RoomStage so today's planner never loads them (T-671 slice 11′).
+   */
+  readonly inCanvas?: ReactNode;
+}): ReactElement {
   const space = useEditorStore((s) => s.space);
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const previewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
@@ -324,6 +336,8 @@ export function PlannerScene(): ReactElement {
   // Its capture, where one may be shown, appears only when asked for.
   const realHall = useModelledGrandHall();
   const hallMood = useHallViewStore((state) => state.mood);
+  // A planner screen that shows the hall as a stage says so (hall-stage.ts).
+  const hallStageAsked = useHallViewStore((state) => state.stage !== null);
   // The opening framing is the hall's Room view on landscape screens; on
   // portrait ones it is no named view.
   const markHallOpeningPose = useCallback((framed: boolean) => {
@@ -507,6 +521,18 @@ export function PlannerScene(): ReactElement {
   // (The drawn hall is never shown under the timeline's frozen preview.)
   const assemblyStage = assemblyAsked && hallDrawn && !walkMode;
   const [assemblyCamera, setAssemblyCamera] = useState(false);
+  // The stage holds the live camera of the drawn hall (never drawn under the frozen preview), and not an assembling one.
+  const hallStage = hallStageAsked && hallDrawn && !assemblyCamera;
+  // The HUD's parts of the scene arrive as soon as a screen asks for either of them. Should the fetch fail, the room
+  // is left an ordinary orbit with the planner's other marks, and nothing else of it is disturbed.
+  const hudSceneAsked = hallStageAsked || plannerFeatureEnabled("chosenMark");
+  const [hudScene, setHudScene] = useState<HudScene | null>(null);
+  useEffect(() => {
+    if (!hudSceneAsked) return undefined;
+    let current = true;
+    void loadHudScene().then((parts) => { if (current) setHudScene(parts); }, () => undefined);
+    return () => { current = false; };
+  }, [hudSceneAsked]);
   // A room known not to be the drawn Grand Hall lets a held layout go at once.
   const assemblyElsewhere = space !== null && !realHall;
   // The Assembly's code is fetched as soon as it may play here (the Grand Hall,
@@ -662,7 +688,7 @@ export function PlannerScene(): ReactElement {
             <RoomLighting variant={!timelinePreviewActive && roomGeometry === null ? "grand-hall" : "polygon"} />
           )}
           {meshVisible && (realHall ? (
-            <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} sunlit={skyLit} multisampled={governed.profile.sceneSamples > 0} />
+            <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} sunlit={skyLit} multisampled={governed.profile.sceneSamples > 0} stage={hallStage} />
           ) : roomGeometry !== null ? (
             <RoomMesh geometry={roomGeometry} variant={roomVariant} includeLighting={false} />
           ) : (
@@ -720,10 +746,12 @@ export function PlannerScene(): ReactElement {
             <SelectionSystem />
             <FurnitureMotion />
             <CockpitSceneOverlays renderGeometry={renderSceneOverlays} />
+            {inCanvas}
             <PlannerMotionOverlayLayers />
           </>}
           <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>
             {!timelinePreviewActive && <FurnitureContactShadows />}
+            {!timelinePreviewActive && hudScene !== null && plannerFeatureEnabled("chosenMark") && <hudScene.ChosenMarks />}
             {!timelinePreviewActive && hallDrawn && <TableCandles />}
             <PlacedFurniture />
           </group>
@@ -733,6 +761,8 @@ export function PlannerScene(): ReactElement {
             defaultPose={realHall ? HALL_VIEW_POSES.room : null}
             onOpeningPose={realHall ? markHallOpeningPose : undefined}
             captureUnavailableKey={captureFailed && captureInUse ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
+          {/* After the rig: it sets the lens and squares the camera up once the rig has moved it. */}
+          {hallStage && hudScene !== null && <hudScene.HallStage />}
           {walkMode && interiorWalk !== null && !walkCameraDisabled && (!captureFailed || !captureInUse) && (
             <InteriorCamera
               key={`${roomSlug ?? "walk"}:${interiorWalk === hallWalkData ? "model" : "capture"}`}

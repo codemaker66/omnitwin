@@ -2,7 +2,7 @@ import type { FastifyRequest } from "fastify";
 import type { NodeOptions, fastifyIntegration } from "@sentry/node";
 import type { Env } from "../env.js";
 import { scrubApiSentryEvent } from "./health-redaction.js";
-import { scrubBreadcrumb, scrubErrorEvent, scrubTransaction } from "./redact.js";
+import { requestUrlOf, scrubBreadcrumb, scrubErrorEvent, scrubTransaction, type ScrubbableTransaction } from "./redact.js";
 
 // ---------------------------------------------------------------------------
 // Sentry — error tracking + tracing for Fastify
@@ -24,8 +24,69 @@ import { scrubBreadcrumb, scrubErrorEvent, scrubTransaction } from "./redact.js"
 //      Fastify integration keeps tracing and captures nothing.
 // ---------------------------------------------------------------------------
 
+/** The page-speed reports' route: API tracing leaves it out (buildSentryOptions). */
+export const WEB_VITALS_TRANSACTION = "/public/web-vitals";
+
 /** The settings the Sentry options are built from. */
 export type SentryOptionsEnv = Pick<Env, "SENTRY_DSN" | "SENTRY_ENVIRONMENT" | "NODE_ENV" | "SENTRY_TRACES_SAMPLE_RATE">;
+
+/**
+ * Whether a timing record has a parent span, and so is not a request's own
+ * whole record. Two kinds have one, and neither is sent:
+ *   - a request that arrived carrying a trace (sentry-trace and baggage
+ *     headers). The web app sends none, and this API sends them to no one
+ *     (tracePropagationTargets), so only another caller does, and its baggage
+ *     can set the sampling draw (sample_rand) to make every one of its
+ *     requests a record; dropped, the rate alone decides which requests are
+ *     timed, and the privacy page's "about one request in ten" holds;
+ *   - the late part of a request already sent, which the SDK sends on its
+ *     own with a parent: work a route started that ended after its reply (a
+ *     push, an email, a provider's call), whose record repeats the request's
+ *     own URL but not its route, so a code spelled only in letters there
+ *     could not be told from a word and would be sent; and, where the caller
+ *     went away before the route finished (an aborted or timed-out request,
+ *     whose record the SDK sends when the connection closes), the route's own
+ *     work, its database and provider calls included. That work keeps its
+ *     route, but nothing in its record tells it from the late part of a
+ *     request that continued a caller's trace, so it is not sent either: the
+ *     request's own record still shows how long it took until the caller
+ *     went away.
+ * (#355's verifications, 13 and 14 November 2026.)
+ */
+export function hasParentSpan(event: ScrubbableTransaction): boolean {
+  return event.contexts?.trace?.parent_span_id !== undefined;
+}
+
+/**
+ * Whether a record is a request's own and has no route: its `http.route` is
+ * missing or names no path, and it is the SDK's `http.server` record or any
+ * other that carries a request's URL or path (`requestUrlOf`, redact.ts).
+ * Fastify's not-found handler gives no route at all. The API's one catch-all
+ * route, @fastify/cors's OPTIONS "*", is never timed: the SDK's sampler
+ * refuses OPTIONS and HEAD requests. A GET whose path looks like a static
+ * file, and a WebSocket upgrade, get no `http.server` span from the SDK, so
+ * Fastify's own request span roots their records, with the path in
+ * `url.path`. Requests no
+ * route matched still get records: an unknown path's 429 from the limiter on
+ * unmatched paths (index.ts), a malformed URL's 400. Their own path could go
+ * only through the segment rules, which keep an email-shaped segment, a phone
+ * number, a short booking number and much else, so none is sent; such a
+ * request has almost no timing worth keeping. (An unknown path's 404 never
+ * reaches here: the SDK drops records of 401 to 404 itself.) The one routed
+ * kind found without a route goes too: a request Fastify answers 503 while
+ * closing, before any hook runs, which Fastify logs. A record of work outside
+ * any request carries no request URL and keeps the segment rules; the late
+ * part of a request repeats its URL, but has a parent and is never sent
+ * (`hasParentSpan`, judged first). (#355's review at
+ * 33db2ba1, WX1, and the verification of its fix, 18 November 2026.)
+ */
+export function isUnroutedRequest(event: ScrubbableTransaction): boolean {
+  const trace = event.contexts?.trace;
+  // Sentry types a trace context's attribute bag as `{ [key: string]: any }`: read as unknown, then narrowed.
+  const route: unknown = trace?.data?.["http.route"];
+  if (typeof route === "string" && route.startsWith("/")) return false;
+  return trace?.op === "http.server" || requestUrlOf(event) !== undefined;
+}
 
 /**
  * The options `initSentry` hands to `Sentry.init`. Pure, so a test can
@@ -36,16 +97,37 @@ export type SentryOptionsEnv = Pick<Env, "SENTRY_DSN" | "SENTRY_ENVIRONMENT" | "
  *   - beforeSend: request bodies, credentials, query strings and the
  *     query parameters in exception values (`./redact.ts`), then any guest
  *     allergy note left in a message or breadcrumb (`./health-redaction.ts`);
- *   - beforeSendTransaction: the query in request urls and span attributes;
+ *   - beforeSendTransaction: the timing records carry no address, identifier
+ *     or browser details (`scrubTransaction`: no browser-supplied header
+ *     beyond the host and content length, no user, tag, breadcrumb, query,
+ *     body or token, and no segment that looks like a record's id in any
+ *     URL), as the privacy page says; one with a parent span is not sent
+ *     (`hasParentSpan`), nor is a request's record that no route matched
+ *     (`isUnroutedRequest`);
  *   - beforeBreadcrumb: the query in http breadcrumbs.
+ * Leave `dataCollection` unset: in @sentry/core 10.60 any key in it switches
+ * its base to collect everything (the user's address, cookies, every body),
+ * which the scrubbers would then have to undo (#355's review, WX3).
  */
 export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
   return {
     dsn: env.SENTRY_DSN,
     environment: env.SENTRY_ENVIRONMENT ?? env.NODE_ENV,
     tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+    // No trace headers on any request this process makes (to Clerk, Stripe,
+    // Resend, R2): the services need none, and the baggage would tell them
+    // our trace ids and route names. The tests' own requests to the API, made
+    // in this process, so carry none either, and are timed as a browser's are
+    // (#355's verification, 13 November 2026).
+    tracePropagationTargets: [],
+    // A page-speed report is traced by no one: the privacy page says the
+    // server keeps only the timings and logs nothing for them (T-685,
+    // 12 November 2026); before #355 a trace also carried the visitor's user
+    // agent. A string here matches any transaction whose name contains it; a
+    // failure still reaches Sentry through the error normaliser's capture.
+    ignoreTransactions: [WEB_VITALS_TRANSACTION],
     beforeSend: (event) => scrubApiSentryEvent(scrubErrorEvent(event)),
-    beforeSendTransaction: scrubTransaction,
+    beforeSendTransaction: (event) => (hasParentSpan(event) || isUnroutedRequest(event) ? null : scrubTransaction(event)),
     beforeBreadcrumb: scrubBreadcrumb,
   };
 }
