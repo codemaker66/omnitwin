@@ -12,6 +12,12 @@ there, because a real shadow or a moulding's edge also differs from the wall bes
 same texels in two builds, or two views of one texel, never for an absolute count; compare_builds.py prints the
 rate on clean texels beside the ones it judges, so that every count can be read against it.
 
+Two builds are counted as pairs, not as two rates: of the same texels, how many turned worse, how many better and
+how many are as they were (paired_counts), with the exact sign test on the ones that changed (sign_test; McNemar's
+exact test). That p takes each texel for an independent pair, which a wall's texels are not: a patch that changes
+station changes together. So it is the least the chance can be, and compare_builds.py counts by connected patch as
+well, and counts the clean texels beside them, whose station did not change, in the same way.
+
 Nothing here writes into a build's folder, and no scan data is kept with these scripts: they take the work
 folders of builds made on the reader's own machine."""
 import glob
@@ -96,6 +102,25 @@ def surroundings(L, clean, depth, r, c):
         if some.any():
             ref[a:a + 2000][some] = np.nanmedian(vals[some], axis=1)
     return ref, count
+
+
+def sign_test(worse, better):
+    """How likely a split at least this lopsided is, were each thing that changed as likely to have turned worse
+    as better: the exact two-sided sign test on the changed pairs alone (McNemar's exact test). 1.0 where nothing
+    changed, or as many turned each way."""
+    n, k = worse + better, min(worse, better)
+    term = total = 1                                       # C(n, 0); whole numbers, so nothing is rounded before the end
+    for i in range(k):
+        term = term * (n - i) // (i + 1)                   # C(n, i + 1)
+        total += term
+    return min(1.0, 2 * total / 2 ** n)
+
+
+def paired_counts(worse, better, among):
+    """McNemar's counts for one yes-or-no judgement of the same texels in two builds: of the texels in `among`,
+    how many turned worse, how many better and how many are as they were, with the sign test on the first two."""
+    w, b = int((worse & among).sum()), int((better & among).sum())
+    return dict(worse=w, better=b, unchanged=int(among.sum()) - w - b, p_exact=sign_test(w, b))
 
 
 def under_a_patch(room, grid, wall):

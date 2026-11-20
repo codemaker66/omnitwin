@@ -487,6 +487,20 @@ class WallMeasure(unittest.TestCase):
         bits[1, 0, 0] = 0b01000000                                  # station 1 saw column 1
         self.assertEqual(wv.bit(bits, np.array([0, 1, 1]), np.array([0, 0, 0]), np.array([1, 1, 0])).tolist(), [False, True, False])
 
+    def test_two_builds_are_counted_as_pairs_with_an_exact_sign_test(self):
+        wv = self.wv
+        self.assertEqual(wv.sign_test(0, 0), 1.0)                   # nothing changed: no evidence either way
+        self.assertEqual(wv.sign_test(5, 5), 1.0)                   # as many each way
+        self.assertEqual(wv.sign_test(0, 5), 2 / 32)                # all five one way: both tails of (1/2)^5
+        self.assertEqual(wv.sign_test(9, 1), 2 * (1 + 10) / 1024)   # C(10, 0) + C(10, 1) of 2^10, both tails
+        self.assertEqual(wv.sign_test(1, 9), wv.sign_test(9, 1))    # which build is called worse does not change it
+        self.assertLess(wv.sign_test(841, 367), 1e-30)              # the Saloon's second build, its dark texels: not chance
+        self.assertTrue(0.3 < wv.sign_test(6000, 6100) < 0.4)       # a large near-even split says nothing, and is exact all the same
+        among = np.array([True, True, True, True, False])
+        worse = np.array([True, False, False, False, True])         # the last is not among the texels counted
+        better = np.array([False, True, True, False, False])
+        self.assertEqual(wv.paired_counts(worse, better, among), dict(worse=1, better=2, unchanged=1, p_exact=1.0))
+
 
 class Windows(unittest.TestCase):
     def test_tops_match_window_relief(self):

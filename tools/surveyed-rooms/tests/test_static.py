@@ -986,10 +986,13 @@ TOLERANCES = ("WALL_LENGTH_TOLERANCE", "ATLAS_ROW_TOLERANCE", "OVERHEAD_EXTENT_T
 
 
 def reader_tolerances(text):
-    """{name: value} of each of TOLERANCES that the reader's source exports as a plain number."""
+    """{name: value} of each of TOLERANCES that the reader's source exports as a plain number, on the one line
+    that declares it. A name declared on two lines is not taken, whatever the lines say: this reads text, not
+    TypeScript, and cannot tell an old value parked in a block comment from the export below it."""
     found = {}
     for name in TOLERANCES:
-        m = re.search(rf"^export const {name} = ([0-9]+(?:\.[0-9]+)?(?:e-?[0-9]+)?);", text, re.M)
+        declared = re.findall(rf"^[ \t]*(?:export[ \t]+)?(?:const|let|var)[ \t]+{name}\b.*$", text, re.M)
+        m = re.match(rf"export const {name} = ([0-9]+(?:\.[0-9]+)?(?:e-?[0-9]+)?);", declared[0]) if len(declared) == 1 else None
         if m:
             found[name] = float(m.group(1))
     return found
@@ -1000,9 +1003,14 @@ class ReaderTolerances(unittest.TestCase):
     languages together: the reader must export each one as a plain number, and each must be publish's,
     or records that one side takes the other refuses. Nothing here skips: a reader that is not
     there, or that no longer exports one of them (a rename, a dropped rule, a value written as a
-    sum), fails, because the reader lives in this tree. CI's Survey tools job runs when the reader
-    changes as well as when the tools do, so a drift that starts on either side is seen.
-    SURVEYED_ROOMS_READER names another copy of the reader to compare with."""
+    sum), or that declares one twice, fails, because the reader lives in this tree. CI's Survey
+    tools job runs when the reader changes as well as when the tools do, so a drift that starts on
+    either side is seen. SURVEYED_ROOMS_READER names another copy of the reader to compare with.
+
+    Only these four are tied. publish.py's other copies of the reader's rules (the schema version;
+    the patterns for a file's name, a slug and a hash; the twelve bytes of a relief's id, which is
+    relief-container.ts's) are compared by no test here: a change to one of them in the reader alone
+    shows only when a record the tools wrote is read by the web's own parser."""
 
     def test_publish_holds_the_readers_tolerances(self):
         from roombuild import publish
@@ -1011,10 +1019,29 @@ class ReaderTolerances(unittest.TestCase):
             text = f.read()
         found = reader_tolerances(text)
         absent = [name for name in TOLERANCES if name not in found]
-        self.assertEqual(absent, [], "the reader must export each of these as `export const NAME = number;` "
+        self.assertEqual(absent, [], "the reader must export each of these as `export const NAME = number;`, on one line "
+                                     "and declared nowhere else, not even in a block comment "
                                      "(publish.py holds a copy of each: change the two together)")
         for name, value in found.items():
             self.assertEqual(getattr(publish, name), value, name)
+
+    def test_a_name_declared_twice_is_not_taken(self):
+        plain = "".join(f"export const {name} = 0.005;\n" for name in TOLERANCES)
+        every = dict.fromkeys(TOLERANCES, 0.005)
+        self.assertEqual(reader_tolerances(plain), every)
+        self.assertEqual(reader_tolerances(plain.replace("\n", "\r\n")), every)       # as Windows may check the file out
+        # Found in review: the old value parked in a block comment above the real export, which now says 50 mm.
+        # TypeScript compiles the second line; the first matching line used to be taken, and the drift went unseen.
+        parked = "/*\nexport const HEIGHT_TOLERANCE = 0.005;\n*/\n"
+        others = {name: 0.005 for name in TOLERANCES if name != "HEIGHT_TOLERANCE"}
+        self.assertEqual(reader_tolerances(parked + plain.replace("HEIGHT_TOLERANCE = 0.005", "HEIGHT_TOLERANCE = 0.05")), others)
+        # The same where the comment's copy is the only plain number: one match of the old pattern, and the wrong one.
+        self.assertEqual(reader_tolerances(parked + plain.replace("HEIGHT_TOLERANCE = 0.005", "HEIGHT_TOLERANCE = 5 / 1000")), others)
+        self.assertEqual(reader_tolerances(plain + "  const HEIGHT_TOLERANCE = 0.05;\n"), others)   # or shadowed in a block
+        # A line comment or a doc comment that quotes the line is no declaration, here as for TypeScript.
+        quoted = "// export const HEIGHT_TOLERANCE = 0.05;\n/**\n * export const HEIGHT_TOLERANCE = 0.05;\n */\n"
+        self.assertEqual(reader_tolerances(quoted + plain), every)
+        self.assertEqual(reader_tolerances(plain.replace("HEIGHT_TOLERANCE = 0.005;", "HEIGHT_TOLERANCE = 0.005; // metres")), every)
 
 
 class OneBlasThread(unittest.TestCase):
