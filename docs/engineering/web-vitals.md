@@ -219,7 +219,9 @@ branch, the reporter's import and the two small modules it uses. (Set at all, ev
 with a rate records every page load's landing route and fetches the reporter (a small
 chunk), which draws the sample; only a sampled load fetches the library and measures,
 except in tests (`MODE=test`), under automation (`navigator.webdriver`, so e2e runs
-are never counted), or where the browser sends Global Privacy Control or Do Not Track.
+are never counted), where the browser sends Global Privacy Control or Do Not Track,
+or where the visitor chose "Don't measure my visits" or the browser will not let the
+site read its storage ("The way to object", below).
 Both chunks load as optional code (`loadOptional` in `route-error-boundary.tsx`): one
 that fails to load (a blocker, offline, a deploy in between) stops the measurement
 and never reloads the page, as a failed page chunk would. While they load, any
@@ -227,17 +229,46 @@ script's failure falls to its own import (a route's to the route boundary, which
 reloads on it); a stylesheet that will not preload still takes the reload.
 
 **Why both are off.** Reading the browser's performance timings and sending them is
-access to information on the visitor's device. PECR Schedule A1 paragraph 5 allows it
-without consent only with clear information and a simple, free way to object. Blake's
-decision of 19 October 2026 for the enquiry funnel's browser signals applies here
-too: keep nothing until the privacy page describes it.
+access to information on the visitor's device. PECR Schedule A1 paragraph 5 (in force
+since 5 February 2026) allows it without consent only when its sole purpose is to
+collect statistics about how the site is used with a view to improving it, the
+information is shared with no one except to help with that, the visitor is given clear
+and comprehensive information about the purpose and a simple, free means of objecting,
+and does not object; paragraph 5(3) asks for the information and the means of
+objecting at the first use. Blake's decision of 19 October 2026 for the enquiry
+funnel's browser signals applies here too: keep nothing until the privacy page
+describes it.
 
-**The way to object is not built yet.** Global Privacy Control and Do Not Track are
-honoured, but Safari, and so every browser on an iPhone, sends neither, so most phone
-visitors would have no way to object. Before switching on, the privacy page needs one
-that works everywhere, for example a "Don't measure my visits" control whose stored
-choice `shouldReportWebVitals` checks. That is for the solicitor and Blake to settle;
-it is not in this change (#355 adds it).
+**The way to object** (T-685, 6 November 2026). Global Privacy Control and Do Not
+Track are honoured, but Safari, and so every browser on an iPhone, sends neither. The
+privacy page therefore carries a "Don't measure my visits" switch
+(`observability/measurement-choice.ts`, rendered in `LegalPage.tsx`). The choice is
+kept in the browser under `venviewer.measurement.declined`, and
+`shouldReportWebVitals` refuses while it is set. A browser that will not let the site
+read its storage at all counts as declined and is never measured. What the browser
+keeps is the choice that holds, in every tab: when another tab presses the switch,
+every tab follows at once, whether or not it shows the switch (the `storage` event,
+heard once for the module), and a reporter still running reads it before its next
+send. A press to decline that the browser will not keep (storage full) is kept for the
+tab instead, in its session storage, which outlasts the site's own links (plain links,
+each a fresh page load) and reloads until the tab is closed (Blake, 13 November 2026:
+"Keep it for the tab (Recommended)"); where the browser refuses that too, it is held in
+that page's memory only, until the next page load. Neither reaches a tab already open,
+and the switch says how long it holds ("only in this tab, until you close it"; "only
+until you leave this page"); a browser does copy session storage into a duplicate of
+the tab or one its script opens, and keeps it in a tab it reopens, which can only
+measure less. A press in another tab while this one has the site open replaces it; a
+script there clearing all of the site's storage does not. A page restored from the
+back/forward cache reads the choice again. The switch reads what holds from the choice itself
+(`measurementChoiceState`, through `useSyncExternalStore`), so a return to the page
+cannot reset what it says. The reporter reads the choice again before every send, so
+pressing the switch also stops the page load in progress (the privacy page is itself
+measured), and so does a press that the browser keeps in another tab, before this
+one is hidden. Safari's tracking prevention clears script
+storage after about seven days without a visit, so there the choice can lapse; the
+paragraph says so, and the page's storage list names the choice ("Your page-speed
+choice"). Blake chose the switch's place: on the privacy page, which every public
+page links to, not in every footer.
 
 **To switch on**, in one release:
 1. check the database first: `web_vital_samples` has no `navigation_type` column,
@@ -246,18 +277,152 @@ it is not in this change (#355 adds it).
    was edited before landing and renumbered (0106 in October, 0108, then
    `0109_web_vital_samples` on 13 November), so a database that ran an earlier copy
    of #309 keeps the old table. Production never ran any of them;
-2. merge #355, which adds the privacy page's paragraph ("How fast our pages are", the
-   wording approved on 12 November 2026) and the "Don't measure my visits" switch, a
-   way to object that works on an iPhone (above);
-3. set `WEB_VITALS_COLLECTION=on` on the API;
-4. build the web with a sample rate **below 1** (0.5 to start): the page says a
+2. merge #355, the privacy page's paragraph ("How fast our pages are", below) and the
+   "Don't measure my visits" switch, a way to object that works on an iPhone
+   (above), re-dating the policy to the day it goes live;
+3. have the solicitor's reply, which Blake chose to wait for (13 November 2026:
+   "Wait for their reply (Recommended)"). What was put to them is kept in a note
+   outside this repository (#355's review, 18 November 2026), and that note promises
+   the measurement stays off until then;
+4. set `WEB_VITALS_COLLECTION=on` on the API;
+5. build the web with a sample rate **below 1** (0.5 to start): the page says a
    browser "may" measure a page load, so only a sample of them is measured, and the
    code treats 1 or more as off. Measuring every page load needs that description
    changed first.
 
-The privacy page's wording is #355's (`LegalPage.tsx`). The October draft that stood
-here said the address was not logged, which is untrue: the host's request logs
-record it (above).
+The privacy page's paragraph. Blake approved the first wording on 6 November 2026.
+On 12 November a check of every claim
+against the code found sentences untrue of the real system (the hosting provider's
+request logs record every request's address; Safari clears the stored choice; one of
+the four is a layout-shift score, not a time) and corrected the switch's status line
+("in this browser"; a plain line when the browser will not keep the choice), and
+Blake approved the corrected wording the same day ("everything is approved and have
+full permissions"). On 13 November the release lead's review found three more places
+to make exact, and Blake approved all three ("Apply all three (Recommended)"): the
+Global Privacy Control and Do Not Track sentence (the server also discards a report
+whose signal the page could not see), a lawful basis under "Why we use it, and our
+lawful basis" (Article 6(1)(f)), with "What we do not do" narrowed to "We run no
+third-party analytics product", and the rating and the day kept beside each
+measurement. A review of #355 later that day found three more, and Blake approved
+them too ("Apply all three (Recommended)"): a row keeps the kind of page and the kind
+of device as well as the day (not the time), not the day alone; the layout shift is
+measured "while it was open", since CLS is reported until the page is hidden, not
+only while it loads; and "How long we keep it" lists the measurements (90 days). He
+also approved naming the Regulations' statistics exemption in the cookies section
+("Add the sentence (Recommended)") and turning off the error monitor's sessions
+("Turn sessions off (Recommended)"): browser Sentry sent a session for every page
+load and navigation, which neither "no third-party analytics product" nor the switch's
+"not measured" would have survived (`observability/sentry.ts` now drops its
+`BrowserSession` integration). Two more reviews that evening (the switch's code and
+tests; every claim against the code and PECR's text) led to four more of Blake's
+answers. "Strip browser details, say so (Recommended)": the API sent Sentry a timing
+record (a transaction) for about one request in ten, whether or not anything failed,
+with the request's headers and the user agent; `scrubTransaction`
+(`packages/api/src/observability/redact.ts`) now keeps no browser-supplied header
+beyond the host and content length, and both of the page's Sentry entries say what
+such a record carries. "Wait for their reply (Recommended)": switching on waits for
+that reply (step 3 above). "Change both
+(Recommended)": the switch says where the browser blocks storage that "your visits in
+this browser are never measured", and why. "Name every condition (Recommended)": the
+cookies section names each of paragraph 5's conditions, not a part of them.
+
+Verification workflows that night (each finding put to three skeptics) found more:
+- The second (five lenses) found record ids in the timing records' URLs (user, event
+  and booking ids in the request's path, provider ids in outgoing calls), against the
+  approved "with no address, identifier or browser details"; a press held only in
+  memory, lost at the next page load, which the page's own links are, though the line
+  said it held until a reload or leaving the site (Blake chose "Keep it for the tab
+  (Recommended)", with the lines "…holds only in this tab, until you close it." and,
+  where the tab will not keep it either, "…holds only until you leave this page.");
+  and "clear information" where paragraph 5(1)(d) says "clear and comprehensive
+  information" (Blake chose "Use the statute's words (Recommended)").
+- The third (four lenses) found that the first fix for the ids covered named keys
+  only (the SDK also writes a plain `url` key, Fastify's own span writes the path
+  again, and breadcrumbs hold outgoing calls' URLs), and that a caller's baggage sets
+  the sampling draw (sample_rand), which the sampler as first written, returning the
+  rate, could not stop. Every URL and path anywhere in a record now goes on the route's
+  pattern where it is the request's own path, and otherwise loses each segment that
+  looks like a record's id (a UUID, a token with a digit, a long token in both cases);
+  a record carries no breadcrumbs; and no record with a parent span is sent.
+- The fourth (three lenses) found that that rule drops every record with a parent, the
+  late parts of a request already sent included (work a route started that ended
+  after its reply, whose record repeats the request's own URL without its route),
+  which is kept on purpose and now said and tested; and that the API's own calls
+  carried Sentry's trace headers, so the tests' requests, made in the same process,
+  were dropped too. The API now sends trace headers to no one
+  (`tracePropagationTargets: []`), which also stops telling Clerk, Stripe, Resend and
+  R2 our trace ids and route names. A record no route matched (a malformed URL's 400,
+  say; an unknown path's 404 is never sent, as the SDK itself drops records of 401
+  to 404) has no pattern, so its own path had the segment rules alone, a code spelled
+  only in letters being the gap, until the release lead's review (below) stopped
+  such records being sent.
+- The fifth (two lenses, 14 November) found that the late-part test could not fail if
+  such a record were sent, since the segment rules replaced its call's id anyway (it
+  now looks for the record's own span id and the request's own path, and checks that
+  no record sent has a parent); that the other two real-SDK tests did not check that
+  their plain requests continued no trace (they now do, for the requests made with
+  fetch; capture-path's node:http request writes its headers raw, so none could be
+  added to it); and that an aborted or timed-out request's route work goes with the
+  late parts, which is kept (nothing in such a record tells it from the late part of a
+  request that continued a caller's trace) and now said. Checking it turned up one
+  more: a push endpoint's device token at FCM has a colon in it, which the segment
+  rules did not take for an id, so a push that ended before its route's reply would
+  have named the device in that request's record. Colons now count.
+- The sixth (two lenses, at 4e2acb3e) found that counting colons would also have taken
+  a long or digit-bearing route placeholder for an id (none exists yet; the longest is
+  18 characters), so a segment that starts with a colon is now never one; that the
+  tests did not cover a token whose digit or capitals come only after its colon; that
+  the capture-path test showed only its /boom records sent (it now shows every record
+  built for the API sent); that "a 404" above was wrong; and that the fifth's bullet
+  above counted capture-path's node:http request as a check of trace headers, though
+  it writes its headers raw and could carry none (corrected there). The check runs
+  found two more: a lint error, an `any` read from a trace context's attribute bag
+  (latent since the second's fixes, as no run had finished since), and a test whose
+  second round could not fail, as its CLS of 500 is one the report schema refuses. A
+  last review, of the delta to 3475d20a, found only wording. At 3475d20a every check
+  passed and every one of 38 mutations was caught by a test.
+- The release lead's review of 33db2ba1 (18 November) found that gap wider than said:
+  the API limits a path no route matches on the global limiter's budget
+  (`limitUnmatchedPaths`, `packages/api/src/index.ts`: 100 a minute from one address,
+  shared with every route that has no limit of its own), so past it an unknown path is
+  answered with a 429, a status the SDK does not drop, and an email-shaped segment or
+  a phone number in that path would have been sent. No record of a request no route
+  matched is sent now (`isUnroutedRequest`, `packages/api/src/observability/sentry.ts`:
+  any record that carries a request's URL or path and whose `http.route` is missing or
+  names no path, whether the SDK's `http.server` span roots it or, for a GET whose
+  path looks like a static file or a WebSocket upgrade, neither of which the SDK
+  gives such a span, Fastify's own request span; the verification of the first fix
+  found that second form). Real-SDK
+  tests show both with the limiter itself, on a budget of one. The review also asked
+  that a record keep no user, tags or extra data, whatever adds them; that any user
+  and password in a URL's origin be cut; that "no request header" say what it means
+  (no browser-supplied header beyond the host and content length: the server's own
+  host name and a body's length stay); that browser errors carry no locale or time
+  zone (the `CultureContext` integration is dropped beside `BrowserSession`); and that
+  the switch say it is unavailable where the browser refuses its storage, show as
+  pressed in forced colours, and be linked from the sentences that send a visitor to
+  it. All of these are done, and where storage is refused the switch also dims
+  (GrayText in forced colours).
+
+The paragraph now reads:
+
+> **How fast our pages are.** When you open one of our pages, your browser may measure
+> how quickly it loaded and responded, and how much its content shifted while it was
+> open (four measurements, each rated good, needs improvement or poor), and send them
+> to us with the kind of page (for example "a proposal") and whether it was opened on
+> a phone, tablet or computer. It does not send the address of the page you opened,
+> anything you typed, or any identifier, and nothing is stored on your device for it.
+> Like any request, it reaches us from your internet address. We do not keep that with
+> the measurements, and our own server does not log it; our hosting provider's standard
+> request logs record it, as they do for every request (see "Server and request
+> logs"). We keep each measurement with only the kind of page, the kind of device and
+> the day it arrived (not the time). We use them only to make the site faster, and
+> delete them after 90 days. If your browser sends Global Privacy Control or Do Not
+> Track, your visit is not measured, and anything that arrives with either signal is
+> discarded. On any browser you can also turn it off with the "Don't measure my
+> visits" switch on this page. That choice is kept in this browser on this device
+> until the browser clears our site's data (Safari does this after about a week
+> without a visit), so you may need to set it again.
 
 **Limits.** Anyone can post a report, so the limiter bounds an address to 60 a minute
 in each server process and a daily ceiling (`WEB_VITALS_DAILY_REPORT_CEILING`, 5,000

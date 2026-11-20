@@ -5,7 +5,7 @@ import {
 } from "../film-toe.js";
 import { normalisedGain, sceneOutput, withMainDraw, withPipelineOutput } from "../scene-grade.js";
 import { withNativeComposedFrame, withNativeRenderScope } from "../native-renderer.js";
-import { Color, PerspectiveCamera, RenderTarget, Scene } from "three";
+import { ACESFilmicToneMapping, Color, NeutralToneMapping, NoToneMapping, PerspectiveCamera, RenderTarget, Scene, type ToneMapping } from "three";
 // three's own Neutral on plain numbers; film-toe-graph.test.ts holds the port to three's source.
 import { khronosNeutral } from "./khronos-neutral.js";
 
@@ -74,8 +74,8 @@ describe("Neutral with its toe as a number", () => {
     expect(worst).toBeLessThan(1e-12);
   });
 
-  it("draws with Neutral's toe by default, so the hall's look does not move until a toe is chosen", () => {
-    expect(DEFAULT_FILM_TOE).toBe(NEUTRAL_TOE);
+  it("draws the hall's photographs as scanned by default: no toe (Blake's pick, 14 November 2026)", () => {
+    expect(DEFAULT_FILM_TOE).toBe(0);
   });
 
   it("leaves a colour under the shoulder exactly as it arrived at toe 0, in every mood", () => {
@@ -235,13 +235,13 @@ describe("the toe a view asks for", () => {
     expect(filmToeFromSearch("")).toBeNull();
   });
 
-  it("leaves the photographs' materials as they were for a view that asks for nothing", () => {
-    expect(photographToeFor("")).toBeNull();
-    expect(photographToeFor("?sky=1")).toBeNull();
-    expect(photographToeFor("?toe=dark")).toBeNull();
+  it("gives a view that asks for nothing the default toe, and one that asks the toe it asked for", () => {
+    expect(photographToeFor("")).toBe(DEFAULT_FILM_TOE);
+    expect(photographToeFor("?sky=1")).toBe(DEFAULT_FILM_TOE);
+    expect(photographToeFor("?toe=dark")).toBe(DEFAULT_FILM_TOE);
     expect(photographToeFor("?toe=0")).toBe(0);
     expect(photographToeFor("?toe=0.02")).toBe(0.02);
-    // Asked for by name, even Neutral's own toe builds the lift, so a comparison can step through every toe on one page.
+    // Neutral's own toe, asked for by name, is how the hall looked before: the comparison's other end.
     expect(photographToeFor("?toe=0.04")).toBe(NEUTRAL_TOE);
   });
 
@@ -293,7 +293,7 @@ describe("what a material is told follows its draw", () => {
     const scene = new Scene();
     const camera = new PerspectiveCamera();
     let target: RenderTarget | null = null;
-    const renderer = { getRenderTarget: () => target, toneMappingExposure: 1.06 };
+    const renderer = { getRenderTarget: () => target, toneMappingExposure: 1.06, toneMapping: NeutralToneMapping };
     const capture = new RenderTarget(1, 1);
     const seen: number[] = [];
     withNativeRenderScope(renderer, scene, camera, () => { seen.push(sceneOutput.main.value, sceneOutput.exposure.value); });
@@ -308,7 +308,7 @@ describe("what a material is told follows its draw", () => {
     const scene = new Scene();
     const camera = new PerspectiveCamera();
     const quad = new Scene();
-    const renderer = { getRenderTarget: (): RenderTarget | null => null, toneMappingExposure: 1.3 };
+    const renderer = { getRenderTarget: (): RenderTarget | null => null, toneMappingExposure: 1.3, toneMapping: NeutralToneMapping };
     const seen: Record<string, number> = {};
     withNativeComposedFrame(renderer, scene, camera, () => {
       // The pipeline draws the canvas with a quad; the scene and its shadow map are drawn nested in it.
@@ -322,6 +322,49 @@ describe("what a material is told follows its draw", () => {
       });
     });
     expect(seen).toEqual({ "scene pass": 1, "shadow map": 0, "scene pass after": 1, "post pass": 0 });
+    expect(read()).toEqual(resting);
+  });
+
+  it("calls no draw the view's frame under another curve, or none: the photographs add only what Neutral's toe will take", () => {
+    const scene = new Scene();
+    const camera = new PerspectiveCamera();
+    const seen: number[] = [];
+    for (const toneMapping of [NeutralToneMapping, ACESFilmicToneMapping, NoToneMapping]) {
+      const renderer = { getRenderTarget: (): RenderTarget | null => null, toneMappingExposure: 1, toneMapping };
+      withNativeRenderScope(renderer, scene, camera, () => { seen.push(sceneOutput.main.value); });
+    }
+    // A renderer that names no curve at all is not known to draw through Neutral.
+    withNativeRenderScope({ getRenderTarget: (): RenderTarget | null => null }, scene, camera, () => { seen.push(sceneOutput.main.value); });
+    expect(seen).toEqual([1, 0, 0, 0]);
+    expect(read()).toEqual(resting);
+  });
+
+  it("reads a composed frame's curve before its composer runs, which takes the renderer's own off while its passes draw", () => {
+    const scene = new Scene();
+    const camera = new PerspectiveCamera();
+    const quad = new Scene();
+    const renderer: { getRenderTarget: () => RenderTarget | null; toneMappingExposure: number; toneMapping: ToneMapping } = {
+      getRenderTarget: () => null, toneMappingExposure: 1.3, toneMapping: NeutralToneMapping,
+    };
+    const seen: Record<string, number> = {};
+    const frame = (label: string): void => {
+      withNativeComposedFrame(renderer, scene, camera, () => {
+        // As three's RenderPipeline.render: the renderer's curve off for its passes, back when it returns.
+        const own = renderer.toneMapping;
+        renderer.toneMapping = NoToneMapping;
+        try {
+          withNativeRenderScope(renderer, quad, camera, () => {
+            withNativeRenderScope(renderer, scene, camera, () => { seen[label] = sceneOutput.main.value; });
+          });
+        } finally {
+          renderer.toneMapping = own;
+        }
+      });
+    };
+    frame("through Neutral");
+    renderer.toneMapping = ACESFilmicToneMapping;
+    frame("through another curve");
+    expect(seen).toEqual({ "through Neutral": 1, "through another curve": 0 });
     expect(read()).toEqual(resting);
   });
 });
