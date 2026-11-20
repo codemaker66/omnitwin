@@ -35,7 +35,8 @@ here changes), a station's view of a texel counts in all of the above only where
 of its ray. The mesh outlines a thing standing proud of a wall smaller than the panoramas show it, so along the edge of
 the zone it hides, a station's picture of the thing reaches onto the wall the mesh says is in view; with one station a
 block that rim is printed sharply, and the Laplacian even prefers it on plain wall. A texel none of its block's RANKED
-stations saw clear takes the first station of the block's whole order that did (clear_views): a clear view like any
+stations saw clear takes the first station of the block's whole order that did (clear_views; whole_order: a block
+without a label asks its stations by how much of it they saw): a clear view like any
 other. A texel that stations saw, but none of them clear, takes the doubtful view that passes farthest from the occluder
 (doubtful_views), so it does not become a hole. A texel no station saw stays one, as without the margin. The npz then
 also holds seenbits (seen at all) and clearbits (seen clear); visbits is clearbits plus the doubtful views given.
@@ -503,19 +504,34 @@ def station_bit(bits, r, c):
     return ((bits[r, c >> 3] >> (7 - (c & 7))) & 1).astype(bool)
 
 
+def whole_order(D, label, keep, cover):
+    """With bestview.OCCLUDER_MARGIN set: per block, every station that saw some of it clear, in the order to ask
+    them for a clear view of a texel. Where the block has a label that is ranked_lists' own order with no station
+    left out: the label, the other candidates by data cost, then the rest by how much of the block they saw. Where
+    it has none, no station passed for a candidate and there is no data cost to go by, so the stations come by how
+    much of the block they saw, most first (ranked_lists gives such a block no list at all). The margin itself can
+    leave a block without a label, by leaving each station too little of it clear to be a candidate, and the texels
+    of such a block that a station did see clear are not to become holes for it."""
+    order = ranked_lists(D, label, keep, cover, None)
+    most = np.argsort(-cover, axis=0, kind='stable')
+    most = np.moveaxis(np.where(np.take_along_axis(cover, most, 0) > 0, most, -1).astype(np.int16), 0, -1)
+    return np.where((label < 0)[..., None], most, order)
+
+
 def clear_views(order, tlab, clearbits):
     """With bestview.OCCLUDER_MARGIN set: a texel none of its block's RANKED stations saw clear of an occluder's
-    margin takes the first station of the block's whole order that did (`order`: ranked_lists with every station).
+    margin takes the first station of the block's whole order that did (`order`: whole_order, every station).
     Beside a thing that stands proud, the near, sharp stations that lead a block's ranking are the ones whose view
     of the wall passes within its margin, and a station outside the ranking, farther off or on the thing's other
-    side, often saw the same texels clear. Such a view is a clear view like any other.
+    side, often saw the same texels clear. Such a view is a clear view like any other. A block without a label has
+    no ranking, and its texels take the first station of its order in the same way.
     Returns the texel labels and how many texels took a station from outside their block's ranking."""
     r, c = np.nonzero((tlab < 0) & B.unpack_bits(np.bitwise_or.reduce(clearbits, axis=0), tlab.shape[1]))
     out = tlab.copy()
     if len(r):
         o = order[r // B.BLOCK, c // B.BLOCK]                    # (n, stations): each texel's block's order
         first = np.full(len(r), -1, np.int16)
-        for k in range(RANKED, o.shape[1]):
+        for k in range(o.shape[1]):                              # the ranked ones again (none of them saw it clear), then the rest
             s = o[:, k]
             sv = np.where(s >= 0, s, 0).astype(np.int64)
             clear = ((clearbits[sv, r, c >> 3] >> (7 - (c & 7))) & 1).astype(bool)
@@ -741,8 +757,7 @@ def main():
     tlab = texel_labels(ranked, stats['visbits'], valid, rb)
     extra, margin = {}, None
     if B.OCCLUDER_MARGIN > 0:               # then stats['visbits'] holds the clear views, and same_margin() has vouched for a cache
-        order = ranked_lists(cand['D'], label, cand['keep'], stats['cover'], None)
-        tlab, outside = clear_views(order, tlab, stats['visbits'])
+        tlab, outside = clear_views(whole_order(cand['D'], label, cand['keep'], stats['cover']), tlab, stats['visbits'])
         clear = int((tlab >= 0).sum())
         tlab, bits, clearance = doubtful_views(grid, sts, tlab, stats)
         extra = dict(seenbits=stats['seenbits'], clearbits=stats['visbits'])

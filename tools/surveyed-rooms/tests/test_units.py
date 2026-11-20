@@ -312,26 +312,39 @@ class MarginViews(unittest.TestCase):
         D = np.tile((0.1 * np.arange(S)).reshape(S, 1, 1), (1, 1, 2))        # one row of two blocks; station 0 the best, 8 the worst
         keep = np.ones((S, 1, 2), bool)
         keep[8] = False                                              # station 8: not a candidate, ranked after them by its cover
+        keep[:, 0, 1] = False                                        # the second block: no station passed for a candidate
         cover = np.full((S, 1, 2), 0.97, np.float32)
-        label = np.array([[0, -1]])                                  # the second block has no label: no order at all
+        cover[:, 0, 1] = 0.0
+        cover[3, 0, 1], cover[7, 0, 1] = 0.02, 0.05                  # two stations saw a little of it clear, station 7 the more
+        label = np.array([[0, -1]])                                  # so it has no label, and ranked_lists gives it no list
         ranked = lv.ranked_lists(D, label, keep, cover)
-        order = lv.ranked_lists(D, label, keep, cover, None)
+        order = lv.whole_order(D, label, keep, cover)
         self.assertEqual(ranked[0, 0].tolist(), [0, 1, 2, 3, 4, 5])
+        self.assertTrue(np.all(ranked[0, 1] == -1))
         self.assertEqual(order[0, 0].tolist(), list(range(S)))       # every station, the ranking first
-        self.assertTrue(np.all(order[0, 1] == -1))
+        self.assertEqual(order[0, 1].tolist(), [7, 3] + [-1] * (S - 2))     # without a label: by how much each saw, most first
+        self.assertEqual(order.dtype, np.int16)
         clear = np.zeros((S, B.BLOCK, n), bool)
         clear[:, :, :2] = True                                       # columns 0 and 1: every station
         clear[6:, :, 2:4] = True                                     # columns 2 and 3: stations 6, 7 and 8, none of them ranked
         clear[8, :, 4:6] = True                                      # columns 4 and 5: station 8 alone
-        clear[3, :, B.BLOCK:] = True                                 # the block without a label: left alone
+        second = B.BLOCK                                             # the block without a label begins at this column
+        clear[3, :, second:second + 5] = True                        # its columns 0 to 4: station 3
+        clear[7, :, second + 2:second + 7] = True                    # its columns 2 to 6: station 7, which saw more of the block
         bits = B.pack_bits(clear)
         valid = np.ones((B.BLOCK, n), bool)
         tlab = lv.texel_labels(ranked, bits, valid, (0, 1, 0, 2))
         self.assertEqual(sorted(np.unique(tlab).tolist()), [-1, 0])
+        self.assertTrue(np.all(tlab[:, second:] == -1))              # the ranking alone leaves the whole second block without a station
         out, outside = lv.clear_views(order, tlab, bits)
         self.assertTrue(np.all(out[:, :2] == 0) and np.all(out[:, 2:4] == 6) and np.all(out[:, 4:6] == 8))
-        self.assertTrue(np.all(out[:, 6:] == -1))                    # no station saw columns 6 and 7; the second block has no order
-        self.assertEqual(outside, 4 * B.BLOCK)
+        self.assertTrue(np.all(out[:, 6:second] == -1))              # no station saw the first block's other columns
+        # The block without a label: a texel a station saw clear takes it all the same, and where two did, the one
+        # that saw more of the block. (The margin can itself leave a block without a label; its texels are not to
+        # become holes for that.) What no station saw clear stays as it was.
+        self.assertTrue(np.all(out[:, second:second + 2] == 3) and np.all(out[:, second + 2:second + 7] == 7))
+        self.assertTrue(np.all(out[:, second + 7:] == -1))
+        self.assertEqual(outside, 4 * B.BLOCK + 7 * B.BLOCK)
         self.assertTrue(np.array_equal(tlab, lv.texel_labels(ranked, bits, valid, (0, 1, 0, 2))))   # the input is not written to
 
     def test_a_doubtful_view_is_the_one_with_the_most_clearance(self):

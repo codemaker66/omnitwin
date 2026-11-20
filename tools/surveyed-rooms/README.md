@@ -497,7 +497,10 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
   reports' own counts were 563 higher over the twelve walls: views given from outside a ranking
   that were in fact clear. Now a texel takes the first station of its block's whole order that
   saw it clear, and only a texel that stations saw, and none clear, takes a doubtful view: the
-  one that passes farthest from the occluder's outline in its station's depth map. On a synthetic
+  one that passes farthest from the occluder's outline in its station's depth map. A block the
+  margin leaves without a label (each station sees too little of it clear to be a candidate) has
+  no ranking; its texels ask the stations by how much of the block each saw clear, so what a
+  station saw clear there does not become a hole either (no such texel on the Saloon's walls). On a synthetic
   wall (a pediment 0.3 m proud and a pilaster 0.15 m proud, the mesh 2 cm short, 7 stations, 1024
   depth maps, 50 mm) the texels whose label's panorama shows a box were 99 without the margin, 211
   with it as first written and 51 now, 45 of those where every station that sees the texel shows
