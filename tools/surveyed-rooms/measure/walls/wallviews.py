@@ -24,6 +24,7 @@ import glob
 import os
 import re
 import sys
+from math import comb
 
 for _name in ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS'):
     os.environ.setdefault(_name, '1')                  # one BLAS thread, as the build's own steps run, unless the caller said otherwise
@@ -149,6 +150,21 @@ def sign_test_worse(worse, better):
         term = term * (n - i) // (i + 1)
         total += term
     return min(1.0, total / 2 ** n)
+
+
+def sign_test_worse_against(worse, better, control_worse, control_better):
+    """sign_test_worse against a split that need not be even: how likely it is that at least `worse` of the
+    `worse + better` that changed turned worse, were each to turn worse with the control's own share,
+    control_worse / (control_worse + control_better), and better otherwise; an even chance where the control has
+    no changed pair. compare_builds.py reads each wall's patches against its control's split with it. The exact
+    binomial tail, in whole numbers until the one division at the end; meant for counts of patches, since its
+    terms grow as the control's count to the power of the patches."""
+    worse, better, a, b = int(worse), int(better), int(control_worse), int(control_better)
+    if a + b == 0:
+        a = b = 1
+    n = worse + better
+    total = sum(comb(n, i) * a ** i * b ** (n - i) for i in range(worse, n + 1))
+    return min(1.0, total / (a + b) ** n)
 
 
 def holm(ps):

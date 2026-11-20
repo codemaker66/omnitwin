@@ -570,6 +570,32 @@ class WallMeasure(unittest.TestCase):
         raw = [0.039] + [0.5] * 23                                  # one wall of eight, on one judgement of three, at 0.039
         self.assertGreater(wv.holm(raw)[0], 0.9)                    # is no finding among twenty-four tests
 
+    def test_is_it_worse_against_the_control_s_own_share(self):
+        # Guards sign_test_worse_against, with which compare_builds reads a wall's patches against its control's own
+        # split (SG6): the exact binomial tail, at least `worse` of `worse + better` turning worse each with the
+        # control's share of worse, against its definition in fractions; at an even share, or where the control has
+        # no changed pair, it is sign_test_worse itself.
+        from fractions import Fraction  # noqa: PLC0415
+        from math import comb  # noqa: PLC0415
+        wv = self.wv
+
+        def tail(worse, better, control_worse, control_better):     # the definition
+            q = Fraction(control_worse, control_worse + control_better) if control_worse + control_better else Fraction(1, 2)
+            n = worse + better
+            return float(sum(comb(n, i) * q ** i * (1 - q) ** (n - i) for i in range(worse, n + 1)))
+
+        f = wv.sign_test_worse_against
+        for case in ((8, 1, 61, 183), (8, 1, 183, 61), (13, 4, 88, 122), (0, 7, 3, 9), (7, 0, 3, 9), (30, 33, 311, 473), (1, 0, 1, 20000)):
+            self.assertEqual(f(*case), tail(*case), case)
+        # The review's case: fireplace-front-end, off, 8 patches worse and 1 better against a control of 61/183 (a
+        # share of 0.25): about 1.1e-4, where an even split gives 10/512.
+        self.assertTrue(1.0e-4 < f(8, 1, 61, 183) < 1.1e-4)
+        for worse, better in ((8, 1), (0, 0), (5, 5), (13, 4), (1, 8), (0, 3)):
+            self.assertEqual(f(worse, better, 0, 0), wv.sign_test_worse(worse, better), (worse, better))
+            self.assertEqual(f(worse, better, 7, 7), wv.sign_test_worse(worse, better), (worse, better))
+        self.assertEqual((f(1, 3, 0, 9), f(0, 3, 0, 9), f(4, 0, 9, 0)), (0.0, 1.0, 1.0))     # a control all one way
+        self.assertEqual(f(np.int64(8), np.int64(1), np.int64(61), np.int64(183)), tail(8, 1, 61, 183))   # numpy's integers
+
     def test_a_patch_is_one_unit_whatever_is_left_out_of_it(self):
         wv = self.wv
         mask = np.zeros((40, 74), bool)
@@ -710,6 +736,154 @@ class CompareBuilds(unittest.TestCase):
         pooled = self.cb.pairs_over_the_walls(rows, "doubtful_to_clear", "paired_by_own_patch")
         self.assertEqual(self.cb.total(rows, "doubtful_to_clear", "paired_by_own_patch", "patches"), 4)
         self.assertEqual(pooled["dark"], dict(worse=4, better=0, unchanged=0, p_exact=2 / 16, p_worse=1 / 16))
+
+    def test_a_control_texel_is_not_among_its_own_surroundings(self):
+        # Guards the control through the whole computation (found in review, 37266a83): a clean texel judged as a
+        # control is set against its clean neighbours without itself, as a changed texel is. Control texel T has
+        # exactly FEW clean neighbours on its own surface, all beyond the control's reach, half at 40 levels and
+        # half at 100 (median 70); T is 100 in the first build and 40 in the second, so it turns dark (40 < 0.85 x
+        # 70) and is off in both. Among its own surroundings it would make their median 100 and then 40, and be
+        # neither. Every other control texel is plaster at 100 on the other surface.
+        wv = self.wv
+        R, few = wv.REACH, wv.FEW
+        self.assertEqual(few % 2, 0)
+        H, W = 2 * R + 2, 2 * R + few // 2 + 10
+        w = self.wall(H, W)
+        w["depth"][:] = 0.05                                        # the plaster
+        c0, t = 5, 5 + R
+        w["new"][R, c0] = 1                                         # the one changed texel, judged, on the plaster
+        w["depth"][R, t] = 0.0                                      # T, at the edge of the control's reach of it
+        w["depth"][R:R + 2, t + 1:t + 1 + few // 2] = 0.0           # T's surface: FEW texels, out of that reach
+        w["L1"][R, t + 1:t + 1 + few // 2] = w["L2"][R, t + 1:t + 1 + few // 2] = 40.0
+        w["L2"][R, t] = 40.0
+        control = self.compare(w)[0]["clean_texels_beside"]
+        self.assertGreater(control["texels"], 1)
+        self.assertEqual((control["dark"], control["off"]), (1, 1))     # T alone, in the second build
+        self.assertEqual(control["paired"]["dark"], dict(worse=1, better=0, unchanged=control["texels"] - 1, p_exact=1.0, p_worse=0.5))
+        self.assertEqual((control["paired"]["off"]["worse"], control["paired"]["off"]["better"]), (0, 0))   # off in both builds
+        w["L2"][R, t] = 100.0                                       # T as it was: then no control texel is dark
+        self.assertEqual(self.compare(w)[0]["clean_texels_beside"]["dark"], 0)
+
+    def test_the_changed_texels_split_into_their_classes(self):
+        # Guards the split by what the change did (SG7): a view the first build's station saw doubtfully or clear,
+        # to one the second build's station saw doubtfully or clear; a former hole judged against the first build's
+        # photograph as the atlas fills it, in all_left_to_be_seen and never in left_to_be_seen; a texel the second
+        # build left without a station in no class; a former hole under a photo patch counted in all, not seen.
+        H, W = 40, 90
+        w = self.wall(H, W)
+        expect = {}
+        for kind, c0 in (("doubtful_to_clear", 10), ("doubtful_to_doubtful", 20), ("clear_to_clear", 30), ("clear_to_doubtful", 40), ("former_holes", 50)):
+            m = np.zeros((H, W), bool)
+            m[18:20, c0:c0 + 2] = True
+            expect[kind] = m
+            w["new"][m] = 1
+            w["L2"][m] = 40.0                                       # each turns dark in the second build
+        w["clear1"][0][expect["doubtful_to_clear"] | expect["doubtful_to_doubtful"]] = False     # the first build's station saw them doubtfully
+        w["clear2"][1][expect["doubtful_to_doubtful"] | expect["clear_to_doubtful"]] = False     # the second build's did
+        hidden = np.zeros((H, W), bool)
+        hidden[18:20, 60:62] = True                                 # a former hole under a photo patch
+        w["new"][hidden] = 1
+        w["covered"][hidden] = True
+        holes = expect["former_holes"] | hidden
+        w["old"][holes] = -1                                        # the first build left them without a station
+        w["ok1"][holes] = False                                     # and coloured nothing there
+        w["L1"][holes] = 0.0                                        # what its photograph holds there is not what it shows
+        w["filled1"] = np.full((H, W), 100.0, np.float32)           # the atlas fills them from the plaster round them
+        w["new"][18, 70] = -1                                       # a texel the second build left without a station
+        w["ok2"][18, 70] = False
+        row, masks = self.compare(w)
+        kept = expect["doubtful_to_clear"] | expect["doubtful_to_doubtful"] | expect["clear_to_clear"] | expect["clear_to_doubtful"]
+        four = dict(worse=4, better=0, unchanged=0, p_exact=2 / 16, p_worse=1 / 16)
+        for kind, m in expect.items():
+            self.assertTrue(np.array_equal(masks[kind], m), kind)
+            self.assertEqual(row[kind]["texels"], 4, kind)
+            self.assertEqual(row[kind]["paired"]["dark"], four, kind)     # a former hole too: against the fill, not the empty photograph
+            self.assertEqual((row[kind]["paired_by_patch"]["patches"], row[kind]["paired_by_own_patch"]["patches"]), (1, 1), kind)
+        self.assertTrue(np.array_equal(masks["left_to_be_seen"], kept))
+        self.assertTrue(np.array_equal(masks["all_left_to_be_seen"], kept | expect["former_holes"]))
+        self.assertTrue(np.array_equal(masks["changed"], kept | holes))   # the texel without a station is not compared
+        self.assertEqual((row["station_changed"], row["left_to_be_seen"]["texels"], row["all_left_to_be_seen"]["texels"]), (16, 16, 20))
+        self.assertEqual({k: row["former_holes"][k] for k in ("in_all", "under_a_patch", "took_a_clear_view")},
+                         dict(in_all=8, under_a_patch=4, took_a_clear_view=8))
+        w["filled1"] = None                                         # without the fill a former hole is refused, not read from the empty photograph
+        with self.assertRaisesRegex(ValueError, "former hole"):
+            self.compare(w)
+
+    def test_the_bar_is_holm_over_the_walls_and_judgements(self):
+        # Guards the bar (wall_tests): the family is every judgement of every wall with a judged changed texel left
+        # to be seen, and no other; Holm's correction runs over that family; a wall fails only where more of its
+        # patches turned worse AND Holm p is under 0.05. The one-sided p at the control's own share is reported
+        # beside it and decides nothing (SG6).
+        wv, cb = self.wv, self.cb
+
+        def counts(worse, better, unchanged):
+            return dict(worse=worse, better=better, unchanged=unchanged, p_exact=wv.sign_test(worse, better), p_worse=wv.sign_test_worse(worse, better))
+
+        def row(wall, splits, control=None, texels=10):
+            judged = dict(texels=texels, paired_by_patch=dict(patches=12, **{k: counts(*splits.get(k, (1, 1, 10))) for k in cb.JUDGEMENTS})) if texels else dict(texels=0)
+            return dict(wall=wall, all_left_to_be_seen=judged,
+                        clean_texels_beside=dict(paired={k: counts(*(control or {}).get(k, (0, 0, 100))) for k in cb.JUDGEMENTS}))
+
+        rows = [row("a", dict(dark=(12, 0, 0))),                    # every patch worse: p 2/4096
+                row("b", dict(off=(0, 12, 0))),                     # every patch better: as small a p, and no failure
+                row("c", dict(off=(8, 1, 3)), control=dict(off=(61, 183, 3299))),     # raw p 0.039; its control leans better
+                row("d", {}, texels=0)]                             # nothing judged: not in the family
+        rows += [row(f"e{i}", {}) for i in range(4)]
+        tests = cb.wall_tests(rows)
+        self.assertEqual(len(tests), 7 * 3)
+        self.assertNotIn("d", {x["wall"] for x in tests})
+        by = {(x["wall"], x["judgement"]): x for x in tests}
+        p = 2 / 4096
+        self.assertEqual((by["a", "dark"]["p_holm"], by["b", "off"]["p_holm"]), (21 * p, 21 * p))   # the smallest two: x 21, and x 20 raised to it
+        self.assertEqual((by["c", "off"]["p_exact"], by["c", "off"]["p_holm"]), (20 / 512, 19 * 20 / 512))
+        self.assertEqual(by["e0", "dark"]["p_holm"], 1.0)
+        self.assertEqual([(x["wall"], x["judgement"]) for x in tests if x["fails"]], [("a", "dark")])
+        c = by["c", "off"]
+        self.assertEqual((c["control_share_worse"], c["p_worse"]), (0.25, wv.sign_test_worse(8, 1)))
+        self.assertEqual(c["p_worse_at_control_share"], wv.sign_test_worse_against(8, 1, 61, 183))
+        self.assertLess(c["p_worse_at_control_share"], 0.05 / 21)  # it would pass Holm's first step, and does not make c fail
+        a = by["a", "dark"]
+        self.assertEqual((a["control_share_worse"], a["p_worse_at_control_share"]), (0.5, a["p_worse"]))     # no control pair: an even share
+
+    def test_apart_from_isolates_the_texels_on_neither_build_s_station(self):
+        # Guards --apart-from (SG3): comparing a third build (old) with a fourth (new), the first as the reference,
+        # unlike_the_reference is exactly the texels the fourth gives a station that is neither the third's nor the
+        # first's, and as_the_reference those it gives the first's. Neither holds a texel that did not change, nor
+        # one the fourth left without a station; one under a photo patch is counted in all, not left to be seen.
+        H, W = 30, 130                                              # not square: rows and columns cannot be swapped unseen
+        w = self.wall(H, W)
+        first = np.zeros((H, W), np.int32)
+        groups = dict(back=(2, 0, 0), back_from_a_third_station=(1, 2, 2), new=(2, 1, 0), new_where_the_third_was_the_first=(0, 1, 0),
+                      hole_back=(-1, 0, 0), hole_new=(-1, 2, 0), the_first_had_a_hole=(0, 1, -1), lost=(0, -1, 0),
+                      unchanged_unlike_the_first=(1, 1, 0), new_under_a_photo_patch=(2, 1, 0))     # (third's, fourth's, first's)
+        at = {}
+        for k, (name, (third, fourth, first_s)) in enumerate(groups.items()):
+            m = np.zeros((H, W), bool)
+            m[14:16, 5 + 12 * k:7 + 12 * k] = True
+            at[name] = m
+            w["old"][m], w["new"][m], first[m] = third, fourth, first_s
+        w["ok2"][at["lost"]] = False
+        w["ok1"][at["hole_back"] | at["hole_new"]] = False
+        w["covered"][at["new_under_a_photo_patch"]] = True
+        w["filled1"] = np.full((H, W), 100.0, np.float32)
+        w["reference"] = first
+        row, masks = self.compare(w)
+
+        def union(*names):
+            return np.logical_or.reduce([at[n] for n in names])
+
+        unlike = union("new", "new_where_the_third_was_the_first", "hole_new", "the_first_had_a_hole", "new_under_a_photo_patch")
+        like = union("back", "back_from_a_third_station", "hole_back")
+        old, new = w["old"], w["new"]
+        self.assertTrue(np.array_equal(unlike, (new >= 0) & (new != old) & (new != first)))      # the groups are the definition
+        self.assertTrue(np.array_equal(like, (new >= 0) & (new != old) & (new == first)))
+        self.assertTrue(np.array_equal(masks["unlike_the_reference_in_all"], unlike))
+        self.assertTrue(np.array_equal(masks["as_the_reference_in_all"], like))
+        self.assertTrue(np.array_equal(masks["unlike_the_reference"], unlike & ~at["new_under_a_photo_patch"]))
+        self.assertTrue(np.array_equal(masks["as_the_reference"], like))
+        self.assertEqual((row["as_the_reference_in_all"], row["unlike_the_reference_in_all"]), (12, 20))
+        self.assertEqual((row["as_the_reference"]["texels"], row["unlike_the_reference"]["texels"]), (12, 16))
+        self.assertEqual(row["unlike_the_reference"]["paired_by_own_patch"]["patches"], 4)    # its own patches: one a group judged
 
 
 class Windows(unittest.TestCase):

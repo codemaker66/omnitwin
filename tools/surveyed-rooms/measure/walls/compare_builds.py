@@ -27,9 +27,14 @@ patches against one build and 42 against another), and one patch may hold texels
 classes' counts by patch overlap and their pooled tests are not independent of each other. BY OWN PATCH: the
 connected patches of every texel of the class itself, judged or not, under a photo patch or not, each read from
 its judged texels left to be seen as above. Nothing outside the class joins or cuts them, so for a test stated
-in advance on one class the own patch is the unit. And the control: clean texels within reach of a judged texel
-left to be seen, left to be seen themselves, whose station is the same in both builds, counted the same way.
-That is what two builds do to a texel neither of them moved.
+in advance on one class the own patch is the unit.
+
+And the control: clean texels within reach of a judged texel left to be seen, left to be seen themselves, whose
+station is the same in both builds, counted the same way. That is what two builds do to a texel neither of them
+moved. It is counted BY TEXEL, up to 20,000 a wall drawn from overlapping windows, so its texels are not
+independent pairs: its sign tests' p values are lower bounds, printed as such, never p values to act on. What it
+gives is its split, the share of its changed pairs that turned worse, against which the per-wall table also reads
+each wall's patches (below).
 
 A texel the first build left without a station, and the second gives one, is a FORMER HOLE: in the first build
 it shows what the atlas step filled it with (wallviews.filled), so that fill is set against the second build's
@@ -38,15 +43,19 @@ view. Former holes are counted as a class of their own and in `all_left_to_be_se
 
 With --apart-from, the changed texels are also split by whether the second build's station is the reference
 build's too: with a third build as the reference, the texels that went back to what it had (as_the_reference),
-and the rest (unlike_the_reference).
+and the rest (unlike_the_reference: a station that is neither the first build's nor the reference's). The
+reference must have the same stations as the two builds, since a station is compared by its number.
 
 The bar. A wall fails where more of its patches turned worse than better and the sign test by patch still passes
 0.05 after Holm's correction over every wall and judgement tested (raw, 24 tests at 0.05 name some wall four times
 in five by chance alone). That test has little power on a small wall, so each class of change is also tested with
-the walls pooled, by patch and by own patch. The sign test asks whether the split is even; where a wall's control
-leans one way itself (the two builds level that wall differently), the split to compare with is the control's,
-printed beside it. p_worse is the one-sided companion: the chance of at least so many turning worse, for a
-question set beforehand as "is it worse?".
+the walls pooled, by patch and by own patch. The sign test asks whether the split is even, and the bar stays on
+that. Where a wall's control leans one way itself (the two builds level that wall differently), the split to
+compare with is the control's: so the per-wall table also gives, for reading and deciding nothing, the chance of
+at least so many of the wall's patches turning worse at an even split (p_worse) and were each to turn worse with
+the control's own share (p_worse_at_control_share, at control_share_worse; an even share where the control has
+no changed pair). p_worse is the one-sided companion everywhere: the chance of at least so many turning worse,
+for a question set beforehand as "is it worse?".
 
 Read-only on both folders. A rule for which view a texel takes is judged on this before it is changed: gate
 B25's second step was chosen on a synthetic wall alone in November 2026 and printed a new dark band on a real
@@ -207,7 +216,8 @@ def compare_wall(name, old, new, clearbits, first_bits, L1, L2, ok1, ok2, valid,
         return out
 
     # The control, and how often the measure calls a clean texel bad where it is used: clean texels within the reach
-    # of a changed texel that is judged and left to be seen, themselves left to be seen.
+    # of a changed texel that is judged and left to be seen, themselves left to be seen. Counted by texel: its p values
+    # take texels judged from overlapping windows for independent pairs, so they are lower bounds.
     beside = image(seen & kept)
     beside = ndimage.binary_dilation(beside, structure=np.ones((3, 3)), iterations=wv.REACH)
     br, bc = np.nonzero(clean & beside & ~covered)
@@ -269,7 +279,8 @@ def pairs_over_the_walls(rows, part, *unit):
 def wall_tests(rows):
     """The bar: per wall and judgement, by patch, every changed texel left to be seen, for every wall with any.
     Raw p, Holm's over the whole family, and whether the wall fails (more of its patches turned worse than better,
-    and Holm p under 0.05), with the control's split beside them."""
+    and Holm p under 0.05). Beside them, for reading and deciding nothing: the control's split, and the one-sided p
+    at an even split and at the control's own share of worse."""
     family = [(row, key) for row in rows if row['all_left_to_be_seen'].get('texels') for key in JUDGEMENTS]
     adjusted = wv.holm([row['all_left_to_be_seen']['paired_by_patch'][key]['p_exact'] for row, key in family])
     tests = []
@@ -277,7 +288,9 @@ def wall_tests(rows):
         t, k = row['all_left_to_be_seen']['paired_by_patch'][key], row['clean_texels_beside']['paired'][key]
         tests.append(dict(wall=row['wall'], judgement=key, patches=row['all_left_to_be_seen']['paired_by_patch']['patches'], worse=t['worse'], better=t['better'],
                           unchanged=t['unchanged'], p_exact=t['p_exact'], p_holm=h, fails=bool(t['worse'] > t['better'] and h < 0.05),
-                          control_worse=k['worse'], control_better=k['better']))
+                          control_worse=k['worse'], control_better=k['better'], p_worse=t['p_worse'],
+                          control_share_worse=k['worse'] / (k['worse'] + k['better']) if k['worse'] + k['better'] else 0.5,
+                          p_worse_at_control_share=wv.sign_test_worse_against(t['worse'], t['better'], k['worse'], k['better'])))
     return tests
 
 
@@ -289,7 +302,7 @@ def print_wall(row):
               f" | nearer {a['nearer_by_2']:5d}, farther {a['farther_by_2']:5d} | clean texels beside: {100 * b['dark'] / max(b['texels'], 1):4.1f}% dark, {100 * b['off'] / max(b['texels'], 1):4.1f}% off",
               flush=True)
         print(f"{'':24s} pairs, worse/better/as they were: {pairs(a['paired'])} | by patch ({a['paired_by_patch']['patches']}): {pairs(a['paired_by_patch'])}"
-              f" | clean texels beside ({b['texels']}): {pairs(b['paired'])}", flush=True)
+              f" | clean texels beside ({b['texels']}), by texel, each p a lower bound: {pairs(b['paired'])}", flush=True)
     else:
         print(f"{name:24s} changed {row['station_changed'] + row['former_holes']['in_all']:6d} | none that could be judged", flush=True)
 
@@ -331,7 +344,8 @@ def main(argv):
     for name in walls:
         z1 = np.load(os.path.join(first, 'proj', f'labels-{name}.npz'))
         z2 = np.load(os.path.join(second, 'proj', f'labels-{name}.npz'))
-        if [str(x) for x in z1['stations']] != [str(x) for x in z2['stations']]:
+        stations = [str(x) for x in z2['stations']]
+        if [str(x) for x in z1['stations']] != stations:
             raise SystemExit(f'{name}: the two builds do not have the same stations')
         old, new = z1['texel_label'], z2['texel_label']
         clearbits = z2['clearbits']
@@ -341,7 +355,12 @@ def main(argv):
         rgb2, ok2 = wv.photograph(second, name)
         if not rgb1.shape[:2] == rgb2.shape[:2] == old.shape == new.shape == grid.depth.shape:
             raise SystemExit(f'{name}: the two builds are not of the same grid')
-        labels3 = np.load(os.path.join(reference, 'proj', f'labels-{name}.npz'))['texel_label'] if reference else None
+        labels3 = None
+        if reference:
+            z3 = np.load(os.path.join(reference, 'proj', f'labels-{name}.npz'))
+            if [str(x) for x in z3['stations']] != stations:                       # a station is compared by its number
+                raise SystemExit(f'{name}: the reference build does not have the same stations')
+            labels3 = z3['texel_label']
         filled1 = wv.levels(wv.filled(first, name, B.P)) if holes_given_a_view(old, new, ok2, grid.valid).any() else None
         row, _ = compare_wall(name, old, new, clearbits, first_bits, wv.levels(rgb1), wv.levels(rgb2), ok1, ok2, grid.valid,
                               grid.depth.astype(np.float32), wv.under_a_patch(room, grid, name), grid.ucol, grid.vrow, rng, labels3, filled1)
@@ -353,14 +372,18 @@ def main(argv):
     t = max(total(rows, 'clean_texels_beside', 'texels'), 1)
     print(f"the measure on clean texels beside them: {100 * total(rows, 'clean_texels_beside', 'dark') / t:.1f}% called dark, {100 * total(rows, 'clean_texels_beside', 'off') / t:.1f}% called off"
           f" ({total(rows, 'clean_texels_beside', 'texels')} texels): read every count above against that")
-    print(f"the same clean texels as pairs, worse/better/as they were: {pairs(pairs_over_the_walls(rows, 'clean_texels_beside', 'paired'))}: what two builds do to a texel neither moved")
+    print(f"the same clean texels as pairs, worse/better/as they were: {pairs(pairs_over_the_walls(rows, 'clean_texels_beside', 'paired'))}: what two builds do to a texel neither moved"
+          " (by texel, from overlapping windows: each p a lower bound, not one to act on)")
     # The bar: per wall and judgement, by patch, raw and after Holm's correction over the whole family.
     tests = wall_tests(rows)
-    print(f'per wall and judgement, by patch, every changed texel left to be seen ({len(tests)} tests; a wall fails where more turned worse and Holm p is under 0.05):')
+    print(f'per wall and judgement, by patch, every changed texel left to be seen ({len(tests)} tests; a wall fails where more turned worse and Holm p is under 0.05;'
+          " is it worse, one-sided at an even split and at the control's own share, decides nothing):")
     for x in tests:
         if x['worse'] or x['better']:
             print(f"  {x['wall']:24s} {x['judgement']:9s} {x['worse']:3d}/{x['better']:3d}/{x['unchanged']:3d}  raw p {x['p_exact']:.2g}  Holm p {x['p_holm']:.2g}"
-                  f"  control {x['control_worse']}/{x['control_better']}{'  FAILS' if x['fails'] else ''}")
+                  f"  control {x['control_worse']}/{x['control_better']}"
+                  f"  is it worse: p {x['p_worse']:.2g} even, p {x['p_worse_at_control_share']:.2g} at the control's {x['control_share_worse']:.2g}"
+                  f"{'  FAILS' if x['fails'] else ''}")
     print('walls that fail: ' + ('; '.join(f"{x['wall']} ({x['judgement']})" for x in tests if x['fails']) or 'none'))
     write(pooled=pooled, per_wall_tests=tests)
 
