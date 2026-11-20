@@ -3,6 +3,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   actionLog,
   configurationLayoutRevisions,
+  configurations,
   configurationSheetSnapshots,
   generalAuditLog,
   handoffPacks,
@@ -204,6 +205,12 @@ export async function removeLapsedPieceNotes(
   let totals = NO_PIECE_NOTES;
   for (const configurationId of layoutIds) {
     const counts = await db.transaction(async (tx) => {
+      // The layout first (FOR KEY SHARE, which no planner edit waits on), and
+      // every read after it: a writer holding the layout FOR UPDATE (an
+      // approval, an erasure) has committed before anything here is read, so
+      // nothing it changed is written back, and its row order never meets
+      // this one (people-erasure.ts).
+      await tx.select({ id: configurations.id }).from(configurations).where(eq(configurations.id, configurationId)).for("key share");
       const pieces = await tx.select({ id: placedObjects.id }).from(placedObjects)
         .where(and(eq(placedObjects.configurationId, configurationId), pieceHasNote));
 
