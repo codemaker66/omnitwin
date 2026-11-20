@@ -13,20 +13,57 @@ wall's detail is written, as the atlas step applies them after every wall's own 
 The method works in texels of the walls' elevations: a block is 8 x 8 of them, seams feather over 8
 and blend over 24. At the Grand Hall's 200 px/m those are 40 mm, 40 mm and 120 mm.
 """
+import json
+import math
+import os
+
 import numpy as np
 
 from . import legacy
 
 
+def refuse_unlabelled(room, name, bestview):
+    """Stops the build at a wall no station labels, saying which. project-walls.py levels and colours a
+    wall from its labelled blocks: with none it ends in its own statistics (an IndexError), and a
+    strip of the atlas with no photograph would be drawn as a blank wall. The label step's own
+    report (proj/labels-<name>.json) says how many blocks it labelled; a wall not yet labelled is
+    project-walls.py's to refuse. With an occluder margin (gate B25) a block is labelled from clear
+    views alone, so the margin can be what left the wall without one: the stop then says so, and
+    how many texels the stations did see."""
+    path = os.path.join('proj', f'labels-{name}.json')
+    if not os.path.exists(path):
+        return
+    with open(path, encoding='utf-8') as f:
+        report = json.load(f)
+    if report['labelled_blocks'] > 0:
+        return
+    margin = report.get('occluder_margin')
+    by_the_margin = '' if margin is None else (
+        f" This room sets survey.projection.walls.occluderMargin (gate B25): a view that passes within "
+        f"{margin['metres'] * 1000:g} mm of anything nearer does not count towards a label, and "
+        f"{margin['texels_given_a_doubtful_view']} of this wall's texels were seen only in such views (each took a "
+        "doubtful one). If that is most of what was seen, a smaller margin would label the wall.")
+    raise SystemExit(
+        f"wall {name}: no station labels any block of it, so there is nothing to photograph it from "
+        f"({report['texels_valid']} of its texels were rendered; {len(room.station_ids())} stations tried). "
+        f"A station labels a block it sees within {bestview.MAX_DIST:g} m, at more than "
+        f"{math.degrees(math.asin(bestview.COS_MIN)):.0f} degrees to the wall's face, with nothing in its depth map "
+        f"in front.{by_the_margin} Give the room a station that sees this wall, join the wall to a neighbour that is "
+        "seen, or leave it out of survey.wallViews.order (it then gets no elevation, and the room cannot publish a "
+        "record until the web's reader takes a wall without one).")
+
+
 def labels(room, name):
-    """label-views.py <name>: proj/labels-<name>.npz and .json."""
-    legacy.best_view(room)
+    """label-views.py <name>: proj/labels-<name>.npz and .json. Stops at a wall no station labels."""
+    bestview = legacy.best_view(room)
     legacy.run_main(legacy.label_views(), name)
+    refuse_unlabelled(room, name, bestview)
 
 
 def photographs(room, name):
     """project-walls.py <name> --labels: proj/<view>.fine.npz, proj/<view>.npz, proj/composite-<name>.json."""
-    legacy.best_view(room)
+    bestview = legacy.best_view(room)
+    refuse_unlabelled(room, name, bestview)
     legacy.run_main(legacy.project_walls(room), name, '--labels')
 
 

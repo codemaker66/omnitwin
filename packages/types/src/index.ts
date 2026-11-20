@@ -1478,6 +1478,7 @@ export {
   PhaseDeadlineSchema,
   EventInstructionsSchema,
   ConfigurationMetadataSchema,
+  PlannerEventKindSchema,
   PlacedObjectMetadataSchema,
   emptyEventInstructions,
   hasInstructionContent,
