@@ -10,7 +10,8 @@
 #   native-image — actual Linux API image and native decoder boundary checks
 #   test       — required migrated PostgreSQL regressions and workspace Vitest
 #   e2e        — four CPU shards, with the exact GPU file excluded before sharding
-#   gate-tooling — receipt, inventory, source and worker boundary regressions
+#   gate-tooling — receipt, inventory, source and worker boundary regressions,
+#                  and the Railway watch list checked against railway.json
 #   gpu-scope    — decides whether the change reaches the renderer, tour or benchmark
 #   gpu-required — authenticated, bounded hardware run of all five Twin cases,
 #                  only for changes in the GPU scope (Blake, 26 September 2026)
@@ -627,6 +628,45 @@ jobs:
           result = unittest.TextTestRunner(verbosity=2).run(suite)
           sys.exit(0 if result.wasSuccessful() else 1)
           PY
+
+      - name: Railway watch list matches railway.json while both exist
+        # .railway/watch-patterns.json is the one list of paths that make
+        # Railway rebuild the API; .railway/railway.ts and the production
+        # receipt read it. Until railway.json is deleted, Railway reads that
+        # file's build.watchPatterns, so the two must be identical, in the
+        # same order. Once railway.json is gone there is nothing to compare.
+        # A list file that is missing, is not JSON or is not a non-empty list
+        # of paths fails the step with an annotation on that file.
+        run: |
+          node --input-type=module <<'JS'
+          import { existsSync, readFileSync } from 'node:fs';
+          const readJson = (file) => {
+            try {
+              return JSON.parse(readFileSync(file, 'utf8'));
+            } catch (error) {
+              console.log(`::error file=${file}::is missing or is not valid JSON`);
+              console.log(String(error));
+              process.exit(1);
+            }
+          };
+          const list = readJson('.railway/watch-patterns.json');
+          if (!Array.isArray(list) || list.length === 0 || !list.every((path) => typeof path === 'string' && path !== '')) {
+            console.log('::error file=.railway/watch-patterns.json::must be a non-empty list of paths');
+            process.exit(1);
+          }
+          if (!existsSync('railway.json')) {
+            console.log('railway.json is absent: nothing to compare.');
+            process.exit(0);
+          }
+          const old = readJson('railway.json')?.build?.watchPatterns;
+          if (JSON.stringify(old) !== JSON.stringify(list)) {
+            console.log('::error file=.railway/watch-patterns.json::differs from build.watchPatterns in railway.json, which Railway reads until it is deleted');
+            console.log(`railway.json:        ${JSON.stringify(old)}`);
+            console.log(`watch-patterns.json: ${JSON.stringify(list)}`);
+            process.exit(1);
+          }
+          console.log(`The ${list.length} watch paths match railway.json.`);
+          JS
 
   survey-tools:
     name: Survey tools
