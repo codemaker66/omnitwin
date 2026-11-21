@@ -1,0 +1,9 @@
+{
+  "workRoot": "D:\\claude\\api-credits-20261104\\sandbox",
+  "ledgerFile": "D:\\claude\\api-credits-20261104\\ledger.jsonl",
+  "keyDir": "%USERPROFILE%\\.venviewer-credits",
+  "keyFile": "batch.key",
+  "lane": "sandbox",
+  "laneCapUsd": 110,
+  "orgCapUsd": 190
+}
