@@ -1485,7 +1485,7 @@ describe("DayBoardPage", () => {
     expect(screen.getByText("No room has a request waiting")).toBeTruthy();
     // Another day counts the requests on its own bookings, and says it is that day's.
     fireEvent.click(screen.getByRole("button", { name: "Next day" }));
-    expect(await screen.findByRole("button", { name: "Waiting this day, 0" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Requests waiting this day, 0" })).toBeTruthy();
   });
 
   it("says a later function's short turn-round on its line, and why it is at risk, in the words a screen reader hears", async () => {
@@ -1494,6 +1494,7 @@ describe("DayBoardPage", () => {
       liveBooking(),
       bookingAt("00000000-0000-4000-8000-0000000000c2", GRAND_HALL, "Ceilidh", 3 * 60, 5 * 60),
       bookingAt("00000000-0000-4000-8000-0000000000c3", GRAND_HALL, "Late bar", 5 * 60 + 5, 7 * 60),
+      bookingAt("00000000-0000-4000-8000-0000000000c4", GRAND_HALL, "Last orders", 7 * 60 + 5, 8 * 60),
     ];
     getCalendarMock.mockResolvedValue({ ...calendarFixture(entries), turnaroundRules: house });
     renderBoard();
@@ -1503,14 +1504,15 @@ describe("DayBoardPage", () => {
     expect(lateBar.getAttribute("aria-label")).toContain(", Turn-round 5 min · needs 1 h");
     cleanup();
 
-    // The Diary holds the pair blocking: the line says why, in its words.
+    // The Diary holds the pair after the Ceilidh blocking: the first line
+    // says why, in its words; the second, under it, keeps them to its label.
     const atRisk = calendarFixture(entries);
     getCalendarMock.mockResolvedValue({
       ...atRisk,
       turnaroundRules: house,
       conflicts: { ...atRisk.conflicts, conflicts: [{
         id: "x", type: "insufficient_turnaround", severity: "blocking", spaceId: GRAND_HALL,
-        entryIds: ["00000000-0000-4000-8000-0000000000c2", "00000000-0000-4000-8000-0000000000c3"],
+        entryIds: ["00000000-0000-4000-8000-0000000000c3", "00000000-0000-4000-8000-0000000000c4"],
         explanation: "5 minutes between events; this changeover needs 60.",
       }] },
     } as CalendarResponse);
@@ -1519,6 +1521,36 @@ describe("DayBoardPage", () => {
     expect(risky.className).toContain("is-line");
     expect(within(risky).getByText("5 minutes between events; this changeover needs 60.")).toBeTruthy();
     expect(risky.getAttribute("aria-label")).toContain(", 5 minutes between events; this changeover needs 60.");
+    const lastOrders = screen.getByRole("button", { name: /^Last orders,/u });
+    expect(within(lastOrders).queryByText("5 minutes between events; this changeover needs 60.")).toBeNull();
+    expect(lastOrders.getAttribute("aria-label")).toContain(", 5 minutes between events; this changeover needs 60.");
+  });
+
+  it("says a pair's changeover reason once in its room: a line under the slot that says it keeps it to its label", async () => {
+    const day = calendarFixture([
+      liveBooking(),
+      bookingAt("00000000-0000-4000-8000-0000000000c2", GRAND_HALL, "Ceilidh", 3 * 60, 5 * 60),
+      bookingAt("00000000-0000-4000-8000-0000000000c3", GRAND_HALL, "Late bar", 5 * 60 + 5, 7 * 60),
+    ]);
+    const why = "5 minutes between events; this changeover needs 60.";
+    getCalendarMock.mockResolvedValue({
+      ...day,
+      turnaroundRules: [{ spaceId: null, eventType: null, name: "House", minutes: 60, isActive: true }],
+      conflicts: { ...day.conflicts, conflicts: [{
+        id: "x", type: "insufficient_turnaround", severity: "blocking", spaceId: GRAND_HALL,
+        entryIds: ["00000000-0000-4000-8000-0000000000c2", "00000000-0000-4000-8000-0000000000c3"], explanation: why,
+      }] },
+    } as CalendarResponse);
+    renderBoard();
+    const ceilidh = await screen.findByRole("button", { name: /^Ceilidh,/u });
+    expect(ceilidh.className).toContain("is-next");
+    expect(within(ceilidh).getByText(why)).toBeTruthy();
+    const lateBar = screen.getByRole("button", { name: /^Late bar,/u });
+    expect(lateBar.className).toContain("is-line");
+    expect(lateBar.textContent).toContain("Changeover at risk");
+    expect(within(lateBar).queryByText(why)).toBeNull();
+    // A screen reader hears one slot at a time, so its label still says why.
+    expect(lateBar.getAttribute("aria-label")).toContain(`, ${why}`);
   });
 
   it("keeps the Diary's turnaround advice off a slot named in passing: a line says its short turn-round, never another pair's warning or one already over", async () => {
@@ -1561,6 +1593,28 @@ describe("DayBoardPage", () => {
     expect(within(lastOrders).getByText("Turn-round 10 min · needs 1 h")).toBeTruthy();
     expect(lastOrders.textContent).not.toMatch(/minutes between/u);
     expect(lastOrders.getAttribute("aria-label")).not.toMatch(/minutes between/u);
+  });
+
+  it("says a slot's guests, its hold and its other rooms in the words a screen reader hears, and on the wall names no other room", async () => {
+    // A first-option hold for 120 guests, one event across two rooms.
+    const held = { kind: "hold", state: "hold", rank: 1, guestCount: 120, eventId: EVENT_ID } as Partial<CalendarResponse["entries"][number]>;
+    getCalendarMock.mockResolvedValue(calendarFixture([
+      bookingAt("00000000-0000-4000-8000-0000000000c1", GRAND_HALL, "Awards dinner", -30, 90, held),
+      bookingAt("00000000-0000-4000-8000-0000000000c2", SALOON, "Awards dinner", -30, 90, held),
+    ]));
+    renderBoard();
+    const room = await screen.findByRole("region", { name: "Grand Hall" });
+    const office = within(room).getByRole("button", { name: /^Awards dinner,/u }).getAttribute("aria-label") ?? "";
+    expect(office).toContain("120 guests");
+    expect(office).toContain("Provisional · 1st option");
+    expect(office).toContain("also Saloon");
+
+    // The wall names no other room, on screen or in its words.
+    fireEvent.click(screen.getByRole("button", { name: "Wall display" }));
+    const wallRoom = screen.getByRole("region", { name: "Grand Hall" });
+    const wall = within(wallRoom).getByRole("group", { name: /^Awards dinner,/u });
+    expect(wall.getAttribute("aria-label")).not.toMatch(/\balso\b/u);
+    expect(wall.textContent).not.toMatch(/\balso\b/u);
   });
 
   it("names everything under way beside the lead \"Also now\", and on the wall keeps one line after the lead", async () => {

@@ -39,20 +39,16 @@ export interface RoomDay {
   readonly tone: DayBoardTone;
 }
 
-/** Under way: past its doors and not finished. */
-function underWay(slot: DayBoardSlot): boolean {
-  return slot.state === "live" || slot.state === "clear-down" || slot.exception === "overrun";
-}
-
 export function roomDay(lane: DayBoardLane): RoomDay {
   const earlier = lane.slots.filter((slot) => slot.state === "done");
   const ahead = lane.slots.filter((slot) => slot.state !== "done");
   const lead = ahead[0] ?? null;
   const after = ahead.slice(1);
-  // A slot under way is happening now whatever comes after it in time order:
-  // it is never named "Next" or "Later".
-  const alsoNow = after.filter(underWay);
-  const toCome = after.filter((slot) => !underWay(slot));
+  // A slot under way is happening now whatever comes after it in time order,
+  // and whatever an exception lays over its state (a live talk held at
+  // risk): it is never named "Next" or "Later".
+  const alsoNow = after.filter((slot) => slot.underWay);
+  const toCome = after.filter((slot) => !slot.underWay);
   const atRisk = ahead.some((slot) => slot.state === "exception");
   return {
     room: lane.room,
@@ -116,7 +112,7 @@ export function planeStages(lanes: readonly DayBoardLane[], waiting?: number): r
   const onBookings = slots.reduce((sum, slot) => sum + (slot.attention?.unownedCount ?? 0), 0);
   const elsewhere = waiting === undefined ? 0 : Math.max(0, waiting - onBookings);
   const requests: PlaneStage = waiting === undefined
-    ? { focus: "waiting", label: "Waiting this day", count: onBookings, note: null }
+    ? { focus: "waiting", label: "Requests waiting this day", count: onBookings, note: null }
     : {
       focus: "waiting",
       label: "Requests waiting",
