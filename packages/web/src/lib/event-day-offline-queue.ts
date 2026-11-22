@@ -1,12 +1,19 @@
-import {
-  MAX_EARLIER_PRESS_KEYS,
-  type CreateEventDayIssueInput,
-  type RecordObservation,
-  type RequestState,
-  type RequestTransition,
-  type UpdateOpsTaskStatusInput,
+import type {
+  CreateEventDayIssueInput,
+  RecordObservation,
+  RequestState,
+  RequestTransition,
+  UpdateOpsTaskStatusInput,
 } from "@omnitwin/types";
 import { openCache, type CacheHandle } from "./idb-cache.js";
+
+/** The most earlier-press keys a task's row keeps: the API's bound
+ *  (MAX_EARLIER_PRESS_KEYS in @omnitwin/types), copied here rather than
+ *  imported. The Day Board route loads this queue, and a value import from
+ *  @omnitwin/types brought its event-day schemas into that route: 2.9 kB
+ *  (1.0 kB gzipped), measured by two builds (#418, review DR7). A test pins
+ *  the two equal. */
+export const MAX_EARLIER_PRESS_KEYS = 20;
 
 // ---------------------------------------------------------------------------
 // event-day-offline-queue

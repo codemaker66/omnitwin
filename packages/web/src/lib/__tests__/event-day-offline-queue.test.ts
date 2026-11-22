@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MAX_EARLIER_PRESS_KEYS } from "@omnitwin/types";
 import { memoryBackend, withBackend, type CacheBackend } from "../idb-cache.js";
-import { createEventDayQueue, type QueuedEventDayOp, type RequestStepInput } from "../event-day-offline-queue.js";
+import {
+  createEventDayQueue,
+  MAX_EARLIER_PRESS_KEYS as QUEUE_MAX_EARLIER_PRESS_KEYS,
+  type QueuedEventDayOp,
+  type RequestStepInput,
+} from "../event-day-offline-queue.js";
 
 function queue() {
   return createEventDayQueue(withBackend<QueuedEventDayOp>(memoryBackend()));
@@ -312,6 +318,13 @@ describe("event-day offline queue", () => {
         await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: `press-${String(press)}`, expectedStatus: "todo", earlierPressKeys: [`press-${String(press)}`] });
       }
       expect(await earlierKeys(q)).toEqual(Array.from({ length: 20 }, (_, index) => `press-${String(index + 4)}`));
+    });
+
+    // The queue keeps its own copy of the API's bound: a value import from
+    // @omnitwin/types would bring its event-day schemas into the Day Board
+    // route, which loads this queue (review DR7). The two must not part.
+    it("keeps as many earlier keys as the API accepts", () => {
+      expect(QUEUE_MAX_EARLIER_PRESS_KEYS).toBe(MAX_EARLIER_PRESS_KEYS);
     });
 
     it("writes a first press's row with no keys, as round three did, and keeps none for a row with no expectedStatus", async () => {
