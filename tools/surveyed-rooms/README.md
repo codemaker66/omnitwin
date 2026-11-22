@@ -510,9 +510,11 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
     (`block_sequence`) is the one the second step asks: the ranked six, then every station by how
     much of the block it saw at all. As first merged (#452) this step had an order of its own,
     `whole_order`: the block's other candidates by data cost, then the rest by how much of the
-    block each saw clear. The Saloon's third build showed that order the worse (below), and it
-    went, with its guard for a block without a label: such a block borrows the nearest labelled
-    block's ranking in the sequence, as it does for a doubtful view.
+    block each saw clear. The release lead's second ruling replaced it with the one sequence,
+    because that is the simpler code and the closest to the first build; the Saloon's walls could
+    not tell the two orders apart (below). Its guard for a block without a label went with it:
+    such a block borrows the nearest labelled block's ranking in the sequence, as it does for a
+    doubtful view.
   - Second, only a texel that stations saw, and none clear, takes a doubtful view. Which one was
     settled on real walls, and not as first written. As first written (19 November) it was the
     view that passes farthest from the occluder's outline in its station's depth map, chosen on a
@@ -788,9 +790,13 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
   set against the reviewed one on a synthetic wall with 7 stations, with the margin absent and
   with an explicit 0.0: the same 21 arrays and report, and the same bytes in the file. On 20
   November the real END wall was run again twice, its labels and then its photographs: with
-  those changes, and with the doubtful view settled as it now is (T-739; on the synthetic wall
-  that rule's labels file is the same bytes once more, the margin absent or 0.0). Each time:
-  23 files, 49 arrays, none different, after the labels and again after the photographs.
+  those changes, and with the doubtful view's sequence settled and the first step still as merged
+  (T-739; on the synthetic wall that rule's labels file is the same bytes once more, the margin
+  absent or 0.0). Each time: 23 files, 49 arrays, none different, after the labels and again
+  after the photographs. On 22 November it was run once more, with one sequence for both steps
+  (commit `2e410bed`, whose tools are this change's): 23 files, 49 arrays, none different, after
+  the labels and again after the photographs; and that day on the reference machine T0 62
+  tests, T1 and T4 91, T3 16, none failing and none skipped.
   On 18 November on the reference machine, with the twin's manifest and an installed checkout's
   meshoptimizer: T0 52 tests, T1 and T4 54, T3 16, none failing and none skipped. T2 was not run
   again; the real END wall is the stronger form of what its label stage shows.
