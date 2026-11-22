@@ -289,7 +289,14 @@ describe("sandbox launcher", () => {
 
     expect(invokesVerifier(VERIFY_COMMAND)).toBe(true);
     expect(invokesVerifier(`  ${VERIFY_COMMAND}\n`)).toBe(true);
+    expect(invokesVerifier(`\t${VERIFY_COMMAND}\t\n`)).toBe(true);
     for (const other of [
+      // Spaces bash does not skip make a different program name (one the agent could have put on the path).
+      `\u00a0${VERIFY_COMMAND}`,
+      `${VERIFY_COMMAND}\u00a0`,
+      `\ufeff${VERIFY_COMMAND}`,
+      `\u3000${VERIFY_COMMAND}`,
+      `\r${VERIFY_COMMAND}`,
       "cat /mnt/session/uploads/verify.mjs",
       "node /mnt/session/uploads/verify.mjs.bak",
       `cd /workspace/omnitwin && ${VERIFY_COMMAND}`,
@@ -502,6 +509,41 @@ describe("sandbox launcher", () => {
     expect(record.review.reasons).toContain('a path holds a control character: "docs/a\\tb.md"');
   });
 
+  it("rejects a hand-written patch whose summary names a file its numstat does not", async () => {
+    // A new name ending in a space: numstat -z keeps the space, the summary's last line loses it as trailing whitespace.
+    const plain = await fixture([{ ...FIX, write: { ...FIX.write, "docs/ab.md": "notes\n" } }]);
+    const name = Object.keys(plain.patches)[0] ?? "";
+    const spaced = (plain.patches[name] ?? "").replace("diff --git a/docs/ab.md b/docs/ab.md\n", "diff --git a/docs/ab.md  b/docs/ab.md \n").replace("+++ b/docs/ab.md\n", "+++ b/docs/ab.md \n");
+    expect(spaced).toContain("+++ b/docs/ab.md \n");
+    const record = await reviewOf(plain, { outputs: outputsOf(plain, { [name]: spaced }) });
+    expect(record.review.verdict).toBe("rejected");
+    expect(record.review.reasons).toContain('the patch summary names a file the patches do not: "docs/ab.md"');
+  });
+
+  it("flags each code file that only gains lines, whatever other files lose, and reads a very large patch whole", async () => {
+    // page-check.ts gains a function and loses nothing; README.md loses a line, which must not hide that.
+    const addOnly = await fixture([
+      {
+        subject: "Add a helper",
+        write: { [PAGE_CHECK]: `${BASE_FILES[PAGE_CHECK] ?? ""}export const star = "*";\n`, [PAGE_CHECK_TEST]: FIXED_TEST, "README.md": "" },
+      },
+    ]);
+    const flagged = await reviewOf(addOnly);
+    expect(flagged.review.flags).toContain(
+      `the patches only add lines to ${PAGE_CHECK}: without them a new test may fail on a missing name rather than on the behaviour it checks`,
+    );
+    // The fix itself changes lines in place: no flag.
+    expect((await reviewOf(happy)).review.flags.filter((flag) => flag.includes("only add lines"))).toEqual([]);
+
+    // A 300,000-line file, about 15 MB of patch: read line by line, not spread into one call.
+    const big = Array.from({ length: 300_000 }, (_, index) => `export const v${String(index)} = ${String(index)}; // padding padding`).join("\n");
+    const large = await fixture([{ ...FIX, write: { ...FIX.write, "packages/api/src/big.ts": `${big}\n` } }]);
+    expect(Object.values(large.patches).join("").length).toBeGreaterThan(14_000_000);
+    const read = await reviewOf(large);
+    expect(read.review.reasons).toEqual([]);
+    expect(read.review.changed).toContain("A packages/api/src/big.ts");
+  });
+
   it("counts added text holding a NUL byte as a binary change, as git and GitHub show it", async () => {
     // git apply reads the hunk as text, but git and GitHub call a file holding a NUL binary, so no one could read it there.
     const notes = await fixture([{ ...FIX, write: { ...FIX.write, "docs/notes.md": "hidden text\n" } }]);
@@ -651,10 +693,6 @@ describe("sandbox launcher", () => {
   it("applies the patches only to its throwaway repository, whatever GIT_* variables the shell exports", async () => {
     // A repository standing in for the checkout the launcher is started from (inside a git hook, say).
     const decoy = fileURLToPath((await fixture([FIX])).url);
-    const edited = await fixture([{ ...FIX, write: { ...FIX.write, "docs/notes.md": "new\n" } }], {
-      baseFiles: { ...BASE_FILES, ".gitattributes": "*.md -diff\n", "docs/notes.md": "old\n" },
-      formatPatchArgs: ["--text"],
-    });
     const state = async () => [
       (await readFile(path.join(decoy, ".git", "index"))).toString("base64"),
       execFileSync("git", ["-C", decoy, "count-objects", "-v"], { encoding: "utf8", env: gitEnv() }),
@@ -664,6 +702,11 @@ describe("sandbox launcher", () => {
     const saved = Object.fromEntries(Object.keys(pointed).map((key) => [key, process.env[key]]));
     Object.assign(process.env, pointed);
     try {
+      // The test's own fixture repositories are made under the same variables: they too go elsewhere only by -C.
+      const edited = await fixture([{ ...FIX, write: { ...FIX.write, "docs/notes.md": "new\n" } }], {
+        baseFiles: { ...BASE_FILES, ".gitattributes": "*.md -diff\n", "docs/notes.md": "old\n" },
+        formatPatchArgs: ["--text"],
+      });
       expect((await reviewOf(edited)).review.reasons).toEqual(["binary change: docs/notes.md (it cannot be read or scanned as text)"]);
     } finally {
       for (const [key, value] of Object.entries(saved)) {

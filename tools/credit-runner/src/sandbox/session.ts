@@ -102,9 +102,12 @@ const VERIFY_LINE = /^VERIFY_RESULT (\{.*\})\s*$/su;
  * a function or alias named node defined in an earlier call of a persistent
  * shell, or a replaced node binary: the agent controls the container. That is
  * why the verifier's result stays advisory and the review reads the patches.
+ * Only the spaces, tabs and newlines bash itself skips around a command are
+ * trimmed: a command wrapped in any other space (a no-break space, say) names
+ * another program, which the agent could have put on the path.
  */
 export function invokesVerifier(command: string): boolean {
-  return command.trim() === VERIFY_COMMAND;
+  return command.replace(/^[ \t\n]+|[ \t\n]+$/gu, "") === VERIFY_COMMAND;
 }
 
 /** Cents as an integer string, as session budgets take them. */

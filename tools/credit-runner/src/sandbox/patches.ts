@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { git, gitResult, isTestFile } from "../git.js";
+import { git, GIT_TIMEOUT_MS, gitResult, isTestFile } from "../git.js";
 import { withBaseCommit } from "./base-repo.js";
 import { REPO_URL } from "./brief.js";
 
@@ -36,9 +36,8 @@ export interface PatchInspection {
    * (filesGitCallsBinary), which git and GitHub show as "Binary files differ".
    */
   readonly binary: readonly string[];
-  /** Lines the patches add to and remove from files that are not tests. */
-  readonly sourceLinesAdded: number;
-  readonly sourceLinesRemoved: number;
+  /** Code files (JavaScript or TypeScript, not tests) that the patches give lines and take none from, other than new files. */
+  readonly addOnlyCode: readonly string[];
   /**
    * What the patches would put in the public record, for the secret scan:
    * authors, subjects and messages as `git am` reads them, every added line
@@ -48,6 +47,9 @@ export interface PatchInspection {
   /** One entry per path for the review: A added (a new file or a rename's target), M modified, D deleted, R renamed or copied from. */
   readonly changed: readonly string[];
 }
+
+/** A JavaScript or TypeScript file, whose new names a test can fail on when the change is taken away. */
+const CODE_FILE = /\.[cm]?[jt]sx?$/iu;
 
 /** The modes a returned patch may create or leave: a regular or an executable file. */
 const REGULAR_MODES = new Set(["100644", "100755"]);
@@ -113,6 +115,11 @@ function tail(text: string, chars = 600): string {
   return trimmed.length > chars ? `…${trimmed.slice(-chars)}` : trimmed;
 }
 
+/** A git call stopped at its time limit, as a reason: the run is rejected for the limit, not for the patches. */
+function stoppedAt(command: string): string {
+  return `${command} ran past its ${String(GIT_TIMEOUT_MS / 60_000)}-minute limit and was stopped`;
+}
+
 function hasControlCharacter(name: string): boolean {
   return Array.from(name).some((char) => (char.codePointAt(0) ?? 0) < 0x20 || char === "\u007f");
 }
@@ -163,8 +170,7 @@ function emptyInspection(commits: readonly (string | null)[], problems: readonly
     deleted: [],
     movedAway: [],
     binary: [],
-    sourceLinesAdded: 0,
-    sourceLinesRemoved: 0,
+    addOnlyCode: [],
     addedText: texts.join("\n"),
     changed: [],
   };
@@ -194,6 +200,10 @@ export async function inspectPatches(
           const splitDir = path.join(scratch, `split-${String(index)}`);
           await mkdir(splitDir);
           const split = await gitResult(repo, ["mailsplit", `-o${splitDir}`, file]);
+          if (split.timedOut) {
+            problems.push(`${name} could not be split: ${stoppedAt("git mailsplit")}`);
+            continue;
+          }
           if (split.code !== 0 || split.stdout.trim() !== "1") {
             problems.push(`${name} holds ${split.code === 0 ? split.stdout.trim() : "no readable"} message(s), not exactly one`);
             continue;
@@ -202,14 +212,15 @@ export async function inspectPatches(
           const body = path.join(scratch, `patch-${String(index)}`);
           const info = await gitResult(repo, ["mailinfo", message, body], await readFile(path.join(splitDir, "0001")));
           if (info.code !== 0) {
-            problems.push(`${name} could not be read as a commit: ${tail(info.stderr)}`);
+            problems.push(`${name} could not be read as a commit: ${info.timedOut ? stoppedAt("git mailinfo") : tail(info.stderr)}`);
             continue;
           }
           const bodyText = await readFile(body, "utf8");
           if (!/^diff --git /mu.test(bodyText)) problems.push(`${name} holds no change`);
           bodies.push(bodyText);
           texts.push(info.stdout, await readFile(message, "utf8"));
-          texts.push(...bodyText.split("\n").filter((line) => line.startsWith("+")));
+          // One at a time: spreading a large patch's lines into push() would overflow the call stack.
+          for (const line of bodyText.split("\n")) if (line.startsWith("+")) texts.push(line);
         }
         if (bodies.length === 0) return emptyInspection(commits, problems, texts);
 
@@ -218,14 +229,15 @@ export async function inspectPatches(
         const series = path.join(scratch, "series.diff");
         await writeFile(series, bodies.join("\n"));
         const check = await gitResult(repo, ["apply", "--cached", "--check", "--whitespace=nowarn", series]);
-        if (check.code !== 0) problems.push(`the patches do not apply to the base ${options.baseSha}: ${tail(check.stderr)}`);
+        if (check.timedOut) problems.push(`the patches could not be checked against the base ${options.baseSha}: ${stoppedAt("git apply --check")}`);
+        else if (check.code !== 0) problems.push(`the patches do not apply to the base ${options.baseSha}: ${tail(check.stderr)}`);
 
         const forward = parseNumstat(await git(repo, ["apply", "--numstat", "-z", series]));
         const reversed = parseNumstat(await git(repo, ["apply", "--numstat", "-z", "-R", series]));
         const newNames = new Set(forward.map((entry) => entry.name));
         const oldNames = new Set(reversed.map((entry) => entry.name));
         const touched = [...new Set([...newNames, ...oldNames])];
-        texts.push(...touched);
+        for (const name of touched) texts.push(name);
         const control = touched.filter(hasControlCharacter);
         if (control.length > 0) {
           problems.push(`a path holds a control character: ${control.map((name) => JSON.stringify(name)).join(", ")}`);
@@ -282,9 +294,18 @@ export async function inspectPatches(
             ...(check.code === 0 ? await filesGitCallsBinary(repo, scratch, options.baseSha, series) : []),
           ]),
         ];
-        const sources = forward.filter((entry) => !isTestFile(entry.name));
+        const isCreated = new Set(created);
+        // Each code file's lines over the whole series, so one that only gains
+        // lines is found whatever the other files lose (new files are flagged apart).
+        const codeLines = new Map<string, { readonly added: number; readonly removed: number; readonly binary: boolean }>();
+        for (const entry of forward) {
+          if (isTestFile(entry.name) || !CODE_FILE.test(entry.name)) continue;
+          const sum = codeLines.get(entry.name) ?? { added: 0, removed: 0, binary: false };
+          codeLines.set(entry.name, { added: sum.added + (entry.added ?? 0), removed: sum.removed + (entry.removed ?? 0), binary: sum.binary || entry.added === null });
+        }
+        const addOnlyCode = [...codeLines].filter(([name, sum]) => !sum.binary && sum.added > 0 && sum.removed === 0 && !isCreated.has(name)).map(([name]) => name);
         const changed = [
-          ...[...newNames].map((name) => `${created.includes(name) ? "A" : deleted.has(name) ? "D" : "M"} ${name}`),
+          ...[...newNames].map((name) => `${isCreated.has(name) ? "A" : deleted.has(name) ? "D" : "M"} ${name}`),
           ...movedAway.map((name) => `R ${name}`),
         ];
         return {
@@ -295,8 +316,7 @@ export async function inspectPatches(
           deleted: [...deleted],
           movedAway,
           binary,
-          sourceLinesAdded: sources.reduce((sum, entry) => sum + (entry.added ?? 0), 0),
-          sourceLinesRemoved: sources.reduce((sum, entry) => sum + (entry.removed ?? 0), 0),
+          addOnlyCode,
           addedText: texts.join("\n"),
           changed,
         };

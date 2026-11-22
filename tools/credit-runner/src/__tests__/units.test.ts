@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { expandHome } from "../config.js";
 import { FrontmatterError, parseFrontmatter } from "../frontmatter.js";
-import { gitResult, protectedPathViolations } from "../git.js";
+import { gitCommandName, gitResult, protectedPathViolations } from "../git.js";
 import { ledgerHasSession } from "../sandbox/credit-ledger.js";
 import { keyFileExposure, readKey, unexpectedPrincipals } from "../keys.js";
 import { AGENT_EFFORT, AGENT_MODEL, MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
@@ -213,6 +213,13 @@ describe("gitResult", () => {
       process.off("uncaughtException", record);
     }
     expect(uncaught).toEqual([]);
+  });
+
+  it("names the git command a call ran, past its options, for a reason that says which limit stopped it", () => {
+    expect(gitCommandName(["apply", "--cached", "x.diff"])).toBe("git apply");
+    expect(gitCommandName(["-c", "core.ignorecase=false", "--attr-source=abc", "diff", "--cached"])).toBe("git diff");
+    expect(gitCommandName(["--literal-pathspecs", "ls-tree", "-r"])).toBe("git ls-tree");
+    expect(gitCommandName(["--version"])).toBe("git");
   });
 });
 

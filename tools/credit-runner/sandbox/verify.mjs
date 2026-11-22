@@ -30,6 +30,8 @@ import path from "node:path";
 import process from "node:process";
 
 const TEST_FILE = /(^|\/)(__tests__\/|[^/]+\.(test|spec)\.[cm]?[jt]sx?$)/u;
+// JavaScript or TypeScript: the files whose new names a test can fail on.
+const CODE_FILE = /\.[cm]?[jt]sx?$/iu;
 // Node in the sandbox image writes its compile cache into the working
 // directory (seen on the A4 trial); it is not the agent's work.
 const NOT_WORK = /^\?\? node-compile-cache\//u;
@@ -160,24 +162,27 @@ result.tests = tests.map(({ file }) => file);
 result.sources = sources.map(({ file }) => file);
 if (tests.length === 0) problems.push("no test file changed, so nothing proves the change");
 
-// A new non-test file, or a source change that only adds lines (a new
+// A new non-test file, or a code file that only gains lines (a new
 // function), makes the without-fix run fail on a missing name whatever the
-// test checks: the revert removes the file or the lines.
+// test checks: the revert removes the file or the lines. Each code file is
+// judged on its own, so a line removed elsewhere (a README, say) hides nothing.
 const addedSources = sources.filter(({ kind }) => kind === "A").map(({ file }) => file);
-const sourceStats = git("diff", "--numstat", "--no-renames", task.baseSha, head)
+const addOnlyCode = git("diff", "--numstat", "--no-renames", task.baseSha, head)
   .split("\n")
   .filter((line) => line !== "")
   .map((line) => {
     const [added = "", removed = "", file = ""] = line.split("\t");
     return { added, removed, file };
   })
-  .filter(({ file }) => !TEST_FILE.test(file));
+  .filter(({ added, removed, file }) => !TEST_FILE.test(file) && CODE_FILE.test(file) && !addedSources.includes(file) && added !== "-" && added !== "0" && removed === "0")
+  .map(({ file }) => file);
 if (addedSources.length > 0) {
   flags.push(
     `the change adds non-test file(s) ${addedSources.join(", ")}, so the run without it removes them and a test may fail on the missing module rather than on the behaviour it checks`,
   );
-} else if (sourceStats.length > 0 && sourceStats.every(({ added, removed }) => removed === "0" && added !== "-")) {
-  flags.push("the source change only adds lines, so the run without it may fail on a missing name rather than on the behaviour the tests check");
+}
+if (addOnlyCode.length > 0) {
+  flags.push(`the change only adds lines to ${addOnlyCode.join(", ")}, so the run without it may fail on a missing name rather than on the behaviour the tests check`);
 }
 
 if (dirty.length === 0 && commits.length > 0) {

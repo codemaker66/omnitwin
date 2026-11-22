@@ -51,6 +51,11 @@ const SECRET_SHAPES: readonly { readonly pattern: RegExp; readonly label: string
   { pattern: /postgres(?:ql)?:\/\/[^\s:@/]+:[^\s@/]+@(?!127\.0\.0\.1|localhost)/u, label: "database URL with a password" },
 ];
 
+/** Appends one at a time: spreading a long list into push() overflows the call stack. */
+function appendAll(target: string[], items: Iterable<string>): void {
+  for (const item of items) target.push(item);
+}
+
 function sameList(a: readonly (string | null)[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
@@ -94,7 +99,7 @@ export async function reviewRun(result: SessionRunResult, options: ReviewOptions
   // then diff.patch and precondition.json (outputs.ts). An output the review
   // would read but that was not downloaded (a name it cannot account for, a
   // size over the cap, a deadline passed) rejects.
-  reasons.push(...result.refusedOutputs);
+  appendAll(reasons, result.refusedOutputs);
   const outputs = [...result.outputs].sort();
   const diffFile = outputs.find((file) => path.basename(file) === "diff.patch") ?? null;
   const preconditionFile = outputs.find((file) => path.basename(file) === "precondition.json") ?? null;
@@ -126,15 +131,18 @@ export async function reviewRun(result: SessionRunResult, options: ReviewOptions
         : "no readable verifier result: the verifier was never run as a call of its own, so nothing proves the change",
     );
   } else if (!verify.ok) {
-    reasons.push(...verify.problems.map((problem) => `verifier: ${problem}`));
+    appendAll(reasons, verify.problems.map((problem) => `verifier: ${problem}`));
   }
-  if (verify !== null) flags.push(ADVISORY_FLAG, ...verify.flags.map((flag) => `verifier: ${flag}`));
+  if (verify !== null) {
+    flags.push(ADVISORY_FLAG);
+    appendAll(flags, verify.flags.map((flag) => `verifier: ${flag}`));
+  }
 
   let inspection: PatchInspection | null = null;
   if (patches.length === 0) reasons.push("no format-patch files came back");
   else {
     inspection = await inspectPatches(patches, { baseSha: options.baseSha, repoUrl: options.repoUrl, log: options.log });
-    reasons.push(...inspection.problems);
+    appendAll(reasons, inspection.problems);
     if (verify !== null) {
       if (verify.commits === null) reasons.push("the verifier reported no list of commits to hold the patches against");
       else if (!sameList(inspection.commits, verify.commits)) {
@@ -159,10 +167,10 @@ export async function reviewRun(result: SessionRunResult, options: ReviewOptions
     else if (pattern.test(diffText)) reasons.push(`diff.patch contains something shaped like a ${label}`);
   }
   if (inspection !== null) {
-    reasons.push(...protectedPathViolations(inspection.touched).map((hit) => `protected path changed: ${hit}`));
-    reasons.push(...deletedTests(inspection.deleted).map((file) => `test deleted: ${file}`));
-    reasons.push(...deletedTests(inspection.movedAway).map((file) => `test renamed or copied away: ${file}`));
-    reasons.push(...inspection.binary.map((file) => `binary change: ${file} (it cannot be read or scanned as text)`));
+    appendAll(reasons, protectedPathViolations(inspection.touched).map((hit) => `protected path changed: ${hit}`));
+    appendAll(reasons, deletedTests(inspection.deleted).map((file) => `test deleted: ${file}`));
+    appendAll(reasons, deletedTests(inspection.movedAway).map((file) => `test renamed or copied away: ${file}`));
+    appendAll(reasons, inspection.binary.map((file) => `binary change: ${file} (it cannot be read or scanned as text)`));
     for (const file of inspection.touched) {
       const hit = CAREFUL.find(({ pattern }) => pattern.test(pathForMatching(file)));
       if (hit !== undefined) flags.push(`${file} (${hit.label})`);
@@ -170,8 +178,12 @@ export async function reviewRun(result: SessionRunResult, options: ReviewOptions
     const newSources = inspection.created.filter((file) => !isTestFile(file));
     if (newSources.length > 0) {
       flags.push(`the patches add source file(s) ${newSources.join(", ")}: without them a new test may fail on a missing module rather than on the behaviour it checks`);
-    } else if (inspection.sourceLinesAdded > 0 && inspection.sourceLinesRemoved === 0) {
-      flags.push("the patches only add source lines: without them a new test may fail on a missing name rather than on the behaviour it checks");
+    }
+    // Each code file on its own: a line removed from another file (a README, say) does not hide one that only gains lines.
+    if (inspection.addOnlyCode.length > 0) {
+      flags.push(
+        `the patches only add lines to ${inspection.addOnlyCode.join(", ")}: without them a new test may fail on a missing name rather than on the behaviour it checks`,
+      );
     }
   }
 

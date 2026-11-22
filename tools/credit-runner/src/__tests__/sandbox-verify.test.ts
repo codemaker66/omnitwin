@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { gitEnv } from "../git.js";
 import { parseVerifyOutput } from "../sandbox/session.js";
 
 // sandbox/verify.mjs runs inside the Managed Agents container. Here it runs
@@ -35,8 +36,9 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true, maxRetries: 30, retryDelay: 500 });
 });
 
+/** git as production runs it (gitEnv: no GIT_* variable from a calling hook), so a fixture never writes to the repository the tests run from. */
 function git(repo: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+  return execFileSync("git", args, { cwd: repo, encoding: "utf8", env: gitEnv() }).trim();
 }
 
 async function repoWith(lib: string): Promise<{ repo: string; base: string; outputs: string }> {
@@ -77,7 +79,8 @@ async function verify(
   await writeFile(taskFile, JSON.stringify({ id: "t1", baseSha: base, repoDir: repo, acceptance, mutation, acceptanceTimeoutMinutes }));
   const child = spawnSync(process.execPath, [VERIFY, taskFile], {
     encoding: "utf8",
-    env: { ...process.env, VERIFY_OUTPUTS_DIR: outputs },
+    // The verifier's own git calls get no GIT_* variable either.
+    env: { ...gitEnv(), VERIFY_OUTPUTS_DIR: outputs },
   });
   const line = child.stdout.split("\n").find((text) => text.startsWith("VERIFY_RESULT "));
   if (line === undefined) throw new Error(`no VERIFY_RESULT line; stderr: ${child.stderr}`);
@@ -195,7 +198,19 @@ describe("sandbox verify.mjs", () => {
     const { result } = await verify(repo, base, outputs);
     expect(result.ok).toBe(true);
     expect(result.flags).toEqual([
-      "the source change only adds lines, so the run without it may fail on a missing name rather than on the behaviour the tests check",
+      "the change only adds lines to lib.mjs, so the run without it may fail on a missing name rather than on the behaviour the tests check",
+    ]);
+  });
+
+  it("flags a code file that only gains lines even when another file in the change loses one", async () => {
+    const { repo, outputs } = await repoWith(FIXED);
+    await commit(repo, { "README.md": "# Lib\n\nNotes.\n" }, "docs");
+    const base = git(repo, "rev-parse", "HEAD");
+    const importsNew = 'import { three } from "../lib.mjs";\nif (three() !== 3) process.exit(1);\n';
+    await commit(repo, { "lib.mjs": `${FIXED}export const three = () => 3;\n`, "__tests__/lib.test.mjs": importsNew, "README.md": "# Lib\n" });
+    const { result } = await verify(repo, base, outputs);
+    expect(result.flags).toEqual([
+      "the change only adds lines to lib.mjs, so the run without it may fail on a missing name rather than on the behaviour the tests check",
     ]);
   });
 

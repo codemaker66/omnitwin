@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { gitEnv } from "../git.js";
 import { withBaseCommit } from "../sandbox/base-repo.js";
 import { ATTENDED, isInsideFolder, main, USAGE } from "../sandbox/cli.js";
 import { masterFacts } from "../sandbox/master.js";
@@ -138,7 +139,7 @@ describe("the key folder", () => {
 
   it("keeps key files out of git, in the package and at the repository root", () => {
     for (const file of ["keys/pot-1.key", "tools/credit-runner/pot-1.key"]) {
-      expect(spawnSync("git", ["-C", REPO_ROOT, "check-ignore", "-q", file]).status, file).toBe(0);
+      expect(spawnSync("git", ["-C", REPO_ROOT, "check-ignore", "-q", file], { env: gitEnv() }).status, file).toBe(0);
     }
   });
 });
@@ -174,8 +175,9 @@ describe("--budget and --timeout overrides", () => {
   });
 });
 
+/** git as production runs it (gitEnv: no GIT_* variable), so a test that sets GIT_* for the code under test does not redirect its own setup. */
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
+  return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: gitEnv() }).trim();
 }
 
 describe("masterFacts", () => {

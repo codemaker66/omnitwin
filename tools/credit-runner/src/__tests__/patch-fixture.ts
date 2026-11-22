@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { gitEnv } from "../git.js";
 
 // Real format-patch files, made by git from a throwaway repository, so the
 // review reads exactly what a session's outputs would hold. The repository
@@ -64,8 +65,10 @@ export interface PatchFixture {
   readonly diff: string;
 }
 
+// The production environment for git (no GIT_* variable from a calling hook), so a
+// fixture never writes to the repository the tests are run from; output up to a large patch.
 function git(cwd: string, args: readonly string[], input?: string): string {
-  return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", input, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
+  return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", input, env: gitEnv(), maxBuffer: 256 * 1024 * 1024 }).trim();
 }
 
 function stageLinks(repo: string, links: BaseLinks): void {

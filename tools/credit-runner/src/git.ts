@@ -16,25 +16,58 @@ export function gitEnv(): NodeJS.ProcessEnv {
   return { ...env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" };
 }
 
+/** The longest one git call may run before it is stopped. */
+export const GIT_TIMEOUT_MS = 120_000;
+/** The most a git() call may print before it is stopped. */
+export const GIT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+
+/** What stopped a git call at one of the limits above, in words for a reason; null when it was not a limit. */
+function limitHit(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  if ("code" in error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return `printed more than ${String(GIT_MAX_OUTPUT_BYTES / 1024 / 1024)} MiB`;
+  if ("killed" in error && error.killed === true) return `ran past its ${String(GIT_TIMEOUT_MS / 60_000)}-minute limit`;
+  return null;
+}
+
+/** The git command `args` run, for a message: the first argument that is neither an option nor the value of a `-c`. */
+export function gitCommandName(args: readonly string[]): string {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "-c") index += 1;
+    else if (!arg.startsWith("-")) return `git ${arg}`;
+  }
+  return "git";
+}
+
 /**
  * The runner's own git calls: never prompt (an expired credential would
- * otherwise open a dialog and stall an unattended run), never hang past two
- * minutes, print paths unquoted so non-ASCII names parse, and act only on the
- * repository named by cwd (see gitEnv).
+ * otherwise open a dialog and stall an unattended run), never hang past
+ * GIT_TIMEOUT_MS, print paths unquoted so non-ASCII names parse, and act only
+ * on the repository named by cwd (see gitEnv). A call stopped at a limit
+ * throws an error that names the limit.
  */
 export async function git(cwd: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", ["-C", cwd, "-c", "core.quotePath=false", ...args], {
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: 120_000,
-    windowsHide: true,
-    env: gitEnv(),
-  });
-  // Trailing whitespace only: leading spaces are meaningful in porcelain output.
-  return stdout.replace(/\s+$/u, "");
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", cwd, "-c", "core.quotePath=false", ...args], {
+      maxBuffer: GIT_MAX_OUTPUT_BYTES,
+      timeout: GIT_TIMEOUT_MS,
+      windowsHide: true,
+      env: gitEnv(),
+    });
+    // Trailing whitespace only: leading spaces are meaningful in porcelain output.
+    return stdout.replace(/\s+$/u, "");
+  } catch (error) {
+    const limit = limitHit(error);
+    if (limit === null) throw error;
+    throw new Error(`${gitCommandName(args)} ${limit} and was stopped`, { cause: error });
+  }
 }
 
 export interface GitResult {
+  /** git's exit code; null when it was stopped (see timedOut) or killed by a signal. */
   readonly code: number | null;
+  /** Stopped at GIT_TIMEOUT_MS: the code and output are then not git's answer. */
+  readonly timedOut: boolean;
   readonly stdout: string;
   readonly stderr: string;
 }
@@ -51,17 +84,25 @@ export function gitResult(cwd: string, args: readonly string[], input?: Buffer):
   return new Promise((resolve, reject) => {
     const child = spawn("git", ["-C", cwd, "-c", "core.quotePath=false", ...args], {
       windowsHide: true,
-      timeout: 120_000,
       env: gitEnv(),
       stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, GIT_TIMEOUT_MS);
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
     child.on("close", (code) => {
-      resolve({ code, stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8") });
+      clearTimeout(timer);
+      resolve({ code, timedOut, stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8") });
     });
     if (child.stdin !== null) {
       child.stdin.on("error", () => undefined);
