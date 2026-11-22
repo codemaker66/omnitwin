@@ -56,6 +56,7 @@ import { isLayoutTimelineMutationLocked, onLayoutTimelineMutationLockChange } fr
 import { createOneShotHandoff } from "../lib/one-shot-handoff.js";
 import { changedBetween, locallyModifiedIds, rebaseOntoServer } from "../lib/layout-live/live-document.js";
 import { matchSavedLayout, serverHoldsLayout } from "../lib/saved-layout-content.js";
+import { openLayoutEventKind } from "../lib/event-kind-record.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -770,6 +771,11 @@ const INITIAL_STATE: EditorState = {
 const CONFLICT_SAVE_ERROR = "This layout changed in another tab. Reload the server copy before saving again.";
 /** The server's own words for a conflict, for one this client finds itself. */
 const SERVER_CONFLICT_MESSAGE = "Layout changed on the server. Reload before saving again.";
+
+/** The planner's address as it is now, for an answer it carries (`?event=wedding`). */
+function plannerSearch(): string {
+  return typeof window === "undefined" ? "" : window.location.search;
+}
 /** "Keep mine" could not read the version it would save over. */
 const KEEP_MINE_UNREAD_ERROR = "The newer version could not be read, so nothing was saved. Try again.";
 
@@ -1178,6 +1184,14 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         flushActionLogToServer(previousRevision);
       }
       beginActionLogForConfig(config.id);
+      // The kind of event the layout is for, read from the metadata this load already holds (T-674), so a
+      // new seat never takes the wrong chair while a second read is in flight. The layout is new, and may be
+      // asked, only when nothing stood on its floor in either copy: work restored here, or emptied here from
+      // a furnished server copy, is work in progress.
+      openLayoutEventKind({
+        configId: config.id, isPublicPreview: config.isPublicPreview, search: plannerSearch(), metadata: config.metadata ?? null,
+        floorEmptyAtOpen: objects.length === 0 && serverObjects.length === 0,
+      });
       // Load space data (name, dimensions) for room geometry rendering.
       // venueId/spaceId are non-nullable on the wire — no guard needed.
       void get().loadSpace(config.venueId, config.spaceId);
@@ -1263,6 +1277,8 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // log to the new configuration — without that, edits to this draft
       // would append under the previous config's id.
       beginActionLogForConfig(config.id);
+      // A new guest draft: the planner has not asked what the event is yet, unless the address says (T-674).
+      openLayoutEventKind({ configId: config.id, isPublicPreview: true, search: plannerSearch(), metadata: null, floorEmptyAtOpen: true });
 
       // Load space data for room geometry rendering.
       // venueId/spaceId are non-nullable on the wire — no guard needed.

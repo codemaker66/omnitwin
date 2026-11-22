@@ -267,9 +267,18 @@ export function pdfRules(buf: Buffer): PdfRule[][] {
   });
 }
 
+/**
+ * A run's text with each no-break space (U+00A0) read as the space it prints
+ * as. Assertions match plain spaces against this, so a character the PDF lost
+ * can never be passed over as whitespace.
+ */
+export function plainSpaces(text: string): string {
+  return text.replace(/\u00A0/gu, " ");
+}
+
 /** All text, runs joined by single spaces, as a reader would search it. */
 export function pdfText(buf: Buffer): string {
-  return pdfPages(buf).flat().map((line) => line.text).join(" ").replace(/\s+/gu, " ").trim();
+  return pdfPages(buf).flat().map((line) => plainSpaces(line.text)).join(" ").replace(/\s+/gu, " ").trim();
 }
 
 export function pdfPageSizes(buf: Buffer): { width: number; height: number }[] {

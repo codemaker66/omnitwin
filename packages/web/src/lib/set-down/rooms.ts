@@ -74,18 +74,22 @@ export const UNCALIBRATED: BandValues = [1, 1, 1, 1, 1, 1, 1];
  * Each room's calibration, fitted to the offline ray tracer (T-700, Task 7):
  * per band, the tracer's empty T20 over Eyring's empty time, clamped to
  * 0.7-1.3 and rounded to 3 decimals. From tools/set-down-acoustics/results.json,
- * retraced on 13 Nov 2026 after ruling R49's changes to the rooms, with seeds 1
- * and 2 (200,000 rays a band; 2,000,000 in the galleries, which share one
- * trace), and run twice to the same bytes. The tracer draws each room as a box
- * with the model's volume and surface areas, so the factors correct Eyring's
- * diffuse-field assumption on those boxes; they are not fitted to the rooms'
- * outlines. The 125 Hz factor is 1 wherever the room's Schroeder frequency is
- * above that octave's lower edge, where rays say nothing about a modal
- * response (ruling R39): every room but the Grand Hall. The Robert Adam
- * Room's 250 and 500 Hz factors (1.261, 1.156) are kept (ruling R59): its
- * absorption sits on the floor and ceiling between hard walls, and Fitzroy's
- * formula for uneven absorption, independent of the tracer, puts those bands
- * at 1.365 and 1.086 x Eyring (README.md, "What stays uncertain"). The
+ * retraced on 13 Nov 2026 after ruling R49's changes to the rooms, and again on
+ * 18 Nov 2026 after the Robert Adam Room took its measured outline (ruling
+ * R96), when every other room traced exactly as on 13 November. Both times with
+ * seeds 1 and 2 (200,000 rays a band; 2,000,000 in the galleries, which share
+ * one trace), and run twice to the same bytes. The tracer draws each room as a
+ * box with the model's volume and surface areas, so the factors correct
+ * Eyring's diffuse-field assumption on those boxes; they are not fitted to the
+ * rooms' outlines. The 125 Hz factor is 1 wherever the room's Schroeder
+ * frequency is above that octave's lower edge, where rays say nothing about a
+ * modal response (ruling R39): every room but the Grand Hall. The Robert Adam
+ * Room's 250 and 500 Hz factors (1.3 and 1.196) are kept as fitted (ruling
+ * R59): its absorption sits on the floor and ceiling between hard walls, and
+ * Fitzroy's formula for uneven absorption, independent of the tracer, puts
+ * those bands at 1.613 and 1.321 x Eyring (README.md, "What stays
+ * uncertain"). At 250 Hz its tracer reads 1.319 x Eyring, just past the clamp,
+ * and the model stays within 1.4 % of it there. The
  * galleries' 1-8 kHz bands sit at the clamp: their tracer reads 1.35-1.57 x
  * Eyring there, an upper bound for an unsurveyed attic section (README.md,
  * "Difference explained"). After any change to a room's surfaces, export,
@@ -95,18 +99,19 @@ export const UNCALIBRATED: BandValues = [1, 1, 1, 1, 1, 1, 1];
 const TRACER_CALIBRATION: Readonly<Record<RoomSlug, BandValues>> = {
   "grand-hall": [1.067, 1.038, 1.023, 1.009, 1.008, 1.007, 1.006],
   saloon: [1, 1.024, 1.019, 1.012, 1.01, 1.006, 1.006],
-  "robert-adam-room": [1, 1.261, 1.156, 1.062, 1.049, 1.042, 1.026],
+  "robert-adam-room": [1, 1.3, 1.196, 1.089, 1.071, 1.053, 1.031],
   "reception-room": [1, 1.009, 1, 0.992, 0.991, 0.989, 0.987],
   "north-gallery": [1, 1.068, 1.198, 1.3, 1.3, 1.3, 1.3],
   "south-gallery": [1, 1.068, 1.198, 1.3, 1.3, 1.3, 1.3],
 };
 
 /**
- * A door outside the Grand Hall, 1.6 x 2.6 m (EST): no source sizes the other
- * rooms' doors (the survey sees double doors in most of them); the figure is
- * a pair of leaves somewhat larger than the Grand Hall's scanned doorways
- * (1.06-1.45 m wide, hall-spec.ts). A door is a few m2 of a room's hundreds,
- * so the error is small.
+ * A door in the Saloon, the Reception Room or a gallery, 1.6 x 2.6 m (EST): no
+ * source sizes those rooms' doors (the survey sees double doors in most of
+ * them); the figure is a pair of leaves somewhat larger than the Grand Hall's
+ * scanned doorways (1.06-1.45 m wide, hall-spec.ts). A door is a few m2 of a
+ * room's hundreds, so the error is small. The Robert Adam Room's doors are
+ * measured (ROBERT_ADAM).
  */
 const HOUSE_DOOR_M2 = 1.6 * 2.6;
 
@@ -216,13 +221,21 @@ function grandHall(): RoomAcoustics {
     slug: "grand-hall",
     volumeM3: volume,
     surfaces: [
+      // The floor's material is EST, the plan's choice: the hall is on the first floor (the 2010 FIRST plan) over
+      // the rooms below, and no source records the construction or finish of its floor.
       surface("oak-boards-joists", floor, "floor"),
+      // The flat ceiling's material is EST, the plan's choice of plaster on lath. The scan measures the coffered
+      // ceiling's height, not its build, and HES's listing (LB32713) records "a new hall ceiling in 1955" by Walter
+      // Underwood, so whether it is lath at all is uncertain. The dome below takes this row too.
       surface("plaster-lath", floor - dome.openingM2, "ceiling"),
       // No source gives the dome's construction (EST). The 2010 licensing
       // plans put a "Dome Space" over it between the galleries, so it has air
       // behind it; it takes the plaster-on-lath row of the ceiling round it.
       { material: "plaster-lath", areaM2: dome.surfaceM2, role: "ceiling", dome: true },
       surface("hardwood-panelling", dado, "wall"),
+      // The wall above the dado is EST, the plan's half panelling and half plaster: the scan shows a plaster face
+      // there with the frieze, the inscription and the cornice, and panelling in the attic band above the cornice
+      // (hall-spec.ts, HALL_ELEVATION), but no source measures what share of it is timber.
       surface("hardwood-panelling", upperWall / 2, "wall"),
       surface("plaster-masonry", upperWall / 2, "wall"),
       surface("sash-glazing", glazing, "opening"),
@@ -231,7 +244,7 @@ function grandHall(): RoomAcoustics {
     ],
     calibration: TRACER_CALIBRATION["grand-hall"],
     source:
-      "hall-spec.ts (scan of 11 July 2026): plan, ceiling, HALL_OPENINGS windows and HALL_DOORS doors; the scanned dome (HALL_DOME, domeHeightAt), integrated, its material EST; dado to the scanned 1.95 m cap rail, less each opening's part of that band; curtains 2 x 0.9 m a window (EST)",
+      "hall-spec.ts (scan of 11 July 2026): plan, ceiling, HALL_OPENINGS windows and HALL_DOORS doors; the scanned dome (HALL_DOME, domeHeightAt), integrated, its material EST; dado to the scanned 1.95 m cap rail, less each opening's part of that band; curtains 2 x 0.9 m a window (EST); EST, the plan's choices: the floor as oak boards on joists, the flat ceiling as plaster on lath (HES records a new hall ceiling in 1955), the wall above the dado half panelling and half plaster",
   };
 }
 
@@ -281,60 +294,198 @@ function saloon(): RoomAcoustics {
   };
 }
 
+/** An opening's width, sill and head in m, the sill and head above the lower floor. */
+type OpeningSize = readonly [width: number, sill: number, head: number];
+
+function openingM2([width, sill, head]: OpeningSize): number {
+  return width * (head - sill);
+}
+
+/** The Robert Adam Room's steps, m2 (ROBERT_ADAM.lower.stepsM2 says how it is found). */
+const ROBERT_ADAM_STEPS_M2 = 3.064;
+
 /**
- * Robert Adam Room: a lower section of 11.2 x 7.6 m under a 3.03 m mean
- * ceiling, open to an upper section of 9.8 x 5.6 x 2.2 m.
- * - Lower section: 11.2 m measured and published; 7.6 m published (85.1 m2).
- *   The survey's mesh runs up to 8.9 m deep to the facade's inner face, piers
- *   and window bays included, and does not reconcile that with 7.6 m (EST,
- *   the published figure). Ceiling 3.03 m: measured, the area mean of the
- *   survey mesh's ceiling (upward rays on a 0.2 m grid): 57-59 % of the plan
- *   is domed bays at 3.18 m, the rest under beams and arches at 2.81 m, where
- *   the survey reads 3.20 and 2.80 m.
- * - Upper section: 9.8 x 5.6 m measured. Its ceiling is kept at 2.2 m (ruling
- *   R66): the survey measures its flat ceiling at 2.15-2.29 m, which takes in
- *   the published 2.18 m. The survey mesh's area mean over the section's
- *   outline is 2.303 m (upward rays on a 0.2 m grid), but its 95th percentile
- *   is 2.98 m: some higher parts inside the outline, which the survey does not
- *   identify, pull the mean up. Taking 2.303 m instead would add about 5.7 m3,
- *   1.5 % of the room's 379 m3.
- * - Both ceilings are plaster on lath (EST: no source gives their
- *   construction). The survey puts the lower section under the south end of
- *   the Grand Hall and the upper under the Saloon. Their floors are at Z -3.57
- *   and -2.98 m, so each ceiling sits 0.4-0.8 m under a first-floor timber
- *   floor at Z 0: the Grand Hall's oak boards on joists and the Saloon's
- *   parquet on a timber subfloor, as this file has them. A ceiling with a void
- *   takes the lath row, not solid plaster.
- * - The upper section's whole 5.6 x 2.2 m end is taken as open to the lower
- *   one (EST: the survey sees the two joined by four steps and a curtained
- *   arch, but does not size the arch), so neither side has a wall there.
- * - The three street windows are 1.6 x 2.0 m sashes (EST: the survey counts
- *   three bays, partly obscured glazing, and sizes none). The curtain at the
- *   arch is 2 x 2.2 m of velour (EST) and the two doors are the house's.
+ * The Robert Adam Room as T-662 measured it from the July scan (#442, ruling
+ * R96). "The outline" is tools/surveyed-rooms/robert-adam-room.room.json: 64
+ * walls, each with its measured height above the lower floor (the ceiling met
+ * 0.10 m inside its face), and the floor levels and ceiling regions. "The
+ * README" is tools/surveyed-rooms/measure/robert-adam-room/README.md. Each
+ * figure below names its source; robertAdamRoom says how they are combined,
+ * and room-acoustics.test.ts recomputes them from the outline.
+ */
+export const ROBERT_ADAM = {
+  lower: {
+    /**
+     * The steps: the alcove's 3.360 m width between its walls, from the first
+     * riser to the top one, 0.912 m (the outline; README, "Steps": 3.1 m2). They
+     * stand south of the top riser's line under the alcove's raised panel, so
+     * their floor and air are the lower section's, and not the upper's.
+     */
+    stepsM2: ROBERT_ADAM_STEPS_M2,
+    /**
+     * The outline south of the top riser's line (E57 Y 0.376, the wall the arch
+     * is in), 112.060 m2: 108.996 m2 of floor with the street recess, the lift
+     * bay and the alcove (README, "Lower section, area": 109.0 m2) and the
+     * steps' 3.064 m2 (README, "Steps": 3.1 m2).
+     */
+    floorM2: 108.996 + ROBERT_ADAM_STEPS_M2,
+    /**
+     * The area mean of the air's height over that floor, from the outline: its
+     * ceiling regions (eleven raised panels at 3.173-3.216 m, the side aisles'
+     * cross beams at 2.896-2.932 m, the boxed lintels over the windows at 2.678
+     * and 2.717 m, the lift bay at 2.706 m, and the beams' 2.8 m soffit
+     * wherever no region is drawn) above its floor levels (the treads and
+     * plinths 0.146-0.43 m up), on a 1 cm raster. Taking the regions as
+     * polygons instead gives 3.004 m.
+     */
+    meanHeightM: 3.003,
+    /**
+     * Its 40 walls, 62.347 m long (the outline), each its length times its
+     * measured height: 185.175 m2. The two short walls either side of the arch
+     * stand partly behind the plinths beside the steps; the 0.24 m2 hidden
+     * there is counted.
+     */
+    wallM2: 185.175,
+  },
+  upper: {
+    /**
+     * The outline north of the top riser: the landing, the lobby and the main
+     * upper room (README, "Upper section, area": 52.5 m2).
+     */
+    floorM2: 52.459,
+    /**
+     * The area mean of the outline's ceiling above the upper floor: its flat
+     * ceiling at 2.171 m over 30.6 m2 (README, "Ceilings": 2.166-2.180 m), the
+     * raised field's two rectangles at 2.288 and 2.293 m over 21.5 m2, and the
+     * arch between the lobby and the main room at 2.055 m over 0.3 m2, on a
+     * 1 cm raster (2.219 m as polygons too).
+     */
+    meanHeightM: 2.219,
+    /**
+     * Its 24 walls, 35.039 m long (the outline), each its length times its
+     * measured height above the upper floor (0.594 m above the lower; README,
+     * "Floors and steps"): 75.308 m2. The curved screen wall counts its
+     * 1.652 m arc (a quarter circle of 1.052 m, README "Wall faces"), not the
+     * outline's 1.486 m chord.
+     */
+    wallM2: 75.308,
+  },
+  /**
+   * The arch to the upper section: 2.375 m wide between its jambs, square-headed
+   * at the upper ceiling's height, 2.77 m above the lower floor (README,
+   * "Openings", and the outline's two jambs). Over its head the lower side's
+   * wall runs on to the alcove's raised panel, 3.191 m (the outline).
+   */
+  arch: { widthM: 2.375, headM: 2.77, alcoveCeilingM: 3.191 },
+  /**
+   * The two street windows (README, "Openings"): from the board to the boxed
+   * lintel's soffit. Their glass rises 0.11-0.13 m behind the lintel, which
+   * the room's air does not meet, so that strip is not counted.
+   */
+  windows: [
+    [2.26, 0.605, 2.677],
+    [2.23, 0.637, 2.716],
+  ],
+  /**
+   * The glazed entrance screen in the middle bay (README, "Openings"): a glazed
+   * door between two sidelights, from its 0.285 m plinth to its head.
+   */
+  entranceScreen: [2.72, 0.285, 2.745],
+  /**
+   * The five doors (README, "Openings"): the double door to the entrance
+   * hall's lobby, the timber door in the west wall, the double door to the
+   * rear corridor and the two doors in the upper north wall.
+   */
+  doors: [
+    [1.35, 0, 2.05],
+    [0.71, 0, 2.045],
+    [1.66, 0.594, 2.634],
+    [0.94, 0.594, 2.599],
+    [0.95, 0.594, 2.584],
+  ],
+} as const;
+
+/**
+ * Robert Adam Room: a lower section on the street front of 112.06 m2, with a
+ * 3.003 m mean height, and, four risers up behind it, an upper section of
+ * 52.46 m2 with a 2.219 m mean height above its floor, joined by an arch
+ * 2.375 m wide: 164.52 m2 of floor (README, "Whole room": 164.5 m2) and
+ * 452.9 m3 of air. ROBERT_ADAM gives each figure's source. How they are
+ * combined:
+ * - Floor and ceiling: each section's plan area. The coffers' sides, the
+ *   vertical faces round the panels, beams, lintels and raised field, come to
+ *   42 m2 by the outline's ceiling regions (52 m2 counting the edges along the
+ *   walls too, an upper bound), and would add about 5.5-7 % to the room's
+ *   absorption at 1 kHz as plaster on masonry or on lath; they are left out,
+ *   as the Grand Hall's coffers are, and so are the risers' and the plinths'
+ *   faces.
+ * - Volume: each section's floor area times its area-mean height.
+ * - Walls: each section's walls at their measured heights, and over the arch's
+ *   head 2.375 x (3.191 - 2.77) = 1.0 m2 more. Nothing is counted across the
+ *   arch itself. The published figures' model took the upper section's whole
+ *   5.6 x 2.2 m end as open (EST); the arch is 2.375 m wide, so the walls
+ *   either side of it now count.
+ * - The published figures were partial. The lower section is 7.64 m deep only
+ *   to its shoulders (the website's 7.6 m); it runs on behind them, 10.07 m
+ *   wide, to the back wall at 9.44 m (README, "Lower section, depth" and
+ *   "width"). Ruling R60's "the mesh gives 8.88 m to the facade" was the
+ *   facade's outer face, not a surface the room's air meets (R96).
+ * - The upper section's height: ruling R66 kept 2.2 m, the flat ceiling,
+ *   because the 17 October mesh's area mean (2.303 m) was pulled up by higher
+ *   parts that survey did not identify. #442 identifies and measures them, the
+ *   raised field, so the area mean of the measured parts, 2.219 m, replaces
+ *   R66's figure (+0.9 %, 1.0 m3).
+ * - The platform lift's upper landing (1.0 x 1.42 m, 1.98 m high) lies outside
+ *   the outline, and is left out: about 2.8 m3, 0.6 % of the air. Its open way
+ *   from the lobby (the outline's lift-landing wall) and the lift's gate over
+ *   the bay (lift-head, whose 0.594 m riser the outline gives, taken up to the
+ *   bay's 2.706 m ceiling) are counted as wall.
+ * - Openings at their measured sizes (README, "Openings"): two windows of
+ *   4.68 and 4.64 m2 and the entrance screen, 6.69 m2, as glazing; five doors,
+ *   11.38 m2, as timber doors, closed as every room's are (the lobby door stood
+ *   open in the scan). The screen is taken as glass throughout (EST: by the
+ *   README its glass is 2.27 m of its 2.72 m width, the rest timber framing),
+ *   as the Reception Room's glazed doors are. The published figures' model had
+ *   three 1.6 x 2.0 m windows and two 1.6 x 2.6 m doors (EST).
+ * - No curtain (ruling R97). That model hung 2 x 2.2 m of velour at the arch (EST), on the
+ *   17 October survey's reading of a red curtain there from station 112, which
+ *   it marked as inferred. #442 finds the arch lined in timber and records no
+ *   curtain in the room (README, "The room, in words" and "Inventory"); the
+ *   scan's photographs from stations 103 and 112 show the bare lining.
+ * - Materials as before (EST): oak boards on joists; plaster on lath for both
+ *   ceilings; plaster on masonry for every wall, including the fluted piers
+ *   and casings, the arch's timber lining, the alcove's mirrors and the
+ *   radiator casings, none of whose construction is measured. The survey puts
+ *   the lower section under the south end of the Grand Hall and the upper
+ *   under the Saloon, so each ceiling sits 0.4-0.8 m under a first-floor timber
+ *   floor (the Grand Hall's oak boards on joists, the Saloon's parquet on a
+ *   timber subfloor, as this file has them). A ceiling with a void takes the
+ *   lath row, not solid plaster (ruling R49).
  */
 function robertAdamRoom(): RoomAcoustics {
-  const lower = { length: 11.2, width: 7.6, height: 3.03 };
-  const upper = { length: 9.8, width: 5.6, height: 2.2 }; // the measured flat ceiling (R66), not the mesh's 2.303 m mean
-  const opening = upper.width * upper.height;
-  const lowerWall = 2 * (lower.length + lower.width) * lower.height - opening;
-  const upperWall = (2 * upper.length + upper.width) * upper.height;
-  const windows = 3 * 1.6 * 2.0;
-  const doors = 2 * HOUSE_DOOR_M2;
-  const plan = lower.length * lower.width + upper.length * upper.width;
+  const { lower, upper, arch } = ROBERT_ADAM;
+  const floor = lower.floorM2 + upper.floorM2;
+  const overArch = arch.widthM * (arch.alcoveCeilingM - arch.headM);
+  const walls = lower.wallM2 + upper.wallM2 + overArch;
+  const windows = ROBERT_ADAM.windows.reduce((sum, size) => sum + openingM2(size), 0);
+  const screen = openingM2(ROBERT_ADAM.entranceScreen);
+  const doors = ROBERT_ADAM.doors.reduce((sum, size) => sum + openingM2(size), 0);
   return {
     slug: "robert-adam-room",
-    volumeM3: lower.length * lower.width * lower.height + upper.length * upper.width * upper.height,
+    volumeM3: lower.floorM2 * lower.meanHeightM + upper.floorM2 * upper.meanHeightM,
     surfaces: [
-      surface("oak-boards-joists", plan, "floor"),
-      surface("plaster-lath", plan, "ceiling"),
-      surface("plaster-masonry", lowerWall + upperWall - windows - doors, "wall"),
+      surface("oak-boards-joists", floor, "floor"),
+      surface("plaster-lath", floor, "ceiling"),
+      surface("plaster-masonry", walls - windows - screen - doors, "wall"),
       surface("sash-glazing", windows, "opening"),
+      // The glazed entrance screen, taken as glass (EST: its timber framing is
+      // about a sixth of its width).
+      surface("sash-glazing", screen, "opening"),
       surface("timber-door", doors, "opening"),
-      surface("velour-drape", 2 * 2.2, "wall"),
     ],
     calibration: TRACER_CALIBRATION["robert-adam-room"],
     source:
-      "survey: lower 11.2 m (measured) x 7.6 m (published) under a 3.03 m mean ceiling (measured, the mesh's area mean), open to an upper 9.8 x 5.6 m (measured) x 2.2 m (the measured 2.15-2.29 m flat ceiling; the mesh's area mean is 2.303 m, R66); ceilings plaster on lath under the timber floors above (EST); EST: three 1.6 x 2.0 m windows, a 2 x 2.2 m velour curtain at the arch, two doors of 1.6 x 2.6 m",
+      "T-662's outline (#442, tools/surveyed-rooms/robert-adam-room.room.json and its measure README): lower section 112.06 m2 with the steps (README 109.0 + 3.1 m2) at a 3.003 m mean height, upper 52.46 m2 (README 52.5 m2) at 2.219 m above its floor (the outline's flat ceiling and raised field, replacing R66's 2.2 m), both the area means of the outline's ceiling regions; walls 260.48 m2 at their measured heights (97.39 m of wall, the screen wall at its arc) and 1.0 m2 over the 2.375 m arch; openings as measured (README, Openings): two windows 2.26 x 2.072 and 2.23 x 2.079 m, the glazed entrance screen 2.72 x 2.46 m (taken as glass, EST), five doors 11.38 m2; no curtain at the arch (#442); the lift's upper landing left out; materials EST: oak boards on joists, plaster-on-lath ceilings under the timber floors above, plaster walls",
   };
 }
 
@@ -437,8 +588,11 @@ export const ROOM_ACOUSTICS: Readonly<Record<RoomSlug, RoomAcoustics>> = {
 
 /**
  * Where each room's reference layout is set out: the whole floor, or for the
- * two-part rooms their main part (the Robert Adam Room's lower section, the
- * Reception Room's wide arm).
+ * two-part rooms their main part (the Robert Adam Room's lower section in
+ * front of its shoulders, the Reception Room's wide arm). The Robert Adam
+ * Room's is the published 11.2 x 7.6 m, which T-662 measures as 11.19 x 7.64 m
+ * (#442, its README's "Lower section, width" and "depth"); the 3-4 cm moves no
+ * reference chair out of the room.
  */
 export const ROOM_PLANS: Readonly<Record<RoomSlug, RoomPlan>> = {
   "grand-hall": { lengthM: HALL_LENGTH, widthM: HALL_WIDTH },

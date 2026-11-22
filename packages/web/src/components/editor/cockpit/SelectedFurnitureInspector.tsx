@@ -16,6 +16,8 @@ import { asOneUndoStep } from "../../../lib/planner-keymap.js";
 import { referenceSceneEntries, referenceSceneSummary, referenceSelection, type ReferenceSceneEntry } from "../../../lib/reference-scene-model.js";
 import { floorNames, withFloorNames } from "../../../lib/floor-names.js";
 import { countLabel } from "../../../lib/count-label.js";
+import { EVENT_KIND_WORDS, layOutStyleFor } from "../../../lib/event-kind-record.js";
+import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import "./ReferencePanels.css";
 
 interface NumberControlProps {
@@ -154,17 +156,21 @@ function openCatalogue(): void {
 
 function layOutForGuests(): void {
   if (useLayoutTimelinePreviewStore.getState().mode !== "inactive") return;
-  useAutoFillRequestStore.getState().request("dinner-rounds");
+  // The event's shape: rows of seats for a corporate event, round tables otherwise (T-674).
+  useAutoFillRequestStore.getState().request(layOutStyleFor(usePlannerEventStore.getState().eventKind));
   useCockpitStore.getState().setMode("guests");
 }
 
 function EmptyInspector({ entries, roomName }: { readonly entries: readonly ReferenceSceneEntry[]; readonly roomName: string }): ReactElement {
-  // An empty floor says once where to start, and shows no zeros (A-15).
+  const eventKind = usePlannerEventStore((state) => state.eventKind);
+  // An empty floor says once where to start, and shows no zeros (A-15); once the planner knows the event, it names it.
   if (entries.length === 0) {
+    const layOut = eventKind === null ? "lay out for your guests" : EVENT_KIND_WORDS[eventKind].layOut;
+    const layOutName = layOutStyleFor(eventKind) === "theatre" ? "Lay out rows of seats for your guests" : "Lay out tables and seats for your guests";
     return <div className="reference-empty-inspector" data-testid="reference-empty-floor"><Armchair size={28} strokeWidth={1} aria-hidden="true" /><h3>{roomName}</h3>
-      <p>Nothing on the floor yet. Add a table, or lay out for your guests.</p>
+      <p>Nothing on the floor yet. Add a table, or {layOut}.</p>
       <button className="reference-action" type="button" onClick={openCatalogue}><Plus size={14} aria-hidden="true" />Add a table</button>
-      <button className="reference-action" type="button" aria-label="Lay out tables and seats for your guests" onClick={layOutForGuests}><LayoutGrid size={14} aria-hidden="true" />Lay out</button>
+      <button className="reference-action" type="button" aria-label={layOutName} onClick={layOutForGuests}><LayoutGrid size={14} aria-hidden="true" />Lay out</button>
     </div>;
   }
   const summary = referenceSceneSummary(entries);

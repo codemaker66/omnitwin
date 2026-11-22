@@ -9,8 +9,9 @@
 // renderer needs to place the published files comes from here, so the record
 // is checked as a whole before anything is drawn from it: the outline frames
 // a room, each wall matches its segment, the atlas strips fit and do not
-// overlap, the relief order names exactly the walls, and every file the
-// record points at is one it lists.
+// overlap, the relief order names exactly the walls, the ceiling's and the
+// floor's photographs cover the outline, and every file the record points at
+// is one it lists.
 //
 // Each list of images (`atlas.files`, `ceiling.files`, `floor.files`) is the
 // same photograph at several sizes, largest first: a device takes the first
@@ -29,11 +30,50 @@
 
 import { z } from "zod";
 import { isReliefId, RELIEF_ID_BYTES } from "./relief-container.js";
-import { outlineFault, segmentLength, type PlanPoint } from "./room-frame.js";
+import { outlineBounds, outlineFault, segmentLength, type PlanPoint } from "./room-frame.js";
 
 export const SURVEY_SCHEMA_VERSION = 2;
+// The four tolerances below have a copy in the survey tools' publish step
+// (tools/surveyed-rooms/roombuild/publish.py), so that it refuses, before
+// anything is published, what this reader would refuse. Change the two
+// together, and keep each as `export const NAME = <number>;`: the tools' test
+// ReaderTolerances reads them out of this file's text, and CI's "Survey
+// tools" job runs whenever this file changes.
 /** How far a wall's recorded length may differ from its outline segment, metres. */
 export const WALL_LENGTH_TOLERANCE = 0.002;
+/**
+ * How far the outline may reach past the rectangle an overhead photograph
+ * covers (`ceiling.extent`, `floor.extent`), metres. Past it the photograph's
+ * edge would be smeared over the rest of the surface.
+ *
+ * It is not slack to tighten. The ceiling's photograph covers the outline's
+ * bounding box exactly, but the tools lay the floor's in whole texels from
+ * the box's lowest x and highest z, so a published `floor.extent` stops up to
+ * half a texel short of the box's other two sides, or runs that far past
+ * them. Every room configured so far photographs its floor at 120 texels per
+ * metre: half a texel is 4.17 mm, which 5 mm admits with 0.8 mm to spare.
+ *
+ * So 5 mm covers that half texel only for a floor photograph of at least 100
+ * texels per metre (0.5 / 100 m is 5 mm). The record carries no floor
+ * resolution, so this reader cannot tell a coarser photograph that is whole
+ * from one that was cropped: at 60 texels per metre half a texel is 8.33 mm,
+ * and a whole floor would be refused here as not covering the outline. The
+ * tools must therefore never publish such a record. Their side of this is in
+ * tools/surveyed-rooms/roombuild/publish.py: `floor_extent`, which lays the
+ * extent, and `record_faults`, which repeats this refusal before anything is
+ * published. They arrive with #452.
+ *
+ * 5 mm is also what a relief may reach outside its record (room-geometry.ts
+ * RELIEF_BOUNDS_TOLERANCE).
+ */
+export const OVERHEAD_EXTENT_TOLERANCE = 0.005;
+/**
+ * How far a wall's height may stand above the heights its strip of the atlas
+ * covers, and a flat ceiling from the tallest wall's top, metres: what a
+ * relief may reach outside its record (room-geometry.ts
+ * RELIEF_BOUNDS_TOLERANCE), since a wall's relief is held to the same strip.
+ */
+export const HEIGHT_TOLERANCE = 0.005;
 /**
  * How far the atlas's row may differ from the heights its strips cover times
  * its texels per metre, in texels: the tools round a row up to a whole texel
@@ -196,6 +236,14 @@ function crossChecks(record: Shape): Issue[] {
         });
       }
     }
+    // A wall stands from the floor to its height, and its strip covers the atlas's heights: taller
+    // than its strip, its top would wear whatever lies above the strip in the image.
+    if (wall.height > atlas.vRange[1] + HEIGHT_TOLERANCE) {
+      issues.push({
+        path: ["walls", index, "height"],
+        message: `wall "${wall.id}" is ${String(wall.height)} m high, but the atlas's strips cover heights up to ${String(atlas.vRange[1])} m (vRange), more than ${String(HEIGHT_TOLERANCE * 1000)} mm short of it`,
+      });
+    }
     const [x, y, w, h] = wall.atlas;
     if (x + w > atlas.size[0] || y + h > atlas.size[1]) {
       issues.push({
@@ -223,6 +271,21 @@ function crossChecks(record: Shape): Issue[] {
     }
   });
 
+  // A ceiling without a relief is drawn flat at the room's ceiling height, so that height must be
+  // where the walls end: higher, and a band of nothing shows above them; lower, and they stand
+  // through it. A ceiling with a relief is drawn from its measured heights instead (held to
+  // `heightRange` when it loads), and the room's ceiling height is then only its reference: walls
+  // of several heights under a stepped or coffered ceiling are no fault.
+  if (record.ceiling.relief === undefined && walls.length > 0) {
+    const tallest = Math.max(...walls.map((wall) => wall.height));
+    if (Math.abs(record.room.ceilingHeight - tallest) > HEIGHT_TOLERANCE) {
+      issues.push({
+        path: ["room", "ceilingHeight"],
+        message: `is ${String(record.room.ceilingHeight)} m, but the tallest wall is ${String(tallest)} m high and the ceiling has no relief: a flat ceiling is drawn at this height, and must meet the walls' tops to within ${String(HEIGHT_TOLERANCE * 1000)} mm`,
+      });
+    }
+  }
+
   const wallReliefIds = new Set(walls.map((wall) => wall.reliefId));
   const order = record.relief.order;
   const orderSet = new Set(order);
@@ -235,6 +298,26 @@ function crossChecks(record: Shape): Issue[] {
     if (extra.length > 0) parts.push(`names ${extra.join(", ")}, which no wall has`);
     if (repeated.length > 0) parts.push(`repeats ${repeated.join(", ")}`);
     issues.push({ path: ["relief", "order"], message: `must list each wall's relief id exactly once; it ${parts.join(" and ")}` });
+  }
+
+  // The floor and a flat ceiling are the outline itself, wearing a photograph laid over its extent:
+  // where the outline reaches past the extent the photograph's edge row or column would be smeared
+  // over the rest (a floor photograph cropped to a room's main rectangle, its bays left off). A
+  // larger extent is no fault. An extent that does not increase has its own fault already.
+  if (outlineValid) {
+    const bounds = outlineBounds(outline);
+    const reach = { x: [bounds.minX, bounds.maxX], z: [bounds.minZ, bounds.maxZ] } as const;
+    for (const part of ["ceiling", "floor"] as const) {
+      for (const axis of ["x", "z"] as const) {
+        const [low, high] = record[part].extent[axis];
+        const [least, most] = reach[axis];
+        if (!(high > low) || (least >= low - OVERHEAD_EXTENT_TOLERANCE && most <= high + OVERHEAD_EXTENT_TOLERANCE)) continue;
+        issues.push({
+          path: [part, "extent", axis],
+          message: `covers ${String(low)} m to ${String(high)} m, but the outline runs from ${String(least)} m to ${String(most)} m along ${axis}, more than ${String(OVERHEAD_EXTENT_TOLERANCE * 1000)} mm outside it: the ${part}'s photograph must cover the whole outline`,
+        });
+      }
+    }
   }
 
   const listed = (name: string): boolean => Object.hasOwn(record.files, name);
@@ -305,8 +388,13 @@ export function parseSurveyRecord(json: unknown): SurveyRecord {
   if (typeof json !== "object" || json === null || Array.isArray(json)) throw new SurveyRecordError(["is not a JSON object"]);
   const version: unknown = (json as { readonly schemaVersion?: unknown }).schemaVersion;
   if (version !== SURVEY_SCHEMA_VERSION) {
+    // No advice to "republish with the current tools": tools from before #452 write version 1 and would write it
+    // again. The message names the change that cures it, so it holds whichever of that and this reader lands first.
+    const versionOne = version === 1
+      ? " (the survey tools write version 2 from #452 on; a version 1 record has none of the room, wall heights, atlas images or floor this reader needs, so the room must be built again with tools that include #452)"
+      : "";
     throw new SurveyRecordError([
-      `schemaVersion is ${version === undefined ? "missing" : JSON.stringify(version)}; this reader reads version ${String(SURVEY_SCHEMA_VERSION)} (republish the room with the current tools)`,
+      `schemaVersion is ${version === undefined ? "missing" : JSON.stringify(version)}; this reader reads version ${String(SURVEY_SCHEMA_VERSION)} only${versionOne}`,
     ]);
   }
   const result = SurveyRecordSchema.safeParse(json);

@@ -9,6 +9,8 @@ import { CanvasLayerControls } from "./CanvasLayerControls.js";
 import { ToolPill } from "./ToolPill.js";
 import { RoomResolveCaption } from "./RoomResolveCaption.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useSurveyedRoomStore } from "../../../stores/surveyed-room-store.js";
+import { surveyedRoomTrouble } from "../../surveyed-room/room-status.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { canReadInternalEventData } from "../../../lib/event-access.js";
 import { CLIENT_SIDE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
@@ -42,6 +44,8 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
   useOfferViewerLenses();
   const activeMode = useShownLens();
   const resolvePhase = useCockpitStore((s) => s.roomResolve.phase);
+  // A surveyed room that could not load, or a photograph of it, is said on a phone too, as a failed capture is.
+  const surveyedTrouble = useSurveyedRoomStore((s) => surveyedRoomTrouble(s.status));
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const timelineUnavailableMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
@@ -78,7 +82,7 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
         aria-label="Planner scene"
       >
         <Editor3D compactDesktop={!mobile} />
-        {timelinePreviewActive || (mobile && resolvePhase !== "degraded" && resolvePhase !== "unavailable")
+        {timelinePreviewActive || (mobile && resolvePhase !== "degraded" && resolvePhase !== "unavailable" && !surveyedTrouble)
           ? null : <RoomResolveCaption />}
         {timelinePreviewActive && (
           <p
