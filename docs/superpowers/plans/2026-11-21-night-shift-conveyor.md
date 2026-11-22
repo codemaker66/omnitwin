@@ -73,7 +73,7 @@ The old local lane (`src/night.ts`, `src/claude.ts`, `run-night.ps1`) has been r
 - [ ] **Step 2:** Bring the launcher's package onto the branch without the local lane. Resolve `pnpm-lock.yaml` by taking master's file and running `pnpm install --lockfile-only`.
 - [ ] **Step 3:** Run `pnpm --filter @omnitwin/credit-runner test`, then `typecheck`, then `lint`. Expected: every test passes and both checks exit 0.
 - [ ] **Step 4:** Check whether `.github/workflows/ci.yml` runs this package's tests. If it does not, add the package to the existing test job in this same change.
-- [ ] **Step 5:** Check that `FakeApi` lives in `src/__tests__/fake-api.ts` (the landing pull request moved it out of `sandbox.test.ts`) and that the shift's tests can import it. Run the tests again: the same count passes (121 passed and 2 skipped on Windows, where the verifier's signal case and the POSIX key-mode case run only on Linux).
+- [ ] **Step 5:** Check that `FakeApi` lives in `src/__tests__/fake-api.ts` (the landing pull request moved it out of `sandbox.test.ts`) and that the shift's tests can import it. Run the tests again: every existing test still passes (on Windows the verifier's signal case and the POSIX key-mode case are skipped, because they run only on Linux).
 - [ ] **Step 6:** Commit with explicit pathspecs, push, open a pull request titled "credit-runner: land the cloud sandbox launcher", and wait for green CI. Later tasks branch from this.
 
 ### Task 2: Settings
@@ -239,7 +239,7 @@ it("respects the running limit", () => {
 
 **Files:**
 - Create: `src/shift/jobs.ts`
-- Modify: `src/task.ts` (the strict front-matter schema, lines 17 to 45: add `source`, `sensitive`, `kind`)
+- Modify: `src/task.ts` (the strict front-matter schema: add `source`, `sensitive`, `kind`)
 - Test: `src/__tests__/shift-jobs.test.ts`
 
 **Interfaces:**
@@ -306,8 +306,8 @@ it("never leaves a partial state file", async () => {
 ### Task 6: Split the session loop into start, follow once, finish
 
 **Files:**
-- Modify: `src/sandbox/session.ts` (`runSession` at lines 518 to 634, `finishRun` at 276 to 350, `stopSession` at 401 to 450, `createOrFind` at 479 to 508, `EventTally` at 170 to 269; `recollectSession` at 636 stays; export `stopSession`, which `finishSession` uses)
-- Test: `src/__tests__/sandbox-follow.test.ts`; the 64 cases in `sandbox.test.ts` must pass unchanged
+- Modify: `src/sandbox/session.ts` (`runSession`, `finishRun`, `stopSession`, `createOrFind` and `EventTally`; `recollectSession` stays; export `stopSession`, which `finishSession` uses)
+- Test: `src/__tests__/sandbox-follow.test.ts`; every existing case in `sandbox.test.ts` must pass unchanged
 
 **Interfaces:**
 - Produces:
@@ -353,7 +353,7 @@ it("leaves each event once in events.jsonl after two calls", async () => {
 ```
 - [ ] **Step 2:** Run. Expected: FAIL.
 - [ ] **Step 3:** Implement the split.
-- [ ] **Step 4:** Run `sandbox-follow.test.ts` and `sandbox.test.ts`. Expected: all PASS, the 64 old cases untouched.
+- [ ] **Step 4:** Run `sandbox-follow.test.ts` and `sandbox.test.ts`. Expected: all PASS, the existing cases untouched.
 - [ ] **Step 5:** Commit.
 
 ### Task 7: The steps of a job
@@ -378,7 +378,7 @@ export function startStep(job: JobState, deps: StepDeps): Promise<JobState>;
 export function followStep(job: JobState, deps: StepDeps): Promise<JobState>;
 export function collectStep(job: JobState, deps: StepDeps): Promise<JobState>;
 export function isCreditGone(error: unknown): boolean;   // an APIError whose message contains "credit balance is too low"
-// already on SandboxApi (src/sandbox/api.ts:116), used as it is: lists the sessions created since a time
+// already on SandboxApi (in src/sandbox/api.ts), used as it is: lists the sessions created since a time
 listSessions(createdSince: string): AsyncIterable<SessionListing>;   // SessionListing = Pick<BetaManagedAgentsSession, "id" | "status" | "metadata">
 ```
 - `reserveStep`: waiting to reserved. Writes the reserve line first, then saves the job. With no pot, the job stays waiting and `reason` carries the choice's reason.
