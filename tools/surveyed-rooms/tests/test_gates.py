@@ -906,6 +906,29 @@ class OccluderMargin(unittest.TestCase):
         self.assertEqual(check_room.validate(self.open["room"].cfg["survey"]["projection"],
                                              schema["$defs"]["survey"]["properties"]["projection"], schema), [])
 
+    def test_5_a_doubtful_view_is_the_first_of_the_blocks_sequence_and_not_the_farthest(self):
+        """Where the rules for a doubtful view part, end to end. In this room the view that passes farthest from
+        the box's outline is another station's than the first of the block's sequence on some hundreds of doubtful
+        texels. So labels made with the farthest view (the rule this replaced), or a main() that hands
+        doubtful_views another sequence, fail here; the pier's room below labels identically under either rule
+        and cannot tell. The committed measuring script works both out from the labels' own arrays
+        (measure/walls/doubtful_rules.py: its `sequence` rule is the first station of label-views.py's
+        block_sequence that saw the texel), which also runs that script on every change."""
+        script = os.path.join(ROOMS, "measure", "walls", "doubtful_rules.py")
+        out = os.path.join(T4, "margin-open-rules.json")
+        r = subprocess.run([sys.executable, "-X", "utf8", script, os.path.join(T4, "margin-open"), out, "--depth-size", str(PROUD_DEPTH)],
+                           cwd=os.path.dirname(script), env=ENV, capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(r.returncode, 0, (r.stdout or "")[-1500:] + (r.stderr or "")[-1500:])
+        with open(out, encoding="utf-8") as f:
+            rules = json.load(f)
+        given = self.open["report"]["occluder_margin"]["texels_given_a_doubtful_view"]
+        self.assertGreater(given, 1000)
+        self.assertEqual(rules["walls"]["south"]["doubtful_texels"], given)
+        self.assertEqual(rules["sequence_differs_from_the_builds_own_labels"], 0,
+                         "a doubtful texel's label is not the first station of its block's sequence that saw it")
+        self.assertGreater(rules["the_farthest_view_is_another_station_than_the_sequences"], 300,
+                           "the farthest view and the sequence agree in this room: the test proves nothing")
+
 
 PIER = dict(u=(2.29, 3.07), v=(-0.5, 3.5), d=0.2)  # as the mesh draws it: the wall's whole height, each flank three columns into a block
 PIER_SHORT = 0.03                                 # the panoramas show it this much wider at each flank
@@ -926,11 +949,18 @@ class OccluderMarginManyStations(unittest.TestCase):
     the pier's edge and within its margin, and its panorama shows the pier there. Labels that ask only the six
     ranked stations print that station's picture of the pier on the plain wall, 1 to 2 cm from the pier itself:
     the outline the margin exists to remove, in the band the box's test above leaves out. With every station
-    asked, those texels take the far station's clear view; a doubtful view is left for the texels no station sees
-    clear, and of those views it is the first of the block's own sequence (its ranked stations, then the others by
-    how much of the block they saw at all, ties to the earlier station), not the one that passes farthest from the
-    pier's edge: on the Saloon's walls the farthest view showed the edge as often and put far more texels in
-    another station's picture (T-739; the README has the numbers).
+    asked, in the block's one sequence (its ranked stations, then the others by how much of the block they saw at
+    all, ties to the earlier station), those texels take a far station's clear view, the first of the sequence
+    that saw them clear. A doubtful view is left for the texels no station sees clear, and it is the first of the
+    same sequence that saw the texel at all, not the one that passes farthest from the pier's edge: on the
+    Saloon's walls the farthest view showed the edge as often and put far more texels in another station's
+    picture. Both steps ask one sequence because the Saloon's walls bore that out too: of two clear views from
+    outside a ranking, the one from the station that saw more of the block at all lay nearer its surroundings
+    than the one the first step's own order took (T-739; the README has the numbers). The order among the
+    stations beyond a ranking is held by a unit test (test_units.MarginViews), not here. Nor can this room tell
+    the rules for a doubtful view apart: it labels identically under the farthest view (every array of its labels
+    file; none of its 672 doubtful texels lies on the plain wall), so test_3's 0 is the first step's and the
+    margin's doing. The box's room above is where those rules part (OccluderMargin.test_5).
 
     What this world can prove is asserted here and no threshold is loosened: no doubtful texel that any station
     saw clear, and no plain texel left that shows the pier (exactly 0). That a margin of 0 changes nothing is
@@ -943,8 +973,9 @@ class OccluderMarginManyStations(unittest.TestCase):
     this rule is worse than the farthest view there, and worse than no margin: 69 of the 113 show the box without
     a margin too, from the same station, and the other 44 lie in blocks that the margin ranks differently (a
     station's cover of a block is its clear cover). Of the 99 without a margin, 69 are carried over, 8 are cured
-    and 22 show the box from another station; 22 more are new. 41 of the 44, all 22 new ones among them, lie in
-    the 25 blocks where the labels' glare test changed the choice with the margin, on a wall that has no glare.
+    and 22 show the box from another station; 22 more are new. With the margin the labels' glare test rejects 31
+    views in 25 blocks of that wall, which has no glare, and none without; 41 of the 44 lie in those blocks, but
+    so do 449 of the wall's 499 doubtful texels, so that says nothing of the cause by itself.
     That count was the bar for the second step when it was
     written, and it is retired for it: a synthetic panorama is drawn from the true geometry with one exposure and
     exact poses, where another station's picture costs nothing, and the Saloon's photographs said otherwise."""

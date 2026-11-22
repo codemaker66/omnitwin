@@ -1,11 +1,15 @@
 """What the wall measuring scripts beside this file share: a finished build's own files, read as the build steps
 read them, and the measure they all use.
 
-The measure. A texel's luminance is set against its clean surroundings: the median over the texels within REACH
-(10 cm at 5 mm a texel) that are known to be clean and lie within NEAR_DEPTH (10 mm) of the texel's own depth, so
+The measure. A texel's luminance is set against its clean surroundings: the median over the texels of the square
+that reaches REACH each way round it (41 x 41 texels: 10 cm each way at 5 mm a texel, 14 cm to a corner), the texel
+itself left out, that are known to be clean and lie within NEAR_DEPTH (10 mm) of the texel's own depth, so
 on the same surface. With fewer than FEW such neighbours a texel is not judged. A texel is DARK where it is under
 85% of its surroundings (the measure of 16 November 2026 for an occluder's rim printed on plaster) and OFF where
-it is more than 12 sRGB levels from them either way.
+it is more than 12 sRGB levels from them either way. DARK is a ratio, and so does not depend on a photograph's
+exposure; OFF, and a distance from the surroundings, are absolute levels and do. The luminance is the sRGB encoding
+of a wall photograph's linear luminance (levels, below); doubtful_rules.py, which samples panoramas, takes the luma of
+their exposure-corrected sRGB instead, and the two agree on neutral greys only.
 
 It is a loose measure beside mouldings: on the Saloon it calls 14 in 100 clean texels dark and 26 in 100 off
 there, because a real shadow or a moulding's edge also differs from the wall beside it. So it is for COMPARING the
@@ -24,6 +28,7 @@ import glob
 import os
 import re
 import sys
+from math import comb
 
 for _name in ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS'):
     os.environ.setdefault(_name, '1')                  # one BLAS thread, as the build's own steps run, unless the caller said otherwise
@@ -38,12 +43,17 @@ DARK, OFF = 0.85, 12.0
 LUMA = np.array([0.2126, 0.7152, 0.0722], np.float32)
 
 
-def setup(work):
+def setup(work, depth_size=None):
     """The room of a finished build's work folder, with bestview and label-views pointed at it as its own steps
-    had them. The working directory becomes the work folder (project.py reads data/ and out-walls/ from it)."""
+    had them. The working directory becomes the work folder (project.py reads data/ and out-walls/ from it).
+    `depth_size` is the side of the build's depth maps where it was made with the tests' small ones (a gate test's
+    room); a real build's are the tools' own size, and the tests' override is cleared."""
     from roombuild import legacy  # noqa: PLC0415 - after the BLAS threads are set
     from roombuild.context import Room  # noqa: PLC0415
-    os.environ.pop('SURVEYED_ROOMS_TEST_DEPTH_SIZE', None)         # a real build's depth maps, never the tests' small ones
+    if depth_size:
+        os.environ['SURVEYED_ROOMS_TEST_DEPTH_SIZE'] = str(int(depth_size))
+    else:
+        os.environ.pop('SURVEYED_ROOMS_TEST_DEPTH_SIZE', None)     # a real build's depth maps, never the tests' small ones
     os.environ.pop('SURVEY_PAUSE_FILE', None)                      # a few minutes of reading: nothing here waits on a gate
     work = os.path.abspath(work)
     os.chdir(work)
@@ -149,6 +159,21 @@ def sign_test_worse(worse, better):
         term = term * (n - i) // (i + 1)
         total += term
     return min(1.0, total / 2 ** n)
+
+
+def sign_test_worse_against(worse, better, control_worse, control_better):
+    """sign_test_worse against a split that need not be even: how likely it is that at least `worse` of the
+    `worse + better` that changed turned worse, were each to turn worse with the control's own share,
+    control_worse / (control_worse + control_better), and better otherwise; an even chance where the control has
+    no changed pair. compare_builds.py reads each wall's patches against its control's split with it. The exact
+    binomial tail, in whole numbers until the one division at the end; meant for counts of patches, since its
+    terms grow as the control's count to the power of the patches."""
+    worse, better, a, b = int(worse), int(better), int(control_worse), int(control_better)
+    if a + b == 0:
+        a = b = 1
+    n = worse + better
+    total = sum(comb(n, i) * a ** i * b ** (n - i) for i in range(worse, n + 1))
+    return min(1.0, total / (a + b) ** n)
 
 
 def holm(ps):

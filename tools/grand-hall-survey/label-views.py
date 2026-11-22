@@ -35,11 +35,13 @@ here changes), a station's view of a texel counts in all of the above only where
 of its ray. The mesh outlines a thing standing proud of a wall smaller than the panoramas show it, so along the edge of
 the zone it hides, a station's picture of the thing reaches onto the wall the mesh says is in view; with one station a
 block that rim is printed sharply, and the Laplacian even prefers it on plain wall. A texel none of its block's RANKED
-stations saw clear asks the block's one sequence (block_sequence: the block's ranked stations, then every station by
-how much of the block it saw at all, most first and of equals the earlier station). It takes the first station of the
-sequence that saw it clear (clear_views): a clear view like any other. Where stations saw it, but none of them clear,
-it takes the first station of the same sequence that saw it at all (doubtful_views): a doubtful view, so that it does
-not become a hole. A texel no station saw stays one, as without the margin. The npz then
+stations saw clear asks the block's one sequence (block_sequence: the block's ranked stations, a block without a label
+borrowing the nearest labelled block's, then every station by how much of the block it saw at all, most first and of
+equals the earlier station). It takes the first station of the sequence that saw it clear (clear_views): a clear view
+like any other. (That step first had an order of its own, whole_order, now gone: past the ranked six, the block's
+remaining candidates by data cost, then the other stations by how much of the block they saw clear.) Where stations
+saw it, but none of them clear, it takes the first station of the same sequence that saw it at all (doubtful_views): a
+doubtful view, so that it does not become a hole. A texel no station saw stays one, as without the margin. The npz then
 also holds seenbits (seen at all) and clearbits (seen clear); visbits is clearbits plus the doubtful views given.
 
 Memory stays under 1.5 GB: statistics run in bands of 64 texel rows (one row of overlap each side,
@@ -506,11 +508,22 @@ def clear_views(sequence, tlab, clearbits):
     that saw any of the block). Beside a thing that stands proud, the near, sharp stations that lead a block's
     ranking are the ones whose view of the wall passes within its margin, and a station outside the ranking,
     farther off or on the thing's other side, often saw the same texels clear. Such a view is a clear view like
-    any other. The sequence is the one doubtful_views asks: a station comes by how much of the block it saw AT
-    ALL, not by how much it saw clear, because on the Saloon's walls the first of these was the better (T-739:
-    of two clear views from outside a ranking, the one from the station that saw more of the block lay nearer
-    its surroundings). A block without a label borrows the nearest labelled block's ranking in the sequence, so a
-    texel a station saw clear in such a block does not become a hole.
+    any other. The sequence is the one doubtful_views asks, so past the ranked six a station comes by how much of
+    the block it saw AT ALL. This step first had an order of its own (whole_order, now gone): past the ranked six,
+    the block's remaining candidates by data cost, then the other stations by how much of the block they saw
+    clear. On the Saloon's walls that order did the worse (T-739: on the 209 texels where it took another clear
+    station than the first build had, from the stations that saw most of the block at all, the first build's
+    view lay nearer its surroundings more often, almost all of that on one wall; tools/surveyed-rooms/README.md
+    has the figures).
+    A block without a label: the borrowed ranking (the nearest labelled block's ranked stations) leads, then the
+    at-all half, so a texel a station saw clear there does not become a hole. On a real wall that is not reached.
+    A clear texel counts in its station's cover of the block; candidates() keeps, wherever any station's cover is
+    above 0, at least one covering station (the best-covering station always covers, and a block left with none
+    kept keeps the covering station nearest the consensus); and solve_labels labels every block in which a kept
+    station has a finite data cost. The one way found to reach it is degenerate: where more than half of a wall's
+    kept views have no Laplacian energy at all (a flat synthetic picture), candidates()' eps is 0, a zero score's
+    log is -inf, the Gaussian average carries it to the blocks around, and their data costs come out NaN, so
+    blocks every station saw clear go without a label.
     Returns the texel labels and how many texels took a station from outside their block's ranking."""
     r, c = np.nonzero((tlab < 0) & B.unpack_bits(np.bitwise_or.reduce(clearbits, axis=0), tlab.shape[1]))
     out = tlab.copy()
@@ -533,7 +546,12 @@ def block_sequence(ranked, label, seenbits, width):
     a label has no ranking, and borrows the nearest labelled block's). Then every station by how much of the
     block it saw at all, most first (of equals, the earlier station), and none that saw nothing of it: the
     ranking is of clear views, and beside a thing that stands proud a station can have seen part of a block only
-    within the thing's margin. A station may stand in both halves; the first place counts."""
+    within the thing's margin. A station may stand in both halves; the first place counts. (Past the ranked six,
+    the first step once asked an order of its own; clear_views says what it was.)
+    The nearest labelled block is SciPy's (ndimage.distance_transform_edt with return_indices, an exact Euclidean
+    transform). Among labelled blocks equally near, which one is borrowed is SciPy's choice: deterministic for a
+    given SciPy, but no simple rule (SciPy 1.17 reports the lowest block index on some such ties and not on
+    others) and not pinned by this code, so another SciPy could borrow another ranking on those blocks."""
     has = label >= 0
     filled = ranked
     if has.any() and not has.all():
@@ -549,15 +567,17 @@ def block_sequence(ranked, label, seenbits, width):
 def doubtful_views(grid, sts, tlab, stats, sequence):
     """With bestview.OCCLUDER_MARGIN set: a texel that stations saw, but none of them clear of an occluder's margin,
     takes a doubtful view instead of becoming a hole, and counts as seen by that station: the first station of its
-    block's sequence that saw it (block_sequence: the block's own stations first, then the others by how much
-    of the block they saw). Every station that saw the texel saw some of its block, so each such texel finds one.
+    block's sequence that saw it (block_sequence: the block's own stations first, then every station by how much
+    of the block it saw at all; clear_views asks the same sequence for a clear view). Every station that saw the
+    texel saw some of its block, so each such texel finds one.
     The block's own stations come first because real walls bear that out (T-739; tools/surveyed-rooms/README.md
     has the measurement). Whichever doubtful view is taken, its photograph shows the occluder's edge about as
-    often: on the Saloon, 50 in 1,000 for this sequence, for the view that passes farthest from the occluder, and
-    for either behind a floor of clearance. What differs is how many texels come from a station other than their
-    block's own, and such a texel-sized island of another station's picture is not levelled with its neighbours:
-    taking the farthest view more than doubled them, and they showed as specks and as a dark band on plaster the
-    block's own station showed even.
+    often: on the Saloon, about 50 to 52 in 1,000 for this sequence, for the view that passes farthest from the
+    occluder, and for either behind a floor of clearance. What the rules measurably differ in is how many texels
+    come from a station other than their block's own (texel-sized islands of another station's picture, not
+    levelled with their neighbours): taking the farthest view more than doubled them. That those islands are what
+    showed, as specks and as a dark band on plaster the block's own station showed even, is the reading the
+    README records; it is not proved.
     Only these texels take a doubtful view: one that any station saw clear has a clear view (clear_views), and one
     no station saw at all stays without a label, as it does without the margin.
     Returns the texel labels, the stations' bits to colour from (the clear views and the doubtful views given), and
