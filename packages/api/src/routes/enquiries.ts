@@ -146,7 +146,7 @@ const ENQUIRY_EVENT_REFUSALS = {
   ENQUIRY_CLOSED: { status: 422, error: "This enquiry is closed, so it is not opened as an event.", code: "ENQUIRY_CLOSED" },
   ENQUIRY_REACHES_SEVERAL_EVENTS: {
     status: 409,
-    error: "This enquiry's dates, deals or proposals already sit in more than one event, so a person needs to choose which. It will be on the list of joins to check.",
+    error: "This enquiry's dates, deals, proposals or floor plan already reach more than one event, so a person needs to choose which. It will be on the list of joins to check.",
     code: "ENQUIRY_REACHES_SEVERAL_EVENTS",
   },
 } as const satisfies Record<EnquiryEventRefusal, { readonly status: number; readonly error: string; readonly code: string }>;

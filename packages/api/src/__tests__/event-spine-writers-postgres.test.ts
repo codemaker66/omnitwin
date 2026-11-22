@@ -61,7 +61,7 @@ const LABEL = "writers";
 const APPLICATION_NAME = `spine_${LABEL}`;
 
 const SEVERAL_EVENTS = {
-  error: "This enquiry's dates, deals or proposals already sit in more than one event, so a person needs to choose which. It will be on the list of joins to check.",
+  error: "This enquiry's dates, deals, proposals or floor plan already reach more than one event, so a person needs to choose which. It will be on the list of joins to check.",
   code: "ENQUIRY_REACHES_SEVERAL_EVENTS",
 };
 
