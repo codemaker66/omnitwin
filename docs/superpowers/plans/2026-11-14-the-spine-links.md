@@ -74,10 +74,29 @@ departs from the tasks below:
 - **Task 5 as built.** A deposit request in force is counted in its own right, whatever became of its proposal:
   a deleted proposal does not hide it from `depositRequestsWithoutEvent`, `disagreeingLinks` or
   `linksToClosedEvents`.
+- **Task 3 as built.** The join departs from the task's text below, so that text is not its contract; the join's
+  section of the engineering note that #436 adds (`docs/engineering/the-spine.md`) describes it as built. Step 1
+  places an enquiry by its bookings, deals and proposals together, not by its held dates alone. Steps 1 to 3
+  repeat while a round joins anything, in up to four rounds, so an enquiry is settled from all of its records
+  together; a chain that needs more is finished by a later run. Events are made last: for a proposal only after
+  every proposal that reaches an existing event has been joined, and one that would have an event made for it
+  and its enquiry waits while a sibling proposal of that enquiry, with no event, reaches one or would be listed.
+  A deal waits for its enquiry when something of the enquiry's own reaches an event. Every row lock is `SKIP
+  LOCKED`; a deal's update that meets a writer's uncommitted open deal on the same event waits at most 100 ms,
+  and the deal is then listed or left to the next run. A draft proposal made from a floor plan alone, with no
+  deal or enquiry, is not joined until it is sent; and a proposal that need not have an event, whose plan
+  reaches several events, is neither joined nor listed.
+- **Each new database suite has a database of its own,** in place of the Global Constraints' shared platform
+  database with a venue for each test: it makes and drops a throwaway database on the platform test cluster,
+  and is named in the platform gate's list (`PLATFORM_POSTGRES_TEST_FILES`). None writes to the shared test
+  database.
 - **Task 14 gains two steps.** Step 5's read is now the Event rules workflow run by hand from master with its
-  join box unticked. The first new step: in that read, check that each event the join made carries a person's
-  name (the join names a made event by the enquiry's name alone). The second: the next database slot stays
-  closed until this read has passed.
+  join box unticked. That read prints one line of status, counts, reasons and migration tags, never a row or a
+  name, because its log is public. The first new step is therefore the founder's own read, made with his yes
+  and kept out of any log: it counts the events the join made that are named `Event` (those found through
+  `event_link_joins` where `event_made` is true). The join names a made event by the enquiry, deal or proposal it was made for, and
+  `Event` only when that is blank or holds an `@`, so expect none. Names never go into the workflow or its log.
+  The second new step: the next database slot stays closed until the workflow's read has passed.
 
 **Not in this plan.** Stages 2 to 6 above. Anything a client sees. Any write to `events.client_account_id` or
 `events.opportunity_id`. Pull request #247 (erase a person) and the People Book's merge, which stay with their

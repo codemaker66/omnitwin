@@ -315,13 +315,20 @@ event.
 > |---|---|---|
 > | 1 | A person (`contacts`). A People Book merge takes the venue's merge lock, then the people `FOR UPDATE`; a deal's writer takes its person `FOR KEY SHARE` | `services/people-merge.ts`, `applyPersonMerge`: the venue's advisory lock, then both people through `lockPerson` (`services/people-records.ts`), lower id first; `mergeLocked` then writes their enquiries before their deals. `routes/opportunities.ts`, `holdContact`: the person before any deal row |
 > | 2 | An import batch's row | Not built yet (the Diary, T-703) |
-> | 3 | Bookings, `FOR UPDATE`: a ladder in id order, or many rows sorted by room and start | `services/booking-mutations.ts`: `transitionBookingCore` (the room's live holds in id order, then the booking itself through `loadAccessibleBooking`); `updateBookingLocked` (the booking through `loadAccessibleBooking`) |
-> | 4 | A combination's row, `FOR SHARE`, in the claims trigger as each booking is written | Not built yet (the Diary) |
-> | 5 | A term's row | Not built yet (the Diary) |
-> | 6 | The proposal, then the enquiry, then the deal | Below |
-> | 7 | The event, last, `FOR NO KEY UPDATE` | `services/event-binding.ts`: `syncEventStatus` (and `syncEventStatuses`, in id order), `movePhasesWithBooking` |
+> | 3 | A decision (`decisions`), `FOR UPDATE` | `services/decisions.ts`: `decideDecision` holds the decision, then locks the one booking it moves `FOR UPDATE`, then calls `updateBookingCore` (`services/booking-mutations.ts`), which takes that booking again, its room `FOR KEY SHARE` and its event (row 8). `withdrawDecision` takes the decision alone |
+> | 4 | Bookings, `FOR UPDATE`: a ladder in id order, or many rows sorted by room and start | `services/booking-mutations.ts`: `transitionBookingCore` (the room's live holds in id order, then the booking itself through `loadAccessibleBooking`); `updateBookingLocked` (the booking through `loadAccessibleBooking`) |
+> | 5 | A combination's row, `FOR SHARE`, in the claims trigger as each booking is written | Not built yet (the Diary) |
+> | 6 | A term's row | Not built yet (the Diary) |
+> | 7 | The proposal, then the enquiry, then the deal | Below |
+> | 8 | The event, last, `FOR NO KEY UPDATE` | `services/event-binding.ts`: `syncEventStatus` (and `syncEventStatuses`, in id order), `movePhasesWithBooking` |
 >
-> - **The proposal, the enquiry, the deal (row 6).** Sending a proposal holds it `FOR UPDATE` (`holdProposal`, in
+> - **A decision before bookings (row 3).** Deciding a prepared booking move holds the decision before it locks
+>   the booking, and no path locks a booking and then a decision. A decision moves only a booking's times, never
+>   its event, so it reaches no proposal, enquiry or deal: in #436 `updateBookingLocked` calls
+>   `followBookingToEvent` only when a booking changes event, and on master not at all. No code takes a decision
+>   together with a person or an import batch, so its place against rows 1 and 2 is the table's order, not yet a
+>   rule the code keeps.
+> - **The proposal, the enquiry, the deal (row 7).** Sending a proposal holds it `FOR UPDATE` (`holdProposal`, in
 >   `routes/proposals.ts`, `POST /:id/transition`) and then stamps its enquiry's first reply
 >   (`stampSendAsFirstReply`). Saving a version holds the proposal and then may write its deal's value
 >   (`POST /:id/versions`). A deposit request is written under its proposal's lock, with the event the proposal
@@ -333,8 +340,12 @@ event.
 >   takes `FOR UPDATE`, the first-reply lock (`lockFirstResponse`, `services/enquiry-funnel.ts`); part two of
 >   stage 1 moves it to `FOR NO KEY UPDATE`.
 > - **New code takes an event only `FOR NO KEY UPDATE`.** The join takes an event it joins `FOR KEY SHARE SKIP
->   LOCKED`. The one `FOR UPDATE` on an event is the edit of the event itself (`updateEventCore`,
->   `services/event-mutations.ts`), which takes the event alone and only reads bookings, as above.
+>   LOCKED`. In the application, the one `FOR UPDATE` on an event is the edit of the event itself
+>   (`updateEventCore`, `services/event-mutations.ts`), which takes the event alone and only reads bookings, as
+>   above. **The one exception is the spine's undo** (`spine_undo_joins()`, in the `*_event_spine_links`
+>   migration): it takes an event it will delete `FOR UPDATE SKIP LOCKED`, after that event's records, and then
+>   the event's phases the same way. It never waits for a row lock: an event or phase it cannot have at once is
+>   kept, with its joins, for a later run.
 > - **In a create, the enquiry is locked before the booking it inserts.** `POST /from-enquiry`
 >   (`routes/bookings.ts`) and `insertBoundBookings` (`services/event-binding.ts`) call `bindBookingToEvent`, which
 >   locks the enquiry, before the booking's insert; the event follows (`syncEventStatus`). That is the reverse of
