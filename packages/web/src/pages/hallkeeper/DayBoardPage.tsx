@@ -344,10 +344,13 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const nowMs = useBoardClock(boundaryMs);
   const corrected = useClockCorrected();
 
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [chosenDate, setSelectedDate] = useState<string | null>(null);
   const [roomId, setRoomIdState] = useState("");
   const [focus, setFocusState] = useState<BoardFocus>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The wall shows today, whatever day this screen had stepped to before it
+  // became the wall: it has no day controls to come back with.
+  const selectedDate = wall ? null : chosenDate;
   const browsingToday = selectedDate === null;
   // A count on the plane and a room from the list are two ways to narrow the
   // rooms; choosing one lets the other go, so the list never comes up empty
@@ -409,8 +412,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const board = useMemo(
     () => (data === null
       ? null
-      : deriveDayBoard(data, nowMs, timeZone, requestsApi.requests, observationsApi.observations)),
-    [data, nowMs, timeZone, requestsApi.requests, observationsApi.observations],
+      : deriveDayBoard(data, nowMs, timeZone, requestsApi.requests, observationsApi.observations, dayBoundaryHour)),
+    [data, nowMs, timeZone, requestsApi.requests, observationsApi.observations, dayBoundaryHour],
   );
   const nextBoundaryMs = board?.nextBoundaryMs ?? null;
   useEffect(() => { setBoundaryMs(nextBoundaryMs); }, [nextBoundaryMs]);
@@ -429,7 +432,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     return seen;
   }, [lanes, dayKey]);
   const eventIds = useMemo(() => [...seenToday.events.keys()], [seenToday]);
-  const floor = useFloorChanges(eventIds, venueId !== null);
+  // Read for the board's own day: another day's changes are that day's.
+  const floor = useFloorChanges(eventIds, venueId !== null, range);
   // A move reaches the board through the live calendar; its change is read
   // with it, not at the next minute.
   const refreshFloor = floor.refresh;
@@ -442,7 +446,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     const changes = changesForDay(eventId, floor.byEvent.get(eventId), seenToday);
     if (changes.length === 0) return [];
     const movedOff = changes.some((change) => seenToday.sources.has(change.sourceId) && movedOffDay(change, range));
-    return [{ eventId, title, changes, movedOff, surface: `left:${eventId}` }];
+    const truncated = floor.byEvent.get(eventId)?.truncated === true;
+    return [{ eventId, title, changes, movedOff, truncated, surface: `left:${eventId}` }];
   }), [seenToday, onBoard, floor.byEvent, range]);
   // Where the keyboard goes when a notice it was in leaves the page: the
   // day's sentence, or the board's title on a day with none.
@@ -534,16 +539,24 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const zone = useMemo(() => zoneNote(timeZone, deviceZone()), [timeZone]);
   const days = useMemo(() => lanes.map(roomDay), [lanes]);
   const busyLanes = lanes.filter((lane) => lane.slots.length > 0).length;
+  // The wall shows every room in use, whatever this screen was narrowed to
+  // before it became the wall: it says nothing of a filter and offers no way
+  // out of one, so a filter carried onto it would hide rooms from the
+  // corridor with nothing on screen to say so. (In the app the switch also
+  // remounts the board under the staff shell, which drops the filter; the
+  // wall does not rely on that.)
+  const shownRoomId = wall ? "" : roomId;
+  const shownFocus: BoardFocus = wall ? "all" : focus;
   // A room with nothing on is one name in a line, not a row to scroll past;
   // a room chosen from the list keeps its row either way, and a count on
   // the plane shows only the rooms it names. The room of an open slot stays
   // whatever the filter says, so the slot never closes under a hand that is
   // using it (a Done that takes a function out of "Live").
-  const focusDays = days.filter((day) => (roomId === ""
-    ? day.slots.length > 0 && roomInFocus(day, focus)
-    : day.room.id === roomId));
+  const focusDays = days.filter((day) => (shownRoomId === ""
+    ? day.slots.length > 0 && roomInFocus(day, shownFocus)
+    : day.room.id === shownRoomId));
   const shownDays = days.filter((day) => focusDays.includes(day) || day.room.id === selected?.room.id);
-  const freeRooms = roomId === "" && focus === "all" && busyLanes > 0 ? lanes.filter((lane) => lane.slots.length === 0).map((lane) => lane.room.name) : [];
+  const freeRooms = shownRoomId === "" && shownFocus === "all" && busyLanes > 0 ? lanes.filter((lane) => lane.slots.length === 0).map((lane) => lane.room.name) : [];
   const readAt = readAtCorrectedMs === null ? null : formatWallTime(readAtCorrectedMs, timeZone);
   const others = live.presence.filter((person) => person.userId !== user?.id).map((person) => person.name);
   // Today the plane counts every request nobody has, as the list and the
@@ -665,12 +678,14 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const plane = board === null || busyLanes === 0 ? null : (
     <div className="dayboard-plane ws-plane" role="group" aria-label="The day in numbers">
       {stages.map((stage) => {
-        // Said as the desks say their stages: "At risk, 2".
-        const spoken = `${stage.label}, ${String(stage.count)}`;
+        // Said as the desks say their stages: "At risk, 2"; with what the
+        // count covers that its filter cannot show, when there is any.
+        const spoken = `${stage.label}, ${String(stage.count)}${stage.note === null ? "" : `, ${stage.note}`}`;
         const face = (
           <>
             <b data-focus={stage.focus} data-alert={stage.focus === "risk" && stage.count > 0 ? "true" : undefined} aria-hidden="true">{String(stage.count)}</b>
             <span aria-hidden="true"><i className="dayboard-stage-dot" data-focus={stage.focus} />{stage.label}</span>
+            {stage.note !== null && <small className="dayboard-stage-note" aria-hidden="true">{stage.note}</small>}
           </>
         );
         return wall
@@ -714,7 +729,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           </button>
         </div>
       ) : null}
-      {status !== "error" && board !== null && busyLanes === 0 && roomId === "" ? (
+      {status !== "error" && board !== null && busyLanes === 0 && shownRoomId === "" ? (
         <p className="dayboard-notice">{selectedDate === null ? "Nothing scheduled today." : "Nothing scheduled on this day."}</p>
       ) : null}
       {/* What changed could not be read: the marks stand as last read, and say so. */}
@@ -733,6 +748,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
             title={entry.title}
             movedOff={entry.movedOff}
             changes={entry.changes}
+            truncated={entry.truncated}
             timeZone={timeZone}
             nowMs={nowMs}
             onAcknowledge={acknowledgesChanges
@@ -756,7 +772,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           plaque={plaque}
           nowMs={nowMs}
           venueSlug={venue.slug}
-          selectedId={selectedId}
+          selectedId={wall ? null : selectedId}
           onOpen={openSlot}
           wall={wall}
           frozen={frozen}

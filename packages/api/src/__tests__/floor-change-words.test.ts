@@ -129,6 +129,18 @@ describe("how far the hours moved", () => {
       { startsAt: at("2026-10-25T00:00:00Z"), endsAt: at("2026-10-25T04:00:00Z") }, LONDON)).toBe("starts 1 h 30 earlier");
   });
 
+  it("measures both ends of one move the same way, so a length kept reads as kept", () => {
+    // A party Sat 24 Oct 23:00 BST – Sun 25 Oct 01:30 BST (the first 01:30),
+    // moved to Sun 25 Oct 23:00 – Mon 26 Oct 01:30 GMT: two and a half hours
+    // before and after. Its end is a time the clocks show twice, so the whole
+    // move is counted in real time, start and end alike.
+    const before = { spaceId: HALL, startsAt: at("2026-10-24T22:00:00Z"), endsAt: at("2026-10-25T00:30:00Z") };
+    const after = { spaceId: HALL, startsAt: at("2026-10-25T23:00:00Z"), endsAt: at("2026-10-26T01:30:00Z") };
+    expect(shiftWords(before, after, LONDON)).toBe("1 day 1 h later");
+    expect(describeBookingMove({ before, after, roomBefore: "Grand Hall", roomAfter: "Grand Hall", timeZone: LONDON }).summary)
+      .toBe("Grand Hall: 1 day 1 h later.");
+  });
+
   it("counts on the venue's clock across the clocks changing", () => {
     // Sat 24 Oct 18:00 BST to Sun 25 Oct 18:00 GMT: the same time on the wall, a day on.
     expect(shiftWords(

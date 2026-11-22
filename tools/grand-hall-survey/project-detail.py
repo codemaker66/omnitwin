@@ -60,6 +60,7 @@ ROW = int(np.ceil((V_MAX - V_MIN) * PPM))
 SRC_PPM = 200.0
 SRC_TOP = 7.0
 LENGTH = {'window': L, 'door': L, 'end': W, 'fire': W}
+SRC_COLUMNS = {}         # a wall whose orthophoto has fewer columns than its rounded length (tools/surveyed-rooms): how many
 
 # pack-atlas.py's patches, in metres: (wall, dst u0, u1, v0, v1, mode, arg); 'shift' copies from u + arg, 'mirror'
 # reflects about u = arg.
@@ -86,7 +87,7 @@ def tile_grid(wall):
 def atlas_scale(wall):
     """5 mm orthophoto texels per metre of the atlas's frame, along u and down t, as pack-atlas.py's resize maps
     them: the crop of round(L * 200) columns (rows 56..1404) onto ceil(L * PPM) columns (ROW rows)."""
-    w_src = int(round(LENGTH[wall] * SRC_PPM))
+    w_src = SRC_COLUMNS.get(wall, int(round(LENGTH[wall] * SRC_PPM)))
     w_dst = int(np.ceil(LENGTH[wall] * PPM))
     r_top = int(round((SRC_TOP - V_MAX) * SRC_PPM))
     r_bot = int(round((SRC_TOP - V_MIN) * SRC_PPM))

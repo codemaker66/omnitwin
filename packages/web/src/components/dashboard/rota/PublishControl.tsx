@@ -3,7 +3,7 @@ import { ApiError } from "../../../api/client.js";
 import { publishRotaWeek, rotaRefusalWords } from "../../../api/rota.js";
 import type { RotaPublishResult, RotaWeek } from "@omnitwin/types";
 import { ActivityIndicator } from "../../shared/Activity.js";
-import { publishPlan, rotaWeekTitle } from "./rota-format.js";
+import { carriedDrafts, carriedDraftsWords, publishPlan, rotaWeekTitle } from "./rota-format.js";
 import type { PanelMessage } from "./ShiftEditor.js";
 
 // ---------------------------------------------------------------------------
@@ -22,11 +22,13 @@ export function publishedWords(result: RotaPublishResult): string {
   return `${shifts} ${told}; tell the other ${String(result.notTold)} yourself.`;
 }
 
-export function PublishControl({ venueId, week, onDone }: {
+export function PublishControl({ venueId, week, onDone, onEarlierWeek }: {
   readonly venueId: string;
   readonly week: RotaWeek;
   /** Publishing finished or was refused: say so and read the week again. */
   readonly onDone: (message: PanelMessage) => void;
+  /** Show last week, where its overnight drafts are published. */
+  readonly onEarlierWeek: () => void;
 }): ReactElement {
   const questionId = useId();
   const [confirming, setConfirming] = useState(false);
@@ -34,6 +36,9 @@ export function PublishControl({ venueId, week, onDone }: {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const questionRef = useRef<HTMLParagraphElement>(null);
   const plan = publishPlan(week);
+  // Last week's overnight drafts run into this week but are published from
+  // last week, so the line under Publish points there (T-695 review D7).
+  const carried = carriedDrafts(week).length;
 
   // The question takes focus, not the button: a second Enter must not publish.
   // The question replaces the button, so focus goes back to the button once
@@ -76,6 +81,11 @@ export function PublishControl({ venueId, week, onDone }: {
           </button>
           <p className="rota-publish__consequence" id={`${questionId}-consequence`}>{plan.consequence}</p>
           {plan.heldBack !== null && <p className="rota-publish__held">{plan.heldBack}</p>}
+          {carried > 0 && (
+            <button type="button" className="rota-link rota-publish__carried" onClick={onEarlierWeek}>
+              {carriedDraftsWords(carried)}
+            </button>
+          )}
         </>
       )}
       {confirming && (

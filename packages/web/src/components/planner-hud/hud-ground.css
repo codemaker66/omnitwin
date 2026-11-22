@@ -1,0 +1,37 @@
+/* ---------------------------------------------------------------------------
+ * THE HUD'S GROUND: one ground, one ink, one accent.
+ *
+ * Bone: warm bone and warm black, with the hall's mahogany as the one accent
+ * (Blake's choice of three, 13 November 2026). The accent means three things
+ * only: chosen, the one primary act, and something to look at. No colour here
+ * is gold, brass or copper.
+ *
+ * The plaque's menu and tooltips are drawn on the page itself (portals), so
+ * the ground is also given to them while the HUD is on screen.
+ * ------------------------------------------------------------------------- */
+
+.hud-root,
+body:has(.hud-root) :is(.pc-popover, .pc-tooltip) {
+  --hud-ground: #efe8da;
+  --hud-ink: #1e1712;
+  --hud-ink-2: #6e6357;
+  --hud-accent: #5c2112;
+  --hud-on-accent: #efe8da;
+  /* A hairline: the ink at a sixth, for the edge of a hit area and the seat line's track. */
+  --hud-line: color-mix(in srgb, var(--hud-ink) 16%, transparent);
+  /*
+   * The photographs are studio renders on a seamless pale ground. Darkened
+   * onto the shelf they leave the shelf exactly, so only the furniture shows.
+   */
+  --hud-tile: var(--hud-ground);
+  --hud-photo-blend: darken;
+  /* The night above the hall's walls, as the scene's own dark reaches the screen (HALL_VOID through the tone curve), and the top bar's words on it. */
+  --hud-night: #080300;
+  --hud-night-ink: #ece7dd;
+  --hud-night-ink-2: #a39d92;
+  --hud-night-line: color-mix(in srgb, #ece7dd 22%, transparent);
+  /* The cloths, as samples of themselves. */
+  --hud-linen-ivory: #f1e9d6;
+  --hud-linen-black: #16110d;
+  --hud-linen-bare: #a9773f;
+}

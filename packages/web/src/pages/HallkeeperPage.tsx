@@ -490,6 +490,9 @@ export function HallkeeperPage(): React.ReactElement {
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
         const queued = await queuedTicks();
+        // The token and the queue take a moment. A sheet closed since, or a
+        // newer read begun, would throw the answer away: do not ask for it.
+        if (!isCurrent()) return;
         const loaded = await readProgress(configId, writeEventId, headers);
         if (loaded === null || !isCurrent()) return;
         if (loaded.scope !== null && loaded.scope.eventId !== writeEventId) return;

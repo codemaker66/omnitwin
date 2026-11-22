@@ -420,6 +420,15 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
   line-height: 1.25;
 }
 
+/* What a count covers that its filter cannot show ("1 not on today's
+   bookings"), under its label in the plane's own ink, in line with the
+   label's words rather than its dot (8 px and the 7 px gap after it). */
+.dayboard-stage-note {
+  padding-left: 15px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 .dayboard-stage[aria-pressed="true"] > span {
   color: var(--house-ink-1);
   font-weight: 600;
@@ -741,11 +750,12 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
 
 /* --- a room's day in words: earlier, the lead, next and later --------------- */
 
-/* A labelled line: "Earlier", "Next", "Later" in a column of their own, the
-   slots beside them. */
+/* A labelled line: "Earlier", "Also now", "Next", "Later" in a column of
+   their own, each on one line, the slots beside them. The column fits the
+   longest, "Also now" (about 5.5em of the line at the label's size). */
 .dayboard-line {
   display: grid;
-  grid-template-columns: 4.6em minmax(0, 1fr);
+  grid-template-columns: 5.9em minmax(0, 1fr);
   align-items: baseline;
   column-gap: 8px;
   margin: 0;
@@ -775,6 +785,7 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .dayboard-slab {
@@ -990,6 +1001,10 @@ button.dayboard-slab:active { transform: translateY(1px); }
 }
 
 .is-line .dayboard-verb > svg { width: 12px; height: 12px; }
+
+/* A slot named in passing that is short of its turn-round, or at risk, keeps
+   why on a line of its own under its title. */
+.is-line .dayboard-slab-why { flex: 1 0 100%; margin: 2px 0 0; }
 
 /* A finished or later slot that is not breathing needs no dot: its icon
    and words say it. */
@@ -1662,6 +1677,14 @@ button.dayboard-rail-item:disabled { cursor: default; }
   font-size: 13.5px;
 }
 
+/* More of the event's changes wait than one read holds: said plainly, in the
+   quiet ink, under the changes shown. */
+.dayboard-changes-more {
+  margin: 12px 0 0;
+  color: var(--house-forest-ink-2);
+  font-size: 13.5px;
+}
+
 .dayboard-changes-ack[aria-disabled="true"] { opacity: 0.55; cursor: default; }
 
 .dayboard-changes-seen:focus { outline: none; }
@@ -1745,6 +1768,7 @@ button.dayboard-rail-item:disabled { cursor: default; }
 .dayboard-moved-off-ack { display: inline-flex; align-items: center; gap: 8px; }
 .dayboard-moved-off-ack[aria-disabled="true"] { cursor: default; }
 .dayboard-moved-off-note { color: var(--lt-ink); }
+.dayboard-moved-off .dayboard-changes-more { margin: 0; color: var(--house-ink-2); }
 
 /* The day's sentence and the title take the keyboard's place when a notice
    it was in leaves the page; a ring only for the keyboard. */
@@ -2018,7 +2042,11 @@ button.dayboard-rail-item:disabled { cursor: default; }
   .dayboard-rooms-head { column-gap: 14px; }
   .dayboard-room-name { font-size: 21px; }
   .is-lead .dayboard-slab-title { font-size: 19px; }
-  .dayboard-line-label { min-width: 0; }
+  /* A phone keeps the narrower column, where "Also now" takes two lines: its
+     slots already take two (the state, then the title), and the wider one
+     would wrap a state ("LIVE · 30 min elapsed" on a 390 px phone). */
+  .dayboard-line { grid-template-columns: 4.6em minmax(0, 1fr); }
+  .dayboard-line-label { min-width: 0; white-space: normal; }
   .dayboard-bar { margin-right: 6px; margin-left: 6px; }
   .dayboard-scale-track { right: 6px; left: 6px; }
   .dayboard-sheet .dayboard-detail-frame .dayboard-detail { margin: 0 -18px; }
@@ -2133,6 +2161,9 @@ button.dayboard-rail-item:disabled { cursor: default; }
 }
 .dayboard[data-register="wall"] .dayboard-plane:only-child { grid-column: 1 / -1; }
 .dayboard[data-register="wall"] .dayboard-stage { min-height: 0; padding-top: 2px; padding-bottom: 2px; }
+/* The wall's counts filter nothing, so they never contradict a filter: the
+   note stays in their spoken words and gives its height to the rooms. */
+.dayboard[data-register="wall"] .dayboard-stage-note { display: none; }
 .dayboard[data-register="wall"] .dayboard-stage b { font-size: clamp(28px, 4vh, 46px); }
 .dayboard[data-register="wall"] .dayboard-stage > span { font-size: clamp(13px, 1.4vh, 16px); }
 
@@ -2190,6 +2221,9 @@ button.dayboard-rail-item:disabled { cursor: default; }
 .dayboard[data-register="wall"] :is(.dayboard-slab-time, .dayboard-slab-notes, .dayboard-slab-why, .dayboard-line, .dayboard-line-label) {
   font-size: clamp(12.5px, 1.45vh, 15.5px);
 }
+/* The wall sets its labels as large as its lines, so "Also now" needs more
+   of the line's em (about 6.2em) to stay on one line. */
+.dayboard[data-register="wall"] .dayboard-line { grid-template-columns: 6.6em minmax(0, 1fr); }
 .dayboard[data-register="wall"] .dayboard-ring { font-size: clamp(12px, 1.35vh, 15px); padding-top: 1px; padding-bottom: 1px; }
 .dayboard[data-register="wall"] .dayboard-bar { height: clamp(10px, 1.4vh, 16px); margin: clamp(4px, 0.9vh, 10px) 0 2px; }
 

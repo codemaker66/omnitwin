@@ -40,6 +40,8 @@ ROW = int(np.ceil((V_MAX - V_MIN) * PPM))
 LENGTH = {'window': L, 'door': L, 'end': W, 'fire': W}
 NAME = {'window': 'window', 'door': 'door', 'end': 'end', 'fire': 'fireplace'}
 GLASS_ALPHA = 192
+ATLAS = 'walls-4096.webp'            # the atlas whose alpha marks the glass
+GLASS_STRIPS = {'window': (0, 0)}    # the walls whose all-glass tiles are left out: their strips' column and row in the atlas
 
 
 def tile_grid(wall):
@@ -48,12 +50,13 @@ def tile_grid(wall):
 
 def glass_only(alpha, col, row, wall):
     """Whether tile (col, row)'s own area is all glass in the window wall's strip of the atlas's alpha."""
-    if wall != 'window':
+    if wall not in GLASS_STRIPS:
         return False
-    w_dst = int(np.ceil(L * PPM))
-    x0, x1 = int(np.floor(col * PITCH * PPM)), int(np.ceil(min((col + 1) * PITCH, L) * PPM))
+    ox, oy = GLASS_STRIPS[wall]
+    w_dst = int(np.ceil(LENGTH[wall] * PPM))
+    x0, x1 = int(np.floor(col * PITCH * PPM)), int(np.ceil(min((col + 1) * PITCH, LENGTH[wall]) * PPM))
     y0, y1 = int(np.floor(row * PITCH * PPM)), int(np.ceil(min((row + 1) * PITCH, V_MAX - V_MIN) * PPM))
-    area = alpha[y0:min(y1, ROW), x0:min(x1, w_dst)]
+    area = alpha[oy + y0:oy + min(y1, ROW), ox + x0:ox + min(x1, w_dst)]
     return area.size > 0 and bool((area < GLASS_ALPHA).all())
 
 
@@ -69,12 +72,12 @@ def main():
     a.add_argument('--proj', default='proj')
     a.add_argument('--out', default='proj')
     args = a.parse_args()
-    alpha = np.asarray(Image.open(os.path.join(args.atlas, 'walls-4096.webp')).convert('RGBA'))[..., 3]
+    alpha = np.asarray(Image.open(os.path.join(args.atlas, ATLAS)).convert('RGBA'))[..., 3]
     root = os.path.join(args.out, 'detail')
     index = dict(format='venviewer-hall-detail', version=1, texelMetres=TEXEL, tileTexels=TILE, gutterTexels=GUTTER,
                  pitchMetres=PITCH, origin=dict(u=0.0, v=V_MAX), quality=QUALITY, walls={})
     total, count, skipped = 0, 0, []
-    for wall in ('window', 'door', 'end', 'fire'):
+    for wall in LENGTH:
         img = np.load(os.path.join(args.proj, f'detail-{wall}.npy'), mmap_mode='r')
         ncols, nrows = tile_grid(wall)
         if img.shape[:2] != (nrows * UNIQUE + 2 * GUTTER, ncols * UNIQUE + 2 * GUTTER):

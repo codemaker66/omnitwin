@@ -7,11 +7,12 @@ import {
   bookingKindNeedsEvent,
   defaultEventPhaseInputs,
   deriveEventStatus,
+  eventNameFor,
   summariseEventBookings,
   type EventStatus,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
-import { bookings, enquiries, eventPhases, events } from "../db/schema.js";
+import { bookings, enquiries, eventPhases, events, venues } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
 // The bind (event-spine Phase A; migration 0090).
@@ -32,8 +33,10 @@ import { bookings, enquiries, eventPhases, events } from "../db/schema.js";
 //   - the event its enquiry's other bookings already have (the enquiry row is
 //     locked first, so two holds pencilled at once from one enquiry join one
 //     event rather than making two);
-// otherwise a new event is made from the booking: its title, type and times,
-// a draft until syncEventStatus derives its status from the bookings.
+// otherwise a new event is made from the booking: its title (without one,
+// its occasion and day: eventNameFor in @omnitwin/types, a day that follows
+// the event's start in syncEventStatus), type and times, a draft until
+// syncEventStatus derives its status from the bookings.
 //
 // Lock order: a booking path locks its bookings first, then the enquiry, then
 // the event (syncEventStatus, FOR NO KEY UPDATE so it never waits on another
@@ -99,12 +102,18 @@ export function defaultEventPhaseRows(eventId: string): (typeof eventPhases.$inf
 }
 
 /** A new event for a booking. Headcounts stay unknown (0 and null) until
- *  someone enters them; nothing is copied that nobody stated. */
+ *  someone enters them; nothing is copied that nobody stated. It is named by
+ *  the booking's title, or, when the booking has none it can use, by its
+ *  occasion and the venue's own day of its start (eventNameFor): an event
+ *  named "" failed every read of its name, the client's schedule and home,
+ *  the Diary range and the room's timeline among them. */
 async function createEventFor(conn: BindConn, seed: EventSeed): Promise<string> {
+  const [venue] = await conn.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, seed.venueId)).limit(1);
+  if (venue === undefined) throw new Error("A new event's venue is missing");
   const [created] = await conn.insert(events).values({
     venueId: seed.venueId,
     createdBy: seed.createdBy,
-    name: seed.title,
+    name: eventNameFor({ title: seed.title, eventType: seed.eventType, startsAt: seed.startsAt, timeZone: venue.timeZone }),
     eventType: seed.eventType,
     status: "draft",
     startsAt: seed.startsAt,
@@ -118,11 +127,35 @@ async function createEventFor(conn: BindConn, seed: EventSeed): Promise<string> 
   return created.id;
 }
 
+/** bookings.title holds this many characters; a longer title is cut there. */
+const BOOKING_TITLE_LENGTH = 200;
+
+/**
+ * A booking's title, or "" when it is only its enquiry's email cut short. The
+ * hold made for an enquiry that gave no name is titled by the enquiry's email,
+ * alone or before its occasion ("jane@example.com — Wedding": the public route
+ * files such an enquiry under its email; enquiryTitleName in
+ * routes/bookings.ts). That is right for the hold, which staff work from. An
+ * event is never named by it: eventNameFor counts a title holding an email
+ * address as no title, at creation and on every screen. The one title it
+ * cannot see is an address long enough to fill the title's 200 characters,
+ * cut there before its domain: only the bind, which reads the enquiry, knows
+ * it is an address.
+ */
+export function titleWithoutEnquiryEmail(title: string, email: string): string {
+  const said = title.trim().toLowerCase();
+  const address = email.trim().toLowerCase();
+  return address !== "" && said.length >= BOOKING_TITLE_LENGTH && address.startsWith(said) ? "" : title;
+}
+
 /**
  * The event a hold or ink belongs to: the one named, the one its enquiry
  * already has, or a new one. Call inside the booking write's transaction.
  */
 export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target: BindTarget): Promise<BindOutcome> {
+  // What a new event is named from: the booking's title, unless it is only
+  // the enquiry's email cut short (eventNameFor sees any other address).
+  let named = seed;
   if (target.join === "event") {
     const [row] = await conn.select({ id: events.id, venueId: events.venueId })
       .from(events)
@@ -133,7 +166,7 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
   }
 
   if (target.join === "enquiry") {
-    const [enquiry] = await conn.select({ id: enquiries.id, venueId: enquiries.venueId })
+    const [enquiry] = await conn.select({ id: enquiries.id, venueId: enquiries.venueId, email: enquiries.email })
       .from(enquiries)
       .where(eq(enquiries.id, target.enquiryId))
       .limit(1)
@@ -155,9 +188,10 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
       .orderBy(desc(sql`${bookings.status} = 'active'`), desc(bookings.createdAt), desc(bookings.id))
       .limit(1);
     if (joined !== undefined) return { ok: true, eventId: joined.eventId, created: false };
+    named = { ...seed, title: titleWithoutEnquiryEmail(seed.title, enquiry.email) };
   }
 
-  return { ok: true, eventId: await createEventFor(conn, seed), created: true };
+  return { ok: true, eventId: await createEventFor(conn, named), created: true };
 }
 
 interface SpanBooking {
@@ -197,6 +231,35 @@ export interface BookingMove {
   readonly eventId: string;
   readonly from: { readonly spaceId: string; readonly startsAt: Date; readonly endsAt: Date };
   readonly to: { readonly spaceId: string; readonly startsAt: Date };
+}
+
+/**
+ * Whether movePhasesWithBooking moves this phase with the booking, read
+ * without a write: a phase of the booking's event in the booking's room,
+ * starting from a day before the booking until it ends, and not inside another
+ * live booking of the same event in that room. Kept in step with the SQL
+ * below; decisions-postgres.test.ts compares the two on a moved booking.
+ */
+export function phaseMovesWithBooking(
+  phase: { readonly eventId: string; readonly spaceId: string | null; readonly startsAt: Date | null },
+  move: {
+    readonly bookingId: string;
+    readonly eventId: string;
+    readonly from: { readonly spaceId: string; readonly startsAt: Date; readonly endsAt: Date };
+  },
+  liveBookings: readonly {
+    readonly id: string;
+    readonly eventId: string | null;
+    readonly spaceId: string;
+    readonly startsAt: Date;
+    readonly endsAt: Date;
+  }[],
+): boolean {
+  if (phase.eventId !== move.eventId || phase.spaceId !== move.from.spaceId || phase.startsAt === null) return false;
+  const at = phase.startsAt.getTime();
+  if (at < move.from.startsAt.getTime() - BOOKING_DAY_LEAD_MS || at >= move.from.endsAt.getTime()) return false;
+  return !liveBookings.some((other) => other.id !== move.bookingId && other.eventId === move.eventId
+    && other.spaceId === move.from.spaceId && at >= other.startsAt.getTime() && at < other.endsAt.getTime());
 }
 
 /**
@@ -263,9 +326,24 @@ export async function movePhasesWithBooking(conn: BindConn, move: BookingMove): 
  * once would each hold a key share and wait for the other's, a deadlock.
  * FOR NO KEY UPDATE still serialises the syncs with each other and with
  * updateEventCore's FOR UPDATE, which is all the status needs.
+ *
+ * A name createEventFor made carries the day the event started on then
+ * ("Wedding, 14 March 2027"), so it moves with the start, under the same
+ * lock: when the stored name is exactly what eventNameFor makes for the old
+ * start, it is made again for the new one. A name a person gave is left as
+ * it is, unless it is word for word the name made for the old start, which
+ * cannot be told from one; so is a name made before the event had a start.
  */
 export async function syncEventStatus(conn: BindConn, eventId: string): Promise<EventStatusChange | null> {
-  const [event] = await conn.select({ id: events.id, status: events.status, startsAt: events.startsAt, endsAt: events.endsAt })
+  const [event] = await conn.select({
+    id: events.id,
+    venueId: events.venueId,
+    status: events.status,
+    name: events.name,
+    eventType: events.eventType,
+    startsAt: events.startsAt,
+    endsAt: events.endsAt,
+  })
     .from(events)
     .where(eq(events.id, eventId))
     .limit(1)
@@ -286,13 +364,32 @@ export async function syncEventStatus(conn: BindConn, eventId: string): Promise<
   const spanMoved = span !== null && (event.startsAt?.getTime() !== span.startsAt.getTime()
     || event.endsAt?.getTime() !== span.endsAt.getTime());
   if (to !== from || spanMoved) {
+    const name = spanMoved ? await nameForMovedStart(conn, event, span.startsAt) : null;
     await conn.update(events).set({
       status: to,
       ...(spanMoved ? { startsAt: span.startsAt, endsAt: span.endsAt } : {}),
+      ...(name === null ? {} : { name }),
       updatedAt: new Date(),
     }).where(eq(events.id, eventId));
   }
   return { eventId, from, to };
+}
+
+/** The name an event takes when its start moves: eventNameFor's for the new
+ *  start when the stored name is eventNameFor's for the old one, else null
+ *  (the name stays). The venue's zone is read as createEventFor reads it. */
+async function nameForMovedStart(
+  conn: BindConn,
+  event: { readonly venueId: string; readonly name: string; readonly eventType: string | null; readonly startsAt: Date | null },
+  startsAt: Date,
+): Promise<string | null> {
+  if (event.startsAt === null) return null;
+  const [venue] = await conn.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, event.venueId)).limit(1);
+  if (venue === undefined) return null;
+  const made = (at: Date): string => eventNameFor({ title: "", eventType: event.eventType, startsAt: at, timeZone: venue.timeZone });
+  if (event.name !== made(event.startsAt)) return null;
+  const renamed = made(startsAt);
+  return renamed === event.name ? null : renamed;
 }
 
 /** syncEventStatus for each distinct event, in id order (a stable lock order). */

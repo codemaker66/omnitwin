@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LAYOUT_STYLES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
-import { transitionBookingCore, type MutationActor } from "../services/booking-mutations.js";
+import { transitionBookingCore, updateBookingCore, type MutationActor } from "../services/booking-mutations.js";
 import { proposeWindowCore, type ProposalDeny } from "../services/window-proposals.js";
 
 // Goal 19 S6 — the contract a client can only create or move a HOLD: proved
@@ -135,6 +135,36 @@ describe.skipIf(target === undefined)("window proposals on migrated PostgreSQL",
     expect(row.decisionAt?.getTime()).toBeLessThan(Date.parse(at("18:00")));
   });
 
+  // A proposal's hold keeps its title wherever it moves, so it carries no day
+  // (#407, the release lead's second ruling, item 1): an event nobody named is
+  // titled by its occasion alone (eventTitleFor).
+  it("titles a proposal on an event stored without a name by its occasion alone", async () => {
+    // An event made before eventNameFor named every new one can hold "".
+    const f = await fixture();
+    await db.update(schema.events).set({ name: "", startsAt: new Date("2030-05-10T03:30:00.000Z"), endsAt: new Date("2030-05-10T08:00:00.000Z") })
+      .where(eq(schema.events.id, f.eventId));
+    const made = granted(await propose(f, f.client, "18:00", "23:00"));
+    expect(made.slot.title).toBe("Dinner");
+    const row = await stored(made.slot.bookingId);
+    expect(row.title).toBe("Dinner");
+    expect(row.nextAction).toBe("Decide Morag Client's proposed time for Dinner");
+  });
+
+  it("titles a proposal on an event the API named by its occasion alone, knowing that name by the venue's own day", async () => {
+    // 03:30 UTC on 10 May is 23:30 on 9 May in New York, so the API named the
+    // event for the 9th there. On a London clock these words would name
+    // another day than the event's, and be read as a name a person gave.
+    const f = await fixture();
+    await db.update(schema.venues).set({ timezone: "America/New_York" }).where(eq(schema.venues.id, f.venueId));
+    await db.update(schema.events).set({ name: "Dinner, 9 May 2030", startsAt: new Date("2030-05-10T03:30:00.000Z"), endsAt: new Date("2030-05-10T08:00:00.000Z") })
+      .where(eq(schema.events.id, f.eventId));
+    const made = granted(await propose(f, f.client, "18:00", "23:00"));
+    expect(made.slot.title).toBe("Dinner");
+    const row = await stored(made.slot.bookingId);
+    expect(row.title).toBe("Dinner");
+    expect(row.nextAction).toBe("Decide Morag Client's proposed time for Dinner");
+  });
+
   it("replays the same key as the same hold, and moves the hold on a new key instead of making a second", async () => {
     const f = await fixture();
     const key = randomUUID();
@@ -212,6 +242,37 @@ describe.skipIf(target === undefined)("window proposals on migrated PostgreSQL",
     expect(decided.status).toBe(409);
     expect(decided.code).toBe("WINDOW_DECIDED");
     expect(await stored(made.slot.bookingId)).toMatchObject({ kind: "ink", startsAt: new Date(at("18:00")) });
+  });
+
+  it("refuses a proposal whose hold the office moved to another event while it was being made, and moves nothing", async () => {
+    const f = await fixture();
+    const made = granted(await propose(f, f.client, "18:00", "23:00"));
+    const merged = randomUUID();
+    await db.insert(schema.events).values({ id: merged, venueId: f.venueId, name: "Merged enquiry", eventType: "dinner", createdBy: f.admin.id, guestCount: 80 });
+    // The office binds the client's hold to the merged event; before that
+    // commits, the client proposes a new time on the event it was on.
+    let entered: () => void = () => undefined;
+    let release: () => void = () => undefined;
+    const inside = new Promise<void>((resolve) => { entered = resolve; });
+    const open = new Promise<void>((resolve) => { release = resolve; });
+    const rebinding = db.transaction(async (tx) => {
+      const rebound = await updateBookingCore(tx, f.admin, made.slot.bookingId, { eventId: merged });
+      entered();
+      await open;
+      return rebound;
+    });
+    await inside;
+    const proposing = propose(f, f.client, "19:00", "23:30");
+    await new Promise((resolve) => { setTimeout(resolve, 400); });
+    release();
+    const [rebound, proposal] = await Promise.all([rebinding, proposing]);
+    expect(rebound).toMatchObject({ ok: true });
+    expect(refused(proposal)).toMatchObject({ status: 409, code: "WINDOW_DECIDED" });
+    // The hold stands on the merged event where the office left it, and no
+    // event's floor is told it moved.
+    expect(await stored(made.slot.bookingId)).toMatchObject({ eventId: merged, startsAt: new Date(at("18:00")), endsAt: new Date(at("23:00")) });
+    expect(await db.select({ id: schema.eventPlanChanges.id }).from(schema.eventPlanChanges)
+      .where(eq(schema.eventPlanChanges.sourceId, made.slot.bookingId))).toEqual([]);
   });
 
   it("refuses a window that has already ended, a room of another venue, and an event that does not exist", async () => {

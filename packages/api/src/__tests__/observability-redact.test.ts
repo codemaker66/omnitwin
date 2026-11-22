@@ -14,6 +14,7 @@ import {
   scrubErrorEvent,
   scrubErrorMessage,
   scrubTransaction,
+  withoutIdentifiers,
   withoutQuery,
   type ScrubbableTransaction,
 } from "../observability/redact.js";
@@ -534,6 +535,273 @@ describe("scrubTransaction", () => {
     expect(serialised).not.toContain("0141");
   });
 
+  // Blake, 13 November 2026 ("Strip browser details, say so"): the privacy
+  // page says the API's timing records carry no address, identifier or
+  // browser details.
+  it("keeps no browser details: no request header, and no user agent in either convention, on the trace or any span", () => {
+    const out = scrubTransaction({
+      type: "transaction",
+      request: {
+        url: "https://api.example.test/venues/0f0f0f0f-0000-4000-8000-000000000001",
+        method: "GET",
+        headers: { "User-Agent": "ProbeBrowser/9.9", "accept-language": "gd-GB", referer: "https://example.test/plan", accept: "application/json" },
+      },
+      contexts: {
+        trace: {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000001",
+          data: {
+            "user_agent.original": "ProbeBrowser/9.9",
+            "http.user_agent": "ProbeBrowser/9.9",
+            "http.request.header.accept_language": "gd-GB",
+            "HTTP.REQUEST.HEADER.USER_AGENT": "ProbeBrowser/9.9",
+            "http.response.header.content_type": "application/json",
+            "http.method": "GET",
+            "http.route": "/venues/:id",
+          },
+        },
+      },
+      spans: [{
+        trace_id: "00000000000000000000000000000001",
+        span_id: "0000000000000002",
+        start_timestamp: 1,
+        data: { "User_Agent.Original": "ProbeBrowser/9.9", "http.request.header.referer": "https://example.test/plan", "db.system": "postgresql" },
+      }],
+    });
+    expect(out.request?.headers).toBeUndefined();
+    expect(out.request?.method).toBe("GET");
+    // On its route's pattern: no record's id (the next test).
+    expect(out.request?.url).toBe("https://api.example.test/venues/:id");
+    expect(out.contexts?.trace?.data).toEqual({
+      "http.response.header.content_type": "application/json",
+      "http.method": "GET",
+      "http.route": "/venues/:id",
+    });
+    expect(out.spans?.[0]?.data).toEqual({ "db.system": "postgresql" });
+    const text = JSON.stringify(out);
+    expect(text).not.toContain("ProbeBrowser");
+    expect(text).not.toContain("gd-GB");
+  });
+
+  // #355's verification (13 November 2026): the page says a timing record
+  // carries no identifier, so no URL in one names a record.
+  it("names no record in any URL under any key: the request's own on its route, every other with each record's segment replaced", () => {
+    const VENUE = "0f0f0f0f-0000-4000-8000-000000000001";
+    const CLERK_USER = "user_2NNEqL2nrIRdJ194ndJqAHwEfxC";
+    // Clerk's ids are 27 letters and digits: about one in a hundred has no digit.
+    const CLERK_USER_NO_DIGIT = "user_AbCdEfGhIjKlMnOpQrStUvWxYzA";
+    // A code spelled only in letters: no pattern of segments could tell it
+    // from a word, so only the route's pattern takes it out.
+    const CODE = "qwertyzx";
+    const out = scrubTransaction({
+      type: "transaction",
+      transaction: "GET /bookings/:bookingId",
+      request: { url: `https://api.example.test/bookings/${CODE}?view=full`, method: "GET" },
+      contexts: {
+        trace: {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000001",
+          data: {
+            "http.route": "/bookings/:bookingId",
+            // The SDK's own plain key beside the conventional ones.
+            url: `https://api.example.test/bookings/${CODE}`,
+            "url.full": `https://api.example.test/bookings/${CODE}`,
+            "http.target": `/bookings/${CODE}?view=full`,
+            "url.path": `/bookings/${CODE}`,
+            "http.method": "GET",
+          },
+        },
+      },
+      spans: [
+        {
+          // Fastify's own span for the request, which writes its path again.
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000002",
+          start_timestamp: 1,
+          description: "request",
+          data: { "url.path": `/bookings/${CODE}?view=full`, "http.route": "/bookings/:bookingId" },
+        },
+        {
+          // An outgoing call.
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000003",
+          start_timestamp: 2,
+          description: `GET https://api.clerk.example/v1/users/${CLERK_USER}`,
+          data: { url: `https://api.clerk.example/v1/users/${CLERK_USER}`, "http.url": `https://api.clerk.example/v1/users/${CLERK_USER}`, "url.path": `/v1/venues/${VENUE}/rooms` },
+        },
+        {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000004",
+          start_timestamp: 3,
+          description: `GET https://api.clerk.example/v1/users/${CLERK_USER_NO_DIGIT}`,
+          data: { url: `https://api.clerk.example/v1/users/${CLERK_USER_NO_DIGIT}` },
+        },
+      ],
+      breadcrumbs: [{ category: "http", data: { url: "https://api.stripe.example/v1/checkout/sessions/cs_live_a1B2c3D4e5F6" } }],
+    });
+    // The request this times: its route's pattern, wherever its path appears.
+    expect(out.request?.url).toBe("https://api.example.test/bookings/:bookingId?[redacted]");
+    expect(out.contexts?.trace?.data).toEqual({
+      "http.route": "/bookings/:bookingId",
+      url: "https://api.example.test/bookings/:bookingId",
+      "url.full": "https://api.example.test/bookings/:bookingId",
+      "http.target": "/bookings/:bookingId?[redacted]",
+      "url.path": "/bookings/:bookingId",
+      "http.method": "GET",
+    });
+    expect(out.spans?.[0]?.data).toEqual({ "url.path": "/bookings/:bookingId?[redacted]", "http.route": "/bookings/:bookingId" });
+    // An outgoing call: each segment that names a record, kept words beside it.
+    expect(out.spans?.[1]?.data).toEqual({
+      url: "https://api.clerk.example/v1/users/:id",
+      "http.url": "https://api.clerk.example/v1/users/:id",
+      "url.path": "/v1/venues/:id/rooms",
+    });
+    expect(out.spans?.[1]?.description).toBe("GET https://api.clerk.example/v1/users/:id");
+    expect(out.spans?.[2]?.data).toEqual({ url: "https://api.clerk.example/v1/users/:id" });
+    // A timing record needs no breadcrumbs, which carry outgoing calls' URLs.
+    expect(out.breadcrumbs).toBeUndefined();
+    expect(out.transaction).toBe("GET /bookings/:bookingId");
+    const text = JSON.stringify(out);
+    for (const id of [CODE, VENUE, CLERK_USER, CLERK_USER_NO_DIGIT, "cs_live_a1B2c3D4e5F6"]) expect(text).not.toContain(id);
+  });
+
+  it("names no record in the name of a transaction no route matched, nor in a short code with a digit", () => {
+    const out = scrubTransaction({
+      type: "transaction",
+      transaction: "GET /p/AB12CD/print",
+      request: { url: "https://api.example.test/p/AB12CD/print", method: "GET" },
+      contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", data: { "url.path": "/p/AB12CD/print" } } },
+    });
+    expect(out.transaction).toBe("GET /p/:id/print");
+    expect(out.request?.url).toBe("https://api.example.test/p/:id/print");
+    expect(out.contexts?.trace?.data).toEqual({ "url.path": "/p/:id/print" });
+    // A route that is not a path ("*", Fastify's catch-all) is no pattern to put a path on.
+    const caught = scrubTransaction({
+      type: "transaction",
+      transaction: "GET *",
+      request: { url: "https://api.example.test/p/AB12CD", method: "GET" },
+      contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", data: { "http.route": "*" } } },
+    });
+    expect(caught.request?.url).toBe("https://api.example.test/p/:id");
+    expect(caught.contexts?.trace?.data).toEqual({ "http.route": "*" });
+    // The route's own words, long ones included, its versions and short tokens stay.
+    expect(withoutIdentifiers("https://api.example.test/v1/health/version")).toBe("https://api.example.test/v1/health/version");
+    expect(withoutIdentifiers("/venues/:id/rooms?[redacted]")).toBe("/venues/:id/rooms?[redacted]");
+    expect(withoutIdentifiers("/events/:id/changes-awaiting-acknowledgement")).toBe("/events/:id/changes-awaiting-acknowledgement");
+    expect(withoutIdentifiers("/v1/h2645/x")).toBe("/v1/h2645/x");
+    // A long token in both cases is an id from twenty characters, not nineteen.
+    expect(withoutIdentifiers("/v1/users/AbCdEfGhIjKlMnOpQrS")).toBe("/v1/users/AbCdEfGhIjKlMnOpQrS");
+    expect(withoutIdentifiers("/v1/users/AbCdEfGhIjKlMnOpQrSt")).toBe("/v1/users/:id");
+  });
+
+  // Found while checking #355's verification at 48004a5b (14 November 2026):
+  // a push endpoint at FCM (Chrome's) ends in the device's token, which has a
+  // colon in it, and a push that ends before its route's reply puts that URL
+  // in the request's record.
+  it("names no device in a push endpoint's URL, colon and all", () => {
+    const TOKEN = "fakeDev1ceTok:APA91bFAKE-push-0123456789-abcdefABCDEF";
+    const endpoint = `https://fcm.googleapis.com/fcm/send/${TOKEN}`;
+    const out = scrubTransaction({
+      type: "transaction",
+      transaction: "POST /venues/:venueId/requests",
+      contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", data: { "http.route": "/venues/:venueId/requests" } } },
+      spans: [{
+        trace_id: "00000000000000000000000000000001",
+        span_id: "0000000000000002",
+        start_timestamp: 1,
+        description: `POST ${endpoint}`,
+        data: { "url.full": endpoint, "url.path": `/fcm/send/${TOKEN}`, "http.url": endpoint },
+      }],
+    });
+    expect(out.spans?.[0]?.description).toBe("POST https://fcm.googleapis.com/fcm/send/:id");
+    expect(out.spans?.[0]?.data).toEqual({
+      "url.full": "https://fcm.googleapis.com/fcm/send/:id",
+      "url.path": "/fcm/send/:id",
+      "http.url": "https://fcm.googleapis.com/fcm/send/:id",
+    });
+    expect(JSON.stringify(out)).not.toContain("APA91b");
+    // Each rule on its own: a short token with a digit, and a long one in both
+    // cases with none; and either with what makes it an id only after its colon.
+    expect(withoutIdentifiers("/fcm/send/ab1:cd")).toBe("/fcm/send/:id");
+    expect(withoutIdentifiers("/fcm/send/abc:d1")).toBe("/fcm/send/:id");
+    expect(withoutIdentifiers("/fcm/send/AbCdEfGhIj:KlMnOpQrSt")).toBe("/fcm/send/:id");
+    expect(withoutIdentifiers("/fcm/send/abcdefghij:KLMNOPQRSt")).toBe("/fcm/send/:id");
+    // An API's own words with a colon in them stay.
+    expect(withoutIdentifiers("/v1/projects/venviewer/messages:send")).toBe("/v1/projects/venviewer/messages:send");
+  });
+
+  // #355's verification at 4e2acb3e (14 November 2026): with colons counted,
+  // a long or digit-bearing placeholder would have been taken for an id.
+  it("keeps a route's placeholders, however long, in its name and route", () => {
+    expect(withoutIdentifiers("/runtime-package-previews/:runtimePackageVersionId")).toBe("/runtime-package-previews/:runtimePackageVersionId");
+    expect(withoutIdentifiers("/slots/:slot1Id/seats")).toBe("/slots/:slot1Id/seats");
+    const out = scrubTransaction({
+      type: "transaction",
+      transaction: "GET /runtime-package-previews/:runtimePackageVersionId",
+      request: { url: "https://api.example.test/runtime-package-previews/a1b2c3d4e5", method: "GET" },
+      contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", data: { "http.route": "/runtime-package-previews/:runtimePackageVersionId" } } },
+    });
+    expect(out.transaction).toBe("GET /runtime-package-previews/:runtimePackageVersionId");
+    expect(out.contexts?.trace?.data).toEqual({ "http.route": "/runtime-package-previews/:runtimePackageVersionId" });
+    expect(out.request?.url).toBe("https://api.example.test/runtime-package-previews/:runtimePackageVersionId");
+  });
+
+  // #355's review at 33db2ba1 (WX3, WX4; 18 November 2026): fail closed on
+  // what the SDK would add were its data collection widened, and cut any
+  // user[:password]@ from a URL's origin.
+  it("keeps no user, tags or extra data, and no user or password in any URL's origin", () => {
+    const out = scrubTransaction({
+      type: "transaction",
+      transaction: "GET /venues/:venueId",
+      user: { ip_address: "203.0.113.9", id: "user_2NNEqL2nrIRdJ194ndJqAHwEfxC" },
+      tags: { "route.url": "/venues/:venueId", visitor: "returning" },
+      extra: { note: "Severe peanut allergy" },
+      request: { url: "https://api.example.test/venues/qwertyzx", method: "GET" },
+      contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", data: { "http.route": "/venues/:venueId" } } },
+      spans: [{
+        trace_id: "00000000000000000000000000000001",
+        span_id: "0000000000000002",
+        start_timestamp: 1,
+        description: "GET https://ops:secret-9f@files.example.test/v1/report",
+        data: { "url.full": "https://ops:secret-9f@files.example.test/v1/report" },
+      }],
+    });
+    expect(out.user).toBeUndefined();
+    expect(out.tags).toBeUndefined();
+    expect(out.extra).toBeUndefined();
+    expect(out.spans?.[0]?.description).toBe("GET https://files.example.test/v1/report");
+    expect(out.spans?.[0]?.data).toEqual({ "url.full": "https://files.example.test/v1/report" });
+    const text = JSON.stringify(out);
+    for (const marker of ["203.0.113.9", "user_2NNEqL2nrIRdJ194ndJqAHwEfxC", "returning", "peanut", "secret-9f", "ops:"]) expect(text).not.toContain(marker);
+  });
+
+  it("finds the request's own path in its trace where the record has no request, and cuts fragments", () => {
+    const out = scrubTransaction({
+      type: "transaction",
+      contexts: {
+        trace: {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000001",
+          data: {
+            "http.route": "/bookings/:bookingId",
+            "url.full": "https://api.example.test/bookings/qwertyzx#note",
+            url: "https://api.example.test/bookings/qwertyzx",
+            "url.fragment": "note",
+          },
+        },
+      },
+      // An outgoing call's span, with the fragment also as its own attribute
+      // (@sentry/opentelemetry and @sentry/core's fetch write it from the URL's hash, 10.60).
+      spans: [{ trace_id: "00000000000000000000000000000001", span_id: "0000000000000002", start_timestamp: 1, data: { "http.url": "https://cdn.example.test/p/AB12CD/print#section-2", "http.fragment": "#section-2" } }],
+    });
+    expect(out.contexts?.trace?.data).toEqual({
+      "http.route": "/bookings/:bookingId",
+      "url.full": "https://api.example.test/bookings/:bookingId",
+      url: "https://api.example.test/bookings/:bookingId",
+    });
+    expect(out.spans?.[0]?.data).toEqual({ "http.url": "https://cdn.example.test/p/:id/print" });
+  });
+
   it("drops the request body, the caller's address and credentials, and the query in url.path", () => {
     const out = scrubTransaction({
       type: "transaction",
@@ -558,7 +826,7 @@ describe("scrubTransaction", () => {
       }],
     });
     expect(out.request?.data).toBeUndefined();
-    expect(out.request?.headers).toEqual({ "user-agent": "test" });
+    expect(out.request?.headers).toBeUndefined();
     expect(out.contexts?.trace?.data).toEqual({ "http.method": "POST" });
     expect(out.spans?.[0]?.data).toEqual({ "url.path": "/people/search?[redacted]" });
     const serialised = JSON.stringify(out);
@@ -633,9 +901,10 @@ describe("a guest plan's claim secret", () => {
         data: { "http.request.header.x_plan_claim_secret": CLAIM_SECRET, "http.request.header.user_agent": "vitest" },
       }],
     });
-    expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+    // A transaction keeps no request header at all (browser details included).
+    expect(out.request?.headers).toBeUndefined();
     expect(out.contexts?.trace?.data).toEqual({ "http.method": "POST" });
-    expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest" });
+    expect(out.spans?.[0]?.data).toEqual({});
     expect(JSON.stringify(out)).not.toContain(CLAIM_SECRET);
   });
 });
@@ -669,10 +938,16 @@ describe("the credential request headers' span attributes", () => {
   });
 
   it("drops the attribute of every header in the list, on the trace and on every span", () => {
-    const attributes = Object.fromEntries(CREDENTIAL_REQUEST_HEADERS.map((header) => [sdkHeaderAttribute(header), `value-of-${header}`]));
-    const out = scrubTransaction(transactionWithHeaderAttributes({ ...attributes, "http.request.header.user_agent": "vitest" }));
-    expect(out.contexts?.trace?.data).toEqual({ "http.request.header.user_agent": "vitest", "http.method": "GET" });
-    expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest", "db.system": "postgresql" });
+    // As a request header every attribute goes (a transaction keeps no browser
+    // details); as a response header only the list's do, which is what this
+    // checks: content_type, beside them, stays.
+    const attributes = Object.fromEntries(CREDENTIAL_REQUEST_HEADERS.flatMap((header) => [
+      [sdkHeaderAttribute(header), `value-of-${header}`],
+      [`http.response.header.${header.replaceAll("-", "_")}`, `value-of-${header}`],
+    ]));
+    const out = scrubTransaction(transactionWithHeaderAttributes({ ...attributes, "http.response.header.content_type": "application/json" }));
+    expect(out.contexts?.trace?.data).toEqual({ "http.response.header.content_type": "application/json", "http.method": "GET" });
+    expect(out.spans?.[0]?.data).toEqual({ "http.response.header.content_type": "application/json", "db.system": "postgresql" });
     expect(JSON.stringify(out)).not.toContain("value-of-");
   });
 
@@ -752,23 +1027,25 @@ describe("cookies", () => {
       }],
     });
     expect(out.request).not.toHaveProperty("cookies");
-    expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+    expect(out.request?.headers).toBeUndefined();
     expect(out.contexts?.trace?.data).toEqual({ "http.method": "GET" });
-    expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest" });
+    expect(out.spans?.[0]?.data).toEqual({});
     const text = JSON.stringify(out);
     expect(text).not.toContain(SESSION_TOKEN);
     expect(text).not.toContain(OTHER_COOKIE_VALUE);
   });
 
   it("leaves another header whose name only begins like a credential header's", () => {
-    // A cookie's attribute sits under `cookie.`; `cookie_consent` is a header of its own.
+    // A cookie's attribute sits under `cookie.`; `cookie_consent` is a header of
+    // its own. Checked on response headers: a request header's attribute goes
+    // whatever its name, as a transaction keeps no browser details.
     const out = scrubTransaction(transactionWithHeaderAttributes({
-      "http.request.header.cookie_consent": "granted",
-      "http.request.header.authorization_hint": "none",
+      "http.response.header.cookie_consent": "granted",
+      "http.response.header.authorization_hint": "none",
     }));
     expect(out.contexts?.trace?.data).toEqual({
-      "http.request.header.cookie_consent": "granted",
-      "http.request.header.authorization_hint": "none",
+      "http.response.header.cookie_consent": "granted",
+      "http.response.header.authorization_hint": "none",
       "http.method": "GET",
     });
   });
@@ -826,10 +1103,12 @@ describe.each(Object.entries(FURTHER_CREDENTIALS))("the %s header", (header, val
         trace_id: "00000000000000000000000000000001",
         span_id: "0000000000000002",
         start_timestamp: 1,
-        data: { [`HTTP.REQUEST.HEADER.${name.toUpperCase()}`]: value, [`http.response.header.${name}.__session`]: value, "db.system": "postgresql" },
+        // Upper case as a response header: a request header's attribute goes
+        // whatever its name, so only here does the list's casing decide.
+        data: { [`HTTP.RESPONSE.HEADER.${name.toUpperCase()}`]: value, [`http.response.header.${name}.__session`]: value, "db.system": "postgresql" },
       }],
     });
-    expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+    expect(out.request?.headers).toBeUndefined();
     expect(out.contexts?.trace?.data).toEqual({ "http.method": "POST" });
     expect(out.spans?.[0]?.data).toEqual({ "db.system": "postgresql" });
     expect(JSON.stringify(out)).not.toContain(value);
@@ -850,6 +1129,7 @@ describe("an address header's span attribute", () => {
       const out = scrubTransaction(transactionWithHeaderAttributes({
         [`http.request.header.${name}`]: "203.0.113.77",
         [`HTTP.REQUEST.HEADER.${name.toUpperCase()}`]: "203.0.113.77, 10.0.0.1",
+        [`HTTP.RESPONSE.HEADER.${name.toUpperCase()}`]: "203.0.113.77",
         [`http.response.header.${name}`]: "203.0.113.77",
       }));
       expect(out.contexts?.trace?.data).toEqual({ "http.method": "GET" });
