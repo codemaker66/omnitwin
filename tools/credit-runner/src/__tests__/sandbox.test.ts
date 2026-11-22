@@ -810,6 +810,52 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     }
     expect(CREATE_SESSION_TIMEOUT_MS).toBeLessThan(10 * 60_000);
   });
+
+  it("bounds the whole create, response body included, and reads a 2xx it cannot read as a create that may have happened", async () => {
+    const params = { agent: "agent_1", environment_id: "env_1" };
+    const ok = { status: 200, headers: { "content-type": "application/json" } };
+    // Broken JSON, and a body that is not JSON at all: both are 2xx answers whose session may exist.
+    const broken = await sdkSandboxApi("sk-test-not-a-key", "https://api.example.invalid", () => Promise.resolve(new Response('{"id":"sesn_', ok)))
+      .createSession(params)
+      .catch((caught: unknown) => caught);
+    expect(broken).toBeInstanceOf(Error);
+    expect(isAmbiguousFailure(broken)).toBe(true);
+    const text = await sdkSandboxApi("sk-test-not-a-key", "https://api.example.invalid", () =>
+      Promise.resolve(new Response("created", { status: 201, headers: { "content-type": "text/plain" } })),
+    )
+      .createSession(params)
+      .catch((caught: unknown) => caught);
+    expect(text).toBeInstanceOf(Error);
+    expect(isAmbiguousFailure(text)).toBe(true);
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // The headers arrive at once; the body then stalls. The SDK's own timeout stops at the headers.
+      const stalled = sdkSandboxApi("sk-test-not-a-key", "https://api.example.invalid", (_input, init) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"id":"sesn_'));
+            init?.signal?.addEventListener("abort", () => {
+              controller.error(new DOMException("aborted", "AbortError"));
+            });
+          },
+        });
+        return Promise.resolve(new Response(body, ok));
+      });
+      let settled: unknown = "pending";
+      void stalled.createSession(params).then(
+        () => (settled = "resolved"),
+        (caught: unknown) => (settled = caught),
+      );
+      await vi.advanceTimersByTimeAsync(CREATE_SESSION_TIMEOUT_MS - 1);
+      expect(settled).toBe("pending");
+      await vi.advanceTimersByTimeAsync(2);
+      expect(settled).toBeInstanceOf(Error);
+      expect(isAmbiguousFailure(settled)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("stops following after thirty reconnects that bring nothing new, then stops the session itself", async () => {
     const config = await workspace();
     const api = new FakeApi([{ history: [], stream: [] }], outputsOf(happy));
@@ -860,6 +906,79 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     if (record.kind !== "ran") throw new Error(record.reason);
     expect(record.result.runningAfterFinish).toBe(true);
     expect(record.review.flags).toContain("the platform still reported the session running after the stream said it had finished; the launcher's interrupt could not be sent, it did not stop, and the launcher archived it");
+    // The stream's word that it finished is not the platform's: the whole budget is booked, as unknown.
+    expect(record.costKnown).toBe(false);
+    expect(record.costUsd).toBe(4.5);
+    const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
+    expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: "sesn_1" });
+  });
+
+  it("books a run that failed while the platform still reported its session running at the whole budget, as unknown", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    api.statuses = ["running"];
+    api.failOutputs = true;
+    await expect(job(api, config, happy, { sleep: instant })).rejects.toThrow("files API down");
+    expect(api.archived).toEqual(["sesn_1"]);
+    const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
+    // The platform's snapshot (2.87) is not final while it says running.
+    expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: "sesn_1" });
+  });
+
+  it("interrupts and archives a running session when its first status read fails, rather than taking the failure for a stop", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    api.retrieveFailures = 1;
+    api.statuses = ["running"];
+    const record = await job(api, config, happy, { sleep: instant });
+    if (record.kind !== "ran") throw new Error(record.reason);
+    expect(record.result.errors).toContain("status check failed: status unavailable");
+    expect(interrupts(api, "sent")).toBe(1);
+    expect(api.archived).toEqual(["sesn_1"]);
+    expect(record.result.runningAfterFinish).toBe(false);
+    expect(record.costKnown).toBe(false);
+    expect(record.costUsd).toBe(4.5);
+  });
+
+  it("never adopts an earlier session of the same lane, job and task after a failed create: the per-run id must match too", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    api.createError = new Anthropic.InternalServerError(500, { type: "error" }, "overloaded", new Headers());
+    api.earlierSessions = [{ id: "sesn_earlier", status: "idle", metadata: { lane: "sandbox", job: "a4-trial", task: "robots-wildcards", run: "an-earlier-run" } }];
+    await expect(job(api, config, happy, { sleep: instant })).rejects.toBeInstanceOf(SessionMayExistError);
+    expect(api.listCalls).toBe(4);
+    expect(api.opened).toBe(0);
+    const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
+    expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: null });
+  });
+
+  it("looks up a create whose 2xx response broke before it was read, and follows the session or books its budget", async () => {
+    // undici's TypeError for a body cut off mid-read: the session was created all the same.
+    const found = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    found.createError = new TypeError("terminated");
+    found.createdAnyway = true;
+    const record = await job(found, await workspace(), happy, { sleep: instant });
+    if (record.kind !== "ran") throw new Error(record.reason);
+    expect(found.listCalls).toBe(1);
+    expect(record.result.sessionId).toBe("sesn_1");
+    expect(record.costUsd).toBeCloseTo(2.87);
+
+    // A body that is not JSON: nothing says whether the session exists, and no lookup finds it.
+    const config = await workspace();
+    const unread = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    unread.createError = new SyntaxError("Unexpected end of JSON input");
+    await expect(job(unread, config, happy, { sleep: instant })).rejects.toBeInstanceOf(SessionMayExistError);
+    expect(unread.listCalls).toBe(4);
+    const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
+    expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: null });
+
+    for (const ambiguous of [new TypeError("terminated"), new SyntaxError("bad JSON"), new Anthropic.APIUserAbortError(), new Error("no session id")]) {
+      expect(isAmbiguousFailure(ambiguous), ambiguous.message).toBe(true);
+    }
+    for (const status of [400, 401, 403, 404, 409, 422, 429]) {
+      expect(isAmbiguousFailure(Anthropic.APIError.generate(status, { type: "error" }, "refused", new Headers())), String(status)).toBe(false);
+    }
+    expect(isAmbiguousFailure(Anthropic.APIError.generate(408, { type: "error" }, "timeout", new Headers()))).toBe(true);
   });
 
   it("answers no ask while it stops a session, so a confirmation cannot wake it", async () => {

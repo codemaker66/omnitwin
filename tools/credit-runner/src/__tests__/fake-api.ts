@@ -52,6 +52,8 @@ export class FakeApi implements SandboxApi {
   /** listSessions fails this many times before it answers. */
   listFailures = 0;
   listCalls = 0;
+  /** Sessions already in the list before this run's create, such as an earlier run of the same task. */
+  earlierSessions: SessionListing[] = [];
   /** Streams opened: one per connection. */
   opened = 0;
   failArchive = false;
@@ -119,7 +121,7 @@ export class FakeApi implements SandboxApi {
     this.listCalls += 1;
     const fail = this.listFailures > 0;
     if (fail) this.listFailures -= 1;
-    const sessions: SessionListing[] = [{ id: "sesn_other", status: "idle", metadata: { lane: "sandbox", job: "other" } }, ...this.created];
+    const sessions: SessionListing[] = [{ id: "sesn_other", status: "idle", metadata: { lane: "sandbox", job: "other" } }, ...this.earlierSessions, ...this.created];
     return (async function* () {
       await Promise.resolve();
       if (fail) throw new Error("connection reset");

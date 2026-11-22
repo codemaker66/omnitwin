@@ -457,11 +457,12 @@ async function findSession(api: SandboxApi, metadata: Readonly<Record<string, st
 }
 
 /**
- * One create, never retried. If it fails ambiguously (the connection broke,
- * it timed out, the server failed), the session may exist anyway: it is looked
- * up by its metadata, which carries a per-run id, and followed if found. If it
- * is not found, the failure is a SessionMayExistError, which the launcher
- * charges at the whole budget.
+ * One create, never retried. Unless the server refused it (isAmbiguousFailure:
+ * a 4xx other than 408), a failed create may have made the session anyway (the
+ * connection broke or timed out, the server failed, or a 2xx body broke or
+ * stalled): it is looked up by its metadata, which carries a per-run id, and
+ * followed if found. If it is not found, the failure is a SessionMayExistError,
+ * which the launcher charges at the whole budget.
  */
 async function createOrFind(
   api: SandboxApi,

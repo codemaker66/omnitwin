@@ -31,20 +31,22 @@ export type SessionListing = Pick<BetaManagedAgentsSession, "id" | "status" | "m
 
 /**
  * Creating a session is never retried by the SDK (a retried create can start a
- * second session nobody follows) and gives up after a minute; the launcher
- * looks the session up by its metadata instead when the outcome is unclear.
+ * second session nobody follows), and the whole create, response body
+ * included, gives up after a minute; the launcher looks the session up by its
+ * metadata instead when the outcome is unclear.
  */
 export const CREATE_SESSION_TIMEOUT_MS = 60_000;
 
 /**
- * A failure after which the request may still have reached the API: the
- * connection broke or timed out, or the server failed (408, 5xx). A 429, a
- * credit error or any other 4xx was refused before anything was created.
+ * Whether a failed create may still have made a session. Only an answer in
+ * which the server refused (a 4xx other than 408: a 429, a credit or a
+ * validation error) says nothing was created. Anything else may have reached
+ * the server: a broken or timed-out connection, a 408 or 5xx, or a 2xx whose
+ * body broke, stalled or held no session.
  */
 export function isAmbiguousFailure(error: unknown): boolean {
-  if (error instanceof Anthropic.APIConnectionError) return true;
-  if (error instanceof Anthropic.APIError && typeof error.status === "number") return error.status === 408 || error.status >= 500;
-  return false;
+  const refused = error instanceof Anthropic.APIError && typeof error.status === "number" && error.status >= 400 && error.status < 500 && error.status !== 408;
+  return !refused;
 }
 
 /**
@@ -104,7 +106,32 @@ export function sdkSandboxApi(apiKey: string, baseURL?: string, fetchImpl?: Clie
       const file = await client.files.upload({ file: await toFile(Buffer.from(data, "utf8"), name) });
       return file.id;
     },
-    createSession: (params) => client.beta.sessions.create(params, { maxRetries: 0, timeout: CREATE_SESSION_TIMEOUT_MS }),
+    async createSession(params) {
+      // The SDK's own timeout stops once the headers arrive; the body is read
+      // after. One deadline covers both, and its abort also ends a body read.
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Anthropic.APIConnectionTimeoutError({ message: `creating the session took over ${String(CREATE_SESSION_TIMEOUT_MS / 1000)} s, response included` }));
+        }, CREATE_SESSION_TIMEOUT_MS);
+      });
+      const request = client.beta.sessions.create(params, { maxRetries: 0, timeout: CREATE_SESSION_TIMEOUT_MS, signal: controller.signal });
+      // Once the deadline has answered, the request's own late failure is not reported.
+      request.catch(() => undefined);
+      try {
+        const session = await Promise.race([request, deadline]);
+        // A 2xx whose body is not a session (the SDK hands back a text body as a string).
+        const raw: unknown = session;
+        if (typeof raw !== "object" || raw === null || !("id" in raw) || typeof raw.id !== "string" || raw.id === "") {
+          throw new Error("the create response held no session id");
+        }
+        return { id: session.id, status: session.status };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     retrieveSession: (id) => client.beta.sessions.retrieve(id),
     async *listSessions(createdSince) {
       for await (const session of client.beta.sessions.list({ "created_at[gte]": createdSince, include_archived: true })) {
