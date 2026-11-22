@@ -384,12 +384,16 @@ async function recordedStatusAnswer(
   };
 }
 
-/** When a completion event is written: the database's own clock as the row
- *  is inserted. Every status write first takes the task's row lock (the
- *  UPDATE, or the replay's SELECT … FOR UPDATE) and inserts its event while
- *  holding it, so these times follow the order the writes were made in.
- *  The column's default, now(), is the time the transaction began, which
- *  two writes waiting on one another can take in the other order. */
+/** When a status write is made: the database's own clock while the task's
+ *  row is held. Every status write first takes the row (SELECT … FOR NO KEY
+ *  UPDATE, the lock its UPDATE takes anyway), then stamps the task's
+ *  updated_at and inserts its completion event with this, so both follow
+ *  the order the writes were made in. A column default, now(), is the time
+ *  the transaction began, and the API's new Date() is another machine's
+ *  clock read before the lock: either can put two writes that wait on one
+ *  another in the other order (#418, review DQ5). An UPDATE that waits for
+ *  a row another transaction only locked computes its SET before the wait,
+ *  so the row is taken first. */
 const WRITTEN_UNDER_THE_ROW_LOCK = sql`clock_timestamp()`;
 
 /** Whether the task's last write was made under one of these keys: the
@@ -424,11 +428,11 @@ async function lastWriteMadeUnder(
  * queued). Otherwise it is refused, so a stale replay never undoes a later
  * press.
  *
- * One decision under the task's row lock: the SELECT … FOR UPDATE holds the
- * row from the comparison, through the look at the task's last write, to
- * the write and its completion event. A second replay or a live press that
- * reaches the row meanwhile waits for this transaction to commit, and a
- * replay that waited reads the row as committed. A key recorded meanwhile
+ * One decision under the task's row lock: the SELECT … FOR NO KEY UPDATE
+ * holds the row from the comparison, through the look at the task's last
+ * write, to the write and its completion event. A second replay or a live
+ * press that reaches the row meanwhile waits for this transaction to
+ * commit, and a replay that waited reads the row as committed. A key recorded meanwhile
  * gets its recorded answer; a refusal writes nothing: no completion event,
  * board line or recorded key.
  */
@@ -440,7 +444,7 @@ async function updateOpsTaskStatusIfStillHeld(
 ): Promise<UpdateOpsTaskStatusResult> {
   const expected = parsed.expectedStatus;
   return db.transaction(async (tx) => {
-    const [current] = await tx.select().from(opsTasks).where(eq(opsTasks.id, joined.task.id)).limit(1).for("update");
+    const [current] = await tx.select().from(opsTasks).where(eq(opsTasks.id, joined.task.id)).limit(1).for("no key update");
     if (current === undefined) throw new EventDayTaskNotFoundError(joined.task.id);
     const recorded = parsed.idempotencyKey === undefined
       ? null
@@ -454,7 +458,7 @@ async function updateOpsTaskStatusIfStillHeld(
     }
 
     const [updatedTask] = await tx.update(opsTasks)
-      .set({ status: parsed.status, updatedAt: new Date() })
+      .set({ status: parsed.status, updatedAt: WRITTEN_UNDER_THE_ROW_LOCK })
       .where(eq(opsTasks.id, current.id))
       .returning();
     if (updatedTask === undefined) throw new EventDayTaskNotFoundError(joined.task.id);
@@ -523,8 +527,12 @@ export async function updateOpsTaskStatus(
   }
 
   return db.transaction(async (tx) => {
+    // The task's row first, so the stamps below are taken while it is held
+    // (WRITTEN_UNDER_THE_ROW_LOCK). The transition is still decided above,
+    // before the lock, as it always was (review DS9, a follow-up).
+    await tx.select({ id: opsTasks.id }).from(opsTasks).where(eq(opsTasks.id, joined.task.id)).for("no key update");
     const [updatedTask] = await tx.update(opsTasks)
-      .set({ status: transition.toStatus, updatedAt: new Date() })
+      .set({ status: transition.toStatus, updatedAt: WRITTEN_UNDER_THE_ROW_LOCK })
       .where(eq(opsTasks.id, joined.task.id))
       .returning();
     if (updatedTask === undefined) throw new EventDayTaskNotFoundError(input.opsTaskId);

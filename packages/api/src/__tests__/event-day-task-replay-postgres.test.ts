@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { asc, count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { OpsTaskSchema } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { eventDayOpsTaskRoutes } from "../routes/event-day-ops.js";
@@ -529,4 +530,40 @@ describe.skipIf(target === undefined)("a queued task status replayed on the migr
     expect(times).toHaveLength(1);
     expect(times[0]?.getTime()).toBeGreaterThanOrEqual(heldAt.getTime());
   }, 60000);
+
+  // DQ5 (review of d9d5eeb4): the board orders the server's writes to a
+  // task by its updatedAt. The time is the database's clock while the task's
+  // row is held, on both paths, as the completion events' is: a write that
+  // waited on the row is stamped after the holder let go, whatever clock
+  // the API instance that sent it keeps.
+  it.each([
+    ["a live press", { status: "in_progress" } as const],
+    ["a replay", { status: "in_progress", expectedStatus: "todo" } as const],
+  ])("stamps the task's updated time when %s writes it under the row lock", async (_name, body) => {
+    const { taskId } = await newTask();
+
+    const { answer, heldAt } = await sendWhileHeld(taskId, { ...body, idempotencyKey: `start-${taskId}` });
+
+    expect(answer.statusCode).toBe(200);
+    const [row] = await db.select({ updatedAt: schema.opsTasks.updatedAt }).from(schema.opsTasks).where(eq(schema.opsTasks.id, taskId));
+    expect(row?.updatedAt.getTime()).toBeGreaterThanOrEqual(heldAt.getTime());
+    expect(answer.body.data?.updatedAt).toBe(row?.updatedAt.toISOString());
+  }, 60000);
+
+  // The database keeps microseconds; the API answers milliseconds, in the
+  // shape the board parses (OpsTaskSchema, then Date.parse to order writes).
+  it("answers a task whose stored time carries microseconds in the shape the board parses", async () => {
+    const { taskId } = await newTask();
+
+    const answer = await send(taskId, { status: "in_progress", idempotencyKey: `start-${taskId}` });
+
+    const stored = (await lockPool.query<{ us: string }>(
+      `SELECT to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') AS us FROM ops_tasks WHERE id = $1`,
+      [taskId],
+    )).rows[0]?.us ?? "";
+    expect(stored).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}$/u);
+    const served = OpsTaskSchema.parse(answer.body.data);
+    expect(served.updatedAt).toBe(`${stored.slice(0, 23)}Z`);
+    expect(Date.parse(served.updatedAt)).toBe(Date.parse(`${stored.slice(0, 23)}Z`));
+  });
 });
