@@ -91,7 +91,7 @@ describe("the chair brush in the Robert Adam Room", () => {
     expect(placed).toHaveLength(54);
   });
 
-  it("sets nothing, and says so, when no chair of the brush stands on the floor", () => {
+  it("sets nothing and returns no ids when no chair of the brush stands on the floor", () => {
     const walls = openRoom("Robert Adam Room", false);
     // Along the lower section's east wall, x = −0.1, from a point 5 cm inside it: every chair would stand through that wall.
     expect(insideWalls(walls, -0.15, 4.2) && insideWalls(walls, -0.15, 7.8)).toBe(true);
