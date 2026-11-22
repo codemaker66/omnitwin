@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,7 @@ import {
   ANTHROPIC_API_URL,
   anthropicEnvironmentProblems,
   CREATE_SESSION_TIMEOUT_MS,
+  DOWNLOAD_TIMEOUT_MS,
   isAmbiguousFailure,
   sdkSandboxApi,
   type SandboxApi,
@@ -27,9 +28,10 @@ import {
 import { outcomeFor, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "../sandbox/credit-ledger.js";
 import { collectSandboxJob, runSandboxJob, type JobOptions, type LauncherConfig } from "../sandbox/launcher.js";
+import { isWindowsDeviceName, MAX_OUTPUT_BYTES, MAX_OUTPUTS_TOTAL_BYTES, OutputTooLargeError, planOutputs, writeCapped } from "../sandbox/outputs.js";
 import { unquoteGitPath } from "../sandbox/patches.js";
 import { ADVISORY_FLAG } from "../sandbox/review.js";
-import { centsString, invokesVerifier, parseVerifyOutput, SessionMayExistError, safeOutputName } from "../sandbox/session.js";
+import { centsString, invokesVerifier, parseVerifyOutput, SessionMayExistError } from "../sandbox/session.js";
 import { ensureSandbox } from "../sandbox/setup.js";
 import { parseTask } from "../task.js";
 import { FakeApi } from "./fake-api.js";
@@ -251,10 +253,15 @@ describe("sandbox launcher", () => {
     expect(review).toContain("CI on the pull request is the acceptance authority");
     // The verifier's run without the fix is shown, so a vacuous failure can be seen.
     expect(review).toContain("expected true to be false");
-    // The session's copy of an uploaded input is listed but cannot be downloaded: skipped, not fatal.
-    expect(record.result.skippedOutputs).toEqual(["verify.mjs"]);
-    expect(record.result.outputs.map((file) => path.basename(file))).toEqual(["0001-Match-robots.patch", "diff.patch", "report.md"]);
-    expect(record.review.patches.map((file) => path.basename(file))).toEqual(["0001-Match-robots.patch"]);
+    // Only what the review reads comes back, under the launcher's own names; the report and the
+    // session's copy of an uploaded input stay in the sandbox.
+    expect(api.downloads).toEqual(["0001-Match-robots.patch", "diff.patch"]);
+    expect(record.result.outputs.map((file) => path.basename(file))).toEqual(["patch-0001.patch", "diff.patch"]);
+    expect(Object.values(record.result.outputNames)).toEqual(["0001-Match-robots.patch", "diff.patch"]);
+    expect(record.result.leftOutputs).toEqual(["verify.mjs", "report.md"]);
+    expect(record.result.skippedOutputs).toEqual([]);
+    expect(record.result.refusedOutputs).toEqual([]);
+    expect(record.review.patches.map((file) => path.basename(file))).toEqual(["patch-0001.patch"]);
   });
 
   it("does not count the verifier when the call holds anything but the exact command, as the A4 trial's did", async () => {
@@ -419,7 +426,8 @@ describe("sandbox launcher", () => {
     ]);
     const [first = "", second = ""] = Object.keys(two.patches);
     const joined = await reviewOf(two, { outputs: { "diff.patch": two.diff, [first]: `${two.patches[first] ?? ""}${two.patches[second] ?? ""}` } });
-    expect(joined.review.reasons).toContain(`${first} holds 2 message(s), not exactly one`);
+    expect(joined.result.outputNames[joined.review.patches[0] ?? ""]).toBe(first);
+    expect(joined.review.reasons).toContain("patch-0001.patch holds 2 message(s), not exactly one");
   });
 
   it("rejects a session that ended because its retries ran out, or was terminated", async () => {
@@ -491,8 +499,41 @@ describe("sandbox launcher", () => {
   });
 
   it("rejects a .patch output that is not a format-patch file, instead of ignoring it", async () => {
-    const record = await reviewOf(happy, { outputs: outputsOf(happy, { "extra.patch": "diff --git a/.github/x b/.github/x\n+on: push\n" }) });
-    expect(record.review.reasons).toContain("extra.patch came back but is not a format-patch file, so the review cannot account for it");
+    const stray = "diff --git a/.github/x b/.github/x\n+on: push\n";
+    // Not a name format-patch writes: refused without being downloaded.
+    const named = await reviewOf(happy, { outputs: outputsOf(happy, { "extra.patch": stray }) });
+    expect(named.review.reasons).toContain(
+      '"extra.patch" came back but is not a format-patch file or diff.patch, so the review cannot account for it; not downloaded',
+    );
+    // A format-patch name over text that is not one: downloaded, read, and refused all the same.
+    const content = await reviewOf(happy, { outputs: outputsOf(happy, { "0002-extra.patch": stray }) });
+    expect(content.review.reasons).toContain(
+      '"0002-extra.patch" (saved as patch-0002.patch) came back but is not a format-patch file, so the review cannot account for it',
+    );
+  });
+
+  it("brings back only the outputs the review reads, refusing device names and sizes over the cap before downloading", async () => {
+    const config = await workspace();
+    const api = new FakeApi(
+      [{ history: [], stream: happyEvents(happy) }],
+      outputsOf(happy, { "logs/install.log": "installed\n", "NUL.patch": "x", "patches/Aux/0002-more.patch": "y", "con .txt": "z" }),
+    );
+    api.listedSizes = { "diff.patch": MAX_OUTPUT_BYTES + 1 };
+    const record = await job(api, config);
+    if (record.kind !== "ran") throw new Error(record.reason);
+    // Nothing else was even requested.
+    expect(api.downloads).toEqual(["0001-Match-robots.patch"]);
+    expect(record.result.leftOutputs).toEqual(["verify.mjs", "report.md", "logs/install.log", "con .txt"]);
+    expect(record.review.verdict).toBe("rejected");
+    expect(record.review.reasons).toEqual(
+      expect.arrayContaining([
+        '"NUL.patch" names a Windows device; not downloaded',
+        '"patches/Aux/0002-more.patch" names a Windows device; not downloaded',
+        `"diff.patch" is listed at ${String(MAX_OUTPUT_BYTES + 1)} bytes, over the ${String(MAX_OUTPUT_BYTES)}-byte limit for one output; not downloaded`,
+        "diff.patch did not come back",
+      ]),
+    );
+    expect((await readdir(path.join(record.runDir, "outputs"))).sort()).toEqual(["patch-0001.patch"]);
   });
 
   it("keeps the agent's text on one line in review.md, so it cannot add a heading", async () => {
@@ -850,6 +891,59 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     }
   });
 
+  it("downloads an output through the real SDK client a chunk at a time, cut off past its cap or its deadline", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "credit-runner-download-"));
+    dirs.push(dir);
+    const streamed = (parts: readonly string[]) =>
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const part of parts) controller.enqueue(new TextEncoder().encode(part));
+          controller.close();
+        },
+      });
+    const serving = (parts: readonly string[]) =>
+      sdkSandboxApi("sk-test-not-a-key", () => Promise.resolve(new Response(streamed(parts), { status: 200, headers: { "content-type": "application/octet-stream" } })));
+    expect(await serving(["From ", "abc", "\n"]).downloadFile("file_1", path.join(dir, "patch-0001.patch"), 100)).toBe("saved");
+    expect(await readFile(path.join(dir, "patch-0001.patch"), "utf8")).toBe("From abc\n");
+    // More than the cap allows, whatever the listing said: cut off, and nothing left on disk.
+    await expect(serving(["0123456789", "0123456789"]).downloadFile("file_2", path.join(dir, "patch-0002.patch"), 15)).rejects.toBeInstanceOf(OutputTooLargeError);
+    expect(await readdir(dir)).toEqual(["patch-0001.patch"]);
+    // A file the API will not serve (the session's copy of an input).
+    const refusing = sdkSandboxApi("sk-test-not-a-key", () =>
+      Promise.resolve(
+        new Response(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "no", details: { error_code: "file_not_downloadable" } } }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    expect(await refusing.downloadFile("file_3", path.join(dir, "diff.patch"), 100)).toBe("not-downloadable");
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const stalled = sdkSandboxApi("sk-test-not-a-key", (_input, init) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("From "));
+            init?.signal?.addEventListener("abort", () => {
+              controller.error(new DOMException("aborted", "AbortError"));
+            });
+          },
+        });
+        return Promise.resolve(new Response(body, { status: 200, headers: { "content-type": "application/octet-stream" } }));
+      });
+      let settled: unknown = "pending";
+      void stalled.downloadFile("file_4", path.join(dir, "patch-0004.patch"), 100).then(
+        () => (settled = "resolved"),
+        (caught: unknown) => (settled = caught),
+      );
+      await vi.advanceTimersByTimeAsync(DOWNLOAD_TIMEOUT_MS + 1);
+      expect(settled).toBeInstanceOf(Anthropic.APIConnectionTimeoutError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("refuses to start while the environment would send the key or another credential elsewhere, naming the variable but never its value", () => {
     for (const [name, value] of [
       ["ANTHROPIC_BASE_URL", "https://gateway.example.invalid"],
@@ -1087,9 +1181,60 @@ describe("sandbox brief", () => {
     expect(rubric).toContain('"ok":true');
   });
 
-  it("keeps downloaded file names inside the run folder and prices budgets in cents", () => {
-    expect(safeOutputName("../../etc/passwd")).toBe("etc__passwd");
-    expect(safeOutputName("patches/0001-fix.patch")).toBe("patches__0001-fix.patch");
+  it("plans downloads from the listing alone: launcher-chosen names, a fixed suffix, sizes checked first", () => {
+    const file = (filename: string, sizeBytes = 10) => ({ id: filename, filename, sizeBytes });
+    const plan = planOutputs([file("diff.patch"), file("0002-b.patch"), file("0001-a.patch"), file("report.md"), file("verify.json"), file("notes.PATCH")]);
+    expect(plan.downloads.map((entry) => [entry.file.filename, entry.localName])).toEqual([
+      ["0001-a.patch", "patch-0001.patch"],
+      ["0002-b.patch", "patch-0002.patch"],
+      ["diff.patch", "diff.patch"],
+    ]);
+    expect(plan.left).toEqual(["report.md", "verify.json"]);
+    expect(plan.refused).toEqual(['"notes.PATCH" came back but is not a format-patch file or diff.patch, so the review cannot account for it; not downloaded']);
+
+    // An agent-chosen name never reaches the disk, whatever it holds.
+    for (const name of ["0001-x.patch.lnk", "0001-x.url", "../../0001-x.patch.exe", "0001-a b.patch"]) {
+      expect(planOutputs([file(name)]).downloads, name).toEqual([]);
+    }
+    expect(planOutputs([file("patches/0001-a.patch")]).downloads.map((entry) => entry.localName)).toEqual(["patch-0001.patch"]);
+
+    // Sizes: one over the per-output cap, then the run's total cap.
+    expect(planOutputs([file("0001-a.patch", MAX_OUTPUT_BYTES + 1)]).refused).toHaveLength(1);
+    expect(planOutputs([file("0001-a.patch", MAX_OUTPUT_BYTES)]).downloads).toHaveLength(1);
+    const many = Array.from({ length: 5 }, (_, index) => file(`000${String(index + 1)}-x.patch`, MAX_OUTPUT_BYTES));
+    const capped = planOutputs(many);
+    expect(capped.downloads).toHaveLength(MAX_OUTPUTS_TOTAL_BYTES / MAX_OUTPUT_BYTES);
+    expect(capped.refused).toEqual([`"0005-x.patch" would take the run's downloads past ${String(MAX_OUTPUTS_TOTAL_BYTES)} bytes; not downloaded`]);
+    // Two diffs: neither is taken.
+    expect(planOutputs([file("diff.patch"), file("logs/diff.patch")]).refused).toEqual(["2 files named diff.patch came back; none was downloaded"]);
+  });
+
+  it("knows the names Windows opens as devices, with or without an extension, in any case", () => {
+    for (const name of ["CON", "con.txt", "Prn.patch", "AUX", "nul", "NUL.tar.gz", "nul .patch", "COM1", "com9.log", "LPT1", "lpt9.patch", "COM¹", "lpt³.x", "CONIN$", "conout$.txt", "nul:stream"]) {
+      expect(isWindowsDeviceName(name), name).toBe(true);
+    }
+    for (const name of ["console", "CON1", "com10", "lpt", "nul_", "aux-notes.md", "0001-nul.patch", "diff.patch"]) {
+      expect(isWindowsDeviceName(name), name).toBe(false);
+    }
+  });
+
+  it("streams a download to disk and removes it once it passes its cap", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "credit-runner-capped-"));
+    dirs.push(dir);
+    const chunks = (count: number) =>
+      (async function* () {
+        for (let index = 0; index < count; index += 1) {
+          await Promise.resolve();
+          yield new TextEncoder().encode("0123456789");
+        }
+      })();
+    expect(await writeCapped(chunks(3), path.join(dir, "a.patch"), 30)).toBe(30);
+    expect(await readFile(path.join(dir, "a.patch"), "utf8")).toBe("0123456789".repeat(3));
+    await expect(writeCapped(chunks(4), path.join(dir, "b.patch"), 30)).rejects.toBeInstanceOf(OutputTooLargeError);
+    expect(await readdir(dir)).toEqual(["a.patch"]);
+  });
+
+  it("prices budgets in cents", () => {
     expect(centsString(4.5)).toBe("450");
     expect(centsString(25)).toBe("2500");
     expect(() => centsString(0)).toThrow();

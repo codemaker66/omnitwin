@@ -7,6 +7,7 @@ import type {
   BetaManagedAgentsStreamSessionEvents,
 } from "@anthropic-ai/sdk/resources/beta/sessions/events";
 import type { BetaManagedAgentsSession, SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
+import { chunksOf, writeCapped } from "./outputs.js";
 
 /** One event, as the live stream or the history list returns it. */
 export type SessionEvent = BetaManagedAgentsStreamSessionEvents | BetaManagedAgentsSessionEvent;
@@ -36,6 +37,33 @@ export type SessionListing = Pick<BetaManagedAgentsSession, "id" | "status" | "m
  * metadata instead when the outcome is unclear.
  */
 export const CREATE_SESSION_TIMEOUT_MS = 60_000;
+
+/** One output's whole download, body included, before it is abandoned. */
+export const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * Runs `request` with an abort signal and fails it with `timedOut()` once `ms`
+ * pass, response body included: the SDK's own timeout stops once the headers
+ * arrive. The abort also ends a body still being read.
+ */
+async function withDeadline<T>(ms: number, request: (signal: AbortSignal) => Promise<T>, timedOut: () => Error): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(timedOut());
+    }, ms);
+  });
+  const pending = request(controller.signal);
+  // Once the deadline has answered, the request's own late failure is not reported.
+  pending.catch(() => undefined);
+  try {
+    return await Promise.race([pending, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Whether a failed create may still have made a session. Only an answer in
@@ -72,8 +100,12 @@ export interface SandboxApi {
   listEvents(sessionId: string): AsyncIterable<SessionEvent>;
   sendEvents(sessionId: string, events: BetaManagedAgentsEventParams[]): Promise<void>;
   listOutputFiles(sessionId: string): Promise<OutputFile[]>;
-  /** Null for a file the API will not serve, such as an input mounted into the session. */
-  downloadFile(fileId: string): Promise<Buffer | null>;
+  /**
+   * Streams one output to `destination`, cut off past `maxBytes` (an
+   * OutputTooLargeError, the partial file removed). "not-downloadable" for a
+   * file the API will not serve, such as an input mounted into the session.
+   */
+  downloadFile(fileId: string, destination: string, maxBytes: number): Promise<"saved" | "not-downloadable">;
 }
 
 /**
@@ -135,30 +167,17 @@ export function sdkSandboxApi(apiKey: string, fetchImpl?: ClientOptions["fetch"]
       return file.id;
     },
     async createSession(params) {
-      // The SDK's own timeout stops once the headers arrive; the body is read
-      // after. One deadline covers both, and its abort also ends a body read.
-      const controller = new AbortController();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const deadline = new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          controller.abort();
-          reject(new Anthropic.APIConnectionTimeoutError({ message: `creating the session took over ${String(CREATE_SESSION_TIMEOUT_MS / 1000)} s, response included` }));
-        }, CREATE_SESSION_TIMEOUT_MS);
-      });
-      const request = client.beta.sessions.create(params, { maxRetries: 0, timeout: CREATE_SESSION_TIMEOUT_MS, signal: controller.signal });
-      // Once the deadline has answered, the request's own late failure is not reported.
-      request.catch(() => undefined);
-      try {
-        const session = await Promise.race([request, deadline]);
-        // A 2xx whose body is not a session (the SDK hands back a text body as a string).
-        const raw: unknown = session;
-        if (typeof raw !== "object" || raw === null || !("id" in raw) || typeof raw.id !== "string" || raw.id === "") {
-          throw new Error("the create response held no session id");
-        }
-        return { id: session.id, status: session.status };
-      } finally {
-        clearTimeout(timer);
+      const session = await withDeadline(
+        CREATE_SESSION_TIMEOUT_MS,
+        (signal) => client.beta.sessions.create(params, { maxRetries: 0, timeout: CREATE_SESSION_TIMEOUT_MS, signal }),
+        () => new Anthropic.APIConnectionTimeoutError({ message: `creating the session took over ${String(CREATE_SESSION_TIMEOUT_MS / 1000)} s, response included` }),
+      );
+      // A 2xx whose body is not a session (the SDK hands back a text body as a string).
+      const raw: unknown = session;
+      if (typeof raw !== "object" || raw === null || !("id" in raw) || typeof raw.id !== "string" || raw.id === "") {
+        throw new Error("the create response held no session id");
       }
+      return { id: session.id, status: session.status };
     },
     retrieveSession: (id) => client.beta.sessions.retrieve(id),
     async *listSessions(createdSince) {
@@ -191,14 +210,22 @@ export function sdkSandboxApi(apiKey: string, fetchImpl?: ClientOptions["fetch"]
       }
       return files;
     },
-    async downloadFile(fileId) {
-      try {
-        const response = await client.files.download(fileId);
-        return Buffer.from(await response.arrayBuffer());
-      } catch (error) {
-        if (isNotDownloadable(error)) return null;
-        throw error;
-      }
-    },
+    downloadFile: (fileId, destination, maxBytes) =>
+      withDeadline(
+        DOWNLOAD_TIMEOUT_MS,
+        async (signal): Promise<"saved" | "not-downloadable"> => {
+          let response: Response;
+          try {
+            response = await client.files.download(fileId, {}, { signal });
+          } catch (error) {
+            if (isNotDownloadable(error)) return "not-downloadable";
+            throw error;
+          }
+          // Streamed to disk a chunk at a time, never buffered whole.
+          await writeCapped(response.body === null ? [] : chunksOf(response.body), destination, maxBytes);
+          return "saved";
+        },
+        () => new Anthropic.APIConnectionTimeoutError({ message: `downloading an output took over ${String(DOWNLOAD_TIMEOUT_MS / 60_000)} min` }),
+      ),
   };
 }

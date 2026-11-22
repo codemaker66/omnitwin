@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { BetaManagedAgentsSession, SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
-import { isAmbiguousFailure, type SandboxApi, type SessionEvent, type SessionRef } from "./api.js";
+import { isAmbiguousFailure, type OutputFile, type SandboxApi, type SessionEvent, type SessionRef } from "./api.js";
 import { outcomeFor, type RunFacts, VERIFY_COMMAND, verifyTaskJson } from "./brief.js";
+import { MAX_OUTPUT_BYTES, MAX_OUTPUTS_TOTAL_BYTES, OutputTooLargeError, planOutputs } from "./outputs.js";
 import type { SandboxState } from "./setup.js";
 
 export interface SessionRunOptions {
@@ -73,8 +74,15 @@ export interface SessionRunResult {
   readonly outcome: { readonly result: string; readonly explanation: string; readonly iteration: number } | null;
   readonly errors: readonly string[];
   readonly deniedAsks: number;
+  /** The outputs downloaded, as local paths under launcher-chosen names (outputs.ts). */
   readonly outputs: readonly string[];
-  /** Listed outputs the API would not serve (the session's copies of its inputs). */
+  /** Each downloaded output's local path, and the name it had in the sandbox. */
+  readonly outputNames: Readonly<Record<string, string>>;
+  /** Why outputs the review would read were not downloaded (a name it cannot account for, a size over the cap); each rejects the run. */
+  readonly refusedOutputs: readonly string[];
+  /** Outputs the review does not read, left in the sandbox (the report, logs). */
+  readonly leftOutputs: readonly string[];
+  /** Wanted outputs the API would not serve. */
   readonly skippedOutputs: readonly string[];
 }
 
@@ -150,16 +158,6 @@ export function parseVerifyOutput(text: string): VerifyReport | null {
   } catch {
     return null;
   }
-}
-
-/** Output file names come from the sandbox: keep them inside the run folder. */
-export function safeOutputName(filename: string): string {
-  const flat = filename
-    .replace(/\\/gu, "/")
-    .split("/")
-    .filter((part) => part !== "" && part !== "." && part !== "..")
-    .join("__");
-  return flat.replace(/[^A-Za-z0-9._-]/gu, "_") || "unnamed";
 }
 
 /**
@@ -288,24 +286,35 @@ async function finishRun(
   // final only if the session has stopped.
   const final = await api.retrieveSession(sessionId);
   await writeFile(path.join(runDir, "session.json"), `${JSON.stringify(final, null, 2)}\n`, "utf8");
-  const outputs: string[] = [];
-  const skippedOutputs: string[] = [];
+  let files: OutputFile[] = [];
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const files = await api.listOutputFiles(sessionId);
-    if (files.length > 0 || attempt === 5) {
-      for (const file of files) {
-        const data = await api.downloadFile(file.id);
-        if (data === null) {
-          skippedOutputs.push(file.filename);
-          continue;
-        }
-        const local = path.join(runDir, "outputs", safeOutputName(file.filename));
-        await writeFile(local, data);
-        outputs.push(local);
+    files = await api.listOutputFiles(sessionId);
+    if (files.length > 0) break;
+    if (attempt < 5) await sleep(2000); // indexing lags the idle event by a second or two
+  }
+  // Only what the review reads comes to this machine, under the launcher's names (outputs.ts).
+  const plan = planOutputs(files);
+  const outputs: string[] = [];
+  const outputNames: Record<string, string> = {};
+  const refusedOutputs = [...plan.refused];
+  const skippedOutputs: string[] = [];
+  let room = MAX_OUTPUTS_TOTAL_BYTES;
+  for (const { file, localName } of plan.downloads) {
+    const local = path.join(runDir, "outputs", localName);
+    try {
+      const saved = await api.downloadFile(file.id, local, Math.min(MAX_OUTPUT_BYTES, room));
+      if (saved === "not-downloadable") {
+        skippedOutputs.push(file.filename);
+        continue;
       }
-      break;
+    } catch (error) {
+      if (!(error instanceof OutputTooLargeError)) throw error;
+      refusedOutputs.push(`${JSON.stringify(file.filename)} ran past its size limit while downloading; cut off and removed`);
+      continue;
     }
-    await sleep(2000); // indexing lags the idle event by a second or two
+    room -= (await stat(local)).size;
+    outputs.push(local);
+    outputNames[local] = file.filename;
   }
   return {
     sessionId,
@@ -332,6 +341,9 @@ async function finishRun(
     errors: tally.errors,
     deniedAsks: tally.deniedAsks,
     outputs,
+    outputNames,
+    refusedOutputs,
+    leftOutputs: plan.left,
     skippedOutputs,
   };
 }

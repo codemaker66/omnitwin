@@ -77,16 +77,21 @@ function short(sha: string | null): string {
 export async function reviewRun(result: SessionRunResult, options: ReviewOptions): Promise<Review> {
   const reasons: string[] = [];
   const flags: string[] = [];
+  // Downloaded under the launcher's names, in order: patch-0001.patch, ...,
+  // then diff.patch (outputs.ts). An output the review would read but that was
+  // not downloaded (a name it cannot account for, a size over the cap) rejects.
+  reasons.push(...result.refusedOutputs);
   const outputs = [...result.outputs].sort();
   const diffFile = outputs.find((file) => path.basename(file) === "diff.patch") ?? null;
-  // The Files API gives back bare names (`0001-fix-….patch`, not under
-  // `patches/`), so a format-patch file is known by its `From <sha>` line.
-  // Any other .patch output is one the review cannot account for.
+  // A format-patch file is known by its `From <sha>` line, whatever its name.
   const patches: string[] = [];
   for (const file of outputs) {
     if (file === diffFile || !file.toLowerCase().endsWith(".patch")) continue;
     if (patchCommit(await readFile(file, "utf8")) !== null) patches.push(file);
-    else reasons.push(`${path.basename(file)} came back but is not a format-patch file, so the review cannot account for it`);
+    else {
+      const name = JSON.stringify(result.outputNames[file] ?? path.basename(file));
+      reasons.push(`${name} (saved as ${path.basename(file)}) came back but is not a format-patch file, so the review cannot account for it`);
+    }
   }
 
   const verify = result.verify;

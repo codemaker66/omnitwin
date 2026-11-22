@@ -1,4 +1,5 @@
 import type { BetaManagedAgentsEventParams } from "@anthropic-ai/sdk/resources/beta/sessions/events";
+import { writeCapped } from "../sandbox/outputs.js";
 import type { SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
 import type {
   AgentRef,
@@ -54,6 +55,10 @@ export class FakeApi implements SandboxApi {
   listCalls = 0;
   /** Sessions already in the list before this run's create, such as an earlier run of the same task. */
   earlierSessions: SessionListing[] = [];
+  /** Sizes the Files API lists, by output name, where they differ from the text's own. */
+  listedSizes: Record<string, number> = {};
+  /** The outputs downloadFile was asked for, by name. */
+  readonly downloads: string[] = [];
   /** Streams opened: one per connection. */
   opened = 0;
   failArchive = false;
@@ -177,10 +182,20 @@ export class FakeApi implements SandboxApi {
   };
   listOutputFiles = (): Promise<OutputFile[]> => {
     if (this.failOutputs) return Promise.reject(new Error("files API down"));
-    return Promise.resolve(Object.entries(this.files).map(([filename, text], index) => ({ id: `out_${String(index)}`, filename, sizeBytes: text?.length ?? 0 })));
+    return Promise.resolve(
+      Object.entries(this.files).map(([filename, text], index) => ({
+        id: `out_${String(index)}`,
+        filename,
+        sizeBytes: this.listedSizes[filename] ?? Buffer.byteLength(text ?? "", "utf8"),
+      })),
+    );
   };
-  downloadFile = (id: string): Promise<Buffer | null> => {
-    const text = Object.values(this.files)[Number(id.slice("out_".length))];
-    return Promise.resolve(text === null || text === undefined ? null : Buffer.from(text, "utf8"));
+  downloadFile = async (id: string, destination: string, maxBytes: number): Promise<"saved" | "not-downloadable"> => {
+    const filename = Object.keys(this.files)[Number(id.slice("out_".length))] ?? "";
+    this.downloads.push(filename);
+    const text = this.files[filename];
+    if (text === null || text === undefined) return "not-downloadable";
+    await writeCapped([Buffer.from(text, "utf8")], destination, maxBytes);
+    return "saved";
   };
 }
