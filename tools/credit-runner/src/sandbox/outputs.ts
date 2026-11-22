@@ -70,7 +70,8 @@ function compareText(a: string, b: string): number {
  * Decides, from the listing alone, what to download and under what names.
  * Nothing is fetched. The format-patch files are taken in the order of their
  * base names, the order format-patch numbers a series in, whatever folder the
- * listing puts each in.
+ * listing puts each in. Two with the same base name are both refused, as two
+ * diff.patch files are.
  */
 export function planOutputs(files: readonly OutputFile[], caps: OutputCaps = OUTPUT_CAPS): OutputPlan {
   const refused: string[] = [];
@@ -103,11 +104,15 @@ export function planOutputs(files: readonly OutputFile[], caps: OutputCaps = OUT
     if (found.length > 1) refused.push(`${String(found.length)} files named ${name} came back; none was downloaded`);
     return found.length === 1 ? [...found] : [];
   };
+  // Two format-patch files with one base name, from two folders, would be read as two steps of one series.
+  const byBase = new Map<string, OutputFile[]>();
+  for (const file of patches) byBase.set(baseOf(file), [...(byBase.get(baseOf(file)) ?? []), file]);
+  const series = [...byBase].flatMap(([base, found]) => single(found, base));
 
   // By base name, then by the whole name so the order never depends on the listing's.
   const bySeries = (a: OutputFile, b: OutputFile): number => compareText(baseOf(a), baseOf(b)) || compareText(a.filename, b.filename);
   const wanted = [
-    ...[...patches].sort(bySeries).map((file, index) => ({ file, localName: `patch-${String(index + 1).padStart(4, "0")}.patch` })),
+    ...series.sort(bySeries).map((file, index) => ({ file, localName: `patch-${String(index + 1).padStart(4, "0")}.patch` })),
     ...single(diffs, "diff.patch").map((file) => ({ file, localName: "diff.patch" })),
     ...single(preconditions, "precondition.json").map((file) => ({ file, localName: "precondition.json" })),
   ];

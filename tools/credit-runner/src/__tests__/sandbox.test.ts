@@ -2140,6 +2140,10 @@ describe("sandbox brief", () => {
     expect(capped.refused).toEqual([`"0005-x.patch" would take the run's downloads past ${String(MAX_OUTPUTS_TOTAL_BYTES)} bytes; not downloaded`]);
     // Two diffs: neither is taken.
     expect(planOutputs([file("diff.patch"), file("logs/diff.patch")]).refused).toEqual(["2 files named diff.patch came back; none was downloaded"]);
+    // Two format-patch files with one base name, in different folders: neither is taken either, never two steps of one series.
+    const twice = planOutputs([file("a/0001-x.patch"), file("b/0001-x.patch"), file("0002-y.patch")]);
+    expect(twice.refused).toEqual(["2 files named 0001-x.patch came back; none was downloaded"]);
+    expect(twice.downloads.map((entry) => [entry.file.filename, entry.localName])).toEqual([["0002-y.patch", "patch-0001.patch"]]);
 
     // precondition.json comes back under its own name, after the patches; one only.
     expect(planOutputs([file("precondition.json"), file("report.md"), file("0001-fix.patch")]).downloads.map((entry) => entry.localName)).toEqual([
