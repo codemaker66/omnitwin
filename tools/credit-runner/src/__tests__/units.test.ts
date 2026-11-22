@@ -1,14 +1,30 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { expandHome } from "../config.js";
 import { FrontmatterError, parseFrontmatter } from "../frontmatter.js";
 import { gitCommandName, gitResult, protectedPathViolations } from "../git.js";
 import { ledgerHasSession } from "../sandbox/credit-ledger.js";
 import { keyFileExposure, readKey, unexpectedPrincipals } from "../keys.js";
 import { AGENT_EFFORT, AGENT_MODEL, MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
+
+// Every spawn still runs; the spy only records how gitResult opened each child's stdin.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, spawn: vi.fn(actual.spawn) };
+});
+
+/** The stdin each spawn since the spy was last cleared was given, in call order. */
+function stdinModes(): unknown[] {
+  return vi.mocked(spawn).mock.calls.map((call) => {
+    const options: unknown = call[2];
+    if (typeof options !== "object" || options === null || !("stdio" in options) || !Array.isArray(options.stdio)) return undefined;
+    const stdin: unknown = options.stdio[0];
+    return stdin;
+  });
+}
 
 describe("parseFrontmatter", () => {
   it("reads scalars, quoted strings, both list forms and the body", () => {
@@ -204,9 +220,24 @@ describe("gitResult", () => {
       expect(unknown.code).not.toBe(0);
       expect(unknown.code).not.toBeNull();
       expect(unknown.stderr).toContain("no-such-subcommand");
-      // Input that git does read arrives whole; with no input, git reads an empty stdin at once.
+      // Input that git does read arrives whole. Without input, git gets no stdin to read: a
+      // command that reads stdin to its end answers at once, far inside the 2-minute limit
+      // that would stop it if it were left waiting on an open pipe.
+      vi.mocked(spawn).mockClear();
       expect((await gitResult(tmpdir(), ["hash-object", "--stdin"], Buffer.from("hello\n"))).stdout.trim()).toBe("ce013625030ba8dba906f756967f9e9ca394464a");
-      expect((await gitResult(tmpdir(), ["hash-object", "--stdin"])).stdout.trim()).toBe("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
+      let limit: NodeJS.Timeout | undefined;
+      const answer = await Promise.race([
+        gitResult(tmpdir(), ["hash-object", "--stdin"]),
+        new Promise<"still waiting">((resolve) => {
+          limit = setTimeout(() => {
+            resolve("still waiting");
+          }, 20_000);
+        }),
+      ]);
+      clearTimeout(limit);
+      expect(answer === "still waiting" ? answer : answer.stdout.trim()).toBe("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
+      // A pipe ended at once would answer the same, so the spawn itself shows that none was opened.
+      expect(stdinModes()).toEqual(["pipe", "ignore"]);
       // A stream error is reported after the process closes, so give it time to surface.
       await new Promise((resolve) => setTimeout(resolve, 200));
     } finally {
