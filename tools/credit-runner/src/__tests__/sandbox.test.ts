@@ -33,7 +33,7 @@ import {
 } from "../sandbox/api.js";
 import { outcomeFor, promptSha, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "../sandbox/credit-ledger.js";
-import { collectSandboxJob, inlineCode, runSandboxJob, type JobOptions, type JobRecord, type LauncherConfig } from "../sandbox/launcher.js";
+import { collectSandboxJob, inlineCode, reviewMarkdown, runSandboxJob, type JobOptions, type JobRecord, type LauncherConfig } from "../sandbox/launcher.js";
 import {
   isWindowsDeviceName,
   MAX_OUTPUT_BYTES,
@@ -45,8 +45,8 @@ import {
   writeCapped,
 } from "../sandbox/outputs.js";
 import { unquoteGitPath } from "../sandbox/patches.js";
-import { ADVISORY_FLAG } from "../sandbox/review.js";
-import { centsString, invokesVerifier, parseVerifyOutput, runSession, SessionMayExistError } from "../sandbox/session.js";
+import { ADVISORY_FLAG, type Review } from "../sandbox/review.js";
+import { centsString, invokesVerifier, parseVerifyOutput, runSession, SessionMayExistError, type SessionRunResult } from "../sandbox/session.js";
 import { ensureSandbox } from "../sandbox/setup.js";
 import { MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
 import { FakeApi, PROJECT_RULES } from "./fake-api.js";
@@ -549,7 +549,23 @@ describe("sandbox launcher", () => {
     const quoted = (plain.patches[name] ?? "").replaceAll("a/docs/ab.md", '"a/docs/a\\tb.md"').replaceAll("b/docs/ab.md", '"b/docs/a\\tb.md"');
     const record = await reviewOf(plain, { outputs: outputsOf(plain, { [name]: quoted }) });
     expect(record.review.verdict).toBe("rejected");
-    expect(record.review.reasons).toContain('a path holds a control character: "docs/a\\tb.md"');
+    expect(record.review.reasons).toContain("a path holds a control, invisible or reordering character, each shown here as <U+code>: docs/a<U+0009>b.md");
+  });
+
+  it("rejects a path holding a character that is invisible, breaks a line or reorders the text, and names the path without it", async () => {
+    // A C1 control, the line and paragraph separators, bidi controls (an override can make a
+    // .js file read as .md in a file list), zero-width and tag characters, and a byte-order mark.
+    const hidden = [0x85, 0x2028, 0x2029, 0x202e, 0x2066, 0x200e, 0x061c, 0x200b, 0x2060, 0xe0049, 0xfeff].map((code) => String.fromCodePoint(code));
+    const codeOf = (char: string): string => `U+${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`;
+    const plain = await fixture([{ ...FIX, write: { ...FIX.write, ...Object.fromEntries(hidden.map((_, index) => [`docs/a${String(index)}b.md`, "notes\n"])) } }]);
+    const name = Object.keys(plain.patches)[0] ?? "";
+    // Written into the patch as git would write them unquoted: no such file is made on disk.
+    const patch = hidden.reduce((text, char, index) => text.replaceAll(`docs/a${String(index)}b.md`, `docs/a${char}b.md`), plain.patches[name] ?? "");
+    const record = await reviewOf(plain, { outputs: outputsOf(plain, { [name]: patch }) });
+    expect(record.review.verdict).toBe("rejected");
+    const reason = record.review.reasons.find((entry) => entry.startsWith("a path holds a control, invisible or reordering character")) ?? "";
+    for (const char of hidden) expect(reason, codeOf(char)).toContain(`docs/a<${codeOf(char)}>b.md`);
+    for (const char of hidden) expect(record.review.reasons.join(" "), codeOf(char)).not.toContain(char);
   });
 
   it("rejects a hand-written patch whose summary names a file its numstat does not", async () => {
@@ -798,6 +814,45 @@ describe("sandbox launcher", () => {
     for (const breaker of breakers) expect(text).not.toContain(breaker);
     expect(lines.filter((line) => line.startsWith("## READY"))).toEqual([]);
     expect(lines[0]).toMatch(/^# REJECTED/u);
+  });
+
+  it("keeps the lines of the verifier's tail and the grader's explanation, but no control, invisible or reordering character, in review.md's fenced blocks", () => {
+    const hidden = [0x85, 0x2028, 0x2029, 0x202e, 0x2066, 0x2069, 0x200e, 0x200f, 0x061c, 0x200b, 0x2060, 0xe0049, 0xfeff, 0x1b, 0x09].map((code) => String.fromCodePoint(code));
+    const text = `first ${hidden.join("x")} line\r\nsecond${String.fromCodePoint(0x202e)}line\n\n  indented${String.fromCodePoint(0x2069)}\n`;
+    const result: SessionRunResult = {
+      sessionId: "sesn_1",
+      status: "idle",
+      stopped: true,
+      archived: false,
+      runningAfterFinish: false,
+      stopInterrupted: false,
+      stopReason: "end_turn",
+      timedOut: false,
+      listCostUsd: 2.87,
+      activeSeconds: 60,
+      requests: 2,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      verify: { ok: true, head: happy.head, problems: [], commits: null, flags: [], baseTail: text },
+      verifyRuns: 1,
+      outcome: { result: "satisfied", explanation: text, iteration: 0 },
+      errors: [],
+      deniedAsks: 0,
+      outputs: [],
+      outputNames: {},
+      refusedOutputs: [],
+      leftOutputs: [],
+    };
+    const review: Review = { verdict: "rejected", reasons: [], flags: [], changed: [], patches: [], diffFile: null };
+    const markdown = reviewMarkdown(task, { kind: "ran", taskId: task.id, runDir: "run", branch: "credit/robots-wildcards", baseSha: BASE, costUsd: 2.87, costKnown: true, result, review });
+    const blocks = markdown.split("\n```\n").filter((_, index) => index % 2 === 1);
+    expect(blocks).toHaveLength(2);
+    for (const block of blocks) {
+      expect(block.split("\n")).toEqual([`first ${hidden.map(() => " ").join("x")} line`, "second line", "", "  indented"]);
+    }
+    for (const char of hidden) expect(markdown, char.codePointAt(0)?.toString(16)).not.toContain(char);
   });
 
   it("puts every agent-derived string in review.md in a code span, so none renders as a tag, a link, an image or a comment", async () => {

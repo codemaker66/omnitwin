@@ -186,10 +186,29 @@ export function inlineCode(text: string): string {
   return `${fence}${pad}${line}${pad}${fence}`;
 }
 
-/** Text that may come from the agent, quoted as a block: fenced with more backticks than it holds, so it cannot close the fence. */
+/**
+ * What fenced() makes a space: controls (C0, DEL and C1), the line and
+ * paragraph separators, and format characters (Unicode category Cf: the
+ * bidirectional marks, embeddings, overrides and isolates, zero-width and tag
+ * characters). These are isLineBreaking's characters and the invisible ones.
+ */
+const HIDDEN_IN_BLOCK = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
+
+/**
+ * Text that may come from the agent, quoted as a block: line by line, with each
+ * HIDDEN_IN_BLOCK character made a space (the newlines between lines kept, a
+ * carriage return dropped at a line's end), so nothing in the block is
+ * invisible or reorders the text around it; fenced with more backticks than
+ * it holds, so it cannot close the fence.
+ */
 function fenced(text: string): string[] {
-  const fence = "`".repeat(Math.max(3, longestBacktickRun(text) + 1));
-  return [fence, text.trimEnd(), fence];
+  const body = text
+    .split("\n")
+    .map((line) => line.replace(HIDDEN_IN_BLOCK, " ").trimEnd())
+    .join("\n")
+    .trimEnd();
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(body) + 1));
+  return [fence, body, fence];
 }
 
 /**

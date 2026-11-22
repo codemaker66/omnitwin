@@ -137,8 +137,19 @@ function stoppedAt(command: string): string {
   return `${command} ran past its ${String(GIT_TIMEOUT_MS / 60_000)}-minute limit and was stopped`;
 }
 
-function hasControlCharacter(name: string): boolean {
-  return Array.from(name).some((char) => (char.codePointAt(0) ?? 0) < 0x20 || char === "\u007f");
+/**
+ * Characters refused in a path, though git takes them: controls (C0, DEL and
+ * C1), the line and paragraph separators, and format characters (Unicode
+ * category Cf: the bidirectional marks, embeddings, overrides and isolates,
+ * zero-width characters and the tag characters). Each breaks a line, is
+ * invisible, or reorders the text around it, so a file list would show the name
+ * as something else: a right-to-left override can make a .js file read as .md.
+ */
+const HIDDEN_IN_PATH = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+
+/** A path with each HIDDEN_IN_PATH character written as <U+XXXX>, so a reason can name it without carrying it. */
+function shownPath(name: string): string {
+  return name.replace(new RegExp(HIDDEN_IN_PATH.source, "gu"), (char) => `<U+${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}>`);
 }
 
 /** One path of `git diff --raw`: its status letter and its blob before and after (all zeros where it is absent). */
@@ -320,9 +331,9 @@ export async function inspectPatches(
         const oldNames = new Set(reversed.map((entry) => entry.name));
         const touched = [...new Set([...newNames, ...oldNames])];
         for (const name of touched) texts.push(name);
-        const control = touched.filter(hasControlCharacter);
-        if (control.length > 0) {
-          problems.push(`a path holds a control character: ${control.map((name) => JSON.stringify(name)).join(", ")}`);
+        const hidden = touched.filter((name) => HIDDEN_IN_PATH.test(name));
+        if (hidden.length > 0) {
+          problems.push(`a path holds a control, invisible or reordering character, each shown here as <U+code>: ${hidden.map(shownPath).join(", ")}`);
           return { ...emptyInspection(commits, problems, texts), touched };
         }
 
