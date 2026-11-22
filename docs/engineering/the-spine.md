@@ -41,9 +41,9 @@ What the database holds already:
 
 | Writer | From | What it writes |
 | --- | --- | --- |
-| The bind (`services/event-binding.ts`) | this pull request | a booking bound through its enquiry keeps the enquiry's link in step with the event it joined (not for a draft, or an enquiry that asks to book nothing) |
+| The bind (`services/event-binding.ts`) | this pull request | a booking bound through its enquiry keeps the enquiry's link in step with the event it joined (not for a draft, or an enquiry that asks to book nothing); and when a person moves the enquiry's last live booking in its linked event to another event, the link moves with it (`followBookingToEvent`) |
 | The deposit route (`routes/deposits.ts`, see [deposits](deposits-and-signatures.md)) | this pull request | a new request takes the event its proposal holds, read under the proposal's lock, or none when the proposal has none yet; the join then fills both together |
-| The join of old records, `spine_join_old_records()` | this pull request | every link it can settle (below), every night and when run by hand |
+| The join of old records, `spine_join_old_records()` | this pull request | every link it can settle (below), every night, and by hand when asked to join |
 | The undo, `spine_undo_joins()` | this pull request | empties what the join wrote; by hand only |
 | Enquiries, deals and proposals (their routes) | the next pull request | each keeps its own link as it is made or moved |
 
@@ -54,8 +54,10 @@ next run.
 ## The join of old records
 
 `spine_join_old_records()` returns `(joined, events_made, listed)`. The migration
-calls it once; the nightly run, and any run by hand, calls it again. Run twice, the second run
-changes nothing. It is the only writer of `event_link_joins`, the record of every
+calls it once; the nightly run, and a run by hand asked to join, calls it again. Run
+twice, the second run changes nothing, unless a chain of records needed more than the
+four rounds one run makes (below): the next run finishes it. It is the only writer
+of `event_link_joins`, the record of every
 join it made (what makes it undoable). Its steps:
 
 0. An open question whose record has its event by now (a writer gave it one) is
@@ -80,9 +82,13 @@ Steps 1 to 3 repeat while a round joins anything, **in up to four rounds**, so a
 enquiry is settled from all of its deals and proposals together and the result
 never depends on reading order. A made event is named by the enquiry, deal or
 proposal it was made for (never an email; `Event` when blank), with its occasion cut
-to 80 characters.
+to 80 characters. **An event the join makes for an enquiry is named by the person's
+name alone** (not "name — occasion", as the API will name one), and keeps that name
+when its first date is held from the enquiry; staff can rename it. The join trims an
+occasion and turns a blank one into none before cutting it; the bind only cuts it.
 
-**Locks.** No table lock, and it never waits for a row lock. Each record is decided
+**Locks.** No table lock, and every row lock it asks for is `SKIP LOCKED`, so it
+never waits for one of those. Each record is decided
 on a plain read, then the rows it will write are locked `FOR NO KEY UPDATE SKIP
 LOCKED` in the writers' order and decided again; an event it joins is taken `FOR KEY
 SHARE SKIP LOCKED`. **A row it cannot have at once, or that changed, is left to the
@@ -98,7 +104,10 @@ and reason (`reaches_many_events`, `paths_disagree`, `second_open_deal`), with
 counts and kinds in its text, never a name. October's two kinds of question
 (`enquiry_events_differ`, `possibly_same_event`) were copied in without their text
 and carry the id of the row they came from. A listed record is never touched by the
-join, and a deal or proposal whose enquiry is listed waits with it.
+join, and a deal or proposal whose enquiry is listed waits with it. A proposal can
+also wait, unlisted, on a listed sibling: one that would have an event made for it
+and its enquiry together waits while another proposal of the same enquiry, with no
+event, reaches an event or would be listed because its plan reaches several.
 
 ## The count
 
@@ -127,7 +136,9 @@ later piece owns that; until then it is repaired by hand.
 
 A listed record that must have an event is counted; one that need not (an unworked
 enquiry whose floor plan reaches several events, say), and October's copies, are
-not. **So the count is expected to be above zero while a question is open on the
+not. A proposal waiting, unlisted, on a listed sibling (above) is counted too, while
+it must have an event: it is why a red count can name more records than the list.
+**So the count is expected to be above zero while a question is open on the
 list**; the list is worked in a later stage (October's copies wait for stage 4).
 `spineInvariantHolds` is true when all nine are zero.
 
@@ -163,8 +174,15 @@ error's message is printed: the workflow log is public.
 **Every night, and by hand.** The Event rules workflow
 ([`event-rules.yml`](../../.github/workflows/event-rules.yml), "Event rules (reports
 only; blocks nothing)") runs the command with `--join` once a night, and whenever
-someone runs it from the Actions page: right after a release, say. Run by hand, its
-`join` input set to false reads without writing.
+someone runs it from the Actions page: right after a release, say. **Run it from
+master**: the job runs only on master's code, so a run started from another branch
+does nothing. **By hand it reads only, unless its `join` box is ticked** (the input
+defaults to false); the schedule joins every night whatever that default. A join by
+hand against production is the founder's call.
+
+The approved design planned a run after each release as well. It is not built:
+Railway makes the release on its own clock, so a job in the deploy workflow could
+not run after it.
 
 - It names no environment, so no approval holds it. It reads the repository's
   `DATABASE_URL` secret, scoped to the one step that runs the command.
@@ -192,6 +210,24 @@ reads.
 - New code takes an event only `FOR NO KEY UPDATE` (every row written onto an event
   holds `FOR KEY SHARE` on it, which `FOR UPDATE` would wait for).
 - No table locks.
+
+## What a later migration must keep
+
+The join and the undo are functions in the database, frozen as the spine's migration
+wrote them, and the nightly run keeps calling the join. A later migration must keep
+these four points, or replace the function in the same file:
+
+- **No new `NOT NULL` column without a default on `events` or `event_phases`** while
+  the join is still called: its inserts name their columns and are frozen.
+- **No wholesale write to `events.updated_at` or `event_phases.updated_at`.** The undo
+  keeps every made event whose `updated_at` is no longer its `created_at`, so a
+  backfill that stamps every row would make the undo leave them all alone.
+- **A second key to `events` on enquiries, deals, proposals or deposit requests**
+  must replace `spine_undo_joins()` in the same file: it excludes recorded records by
+  table, not by column.
+- **A new deal stage, proposal status, enquiry state or request type that books
+  nothing** must replace `spine_join_old_records()` in the same file: its four lists
+  are written into it, not read from the definition in `@omnitwin/types`.
 
 ## Repairs by hand
 
@@ -229,8 +265,11 @@ a deploy when the migrations ledger is not an exact prefix of the image's journa
 (more rows than the journal has, or a timestamp out of place), and when a pending
 migration would create a table that already exists. So this order holds only while
 the spine's migration is the newest one applied; once a later migration has been
-applied on top of it, removing its row breaks the prefix, and the rollback is a new
-piece of work (or the backup branch).
+applied on top of it, removing its row breaks the prefix, and the way back is
+forward. Stop the joins (step 1), run the undo (step 2), then take the spine's code
+out by a new commit that keeps the migration file and its journal entry. The columns
+stay, empty and nullable; the older writers ignore them. (The backup branch remains
+the last resort.)
 
 1. **Stop the joins.** Disable the Event rules workflow (Actions → Event rules →
    Disable workflow; it stops nothing else), or remove `--join` from it. Otherwise
@@ -238,12 +277,18 @@ piece of work (or the backup branch).
 2. **Undo the joins, bounded:**
 
    ```sql
-   BEGIN;
+   BEGIN ISOLATION LEVEL READ COMMITTED;
    SET LOCAL lock_timeout = '5s';
    SET LOCAL statement_timeout = '120s';
    SELECT * FROM spine_undo_joins();
    COMMIT;
    ```
+
+   `READ COMMITTED` is stated because the undo decides again under its locks, which
+   needs a fresh snapshot for each statement (under `REPEATABLE READ` it could raise
+   instead of leaving a row for its next call). An event the undo removes while a
+   writer is attaching a row to it (a plan link, say) makes that writer's request
+   fail on the key, which is why it runs at a quiet moment.
 
    It returns `(emptied, events_removed, left_alone)`. It empties each link that
    still holds the event the join gave it, removes an event the join made only when
@@ -263,8 +308,10 @@ piece of work (or the backup branch).
    migration, by design: a person worked on them.
 3. **Delete the spine's row from the migrations ledger:**
    `DELETE FROM drizzle.__drizzle_migrations WHERE created_at = <the journal's when for the *_event_spine_links tag>;`
-   The running server reads nothing from the ledger; it is read only when a
-   release is deployed. Before this step a release from before the spine is refused
+   The running server reads the ledger on every `/health/ready`, so between this
+   step and step 4 it answers 503 there (`MIGRATIONS_PENDING`). Railway reads that
+   path only when it deploys, so nothing restarts, but an outside monitor on it will
+   alarm: that is expected. Before this step a release from before the spine is refused
    by the gate, because the ledger holds more migrations than its journal.
 4. **Revert the spine's merge on master** (or deploy the commit before it) and
    wait until that release is live. While the ledger row is gone and the objects
