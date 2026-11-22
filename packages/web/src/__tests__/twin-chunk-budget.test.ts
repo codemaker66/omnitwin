@@ -48,6 +48,31 @@ const ENQUIRY_CHUNK_BUDGET_GZIP_BYTES = 2_560;
 const SET_DOWN_WORKER_CHUNK = /^set-down\.worker-[\w-]{8}\.js$/u;
 const SET_DOWN_CHUNK_BUDGET_GZIP_BYTES = 25 * 1024;
 
+/**
+ * The chunks a built chunk imports statically, in every form Rollup writes:
+ * bare (`import"./a.js"`), named, namespace, a default with named or a
+ * namespace (`import a,{b}from"./b.js"`), and re-exports (`export{c}from`,
+ * `export*from`). A dynamic `import("./x.js")` loads later, and is not one.
+ */
+const STATIC_CHUNK_IMPORT = /\b(?:import\s*(?:(?:[\w$]+\s*,\s*)?(?:\{[^}]*\}|\*\s*as\s*[\w$]+|[\w$]+)\s*from\s*)?|export\s*(?:\*(?:\s*as\s*[\w$]+)?|\{[^}]*\})\s*from\s*)["']\.\/([^"']+\.js)["']/g;
+
+function staticChunkImports(source: string): string[] {
+  return [...source.matchAll(STATIC_CHUNK_IMPORT)].flatMap((match) => (match[1] === undefined ? [] : [match[1]]));
+}
+
+/** Every chunk `roots` reach by static imports, themselves included. */
+async function staticChunkClosure(roots: readonly string[]): Promise<Set<string>> {
+  const reached = new Set<string>();
+  const pending = [...roots];
+  while (pending.length > 0) {
+    const chunk = pending.pop();
+    if (chunk === undefined || reached.has(chunk)) continue;
+    reached.add(chunk);
+    pending.push(...staticChunkImports(await readFile(resolve(ASSETS_DIR, chunk), "utf-8")));
+  }
+  return reached;
+}
+
 function jsChunks(prefix: string): string[] {
   return readdirSync(ASSETS_DIR).filter(
     (name) => name.startsWith(`${prefix}-`) && name.endsWith(".js"),
@@ -94,6 +119,26 @@ describe("twin fixture bundle", () => {
   });
 });
 
+describe("the built-chunk walk", () => {
+  it("follows every static form Rollup writes, and no dynamic import", () => {
+    const source = [
+      `import"./bare.js";`,
+      `import{a as b}from"./named.js";`,
+      `import*as c from"./namespace.js";`,
+      `import d,{e}from"./default-and-named.js";`,
+      `import f,*as g from"./default-and-namespace.js";`,
+      `import h from "./default.js";`,
+      `export{i}from"./reexport.js";`,
+      `export*from"./star.js";`,
+      `export*as j from"./star-as.js";`,
+      `const k=()=>import("./lazy.js");`,
+    ].join("\n");
+    expect(staticChunkImports(source)).toEqual([
+      "bare.js", "named.js", "namespace.js", "default-and-named.js", "default-and-namespace.js", "default.js", "reexport.js", "star.js", "star-as.js",
+    ]);
+  });
+});
+
 describe("twin chunk budgets", () => {
   it.skipIf(!hasTwinBuild)("keeps the twin route chunk within 250 KB gzip", async () => {
     const chunks = jsChunks("TwinPage");
@@ -125,19 +170,7 @@ describe("twin chunk budgets", () => {
     // The tour renders with a WebGL R3F canvas. Only NativeCanvas surfaces
     // should pay for three.webgpu, TSL and the splat addons.
     expect(jsChunks("three-webgpu").length).toBeGreaterThan(0);
-    const staticImport = /import\s*(?:(?:\{[^}]*\}|\*\s*as\s*[\w$]+|[\w$]+)\s*from\s*)?["']\.\/([^"']+\.js)["']/g;
-    const reached = new Set<string>();
-    const pending = [...jsChunks("TwinPage")];
-    while (pending.length > 0) {
-      const chunk = pending.pop();
-      if (chunk === undefined || reached.has(chunk)) continue;
-      reached.add(chunk);
-      const source = await readFile(resolve(ASSETS_DIR, chunk), "utf-8");
-      for (const match of source.matchAll(staticImport)) {
-        const imported = match[1];
-        if (imported !== undefined) pending.push(imported);
-      }
-    }
+    const reached = await staticChunkClosure(jsChunks("TwinPage"));
     expect([...reached].some((chunk) => chunk.startsWith("three-") && !chunk.startsWith("three-webgpu-"))).toBe(true);
     expect([...reached].filter((chunk) => chunk.startsWith("three-webgpu-"))).toEqual([]);
   });
@@ -160,20 +193,9 @@ describe("twin chunk budgets", () => {
   });
 
   it.skipIf(!hasTwinBuild)("keeps the set-down driver out of the planner's static chunks (R78)", async () => {
-    const staticImport = /import\s*(?:(?:\{[^}]*\}|\*\s*as\s*[\w$]+|[\w$]+)\s*from\s*)?["']\.\/([^"']+\.js)["']/g;
-    const reached = new Set<string>();
-    const pending = [...jsChunks("EditorPage")];
-    expect(pending.length).toBeGreaterThan(0);
-    while (pending.length > 0) {
-      const chunk = pending.pop();
-      if (chunk === undefined || reached.has(chunk)) continue;
-      reached.add(chunk);
-      const source = await readFile(resolve(ASSETS_DIR, chunk), "utf-8");
-      for (const match of source.matchAll(staticImport)) {
-        const imported = match[1];
-        if (imported !== undefined) pending.push(imported);
-      }
-    }
+    const editor = jsChunks("EditorPage");
+    expect(editor.length).toBeGreaterThan(0);
+    const reached = await staticChunkClosure(editor);
     expect([...reached].filter((chunk) => chunk.startsWith("set-down-driver-") || SET_DOWN_WORKER_CHUNK.test(chunk))).toEqual([]);
   });
 
