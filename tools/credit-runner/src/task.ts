@@ -102,15 +102,39 @@ export function parseTask(text: string, file: string): Task {
 const MAX_CAUSES = 4;
 
 /**
+ * How many characters of each message describeError keeps: room for the
+ * launcher's longest refusal (setup's list of what differs, then its remedy),
+ * not for a server's whole error body.
+ */
+const MAX_MESSAGE_CHARS = 2000;
+
+/**
+ * `text` on one line for a terminal: line breaks and tabs become spaces, every
+ * other control character (C0, DEL and C1, so no escape sequence) is left out,
+ * and past MAX_MESSAGE_CHARS it is cut, never inside a surrogate pair, and
+ * marked "...". A server's text can reach a message (an error answer's body).
+ */
+function terminalLine(text: string): string {
+  const line = text
+    .replace(/\s*\r?\n\s*/gu, " ")
+    .replace(/[\t\v\f\r]/gu, " ")
+    .replace(/\p{Cc}/gu, "")
+    .trim();
+  if (line.length <= MAX_MESSAGE_CHARS) return line;
+  const cut = line.slice(0, MAX_MESSAGE_CHARS);
+  return `${/[\uD800-\uDBFF]$/u.test(cut) ? cut.slice(0, -1) : cut}...`;
+}
+
+/**
  * One line for the CLI: the error's message, then its cause chain (the SDK's
  * "Connection error." keeps the real reason in its cause), each message once,
- * at most MAX_CAUSES deep.
+ * at most MAX_CAUSES deep, each through terminalLine.
  */
 export function describeError(error: unknown): string {
   if (error instanceof z.ZodError) {
-    return error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
+    return error.issues.map((issue) => terminalLine(`${issue.path.join(".") || "(root)"}: ${issue.message}`)).join("; ");
   }
-  const messageOf = (value: unknown): string => (value instanceof Error ? value.message : String(value)).replace(/\s*\r?\n\s*/gu, " ").trim();
+  const messageOf = (value: unknown): string => terminalLine(value instanceof Error ? value.message : String(value));
   const first = messageOf(error);
   const causes: string[] = [];
   const seen = new Set<unknown>([error]);

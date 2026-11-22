@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { isWorkspaceKey, keyFileExposure, readKey } from "../keys.js";
 import { ANTHROPIC_API_URL, keyOnlyToAnthropic, sdkSandboxApi, type SandboxApi } from "../sandbox/api.js";
 import { main } from "../sandbox/cli.js";
@@ -280,6 +281,36 @@ describe("redirects off api.anthropic.com", () => {
     expect(await (await guard(`${ANTHROPIC_API_URL}/v1/files/file_2/content`, get)).text()).toBe("from storage");
     expect(seen).toEqual([`${ANTHROPIC_API_URL}/v1/files/file_2/content`, `${ANTHROPIC_API_URL}/v1/elsewhere`, STORAGE]);
   });
+
+  it("pass on a last answer that is not 2xx as its status alone, its body cancelled, so no large or escape-laden body reaches an error", async () => {
+    const dir = await tempDir("credit-runner-redirect-");
+    // Two million characters from the storage host, ANSI escapes included, in one finite body.
+    const big = `\u001b[31mSTORAGE-SAYS\u001b[0m ${"z".repeat(2_000_000)}`;
+    let cancels = 0;
+    const wire = seam((url) => {
+      if (url.origin === ANTHROPIC_API_URL) return redirect(302, STORAGE);
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(big));
+          controller.close();
+        },
+        cancel() {
+          cancels += 1;
+        },
+      });
+      return new Response(body, { status: 403, headers: { "content-type": "text/plain" } });
+    });
+    const error: unknown = await sdkSandboxApi(KEY, wire.fetch, {})
+      .downloadFile("file_1", path.join(dir, "patch-0001.patch"), 1000)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Anthropic.PermissionDeniedError);
+    for (const text of [error instanceof Error ? error.message : "", describeError(error)]) {
+      expect(text).toBe("403 status code (no body)");
+    }
+    expect(cancels).toBe(1);
+    expect(wire.seen.map((request) => request.url.origin)).toEqual([ANTHROPIC_API_URL, new URL(STORAGE).origin]);
+    expect(await readdir(dir)).toEqual([]);
+  });
 });
 
 describe("a refused request", () => {
@@ -352,6 +383,23 @@ describe("describeError", () => {
     const other = new Error("b", { cause: looping });
     looping.cause = other;
     expect(describeError(looping)).toBe("a (caused by: b)");
+  });
+
+  it("leaves out control characters and cuts each message at 2,000 characters, so no server's text can fill or drive the terminal", () => {
+    const body = `\u001b[31mSTORAGE-SAYS\u001b[0m ${"z".repeat(2_000_000)}`;
+    const cause = `\u009b2J\u0007bell\ttab\u007fdel ${"y".repeat(10_000)}`;
+    const text = describeError(new Error(`403 ${body}`, { cause: new Error(cause) }));
+    expect(text).not.toMatch(/\p{Cc}/u);
+    const [first = "", second = ""] = text.split(" (caused by: ");
+    expect(first).toBe(`403 [31mSTORAGE-SAYS[0m ${"z".repeat(2000 - "403 [31mSTORAGE-SAYS[0m ".length)}...`);
+    expect(second).toBe(`2Jbell tabdel ${"y".repeat(2000 - "2Jbell tabdel ".length)}...)`);
+    // A message at the limit is left whole; a character pair is never cut in two.
+    expect(describeError(new Error("x".repeat(2000)))).toBe("x".repeat(2000));
+    expect(describeError(new Error(`${"x".repeat(1999)}\u{1F600}y`))).toBe(`${"x".repeat(1999)}...`);
+    // A validation error's issues get the same treatment: a spec's own key names reach them.
+    const parsed = z.object({}).strict().safeParse({ "\u001b[2Jodd": 1 });
+    expect(describeError(parsed.error)).toMatch(/^\(root\): .*\[2Jodd/u);
+    expect(describeError(parsed.error)).not.toMatch(/\p{Cc}/u);
   });
 });
 

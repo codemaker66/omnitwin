@@ -244,6 +244,18 @@ function refuseMalformedKey(apiKey: string): void {
   }
 }
 
+/**
+ * A download's answer from a host other than ANTHROPIC_API_URL that is not
+ * 2xx, reduced to its status: the SDK reads an error answer's whole body, with
+ * no limit, into the error's message, which the CLI prints. The body is
+ * cancelled, not awaited (a cancel need not settle), and no header is kept, so
+ * the SDK decides any retry by the status alone, as an APIError without a body.
+ */
+function statusOnly(response: Response): Response {
+  void response.body?.cancel().catch(() => undefined);
+  return new Response(null, { status: response.status });
+}
+
 function urlOf(input: string | URL | Request): string {
   return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 }
@@ -277,7 +289,9 @@ function forwardedHeaders(apiKey: string, built: Headers): Headers {
  * 301, 302 or 303 of it, or a redirect off the origin, is refused. A target
  * that is not https, or a Location that cannot be read, is never followed. At
  * most five redirects. Every refusal is a KeyGuardRefusal. A key that is not
- * of the workspace shape is refused before the guard is made.
+ * of the workspace shape is refused before the guard is made. Once a download
+ * has left ANTHROPIC_API_URL, a last answer that is not 2xx is passed on as its
+ * status alone (statusOnly).
  */
 export function keyOnlyToAnthropic(apiKey: string, next: Fetch = globalThis.fetch): Fetch {
   refuseMalformedKey(apiKey);
@@ -287,10 +301,12 @@ export function keyOnlyToAnthropic(apiKey: string, next: Fetch = globalThis.fetc
     const method = (init?.method ?? "GET").toUpperCase();
     const headers = forwardedHeaders(apiKey, new Headers(init?.headers));
     const download = (method === "GET" || method === "HEAD") && FILE_CONTENT_PATH.test(url.pathname);
+    // Set once a download has been led off ANTHROPIC_API_URL: every later answer is from a host the key never reached.
+    let leftAnthropic = false;
     for (let hops = 0; ; hops += 1) {
       const response = await next(url.href, { ...init, method, headers, redirect: "manual" });
       const location = response.headers.get("location");
-      if (![301, 302, 303, 307, 308].includes(response.status) || location === null) return response;
+      if (![301, 302, 303, 307, 308].includes(response.status) || location === null) return leftAnthropic && !response.ok ? statusOnly(response) : response;
       await response.body?.cancel();
       if (hops === MAX_REDIRECTS) throw new KeyGuardRefusal(`more than ${String(MAX_REDIRECTS)} redirects from ${ANTHROPIC_API_URL}`);
       // A Location that cannot be parsed is refused here: a TypeError from fetch would be retried as a connection failure.
@@ -308,6 +324,7 @@ export function keyOnlyToAnthropic(apiKey: string, next: Fetch = globalThis.fetc
       } else if (target.origin !== url.origin || target.origin !== ANTHROPIC_API_URL) {
         if (!download) throw new KeyGuardRefusal(`refusing to follow a ${method} redirect to another host: only a file download may leave ${ANTHROPIC_API_URL}`);
         headers.delete("x-api-key");
+        leftAnthropic = true;
       }
       url = target;
     }
