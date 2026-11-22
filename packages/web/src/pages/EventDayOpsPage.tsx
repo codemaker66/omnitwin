@@ -317,20 +317,28 @@ function withRowKeys(input: UpdateOpsTaskStatusInput, row: UpdateOpsTaskStatusIn
 }
 
 /** Once a press here has landed, a status queued for its task before it was
- *  pressed is an older word, whoever queued it (a press here, this page
- *  before a reload, another tab): acked, while its row still holds that
- *  press. This only saves a request: such a row's replay is refused by the
- *  server anyway, since the task no longer holds what it was pressed
- *  against. A row queued after this press was made stays. */
+ *  pressed is an older word, whoever queued it: acked, while its row still
+ *  holds that press. A press made here before it is known by its key, and a
+ *  press made here after it is never acked by it. A row from another tab,
+ *  or from this page before a reload, is judged by the device's clock: it
+ *  is acked when it was queued before this press was made. The ack is more
+ *  than a saved request: a row pressed against the very status this press
+ *  set would otherwise be written over it when it replays (review DQ7).
+ *  Limit: a backward step of the device's clock between another tab's press
+ *  and this one can make that tab's later row read as older, and ack it
+ *  unsent (review DQ2). */
 async function ackOlderQueuedPresses(presses: TaskPresses, opsTaskId: string, landed: TaskPress): Promise<void> {
   const own = presses.get(opsTaskId) ?? [];
-  const earlier = new Set(own.slice(0, Math.max(own.indexOf(landed), 0)).map((press) => press.input.idempotencyKey));
+  const at = own.indexOf(landed);
+  const keys = (made: readonly TaskPress[]): ReadonlySet<string> => new Set(made.map((press) => press.input.idempotencyKey));
+  const earlier = keys(at < 0 ? [] : own.slice(0, at));
+  const later = keys(at < 0 ? [] : own.slice(at + 1));
   const pressedAt = Date.parse(landed.pressedAt);
   const queued = await listPendingEventDayOps();
   await Promise.all(queued.flatMap((op) => {
     if (op.kind !== "task_status" || op.opsTaskId !== opsTaskId) return [];
     const key = op.input.idempotencyKey;
-    if (key === undefined) return [];
+    if (key === undefined || later.has(key)) return [];
     return earlier.has(key) || Date.parse(op.queuedAt) < pressedAt ? [ackEventDayOpIf(op.queueKey, key)] : [];
   }));
 }

@@ -1878,12 +1878,45 @@ describe("EventDayOpsPage", () => {
         await remount();
         await pressOn("Done");
         await answer(server.answerAll);
+        // Done landed after Start was queued (before the reload): Start's row
+        // is acked, so nothing is pending before Sync (review DT7).
+        await waitFor(async () => { expect(await queue.list()).toEqual([]); });
         await syncOn();
         await answer(server.answerAll);
 
+        expect(statusesSent()).toEqual(["in_progress", "done"]);
         expect(server.status()).toBe("done");
         expect(await queue.list()).toEqual([]);
         expect(shownStatus()).toBe("Done");
+      });
+
+      // DQ2 (review of d9d5eeb4): a row from another tab or an earlier mount
+      // is acked by a press that lands after it was queued, judged by the
+      // device's clock. A press made on this page after the landed one is
+      // never acked by it, whatever the clock says: here the tablet's clock
+      // steps back two minutes between Start and Done.
+      it("keeps a later press's row queued when an earlier press lands after the device's clock stepped back (DQ2)", async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-06-12T10:00:00.000Z"));
+        try {
+          const queue = await realQueue();
+          const server = fakeServer({ fateOf: (status) => (status === "done" ? "fails" : "lands") });
+          renderPage();
+          await screen.findByText("Set 12 x Round Table");
+          await pressOn("Start");
+          vi.setSystemTime(new Date("2026-06-12T09:58:00.000Z"));
+          await pressOn("Done");
+          await answer(() => { server.answerPress("done"); });
+          await answer(() => { server.answerPress("in_progress"); });
+
+          expect(await queuedStatuses(queue)).toEqual(["done"]);
+          await syncOn();
+          await answer(server.answerAll);
+          expect(server.status()).toBe("done");
+          expect(await queue.list()).toEqual([]);
+        } finally {
+          vi.useRealTimers();
+        }
       });
 
       it("refuses Start's replay that was on its way when the reloaded board's Done landed", async () => {
