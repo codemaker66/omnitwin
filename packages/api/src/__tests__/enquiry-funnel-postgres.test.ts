@@ -856,6 +856,8 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
 
   it("shows the venue's funnel fields to its team and never to the enquiry's customer", async () => {
     const enquiryId = await newEnquiry({ userId: people.client });
+    // Not yet worked, it has no event; the reply below works it and makes one (services/enquiry-event.ts).
+    expect((await call("GET", `/enquiries/${enquiryId}`, asStaff())).body["data"]).toHaveProperty("eventId", null);
     expect((await report(asStaff(), enquiryId, { channel: "email" })).status).toBe(200);
     const asClient = as("client", null, people.client);
     const own = await call("GET", `/enquiries/${enquiryId}`, asClient);
@@ -869,8 +871,11 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     expect((listed.body["data"] as Record<string, unknown>[]).every((row) => !("firstResponseAt" in row) && !("eventId" in row))).toBe(true);
     const staffView = await call("GET", `/enquiries/${enquiryId}`, asStaff());
     expect(staffView.body["data"]).toMatchObject({ firstResponseChannel: "email", firstResponseBy: people.staff });
-    // The event the venue filed it under is its team's to read (the spine's links migration, `*_event_spine_links`).
-    expect(staffView.body["data"]).toHaveProperty("eventId", null);
+    // The event the reply filed it under is its team's to read, as stored (the spine's links migration,
+    // `*_event_spine_links`), while the customer above never sees it.
+    const [linked] = (await pool.query<{ event_id: string | null }>("SELECT event_id FROM enquiries WHERE id = $1", [enquiryId])).rows;
+    expect(linked?.event_id).toEqual(expect.any(String));
+    expect(staffView.body["data"]).toHaveProperty("eventId", linked?.event_id);
   });
 
   it("records a proposal sent as the first reply to its enquiry, or its deal's enquiry, never another venue's", async () => {
