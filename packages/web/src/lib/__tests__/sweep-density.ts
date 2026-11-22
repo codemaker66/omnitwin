@@ -7,7 +7,7 @@
 // per-pull-request density: the same sweeps of every shaped room and every piece in hand, each step a whole
 // multiple of the full step (chairs every 9 cm through the alcoves for 3 cm, pieces slid 20 cm at a time for
 // 1 cm, with the places where a piece's end meets a wall's end added, and a pointer every 0.92 m for 0.23 m),
-// so the placements judged are among the full sweep's, in about a tenth of the time. Every hand-picked case
+// so the placements judged are among the full sweep's, in about a ninth of the time. Every hand-picked case
 // in those files runs alike at both densities.
 //
 // Each sweep asserts how many placements it judged, in the range its density gives: a sweep that silently
