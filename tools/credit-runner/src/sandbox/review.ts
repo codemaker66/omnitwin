@@ -26,6 +26,8 @@ export interface ReviewOptions {
   /** Where the base is fetched from for the inspection (default: the public repository). */
   readonly repoUrl?: string | undefined;
   readonly log?: ((line: string) => void) | undefined;
+  /** The task has a precondition, so the run must have written precondition.json (the brief tells the agent to). */
+  readonly preconditionExpected?: boolean | undefined;
 }
 
 /** Said in every review with a readable verifier result. */
@@ -96,7 +98,11 @@ export async function reviewRun(result: SessionRunResult, options: ReviewOptions
   const outputs = [...result.outputs].sort();
   const diffFile = outputs.find((file) => path.basename(file) === "diff.patch") ?? null;
   const preconditionFile = outputs.find((file) => path.basename(file) === "precondition.json") ?? null;
-  if (preconditionFile !== null) {
+  if (preconditionFile === null) {
+    if (options.preconditionExpected === true) {
+      reasons.push("the task has a precondition but the run left no precondition.json (the exact name, in the outputs folder), so nobody checked that the code the task cites has not moved");
+    }
+  } else {
     const precondition = preconditionResult(await readFile(preconditionFile, "utf8"));
     if (precondition === false) reasons.push("the precondition failed: the code the task cites has moved, so the task no longer applies as written");
     else if (precondition === null) reasons.push('precondition.json holds neither {"ok":true} nor {"ok":false}');

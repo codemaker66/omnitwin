@@ -157,7 +157,7 @@ function happyEvents(fixture: PatchFixture, options: { command?: string; output?
 
 /** A session's outputs for a fixture, as the Files API lists them. */
 function outputsOf(fixture: PatchFixture, overrides: Record<string, string | null> = {}): Record<string, string | null> {
-  return { "verify.mjs": null, ...fixture.patches, "diff.patch": fixture.diff, "report.md": "## Summary\nFixed.\n", ...overrides };
+  return { "verify.mjs": null, ...fixture.patches, "diff.patch": fixture.diff, "report.md": "## Summary\nFixed.\n", "precondition.json": '{"ok":true}\n', ...overrides };
 }
 
 const dirs: string[] = [];
@@ -268,9 +268,9 @@ describe("sandbox launcher", () => {
     expect(review).toContain("expected true to be false");
     // Only what the review reads comes back, under the launcher's own names; the report and the
     // session's copy of an uploaded input stay in the sandbox.
-    expect(api.downloads).toEqual(["0001-Match-robots.patch", "diff.patch"]);
-    expect(record.result.outputs.map((file) => path.basename(file))).toEqual(["patch-0001.patch", "diff.patch"]);
-    expect(Object.values(record.result.outputNames)).toEqual(["0001-Match-robots.patch", "diff.patch"]);
+    expect(api.downloads).toEqual(["0001-Match-robots.patch", "diff.patch", "precondition.json"]);
+    expect(record.result.outputs.map((file) => path.basename(file))).toEqual(["patch-0001.patch", "diff.patch", "precondition.json"]);
+    expect(Object.values(record.result.outputNames)).toEqual(["0001-Match-robots.patch", "diff.patch", "precondition.json"]);
     expect(record.result.leftOutputs).toEqual(["verify.mjs", "report.md"]);
     expect(record.result.skippedOutputs).toEqual([]);
     expect(record.result.refusedOutputs).toEqual([]);
@@ -535,6 +535,23 @@ describe("sandbox launcher", () => {
     expect(passed.result.outputs.map((file) => path.basename(file))).toEqual(["patch-0001.patch", "diff.patch", "precondition.json"]);
   });
 
+  it("rejects a run with no precondition.json when the task has a precondition, and a case-variant name does not count", async () => {
+    const missing = await reviewOf(happy, { outputs: outputsOf(happy, { "precondition.json": null }) });
+    expect(missing.review.verdict).toBe("rejected");
+    expect(missing.review.reasons).toEqual([expect.stringContaining("left no precondition.json")]);
+    const variant = await reviewOf(happy, { outputs: outputsOf(happy, { "precondition.json": null, "Precondition.json": '{"ok":true}\n' }) });
+    expect(variant.review.verdict).toBe("rejected");
+    expect(variant.review.reasons).toEqual([expect.stringContaining("left no precondition.json")]);
+    expect(variant.result.outputs.map((file) => path.basename(file))).not.toContain("precondition.json");
+    // A task with no precondition needs none.
+    const bare = parseTask("---\nid: robots-wildcards\nacceptance: x\n---\nDo it.", "spec.md");
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy, { "precondition.json": null }));
+    const record = await job(api, config, happy, { task: bare });
+    if (record.kind !== "ran") throw new Error(record.reason);
+    expect(record.review.reasons).toEqual([]);
+  });
+
   it("turns a download that passes its deadline into a reason, as one past its size cap, and still writes the review", async () => {
     const config = await workspace();
     const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
@@ -572,7 +589,7 @@ describe("sandbox launcher", () => {
     const record = await job(api, config);
     if (record.kind !== "ran") throw new Error(record.reason);
     // Nothing else was even requested.
-    expect(api.downloads).toEqual(["0001-Match-robots.patch"]);
+    expect(api.downloads).toEqual(["0001-Match-robots.patch", "precondition.json"]);
     expect(record.result.leftOutputs).toEqual(["verify.mjs", "report.md", "logs/install.log", "con .txt"]);
     expect(record.review.verdict).toBe("rejected");
     expect(record.review.reasons).toEqual(
@@ -583,7 +600,7 @@ describe("sandbox launcher", () => {
         "diff.patch did not come back",
       ]),
     );
-    expect((await readdir(path.join(record.runDir, "outputs"))).sort()).toEqual(["patch-0001.patch"]);
+    expect((await readdir(path.join(record.runDir, "outputs"))).sort()).toEqual(["patch-0001.patch", "precondition.json"]);
   });
 
   it("keeps the agent's text on one line in review.md, so it cannot add a heading", async () => {
@@ -682,6 +699,10 @@ describe("sandbox launcher", () => {
       ["install: false", "install: false"],
       ["allowed_tools: [Read]", "allowed_tools"],
       ["extra_allowed_tools: [Bash(pnpm *)]", "extra_allowed_tools"],
+      // The key being present is what is refused, an empty list included.
+      ["allowed_tools: []", "allowed_tools"],
+      ["extra_allowed_tools: []", "extra_allowed_tools"],
+      ["extra_allowed_tools:", "extra_allowed_tools"],
     ] as const) {
       const spec = parseTask(`---\nid: robots-wildcards\nacceptance: x\n${line}\n---\nDo it.`, "spec.md");
       const config = await workspace();
@@ -1131,6 +1152,58 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     expect(seen).toEqual([]);
     const looping = keyOnlyToAnthropic(() => Promise.resolve(to(307, "/v1/loop")));
     await expect(looping("https://api.anthropic.com/v1/loop", { method: "GET" })).rejects.toThrow(/redirects/u);
+  });
+
+  it("never re-sends a POST on a 301, 302 or 303, keeps method and body only through a same-origin 307 or 308, and follows only https", async () => {
+    const API = "https://api.anthropic.com";
+    const seen: { url: string; method: string | undefined; body: unknown; key: string | null }[] = [];
+    const to = (status: number, location: string) => new Response(null, { status, headers: { location } });
+    const ok = () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    /** Answers `first` to the first request and a plain 200 to any other. */
+    const via = (first: Response): typeof fetch => (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      seen.push({ url, method: init?.method, body: init?.body, key: new Headers(init?.headers).get("x-api-key") });
+      return Promise.resolve(seen.length === 1 ? first : ok());
+    };
+    const post = { method: "POST", body: '{"a":1}', headers: { "x-api-key": "sk-ant-test-key-value" } };
+
+    // A POST redirected with 301, 302 or 303 is never re-sent, as a GET or as a POST.
+    for (const status of [301, 302, 303]) {
+      seen.length = 0;
+      await expect(keyOnlyToAnthropic(via(to(status, "/v1/other")))(`${API}/v1/sessions`, post), String(status)).rejects.toThrow(new RegExp(`${String(status)} redirect of a POST`, "u"));
+      expect(seen, String(status)).toHaveLength(1);
+    }
+
+    // A 307 or 308 to the same origin keeps the method, the body and the key.
+    for (const status of [307, 308]) {
+      seen.length = 0;
+      await keyOnlyToAnthropic(via(to(status, "/v1/other")))(`${API}/v1/sessions`, post);
+      expect(seen.map((request) => [request.url, request.method, request.body, request.key]), String(status)).toEqual([
+        [`${API}/v1/sessions`, "POST", '{"a":1}', "sk-ant-test-key-value"],
+        [`${API}/v1/other`, "POST", '{"a":1}', "sk-ant-test-key-value"],
+      ]);
+    }
+
+    // A 307 or 308 of a POST to another origin is refused; any non-GET method is held to the same rule.
+    seen.length = 0;
+    await expect(keyOnlyToAnthropic(via(to(308, "https://files.example.invalid/x")))(`${API}/v1/sessions`, post)).rejects.toThrow(/refusing to follow a POST redirect/u);
+    seen.length = 0;
+    await keyOnlyToAnthropic(via(to(307, "/v1/other")))(`${API}/v1/sessions/s`, { ...post, method: "DELETE" });
+    expect(seen.map((request) => request.method)).toEqual(["DELETE", "DELETE"]);
+    seen.length = 0;
+    await expect(keyOnlyToAnthropic(via(to(303, "/v1/other")))(`${API}/v1/sessions/s`, { ...post, method: "DELETE" })).rejects.toThrow(/303 redirect of a DELETE/u);
+
+    // A GET follows a 303 as a GET.
+    seen.length = 0;
+    await keyOnlyToAnthropic(via(to(303, "/v1/other")))(`${API}/v1/sessions/s`, { method: "GET", headers: post.headers });
+    expect(seen.map((request) => [request.url, request.method])).toEqual([[`${API}/v1/sessions/s`, "GET"], [`${API}/v1/other`, "GET"]]);
+
+    // A target that is not https is never followed, for a GET too: nothing is requested for it.
+    for (const target of ["http://api.anthropic.com/v1/other", "http://files.example.invalid/x", "data:text/plain,hello", "ftp://files.example.invalid/x"]) {
+      seen.length = 0;
+      await expect(keyOnlyToAnthropic(via(to(302, target)))(`${API}/v1/sessions/s`, { method: "GET", headers: post.headers }), target).rejects.toThrow(/only https is followed/u);
+      expect(seen, target).toHaveLength(1);
+    }
   });
 
   it("downloads an output through the real SDK client a chunk at a time, cut off past its cap or its deadline", async () => {

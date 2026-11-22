@@ -85,7 +85,7 @@ describe("parseTask", () => {
       install: true,
       readOnly: false,
       allowedTools: undefined,
-      extraAllowedTools: [],
+      extraAllowedTools: undefined,
       spec: "Do the thing.",
     });
   });
@@ -94,6 +94,13 @@ describe("parseTask", () => {
     const text = `---\nid: a\nacceptance: x\nbudget_usd: ${String(MAX_BUDGET_USD)}\ntimeout_minutes: ${String(MAX_TIMEOUT_MINUTES)}\n---\nb`;
     const task = parseTask(text, "a.md");
     expect([task.budgetUsd, task.timeoutMinutes]).toEqual([MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES]);
+  });
+
+  it("tells an empty tool list from no key, so the launcher can refuse the key being there", () => {
+    const none = parseTask("---\nid: a\nacceptance: x\n---\nb", "a.md");
+    expect([none.allowedTools, none.extraAllowedTools]).toEqual([undefined, undefined]);
+    const empty = parseTask("---\nid: a\nacceptance: x\nallowed_tools: []\nextra_allowed_tools: []\n---\nb", "a.md");
+    expect([empty.allowedTools, empty.extraAllowedTools]).toEqual([[], []]);
   });
 
   it("still parses the tool keys, so the launcher can refuse them by name", () => {

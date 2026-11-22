@@ -20,7 +20,8 @@ const REPO_ROOT = path.resolve(PACKAGE_DIR, "../..");
 /** Whether `child` is `parent` or inside it (both already real paths; Windows compares without case). */
 export function isInsideFolder(child: string, parent: string): boolean {
   const relative = path.relative(parent, child);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  // A child named "..keys" is inside; ".." and "..\x" are not, and neither is another drive (an absolute relative path).
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 /** The real path, through junctions and symlinks, of a folder that may not exist yet: its nearest existing ancestor's, with the rest appended. */

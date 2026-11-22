@@ -181,14 +181,16 @@ function urlOf(input: string | URL | Request): string {
  * followed here rather than by fetch (which forwards X-Api-Key to another host).
  * A redirect within ANTHROPIC_API_URL keeps the headers. One to another host is
  * followed only for a GET or HEAD (a download handed to storage, say), with
- * every credential header removed for the rest of the chain; any other request
- * redirected away is refused. At most five redirects.
+ * every credential header removed for the rest of the chain. Any other request
+ * is followed only through a same-origin 307 or 308 (which keep the method and
+ * body); a 301, 302 or 303 of it, or a redirect off the origin, is refused. A
+ * target that is not https is never followed. At most five redirects.
  */
 export function keyOnlyToAnthropic(next: Fetch = globalThis.fetch): Fetch {
   return async (input, init) => {
     let url = new URL(urlOf(input));
     if (url.origin !== ANTHROPIC_API_URL) throw new Error(`refusing a request to ${url.origin}: the key goes only to ${ANTHROPIC_API_URL}`);
-    let method = (init?.method ?? "GET").toUpperCase();
+    const method = (init?.method ?? "GET").toUpperCase();
     const headers = new Headers(init?.headers);
     for (let hops = 0; ; hops += 1) {
       const response = await next(url.href, { ...init, method, headers, redirect: "manual" });
@@ -197,9 +199,12 @@ export function keyOnlyToAnthropic(next: Fetch = globalThis.fetch): Fetch {
       await response.body?.cancel();
       if (hops === MAX_REDIRECTS) throw new Error(`more than ${String(MAX_REDIRECTS)} redirects from ${ANTHROPIC_API_URL}`);
       const target = new URL(location, url);
-      if (response.status === 303) method = "GET";
-      if (target.origin !== url.origin || target.origin !== ANTHROPIC_API_URL) {
-        if (method !== "GET" && method !== "HEAD") throw new Error(`refusing to follow a ${method} redirect to ${target.origin}`);
+      if (target.protocol !== "https:") throw new Error(`refusing to follow a redirect to ${target.protocol}, only https is followed`);
+      if (method !== "GET" && method !== "HEAD") {
+        // Only a 307 or 308 keeps the method and the body by definition; a 301, 302 or 303 would re-send as GET (or re-POST), so none is followed.
+        if (response.status !== 307 && response.status !== 308) throw new Error(`refusing to follow a ${String(response.status)} redirect of a ${method} request`);
+        if (target.origin !== url.origin) throw new Error(`refusing to follow a ${method} redirect to ${target.origin}`);
+      } else if (target.origin !== url.origin || target.origin !== ANTHROPIC_API_URL) {
         for (const name of CREDENTIAL_HEADERS) headers.delete(name);
       }
       url = target;

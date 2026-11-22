@@ -41,7 +41,7 @@ const frontmatterSchema = z
       .regex(/^(?!-)[A-Za-z0-9._/-]+$/u, "base must be a branch or ref name such as origin/master")
       .optional(),
     allowed_tools: toolList.optional(),
-    extra_allowed_tools: toolList.default([]),
+    extra_allowed_tools: toolList.optional(),
     /**
      * Sandbox runs: a shell command that breaks the code under test. When a
      * task only adds tests, the verifier applies it and the tests must fail.
@@ -64,9 +64,9 @@ export interface Task {
   readonly install: boolean;
   readonly readOnly: boolean;
   readonly base: string | undefined;
-  /** As the spec set them (undefined and empty when it did not): the sandbox lane refuses either. */
+  /** As the spec set them (undefined when it did not, so an empty list is told from no key): the sandbox lane refuses either key being present. */
   readonly allowedTools: readonly string[] | undefined;
-  readonly extraAllowedTools: readonly string[];
+  readonly extraAllowedTools: readonly string[] | undefined;
   readonly mutation?: string | undefined;
   readonly precondition?: string | undefined;
   readonly spec: string;

@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readdir, readFile, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -104,16 +104,37 @@ describe("the key folder", () => {
     expect(isInsideFolder(REPO_ROOT, REPO_ROOT)).toBe(true);
     expect(isInsideFolder(`${REPO_ROOT}-keys`, REPO_ROOT)).toBe(false);
     expect(isInsideFolder(path.dirname(REPO_ROOT), REPO_ROOT)).toBe(false);
+    // A child whose first segment merely starts with two dots is inside; ".." and "../x" are not.
+    expect(isInsideFolder(path.join(REPO_ROOT, "..keys"), REPO_ROOT)).toBe(true);
+    expect(isInsideFolder(path.join(REPO_ROOT, "..keys", "pot-1.key"), REPO_ROOT)).toBe(true);
+    expect(isInsideFolder(path.join(REPO_ROOT, "..", "keys"), REPO_ROOT)).toBe(false);
+    expect(isInsideFolder(path.join(path.dirname(REPO_ROOT), "..keys"), REPO_ROOT)).toBe(false);
+    // path.relative gives an absolute path when the child is on another drive.
+    if (process.platform === "win32") {
+      const otherDrive = REPO_ROOT.slice(0, 1).toUpperCase() === "Z" ? "Y:/keys" : "Z:/keys";
+      expect(isInsideFolder(otherDrive, REPO_ROOT)).toBe(false);
+    }
   });
 
-  it.runIf(process.platform === "win32")("setup-keys.ps1 refuses a key folder inside the repository before it asks for a key", () => {
-    const args = ["-NoProfile", "-NonInteractive", "-File", path.join(PACKAGE_DIR, "setup-keys.ps1"), "-KeyDir", "keys-test-refused"];
-    let child = spawnSync("pwsh", args, { cwd: REPO_ROOT, encoding: "utf8", windowsHide: true });
-    if (child.error !== undefined) child = spawnSync("powershell", args, { cwd: REPO_ROOT, encoding: "utf8", windowsHide: true });
-    expect(child.status).not.toBe(0);
-    expect(`${child.stdout}${child.stderr}`).toContain("inside the repository");
-    expect(existsSync(path.join(REPO_ROOT, "keys-test-refused"))).toBe(false);
-  });
+  it.runIf(process.platform === "win32")("setup-keys.ps1 refuses a key folder inside the repository before it asks for a key", async () => {
+    // Run a copy placed at tools/credit-runner/ of a temporary tree, so a regression that
+    // creates and locks the folder does it there, never in this checkout.
+    const root = await mkdtemp(path.join(tmpdir(), "credit-runner-setup-keys-"));
+    try {
+      const folder = path.join(root, "tools", "credit-runner");
+      await mkdir(folder, { recursive: true });
+      await cp(path.join(PACKAGE_DIR, "setup-keys.ps1"), path.join(folder, "setup-keys.ps1"));
+      const args = ["-NoProfile", "-NonInteractive", "-File", path.join(folder, "setup-keys.ps1"), "-KeyDir", "keys-test-refused"];
+      let child = spawnSync("pwsh", args, { cwd: root, encoding: "utf8", windowsHide: true });
+      if (child.error !== undefined) child = spawnSync("powershell", args, { cwd: root, encoding: "utf8", windowsHide: true });
+      expect(child.status).not.toBe(0);
+      expect(`${child.stdout}${child.stderr}`).toContain("inside the repository");
+      expect(existsSync(path.join(root, "keys-test-refused"))).toBe(false);
+      expect(existsSync(path.join(REPO_ROOT, "keys-test-refused"))).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("keeps key files out of git, in the package and at the repository root", () => {
     for (const file of ["keys/pot-1.key", "tools/credit-runner/pot-1.key"]) {

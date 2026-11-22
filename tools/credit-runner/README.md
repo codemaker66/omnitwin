@@ -116,8 +116,8 @@ What to build, where, the constraints, the tests to add, and what done looks lik
 | `enabled` | `true` | Only `true`: the lane runs every spec it is given, so `run` and `collect` refuse `false`. |
 | `read_only` | `false` | Only `false`: the sandbox agent always has its full toolset, so `run` and `collect` refuse `true`. |
 | `install` | `true` | Only `true`: the agent always installs, so `run` and `collect` refuse `false`. |
-| `base` | master | Only master (`master` or `origin/master`): every run starts from master, so `run` and `collect` refuse any other base. |
-| `allowed_tools`, `extra_allowed_tools` | none | Not at all: the sandbox agent has one fixed toolset, so `run` and `collect` refuse a spec that sets either. |
+| `base` | master | Only master, spelled `master`, `origin/master`, `refs/heads/master` or `refs/remotes/origin/master`: every run starts from master, so `run` and `collect` refuse any other base. |
+| `allowed_tools`, `extra_allowed_tools` | none | Not at all: the sandbox agent has one fixed toolset, so `run` and `collect` refuse a spec that has either key, even with an empty list. |
 
 Every key above `model` takes effect; the rest are accepted only at the value the lane runs, and anything else is refused with the key named. Unknown keys are rejected, so a typo cannot silently fall back to a default.
 

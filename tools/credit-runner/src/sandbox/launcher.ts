@@ -58,7 +58,7 @@ export function unhonouredSpecKeys(task: Task): string[] {
   if (task.base !== undefined && !MASTER_REFS.has(task.base)) keys.push(`base: ${task.base} (every run starts from master)`);
   if (!task.install) keys.push("install: false (the sandbox agent always installs)");
   if (task.allowedTools !== undefined) keys.push("allowed_tools (the sandbox agent has one fixed toolset)");
-  if (task.extraAllowedTools.length > 0) keys.push("extra_allowed_tools (the sandbox agent has one fixed toolset)");
+  if (task.extraAllowedTools !== undefined) keys.push("extra_allowed_tools (the sandbox agent has one fixed toolset)");
   return keys;
 }
 
@@ -255,7 +255,7 @@ async function writeRecord(
   costKnown: boolean,
   log?: (line: string) => void,
 ): Promise<Extract<JobRecord, { kind: "ran" }>> {
-  const review = await reviewRun(result, { baseSha, repoUrl, log });
+  const review = await reviewRun(result, { baseSha, repoUrl, log, preconditionExpected: task.precondition !== undefined });
   const record = { kind: "ran", taskId: task.id, runDir, branch, baseSha, costUsd, costKnown, result, review } as const;
   await writeFile(path.join(runDir, "result.json"), `${JSON.stringify(record, null, 2)}\n`, "utf8");
   await writeFile(path.join(runDir, "review.md"), reviewMarkdown(task, record), "utf8");
