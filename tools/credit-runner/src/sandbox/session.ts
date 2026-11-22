@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { BetaManagedAgentsSession, SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
+import { MAX_TIMEOUT_MINUTES } from "../task.js";
 import { isAmbiguousFailure, type OutputFile, type SandboxApi, type SessionEvent, type SessionRef } from "./api.js";
 import { outcomeFor, type RunFacts, VERIFY_COMMAND, verifyTaskJson } from "./brief.js";
 import { OUTPUT_CAPS, type OutputCaps, OutputTimeoutError, OutputTooLargeError, planOutputs } from "./outputs.js";
@@ -24,8 +25,15 @@ export interface SessionRunOptions {
   readonly log?: (line: string) => void;
   /** Called as soon as the session exists, so a later failure can still be charged to it. */
   readonly onSessionCreated?: (sessionId: string) => void;
+  /**
+   * Called once, as soon as the platform's final status and cost are read and
+   * before any output is downloaded, so the run can be booked even if a
+   * download then stalls or fails. A throw from it fails the run.
+   */
+  readonly onCostKnown?: (totals: RunTotals) => Promise<void>;
   /** Test seams: every wait (back-off, polls, lookups) goes through `sleep`. */
   readonly sleep?: (ms: number) => Promise<void>;
+  /** How long after the deadline's interrupt the launcher keeps following (default DEFAULT_GRACE_MS, at most MAX_GRACE_MS). */
   readonly graceMs?: number;
   /** Test seam: the byte caps on what comes back (default OUTPUT_CAPS). */
   readonly outputCaps?: OutputCaps;
@@ -85,6 +93,13 @@ export interface SessionRunResult {
   /** Outputs the review does not read, left in the sandbox and never requested (the report, logs, the session's copies of its inputs). */
   readonly leftOutputs: readonly string[];
 }
+
+/**
+ * Everything in a run's result that is known once the platform's final status
+ * is read, before any output is downloaded: the status, the cost (final when
+ * `stopped`) and the token counts, which is all a ledger line needs.
+ */
+export type RunTotals = Omit<SessionRunResult, "outputs" | "outputNames" | "refusedOutputs" | "leftOutputs">;
 
 /**
  * Any line that claims to be the verifier's: only one may appear in its call's
@@ -190,7 +205,7 @@ class EventTally {
   /** Asks that already have a user.tool_confirmation in the history. */
   private readonly answered = new Set<string>();
   private readonly bashCommands = new Map<string, string>();
-  /** Off while the launcher stops a session: a confirmation then could wake an idle session waiting on it. */
+  /** Off from the deadline's interrupt on, and while the launcher stops a session: a confirmation then could wake an idle session waiting on it. */
   answering = true;
 
   constructor(
@@ -275,7 +290,12 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** The platform's totals and the files the agent left, once the launcher has stopped following the session. */
+/**
+ * The platform's totals and the files the agent left, once the launcher has
+ * stopped following the session. The totals come first: `onCostKnown` hears
+ * them before any output is downloaded, so a download that stalls (up to
+ * DOWNLOAD_TIMEOUT_MS each) or fails cannot hold back the booking.
+ */
 async function finishRun(
   api: SandboxApi,
   sessionId: string,
@@ -285,10 +305,37 @@ async function finishRun(
   stopping: Stopping,
   sleep: (ms: number) => Promise<void>,
   caps: OutputCaps = OUTPUT_CAPS,
+  onCostKnown?: (totals: RunTotals) => Promise<void>,
 ): Promise<SessionRunResult> {
   // The platform's own totals: the cost includes the session-hour fee. It is
   // final only if the session has stopped.
   const final = await api.retrieveSession(sessionId);
+  const totals: RunTotals = {
+    sessionId,
+    status: final.status,
+    stopped: isStopped(final.status),
+    archived: stopping.archived,
+    runningAfterFinish: stopping.runningAfterFinish,
+    stopInterrupted: stopping.interrupted,
+    stopReason: tally.stopReason,
+    timedOut,
+    listCostUsd: listCostUsd(final),
+    activeSeconds: final.usage.active_seconds ?? null,
+    requests: tally.requests,
+    inputTokens: final.usage.input_tokens ?? tally.inputTokens,
+    outputTokens: final.usage.output_tokens ?? tally.outputTokens,
+    cacheReadTokens: final.usage.cache_read_input_tokens ?? tally.cacheReadTokens,
+    cacheCreationTokens:
+      final.usage.cache_creation === undefined
+        ? tally.cacheCreationTokens
+        : (final.usage.cache_creation.ephemeral_5m_input_tokens ?? 0) + (final.usage.cache_creation.ephemeral_1h_input_tokens ?? 0),
+    verify: tally.verify,
+    verifyRuns: tally.verifyRuns,
+    outcome: tally.outcome,
+    errors: tally.errors,
+    deniedAsks: tally.deniedAsks,
+  };
+  await onCostKnown?.(totals);
   await writeFile(path.join(runDir, "session.json"), `${JSON.stringify(final, null, 2)}\n`, "utf8");
   let files: OutputFile[] = [];
   for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -323,35 +370,7 @@ async function finishRun(
     outputs.push(local);
     outputNames[local] = file.filename;
   }
-  return {
-    sessionId,
-    status: final.status,
-    stopped: isStopped(final.status),
-    archived: stopping.archived,
-    runningAfterFinish: stopping.runningAfterFinish,
-    stopInterrupted: stopping.interrupted,
-    stopReason: tally.stopReason,
-    timedOut,
-    listCostUsd: listCostUsd(final),
-    activeSeconds: final.usage.active_seconds ?? null,
-    requests: tally.requests,
-    inputTokens: final.usage.input_tokens ?? tally.inputTokens,
-    outputTokens: final.usage.output_tokens ?? tally.outputTokens,
-    cacheReadTokens: final.usage.cache_read_input_tokens ?? tally.cacheReadTokens,
-    cacheCreationTokens:
-      final.usage.cache_creation === undefined
-        ? tally.cacheCreationTokens
-        : (final.usage.cache_creation.ephemeral_5m_input_tokens ?? 0) + (final.usage.cache_creation.ephemeral_1h_input_tokens ?? 0),
-    verify: tally.verify,
-    verifyRuns: tally.verifyRuns,
-    outcome: tally.outcome,
-    errors: tally.errors,
-    deniedAsks: tally.deniedAsks,
-    outputs,
-    outputNames,
-    refusedOutputs,
-    leftOutputs: plan.left,
-  };
+  return { ...totals, outputs, outputNames, refusedOutputs, leftOutputs: plan.left };
 }
 
 /** Idle (waiting for input, spending nothing) or terminated: the platform's cost figure is then final. */
@@ -370,6 +389,9 @@ const STOP_POLL_MS = 10_000;
 const ARCHIVE_ATTEMPTS = 3;
 /** Waits before each metadata lookup after an unclear create: the API may still be making the session. */
 const LOOKUP_WAITS_MS = [0, 5_000, 15_000, 30_000] as const;
+/** How long after the deadline's interrupt the launcher keeps following a session: by default, and at most. */
+export const DEFAULT_GRACE_MS = 10 * 60_000;
+export const MAX_GRACE_MS = 60 * 60_000;
 
 /** Sends the interrupt, retrying with back-off; false if every attempt failed. */
 async function sendInterrupt(api: SandboxApi, sessionId: string, tally: EventTally, sleep: (ms: number) => Promise<void>): Promise<boolean> {
@@ -458,12 +480,16 @@ async function stopSession(
 /**
  * Creation failed in a way that does not say whether the session exists, and
  * the lookup did not find it: the lookup failed, or a create still in flight
- * may start the session later. One may be running and spending.
+ * may start the session later. One may be running and spending. The message
+ * and `runId` give the per-run id its metadata carries (kickoff.md in the run
+ * folder holds it too), so the session can be found later.
  */
 export class SessionMayExistError extends Error {
-  constructor(message: string, options: { readonly cause: unknown }) {
-    super(message, options);
+  readonly runId: string;
+  constructor(message: string, options: { readonly cause: unknown; readonly runId: string }) {
+    super(message, { cause: options.cause });
     this.name = "SessionMayExistError";
+    this.runId = options.runId;
   }
 }
 
@@ -484,7 +510,7 @@ async function findSession(api: SandboxApi, metadata: Readonly<Record<string, st
  */
 async function createOrFind(
   api: SandboxApi,
-  params: SessionCreateParams & { readonly metadata: Readonly<Record<string, string>> },
+  params: SessionCreateParams & { readonly metadata: Readonly<Record<string, string>> & { readonly run: string } },
   sleep: (ms: number) => Promise<void>,
   log: (line: string) => void,
 ): Promise<SessionRef> {
@@ -509,7 +535,11 @@ async function createOrFind(
       }
     }
     const lookup = lastLookup === null ? "no session carries its metadata yet" : `the lookup failed too (${describe(lastLookup)})`;
-    throw new SessionMayExistError(`creating the session failed (${describe(error)}) and ${lookup}; a session may still be running`, { cause: error });
+    const runId = params.metadata.run;
+    throw new SessionMayExistError(
+      `creating the session failed (${describe(error)}) and ${lookup}; a session may still be running, with run ${runId} in its metadata (kickoff.md in the run folder holds it too)`,
+      { cause: error, runId },
+    );
   }
 }
 
@@ -522,7 +552,17 @@ async function createOrFind(
  * still runs, archived before the result is read.
  */
 export async function runSession(options: SessionRunOptions): Promise<SessionRunResult> {
-  const { api, state, facts, runDir } = options;
+  const { api, state, facts, runDir, timeoutMinutes } = options;
+  // The timers' bounds, checked before anything is uploaded or created: a NaN,
+  // a negative or an out-of-range delay would make setTimeout fire at once.
+  // The time limit has the spec's ceiling (task.ts), fractional allowed here.
+  if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0 || timeoutMinutes > MAX_TIMEOUT_MINUTES) {
+    throw new RangeError(`timeoutMinutes must be more than 0 and at most ${String(MAX_TIMEOUT_MINUTES)}, not ${String(timeoutMinutes)}`);
+  }
+  const graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
+  if (!Number.isFinite(graceMs) || graceMs < 0 || graceMs > MAX_GRACE_MS) {
+    throw new RangeError(`graceMs must be from 0 to ${String(MAX_GRACE_MS)}, not ${String(graceMs)}`);
+  }
   const log = options.log ?? (() => undefined);
   const sleep = options.sleep ?? defaultSleep;
   await mkdir(path.join(runDir, "outputs"), { recursive: true });
@@ -530,7 +570,11 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
   const verifyFileId = await api.uploadFile("verify.mjs", options.verifyScript);
   const taskFileId = await api.uploadFile("task.json", verifyTaskJson(facts));
   const outcome = outcomeFor(facts);
-  await writeFile(path.join(runDir, "kickoff.md"), `${outcome.description}\n---\n\n${outcome.rubric}`, "utf8");
+  // `run` makes the metadata unique, so a lookup after an unclear create finds
+  // this session and no other; kickoff.md keeps it, so a session that may have
+  // started can be found by it later.
+  const runId = randomUUID();
+  await writeFile(path.join(runDir, "kickoff.md"), `Run id (the session's metadata \`run\`): ${runId}\n\n${outcome.description}\n---\n\n${outcome.rubric}`, "utf8");
 
   const session = await createOrFind(
     api,
@@ -538,8 +582,7 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
       agent: { type: "agent", id: state.agentId, version: state.agentVersion },
       environment_id: state.environmentId,
       title: options.title,
-      // `run` makes the metadata unique, so a lookup after an unclear create finds this session and no other.
-      metadata: { ...options.metadata, run: randomUUID() },
+      metadata: { ...options.metadata, run: runId },
       resources: [
         { type: "file", file_id: verifyFileId, mount_path: "/verify.mjs" },
         { type: "file", file_id: taskFileId, mount_path: "/task.json" },
@@ -582,13 +625,15 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
   // Interrupt at the deadline (retried); stop waiting a grace period later, whatever happens.
   const interruptTimer = setTimeout(() => {
     run.timedOut = true;
+    // From the interrupt on, an ask is left unanswered: a confirmation would wake the interrupted agent.
+    tally.answering = false;
     log(`Time limit reached; interrupting ${sessionId}.`);
     void sendInterrupt(api, sessionId, tally, sleep);
-  }, options.timeoutMinutes * 60_000);
+  }, timeoutMinutes * 60_000);
   const giveUpTimer = setTimeout(() => {
     run.giveUp = true;
     run.current?.close();
-  }, options.timeoutMinutes * 60_000 + (options.graceMs ?? 10 * 60_000));
+  }, timeoutMinutes * 60_000 + graceMs);
   // Read through functions: the handler and the timers change these between reads.
   const done = (): boolean => tally.finished || run.giveUp;
   const givenUp = (): boolean => run.giveUp;
@@ -630,7 +675,7 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
     stopping = await stopSession(api, sessionId, tally, sleep, log);
   }
 
-  return finishRun(api, sessionId, runDir, tally, run.timedOut, stopping, sleep, options.outputCaps);
+  return finishRun(api, sessionId, runDir, tally, run.timedOut, stopping, sleep, options.outputCaps, options.onCostKnown);
 }
 
 /**

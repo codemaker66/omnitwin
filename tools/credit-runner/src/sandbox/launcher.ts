@@ -6,7 +6,7 @@ import { sandboxSystemPrompt } from "./brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "./credit-ledger.js";
 import type { OutputCaps } from "./outputs.js";
 import { reviewRun, type Review } from "./review.js";
-import { isStopped, listCostUsd, recollectSession, runSession, SessionMayExistError, type SessionRunResult } from "./session.js";
+import { isStopped, listCostUsd, recollectSession, type RunTotals, runSession, SessionMayExistError, type SessionRunResult } from "./session.js";
 import { ensureSandbox } from "./setup.js";
 
 export interface LauncherConfig {
@@ -190,8 +190,10 @@ function fenced(text: string): string[] {
 }
 
 /**
- * One task, one session: check the spend, run, record the spend, review.
- * Spend is recorded even when the run fails after its session started.
+ * One task, one session: check the spend, run, record the spend, review. The
+ * spend is recorded once, as soon as the platform's final figure is read and
+ * before any output is downloaded, and even when the run fails after its
+ * session started.
  */
 export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   const { api, config, task } = options;
@@ -226,9 +228,24 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
     batchId: sessionId,
   });
 
+  // Set from runSession's callbacks; an object so the compiler does not narrow it to its first values.
+  const started: { sessionId: string | null; booked: boolean } = { sessionId: null, booked: false };
+  // The session's one ledger line, from the platform's figure. runSession
+  // hands the totals over (onCostKnown) as soon as the final status is read,
+  // before any output is downloaded, so a download that stalls or fails cannot
+  // hold the line back; every later path sees `booked` and writes no second one.
+  const bookTotals = async (totals: RunTotals): Promise<void> => {
+    await appendCreditLine(config.ledgerFile, {
+      ...emptyLine(totals.sessionId),
+      requests: totals.requests,
+      inputTokens: totals.inputTokens + totals.cacheReadTokens + totals.cacheCreationTokens,
+      outputTokens: totals.outputTokens,
+      ...ledgerCost(bookedCost(totals.stopped, totals.listCostUsd, options.budgetUsd)),
+    });
+    started.booked = true;
+  };
+
   let result: SessionRunResult;
-  // Set from runSession's callback; an object so the compiler does not narrow it to null.
-  const started: { sessionId: string | null } = { sessionId: null };
   try {
     result = await runSession({
       api,
@@ -244,16 +261,21 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
       onSessionCreated: (id) => {
         started.sessionId = id;
       },
+      onCostKnown: bookTotals,
       ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
       ...(options.graceMs === undefined ? {} : { graceMs: options.graceMs }),
       ...(options.outputCaps === undefined ? {} : { outputCaps: options.outputCaps }),
     });
   } catch (error) {
     // Nothing is spent before a session exists. Once one does (or may), it is
-    // charged: the platform's figure if the session has stopped, or else the
-    // whole budget, marked unknown. runSession has already tried to stop it.
+    // charged once: already, when the failure came after the platform's figure
+    // was read (a download, say); otherwise the platform's figure if the
+    // session has stopped, or else the whole budget, marked unknown.
+    // runSession has already tried to stop it.
     const sessionId = started.sessionId;
-    if (sessionId !== null) {
+    if (started.booked) {
+      // Booked from the platform's figure before the failure.
+    } else if (sessionId !== null) {
       const snapshot = await api.retrieveSession(sessionId).catch(() => null);
       const cost = bookedCost(snapshot !== null && isStopped(snapshot.status), snapshot === null ? null : listCostUsd(snapshot), options.budgetUsd);
       await appendCreditLine(config.ledgerFile, { ...emptyLine(sessionId), ...ledgerCost(cost) });
@@ -263,15 +285,9 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
     throw error;
   }
 
-  const cost = bookedCost(result.stopped, result.listCostUsd, options.budgetUsd);
-  await appendCreditLine(config.ledgerFile, {
-    ...emptyLine(result.sessionId),
-    requests: result.requests,
-    inputTokens: result.inputTokens + result.cacheReadTokens + result.cacheCreationTokens,
-    outputTokens: result.outputTokens,
-    ...ledgerCost(cost),
-  });
-  const { costUsd, costKnown } = cost;
+  // runSession booked it before the downloads; this covers only a runSession that did not call back.
+  if (!started.booked) await bookTotals(result);
+  const { costUsd, costKnown } = bookedCost(result.stopped, result.listCostUsd, options.budgetUsd);
 
   return writeRecord(task, runDir, branch, options.baseSha, options.repoUrl, result, costUsd, costKnown, log);
 }

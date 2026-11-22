@@ -33,7 +33,7 @@ import {
 } from "../sandbox/api.js";
 import { outcomeFor, promptSha, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "../sandbox/credit-ledger.js";
-import { collectSandboxJob, inlineCode, runSandboxJob, type JobOptions, type LauncherConfig } from "../sandbox/launcher.js";
+import { collectSandboxJob, inlineCode, runSandboxJob, type JobOptions, type JobRecord, type LauncherConfig } from "../sandbox/launcher.js";
 import {
   isWindowsDeviceName,
   MAX_OUTPUT_BYTES,
@@ -48,7 +48,7 @@ import { unquoteGitPath } from "../sandbox/patches.js";
 import { ADVISORY_FLAG } from "../sandbox/review.js";
 import { centsString, invokesVerifier, parseVerifyOutput, runSession, SessionMayExistError } from "../sandbox/session.js";
 import { ensureSandbox } from "../sandbox/setup.js";
-import { parseTask } from "../task.js";
+import { MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
 import { FakeApi, PROJECT_RULES } from "./fake-api.js";
 import { BASE_FILES, FIX, PAGE_CHECK, PAGE_CHECK_TEST, patchFixture, type Commit, type PatchFixture } from "./patch-fixture.js";
 
@@ -1861,6 +1861,130 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     expect(denies(api, "sendAttempts")).toBe(0);
     expect(record.result.deniedAsks).toBe(0);
     expect(record.review.reasons).toContain("the session never reported that it finished");
+  });
+
+  it("answers no ask that arrives after the deadline's interrupt, so a confirmation cannot wake the interrupted agent", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: [] }], outputsOf(happy));
+    api.statuses = ["idle"];
+    let release: () => void = () => undefined;
+    const closed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The ask is emitted only once the deadline's interrupt has reached the session.
+    api.openStream = () =>
+      Promise.resolve({
+        events: (async function* () {
+          yield running("e1");
+          while (!api.sent.some((event) => event.type === "user.interrupt")) await new Promise((resolve) => setTimeout(resolve, 5));
+          yield bash("ask-late", "curl https://example.com", "ask");
+          await closed;
+        })(),
+        close: () => {
+          release();
+        },
+      });
+    const record = await job(api, config, happy, { ...quick, graceMs: 1000 });
+    if (record.kind !== "ran") throw new Error(record.reason);
+    // The ask was seen (it is in the event log), and left unanswered.
+    expect(await readFile(path.join(record.runDir, "events.jsonl"), "utf8")).toContain('"id":"ask-late"');
+    expect(interrupts(api, "sent")).toBeGreaterThanOrEqual(1);
+    expect(denies(api, "sendAttempts")).toBe(0);
+    expect(record.result.deniedAsks).toBe(0);
+    expect(record.result.timedOut).toBe(true);
+  });
+
+  it("books the platform's figure as soon as it is read, before any download, and once, whether a download then stalls, fails or finishes", async () => {
+    for (const ending of ["stalls past its deadline", "fails", "finishes"] as const) {
+      const config = await workspace();
+      const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+      let entered: () => void = () => undefined;
+      const atDownload = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let finish: (error: Error | null) => void = () => undefined;
+      // diff.patch's download stays open until the test has read the ledger.
+      api.downloadGate = (name) =>
+        name !== "diff.patch"
+          ? Promise.resolve()
+          : new Promise<void>((resolve, reject) => {
+              finish = (error) => {
+                if (error === null) resolve();
+                else reject(error);
+              };
+              entered();
+            });
+      vi.mocked(appendCreditLine).mockClear();
+      const running = job(api, config).then(
+        (record) => record,
+        (error: unknown) => error,
+      );
+      await atDownload;
+      // The download is still open, and the line is already in the ledger.
+      expect((await readCreditLedger(config.ledgerFile)).lines, ending).toEqual([expect.objectContaining({ costUsd: 2.87, job: "a4-trial:robots-wildcards" })]);
+      expect(JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()), ending).toMatchObject({ batchId: "sesn_1", requests: 2, inputTokens: 110 + 3000 + 200, outputTokens: 55 });
+      finish(ending === "stalls past its deadline" ? new OutputTimeoutError(DOWNLOAD_TIMEOUT_MS) : ending === "fails" ? new Error("connection reset while downloading") : null);
+      const outcome = await running;
+      if (ending === "fails") expect(outcome, ending).toEqual(expect.objectContaining({ message: "connection reset while downloading" }));
+      else {
+        expect(outcome, ending).toMatchObject({ kind: "ran", costUsd: 2.87, costKnown: true });
+        if (ending === "stalls past its deadline") {
+          expect((outcome as Extract<JobRecord, { kind: "ran" }>).review.reasons).toContain('"diff.patch" took longer than 5 min to download; abandoned');
+        }
+      }
+      // One line, whatever came after: no second booking from the failure path or the end of the run.
+      expect(appendCreditLine, ending).toHaveBeenCalledTimes(1);
+      expect((await readCreditLedger(config.ledgerFile)).lines.map((line) => line.costUsd), ending).toEqual([2.87]);
+    }
+  });
+
+  it("names the per-run id in kickoff.md, and in the error when a failed create finds no session", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    api.createError = new Anthropic.InternalServerError(500, { type: "error" }, "overloaded", new Headers());
+    const error: unknown = await job(api, config, happy, { sleep: instant }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SessionMayExistError);
+    const runId = String(api.sessions[0]?.metadata?.run);
+    expect(runId).toMatch(/^[0-9a-f-]{36}$/u);
+    expect((error as SessionMayExistError).runId).toBe(runId);
+    expect((error as Error).message).toContain(`with run ${runId} in its metadata`);
+    const runs = path.join(config.workRoot, "runs", task.id);
+    const [stampDir] = await readdir(runs);
+    expect(await readFile(path.join(runs, stampDir ?? "", "kickoff.md"), "utf8")).toMatch(new RegExp(`^Run id \\(the session's metadata \`run\`\\): ${runId}\\n`, "u"));
+  });
+
+  it("refuses a time limit or grace period outside its bounds before anything is uploaded or created", async () => {
+    const runDir = await mkdtemp(path.join(tmpdir(), "credit-runner-bounds-"));
+    dirs.push(runDir);
+    const cases: readonly { readonly timeoutMinutes?: number; readonly graceMs?: number }[] = [
+      { timeoutMinutes: Number.NaN },
+      { timeoutMinutes: 0 },
+      { timeoutMinutes: -1 },
+      { timeoutMinutes: MAX_TIMEOUT_MINUTES + 1 },
+      { timeoutMinutes: Number.POSITIVE_INFINITY },
+      { graceMs: Number.NaN },
+      { graceMs: -1 },
+      { graceMs: 60 * 60_000 + 1 },
+    ];
+    for (const bad of cases) {
+      const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+      const run = runSession({
+        api,
+        state: { environmentId: "env_1", agentId: "agent_1", agentVersion: 1, promptSha: "x" },
+        facts: { task, baseSha: BASE, branch: "credit/robots-wildcards" },
+        budgetUsd: 4.5,
+        timeoutMinutes: 60,
+        runDir,
+        verifyScript: "// verify",
+        title: "bounds",
+        metadata: { lane: "sandbox" },
+        sleep: instant,
+        ...bad,
+      });
+      await expect(run, String(Object.entries(bad))).rejects.toThrow(bad.timeoutMinutes === undefined ? /^graceMs must be from 0 to 3600000/u : /^timeoutMinutes must be more than 0 and at most 240/u);
+      expect(api.uploads).toHaveLength(0);
+      expect(api.sessions).toHaveLength(0);
+    }
   });
 });
 

@@ -155,6 +155,8 @@ export class FakeApi implements SandboxApi {
   readonly downloads: string[] = [];
   /** Outputs whose download passes its deadline, by name. */
   stalledDownloads: string[] = [];
+  /** Awaited when a download starts, by output name: a test can hold a download open, or fail it. */
+  downloadGate: ((filename: string) => Promise<void>) | null = null;
   /** Streams opened: one per connection. */
   opened = 0;
   failArchive = false;
@@ -314,6 +316,7 @@ export class FakeApi implements SandboxApi {
   downloadFile = async (id: string, destination: string, maxBytes: number): Promise<"saved" | "not-downloadable"> => {
     const filename = Object.keys(this.files)[Number(id.slice("out_".length))] ?? "";
     this.downloads.push(filename);
+    await this.downloadGate?.(filename);
     const text = this.files[filename];
     if (text === null || text === undefined) return "not-downloadable";
     if (this.stalledDownloads.includes(filename)) throw new OutputTimeoutError(DOWNLOAD_TIMEOUT_MS);
