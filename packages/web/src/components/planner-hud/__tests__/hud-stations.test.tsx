@@ -4,7 +4,9 @@ import { resolve } from "node:path";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../../api/client.js";
+import { rememberTradesHallVenue, resetTradesHallVenueReads } from "../../../hooks/use-trades-hall-venue.js";
 import { grandHallExits } from "../../../lib/auto-fill.js";
+import { GRAND_HALL_RENDER_DIMENSIONS, RENDER_SCALE } from "../../../constants/scale.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../../lib/door-clear-spaces.js";
 import {
@@ -18,8 +20,9 @@ import {
   type OpenedLayout,
 } from "../../../lib/event-kind-record.js";
 import { DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "../../../lib/furniture-defaults.js";
+import { LAID_CLEARANCE_M, roomFacts } from "../../../lib/hud/room-seals.js";
 import { doorBlockers } from "../../../lib/keep-doors-clear.js";
-import { resetPlacedIdCounter, type PlacedItem } from "../../../lib/placement.js";
+import { createGroupMemberIdsLookup, resetPlacedIdCounter, type PlacedItem } from "../../../lib/placement.js";
 import { plannerFeatureEnabled, setPlannerChromeFeatures, setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 import { cardParamsFor, pieceCardId, stampSetup, type CardId, type CardParamsRequest } from "../../../lib/setup-cards.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
@@ -162,6 +165,12 @@ function chosenIds(): readonly string[] {
 
 /** Where a device keeps its answers to the event's question: lib/event-kind-record's own key, which it does not export. */
 const EVENT_KIND_STORAGE_KEY = "venviewer.planner.eventKind";
+/** The Grand Hall as the editor holds an open room. */
+const GRAND_HALL_SPACE = {
+  id: "space-grand-hall", venueId: "venue-trades-hall", name: "Grand Hall", slug: "grand-hall",
+  widthM: "21", lengthM: "10.5", heightM: "7",
+  floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
+};
 /** A layout's review state as the editor starts with it, put back after a test that locks one. */
 const REVIEW_STATUS_AT_REST = useEditorStore.getState().reviewStatus;
 
@@ -183,7 +192,8 @@ afterEach(() => {
   usePlacementNoticeStore.getState().dismiss();
   usePlannerHudStore.setState({ sheet: null, sentLayoutIds: [] });
   window.localStorage.removeItem(HUD_SENT_STORAGE_KEY);
-  useEditorStore.setState({ configId: null });
+  useEditorStore.setState({ configId: null, space: null });
+  resetTradesHallVenueReads();
   usePlannerEventStore.getState().setEventKind(null);
   resetEventAnswerForTesting();
   resetEventKindQuestionForTesting();
@@ -600,7 +610,10 @@ describe("the one primary key", () => {
 
   // Seen on the live site on 20 November: Lay out for 80 set eight rounds at the planner's own spacing, and the one
   // key then read "Open up the narrowest gap". What the planner has just laid is ready to send.
-  it("offers Send once the planner has laid the room itself, and says its spacing as a plain figure", () => {
+  it("offers Send once the planner has laid the room itself, and says its spacing as a plain figure", async () => {
+    // The Grand Hall, as the planner opens it: the planner's own review of its gangways is read for this room.
+    rememberTradesHallVenue(GRAND_HALL_SPACE.venueId, true);
+    act(() => { useEditorStore.setState({ space: GRAND_HALL_SPACE }); });
     renderHud();
     recordDoors();
     setGuests(80);
@@ -608,6 +621,13 @@ describe("the one primary key", () => {
     if (round === undefined) throw new Error("the planner's round table is in the catalogue");
     act(() => { usePlacementStore.getState().autoArrangeBanquet(round.id, 80, 10, grandHallExits()); });
     expect(tables()).toHaveLength(8);
+    // What the planner's own lay-out measures: its narrowest gap is between two dining tables, at its own spacing.
+    const laid = roomFacts({ items: usePlacementStore.getState().placedItems, guests: 80, roomSlug: "grand-hall", doorSpaces: GRAND_HALL_DOOR_CLEAR_SPACES, kind: null, room: GRAND_HALL_RENDER_DIMENSIONS });
+    expect(laid.aisles.asLaid).toBe(true);
+    expect(laid.aisles.band).toBe("tight");
+    // By the circulation scale's own measure the planner's rounds of ten stand about 0.65 m apart: over its spacing.
+    expect(laid.aisles.tightestGapM).toBeGreaterThanOrEqual(LAID_CLEARANCE_M);
+    expect(laid.aisles.tightestGapM).toBeLessThan(0.7);
     // The receipt for what was laid stands where the status line does, until it has had its moment.
     act(() => { usePlacementNoticeStore.getState().dismiss(); });
     expect(statusLine().textContent).toContain("80 of 80 seated");
@@ -615,6 +635,21 @@ describe("the one primary key", () => {
     expect(statusLine().textContent).toContain("Narrowest aisle 0.6 m");
     expect(within(statusLine()).queryByRole("button", { name: /Narrowest aisle/u })).toBeNull();
     expect(primaryKey().textContent).toBe("Send to the events team");
+    // One of the two closest tables pushed 0.15 m toward the other leaves less than the planner's spacing: asked
+    // about, as before.
+    const pair = laid.aisles.tightestPair;
+    if (pair === null) throw new Error("the laid room has a narrowest gap");
+    const reach = Math.hypot(pair.pointB.x - pair.pointA.x, pair.pointB.z - pair.pointA.z);
+    const push = { x: ((pair.pointB.x - pair.pointA.x) / reach) * 0.15 * RENDER_SCALE, z: ((pair.pointB.z - pair.pointA.z) / reach) * 0.15 * RENDER_SCALE };
+    const all = usePlacementStore.getState().placedItems;
+    // The table and its chairs, as the circulation scale groups them.
+    const unit = new Set(createGroupMemberIdsLookup(all)(pair.aId));
+    expect(unit.size).toBeGreaterThan(1);
+    setPlaced(all.map((item) => (unit.has(item.id) ? { ...item, x: item.x + push.x, z: item.z + push.z } : item)));
+    const pushed = roomFacts({ items: usePlacementStore.getState().placedItems, guests: 80, roomSlug: "grand-hall", doorSpaces: GRAND_HALL_DOOR_CLEAR_SPACES, kind: null, room: GRAND_HALL_RENDER_DIMENSIONS });
+    expect(pushed.aisles.tightestGapM).toBeCloseTo(0.5, 2);
+    // The screen reads a moved piece once it has come to rest.
+    await waitFor(() => { expect(primaryKey().textContent).toBe("Open up the narrowest gap"); });
   });
 
   it("sends to the events team once every guest has a seat", () => {

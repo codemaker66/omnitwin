@@ -89,7 +89,7 @@ export function nextMove(facts: RoomFacts, sent: boolean): NextMove {
   if (plane.short > 0) {
     return { id: "seat-more", text: `Seat ${String(plane.short)} more ${countNoun(plane.short, "guest")}`, step: "layout" };
   }
-  // Only a gap narrower than the planner itself lays (room-seals.ts): a room it has just laid is ready to send.
+  // Every tight or blocked gap but the planner's own spacing (room-seals.ts): a room it has just laid is ready to send.
   if (gapToOpenUp(facts.aisles)) {
     return { id: "open-gap", text: "Open up the narrowest gap", step: "layout" };
   }

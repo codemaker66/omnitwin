@@ -6,6 +6,7 @@ import { useDoorClearSpaceStore } from "../../stores/door-clear-space-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { usePlannerEventStore } from "../../stores/planner-event-store.js";
+import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 
 // ---------------------------------------------------------------------------
 // The room's facts, read once for the whole screen (the steps, the shelf's
@@ -58,9 +59,10 @@ export function HudFactsProvider({ eventGuests, children }: { readonly eventGues
   const doorSpaces = useDoorClearSpaceStore((state) => state.spaces);
   const doorsRecorded = useDoorClearSpaceStore((state) => state.recorded);
   const kind = usePlannerEventStore((state) => state.eventKind);
+  const room = useRoomDimensionsStore((state) => state.dimensions);
   const facts = useMemo(
-    () => roomFacts({ items, guests: planned ?? eventGuests, roomSlug, doorSpaces: doorsRecorded ? doorSpaces : null, kind }),
-    [items, planned, eventGuests, roomSlug, doorSpaces, doorsRecorded, kind],
+    () => roomFacts({ items, guests: planned ?? eventGuests, roomSlug, doorSpaces: doorsRecorded ? doorSpaces : null, kind, room }),
+    [items, planned, eventGuests, roomSlug, doorSpaces, doorsRecorded, kind, room],
   );
   return <HudFactsContext.Provider value={facts}>{children}</HudFactsContext.Provider>;
 }
