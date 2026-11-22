@@ -173,7 +173,7 @@ function chronological(
 /** Most specific active rule for (spaceId, incoming eventType); ties resolve
  *  toward the LARGEST minutes (fail-safe direction). Null = nothing applies.
  *
- *  Exported because the hallkeeper sheet derives its set-up deadline from the
+ *  Exported because the hallkeeper sheet derives its setup start from the
  *  SAME rule the conflict engine enforces. Two implementations of "how long
  *  this room needs" would eventually disagree, and the sheet is the copy a
  *  hallkeeper acts on. */
