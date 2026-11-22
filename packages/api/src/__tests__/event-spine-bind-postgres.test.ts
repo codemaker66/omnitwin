@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BookingSchema, VENUE_ACCESS_ENQUIRY_TYPE, type Booking } from "@omnitwin/types";
 import { bookingRoutes } from "../routes/bookings.js";
+import { opportunityRoutes } from "../routes/opportunities.js";
 import { transitionBookingCore, updateBookingCore } from "../services/booking-mutations.js";
 import { createEventFor } from "../services/event-binding.js";
 import {
@@ -32,6 +33,10 @@ import {
 // still share one event, and a writer holding a key share on the enquiry (a
 // viewing's insert, through its foreign key) never makes the bind wait.
 //
+// The join files a lost deal on its enquiry's event beside an open one; a
+// platform admin reopening it (PATCH /opportunities/:id) is refused with a
+// 409 naming the open deal, and nothing changes.
+//
 // The suite runs on a throwaway database of its own (openSpineDatabase); the
 // shared platform database is only the door to the cluster.
 // ---------------------------------------------------------------------------
@@ -53,6 +58,11 @@ function at(hhmm: string, dayOffset = 0): string {
 
 function bearer(actor: SpineActor): { authorization: string } {
   return { authorization: `Bearer ${JSON.stringify({ ...actor, email: `${actor.id}@event-spine.invalid` })}` };
+}
+
+/** The venue's coordinator, as a platform admin (who may move a deal to any stage). */
+function platformAdmin(actor: SpineActor): { authorization: string } {
+  return { authorization: `Bearer ${JSON.stringify({ ...actor, platformRole: "admin", email: `${actor.id}@event-spine.invalid` })}` };
 }
 
 /** The hold quartet every option carries (roadmap N3). */
@@ -88,6 +98,7 @@ describe.skipIf(target === undefined)("the spine: the bind joins the enquiry's o
     pool = spine.pool;
     server = Fastify();
     await server.register(bookingRoutes, { db: spine.db, prefix: "/bookings" });
+    await server.register(opportunityRoutes, { db: spine.db, prefix: "/opportunities" });
     await server.ready();
   }, 180_000);
   afterAll(async () => { await server?.close(); await spine?.close(); });
@@ -435,5 +446,30 @@ describe.skipIf(target === undefined)("the spine: the bind joins the enquiry's o
     expect(await questionsOn(fresh)).toEqual([]);
     expect(await enquiryEvent(inOne)).toBe(only);
     expect(await enquiryEvent(fresh)).toBe(made.eventId);
+  });
+
+  it("a platform admin reopening a lost deal the join filed beside an open one is refused plainly, naming the open deal, and nothing changes", async () => {
+    const v = await venue("reopened beside an open deal");
+    const enquiryId = await enquiryIn(pool, v.venueId);
+    const hold = await holdFromEnquiry(v.admin, holdBody(v, enquiryId));
+    const lost = await dealIn(pool, v.venueId, "lost", enquiryId);
+    const open = await dealIn(pool, v.venueId, "qualified", enquiryId);
+    // The join files both on the enquiry's event: the lost deal as history, the qualified one as its open deal.
+    await joinOldRecords();
+    const dealRow = async (id: string): Promise<Record<string, unknown> | undefined> => (await pool.query<Record<string, unknown>>(
+      `SELECT o.stage, o.event_id, o.closed_at, o.updated_at,
+        (SELECT count(*)::int FROM opportunity_status_history h WHERE h.opportunity_id = o.id) AS moves
+      FROM opportunities o WHERE o.id = $1`, [id])).rows[0];
+    const lostBefore = await dealRow(lost), openBefore = await dealRow(open);
+    expect([lostBefore?.["event_id"], openBefore?.["event_id"]]).toEqual([hold.eventId, hold.eventId]);
+
+    const reopened = await server.inject({
+      method: "PATCH", url: `/opportunities/${lost}`, headers: platformAdmin(v.admin), payload: { stage: "new" },
+    });
+    expect(reopened.statusCode, reopened.body).toBe(409);
+    expect(reopened.json<unknown>()).toEqual({
+      error: "This deal's event already has another open deal. Close that one first.", code: "EVENT_HAS_OPEN_DEAL", dealId: open,
+    });
+    expect([await dealRow(lost), await dealRow(open)]).toEqual([lostBefore, openBefore]);
   });
 });
