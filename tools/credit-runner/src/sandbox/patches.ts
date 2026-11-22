@@ -16,7 +16,7 @@ import { REPO_URL } from "./brief.js";
  * deleted and mode-changed files) read them, and `git ls-tree` reads the
  * base's own entry for every path they name. To classify binary files as git
  * does, a series that passes `--check` is then applied to the throwaway
- * index, and nowhere else (filesGitCallsBinary).
+ * index one patch at a time, and nowhere else (filesGitCallsBinary).
  */
 export interface PatchInspection {
   /** The `From <sha>` of each format-patch file, in file order (null: none). */
@@ -32,8 +32,9 @@ export interface PatchInspection {
   readonly movedAway: readonly string[];
   /**
    * Binary patch sections, whose content the patch does not show as text, and
-   * files git's own diff of the base and the patched result calls binary
-   * (filesGitCallsBinary), which git and GitHub show as "Binary files differ".
+   * files whose content one of the commits changes while git's own diff of
+   * that commit calls them binary (filesGitCallsBinary), which `git log -p`
+   * and a commit-by-commit view show as "Binary files differ".
    */
   readonly binary: readonly string[];
   /** Code files (JavaScript or TypeScript, not tests) that the patches give lines and take none from, other than new files. */
@@ -104,7 +105,7 @@ function parseNumstat(output: string): NumstatEntry[] {
     .filter((entry) => entry !== "")
     .map((entry) => {
       const match = /^(\d+|-)\t(\d+|-)\t([\s\S]+)$/u.exec(entry);
-      if (match === null) throw new Error(`git apply --numstat printed an unreadable entry: ${JSON.stringify(entry)}`);
+      if (match === null) throw new Error(`git printed an unreadable numstat entry: ${JSON.stringify(entry)}`);
       const count = (value: string | undefined): number | null => (value === undefined || value === "-" ? null : Number(value));
       return { added: count(match[1]), removed: count(match[2]), name: match[3] ?? "" };
     });
@@ -124,24 +125,27 @@ function hasControlCharacter(name: string): boolean {
   return Array.from(name).some((char) => (char.codePointAt(0) ?? 0) < 0x20 || char === "\u007f");
 }
 
+/** One path of `git diff --raw`: its status letter and its blob before and after (all zeros where it is absent). */
+interface RawEntry {
+  readonly status: string;
+  readonly before: string;
+  readonly after: string;
+}
+
 /**
- * The files git itself calls binary in the change from the base to the
- * patched result, as `git diff` and GitHub do: a NUL in the first 8,000 bytes
- * of the base's file or of the patched one, or a base .gitattributes that
- * unsets diff for the path (`-diff`, or `binary`). Nobody could read such a
- * change there, whatever the patch wrote, so it counts as a binary change.
- *
- * The series is applied to the throwaway index only (it holds the base; git
- * fetches the blobs it needs into the throwaway repository), and git then
- * compares that index with the base. The base's .gitattributes decides, not one
- * the series edits (`--attr-source`, git 2.42 or newer), a global attributes
- * file is left out, and patterns match names by case, as on Linux and GitHub,
- * though a Windows clone would otherwise ignore case. Text conversion and
- * external diff drivers are off.
+ * The paths one step of the series shows as "Binary files differ": the
+ * change from the tree `before` to the throwaway index, read by `git diff
+ * --raw --numstat`. git calls a file binary (numstat prints `-`) for a NUL in
+ * the first 8,000 bytes of either side, or a base .gitattributes that unsets
+ * diff for the path (`-diff`, or `binary`), and `git log -p` and format-patch
+ * then print "Binary files differ" only where the content changed. So a mode
+ * change alone (an M whose blob stays the same) is left out, and so is an
+ * exact rename (a blob deleted and the same blob added under another name,
+ * which git's rename detection always pairs), though numstat prints `-` for
+ * both. A path numstat names but --raw does not counts as binary.
  */
-async function filesGitCallsBinary(repo: string, scratch: string, baseSha: string, series: string): Promise<string[]> {
-  await git(repo, ["apply", "--cached", "--whitespace=nowarn", series]);
-  const diff = await git(repo, [
+async function binaryInStep(repo: string, scratch: string, baseSha: string, before: string): Promise<string[]> {
+  const output = await git(repo, [
     "-c",
     "core.ignorecase=false",
     "-c",
@@ -150,15 +154,73 @@ async function filesGitCallsBinary(repo: string, scratch: string, baseSha: strin
     "diff",
     "--cached",
     "-z",
+    "--raw",
     "--numstat",
     "--no-renames",
+    "--no-abbrev",
     "--no-textconv",
     "--no-ext-diff",
-    baseSha,
+    before,
   ]);
-  return parseNumstat(diff)
-    .filter((entry) => entry.added === null)
-    .map((entry) => entry.name);
+  // With -z, a --raw entry is a `:` header and then its path; every other entry is a numstat line.
+  const raw = new Map<string, RawEntry>();
+  const binary: string[] = [];
+  const tokens = output.split("\0");
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (token === "") continue;
+    if (token.startsWith(":")) {
+      const header = /^:[0-7]{6} [0-7]{6} ([0-9a-f]+) ([0-9a-f]+) ([A-Z])[0-9]*$/u.exec(token);
+      const file = tokens[index + 1];
+      if (header === null || file === undefined || file === "") throw new Error(`git diff --raw printed an unreadable entry: ${JSON.stringify(token)}`);
+      const [, from = "", to = "", status = ""] = header;
+      raw.set(file, { status, before: from, after: to });
+      index += 1;
+    } else {
+      for (const entry of parseNumstat(token)) if (entry.added === null) binary.push(entry.name);
+    }
+  }
+  const unchanged = new Set<string>();
+  const deletedBlobs = new Map<string, string[]>();
+  for (const [file, entry] of raw) {
+    if (entry.status === "M" && entry.before === entry.after) unchanged.add(file);
+    if (entry.status === "D") deletedBlobs.set(entry.before, [...(deletedBlobs.get(entry.before) ?? []), file]);
+  }
+  for (const [file, entry] of raw) {
+    if (entry.status !== "A") continue;
+    const renamedFrom = deletedBlobs.get(entry.after)?.shift();
+    if (renamedFrom === undefined) continue;
+    unchanged.add(renamedFrom);
+    unchanged.add(file);
+  }
+  return binary.filter((file) => !unchanged.has(file));
+}
+
+/**
+ * The files git itself shows as a binary change in any one of the commits, as
+ * `git log -p` and a commit-by-commit view on GitHub do (binaryInStep). Each
+ * commit is judged on its own, so a NUL that one commit adds and a later one
+ * takes out again still counts: nobody could read either commit there,
+ * whatever the patch wrote, though the series' net change reads as text.
+ *
+ * The patches are applied to the throwaway index only, one at a time (it holds
+ * the base; git fetches the blobs it needs into the throwaway repository), and
+ * each step is compared with the tree before it (`git write-tree`). The base's
+ * .gitattributes decides every step, not one the series edits
+ * (`--attr-source`, git 2.42 or newer), a global attributes file is left out,
+ * and patterns match names by case, as on Linux and GitHub, though a Windows
+ * clone would otherwise ignore case. Text conversion and external diff drivers
+ * are off.
+ */
+async function filesGitCallsBinary(repo: string, scratch: string, baseSha: string, steps: readonly string[]): Promise<string[]> {
+  const found = new Set<string>();
+  let before = baseSha;
+  for (const [index, step] of steps.entries()) {
+    await git(repo, ["apply", "--cached", "--whitespace=nowarn", step]);
+    for (const file of await binaryInStep(repo, scratch, baseSha, before)) found.add(file);
+    if (index < steps.length - 1) before = await git(repo, ["write-tree"]);
+  }
+  return [...found];
 }
 
 function emptyInspection(commits: readonly (string | null)[], problems: readonly string[], texts: readonly string[]): PatchInspection {
@@ -194,6 +256,7 @@ export async function inspectPatches(
         // Each file as `git am` would read it: exactly one message, split into
         // the commit message and the patch by git itself.
         const bodies: string[] = [];
+        const bodyFiles: string[] = [];
         for (const [index, file] of files.entries()) {
           const name = path.basename(file);
           commits.push(patchCommit((await readFile(file)).toString("utf8")));
@@ -218,6 +281,7 @@ export async function inspectPatches(
           const bodyText = await readFile(body, "utf8");
           if (!/^diff --git /mu.test(bodyText)) problems.push(`${name} holds no change`);
           bodies.push(bodyText);
+          bodyFiles.push(body);
           texts.push(info.stdout, await readFile(message, "utf8"));
           // One at a time: spreading a large patch's lines into push() would overflow the call stack.
           for (const line of bodyText.split("\n")) if (line.startsWith("+")) texts.push(line);
@@ -286,12 +350,12 @@ export async function inspectPatches(
         const movedAway = [...oldNames].filter((name) => !newNames.has(name));
         const created = [...newNames].filter((name) => !atBase.has(name) && !deleted.has(name));
         // A binary patch section hides its content from the scan whatever it
-        // holds; git's diff of the applied series classifies everything else.
+        // holds; git's diff of each applied commit classifies everything else.
         // A series that does not apply is rejected already and is not applied.
         const binary = [
           ...new Set([
             ...forward.filter((entry) => entry.added === null).map((entry) => entry.name),
-            ...(check.code === 0 ? await filesGitCallsBinary(repo, scratch, options.baseSha, series) : []),
+            ...(check.code === 0 ? await filesGitCallsBinary(repo, scratch, options.baseSha, bodyFiles) : []),
           ]),
         ];
         const isCreated = new Set(created);
