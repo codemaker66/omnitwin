@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import PDFDocument from "pdfkit";
 import { registerSheetFonts } from "../services/sheet-pdf/fonts.js";
-import { TYPE, balancedLines, drawLine, textWidth, wrapLines } from "../services/sheet-pdf/style.js";
+import { PAGE, TYPE, balancedLines, drawLine, textWidth, wrapLines } from "../services/sheet-pdf/style.js";
 import { pdfPages } from "./helpers/pdf-text.js";
 
 // The sheet wraps its own text, so a planner's pasted link or a paragraph of
@@ -101,6 +101,57 @@ describe("lines a reader takes in at a glance", () => {
         expect(line.trimStart().startsWith("·"), `${String(width)} pt: "${line}"`).toBe(false);
       }
     }
+    d.end();
+  });
+});
+
+describe("a count kept to its tables (#443's review, HG3)", () => {
+  // The setup page's place column: the steps' lane beside the rail, less the step numerals' indent, a third of it.
+  const placeW = Math.min(150, (PAGE.contentWidth - Math.round(PAGE.contentWidth * 0.29) - 16 - 30) * 0.32);
+
+  it("breaks a seat note only at a plain space, so a no-break space keeps the count at each with its last table", () => {
+    const d = doc();
+    const text = "80 at Tables 1–4, 6–9, 13\u00A0(10\u00A0each) · 10 at Top table";
+    expect(placeW).toBeCloseTo(102.49, 2);
+    expect(wrapLines(d, TYPE.where, text, placeW).length).toBeGreaterThan(1);
+    for (let width = 60; width <= 200; width += 0.5) {
+      const lines = wrapLines(d, TYPE.where, text, width);
+      expect(lines.join(" "), `${String(width)} pt`).toBe(text);
+      expect(lines.some((line) => line.includes("13\u00A0(10\u00A0each)")), `${String(width)} pt: ${JSON.stringify(lines)}`).toBe(true);
+      for (const line of lines) expect(/^(?:each|\(|·)/u.test(line), `${String(width)} pt: "${line}"`).toBe(false);
+    }
+    d.end();
+  });
+
+  it("still breaks at a tab as at a space", () => {
+    const d = doc();
+    expect(textWidth(d, TYPE.where, "Tables")).toBeLessThan(32);
+    expect(wrapLines(d, TYPE.where, "Tables\t1–11", 32)).toEqual(["Tables", "1–11"]);
+    d.end();
+  });
+
+  it("ties only at U+00A0, so a narrow no-break or figure space, which no House face sets, breaks as a space (#443's second review, HI1)", () => {
+    const d = doc();
+    expect(wrapLines(d, TYPE.where, "Tables\u202F1–11", 32)).toEqual(["Tables", "1–11"]);
+    expect(wrapLines(d, TYPE.where, "Tables\u20071–11", 32)).toEqual(["Tables", "1–11"]);
+    expect(wrapLines(d, TYPE.where, "Tables\u00A01–11", 32).join("")).not.toContain(" ");
+    d.end();
+  });
+
+  it("breaks a tied place wider than its line at its own no-break spaces, the bracket whole, between characters only as the last resort (HI4)", () => {
+    const d = doc();
+    const text = "16 at Bridesmaids-and-ushers, Family-of-the-groom\u00A0(8\u00A0each)";
+    const lines = wrapLines(d, TYPE.where, text, placeW);
+    expect(textWidth(d, TYPE.where, "Family-of-the-groom\u00A0(8\u00A0each)")).toBeGreaterThan(placeW);
+    // Every word whole, the line broken before the bracket.
+    expect(lines.flatMap((line) => line.split(/[ \u00A0]/u))).toEqual(text.split(/[ \u00A0]/u));
+    expect(lines.slice(-2)).toEqual(["Family-of-the-groom", "(8\u00A0each)"]);
+    // A name with nowhere to break is cut between its characters, its bracket still whole after it.
+    const unbroken = `16 at ${"Grandparents".repeat(4)}\u00A0(8\u00A0each)`;
+    const cut = wrapLines(d, TYPE.where, unbroken, placeW);
+    expect(cut.join("").split(/[ \u00A0]/u).join("")).toBe(unbroken.split(/[ \u00A0]/u).join(""));
+    expect(cut[cut.length - 1]).toBe("(8\u00A0each)");
+    for (const line of cut) expect(textWidth(d, TYPE.where, line), line).toBeLessThanOrEqual(placeW);
     d.end();
   });
 });

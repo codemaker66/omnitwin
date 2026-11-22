@@ -6,6 +6,7 @@ import type { SurveyedRoomEntry } from "../room-registry.js";
 import {
   loadSurveyedRoom,
   SurveyedRoomLoadError,
+  surveyFileUrl,
   useSurveyedRoom,
   type SurveyedRoomFailure,
   type SurveyedRoomProgress,
@@ -101,6 +102,12 @@ afterEach(() => {
 });
 
 describe("loading a surveyed room", () => {
+  it("builds a file's URL at the entry's revision", () => {
+    const third: SurveyedRoomEntry = { ...SALOON, revision: 3 };
+    expect(surveyFileUrl(third, "survey.json")).toBe("/rooms/saloon/survey-2026-07-11/survey.json?r=3");
+    expect(surveyFileUrl(third, "walls-4096.webp")).toBe("/rooms/saloon/survey-2026-07-11/walls-4096.webp?r=3");
+  });
+
   it("reads the record and both reliefs at the entry's revision, and builds the room's surfaces", async () => {
     const files = saloonFiles();
     const fake = serveSaloon(files);
@@ -183,6 +190,14 @@ describe("loading a surveyed room", () => {
     return encodeReliefFile([flatWallEntry(front.reliefId, front.length + 0.5, front.height), ...rest.map((wall) => flatWallEntry(wall.reliefId, wall.length, wall.height))]);
   };
   const withoutAWall = (): ArrayBuffer => encodeReliefFile(saloonWalls(saloonFiles().record).slice(0, 11));
+  /** A room without a ceiling relief, its walls' reliefs stopping 0.3 m short of the height its flat ceiling is given. */
+  const shortOfAFlatCeiling = (): SaloonFiles => saloonFiles(
+    (record) => {
+      delete record.ceiling.relief;
+      delete record.files["ceiling-relief.bin"];
+    },
+    encodeReliefFile(saloonFiles().record.walls.map((wall) => flatWallEntry(wall.reliefId, wall.length, wall.height - 0.3))),
+  );
 
   it.each<[string, () => SaloonFiles, Answer | null, Partial<SurveyedRoomFailure>, RegExp]>([
     ["the server refuses it", saloonFiles, () => new Response("gone", { status: 503 }), { reason: "http", status: 503 }, /HTTP 503/],
@@ -192,6 +207,7 @@ describe("loading a surveyed room", () => {
     ["it is not the size the record lists", () => saloonFiles((record) => { record.files["walls-relief.bin"] = { bytes: 12, sha256: "0".repeat(64) }; }), null, { reason: "integrity" }, /but the record lists 12/],
     ["a wall in it is wound inside out", () => saloonFiles(undefined, insideOut()), null, { reason: "geometry" }, /wall "front"'s relief is wound clockwise/],
     ["a wall in it reaches past its wall's end", () => saloonFiles(undefined, overlong()), null, { reason: "geometry" }, /wall "front"'s relief runs from 0.000 m to 7.508 m along the wall/],
+    ["its walls stop short of a flat ceiling", shortOfAFlatCeiling, null, { reason: "geometry" }, /the flat ceiling stands at 5\.515 m but the walls rise to 5\.215 m, more than 5 mm apart/],
   ])("fails, naming the walls' relief, when %s", async (_name, files, answer, expected, detail) => {
     serveSaloon(files(), answer === null ? {} : { "walls-relief.bin": answer });
     const failure = await failureOf(loadSurveyedRoom(SALOON));

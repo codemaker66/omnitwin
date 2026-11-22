@@ -9,7 +9,7 @@ import { SurveyedRoomModel, type SurveyedRoomPhotoProgress } from "../components
 import { parseRoomLabQuery, resolveRoomPose, ROOM_POSE_NAMES, type RoomPose } from "../components/surveyed-room/room-lab.js";
 import { useSurveyedRoom, type SurveyedRoomFailure, type SurveyedRoomState } from "../components/surveyed-room/use-surveyed-room.js";
 import { nativePrecompilePending } from "../lib/native-precompile.js";
-import { getNativeRenderer } from "../lib/native-renderer.js";
+import { getNativeRenderer, nativeDrawingBackend, type NativeDrawingBackend } from "../lib/native-renderer.js";
 import { readRenderDeviceContext, selectRenderProfile } from "../lib/render-quality.js";
 
 // Development fixture for one surveyed room, drawn by the room-driven path
@@ -34,6 +34,12 @@ interface RoomLabStatus {
   readonly photos: SurveyedRoomPhotoProgress | null;
   /** The record's wall ids, in order: a wall's index or id is a pose. */
   readonly walls: readonly string[];
+  /**
+   * What draws the page's frames, read from the renderer the canvas made
+   * (lib/native-renderer.ts): its backend and its GPU. Null until that
+   * renderer's backend can draw.
+   */
+  readonly drawnBy: NativeDrawingBackend | null;
 }
 
 declare global {
@@ -158,6 +164,7 @@ export function SurveyedRoomLabPage(): ReactElement {
           failure: now.state.status === "failed" ? now.state.failure : null,
           photos: now.photos,
           walls: now.wallIds,
+          drawnBy: nativeDrawingBackend(renderer.current),
         };
       },
       setPose: (asked) => {
