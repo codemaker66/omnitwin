@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { useCaptionPresenceStore } from "../stores/caption-presence-store.js";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
@@ -878,7 +879,7 @@ export function PlacedFurniture(): React.ReactElement {
     !cameraInteractionActive
     && (
       cameraReferenceItemIds.has(placedId)
-      || (!captionShown && !marqueeActive && placedId === primaryNameplateItemId)
+      || (!captionShown && !marqueeActive && placedId === primaryNameplateItemId && plannerFeatureEnabled("roomCallouts"))
     )
   ), [cameraInteractionActive, cameraReferenceItemIds, captionShown, marqueeActive, primaryNameplateItemId]);
 

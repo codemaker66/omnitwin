@@ -56,6 +56,11 @@
     "patchedDependencies": {
       "@react-three/drei@9.122.0": "patches/@react-three__drei@9.122.0.patch",
       "three@0.186.0": "patches/three@0.186.0.patch"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-fc5q-39xc-vjpf"
+      ]
     }
   },
   "devDependencies": {

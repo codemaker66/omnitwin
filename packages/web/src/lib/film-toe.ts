@@ -16,10 +16,11 @@
 // pinker). So the curve stays Neutral, and a photograph adds to its own
 // colour, before the curve, what the toe will take out again. `filmToe` is the
 // toe the photographs then come out with: at 0.04 they add nothing and draw as
-// before; at 0 they leave the curve exactly as they arrived, wherever the
-// photograph's own colour is all that reaches the curve. The frame's occlusion
-// and bloom, and a varnished photograph's own reflection, each leave a part of
-// the toe in place; none adds light the scan did not hold.
+// they did under Neutral alone; at 0, the default, they leave the curve exactly
+// as they arrived, wherever the photograph's own colour is all that reaches the
+// curve. The frame's occlusion and bloom, and a varnished photograph's own
+// reflection, each leave a part of the toe in place; none adds light the scan
+// did not hold.
 //
 // What reaches the curve is the material's colour after the frame's last
 // stage: the planner's grade and vignette, where its pipeline draws
@@ -34,8 +35,13 @@ import { cameraEye, sceneGrade, sceneOutput, vignetteShade } from "./scene-grade
 
 /** Khronos PBR Neutral's own toe. */
 export const NEUTRAL_TOE = 0.04;
-/** The toe the hall's photographs draw with unless a view asks for another. */
-export const DEFAULT_FILM_TOE: number = NEUTRAL_TOE;
+/**
+ * The toe the hall's photographs draw with unless a view asks for another:
+ * none, so they are on the screen as the scan saw them. Blake's pick of 14
+ * November 2026, from frames of the planner at 0.04, 0.02 and 0 in which the
+ * furniture did not differ.
+ */
+export const DEFAULT_FILM_TOE: number = 0;
 
 /** Neutral's shoulder starts here, measured after the toe is taken (0.8 - 0.04). */
 const SHOULDER_START = 0.8 - NEUTRAL_TOE;
@@ -79,15 +85,12 @@ export function filmToeFromSearch(search: string): number | null {
 }
 
 /**
- * The toe a page's photographs are to draw with, or null when they draw
- * through Neutral as it is: the address's `?toe=` if it has one, else the
- * default if that is no longer Neutral's own. Null builds the photographs'
- * materials exactly as they were before this file existed.
+ * The toe a page's photographs are to draw with: the address's `?toe=` if it
+ * has one (`?toe=0.04` is the hall as it drew under Neutral alone), else the
+ * default.
  */
-export function photographToeFor(search: string): number | null {
-  const asked = filmToeFromSearch(search);
-  if (asked !== null) return asked;
-  return DEFAULT_FILM_TOE === NEUTRAL_TOE ? null : DEFAULT_FILM_TOE;
+export function photographToeFor(search: string): number {
+  return filmToeFromSearch(search) ?? DEFAULT_FILM_TOE;
 }
 
 /**

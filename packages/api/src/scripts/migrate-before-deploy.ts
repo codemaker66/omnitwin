@@ -20,7 +20,8 @@ import { isLocalDatabaseUrl } from "../db/client.js";
 // applies migrations only after master's CI has passed. On 9 October 2026
 // that left the API running eleven minutes ahead of migration 0087, selecting
 // columns that did not exist yet. This script is Railway's pre-deploy
-// command (railway.json): it runs inside the built image, with the service's
+// command, declared in .railway/railway.ts and applied to Railway's stored
+// settings: it runs inside the built image, with the service's
 // own DATABASE_URL, before traffic switches. It runs the same read-only tail
 // gate the workflow runs, then applies what is pending through drizzle-orm's
 // migrator, which keeps the same `drizzle.__drizzle_migrations` ledger (tag

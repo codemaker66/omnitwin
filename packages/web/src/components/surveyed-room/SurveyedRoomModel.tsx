@@ -4,8 +4,10 @@
 // Draws a room loaded by use-surveyed-room.ts: its walls' measured relief,
 // its ceiling and its floor, each wearing the scan's photograph of it as
 // taken (room-materials.ts). Three draws: the walls, the ceiling, the floor.
-// Every face looks into the room and only front faces are drawn, so a camera
-// outside the room sees in through the walls nearest it.
+// Every face looks into the room and only front faces are drawn; a wall the
+// camera is behind, and the ceiling from above, are not drawn at all, relief
+// included (room-visibility.ts), so a camera outside the room sees in past
+// the walls nearest it with nothing of them left floating.
 //
 // The surfaces are there from the first frame, in a plain tone; the
 // photographs follow in the background and are swapped in as each arrives
@@ -24,8 +26,8 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactElement } from "react";
-import { useThree } from "@react-three/fiber";
-import type { Group } from "three";
+import { addAfterEffect, useFrame, useThree } from "@react-three/fiber";
+import type { Group, Mesh } from "three";
 import { useHallFinish } from "../grand-hall/hall-finish.js";
 import { nativeFramePrecompile } from "../../lib/native-frame-composer.js";
 import { requestNativePrecompile } from "../../lib/native-precompile.js";
@@ -34,6 +36,8 @@ import { SELECTION_PICK_IGNORED } from "../../lib/raycast-gate.js";
 import { createRoomBuffers } from "./room-buffers.js";
 import { createRoomMaterials, disposeRoomMaterials, RoomGradeUniforms, type RoomGrade } from "./room-materials.js";
 import { RoomPhotos, roomPhotoSources } from "./room-photos.js";
+import { RoomSight } from "./room-sight.js";
+import { roomPlanes } from "./room-visibility.js";
 import type { SurveyedRoom } from "./use-surveyed-room.js";
 
 /** The room itself is never selected, so a press does not test its triangles (lib/raycast-gate.ts). */
@@ -111,10 +115,36 @@ export function SurveyedRoomModel({ room, photoQuality, grade, onPhotoProgress }
     return () => { live = false; };
   }, [invalidate, photos, quality, room]);
 
+  const group = useRef<Group | null>(null);
+  const ceilingMesh = useRef<Mesh | null>(null);
+
+  // A wall the camera is behind, and the ceiling from above, are not drawn
+  // (room-visibility.ts): decided each frame before it is drawn, and written
+  // to the buffers only when the camera has changed sides.
+  const sight = useMemo(() => {
+    const ceilingHeight = room.record.ceiling.relief?.reference ?? room.record.room.ceilingHeight;
+    return new RoomSight(roomPlanes(room.frame, ceilingHeight), buffers);
+  }, [buffers, room]);
+  useFrame(({ camera }) => {
+    if (group.current === null) return;
+    sight.update(camera, group.current);
+    // A ceiling taken away is not drawn at all. Its empty draw range alone still had every pass that
+    // draws the room bind a pipeline and issue an indexed draw of nothing (three r186 skips a draw
+    // only for a count below zero), which WebGPU warns of. The range stays as it is, since three
+    // raycasts a mesh whether or not it is visible. Set each frame from what the sight draws, so a
+    // room that takes another's place never inherits a ceiling left hidden.
+    if (ceilingMesh.current !== null) ceilingMesh.current.visible = sight.ceilingDrawn;
+  });
+  // A camera moved after the room's turn in a frame was drawn as from where
+  // it had been: one more frame puts that right, whoever moved it and when.
+  const get = useThree((state) => state.get);
+  useEffect(() => addAfterEffect(() => {
+    if (group.current !== null && sight.stale(get().camera, group.current)) invalidate();
+  }), [get, invalidate, sight]);
+
   // The room's pipelines for the planner's scene pass, compiled before it
   // first draws them, as the Grand Hall's are (lib/native-precompile.ts,
   // F-01). Where the view draws plainly there is no pass to compile for.
-  const group = useRef<Group | null>(null);
   useLayoutEffect(() => {
     const renderer = getNativeRenderer(gl);
     if (renderer === null || group.current === null) return undefined;
@@ -133,7 +163,7 @@ export function SurveyedRoomModel({ room, photoQuality, grade, onPhotoProgress }
     // dispose={null}: what is drawn here is freed by the effects above, once, not by the reconciler too.
     <group ref={group} name="surveyed-room" userData={ROOM_USER_DATA} dispose={null}>
       <mesh name="surveyed-room-walls" geometry={buffers.walls} material={materials.walls} frustumCulled={false} userData={ROOM_USER_DATA} />
-      <mesh name="surveyed-room-ceiling" geometry={buffers.ceiling} material={materials.ceiling} frustumCulled={false} userData={ROOM_USER_DATA} />
+      <mesh ref={ceilingMesh} name="surveyed-room-ceiling" geometry={buffers.ceiling} material={materials.ceiling} frustumCulled={false} userData={ROOM_USER_DATA} />
       <mesh name="surveyed-room-floor" geometry={buffers.floor} material={materials.floor} frustumCulled={false} userData={ROOM_USER_DATA} />
     </group>
   );
