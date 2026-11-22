@@ -296,9 +296,69 @@ filtered) and installed as the scene's environment before the room's first frame
 (`HallEnvironmentCapture.prepare`), and every capture refills it: installing a new texture with the
 first capture made three rebuild every material of the scene pass once more, a 2.2-3.0 s
 main-thread task at 4x CPU on the phone profile, on master as on the branch (review R2). `HallEnvironment` stands in only
-while the room is not drawn. The canvas uses Khronos PBR Neutral tone mapping for the
-photographed room (`lib/capture-display.ts`), which keeps the photographs' mid-tones, after the
-planner's pipeline grades each mood ([planner rendering](planner-rendering.md)).
+while the room is not drawn. The canvas draws the photographed room through Khronos PBR Neutral
+(`lib/capture-display.ts`, `CaptureToneMapping`), after the planner's pipeline grades each mood
+([planner rendering](planner-rendering.md)). Neutral's toe takes up to 0.04 from every channel to
+cancel the mirror reflection of a lit material; a photograph has none, so at that toe the wall
+atlas shows 11 levels darker per channel on average and its texels under L* 10 rise from 8.4 % to
+14.9 % (simulated on `walls-4096.webp`, 13 November 2026).
+
+The curve is one curve for the whole frame, and the furniture is lit material whose colours were
+tuned under Neutral's toe: drawn with no toe anywhere, the planner's red chairs come out paler and
+pinker (measured on `/dev/planner-lab`, 14 November 2026). So the curve stays Neutral, and the
+photographs give the toe back themselves (`lib/film-toe.ts`): the matt and the varnished
+photographs (`hall-materials.ts`, where `relitPhoto` is shown), the two photographed door
+linings (`hall-section.ts`, in the wall bodies' material) and the windows' bars, whose paint is
+the colour the scan photographed (`hall-materials.ts` `paintSurface`), add to their own colour,
+before the curve, what the toe will take out again, so they come out as if the curve's toe were
+`filmToe`. At 0.04 they add nothing; at 0 a photograph under the shoulder is on the screen what
+arrived at the curve, and in Daylight that is the photograph.
+
+The addition is exact where the photograph's own colour is all that reaches the curve. Three
+things leave a part of the toe in place, and none adds more light than the scan held. Where the
+pipeline's occlusion darkens a photograph, the addition is darkened with it, so a crease keeps
+part of the toe. A varnished photograph's reflection is added after the addition was worked out
+from the photograph alone. And an edge resolved from several samples (a phone's multisampling,
+the desktop's temporal resolve) averages colours that already carry the addition, which the
+toe's curve then takes a little more from than from each alone.
+
+For the addition to be exact a photograph has to know what follows its draw: the exposure, and in
+the planner's pipeline the grade and the vignette. `sceneOutput` (`lib/scene-grade.ts`) carries
+those. Every draw through the native renderer declares itself (`withNativeRenderScope`): the
+view's own frame as such, with its exposure, and every other draw of the scene (the room's
+reflection capture, a shadow map, the plan thumbnail) as not, so it adds nothing and the
+furniture's reflections are as they were. A draw counts as the view's own frame for this only
+where Khronos PBR Neutral follows it: the renderer's curve for a plain draw, and for the
+pipeline's scene pass the curve read before the pipeline runs (three's `RenderPipeline.render`
+takes the renderer's own off while its passes draw). Under any other curve, or none, the
+photographs add nothing. The pipeline declares its grade and vignette around its frame; they
+mean something only for the view's own frame. The grade and the vignette are one function,
+`cameraEye` (`lib/scene-grade.ts`): the pipeline draws its frame through it and `photographLift`
+works the same function back out of the photograph's colour, so a stage added to it reaches
+both. `film-toe-graph.test.ts` runs the lift's own node graph through that function and three's
+Neutral, and holds the tests' plain-number Neutral to three's source.
+
+The photographs' toe is none by default (`DEFAULT_FILM_TOE`; Blake's pick of 14 November 2026,
+from frames of the planner at 0.04, 0.02 and 0 in which the furniture did not differ), so they are
+on the screen as the scan saw them. `?toe=0.04` in the page address draws the hall as it was under
+Neutral alone, and a value between draws the photographs with that toe.
+
+What gives the toe back is the scan's photographs and what is matched to them at a seam: the
+door linings beside the photographed door surrounds, and the windows' bars beside the
+photographed sash frames. The linings and the bars still had the toe in the frames Blake picked
+from; they follow the rule he picked. The drawn floor, the gilt, the brass, the painted mahogany
+and the windows' outer reveals were tuned under the toe, as the furniture was, and keep it. So do
+the dimmed rooms past the doors (`hall-beyond.ts`), whose floors are held by eye to at most 0.4
+of their photograph against the hall's own drawn floor. `hall-photograph-toe.test.ts` checks the
+hall's materials for both (it cannot see inside a deferred `Fn` body).
+
+The plan thumbnail sent with a layout (`lib/ortho-capture.ts`) is
+not the view's own frame, so the photographs add nothing in it. Nor has it a toe to give back:
+it is drawn into a render target, which three draws with no tone mapping and no exposure
+(`Renderer.currentToneMapping`, read in r186 on 14 November 2026). Measured on the planner's lab
+page on 15 November (phone profile, WebGPU): the thumbnail taken as the planner takes it, with
+the renderer's tone mapping off, with twice its exposure and with the photographs' toe at
+Neutral's is the same picture each time, 0 of 426,400 pixels apart.
 
 ## The real sky (`?sky=1`)
 
@@ -377,8 +437,8 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   |z| 5.95, 0.3 m inside the street wall. `?setting=none` leaves the hall under the sky alone, for
   measuring.
 - **The front** (`hall-exterior-spec.ts`, `hall-exterior.ts`, `hall-exterior-material.ts`,
-  `hall-exterior-cut.ts`, `HallExterior.tsx`; off unless `?facade=1`, remembered per device by
-  `lib/hall-facade-access.ts`, and only under the real sky, with the city): Trades Hall's Glassford Street front as
+  `hall-exterior-cut.ts`, `HallExterior.tsx`; under the real sky, with the city, unless a device chose
+  `?facade=0`, remembered by `lib/hall-facade-access.ts`; Blake's choice, 4 November): Trades Hall's Glassford Street front as
   solid masonry in place of the city's LiDAR trace of it, which stood 1.0-1.2 m out and stair-stepped (the DSM's
   shadow on a front facing away from the survey aircraft). Every number in the spec names its source: the E57 scan
   for the faces (links z -6.312, pavilions -6.607, the temple's podium -7.200), the venue's plan for the columns'
@@ -386,7 +446,10 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   streetward of the painted dome inside), photographs for heights and details, and the room for the hall's five
   windows (`HALL_OPENINGS`, so the front's openings and the room's glazing are one). 31,764 triangles (26,644 on a
   phone's finish), closed solids built a frame's spare time at a time after the city; its code is a lazy chunk
-  (28.7 kB, 10.9 kB gzipped) fetched only when the front is asked for. With it the city comes from
+  (28,839 B, 10,885 B gzipped, measured at #332's head) fetched only when the front is drawn. If the chunk will
+  not load (it rejects, or Vite's preload helper resolves it to nothing once the page has claimed its one
+  stale-chunk reload, `route-error-boundary.tsx`) or the build fails, the city fetches v2's model and lamps
+  again, so the street keeps a front. With it the city comes from
   `merchant-city-v3.bin` (the old front cut away to bare pavement, the neighbours' street fronts straightened; the
   survey README's v3 paragraph) with its lamps baked against it (the two door lanterns on the modelled podium). The
   material discards everything above the window wall's eased cut (`hallFrontCut`, written by GrandHallModel's cut
@@ -398,9 +461,12 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   lamp (24094) where photograph A puts it. Its round pieces keep sharp corners (`MeshBuilder.lathe`'s crease).
   An uncut copy casts on the sun's shadow layer, so the columns, cornices and pediment shade the hall's windows. Against photograph A from its solved
   camera (`tools/grand-hall-survey/front`) the render's edges lie a median 0.95 px (about 2.6 cm) from the
-  photograph's, the skyline within 1-4 px. On the RTX 4090 (Chrome 156, WebGPU, 160 guests, off/on/on/off pages)
-  the front changed the mean frame time by -0.23 to +0.29 ms across two poses by day and night, within the spread
-  of repeated runs (up to 1.2 ms).
+  photograph's, the skyline within 1-4 px; the other way, the photograph's edges lie a median 3.28 px from the
+  render's (its joints, carving, signs and street have no edges in the model). On the RTX 4090 (Chrome 156,
+  WebGPU, 160 guests, off/on/on/off pages) the front changed the mean frame time by -0.04 to +0.20 ms across two
+  poses by day and night, within the spread of repeated runs (0.26-1.66 ms); measured while the sky's WebGPU
+  pipelines failed to compile under `?sky=1` (three r186 writes an empty WGSL struct), so to be measured again once
+  that is fixed. The city drawn round the front (`merchant-city-v3.bin` and its lamps) is 2,568 B smaller than v2's.
 - **The street at night** (`lib/sky/night-looks.ts`, `hall-street-light.ts`, `HallStreetLights.tsx`):
   after dusk the card turns a dark violet with its skyline brighter than its blocks, so every
   building stands as a silhouette and no lit window floats; Glasgow City Council's street lamps

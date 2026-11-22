@@ -62,6 +62,7 @@ vi.mock("../api/configurations.js", () => ({
   claimConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
+  patchConfigMetadata: vi.fn(),
 }));
 vi.mock("../api/spaces.js", () => ({ listVenues: vi.fn(), listSpaces: vi.fn(), getSpace: vi.fn(), getVenue: vi.fn() }));
 
@@ -71,6 +72,7 @@ const { EditorPage } = await import("../pages/EditorPage.js");
 const { PlannerAuthBoundary } = await import("../router.js");
 const { useAuthStore } = await import("../stores/auth-store.js");
 const { useEditorStore } = await import("../stores/editor-store.js");
+const eventKind = await import("../lib/event-kind-record.js");
 
 const venue: Venue = { id: "venue-trades", name: "Trades Hall", slug: "trades-hall", address: "85 Glassford Street", logoUrl: null, brandColour: null };
 const reception: Space = { id: "space-reception", venueId: venue.id, name: "Reception Room", slug: "reception-room", widthM: "12", lengthM: "10", heightM: "4", floorPlanOutline: [] };
@@ -135,6 +137,8 @@ beforeEach(() => {
   configApi.claimConfig.mockImplementation((configId) => Promise.resolve(draft(configId, { isPublicPreview: false, userId: client.id })));
   configApi.authBatchSave.mockResolvedValue({ revision: 4, objects: [TABLE] });
   configApi.publicBatchSave.mockResolvedValue({ revision: 4, objects: [TABLE] });
+  configApi.patchConfigMetadata.mockResolvedValue({ id: "written" });
+  eventKind.resetEventKindQuestionForTesting();
 });
 
 afterEach(cleanup);
@@ -381,6 +385,24 @@ describe("a signed-in person's new plan", () => {
     expect(useEditorStore.getState().isPublicPreview).toBe(false);
     expect(configApi.authBatchSave).not.toHaveBeenCalled();
     expect(configApi.publicBatchSave).not.toHaveBeenCalled();
+  });
+
+  it("writes the event answered while it was being claimed into the new layout's metadata, and each later answer too (T-674)", async () => {
+    // The claim is held, so the question is answered while the plan is still a guest's draft.
+    let land: () => void = () => undefined;
+    configApi.claimConfig.mockImplementationOnce((configId) => new Promise((resolve) => {
+      land = () => { resolve(draft(configId, { isPublicPreview: false, userId: client.id })); };
+    }));
+    renderPlanner("/plan?space=reception-room");
+    await waitFor(() => { expect(eventKind.useEventKindQuestion.getState()).toMatchObject({ configId: "created", guest: true, known: true }); });
+    act(() => { eventKind.answerEventKind("wedding"); });
+    expect(configApi.patchConfigMetadata).not.toHaveBeenCalled();
+
+    await act(async () => { land(); await Promise.resolve(); });
+    await waitFor(() => { expect(configApi.patchConfigMetadata).toHaveBeenCalledWith("created", { eventKind: "wedding" }); });
+    act(() => { eventKind.answerEventKind("corporate"); });
+    await waitFor(() => { expect(configApi.patchConfigMetadata).toHaveBeenLastCalledWith("created", { eventKind: "corporate" }); });
+    expect(eventKind.useEventKindQuestion.getState()).toMatchObject({ guest: false, answer: "corporate" });
   });
 
   it("is claimed once the plan is open when the claim did not arrive as it was created", async () => {

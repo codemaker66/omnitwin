@@ -8,28 +8,32 @@ import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import type { PlacedItem } from "../../../lib/placement.js";
 import { PLANNER_CHROME_STORAGE_KEY } from "../../../lib/planner-chrome-flag.js";
 import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
-import { replaceSelection } from "../../../lib/planner-keymap.js";
+import { replaceSelection } from "../../../lib/planner-edit-commands.js";
 import { cardParamsFor } from "../../../lib/setup-cards.js";
 import { createTableGroup } from "../../../lib/table-group.js";
 import { EditorPage } from "../../../pages/EditorPage.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
-import { PLACEMENT_NOTICE_MS, usePlacementNoticeStore } from "../../../stores/placement-notice-store.js";
+import { usePlacementNoticeStore } from "../../../stores/placement-notice-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
+import { usePlannerChromeStore } from "../../../stores/planner-chrome-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { __resetEditorBridgeMountCountForTests } from "../../editor/EditorBridge.js";
+import { RECEIPT_MS } from "../Receipt.js";
 
 // ---------------------------------------------------------------------------
-// The placement line in the new chrome (ruling C2 on #388, 12 November 2026).
-// The planner says why a change did not happen, or what stayed, in one line
-// from the placement-notice store: "Nothing was undone: ...", "Nothing was
-// replaced: ...". Today's chrome draws it near the floor (PlacementNotice, in
-// the 3D view and the 2D view); the new chrome drew it nowhere, so a refused
-// Undo or Replace there was silent. It now stands in the zone above the dock,
-// under the door line, in the chrome's own Notice, by v1's rules: one line at
-// a time, in a status region that is always there, gone after its time or
-// when another piece is chosen.
+// The engine's line in the new chrome (ruling C2 on #388, 12 November 2026,
+// revised by the release lead's ruling on #388's merge with master, 22
+// November 2026). The planner says why a change did not happen, or what
+// stayed, in one line from the placement-notice store: "Nothing was undone:
+// ...", "Nothing was replaced: ...". Today's chrome draws it near the floor
+// (PlacementNotice, in the 3D view and the 2D view). The new chrome says it in
+// its receipt above the dock (Receipt, #357's B-02), over the door line: one
+// line at a time, in a status region that is always there and is the only
+// live region that says it, gone after the receipt's time. A sentence that
+// names its piece stays when another piece is chosen (accepted on 22 November
+// 2026).
 //
 // The new chrome hosts neither the 3D view of today's chrome nor the 2D view
 // (EditorPage gives it no 2D view), each of which mounts its own line: they
@@ -149,27 +153,35 @@ async function openTheNewChrome(): Promise<void> {
     </MemoryRouter>,
   );
   await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); });
+  // The chrome came in from its lazy chunk outside act, so its effects (the scene bridge's sync, the
+  // receipt's hold on the engine's notices) can still be waiting for the scheduler: a change made now
+  // would reach neither. Let them run first.
+  await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 50); }); });
 }
 
-/** The zone above the dock, and the placement line's region in it (always there). */
-function lineRegion(): HTMLElement {
+/** The zone above the dock, and the receipt's region in it (always there). */
+function receiptRegion(): HTMLElement {
   const zone = document.querySelector<HTMLElement>("[data-pc-zone='above-dock']");
   if (zone === null) throw new Error("no zone above the dock");
-  return within(zone).getByTestId("placement-notice-region");
+  const region = zone.querySelector<HTMLElement>(".pc-receipt-region");
+  if (region === null) throw new Error("no receipt region above the dock");
+  return region;
 }
 
-/** The sentence is said once on the page, in the chrome's own notice inside that region. */
-function saidOnceInTheNotice(line: string): void {
+/** The sentence is said once on the page, as the receipt's line inside that region, and by that region alone. */
+function saidOnceInTheReceipt(line: string): void {
   const said = screen.getAllByText(line);
   expect(said).toHaveLength(1);
   const [only] = said;
-  expect(only?.closest(".pc-notice")).not.toBeNull();
-  expect(lineRegion().contains(only ?? null)).toBe(true);
-  expect(document.querySelectorAll("[data-testid='placement-notice-region']")).toHaveLength(1);
-  // One live region says it, the one that was there before it: never a second one nested inside it (delta review of #388 at 33a8e0ad, U2).
+  expect(only?.closest(".pc-receipt")).not.toBeNull();
+  expect(receiptRegion().contains(only ?? null)).toBe(true);
+  expect(document.querySelectorAll(".pc-receipt-region")).toHaveLength(1);
+  // One live region says it, the one that was there before it: never a second one beside or inside it.
   const voices = [...document.querySelectorAll("[aria-live], [role='status'], [role='alert']")]
     .filter((element) => (element.textContent ?? "").includes(line));
-  expect(voices).toEqual([lineRegion()]);
+  expect(voices).toEqual([receiptRegion()]);
+  // A refusal is the line alone: nothing to take back.
+  expect(within(receiptRegion()).queryByRole("button", { name: /^Undo/u })).toBeNull();
 }
 
 beforeEach(() => {
@@ -180,6 +192,7 @@ beforeEach(() => {
   usePlacementStore.setState({ placedItems: [] });
   useSelectionStore.getState().clearSelection();
   usePlacementNoticeStore.getState().dismiss();
+  usePlannerChromeStore.getState().clearReceipt();
   useCatalogueStore.setState({ selectedItemId: null });
   useRoomDimensionsStore.setState({ dimensions: GRAND_HALL_RENDER_DIMENSIONS });
   __resetEditorBridgeMountCountForTests();
@@ -193,8 +206,8 @@ afterEach(() => {
   window.localStorage.removeItem(PLANNER_CHROME_STORAGE_KEY);
 });
 
-describe("the placement line in the new chrome (ruling C2 on #388)", () => {
-  it("says a refused Undo once, in the chrome's own notice under the door line, and clears it when another piece is chosen", async () => {
+describe("the engine's line in the new chrome, in its receipt (ruling C2 on #388, as revised on 22 November 2026)", () => {
+  it("says a refused Undo once, in the receipt above the door line, and keeps it when another piece is chosen, as it names its pieces", async () => {
     const [first, second] = rounds(2);
     const firstChair = first?.chairs[2];
     const secondChair = second?.chairs[5];
@@ -202,11 +215,11 @@ describe("the placement line in the new chrome (ruling C2 on #388)", () => {
     await open([], []);
     await openTheNewChrome();
 
-    // The region is there before any line, and polite; it stands under the door line's.
-    const region = lineRegion();
-    expect({ role: region.getAttribute("role"), live: region.getAttribute("aria-live"), words: region.textContent }).toEqual({ role: "status", live: "polite", words: "" });
+    // The region is there before any line, and quiet; it stands over the door line's.
+    const region = receiptRegion();
+    expect({ role: region.getAttribute("role"), words: region.textContent }).toEqual({ role: "status", words: "" });
     const doorRegion = screen.getByTestId("door-clear-notice-region");
-    expect(doorRegion.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(region.compareDocumentPosition(doorRegion) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     // Both rounds placed in one step and saved; the maker then writes a note on a chair at each.
     act(() => { usePlacementStore.getState().placeSetup([...first.pieces, ...second.pieces]); });
@@ -215,15 +228,15 @@ describe("the placement line in the new chrome (ruling C2 on #388)", () => {
 
     act(() => { useEditorStore.getState().undo(); });
     const line = "Nothing was undone: a chair at Table 1 and a chair at Table 2 have notes that cannot be shown here.";
-    saidOnceInTheNotice(line);
+    saidOnceInTheReceipt(line);
 
-    // Choosing a piece to place makes the line stale; the region stays for the next.
+    // Choosing a piece to place does not take it away: the line says which pieces it is about.
     act(() => { useCatalogueStore.getState().selectItem(ROUND); });
-    expect(screen.queryByText(line)).toBeNull();
-    expect(lineRegion()).toBe(region);
+    saidOnceInTheReceipt(line);
+    expect(receiptRegion()).toBe(region);
   });
 
-  it("says a refused Replace the same way, one line at a time, and the line goes after its time", async () => {
+  it("says a refused Replace the same way, one line at a time, and the line goes after the receipt's time", async () => {
     const [first, second] = rounds(2);
     if (first === undefined || second === undefined) throw new Error("no rounds");
     await open([first, second], [first.table]);
@@ -236,12 +249,33 @@ describe("the placement line in the new chrome (ruling C2 on #388)", () => {
     act(() => { useSelectionStore.getState().selectMultiple([first.table, second.table]); });
     act(() => { replaceSelection(card); });
     const line = "Nothing was replaced: Table 1 has a note that cannot be shown here.";
-    saidOnceInTheNotice(line);
+    saidOnceInTheReceipt(line);
     // One line at a time: the new one replaced the last.
     expect(screen.queryByText("TEST ONLY an earlier line")).toBeNull();
 
-    act(() => { vi.advanceTimersByTime(PLACEMENT_NOTICE_MS); });
+    act(() => { vi.advanceTimersByTime(RECEIPT_MS); });
     expect(screen.queryByText(line)).toBeNull();
-    expect(lineRegion().textContent).toBe("");
+    expect(receiptRegion().textContent).toBe("");
+  });
+
+  it("gives one notice one announcement and one visible line, in the region that was already there", async () => {
+    const [first] = rounds(1);
+    if (first === undefined) throw new Error("no rounds");
+    await open([first], [first.table]);
+    await openTheNewChrome();
+    const region = receiptRegion();
+    const receipts: string[] = [];
+    const stopCounting = usePlannerChromeStore.subscribe((state, previous) => {
+      if (state.receipt !== null && state.receipt !== previous.receipt) receipts.push(state.receipt.text);
+    });
+
+    act(() => { useEditorStore.getState().removeObject(first.table); });
+    stopCounting();
+    const line = "Nothing was removed: Table 1 has a note that cannot be shown here.";
+    saidOnceInTheReceipt(line);
+    expect(receiptRegion()).toBe(region);
+    // The region's words were set once: one receipt for the one notice.
+    expect(receipts).toEqual([line]);
+    expect(usePlannerChromeStore.getState().receipt).toMatchObject({ text: line, undo: false });
   });
 });

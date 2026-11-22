@@ -8,6 +8,8 @@ import {
   EnquirySchema,
   CreateEnquirySchema,
   GuestEnquirySchema,
+  GUEST_ENQUIRY_LIMITS,
+  GUEST_ENQUIRY_LATEST_EVENT_DATE,
   GUEST_ENQUIRY_SOURCES,
   ENQUIRY_SOURCES,
   occasionLabel,
@@ -566,6 +568,19 @@ describe("GuestEnquirySchema", () => {
       .toEqual(Object.fromEntries([...real.map((date) => [date, true]), ...none.map((date) => [date, false])]));
   });
 
+  // Review of #405, F2. A date input with no max takes a year of five or six
+  // digits ("20277-05-01"), which this schema refuses, so all three forms set
+  // this bound as their date field's max. It is the schema's own last date.
+  it("takes GUEST_ENQUIRY_LATEST_EVENT_DATE, the forms' last date, and no date after it", () => {
+    const takes = (eventDate: string): boolean => GuestEnquirySchema.safeParse({ ...validGuest, eventDate }).success;
+    expect(GUEST_ENQUIRY_LATEST_EVENT_DATE).toBe("9999-12-31");
+    expect({
+      [GUEST_ENQUIRY_LATEST_EVENT_DATE]: takes(GUEST_ENQUIRY_LATEST_EVENT_DATE),
+      "10000-01-01": takes("10000-01-01"),
+      "20277-05-01": takes("20277-05-01"),
+    }).toEqual({ "9999-12-31": true, "10000-01-01": false, "20277-05-01": false });
+  });
+
   it("rejects negative guestCount", () => {
     expect(GuestEnquirySchema.safeParse({ ...validGuest, guestCount: -1 }).success).toBe(false);
   });
@@ -601,6 +616,22 @@ describe("GuestEnquirySchema", () => {
 
   it("rejects phone exceeding 30 characters", () => {
     expect(GuestEnquirySchema.safeParse({ ...validGuest, phone: "1".repeat(31) }).success).toBe(false);
+  });
+
+  // The public forms set these limits on their fields (enquiries-crm-2), so
+  // the schema must refuse exactly one past each of them and take the limit.
+  it("holds each field the forms limit to GUEST_ENQUIRY_LIMITS, no more and no less", () => {
+    const { nameLength, phoneLength, messageLength, guestCount } = GUEST_ENQUIRY_LIMITS;
+    const cases: readonly [string, Record<string, unknown>, Record<string, unknown>][] = [
+      ["name", { name: "a".repeat(nameLength) }, { name: "a".repeat(nameLength + 1) }],
+      ["phone", { phone: "1".repeat(phoneLength) }, { phone: "1".repeat(phoneLength + 1) }],
+      ["message", { message: "m".repeat(messageLength) }, { message: "m".repeat(messageLength + 1) }],
+      ["guestCount", { guestCount }, { guestCount: guestCount + 1 }],
+    ];
+    for (const [field, atLimit, pastLimit] of cases) {
+      expect(GuestEnquirySchema.safeParse({ ...validGuest, ...atLimit }).success, `${field} at the limit`).toBe(true);
+      expect(GuestEnquirySchema.safeParse({ ...validGuest, ...pastLimit }).success, `${field} past the limit`).toBe(false);
+    }
   });
 
   it("accepts where the enquiry was written: the website composer or the walkthrough", () => {

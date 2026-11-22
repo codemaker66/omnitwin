@@ -15,6 +15,7 @@ import { PlannerLeavingNotes } from "../components/editor/PlannerLeavingNotes.js
 import { EditorBridge } from "../components/editor/EditorBridge.js";
 import { LayoutLiveLayer } from "../components/editor/LayoutLiveLayer.js";
 import { PlannerCockpit } from "../components/editor/cockpit/PlannerCockpit.js";
+import { EventKindPicker } from "../components/editor/event-kind/EventKindPicker.js";
 import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
 import { EventDetailsPanel } from "../components/editor/EventDetailsPanel.js";
 import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
@@ -26,11 +27,12 @@ import {
 } from "../lib/truth-mode-summary.js";
 import { getConfig, getPublicConfig, type Configuration } from "../api/configurations.js";
 import { claimTrackedDraft } from "../lib/planner-claim.js";
+import { layoutClaimedEventKind } from "../lib/event-kind-record.js";
 import { usePlannerDraftClaim } from "../hooks/use-planner-draft-claim.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { prefetchPlannerVenue } from "../hooks/use-planner-venue-identity.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
-import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
+import { plannerChromeRequested, setMountedPlannerChrome } from "../lib/planner-chrome-flag.js";
 import { registerReplayBridge } from "../lib/action-log-replay-bridge.js";
 import {
   resolvePlannerVenue,
@@ -425,6 +427,8 @@ export function EditorPage(): React.ReactElement {
         if (isAuthenticated && ownsRoute() && await claimOwnDraft(newConfigId)
           && ownsRoute() && useEditorStore.getState().configId === newConfigId) {
           useEditorStore.setState({ isPublicPreview: false });
+          // The event's answer, given while it was a guest's draft, now belongs with the layout (T-674).
+          layoutClaimedEventKind(newConfigId);
         }
         // Committing this draft changes storeConfigId and cleans up the effect.
         // That self-settlement may still navigate, but only for the same route,
@@ -560,6 +564,12 @@ function PlannerChrome(): React.ReactElement {
   usePlannerToolKeys();
   const location = useLocation();
   const chrome = useMemo(() => plannerChromeRequested(location.search), [location.search]);
+  // The scene asks which chrome is mounted, and this is the one answer: the address and the device's memory can say
+  // something else by the time of a click (another tab's flag), and what is on screen has not changed.
+  useLayoutEffect(() => {
+    setMountedPlannerChrome(chrome);
+    return () => { setMountedPlannerChrome(null); };
+  }, [chrome]);
   if (chrome === "v1") return <PlannerCommsLayer />;
   return (
     <Suspense
@@ -573,7 +583,7 @@ function PlannerChrome(): React.ReactElement {
       )}
     >
       <PlannerWorkContext.Provider value={NO_2D_VIEW}>
-        <PlannerChromeV2 />
+        {chrome === "hud" ? <PlannerHud /> : <PlannerChromeV2 />}
       </PlannerWorkContext.Provider>
     </Suspense>
   );
@@ -585,6 +595,12 @@ function PlannerChrome(): React.ReactElement {
  * (PlanDrawingSwitch) here so the cards offer "Continue in the drawing".
  */
 const NO_2D_VIEW: PlannerWork = { continueIn2d: null };
+
+/** The HUD (13 Nov 2026: the hall as one picture, and one shelf), loaded only behind `?chrome=hud`. */
+const PlannerHud = lazy(async () => {
+  const module = await import("../components/planner-hud/PlannerHud.js");
+  return { default: module.PlannerHud };
+});
 
 /** The new chrome (T-671), loaded only behind its flag. */
 const PlannerChromeV2 = lazy(async () => {
@@ -639,6 +655,7 @@ function PlannerCommsLayer(): React.ReactElement {
   // the config is claimed; the panel itself renders a sign-in hint if it
   // ever opens in that state (defense-in-depth).
   const canEditEventDetails = configId !== null && !isPublicPreview;
+  const hasLinkedEvent = (searchParams.get("eventId")?.trim().length ?? 0) > 0;
   const mobile = isNarrow || isTouch;
   const showStandaloneTruthIndicator = !timelinePreviewActive
     && truthModeEnabled
@@ -690,7 +707,7 @@ function PlannerCommsLayer(): React.ReactElement {
       >
         {viewMode === "3d" ? (
           <PlannerWorkContext.Provider value={plannerWork}>
-            <PlannerCockpit mobile={mobile} hasLinkedEvent={(searchParams.get("eventId")?.trim().length ?? 0) > 0} />
+            <PlannerCockpit mobile={mobile} hasLinkedEvent={hasLinkedEvent} />
           </PlannerWorkContext.Provider>
         ) : (
           <BlueprintPage source="editor-store" />
@@ -706,6 +723,9 @@ function PlannerCommsLayer(): React.ReactElement {
           previewLocked={timelinePreviewActive}
         />
       )}
+      {/* "What are you planning?" on a new layout's first open (T-674). Beside the 3D and 2D views, not in
+          either, so the room's name opens it in both; it portals itself into the top layer. */}
+      <EventKindPicker eventLinked={hasLinkedEvent} />
       <div className={mobile ? "mobile-planner-utilities" : undefined}>
       {mobile && showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} embedded />}
       {canEditEventDetails && viewMode === "3d" && !timelinePreviewActive && (

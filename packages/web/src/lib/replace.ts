@@ -3,7 +3,8 @@ import { getCatalogueItem, type CatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { createGhostWorld, judgeGhost, obstacleAt, refusalChip, type GhostObstacle, type GhostWorld } from "./ghost-truth.js";
 import { heldNotePieceName, heldNotePieceToName, nothingReplacedLine } from "./guest-plan-notes.js";
-import { footprintBounds, selectionUnits, wholeSelection } from "./placement-edit.js";
+import { footprintBounds, wholeSelection } from "./placement-edit.js";
+import { selectionUnits } from "./placement-moves.js";
 import { generatePlacedId, settleMovedOnSurfaces, type PlacedItem } from "./placement.js";
 import {
   cardMainItem,
@@ -84,7 +85,7 @@ export interface ReplaceOptions {
    * (lib/guest-plan-notes currentHeldNoteIds). A selection with such a piece
    * is not replaced: the note cannot be read, so it cannot be carried to a new
    * table, and a piece that goes takes its note with it for good. A preview
-   * must be given the same answer as the command (planner-keymap
+   * must be given the same answer as the command (planner-edit-commands
    * replaceSelection), so that its refusal is the command's.
    */
   readonly holdsUnseenNote?: (id: string) => boolean;

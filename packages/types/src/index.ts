@@ -1046,6 +1046,9 @@ export {
   EnquirySchema,
   CreateEnquirySchema,
   GuestEnquirySchema,
+  GuestEnquiryEmailSchema,
+  GUEST_ENQUIRY_LIMITS,
+  GUEST_ENQUIRY_LATEST_EVENT_DATE,
   GUEST_ENQUIRY_SOURCES,
   ENQUIRY_SOURCES,
   EnquirySourceSchema,
@@ -1472,6 +1475,7 @@ export {
   PhaseDeadlineSchema,
   EventInstructionsSchema,
   ConfigurationMetadataSchema,
+  PlannerEventKindSchema,
   PlacedObjectMetadataSchema,
   emptyEventInstructions,
   hasInstructionContent,
@@ -2625,6 +2629,9 @@ export * from "./competitor-watch.js";
 // The enquiry funnel (migration 0100): first replies, where enquiries come from,
 // proposal link visits, and engagement attached to an enquiry or a proposal.
 export * from "./enquiry-funnel.js";
+// Field web vitals (goal 07): a sampled page load's LCP, INP, CLS and TTFB by
+// route pattern and device class, for p75 on production.
+export * from "./web-vitals.js";
 // The gangway review (25 Oct 2026): pinches under the 1.1 m guidance, for the venue to decide.
 export * from "./gangway-review.js";
 // The venue team (Plan 19 L1): venue admins invite their own staff; Blake
@@ -2638,3 +2645,4 @@ export * from "./crowded-day.js";
 export * from "./deposits.js";
 export * from "./contracts.js";
 export * from "./reference-loadouts.js";
+export * from "./decision.js";

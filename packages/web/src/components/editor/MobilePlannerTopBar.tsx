@@ -14,6 +14,7 @@ import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { useOnlineStatus } from "../../hooks/use-online-status.js";
+import { EventKindName } from "./event-kind/EventKindPicker.js";
 
 interface MobilePlannerTopBarProps {
   readonly mode: "3d" | "2d";
@@ -261,6 +262,7 @@ export function MobilePlannerTopBar({
         <div style={titleStyle}>
           <div data-testid="mobile-planner-room-name" style={roomStyle}>{roomName}</div>
           <div data-testid="mobile-planner-layout-name" style={layoutStyle}>{layoutName}</div>
+          <EventKindName className="is-phone" />
           {status === "failed" ? (
             <button
               type="button"

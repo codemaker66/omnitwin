@@ -3,7 +3,7 @@ import { useAuthStore } from "./stores/auth-store.js";
 import { createBrowserRouter, Navigate, Outlet, useLocation, useMatches, type RouteObject } from "react-router-dom";
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
 import {
-  CLIENT_SIDE_ROLES, COMMERCIAL_ROLES, DIARY_ROLES, hasRole, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
+  CLIENT_SIDE_ROLES, COMMERCIAL_ROLES, hasRole, opensDiary, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
 } from "./lib/role-capabilities.js";
 import { CLIENT_HOME_ROUTE } from "./lib/role-routing.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
@@ -334,6 +334,9 @@ function devFixtureRoutes(): readonly RouteObject[] {
   const GrandHallLabPage = lazy(() =>
     cockpitImport(() => import("./pages/GrandHallLabPage.js").then((m) => ({ default: m.GrandHallLabPage }))),
   );
+  const SurveyedRoomLabPage = lazy(() =>
+    cockpitImport(() => import("./pages/SurveyedRoomLabPage.js").then((m) => ({ default: m.SurveyedRoomLabPage }))),
+  );
   const FurnitureLabPage = lazy(() =>
     cockpitImport(() => import("./pages/FurnitureLabPage.js").then((m) => ({ default: m.FurnitureLabPage }))),
   );
@@ -376,6 +379,12 @@ function devFixtureRoutes(): readonly RouteObject[] {
       // window bridge for headless visual review.
       path: "/dev/grand-hall",
       element: withSuspense(<GrandHallLabPage />),
+    },
+    {
+      // One surveyed room drawn by the room-driven path from a public folder
+      // (`?base=<folder>&r=<revision>`), posed by a window bridge for review.
+      path: "/dev/surveyed-room",
+      element: withSuspense(<SurveyedRoomLabPage />),
     },
     {
       // The crafted furniture beside the supplied models it replaces, in the
@@ -546,7 +555,7 @@ export const router = createBrowserRouter(underRouteErrorBoundary([
       // The Diary Board (T-493): staff/admin move bookings; hallkeeper reads.
       // The API enforces the same write split server-side.
       staffPage("/diary", DiaryBoardPage,
-        <ProtectedRoute allowedRoles={DIARY_ROLES}><DiaryBoardPage /></ProtectedRoute>),
+        <ProtectedRoute admits={opensDiary}><DiaryBoardPage /></ProtectedRoute>),
       staffPage("/dashboard", DashboardPage,
         <ProtectedRoute allowedRoles={WORKSPACE_ROLES}><DashboardPage /></ProtectedRoute>),
       staffPage("/ops/handoff/:handoffPackId", OpsHandoffPage,

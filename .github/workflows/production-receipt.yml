@@ -73,12 +73,18 @@ jobs:
           note() { printf '%s\n' "$*" | tee -a "$GITHUB_STEP_SUMMARY"; }
           status_of() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || true; }
           # True when no file changed between a build and the expected commit
-          # matches railway.json's watchPatterns at the expected commit: the
-          # paths Railway rebuilds the API for. Unknown answers count as a
-          # change, so the receipt fails safe.
+          # matches the watch list at the expected commit: the paths Railway
+          # rebuilds the API for. The list is read from
+          # .railway/watch-patterns.json; at commits older than that file it
+          # cannot be read, so railway.json's build.watchPatterns is read
+          # instead (while both exist, ci.yml keeps them equal). Unknown
+          # answers, including neither file, count as a change, so the
+          # receipt fails safe.
           api_unchanged_since() {
             local patterns files regex
-            patterns=$(gh api "repos/$REPOSITORY/contents/railway.json?ref=$EXPECTED_SHA" --jq '.content' 2>/dev/null \
+            patterns=$(gh api "repos/$REPOSITORY/contents/.railway/watch-patterns.json?ref=$EXPECTED_SHA" --jq '.content' 2>/dev/null \
+              | base64 -d 2>/dev/null | jq -r 'if type == "array" then .[] else error("not a list") end' 2>/dev/null) \
+              || patterns=$(gh api "repos/$REPOSITORY/contents/railway.json?ref=$EXPECTED_SHA" --jq '.content' 2>/dev/null \
               | base64 -d 2>/dev/null | jq -r '.build.watchPatterns[]' 2>/dev/null) || return 1
             [[ -n "$patterns" ]] || return 1
             files=$(gh api "repos/$REPOSITORY/compare/$1...$EXPECTED_SHA" --jq '.files | if length >= 300 then error("too many files") else .[].filename end' 2>/dev/null) || return 1
@@ -116,8 +122,8 @@ jobs:
               relation=$(gh api "repos/$REPOSITORY/compare/$EXPECTED_SHA...$reported" --jq '.status' 2>/dev/null || echo "unknown")
             fi
             if [[ "$relation" == "identical" || "$relation" == "ahead" ]]; then api_state="contains"; break; fi
-            # Railway rebuilds only when a watched path changes (railway.json),
-            # so an older build can still be the current one.
+            # Railway rebuilds only when a watched path changes (the watch
+            # list above), so an older build can still be the current one.
             if [[ "$relation" == "behind" ]] && api_unchanged_since "$reported"; then api_state="unchanged"; break; fi
             if (( $(date +%s) >= deadline )); then break; fi
             sleep 30
@@ -127,6 +133,7 @@ jobs:
             note "- the running build (\`$reported\`) contains the expected commit ($relation)"
           elif [[ "$api_state" == "unchanged" ]]; then
             note "- the running build (\`$reported\`) is current: nothing the API is built from changed between it and the expected commit"
+            note "- this assumes Railway's stored settings match the repository: the watch list is read from the repository, not from Railway"
           else
             note "- the running build does not contain the expected commit (reports \`${reported:-nothing}\`, $relation)"
             failed=1

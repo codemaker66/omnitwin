@@ -26,6 +26,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
+import { clipName } from "../utils/clip-name.js";
 import { canManageVenue } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
@@ -385,7 +386,9 @@ async function appendMessage(
       venueId: thread.venueId,
       kind: seed.kind,
       authorUserId: seed.authorUserId,
-      authorName: seed.authorName,
+      // Every message is written here: a name longer than the column is
+      // kept to it, never refused.
+      authorName: clipName(seed.authorName),
       authorRole: seed.authorRole,
       body: seed.body,
       idempotencyKey: seed.idempotencyKey,
@@ -476,7 +479,9 @@ async function receiptsFor(conn: Conn, messageIds: readonly string[]): Promise<R
     list.push({
       messageId: receipt.messageId,
       recipientUserId: receipt.recipientUserId,
-      recipientName: name,
+      // An account's name may be longer than a receipt carries: one long
+      // name must not refuse the author their own messages.
+      recipientName: clipName(name),
       deliveredAt: receipt.deliveredAt.toISOString(),
       readAt: iso(receipt.readAt),
       acknowledgedAt: iso(receipt.acknowledgedAt),
@@ -577,7 +582,7 @@ export async function markReceiptCore(
     receipt: {
       messageId: row.messageId,
       recipientUserId: row.recipientUserId,
-      recipientName: actor.name,
+      recipientName: clipName(actor.name),
       deliveredAt: row.deliveredAt.toISOString(),
       readAt: iso(row.readAt),
       acknowledgedAt: iso(row.acknowledgedAt),

@@ -12,6 +12,7 @@ import { canReadInternalEventData, customerEventPath, isCustomerRole } from "../
 import { useOnlineStatus } from "../../../hooks/use-online-status.js";
 import { useChromePresenceStore } from "../../../stores/chrome-presence-store.js";
 import { CrestLabel, useCrestLabel } from "./CrestLabel.js";
+import { EventKindName } from "../event-kind/EventKindPicker.js";
 
 interface HeaderSaveState {
   readonly configId: string | null;
@@ -105,6 +106,7 @@ export function ReferenceRoomHeader(): ReactElement {
         {saving ? <ActivityIndicator size={18} /> : offlineUnsaved ? <CloudOff size={16} aria-hidden /> : !dirty && saveError === null && saveConflict === null ? <Check size={16} aria-hidden /> : <Save size={16} aria-hidden />}
       </button>
       <span className="reference-save-status" role="status" id={statusId}>{saveLabel}</span>
+      <EventKindName />
     </header>
   );
 }

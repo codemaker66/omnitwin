@@ -139,9 +139,13 @@ export async function publicConfigRoutes(
   const { db } = opts;
   const saveBudget = opts.saveBudget ?? new GuestSaveBudget();
 
-  // POST /public/configurations — create anonymous preview config
+  // POST /public/configurations — create anonymous preview config. Sixty an
+  // hour per address (Blake, 12 November 2026, "Plans 60/h, enquiries 10/h"):
+  // the planner makes one on a new visitor's first open, so ten locked out the
+  // eleventh visitor on one shared connection. A plan sends no email; the
+  // enquiry route keeps its ten.
   server.post("/configurations", {
-    config: { rateLimit: { max: 10, timeWindow: "1 hour" } },
+    config: { rateLimit: { max: 60, timeWindow: "1 hour" } },
   }, async (request, reply) => {
     const parsed = CreatePublicConfigBody.safeParse(request.body);
     if (!parsed.success) {
