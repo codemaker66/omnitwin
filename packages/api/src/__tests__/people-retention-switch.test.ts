@@ -9,8 +9,8 @@ import {
 } from "../services/people-retention.js";
 
 // ---------------------------------------------------------------------------
-// The 24-month pass's switch (Blake, 18 Nov 2026: "Merge with the pass off
-// until you pick a date"). A real run reads PEOPLE_RETENTION_STARTS_ON and,
+// The 24-month pass's switch: off until a first day is named (Blake's
+// decision, 18 November 2026). A real run reads PEOPLE_RETENTION_STARTS_ON and,
 // while it is off, returns before touching the database. The stub database
 // below refuses every call and counts them: a run that reached it was on.
 // ---------------------------------------------------------------------------

@@ -73,7 +73,7 @@ export const PEOPLE_PASS_BUDGET_MS = 150_000;
 
 /**
  * The 24-month pass erases nothing until the venue names its first day
- * (Blake, 18 Nov 2026: "Merge with the pass off until you pick a date"):
+ * (Blake's decision, 18 November 2026):
  * this variable holds that day as YYYY-MM-DD, and every real run reads it,
  * the nightly job's and POST /admin/cleanup's alike. Unset, empty or not a
  * date, the pass is off. A rehearsal counts what it would do either way.
