@@ -40,7 +40,7 @@
 --      call of it: each proposal, deal and enquiry with no event joins the one
 --      event a path reaches, goes on the list when paths disagree, or gets an
 --      event of its own when it must have one and nothing reaches any. The
---      deploy and the nightly workflows call it again.
+--      nightly Event rules workflow, and a run by hand, call it again.
 --   8. spine_undo_joins(), the join's undo, read from its own record: an
 --      operator's tool, run by hand. This file never calls it.
 --
@@ -253,11 +253,14 @@ ON CONFLICT DO NOTHING;
 -- 7. The join of old records -------------------------------------------------
 -- The one repeatable step that joins proposals, deals and enquiries made
 -- before the links to their events, never by a guess. It is the only writer
--- of event_link_joins. It runs below, and again after every release and every
--- night, beside live writers; run twice, the second run changes nothing.
+-- of event_link_joins. It runs below, and again every night and when run by
+-- hand, beside live writers. Run twice, the second run changes nothing, unless
+-- a chain of records needed more than the four rounds one run makes (see
+-- Enquiries, below): the next run finishes such a chain.
 --
--- Locks. It takes no table lock, and it never waits for a row lock: each
--- record is decided first on a plain read; nothing is locked for a record
+-- Locks. It takes no table lock, and every row lock it asks for is SKIP
+-- LOCKED, so it never waits for one of those: each record is decided first
+-- on a plain read; nothing is locked for a record
 -- that will be neither joined nor listed; for one that will be, the rows the
 -- join will write are locked FOR NO KEY UPDATE SKIP LOCKED in the writers'
 -- order (a proposal, then its enquiry and its deposit request; a deal's
@@ -268,31 +271,35 @@ ON CONFLICT DO NOTHING;
 -- UPDATE waits for. A row it cannot have at once, or that changed, is left
 -- to the next run. Every lock it takes is held until the run commits.
 --
--- The one wait it can make on another transaction is a deal's update meeting
--- an open deal a writer has put on the same event and not yet committed (the
--- one-open-deal index). That wait is bounded at 100 ms, below the server's
--- deadlock_timeout: a writer that then took the event FOR UPDATE would wait
--- for the join's key share while the join waited for it. When the writer
--- commits within the bound the deal is listed; otherwise the deal is left to
--- the next run, which lists it. (Its foreign keys also take key shares on the
--- venue rows they name; only a venue row held FOR UPDATE would make those
--- wait, for as long as the session's own lock_timeout allows.)
+-- It can wait on another transaction in two places. The first is a deal's
+-- update meeting an open deal a writer has put on the same event and not yet
+-- committed (the one-open-deal index). That wait is bounded at 100 ms, below
+-- the server's deadlock_timeout: a writer that then took the event FOR UPDATE
+-- would wait for the join's key share while the join waited for it. When the
+-- writer commits within the bound the deal is listed; otherwise the deal is
+-- left to the next run, which lists it. The second: its foreign keys take key
+-- shares on the venue rows they name; only a venue row held FOR UPDATE would
+-- make those wait, for as long as the session's own lock_timeout allows.
 --
 -- A live event is an events row with deleted_at IS NULL at the record's own
 -- venue. Listed is an open question of the join's own (resolved_at IS NULL,
 -- binding_review_id IS NULL). A listed record is never touched; a deal or a
 -- proposal whose enquiry is listed, and a proposal whose open deal has no
--- event, wait with it. A question's detail holds counts and kinds, never a
--- name.
+-- event, wait with it. A proposal that would have an event made for it and
+-- its enquiry together also waits, unlisted, while another undeleted proposal
+-- of the same enquiry, itself with no event, reaches a live event through its
+-- deal, its deposit request in force or its plan, or must have an event while
+-- its plan reaches several (and so would be listed). A question's detail
+-- holds counts and kinds, never a name.
 --
 -- Enquiries. After a run no enquiry that may become an event is left without
 -- one while an undeleted booking, deal or proposal of it has a live event,
 -- unless it is listed or a writer held one of its rows. Step 1 joins an
 -- enquiry to the one live event its bookings, deals and proposals sit in, or
 -- lists it when they sit in several. Steps 1 to 3 are repeated while a round
--- joins anything (at most four rounds), so an enquiry whose deals or
--- proposals were joined in one round is settled from all of them together in
--- the next, and the result never depends on the order records are read in.
+-- joins anything (at most four rounds; a chain that needs a fifth round is
+-- finished by the next run), so an enquiry whose deals or proposals were
+-- joined in one round is settled from all of them together in the next, and the result never depends on the order records are read in.
 -- An event is made for an enquiry, by step 1, 2 or 3, only when nothing of
 -- its own (held dates, deals, proposals, floor plan) reaches a live event, and
 -- in step 3 only after every proposal that reaches an existing event has been
@@ -945,8 +952,9 @@ $join$;
 -- 8. The undo of the join -----------------------------------------------------
 -- Puts back what the join did, read from its own record (event_link_joins),
 -- and leaves what a person has changed since. An operator's tool, run by hand
--- and rarely; nothing calls it. Stop the deploy's and the nightly runs of the
--- join first: the next of them would join again what was undone.
+-- and rarely; nothing calls it. Disable the nightly Event rules workflow
+-- first, and run nothing by hand: its next run would join again what was
+-- undone.
 --
 -- An event the join made (the one join row with event_made) goes, with its
 -- phases, only when nothing has attached to it since: every join recorded to
