@@ -3,8 +3,9 @@
 Design, 22 November 2026. Revised the same day after an independent check of its
 facts and its holes; section 13 lists what that check changed. Ledger row T-745.
 
-Status: **draft. Not yet approved; nothing is built.** Until this is approved,
-built and reviewed, the rule stays as it is: a reviewed pull request to
+Status: **approved by Blake on 22 November 2026, with the two choices of
+section 11 decided. Nothing is built yet.** Until this is built, reviewed and
+set up, the rule stays as it is: a reviewed pull request to
 `.railway/railway.ts`, then an apply by hand with Blake's yes at that moment
 ([the Railway config move](../../operations/railway-config-move.md)).
 
@@ -395,22 +396,25 @@ No automated tool sees the token at any point. The order matters.
   first live run is read-only.
 - The Deploy workflow is not changed; 6.5 is a look, not a lock.
 
-## 11. What only Blake decides
+## 11. What Blake decided
 
-1. **Build this now under a rule, or lock first.**
-   - *Now, under a rule (recommended):* build as designed. Automated tools never
-     approve and never change the environment. This adds no power they lack
-     today: the hand-run route already runs under a full Railway sign-in. It adds
-     a second, guarded route.
-   - *Lock first:* store no token until automated tools work through a second
-     GitHub account that is a collaborator, not the owner. Blake's account is
-     then the only one able to approve or to change the environment, and GitHub
-     enforces it. It touches every tool that pushes or merges, and is a piece of
-     work of its own. Settings stay by hand until it is done.
-2. **Two taps or one.**
-   - *Two (recommended):* he reads Railway's own plan before anything is applied.
-   - *One:* after step 1's summary, a single tap plans and applies, under the
-     refusals of 6.3. Faster. He sees Railway's lines only afterwards.
+Both choices were put to him on 22 November 2026, with this design in front of
+him. He decided them as below and approved the design.
+
+1. **Build this now, under a rule.** Automated tools never approve and never
+   change the environment. This adds no power they lack today: the hand-run
+   route already runs under a full Railway sign-in. It adds a second, guarded
+   route.
+   - *Not chosen, lock first:* store no token until automated tools work
+     through a second GitHub account that is a collaborator, not the owner.
+     Blake's account is then the only one able to approve or to change the
+     environment, and GitHub enforces it. It touches every tool that pushes or
+     merges, and is a piece of work of its own. It stays possible later.
+   - *Not chosen, stay by hand:* store no token at all.
+2. **Two taps.** He reads Railway's own plan before anything is applied.
+   - *Not chosen, one tap:* after step 1's summary, a single tap plans and
+     applies, under the refusals of 6.3. Faster, but he would see Railway's
+     lines only afterwards.
 
 ## 12. Left to the builder
 
@@ -435,7 +439,7 @@ and Railway's own pages and looked for ways round the anti-goals.
   any workflow on `master` that names it. Now section 3 says so and CI checks
   every workflow file (6.7).
 - **The "lock" was no lock.** A second reviewer account can be removed by the
-  owner's sign-in. Decision 1 now says what a real lock is.
+  owner's sign-in. Section 11 now says what a real lock is.
 - **The rules were set once and never read again.** Now every run reads all
   four, and the token is pasted only after they are proven (6.1, section 8).
 - **A hash did not bind what he read.** Now step 3 compares the lines (6.2).
