@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { usePlannerSoundArming, type PlannerSoundMode } from "../../lib/sound-registry.js";
-import { usePlannerSoundShortcut } from "../planner-chrome/SoundControl.js";
+import { usePlannerSoundShortcut } from "../../lib/planner-sound-shortcut.js";
 import "./LayoutLiveLayer.css";
 import "./PlannerSoundReceipt.css";
 

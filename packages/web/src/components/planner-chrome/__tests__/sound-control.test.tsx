@@ -9,7 +9,9 @@ import {
   setPlannerSoundMode,
 } from "../../../lib/sound-registry.js";
 import { Key } from "../Keys.js";
-import { SOUND_MODE_LINES, SoundControl, soundKeyLabel, usePlannerSoundShortcut } from "../SoundControl.js";
+import { usePlannerSoundShortcut } from "../../../lib/planner-sound-shortcut.js";
+import { SOUND_MODE_LINES } from "../../shared/SoundSettingsCore.js";
+import { SoundControl, soundKeyLabel } from "../SoundControl.js";
 import { TOOLTIP_FIRST_DELAY_MS, useTooltipStore } from "../Tooltip.js";
 import { registerEscapeLayer } from "../../../lib/planner-keys.js";
 

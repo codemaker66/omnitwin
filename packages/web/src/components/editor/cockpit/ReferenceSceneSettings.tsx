@@ -4,9 +4,9 @@ import { COCKPIT_OVERLAY_KEYS, type CockpitOverlayKey } from "../../../lib/cockp
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { SectionSlider } from "../../SectionSlider.js";
-import { SoundSettings } from "../../planner-chrome/SoundControl.js";
 import { CockpitTruthRail } from "./CockpitTruthRail.js";
 import { CockpitMinimap } from "./CockpitMinimap.js";
+import { MenuSoundSettings } from "../MenuSoundSettings.js";
 import "./ReferenceSceneSettings.css";
 
 const OVERLAY_LABELS: Readonly<Record<CockpitOverlayKey, string>> = {
@@ -64,7 +64,7 @@ export function ReferenceSceneSettings({ className = "" }: { readonly className?
     </>}
     <details>
       <summary><Volume2 size={15} aria-hidden />Sound<ChevronDown size={13} aria-hidden /></summary>
-      <div className="reference-scene-settings__body"><SoundSettings /></div>
+      <div className="reference-scene-settings__body"><MenuSoundSettings /></div>
     </details>
   </section>;
 }

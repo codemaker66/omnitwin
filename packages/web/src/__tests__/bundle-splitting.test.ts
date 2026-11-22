@@ -484,3 +484,72 @@ describe("the set-down engine stays behind the scene's lazy import (T-700, R78)"
     expect(codeOnly).not.toMatch(/(?:^|[;\n])\s*(?:import|export)\s+(?!type\s)[^;]*?\bfrom\s+["']\.\/set-down-driver/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The sound setting reaches v1 without the new chrome (T-700, T-671)
+//
+// v1's two menus hold the planner's sound setting, and the scene's Shift M
+// receipt is mounted for every chrome. They take it from a chrome-free core
+// (the shortcut in lib, the setting in components/shared) dressed in v1's own
+// look, never from planner-chrome: its modules would ship to every visitor,
+// and its stylesheet is global and would restyle the default planner. The
+// module walk skips stylesheets, so this also reads every reached module's
+// own CSS imports. One already reaches v1 on master: GhostSet's MarkLabel is
+// in Surfaces.tsx, the one planner-chrome module T-671 allows, and it imports
+// chrome.css. Nothing else may.
+// ---------------------------------------------------------------------------
+
+/** The stylesheets under `dir` that `files` import by side effect, each as "<importer> -> <sheet>" in source paths. */
+async function stylesheetsUnder(files: Iterable<string>, dir: string): Promise<string[]> {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const sideEffectImport = /(?:^|[;\n])\s*import\s+["'](\.{1,2}\/[^"']+\.css)["']/gu;
+  const relative = (file: string): string => path.relative(path.resolve("."), file).split(path.sep).join("/");
+  const found: string[] = [];
+  for (const file of files) {
+    const code = (await fs.readFile(file, "utf-8")).replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
+    for (const match of code.matchAll(sideEffectImport)) {
+      const sheet = relative(path.resolve(path.dirname(file), match[1] ?? ""));
+      if (sheet.startsWith(dir)) found.push(`${relative(file)} -> ${sheet}`);
+    }
+  }
+  return found.sort();
+}
+
+describe("the sound setting reaches v1 without the new chrome (T-700, T-671)", () => {
+  const relativeTo = async (files: Iterable<string>): Promise<string[]> => {
+    const path = await import("node:path");
+    return [...files].map((file) => path.relative(path.resolve("."), file).split(path.sep).join("/"));
+  };
+
+  for (const entry of ["src/pages/EditorPage.tsx", "src/App.tsx"]) {
+    it(`gives ${entry} the menus' setting and the receipt's shortcut from the chrome-free core, and no stylesheet of the new chrome but master's one`, async () => {
+      const reached = await staticImportClosure(entry);
+      const files = await relativeTo(reached);
+      expect(files).toEqual(expect.arrayContaining([
+        "src/lib/planner-sound-shortcut.ts",
+        "src/components/shared/SoundSettingsCore.tsx",
+        "src/components/editor/MenuSoundSettings.tsx",
+        "src/components/editor/PlannerSoundReceipt.tsx",
+      ]));
+      expect(await stylesheetsUnder(reached, "src/components/planner-chrome/")).toEqual([
+        "src/components/planner-chrome/Surfaces.tsx -> src/components/planner-chrome/chrome.css",
+      ]);
+    });
+  }
+
+  it("keeps the core and the shortcut free of every chrome", async () => {
+    for (const entry of ["src/components/shared/SoundSettingsCore.tsx", "src/lib/planner-sound-shortcut.ts"]) {
+      const reached = await staticImportClosure(entry);
+      const files = await relativeTo(reached);
+      expect(files.filter((file) => file.startsWith("src/components/planner-chrome/") || file.startsWith("src/components/editor/")), entry).toEqual([]);
+      expect(await stylesheetsUnder(reached, "src/components/"), entry).toEqual([]);
+    }
+  });
+
+  it("finds a stylesheet a module imports, so the checks above mean something", async () => {
+    const path = await import("node:path");
+    expect(await stylesheetsUnder([path.resolve("src/components/planner-chrome/Kbd.tsx")], "src/components/planner-chrome/"))
+      .toEqual(["src/components/planner-chrome/Kbd.tsx -> src/components/planner-chrome/chrome.css"]);
+  });
+});

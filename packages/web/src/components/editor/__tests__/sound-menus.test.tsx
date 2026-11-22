@@ -145,7 +145,24 @@ describe("the wide desktop's More menu", () => {
     const scene = within(menu).getByTestId("reference-scene-settings");
     expect(within(scene).getByText("Sound", { selector: "summary" }).closest("details")?.parentElement).toBe(scene);
   });
+
+  it("wears v1's own look, none of the new chrome's, and keeps a radio group's keys (T-671)", () => {
+    const menu = openMoreMenu();
+    disclose("Sound");
+    const group = within(menu).getByRole("radiogroup", { name: "Sound" });
+    expect(newChromeClassesAround(group)).toEqual([]);
+    fireEvent.keyDown(group, { key: "ArrowRight" });
+    expect(getPlannerSoundSettings().mode).toBe("full");
+    expect(document.activeElement).toBe(within(group).getByRole("radio", { name: "Full" }));
+  });
 });
+
+/** The new chrome's class names (pc-*) on the sound setting that holds `group`, or on anything in it. */
+function newChromeClassesAround(group: HTMLElement): string[] {
+  const setting = group.closest(".menu-sound");
+  if (!(setting instanceof HTMLElement)) throw new Error("the sound setting is not v1's");
+  return [setting, ...setting.querySelectorAll("*")].flatMap((element) => [...element.classList]).filter((name) => name.startsWith("pc-"));
+}
 
 describe("the phone's More sheet", () => {
   it.each([
@@ -167,6 +184,14 @@ describe("the phone's More sheet", () => {
     fireEvent.click(within(group).getByRole("radio", { name: "Full" }));
     expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY)).toBe("full");
     expect(within(group).getByRole("radio", { name: "Full" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("wears v1's own look there too, none of the new chrome's (T-671)", () => {
+    media.narrow = true;
+    media.coarse = true;
+    render(<MemoryRouter><VerticalToolbox /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(newChromeClassesAround(within(screen.getByTestId("mobile-more-sheet")).getByRole("radiogroup", { name: "Sound" }))).toEqual([]);
   });
 
   it("keeps the sheet open while Sound is chosen", () => {
