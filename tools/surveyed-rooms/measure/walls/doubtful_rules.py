@@ -1,13 +1,14 @@
 """Which doubtful view should a wall texel take? The candidate rules, scored on one room's real walls.
 
-    python -X utf8 doubtful_rules.py <work> <out.json> [--stations a,b] [<wall> ...]
+    python -X utf8 doubtful_rules.py <work> <out.json> [--stations a,b] [--depth-size N] [<wall> ...]
 
 <work> is the work folder of a build whose labels step has run with an occluder margin (gate B25). With a margin,
 a texel that stations saw, and none of them clear of an occluder's margin, must still take a view. Here every such
 texel is sampled from EVERY station that saw it (one sample from the station's panorama at the wall's relief), and
 each view is judged against the same station's own picture of the clean wall beside it: the median luminance of
 the texels within 10 cm that this station saw clear, on the same surface (wallviews.py). That is the measure of
-16 November 2026 for an occluder's rim, and it does not depend on a station's exposure. Each rule then picks its
+16 November 2026 for an occluder's rim; its DARK judgement is a ratio and does not depend on a station's exposure,
+while OFF and the distance are absolute levels and do. Each rule then picks its
 station for every texel, and is scored:
 
   sequence      the tools' rule: the first station of the block's sequence that saw the texel (label-views.py
@@ -24,7 +25,7 @@ first two: a texel-sized island of another station's picture inside a block is n
 and shows in the finished photograph whatever its own station's clean wall looks like. compare_builds.py measures
 that, on two finished builds.
 
-What this found on the Saloon (November 2026, 28,250 doubtful texels left to be seen): every rule above but
+What the study script this one came from found on the Saloon (November 2026, 28,250 doubtful texels left to be seen): every rule above but
 `best` shows the occluder's edge about as often (50 dark in 1,000), so none earns its place by that; `farthest`
 takes more than twice as many texels from another station than `sequence` does. The README has the account.
 
@@ -45,9 +46,14 @@ if '--stations' in args:
     i = args.index('--stations')
     only_stations = args[i + 1].split(',')
     del args[i:i + 2]
+depth_size = None                                      # a gate test's room: the side of its small depth maps
+if '--depth-size' in args:
+    i = args.index('--depth-size')
+    depth_size = int(args[i + 1])
+    del args[i:i + 2]
 work, out_path = [os.path.abspath(a) for a in args[:2]]
 walls = args[2:] or wv.walls_of(work)
-room, B, lv = wv.setup(work)
+room, B, lv = wv.setup(work, depth_size)
 P = B.P
 sts = P.stations()
 S = len(sts)
@@ -164,7 +170,7 @@ def score(w, pick, mask):
 
 picks = {name: choose(W[name]) for name in walls}
 result = dict(reach_texels=wv.REACH, near_depth_m=wv.NEAR_DEPTH, dark_under=wv.DARK, off_levels=wv.OFF, walls={}, rules={}, pairs={})
-unlike = 0
+unlike = apart = 0
 for name in walls:
     w = W[name]
     result['walls'][name] = {rule: score(w, picks[name][rule], w['seen_ok']) for rule in RULES}
@@ -172,7 +178,9 @@ for name in walls:
     result['walls'][name]['left_to_be_seen'] = int(w['seen_ok'].sum())
     if not only_stations:
         unlike += int((picks[name]['sequence'] != w['built']).sum())
+        apart += int((picks[name]['farthest'] != picks[name]['sequence']).sum())
 result['sequence_differs_from_the_builds_own_labels'] = unlike
+result['the_farthest_view_is_another_station_than_the_sequences'] = apart       # how far the two rules part on this room at all
 
 
 def together(common):
@@ -238,6 +246,7 @@ with open(out_path, 'w', encoding='utf-8') as f:
 if not only_stations:
     print(f'the sequence rule, worked out here, against the labels this build wrote: {unlike} texels differ'
           ' (0 if the build was made with this rule)')
+    print(f'the farthest view is another station than the sequence gives on {apart} doubtful texels: how far the two rules part here')
 for title in ('each_rule_where_it_could_be_judged', 'where_every_rule_could_be_judged'):
     print('==', title.replace('_', ' '))
     for rule in RULES:

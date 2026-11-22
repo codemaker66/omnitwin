@@ -605,6 +605,9 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
     station of the stations' own order, so a build made again is the same build. Run on the two
     builds' own arrays, the rule gives the first build's view on every one of the 40,420
     doubtful texels that had one (of 40,520), and the second build's clear views everywhere else.
+    Which of two equally near labelled blocks a block without a label borrows from is the
+    choice of SciPy's distance transform: the same for a given SciPy, following no simple rule,
+    and not pinned here.
     - The third build (20 November), made with this rule and the first step as merged. Its
       labels against the first build's: 1,813 of 8,548,148 texels differ. 1,367 doubtful views
       became clear ones (the first step), 209 clear views became another station's clear view,
@@ -630,11 +633,52 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       past the ranked six that order was the block's remaining candidates by data cost, then
       the other stations by how much of the block they saw clear. On the fireplace wall's front
       end they are one row of 45 texels above a cornice, beside a band no station coloured.
-      Worked out on the label files, not built: were the first step to use the second step's
-      sequence (every station by how much of the block it saw at all), all 209 would keep the
-      first build's station, 1,130 of the 1,367 and 133 of the 137 would keep the third build's,
-      241 would take another clear station, and every other clear texel of the room would be as
-      it is. That would be one sequence for both steps.
+      Forecast on the label files before anything was built (`forecast_labels.py`): were the
+      first step to use the second step's sequence (every station by how much of the block it
+      saw at all), all 209 would keep the first build's station, 1,130 of the 1,367 and 133 of
+      the 137 would keep the third build's, 241 would take another clear station, and every
+      other clear texel of the room would be as it is.
+    - One sequence for both steps, and the fourth build (20 to 22 November). The release lead
+      ruled that the first step ask the second step's sequence. Not because of that one wall:
+      tested as it should be it does not fail, and the study cannot tell the two orders apart. On
+      the criterion itself: one sequence is the simpler code (`whole_order` and its guard go),
+      and it is the closest to the first build, the same on every texel the first build gave a
+      view, clear or doubtful. It came with a test stated before the build: on the texels whose
+      clear station would be new (neither the third build's nor the first's), the fourth build
+      against the third, by patch (the connected patches of those texels themselves), one-sided,
+      on each of dark, off and farther; were any under 0.05, or a defect seen in their crops, a
+      narrower rule would ship instead (a texel keeps its sequence's first station where that
+      station saw it clear). The forecast was written down before the build
+      (`forecast_labels.py`: 450 texels to differ from the third build, 209 back on the first
+      build's station and 241 new; 1,604 from the first, none of them one clear view for
+      another), and the build's labels are that on every wall (`labels_diff.py --expect`). The
+      test: 80 of the 241 can be judged, in 44 patches: dark 1 worse / 1 better (p 0.75), off
+      4 / 1 (p 0.19), farther 18 / 14 (p 0.30). By texel, which overstates, off is 9 / 2. Their
+      40 clusters were cut, first, third and fourth build side by side, and the 15 that changed
+      most looked at (178 texels; the largest a row of 51 above a door case on the front wall,
+      within 18 levels of the third build): no defect, the two builds alike at the scale of a
+      texel; the rest changed by 20 levels at most. So one sequence stands. The 209 that went
+      back: off 2 patches worse, 10 better.
+      The fourth build against the first, the room as it is to be published. No clear view
+      changed station. The three walls whose labels are the first build's (the fireplace wall's
+      front end among them) have its photographs array for array. Of the 575 changed texels that
+      can be judged (132 patches): dark 5 worse / 12 better, off 23 / 23, farther 42 / 62. By
+      wall and judgement, with Holm's correction over the 18 tests: none fails, and the least
+      raw p (0.125) is a wall the better on dark. The window wall's band is still gone, and the
+      window wall's rear end keeps the first step's cure (dark 0 patches worse, 4 better). The
+      control, 87,024 clean texels: dark 87 / 116, off 208 / 266, farther 921 / 1,105.
+      What this bar can and cannot say. A wall fails where more of its patches turned worse than
+      better and the sign test by patch passes 0.05 after Holm's correction over every wall and
+      judgement tested, or where its crops show a defect. With 24 tests a wall needs ten patches
+      all one way to fail, so for a wall with fewer the crops are the only check; and the test
+      on the 241 could hardly have failed either. A patch that holds texels of two classes
+      counts in both, so the classes' pooled tests are not independent. The control is counted
+      by texel, from overlapping windows, so its p values are lower bounds and no test;
+      `compare_builds.py` prints, beside each wall, the chance of its split were patches to turn
+      worse at the control's own share. Between the third and fourth builds that share is not a
+      half on the fireplace wall's front end (off 183 worse, 61 better of 3,543 clean texels):
+      45 labels there changed the levelling of 1,637 texels of a 0.8 m window by more than 6
+      levels, and the measure cannot say which levelling is right.
     - The former holes. The first build's sequence stopped at the six stations that saw most of
       a block, and so left 100 texels that a station had seen, none clear, without a label
       (fireplace 10, fireplace-rear-end 6, fireplace-rear-return 1, front 17, rear 64,
@@ -650,6 +694,12 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       Looked at cluster by cluster, third build beside the first build's fill (nine clusters
       hold the 36), neither draws the eye: each lies along a moulding's edge. The other 64 are
       hidden only by the patches of the Saloon's edits; a build without them would show them.
+      Built (the fourth build against the first, every one of the 237 texels the first build
+      left without a station, 137 of which took a clear view; `compare_builds.py`): 125 lie
+      under a patch and 73 can be judged, in 8 patches: dark 1 worse / 0 better, off 2 / 0,
+      farther 2 / 4; by texel dark 4 / 0, off 4 / 0, and the view the nearer its surroundings
+      on 41, the fill on 14. The nine clusters look as they did in the third build, whose
+      stations for them they keep.
     - The synthetic wall says the opposite, and its count is no bar for this step any more. The
       texels whose label's panorama shows a box are 113 with this rule, against 51 with the
       farthest view, 99 with no margin and 211 with the first step missing: by that count this
@@ -685,7 +735,10 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       shows the pier (exactly 0), and a margin of 0 that changes nothing.
 
     A rule for this step is to be judged with those scripts on a real room's builds before it is
-    changed again.
+    changed again: forecast on a build's saved statistics (`forecast_labels.py`), built, its
+    labels checked against the forecast (`labels_diff.py --expect`), and only then its
+    photographs judged (`compare_builds.py`), any test of one class of texels stated before the
+    build.
 - A known cost: the junctions (found in this gate's review, 19 November 2026). The margin's
   allowance for slope is the wall's own. Where another surface meets the wall in a concave
   junction (the floor, the ceiling, a side wall, a pilaster's flank), that surface stands nearer
@@ -821,7 +874,9 @@ T4 builds a small room for each gate that neither the Grand Hall nor T3 opens:
   panoramas show it (a rim one block wide on the test's 1 cm grid, as the Saloon's is on its 5 mm
   grid): without the margin the box's dark edge is printed in the plain wall a third of a metre
   above it (1,280 texels); with `occluderMargin` (80 mm) the plain wall is clean, no texel loses
-  its colour (2,182 keep a doubtful view, each one a texel no station sees clear), and the labels'
+  its colour (2,182 keep a doubtful view, each one a texel no station sees clear, and each the first station of its block's sequence that
+  saw it, where the view farthest from the box would be another station's on 376 of them: the
+  committed `doubtful_rules.py`, run on the room), and the labels'
   files hold the views seen, the views clear and the doubtful ones given; the key is refused on
   any surface but the walls (B25);
 - a pier 0.2 m proud over the wall's whole height, which the mesh draws 3 cm narrow, with eight
