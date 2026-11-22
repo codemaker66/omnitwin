@@ -55,6 +55,30 @@ new list; its status notes stay in October's table (design 5.6). Tasks 2 and 3 w
 correction, so the build applies it to both as one fix: the copy, the list of reasons in SQL and in Drizzle, and
 the two suites' counts.
 
+**Amended 22 November 2026, after the build of part one (#436).** Part one was built as eight tasks. Where it
+departs from the tasks below:
+
+- **Task 11 was built in part one**, not part two: a deposit request takes its proposal's event, under the
+  proposal's lock. Without it a request made after its proposal was joined would never get an event, and the
+  count could not reach zero. Part two is Tasks 8, 9, 10, 12 and 13.
+- **Task 7 as built.** There is no job in `deploy.yml` and no job beside the clean-up in `cleanup.yml`: the
+  nightly check is a workflow of its own, `.github/workflows/event-rules.yml`. No after-release job: the host
+  releases on its own clock, so a job in the deploy workflow could not run after the release (the design's
+  sections 6 and 13 carry the amendment). Run by hand, the check only reads unless asked to join, and it runs
+  only from master. A join by hand against production is the founder's call.
+- **Task 6 as built.** `followBookingToEvent` moves an enquiry's link only when no other live booking of the
+  enquiry (active and not deleted) is left in the old event; the Interfaces block's word was "undeleted". And
+  the bind writes an enquiry's link only when nothing else of the enquiry's own (its bookings, deals, proposals
+  or floor plan) reaches a different live event; otherwise the link is left and the nightly join lists the
+  enquiry for a person. The booking itself is bound as before.
+- **Task 5 as built.** A deposit request in force is counted in its own right, whatever became of its proposal:
+  a deleted proposal does not hide it from `depositRequestsWithoutEvent`, `disagreeingLinks` or
+  `linksToClosedEvents`.
+- **Task 14 gains two steps.** Step 5's read is now the Event rules workflow run by hand from master with its
+  join box unticked. The first new step: in that read, check that each event the join made carries a person's
+  name (the join names a made event by the enquiry's name alone). The second: the next database slot stays
+  closed until this read has passed.
+
 **Not in this plan.** Stages 2 to 6 above. Anything a client sees. Any write to `events.client_account_id` or
 `events.opportunity_id`. Pull request #247 (erase a person) and the People Book's merge, which stay with their
 owners.
