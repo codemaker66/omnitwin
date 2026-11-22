@@ -301,6 +301,32 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
     expect(await enquiryEvent(enquiryId)).toBeNull();
   });
 
+  it("an approval and a quote on an enquiry whose bookings sit in two events are still recorded, and make no event; the join lists both", async () => {
+    const v = await venue("two events, approval and quote");
+    const approved = await enquiryInTwoEvents(v);
+    await pool.query("UPDATE enquiries SET state = 'under_review' WHERE id = $1", [approved]);
+    const priced = await enquiryInTwoEvents(v);
+    const before = await eventCount(v.venueId);
+
+    const approval = await decide(v, approved, "approved");
+    expect(approval.statusCode, approval.body).toBe(200);
+    expect(DecisionReplySchema.parse(approval.json<unknown>()).data.eventId).toBeNull();
+    expect(await enquiryRow(approved)).toMatchObject({ state: "approved", event_id: null });
+
+    const quote = await priceQuote(v, { enquiryId: priced });
+    expect(quote.statusCode, quote.body).toBe(201);
+    const [quoted] = (await pool.query<{ count: number }>("SELECT count(*)::int AS count FROM quotes WHERE enquiry_id = $1", [priced])).rows;
+    expect(quoted?.count).toBe(1);
+    expect(await enquiryEvent(priced)).toBeNull();
+    expect(await eventCount(v.venueId)).toBe(before);
+
+    await joinOldRecords();
+    for (const enquiryId of [approved, priced]) {
+      expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+      expect(await enquiryEvent(enquiryId)).toBeNull();
+    }
+  });
+
   it("an enquiry whose one deal sits in an event joins that event and makes none; the join changes nothing for it", async () => {
     const v = await venue("one deal's event");
     const dealsEvent = await datelessEvent(v.venueId, "The deal's event");
