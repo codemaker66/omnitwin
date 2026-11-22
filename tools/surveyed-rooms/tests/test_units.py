@@ -631,8 +631,8 @@ class MarginViews(unittest.TestCase):
         doubtful_views and the labels file are main()'s. One row of two blocks and eight stations. On its two texels
         that only stations beyond the ranking saw clear, the first form of the first step (whole_order: past the
         ranking by data cost in the first block, as in (1), and by clear cover in the second, as in (2)) takes
-        station 6 and the one sequence takes 7; on its doubtful texel the old order would take 6 and the ranking
-        alone none. So main() handing either step another order fails here. No gate room parts the two orders of
+        station 6 and the one sequence takes 7; on its doubtful texel the old order would take 6, an order by clear
+        cover 6 as well, and the ranking alone none. So main() handing either step another order fails here. No gate room parts the two orders of
         the first step: the box's room gives no clear view from outside a ranking, and in the pier's room every
         texel that only stations beyond its block's ranking saw clear was seen clear by one station alone."""
         lv, B = self.lv, self.B
@@ -649,6 +649,9 @@ class MarginViews(unittest.TestCase):
         seen[6, 0, :3] = clear[6, 0, :3] = seen[6, n - 1, n - 1] = True
         seen[7, :, :n] = True
         clear[7, 0, :6] = True
+        # Station 6 also saw the block's second row, clear: it saw more of the block clear than 7 (11 texels to 6) and
+        # far less of it at all (12 to 64), so an order by clear cover and the one sequence part on the doubtful texel.
+        seen[6, 1, :n] = clear[6, 1, :n] = True
         # The second block, where neither is a candidate. Station 6 saw 20 texels from (0, 0) on, all clear; station
         # 7 saw the whole block, five texels of it clear.
         seen[6, :2, second:] = clear[6, :2, second:] = True
@@ -1201,8 +1204,10 @@ class CompareBuilds(unittest.TestCase):
         # or not, and of nothing else. Two blobs of such texels, a column apart, are joined at one texel. Where that
         # texel went back to the reference's station they are two own patches (numbered by all the changed texels
         # they would be one); where it is of their own kind but under a photo patch, not judged, they are one
-        # (numbered by the judged texels alone they would be two). By patch, every texel whose label differs, they
-        # are one either way.
+        # (numbered by the judged texels alone they would be two); and where it is of their own kind but the earlier
+        # build left it uncoloured, so that it is not among the texels compared at all, they are one still (numbered
+        # by the compared texels alone they would be two: TP2). By patch, every texel whose label differs, they are
+        # one each time. The texel that went back is the one own patch of as_the_reference.
         H, W = 30, 60
         blobs, joint = np.zeros((H, W), bool), np.zeros((H, W), bool)
         blobs[14:17, 20:23] = blobs[14:17, 24:27] = True
@@ -1217,10 +1222,14 @@ class CompareBuilds(unittest.TestCase):
         hidden = self.copy(base)
         hidden["new"][joint] = 1                                    # of the blobs' own kind
         hidden["covered"][joint] = True                             # under a photo patch: not judged
+        uncoloured = self.copy(base)
+        uncoloured["new"][joint] = 1                                # of the blobs' own kind
+        uncoloured["ok1"][joint] = False                            # the third build left it uncoloured: not compared
         one = dict(worse=1, better=0, unchanged=0, p_exact=1.0, p_worse=0.5)
         two = dict(worse=2, better=0, unchanged=0, p_exact=0.5, p_worse=0.25)
         for name, w, own, in_all, like in (("joined by a texel back on the reference's station", back, two, 18, 1),
-                                           ("joined by an unjudged texel of their own kind", hidden, one, 19, 0)):
+                                           ("joined by an unjudged texel of their own kind", hidden, one, 19, 0),
+                                           ("joined by a texel of their own kind that one build left uncoloured", uncoloured, one, 18, 0)):
             with self.subTest(name):
                 row, masks = self.compare(w)
                 part = row["unlike_the_reference"]
@@ -1231,6 +1240,9 @@ class CompareBuilds(unittest.TestCase):
                     self.assertEqual(part["paired_by_own_patch"][key], own, key)
                     self.assertEqual(part["paired_by_patch"][key], one, key)
                 self.assertEqual(part["paired_by_patch"]["patches"], 1)
+                self.assertEqual(row["as_the_reference"]["texels"], like)                    # the texel that went back, alone
+                if like:
+                    self.assertEqual(row["as_the_reference"]["paired_by_own_patch"]["patches"], 1)   # and it is one own patch
 
     def test_labels_diff_checks_every_count_a_forecast_names(self):
         # Guards labels_diff.py --expect (TM6), with which a build's labels are checked against the forecast written
