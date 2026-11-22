@@ -246,7 +246,9 @@ export function weddingSheet(): HallkeeperSheetV2 {
     config: { id: "6d1f8a52-3c1b-4f6e-9b1a-0a4c2b7e9d10", name: "Mackenzie–Ross wedding breakfast", guestCount: 120, layoutStyle: "dinner-rounds" },
     venue: { name: "Trades Hall Glasgow", address: "85 Glassford Street, Glasgow G1 1UH", logoUrl: null, timezone: "Europe/London" },
     space: { name: "Grand Hall", ...GRAND_HALL },
-    timing: { eventStart: bst(14, 30), setupBy: bst(13, 30), bufferMinutes: 60 },
+    // setupBy is when the setup window opens (its name is historical): the
+    // structure is due by 10:00, so the room opens for the crew at 08:00.
+    timing: { eventStart: bst(14, 30), setupBy: bst(8, 0), bufferMinutes: 390 },
     instructions: WEDDING_INSTRUCTIONS,
     ...build(weddingLayout(), GRAND_HALL),
     diagramUrl: null,
