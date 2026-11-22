@@ -25,9 +25,10 @@ import {
 // gets its event through the bind (services/event-binding.ts), which joins
 // the enquiry's own event first.
 //
-// It decides exactly as step 1 of the join of old records decides
+// It decides as step 1 of the join of old records decides
 // (spine_join_old_records, the spine's links migration), case by case in the
-// join's order, so the writer and the nightly join never disagree:
+// join's order, so the writer and the nightly join never disagree (but for
+// the two departures below):
 //   - the enquiry's own link, when it names a live event of its venue;
 //   - else what of its own reaches a live event (readEnquiryReach): its held
 //     dates, deals and proposals (M) and its floor plan (B). M holding more
@@ -39,6 +40,16 @@ import {
 // It never chooses among several events and never makes one while something
 // of the enquiry's own reaches one: the link stays as it was and the join
 // lists the enquiry for a person. Joining is never a guess.
+//
+// It departs from the join twice, in which enquiries it decides:
+//   (i) Unlike the join, it does not skip an enquiry already on the join's
+//       list of joins to check: it decides on today's data, by the rules
+//       above, and the join's step 0 then closes that question as joined. So
+//       any later route that answers such a question must read the enquiry's
+//       link again under the enquiry's lock, never trust the question row.
+//   (ii) A link that names a soft-deleted event is treated as no link, as the
+//       bind treats it: the enquiry is decided afresh and the link moves. The
+//       join never reads such an enquiry (it reads only an empty link).
 //
 // An event made here is a draft with no dates and no guests, named as the
 // enquiry's first hold would be titled (enquiryEventNaming; the join names

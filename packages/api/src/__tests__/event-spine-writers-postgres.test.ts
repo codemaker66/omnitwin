@@ -36,8 +36,10 @@ import {
 // approval, a viewing, a price), or when its team opens it as an event on
 // purpose (POST /enquiries/:id/event).
 //
-// The writer decides exactly as step 1 of the join of old records decides
-// (ruling R25): the enquiry's own link to a live event; else the one live
+// The writer decides as step 1 of the join of old records decides (ruling
+// R25), apart from two departures its service header names (an enquiry
+// already on the join's list, a link to a deleted event): the enquiry's own
+// link to a live event; else the one live
 // event its held dates, deals and proposals reach; else the one its floor
 // plan reaches; else a new event, for an open enquiry. It never chooses among
 // several events and never makes one while something of the enquiry's own
