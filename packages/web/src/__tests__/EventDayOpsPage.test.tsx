@@ -1540,6 +1540,34 @@ describe("EventDayOpsPage", () => {
       expect(await queue.list()).toEqual([]);
     });
 
+    // DQ3 (review of d9d5eeb4): a press held back for an earlier one still
+    // on its way is sent as soon as that one settles, landed or failed,
+    // without waiting for the next 'online' event or a Sync tap.
+    it.each([
+      ["lands", "in_progress"],
+      ["fails", "todo"],
+    ] as const)("sends a press held back for an earlier one as soon as that one %s", async (startFate, against) => {
+      const queue = await realQueue();
+      const server = fakeServer({ fateOf: (status) => (status === "done" ? "fails" : startFate) });
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+      await pressOn("Start");
+      await pressOn("Done");
+      await answer(() => { server.answerPress("done"); });
+      act(() => { window.dispatchEvent(new Event("online")); });
+      await settle();
+      expect(statusesSent()).toEqual(["in_progress", "done"]);
+
+      await answer(() => { server.answerPress("in_progress"); });
+      await answer(server.answerAll);
+
+      expect(statusesSent()).toEqual(["in_progress", "done", "done"]);
+      expect((mockUpdateOpsTaskStatus.mock.calls[2]?.[1] as UpdateOpsTaskStatusInput | undefined)?.expectedStatus).toBe(against);
+      expect(server.status()).toBe("done");
+      expect(await queue.list()).toEqual([]);
+      await waitFor(() => { expect(screen.getByText("Synced")).toBeTruthy(); });
+    });
+
     // DT8 (review of d9d5eeb4): a replay that itself fails, or is written
     // and loses its answer, keeps its row, and the next drain sends it again
     // under the same key.

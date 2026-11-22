@@ -253,6 +253,9 @@ interface TaskPress {
   /** Once it has landed, and only when the answer showed its own status:
    *  the write it made, as the answer gave it (pressLanded). */
   landed?: ServerTaskWrite;
+  /** The drain held its queued row back while a press made here before it
+   *  was on its way; that press settling sends it (releaseHeldBack). */
+  heldBack?: boolean;
 }
 
 /** A press the server answered: landed, and its own write only when the
@@ -393,10 +396,13 @@ async function sendQueuedStatus(opsTaskId: string, input: UpdateOpsTaskStatusInp
 
 /** Replays one queued status, and resolves the task as the server's answer
  *  gave it, if it gave one. A press this page made and has superseded since
- *  is only acked. This page's own latest press waits while a press made here
- *  before it is still on its way, since what it is replayed against depends
- *  on where that one ends. Any other row is sent with the status it was
- *  pressed against, and the server decides: a task that has moved on since
+ *  is only acked. This page's own latest press is held back while a press
+ *  made here before it is still on its way, since what it is replayed
+ *  against depends on where that one ends; it is sent as soon as that one
+ *  settles (releaseHeldBack). It goes against the status recomputed then,
+ *  with the earlier-press keys of this page and those its row gathered.
+ *  Any other row is sent as it was queued. The server decides: a task that
+ *  has moved on since, and whose last write none of the row's keys made,
  *  refuses it (409), and the row is acked with nothing sent again. A row
  *  queued before replays carried that status is sent without one, as
  *  before. Every ack compares: a row a later press has written over in the
@@ -410,11 +416,17 @@ async function replayQueuedTaskStatus(presses: TaskPresses, op: QueuedTaskStatus
     await ack();
     return undefined;
   }
-  if (press !== undefined && own.slice(0, own.indexOf(press)).some((earlier) => earlier.outcome === "sending")) return undefined;
+  if (press !== undefined && own.slice(0, own.indexOf(press)).some((earlier) => earlier.outcome === "sending")) {
+    press.heldBack = true;
+    return undefined;
+  }
   // This page's own press goes against the status recomputed now, with the
   // keys its row gathered (other tabs', a mount before a reload) and its own.
   const input = press === undefined ? op.input : withRowKeys(queuedInput(presses, op.opsTaskId, press), op.input);
-  if (press !== undefined) press.outcome = "sending";
+  if (press !== undefined) {
+    press.outcome = "sending";
+    press.heldBack = false;
+  }
   let answer: OpsTask;
   try {
     answer = await sendQueuedStatus(op.opsTaskId, input);
@@ -708,9 +720,24 @@ export function EventDayOpsPage(): ReactElement {
     return () => { window.clearInterval(timer); };
   }, [refreshBoard]);
 
+  // One drain at a time, guarded here rather than by the rendered `syncing`,
+  // which a call made before the next render would not yet see. A drain
+  // asked for by a press that settled while one was running (DQ3) runs once
+  // that one ends.
+  const draining = useRef(false);
+  const drainAgain = useRef(false);
+  const flushQueueRef = useRef<() => void>(() => undefined);
   const flushQueue = useCallback(() => {
-    if (syncing) return;
+    if (draining.current) return;
+    draining.current = true;
     setSyncing(true);
+    const drained = (): void => {
+      draining.current = false;
+      setSyncing(false);
+      if (!drainAgain.current) return;
+      drainAgain.current = false;
+      flushQueueRef.current();
+    };
     void (async () => {
       const queued = await listPendingEventDayOps();
       for (const op of queued) {
@@ -746,12 +773,25 @@ export function EventDayOpsPage(): ReactElement {
         const [board, changes] = await Promise.all([getEventDayOpsBoard(eventId), readChangeFeed(eventId)]);
         landRead(eventId, seq, board, changes);
       }
-      setSyncing(false);
+      drained();
     })().catch(() => {
-      setSyncing(false);
       refreshPendingCount();
+      drained();
     });
-  }, [eventId, landRead, readAcknowledgements, refreshPendingCount, syncing]);
+  }, [eventId, landRead, readAcknowledgements, refreshPendingCount]);
+  flushQueueRef.current = flushQueue;
+
+  /** A press here has settled, landed or not: a later press of this page
+   *  whose row the drain held back for it is sent now, while the device is
+   *  online, rather than at the next 'online' event or Sync tap (review DQ3). */
+  const releaseHeldBack = useCallback((opsTaskId: string, settled: TaskPress) => {
+    const own = taskPresses.current.get(opsTaskId) ?? [];
+    const at = own.indexOf(settled);
+    if (at < 0 || !own.slice(at + 1).some((later) => later.heldBack === true)) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+    if (draining.current) drainAgain.current = true;
+    else flushQueueRef.current();
+  }, []);
 
   useEffect(() => {
     loadBoard();
@@ -921,8 +961,11 @@ export function EventDayOpsPage(): ReactElement {
         setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, task) } : prev);
         setNotice("Task could not be saved on this device. Please try again.");
       })
-      .finally(() => { setPendingWrites((count) => count - 1); });
-  }, [refreshBoard, refreshPendingCount]);
+      .finally(() => {
+        setPendingWrites((count) => count - 1);
+        releaseHeldBack(task.id, press);
+      });
+  }, [refreshBoard, refreshPendingCount, releaseHeldBack]);
 
   const submitIssue = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
