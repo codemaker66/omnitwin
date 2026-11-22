@@ -8,7 +8,7 @@ import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { isWorkspaceKey, keyFileExposure, readKey } from "../keys.js";
-import { ANTHROPIC_API_URL, keyOnlyToAnthropic, sdkSandboxApi, type SandboxApi } from "../sandbox/api.js";
+import { ANTHROPIC_API_URL, keyGuard, sdkSandboxApi, type SandboxApi } from "../sandbox/api.js";
 import { main } from "../sandbox/cli.js";
 import { describeError } from "../task.js";
 
@@ -183,8 +183,8 @@ describe("the headers that reach api.anthropic.com", () => {
     }
     // The wrapper itself: no key, or a key other than the launcher's, is refused too.
     const wire = seam(anyAnswer);
-    await expect(keyOnlyToAnthropic(KEY, wire.fetch)(`${ANTHROPIC_API_URL}/v1/sessions/sesn_1`, { method: "GET" })).rejects.toThrow(/key/u);
-    await expect(keyOnlyToAnthropic(KEY, wire.fetch)(`${ANTHROPIC_API_URL}/v1/sessions/sesn_1`, { method: "GET", headers: { "x-api-key": OTHER_KEY } })).rejects.toThrow(/key/u);
+    await expect(keyGuard(KEY, wire.fetch).fetch(`${ANTHROPIC_API_URL}/v1/sessions/sesn_1`, { method: "GET" })).rejects.toThrow(/key/u);
+    await expect(keyGuard(KEY, wire.fetch).fetch(`${ANTHROPIC_API_URL}/v1/sessions/sesn_1`, { method: "GET", headers: { "x-api-key": OTHER_KEY } })).rejects.toThrow(/key/u);
     expect(wire.seen).toEqual([]);
   });
 
@@ -247,7 +247,7 @@ describe("redirects off api.anthropic.com", () => {
 
   it("decide by the API path: only GET /v1/files/<id>/content may leave", async () => {
     const wire = seam((url) => (url.origin === ANTHROPIC_API_URL ? redirect(302, STORAGE) : new Response("x", { status: 200 })));
-    const guard = keyOnlyToAnthropic(KEY, wire.fetch);
+    const guard = keyGuard(KEY, wire.fetch).fetch;
     const get = { method: "GET", headers: { "x-api-key": KEY } };
     for (const pathname of ["/v1/files/file_1", "/v1/files/file_1/content/more", "/v1/files/a/b/content", "/v1/sessions/sesn_1/content", "/v2/files/file_1/content"]) {
       wire.seen.length = 0;
@@ -264,14 +264,14 @@ describe("redirects off api.anthropic.com", () => {
 
   it("are decided by the request's first URL alone, whatever path a hop on api.anthropic.com passes through", async () => {
     const seen: string[] = [];
-    const guard = keyOnlyToAnthropic(KEY, (input) => {
+    const guard = keyGuard(KEY, (input) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       seen.push(url.href);
       if (url.pathname === "/v1/sessions/sesn_1") return Promise.resolve(redirect(302, "/v1/files/file_1/content"));
       if (url.pathname === "/v1/files/file_2/content") return Promise.resolve(redirect(302, "/v1/elsewhere"));
       if (url.origin === ANTHROPIC_API_URL) return Promise.resolve(redirect(302, STORAGE));
       return Promise.resolve(new Response("from storage", { status: 200 }));
-    });
+    }).fetch;
     const get = { method: "GET", headers: { "x-api-key": KEY } };
     // A JSON endpoint led through a file's content path on the same host is still a JSON endpoint: refused before it leaves.
     await expect(guard(`${ANTHROPIC_API_URL}/v1/sessions/sesn_1`, get)).rejects.toThrow(/only a file download may leave/u);
@@ -354,6 +354,20 @@ describe("a refused request", () => {
     expect(error).not.toBeInstanceOf(Anthropic.APIConnectionError);
     expect(describeError(error)).toMatch(/only a file download may leave/u);
     expect(describeError(error)).not.toMatch(/timed? ?out/iu);
+  });
+
+  it("comes from a guard exported only together with the middleware that makes its refusals final", async () => {
+    expect(Object.keys(await import("../sandbox/api.js"))).not.toContain("keyOnlyToAnthropic");
+    // A client built from the pair, as sdkSandboxApi builds its own: the refused POST is sent once and keeps its reason.
+    const wire = seam(() => redirect(302, `${ANTHROPIC_API_URL}/v1/agents/elsewhere`));
+    const guard = keyGuard(KEY, wire.fetch);
+    const client = new Anthropic({ apiKey: KEY, authToken: null, baseURL: ANTHROPIC_API_URL, fetch: guard.fetch, middleware: [guard.middleware] });
+    const error: unknown = await client.beta.agents.create({ name: "a", model: "claude-opus-5-5" }).catch((caught: unknown) => caught);
+    expect(wire.seen).toHaveLength(1);
+    expect(error).not.toBeInstanceOf(Anthropic.APIConnectionError);
+    expect(describeError(error)).toMatch(/refusing to follow a 302 redirect of a POST request/u);
+    // The guard holds a key to the client's rule too.
+    expect(() => keyGuard(`${KEY}\nsecond-line`, wire.fetch)).toThrow(/workspace API key/u);
   });
 
   it("leaves a real connection failure on the SDK's retry path, and the CLI's message shows its cause", async () => {

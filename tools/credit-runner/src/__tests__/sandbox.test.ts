@@ -23,7 +23,7 @@ import {
   CREATE_SESSION_TIMEOUT_MS,
   DOWNLOAD_TIMEOUT_MS,
   isAmbiguousFailure,
-  keyOnlyToAnthropic,
+  keyGuard,
   sdkSandboxApi,
   type AgentRef,
   type AgentTool,
@@ -1526,9 +1526,9 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
 
     // The wrapper itself sends nothing to another origin, and stops a redirect loop.
     seen.length = 0;
-    await expect(keyOnlyToAnthropic(TEST_KEY, fake)("https://elsewhere.example.invalid/v1/sessions", { method: "GET" })).rejects.toThrow(/only to https:\/\/api\.anthropic\.com/u);
+    await expect(keyGuard(TEST_KEY, fake).fetch("https://elsewhere.example.invalid/v1/sessions", { method: "GET" })).rejects.toThrow(/only to https:\/\/api\.anthropic\.com/u);
     expect(seen).toEqual([]);
-    const looping = keyOnlyToAnthropic(TEST_KEY, () => Promise.resolve(to(307, "/v1/loop")));
+    const looping = keyGuard(TEST_KEY, () => Promise.resolve(to(307, "/v1/loop"))).fetch;
     await expect(looping("https://api.anthropic.com/v1/loop", { method: "GET", headers: { "x-api-key": TEST_KEY } })).rejects.toThrow(/redirects/u);
   });
 
@@ -1548,14 +1548,14 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     // A POST redirected with 301, 302 or 303 is never re-sent, as a GET or as a POST.
     for (const status of [301, 302, 303]) {
       seen.length = 0;
-      await expect(keyOnlyToAnthropic(post.headers["x-api-key"], via(to(status, "/v1/other")))(`${API}/v1/sessions`, post), String(status)).rejects.toThrow(new RegExp(`${String(status)} redirect of a POST`, "u"));
+      await expect(keyGuard(post.headers["x-api-key"], via(to(status, "/v1/other"))).fetch(`${API}/v1/sessions`, post), String(status)).rejects.toThrow(new RegExp(`${String(status)} redirect of a POST`, "u"));
       expect(seen, String(status)).toHaveLength(1);
     }
 
     // A 307 or 308 to the same origin keeps the method, the body and the key.
     for (const status of [307, 308]) {
       seen.length = 0;
-      await keyOnlyToAnthropic(post.headers["x-api-key"], via(to(status, "/v1/other")))(`${API}/v1/sessions`, post);
+      await keyGuard(post.headers["x-api-key"], via(to(status, "/v1/other"))).fetch(`${API}/v1/sessions`, post);
       expect(seen.map((request) => [request.url, request.method, request.body, request.key]), String(status)).toEqual([
         [`${API}/v1/sessions`, "POST", '{"a":1}', TEST_KEY],
         [`${API}/v1/other`, "POST", '{"a":1}', TEST_KEY],
@@ -1564,22 +1564,22 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
 
     // A 307 or 308 of a POST to another origin is refused; any non-GET method is held to the same rule.
     seen.length = 0;
-    await expect(keyOnlyToAnthropic(post.headers["x-api-key"], via(to(308, "https://files.example.invalid/x")))(`${API}/v1/sessions`, post)).rejects.toThrow(/refusing to follow a POST redirect/u);
+    await expect(keyGuard(post.headers["x-api-key"], via(to(308, "https://files.example.invalid/x"))).fetch(`${API}/v1/sessions`, post)).rejects.toThrow(/refusing to follow a POST redirect/u);
     seen.length = 0;
-    await keyOnlyToAnthropic(post.headers["x-api-key"], via(to(307, "/v1/other")))(`${API}/v1/sessions/s`, { ...post, method: "DELETE" });
+    await keyGuard(post.headers["x-api-key"], via(to(307, "/v1/other"))).fetch(`${API}/v1/sessions/s`, { ...post, method: "DELETE" });
     expect(seen.map((request) => request.method)).toEqual(["DELETE", "DELETE"]);
     seen.length = 0;
-    await expect(keyOnlyToAnthropic(post.headers["x-api-key"], via(to(303, "/v1/other")))(`${API}/v1/sessions/s`, { ...post, method: "DELETE" })).rejects.toThrow(/303 redirect of a DELETE/u);
+    await expect(keyGuard(post.headers["x-api-key"], via(to(303, "/v1/other"))).fetch(`${API}/v1/sessions/s`, { ...post, method: "DELETE" })).rejects.toThrow(/303 redirect of a DELETE/u);
 
     // A GET follows a 303 as a GET.
     seen.length = 0;
-    await keyOnlyToAnthropic(post.headers["x-api-key"], via(to(303, "/v1/other")))(`${API}/v1/sessions/s`, { method: "GET", headers: post.headers });
+    await keyGuard(post.headers["x-api-key"], via(to(303, "/v1/other"))).fetch(`${API}/v1/sessions/s`, { method: "GET", headers: post.headers });
     expect(seen.map((request) => [request.url, request.method])).toEqual([[`${API}/v1/sessions/s`, "GET"], [`${API}/v1/other`, "GET"]]);
 
     // A target that is not https is never followed, for a GET too: nothing is requested for it.
     for (const target of ["http://api.anthropic.com/v1/other", "http://files.example.invalid/x", "data:text/plain,hello", "ftp://files.example.invalid/x"]) {
       seen.length = 0;
-      await expect(keyOnlyToAnthropic(post.headers["x-api-key"], via(to(302, target)))(`${API}/v1/sessions/s`, { method: "GET", headers: post.headers }), target).rejects.toThrow(/only https is followed/u);
+      await expect(keyGuard(post.headers["x-api-key"], via(to(302, target))).fetch(`${API}/v1/sessions/s`, { method: "GET", headers: post.headers }), target).rejects.toThrow(/only https is followed/u);
       expect(seen, target).toHaveLength(1);
     }
   });

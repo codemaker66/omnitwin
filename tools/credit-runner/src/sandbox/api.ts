@@ -288,13 +288,12 @@ function forwardedHeaders(apiKey: string, built: Headers): Headers {
  * only through a same-origin 307 or 308 (which keep the method and body); a
  * 301, 302 or 303 of it, or a redirect off the origin, is refused. A target
  * that is not https, or a Location that cannot be read, is never followed. At
- * most five redirects. Every refusal is a KeyGuardRefusal. A key that is not
- * of the workspace shape is refused before the guard is made. Once a download
+ * most five redirects. Every refusal is a KeyGuardRefusal. Once a download
  * has left ANTHROPIC_API_URL, a last answer that is not 2xx is passed on as its
- * status alone (statusOnly).
+ * status alone (statusOnly). Installed only through keyGuard, with
+ * refusalsAreFinal.
  */
-export function keyOnlyToAnthropic(apiKey: string, next: Fetch = globalThis.fetch): Fetch {
-  refuseMalformedKey(apiKey);
+function keyOnlyToAnthropic(apiKey: string, next: Fetch): Fetch {
   return async (input, init) => {
     let url = new URL(urlOf(input));
     if (url.origin !== ANTHROPIC_API_URL) throw new KeyGuardRefusal(`refusing a request to ${url.origin}: the key goes only to ${ANTHROPIC_API_URL}`);
@@ -350,6 +349,23 @@ const refusalsAreFinal: Middleware = async (request, next) => {
   }
 };
 
+/** The key guard as a client installs it: its fetch, and the middleware without which a refusal is retried and loses its reason. */
+export interface KeyGuard {
+  readonly fetch: Fetch;
+  readonly middleware: Middleware;
+}
+
+/**
+ * keyOnlyToAnthropic around `next`, with refusalsAreFinal: exported only as
+ * this pair, so the guard is never installed without the middleware that
+ * makes its refusals final. A key that is not one line of the workspace-key
+ * shape is refused first, with a reason that names no part of it.
+ */
+export function keyGuard(apiKey: string, next: Fetch = globalThis.fetch): KeyGuard {
+  refuseMalformedKey(apiKey);
+  return { fetch: keyOnlyToAnthropic(apiKey, next), middleware: refusalsAreFinal };
+}
+
 /**
  * The key is passed in from the key file and handed straight to the client;
  * it never enters process.env, a log or an error message. One that is not a
@@ -365,12 +381,13 @@ const refusalsAreFinal: Middleware = async (request, next) => {
  * process.env except in tests: `env` and `fetchImpl` are test seams.
  */
 export function sdkSandboxApi(apiKey: string, fetchImpl?: Fetch, env: NodeJS.ProcessEnv = process.env): SandboxApi {
-  refuseMalformedKey(apiKey);
+  // First of all: keyGuard refuses a key that is not of the workspace shape.
+  const guard = keyGuard(apiKey, fetchImpl);
   const problems = anthropicEnvironmentProblems(env);
   if (problems.length > 0) {
     throw new Error(`refusing to start: ${problems.join("; ")}. Unset ${problems.length === 1 ? "it" : "them"} in this shell; the launcher talks only to ${ANTHROPIC_API_URL}.`);
   }
-  const client = new Anthropic({ apiKey, authToken: null, baseURL: ANTHROPIC_API_URL, fetch: keyOnlyToAnthropic(apiKey, fetchImpl), middleware: [refusalsAreFinal] });
+  const client = new Anthropic({ apiKey, authToken: null, baseURL: ANTHROPIC_API_URL, fetch: guard.fetch, middleware: [guard.middleware] });
   return {
     createEnvironment: (params) => client.beta.environments.create(params),
     retrieveEnvironment: (id) => client.beta.environments.retrieve(id),
