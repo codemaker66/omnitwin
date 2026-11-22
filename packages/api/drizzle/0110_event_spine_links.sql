@@ -10,6 +10,8 @@
 -- In order, in one transaction (the migrator runs the file as one; a lock
 -- that cannot be had within five seconds fails it and nothing changes):
 --
+--   0. proposals, enquiries, opportunities, events and client_accounts are
+--      locked at once, before anything else, in the writers' order.
 --   1. opportunities gains the key (id, venue_id), as proposals and enquiries
 --      already have, for later keys that pin a row to a deal's venue.
 --   2. An event's client account must be its own venue's. The file stops,
@@ -50,6 +52,18 @@
 -- ---------------------------------------------------------------------------
 
 SET LOCAL lock_timeout = '5s';
+--> statement-breakpoint
+
+-- 0. The tables, in the writers' order ----------------------------------------
+-- The five existing tables the steps below lock outright (ACCESS EXCLUSIVE),
+-- taken in one statement in the writers' order: a proposal, its enquiry, the
+-- deal, the event, then the client account. Left to the steps, they would be
+-- taken deals first and proposals last, against that order, while a proposal
+-- sent during the release holds the proposal and then writes its enquiry: the
+-- two could wait for each other. With the lock limit set above, a table that
+-- cannot be had within five seconds fails the release cleanly, and nothing
+-- changes.
+LOCK TABLE "proposals", "enquiries", "opportunities", "events", "client_accounts" IN ACCESS EXCLUSIVE MODE;
 --> statement-breakpoint
 
 -- 1. A deal's own (id, venue_id) key ------------------------------------------

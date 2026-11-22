@@ -4,6 +4,7 @@ import type { Pool, PoolClient } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { defaultEventPhaseInputs } from "@omnitwin/types";
 import { readSpineInvariant, type SpineInvariant } from "../services/event-spine-invariant.js";
+import { sqlStateOf } from "../utils/sql-state.js";
 import {
   deal as dealIn,
   enquiry as enquiryIn,
@@ -68,7 +69,10 @@ import {
 // deadlock; and while a writer holds the event an enquiry's held dates sit in,
 // nothing is made for the enquiry or its deal. A third runs the undo beside a
 // writer: a record or an event the writer holds is left to the undo's next
-// run, never waited for.
+// run, never waited for. A fourth runs the migration while another
+// connection holds proposals: it waits in its first lock, holding none of its
+// other tables, gives up after its own five seconds, leaves nothing behind,
+// and runs once the table is free.
 //
 // The suites run on throwaway databases of their own (openSpineDatabaseBefore,
 // a fresh one for each case of the first block, and openSpineDatabase); the
@@ -997,4 +1001,69 @@ describe.skipIf(target === undefined)("the spine: the undo beside a live writer"
       (SELECT count(*)::int FROM event_link_joins WHERE undone_at IS NULL) AS joins`, [made])).toEqual({ events: 0, phases: 0, joins: 0 });
     expect(await one(pool, "SELECT count(*)::int AS count FROM events WHERE id = $1", [x])).toEqual({ count: 1 });
   }, 60_000);
+});
+
+describe.skipIf(target === undefined)("the spine: the migration beside a table someone else holds", () => {
+  it("takes its tables before anything else, gives up within its own lock limit, rolls back whole, and runs once the table is free", async () => {
+    const before = await openSpineDatabaseBefore("links_migration_lock");
+    const pool = before.pool;
+    const holder = await pool.connect();
+    let migrating: Promise<unknown> | undefined;
+    const one = async (text: string, values: readonly unknown[] = []): Promise<Row | undefined> =>
+      (await pool.query<Row>(text, [...values])).rows[0];
+    const spineParts = async (): Promise<Row | undefined> => one(`SELECT
+      EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'enquiries' AND column_name = 'event_id') AS link,
+      to_regclass('public.event_link_joins') IS NOT NULL AS joins,
+      (SELECT count(*)::int FROM drizzle.__drizzle_migrations) AS ledger`);
+    try {
+      const unmigrated = await spineParts();
+      expect(unmigrated).toMatchObject({ link: false, joins: false });
+      // Any lock on a table conflicts with ACCESS EXCLUSIVE; this one is held until the case lets it go.
+      await holder.query("BEGIN");
+      await holder.query("LOCK TABLE proposals IN ACCESS SHARE MODE");
+
+      let finished = false;
+      const isFinished = (): boolean => finished;
+      const started = Date.now();
+      const running = before.migrateToHead().finally(() => { finished = true; });
+      migrating = running;
+      // The failure is read where it is awaited below, not reported twice.
+      running.catch(() => undefined);
+
+      // The migrator is seen waiting for proposals: the wait lasts the file's five seconds, far longer than a poll.
+      let waiting: Row | undefined;
+      while (waiting === undefined && !isFinished()) {
+        waiting = await one(`SELECT l.pid, a.query FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+          WHERE l.relation = 'proposals'::regclass AND NOT l.granted`);
+        if (waiting === undefined) await new Promise((done) => setTimeout(done, 10));
+      }
+      if (waiting === undefined) throw new Error("The migrator was never seen waiting for proposals");
+      // It waits in its first lock, holding none of the other tables it takes.
+      expect(String(waiting["query"])).toContain('LOCK TABLE "proposals", "enquiries", "opportunities", "events", "client_accounts"');
+      expect((await pool.query<Row>(`SELECT c.relname FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
+        WHERE l.pid = $1 AND l.granted AND c.relname IN ('enquiries', 'opportunities', 'events', 'client_accounts')`,
+      [waiting["pid"]])).rows).toEqual([]);
+
+      const failure = await running.then(() => null, (error: unknown) => error);
+      const took = Date.now() - started;
+      // Lock not available, after the file's own five seconds: not the connection's twenty.
+      expect(sqlStateOf(failure)).toBe("55P03");
+      expect(took).toBeGreaterThanOrEqual(4_500);
+      expect(took).toBeLessThan(15_000);
+      // Nothing of the spine is left: no link, no record of joins, no ledger row.
+      expect(await spineParts()).toEqual(unmigrated);
+
+      await holder.query("ROLLBACK");
+      await before.migrateToHead();
+      const migrated = await spineParts();
+      expect(migrated).toMatchObject({ link: true, joins: true });
+      expect(Number(migrated?.["ledger"])).toBeGreaterThan(Number(unmigrated?.["ledger"]));
+    } finally {
+      await holder.query("ROLLBACK");
+      holder.release();
+      await migrating?.catch(() => undefined);
+      await before.close();
+    }
+  }, 180_000);
 });
