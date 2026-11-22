@@ -28,6 +28,7 @@ import {
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canAccessInternalEvent } from "../utils/query.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import {
   serializeAcknowledgement,
   serializeEventPlanChange,
@@ -471,9 +472,15 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
     }
 
     const outcome = await db.transaction(async (tx) => {
-      // Held until this commits. A Diary move folding this change in
+      // The event first (FOR KEY SHARE), as an erasure takes it
+      // (people-erasure.ts), so this waits behind an erasure of the event's
+      // person rather than meeting it; a Diary move's fold takes the event
+      // before its changes too, so every path takes the two in one order.
+      await tx.select({ id: events.id }).from(events).where(eq(events.id, eventRow.id)).for("key share");
+      // Then the change, held until this commits. A Diary move folding it in
       // (services/booking-move-feed.ts) holds it too, so one of the two lands
       // first and the other sees it: never acknowledged and replaced at once.
+      // An erasure that deleted it has committed by now: missing, 404.
       const [change] = await tx
         .select()
         .from(eventPlanChanges)
@@ -522,9 +529,14 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
         note: body.data.note ?? null,
       }).returning();
       return created === undefined ? { kind: "failed" } as const : { kind: "created", row: created } as const;
+    }).catch((err: unknown) => {
+      if (lockConflictOf(err) !== null) return { kind: "retry" } as const;
+      throw err;
     });
 
     switch (outcome.kind) {
+      case "retry":
+        return reply.status(409).send(RETRY_ANSWER);
       case "missing":
         return reply.status(404).send({ error: "Change not found", code: "NOT_FOUND" });
       case "not-required":
