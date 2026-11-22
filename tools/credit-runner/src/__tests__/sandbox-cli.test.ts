@@ -3,8 +3,9 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withBaseCommit } from "../sandbox/base-repo.js";
+import { ATTENDED, main, USAGE } from "../sandbox/cli.js";
 import { masterFacts } from "../sandbox/master.js";
 import { boundedNumber, budgetOverride, timeoutOverride } from "../sandbox/overrides.js";
 import { sandboxConfigSchema } from "../sandbox/sandbox-config.js";
@@ -19,6 +20,33 @@ describe("the example config", () => {
     expect(config.keyDir).toBe("%USERPROFILE%\\.credit-runner-keys");
     expect(config.lane).toBe("sandbox");
     expect(config.laneCapUsd).toBeLessThanOrEqual(config.orgCapUsd);
+  });
+});
+
+describe("the CLI's own words", () => {
+  it("says in its usage that the launcher is run by hand and attended, with a neutral job label", () => {
+    expect(ATTENDED).toContain("Run it by hand and attended until the night-shift conveyor's ledger v2 lands");
+    expect(ATTENDED).toContain("Do not schedule or loop `sandbox run`");
+    expect(USAGE).toContain(ATTENDED);
+    // No example that reads like a scheduled night.
+    expect(USAGE).not.toMatch(/night-\d/u);
+    expect(USAGE).toContain("e.g. trial-1");
+  });
+
+  it("prints the same words at the start of run, before it reads its config", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "credit-runner-cli-"));
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      written.push(String(chunk));
+      return true;
+    });
+    try {
+      await expect(main(["run", "spec.md", "--job", "trial-1", "--config", path.join(root, "missing.json")])).rejects.toThrow(/ENOENT/u);
+    } finally {
+      spy.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    }
+    expect(written.join("")).toContain(ATTENDED);
   });
 });
 

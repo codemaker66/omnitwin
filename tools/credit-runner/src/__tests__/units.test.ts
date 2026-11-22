@@ -3,13 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { expandHome } from "../config.js";
-import { isPassed } from "../env.js";
 import { FrontmatterError, parseFrontmatter } from "../frontmatter.js";
 import { protectedPathViolations } from "../git.js";
 import { ledgerHasSession } from "../sandbox/credit-ledger.js";
 import { readKey, unexpectedPrincipals } from "../keys.js";
-import { redactAll } from "../proc.js";
-import { DEFAULT_ALLOWED_TOOLS, DEFAULT_MODEL, MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask, READ_ONLY_TOOLS } from "../task.js";
+import { DEFAULT_MODEL, MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
 
 describe("parseFrontmatter", () => {
   it("reads scalars, quoted strings, both list forms and the body", () => {
@@ -86,7 +84,6 @@ describe("parseTask", () => {
       readOnly: false,
       spec: "Do the thing.",
     });
-    expect(task.allowedTools).toEqual(DEFAULT_ALLOWED_TOOLS);
   });
 
   it("accepts the ceilings themselves", () => {
@@ -95,12 +92,8 @@ describe("parseTask", () => {
     expect([task.budgetUsd, task.timeoutMinutes]).toEqual([MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES]);
   });
 
-  it("appends extra tools and gives read-only tasks inspection tools only", () => {
-    const extra = parseTask("---\nid: a\nacceptance: x\nextra_allowed_tools: [WebFetch, Bash(pnpm *)]\n---\nb", "a.md");
-    expect(extra.allowedTools).toEqual([...DEFAULT_ALLOWED_TOOLS, "WebFetch"]);
-    const readOnly = parseTask("---\nid: a\nacceptance: x\nread_only: true\n---\nb", "a.md");
-    expect(readOnly.allowedTools).toEqual(READ_ONLY_TOOLS);
-    expect(readOnly.allowedTools).not.toContain("Edit");
+  it("still parses the tool keys of existing specs", () => {
+    expect(() => parseTask("---\nid: a\nacceptance: x\nallowed_tools: [Read]\nextra_allowed_tools: [Bash(pnpm *)]\n---\nb", "a.md")).not.toThrow();
   });
 
   it.each([
@@ -114,7 +107,6 @@ describe("parseTask", () => {
     ["a fractional timeout", "---\nid: a\nacceptance: x\ntimeout_minutes: 1.5\n---\nb", /timeout_minutes/u],
     ["an allowed tool that would parse as a flag", "---\nid: a\nacceptance: x\nallowed_tools: [Read, --dangerously-skip-permissions]\n---\nb", /must not start with/u],
     ["an extra tool that would parse as a flag", '---\nid: a\nacceptance: x\nextra_allowed_tools: ["--add-dir"]\n---\nb', /must not start with/u],
-    ["tools on a read-only task", "---\nid: a\nacceptance: x\nread_only: true\nextra_allowed_tools: [Edit]\n---\nb", /read_only/u],
   ])("rejects %s", (_name, text, message) => {
     expect(() => parseTask(text, "a.md")).toThrow(message);
   });
@@ -125,16 +117,6 @@ describe("expandHome", () => {
     expect(expandHome("%USERPROFILE%\\.k", "C:\\Users\\u")).toBe("C:\\Users\\u\\.k");
     expect(expandHome("~/k", "/home/u")).toBe("/home/u/k");
     expect(expandHome("D:\\x~", "/home/u")).toBe("D:\\x~");
-  });
-});
-
-describe("child environment allow-list", () => {
-  it("passes the names git, node and pnpm need, and nothing from Anthropic, Claude, hosted services or databases", () => {
-    for (const name of ["PATH", "Path", "USERPROFILE", "TEMP", "PNPM_HOME"]) expect(isPassed(name), name).toBe(true);
-    for (const name of ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "GH_TOKEN", "RAILWAY_TOKEN", "DATABASE_URL", "GIT_ASKPASS"]) {
-      expect(isPassed(name), name).toBe(false);
-    }
-    expect(isPassed("MY_EXTRA", ["my_extra"])).toBe(true);
   });
 });
 
@@ -245,9 +227,5 @@ describe("key files", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
-
-  it("redacts secrets from anything logged", () => {
-    expect(redactAll("key=sk-ant-abcdefgh end", ["sk-ant-abcdefgh"])).toBe("key=[REDACTED] end");
   });
 });

@@ -106,16 +106,18 @@ What to build, where, the constraints, the tests to add, and what done looks lik
 |---|---|---|
 | `id` | required | Lowercase letters, digits and dashes. It names the branch `credit/<id>`. |
 | `title` | the id | Shown in the review. |
-| `model` | `claude-opus-5-5` | The model name. |
-| `effort` | `high` | `low`, `medium`, `high`, `xhigh` or `max`. |
 | `budget_usd` | `5` | The session's hard cap (at most 50). |
 | `timeout_minutes` | `60` | Wall-clock limit before the agent is interrupted (whole minutes, at most 240). |
 | `acceptance` | required | A shell command run at the repository root in the container. Quote it if it contains `#` or `:`. |
 | `mutation` | none | For a test-only change: a command that breaks the code under test; the tests must then fail. |
 | `precondition` | none | A cheap check, run right after checkout, that the code the brief cites has not moved. |
-| `allowed_tools`, `extra_allowed_tools` | see `src/task.ts` | Tool rules. Not read by the sandbox lane; kept so existing specs parse. A rule may not start with `-`. |
+| `model` | `claude-opus-5-5` | Only that value: the sandbox agent runs one model, so `run` and `collect` refuse any other. |
+| `effort` | `high` | Only that value, for the same reason. |
+| `enabled` | `true` | Only `true`: the lane runs every spec it is given, so `run` and `collect` refuse `false`. |
+| `read_only` | `false` | Only `false`: the sandbox agent always has its full toolset, so `run` and `collect` refuse `true`. |
+| `install`, `base`, `allowed_tools`, `extra_allowed_tools` | none | Parsed so existing specs keep working, and take no effect: the agent always installs, starts from master and has its full toolset. A tool rule may not start with `-`. |
 
-Unknown keys are rejected, so a typo cannot silently fall back to a default.
+Every key above `model` takes effect; `model`, `effort`, `enabled` and `read_only` are accepted only at the value the lane runs. Unknown keys are rejected, so a typo cannot silently fall back to a default.
 
 **Writing a spec that works unattended:**
 

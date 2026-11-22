@@ -16,9 +16,21 @@ import { ensureSandbox, readState } from "./setup.js";
 
 const PACKAGE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-const USAGE = `credit-runner sandbox: runs one spec per Claude Managed Agents session in
+/**
+ * Said in the usage and printed at the start of every `run`: the launcher is
+ * not safe to schedule until the conveyor's ledger reserves a budget before the
+ * session starts.
+ */
+export const ATTENDED = `Run it by hand and attended until the night-shift conveyor's ledger v2 lands: the
+ledger line is written only after the launcher has finished with a session, and nothing
+locks the check-then-spend step, so a launcher that dies or is started twice at once can
+leave a running session unrecorded. Do not schedule or loop \`sandbox run\`.`;
+
+export const USAGE = `credit-runner sandbox: runs one spec per Claude Managed Agents session in
 Anthropic's cloud sandbox, and brings back a patch for review. No agent code runs
-on the machine it is run from.
+on the machine it is run from. Each \`run\` spends up to one session budget.
+
+${ATTENDED}
 
 From the repo root:
   pnpm --filter @omnitwin/credit-runner sandbox status
@@ -28,11 +40,12 @@ From the repo root:
       rebuilds a finished session's record and review from its history; starts and charges nothing
 
 Options:
-  --job <label>      groups runs in the credit ledger, e.g. a4-trial or night-2026-11-06
+  --job <label>      groups runs in the credit ledger, e.g. trial-1
   --budget <usd>     the session's hard spend cap, at most 50 (default: the spec's budget_usd); on collect,
                      what a session whose cost cannot be read is counted at
   --timeout <min>    interrupt the agent after this many whole minutes, at most 240 (default: the spec's)
-  --night-cap <usd>  refuse the run if this job's spend so far plus its budget passes this
+  --night-cap <usd>  refuse the run if the spend so far under this --job label plus its budget
+                     passes this
   --config <file>    default: tools/credit-runner/sandbox.config.json (copy the .example.json
                      beside it and fill in your own paths, the real file is git-ignored)
 `;
@@ -46,7 +59,7 @@ function costText(record: { readonly costUsd: number; readonly costKnown: boolea
   return `$${record.costUsd.toFixed(2)}${record.costKnown ? "" : " (unknown: counted at the whole budget, or the last figure if higher)"}`;
 }
 
-async function main(argv: readonly string[]): Promise<number> {
+export async function main(argv: readonly string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv.filter((arg) => arg !== "--"),
     allowPositionals: true,
@@ -66,6 +79,8 @@ async function main(argv: readonly string[]): Promise<number> {
     out(USAGE);
     return values.help === true ? 0 : 1;
   }
+  // Said before anything is read or spent, so it is seen even when the run then fails.
+  if (command === "run") out(`${ATTENDED}\n`);
 
   const raw = sandboxConfigSchema.parse(JSON.parse(await readFile(values.config ?? path.join(PACKAGE_DIR, "sandbox.config.json"), "utf8")));
   const config = { ...raw, workRoot: path.resolve(expandHome(raw.workRoot)), ledgerFile: path.resolve(expandHome(raw.ledgerFile)) };
@@ -148,12 +163,23 @@ async function main(argv: readonly string[]): Promise<number> {
   return record.review.verdict === "ready-for-review" ? 0 : 2;
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    process.exitCode = code;
-  },
-  (error: unknown) => {
-    process.stderr.write(`credit-runner sandbox: ${describeError(error)}\n`);
-    process.exitCode = 1;
-  },
-);
+/** Run as the command (`pnpm ... sandbox`), not when a test imports this module. */
+function invokedDirectly(): boolean {
+  const script = process.argv[1];
+  if (script === undefined) return false;
+  const here = fileURLToPath(import.meta.url);
+  const resolved = path.resolve(script);
+  return process.platform === "win32" ? resolved.toLowerCase() === here.toLowerCase() : resolved === here;
+}
+
+if (invokedDirectly()) {
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (error: unknown) => {
+      process.stderr.write(`credit-runner sandbox: ${describeError(error)}\n`);
+      process.exitCode = 1;
+    },
+  );
+}

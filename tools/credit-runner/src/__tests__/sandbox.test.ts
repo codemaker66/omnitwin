@@ -524,6 +524,29 @@ describe("sandbox launcher", () => {
     expect(ledger.lines.map((line) => line.costUsd)).toEqual([2.87]);
   });
 
+  it("refuses a spec whose enabled, read_only, model or effort the sandbox lane would not honour, before anything starts", async () => {
+    for (const [line, said] of [
+      ["enabled: false", "enabled: false"],
+      ["read_only: true", "read_only: true"],
+      ["model: claude-sonnet-5", "model: claude-sonnet-5"],
+      ["effort: low", "effort: low"],
+    ] as const) {
+      const spec = parseTask(`---\nid: robots-wildcards\nacceptance: x\n${line}\n---\nDo it.`, "spec.md");
+      const config = await workspace();
+      const api = new FakeApi([{ history: happyEvents(happy), stream: happyEvents(happy) }], outputsOf(happy));
+      await expect(job(api, config, happy, { task: spec }), line).rejects.toThrow(said);
+      expect(api.uploads, line).toHaveLength(0);
+      expect(api.sessions, line).toHaveLength(0);
+      expect(api.environmentCreates + api.agentCreates, line).toBe(0);
+      const runDir = path.join(config.workRoot, "runs", "robots-wildcards", "collected");
+      await expect(collectSandboxJob({ api, task: spec, sessionId: "sesn_1", runDir, baseSha: happy.base, repoUrl: happy.url }), line).rejects.toThrow(said);
+    }
+    // The defaults, and the values the lane runs, are accepted.
+    const explicit = parseTask("---\nid: robots-wildcards\nacceptance: x\nenabled: true\nread_only: false\nmodel: claude-opus-5-5\neffort: high\n---\nDo it.", "spec.md");
+    const record = await job(new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy)), await workspace(), happy, { task: explicit });
+    expect(record.kind).toBe("ran");
+  });
+
   it("creates the environment and agent once and versions the agent when its prompt changes", async () => {
     const config = await workspace();
     const api = new FakeApi([]);

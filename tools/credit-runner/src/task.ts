@@ -1,50 +1,13 @@
 import { z } from "zod";
 import { parseFrontmatter } from "./frontmatter.js";
 
-/** Shell commands that only look. */
-const INSPECT_COMMANDS: readonly string[] = [
-  "Bash(cd *)",
-  "Bash(ls*)",
-  "Bash(cat *)",
-  "Bash(head *)",
-  "Bash(tail *)",
-  "Bash(wc *)",
-  "Bash(grep *)",
-  "Bash(rg *)",
-  "Bash(git status*)",
-  "Bash(git diff*)",
-  "Bash(git log*)",
-  "Bash(git show*)",
-  "Bash(git grep *)",
-  "Bash(git ls-files*)",
-];
-
-/**
- * A default tool allow-list for a spec that does not set its own. The sandbox
- * lane does not read it (the cloud agent has its own toolset); it stays part of
- * the spec format so existing specs keep parsing.
- */
-export const DEFAULT_ALLOWED_TOOLS: readonly string[] = [
-  ...INSPECT_COMMANDS,
-  "Bash(pnpm *)",
-  "Bash(node *)",
-  "Bash(mkdir *)",
-  "Bash(touch *)",
-  "Bash(cp *)",
-  "Bash(mv *)",
-  "Bash(git add *)",
-  "Bash(git commit *)",
-  "Bash(git rm *)",
-  "Bash(git mv *)",
-  "Bash(git restore *)",
-];
-
-/** A read-only task gets inspection commands only, and runs without Edit at all. */
-export const READ_ONLY_TOOLS: readonly string[] = INSPECT_COMMANDS;
-
 export const DEFAULT_MODEL = "claude-opus-5-5";
 
-/** A tool rule is never allowed to start with "-": it would be read as a command-line flag. */
+/**
+ * Tool rules. The sandbox lane takes none from a spec (its agent has one fixed
+ * toolset); the keys still parse so existing specs keep working. A rule is never
+ * allowed to start with "-": it would read as a command-line flag.
+ */
 const toolList = z.array(z.string().regex(/^(?!-)\S/u, "a tool rule must not start with \"-\" or whitespace"));
 
 /** The ceilings a spec sets; the sandbox CLI holds its --budget and --timeout overrides to the same ones. */
@@ -95,7 +58,6 @@ export interface Task {
   readonly install: boolean;
   readonly readOnly: boolean;
   readonly base: string | undefined;
-  readonly allowedTools: readonly string[];
   readonly mutation?: string | undefined;
   readonly precondition?: string | undefined;
   readonly spec: string;
@@ -106,10 +68,6 @@ export function parseTask(text: string, file: string): Task {
   const { data, body } = parseFrontmatter(text);
   const fm = frontmatterSchema.parse(data);
   if (body === "") throw new Error("the task body (the spec) is empty");
-  if (fm.read_only && (fm.allowed_tools !== undefined || fm.extra_allowed_tools.length > 0)) {
-    throw new Error("a read_only task cannot set allowed_tools or extra_allowed_tools");
-  }
-  const base = fm.read_only ? READ_ONLY_TOOLS : (fm.allowed_tools ?? DEFAULT_ALLOWED_TOOLS);
   return {
     id: fm.id,
     title: fm.title ?? fm.id,
@@ -122,7 +80,6 @@ export function parseTask(text: string, file: string): Task {
     install: fm.install,
     readOnly: fm.read_only,
     base: fm.base,
-    allowedTools: [...new Set([...base, ...fm.extra_allowed_tools])],
     mutation: fm.mutation,
     precondition: fm.precondition,
     spec: body,

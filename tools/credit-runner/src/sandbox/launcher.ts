@@ -6,7 +6,7 @@ import { sandboxSystemPrompt } from "./brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "./credit-ledger.js";
 import { reviewRun, type Review } from "./review.js";
 import { isStopped, listCostUsd, recollectSession, runSession, SessionMayExistError, type SessionRunResult } from "./session.js";
-import { AGENT_MODEL, ensureSandbox } from "./setup.js";
+import { AGENT_EFFORT, AGENT_MODEL, ensureSandbox } from "./setup.js";
 
 export interface LauncherConfig {
   /** Run records, state and specs live here (outside the repository). */
@@ -22,7 +22,7 @@ export interface JobOptions {
   readonly api: SandboxApi;
   readonly config: LauncherConfig;
   readonly task: Task;
-  /** Groups runs in the ledger, e.g. "a4-trial" or "night-2026-11-06". */
+  /** Groups runs in the ledger, e.g. "trial-1". */
   readonly job: string;
   readonly budgetUsd: number;
   readonly timeoutMinutes: number;
@@ -38,6 +38,27 @@ export interface JobOptions {
   /** Test seams, passed to runSession: every wait, and the time allowed after the interrupt. */
   readonly sleep?: (ms: number) => Promise<void>;
   readonly graceMs?: number;
+}
+
+/**
+ * Spec keys this lane would otherwise ignore: it runs every spec it is given,
+ * on one agent with one model, effort and full toolset. A spec asking for
+ * anything else is refused, never run as something it did not ask for.
+ */
+export function unhonouredSpecKeys(task: Task): string[] {
+  const keys: string[] = [];
+  if (!task.enabled) keys.push("enabled: false (this lane runs every spec it is given)");
+  if (task.readOnly) keys.push("read_only: true (the sandbox agent always has its full toolset)");
+  if (task.model !== AGENT_MODEL) keys.push(`model: ${task.model} (the sandbox agent runs ${AGENT_MODEL})`);
+  if (task.effort !== AGENT_EFFORT) keys.push(`effort: ${task.effort} (the sandbox agent runs at ${AGENT_EFFORT})`);
+  return keys;
+}
+
+function refuseUnhonouredSpec(task: Task): void {
+  const keys = unhonouredSpecKeys(task);
+  if (keys.length > 0) {
+    throw new Error(`the spec sets ${keys.join("; ")}; remove these keys or set them to what the sandbox lane runs`);
+  }
 }
 
 /**
@@ -132,6 +153,7 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   const { api, config, task } = options;
   const now = options.now ?? (() => new Date());
   const log = options.log ?? (() => undefined);
+  refuseUnhonouredSpec(task);
 
   const ledger = await readCreditLedger(config.ledgerFile);
   const check = checkSpend(
@@ -250,6 +272,7 @@ export async function collectSandboxJob(options: {
   readonly repoUrl?: string | undefined;
   readonly log?: (line: string) => void;
 }): Promise<Extract<JobRecord, { kind: "ran" }>> {
+  refuseUnhonouredSpec(options.task);
   const result = await recollectSession(options.api, options.sessionId, options.runDir, options.log);
   // An unknown cost is counted at the whole budget, as runSandboxJob booked it; never shown as $0.
   const { costUsd, costKnown } = bookedCost(result.stopped, result.listCostUsd, options.budgetUsd ?? options.task.budgetUsd);
