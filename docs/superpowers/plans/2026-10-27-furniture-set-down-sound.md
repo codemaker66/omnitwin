@@ -49,7 +49,7 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
   | Recomputing reverberation times | ≤ 0.5 ms |
   | The tail | idle slices of ≤ 4 ms each, ≤ 150 ms in total; 1.2 x the longest band's reverberation time in seconds at any rate, its memory per rate stated in `tail.ts` (R46; the plan's first cap was 2 MB) |
   | Voices at once | ≤ 8 |
-  | Engine and data | ≤ 25 KB gzipped, lazy with the planner |
+  | Engine and data | ≤ 32 KB gzipped for the Worker's and the driver's chunks together, lazy with the planner (R101, R103; the first figure was 25 KB, before the engine's rulings through R102 were built) |
 - **This PC is short of memory** (system commit at 92–97 %). Run Vitest on single files (`pnpm --filter @omnitwin/web exec vitest run <file>`). CI runs the full suites. Check free memory before the ray tracer and any browser run (`D:/claude/furniture-rebuild-20261026/tools/wait-memory.sh`).
 - **No edits** to `components/meshes/crafted/*` or `crafted-furniture.test.ts`: four T-675 PRs are open on them.
 - **Commits.** Commit with explicit pathspecs. Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never commit in `C:/Users/blake/omnitwin2`.
@@ -1107,10 +1107,11 @@ This task does not wait on the gate.
   - #449 gave the room its measured outline and took away the curtain at the arch, which the scan shows bare.
   - Its echo is now 11–14 % longer at 1 kHz, above the ~5 % just-noticeable difference.
   - Build the listening page with #449's model, put it where he can open it, and ask him how the room sounds. Record his answer in the PR body.
-- [ ] **Step 0b (ruling R100, condition 4): real-phone evidence before part 3 ships.** On at least one real low-end phone (Blake's, when it comes, or another real device), with `?soundtap=1`, show three things:
+- [ ] **Step 0b (ruling R100, condition 4): real-phone evidence before part 3 ships.** On at least one real low-end phone (Blake's, when it comes, or another real device), with `?soundtap=1`, show four things:
   - the adaptive switch engages for the slow class;
   - after warm-up (each class's first 5 contacts), misses are under 5 % of contacts, over at least 40 contacts;
-  - nothing plays later than R80's 45 ms window.
+  - nothing plays later than R80's 45 ms window;
+  - the sound's lazy load (R103): in a remote-debugging trace from opening the planner to the first set-down, no main-thread task over 50 ms comes from loading the driver's chunk, and the time from arming to the Worker's ready message is recorded.
 
   This holds part 3's release, not 14b's build.
 - [ ] **Step 1:** Write `sound-live.mjs`, a script kept outside the repo, from the furniture rebuild's batch 4 live script (also kept outside the repo).
@@ -1139,7 +1140,7 @@ This task does not wait on the gate.
   - the set-down folder, and `src/lib/__tests__/{planner-sound,planner-set-down-sound,sound-registry,furniture-motion,furniture-motion-landings,placement-support}.test.ts`, plus the component tests named in Tasks 11, 14b and 15;
   - `tsc --noEmit` (delete `packages/web/tsconfig.tsbuildinfo` first);
   - eslint over the changed files;
-  - `pnpm --filter @omnitwin/web build`, then the gzip sizes of the set-down chunks (main and Worker) against the 25 KB budget.
+  - `pnpm --filter @omnitwin/web build`, then the gzip sizes of the set-down chunks (main and Worker), together against the 32 KB budget (R103).
 
   Expected: clean, and the sizes reported.
 - [ ] **Step 4:** Push. Open "Furniture set-down sound, 3 of 3: in the planner, on at Quiet (T-700)". The body gives:

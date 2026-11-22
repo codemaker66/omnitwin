@@ -44,9 +44,11 @@ const TWIN_CHUNK_BUDGET_GZIP_BYTES = 250 * 1024;
 const ENQUIRY_CHUNK = /^enquiry-[\w-]{8}\.js$/u;
 const ENQUIRY_CHUNK_BUDGET_GZIP_BYTES = 2_560;
 // The set-down engine's two chunks (T-700): the Worker (dist/assets/set-down.worker-<hash>.js) and the
-// driver the scene imports lazily (set-down-driver-<hash>.js). The plan's budget for engine and data.
+// driver the scene imports lazily (set-down-driver-<hash>.js). The plan's budget for engine and data is
+// one total for both (R101). R103 set it at 32 KB: with nothing duplicated, the engine as ruled through
+// R102 measured 31,827 B on 22 Nov 2026 (Worker 11,759, driver 20,068). The first figure was 25 KB.
 const SET_DOWN_WORKER_CHUNK = /^set-down\.worker-[\w-]{8}\.js$/u;
-const SET_DOWN_CHUNK_BUDGET_GZIP_BYTES = 25 * 1024;
+const SET_DOWN_TOTAL_BUDGET_GZIP_BYTES = 32 * 1024;
 
 /**
  * The chunks a built chunk imports statically, in every form Rollup writes:
@@ -176,20 +178,24 @@ describe("twin chunk budgets", () => {
   });
 
   // The set-down sound (T-700): the engine and its data load lazily with the
-  // planner, in two chunks, and each stays within the budget the plan set for
-  // "engine and data", 25 KB gzip. The Worker's chunk renders every set-down
-  // and tail; the driver's is the scene's half, imported at the planner's
-  // first idle (R78). The Worker's was 22,377 B gzip when Task 14a built it.
-  it.skipIf(!hasTwinBuild)("keeps the set-down engine's Worker chunk and its driver's chunk within 25 KB gzip each", async () => {
+  // planner, in two chunks, which together stay within the plan's budget for
+  // "engine and data", 32 KB gzip (R101, R103). The Worker's chunk renders
+  // every set-down and tail; the driver's is the scene's half, imported at the
+  // planner's first idle (R78). Growth past the budget needs a new ruling.
+  it.skipIf(!hasTwinBuild)("keeps the set-down engine's Worker chunk and its driver's chunk within 32 KB gzip together", async () => {
     const workers = readdirSync(ASSETS_DIR).filter((name) => SET_DOWN_WORKER_CHUNK.test(name));
     const drivers = jsChunks("set-down-driver");
     // Exactly one of each: with none the module has moved, and this would measure nothing.
     expect(workers).toHaveLength(1);
     expect(drivers).toHaveLength(1);
+    let totalGzippedBytes = 0;
     for (const chunk of [...workers, ...drivers]) {
-      const gzippedBytes = gzipSync(await readFile(resolve(ASSETS_DIR, chunk))).byteLength;
-      expect(gzippedBytes, `${chunk} must stay within the set-down engine's gzip budget`).toBeLessThanOrEqual(SET_DOWN_CHUNK_BUDGET_GZIP_BYTES);
+      totalGzippedBytes += gzipSync(await readFile(resolve(ASSETS_DIR, chunk))).byteLength;
     }
+    expect(
+      totalGzippedBytes,
+      `${[...workers, ...drivers].join(" + ")} must stay within the set-down engine's gzip budget together`,
+    ).toBeLessThanOrEqual(SET_DOWN_TOTAL_BUDGET_GZIP_BYTES);
   });
 
   it.skipIf(!hasTwinBuild)("keeps the set-down driver out of the planner's static chunks (R78)", async () => {
