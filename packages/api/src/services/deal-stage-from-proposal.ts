@@ -87,7 +87,9 @@ export async function moveDealWithProposal(
     const [moved] = await tx.update(opportunities)
       .set({
         stage: move.to,
+        // The stage's own step, and the old step's date goes with the old step.
         nextAction: nextActionForStage(move.to),
+        nextActionDueAt: null,
         updatedAt: new Date(),
         ...(closing ? { closedAt: new Date() } : {}),
       })
