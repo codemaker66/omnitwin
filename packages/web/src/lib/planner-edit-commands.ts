@@ -85,7 +85,7 @@ export function replaceSelection(params: CardParams, options: Pick<ReplaceOption
   const held = currentHeldNoteIds();
   const result = planReplace(selectedIds(), params, editWorld(), { ...options, hasNote, holdsUnseenNote: (pieceId) => held.has(pieceId) });
   if (!result.ok) {
-    postPlacementNotice(result.reason);
+    postPlacementNotice(result.reason, { namesNoPiece: result.namesNoPiece === true });
     return result;
   }
   const { plan } = result;

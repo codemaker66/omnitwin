@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from "react";
+import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementNoticeStore, type PlacementNotice } from "../../stores/placement-notice-store.js";
 import { usePlannerChromeStore, type Receipt as ReceiptShown } from "../../stores/planner-chrome-store.js";
@@ -87,11 +88,15 @@ export function Receipt(): ReactElement {
   // before this chrome's chunk is there (#388). It goes in after the region's first render,
   // as every line does, so the region that says it was there before it; each notice once.
   const shownNotice = useRef<number | null>(null);
+  // The receipt saying a line that knows a piece only by what it is ("a table has a note that cannot be
+  // shown here."), while it shows.
+  const goesWithAnotherPiece = useRef<number | null>(null);
   useEffect(() => {
     const show = (notice: PlacementNotice): void => {
       if (shownNotice.current === notice.id) return;
       shownNotice.current = notice.id;
       usePlannerChromeStore.getState().postReceipt(notice.text, { undo: notice.undo === true });
+      goesWithAnotherPiece.current = notice.namesNoPiece === true ? usePlannerChromeStore.getState().receipt?.id ?? null : null;
     };
     const standing = usePlacementNoticeStore.getState().notice;
     if (standing !== null) show(standing);
@@ -101,6 +106,15 @@ export function Receipt(): ReactElement {
       show(notice);
     });
   }, []);
+
+  // Choosing another piece, or putting it down, makes such a line stale: it could be read as about the piece
+  // now in hand. A line that names its pieces stays its time (the release lead's ruling of 22 November 2026).
+  useEffect(() => useCatalogueStore.subscribe((state, previous) => {
+    if (state.selectedItemId === previous.selectedItemId) return;
+    const stale = goesWithAnotherPiece.current;
+    goesWithAnotherPiece.current = null;
+    if (stale !== null && usePlannerChromeStore.getState().receipt?.id === stale) usePlannerChromeStore.getState().clearReceipt();
+  }), []);
 
   return (
     <div className="pc-receipt-region" role="status">

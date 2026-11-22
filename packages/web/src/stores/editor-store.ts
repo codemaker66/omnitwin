@@ -32,6 +32,7 @@ import {
   heldNotePiecesDropped,
   heldNotePiecesToPutBack,
   keepingConfirmedNotes,
+  namesNoPiece,
   namingReplacedNotes,
   noteStillSavingLine,
   notesRefusedOnLeaving,
@@ -850,7 +851,8 @@ function stepRefusedForHeldNote(
 ): boolean {
   const dropped = heldNotePiecesDropped(state, result);
   if (dropped.length === 0) return false;
-  postPlacementNotice(words(heldNoteObjectsNamed(dropped, state.objects)));
+  const named = heldNoteObjectsNamed(dropped, state.objects);
+  postPlacementNotice(words(named), { namesNoPiece: namesNoPiece(named) });
   return true;
 }
 
@@ -1601,9 +1603,10 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     if (holders.length > 0) {
       // A note of their own that no save has confirmed yet is one they can read: it is still being saved.
       const carried = carriedNoteIds(s);
+      const named = heldNoteObjectsNamed(holders, s.objects);
       postPlacementNotice(holders.every((o) => carried.has(o.id))
-        ? noteStillSavingLine(heldNoteObjectsNamed(holders, s.objects))
-        : nothingRemovedLine(heldNoteObjectsName(holders, s.objects)));
+        ? noteStillSavingLine(named)
+        : nothingRemovedLine(heldNoteObjectsName(holders, s.objects)), { namesNoPiece: namesNoPiece(named) });
       return;
     }
     const after = s.objects.filter((o) => o.id !== objectId);
@@ -2054,7 +2057,7 @@ function putBackHeldNotePieces(): boolean {
   const carried = carriedNoteIds(s);
   const named = heldNoteObjectsNamed(returned, s.baseObjects);
   const line = returned.every((piece) => carried.has(piece.id)) ? noteStillSavingLine(named) : stayedForNotesLine(named);
-  if (line !== null) postPlacementNotice(line);
+  if (line !== null) postPlacementNotice(line, { namesNoPiece: namesNoPiece(named) });
   return true;
 }
 

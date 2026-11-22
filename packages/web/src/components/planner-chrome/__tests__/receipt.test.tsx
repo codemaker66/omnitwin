@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Receipt, RECEIPT_MS } from "../Receipt.js";
+import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlannerChromeStore } from "../../../stores/planner-chrome-store.js";
 import { postPlacementNotice, usePlacementNoticeStore } from "../../../stores/placement-notice-store.js";
@@ -110,6 +111,24 @@ describe("a receipt someone is holding", () => {
 });
 
 describe("the engine's notices (v2 has no other place for them)", () => {
+  // #388, the release lead's ruling of 22 November 2026: a line that knows a
+  // piece only by what it is ("a table") could be read as about the piece in
+  // hand, so choosing another takes it away; a line that names its piece stays.
+  it("takes away a line that knows its piece only by what it is when another piece is chosen, and keeps one that names it", () => {
+    render(<Receipt />);
+    const unnamed = "Nothing was removed: a table has a note that cannot be shown here.";
+    act(() => { postPlacementNotice(unnamed, { namesNoPiece: true }); });
+    expect(screen.getByRole("status").textContent).toBe(unnamed);
+    act(() => { useCatalogueStore.setState({ selectedItemId: "TEST ONLY another piece" }); });
+    expect(screen.getByRole("status").textContent).toBe("");
+
+    const named = "Nothing was removed: Table 1 has a note that cannot be shown here.";
+    act(() => { postPlacementNotice(named); });
+    act(() => { useCatalogueStore.setState({ selectedItemId: null }); });
+    expect(screen.getByRole("status").textContent).toBe(named);
+    act(() => { usePlacementNoticeStore.getState().dismiss(); });
+  });
+
   // #388: a reload that puts back a piece holding a note this browser is not
   // shown says so while the loading screen stands, before the chrome mounts.
   it("shows a notice already standing when it mounts, once, after the region's first render", () => {

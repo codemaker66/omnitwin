@@ -2,7 +2,8 @@ import { seatBaseSlug } from "@omnitwin/types";
 import { getCatalogueItem, type CatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { createGhostWorld, judgeGhost, obstacleAt, refusalChip, type GhostObstacle, type GhostWorld } from "./ghost-truth.js";
-import { heldNotePieceName, heldNotePieceToName, nothingReplacedLine } from "./guest-plan-notes.js";
+import { describePieces } from "./editor-save-status.js";
+import { heldNotePieceNamed, heldNotePieceToName, nothingReplacedLine } from "./guest-plan-notes.js";
 import { footprintBounds, wholeSelection } from "./placement-edit.js";
 import { selectionUnits } from "./placement-moves.js";
 import { generatePlacedId, settleMovedOnSurfaces, type PlacedItem } from "./placement.js";
@@ -73,7 +74,13 @@ export interface ReplacePlan {
 
 export type ReplaceResult =
   | { readonly ok: true; readonly plan: ReplacePlan }
-  | { readonly ok: false; readonly obstacle: GhostObstacle | null; readonly reason: string };
+  | {
+    readonly ok: false;
+    readonly obstacle: GhostObstacle | null;
+    readonly reason: string;
+    /** The reason knows a piece only by what it is ("a table"): lib/guest-plan-notes namesNoPiece. */
+    readonly namesNoPiece?: true;
+  };
 
 export interface ReplaceOptions {
   /** Ids for every new piece, so the preview and the commit name them alike. */
@@ -304,7 +311,10 @@ export function planReplace(selectedIds: ReadonlySet<string>, card: CardParams, 
   if (selection.length === 0 || cardItem === undefined) return refused(null);
   const holdsUnseenNote = options.holdsUnseenNote;
   const heldNote = holdsUnseenNote === undefined ? undefined : heldNotePieceToName(selection.filter((piece) => holdsUnseenNote(piece.id)));
-  if (heldNote !== undefined) return { ok: false, obstacle: null, reason: nothingReplacedLine(heldNotePieceName(heldNote, selection)) };
+  if (heldNote !== undefined) {
+    const named = heldNotePieceNamed(heldNote, selection);
+    return { ok: false, obstacle: null, reason: nothingReplacedLine(describePieces([named])), ...(named.label === null ? { namesNoPiece: true as const } : {}) };
+  }
   const units = unitsOf(selection);
   const sourceTables = units.flatMap((unit) => unit.tables);
   const allTables = units.every((unit) => unit.tables.length > 0);

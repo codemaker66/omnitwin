@@ -35,9 +35,9 @@ import {
   currentCarriedNoteIds,
   currentHeldNoteIds,
   danceFloorNotResizedLine,
-  heldNotePieceName,
   heldNotePieceNamed,
   heldNotePieceToName,
+  namesNoPiece,
   noSeatRemovedLine,
   nothingClearedLine,
   nothingFilledLine,
@@ -362,7 +362,8 @@ function refusedByStore(before: readonly PlacedItem[], after: readonly PlacedIte
 function refusedForHeldNote(before: readonly PlacedItem[], after: readonly PlacedItem[], words: (name: string) => string): boolean {
   const going = heldPieceGoing(before, after);
   if (going === undefined) return false;
-  postPlacementNotice(words(heldNotePieceName(going, before)));
+  const named = heldNotePieceNamed(going, before);
+  postPlacementNotice(words(describePieces([named])), { namesNoPiece: namesNoPiece([named]) });
   return true;
 }
 
@@ -545,7 +546,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const kept = keptForHeldNotes(unit, state.placedItems);
     const [name] = kept.names;
     if (name !== undefined) {
-      postPlacementNotice(kept.saving ? noteStillSavingLine([name]) : nothingRemovedLine(describePieces([name])));
+      postPlacementNotice(kept.saving ? noteStillSavingLine([name]) : nothingRemovedLine(describePieces([name])), { namesNoPiece: namesNoPiece([name]) });
       return;
     }
     set({ placedItems: next });
@@ -568,12 +569,12 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const going = removing.filter((item) => !kept.ids.has(item.id));
     // Nothing goes, and every note in the way is their own, still on its way to the server: say that, not "cannot be shown".
     if (going.length === 0 && kept.saving) {
-      postPlacementNotice(noteStillSavingLine(kept.names));
+      postPlacementNotice(noteStillSavingLine(kept.names), { namesNoPiece: namesNoPiece(kept.names) });
       return;
     }
     const [only] = kept.names;
     if (going.length === 0 && kept.names.length === 1 && only !== undefined) {
-      postPlacementNotice(nothingRemovedLine(describePieces([only])));
+      postPlacementNotice(nothingRemovedLine(describePieces([only])), { namesNoPiece: namesNoPiece([only]) });
       return;
     }
     if (going.length > 0) {
@@ -582,7 +583,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       announceRemoved(going);
     }
     const stayed = stayedForNotesLine(kept.names);
-    if (stayed !== null) postPlacementNotice(stayed);
+    if (stayed !== null) postPlacementNotice(stayed, { namesNoPiece: namesNoPiece(kept.names) });
   },
 
   moveItem: (id: string, x: number, z: number) => {
@@ -1011,12 +1012,12 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (changed) set({ placedItems: placed });
     const [only] = kept;
     if (!changed && kept.length === 1 && only !== undefined) {
-      postPlacementNotice(noSeatRemovedLine(describePieces([only])));
+      postPlacementNotice(noSeatRemovedLine(describePieces([only])), { namesNoPiece: namesNoPiece([only]) });
       return;
     }
     // Another table lost a seat, or several kept theirs: say which stayed, as a removal of several does.
     const stayed = stayedForNotesLine(kept);
-    if (stayed !== null) postPlacementNotice(stayed);
+    if (stayed !== null) postPlacementNotice(stayed, { namesNoPiece: namesNoPiece(kept) });
   },
 
   autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number, exits: readonly RoomExit[] | null = null) => {

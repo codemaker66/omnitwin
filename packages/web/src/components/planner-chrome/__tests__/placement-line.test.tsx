@@ -279,6 +279,24 @@ describe("the engine's line in the new chrome, in its receipt (ruling C2 on #388
     expect(usePlannerChromeStore.getState().receipt).toMatchObject({ text: line, undo: false });
   });
 
+  it("takes away a line that knows its piece only by what it is when another piece is chosen", async () => {
+    const [first] = rounds(1);
+    if (first === undefined) throw new Error("no rounds");
+    // A round whose table has no name of its own: a line about it can say only "a table".
+    const unnamed: Round = { ...first, pieces: first.pieces.map((piece) => (piece.id === first.table ? { ...piece, label: "" } : piece)) };
+    await open([unnamed], [first.table]);
+    await openTheNewChrome();
+
+    act(() => { useEditorStore.getState().removeObject(first.table); });
+    const line = "Nothing was removed: a table has a note that cannot be shown here.";
+    saidOnceInTheReceipt(line);
+
+    // Choosing a piece to place: the line could now be read as about that piece, so it goes (ruled 22 November 2026).
+    act(() => { useCatalogueStore.getState().selectItem(ROUND); });
+    expect(screen.queryByText(line)).toBeNull();
+    expect(receiptRegion().textContent).toBe("");
+  });
+
   it("says a reload's line about a piece it put back, standing as the chrome mounts, once in the receipt", async () => {
     const [first] = rounds(1);
     if (first === undefined) throw new Error("no rounds");

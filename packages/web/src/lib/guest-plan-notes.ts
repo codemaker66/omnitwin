@@ -564,6 +564,18 @@ export function heldNotePieceNamed(piece: NamedPiece, pieces: readonly NamedPiec
   return { label: `${what} at ${ownName(table)}`, noun: nounOf(piece), asWritten: true };
 }
 
+/**
+ * Whether a line about these pieces knows one of them only by what it is ("a
+ * table", "a lectern"): a piece with no name of its own and no named table to
+ * be found by. In the new chrome such a line goes when another piece is
+ * chosen, where it could be read as about the piece now in hand; a line that
+ * names its pieces stays its time (the release lead's ruling of 22 November
+ * 2026 on #388's merge with master).
+ */
+export function namesNoPiece(pieces: readonly ChangedPiece[]): boolean {
+  return pieces.some((piece) => piece.label === null);
+}
+
 /** One piece as a line names it: "Table 3", or "a table", "a lectern". */
 export function heldNotePieceName(piece: NamedPiece, pieces: readonly NamedPiece[]): string {
   return describePieces([heldNotePieceNamed(piece, pieces)]);
