@@ -174,7 +174,7 @@ describe("the status line", () => {
   });
 
   it("says nothing about doors in a room with none recorded", () => {
-    const status = roomStatus(roomFacts({ items: rounds(2), guests: 20, roomSlug: "saloon", doorSpaces: null, kind: null }));
+    const status = roomStatus(roomFacts({ items: rounds(2), guests: 20, roomSlug: "saloon", doorSpaces: null, kind: null, room: null }));
     expect(status.some((entry) => entry.id === "doors")).toBe(false);
   });
 

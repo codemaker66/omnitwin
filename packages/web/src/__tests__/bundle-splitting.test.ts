@@ -508,6 +508,11 @@ describe("the planner HUD stays behind its flag (T-723)", () => {
    */
   const SEAMS: ReadonlyMap<string, string> = new Map([
     ["lib/planner-features.js setPlannerChromeFeatures", "the chrome's own switches, set as it mounts and cleared as it leaves: about 70 bytes of the shared runtime file"],
+    // The planner's own gangway review of a layout. The default planner builds everything it stands on (the record
+    // it keeps for a signed-in layout derives the same items) but never asks for it under this name, so the new
+    // screen asking adds the wrapper and one export name to the planner page's file. A copy of the review's
+    // geometry in the screen's own files would add nothing there and be a second rule to keep true; this is one rule.
+    ["lib/gangway-review-record.js layoutGangwayReview", "the planner's own gangway review, asked before the new screen excuses a tight gap: its three-line wrapper and one export name in the planner page's file (the two-build reading gives the bytes)"],
     // (The seat line's spring hook, useSpringCssVariable, was listed here until 16 Nov 2026. The other new chrome
     // imports it in production since #357, so the HUD is no longer its only reader, and the last check below said so.)
   ]);
