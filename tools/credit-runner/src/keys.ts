@@ -17,9 +17,22 @@ export async function keyFilePresent(file: string): Promise<boolean> {
   }
 }
 
+/**
+ * Keys of the right shape that the runner must not hold: an Admin API key
+ * manages the whole organization, and an OAuth token is not a Console API key
+ * (the client sends X-Api-Key only, so it would fail with a bare 401).
+ */
+const REFUSED_KINDS: readonly (readonly [RegExp, string])[] = [
+  [/^sk-ant-admin/iu, "an Admin API key (sk-ant-admin...), which the runner must never hold"],
+  [/^sk-ant-oat/iu, "an OAuth token (sk-ant-oat...), not a Console API key"],
+];
+
 /** Reads and shape-checks a key. Error messages never include the file's contents. */
 export async function readKey(file: string): Promise<string> {
   const key = (await readFile(file, "utf8")).trim();
+  for (const [kind, what] of REFUSED_KINDS) {
+    if (kind.test(key)) throw new Error(`${file} holds ${what}; store a workspace API key (sk-ant-api...) for the runner instead`);
+  }
   if (!KEY_SHAPE.test(key)) {
     throw new Error(`${file} does not hold an Anthropic API key (expected a single line starting with sk-ant-)`);
   }

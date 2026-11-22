@@ -14,7 +14,11 @@
     .\tools\credit-runner\setup-keys.ps1 -KeyDir <folder>   # another folder
 
   The key folder is the `keyDir` of your sandbox.config.json; keep the two equal.
-  A folder inside the repository is refused.
+  Refused, before anything is created: a folder inside the repository or inside
+  any git work tree (a .git in it or a folder above it, found through junctions
+  and symlinks), and a -KeyDir starting with \ or / (a network, device,
+  long-path or drive-root spelling). Finding where the folder really is needs
+  node, which the runner needs anyway.
 #>
 param(
   [ValidatePattern('^[a-z][a-z0-9-]*$')]
@@ -23,14 +27,63 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+# Why a key is not one the runner takes, or $null when it is. The key itself is never shown.
+# The shape test is case-sensitive, like the runner's own (src/keys.ts).
+function Get-KeyProblem([string] $Key) {
+  if ($Key -match '^sk-ant-admin') { return 'That is an Admin API key (sk-ant-admin...), which the runner must never hold; store a workspace API key (sk-ant-api...).' }
+  if ($Key -match '^sk-ant-oat') { return 'That is an OAuth token (sk-ant-oat...), not a Console API key; store a workspace API key (sk-ant-api...).' }
+  if ($Key -cnotmatch '^sk-ant-[A-Za-z0-9_-]{20,}$') { return 'That does not look like an Anthropic API key (one line starting sk-ant-).' }
+  return $null
+}
+
+# \\server\share, \\?\ and \\.\ spellings are not resolved the way a drive path is; ask for a drive path.
+if ($KeyDir.StartsWith('\') -or $KeyDir.StartsWith('/')) {
+  throw "Give -KeyDir as a full path that starts with a drive letter, or a relative one: '$KeyDir' starts with \ or / (a network, device, long-path or drive-root spelling)."
+}
 # One full path for every step: a relative -KeyDir is taken from this window's
 # location (the .NET calls below would otherwise read it from another folder).
 $here = (Get-Location).ProviderPath
 $dir = if ([System.IO.Path]::IsPathRooted($KeyDir)) { [System.IO.Path]::GetFullPath($KeyDir) } else { [System.IO.Path]::GetFullPath((Join-Path $here $KeyDir)) }
-# A key folder inside the repository is one careless `git add` from the public record.
-$repo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-if (($dir.TrimEnd('\') + '\').StartsWith($repo.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
-  throw "The key folder $dir is inside the repository; choose one outside it (the default is under your profile)."
+if ($dir.StartsWith('\\')) {
+  throw "'$KeyDir' leads to a network or device path from this window's location; give -KeyDir as a full path that starts with a drive letter."
+}
+
+# A key folder inside the repository, or inside any git work tree, is one careless
+# `git add` from a public record. Where the folder really is comes from node's
+# realpath (fs.realpathSync.native) of its nearest existing folder, through
+# junctions and symlinks; a .git is looked for there and above it, and above the
+# path as written.
+# The script prints no path but the -KeyDir it was given.
+$where = @'
+const fs = require('fs'), path = require('path');
+const real = (p) => { const rest = []; for (let c = path.resolve(p); ; ) { try { return path.join(fs.realpathSync.native(c), ...rest); } catch (e) { const up = path.dirname(c); if (up === c || e.code !== 'ENOENT') throw e; rest.unshift(path.basename(c)); c = up; } } };
+const gitAbove = (p) => { for (let c = p; ; ) { try { fs.lstatSync(path.join(c, '.git')); return true; } catch (e) { if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') throw e; } const up = path.dirname(c); if (up === c) return false; c = up; } };
+const dir = process.env.CREDIT_RUNNER_KEY_DIR, folder = real(dir), repo = real(process.env.CREDIT_RUNNER_REPO);
+const rel = path.relative(repo.toLowerCase(), folder.toLowerCase());
+const inRepo = rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel));
+process.stdout.write(inRepo ? 'repository' : gitAbove(folder) || gitAbove(dir) ? 'git' : 'ok');
+'@
+$node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $node) { throw 'node was not found on PATH; it is needed to find where the key folder really is. Nothing was created.' }
+$env:CREDIT_RUNNER_KEY_DIR = $dir
+$env:CREDIT_RUNNER_REPO = Join-Path $PSScriptRoot '..\..'
+$ErrorActionPreference = 'Continue'
+try {
+  $verdict = "$(& $node.Source -e (($where -split "`r?`n") -join ' ') 2>$null)"
+  $nodeExit = $LASTEXITCODE
+}
+finally {
+  $ErrorActionPreference = 'Stop'
+  Remove-Item Env:CREDIT_RUNNER_KEY_DIR, Env:CREDIT_RUNNER_REPO -ErrorAction SilentlyContinue
+}
+if ($nodeExit -ne 0 -or $verdict -notin @('ok', 'repository', 'git')) {
+  throw "Could not tell where '$KeyDir' really is (node failed). Nothing was created."
+}
+if ($verdict -eq 'repository') {
+  throw "The key folder '$KeyDir' is inside the repository; choose one outside it (the default is under your profile)."
+}
+if ($verdict -eq 'git') {
+  throw "The key folder '$KeyDir' is inside a git work tree (a .git in it or a folder above it); choose one outside every repository (the default is under your profile)."
 }
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $me = $identity.Name
@@ -67,8 +120,9 @@ foreach ($name in $Pot) {
       Write-Host "Skipped $name."
       continue
     }
-    if ($plain -notmatch '^sk-ant-[A-Za-z0-9_-]{20,}$') {
-      Write-Warning "That does not look like an Anthropic API key (one line starting sk-ant-). Skipped $name."
+    $problem = Get-KeyProblem $plain
+    if ($null -ne $problem) {
+      Write-Warning "$problem Skipped $name."
       continue
     }
     $path = Join-Path $dir "$name.key"

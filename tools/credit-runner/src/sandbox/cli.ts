@@ -1,4 +1,4 @@
-import { readFile, realpath } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -36,6 +36,21 @@ async function realPathOf(folder: string): Promise<string> {
       rest.unshift(path.basename(current));
       current = parent;
     }
+  }
+}
+
+/** Whether `folder` or any folder above it holds a `.git` entry: a checkout's folder, or the file a linked worktree or submodule has. */
+async function gitEntryAbove(folder: string): Promise<boolean> {
+  for (let current = folder; ; ) {
+    try {
+      await lstat(path.join(current, ".git"));
+      return true;
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR"))) throw error;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    current = parent;
   }
 }
 
@@ -110,13 +125,18 @@ export async function main(argv: readonly string[]): Promise<number> {
   const keyDir = path.resolve(expandHome(raw.keyDir));
   const keyFile = path.join(keyDir, raw.keyFile);
   const stateFile = path.join(config.workRoot, "state.json");
-  // A key folder in the repository is one careless `git add` from the public record.
-  const keyDirInRepository = isInsideFolder(await realPathOf(keyDir), await realPathOf(REPO_ROOT));
-  const keyDirProblem = `the key folder ${keyDir} is inside the repository; keep it outside (keyDir in the config, -KeyDir for setup-keys.ps1)`;
+  // A key folder in the repository, or in any git work tree, is one careless `git add` from a public record.
+  // Both where the folder really is and the path as written are checked: a link can lead into a work tree, or out of one.
+  const keyDirReal = await realPathOf(keyDir);
+  const keyDirProblem = isInsideFolder(keyDirReal, await realPathOf(REPO_ROOT))
+    ? `the key folder ${keyDir} is inside the repository; keep it outside (keyDir in the config, -KeyDir for setup-keys.ps1)`
+    : (await gitEntryAbove(keyDirReal)) || (await gitEntryAbove(keyDir))
+      ? `the key folder ${keyDir} is inside a git work tree (a .git in it or a folder above it); keep it outside every repository (keyDir in the config, -KeyDir for setup-keys.ps1)`
+      : null;
 
   if (command === "status") {
     const present = await keyFilePresent(keyFile);
-    if (keyDirInRepository) out(`Warning: ${keyDirProblem}`);
+    if (keyDirProblem !== null) out(`Warning: ${keyDirProblem}`);
     out(`Key file ${keyFile}: ${present ? "present" : "missing"}${present ? `, ${(await keyFileExposure(keyFile)).join("; ") || "private"}` : ""}`);
     const state = await readState(stateFile);
     out(state === null ? "Sandbox: not set up" : `Sandbox: environment ${state.environmentId}, agent ${state.agentId} v${String(state.agentVersion)}`);
@@ -127,7 +147,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
-  if (keyDirInRepository) throw new Error(keyDirProblem);
+  if (keyDirProblem !== null) throw new Error(keyDirProblem);
   if (!(await keyFilePresent(keyFile))) throw new Error(`no key file at ${keyFile}; store one with setup-keys.ps1`);
   const exposure = await keyFileExposure(keyFile);
   if (exposure.length > 0) throw new Error(`${keyFile} is not private: ${exposure.join("; ")}`);
