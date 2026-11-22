@@ -100,3 +100,41 @@ describe("a download whose body's cancel never settles", () => {
     expect(await readdir(dir)).toEqual([]);
   });
 });
+
+describe("a download whose request ignores the abort", () => {
+  it("fails at its deadline without waiting for the answer, and an answer that comes later writes nothing", async () => {
+    const dir = await tempDir();
+    const destination = path.join(dir, "patch-0001.patch");
+    // The fetch never looks at its signal: it answers only when the test says so.
+    const request: { signal?: AbortSignal; answer?: (response: Response) => void } = {};
+    const api = sdkSandboxApi(
+      KEY,
+      (_input, init) => {
+        request.signal = init?.signal ?? undefined;
+        return new Promise<Response>((resolve) => {
+          request.answer = resolve;
+        });
+      },
+      {},
+    );
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const download = api.downloadFile("file_1", destination, 1024);
+    const until = Date.now() + 15_000;
+    while (request.answer === undefined && Date.now() < until) await new Promise((resolve) => setImmediate(resolve));
+    expect(request.answer).toBeDefined();
+
+    await vi.advanceTimersByTimeAsync(DOWNLOAD_TIMEOUT_MS - 1);
+    expect(await settleWithin(download, 200)).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    // At the deadline, whatever the fetch does with its aborted signal.
+    const outcome = await settleWithin(download, 15_000);
+    expect(outcome?.state).toBe("rejected");
+    expect(outcome?.state === "rejected" ? outcome.error : null).toBeInstanceOf(OutputTimeoutError);
+    expect(request.signal?.aborted).toBe(true);
+
+    // The answer arrives after all, body and all; half a second of turns later, nothing has reached the folder.
+    request.answer?.(new Response("From late body\n", { status: 200, headers: { "content-type": "application/octet-stream" } }));
+    await settleWithin(new Promise<never>(() => undefined), 500);
+    expect(await readdir(dir)).toEqual([]);
+  });
+});
