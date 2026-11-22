@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { api } from "../../../api/client.js";
 import { grandHallExits } from "../../../lib/auto-fill.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../../lib/door-clear-spaces.js";
@@ -20,6 +21,7 @@ import { doorBlockers } from "../../../lib/keep-doors-clear.js";
 import { resetPlacedIdCounter, type PlacedItem } from "../../../lib/placement.js";
 import { plannerFeatureEnabled, setPlannerChromeFeatures, setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 import { cardParamsFor, pieceCardId, stampSetup, type CardId, type CardParamsRequest } from "../../../lib/setup-cards.js";
+import { useAuthStore } from "../../../stores/auth-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useDoorClearSpaceStore } from "../../../stores/door-clear-space-store.js";
@@ -186,6 +188,7 @@ afterEach(() => {
   resetEventKindQuestionForTesting();
   window.localStorage.removeItem(EVENT_KIND_STORAGE_KEY);
   useEditorStore.setState({ reviewStatus: REVIEW_STATUS_AT_REST });
+  useAuthStore.setState({ user: null, isAuthenticated: false });
   setPlannerFeaturesForTesting(null);
   setPlannerChromeFeatures({});
 });
@@ -1202,6 +1205,32 @@ describe("the first screen", () => {
       expect(deviceEventKind("draft-1")).toBe("wedding");
       // The default planner's receipt is not this screen's to show, and is not left waiting for that planner.
       expect(useEventKindQuestion.getState().receipt).toBeNull();
+    });
+
+    // Someone signed in: the answer belongs with the layout, not with the device they happen to be on.
+    it("keeps a signed-in person's answer in the layout itself, and reads it back when the layout next opens", async () => {
+      const patch = vi.spyOn(api, "patch").mockResolvedValue({});
+      const id = "planner-1";
+      act(() => {
+        useAuthStore.setState({ user: { id, email: `${id}@fixture.test`, name: id, role: "planner", platformRole: "none", venueId: null }, isAuthenticated: true });
+      });
+      open("layout-1", { isPublicPreview: false });
+      ask();
+      renderHud();
+      fireEvent.click(screen.getByRole("button", { name: /Wedding/u }));
+      await waitFor(() => {
+        expect(patch).toHaveBeenCalledWith("/configurations/layout-1", { metadata: { eventKind: "wedding" } }, expect.anything());
+      });
+      expect(deviceEventKind("layout-1")).toBeUndefined();
+      // The page opened again: the layout's own copy says what was answered.
+      cleanup();
+      act(() => { resetEventKindQuestionForTesting(); });
+      open("layout-1", { isPublicPreview: false, metadata: { eventKind: "wedding" } });
+      ask();
+      renderHud();
+      expect(usePlannerEventStore.getState().eventKind).toBe("wedding");
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+      patch.mockRestore();
     });
 
     it("keeps Start with an empty hall as not sure yet, and does not ask that layout again when it next opens", () => {
