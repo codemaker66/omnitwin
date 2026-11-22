@@ -287,10 +287,10 @@
   margin-top: 1px;
 }
 
-/* A section's line needs room for its name and its figure together ("Lower
- * 11.2 × 7.6 m" is about 104px at this size). The desktop column has it; on a
- * 375px phone the column is 101px and the line broke inside the figure, after
- * "11.2". So where the stats are narrower than two such columns, a stat with
+/* A section's line needs room for its name and its figure together: about
+ * 104px at this size for the longest one today. The desktop column has it; on
+ * a 375px phone the column is 101px and the line broke inside the figure. So
+ * where the stats are narrower than two such columns, a stat with
  * section lines takes the full row. It is asked of the stats' own width, not
  * the viewport's, because the card's width is itself a calculation. */
 @container twin-dossier-stats (max-width: 240px) {

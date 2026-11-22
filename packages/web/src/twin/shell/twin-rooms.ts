@@ -140,7 +140,7 @@ export function formatRoomDimensions(slug: PublishedRoomSlug): string | null {
 }
 
 /**
- * The floor of one extent, length by width: "9.7 × 5.6 m". The one place the
+ * The floor of one extent, as "length × width m". The one place the
  * tour composes a plan size, so the dossier's Dimensions stat and the room
  * selector's line cannot drift apart, in their rounding or their separator.
  */

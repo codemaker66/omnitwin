@@ -121,6 +121,10 @@ export function pickRoomTarget(
   return best;
 }
 
+/** U+00A0. Written as an escape so it cannot be mistaken for, or silently
+ *  retyped as, an ordinary space. */
+const NO_BREAK_SPACE = "\u00a0";
+
 /**
  * The one-line comparison beneath a room's name — capacities and published
  * extent, joined — or null at a viewpoint whose room is not known.
@@ -137,8 +141,17 @@ export function pickRoomTarget(
  *
  * A room with no stated dimensions renders its capacities alone, rather than an
  * em dash where a measurement should be. A room published in sections gives
- * each section's floor, in the venue's order, joined by "and": the capacities
- * before them are the whole room's, so the sections are not named here.
+ * each section's floor, named as the venue names it and in the venue's order,
+ * joined by "and", so two sizes are never read as a choice between two rooms.
+ * The capacities before them are the whole room's.
+ *
+ * WHERE THE LINE MAY WRAP. A floor (its section's name, where it has one, and
+ * its figure) is held together with no-break spaces, and "and" is tied to the
+ * floor after it, so the only places a narrow row can break the line are at a
+ * " · " and before "and". A sectioned room's line is the longest on the panel
+ * and takes two lines there; with ordinary spaces it broke inside a figure and
+ * left the unit alone on the second. A no-break space is as wide as a space,
+ * so a line that fits is drawn exactly as before.
  */
 export function formatRoomComparison(nodeId: string): string | null {
   const room = lookUpRoom(nodeId);
@@ -151,7 +164,12 @@ export function formatRoomComparison(nodeId: string): string | null {
   if (dimensions === undefined) {
     return head;
   }
-  return `${head} · ${dimensions.extents.map(formatExtentPlan).join(" and ")}`;
+  const floors = dimensions.extents.map((extent) => {
+    const plan = formatExtentPlan(extent);
+    const named = extent.section === undefined ? plan : `${extent.section} ${plan}`;
+    return named.split(" ").join(NO_BREAK_SPACE);
+  });
+  return `${head} · ${floors.join(` and${NO_BREAK_SPACE}`)}`;
 }
 
 /** One offered room, ready to render. */

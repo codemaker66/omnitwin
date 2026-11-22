@@ -642,8 +642,9 @@ export function RoomDossier({
                       <dd className="vv-twin-dossier-stat-value" key={line.section ?? stat.key}>
                         {/* Both separators are DOM text, not CSS margins: a span
                             is inline with no default whitespace, so styling
-                            alone would read "Lower11.2" and "6.7 mto the
-                            coffered ceiling" to anyone whose stylesheet had not
+                            alone would run a section's name into its figure,
+                            and read "6.7 mto the coffered ceiling", to anyone
+                            whose stylesheet had not
                             loaded — and to every screen reader, which hears the
                             concatenation regardless. */}
                         {line.section !== undefined && (

@@ -207,8 +207,8 @@ describe("RoomDossier", () => {
       return [...(row?.querySelectorAll("dd") ?? [])].map((line) => line.textContent ?? "");
     };
     // One description per section, in the venue's order. The space between a
-    // section's name and its figure is in the text itself ("Lower 11.2 …"), so
-    // it survives a missing stylesheet and is what a screen reader hears.
+    // section's name and its figure is in the text itself, so it survives a
+    // missing stylesheet and is what a screen reader hears.
     expect(linesUnder("Dimensions")).toEqual(
       sections.map(
         ({ name, extent }) => `${name} ${metres(extent.lengthM)} × ${metres(extent.widthM)} m`,
@@ -224,7 +224,7 @@ describe("RoomDossier", () => {
 
     // Only the stats with section lines are marked, which is what lets the
     // stylesheet give them the full row on a phone, where a half-width column
-    // broke "Lower 11.2 × 7.6 m" inside the figure.
+    // broke a section's line inside its figure.
     const marked = (label: string): boolean =>
       screen.getByText(label).parentElement?.classList.contains("vv-twin-dossier-stat--sections") ?? false;
     expect(marked("Dimensions")).toBe(true);

@@ -89,6 +89,8 @@ const STAT_DIMENSIONS = "Dimensions";
 const STAT_RECEPTION = "Reception";
 const STAT_DINNER = "Dinner";
 const STAT_CEILING = "Ceiling";
+/** The validated viewpoint in the one room the venue publishes in sections. */
+const SECTIONED_NODE = "scan_105";
 
 const TOUR_PATH = "/tour";
 const MANIFEST_ROUTE = "**/twin/trades-hall/manifest.json";
@@ -304,16 +306,48 @@ async function expectLiveStage(page: Page, what: string): Promise<void> {
   expect(state.height, `${what}: the drawing buffer must have height`).toBeGreaterThan(0);
 }
 
-/** The dossier's published figures, read as label → rendered value. */
-async function dossierStats(page: Page): Promise<Record<string, string>> {
+/**
+ * The dossier's figures, read as label → every rendered line under it.
+ *
+ * Every line, not the first: a stat holds one line for a room given as a whole
+ * and one per section for a room published in sections, so a reader that took
+ * the first would pass with a section missing, or with a line too many.
+ */
+async function dossierStats(page: Page): Promise<Record<string, string[]>> {
   return page.evaluate(() => {
-    const stats: Record<string, string> = {};
+    const stats: Record<string, string[]> = {};
     for (const row of document.querySelectorAll(".vv-twin-dossier-stat")) {
       const label = row.querySelector(".vv-twin-dossier-stat-label")?.textContent ?? "";
-      const value = row.querySelector(".vv-twin-dossier-stat-value")?.textContent ?? "";
-      stats[label] = value;
+      stats[label] = [...row.querySelectorAll(".vv-twin-dossier-stat-value")].map(
+        (line) => line.textContent ?? "",
+      );
     }
     return stats;
+  });
+}
+
+/**
+ * The text of every dossier stat line that is drawn on more than one line.
+ *
+ * Counted from the line boxes of the line's CONTENTS. The line's own element is
+ * a block, and a block has one box however many lines it wraps to, so asking it
+ * directly would always answer one. Boxes on one line share a top to within a
+ * fraction of their height; a second line starts a whole line lower.
+ */
+async function wrappedDossierLines(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const wrapped: string[] = [];
+    for (const line of document.querySelectorAll(".vv-twin-dossier-stat-value")) {
+      const range = document.createRange();
+      range.selectNodeContents(line);
+      const boxes = [...range.getClientRects()].filter((box) => box.width > 0 && box.height > 0);
+      const first = boxes[0];
+      if (first === undefined) continue;
+      if (boxes.some((box) => Math.abs(box.top - first.top) > first.height / 2)) {
+        wrapped.push(line.textContent ?? "");
+      }
+    }
+    return wrapped;
   });
 }
 
@@ -552,18 +586,19 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
 
   // Every figure is JOINED from the venue-truth module through twin-rooms —
   // nothing here is a literal, which is what keeps the drift gate meaningful.
+  // The Grand Hall is given as a whole, so each stat holds exactly one line.
   const stats = await dossierStats(page);
-  expect(stats[STAT_DIMENSIONS]).toBe(
+  expect(stats[STAT_DIMENSIONS]).toEqual([
     `${metres(hall.lengthM)} × ${metres(hall.widthM)} m`,
-  );
-  expect(stats[STAT_RECEPTION]).toBe(`${String(room.capacities.reception)} standing`);
-  expect(stats[STAT_DINNER]).toBe(`${String(room.capacities.dinner)} seated`);
+  ]);
+  expect(stats[STAT_RECEPTION]).toEqual([`${String(room.capacities.reception)} standing`]);
+  expect(stats[STAT_DINNER]).toEqual([`${String(room.capacities.dinner)} seated`]);
   // The ceiling qualifier says what the height is measured to, and its
   // separator is DOM text — "7 ma further…" is the failure this pins shut.
   const note = hall.note;
-  expect(stats[STAT_CEILING]).toBe(
+  expect(stats[STAT_CEILING]).toEqual([
     note === undefined ? `${metres(heightM)} m` : `${metres(heightM)} m — ${note}`,
-  );
+  ]);
 
   // Provenance travels with the figures, verbatim — the dossier's footnote ends
   // with this constant, so a reworded claim about someone else's data fails
@@ -574,6 +609,43 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
   if (remark !== undefined) {
     await expect(footnote).toHaveText(`${remark} ${ROOM_TRUTH_PROVENANCE}`);
   }
+
+  // A room published in sections, on a phone. Each section is a line of its own
+  // under Dimensions and under Ceiling, named, in the venue's order — and each
+  // is drawn on ONE line. At this width the stats sit in two half-width columns
+  // too narrow for a section's name and its figure together, where the line
+  // broke inside the figure; room-dossier.css gives such a stat the full row.
+  const sectioned = lookUpRoom(SECTIONED_NODE);
+  if (sectioned === null) throw new Error(`${SECTIONED_NODE} has no validated room to assert.`);
+  const sections = sectioned.dimensions?.extents ?? [];
+  expect(sections.length, "the room at this viewpoint is published in sections").toBeGreaterThan(1);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await openTour(page, `?node=${SECTIONED_NODE}`);
+  await expect(dossier.getByRole("heading", { name: sectioned.name })).toBeVisible();
+
+  const sectionedStats = await dossierStats(page);
+  expect(sectionedStats[STAT_DIMENSIONS]).toEqual(
+    sections.map(
+      (extent) =>
+        `${extent.section ?? ""} ${metres(extent.lengthM)} × ${metres(extent.widthM)} m`,
+    ),
+  );
+  expect(sectionedStats[STAT_CEILING]).toEqual(
+    sections.flatMap((extent) =>
+      extent.heightM === undefined
+        ? []
+        : [`${extent.section ?? ""} ${metres(extent.heightM)} m`],
+    ),
+  );
+  // The capacities are the whole room's: one line each, with no section name.
+  expect(sectionedStats[STAT_RECEPTION]).toEqual([
+    `${String(sectioned.capacities.reception)} standing`,
+  ]);
+  expect(sectionedStats[STAT_DINNER]).toEqual([`${String(sectioned.capacities.dinner)} seated`]);
+  expect(
+    await wrappedDossierLines(page),
+    "no dossier line may wrap at 375 × 812 in a room published in sections",
+  ).toEqual([]);
 
   expect(errors, "the dossier must not log an error").toEqual([]);
 });

@@ -144,7 +144,7 @@ describe("public profile — what the venue already publishes", () => {
 
 describe("room dimensions", () => {
   it("gives the Grand Hall's interior as its laser scan measures it", () => {
-    // Blake, 11 November 2026: "The measured 21.14 x 10.59 m". The height is the
+    // Blake's decision, 11 November 2026: the measured size. The height is the
     // clear 6.7 m to the underside of the coffered ceiling, never the dome's.
     // The note says only what the height is measured to, short enough to sit
     // beside the figure; the dome is a remark of its own, for a footnote.

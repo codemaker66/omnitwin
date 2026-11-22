@@ -110,7 +110,7 @@ export interface RoomDimensions {
  *
  *  The Grand Hall is its panelled interior as the Matterport E57 capture of
  *  11 July 2026 measures it, 21.135 m by 10.59 m to about 2 cm, shown as
- *  21.14 × 10.59 m (Blake, 11 November 2026: "The measured 21.14 x 10.59 m");
+ *  21.14 × 10.59 m (Blake's decision, 11 November 2026: the measured size);
  *  its height is the clear 6.7 m to the underside of the coffered ceiling. The
  *  dome rises above part of the hall and is never given as the room's height:
  *  the height's note says what it is measured to, and the dome is a separate

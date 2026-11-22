@@ -6,6 +6,7 @@ import {
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_ROOM_DIMENSIONS,
   type PublishedRoomSlug,
+  type RoomExtent,
 } from "@omnitwin/types";
 import { ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES, metres } from "../twin-rooms.js";
 import {
@@ -58,6 +59,16 @@ function node(id: string, x: number, y: number, floor: number): TwinScanNode {
   };
 }
 
+/** U+00A0, as an escape: a figure is held together by these, never by spaces. */
+const NBSP = "\u00a0";
+
+/** One floor as the panel prints it: its section's name where the room is
+ *  published in sections, then length by width, all of it unbreakable. */
+function expectedFloor(extent: RoomExtent): string {
+  const plan = `${metres(extent.lengthM)}${NBSP}×${NBSP}${metres(extent.widthM)}${NBSP}m`;
+  return extent.section === undefined ? plan : `${extent.section}${NBSP}${plan}`;
+}
+
 /** The comparison line rebuilt from the venue-truth module, independently of the
  *  module under test — so a drift between the two fails here rather than
  *  agreeing with itself. */
@@ -68,10 +79,7 @@ function expectedComparison(slug: PublishedRoomSlug): string {
   if (dimensions === undefined) {
     return head;
   }
-  const floors = dimensions.extents.map(
-    (extent) => `${metres(extent.lengthM)} × ${metres(extent.widthM)} m`,
-  );
-  return `${head} · ${floors.join(" and ")}`;
+  return `${head} · ${dimensions.extents.map(expectedFloor).join(` and${NBSP}`)}`;
 }
 
 describe("ROOM_SELECTOR_ORDER", () => {
@@ -147,9 +155,10 @@ describe("formatRoomComparison", () => {
     }
   });
 
-  it("gives every section's floor for a room published in sections, and never one alone", () => {
+  it("gives every section's floor, named, for a room published in sections, and never one alone", () => {
     // The Robert Adam Room is one room on two levels. One section's floor on
-    // its own reads as the whole room's, which is the fault this line had.
+    // its own reads as the whole room's, which is the fault this line had, and
+    // two unnamed floors read as a choice between two rooms.
     const nodeId = Object.keys(VERIFIED_ROOM_NODES).find(
       (id) => VERIFIED_ROOM_NODES[id] === "robert-adam-room",
     );
@@ -158,11 +167,34 @@ describe("formatRoomComparison", () => {
       throw new Error("the Robert Adam Room lost its validated viewpoint or its dimensions");
     }
     expect(dimensions.extents.length).toBeGreaterThan(1);
+    for (const extent of dimensions.extents) {
+      expect(extent.section, "every section of a sectioned room is named").toBeDefined();
+    }
     const line = formatRoomComparison(nodeId) ?? "";
     for (const extent of dimensions.extents) {
-      expect(line).toContain(`${metres(extent.lengthM)} × ${metres(extent.widthM)} m`);
+      expect(line).toContain(expectedFloor(extent));
     }
-    expect(line.split(" and ")).toHaveLength(dimensions.extents.length);
+    expect(line.split(` and${NBSP}`)).toHaveLength(dimensions.extents.length);
+  });
+
+  it("can wrap only at a separator or before \"and\", never inside a floor", () => {
+    // With ordinary spaces the Robert Adam Room's line, the longest on the
+    // panel, wrapped inside its last figure and left the unit alone on a second
+    // line. The breakable spaces that remain are the ones around each " · "
+    // and the one before "and".
+    for (const [nodeId, slug] of Object.entries(VERIFIED_ROOM_NODES)) {
+      const dimensions = TRADES_HALL_ROOM_DIMENSIONS[slug];
+      const line = formatRoomComparison(nodeId);
+      if (dimensions === undefined || line === null) {
+        throw new Error(`${slug} lost its dimensions or its comparison line`);
+      }
+      const floors = line.slice(line.lastIndexOf(" · ") + 3).split(" ");
+      expect(floors, slug).toEqual(
+        dimensions.extents.map((extent, index) =>
+          index === 0 ? expectedFloor(extent) : `and${NBSP}${expectedFloor(extent)}`,
+        ),
+      );
+    }
   });
 
   it("says nothing at a viewpoint whose room is not known", () => {
