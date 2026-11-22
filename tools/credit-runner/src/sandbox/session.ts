@@ -549,11 +549,12 @@ async function createOrFind(
   }
 }
 
-/** A run's spend and time bounds, as a caller passes them to runSession or runSandboxJob. */
+/** A run's spend, time and download bounds, as a caller passes them to runSession or runSandboxJob. */
 export interface RunBounds {
   readonly budgetUsd: number;
   readonly timeoutMinutes: number;
   readonly graceMs?: number | undefined;
+  readonly outputCaps?: OutputCaps | undefined;
 }
 
 /**
@@ -564,7 +565,9 @@ export interface RunBounds {
  * as "NaN" cents and leave a ledger line that cannot be written. The time
  * limit is above 0 and at most the spec's ceiling, fractional allowed here,
  * and the grace period from 0 to MAX_GRACE_MS: a NaN, negative or
- * out-of-range delay would make setTimeout fire at once.
+ * out-of-range delay would make setTimeout fire at once. Output caps, a test
+ * seam, are whole numbers of bytes from 1 to OUTPUT_CAPS's, so they can only
+ * lower the real caps: a NaN or an infinite cap would switch one off.
  */
 export function checkRunBounds(bounds: RunBounds): void {
   const { budgetUsd, timeoutMinutes } = bounds;
@@ -577,6 +580,13 @@ export function checkRunBounds(bounds: RunBounds): void {
   const graceMs = bounds.graceMs ?? DEFAULT_GRACE_MS;
   if (!Number.isFinite(graceMs) || graceMs < 0 || graceMs > MAX_GRACE_MS) {
     throw new RangeError(`graceMs must be from 0 to ${String(MAX_GRACE_MS)}, not ${String(graceMs)}`);
+  }
+  const caps = bounds.outputCaps;
+  const within = (bytes: number, most: number): boolean => Number.isSafeInteger(bytes) && bytes >= 1 && bytes <= most;
+  if (caps !== undefined && !(within(caps.perOutput, OUTPUT_CAPS.perOutput) && within(caps.total, OUTPUT_CAPS.total))) {
+    throw new RangeError(
+      `outputCaps must be whole numbers of bytes from 1 to ${String(OUTPUT_CAPS.perOutput)} per output and ${String(OUTPUT_CAPS.total)} in all, not ${String(caps.perOutput)} and ${String(caps.total)}`,
+    );
   }
 }
 

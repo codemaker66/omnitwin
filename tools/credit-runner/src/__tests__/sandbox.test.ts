@@ -2047,13 +2047,31 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     expect(await readFile(path.join(runs, stampDir ?? "", "kickoff.md"), "utf8")).toMatch(new RegExp(`^Run id \\(the session's metadata \`run\`\\): ${runId}\\n`, "u"));
   });
 
-  it("refuses a budget, a time limit or a grace period outside its bounds before anything is uploaded or created", async () => {
+  it("refuses a budget, a time limit, a grace period or output caps outside their bounds before anything is uploaded or created", async () => {
     const runDir = await mkdtemp(path.join(tmpdir(), "credit-runner-bounds-"));
     dirs.push(runDir);
     const budget = /^budgetUsd must be from 0\.01 to 50, not /u;
     const timeout = /^timeoutMinutes must be more than 0 and at most 240/u;
     const grace = /^graceMs must be from 0 to 3600000/u;
-    const cases: readonly { readonly budgetUsd?: number; readonly timeoutMinutes?: number; readonly graceMs?: number; readonly refused: RegExp }[] = [
+    const caps = /^outputCaps must be whole numbers of bytes from 1 to 16777216 per output and 67108864 in all/u;
+    // The caps are a test seam that may only lower the real ones: never raise them, switch them off or make them NaN.
+    const capsWith = (perOutput: number, total: number) => ({ outputCaps: { perOutput, total }, refused: caps });
+    const cases: readonly {
+      readonly budgetUsd?: number;
+      readonly timeoutMinutes?: number;
+      readonly graceMs?: number;
+      readonly outputCaps?: { readonly perOutput: number; readonly total: number };
+      readonly refused: RegExp;
+    }[] = [
+      capsWith(Number.NaN, 1000),
+      capsWith(1000, Number.NaN),
+      capsWith(Number.POSITIVE_INFINITY, 1000),
+      capsWith(1000, Number.POSITIVE_INFINITY),
+      capsWith(0, 1000),
+      capsWith(-1, 1000),
+      capsWith(1.5, 1000),
+      capsWith(MAX_OUTPUT_BYTES + 1, MAX_OUTPUTS_TOTAL_BYTES),
+      capsWith(MAX_OUTPUT_BYTES, MAX_OUTPUTS_TOTAL_BYTES + 1),
       // A NaN budget would reach the create as "NaN" cents, and its ledger line could not be written.
       { budgetUsd: Number.NaN, refused: budget },
       { budgetUsd: 0, refused: budget },
@@ -2085,7 +2103,8 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
         sleep: instant,
         ...bad,
       });
-      await expect(run, String(Object.entries(bad))).rejects.toThrow(refused);
+      const shown = Object.entries(bad).map(([key, value]) => `${key} ${typeof value === "number" ? String(value) : `${String(value?.perOutput)}/${String(value?.total)}`}`);
+      await expect(run, shown.join(", ")).rejects.toThrow(refused);
       expect(api.uploads).toHaveLength(0);
       expect(api.sessions).toHaveLength(0);
     }
