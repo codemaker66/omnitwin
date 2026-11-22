@@ -105,23 +105,24 @@ export function reviewMarkdown(task: Task, record: Extract<JobRecord, { kind: "r
   const lines = [
     `# ${review.verdict === "ready-for-review" ? "READY FOR REVIEW" : "REJECTED"} · ${task.id} — ${task.title}`,
     "",
-    `- Session: ${result.sessionId} (${result.status}, stopped: ${result.stopReason ?? "unknown"})`,
+    `- Session: ${inlineCode(result.sessionId)} (${inlineCode(result.status)}, stopped: ${result.stopReason === null ? "unknown" : inlineCode(result.stopReason)})`,
     `- Base: ${record.baseSha}; branch to open: ${record.branch}`,
     `- Cost: $${record.costUsd.toFixed(2)}${record.costKnown ? " (platform list cost, includes the session-hour fee)" : " (unknown: counted at the whole budget, or the last figure if higher)"}; ${String(result.requests)} model requests; ${String(result.activeSeconds ?? "?")} active seconds`,
     `- Tokens: ${String(result.inputTokens)} uncached in, ${String(result.cacheReadTokens)} cache read, ${String(result.cacheCreationTokens)} cache written, ${String(result.outputTokens)} out`,
     `- Verifier (advisory): ${result.verify === null ? "no readable result" : result.verify.ok ? "ok" : "failed"} (${String(result.verifyRuns)} run(s))`,
-    `- Grader: ${result.outcome === null ? "no verdict" : `${result.outcome.result} after iteration ${String(result.outcome.iteration)}`}`,
+    `- Grader: ${result.outcome === null ? "no verdict" : `${inlineCode(result.outcome.result)} after iteration ${String(result.outcome.iteration)}`}`,
     "",
-    "This verdict is this machine's reading of the returned patches. The verifier ran inside the agent's own container, so its result is advisory: it can reject a run but never clears one. CI on the pull request is the acceptance authority.",
+    "This verdict is this machine's reading of the returned patches. The verifier ran, and precondition.json was written, inside the agent's own container, so both are advisory: a failing or unreadable result rejects the run, a passing one proves nothing. CI on the pull request is the acceptance authority.",
   ];
-  // Reasons, flags and paths can carry text the agent wrote (the verifier's
-  // problems, file names): each stays on its one bullet line.
-  if (review.reasons.length > 0) lines.push("", "## Why it is rejected", ...review.reasons.map((reason) => `- ${oneLine(reason)}`));
-  if (review.flags.length > 0) lines.push("", "## Look closely", ...review.flags.map((flag) => `- ${oneLine(flag)}`));
+  // Reasons, flags and changed entries can carry text the agent wrote (the
+  // verifier's problems, file names, output names): each is one code span on
+  // its own bullet line, so none renders as a tag, link, image or heading.
+  if (review.reasons.length > 0) lines.push("", "## Why it is rejected", ...review.reasons.map((reason) => `- ${inlineCode(reason)}`));
+  if (review.flags.length > 0) lines.push("", "## Look closely", ...review.flags.map((flag) => `- ${inlineCode(flag)}`));
   lines.push(
     "",
     "## Changed files, read from the patches (A added or a rename's target, M modified, D deleted, R renamed or copied from)",
-    ...(review.changed.length === 0 ? ["- (none read)"] : review.changed.map((entry) => `- ${oneLine(entry)}`)),
+    ...(review.changed.length === 0 ? ["- (none read)"] : review.changed.map((entry) => `- ${inlineCode(entry)}`)),
   );
   const baseTail = result.verify?.baseTail ?? null;
   if (baseTail !== null && baseTail.trim() !== "") {
@@ -133,12 +134,22 @@ export function reviewMarkdown(task: Task, record: Extract<JobRecord, { kind: "r
 
 /**
  * Characters that can break or reorder a line: C0 and C1 controls, DEL, the
- * line and paragraph separators, and the bidirectional embeddings, overrides
- * and isolates.
+ * line and paragraph separators, and the bidirectional embeddings, overrides,
+ * isolates and marks (LRM, RLM, ALM).
  */
 function isLineBreaking(char: string): boolean {
   const code = char.codePointAt(0) ?? 0;
-  return code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029 || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069);
+  return (
+    code < 0x20 ||
+    (code >= 0x7f && code <= 0x9f) ||
+    code === 0x061c ||
+    code === 0x200e ||
+    code === 0x200f ||
+    code === 0x2028 ||
+    code === 0x2029 ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069)
+  );
 }
 
 /** Text that may come from the agent, on one line: newlines and other line-breaking or reordering characters become spaces. */
@@ -149,9 +160,32 @@ function oneLine(text: string): string {
     .trim();
 }
 
+/** The longest run of backticks in `text`, counted in a loop (a long text spread into Math.max would overflow the stack). */
+function longestBacktickRun(text: string): number {
+  let longest = 0;
+  for (const run of text.matchAll(/`+/gu)) longest = Math.max(longest, run[0].length);
+  return longest;
+}
+
+/**
+ * Text that may come from the agent or the session, as one inline code span:
+ * on one line (oneLine), fenced with one backtick more than its longest run of
+ * backticks, so no run inside can close it, and padded with a space where it
+ * starts or ends with a backtick or a space (CommonMark then drops one space
+ * from each end). CommonMark and GitHub show a code span's content as written:
+ * never a tag, link, image, comment, emphasis or mention.
+ */
+export function inlineCode(text: string): string {
+  const line = oneLine(text);
+  if (line === "") return "` `";
+  const fence = "`".repeat(longestBacktickRun(line) + 1);
+  const pad = /^[` ]|[` ]$/u.test(line) ? " " : "";
+  return `${fence}${pad}${line}${pad}${fence}`;
+}
+
 /** Text that may come from the agent, quoted as a block: fenced with more backticks than it holds, so it cannot close the fence. */
 function fenced(text: string): string[] {
-  const fence = "`".repeat(Math.max(3, ...[...text.matchAll(/`+/gu)].map((run) => run[0].length + 1)));
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(text) + 1));
   return [fence, text.trimEnd(), fence];
 }
 

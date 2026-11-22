@@ -88,9 +88,10 @@ function short(sha: string | null): string {
  * branch. The verdict rests on what this machine reads from the returned
  * format-patch files (see patches.ts): the paths, file modes, deletions and
  * secret-shaped text in them, whatever the agent printed. The in-sandbox
- * verifier ran in a container the agent controls, so its result is advisory: a
- * failing or unreadable result rejects, a passing one never outweighs the patch
- * inspection, and CI on the pull request is the acceptance authority.
+ * verifier's line and precondition.json both come from a container the agent
+ * controls, so both are advisory: a failing, unreadable or (when expected)
+ * missing result rejects, a passing one never outweighs the patch inspection,
+ * and CI on the pull request is the acceptance authority.
  */
 export async function reviewRun(result: SessionRunResult, options: ReviewOptions): Promise<Review> {
   const reasons: string[] = [];
@@ -103,9 +104,14 @@ export async function reviewRun(result: SessionRunResult, options: ReviewOptions
   const outputs = [...result.outputs].sort();
   const diffFile = outputs.find((file) => path.basename(file) === "diff.patch") ?? null;
   const preconditionFile = outputs.find((file) => path.basename(file) === "precondition.json") ?? null;
+  // precondition.json is the agent's own record, written in its container: like
+  // the verifier's line it is advisory, so a false, unreadable or missing one
+  // rejects, and a true one proves nothing.
   if (preconditionFile === null) {
     if (options.preconditionExpected === true) {
-      reasons.push("the task has a precondition but the run left no precondition.json (the exact name, in the outputs folder), so nobody checked that the code the task cites has not moved");
+      reasons.push(
+        "the task has a precondition but the run left no precondition.json (the exact name, in the outputs folder), so not even the agent's own record says whether the code the task cites has moved",
+      );
     }
   } else {
     const precondition = preconditionResult(await readFile(preconditionFile, "utf8"));

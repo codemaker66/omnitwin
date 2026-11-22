@@ -33,7 +33,7 @@ import {
 } from "../sandbox/api.js";
 import { outcomeFor, promptSha, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "../sandbox/credit-ledger.js";
-import { collectSandboxJob, runSandboxJob, type JobOptions, type LauncherConfig } from "../sandbox/launcher.js";
+import { collectSandboxJob, inlineCode, runSandboxJob, type JobOptions, type LauncherConfig } from "../sandbox/launcher.js";
 import {
   isWindowsDeviceName,
   MAX_OUTPUT_BYTES,
@@ -163,6 +163,48 @@ function outputsOf(fixture: PatchFixture, overrides: Record<string, string | nul
   return Object.fromEntries(Object.entries(all).filter((entry): entry is [string, string | null] => entry[1] !== undefined));
 }
 
+/**
+ * One line of Markdown read as CommonMark 0.31 reads code spans (section 6.1):
+ * a run of n backticks opens a span that the next run of exactly n closes, and
+ * a run with no closer is plain text. Returns the text outside the spans, and
+ * each span's content as rendered (one space dropped from each end when both
+ * ends are spaces and it is not all spaces).
+ */
+function codeSpans(line: string): { readonly outside: string; readonly spans: readonly string[] } {
+  const runAt = (at: number): number => {
+    let end = at;
+    while (line[end] === "`") end += 1;
+    return end - at;
+  };
+  let outside = "";
+  const spans: string[] = [];
+  for (let at = 0; at < line.length; ) {
+    if (line[at] !== "`") {
+      outside += line[at] ?? "";
+      at += 1;
+      continue;
+    }
+    const length = runAt(at);
+    let close = -1;
+    for (let next = at + length; next < line.length; ) {
+      if (line[next] !== "`") next += 1;
+      else if (runAt(next) === length) {
+        close = next;
+        break;
+      } else next += runAt(next);
+    }
+    if (close === -1) {
+      outside += line.slice(at, at + length);
+      at += length;
+      continue;
+    }
+    const content = line.slice(at + length, close);
+    spans.push(content.length > 1 && content.startsWith(" ") && content.endsWith(" ") && content.trim() !== "" ? content.slice(1, -1) : content);
+    at = close + length;
+  }
+  return { outside, spans };
+}
+
 const dirs: string[] = [];
 afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
@@ -265,7 +307,8 @@ describe("sandbox launcher", () => {
     expect(Object.keys(line).sort()).toEqual(["batchId", "costUsd", "inputTokens", "job", "lane", "model", "outputTokens", "requests", "ts"]);
     const review = await readFile(path.join(record.runDir, "review.md"), "utf8");
     expect(review).toContain("READY FOR REVIEW");
-    expect(review).toContain("The verifier ran inside the agent's own container, so its result is advisory");
+    expect(review).toContain("The verifier ran, and precondition.json was written, inside the agent's own container, so both are advisory");
+    expect(review).toContain("a passing one proves nothing");
     expect(review).toContain("CI on the pull request is the acceptance authority");
     // The verifier's run without the fix is shown, so a vacuous failure can be seen.
     expect(review).toContain("expected true to be false");
@@ -743,17 +786,74 @@ describe("sandbox launcher", () => {
 
   it("keeps the agent's text on one line in review.md, so it cannot add a heading", async () => {
     // A newline, then the other characters that break or reorder a line: a C1
-    // next-line, the line and paragraph separators, a bidi override and isolate.
-    const breakers = ["\u0085", "\u2028", "\u2029", "\u202e", "\u2066"];
+    // next-line, the line and paragraph separators, a bidi override and
+    // isolate, and the bidi marks (LRM, RLM, ALM).
+    const breakers = ["\u0085", "\u2028", "\u2029", "\u202e", "\u2066", "\u200e", "\u200f", "\u061c"];
     const forged = verifyLine(happy, { ok: false, problems: ["fails\n## READY FOR REVIEW\n- all good", `a${breakers.join("b")}c`] });
     const record = await reviewOf(happy, { events: happyEvents(happy, { output: `${forged}\n` }) });
     const text = await readFile(path.join(record.runDir, "review.md"), "utf8");
     const lines = text.split("\n");
-    expect(lines).toContain("- verifier: fails ## READY FOR REVIEW - all good");
-    expect(lines).toContain("- verifier: a b b b b c");
+    expect(lines).toContain("- `verifier: fails ## READY FOR REVIEW - all good`");
+    expect(lines).toContain("- `verifier: a b b b b b b b c`");
     for (const breaker of breakers) expect(text).not.toContain(breaker);
     expect(lines.filter((line) => line.startsWith("## READY"))).toEqual([]);
     expect(lines[0]).toMatch(/^# REJECTED/u);
+  });
+
+  it("puts every agent-derived string in review.md in a code span, so none renders as a tag, a link, an image or a comment", async () => {
+    const payloads = [
+      "<img src=https://x.invalid/a>",
+      "[l](https://x.invalid)",
+      "![i](https://x.invalid/i.png)",
+      "<!-- hidden -->",
+      "<https://x.invalid/auto>",
+      "<textarea>",
+      "`lead",
+      "trail`",
+      "a``b```c",
+      "*em* _em_ ~~gone~~ &amp; \\",
+    ];
+    // File names the patches carry. Windows refuses < and > in a name, so these
+    // use the link and image forms, backtick runs, and a name that starts with one.
+    const names = ["docs/`a``b`.md", "docs/[l](x.invalid).md", "docs/![i](i.png).md", "`pkg`/package.json"];
+    const odd = await fixture([{ ...FIX, write: { ...FIX.write, ...Object.fromEntries(names.map((name) => [name, "{}\n"])) } }]);
+    const forged = verifyLine(odd, { ok: false, problems: payloads, flags: payloads });
+    // An output the launcher does not read, listed under a name that is HTML: its refusal quotes the name.
+    const listed = "<img src=https://x.invalid/o>`x``.patch";
+    const record = await reviewOf(odd, { outputs: outputsOf(odd, { [listed]: "not a patch\n" }), events: happyEvents(odd, { output: `${forged}\n` }) });
+    const text = await readFile(path.join(record.runDir, "review.md"), "utf8");
+
+    // Every line outside the fenced blocks: what CommonMark reads outside code spans holds nothing
+    // that starts a tag, comment, autolink, link, image, emphasis, entity or escape.
+    const spans: string[] = [];
+    let inFence: string | null = null;
+    for (const line of text.split("\n")) {
+      if (inFence !== null) {
+        if (line === inFence) inFence = null;
+        continue;
+      }
+      if (/^`{3,}$/u.test(line)) {
+        inFence = line;
+        continue;
+      }
+      const read = codeSpans(line);
+      expect(read.outside, line).not.toMatch(/[<>[\]!`*_~&\\|]/u);
+      spans.push(...read.spans);
+    }
+    expect(inFence).toBeNull();
+    // Each string reaches the page whole, as written.
+    for (const payload of payloads) expect(spans.filter((span) => span === `verifier: ${payload}`), payload).toHaveLength(2);
+    for (const name of names) expect(spans, name).toContain(`A ${name}`);
+    expect(spans).toContain("`pkg`/package.json (package manifest)");
+    expect(spans.some((span) => span.startsWith(JSON.stringify(listed)))).toBe(true);
+    expect(text.split("\n")[0]).toMatch(/^# REJECTED/u);
+
+    // The fence is one longer than the longest run inside, and a backtick at an end is padded.
+    expect(inlineCode("a``b```c")).toBe("````a``b```c````");
+    expect(inlineCode("`lead")).toBe("`` `lead ``");
+    expect(inlineCode("trail`")).toBe("`` trail` ``");
+    expect(inlineCode("a\nb")).toBe("`a b`");
+    expect(inlineCode("")).toBe("` `");
   });
 
   it("collects a finished session from its history without starting or charging anything", async () => {
