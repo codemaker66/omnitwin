@@ -58,7 +58,7 @@ The limit was never money. It was the conveyor around the agents, and the supply
 
 **Rendering (measured, from the workflow and Playwright files).** CI already renders the web app headless on Linux with Playwright's Chromium, with every API call stubbed in the browser, so ordinary pages need no API, database or secret. The planner renders on software graphics there too. The captured rooms are not in the repository, so a sandbox frame of the planner shows the procedural hall, never a captured one.
 
-**Switchboard** is the owner's local dashboard, outside this repository. It only reads files, and never calls Anthropic or holds an API key.
+**The owner's local dashboard** is a tool outside this repository. It only reads files, and never calls Anthropic or holds an API key.
 
 **House rules.** The repository is public: no addresses, no secrets, protected paths stay untouched. The owner creates keys and they are never printed, logged or put in an environment variable. Only public code and synthetic data go to the sandbox.
 
@@ -142,9 +142,9 @@ A brief is refused by the queue unless it has a cheap precondition that proves t
 
 ### The board
 
-A fifth tab in Switchboard, the owner's local dashboard, "Night shift", in Switchboard's own type and one colour. The tick writes a small snapshot file and each job's event log; Switchboard only reads them. It shows one plain sentence about the night, the jobs in hand with what each is doing and what it has cost, what landed and what was thrown out, the pots with what is left and when each ends, and what needs the owner. Motion comes only from real events. If the tick's heartbeat is stale during the shift, the tab says the shift did not run and Switchboard's existing notification fires.
+A fifth tab in the owner's local dashboard, "Night shift", in the dashboard's own type and one colour. The tick writes a small snapshot file and each job's event log; the dashboard only reads them. It shows one plain sentence about the night, the jobs in hand with what each is doing and what it has cost, what landed and what was thrown out, the pots with what is left and when each ends, and what needs the owner. Motion comes only from real events. If the tick's heartbeat is stale during the shift, the tab says the shift did not run and the dashboard's existing notification fires.
 
-*My call; the owner can overrule it.* The tab may write one thing, through Switchboard's existing keyed actions: a decision dropped in the shift's inbox folder, to accept or reject a look with a note, or to pause or resume the shift. It never calls Anthropic or GitHub and never holds a key. The first version of the tab is read-only; the decisions arrive with steps 4 and 5, and until then pause and resume are commands.
+*My call; the owner can overrule it.* The tab may write one thing, through the dashboard's existing keyed actions: a decision dropped in the shift's inbox folder, to accept or reject a look with a note, or to pause or resume the shift. It never calls Anthropic or GitHub and never holds a key. The first version of the tab is read-only; the decisions arrive with steps 4 and 5, and until then pause and resume are commands.
 
 The arrangement is the owner's pick from three true-size stills:
 
@@ -152,13 +152,13 @@ The arrangement is the owner's pick from three true-size stills:
 - **B, the line.** Three stations joined by a wire (waiting, in hand, landed), with the queue listed by name and the pots as a strip along the bottom.
 - **C, the night book.** Jobs in hand on top and one running record of the night beneath, newest first, with the pots and what needs the owner in a side column.
 
-The stills are in the mockups folder of the shift's design folder (`r3-*.png`, at 1536 by 704 and 1366 by 641), drawn with Switchboard's own stylesheet and invented sample figures.
+The stills are in the mockups folder of the shift's design folder (`r3-*.png`, at 1536 by 704 and 1366 by 641), drawn with the dashboard's own stylesheet and invented sample figures.
 
 ## Order of work
 
 1. **Keep what exists safe, and learn two things.** Land the launcher through the public-repository checks. Read each pot's balance and end date. The owner links any unlinked pots, creates the API keys and the repository-limited GitHub token, and confirms no card on each pot. Run the frames trial, since its answer shapes the queue.
 2. **The conveyor.** Job folders, the tick, pots with reserve and settle, re-attach, delivery, the controls, the scheduled task. Done when a night runs unattended with every chat closed, its pull requests carry green CI, and the ledger matches the Console within fifty cents.
-3. **The board.** The snapshot, the tab, the stale-heartbeat alarm. Done when it passes Switchboard's tests and true-size checks, and stopping the task makes the alarm fire.
+3. **The board.** The snapshot, the tab, the stale-heartbeat alarm. Done when it passes the dashboard's tests and true-size checks, and stopping the task makes the alarm fire.
 4. **The reviewer in the loop**, the pause rules and a morning summary.
 5. **Visible jobs** and the owner's accept or reject on the board, if the trial passed.
 6. **Scouts**, so the queue does not run dry.
