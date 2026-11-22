@@ -17,13 +17,15 @@ const SPEECHES = "00000000-0000-4000-8000-0000000000f1";
 const SATURDAY = "00000000-0000-4000-8000-0000000000b9";
 const HALL = "00000000-0000-4000-8000-0000000000a1";
 
-function change(id: string, sourceId: string, movedTo: FloorChange["movedTo"] = null): FloorChange {
+/** A waiting change, as the API answers it; `eventWide` is left out as an
+ *  API from before it was sent leaves it out. */
+function change(id: string, sourceId: string, movedTo: FloorChange["movedTo"] = null, eventWide?: boolean): FloorChange {
   return {
     id, eventId: WEDDING, venueId: "00000000-0000-4000-8000-000000000001", configurationId: null, proposalId: null,
     handoffPackId: null, actorUserId: null, actorRole: "staff", actorLabel: "Events desk", sourceKind: "event", sourceId,
     title: "Changed", summary: "Something changed.", beforeSummary: null, afterSummary: null, affectedSurfaces: ["timings"],
     audienceRoles: ["staff", "hallkeeper"], riskLevel: "attention", requiresHallkeeperAcknowledgement: true,
-    createdAt: "2026-11-14T13:00:00.000Z", movedTo,
+    createdAt: "2026-11-14T13:00:00.000Z", movedTo, ...(eventWide === undefined ? {} : { eventWide }),
   };
 }
 
@@ -58,9 +60,25 @@ describe("floorChangesBySlot", () => {
     expect(floorChangesBySlot(saturday, moved, seenWith(undefined, saturday)).get(SATURDAY)?.map((item) => item.id)).toEqual(["c4"]);
   });
 
-  it("keeps another day's phase off this day's slots", () => {
-    const bySlot = floorChangesBySlot(friday, waiting(change("c5", "00000000-0000-4000-8000-0000000000f9")), seenWith(undefined, friday));
+  it("keeps a phase placed on another day off this day's slots", () => {
+    const bySlot = floorChangesBySlot(friday, waiting(change("c5", "00000000-0000-4000-8000-0000000000f9", null, false)), seenWith(undefined, friday));
     expect([...bySlot.values()].flat()).toEqual([]);
+  });
+
+  it("shows a change with no place of its own on every slot of its event: a phase with no room, an enquiry's date", () => {
+    const roomless = change("c9", "00000000-0000-4000-8000-0000000000f8", null, true);
+    const enquiry = change("c10", "00000000-0000-4000-8000-0000000000b8", null, true);
+    const bySlot = floorChangesBySlot(friday, waiting(roomless, enquiry), seenWith(undefined, friday));
+    expect(bySlot.get(CEREMONY)?.map((item) => item.id)).toEqual(["c9", "c10"]);
+    expect(bySlot.get(DINNER)?.map((item) => item.id)).toEqual(["c9", "c10"]);
+  });
+
+  it("reads an answer from before the server marked a change's place as it read one then", () => {
+    // No eventWide: an edit to the event is on every slot, and a source never
+    // seen on this day stays off it.
+    const bySlot = floorChangesBySlot(friday, waiting(change("c11", WEDDING), change("c12", "00000000-0000-4000-8000-0000000000f9")), seenWith(undefined, friday));
+    expect(bySlot.get(CEREMONY)?.map((item) => item.id)).toEqual(["c11"]);
+    expect(bySlot.get(DINNER)?.map((item) => item.id)).toEqual(["c11"]);
   });
 
   it("tells the slots that remain of a booking seen on this day that has moved away", () => {
@@ -74,10 +92,12 @@ describe("floorChangesBySlot", () => {
 describe("a function that has left the day", () => {
   const day = { fromMs: Date.parse("2026-11-13T00:00:00Z"), toMs: Date.parse("2026-11-14T04:00:00Z") };
 
-  it("keeps the changes that concern the day: the event's own, and its bookings and phases seen here", () => {
+  it("keeps the changes that concern the day: the event's own, its bookings and phases seen here, and those with no place", () => {
     const seen = seenWith(undefined, friday);
-    const kept = changesForDay(WEDDING, waiting(change("c1", DINNER), change("c2", WEDDING), change("c3", SATURDAY)).get(WEDDING), seen);
-    expect(kept.map((item) => item.id)).toEqual(["c1", "c2"]);
+    const kept = changesForDay(WEDDING, waiting(
+      change("c1", DINNER), change("c2", WEDDING), change("c3", SATURDAY), change("c13", "00000000-0000-4000-8000-0000000000f8", null, true),
+    ).get(WEDDING), seen);
+    expect(kept.map((item) => item.id)).toEqual(["c1", "c2", "c13"]);
   });
 
   it("knows a move off the day by where it put the booking, never by its words", () => {

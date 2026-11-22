@@ -429,7 +429,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     return seen;
   }, [lanes, dayKey]);
   const eventIds = useMemo(() => [...seenToday.events.keys()], [seenToday]);
-  const floor = useFloorChanges(eventIds, venueId !== null);
+  // Read for the board's own day: another day's changes are that day's.
+  const floor = useFloorChanges(eventIds, venueId !== null, range);
   // A move reaches the board through the live calendar; its change is read
   // with it, not at the next minute.
   const refreshFloor = floor.refresh;
@@ -442,7 +443,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     const changes = changesForDay(eventId, floor.byEvent.get(eventId), seenToday);
     if (changes.length === 0) return [];
     const movedOff = changes.some((change) => seenToday.sources.has(change.sourceId) && movedOffDay(change, range));
-    return [{ eventId, title, changes, movedOff, surface: `left:${eventId}` }];
+    const truncated = floor.byEvent.get(eventId)?.truncated === true;
+    return [{ eventId, title, changes, movedOff, truncated, surface: `left:${eventId}` }];
   }), [seenToday, onBoard, floor.byEvent, range]);
   // Where the keyboard goes when a notice it was in leaves the page: the
   // day's sentence, or the board's title on a day with none.
@@ -723,6 +725,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
             title={entry.title}
             movedOff={entry.movedOff}
             changes={entry.changes}
+            truncated={entry.truncated}
             timeZone={timeZone}
             nowMs={nowMs}
             onAcknowledge={acknowledgesChanges
