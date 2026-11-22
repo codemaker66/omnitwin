@@ -691,7 +691,7 @@ describe("GuestEnquiryModal keeps the guest's work", () => {
     await open(onClose);
     fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
     fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
-    expect(await screen.findByText("Sending your layout…")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Sending your layout…" })).toBeTruthy();
     fireEvent.click(screen.getByRole("dialog"));
     expect(onClose).not.toHaveBeenCalled();
     arrive({});
@@ -728,5 +728,154 @@ describe("GuestEnquiryModal keeps the guest's work", () => {
     const heading = await screen.findByRole("heading", { name: "Layout sent" });
     await waitFor(() => { expect(document.activeElement).toBe(heading); });
     expect(screen.getAllByRole("status").some((region) => region.textContent === "Layout sent. Keep Rooms will reply to guest@example.test.")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-732 (the release lead's HE10): while the enquiry was on its way, Send's
+// ground became half-transparent copper over the dark card, and its words
+// ("Sending your layout…", in #111113) read at about 2.6:1, under the 4.5:1
+// the house holds words to (WCAG 1.4.3). The ground stays the solid copper
+// while sending, and the work shows through the shared activity component
+// with its words, as the activity convention asks.
+//
+// happy-dom paints nothing, so the contrast is computed from the inline
+// grounds the button and its ancestors declare, blended from the dialog's
+// own overlay up to the button. Whatever the planner draws beneath the
+// overlay is taken at its worst, black or white. The ratio is the WCAG 2.x
+// one of relative luminances, as client-surface-contrast.test.ts computes it.
+// ---------------------------------------------------------------------------
+
+type Rgba = readonly [number, number, number, number];
+
+/** Every colour named in a declared background or colour, in order (each stop of a gradient). */
+function declaredColours(value: string): Rgba[] {
+  const found: Rgba[] = [];
+  for (const match of value.matchAll(/#([0-9a-f]{6})\b|rgba?\(([^)]*)\)/giu)) {
+    const hexDigits = match[1];
+    if (hexDigits !== undefined) {
+      const pair = (at: number): number => Number.parseInt(hexDigits.slice(at, at + 2), 16);
+      found.push([pair(0), pair(2), pair(4), 1]);
+      continue;
+    }
+    const parts = (match[2] ?? "").split(/[\s,/]+/u).filter((part) => part !== "").map(Number);
+    const [r, g, b, a] = parts;
+    if (r === undefined || g === undefined || b === undefined || parts.some(Number.isNaN)) {
+      throw new Error(`Not a colour this test reads: ${match[0]}`);
+    }
+    found.push([r, g, b, a ?? 1]);
+  }
+  return found;
+}
+
+/** `top` painted over an opaque `under`. */
+function over(top: Rgba, under: Rgba): Rgba {
+  const [r, g, b, a] = top;
+  return [r * a + under[0] * (1 - a), g * a + under[1] * (1 - a), b * a + under[2] * (1 - a), 1];
+}
+
+function channel(value: number): number {
+  const c = value / 255;
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+function luminance([r, g, b]: Rgba): number {
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function contrast(a: Rgba, b: Rgba): number {
+  const [x, y] = [luminance(a), luminance(b)];
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/** The lowest contrast of an element's words against every ground that can be behind them. */
+function wordsContrast(element: HTMLElement): number {
+  const layers: Rgba[][] = [];
+  for (let node: HTMLElement | null = element; node !== null; node = node.parentElement) {
+    const stops = declaredColours(node.style.background || node.style.backgroundColor || "");
+    if (stops.length > 0) layers.unshift(stops);
+    if (node.getAttribute("role") === "dialog") break;
+  }
+  let grounds: Rgba[] = [[0, 0, 0, 1], [255, 255, 255, 1]];
+  for (const stops of layers) grounds = grounds.flatMap((under) => stops.map((stop) => over(stop, under)));
+  const [ink] = declaredColours(element.style.color);
+  if (ink === undefined || ink[3] !== 1) throw new Error(`Words not in one opaque colour: ${element.style.color}`);
+  return Math.min(...grounds.map((ground) => contrast(ink, ground)));
+}
+
+describe("GuestEnquiryModal's Send while the enquiry is on its way", () => {
+  const rooms: VenueDetail = {
+    id: "venue-send", name: "Send Rooms", slug: "send-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+
+  beforeEach(() => {
+    resetStores();
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(rooms);
+    mocks.listLinks.mockResolvedValue([]);
+    useEditorStore.setState({ configId: "cfg-1", venueId: rooms.id, isPublicPreview: true });
+  });
+  afterEach(() => {
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  /** Opens the form and presses Send, with the enquiry held until `settle` is called. */
+  async function sendHeld(): Promise<{ readonly button: HTMLElement; readonly settle: { resolve: (value: unknown) => void; reject: (reason: Error) => void } }> {
+    const settle = { resolve: (_value: unknown): void => { /* set below */ }, reject: (_reason: Error): void => { /* set below */ } };
+    mocks.submit.mockReturnValue(new Promise((resolve, reject) => { settle.resolve = resolve; settle.reject = reject; }));
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+    await screen.findByText("Your details are shared only with the Send Rooms events team.");
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    const button = await screen.findByRole("button", { name: "Sending your layout…" });
+    return { button, settle };
+  }
+
+  function sendingAnnouncements(): HTMLElement[] {
+    return screen.queryAllByRole("status").filter((region) => region.textContent === "Sending your layout…");
+  }
+
+  it("keeps its words at 4.5:1 or more against what is behind them", async () => {
+    const { button } = await sendHeld();
+    const ratio = wordsContrast(button);
+    expect(ratio, `"Sending your layout…" at ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps the solid copper ground it has when ready", async () => {
+    const { button } = await sendHeld();
+    const stops = declaredColours(button.style.background || button.style.backgroundColor);
+    expect(new Set(stops.map((stop) => `rgba(${stop.join(", ")})`))).toEqual(new Set(["rgba(201, 138, 91, 1)"]));
+  });
+
+  it("shows the work through the shared indicator with its words, says it is busy, and announces it politely", async () => {
+    const { button } = await sendHeld();
+    expect(button.textContent).toBe("Sending your layout…");
+    expect(button.querySelector('[data-activity-indicator="particles"]')).not.toBeNull();
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    const [announcement, ...more] = sendingAnnouncements();
+    expect(more).toHaveLength(0);
+    expect(announcement?.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("leaves no working state once the enquiry has arrived", async () => {
+    const { settle } = await sendHeld();
+    settle.resolve({});
+    await screen.findByRole("heading", { name: "Layout sent" });
+    expect(document.querySelector('[data-activity-indicator="particles"]')).toBeNull();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(sendingAnnouncements()).toHaveLength(0);
+  });
+
+  it("leaves no working state when the send fails, and Send is ready again", async () => {
+    const { settle } = await sendHeld();
+    settle.reject(new Error("The events team could not be reached"));
+    expect((await screen.findByRole("alert")).textContent).toBe("The events team could not be reached");
+    const button = screen.getByRole("button", { name: "Send to Events Team" });
+    expect(button.getAttribute("aria-busy")).not.toBe("true");
+    expect(document.querySelector('[data-activity-indicator="particles"]')).toBeNull();
+    expect(sendingAnnouncements()).toHaveLength(0);
   });
 });
