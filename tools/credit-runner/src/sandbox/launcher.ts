@@ -6,7 +6,7 @@ import { sandboxSystemPrompt } from "./brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "./credit-ledger.js";
 import type { OutputCaps } from "./outputs.js";
 import { reviewRun, type Review } from "./review.js";
-import { isStopped, listCostUsd, recollectSession, type RunTotals, runSession, SessionMayExistError, type SessionRunResult } from "./session.js";
+import { checkRunBounds, isStopped, listCostUsd, recollectSession, type RunTotals, runSession, SessionMayExistError, type SessionRunResult } from "./session.js";
 import { ensureSandbox } from "./setup.js";
 
 export interface LauncherConfig {
@@ -212,15 +212,18 @@ function fenced(text: string): string[] {
 }
 
 /**
- * One task, one session: check the spend, run, record the spend, review. The
- * spend is recorded once, as soon as the platform's final figure is read and
- * before any output is downloaded, and even when the run fails after its
- * session started.
+ * One task, one session: check the bounds and the spend, run, record the
+ * spend, review. The budget, time limit, grace period and output caps are
+ * checked first (checkRunBounds, as runSession checks them), before the ledger
+ * is read or the sandbox set up. The spend is recorded once, as soon as the
+ * platform's final figure is read and before any output is downloaded, and
+ * even when the run fails after its session started.
  */
 export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   const { api, config, task } = options;
   const now = options.now ?? (() => new Date());
   const log = options.log ?? (() => undefined);
+  checkRunBounds(options);
   refuseUnhonouredSpec(task);
 
   const ledger = await readCreditLedger(config.ledgerFile);

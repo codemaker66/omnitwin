@@ -990,6 +990,30 @@ describe("sandbox launcher", () => {
     expect(ledger.lines.map((line) => line.costUsd)).toEqual([2.87]);
   });
 
+  it("refuses a bad budget, time limit, grace period or output caps before it reads the ledger or sets up the sandbox", async () => {
+    const bad: readonly Partial<JobOptions>[] = [
+      { budgetUsd: Number.NaN },
+      { budgetUsd: MAX_BUDGET_USD + 1 },
+      { timeoutMinutes: Number.NaN },
+      { graceMs: -1 },
+      { outputCaps: { perOutput: Number.POSITIVE_INFINITY, total: 1000 } },
+    ];
+    for (const extra of bad) {
+      const config = await workspace();
+      const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+      await expect(job(api, config, happy, extra), Object.keys(extra).join()).rejects.toThrow(RangeError);
+      // No environment or agent created or checked, no state, run folder or ledger line written.
+      expect([api.environmentCreates, api.agentCreates, api.environmentParams.length, api.uploads.length, api.sessions.length]).toEqual([0, 0, 0, 0, 0]);
+      await expect(readdir(config.workRoot)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(config.ledgerFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    // Before the ledger is read: a ledger the run would refuse for its unreadable line never gets the chance.
+    const unreadable = await workspace("{not json\n");
+    await expect(job(new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy)), unreadable, happy, { timeoutMinutes: 0 })).rejects.toThrow(
+      /^timeoutMinutes must be more than 0/u,
+    );
+  });
+
   it("refuses a spec with any key the sandbox lane would not honour, before anything starts", async () => {
     for (const [line, said] of [
       ["enabled: false", "enabled: false"],
