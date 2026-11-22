@@ -4,6 +4,7 @@ import { eq, and, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   configurations,
+  events,
   hallkeeperProgress,
 } from "../db/schema.js";
 import { assembleSheetDataV2, ApprovedSnapshotUnavailableError, linkedEventIds, type SheetDataV2Internal } from "../services/hallkeeper-sheet-v2-data.js";
@@ -154,6 +155,21 @@ export async function hallkeeperSheetRoutes(
   opts: { db: Database },
 ): Promise<void> {
   const { db } = opts;
+
+  /** A tick's row names its layout and its event, and its foreign keys take
+   *  the layout first. The event is held first (FOR KEY SHARE, which the key
+   *  takes anyway), the house order an erasure and a layout link keep
+   *  (people-erasure.ts, routes/events.ts), so a tick and an erasure never
+   *  wait on each other. */
+  async function withEventFirst(
+    eventId: string | null,
+    write: (tx: Parameters<Parameters<Database["transaction"]>[0]>[0]) => Promise<unknown>,
+  ): Promise<void> {
+    await db.transaction(async (tx) => {
+      if (eventId !== null) await tx.select({ id: events.id }).from(events).where(eq(events.id, eventId)).for("key share");
+      await write(tx);
+    });
+  }
 
   const frontendUrl = process.env["FRONTEND_URL"] ?? null;
 
@@ -428,14 +444,14 @@ export async function hallkeeperSheetRoutes(
     // duplicate-key 500 from the unique (config_id, event_id, row_key) key.
     if (desired !== undefined) {
       if (desired) {
-        await db.insert(hallkeeperProgress).values({
+        await withEventFirst(eventId, (tx) => tx.insert(hallkeeperProgress).values({
           configId,
           eventId,
           rowKey,
           checkedBy: request.user.id,
         }).onConflictDoNothing({
           target: [hallkeeperProgress.configId, hallkeeperProgress.eventId, hallkeeperProgress.rowKey],
-        });
+        }));
       } else {
         await db.delete(hallkeeperProgress)
           .where(and(progressScope(configId, eventId), eq(hallkeeperProgress.rowKey, rowKey)));
@@ -454,12 +470,12 @@ export async function hallkeeperSheetRoutes(
     const mutation = resolveProgressMutation(exists, undefined);
 
     if (mutation === "insert") {
-      await db.insert(hallkeeperProgress).values({
+      await withEventFirst(eventId, (tx) => tx.insert(hallkeeperProgress).values({
         configId,
         eventId,
         rowKey,
         checkedBy: request.user.id,
-      });
+      }));
     } else if (mutation === "delete" && existing !== undefined) {
       await db.delete(hallkeeperProgress)
         .where(eq(hallkeeperProgress.id, existing.id));
