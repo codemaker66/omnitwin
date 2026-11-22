@@ -158,7 +158,10 @@ function abortReason(signal: AbortSignal): Error {
  * A web stream's chunks. A reader the caller stops early is cancelled, so the
  * download stops too. When `signal` aborts, the reader is cancelled at once,
  * which ends a read still waiting even on a body that ignores the abort, and
- * the chunks end by throwing the signal's reason.
+ * the chunks end by throwing the signal's reason. No cancel is waited for: a
+ * cancel ends a waiting read whether or not the body's own cancel ever settles
+ * (the Streams rule every ReadableStream follows), so a body whose cancel hangs
+ * cannot hold a download past its cap or its deadline.
  */
 export async function* chunksOf(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
   const reader = body.getReader();
@@ -185,7 +188,8 @@ export async function* chunksOf(body: ReadableStream<Uint8Array>, signal?: Abort
     }
   } finally {
     signal?.removeEventListener("abort", cancel);
-    await reader.cancel().catch(() => undefined);
+    // Not awaited: the caller closes and removes its file next, whatever the body does.
+    reader.cancel().catch(() => undefined);
   }
 }
 
