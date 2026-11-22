@@ -1,0 +1,4 @@
+# The real config holds this machine's folders and caps; copy the .example.json beside it and fill it in.
+sandbox.config.json
+# The retired local lane's config: a copy left on a disk can hold old account details.
+credit-runner.config.json
