@@ -47,8 +47,8 @@ and the rest (unlike_the_reference: a station that is neither the first build's 
 reference must have the same stations as the two builds, since a station is compared by its number.
 
 The bar. A wall fails where more of its patches turned worse than better and the sign test by patch still passes
-0.05 after Holm's correction over every wall and judgement tested. Read raw at 0.05, the family would name some
-wall by chance alone: 7 times in 10 for 24 tests, were they continuous; less for sign tests on few patches, since a
+0.05 after Holm's correction over every wall and judgement tested. Read raw at 0.05, the family would show some
+p under it by chance alone, in either direction: 7 times in 10 for 24 tests, were they continuous; less for sign tests on few patches, since a
 wall with 5 changed patches or fewer cannot reach 0.05 at all (raw_bar_chance.py: on the Saloon about 0.28 for the
 24 tests of its first build against the third, and 0.15 for the 18 of the first against the fourth, the tests
 taken as independent). That test has little power on a small wall, so each class of change is also tested with

@@ -1,4 +1,5 @@
-"""How often compare_builds.py's per-wall tests, were each read raw at 0.05, would name some wall by chance alone.
+"""How often compare_builds.py's per-wall tests, were each read raw at 0.05, would show some p under it by chance
+alone, in either direction. (The bar itself names a wall only where more of its patches turned worse: rarer still.)
 
     python -X utf8 raw_bar_chance.py [--out <out.json>] [--level 0.05] <compare_builds_out.json> ...
 

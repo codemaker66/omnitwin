@@ -4,8 +4,8 @@ out cluster by cluster to be looked at: the half of a comparison that a pair of 
     python -X utf8 unlike_reference_crops.py <reference_work> <first_work> <second_work> <out_dir> [--size 48] [--zoom 6] [--per-sheet 5] [--names "a|b|c"]
 
 The three work folders are builds of one room config from the same inputs, with the same stations (the labels and
-walls steps have run in all three). The texels are those to which the second build gives a station that is the
-first build's neither nor the reference's: what compare_builds.py --apart-from <reference_work> <first_work>
+walls steps have run in all three). The texels are those to which the second build gives a station that is
+neither the first build's nor the reference's: what compare_builds.py --apart-from <reference_work> <first_work>
 <second_work> calls unlike_the_reference, and labels_diff.py --apart-from calls `new`. A cluster is those of them
 that lie in one connected region of the set grown by 8 texels each way, so that texels a few apart are cut
 together. A cluster is not compare_builds' unit: its own patches are the set's connected patches, not grown.
