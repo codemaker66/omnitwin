@@ -126,7 +126,7 @@ it("rejects a cycle that ends on or before its start", () => {
 it("rejects two pots with one id", () => { expect(() => parseSettings(twoPotsSameId)).toThrow(); });
 ```
 - [ ] **Step 2:** Run `pnpm --filter @omnitwin/credit-runner exec vitest run src/__tests__/shift-settings.test.ts`. Expected: FAIL, module not found.
-- [ ] **Step 3:** Implement with a strict zod schema; reuse `expandHome` and `isoDateSchema` from `src/config.ts`.
+- [ ] **Step 3:** Implement with a strict zod schema; reuse `expandHome` from `src/config.ts` and define the YYYY-MM-DD date schema in `src/shift/settings.ts` (`src/config.ts` keeps only `expandHome`).
 - [ ] **Step 4:** Run the test file. Expected: PASS.
 - [ ] **Step 5:** Commit `src/shift/settings.ts` and its test.
 
@@ -155,7 +155,7 @@ export function committedCents(ledger: Ledger, pot: string, cycle: string): numb
 /** The same sum over every pot, for lines whose time falls on that local day (YYYY-MM-DD). */
 export function dayCommittedCents(ledger: Ledger, localDay: string): number;
 ```
-`cycle` is the cycle's start day. A line in the launcher's own format (`src/sandbox/credit-ledger.ts`: `ts`, `lane`, `job`, `costUsd`, and `costKnown: false` when the cost is a booking at the whole budget, with no `v`) is read as a settle for pot `"legacy"` in cycle `"legacy"` (carrying its `costKnown`), so it never counts against a live cycle.
+`cycle` is the cycle's start day. A line in the launcher's own format (`src/sandbox/credit-ledger.ts`: `ts`, `lane`, `job`, `costUsd`, and `costKnown: false` when the cost is a booking at its whole budget, or its last cost figure if higher, with no `v`) is read as a settle for pot `"legacy"` in cycle `"legacy"` (carrying its `costKnown`), so it never counts against a live cycle.
 
 - [ ] **Step 1: Write the failing tests**
 ```ts
@@ -251,7 +251,7 @@ export interface JobState {
   readonly source: string; readonly sensitive: boolean; readonly attempts: number;
   readonly pot: string | null; readonly cycle: string | null; readonly budgetCents: number; readonly timeoutMinutes: number;
   readonly sessionId: string | null; readonly baseSha: string | null; readonly runDir: string | null;
-  readonly reservedAt: string | null; readonly startedAt: string | null; readonly interruptedAt: string | null;
+  readonly reservedAt: string | null; readonly startedAt: string | null; readonly runId: string | null; readonly interruptedAt: string | null;
   readonly deniedAsks: readonly string[]; readonly costCents: number | null;
   readonly doing: { readonly at: string; readonly text: string } | null;
   readonly pr: { readonly number: number; readonly url: string; readonly draft: boolean } | null;
@@ -382,7 +382,12 @@ export function isCreditGone(error: unknown): boolean;   // an APIError whose me
 listSessions(createdSince: string): AsyncIterable<SessionListing>;   // SessionListing = Pick<BetaManagedAgentsSession, "id" | "status" | "metadata">
 ```
 - `reserveStep`: waiting to reserved. Writes the reserve line first, then saves the job. With no pot, the job stays waiting and `reason` carries the choice's reason.
-- `startStep`: reserved to building. A job that already has a `sessionId` is moved to building without creating anything. Otherwise it saves `startedAt` first, then creates the session with `metadata: { lane: "shift", job: <id>, task: <id> }` (one attempt, a one-minute deadline, as the launcher's create), and saves the id before doing anything else. The conveyor does not use the launcher's rule of booking the whole budget after an unclear create, because it can keep looking over later ticks. An unclear failure (a connection error, a timeout or a 5xx) leaves the job reserved; each following tick looks for the session by its metadata with `listSessions` (already on the launcher's API) for up to 10 minutes from `startedAt`. A session found is adopted and nothing is created. If none is ever found, it writes a release line, counts one attempt and returns the job to waiting; a second such attempt gives failed. The same lookup covers a tick that died between the reserve line and the saved id. A 429 or a credit-gone error certainly created nothing: the job is released at once, with no wait.
+- `startStep`: reserved to building. A job that already has a `sessionId` is moved to building without creating anything. Otherwise it saves `startedAt` and a new per-attempt `runId` (a random UUID) in one save, then creates the session with `metadata: { lane: "shift", job: <id>, task: <id>, run: <runId> }` (one attempt, a one-minute deadline, as the launcher's create), and saves the id before doing anything else. The conveyor does not use the launcher's rule of booking the whole budget after an unclear create, because it can keep looking over later ticks.
+  - A failure is unclear exactly when the launcher's `isAmbiguousFailure` (`src/sandbox/api.ts`) says so: anything but a 4xx other than 408. A connection error, a timeout, a 408, a 5xx, a 2xx whose body broke or stalled, and a reply with no session id are all unclear.
+  - An unclear failure leaves the job reserved. Each following tick looks for the session with `listSessions` (already on the launcher's API), from no later than `startedAt` less the launcher's 10-minute slack for clock skew (as `createOrFind` does). It adopts only a session whose metadata names this job and carries this attempt's `runId`; nothing is created then. Any other session that names this job and that the ledger has not settled (an earlier attempt's late session) is never adopted: it is stopped and settled at the larger of its listed figure and the job's budget, as not known.
+  - A lookup that throws is not "none found": the job stays reserved and the next tick looks again. Only a lookup that succeeded at a time past `startedAt` + 10 minutes and found nothing writes a release line, counts one attempt and returns the job to waiting; a second such attempt gives failed.
+  - The same lookup, matching the saved `runId`, covers a tick that died between saving `startedAt` and saving the id. A job with no `startedAt` never created a session.
+  - A failure the server refused (a 4xx other than 408: a 429, a validation error, a credit-gone error) certainly created nothing: the job is released at once, with no wait.
 - `followStep`: calls `followOnce`, saves `doing` and the denied asks. At `startedAt + timeoutMinutes` it sends `user.interrupt`, retried with back-off (up to 5 attempts, as the launcher's `sendInterrupt` does), and sets `interruptedAt` once one has reached the session; if every attempt fails it stays as it is and the next tick sends it again. 10 minutes after `interruptedAt` it stops following, treats the session as timed out and moves it to collected. A session the stream says has finished also moves to collected. Neither move trusts the stream: collecting runs the stop rule.
 - `collectStep`: `finishSession` (which confirms the stop or interrupts again and archives, taking up to about three minutes for a session that will not stop, inside the tick's lock), then `reviewRun`. It writes the settle line through `bookedCost`: the platform's figure, with `costKnown: true`, only when the platform reported the session stopped (idle or terminated); otherwise the larger of the last snapshot and the whole budget, with `costKnown: false`, so a session that may still be spending is never under-counted (the whole budget too when the figure cannot be read). `precondition.json` with `ok: false` gives thrown-out with reason "the defect is no longer there". A rejected review gives thrown-out with the review's reasons. Ready for review gives `held` when the job is sensitive, otherwise `ready`.
 - An outside failure (a connection error, a 429 or a 5xx) never moves a job that already has a session id: it stays where it is, the reason is recorded and the next tick tries again, so a running session is never left behind. Only a failure to create the session adds one to `attempts` and returns the job to waiting; a second one gives failed. Every move from reserved back to waiting writes a release line first. `isCreditGone` writes a release line, returns the job to waiting and records the pot as empty until its cycle ends in `<workRoot>/pots/<id>.json`.
@@ -399,10 +404,32 @@ it("re-attaches after a restart from the saved id alone", async () => {         
   const job = await followStep(saved, depsWith(new FakeApi({ history: finishedHistory })));
   expect(job.status).toBe("collected");
 });
-it("adopts an orphan session by its metadata", async () => {
-  const api = new FakeApi({ sessions: [{ id: "sesn_orphan", metadata: { job: reservedJob.id } }] });
-  const job = await startStep(reservedElevenMinutesAgo, depsWith(api));
+it("adopts an orphan session by its metadata and this attempt's run id", async () => {   // a tick died after saving startedAt and runId
+  const api = new FakeApi({ sessions: [{ id: "sesn_orphan", metadata: { lane: "shift", job: startedJob.id, run: startedJob.runId } }] });
+  const job = await startStep(startedJob, depsWith(api));
   expect([job.sessionId, api.created]).toEqual(["sesn_orphan", 0]);
+});
+it("never adopts an earlier attempt's session: the run id must match", async () => {
+  const api = new FakeApi({ sessions: [{ id: "sesn_earlier", metadata: { lane: "shift", job: startedJob.id, run: "run-of-an-earlier-attempt" } }] });
+  const job = await startStep(startedJob, depsWith(api));
+  expect([job.status, job.sessionId, api.archived]).toEqual(["reserved", null, ["sesn_earlier"]]);   // stopped and settled, not followed
+});
+it("looks up from no later than startedAt less the 10-minute clock-skew slack", async () => {
+  const api = new FakeApi();
+  await startStep(startedJob, depsWith(api));
+  expect(Date.parse(api.listedSince[0])).toBeLessThanOrEqual(Date.parse(startedJob.startedAt) - 10 * 60_000);
+});
+it("keeps the reservation when the lookup throws, even past ten minutes", async () => {
+  const api = new FakeApi({ listError: new Error("connection reset") });
+  const job = await startStep(startedElevenMinutesAgo, depsWith(api));
+  expect([job.status, await releaseLines(ledgerFile, job.id)]).toEqual(["reserved", 0]);
+});
+it("calls a failure unclear exactly when isAmbiguousFailure does", async () => {
+  for (const createError of [new TypeError("terminated"), apiError(408), apiError(503), new Error("the create response held no session id")]) {
+    expect((await startStep(reservedJob, depsWith(new FakeApi({ createError })))).status).toBe("reserved");
+  }
+  const refused = await startStep(reservedJob, depsWith(new FakeApi({ createError: apiError(400) })));
+  expect([refused.status, refused.attempts]).toEqual(["waiting", 1]);   // refused: nothing was created
 });
 it("retries the interrupt at the time limit and sends it once it has arrived", async () => {
   const api = new FakeApi({ history: runningHistory, sendOutcome: (_event, attempt) => (attempt < 3 ? "fail" : "ok") });
