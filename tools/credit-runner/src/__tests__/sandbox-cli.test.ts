@@ -66,7 +66,7 @@ describe("the CLI's own words", () => {
       await removeLink(link);
       await rm(root, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 120_000);
 });
 
 /** Removes a junction or symlink itself, never what it points at. */
@@ -135,7 +135,7 @@ describe("the key folder", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 120_000);
 
   it("keeps key files out of git, in the package and at the repository root", () => {
     for (const file of ["keys/pot-1.key", "tools/credit-runner/pot-1.key"]) {

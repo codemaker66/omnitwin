@@ -921,7 +921,7 @@ describe("sandbox launcher", () => {
     expect(checkSpend(broken, "sandbox", 1, limits).ok).toBe(false);
   });
 
-  it("still charges a session that failed after it started, at the platform's figure", async () => {
+  it("books a session at the platform's figure before its outputs are read, so a failed output listing books nothing more", async () => {
     const config = await workspace();
     const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
     api.failOutputs = true;
@@ -1734,7 +1734,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: "sesn_1" });
   });
 
-  it("books a run that failed while the platform still reported its session running at the whole budget, as unknown", async () => {
+  it("books a session the platform still reports running at the whole budget, as unknown, before its outputs are read", async () => {
     const config = await workspace();
     const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
     api.statuses = ["running"];
@@ -1744,6 +1744,35 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
     // The platform's snapshot (2.87) is not final while it says running.
     expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: "sesn_1" });
+  });
+
+  it("books the whole budget as unknown, once, when the final read fails and the failure path's re-read says running", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    api.statuses = ["idle", "running"];
+    const real = api.retrieveSession;
+    let calls = 0;
+    api.retrieveSession = () => {
+      calls += 1;
+      return calls === 2 ? Promise.reject(new Error("final read failed")) : real();
+    };
+    vi.mocked(appendCreditLine).mockClear();
+    await expect(job(api, config, happy, { sleep: instant })).rejects.toThrow("final read failed");
+    expect(calls).toBe(3);
+    expect(appendCreditLine).toHaveBeenCalledTimes(1);
+    const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
+    // The failure path's own re-read says running, so its snapshot (2.87) is not final.
+    expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: "sesn_1" });
+  });
+
+  it("books a session once, through the failure path, when the ledger write at the final read fails", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    vi.mocked(appendCreditLine).mockClear();
+    vi.mocked(appendCreditLine).mockRejectedValueOnce(new Error("ledger busy"));
+    await expect(job(api, config, happy, { sleep: instant })).rejects.toThrow("ledger busy");
+    expect(appendCreditLine).toHaveBeenCalledTimes(2);
+    expect((await readCreditLedger(config.ledgerFile)).lines.map((line) => line.costUsd)).toEqual([2.87]);
   });
 
   it("interrupts and archives a running session when its first status read fails, rather than taking the failure for a stop", async () => {
