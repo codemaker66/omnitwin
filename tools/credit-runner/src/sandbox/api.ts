@@ -376,9 +376,10 @@ export function keyGuard(apiKey: string, next: Fetch = globalThis.fetch): KeyGua
  * and refuses an identity header; every other value is the one the client
  * built. The client fixes its host and auth, but the SDK reads process.env
  * whatever `env` says, and ANTHROPIC_CUSTOM_HEADERS can override the value of
- * an allowed name (anthropic-version, anthropic-beta or user-agent). The start
- * check below refuses that variable whenever it is set in `env`, which is
- * process.env except in tests: `env` and `fetchImpl` are test seams.
+ * any allowed name (any of FORWARDED_HEADERS, accept and the x-stainless names
+ * included; none carries an identity). The start check below refuses that
+ * variable whenever it is set in `env`, which is process.env except in tests:
+ * `env` and `fetchImpl` are test seams.
  */
 export function sdkSandboxApi(apiKey: string, fetchImpl?: Fetch, env: NodeJS.ProcessEnv = process.env): SandboxApi {
   // First of all: keyGuard refuses a key that is not of the workspace shape.
