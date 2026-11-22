@@ -60,12 +60,20 @@ reads, a deploy is the same. Doing both in one slot keeps that state to minutes.
 ## The slot's checklist
 
 Book it with the merge coordinator: a quiet hour, not beside a pull request that
-carries a database migration, not while a deploy is running. Pull request 2 is
-reviewed and green before the slot starts.
+carries a database migration, not while a deploy is running, and with no Deploy
+workflow run approved or running during the slot (its migration job would run
+beside Railway's own migration step). Pull request 2 is reviewed, and its
+required checks pass, before the slot starts.
 
 The slot must be done by 27 November 2026 at the latest. If it has not been
 done by then, hold every pull request that touches a watched path until it is:
 after 1 December such a merge would deploy with Railway's old stored settings.
+
+On the slot's day, before step 1: merge master into pull request 2 and wait for
+its required checks to pass. From then until step 7 is done, the merge
+coordinator holds every merge that touches a watched path or `.railway/`.
+Otherwise pull request 2 falls behind master, its checks must run again, and it
+cannot merge at once.
 
 1. On Railway's dashboard, check that the environment has no pending staged
    changes. If it has, stop.
@@ -73,18 +81,28 @@ after 1 December such a merge would deploy with Railway's old stored settings.
    with the file outside the repository. Read its change set and its `effects`.
    They must match the plan in pull request 1. Anything else, or anything
    destructive: stop. A pinned plan also pins the `.railway/` folder, so nothing
-   that changes it may merge between this step and step 4.
+   that changes it may merge between this step and step 4. If the plan refuses
+   the service because of a config-file path, stop: Railway's documented order
+   then starts with its cutover, and pull request 2 must not merge.
 3. Show Blake that summary and ask him by button, in these words: "this will most
    likely redeploy the API once, with its migration step".
 4. Run `railway config apply --plan <file> --yes`. Never add
    `--confirm-destructive`, so the tool itself refuses anything destructive.
 5. If a deployment starts, watch it to the end: the migration step ran,
-   `/health/ready` passed, it is serving.
+   `/health/ready` passed, it is serving. If it fails, stop, and do not merge
+   pull request 2: the previous deployment keeps serving.
 6. Run `railway config plan --detailed-exit-code`. It must exit 0. If it does not,
    stop: `railway.json` is still there and still read.
-7. Merge pull request 2 at once and watch its deploy. If no deployment starts
+7. Mark pull request 2 (#447) ready for review, then merge it at once, and watch
+   its deploy. Until step 6 exits 0 it stays a draft, so it cannot be merged
+   early. It changes the `Dockerfile` (a comment), a watched path, so the merge
+   should start a deploy by itself. As a backstop: if no deployment starts
    within ten minutes, deploy the latest commit from Railway's dashboard, so the
    first deploy without the file happens while it is watched.
+
+After a stop before 1 December, the merge coordinator releases the hold on
+merges and the slot is rebooked, by 27 November. Pull request 2 stays a draft
+and is brought up to date with master again on the new slot day.
 
 ## The proof
 
