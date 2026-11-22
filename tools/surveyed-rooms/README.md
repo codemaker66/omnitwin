@@ -23,7 +23,7 @@ build (`build-room.py`) reads every room fact from the config; the Grand Hall's 
 | `nodemods.mjs` | resolves meshoptimizer as `modules.mjs` does (`SURVEYED_ROOMS_NODE_ROOT` borrows another checkout's: gate B22) |
 | `prove-build-identity.py` | the Grand Hall's build identity: a static proof, a tree comparison, digests, a self-test |
 | `measure/saloon/` | the scripts that measured the Saloon (`32_glass_split.py`: where its glass changes plane) |
-| `measure/walls/` | measures of a finished build's wall photographs, for judging a change to how the walls are coloured on a real room: `compare_builds.py` (two builds, on the texels whose station changed: as rates, and as pairs that turned worse, turned better or stayed, by texel and by connected patch, beside the same count on clean texels), `doubtful_rules.py` (the rules for a doubtful view, each view against its own station's clean wall), `changed_crops.py` (where two builds' walls differ, to be looked at), `forecast_labels.py` (the labels step as coded, run on a build's saved statistics: a forecast of a build's labels before it is built), `labels_diff.py` (where two builds label a texel differently, by kind, and whether that is as forecast), `former_holes.py` (a view against the atlas step's fill, for texels a build left without a station), `stations_in_box.py` (which stations coloured a box of a wall in two builds). They take the builds' work folders; no scan data is kept with them |
+| `measure/walls/` | measures of a finished build's wall photographs, for judging a change to how the walls are coloured on a real room: `compare_builds.py` (two builds, on the texels whose station changed: as rates, and as pairs that turned worse, turned better or stayed, by texel and by connected patch, beside the same count on clean texels), `doubtful_rules.py` (the rules for a doubtful view, each view against its own station's clean wall), `raw_bar_chance.py` (how often `compare_builds.py`'s per-wall tests, read raw, would name some wall by chance on their own patch counts), `changed_crops.py` (where two builds' walls differ, to be looked at), `unlike_reference_crops.py` (the texels one build gives a station that is neither an earlier build's nor a reference build's, cut out cluster by cluster to be looked at), `three_way.py` (three builds side by side at named places, from the atlas or the walls step's photographs), `forecast_labels.py` (the labels step as coded, run on a build's saved statistics: a forecast of a build's labels before it is built), `labels_diff.py` (where two builds label a texel differently, by kind, whether that is as forecast, and with `--photographs` whether a wall labelled the same in both has the same photograph files, array for array), `former_holes.py` (a view against the atlas step's fill, for texels a build left without a station), `stations_in_box.py` (which stations coloured a box of a wall in two builds). They take the builds' work folders; no scan data is kept with them |
 | `tests/` | T0 static, T1 units, T2 the mini Grand Hall (old scripts against new steps), T3 an analytic room, T4 the gates neither opens |
 | `.gitattributes` | keeps the configs, the schema and the shell scripts LF on every checkout |
 
@@ -621,7 +621,7 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       labels against the first build's: 1,813 of 8,548,148 texels differ. 1,367 doubtful views
       became clear ones (the first step), 209 clear views became another station's clear view,
       137 holes took a clear view and 100 a doubtful one; no doubtful texel that had a view
-      changed it, and none is left unexplained. Against the second build 20,504 texels differ,
+      changed it. Against the second build 20,504 texels differ,
       each one doubtful view for another: every clear view is the same. Its photographs against
       the first build's, on the 570 changed texels left to be seen that can be judged (worse /
       better / as they were): dark 15 / 39 / 516, by patch (138) 4 / 14 / 120 (p 0.03); off 70 /
@@ -630,9 +630,12 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       2,222. The band on the window wall is gone: in its window no texel differs from the first
       build's by more than 6 levels. One wall stands out by patch: the fireplace wall's front
       end, off, 8 patches against 1 (raw p 0.04; by texel 22 of 30 against 2), while its own
-      control leans the other way (61 against 183). Tested raw, eight walls by three judgements name some wall
-      most of the time by chance, and after Holm's correction over those 24 tests this one does
-      not fail (p 0.94). Its texels are of one kind, the 209 whose clear view changed station
+      control leans the other way (61 against 183). Tested raw at 0.05, eight walls by three
+      judgements would name some wall by chance about one time in four on these walls' patch
+      counts (0.28, the 24 tests taken as independent; 14 of them cannot reach 0.05 at all, and
+      were the tests continuous it would be 0.71: `measure/walls/raw_bar_chance.py`). After
+      Holm's correction over those 24 tests this one does not fail (p 0.94). Its texels are of
+      one kind, the 209 whose clear view changed station
       (83 judged: off 26 / 4 / 53, by patch 10 / 2 / 15), but that pooled count is this wall's
       own again: 22 of the 26 and 8 of the 10 are its, and the other walls give 4 / 2 by texel
       and 2 / 1 by patch, too few to judge. None
@@ -651,8 +654,11 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       ruled that the first step ask the second step's sequence. Not because of that one wall:
       tested as it should be it does not fail, and the study cannot tell the two orders apart. On
       the criterion itself: one sequence is the simpler code (`whole_order` and its guard go),
-      and it is the closest to the first build, the same on every texel the first build gave a
-      view, clear or doubtful. It came with a test stated before the build: on the texels whose
+      and it is the closest to the first build: it gives the first build's station on every
+      texel the first build gave a clear view, and on every doubtful texel that no station saw
+      clear; the 1,367 doubtful texels that some station saw clear take a clear view instead,
+      and the 237 the first build left without a station take one. It came with a test stated
+      before the build: on the texels whose
       clear station would be new (neither the third build's nor the first's), the fourth build
       against the third, by patch (the connected patches of those texels themselves), one-sided,
       on each of dark, off and farther; were any under 0.05, or a defect seen in their crops, a
@@ -661,16 +667,20 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       (`forecast_labels.py`: 450 texels to differ from the third build, 209 back on the first
       build's station and 241 new; 1,604 from the first, none of them one clear view for
       another), and the build's labels are that on every wall (`labels_diff.py --expect`). The
-      test: 80 of the 241 can be judged, in 44 patches: dark 1 worse / 1 better (p 0.75), off
-      4 / 1 (p 0.19), farther 18 / 14 (p 0.30). By texel, which overstates, off is 9 / 2. Their
-      40 clusters were cut, first, third and fourth build side by side, and the 15 that changed
+      test: 80 of the 241 can be judged, in 44 of their 78 patches: dark 1 worse / 1 better (p
+      0.75; with 2 patches that changed, dark could not fail at all), off 4 / 1 (p 0.19),
+      farther 18 / 14 (p 0.30). By texel, which overstates, off is 9 / 2. For the crops
+      (`measure/walls/unlike_reference_crops.py`) the 241 lie in 40 clusters: a cluster is those
+      in one connected region of the 241 grown by 8 texels each way, so it is not the test's
+      patch. Each was cut, first, third and fourth build side by side, and the 15 that changed
       most looked at (178 texels; the largest a row of 51 above a door case on the front wall,
-      within 18 levels of the third build): no defect, the two builds alike at the scale of a
-      texel; the rest changed by 20 levels at most. So one sequence stands. The 209 that went
+      at most 18.3 levels from the third build): no defect, the two builds alike at the scale of
+      a texel; the rest changed by 20 levels at most. So one sequence stands. The 209 that went
       back: off 2 patches worse, 10 better.
       The fourth build against the first, the room as it is to be published. No clear view
       changed station. The three walls whose labels are the first build's (the fireplace wall's
-      front end among them) have its photographs array for array. Of the 575 changed texels that
+      front end among them) have its photographs array for array: every array of their
+      photograph files, 5 of 5 each (`labels_diff.py --photographs`). Of the 575 changed texels that
       can be judged (132 patches): dark 5 worse / 12 better, off 23 / 23, farther 42 / 62. By
       wall and judgement, with Holm's correction over the 18 tests: none fails, and the least
       raw p (0.125) is a wall the better on dark. The window wall's band is still gone, and the
@@ -678,9 +688,12 @@ to 4.3 m; 280,344 texels) 0.504 against 0.144, and 12.4 against 1.4.
       control, 87,024 clean texels: dark 87 / 116, off 208 / 266, farther 921 / 1,105.
       What this bar can and cannot say. A wall fails where more of its patches turned worse than
       better and the sign test by patch passes 0.05 after Holm's correction over every wall and
-      judgement tested, or where its crops show a defect. With 24 tests a wall needs ten patches
-      all one way to fail, so for a wall with fewer the crops are the only check; and the test
-      on the 241 could hardly have failed either. A patch that holds texels of two classes
+      judgement tested, or where its crops show a defect. With the 18 tests of the fourth build
+      against the first a wall needs ten patches all one way to fail, so for a wall with fewer
+      the crops are the only check. Read raw at 0.05 those 18 tests would name some wall by
+      chance about 0.15 of the time on their patch counts (10 of them cannot reach 0.05 at all;
+      `raw_bar_chance.py`). And the test on the 241 could hardly have failed either: its dark
+      arm could not. A patch that holds texels of two classes
       counts in both, so the classes' pooled tests are not independent. The control is counted
       by texel, from overlapping windows, so its p values are lower bounds and no test;
       `compare_builds.py` prints, beside each wall, the chance of its split were patches to turn

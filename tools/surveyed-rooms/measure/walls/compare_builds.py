@@ -7,8 +7,8 @@ The two work folders are builds of the same room config from the same inputs (th
 run in both); what differs is the tools' code or one setting. For each wall this reads both builds' labels
 (proj/labels-<wall>.npz) and photographs (proj/wall-<wall>-<tile>.npz) and the wall's relief. Every texel whose
 station changed is set, in each build's own photograph, against its clean surroundings (wallviews.py: the texels
-within 10 cm on the same surface that kept their station in both builds and were seen clear by it), and counted
-DARK or OFF in each.
+of a 41 x 41 square round it, the texel left out, on the same surface, that kept their station in both builds and
+were seen clear by it), and counted DARK or OFF in each.
 
 It prints, wall by wall and for the texels left to be seen (outside the config's photo patches): the changed
 texels, how many are dark and off in each build, how many were cured and how many are new, the mean distance
@@ -47,8 +47,11 @@ and the rest (unlike_the_reference: a station that is neither the first build's 
 reference must have the same stations as the two builds, since a station is compared by its number.
 
 The bar. A wall fails where more of its patches turned worse than better and the sign test by patch still passes
-0.05 after Holm's correction over every wall and judgement tested (raw, 24 tests at 0.05 name some wall four times
-in five by chance alone). That test has little power on a small wall, so each class of change is also tested with
+0.05 after Holm's correction over every wall and judgement tested. Read raw at 0.05, the family would name some
+wall by chance alone: 7 times in 10 for 24 tests, were they continuous; less for sign tests on few patches, since a
+wall with 5 changed patches or fewer cannot reach 0.05 at all (raw_bar_chance.py: on the Saloon about 0.28 for the
+24 tests of its first build against the third, and 0.15 for the 18 of the first against the fourth, the tests
+taken as independent). That test has little power on a small wall, so each class of change is also tested with
 the walls pooled, by patch and by own patch. The sign test asks whether the split is even, and the bar stays on
 that. Where a wall's control leans one way itself (the two builds level that wall differently), the split to
 compare with is the control's: so the per-wall table also gives, for reading and deciding nothing, the chance of

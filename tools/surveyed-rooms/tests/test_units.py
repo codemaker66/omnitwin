@@ -6,6 +6,8 @@ bit for bit equal. The GHR1 comparison runs the old relief-mesh.mjs (copied byte
 a shim modules.mjs) against relief-mesh-room.mjs; it needs a node install with meshoptimizer
 (SURVEYED_ROOMS_NODE_ROOT, default: the checkout these tools are in) and is skipped without one.
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -378,8 +380,10 @@ class MarginViews(unittest.TestCase):
     def test_a_clear_view_is_taken_from_the_first_station_of_the_blocks_sequence_that_has_one(self):
         """T-739. One sequence serves both steps. A texel none of its block's ranked stations saw clear takes the
         first station of the block's sequence that saw it clear, and beyond the ranking the sequence goes by how
-        much of the block a station saw at all, not by its data cost or by how much it saw clear: on the Saloon's
-        walls, of two clear views from outside a ranking, that one lay nearer its surroundings."""
+        much of the block a station saw at all, not by its data cost or by how much it saw clear. One sequence is
+        the simpler code and the closest to the first build; the Saloon does not tell the two orders apart (of the
+        209 texels whose clear view had changed station, the lean was one wall's, and it does not fail after Holm's
+        correction over the 24 tests, p 0.94)."""
         lv, B = self.lv, self.B
         S, n = 9, 2 * B.BLOCK
         self.assertGreater(S, lv.RANKED)
@@ -619,6 +623,91 @@ class MarginViews(unittest.TestCase):
                 self.assertGreater(int((none & any_clear).sum()), 0, seed)
                 self.assertTrue(np.all(out[none & any_clear] >= 0), seed)               # blocks without a label among them
 
+    def test_main_hands_both_steps_the_blocks_sequence(self):
+        """T-739, (7). main() itself, where the tests above build the chain themselves: the step that gives a clear
+        view to a texel none of its block's ranked stations saw clear asks block_sequence's sequence, and so does the
+        doubtful step. The statistics come in by main()'s own --stats-cache; the grid, the stations, candidates(),
+        solve_labels() and the depth sweep are stood in for; ranked_lists, texel_labels, block_sequence, clear_views,
+        doubtful_views and the labels file are main()'s. One row of two blocks and eight stations. On its two texels
+        that only stations beyond the ranking saw clear, the first form of the first step (whole_order: past the
+        ranking by data cost in the first block, as in (1), and by clear cover in the second, as in (2)) takes
+        station 6 and the one sequence takes 7; on its doubtful texel the old order would take 6 and the ranking
+        alone none. So main() handing either step another order fails here. No gate room parts the two orders of
+        the first step: the box's room gives no clear view from outside a ranking, and in the pier's room every
+        texel that only stations beyond its block's ranking saw clear was seen clear by one station alone."""
+        lv, B = self.lv, self.B
+        n = B.BLOCK
+        S, H, W = 8, n, 2 * n
+        second = n                                                   # the second block begins at this column
+        seen = np.zeros((S, H, W), bool)
+        seen[:6] = True                                              # stations 0 to 5 saw both blocks
+        seen[:6, n - 1, n - 1] = False                               # but texel (7, 7),
+        clear = seen.copy()
+        clear[:6, 0, 0] = clear[:6, 0, second] = False               # and each block's (0, 0) only within a margin
+        # The first block. Station 6, a seventh candidate (data cost 0.6), saw three texels from (0, 0) on, all clear,
+        # and (7, 7) within a margin; station 7, no candidate, saw the whole block, six texels of it clear.
+        seen[6, 0, :3] = clear[6, 0, :3] = seen[6, n - 1, n - 1] = True
+        seen[7, :, :n] = True
+        clear[7, 0, :6] = True
+        # The second block, where neither is a candidate. Station 6 saw 20 texels from (0, 0) on, all clear; station
+        # 7 saw the whole block, five texels of it clear.
+        seen[6, :2, second:] = clear[6, :2, second:] = True
+        seen[6, 2, second:second + 4] = clear[6, 2, second:second + 4] = True
+        seen[7, :, second:] = True
+        clear[7, 0, second:second + 5] = True
+        keep = np.zeros((S, 1, 2), bool)
+        keep[:6] = True
+        keep[6, 0, 0] = True
+        D = np.where(keep, 0.1 * np.arange(S).reshape(S, 1, 1), np.inf)
+        cover = np.moveaxis(B.block_sum(np.moveaxis(clear, 0, -1).astype(np.float32), 1, 2), -1, 0) / n ** 2
+        work = os.path.join(T1, "label-views-main")
+        shutil.rmtree(work, ignore_errors=True)
+        os.makedirs(work)
+        cache = os.path.join(work, "stats.npz")
+        np.savez(cache, cover=cover, rgb=np.zeros((S, 1, 2, 3), np.float32), lap=np.zeros((S, 1, 2), np.float32),
+                 lum2=np.zeros((S, 1, 2), np.float32), foot=np.full((S, 1, 2), np.inf, np.float32),
+                 visbits=B.pack_bits(clear), seenbits=B.pack_bits(seen), nvalid=np.full((1, 2), n * n, np.float32),
+                 views_left_out=np.array([int((seen & ~clear).sum()), 0]), occluder_margin=np.float64(0.05))
+        grid = mock.Mock(depth=np.zeros((H, W), np.float32), valid=np.ones((H, W), bool), n=np.array([0.0, 0.0, 1.0]),
+                         points=lambda r, c, d: np.stack([r, c, d], -1).astype(np.float64))
+        args = mock.Mock(wall="south", data=work, region=None, out=os.path.join(work, "proj"), stats_cache=cache)
+        no = np.zeros((S, 1, 2), bool)
+        cand = dict(D=D, keep=keep, glare=no, occl=no, glare_changed=np.zeros((1, 2), bool))
+        stand_ins = [(lv, "parse", lambda: args), (B, "below_normal_priority", lambda: None), (B, "use_data", lambda path: None),
+                     (B, "Grid", lambda wall: grid), (lv.P, "stations", lambda: [dict(id=k, t=np.zeros(3)) for k in range(S)]),
+                     (lv, "candidates", lambda stats: cand),
+                     (lv, "solve_labels", lambda D, wr, wd: (np.zeros((1, 2), np.int64), "stood in", [])),
+                     (lv, "sweep", lambda grid, sts, ranked, keep, stats, rb: (np.zeros((1, 2, len(lv.DEPTHS)), np.float32), np.zeros((1, 2), bool))),
+                     (B, "wait_while_quiet", lambda: None), (lv.P, "load_depth", lambda sid: sid),
+                     (B, "occluder_clearance", lambda cube, v, dist, cos: np.full(len(v), 0.01, np.float32))]
+        with contextlib.ExitStack() as stack:
+            for target, name, value in stand_ins:
+                stack.enter_context(mock.patch.object(target, name, value))
+            stack.enter_context(self.margin(0.05))
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            lv.main()
+        with np.load(os.path.join(work, "proj", "labels-south.npz")) as lb:
+            tl, ranked, label, seenbits, clearbits = (lb[k] for k in ("texel_label", "ranked", "label", "seenbits", "clearbits"))
+        with open(os.path.join(work, "proj", "labels-south.json"), encoding="utf-8") as f:
+            margin = json.load(f)["occluder_margin"]
+        self.assertTrue(np.array_equal(B.unpack_bits(clearbits, W), clear) and np.array_equal(B.unpack_bits(seenbits, W), seen))
+        self.assertEqual(ranked.reshape(2, -1).tolist(), [[0, 1, 2, 3, 4, 5]] * 2)
+        sequence = lv.block_sequence(ranked, label, seenbits, W)    # from the labels file's own arrays
+        self.assertEqual(sequence[0, 0, lv.RANKED:].tolist(), [7, 0, 1, 2, 3, 4, 5, 6])    # 7 saw all 64 texels, 0 to 5 all but (7, 7)
+        self.assertEqual(sequence[0, 1, lv.RANKED:].tolist(), [0, 1, 2, 3, 4, 5, 7, 6])
+        expected = np.zeros((H, W), np.int16)                        # station 0, the label, saw every other texel clear
+        expected[0, 0] = expected[0, second] = 7                     # the first of the sequence that saw it clear
+        expected[n - 1, n - 1] = 7                                   # the first of the sequence that saw it at all
+        self.assertEqual(tl.tolist(), expected.tolist())
+        old = [self.old_order(D[:, 0, b], keep[:, 0, b], cover[:, 0, b], 0) for b in (0, 1)]
+        self.assertEqual(old, [list(range(S))] * 2)                  # the label, the other candidates by data cost, then by clear cover
+        for c in (0, second):
+            self.assertEqual(next(int(s) for s in sequence[0, c // n] if s >= 0 and clear[s, 0, c]), tl[0, c])
+            self.assertEqual(next(s for s in old[c // n] if clear[s, 0, c]), 6)  # the old order took 6
+        self.assertEqual(next(s for s in old[0] if seen[s, n - 1, n - 1]), 6)    # so would it for the doubtful texel,
+        self.assertFalse(seen[ranked[0, 0], n - 1, n - 1].any())                 # and the ranking alone gives it none
+        self.assertEqual((margin["texels_given_a_clear_view_from_outside_the_ranking"], margin["texels_given_a_doubtful_view"]), (2, 1))
+
     def test_a_statistics_cache_is_good_for_its_own_margin_alone(self):
         lv = self.lv
         bits = np.zeros((1, 1, 1), np.uint8)
@@ -792,6 +881,27 @@ class WallMeasure(unittest.TestCase):
         self.assertEqual((f(1, 3, 0, 9), f(0, 3, 0, 9), f(4, 0, 9, 0)), (0.0, 1.0, 1.0))     # a control all one way
         self.assertEqual(f(np.int64(8), np.int64(1), np.int64(61), np.int64(183)), tail(8, 1, 61, 183))   # numpy's integers
 
+    def test_the_chance_that_a_family_of_raw_tests_names_some_wall(self):
+        # Guards chance_of_reaching and chance_of_any, behind the records' chance that the per-wall tests, taken
+        # raw at 0.05, name some wall by chance alone (TM4): a sign test on 5 patches or fewer cannot reach 0.05;
+        # on 6 only all six one way does, either way; a family's chance is one less the product of each one's
+        # chance of not reaching it, which for few patches is far below 1 - 0.95^k.
+        from fractions import Fraction  # noqa: PLC0415
+        from math import comb  # noqa: PLC0415
+        wv = self.wv
+        self.assertEqual([wv.chance_of_reaching(n) for n in range(6)], [0.0] * 6)
+        self.assertEqual(wv.chance_of_reaching(6), 2 / 64)
+        self.assertEqual(wv.chance_of_reaching(np.int64(6)), 2 / 64)            # a count straight from numpy
+        for n in (9, 17, 38):                                       # against the definition, in fractions
+            want = Fraction(sum(comb(n, w) for w in range(n + 1) if wv.sign_test(w, n - w) < 0.05), 2 ** n)
+            self.assertEqual(wv.chance_of_reaching(n), float(want), n)
+            self.assertLess(wv.chance_of_reaching(n), 0.05)         # the exact test is conservative
+        self.assertEqual(wv.chance_of_any([]), 0.0)
+        self.assertEqual(wv.chance_of_any([6, 6]), 1 - (1 - 2 / 64) ** 2)
+        self.assertEqual(wv.chance_of_any([5, 0, 3]), 0.0)
+        saloon = [4, 9, 26, 0, 9, 12, 1, 1, 1, 4, 9, 17, 2, 4, 11, 2, 4, 11, 1, 0, 3, 5, 21, 38]    # the first build against the third
+        self.assertTrue(0.27 < wv.chance_of_any(saloon) < 0.28 < 0.70 < 1 - 0.95 ** 24)
+
     def test_a_patch_is_one_unit_whatever_is_left_out_of_it(self):
         wv = self.wv
         mask = np.zeros((40, 74), bool)
@@ -825,7 +935,8 @@ class WallMeasure(unittest.TestCase):
 class CompareBuilds(unittest.TestCase):
     """measure/walls/compare_builds.py: its per-wall computation (compare_wall) and its bar (wall_tests), on tiny
     made-up walls. Each wall starts as grey plaster at 100 levels on one surface, every texel on station 0 in both
-    builds, seen clear by it and coloured in both photographs; each test changes what it needs."""
+    builds, seen clear by it and coloured in both photographs; each test changes what it needs. And
+    labels_diff.py's check of a build's labels against the forecast written before it (against_forecast)."""
 
     @classmethod
     def setUpClass(cls):
@@ -841,6 +952,9 @@ class CompareBuilds(unittest.TestCase):
             spec = importlib.util.spec_from_file_location("compare_builds", os.path.join(walls, "compare_builds.py"))
             cls.cb = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(cls.cb)                         # reads no argument and no file: that is all main()'s
+            spec = importlib.util.spec_from_file_location("labels_diff", os.path.join(walls, "labels_diff.py"))
+            cls.ld = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(cls.ld)                         # likewise
         finally:
             if before is None:
                 sys.modules.pop("wallviews", None)
@@ -1080,6 +1194,87 @@ class CompareBuilds(unittest.TestCase):
         self.assertEqual((row["as_the_reference_in_all"], row["unlike_the_reference_in_all"]), (12, 20))
         self.assertEqual((row["as_the_reference"]["texels"], row["unlike_the_reference"]["texels"]), (12, 16))
         self.assertEqual(row["unlike_the_reference"]["paired_by_own_patch"]["patches"], 4)    # its own patches: one a group judged
+
+    def test_apart_from_s_own_patches_are_its_own_texels_judged_or_not(self):
+        # Guards the unit of the test stated before the Saloon's fourth build (TM3): unlike_the_reference's own
+        # patches are the connected patches of every changed texel whose station is the reference's neither, judged
+        # or not, and of nothing else. Two blobs of such texels, a column apart, are joined at one texel. Where that
+        # texel went back to the reference's station they are two own patches (numbered by all the changed texels
+        # they would be one); where it is of their own kind but under a photo patch, not judged, they are one
+        # (numbered by the judged texels alone they would be two). By patch, every texel whose label differs, they
+        # are one either way.
+        H, W = 30, 60
+        blobs, joint = np.zeros((H, W), bool), np.zeros((H, W), bool)
+        blobs[14:17, 20:23] = blobs[14:17, 24:27] = True
+        joint[15, 23] = True                                        # touches both blobs; nothing else does
+        base = self.wall(H, W)                                      # the third build (old) and the reference: station 0 everywhere
+        base["reference"] = np.zeros((H, W), np.int32)
+        base["new"][blobs] = 1                                      # the fourth build: neither the third's station nor the first's
+        base["L2"][blobs] = 40.0                                    # and every texel of both blobs turns dark
+        back = self.copy(base)
+        back["old"][joint] = 2                                      # the third build had another station there
+        back["new"][joint] = 0                                      # and the fourth went back to the reference's
+        hidden = self.copy(base)
+        hidden["new"][joint] = 1                                    # of the blobs' own kind
+        hidden["covered"][joint] = True                             # under a photo patch: not judged
+        one = dict(worse=1, better=0, unchanged=0, p_exact=1.0, p_worse=0.5)
+        two = dict(worse=2, better=0, unchanged=0, p_exact=0.5, p_worse=0.25)
+        for name, w, own, in_all, like in (("joined by a texel back on the reference's station", back, two, 18, 1),
+                                           ("joined by an unjudged texel of their own kind", hidden, one, 19, 0)):
+            with self.subTest(name):
+                row, masks = self.compare(w)
+                part = row["unlike_the_reference"]
+                self.assertTrue(np.array_equal(masks["unlike_the_reference"], blobs))       # the same 18 judged texels each time
+                self.assertEqual((row["unlike_the_reference_in_all"], row["as_the_reference_in_all"]), (in_all, like))
+                self.assertEqual(part["paired_by_own_patch"]["patches"], own["worse"])
+                for key in self.cb.JUDGEMENTS:                      # dark, off and farther: every texel of both blobs turned worse
+                    self.assertEqual(part["paired_by_own_patch"][key], own, key)
+                    self.assertEqual(part["paired_by_patch"][key], one, key)
+                self.assertEqual(part["paired_by_patch"]["patches"], 1)
+
+    def test_labels_diff_checks_every_count_a_forecast_names(self):
+        # Guards labels_diff.py --expect (TM6), with which a build's labels are checked against the forecast written
+        # before it was made: every total and every per-wall count the forecast names is compared, so a build whose
+        # totals match while a wall's count does not is refused, and so is a count the build does not make.
+        rows = [dict(wall="front", differ=3, doubtful_to_clear=2, hole_to_clear=1, unexplained=0),
+                dict(wall="rear", differ=1, doubtful_to_clear=1, hole_to_clear=0, unexplained=0)]
+        total = dict(differ=4, doubtful_to_clear=3, hole_to_clear=1, unexplained=0)
+        forecast = dict(total=dict(differ=4, doubtful_to_clear=3, hole_to_clear=1),
+                        walls=dict(front=dict(differ=3, doubtful_to_clear=2), rear=dict(hole_to_clear=0)))
+        self.assertEqual(self.ld.against_forecast(total, rows, forecast), [])
+        # The same totals, and the texels on the wrong walls: one each way.
+        moved = dict(forecast, walls=dict(front=dict(doubtful_to_clear=1), rear=dict(doubtful_to_clear=2)))
+        self.assertEqual(self.ld.against_forecast(total, rows, moved),
+                         ["front doubtful_to_clear: expected 1, found 2", "rear doubtful_to_clear: expected 2, found 1"])
+        # A count the build does not make, and a wall it does not have, are differences, not matches.
+        absent = dict(total=dict(clear_to_doubtful=0), walls=dict(window=dict(differ=0)))
+        self.assertEqual(self.ld.against_forecast(total, rows, absent),
+                         ["total clear_to_doubtful: expected 0, found None", "window differ: expected 0, found None"])
+
+    def test_labels_diff_compares_every_array_of_a_wall_s_photographs(self):
+        # Guards labels_diff.py --photographs: every file the walls step wrote for the wall (its tiles and their
+        # 2.5 mm .fine files, never another wall's whose name begins with this one's), and every array in them, by
+        # dtype, shape and bytes, so that the same bytes read as another dtype or shape are not the same array.
+        import tempfile  # noqa: PLC0415
+        rgb = np.arange(24, dtype=np.float32).reshape(2, 4, 3)
+        arrays = {"wall-w-0.npz": dict(rgb=rgb, weight=np.ones((2, 4), np.float32), valid=np.ones((2, 4), bool)),
+                  "wall-w-0.fine.npz": dict(rgb8=np.zeros((4, 8, 3), np.uint8), valid=np.ones((4, 8), bool)),
+                  "wall-w-front-0.npz": dict(rgb=rgb)}                  # another wall, which must not be counted
+        with tempfile.TemporaryDirectory() as root:
+            works = [os.path.join(root, k) for k in ("a", "b")]
+            for work in works:
+                os.makedirs(os.path.join(work, "proj"))
+                for name, content in arrays.items():
+                    np.savez(os.path.join(work, "proj", name), **content)
+            self.assertEqual(self.ld.same_photographs(*works, "w"), dict(files=2, arrays=5, identical=5, differ=[]))
+            np.savez(os.path.join(works[1], "proj", "wall-w-front-0.npz"), rgb=rgb + 1)
+            self.assertEqual(self.ld.same_photographs(*works, "w")["identical"], 5)
+            np.savez(os.path.join(works[1], "proj", "wall-w-0.npz"), **dict(arrays["wall-w-0.npz"], rgb=rgb.view(np.int32)))
+            self.assertEqual(self.ld.same_photographs(*works, "w")["differ"], ["wall-w-0.npz: rgb"])     # the same bytes, another dtype
+            np.savez(os.path.join(works[1], "proj", "wall-w-1.npz"), rgb=rgb)
+            got = self.ld.same_photographs(*works, "w")
+            self.assertEqual((got["files"], got["identical"]), (3, 4))
+            self.assertEqual(got["differ"], ["wall-w-1.npz: in one build only", "wall-w-0.npz: rgb"])
 
 
 class Windows(unittest.TestCase):

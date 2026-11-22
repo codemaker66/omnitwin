@@ -147,5 +147,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 ENTRYPOINT ["/sbin/tini", "--"]
 # --conditions=omnitwin-dist resolves the foundry workspace packages to their
 # compiled dist/ output (their default export condition is TS source, which
-# Node cannot execute). Keep in sync with railway.json deploy.startCommand.
+# Node cannot execute). Keep in sync with the start command declared in
+# .railway/railway.ts and applied to Railway's stored settings.
 CMD ["node", "--conditions=omnitwin-dist", "dist/index.js"]
