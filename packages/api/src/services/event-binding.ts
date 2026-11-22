@@ -47,7 +47,11 @@ import { bookings, enquiries, eventPhases, events, venues } from "../db/schema.j
 // writes the enquiry's event_id to the event it joined when they differ
 // (setEnquiryEvent), unless the enquiry is a draft or asks to book nothing
 // (enquiryMayBecomeEvent in @omnitwin/types): such an enquiry never has an
-// event, and its bookings bind as they always did. A booking a person moves
+// event, and its bookings bind as they always did. Nor is the link written
+// when anything else of the enquiry's own (its bookings, deals, proposals or
+// floor plan) reaches a different live event: the join of old records lists
+// such an enquiry for a person, and the bind does not choose for them; the
+// booking still joins its event as before. A booking a person moves
 // to another event takes the link with it when it was the enquiry's last
 // live booking in the old event (followBookingToEvent; a released or
 // cancelled one left there does not count). The link is moved, never
@@ -176,10 +180,14 @@ export function titleWithoutEnquiryEmail(title: string, email: string): string {
 }
 
 /**
- * The enquiry's event: its own link when that names a live event of its
- * venue; otherwise the event its bookings have (a live booking's first, then
- * the newest); otherwise null. Call it with the enquiry row locked
- * (FOR NO KEY UPDATE), so what it reads cannot change before the caller acts.
+ * The event a booking of the enquiry joins: the enquiry's own link when that
+ * names a live event of its venue; otherwise the event its bookings have (a
+ * live booking's first, then the newest), even when they sit in more than
+ * one; otherwise null. That last choice is for the booking only: the bind
+ * writes it as the enquiry's link only when nothing else of the enquiry's
+ * reaches another live event (enquiryReachesAnotherEvent). Call it with the
+ * enquiry row locked (FOR NO KEY UPDATE), so what it reads cannot change
+ * before the caller acts.
  */
 export async function enquiryEventOf(
   conn: BindConn,
@@ -255,8 +263,11 @@ export async function followBookingToEvent(
 /**
  * The event a hold or ink belongs to: the one named, its enquiry's own, the
  * one its enquiry's bookings already have, or a new one. Bound through an
- * enquiry that may have an event, the enquiry's link is written to it. Call
- * inside the booking write's transaction, before the booking is inserted.
+ * enquiry that may have an event, the enquiry's link is written to it, unless
+ * anything else of the enquiry's own (its bookings, deals, proposals or floor
+ * plan) reaches a different live event of its venue: then the link is left as
+ * it is, for the join's list. Call inside the booking write's transaction,
+ * before the booking is inserted.
  */
 export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target: BindTarget): Promise<BindOutcome> {
   if (target.join === "event") {
@@ -279,6 +290,7 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
     eventId: enquiries.eventId,
     state: enquiries.state,
     eventType: enquiries.eventType,
+    configurationId: enquiries.configurationId,
   })
     .from(enquiries)
     .where(eq(enquiries.id, target.enquiryId))
@@ -291,10 +303,51 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
   const eventId = joined ?? await createEventFor(conn, { ...seed, title: titleWithoutEnquiryEmail(seed.title, enquiry.email) });
   const state = EnquiryStatusSchema.safeParse(enquiry.state);
   if (eventId !== enquiry.eventId && state.success
-    && enquiryMayBecomeEvent({ state: state.data, eventType: enquiry.eventType })) {
+    && enquiryMayBecomeEvent({ state: state.data, eventType: enquiry.eventType })
+    && !(await enquiryReachesAnotherEvent(conn, enquiry, eventId))) {
     await setEnquiryEvent(conn, enquiry.id, eventId);
   }
   return { ok: true, eventId, created: joined === null };
+}
+
+/**
+ * Whether anything of the enquiry's own reaches a live event of its venue
+ * other than `eventId`, read as the join of old records reads it (step 1 of
+ * spine_join_old_records, the spine's links migration): (A) an undeleted
+ * booking of the enquiry sits in it; (C) an undeleted deal (source_enquiry_id)
+ * or undeleted proposal (enquiry_id) of the enquiry is joined to it; (B) the
+ * enquiry's floor plan is linked to it (event_configuration_links). When one
+ * does, the join would list the enquiry rather than choose, so the bind does
+ * not choose for it either. Plain reads, under the enquiry's lock the caller
+ * already holds; no lock is taken here.
+ */
+async function enquiryReachesAnotherEvent(
+  conn: BindConn,
+  enquiry: { readonly id: string; readonly venueId: string; readonly configurationId: string | null },
+  eventId: string,
+): Promise<boolean> {
+  const result = await conn.execute(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM bookings b JOIN events e ON e.id = b.event_id
+        WHERE b.enquiry_id = ${enquiry.id} AND b.deleted_at IS NULL
+          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
+      UNION ALL
+      SELECT 1 FROM opportunities o JOIN events e ON e.id = o.event_id
+        WHERE o.source_enquiry_id = ${enquiry.id} AND o.deleted_at IS NULL
+          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
+      UNION ALL
+      SELECT 1 FROM proposals p JOIN events e ON e.id = p.event_id
+        WHERE p.enquiry_id = ${enquiry.id} AND p.deleted_at IS NULL
+          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
+      UNION ALL
+      SELECT 1 FROM event_configuration_links k JOIN events e ON e.id = k.event_id
+        WHERE k.configuration_id = ${enquiry.configurationId}
+          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
+    ) AS reaches
+  `);
+  const reaches = result.rows[0]?.["reaches"];
+  if (typeof reaches !== "boolean") throw new Error("The enquiry's reach returned no answer");
+  return reaches;
 }
 
 interface SpanBooking {

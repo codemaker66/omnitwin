@@ -6,8 +6,10 @@ import { bookingRoutes } from "../routes/bookings.js";
 import { transitionBookingCore, updateBookingCore } from "../services/booking-mutations.js";
 import { createEventFor } from "../services/event-binding.js";
 import {
+  deal as dealIn,
   enquiry as enquiryIn,
   event as eventIn,
+  link,
   openSpineDatabase,
   platformTarget,
   venue as venueIn,
@@ -319,5 +321,119 @@ describe.skipIf(target === undefined)("the spine: the bind joins the enquiry's o
       expect(hold.statusCode, hold.body).toBe(201);
     }
     expect(await eventCount(v.venueId)).toBe(1);
+  });
+
+  // ---------------------------------------------------------------------------
+  // The enquiry's link is written only where the join would agree: when
+  // nothing else of the enquiry's own (its bookings, its deals and proposals,
+  // its floor plan) reaches a different live event of its venue. The join of
+  // old records is the outside reference, so each case runs it after the hold.
+
+  interface OpenQuestion { readonly reason: string; readonly resolved_at: Date | null }
+
+  async function joinOldRecords(): Promise<void> {
+    await pool.query("SELECT * FROM spine_join_old_records()");
+  }
+
+  async function questionsOn(enquiryId: string): Promise<OpenQuestion[]> {
+    return (await pool.query<OpenQuestion>(
+      "SELECT reason, resolved_at FROM event_link_reviews WHERE subject_kind = 'enquiry' AND subject_id = $1 ORDER BY created_at",
+      [enquiryId],
+    )).rows;
+  }
+
+  /** An interest-only booking of the enquiry in an event, written straight into the table (as an import would). */
+  async function interestIn(v: SpineVenue, enquiryId: string, eventId: string, minutesAgo: number, room: string): Promise<void> {
+    await pool.query(`INSERT INTO bookings
+      (venue_id, space_id, kind, title, starts_at, ends_at, event_id, enquiry_id, created_by, created_at)
+      VALUES ($1, $2, 'prospect', 'Interest only', $3, $4, $5, $6, $7, now() - make_interval(mins => $8))`,
+    [v.venueId, room, at("12:00", 3), at("14:00", 3), eventId, enquiryId, v.admin.id, minutesAgo]);
+  }
+
+  it("a hold on an enquiry with no link whose bookings sit in two events joins as before and writes no link; the join keeps it listed", async () => {
+    const v = await venue("two events, no link");
+    const enquiryId = await enquiryIn(pool, v.venueId);
+    const older = await datelessEvent(v.venueId, "Older event");
+    const newer = await datelessEvent(v.venueId, "Newer event");
+    await interestIn(v, enquiryId, older, 60, v.rooms.saloon);
+    await interestIn(v, enquiryId, newer, 30, v.rooms.reception);
+    // The join lists it first: its bookings sit in two events.
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+
+    const hold = await holdFromEnquiry(v.admin, holdBody(v, enquiryId));
+    // The hold joins the event it always has: a live booking's, the newest first.
+    expect(hold.eventId).toBe(newer);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+
+    // The next join neither closes the question nor joins the enquiry.
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+  });
+
+  it("a hold on an enquiry whose deal is in another event makes its own event and writes no link; the join lists it", async () => {
+    const v = await venue("deal elsewhere");
+    const enquiryId = await enquiryIn(pool, v.venueId);
+    const dealsEvent = await datelessEvent(v.venueId, "The deal's event");
+    const dealId = await dealIn(pool, v.venueId, "qualified", enquiryId);
+    await link(pool, "opportunities", dealId, dealsEvent);
+    const before = await eventCount(v.venueId);
+
+    const hold = await holdFromEnquiry(v.admin, holdBody(v, enquiryId));
+    expect(hold.eventId).not.toBe(dealsEvent);
+    expect(await eventCount(v.venueId)).toBe(before + 1);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+  });
+
+  it("a hold on an enquiry whose floor plan is linked to another event makes its own event and writes no link; the join lists it", async () => {
+    const v = await venue("plan elsewhere");
+    const enquiryId = await enquiryIn(pool, v.venueId);
+    const plansEvent = await datelessEvent(v.venueId, "The plan's event");
+    const [plan] = (await pool.query<{ id: string }>(
+      "INSERT INTO configurations (space_id, venue_id, name, layout_style) VALUES ($1, $2, 'Fixture plan', 'dinner-rounds') RETURNING id",
+      [v.rooms.hall, v.venueId],
+    )).rows;
+    if (plan === undefined) throw new Error("Plan fixture missing");
+    await pool.query("INSERT INTO event_configuration_links (event_id, configuration_id, link_type) VALUES ($1, $2, 'source_configuration')",
+      [plansEvent, plan.id]);
+    await pool.query("UPDATE enquiries SET configuration_id = $1 WHERE id = $2", [plan.id, enquiryId]);
+    const before = await eventCount(v.venueId);
+
+    const hold = await holdFromEnquiry(v.admin, holdBody(v, enquiryId));
+    expect(hold.eventId).not.toBe(plansEvent);
+    expect(await eventCount(v.venueId)).toBe(before + 1);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([{ reason: "paths_disagree", resolved_at: null }]);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+  });
+
+  it("a hold still writes the link when its enquiry's bookings sit in one event only, or nothing reaches any event; the join lists neither", async () => {
+    const v = await venue("one event or none");
+    // Bookings in one event only, and no link yet.
+    const inOne = await enquiryIn(pool, v.venueId);
+    const only = await datelessEvent(v.venueId, "The one event");
+    await interestIn(v, inOne, only, 30, v.rooms.saloon);
+    const joined = await holdFromEnquiry(v.admin, holdBody(v, inOne));
+    expect(joined.eventId).toBe(only);
+    expect(await enquiryEvent(inOne)).toBe(only);
+    // Nothing reaching any event: a new event, and the link names it.
+    const fresh = await enquiryIn(pool, v.venueId);
+    const made = await holdFromEnquiry(v.admin, holdBody(v, fresh, { startsAt: at("18:00", 1), endsAt: at("23:00", 1) }));
+    expect(made.eventId).not.toBeNull();
+    expect(made.eventId).not.toBe(only);
+    expect(await enquiryEvent(fresh)).toBe(made.eventId);
+
+    await joinOldRecords();
+    expect(await questionsOn(inOne)).toEqual([]);
+    expect(await questionsOn(fresh)).toEqual([]);
+    expect(await enquiryEvent(inOne)).toBe(only);
+    expect(await enquiryEvent(fresh)).toBe(made.eventId);
   });
 });

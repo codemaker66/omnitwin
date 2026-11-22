@@ -47,6 +47,12 @@ What the database holds already:
 | The undo, `spine_undo_joins()` | this pull request | empties what the join wrote; by hand only |
 | Enquiries, deals and proposals (their routes) | the next pull request | each keeps its own link as it is made or moved |
 
+The bind writes an enquiry's link only when nothing else of the enquiry's own (its
+bookings, deals and proposals, or its floor plan) reaches another live event of its
+venue; otherwise the booking joins its event as before and the link is left for the
+list, where the join puts the enquiry for a person. Joining is never a guess, in the
+bind as in the join.
+
 Until the next pull request lands, the join is what joins new enquiries, deals and
 proposals, so the count can read above zero between a record being made and the
 next run.
@@ -370,7 +376,8 @@ the last resort.)
   migration run by the real migrator over rows written before it, the join's paths
   and kinds of doubt, a replay that changes nothing, and the undo.
 - `packages/api/src/__tests__/event-spine-bind-postgres.test.ts`: a hold joins its
-  enquiry's own event first and keeps the enquiry's link in step.
+  enquiry's own event first and keeps the enquiry's link in step, and writes no link
+  where the join would list the enquiry (checked against the join itself).
 - `packages/api/src/__tests__/event-spine-invariant.test.ts` and
   `event-spine-invariant-postgres.test.ts`: the count, each number counting what it
   names and nothing else, one venue at a time.
