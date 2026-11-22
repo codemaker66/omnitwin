@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, isNotNull, notExists, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, notExists, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   toEventPlanAudienceRole,
@@ -38,6 +38,11 @@ import { recordEventPlanChange } from "./event-plan-lifecycle.js";
 // and tells the floor nothing, only while it is quick (QUIET_UNDO_MS) and
 // nobody has opened a bell of the moves it takes back. Otherwise the floor may
 // have acted on the move away, and is told the booking is back.
+//
+// A move into the past (a slip, or a correction of what already happened) is
+// not news to the floor and rings no bell, but it is kept in the feed, told to
+// no one, with the place the floor last knew: the move that puts it right is
+// told from that place, never from the slip the floor never saw.
 // ---------------------------------------------------------------------------
 
 type Connection = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -143,14 +148,22 @@ export function shiftAmount(minutesMoved: number): string {
 }
 
 /**
- * Minutes from one time to another as the venue's clock reads them, so a
- * move across a clock change reads as the wall does ("1 day later", not
- * "1 day 1 h later"). Where either time is one the clocks show twice, the
- * wall cannot tell how far it moved, so the real minutes are counted.
+ * How one move's times are measured, the same way for both its ends. On the
+ * venue's clock, so a move across a clock change reads as the wall does
+ * ("1 day later", not "1 day 1 h later"). Where any of the move's times is one
+ * the clocks show twice, the wall cannot tell how far it moved, so the real
+ * minutes are counted, for the start and the end alike: never one end each
+ * way, which would make a length kept read as changed.
  */
-function minutesMoved(from: Date, to: Date, timeZone: string): number {
-  if (isRepeatedWallTime(from, timeZone) || isRepeatedWallTime(to, timeZone)) return (to.getTime() - from.getTime()) / MINUTE_MS;
-  return wallMinutes(to, timeZone) - wallMinutes(from, timeZone);
+function moveMeasure(
+  before: { readonly startsAt: Date; readonly endsAt: Date },
+  after: { readonly startsAt: Date; readonly endsAt: Date },
+  timeZone: string,
+): (from: Date, to: Date) => number {
+  const real = [before.startsAt, before.endsAt, after.startsAt, after.endsAt].some((at) => isRepeatedWallTime(at, timeZone));
+  return real
+    ? (from, to) => (to.getTime() - from.getTime()) / MINUTE_MS
+    : (from, to) => wallMinutes(to, timeZone) - wallMinutes(from, timeZone);
 }
 
 /** How the hours moved on the venue's clock: "30 min later", "starts 1 h earlier". */
@@ -159,8 +172,9 @@ export function shiftWords(
   after: { readonly startsAt: Date; readonly endsAt: Date },
   timeZone: string,
 ): string {
-  const start = minutesMoved(before.startsAt, after.startsAt, timeZone);
-  const end = minutesMoved(before.endsAt, after.endsAt, timeZone);
+  const minutesMoved = moveMeasure(before, after, timeZone);
+  const start = minutesMoved(before.startsAt, after.startsAt);
+  const end = minutesMoved(before.endsAt, after.endsAt);
   const way = (minutes: number): string => `${shiftAmount(minutes)} ${minutes > 0 ? "later" : "earlier"}`;
   if (start === end) return start === 0 ? "the same hours" : way(start);
   if (end === 0) return `starts ${way(start)}`;
@@ -348,14 +362,71 @@ async function dropUnreadBells(db: Connection, changeIds: readonly string[]): Pr
   ));
 }
 
+/** A run of moves the floor has not acknowledged, though none of it waits. */
+interface UntoldRun {
+  /** Where the floor last knew the booking. */
+  readonly known: BookingPlace;
+  readonly chainId: string;
+  /** The last place the floor was shown in the run, if it was shown one. */
+  readonly lastShown: BookingPlace | null;
+}
+
+/**
+ * The run of moves a move into the past ended without telling the floor,
+ * found when nothing of this booking waits: the booking's latest move, which
+ * nobody acknowledged and which no longer waits (taken back, or ended by a
+ * move into the past), still holds where the floor last knew the booking.
+ * While the booking stands somewhere else than that, the run goes on: the next
+ * move is told from that place, and a move back to it is told from the last
+ * place the floor was shown in the run, if it was shown one. Null when the
+ * floor acknowledged the latest move, or the booking is back where it knew it.
+ */
+async function untoldRun(db: Connection, input: BookingMoveInput): Promise<UntoldRun | null> {
+  const ofThisBooking = [
+    eq(eventPlanChanges.venueId, input.venueId),
+    eq(eventPlanChanges.sourceKind, "event"),
+    eq(eventPlanChanges.sourceId, input.bookingId),
+  ];
+  const [latest] = await db.select({
+    chainId: eventPlanChanges.moveChainId,
+    waits: eventPlanChanges.requiresHallkeeperAcknowledgement,
+    knownSpaceId: eventPlanChanges.moveKnownSpaceId,
+    knownStartsAt: eventPlanChanges.moveKnownStartsAt,
+    knownEndsAt: eventPlanChanges.moveKnownEndsAt,
+  })
+    .from(eventPlanChanges)
+    .where(and(...ofThisBooking, isNotNull(eventPlanChanges.moveChainId)))
+    .orderBy(desc(eventPlanChanges.createdAt), desc(eventPlanChanges.id))
+    .limit(1);
+  // Still marked to wait, yet not waiting: the floor acknowledged it.
+  if (latest === undefined || latest.waits || latest.chainId === null) return null;
+  const known = storedPlace(latest.knownSpaceId, latest.knownStartsAt, latest.knownEndsAt);
+  if (known === null || samePlace(known, input.before)) return null;
+  const [shown] = await db.select({
+    spaceId: eventPlanChanges.moveToSpaceId,
+    startsAt: eventPlanChanges.moveToStartsAt,
+    endsAt: eventPlanChanges.moveToEndsAt,
+  })
+    .from(eventPlanChanges)
+    .where(and(...ofThisBooking, eq(eventPlanChanges.moveChainId, latest.chainId), eq(eventPlanChanges.moveTold, true)))
+    .orderBy(desc(eventPlanChanges.createdAt), desc(eventPlanChanges.id))
+    .limit(1);
+  return {
+    known,
+    chainId: latest.chainId,
+    lastShown: shown === undefined ? null : storedPlace(shown.spaceId, shown.startsAt, shown.endsAt),
+  };
+}
+
 /**
  * Records the move in the event's change feed, needing the floor's
  * acknowledgement, folding in any earlier move of this booking nobody has
  * acknowledged yet (on whichever event it was told). A booking already over
  * by its new end tells no one: an administrative correction of history is not
- * news to the floor; nor does a quick Undo nobody has read of. Either way the
- * moves it replaces leave the floor's list. Returns whether a change now
- * waits for the floor.
+ * news to the floor. It is kept, told to no one, so the next move is told
+ * from the place the floor last knew. Nor does a quick Undo nobody has read
+ * of tell anyone. Either way the moves it replaces leave the floor's list.
+ * Returns whether a change now waits for the floor.
  *
  * Runs inside the move's own transaction, after the booking's row is locked,
  * so two moves of one booking fold one after the other.
@@ -399,9 +470,13 @@ export async function recordBookingMove(db: Connection, input: BookingMoveInput)
   });
 
   const first = waiting[0];
-  // Where the floor last knew the booking, and the run this move joins.
-  const known = first?.known ?? input.before;
-  const chainId = first?.chainId ?? randomUUID();
+  const untold = first === undefined ? await untoldRun(db, input) : null;
+  // Where the floor last knew the booking, the run this move joins, and the
+  // last place the floor was shown, which a move back is told from.
+  const known = first?.known ?? untold?.known ?? input.before;
+  const chainId = first?.chainId ?? untold?.chainId ?? randomUUID();
+  const lastShown = first !== undefined ? input.before : untold?.lastShown ?? null;
+  const runs = first !== undefined ? [...new Set(waiting.map((change) => change.chainId))] : untold !== null ? [untold.chainId] : [];
   const replaced = waiting.map((change) => change.id);
   if (replaced.length > 0) {
     // Kept in the feed as history; the floor reads one change instead.
@@ -410,23 +485,10 @@ export async function recordBookingMove(db: Connection, input: BookingMoveInput)
       .where(inArray(eventPlanChanges.id, replaced));
   }
 
-  const back = first !== undefined && samePlace(known, input.after);
-  if (input.after.endsAt.getTime() <= input.now.getTime()
-    || (back && await quietUndo(db, input, [...new Set(waiting.map((change) => change.chainId))]))) {
-    await dropUnreadBells(db, replaced);
-    return false;
-  }
-
-  const names = await moveNames(db, input, [known.spaceId, input.before.spaceId, input.after.spaceId]);
+  const names = await moveNames(db, input, [known.spaceId, input.before.spaceId, input.after.spaceId, ...(lastShown === null ? [] : [lastShown.spaceId])]);
   const roomBefore = names.room(input.before.spaceId);
   const roomAfter = names.room(input.after.spaceId);
-  const words = back
-    ? describeMoveBack({ before: input.before, after: input.after, roomBefore, roomAfter, timeZone: names.timeZone })
-    : first !== undefined
-      ? describeFoldedMove({ known, after: input.after, roomKnown: names.room(known.spaceId), roomAfter, timeZone: names.timeZone })
-      : describeBookingMove({ before: input.before, after: input.after, roomBefore, roomAfter, timeZone: names.timeZone });
-
-  await recordEventPlanChange(db, {
+  const change = (words: MoveWords, told: boolean) => recordEventPlanChange(db, {
     eventId: input.eventId,
     venueId: input.venueId,
     actorUserId: input.actor.id,
@@ -440,11 +502,34 @@ export async function recordBookingMove(db: Connection, input: BookingMoveInput)
     afterSummary: words.afterSummary,
     affectedSurfaces: words.surfaces,
     audienceRoles: ["staff", "hallkeeper"],
-    riskLevel: "attention",
-    requiresHallkeeperAcknowledgement: true,
+    riskLevel: told ? "attention" : "info",
+    requiresHallkeeperAcknowledgement: told,
     actionPath: `/ops/events/${input.eventId}`,
-    bookingMove: { known, to: input.after, chainId },
+    bookingMove: { known, to: input.after, chainId, told },
   });
+
+  if (input.after.endsAt.getTime() <= input.now.getTime()) {
+    // Over by its new end: kept, told to no one, with the place the floor
+    // last knew, so the move that puts it right is told from there.
+    await change(describeBookingMove({ before: input.before, after: input.after, roomBefore, roomAfter, timeZone: names.timeZone }), false);
+    await dropUnreadBells(db, replaced);
+    return false;
+  }
+
+  // Back where the floor last knew it: nothing to tell if the floor was never
+  // shown the run (it ended in the past untold), or as a quick Undo.
+  const back = (first !== undefined || untold !== null) && samePlace(known, input.after);
+  if (back && (lastShown === null || await quietUndo(db, input, runs))) {
+    await dropUnreadBells(db, replaced);
+    return false;
+  }
+
+  const words = back && lastShown !== null
+    ? describeMoveBack({ before: lastShown, after: input.after, roomBefore: names.room(lastShown.spaceId), roomAfter, timeZone: names.timeZone })
+    : first !== undefined || untold !== null
+      ? describeFoldedMove({ known, after: input.after, roomKnown: names.room(known.spaceId), roomAfter, timeZone: names.timeZone })
+      : describeBookingMove({ before: input.before, after: input.after, roomBefore, roomAfter, timeZone: names.timeZone });
+  await change(words, true);
   await dropUnreadBells(db, replaced);
   return true;
 }

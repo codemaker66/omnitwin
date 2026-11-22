@@ -2881,9 +2881,11 @@ export const eventPlanChanges = pgTable("event_plan_changes", {
   // floor_change_move_places), kept as data so the next move is compared by
   // room id and instant, never by reading the words back: where the floor last
   // knew the booking (before the first move nobody has acknowledged), where
-  // this move put it, and the run of unacknowledged moves it belongs to. NULL
-  // together on every other change. The rooms carry no key: the record stays
-  // true if a room is later removed.
+  // this move put it, the run of unacknowledged moves it belongs to, and
+  // whether the floor was told of it (a move into the past is kept, told to no
+  // one, so the next move is compared with the place the floor last knew).
+  // NULL together on every other change. The rooms carry no key: the record
+  // stays true if a room is later removed.
   moveKnownSpaceId: uuid("move_known_space_id"),
   moveKnownStartsAt: timestamp("move_known_starts_at", { withTimezone: true }),
   moveKnownEndsAt: timestamp("move_known_ends_at", { withTimezone: true }),
@@ -2891,6 +2893,7 @@ export const eventPlanChanges = pgTable("event_plan_changes", {
   moveToStartsAt: timestamp("move_to_starts_at", { withTimezone: true }),
   moveToEndsAt: timestamp("move_to_ends_at", { withTimezone: true }),
   moveChainId: uuid("move_chain_id"),
+  moveTold: boolean("move_told"),
 }, (table) => [
   index("event_plan_changes_event_created_idx").on(table.eventId, table.createdAt),
   index("event_plan_changes_venue_created_idx").on(table.venueId, table.createdAt),
@@ -2898,7 +2901,7 @@ export const eventPlanChanges = pgTable("event_plan_changes", {
   index("event_plan_changes_proposal_idx").on(table.proposalId),
   index("event_plan_changes_handoff_idx").on(table.handoffPackId),
   index("event_plan_changes_booking_move_idx").on(table.sourceId, table.createdAt).where(sql`${table.moveChainId} IS NOT NULL`),
-  check("event_plan_changes_booking_move_places", sql`num_nonnulls(${table.moveKnownSpaceId}, ${table.moveKnownStartsAt}, ${table.moveKnownEndsAt}, ${table.moveToSpaceId}, ${table.moveToStartsAt}, ${table.moveToEndsAt}, ${table.moveChainId}) = 0 OR (num_nulls(${table.moveKnownSpaceId}, ${table.moveKnownStartsAt}, ${table.moveKnownEndsAt}, ${table.moveToSpaceId}, ${table.moveToStartsAt}, ${table.moveToEndsAt}, ${table.moveChainId}) = 0 AND ${table.moveKnownEndsAt} > ${table.moveKnownStartsAt} AND ${table.moveToEndsAt} > ${table.moveToStartsAt} AND ${table.sourceKind} = 'event')`),
+  check("event_plan_changes_booking_move_places", sql`num_nonnulls(${table.moveKnownSpaceId}, ${table.moveKnownStartsAt}, ${table.moveKnownEndsAt}, ${table.moveToSpaceId}, ${table.moveToStartsAt}, ${table.moveToEndsAt}, ${table.moveChainId}, ${table.moveTold}) = 0 OR (num_nulls(${table.moveKnownSpaceId}, ${table.moveKnownStartsAt}, ${table.moveKnownEndsAt}, ${table.moveToSpaceId}, ${table.moveToStartsAt}, ${table.moveToEndsAt}, ${table.moveChainId}, ${table.moveTold}) = 0 AND ${table.moveKnownEndsAt} > ${table.moveKnownStartsAt} AND ${table.moveToEndsAt} > ${table.moveToStartsAt} AND ${table.sourceKind} = 'event')`),
 ]);
 
 export const eventPlanNotifications = pgTable("event_plan_notifications", {

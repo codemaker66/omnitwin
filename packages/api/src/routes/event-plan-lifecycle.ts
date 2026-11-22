@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, count, desc, eq, exists, getTableColumns, inArray, isNotNull, isNull, lte, notExists, or, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, exists, getTableColumns, inArray, isNotNull, isNull, lte, not, notExists, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   AWAITING_CHANGES_PER_EVENT,
@@ -16,6 +17,8 @@ import {
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
+  bookings,
+  eventPhases,
   eventPlanChangeAcknowledgements,
   eventPlanChanges,
   eventPlanNotificationReads,
@@ -108,6 +111,25 @@ function notificationEventScope(
   return or(personal, exists(db.select({ id: events.id }).from(events).where(and(...conditions)))) ?? personal;
 }
 
+/**
+ * A bell whose Diary move was replaced before anyone acknowledged it (folded
+ * into a newer move, taken back, or ended in the past): what it announced no
+ * longer holds. Bells nobody opened are taken away when that happens
+ * (services/booking-move-feed.ts); one somebody opened stays, as the record
+ * of their read, but only for those who opened it. Everyone else in the role
+ * never sees it, and it is never counted unread: the newer move, if any,
+ * rings its own bell.
+ */
+function supersededMoveBell(db: Database): SQL {
+  return exists(db.select({ id: eventPlanChanges.id })
+    .from(eventPlanChanges)
+    .where(and(
+      eq(eventPlanChanges.id, eventPlanNotifications.changeId),
+      isNotNull(eventPlanChanges.moveChainId),
+      eq(eventPlanChanges.requiresHallkeeperAcknowledgement, false),
+    )));
+}
+
 export async function notificationRoutes(server: FastifyInstance, opts: { db: Database }): Promise<void> {
   const { db } = opts;
 
@@ -146,6 +168,7 @@ export async function notificationRoutes(server: FastifyInstance, opts: { db: Da
       .where(and(
         or(...conditions),
         notificationEventScope(db, request),
+        or(isNotNull(eventPlanNotificationReads.id), not(supersededMoveBell(db))),
         query.data.status === "unread" ? isNull(eventPlanNotificationReads.id)
           : query.data.status === "read" ? isNotNull(eventPlanNotificationReads.id) : undefined,
       ))
@@ -231,10 +254,74 @@ export async function notificationRoutes(server: FastifyInstance, opts: { db: Da
         or(...conditions),
         notificationEventScope(db, request),
         isNull(eventPlanNotificationReads.id),
+        not(supersededMoveBell(db)),
       ));
 
     return { data: { unread: row?.unread ?? 0 } };
   });
+}
+
+// What the board's read joins each waiting change to: for a Diary move, its
+// booking as it stands; for anything else, the phase it may name.
+const movedBooking = alias(bookings, "moved_booking");
+const changedPhase = alias(eventPhases, "changed_phase");
+const BOARD_BOOKING = "board_booking";
+const boardBooking = alias(bookings, BOARD_BOOKING);
+
+interface BoardDay { readonly from: Date; readonly to: Date }
+
+/** A place [startsAt, endsAt) on the board's day, as the calendar finds one. */
+function onDay(startsAt: SQLWrapper, endsAt: SQLWrapper, day: BoardDay): SQL {
+  return sql`(${startsAt} < ${day.to.toISOString()}::timestamptz and ${endsAt} > ${day.from.toISOString()}::timestamptz)`;
+}
+
+/** When a phase ends: its start and its minutes, as the calendar reckons it. */
+const phaseEnds = sql`${changedPhase.startsAt} + make_interval(mins => ${changedPhase.durationMinutes})`;
+
+/**
+ * Whether a waiting change has no place of its own on the board, so the board
+ * shows it on every slot of its event (FloorChangeSchema's eventWide): an
+ * edit to the event itself; a Diary move of a booking still an enquiry, which
+ * no board shows; a phase with no room or no time, which the calendar lists
+ * nowhere, or one since removed; and, on the board's day, a phase the day's
+ * bookings do not hold (no booking the board shows of its event in its room
+ * that day). Any other source is placed: a Diary move by its booking, a phase
+ * by its room and time.
+ */
+function changeHasNoPlace(day: BoardDay | null): SQL {
+  const unheldOnDay = day === null ? sql`false` : sql`(${onDay(changedPhase.startsAt, phaseEnds, day)} and not exists (
+    select 1 from ${bookings} as ${sql.identifier(BOARD_BOOKING)}
+    where ${boardBooking.eventId} = ${eventPlanChanges.eventId}
+      and ${boardBooking.spaceId} = ${changedPhase.spaceId}
+      and ${boardBooking.status} = 'active'
+      and ${boardBooking.kind} <> 'prospect'
+      and ${boardBooking.deletedAt} is null
+      and ${onDay(boardBooking.startsAt, boardBooking.endsAt, day)}
+  ))`;
+  return sql`(case
+    when ${eventPlanChanges.sourceId} = ${eventPlanChanges.eventId}::text then true
+    when ${eventPlanChanges.moveChainId} is not null then coalesce(${movedBooking.kind} = 'prospect', false)
+    when ${changedPhase.id} is null then true
+    when ${changedPhase.spaceId} is null or ${changedPhase.startsAt} is null then true
+    else ${unheldOnDay}
+  end)`;
+}
+
+/**
+ * Whether a waiting change is placed on the board's day: a Diary move where
+ * the floor last knew its booking, where the move put it, or where the
+ * booking stands now; a phase by its room's time that day.
+ */
+function changeIsPlacedOn(day: BoardDay): SQL {
+  return sql`(case
+    when ${eventPlanChanges.moveChainId} is not null then (
+      ${onDay(eventPlanChanges.moveKnownStartsAt, eventPlanChanges.moveKnownEndsAt, day)}
+      or ${onDay(eventPlanChanges.moveToStartsAt, eventPlanChanges.moveToEndsAt, day)}
+      or (${movedBooking.deletedAt} is null and ${onDay(movedBooking.startsAt, movedBooking.endsAt, day)})
+    )
+    when ${changedPhase.startsAt} is not null then ${onDay(changedPhase.startsAt, phaseEnds, day)}
+    else false
+  end)`;
 }
 
 export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { db: Database }): Promise<void> {
@@ -245,8 +332,13 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
   // caller's venue holds, the changes to the plan itself (source kind
   // "event": the event, its phases, its bookings moved in the Diary) that need
   // a hallkeeper's acknowledgement and that nobody has acknowledged, newest
-  // first, at most AWAITING_CHANGES_PER_EVENT of each event so a busy one
-  // never crowds another out, and who last acknowledged one of them there.
+  // first, and who last acknowledged one of them there.
+  // With the board's day (from, to), an event's changes are those placed on
+  // that day and those with no place of their own, which the board shows on
+  // every slot of the event (eventWide); another day's are that day's board's
+  // to show. Then at most AWAITING_CHANGES_PER_EVENT of each event, so one busy
+  // event never crowds another out, nor another day this one, and the read
+  // says when an event had more (truncated).
   // Proposal traffic stays on the event-day board: nothing has changed on the
   // floor until the plan does.
   // The floor acknowledges as one, as the event-day board does: once anyone
@@ -264,11 +356,19 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
     const readable = eventRows.filter((row) => canAccessInternalEvent(request.user, row.venueId)).map((row) => row.id);
     if (readable.length === 0) return { data: [] };
 
+    const day = query.data.from === undefined || query.data.to === undefined
+      ? null
+      : { from: new Date(query.data.from), to: new Date(query.data.to) };
     const ranked = db.select({
       ...getTableColumns(eventPlanChanges),
+      eventWide: sql<boolean>`${changeHasNoPlace(day)}`.as("event_wide"),
       place: sql<number>`row_number() over (partition by ${eventPlanChanges.eventId} order by ${eventPlanChanges.createdAt} desc, ${eventPlanChanges.id} desc)`.as("place"),
+      waitingOnEvent: sql<number>`(count(*) over (partition by ${eventPlanChanges.eventId}))::int`.as("waiting_on_event"),
     })
       .from(eventPlanChanges)
+      // A source is named as text (its kind says what it is): matched as text.
+      .leftJoin(movedBooking, and(isNotNull(eventPlanChanges.moveChainId), eq(sql`${movedBooking.id}::text`, eventPlanChanges.sourceId)))
+      .leftJoin(changedPhase, and(isNull(eventPlanChanges.moveChainId), eq(sql`${changedPhase.id}::text`, eventPlanChanges.sourceId)))
       .where(and(
         inArray(eventPlanChanges.eventId, readable),
         eq(eventPlanChanges.sourceKind, "event"),
@@ -276,6 +376,7 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
         notExists(db.select({ id: eventPlanChangeAcknowledgements.id })
           .from(eventPlanChangeAcknowledgements)
           .where(eq(eventPlanChangeAcknowledgements.changeId, eventPlanChanges.id))),
+        day === null ? undefined : or(changeHasNoPlace(day), changeIsPlacedOn(day)),
       ))
       .as("ranked");
     const pending = await db.select().from(ranked)
@@ -300,9 +401,11 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
       data: z.array(EventAwaitingAcknowledgementSchema).parse(readable.map((eventId) => {
         const last = lastByEvent.get(eventId);
         const by = last === undefined ? "" : (last.displayName ?? "").trim() || last.name.trim();
+        const changes = pending.filter((change) => change.eventId === eventId);
         return {
           eventId,
-          changes: pending.filter((change) => change.eventId === eventId).map(serializeFloorChange),
+          changes: changes.map((change) => serializeFloorChange(change, change.eventWide)),
+          truncated: (changes[0]?.waitingOnEvent ?? 0) > changes.length,
           lastAcknowledgement: last === undefined || by === "" ? null : { at: last.at.toISOString(), by: by.slice(0, 200), byUserId: last.userId },
         };
       })),

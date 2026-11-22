@@ -11,7 +11,7 @@
 -- changed" when only its hours had, and a room renamed between two moves did
 -- the same.
 --
--- A booking move now keeps three things beside its words, so the next move is
+-- A booking move now keeps four things beside its words, so the next move is
 -- compared with them by room id and by instant and the words are only ever
 -- written, never read:
 --   move_known_*  where the floor last knew the booking: its place before the
@@ -20,8 +20,12 @@
 --                 move took a function off the day it shows);
 --   move_chain_id the run of unacknowledged moves it belongs to, so a move back
 --                 finds every bell of that run (whether anyone read one) and
---                 when the run began.
--- Every other change leaves all seven NULL. The CHECK keeps them together, on
+--                 when the run began;
+--   move_told     whether the floor was told of the move. A move into the past
+--                 is not news to the floor and rings no bell, but it is kept,
+--                 told to no one, so the next move is still compared with the
+--                 place the floor last knew rather than with the slip.
+-- Every other change leaves all eight NULL. The CHECK keeps them together, on
 -- a change sourced from the event, each place ending after it starts.
 --
 -- The room ids carry no foreign key: they record where the floor knew the
@@ -29,14 +33,21 @@
 -- block the removal or empty the record).
 --
 -- No stored row is a booking move: #361 brings the first with this file, so
--- every row has all seven NULL and passes the CHECK. Additive for the release
+-- every row has all eight NULL and passes the CHECK. Additive for the release
 -- before it, which writes none of the columns.
 --
--- The ALTER takes ACCESS EXCLUSIVE on event_plan_changes once, briefly: the new
--- columns have no default, so no row is rewritten, and the CHECK reads the
--- table under it. The index then holds SHARE while it is built (reads go on;
--- it indexes no row yet). A lock not had within five seconds fails the deploy,
--- leaving the database as it was, rather than queue the change feed behind it.
+-- Locks. The deploy applies every pending migration in ONE transaction
+-- (drizzle-orm 0.45's migrator, node-postgres and Neon alike), so the
+-- ACCESS EXCLUSIVE lock the ALTER takes on event_plan_changes is held until
+-- that whole batch commits, including any later migration in the same
+-- release, and the CREATE INDEX runs inside it. Until then nothing reads or
+-- writes the change feed (event pages, the Day Board, a booking move, Got it).
+-- Each step itself is quick: the new columns have no default, so no row is
+-- rewritten; the CHECK and the index each scan the table once under the lock.
+-- SET LOCAL also lasts to the end of that transaction, so every later
+-- statement in the batch waits at most five seconds for a lock it cannot have
+-- and then fails the deploy, leaving the database as it was, rather than
+-- queue the change feed behind it.
 SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
 ALTER TABLE "event_plan_changes"
@@ -47,12 +58,13 @@ ALTER TABLE "event_plan_changes"
   ADD COLUMN "move_to_starts_at" timestamp with time zone,
   ADD COLUMN "move_to_ends_at" timestamp with time zone,
   ADD COLUMN "move_chain_id" uuid,
+  ADD COLUMN "move_told" boolean,
   ADD CONSTRAINT "event_plan_changes_booking_move_places" CHECK (
     num_nonnulls("move_known_space_id", "move_known_starts_at", "move_known_ends_at",
-      "move_to_space_id", "move_to_starts_at", "move_to_ends_at", "move_chain_id") = 0
+      "move_to_space_id", "move_to_starts_at", "move_to_ends_at", "move_chain_id", "move_told") = 0
     OR (
       num_nulls("move_known_space_id", "move_known_starts_at", "move_known_ends_at",
-        "move_to_space_id", "move_to_starts_at", "move_to_ends_at", "move_chain_id") = 0
+        "move_to_space_id", "move_to_starts_at", "move_to_ends_at", "move_chain_id", "move_told") = 0
       AND "move_known_ends_at" > "move_known_starts_at"
       AND "move_to_ends_at" > "move_to_starts_at"
       AND "source_kind" = 'event'
