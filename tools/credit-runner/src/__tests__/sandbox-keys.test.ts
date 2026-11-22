@@ -648,7 +648,8 @@ describe.runIf(process.platform === "win32")("setup-keys.ps1's key folder", () =
       await removeLink(viaJunction);
       await removeLink(outOfRepo);
     }
-  }, 120_000);
+    // Eight PowerShell runs, one after another: on a loaded machine they have taken longer than two minutes.
+  }, 300_000);
 
   it("lets a folder outside every work tree through to the prompt", async () => {
     const root = await tempDir("credit-runner-setup-keys-");
