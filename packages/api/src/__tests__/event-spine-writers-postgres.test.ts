@@ -13,10 +13,13 @@ import {
   type EnquiryStatus,
 } from "@omnitwin/types";
 import { bookingRoutes } from "../routes/bookings.js";
+import { crmRoutes } from "../routes/crm.js";
 import { enquiryRoutes } from "../routes/enquiries.js";
+import { opportunityRoutes } from "../routes/opportunities.js";
 import { quoteRoutes } from "../routes/quotes.js";
 import { enquiryEventNaming } from "../services/enquiry-event.js";
 import { createEventFor } from "../services/event-binding.js";
+import { readSpineInvariant, spineInvariantHolds } from "../services/event-spine-invariant.js";
 import {
   deal as dealIn,
   enquiry as enquiryIn,
@@ -47,6 +50,13 @@ import {
 // reaches one: the link stays empty and the join lists the enquiry for a
 // person. The join is the outside reference, so the cases that turn on it run
 // the act, then the join, and assert both.
+//
+// A deal takes its event in the transaction that makes it (ruling R28): as
+// the join's step 2 decides a deal, its enquiry's event; else, when its
+// enquiry may become one, the one event the enquiry's records reach, or none
+// while they reach several (the deal is still made), or one made for the
+// enquiry and the deal together; else, for a draft, a request or no
+// enquiry, one of its own. An event has one open deal.
 //
 // The suite runs on a throwaway database of its own (openSpineDatabase); the
 // shared platform database is only the door to the cluster.
@@ -88,6 +98,15 @@ function hygiene(ownerUserId: string) {
 
 const DecisionReplySchema = z.object({ data: z.object({ eventId: z.uuid().nullable() }) });
 
+/** A deal as the deal routes answer it (the row, whole). */
+const DealSchema = z.object({ id: z.uuid(), eventId: z.uuid().nullable(), stage: z.string(), sourceEnquiryId: z.uuid().nullable() });
+type Deal = z.infer<typeof DealSchema>;
+/** POST /crm/from-enquiry/:id and POST /opportunities answer the deal under data.opportunity. */
+const MadeDealSchema = z.object({ data: z.object({ opportunity: DealSchema }) });
+
+const OPEN_DEAL_REFUSAL = "This event already has an open deal. Close that one first, or make this deal without the enquiry.";
+const REOPEN_REFUSAL = "This deal's event already has another open deal. Close that one first.";
+
 interface EventRowRead {
   readonly id: string;
   readonly name: string;
@@ -114,6 +133,8 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
     await server.register(enquiryRoutes, { db: spine.db, prefix: "/enquiries" });
     await server.register(bookingRoutes, { db: spine.db, prefix: "/bookings" });
     await server.register(quoteRoutes, { db: spine.db, prefix: "/quotes" });
+    await server.register(crmRoutes, { db: spine.db, prefix: "/crm" });
+    await server.register(opportunityRoutes, { db: spine.db, prefix: "/opportunities" });
     await server.ready();
   }, 180_000);
   afterAll(async () => { await server?.close(); await spine?.close(); });
@@ -198,17 +219,17 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
     await pool.query("SELECT * FROM spine_join_old_records()");
   }
 
-  async function questionsOn(enquiryId: string): Promise<OpenQuestion[]> {
+  async function questionsOn(subjectId: string, kind: "enquiry" | "opportunity" = "enquiry"): Promise<OpenQuestion[]> {
     return (await pool.query<OpenQuestion>(
-      "SELECT reason, resolved_at FROM event_link_reviews WHERE subject_kind = 'enquiry' AND subject_id = $1 ORDER BY created_at",
-      [enquiryId],
+      "SELECT reason, resolved_at FROM event_link_reviews WHERE subject_kind = $2 AND subject_id = $1 ORDER BY created_at",
+      [subjectId, kind],
     )).rows;
   }
 
-  /** How many joins the join of old records has recorded for the enquiry. */
-  async function joinsRecordedFor(enquiryId: string): Promise<number> {
+  /** How many joins the join of old records has recorded for the enquiry (or the deal). */
+  async function joinsRecordedFor(subjectId: string, kind: "enquiry" | "opportunity" = "enquiry"): Promise<number> {
     const [row] = (await pool.query<{ count: number }>(
-      "SELECT count(*)::int AS count FROM event_link_joins WHERE subject_kind = 'enquiry' AND subject_id = $1", [enquiryId])).rows;
+      "SELECT count(*)::int AS count FROM event_link_joins WHERE subject_kind = $2 AND subject_id = $1", [subjectId, kind])).rows;
     return row?.count ?? 0;
   }
 
@@ -807,5 +828,372 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
     expect({ event_type: madeHere.event_type, fixture_source: madeHere.fixture_source })
       .toEqual({ event_type: madeByJoin.event_type, fixture_source: madeByJoin.fixture_source });
     expect(madeHere.event_type).toBe("Dinner dance");
+  });
+
+  // ---------------------------------------------------------------------------
+  // A deal takes its event when it is made (ruling R28): POST /crm/from-enquiry
+  // and POST /opportunities decide as the join's step 2 decides a deal, and the
+  // edit (PATCH /opportunities/:id) gives a newly named enquiry the deal's event.
+
+  describe("a deal takes its event when it is made", () => {
+    const fromEnquiry = (v: SpineVenue, enquiryId: string): Promise<LightMyRequestResponse> =>
+      post(v.admin, `/crm/from-enquiry/${enquiryId}`);
+    const createDeal = (
+      v: SpineVenue,
+      body: { readonly title: string; readonly sourceEnquiryId?: string; readonly eventType?: string },
+    ): Promise<LightMyRequestResponse> => post(v.admin, "/opportunities", { venueId: v.venueId, ...body });
+    const patchDeal = (headers: { authorization: string }, dealId: string, body: Record<string, unknown>): Promise<LightMyRequestResponse> =>
+      server.inject({ method: "PATCH", url: `/opportunities/${dealId}`, headers, payload: body });
+
+    /** The venue's coordinator, as a platform admin (who may move a deal to any stage). */
+    function platformAdmin(actor: SpineActor): { authorization: string } {
+      return { authorization: `Bearer ${JSON.stringify({ ...actor, platformRole: "admin", email: `${actor.id}@event-spine.invalid` })}` };
+    }
+
+    /** The deal a create answered, which must be 201. */
+    function made(response: LightMyRequestResponse): Deal {
+      expect(response.statusCode, response.body).toBe(201);
+      return MadeDealSchema.parse(response.json<unknown>()).data.opportunity;
+    }
+
+    async function dealRow(dealId: string): Promise<{ readonly event_id: string | null; readonly stage: string }> {
+      const [row] = (await pool.query<{ event_id: string | null; stage: string }>(
+        "SELECT event_id, stage FROM opportunities WHERE id = $1", [dealId])).rows;
+      if (row === undefined) throw new Error("Missing deal");
+      return row;
+    }
+
+    async function dealEvent(dealId: string): Promise<string | null> {
+      return (await dealRow(dealId)).event_id;
+    }
+
+    async function dealsOf(enquiryId: string): Promise<number> {
+      const [row] = (await pool.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM opportunities WHERE source_enquiry_id = $1", [enquiryId])).rows;
+      return row?.count ?? 0;
+    }
+
+    function known(eventId: string | null): string {
+      if (eventId === null) throw new Error("No event");
+      return eventId;
+    }
+
+    /** The join of old records records nothing for these, and lists none of them. */
+    async function joinLeavesAlone(records: readonly (readonly [string, "enquiry" | "opportunity"])[]): Promise<void> {
+      for (const [id, kind] of records) {
+        expect(await questionsOn(id, kind), `${kind} ${id}`).toEqual([]);
+        expect(await joinsRecordedFor(id, kind), `${kind} ${id}`).toBe(0);
+      }
+    }
+
+    // Ruling R28 first: the writer decides as the join's step 2.
+
+    it("a deal made from an enquiry whose bookings sit in two events is still made, with no event, and makes none; the join lists the enquiry and the deal waits", async () => {
+      const v = await venue("deal, two events");
+      const enquiryId = await enquiryInTwoEvents(v);
+      const before = await eventCount(v.venueId);
+
+      const deal = made(await fromEnquiry(v, enquiryId));
+      expect(deal.eventId).toBeNull();
+      expect(await dealEvent(deal.id)).toBeNull();
+      expect(await enquiryEvent(enquiryId)).toBeNull();
+      expect(await eventCount(v.venueId)).toBe(before);
+
+      await joinOldRecords();
+      expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+      await joinLeavesAlone([[deal.id, "opportunity"]]);
+      expect(await dealEvent(deal.id)).toBeNull();
+      expect(await enquiryEvent(enquiryId)).toBeNull();
+      expect(await eventCount(v.venueId)).toBe(before);
+    });
+
+    it("a deal made from an enquiry whose one booking sits in an event takes that event with its enquiry, and makes none; the join changes nothing", async () => {
+      const v = await venue("deal, one reached event");
+      const enquiryId = await enquiry(v);
+      const reached = await datelessEvent(v.venueId, "Where the dates are");
+      await interestIn(v, enquiryId, reached, v.rooms.saloon);
+      const before = await eventCount(v.venueId);
+
+      const deal = made(await fromEnquiry(v, enquiryId));
+      expect(deal.eventId).toBe(reached);
+      expect(await enquiryEvent(enquiryId)).toBe(reached);
+      expect(await eventCount(v.venueId)).toBe(before);
+
+      await joinOldRecords();
+      await joinLeavesAlone([[enquiryId, "enquiry"], [deal.id, "opportunity"]]);
+      expect(await dealEvent(deal.id)).toBe(reached);
+      expect(await enquiryEvent(enquiryId)).toBe(reached);
+      expect(await eventCount(v.venueId)).toBe(before);
+    });
+
+    it("a deal made from a closed enquiry that reaches no event gets one event with its enquiry, as the join's step 2 makes it; the join changes nothing", async () => {
+      const v = await venue("deal, closed enquiry");
+      const rejected = await enquiry(v, { state: "rejected" });
+      const withdrawn = await enquiry(v, { state: "withdrawn" });
+      // Neither route refuses a closed enquiry: the press on it, and a deal that names it.
+      const pressed = made(await fromEnquiry(v, rejected));
+      const named = made(await createDeal(v, { title: "Second thoughts", sourceEnquiryId: withdrawn }));
+
+      for (const [deal, enquiryId] of [[pressed, rejected], [named, withdrawn]] as const) {
+        const eventId = known(deal.eventId);
+        expect(await enquiryEvent(enquiryId)).toBe(eventId);
+        // Made for the enquiry, so named as an enquiry's event is named.
+        expect(await eventRow(eventId)).toMatchObject({
+          name: "Fixture enquirer — Wedding", client_name: "Fixture enquirer", event_type: "wedding",
+          status: "draft", starts_at: null, guest_count: 0, created_by: v.admin.id,
+        });
+        expect(await phaseCount(eventId)).toBe(DEFAULT_EVENT_PHASE_TEMPLATE.length);
+      }
+      expect(await eventCount(v.venueId)).toBe(2);
+
+      await joinOldRecords();
+      await joinLeavesAlone([[rejected, "enquiry"], [pressed.id, "opportunity"], [withdrawn, "enquiry"], [named.id, "opportunity"]]);
+      expect(await enquiryEvent(rejected)).toBe(pressed.eventId);
+      expect(await enquiryEvent(withdrawn)).toBe(named.eventId);
+      expect(await eventCount(v.venueId)).toBe(2);
+    });
+
+    it("a deal made from a draft enquiry, or from a request that books nothing, has an event of its own and the enquiry none; the join changes nothing", async () => {
+      const v = await venue("deal, draft and request");
+      const draft = await enquiry(v, { state: "draft" });
+      const request = await enquiry(v, { eventType: VENUE_ACCESS_ENQUIRY_TYPE });
+
+      const fromDraft = made(await fromEnquiry(v, draft));
+      const fromRequest = made(await createDeal(v, { title: "Access visit", sourceEnquiryId: request }));
+      // Named by the deal, its client the enquiry's and its occasion the deal's, else the enquiry's, as the join makes one.
+      expect(await eventRow(fromDraft.eventId)).toMatchObject({ name: "Wedding — Fixture enquirer", client_name: "Fixture enquirer", event_type: "wedding" });
+      expect(await eventRow(fromRequest.eventId)).toMatchObject({ name: "Access visit", client_name: "Fixture enquirer", event_type: VENUE_ACCESS_ENQUIRY_TYPE });
+      expect(await enquiryEvent(draft)).toBeNull();
+      expect(await enquiryEvent(request)).toBeNull();
+      expect(await eventCount(v.venueId)).toBe(2);
+
+      await joinOldRecords();
+      await joinLeavesAlone([[draft, "enquiry"], [fromDraft.id, "opportunity"], [request, "enquiry"], [fromRequest.id, "opportunity"]]);
+      expect(await enquiryEvent(draft)).toBeNull();
+      expect(await enquiryEvent(request)).toBeNull();
+      expect(await dealEvent(fromDraft.id)).toBe(fromDraft.eventId);
+      expect(await dealEvent(fromRequest.id)).toBe(fromRequest.eventId);
+      expect(await eventCount(v.venueId)).toBe(2);
+    });
+
+    // The brief's cases.
+
+    it("a deal made from an enquiry takes the enquiry's event; from an enquiry with none, one event for both", async () => {
+      const v = await venue("deal, the enquiry's event");
+      const openedEnquiry = await enquiry(v);
+      const itsEvent = opened(await openAsEvent(v.admin, openedEnquiry)).eventId;
+      const fresh = await enquiry(v);
+
+      const onOpened = made(await fromEnquiry(v, openedEnquiry));
+      expect(onOpened.eventId).toBe(itsEvent);
+      expect(await enquiryEvent(openedEnquiry)).toBe(itsEvent);
+      const onFresh = made(await fromEnquiry(v, fresh));
+      expect(onFresh.eventId).not.toBeNull();
+      expect(onFresh.eventId).not.toBe(itsEvent);
+      expect(await enquiryEvent(fresh)).toBe(onFresh.eventId);
+      expect(await eventCount(v.venueId)).toBe(2);
+      const counts = await readSpineInvariant(spine.db, v.venueId);
+      expect(spineInvariantHolds(counts), JSON.stringify(counts)).toBe(true);
+    });
+
+    it("a deal with no enquiry gets an event of its own, named by the deal", async () => {
+      const v = await venue("deal, no enquiry");
+      const deal = made(await createDeal(v, { title: "Burns supper for the Gillies", eventType: "Burns supper" }));
+      const eventId = known(deal.eventId);
+      expect(await eventRow(eventId)).toMatchObject({
+        name: "Burns supper for the Gillies", client_name: null, event_type: "Burns supper",
+        status: "draft", starts_at: null, guest_count: 0, created_by: v.admin.id,
+      });
+      expect(await phaseCount(eventId)).toBe(DEFAULT_EVENT_PHASE_TEMPLATE.length);
+      expect(await eventCount(v.venueId)).toBe(1);
+
+      await joinOldRecords();
+      await joinLeavesAlone([[deal.id, "opportunity"]]);
+      expect(await eventCount(v.venueId)).toBe(1);
+    });
+
+    it("a second open deal on the same event is refused, names the first, and writes nothing", async () => {
+      const v = await venue("second open deal");
+      const enquiryId = await enquiry(v);
+      const first = made(await fromEnquiry(v, enquiryId));
+      const again = await createDeal(v, { title: "Second", sourceEnquiryId: enquiryId });
+      expect(again.statusCode, again.body).toBe(409);
+      expect(again.json<unknown>()).toEqual({ error: OPEN_DEAL_REFUSAL, code: "EVENT_HAS_OPEN_DEAL", dealId: first.id });
+      expect(await dealsOf(enquiryId)).toBe(1);
+      expect(await eventCount(v.venueId)).toBe(1);
+    });
+
+    it("a lost deal does not stand in the way of a new one, on the same event; a platform admin reopening the lost one beside it is refused plainly", async () => {
+      const v = await venue("lost, then a new deal");
+      const enquiryId = await enquiry(v);
+      const lost = made(await fromEnquiry(v, enquiryId));
+      const closed = await patchDeal(bearer(v.admin), lost.id, { stage: "lost", note: "Chose another date" });
+      expect(closed.statusCode, closed.body).toBe(200);
+
+      const next = made(await createDeal(v, { title: "Second try", sourceEnquiryId: enquiryId }));
+      expect(next.eventId).toBe(lost.eventId);
+      expect(await eventCount(v.venueId)).toBe(1);
+
+      // A platform admin may move a deal to any stage, but not open a second deal on an event.
+      const reopened = await patchDeal(platformAdmin(v.admin), lost.id, { stage: "new" });
+      expect(reopened.statusCode, reopened.body).toBe(409);
+      expect(reopened.json<unknown>()).toEqual({ error: REOPEN_REFUSAL, code: "EVENT_HAS_OPEN_DEAL", dealId: next.id });
+      expect(await dealRow(lost.id)).toEqual({ event_id: lost.eventId, stage: "lost" });
+    });
+
+    it("changing a deal's enquiry leaves its event where it was; the new enquiry takes it when it had none, keeps its own when it had one, and the count holds", async () => {
+      const v = await venue("deal changes enquiry");
+      const asCoordinator = bearer(v.admin);
+
+      // An enquiry with no event takes the deal's.
+      const deal = made(await createDeal(v, { title: "Ceilidh" }));
+      const bare = await enquiry(v);
+      const moved = await patchDeal(asCoordinator, deal.id, { sourceEnquiryId: bare });
+      expect(moved.statusCode, moved.body).toBe(200);
+      expect(await dealEvent(deal.id)).toBe(deal.eventId);
+      expect(await enquiryEvent(bare)).toBe(deal.eventId);
+
+      // One that already has its event keeps it; the deal keeps its own.
+      const other = made(await createDeal(v, { title: "Dinner" }));
+      const owned = await enquiry(v);
+      const ownEvent = opened(await openAsEvent(v.admin, owned)).eventId;
+      const named = await patchDeal(asCoordinator, other.id, { sourceEnquiryId: owned });
+      expect(named.statusCode, named.body).toBe(200);
+      expect(await dealEvent(other.id)).toBe(other.eventId);
+      expect(await enquiryEvent(owned)).toBe(ownEvent);
+
+      // A draft never takes one.
+      const third = made(await createDeal(v, { title: "Supper" }));
+      const draft = await enquiry(v, { state: "draft" });
+      expect((await patchDeal(asCoordinator, third.id, { sourceEnquiryId: draft })).statusCode).toBe(200);
+      expect(await enquiryEvent(draft)).toBeNull();
+      expect(await dealEvent(third.id)).toBe(third.eventId);
+
+      const counts = await readSpineInvariant(spine.db, v.venueId);
+      expect(spineInvariantHolds(counts), JSON.stringify(counts)).toBe(true);
+      await joinOldRecords();
+      await joinLeavesAlone([[bare, "enquiry"], [owned, "enquiry"], [draft, "enquiry"],
+        [deal.id, "opportunity"], [other.id, "opportunity"], [third.id, "opportunity"]]);
+    });
+
+    it("changing a deal's enquiry to one whose own records reach another event leaves that enquiry's link empty for the join's list", async () => {
+      const v = await venue("deal names a reached enquiry");
+      const deal = made(await createDeal(v, { title: "Ceilidh" }));
+      const elsewhere = await enquiry(v);
+      await interestIn(v, elsewhere, await datelessEvent(v.venueId, "Where its dates are"), v.rooms.saloon);
+
+      const moved = await patchDeal(bearer(v.admin), deal.id, { sourceEnquiryId: elsewhere });
+      expect(moved.statusCode, moved.body).toBe(200);
+      expect(await dealEvent(deal.id)).toBe(deal.eventId);
+      expect(await enquiryEvent(elsewhere)).toBeNull();
+
+      await joinOldRecords();
+      expect(await questionsOn(elsewhere)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+      expect(await enquiryEvent(elsewhere)).toBeNull();
+      expect(await dealEvent(deal.id)).toBe(deal.eventId);
+    });
+
+    it("an edit naming an enquiry takes the enquiry before it writes the deal", async () => {
+      const v = await venue("edit lock order");
+      const deal = made(await createDeal(v, { title: "Ceilidh" }));
+      const enquiryId = await enquiry(v);
+      let moving: Promise<LightMyRequestResponse> | undefined;
+      let waiting: readonly { readonly query: string }[] = [];
+      try {
+        await withLockedEnquiry(enquiryId, "NO KEY UPDATE", async (client) => {
+          moving = patchDeal(bearer(v.admin), deal.id, { sourceEnquiryId: enquiryId });
+          await blocked(1);
+          waiting = (await pool.query<{ query: string }>(
+            "SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'", [APPLICATION_NAME])).rows;
+          // The deal row is not held while the edit waits for the enquiry.
+          await client.query("SELECT id FROM opportunities WHERE id = $1 FOR UPDATE NOWAIT", [deal.id]);
+          await client.query("COMMIT");
+        });
+      } finally {
+        // Every request started is settled before the case ends, on every path.
+        await Promise.allSettled([moving]);
+      }
+      expect(waiting).toHaveLength(1);
+      expect(waiting[0]?.query).toMatch(/from "enquiries" .* for no key update/u);
+      const response = await moving;
+      expect(response?.statusCode, response?.body).toBe(200);
+      expect(await enquiryEvent(enquiryId)).toBe(deal.eventId);
+    }, 30_000);
+
+    it("two deals pressed at once for one enquiry: one is made, the other is refused naming it, never a 500", async () => {
+      const v = await venue("two deals at once");
+      const enquiryId = await enquiry(v);
+      let first: Promise<LightMyRequestResponse> | undefined;
+      let second: Promise<LightMyRequestResponse> | undefined;
+      try {
+        // Both wait on the enquiry, the first ahead of the second, then run in that order.
+        await withLockedEnquiry(enquiryId, "NO KEY UPDATE", async (client) => {
+          first = createDeal(v, { title: "First press", sourceEnquiryId: enquiryId });
+          await blocked(1);
+          second = createDeal(v, { title: "Second press", sourceEnquiryId: enquiryId });
+          await blocked(2);
+          await client.query("COMMIT");
+        });
+      } finally {
+        await Promise.allSettled([first, second]);
+      }
+      if (first === undefined || second === undefined) throw new Error("A press never started");
+      const winner = made(await first);
+      const refused = await second;
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(refused.json<unknown>()).toEqual({ error: OPEN_DEAL_REFUSAL, code: "EVENT_HAS_OPEN_DEAL", dealId: winner.id });
+      expect(await dealsOf(enquiryId)).toBe(1);
+      expect(await enquiryEvent(enquiryId)).toBe(winner.eventId);
+      expect(await eventCount(v.venueId)).toBe(1);
+
+      // At the same moment, five rounds: one made, the other refused naming it, never a 500.
+      for (let round = 0; round < 5; round += 1) {
+        const pressedOn = await enquiry(v);
+        const answers = await Promise.all([
+          createDeal(v, { title: "One press", sourceEnquiryId: pressedOn }),
+          createDeal(v, { title: "The other press", sourceEnquiryId: pressedOn }),
+        ]);
+        expect(answers.map((answer) => answer.statusCode).sort(), answers.map((answer) => answer.body).join("\n")).toEqual([201, 409]);
+        const [kept] = answers.filter((answer) => answer.statusCode === 201).map(made);
+        const [turnedAway] = answers.filter((answer) => answer.statusCode === 409);
+        expect(turnedAway?.json<unknown>()).toEqual({ error: OPEN_DEAL_REFUSAL, code: "EVENT_HAS_OPEN_DEAL", dealId: kept?.id });
+        expect(await dealsOf(pressedOn)).toBe(1);
+      }
+    }, 60_000);
+
+    it("a deal whose event is given an open deal by another writer while it is made is refused naming that deal, never a 500", async () => {
+      const v = await venue("open deal at the same moment");
+      const enquiryId = await enquiry(v);
+      const eventId = opened(await openAsEvent(v.admin, enquiryId)).eventId;
+      const writer = await pool.connect();
+      let pressed: Promise<LightMyRequestResponse> | undefined;
+      let theirs: string | undefined;
+      let waiting: readonly { readonly query: string }[] = [];
+      try {
+        await writer.query("BEGIN");
+        theirs = (await writer.query<{ id: string }>(
+          "INSERT INTO opportunities (venue_id, title, stage, event_id) VALUES ($1, 'Another writer''s deal', 'new', $2) RETURNING id",
+          [v.venueId, eventId])).rows[0]?.id;
+        pressed = createDeal(v, { title: "This press", sourceEnquiryId: enquiryId });
+        // It sees no open deal on the event, and waits at its insert on the one-open-deal index.
+        await blocked(1);
+        waiting = (await pool.query<{ query: string }>(
+          "SELECT query FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'", [APPLICATION_NAME])).rows;
+        await writer.query("COMMIT");
+      } catch (error) {
+        await writer.query("ROLLBACK");
+        await pressed?.catch(() => undefined);
+        throw error;
+      } finally {
+        writer.release();
+      }
+      const response = await pressed;
+      expect(theirs).toEqual(expect.any(String));
+      expect(waiting).toHaveLength(1);
+      expect(waiting[0]?.query).toMatch(/^insert into "opportunities"/iu);
+      expect(response?.statusCode, response?.body).toBe(409);
+      expect(response?.json<unknown>()).toEqual({ error: OPEN_DEAL_REFUSAL, code: "EVENT_HAS_OPEN_DEAL", dealId: theirs });
+      expect(await dealsOf(enquiryId)).toBe(0);
+    }, 30_000);
   });
 });

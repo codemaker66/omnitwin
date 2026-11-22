@@ -368,9 +368,10 @@ export async function readEnquiryReach(
 /**
  * Whether anything of the enquiry's own (readEnquiryReach) reaches a live
  * event of its venue other than `eventId`. When one does, the join would list
- * the enquiry rather than choose, so the bind does not choose for it either.
+ * the enquiry rather than choose, so the bind does not choose for it either;
+ * nor does a deal's edit that names the enquiry (services/event-links.ts).
  */
-async function enquiryReachesAnotherEvent(
+export async function enquiryReachesAnotherEvent(
   conn: BindConn,
   enquiry: { readonly id: string; readonly venueId: string; readonly configurationId: string | null },
   eventId: string,

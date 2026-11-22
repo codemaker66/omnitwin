@@ -37,6 +37,10 @@ import {
 //     one event is its event;
 //   - else, nothing reaching any event, a new event for an open enquiry;
 //     a closed one (CLOSED_ENQUIRY_STATES) gets none, as the join makes none.
+//     (A new open deal made from a closed enquiry is the one exception: the
+//     join's step 2 makes the event for the enquiry and the deal together,
+//     and so does eventForNewDeal in services/event-links.ts, which shares
+//     eventReached and makeEnquiryEvent below.)
 // It never chooses among several events and never makes one while something
 // of the enquiry's own reaches one: the link stays as it was and the join
 // lists the enquiry for a person. Joining is never a guess.
@@ -102,23 +106,66 @@ export function enquiryEventNaming(enquiry: {
   return { title, clientName };
 }
 
-type Decision =
-  | { readonly kind: "join"; readonly eventId: string }
-  | { readonly kind: "make" }
-  | { readonly kind: "refuse"; readonly code: "ENQUIRY_REACHES_SEVERAL_EVENTS" | "ENQUIRY_CLOSED" };
+/** What an enquiry's own records reach (eventReached). */
+export type EnquiryReachDecision =
+  /** One live event: the enquiry joins it. */
+  | { readonly kind: "one"; readonly eventId: string }
+  /** Several, or paths that disagree: a person chooses (the join lists it). */
+  | { readonly kind: "several" }
+  /** Nothing reaches any event. */
+  | { readonly kind: "none" };
 
-const SEVERAL: Decision = { kind: "refuse", code: "ENQUIRY_REACHES_SEVERAL_EVENTS" };
+const SEVERAL: EnquiryReachDecision = { kind: "several" };
 
-/** Step 1 of the join for an enquiry with no live link, in the join's order. */
-function decide(reach: EnquiryReach, open: boolean): Decision {
+/**
+ * Step 1 of the join for an enquiry with no live link, in the join's order:
+ * which event, if any, its own records reach. Whether a new event is made
+ * when none is reached is each caller's rule: here, only for an open
+ * enquiry; for an enquiry a new open deal is made from (eventForNewDeal in
+ * services/event-links.ts), always, as the join's step 2 makes one.
+ */
+export function eventReached(reach: EnquiryReach): EnquiryReachDecision {
   const [held] = reach.held;
   // The join's reaches_many_events, then its paths_disagree.
   if (reach.held.length > 1) return SEVERAL;
-  if (held !== undefined) return reach.plan.some((id) => id !== held) ? SEVERAL : { kind: "join", eventId: held };
+  if (held !== undefined) return reach.plan.some((id) => id !== held) ? SEVERAL : { kind: "one", eventId: held };
   const [planned] = reach.plan;
   if (reach.plan.length > 1) return SEVERAL;
-  if (planned !== undefined) return { kind: "join", eventId: planned };
-  return open ? { kind: "make" } : { kind: "refuse", code: "ENQUIRY_CLOSED" };
+  if (planned !== undefined) return { kind: "one", eventId: planned };
+  return { kind: "none" };
+}
+
+/** What an event made for an enquiry is made from. */
+export interface EnquiryForEvent {
+  readonly id: string;
+  readonly venueId: string;
+  readonly name: string;
+  readonly email: string;
+  readonly eventType: string | null;
+  readonly fixtureSource: string | null;
+}
+
+/**
+ * A new event for the enquiry, and the enquiry's link to it: named as its
+ * first hold would be titled (enquiryEventNaming), with its occasion and
+ * fixture marker, and the house's default phases (createEventFor). Call with
+ * the enquiry row locked, once nothing of its own reaches an event.
+ */
+export async function makeEnquiryEvent(conn: BindConn, enquiry: EnquiryForEvent, byUserId: string | null): Promise<string> {
+  const naming = enquiryEventNaming(enquiry);
+  const eventId = await createEventFor(conn, {
+    venueId: enquiry.venueId,
+    // A title that is only the enquiry's email cut short names nothing (eventNameFor sees any other address).
+    title: titleWithoutEnquiryEmail(naming.title, enquiry.email),
+    eventType: enquiry.eventType,
+    startsAt: null,
+    endsAt: null,
+    createdBy: byUserId,
+    clientName: naming.clientName,
+    fixtureSource: enquiry.fixtureSource,
+  });
+  await setEnquiryEvent(conn, enquiry.id, eventId);
+  return eventId;
 }
 
 /**
@@ -159,24 +206,13 @@ export async function ensureEnquiryEvent(conn: BindConn, enquiryId: string, byUs
     if (own !== undefined) return { ok: true, eventId: own.id, created: false };
   }
 
-  const decision = decide(await readEnquiryReach(conn, enquiry), !CLOSED_STATES.has(state));
-  if (decision.kind === "refuse") return { ok: false, code: decision.code };
-  if (decision.kind === "join") {
-    await setEnquiryEvent(conn, enquiry.id, decision.eventId);
-    return { ok: true, eventId: decision.eventId, created: false };
+  const reached = eventReached(await readEnquiryReach(conn, enquiry));
+  if (reached.kind === "several") return { ok: false, code: "ENQUIRY_REACHES_SEVERAL_EVENTS" };
+  if (reached.kind === "one") {
+    await setEnquiryEvent(conn, enquiry.id, reached.eventId);
+    return { ok: true, eventId: reached.eventId, created: false };
   }
-  const naming = enquiryEventNaming(enquiry);
-  const eventId = await createEventFor(conn, {
-    venueId: enquiry.venueId,
-    // A title that is only the enquiry's email cut short names nothing (eventNameFor sees any other address).
-    title: titleWithoutEnquiryEmail(naming.title, enquiry.email),
-    eventType: enquiry.eventType,
-    startsAt: null,
-    endsAt: null,
-    createdBy: byUserId,
-    clientName: naming.clientName,
-    fixtureSource: enquiry.fixtureSource,
-  });
-  await setEnquiryEvent(conn, enquiry.id, eventId);
-  return { ok: true, eventId, created: true };
+  // Nothing reaches any event: a closed enquiry gets none, as the join's step 1 makes none.
+  if (CLOSED_STATES.has(state)) return { ok: false, code: "ENQUIRY_CLOSED" };
+  return { ok: true, eventId: await makeEnquiryEvent(conn, enquiry, byUserId), created: true };
 }

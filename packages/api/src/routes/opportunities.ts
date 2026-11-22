@@ -32,6 +32,18 @@ import { paginate } from "../utils/pagination.js";
 import { canManageCommercial } from "../utils/query.js";
 import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import { nextActionForStage } from "../services/deal-next-action.js";
+import {
+  EVENT_HAS_OPEN_DEAL,
+  EventHasOpenDeal,
+  REOPENED_BESIDE_OPEN_DEAL,
+  enquiryFollowsDeal,
+  eventForNewDeal,
+  isOpenDealConflict,
+  lockDealEnquiry,
+  openDealAnswer,
+  openDealBeside,
+  openDealRefusedFor,
+} from "../services/event-links.js";
 import type { PeopleConn, PeopleTx } from "../services/people-records.js";
 import { mergedPerson } from "./people.js";
 import { lostToRefusal, recordLoss } from "../services/competitor-watch-data.js";
@@ -225,11 +237,25 @@ export async function opportunityRoutes(
     type Created =
       | { kind: "refused"; refusal: LinkRefusal }
       | { kind: "created"; opportunity: typeof opportunities.$inferSelect; task: typeof followUpTasks.$inferSelect | null };
+    // The event the deal was to join, for naming an open deal the
+    // one-open-deal index met after the transaction has rolled back.
+    const joining: { eventId: string | null } = { eventId: null };
     const write = async (tx: PeopleTx): Promise<Created> => {
-      // The person first (refuseLinks → holdContact), then the deal: see
-      // holdContact for the lock order.
+      // The person first (refuseLinks → holdContact), then the enquiry
+      // (eventForNewDeal), then the deal: see holdContact for the lock order.
       const refusal = await refuseLinks(tx, parsed.data.venueId, parsed.data);
       if (refusal !== null) return { kind: "refused", refusal };
+      // Its event, in this transaction (services/event-links.ts); a refusal
+      // rolls the whole write back.
+      const linked = await eventForNewDeal(tx, {
+        venueId: parsed.data.venueId,
+        sourceEnquiryId: parsed.data.sourceEnquiryId ?? null,
+        title: parsed.data.title,
+        eventType: parsed.data.eventType ?? null,
+        createdBy: request.user.id,
+      });
+      if (!linked.ok) throw new EventHasOpenDeal(linked.dealId);
+      joining.eventId = linked.eventId;
       const nextAction = parsed.data.nextAction ?? nextActionForStage("new");
       const [opportunity] = await tx.insert(opportunities).values({
         venueId: parsed.data.venueId,
@@ -239,6 +265,7 @@ export async function opportunityRoutes(
         ownerUserId: request.user.id,
         title: parsed.data.title,
         stage: "new",
+        eventId: linked.eventId,
         eventType: parsed.data.eventType ?? null,
         preferredDate: parsed.data.preferredDate ?? null,
         guestCount: parsed.data.guestCount ?? null,
@@ -272,6 +299,12 @@ export async function opportunityRoutes(
     try {
       created = await db.transaction(write);
     } catch (error) {
+      // The deal's event already has an open deal: refused by the check, or,
+      // when another writer put one there at the same moment, by the index.
+      const openDeal = await openDealRefusedFor(db, error, joining.eventId);
+      if (openDeal !== undefined) {
+        return reply.status(409).send(openDeal === null ? RETRY_ANSWER : openDealAnswer(EVENT_HAS_OPEN_DEAL, openDeal));
+      }
       // A deadlock or serialisation failure rolled the whole write back.
       const pgCode = lockConflictOf(error);
       if (pgCode === null) throw error;
@@ -502,6 +535,11 @@ export async function opportunityRoutes(
       const refusal = await refuseLinks(tx, opportunity.venueId, parsed.data);
       if (refusal !== null) return { kind: "refused", refusal };
       if (stageRefusal !== null) return { kind: "stage_refused", refusal: stageRefusal };
+      // An enquiry the edit names next, FOR NO KEY UPDATE, before the deal's
+      // row (the person, the enquiry, the deal): it may take the deal's event.
+      const namedEnquiry = parsed.data.sourceEnquiryId === undefined || parsed.data.sourceEnquiryId === null
+        ? undefined
+        : await lockDealEnquiry(tx, parsed.data.sourceEnquiryId, opportunity.venueId);
       // A stage is written only over the stage it was judged from: a move
       // that landed since (a colleague's, or the client's acceptance) stands,
       // and this one writes nothing, neither its history nor who won.
@@ -519,6 +557,9 @@ export async function opportunityRoutes(
           .limit(1);
         return still === undefined ? { kind: "not_found" } : { kind: "stage_changed" };
       }
+      // The deal's event stays where it is; an enquiry it now names with no
+      // event takes it, as the join would (services/event-links.ts).
+      if (namedEnquiry !== undefined) await enquiryFollowsDeal(tx, namedEnquiry, updated.eventId);
 
       if (toStage !== undefined && toStage !== fromStage) {
         const [move] = await tx.insert(opportunityStatusHistory).values({
@@ -546,6 +587,13 @@ export async function opportunityRoutes(
     try {
       outcome = await db.transaction(write);
     } catch (error) {
+      // A deal reopened beside another open deal on its event (a platform
+      // admin may move a deal to any stage): the one-open-deal index refused
+      // it, and the open deal is read afresh to name it.
+      if (isOpenDealConflict(error)) {
+        const openDeal = await openDealBeside(db, opportunity.id);
+        return reply.status(409).send(openDeal === null ? RETRY_ANSWER : openDealAnswer(REOPENED_BESIDE_OPEN_DEAL, openDeal));
+      }
       // A deadlock or serialisation failure rolled the whole write back.
       const pgCode = lockConflictOf(error);
       if (pgCode === null) throw error;
