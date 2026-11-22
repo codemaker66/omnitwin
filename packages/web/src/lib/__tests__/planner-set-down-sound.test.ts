@@ -9,6 +9,7 @@ import {
   __resetPlannerSoundForTests,
   armPlannerSound,
   beginSetDownBatch,
+  logSetDownDrop,
   plannerAudioClock,
   setPlannerRoomTail,
   setPlannerSoundMode,
@@ -764,6 +765,28 @@ describe("the clock, arming and the tap", () => {
     expect(tap?.log).toHaveLength(2);
     expect(tap?.log[0]).toMatchObject({ startAt: 1.1, levelDb: 0, directGain: 0.5, send: 0.8, slug: "chiavari-chair", surface: "oak-floor", rtMid: 2.1, contactMs: 83.3 });
     expect(tap?.log[1]).toMatchObject({ startAt: 1.2 });
+  });
+
+  it("logs how the scene played each voice, and every landing it dropped, with ?soundtap=1 (R78, R80, R87, R89)", () => {
+    window.history.replaceState(null, "", "/plan/stub?soundtap=1");
+    armPlannerSound();
+    const tap = window.__venSoundTap;
+    expect(tap?.drops).toEqual([]);
+    const batch = beginSetDownBatch(1);
+    batch?.play(voice({ tap: { slug: "chiavari-chair", surface: "oak-floor", rtMid: 2.1, contactMs: 1016.7, played: "late", workMs: 31.5 } }));
+    expect(tap?.log[0]).toMatchObject({ played: "late", workMs: 31.5, contactMs: 1016.7 });
+    logSetDownDrop({ drop: "not-loaded" });
+    logSetDownDrop({ drop: "too-late", slug: "chiavari-chair", contactMs: 1033.3, workMs: 61 });
+    expect(tap?.drops).toEqual([{ drop: "not-loaded" }, { drop: "too-late", slug: "chiavari-chair", contactMs: 1033.3, workMs: 61 }]);
+    expect(tap?.log, "a dropped landing is never a played voice").toHaveLength(1);
+  });
+
+  it("drops nothing on the floor without the flag: a dropped landing is simply not logged", () => {
+    window.history.replaceState(null, "", "/plan/stub");
+    expect(() => { logSetDownDrop({ drop: "gone" }); }).not.toThrow();
+    armPlannerSound();
+    expect(() => { logSetDownDrop({ drop: "undone" }); }).not.toThrow();
+    expect(window.__venSoundTap).toBeUndefined();
   });
 
   it("has no tap without the flag", () => {

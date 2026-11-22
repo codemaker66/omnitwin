@@ -452,3 +452,35 @@ describe("the new chrome stays behind its lazy import (T-671)", () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// The set-down engine stays behind the scene's lazy import (T-700, R78)
+//
+// The planner always mounts SetDownSound, a small shell that hears the
+// landings from its mount. The driver, and with it the engine's room models,
+// bodies, surfaces and the Worker's client, load only through the shell's
+// dynamic import: at the planner's first idle while sound is on, and at the
+// first gesture at the latest. Of the engine, the planner's static graph may
+// reach only the registry's ear fatigue, which the registry itself imports.
+// ---------------------------------------------------------------------------
+
+describe("the set-down engine stays behind the scene's lazy import (T-700, R78)", () => {
+  const LAZY_SOUND = ["src/components/editor/set-down-driver.ts", "src/components/editor/set-down-policy.ts"];
+
+  for (const entry of ["src/components/editor/PlannerScene.tsx", "src/pages/EditorPage.tsx", "src/App.tsx", "src/components/planner-chrome/RoomStage.tsx"]) {
+    it(`reaches only the registry's fatigue of the engine from ${entry} by static imports`, async () => {
+      const path = await import("node:path");
+      const reached = [...await staticImportClosure(entry)].map((file) => path.relative(path.resolve("."), file).split(path.sep).join("/"));
+      expect(reached).toContain("src/components/editor/SetDownSound.tsx");
+      expect(reached.filter((file) => file.startsWith("src/lib/set-down/"))).toEqual(["src/lib/set-down/fatigue.ts"]);
+      expect(reached.filter((file) => LAZY_SOUND.includes(file))).toEqual([]);
+    });
+  }
+
+  it("loads the driver only by the shell's dynamic import", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SetDownSound.tsx");
+    expect(codeOnly).toMatch(/\bimport\(["']\.\/set-down-driver\.js["']\)/);
+    // Its types may be imported (`import type` is erased); nothing of it is imported at run time.
+    expect(codeOnly).not.toMatch(/(?:^|[;\n])\s*(?:import|export)\s+(?!type\s)[^;]*?\bfrom\s+["']\.\/set-down-driver/);
+  });
+});

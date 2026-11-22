@@ -48,6 +48,8 @@ import { CirculationOverlay } from "../CirculationOverlay.js";
 import { ClearanceRings } from "./ClearanceRings.js";
 import { DoorClearSpaceLayer } from "./DoorClearSpaceLayer.js";
 import { FurnitureMotion } from "./FurnitureMotion.js";
+import { SetDownSound } from "./SetDownSound.js";
+import { PlannerSoundReceipt } from "./PlannerSoundReceipt.js";
 import { MarkupLayer } from "../MarkupLayer.js";
 import { SceneProvider } from "../SceneProvider.js";
 import { PerfMonitor } from "../PerfMonitor.js";
@@ -726,6 +728,7 @@ export function PlannerScene({ inCanvas }: {
             <WarmPieceInHand />
             <SelectionSystem />
             <FurnitureMotion />
+            <SetDownSound />
             <CockpitSceneOverlays renderGeometry={renderSceneOverlays} />
             {inCanvas}
             <PlannerMotionOverlayLayers />
@@ -766,6 +769,7 @@ export function PlannerScene({ inCanvas }: {
           {/* Re-register last when a camera owner mounts or the room shell changes. */}
           <PlannerScenePrecompiler key={`${sceneWarmupSignature}:${String(walkMode)}`} signature={sceneWarmupSignature} />
         </Canvas>
+        <PlannerSoundReceipt />
         {assemblyStage && <AssemblyReplay />}
       </div>
       {showArrival && <PlannerArrival onEnter={enterRoom} />}

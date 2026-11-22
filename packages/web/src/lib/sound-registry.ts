@@ -1088,7 +1088,27 @@ export interface SetDownVoice {
   /** RoomState.send, never scaled by distance (R58). */
   readonly send: number;
   /** What the tap logs about the voice (?soundtap=1). */
-  readonly tap?: { readonly slug: string; readonly surface: string; readonly rtMid: number; readonly contactMs: number };
+  readonly tap?: SetDownVoiceTap;
+}
+
+/**
+ * Which render a voice played (Task 14b): its exact render, ready at its
+ * contact; that render arriving within 45 ms after it (R80); a variant
+ * rendered ahead of its landing (R100); or its drop's render after the
+ * surfaces under it changed (Review Focus 5).
+ */
+export type SetDownPlayed = "exact" | "late" | "variant" | "stale";
+
+/** What the tap logs about a voice. */
+export interface SetDownVoiceTap {
+  readonly slug: string;
+  readonly surface: string;
+  readonly rtMid: number;
+  /** When its contact frame is shown, on the context's clock, ms. */
+  readonly contactMs: number;
+  readonly played?: SetDownPlayed;
+  /** The Worker's time for the render it played, ms. */
+  readonly workMs?: number;
 }
 
 export interface SetDownBatch {
@@ -1354,12 +1374,33 @@ export interface VenSoundTapEntry {
   readonly surface?: string;
   readonly rtMid?: number;
   readonly contactMs?: number;
+  readonly played?: SetDownPlayed;
+  readonly workMs?: number;
   /** Set only when the voice was dropped rather than played. */
   readonly miss?: SetDownMiss;
 }
 
+/**
+ * Why the scene dropped a landing before it reached a batch (Task 14b): its
+ * driver had not loaded by its contact (R78); its render came more than 45 ms
+ * after its contact (R80); an undo or redo ended its gesture (R87); its piece
+ * was gone (R89); or its render failed.
+ */
+export type SetDownDrop = "not-loaded" | "too-late" | "undone" | "gone" | "failed";
+
+/** One landing the scene dropped, as the tap logs it. */
+export interface VenSoundTapDrop {
+  readonly drop: SetDownDrop;
+  readonly slug?: string;
+  /** When its contact frame is shown, on the context's clock, ms. */
+  readonly contactMs?: number;
+  readonly workMs?: number;
+}
+
 export interface VenSoundTap {
   readonly log: VenSoundTapEntry[];
+  /** Every landing the scene dropped before it could play (Task 14b). */
+  readonly drops: VenSoundTapDrop[];
   /** Records `seconds` of the master into a Blob. */
   record(seconds: number): Promise<Blob>;
 }
@@ -1385,9 +1426,14 @@ function installSoundTap(context: AudioContext, master: GainNode): void {
     return; // No stream destination in this browser: it plays without a tap.
   }
   master.connect(destination);
-  const tap: VenSoundTap = { log: [], record: (seconds) => recordStream(destination.stream, seconds) };
+  const tap: VenSoundTap = { log: [], drops: [], record: (seconds) => recordStream(destination.stream, seconds) };
   plannerTap = tap;
   window.__venSoundTap = tap;
+}
+
+/** Logs a landing the scene dropped, on the tap; nothing without ?soundtap=1 or before the first gesture. */
+export function logSetDownDrop(drop: VenSoundTapDrop): void {
+  plannerTap?.drops.push(drop);
 }
 
 function recordStream(stream: MediaStream, seconds: number): Promise<Blob> {

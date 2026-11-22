@@ -1,0 +1,15 @@
+/* The Shift M receipt (T-700): centred under the planner's top bar, above
+   the scene and its chrome, and never in the way of a press. Its look and
+   entrance are the live layer's capsule and notice (LayoutLiveLayer.css). */
+
+.planner-sound-receipt {
+  position: fixed;
+  z-index: 47;
+  top: calc(env(safe-area-inset-top) + 72px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  font-family: "Inter", system-ui, sans-serif;
+}
