@@ -176,6 +176,26 @@ def sign_test_worse_against(worse, better, control_worse, control_better):
     return min(1.0, total / (a + b) ** n)
 
 
+def chance_of_reaching(n, level=0.05):
+    """How likely sign_test on `n` changed pairs is to come out under `level` by chance alone, were each pair as
+    likely to have turned worse as better: the share of the 2^n splits whose p is under it. 0 where no split can
+    reach it, as at 0.05 for 5 pairs or fewer (all five one way is p 2/32). The whole numbers are summed before the
+    one division. Meant for counts of patches: it calls sign_test once a split."""
+    n = int(n)
+    return sum(comb(n, w) for w in range(n + 1) if sign_test(w, n - w) < level) / 2 ** n
+
+
+def chance_of_any(ns, level=0.05):
+    """How likely a family of sign tests, on `ns` changed pairs each and taken as independent, is to have at least
+    one come out under `level` by chance alone: one less the product of each one's chance of not doing so
+    (chance_of_reaching). Were the tests continuous it would be 1 - (1 - level)^k for k tests (0.71 for 24 at
+    0.05); a sign test on few pairs reaches `level` less often, or never."""
+    keep = 1.0
+    for n in ns:
+        keep *= 1.0 - chance_of_reaching(n, level)
+    return 1.0 - keep
+
+
 def holm(ps):
     """Holm's step-down correction of a family of p values, each returned in its own place: the smallest is
     multiplied by the number of tests, the next by one fewer, and none may come out below the one before it.
