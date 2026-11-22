@@ -43,8 +43,9 @@ GitHub > Actions > "Railway settings" > the run for that merge
    limit section 3 names.
 2. **First tap.** The second step reads Railway and writes the plan in plain
    lines: `deploy.healthcheckTimeout: 2700 -> 3000`. It says: "Applying this
-   redeploys the API at commit abc1234, with its migration step." If nothing
-   would change, it says "already up to date" and the run ends.
+   redeploys the API at commit abc1234, with its migration step." It also says
+   whether Railway is building or deploying just now. If nothing would change,
+   it says "already up to date" and the run ends.
 3. **Second tap.** The third step applies exactly those lines, checks that
    nothing is left to change, and waits for Railway's own report that the new
    deployment is live. A deployment that fails can take about an hour to say so.
@@ -146,8 +147,10 @@ Each was checked against the source named, on 22 November 2026, unless marked.
 - An environment can be limited to chosen branches. By default administrators
   may bypass its rules; that can be switched off. Only the repository's owner
   can configure an environment here.
-- Anyone with read access can read an environment's rules through the API:
-  reviewers, self-review, branch rule, bypass.
+- Anyone with read access can read an environment's rules through the API. The
+  documented answer holds the reviewers, the self-review setting and the branch
+  rule. The bypass setting was seen in the answer under the owner's sign-in;
+  whether a run's own token can see it is not yet proven (6.1, section 9).
 - A workflow that names an environment which does not exist makes GitHub create
   it, with no rules.
 - Logs, job summaries and artifacts of a public repository can be read by anyone
@@ -228,10 +231,14 @@ refuses on any of these:
 - an answer that is not a success, a missing field, or more than one page;
 - reviewers other than exactly Blake's user;
 - "prevent self-review" on;
+- a branch rule in any mode but chosen branches: no branch policy at all, the
+  protected-branches mode on, or custom policies off;
 - branch policies other than exactly one, of type branch, named `master`;
 - a bypass answer other than "no".
 
 GitHub's published description of that answer does not list the bypass field.
+It is the only field exempt from "a missing field", and only once the build has
+shown that a run's token cannot see it.
 The build proves once whether a run's token can see it. If it cannot, the
 workflow does not check it and says so in every summary; that rule then rests on
 Blake's own check in section 8, and no token with more power is ever used to
@@ -263,8 +270,12 @@ So that the trigger, the refusals and Railway's pin all mean the same folder,
 - Refuses unless the run is on `master` and its trusted places are the ones at
   `master`'s head now. That is "the currency check".
 - Finds the last change applied from a record the commit cannot rewrite: this
-  workflow's own history of runs on GitHub. When there is none, or it cannot be
-  read, it shows the trusted places in full.
+  workflow's own history of runs on GitHub. Only one kind of run counts: a run
+  of this workflow on `master`, started by a push or by hand in this repository
+  and not in a fork, whose step 3 applied after an approval that the run's
+  review history records for the `railway-settings` environment. Every other
+  run is ignored. When there is none, or the history cannot be read, it shows
+  the trusted places in full.
 - Writes the summary described in section 2.
 
 **Step 2, "Read Railway's plan".** In the environment.
@@ -275,8 +286,12 @@ So that the trigger, the refusals and Railway's pin all mean the same folder,
   workflow's folder. The runtime that evaluates the settings file is pinned.
   The token is not yet present.
 - Exactly one step receives the token. It runs the workflow's own code, which
-  makes one call to Railway: `railway config plan --out <file>`. The file stays
-  on the runner.
+  makes two calls to Railway and no others, each with its output written to a
+  file on the runner: `railway config plan --out <file>`, then
+  `railway deployment list --service <name> --json`. The second lets the
+  summary say whether Railway is building or deploying just now. It also means
+  every run, a check included, proves the token can make both reads, before a
+  real change depends on them.
 - The plan's lines are rendered (6.4), with a mark on any line that touches the
   pre-deploy command, the health check, the region or sleep (6.3), and the
   summary says whether step 3 would refuse.
@@ -290,11 +305,11 @@ So that the trigger, the refusals and Railway's pin all mean the same folder,
   output written to a file on the runner:
   1. `railway config plan --out <file>`. Its lines are rendered and must equal
      step 2's. Every refusal of 6.3 is worked out again here.
-  2. `railway deployment list`, for the look of 6.5.
+  2. `railway deployment list --service <name> --json`, for the look of 6.5.
   3. `railway config apply --plan <file> --yes`. Just before it, the kit is
      checked against its lockfile and the tool against its checksum once more.
   4. `railway config plan --detailed-exit-code`. It must exit 0.
-  5. Only if 6.6 needs its fallback: `railway deployment list` again.
+  5. Only if 6.6 needs its fallback: the same list of deployments again.
 - Checks `master`'s head again and says so if it moved.
 - Waits for the redeploy (6.6) and writes the result.
 
@@ -347,10 +362,14 @@ looks, and refuses if:
 - a job of the Deploy workflow, or of another workflow that runs migrations, is
   executing (a run that only waits for review does not count);
 - Railway is building or deploying (read with the token; only the verdict is
-  printed);
+  printed). Every status that is not final counts as busy;
 - the running build does not already contain `master`'s API code, worked out as
   the production receipt does. An apply would then ship undeployed changes and
   their migrations under a settings approval.
+
+Step 2 makes the same read of Railway, and its summary says in fixed words
+whether Railway is busy, so he knows before the second tap. Step 3 still looks
+again just before the apply: Railway can become busy between the two taps.
 
 This is a look, not a lock. Step 2's summary says: do not approve a Deploy run
 until step 3 has finished. Blake gives both approvals. The Deploy workflow is not
@@ -374,6 +393,13 @@ no such record reports success, the job fails, and says the apply succeeded and
 the redeploy is not confirmed. A production redeploy nobody confirmed does not
 show green.
 
+If the build finds that Railway posts no such record for a redeploy an apply
+starts, the fallback is the tool's own list of deployments (6.2, call 5). It
+counts only a deployment of the one service, created after the apply, that
+ended in success, for `master`'s head. The documented list carries no commit.
+If the output cannot show all four, the fallback cannot confirm, and the job
+fails.
+
 ### 6.7 A check in CI
 
 A step in CI's tooling job reads every workflow file and fails unless:
@@ -383,9 +409,13 @@ A step in CI's tooling job reads every workflow file and fails unless:
 - this workflow starts only on a push to `master` and by hand, and every job in
   it states its condition and its permissions;
 - everything its tapped jobs run or read is in the trusted places of 6.2;
-- Railway's tool is called only with the exact commands of 6.2;
-- no reference to a secret whose name begins `RAILWAY` appears anywhere but the
-  one token step of each tapped job;
+- Railway's tool is called only with the exact commands of 6.2, each step held
+  to its own list: step 2 can make its two reads and nothing else;
+- in this workflow the `secrets` context appears only as the literal
+  `secrets.RAILWAY_SETTINGS_TOKEN`, in the one token step of each tapped job,
+  and as `secrets.GITHUB_TOKEN` where a step needs it. Index syntax
+  (`secrets[...]`) and `toJSON(secrets)` appear nowhere in the file. No other
+  workflow names a secret that begins `RAILWAY`;
 - `.railway/railway.ts` still leaves variables unmanaged, and imports only
   Railway's kit and files inside `.railway/`.
 
@@ -430,7 +460,7 @@ section 11, this rule is the only control.
 | A pinned plan, applied as read | Kept: step 3 pins its own plan and its lines must equal step 2's |
 | No deletion | Kept, and wider (6.3) |
 | A second plan that must be empty | Kept |
-| A hold on merges | Replaced: the folder must be `master`'s head before, and is checked after |
+| A hold on merges | Replaced: the trusted places must be `master`'s head before, and the head is checked after |
 | Not beside a migration, not while a deploy runs | Replaced by the look in 6.5 |
 | A person watching the migration step | Replaced by 6.6; the first real change is still watched |
 | A look at Railway's dashboard for pending staged changes | Not kept by the workflow. Railway's tool does not show them. Step 2's summary asks him to look |
@@ -445,7 +475,11 @@ No automated tool sees the token at any point. The order matters.
    `RAILWAY_SETTINGS_TOKEN` or `RAILWAY_TOKEN`.
 3. Press "check now". Step 1 reads the rules back and shows them. The run then
    rehearses the gate with no token: each of the two later steps asks for its
-   own approval, and a run started from another branch is refused by GitHub.
+   own approval. Then one more run shows GitHub's own rule at work. A throwaway
+   branch carries a copy of the workflow without its job conditions and without
+   step 1's refusal of other branches, and a run is started from it. The
+   environment itself must refuse that run's step 2. This is safe only because
+   no token exists yet. The branch is never merged and is deleted afterwards.
 4. Only then: on Railway, create a project token for the production
    environment, and paste it as the environment's secret.
 5. Press "check now" again, on his phone. It must say "already up to date".
@@ -467,12 +501,12 @@ secret, delete the old token on Railway, repeat checks 1 and 2 above, and press
 
 ## 9. How we will know it works
 
-- The rehearsal of step 2 above, before any token exists.
+- The rehearsal of section 8 (its step 3), before any token exists.
 - The first "check now" with the token says "already up to date".
 - The CI check of 6.7 fails on each of these when planted, then passes without
   them: a second use of the environment, a forbidden flag, a forbidden trigger,
-  a file run from outside the trusted places, and a `RAILWAY` secret named
-  outside the token step.
+  a file run from outside the trusted places, a `RAILWAY` secret named outside
+  the token step, a secret read by index syntax, and `toJSON(secrets)`.
 - The renderer and the refusals of 6.3 are tested on plans shaped like the one
   seen on 22 November, with made-up ids: no change, a safe update, an emptied
   setting, a removed domain, an added service, a change under variables.
@@ -484,8 +518,12 @@ secret, delete the old token on Railway, repeat checks 1 and 2 above, and press
 
 - that two jobs in one run, in the same environment, each ask for an approval,
   and that a skipped job asks for none and does not create the environment;
+- that a run started from another branch is refused by the environment itself
+  (section 8);
 - whether a run's own token can read the environment's bypass rule (6.1 says
   what happens if it cannot);
+- what a project token may run, and what those calls return: the plan, the
+  list of deployments, the apply;
 - that GitHub's phone app shows job summaries and offers the review and "run
   workflow" buttons (if not, he uses the browser on his phone);
 - that Railway posts a deployment record to GitHub for a redeploy an apply
@@ -542,7 +580,7 @@ him. He decided them as below and approved the design.
 - The comment at the top of the Deploy workflow that gives the old reason for
   keeping Railway tokens out of GitHub: updated to point here when this
   workflow lands.
-- How step 3 reads other workflows' executing jobs and Railway's state.
+- How step 3 reads other workflows' executing jobs.
 - The rehearsal mode of section 8.
 - The exact words of the summaries, in the plain style of section 2.
 - The new home and text of the README, and the edit to "After the move" in the
@@ -607,3 +645,20 @@ approval, and asked for these to be closed in words:
   yes in a chat lets nothing else tap.
 - **The refusals judge shape, not meaning.** 6.3 says so, and step 2 marks the
   lines whose meaning matters most.
+- **The token's right to list deployments was first tested by a real change.**
+  Now step 2 makes that read on every run, so the first check with the token
+  proves it with nothing at stake (6.2, 6.5).
+
+Its second pass asked for these as well:
+
+- **Which runs count as "the last change applied".** Only this workflow's own
+  runs on `master`, in this repository, that applied after a recorded approval
+  (6.2, step 1).
+- **The gate's read-back also refuses a branch rule in the wrong mode,** and the
+  bypass field is the one exemption from "a missing field" (6.1).
+- **The check on secrets matched names only.** Now the workflow may name its
+  one secret literally and in no other way (6.7).
+- **The rehearsal could no longer show GitHub refusing a branch.** Now a
+  throwaway branch copy shows it, before any token exists (section 8).
+- **The fallback for confirming a redeploy had no counting rule.** 6.6 has one,
+  and fails when the tool's output cannot meet it.
