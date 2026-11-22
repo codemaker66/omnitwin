@@ -238,6 +238,9 @@
 }
 
 .vv-twin-dossier-stats {
+  /* A query container, so a stat can respond to the width the stats actually
+   * have (see the sections rule below). */
+  container: twin-dossier-stats / inline-size;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px 12px;
@@ -269,6 +272,31 @@
  * The room's remark (the dome) is not a qualifier: it leads the footnote. */
 .vv-twin-dossier-stat-note {
   color: var(--ink-3, #b9aa8b);
+}
+
+/* Which section a line's figure belongs to, for a room published in sections
+ * (the Robert Adam Room's "Lower" and "Upper"). Quiet, so the figures still
+ * lead; its trailing space is DOM text, like the note's separator. */
+.vv-twin-dossier-stat-section {
+  color: var(--ink-3, #b9aa8b);
+}
+
+/* A second section's line sits close under the first: they are one fact in two
+ * parts, not two facts. */
+.vv-twin-dossier-stat-value + .vv-twin-dossier-stat-value {
+  margin-top: 1px;
+}
+
+/* A section's line needs room for its name and its figure together ("Lower
+ * 11.2 × 7.6 m" is about 104px at this size). The desktop column has it; on a
+ * 375px phone the column is 101px and the line broke inside the figure, after
+ * "11.2". So where the stats are narrower than two such columns, a stat with
+ * section lines takes the full row. It is asked of the stats' own width, not
+ * the viewport's, because the card's width is itself a calculation. */
+@container twin-dossier-stats (max-width: 240px) {
+  .vv-twin-dossier-stat--sections {
+    grid-column: 1 / -1;
+  }
 }
 
 .vv-twin-dossier-footnote {

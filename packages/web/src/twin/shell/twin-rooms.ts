@@ -1,4 +1,4 @@
-import type { PublishedRoomSlug, RoomCapacity, RoomDimensions } from "@omnitwin/types";
+import type { PublishedRoomSlug, RoomCapacity, RoomDimensions, RoomExtent } from "@omnitwin/types";
 import { TRADES_HALL_ROOM_CAPACITIES, TRADES_HALL_ROOM_DIMENSIONS, VENUE_TRUTH_PROVENANCE } from "@omnitwin/types/trades-hall-venue-truth";
 
 // -----------------------------------------------------------------------------
@@ -89,7 +89,7 @@ export interface VerifiedRoom {
   readonly name: string;
   /** The venue-confirmed capacities, by reference — never a copy. */
   readonly capacities: RoomCapacity;
-  /** The room's dimensions (the Grand Hall's measured), or null for rooms the venue publishes none for. */
+  /** The room's dimensions (the Grand Hall's measured), or null for a room venue truth states none for. */
   readonly dimensions: RoomDimensions | null;
   /** Ready-to-render dimension line, or null when there is nothing to render. */
   readonly dimensionLine: string | null;
@@ -113,9 +113,13 @@ export function metres(value: number): string {
 }
 
 /**
- * The published dimension line for a room, or null when the venue publishes no
- * dimensions for it — the two galleries — in which case the caller renders
- * nothing at all rather than an empty field or an inferred figure.
+ * The dimension line for a room, or null for a room venue truth states no
+ * dimensions for, in which case the caller renders nothing at all rather than
+ * an empty field or an inferred figure.
+ *
+ * A room published in sections (the Robert Adam Room) gives each section in
+ * the venue's order, named, and never a figure for the room as a whole. A room
+ * with no stated height (the galleries) gives its length and width alone.
  *
  * Renders the qualifier when there is one — the Grand Hall's says its height is
  * to the coffered ceiling, and dropping it would let a visitor read the
@@ -131,11 +135,32 @@ export function formatRoomDimensions(slug: PublishedRoomSlug): string | null {
   if (dimensions === undefined) {
     return null;
   }
-  const extent =
-    `${metres(dimensions.lengthM)} × ${metres(dimensions.widthM)} × ` +
-    `${metres(dimensions.heightM)} m`;
-  const qualified = dimensions.note === undefined ? extent : `${extent} — ${dimensions.note}`;
-  return dimensions.remark === undefined ? qualified : `${qualified}. ${dimensions.remark}`;
+  const line = dimensions.extents.map(formatExtent).join("; ");
+  return dimensions.remark === undefined ? line : `${line}. ${dimensions.remark}`;
+}
+
+/**
+ * The floor of one extent, length by width: "9.7 × 5.6 m". The one place the
+ * tour composes a plan size, so the dossier's Dimensions stat and the room
+ * selector's line cannot drift apart, in their rounding or their separator.
+ */
+export function formatExtentPlan(extent: RoomExtent): string {
+  return `${metres(extent.lengthM)} × ${metres(extent.widthM)} m`;
+}
+
+/**
+ * One extent in full: its section's name when the room is published in
+ * sections, its length, width and (where one is stated) height, then the
+ * height's qualifier. An extent with no stated height gives its floor alone
+ * rather than a third figure nobody published.
+ */
+function formatExtent(extent: RoomExtent): string {
+  const size =
+    extent.heightM === undefined
+      ? formatExtentPlan(extent)
+      : `${metres(extent.lengthM)} × ${metres(extent.widthM)} × ${metres(extent.heightM)} m`;
+  const named = extent.section === undefined ? size : `${extent.section} section ${size}`;
+  return extent.note === undefined ? named : `${named} — ${extent.note}`;
 }
 
 /**

@@ -9,6 +9,7 @@ import {
 } from "react";
 import { prefersReducedMotion } from "../reduced-motion.js";
 import {
+  formatExtentPlan,
   lookUpRoom,
   metres,
   ROOM_TRUTH_PROVENANCE,
@@ -208,16 +209,26 @@ const STAT_LABEL_DINNER = "Dinner";
  *  between them, which is the part that silently broke. */
 export const STAT_LABEL_CEILING = "Ceiling";
 
-/** A figure, the quiet word for it, and its qualifier where one exists (what
- *  the Grand Hall's measured height is to). The qualifier stays a few words:
- *  the stat column is narrow, and a longer note wrapped to four lines on a
- *  desktop and was cut through by the landscape-phone fold. The room's remark
- *  (the Grand Hall's dome) is a sentence, so it leads the footnote instead. */
+/** One line of a stat: a figure, the section it belongs to when the room is
+ *  published in sections (the Robert Adam Room's "Lower" and "Upper"), and its
+ *  qualifier where one exists (what the Grand Hall's measured height is to).
+ *  The qualifier stays a few words: the stat column is narrow, and a longer
+ *  note wrapped to four lines on a desktop and was cut through by the
+ *  landscape-phone fold. The room's remark (the Grand Hall's dome) is a
+ *  sentence, so it leads the footnote instead. */
+interface DossierStatLine {
+  readonly section?: string;
+  readonly value: string;
+  readonly note?: string;
+}
+
+/** The quiet word for a fact and its lines: one for a room given as a whole,
+ *  one per section for a room published in sections. Never a line that adds
+ *  the sections up, because the venue publishes no figure for the two together. */
 interface DossierStat {
   readonly key: string;
   readonly label: string;
-  readonly value: string;
-  readonly note?: string;
+  readonly lines: readonly DossierStatLine[];
 }
 
 /**
@@ -245,7 +256,19 @@ export function allRoomDossierCopy(): readonly string[] {
     twinDossierActionLabel("Grand Hall"),
     twinDossierArrival("Grand Hall", "Trades Hall Glasgow"),
     ...roomRemarks(),
+    ...roomSections(),
   ];
+}
+
+/** Every section name a verified room's stats can be labelled with, once each. */
+function roomSections(): readonly string[] {
+  const sections = new Set<string>();
+  for (const nodeId of Object.keys(VERIFIED_ROOM_NODES)) {
+    for (const extent of lookUpRoom(nodeId)?.dimensions?.extents ?? []) {
+      if (extent.section !== undefined) sections.add(extent.section);
+    }
+  }
+  return [...sections];
 }
 
 /** Every remark a verified room's footnote can lead with, once each. */
@@ -461,38 +484,42 @@ export function RoomDossier({
     setCollapsed(true);
   };
 
-  // The galleries publish no dimensions. A room without them shows its two
-  // capacity figures alone rather than an em-dash where a measurement should be.
+  // A room with no stated dimensions shows its two capacity figures alone
+  // rather than an em-dash where a measurement should be, and a room with a
+  // floor size but no stated height (the galleries) shows no Ceiling stat for
+  // the same reason. A room published in sections gets one line per section
+  // under each stat, named, in the venue's order.
   //
   // Note this reads `dimensions`, not the ready-made `dimensionLine`: that line
   // folds height into the extent, which would state the ceiling twice now that
   // Ceiling has a stat of its own.
   const dimensions = shown.dimensions;
+  const extents = dimensions?.extents ?? [];
+  const ceilings = extents.flatMap((extent): DossierStatLine[] =>
+    extent.heightM === undefined
+      ? []
+      : [{ section: extent.section, value: `${metres(extent.heightM)} m`, note: extent.note }],
+  );
   const stats: DossierStat[] = [];
-  if (dimensions !== null) {
+  if (extents.length > 0) {
     stats.push({
       key: "dimensions",
       label: STAT_LABEL_DIMENSIONS,
-      value: `${metres(dimensions.lengthM)} × ${metres(dimensions.widthM)} m`,
+      lines: extents.map((extent) => ({ section: extent.section, value: formatExtentPlan(extent) })),
     });
   }
   stats.push({
     key: "reception",
     label: STAT_LABEL_RECEPTION,
-    value: `${String(shown.capacities.reception)} standing`,
+    lines: [{ value: `${String(shown.capacities.reception)} standing` }],
   });
   stats.push({
     key: "dinner",
     label: STAT_LABEL_DINNER,
-    value: `${String(shown.capacities.dinner)} seated`,
+    lines: [{ value: `${String(shown.capacities.dinner)} seated` }],
   });
-  if (dimensions !== null) {
-    stats.push({
-      key: "ceiling",
-      label: STAT_LABEL_CEILING,
-      value: `${metres(dimensions.heightM)} m`,
-      note: dimensions.note,
-    });
+  if (ceilings.length > 0) {
+    stats.push({ key: "ceiling", label: STAT_LABEL_CEILING, lines: ceilings });
   }
   // The sentence that goes with the figures but not beside them: the Grand
   // Hall's dome. It leads the footnote, straight under the Ceiling stat.
@@ -596,19 +623,38 @@ export function RoomDossier({
             <>
               <dl className="vv-twin-dossier-stats">
                 {stats.map((stat) => (
-                  <div className="vv-twin-dossier-stat" key={stat.key}>
+                  <div
+                    // A stat with a line per section says so, so room-dossier.css
+                    // can give it the card's full width where a half-width column
+                    // (a phone) is too narrow for "Lower" and a figure on one line.
+                    className={
+                      stat.lines.some((line) => line.section !== undefined)
+                        ? "vv-twin-dossier-stat vv-twin-dossier-stat--sections"
+                        : "vv-twin-dossier-stat"
+                    }
+                    key={stat.key}
+                  >
                     <dt className="vv-twin-dossier-stat-label">{stat.label}</dt>
-                    <dd className="vv-twin-dossier-stat-value">
-                      {stat.value}
-                      {/* The separator is DOM text, not a CSS margin: a span is
-                          inline with no default whitespace, so styling alone
-                          would read "6.7 mto the coffered ceiling" to anyone
-                          whose stylesheet had not loaded — and to every screen
-                          reader, which hears the concatenation regardless. */}
-                      {stat.note !== undefined && (
-                        <span className="vv-twin-dossier-stat-note">{` — ${stat.note}`}</span>
-                      )}
-                    </dd>
+                    {/* One <dd> per line: a term with several descriptions is
+                        what a room published in sections is, and each section
+                        is then read out as its own item under the one label. */}
+                    {stat.lines.map((line) => (
+                      <dd className="vv-twin-dossier-stat-value" key={line.section ?? stat.key}>
+                        {/* Both separators are DOM text, not CSS margins: a span
+                            is inline with no default whitespace, so styling
+                            alone would read "Lower11.2" and "6.7 mto the
+                            coffered ceiling" to anyone whose stylesheet had not
+                            loaded — and to every screen reader, which hears the
+                            concatenation regardless. */}
+                        {line.section !== undefined && (
+                          <span className="vv-twin-dossier-stat-section">{`${line.section} `}</span>
+                        )}
+                        {line.value}
+                        {line.note !== undefined && (
+                          <span className="vv-twin-dossier-stat-note">{` — ${line.note}`}</span>
+                        )}
+                      </dd>
+                    ))}
                   </div>
                 ))}
               </dl>

@@ -539,6 +539,11 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
   const dimensions = room.dimensions;
   expect(dimensions, "the Grand Hall must publish dimensions").not.toBeNull();
   if (dimensions === null) throw new Error("The Grand Hall publishes no dimensions.");
+  // The Grand Hall is given as a whole: one extent, with a height.
+  expect(dimensions.extents, "the Grand Hall is one extent, not sections").toHaveLength(1);
+  const [hall] = dimensions.extents;
+  const heightM = hall.heightM;
+  if (heightM === undefined) throw new Error("The Grand Hall states no height.");
 
   const dossier = page.getByTestId("twin-room-dossier");
   await expect(dossier).toBeVisible();
@@ -549,17 +554,15 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
   // nothing here is a literal, which is what keeps the drift gate meaningful.
   const stats = await dossierStats(page);
   expect(stats[STAT_DIMENSIONS]).toBe(
-    `${metres(dimensions.lengthM)} × ${metres(dimensions.widthM)} m`,
+    `${metres(hall.lengthM)} × ${metres(hall.widthM)} m`,
   );
   expect(stats[STAT_RECEPTION]).toBe(`${String(room.capacities.reception)} standing`);
   expect(stats[STAT_DINNER]).toBe(`${String(room.capacities.dinner)} seated`);
   // The ceiling qualifier says what the height is measured to, and its
   // separator is DOM text — "7 ma further…" is the failure this pins shut.
-  const note = dimensions.note;
+  const note = hall.note;
   expect(stats[STAT_CEILING]).toBe(
-    note === undefined
-      ? `${metres(dimensions.heightM)} m`
-      : `${metres(dimensions.heightM)} m — ${note}`,
+    note === undefined ? `${metres(heightM)} m` : `${metres(heightM)} m — ${note}`,
   );
 
   // Provenance travels with the figures, verbatim — the dossier's footnote ends

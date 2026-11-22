@@ -68,7 +68,10 @@ function expectedComparison(slug: PublishedRoomSlug): string {
   if (dimensions === undefined) {
     return head;
   }
-  return `${head} · ${metres(dimensions.lengthM)} × ${metres(dimensions.widthM)} m`;
+  const floors = dimensions.extents.map(
+    (extent) => `${metres(extent.lengthM)} × ${metres(extent.widthM)} m`,
+  );
+  return `${head} · ${floors.join(" and ")}`;
 }
 
 describe("ROOM_SELECTOR_ORDER", () => {
@@ -142,6 +145,24 @@ describe("formatRoomComparison", () => {
     for (const [nodeId, slug] of Object.entries(VERIFIED_ROOM_NODES)) {
       expect(formatRoomComparison(nodeId)).toBe(expectedComparison(slug));
     }
+  });
+
+  it("gives every section's floor for a room published in sections, and never one alone", () => {
+    // The Robert Adam Room is one room on two levels. One section's floor on
+    // its own reads as the whole room's, which is the fault this line had.
+    const nodeId = Object.keys(VERIFIED_ROOM_NODES).find(
+      (id) => VERIFIED_ROOM_NODES[id] === "robert-adam-room",
+    );
+    const dimensions = TRADES_HALL_ROOM_DIMENSIONS["robert-adam-room"];
+    if (nodeId === undefined || dimensions === undefined) {
+      throw new Error("the Robert Adam Room lost its validated viewpoint or its dimensions");
+    }
+    expect(dimensions.extents.length).toBeGreaterThan(1);
+    const line = formatRoomComparison(nodeId) ?? "";
+    for (const extent of dimensions.extents) {
+      expect(line).toContain(`${metres(extent.lengthM)} × ${metres(extent.widthM)} m`);
+    }
+    expect(line.split(" and ")).toHaveLength(dimensions.extents.length);
   });
 
   it("says nothing at a viewpoint whose room is not known", () => {

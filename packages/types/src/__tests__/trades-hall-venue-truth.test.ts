@@ -149,10 +149,7 @@ describe("room dimensions", () => {
     // The note says only what the height is measured to, short enough to sit
     // beside the figure; the dome is a remark of its own, for a footnote.
     expect(TRADES_HALL_ROOM_DIMENSIONS["grand-hall"]).toEqual({
-      lengthM: 21.14,
-      widthM: 10.59,
-      heightM: 6.7,
-      note: "to the coffered ceiling",
+      extents: [{ lengthM: 21.14, widthM: 10.59, heightM: 6.7, note: "to the coffered ceiling" }],
       remark: "The dome rises above part of the hall.",
     });
   });
@@ -161,18 +158,55 @@ describe("room dimensions", () => {
     // The dome is never given as the room's height, and a number in either
     // string would be a second height for a surface to print.
     const texts = Object.values(TRADES_HALL_ROOM_DIMENSIONS)
-      .flatMap((d) => [d?.note, d?.remark])
+      .flatMap((d) => [...(d?.extents.map((extent) => extent.note) ?? []), d?.remark])
       .filter((text): text is string => text !== undefined);
     expect(texts.length).toBeGreaterThan(0);
     for (const text of texts) expect(text).not.toMatch(/\d/);
   });
 
-  it("keeps the other rooms at the venue's published figures", () => {
-    expect(TRADES_HALL_ROOM_DIMENSIONS.saloon).toEqual({ lengthM: 12, widthM: 7, heightM: 5.4 });
-    expect(TRADES_HALL_ROOM_DIMENSIONS["robert-adam-room"]).toEqual({ lengthM: 9.7, widthM: 5.6, heightM: 2.18 });
-    expect(TRADES_HALL_ROOM_DIMENSIONS["reception-room"]).toEqual({ lengthM: 13.4, widthM: 11.2, heightM: 3.2 });
-    expect(TRADES_HALL_ROOM_DIMENSIONS["north-gallery"]).toBeUndefined();
-    expect(TRADES_HALL_ROOM_DIMENSIONS["south-gallery"]).toBeUndefined();
+  it("keeps the Saloon and the Reception Room at the venue's published figures", () => {
+    // The Reception Room's survey traces a smaller, L-shaped room. The
+    // published figure stays until the planner's room changes with it (T-662).
+    expect(TRADES_HALL_ROOM_DIMENSIONS.saloon).toEqual({ extents: [{ lengthM: 12, widthM: 7, heightM: 5.4 }] });
+    expect(TRADES_HALL_ROOM_DIMENSIONS["reception-room"]).toEqual({
+      extents: [{ lengthM: 13.4, widthM: 11.2, heightM: 3.2 }],
+    });
+  });
+
+  it("gives the Robert Adam Room as the two sections the venue publishes, lower first", () => {
+    // The venue's rooms page (read 22 November 2026) lists a Lower Section and
+    // an Upper Section. The upper figures alone used to stand for the whole
+    // room; Blake chose both, 22 November 2026.
+    expect(TRADES_HALL_ROOM_DIMENSIONS["robert-adam-room"]).toEqual({
+      extents: [
+        { section: "Lower", lengthM: 11.2, widthM: 7.6, heightM: 2.8 },
+        { section: "Upper", lengthM: 9.7, widthM: 5.6, heightM: 2.18 },
+      ],
+    });
+  });
+
+  it("gives each gallery the published 11.5 by 4 m and no height", () => {
+    // The venue's page states a height for the North Gallery only and not what
+    // it is measured to, so neither gallery carries one (Blake, 22 November 2026).
+    for (const slug of ["north-gallery", "south-gallery"] as const) {
+      const gallery = TRADES_HALL_ROOM_DIMENSIONS[slug];
+      expect(gallery).toEqual({ extents: [{ lengthM: 11.5, widthM: 4 }] });
+      expect(gallery?.extents[0].heightM).toBeUndefined();
+    }
+  });
+
+  it("names every section of a room published in sections, and none of a room given whole", () => {
+    // A surface labels each line of a sectioned room by its section; an
+    // unnamed section would print as a second whole-room figure.
+    for (const [slug, dimensions] of Object.entries(TRADES_HALL_ROOM_DIMENSIONS)) {
+      const sections = dimensions.extents.map((extent) => extent.section);
+      if (dimensions.extents.length === 1) {
+        expect(sections, slug).toEqual([undefined]);
+      } else {
+        expect(sections.every((section) => section !== undefined && section.trim() !== ""), slug).toBe(true);
+        expect(new Set(sections).size, slug).toBe(sections.length);
+      }
+    }
   });
 });
 
@@ -186,7 +220,7 @@ describe("claim safety", () => {
       ...CAPACITY_FORMATS.flatMap((f) => [f.label, f.description]),
       ...Object.values(TRADES_HALL_PUBLISHED_ROOM_NAMES),
       ...Object.values(TRADES_HALL_ROOM_DIMENSIONS)
-        .flatMap((d) => [d?.note, d?.remark])
+        .flatMap((d) => [...(d?.extents.flatMap((extent) => [extent.section, extent.note]) ?? []), d?.remark])
         .filter((text): text is string => text !== undefined),
     ];
     for (const s of strings) {

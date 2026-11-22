@@ -1,7 +1,7 @@
 import type { TwinScanNode } from "@omnitwin/types";
 import type { PublishedRoomSlug } from "@omnitwin/types";
 import { TRADES_HALL_ROOM_CAPACITIES, TRADES_HALL_ROOM_DIMENSIONS } from "@omnitwin/types/trades-hall-venue-truth";
-import { ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES, lookUpRoom, metres } from "./twin-rooms.js";
+import { ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES, formatExtentPlan, lookUpRoom } from "./twin-rooms.js";
 
 // -----------------------------------------------------------------------------
 // room-selector — the arithmetic behind the Rooms panel, with no React in it.
@@ -25,8 +25,8 @@ import { ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES, lookUpRoom, metres } from "./t
 //
 // EVERY FIGURE JOINS AT READ TIME. formatRoomComparison composes its line out of
 // TRADES_HALL_ROOM_CAPACITIES and TRADES_HALL_ROOM_DIMENSIONS through twin-rooms
-// (and through its exported metres(), so the dossier and this panel cannot drift
-// even in their rounding). No capacity or dimension is written here, not even in
+// (and through its exported formatExtentPlan(), so the dossier and this panel
+// cannot drift even in their rounding). No capacity or dimension is written here, not even in
 // a comment: a figure in prose is the one a future reader trusts, and the drift
 // gate cannot see it.
 //
@@ -135,8 +135,10 @@ export function pickRoomTarget(
  * accessible name reuses this exact string, so Label in Name (WCAG 2.5.3) holds
  * by construction rather than by a second formatter agreeing with this one.
  *
- * Rooms the venue publishes no dimensions for render their capacities alone,
- * rather than an em dash where a measurement should be.
+ * A room with no stated dimensions renders its capacities alone, rather than an
+ * em dash where a measurement should be. A room published in sections gives
+ * each section's floor, in the venue's order, joined by "and": the capacities
+ * before them are the whole room's, so the sections are not named here.
  */
 export function formatRoomComparison(nodeId: string): string | null {
   const room = lookUpRoom(nodeId);
@@ -149,7 +151,7 @@ export function formatRoomComparison(nodeId: string): string | null {
   if (dimensions === undefined) {
     return head;
   }
-  return `${head} · ${metres(dimensions.lengthM)} × ${metres(dimensions.widthM)} m`;
+  return `${head} · ${dimensions.extents.map(formatExtentPlan).join(" and ")}`;
 }
 
 /** One offered room, ready to render. */
