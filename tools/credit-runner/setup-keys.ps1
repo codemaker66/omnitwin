@@ -28,11 +28,14 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # Why a key is not one the runner takes, or $null when it is. The key itself is never shown.
-# The shape test is case-sensitive, like the runner's own (src/keys.ts).
+# The same rule as the runner's own (src/keys.ts): only a workspace API key, sk-ant-api, two
+# digits and a dash, then the key, matched case-sensitively; other kinds are named.
 function Get-KeyProblem([string] $Key) {
   if ($Key -match '^sk-ant-admin') { return 'That is an Admin API key (sk-ant-admin...), which the runner must never hold; store a workspace API key (sk-ant-api...).' }
-  if ($Key -match '^sk-ant-oat') { return 'That is an OAuth token (sk-ant-oat...), not a Console API key; store a workspace API key (sk-ant-api...).' }
-  if ($Key -cnotmatch '^sk-ant-[A-Za-z0-9_-]{20,}$') { return 'That does not look like an Anthropic API key (one line starting sk-ant-).' }
+  if ($Key -match '^sk-ant-oat') { return 'That is an OAuth access token (sk-ant-oat...), not a Console API key; store a workspace API key (sk-ant-api...).' }
+  if ($Key -match '^sk-ant-ort') { return 'That is an OAuth refresh token (sk-ant-ort...), not a Console API key; store a workspace API key (sk-ant-api...).' }
+  if ($Key -match '^sk-ant-sid') { return 'That is a session key (sk-ant-sid...), not a Console API key; store a workspace API key (sk-ant-api...).' }
+  if ($Key -cnotmatch '^sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{20,}$') { return 'That does not look like a workspace API key (one line: sk-ant-api, two digits and a dash, then the key).' }
   return $null
 }
 

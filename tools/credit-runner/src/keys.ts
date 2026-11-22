@@ -5,8 +5,12 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-/** An Anthropic Console API key: one line, `sk-ant-` then the secret. */
-const KEY_SHAPE = /^sk-ant-[A-Za-z0-9_-]{20,}$/u;
+/**
+ * A workspace API key from the Console, the only kind the runner takes: one
+ * line, `sk-ant-api`, two digits and a dash, then the secret. An allow-list, so
+ * a credential of any other kind is refused, a new one included.
+ */
+const KEY_SHAPE = /^sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{20,}$/u;
 
 export async function keyFilePresent(file: string): Promise<boolean> {
   try {
@@ -18,23 +22,26 @@ export async function keyFilePresent(file: string): Promise<boolean> {
 }
 
 /**
- * Keys of the right shape that the runner must not hold: an Admin API key
- * manages the whole organization, and an OAuth token is not a Console API key
- * (the client sends X-Api-Key only, so it would fail with a bare 401).
+ * Other Anthropic credentials, named so a refusal says what was stored: an
+ * Admin API key manages the whole organization, and the others are not
+ * Console API keys (the client sends X-Api-Key only, so they would fail with a
+ * bare 401).
  */
-const REFUSED_KINDS: readonly (readonly [RegExp, string])[] = [
+const OTHER_KINDS: readonly (readonly [RegExp, string])[] = [
   [/^sk-ant-admin/iu, "an Admin API key (sk-ant-admin...), which the runner must never hold"],
-  [/^sk-ant-oat/iu, "an OAuth token (sk-ant-oat...), not a Console API key"],
+  [/^sk-ant-oat/iu, "an OAuth access token (sk-ant-oat...), not a Console API key"],
+  [/^sk-ant-ort/iu, "an OAuth refresh token (sk-ant-ort...), not a Console API key"],
+  [/^sk-ant-sid/iu, "a session key (sk-ant-sid...), not a Console API key"],
 ];
 
 /** Reads and shape-checks a key. Error messages never include the file's contents. */
 export async function readKey(file: string): Promise<string> {
   const key = (await readFile(file, "utf8")).trim();
-  for (const [kind, what] of REFUSED_KINDS) {
+  for (const [kind, what] of OTHER_KINDS) {
     if (kind.test(key)) throw new Error(`${file} holds ${what}; store a workspace API key (sk-ant-api...) for the runner instead`);
   }
   if (!KEY_SHAPE.test(key)) {
-    throw new Error(`${file} does not hold an Anthropic API key (expected a single line starting with sk-ant-)`);
+    throw new Error(`${file} does not hold an Anthropic API key the runner takes (expected a single line: sk-ant-api, two digits and a dash, then the key)`);
   }
   return key;
 }

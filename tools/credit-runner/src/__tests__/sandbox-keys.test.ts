@@ -1,12 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readKey } from "../keys.js";
+import { keyFileExposure, readKey } from "../keys.js";
 import { ANTHROPIC_API_URL, keyOnlyToAnthropic, sdkSandboxApi, type SandboxApi } from "../sandbox/api.js";
 import { main } from "../sandbox/cli.js";
 import { describeError } from "../task.js";
@@ -260,6 +260,26 @@ describe("redirects off api.anthropic.com", () => {
       [STORAGE, null],
     ]);
   });
+
+  it("are decided by the request's first URL alone, whatever path a hop on api.anthropic.com passes through", async () => {
+    const seen: string[] = [];
+    const guard = keyOnlyToAnthropic(KEY, (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      seen.push(url.href);
+      if (url.pathname === "/v1/sessions/sesn_1") return Promise.resolve(redirect(302, "/v1/files/file_1/content"));
+      if (url.pathname === "/v1/files/file_2/content") return Promise.resolve(redirect(302, "/v1/elsewhere"));
+      if (url.origin === ANTHROPIC_API_URL) return Promise.resolve(redirect(302, STORAGE));
+      return Promise.resolve(new Response("from storage", { status: 200 }));
+    });
+    const get = { method: "GET", headers: { "x-api-key": KEY } };
+    // A JSON endpoint led through a file's content path on the same host is still a JSON endpoint: refused before it leaves.
+    await expect(guard(`${ANTHROPIC_API_URL}/v1/sessions/sesn_1`, get)).rejects.toThrow(/only a file download may leave/u);
+    expect(seen).toEqual([`${ANTHROPIC_API_URL}/v1/sessions/sesn_1`, `${ANTHROPIC_API_URL}/v1/files/file_1/content`]);
+    // A download led through another path on the same host is still a download: followed to storage.
+    seen.length = 0;
+    expect(await (await guard(`${ANTHROPIC_API_URL}/v1/files/file_2/content`, get)).text()).toBe("from storage");
+    expect(seen).toEqual([`${ANTHROPIC_API_URL}/v1/files/file_2/content`, `${ANTHROPIC_API_URL}/v1/elsewhere`, STORAGE]);
+  });
 });
 
 describe("a refused request", () => {
@@ -273,6 +293,36 @@ describe("a refused request", () => {
     expect(error).toBeInstanceOf(Error);
     expect(error).not.toBeInstanceOf(Anthropic.APIConnectionError);
     expect(describeError(error)).toMatch(/refusing to follow a 302 redirect of a POST request/u);
+  });
+
+  it("is final too for a Location that cannot be read, or whose host or scheme says timeout, and its reason holds nothing the server sent", async () => {
+    // The SDK retries any error whose text says "timed out", "time out" or "timeout", and a fetch TypeError as a connection failure.
+    const cases: readonly (readonly [string, number, string, RegExp])[] = [
+      ["an unreadable Location", 302, "https://[", /Location cannot be read/u],
+      ["a host that says timeout", 307, "https://timeout.example.invalid/v1/agents", /POST redirect to another host/u],
+      ["a scheme that says timeout", 307, "timeout:x", /only https is followed/u],
+    ];
+    for (const [what, status, location, reason] of cases) {
+      const wire = seam(() => redirect(status, location));
+      const error: unknown = await sdkSandboxApi(KEY, wire.fetch, {})
+        .createAgent({ name: "a", model: "claude-opus-5-5" })
+        .catch((caught: unknown) => caught);
+      expect(wire.seen.map((request) => request.method), what).toEqual(["POST"]);
+      expect(error, what).toBeInstanceOf(Error);
+      expect(error, what).not.toBeInstanceOf(Anthropic.APIConnectionError);
+      const text = describeError(error);
+      expect(text, what).toMatch(reason);
+      expect(text, what).not.toMatch(/timed? ?out|example\.invalid|\[/iu);
+    }
+    // A JSON GET redirected to such a host is refused after its one request too.
+    const wire = seam(() => redirect(302, "https://timeout.example.invalid/v1/sessions/sesn_1"));
+    const error: unknown = await sdkSandboxApi(KEY, wire.fetch, {})
+      .retrieveSession("sesn_1")
+      .catch((caught: unknown) => caught);
+    expect(wire.seen).toHaveLength(1);
+    expect(error).not.toBeInstanceOf(Anthropic.APIConnectionError);
+    expect(describeError(error)).toMatch(/only a file download may leave/u);
+    expect(describeError(error)).not.toMatch(/timed? ?out/iu);
   });
 
   it("leaves a real connection failure on the SDK's retry path, and the CLI's message shows its cause", async () => {
@@ -305,52 +355,84 @@ describe("describeError", () => {
   });
 });
 
+/** Runs pwsh, or Windows PowerShell where pwsh is missing, as the CLI tests do; says which ran. */
+function powershell(args: readonly string[], options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv } = {}) {
+  const run = (shell: string) => spawnSync(shell, args, { ...options, encoding: "utf8", windowsHide: true });
+  let shell = "pwsh";
+  let child = run(shell);
+  if (child.error !== undefined) {
+    shell = "powershell";
+    child = run(shell);
+  }
+  return { shell, status: child.status, output: `${child.stdout}${child.stderr}` };
+}
+
+/** A copy of setup-keys.ps1 at tools/credit-runner/ of a temporary tree of its own (its "repository"), so nothing it makes lands in this checkout. */
+async function scriptCopy(): Promise<{ readonly root: string; readonly script: string }> {
+  const root = await tempDir("credit-runner-script-");
+  const folder = path.join(root, "tools", "credit-runner");
+  await mkdir(folder, { recursive: true });
+  await cp(path.join(PACKAGE_DIR, "setup-keys.ps1"), path.join(folder, "setup-keys.ps1"));
+  return { root, script: path.join(folder, "setup-keys.ps1") };
+}
+
+/** Every kind of Anthropic credential the runner refuses, and why; built at run time, so no key-shaped literal sits in the source. */
+const REFUSED_KEYS: readonly (readonly [string, string, RegExp])[] = [
+  ["admin", fakeKey("admin01", "a"), /Admin API key/u],
+  ["OAuth access", fakeKey("oat01", "b"), /OAuth access token/u],
+  ["OAuth refresh", fakeKey("ort01", "c"), /OAuth refresh token/u],
+  ["session", fakeKey("sid01", "d"), /session key/u],
+  ["unknown kind", fakeKey("xyz01", "e"), /does not/u],
+  ["no digits", fakeKey("api", "f"), /does not/u],
+  ["capitals", KEY.toUpperCase(), /does not/u],
+];
+
 describe("the key", () => {
-  it("is refused when it is an Admin API key or an OAuth token, with a reason that never holds the key", async () => {
+  it("is taken only when it is a workspace API key; every other kind is refused with a reason that never holds the key", async () => {
     const dir = await tempDir("credit-runner-keyshape-");
-    const cases = [
-      [fakeKey("admin01", "a"), /Admin API key/u],
-      [fakeKey("oat01", "b"), /OAuth token/u],
-    ] as const;
-    for (const [key, reason] of cases) {
-      const file = path.join(dir, "pot-1.key");
+    const file = path.join(dir, "pot-1.key");
+    for (const [what, key, reason] of REFUSED_KEYS) {
       await writeFile(file, `${key}\n`);
       const error: unknown = await readKey(file).catch((caught: unknown) => caught);
-      expect(error, key.slice(0, 13)).toBeInstanceOf(Error);
+      expect(error, what).toBeInstanceOf(Error);
       const message = error instanceof Error ? error.message : "";
-      expect(message).toMatch(reason);
-      expect(message).not.toContain(key);
-      expect(message).not.toContain(key.slice(-20));
+      expect(message, what).toMatch(reason);
+      expect(message, what).not.toContain(key);
+      expect(message, what).not.toContain(key.slice(-20));
     }
-    const file = path.join(dir, "pot-1.key");
     await writeFile(file, `${KEY}\n`);
     expect(await readKey(file)).toBe(KEY);
   });
 
-  it.runIf(process.platform === "win32")("is refused by setup-keys.ps1 the same way when it is an Admin API key or an OAuth token", () => {
-    // The script's own rule, lifted out of it by the PowerShell parser and run alone: the rest never runs, and nothing is prompted for.
-    const probe = [
-      "$ast = [System.Management.Automation.Language.Parser]::ParseFile($env:CR_SCRIPT, [ref]$null, [ref]$null)",
-      "$rule = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-KeyProblem' }, $true)",
-      "if ($null -eq $rule) { throw 'no Get-KeyProblem in the script' }",
-      ". ([scriptblock]::Create($rule.Extent.Text))",
-      "foreach ($name in 'CR_ADMIN', 'CR_OAT', 'CR_API', 'CR_UPPER') { $problem = Get-KeyProblem ([Environment]::GetEnvironmentVariable($name)); Write-Output \"${name}=$problem\" }",
+  it.runIf(process.platform === "win32")("is stored by setup-keys.ps1's prompt loop only when it is a workspace API key, in a file only its owner can read", async () => {
+    const { root, script } = await scriptCopy();
+    const keyDir = path.join(await tempDir("credit-runner-prompt-"), "keys");
+    const keys = [...REFUSED_KEYS.map(([, key]) => key), KEY];
+    const pots = keys.map((_, index) => `pot-${String(index + 1)}`);
+    const stored = pots[pots.length - 1] ?? "";
+    // A Read-Host defined where the script is called from stands in for the cmdlet inside it (a function wins over a
+    // cmdlet): it answers each hidden prompt with the next key, read from the environment, never the command line.
+    const command = [
+      "$global:answers = $env:CR_KEYS -split ','",
+      "$global:asked = 0",
+      "function Read-Host { $answer = $global:answers[$global:asked]; $global:asked += 1; ConvertTo-SecureString $answer -AsPlainText -Force }",
+      "& $env:CR_SCRIPT -KeyDir $env:CR_KEY_DIR -Pot ($env:CR_POTS -split ',')",
     ].join("\n");
-    const child = spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-Command", probe], {
-      encoding: "utf8",
-      windowsHide: true,
-      env: { ...process.env, CR_SCRIPT: path.join(PACKAGE_DIR, "setup-keys.ps1"), CR_ADMIN: fakeKey("admin01", "a"), CR_OAT: fakeKey("oat01", "b"), CR_API: KEY, CR_UPPER: KEY.toUpperCase() },
+    const { status, output } = powershell(["-NoProfile", "-NonInteractive", "-Command", command], {
+      cwd: root,
+      env: { ...process.env, CR_KEYS: keys.join(","), CR_POTS: pots.join(","), CR_SCRIPT: script, CR_KEY_DIR: keyDir },
     });
-    expect(child.stderr).toBe("");
-    const lines = child.stdout.trim().split(/\r?\n/u);
-    expect(lines[0]).toMatch(/^CR_ADMIN=That is an Admin API key/u);
-    expect(lines[1]).toMatch(/^CR_OAT=That is an OAuth token/u);
-    expect(lines[2]).toBe("CR_API=");
-    // readKey's rule is case-sensitive, so the script's is too: it never stores a key the runner will refuse.
-    expect(lines[3]).toMatch(/^CR_UPPER=That does not look like an Anthropic API key/u);
-    expect(child.stdout).not.toContain(fakeKey("admin01", "a"));
-    expect(child.stdout).not.toContain(KEY);
-  }, 30_000);
+    expect(status, output).toBe(0);
+    for (const [index, [what, , reason]] of REFUSED_KEYS.entries()) {
+      expect(output, what).toMatch(new RegExp(`${reason.source}[^\\n]*Skipped pot-${String(index + 1)}\\.`, "u"));
+    }
+    expect(output).toContain(`Saved ${stored}`);
+    for (const key of keys) expect(output).not.toContain(key);
+    // Only the workspace key was written, as the runner reads it, and only its owner can open it.
+    expect(await readdir(keyDir)).toEqual([`${stored}.key`]);
+    expect(await readKey(path.join(keyDir, `${stored}.key`))).toBe(KEY);
+    expect(await keyFileExposure(path.join(keyDir, `${stored}.key`))).toEqual([]);
+  }, 120_000);
 });
 
 describe("the key folder, inside any git work tree", () => {
@@ -391,17 +473,46 @@ describe("the key folder, inside any git work tree", () => {
       await removeLink(outOfRepo);
     }
   });
+
+  it("is named in a warning by status, which reads nothing else differently and refuses nothing", async () => {
+    const root = await tempDir("credit-runner-status-");
+    const worktree = path.join(root, "worktree");
+    await mkdir(worktree);
+    await writeFile(path.join(worktree, ".git"), "gitdir: ../repo/.git/worktrees/w\n");
+    const statusOf = async (keyDir: string): Promise<string> => {
+      const file = path.join(root, "sandbox.config.json");
+      await writeFile(file, JSON.stringify({ workRoot: path.join(root, "work"), ledgerFile: path.join(root, "ledger.jsonl"), keyDir, keyFile: "pot-1.key", lane: "sandbox", laneCapUsd: 1, orgCapUsd: 2 }));
+      const printed: string[] = [];
+      const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+        printed.push(String(chunk));
+        return true;
+      });
+      try {
+        expect(await main(["status", "--config", file]), keyDir).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+      return printed.join("");
+    };
+    const lines = (text: string) => text.split("\n").filter((line) => line !== "");
+    // A folder under a work tree, and one inside this repository (named, never created).
+    const inWorktree = lines(await statusOf(path.join(worktree, "keys")));
+    expect(inWorktree[0]).toMatch(/^Warning: the key folder .+ is inside a git work tree/u);
+    expect(inWorktree.slice(1).map((line) => line.split(" ")[0])).toEqual(["Key", "Sandbox:", "Spend:"]);
+    const inRepo = lines(await statusOf(path.join(PACKAGE_DIR, "..", "..", "keys-status-test")));
+    expect(inRepo[0]).toMatch(/^Warning: the key folder .+ is inside the repository/u);
+    expect(existsSync(path.join(PACKAGE_DIR, "..", "..", "keys-status-test"))).toBe(false);
+    // A folder no work tree holds: no warning.
+    const outside = lines(await statusOf(path.join(root, "outside", "keys")));
+    expect(outside[0]).toMatch(/^Key file /u);
+  });
 });
 
 describe.runIf(process.platform === "win32")("setup-keys.ps1's key folder", () => {
   /** Runs a copy of the script placed at tools/credit-runner/ of a temporary tree of its own (its "repository"), from that tree. */
   async function runScript(keyDir: string) {
-    const root = await tempDir("credit-runner-script-");
-    const folder = path.join(root, "tools", "credit-runner");
-    await mkdir(folder, { recursive: true });
-    await cp(path.join(PACKAGE_DIR, "setup-keys.ps1"), path.join(folder, "setup-keys.ps1"));
-    const child = spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-File", path.join(folder, "setup-keys.ps1"), "-KeyDir", keyDir], { cwd: root, encoding: "utf8", windowsHide: true });
-    return { status: child.status, output: `${child.stdout}${child.stderr}` };
+    const { root, script } = await scriptCopy();
+    return powershell(["-NoProfile", "-NonInteractive", "-File", script, "-KeyDir", keyDir], { cwd: root });
   }
 
   it("refuses a path starting with \\ or /, and one that reaches a .git through a junction, a long-path prefix or a folder above it, before creating anything", async () => {
@@ -419,7 +530,9 @@ describe.runIf(process.platform === "win32")("setup-keys.ps1's key folder", () =
     await symlink(path.join(repo, "sub"), viaJunction, "junction");
     const outOfRepo = path.join(repo, "out");
     await symlink(outside, outOfRepo, "junction");
-    const atDriveRoot = `credit-runner-test-${path.basename(root)}`;
+    // A spelling rooted at the drive (`/` and the rest of the path), led into this test's own temp folder: if the check
+    // regressed, its folder would be made there, never at the drive's root.
+    const rooted = `/${path.relative(path.parse(root).root, path.join(root, "rooted", "keys")).split(path.sep).join("/")}`;
     try {
       const cases: readonly (readonly [string, RegExp, string])[] = [
         [`\\\\?\\${repo}\\keys`, /starts with \\ or \//u, path.join(repo, "keys")],
@@ -429,8 +542,7 @@ describe.runIf(process.platform === "win32")("setup-keys.ps1's key folder", () =
         [path.join(outOfRepo, "keys"), /inside a git work tree/u, path.join(outside, "keys")],
         [path.join(repo, "deep", "keys"), /inside a git work tree/u, path.join(repo, "deep")],
         [path.join(worktree, "keys"), /inside a git work tree/u, path.join(worktree, "keys")],
-        // Last, so a regression that already fails above never gets as far as making a folder at the drive's root.
-        [`/${atDriveRoot}`, /starts with \\ or \//u, path.join(path.parse(root).root, atDriveRoot)],
+        [rooted, /starts with \\ or \//u, path.join(root, "rooted")],
       ];
       for (const [keyDir, reason, notCreated] of cases) {
         const { status, output } = await runScript(keyDir);
@@ -454,5 +566,20 @@ describe.runIf(process.platform === "win32")("setup-keys.ps1's key folder", () =
     expect(status).not.toBe(0);
     expect(output).toMatch(/NonInteractive/u);
     expect(existsSync(keyDir)).toBe(true);
+  }, 60_000);
+
+  it("refuses a relative path given from a long-path location, which would lead to a \\\\?\\ path, before creating anything", async () => {
+    const { script } = await scriptCopy();
+    const here = path.join(await tempDir("credit-runner-location-"), "here");
+    await mkdir(here);
+    // The window stands in the same folder spelled with the long-path prefix; a relative -KeyDir is taken from there.
+    const command = "Set-Location -LiteralPath $env:CR_LOCATION; & $env:CR_SCRIPT -KeyDir keys";
+    const { shell, status, output } = powershell(["-NoProfile", "-NonInteractive", "-Command", command], {
+      env: { ...process.env, CR_LOCATION: `Microsoft.PowerShell.Core\\FileSystem::\\\\?\\${here}`, CR_SCRIPT: script },
+    });
+    expect(status, output).not.toBe(0);
+    expect(existsSync(path.join(here, "keys")), output).toBe(false);
+    // Windows PowerShell 5.1 cannot join a path onto a \\?\ location and stops before this check; PowerShell 7 reaches it.
+    if (shell === "pwsh") expect(output).toMatch(/leads to a network or device path/u);
   }, 60_000);
 });
