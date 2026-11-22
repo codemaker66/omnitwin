@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
+import type { ZodType } from "zod";
 import {
   ClientEventScheduleQuerySchema,
   ClientEventScheduleSchema,
   ProposeWindowSchema,
   RoomDayQuerySchema,
   RoomDaySchema,
+  ScheduleSlotSchema,
 } from "../client-event-schedule.js";
+import { BookViewingSchema, ConvertEnquirySchema, CreateBookingSchema, UpdateBookingSchema } from "../booking.js";
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
 const EVENT = "00000000-0000-4000-8000-000000000002";
@@ -50,6 +53,53 @@ describe("client event schedule contract", () => {
       { ...original, slots: [{ ...original.slots[0], ownerUserId: VENUE }] },
       { ...original, slots: [{ ...original.slots[0], clientName: "Private" }] },
     ]) expect(ClientEventScheduleSchema.safeParse(candidate).success).toBe(false);
+  });
+
+  it("reads a slot whose booking was stored with an empty title, so one such row never fails the whole schedule (API-9)", () => {
+    // Rows written before #350 can carry "" (a public enquiry's blank name).
+    // The read model says what is stored; every writer still refuses it.
+    const original = schedule();
+    const untitled = { ...original.slots[0], title: "" };
+    const second = { ...original.slots[0], bookingId: EVENT, startsAt: "2026-10-26T18:00:00.000Z", endsAt: "2026-10-26T23:00:00.000Z" };
+    expect(ClientEventScheduleSchema.parse({ ...original, slots: [untitled, second] }).slots).toEqual([untitled, second]);
+    // A proposal's reply is one slot as stored, read through the same schema.
+    expect(ScheduleSlotSchema.parse(untitled)).toEqual(untitled);
+    expect(ScheduleSlotSchema.parse({ ...untitled, title: "   " }).title).toBe("");
+    // Still bounded, and still never written.
+    expect(ScheduleSlotSchema.safeParse({ ...untitled, title: "x".repeat(201) }).success).toBe(false);
+    expect(UpdateBookingSchema.safeParse({ title: "" }).success).toBe(false);
+    expect(UpdateBookingSchema.safeParse({ title: "   " }).success).toBe(false);
+  });
+
+  it("reads an event stored with no name, so it never fails the whole schedule (the event-name ruling)", () => {
+    // Events made before eventNameFor named them can hold "" (an untitled
+    // booking's); the screens name them by their occasion and day.
+    const original = schedule();
+    for (const name of ["", "   "]) {
+      expect(ClientEventScheduleSchema.parse({ ...original, event: { ...original.event, name } }).event.name, JSON.stringify(name)).toBe("");
+    }
+    expect(ClientEventScheduleSchema.safeParse({ ...original, event: { ...original.event, name: "x".repeat(201) } }).success).toBe(false);
+  });
+
+  // The reads above take what is stored; no writer stores it. Each input is
+  // otherwise valid, so the title is the one thing refused.
+  const WINDOW = { startsAt: "2026-10-25T18:00:00.000Z", endsAt: "2026-10-25T23:00:00.000Z" };
+  const WRITERS: Array<[string, ZodType, Record<string, unknown>]> = [
+    ["CreateBookingSchema", CreateBookingSchema, { venueId: VENUE, spaceId: ROOM, kind: "ink", title: "Dinner", ...WINDOW }],
+    ["UpdateBookingSchema", UpdateBookingSchema, { title: "Dinner" }],
+    ["ConvertEnquirySchema", ConvertEnquirySchema, {
+      enquiryId: EVENT, title: "Dinner", ...WINDOW, decisionAt: "2026-10-18T12:00:00.000Z", ownerUserId: VENUE,
+      nextAction: "Call the client", nextActionDueAt: "2026-10-16T12:00:00.000Z",
+    }],
+    ["BookViewingSchema", BookViewingSchema, { enquiryId: EVENT, title: "Dinner", ...WINDOW }],
+  ];
+  it.each(WRITERS)("%s still refuses an empty or blank title (API-9)", (_name, writer, input) => {
+    expect(writer.safeParse(input).success).toBe(true);
+    for (const title of ["", "   "]) {
+      const result = writer.safeParse({ ...input, title });
+      expect(result.success, JSON.stringify(title)).toBe(false);
+      expect(result.error?.issues.map((issue) => issue.path.join(".")), JSON.stringify(title)).toEqual(["title"]);
+    }
   });
 
   it("rejects internal material at every projected object boundary", () => {
@@ -129,8 +179,14 @@ describe("RoomDaySchema (goal 19 S6)", () => {
     expect(RoomDayQuerySchema.safeParse({ spaceId: ROOM, day: "2030-05-10" }).success).toBe(true);
   });
 
+  it("reads the client's own booking stored with an empty title, so the room's day still reaches the ribbon (API-9)", () => {
+    const untitled = { ...roomDay, spans: [{ kind: "yours", bookingId: BOOKING, title: "", ...span }, ...roomDay.spans.slice(1)] };
+    expect(RoomDaySchema.parse(untitled).spans).toEqual(untitled.spans);
+    expect(RoomDaySchema.safeParse({ ...roomDay, spans: [{ kind: "yours", bookingId: BOOKING, title: "x".repeat(201), ...span }] }).success).toBe(false);
+  });
+
   it("refuses a name, a booking id or anything else on an anonymous span: the privacy pin", () => {
-    for (const leak of [{ title: "The MacLeod wedding" }, { bookingId: BOOKING }, { eventId: EVENT }, { ownerName: "Isla" }]) {
+    for (const leak of [{ title: "The MacLeod wedding" }, { title: "" }, { bookingId: BOOKING }, { eventId: EVENT }, { ownerName: "Isla" }]) {
       for (const kind of ["held", "busy"]) {
         expect(RoomDaySchema.safeParse({ ...roomDay, spans: [{ kind, ...span, ...leak }] }).success, `${kind} ${Object.keys(leak)[0] ?? ""}`).toBe(false);
       }

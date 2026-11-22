@@ -96,6 +96,9 @@
   display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 9px !important; gap: 7px !important; border: 1px solid var(--cockpit-hairline) !important;
   border-radius: 8px !important; background: #1c1b18 !important;
+  /* Beside the right-hand dock, a tool's card opens left, over the room
+     (VerticalToolbox's ToolBtn reads this; tool-card-placement.ts). */
+  --tool-cards: left;
 }
 .reference-viewer [data-testid="planner-toolbar"].reference-extra-tools > div:empty { display: none; }
 .reference-viewer [data-testid="furniture-panel"] { left: calc(var(--reference-left) + 26px) !important; top: 82px !important; max-height: calc(100dvh - 202px); }

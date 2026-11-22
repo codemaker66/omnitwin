@@ -1,0 +1,92 @@
+// ---------------------------------------------------------------------------
+// Which rooms are drawn as surveyed
+//
+// A surveyed room is published by tools/surveyed-rooms into a dated folder of
+// the web's public files, with a survey.json that describes it. This table
+// says where each Trades Hall room's survey lives and at which revision; a
+// room is drawn as surveyed only when it is listed here, its space belongs to
+// Trades Hall (never another venue's room of the same slug), and this device
+// has asked for surveyed rooms.
+//
+// No room is listed yet: the Saloon joins once its files are published. The
+// Grand Hall keeps its own code (components/grand-hall) and is not listed.
+// An entry names its room, and the load holds the folder's record to it
+// (use-surveyed-room.ts): another room's survey, or another venue's, is
+// refused rather than drawn.
+//
+// The switch is per device while surveyed rooms are reviewed: `?rooms=surveyed`
+// turns them on and remembers it; `?rooms=plain` turns them off again.
+// Presentation only: the layout is the same either way.
+//
+// This file is part of what the planner carries for every visitor (the seam,
+// use-planner-surveyed-room.ts), so it holds the table and the switch and
+// nothing a room needs only once it is being loaded: a survey file's URL is
+// worked out with the load (use-surveyed-room.ts).
+// ---------------------------------------------------------------------------
+
+import { isTradesHallVenueSlug } from "../../hooks/use-trades-hall-venue.js";
+
+export interface SurveyedRoomEntry {
+  /**
+   * The room's slug, which its space and its survey's record share: a folder
+   * that holds another room's survey is refused when it loads.
+   */
+  readonly slug: string;
+  /** The survey's public folder, without a trailing slash. */
+  readonly base: string;
+  /**
+   * Raised whenever the survey's files are rebuilt in place, so a browser
+   * never pairs a new record with an old atlas or relief it kept.
+   */
+  readonly revision: number;
+}
+
+/** Trades Hall's surveyed rooms. None is listed yet. */
+const LISTED: readonly SurveyedRoomEntry[] = [];
+
+/** Rooms by space slug: each is filed under its own slug, so a key cannot name another room's entry. */
+export function surveyedRoomsBySlug(listed: readonly SurveyedRoomEntry[]): ReadonlyMap<string, SurveyedRoomEntry> {
+  return new Map(listed.map((entry) => [entry.slug, entry]));
+}
+
+/** Trades Hall's surveyed rooms by space slug. */
+export const SURVEYED_ROOMS: ReadonlyMap<string, SurveyedRoomEntry> = surveyedRoomsBySlug(LISTED);
+
+/** A public folder on this origin: a path of plain segments, nothing that climbs or leaves. */
+const PUBLIC_FOLDER = /^(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)+$/;
+
+/**
+ * A survey's folder as a development page or parameter names one: the path
+ * without its trailing slashes, or null for anything but a plain path on
+ * this site (another origin, a query, a segment that climbs).
+ */
+export function publicSurveyFolder(asked: string): string | null {
+  const base = asked.replace(/\/+$/, "");
+  return PUBLIC_FOLDER.test(base) ? base : null;
+}
+
+/** The survey for a Trades Hall space, or null when the space is not drawn as surveyed. */
+export function surveyedRoomFor(
+  venueSlug: string,
+  spaceSlug: string,
+  rooms: ReadonlyMap<string, SurveyedRoomEntry> = SURVEYED_ROOMS,
+): SurveyedRoomEntry | null {
+  if (!isTradesHallVenueSlug(venueSlug)) return null;
+  return rooms.get(spaceSlug) ?? null;
+}
+
+const STORAGE_KEY = "venviewer.surveyed-rooms";
+
+/** Whether this device draws surveyed rooms, from the URL or the last choice. */
+export function surveyedRoomsEnabled(search: string): boolean {
+  const asked = new URLSearchParams(search).get("rooms");
+  if (asked === "surveyed" || asked === "plain") {
+    try { window.localStorage.setItem(STORAGE_KEY, asked); } catch { /* a convenience only */ }
+    return asked === "surveyed";
+  }
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) === "surveyed";
+  } catch {
+    return false;
+  }
+}

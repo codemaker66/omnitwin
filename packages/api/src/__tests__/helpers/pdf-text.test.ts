@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import PDFDocument from "pdfkit";
 import { registerSheetFonts } from "../../services/sheet-pdf/fonts.js";
 import { pdfPageTexts } from "../support/pdf-text.js";
-import { pdfImageCount, pdfPageSizes, pdfPages, pdfStream, pdfStreams, pdfText } from "./pdf-text.js";
+import { pdfImageCount, pdfPageSizes, pdfPages, pdfRules, pdfStream, pdfStreams, pdfText } from "./pdf-text.js";
 import { printedQr } from "./sheet-paper-reading.js";
 
 // The sheet embeds subset TrueType fonts, so its content streams hold glyph
@@ -64,9 +64,38 @@ describe("pdf text helper", () => {
     expect((line?.y2 ?? 0) - (line?.y ?? 0)).toBeCloseTo(line?.width ?? 0, 0);
   });
 
+  it("reports the fill colour each run is shown in, as the graphics state saves and restores it", async () => {
+    const buf = await render((doc) => {
+      doc.font("Inter-Regular").fontSize(9);
+      doc.text("plain", 40, 80, { lineBreak: false });
+      doc.fillColor("#8a3522").text("late", 40, 100, { lineBreak: false });
+      doc.save().fillColor("#2b3a33").text("inside", 40, 120, { lineBreak: false }).restore();
+      doc.text("after", 40, 140, { lineBreak: false });
+    });
+    expect(pdfPages(buf)[0]?.map((line) => [line.text, line.color])).toEqual([
+      ["plain", null], ["late", "#8a3522"], ["inside", "#2b3a33"], ["after", "#8a3522"],
+    ]);
+  });
+
   it("counts embedded images", async () => {
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/RZkAAAAASUVORK5CYII=", "base64");
     expect(pdfImageCount(await render((doc) => { doc.image(png, 10, 10, { width: 20 }); }))).toBe(1);
+  });
+
+  it("finds each page's horizontal rules where they land, and nothing else", async () => {
+    const buf = await render((doc) => {
+      doc.save().moveTo(40, 120).lineTo(555.28, 120).lineWidth(0.6).stroke().restore();
+      doc.save().moveTo(300, 50).lineTo(300, 90).stroke().restore();
+      doc.save().rect(100, 300, 50, 20).stroke().restore();
+      doc.save().moveTo(60, 400).lineTo(160, 400).lineTo(160, 450).stroke().restore();
+      doc.addPage({ size: "A4", margin: 0 });
+      doc.save().moveTo(40, 32).lineTo(555.28, 32).stroke().restore();
+    });
+    const pages = pdfRules(buf);
+    expect(pages).toHaveLength(2);
+    // A rule's own width when it sets one; none when it strokes at the default.
+    expect(pages[0]).toEqual([{ x: 40, x2: 555.28, y: expect.closeTo(841.89 - 120, 2) as number, weight: 0.6 }]);
+    expect(pages[1]).toEqual([{ x: 40, x2: 555.28, y: expect.closeTo(841.89 - 32, 2) as number, weight: null }]);
   });
 
   // A compressed stream ends in its zlib checksum, whose last byte is as good as

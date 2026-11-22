@@ -41,6 +41,10 @@ export function changeoverFailure(error: unknown): ChangeoverFailure {
   const configIds = details.success ? details.data.configIds : [];
   if (error.status === 503 && error.code === "APPROVED_SNAPSHOT_UNAVAILABLE") return { lasting: true, reason: "unreadable", configIds };
   if (error.status >= 500) return { lasting: false };
+  // The route names its layouts on each 404 and 403 of its own. One naming
+  // none is not about these layouts: an API that does not serve the route yet
+  // (the web served first, or the API rolled back alone), or the sign-in gate.
+  if ((error.status === 404 || error.status === 403) && configIds.length === 0) return { lasting: false };
   if (error.status === 404) return { lasting: true, reason: "removed", configIds };
   if (error.status === 409 && error.code === "NOT_ONE_ROOM") return { lasting: true, reason: "rooms", configIds };
   if (error.status === 403) return { lasting: true, reason: "no-access", configIds };

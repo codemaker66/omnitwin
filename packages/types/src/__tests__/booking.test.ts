@@ -510,6 +510,23 @@ describe("Calendar entries and conflicts", () => {
     expect(phase.success).toBe(true);
   });
 
+  it("reads a phase of an event stored with no name, so one never fails the venue's whole range (the event-name ruling)", () => {
+    const phase = {
+      entryType: "phase",
+      id: "00000000-0000-4000-8000-000000000004",
+      spaceId: SPACE_ID,
+      eventId: "00000000-0000-4000-8000-000000000005",
+      eventName: "",
+      name: "Setup",
+      startsAt: "2026-09-18T15:00:00.000Z",
+      endsAt: "2026-09-18T18:00:00.000Z",
+      sortOrder: 0,
+    };
+    expect(CalendarEntrySchema.parse(phase)).toMatchObject({ entryType: "phase", eventName: "" });
+    expect(CalendarEntrySchema.parse({ ...phase, eventName: "   " })).toMatchObject({ eventName: "" });
+    expect(CalendarEntrySchema.safeParse({ ...phase, eventName: "x".repeat(201) }).success).toBe(false);
+  });
+
   it("rejects an unknown entry type", () => {
     expect(
       CalendarEntrySchema.safeParse({ entryType: "note", id: "x" }).success,

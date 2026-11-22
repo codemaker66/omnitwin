@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
 import { useChromePresenceStore } from "../../../../stores/chrome-presence-store.js";
+import { useSurveyedRoomStore } from "../../../../stores/surveyed-room-store.js";
 
 // The cockpit hosts the full editor (App) in its stage; mock it to a stand-in
 // so the test stays a structural shell test (no WebGL). The top bar reads
@@ -105,6 +106,25 @@ describe("PlannerCockpit", () => {
     expect(screen.getByTestId("room-resolve-caption").textContent).toContain("Part of the room capture");
     expect(screen.getByTestId("room-resolve-caption").querySelector("svg")).toBeNull();
   });
+  it.each([true, false])("says that a surveyed room could not load on mobile=%s, and on a phone only then", (mobile) => {
+    const store = useSurveyedRoomStore.getState();
+    try {
+      // Still loading: a phone keeps its stage clear, as it does while a capture loads.
+      store.publish({ roomName: "Saloon", phase: "loading", files: { settled: 1, expected: 3 }, failure: null });
+      const { rerender } = render(<PlannerCockpit mobile={mobile} />);
+      if (mobile) expect(screen.queryByTestId("room-resolve-caption")).toBeNull();
+      else expect(screen.getByTestId("room-resolve-caption").textContent).toContain("Loading the Saloon as surveyed");
+      act(() => { store.publish({ roomName: "Saloon", phase: "failed", files: { settled: 0, expected: null }, failure: "survey.json (http): HTTP 404" }); });
+      rerender(<PlannerCockpit mobile={mobile} />);
+      const caption = screen.getByTestId("room-resolve-caption");
+      expect(caption.getAttribute("data-visible")).toBe("true");
+      expect(caption.textContent).toContain("The surveyed Saloon could not load");
+      expect(caption.querySelector("svg")).toBeNull();
+    } finally {
+      act(() => { store.publish(null); });
+    }
+  });
+
   it("keeps booking controls reachable independently of the layout timeline's expansion", () => {
     const { container, rerender } = render(<PlannerCockpit hasLinkedEvent />);
     const disclosure = screen.getByText("Booking time").closest("details");

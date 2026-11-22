@@ -21,7 +21,7 @@ import type { SlotRequestsComponent } from "./lib/slot-requests-contract.js";
 import type { CrewOnPanel } from "./lib/turn-round-crew.js";
 import { StateIcon } from "./DayBoardRooms.js";
 import { ChangeoverSection } from "./DayBoardChangeover.js";
-import { ChangeList, changeWhen, gotItLabel } from "./DayBoardChanges.js";
+import { ChangeList, MORE_WAITING, changeWhen, gotItLabel } from "./DayBoardChanges.js";
 
 // ---------------------------------------------------------------------------
 // The open slot, on the forest decision panel the desks use: the room's
@@ -175,9 +175,10 @@ const SEEN_BY_FOR_MS = 12 * 60 * 60 * 1000;
  * words before and after, and one "Got it" for all of them, which puts them in
  * hand for the whole floor. With nothing waiting, who last acknowledged a
  * change to the event, said of the event: the change may have been another
- * room's.
+ * room's. The line that says what a Got it came to stays in place whether or
+ * not a change waits here, so it is always heard where Got it was pressed.
  */
-function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, note, unread }: {
+function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, note, unread, focusAfter }: {
   readonly changes: EventAwaitingAcknowledgement;
   /** The last read of what changed failed: what shows is as last read. */
   readonly unread: boolean;
@@ -188,52 +189,66 @@ function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, note, u
   readonly sending: boolean;
   /** What the last Got it here came to, when that needs saying. */
   readonly note: string | null;
-}): ReactElement | null {
+  /** Where the keyboard goes when the changes leave and nobody is named as
+   *  having them: the panel's next step. */
+  readonly focusAfter: () => void;
+}): ReactElement {
   const waiting = changes.changes;
   const seenRef = useRef<HTMLParagraphElement>(null);
   const wasSending = useRef(false);
   // The button leaves with the changes it acknowledged; the keyboard's place
-  // goes to the line that says who has them, not to the document.
+  // goes to the line that says who has them, or to the panel's next step,
+  // never to the document.
   useEffect(() => {
     if (wasSending.current && !sending && waiting.length === 0) {
       const active = document.activeElement;
-      if (active === null || active === document.body) seenRef.current?.focus();
+      if (active === null || active === document.body) {
+        if (seenRef.current !== null) seenRef.current.focus();
+        else focusAfter();
+      }
     }
     wasSending.current = sending;
-  }, [sending, waiting.length]);
+  }, [sending, waiting.length, focusAfter]);
+  // Second in both arrangements below, so it stays the one element, and the
+  // one live region, as changes come and go.
+  const status = <p className="dayboard-changes-status" aria-live="polite">{note ?? ""}</p>;
+  const more = changes.truncated === true ? <p className="dayboard-changes-more">{MORE_WAITING}</p> : null;
   const unreadLine = unread
     ? <p className="dayboard-changes-unread">What changed could not be read just now; this is as last read.</p>
     : null;
   if (waiting.length === 0) {
     const last = changes.lastAcknowledgement;
-    if (last === null || nowMs - Date.parse(last.at) > SEEN_BY_FOR_MS) return unreadLine;
-    return (
+    const seenBy = last === null || nowMs - Date.parse(last.at) > SEEN_BY_FOR_MS ? null : (
       <p ref={seenRef} className="dayboard-changes-seen" tabIndex={-1}>
         {last.by} last acknowledged a change to this event, {changeWhen(Date.parse(last.at), nowMs, timeZone)}.
       </p>
     );
+    return <>{seenBy}{status}{more}{unreadLine}</>;
   }
   return (
-    <section className="dayboard-changes dayboard-detail-section" aria-label="What changed">
-      <h3 className="dayboard-detail-heading">What changed</h3>
-      <ChangeList changes={waiting} timeZone={timeZone} nowMs={nowMs} />
-      {onAcknowledge !== null && (
-        // Never disabled: a disabled button drops the keyboard's place to the
-        // page, and on a failed send nothing would bring it back.
-        <button
-          type="button"
-          className="dayboard-seen-button is-primary dayboard-changes-ack"
-          aria-busy={sending}
-          aria-disabled={sending}
-          onClick={() => { if (!sending) onAcknowledge(); }}
-        >
-          {sending && <ActivityIndicator size={14} />}
-          {gotItLabel(waiting.length)}
-        </button>
-      )}
-      <p className="dayboard-changes-status" aria-live="polite">{note ?? ""}</p>
+    <>
+      <section className="dayboard-changes dayboard-detail-section" aria-label="What changed">
+        <h3 className="dayboard-detail-heading">What changed</h3>
+        <ChangeList changes={waiting} timeZone={timeZone} nowMs={nowMs} />
+        {more}
+        {onAcknowledge !== null && (
+          // Never disabled: a disabled button drops the keyboard's place to the
+          // page, and on a failed send nothing would bring it back.
+          <button
+            type="button"
+            className="dayboard-seen-button is-primary dayboard-changes-ack"
+            aria-busy={sending}
+            aria-disabled={sending}
+            onClick={() => { if (!sending) onAcknowledge(); }}
+          >
+            {sending && <ActivityIndicator size={14} />}
+            {gotItLabel(waiting.length)}
+          </button>
+        )}
+      </section>
+      {status}
       {unreadLine}
-    </section>
+    </>
   );
 }
 
@@ -287,18 +302,23 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
       .catch((err: unknown) => { setSeenLine(seenStatus(kind, err instanceof Error ? err : new Error("the server refused it"))); })
       .finally(() => { settledRef.current = true; setBusy(null); });
   }, [observations, slot.bookingId, busy]);
+  // The panel's next step for the keyboard: the next fact to record, or the
+  // section when there is none left.
+  const focusNextStep = useCallback((): void => {
+    const next = actionsRef.current?.querySelector("button");
+    if (next instanceof HTMLButtonElement) next.focus();
+    else seenRef.current?.focus();
+  }, []);
   // The tapped button leaves with its fact; if that dropped the keyboard's
-  // place to the document, it is kept on the next fact to record, or on the
-  // section when there is none left. A place moved elsewhere meanwhile stays.
+  // place to the document, it is kept on the next step. A place moved
+  // elsewhere meanwhile stays.
   useEffect(() => {
     if (busy !== null || !settledRef.current) return;
     settledRef.current = false;
     const active = document.activeElement;
     if (active !== null && active !== document.body) return;
-    const next = actionsRef.current?.querySelector("button");
-    if (next instanceof HTMLButtonElement) next.focus();
-    else seenRef.current?.focus();
-  }, [busy]);
+    focusNextStep();
+  }, [busy, focusNextStep]);
   const nextKinds = nextObservationKinds(slot.observed?.kind ?? null);
   // A change waiting to be read takes the panel's one cream button.
   const changeFirst = onAcknowledge !== null && (changes?.changes.length ?? 0) > 0;
@@ -358,6 +378,7 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
           sending={acknowledging}
           note={acknowledgeNote}
           unread={changesUnread}
+          focusAfter={focusNextStep}
         />
       ) : changesUnread && slot.eventId !== null ? (
         <p className="dayboard-changes-unread">What changed could not be read just now.</p>

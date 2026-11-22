@@ -96,6 +96,36 @@ describe("the venue's acknowledgement copy", () => {
     expect(html.toLowerCase()).not.toContain("unsubscribe");
   });
 
+  // Blake, 12 November 2026, "Name if it looks real": the reply goes in the
+  // venue's name to an address nobody has confirmed, so it repeats a name only
+  // when the name reads as one.
+  it("greets by a name only when it reads as one, and otherwise says Hello", async () => {
+    async function greetingFor(organiserName: string | null): Promise<string | undefined> {
+      const { html } = await enquiryAcknowledgement({
+        venueName: "Trades Hall Glasgow", roomName: null, organiserName,
+        eventType: null, eventDate: null, guestCount: null, replyToEmail: null,
+      });
+      return /<\/h[1-6]>\s*<p[^>]*>([\s\S]*?)<\/p>/u.exec(readableText(html))?.[1]?.replaceAll("&#x27;", "'");
+    }
+    const sixty = "Abcdefghij".repeat(6);
+    expect(await greetingFor("Siobhán O’Neill-Smith")).toBe("Dear Siobhán O’Neill-Smith,");
+    expect(await greetingFor("Mary O'Brien")).toBe("Dear Mary O'Brien,");
+    expect(await greetingFor("J. R. Fraser")).toBe("Dear J. R. Fraser,");
+    // Initials run together, and a title with its stop, are still names.
+    expect(await greetingFor("J.R.R. Tolkien")).toBe("Dear J.R.R. Tolkien,");
+    expect(await greetingFor("Dr. Ailsa Grant Jr.")).toBe("Dear Dr. Ailsa Grant Jr.,");
+    expect(await greetingFor(sixty)).toBe(`Dear ${sixty},`);
+    for (const refused of [
+      null, `${sixty}k`, "Elaine Fraser 2", "elaine@example.test", "Elaine / Fraser", "Re: your deposit",
+      "Elaine‮resarF", "Elaine\nFraser", "- . '",
+      // A web address needs no digit, '/' or ':': mail programs make a link of
+      // words joined by a full stop. "Dr.Smith" pays for that with a Hello.
+      "pay at th-deposit.example", "www.example.test", "Visit x.co now", "Dr.Smith",
+    ]) {
+      expect(await greetingFor(refused), JSON.stringify(refused)).toBe("Hello,");
+    }
+  });
+
   it("omits fields the organiser did not give", async () => {
     const { html } = await enquiryAcknowledgement({
       venueName: "Trades Hall Glasgow",

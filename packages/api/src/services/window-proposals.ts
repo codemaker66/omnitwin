@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
-import type { ClientEventScheduleSlot, PlatformRole, ProposeWindow } from "@omnitwin/types";
+import { eventTitleFor, type ClientEventScheduleSlot, type PlatformRole, type ProposeWindow } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
-import { bookings, diaryCommands, events, spaces, users } from "../db/schema.js";
+import { bookings, diaryCommands, events, spaces, users, venues } from "../db/schema.js";
 import { canProposeWindow, isClientSideRole } from "../utils/query.js";
 import { canWriteBookings, ownerWorksAtVenue, PG_UNIQUE_VIOLATION } from "./booking-mutations.js";
 import { clientHoldsEventLink } from "./conversations.js";
@@ -126,8 +126,8 @@ export async function proposeWindowCore(
   now: Date = new Date(),
 ): Promise<ProposalOk | ProposalDeny> {
   const [eventRow] = await db
-    .select({ id: events.id, venueId: events.venueId, name: events.name, eventType: events.eventType, createdBy: events.createdBy })
-    .from(events).where(and(eq(events.id, eventId), isNull(events.deletedAt))).limit(1);
+    .select({ id: events.id, venueId: events.venueId, name: events.name, eventType: events.eventType, createdBy: events.createdBy, startsAt: events.startsAt, timeZone: venues.timezone })
+    .from(events).innerJoin(venues, eq(venues.id, events.venueId)).where(and(eq(events.id, eventId), isNull(events.deletedAt))).limit(1);
   if (eventRow === undefined) return deny(404, "EVENT_NOT_FOUND", "That event does not exist.");
 
   const holdsEventLink = isClientSideRole(actor.role) ? await clientHoldsEventLink(db, actor.id, eventId) : false;
@@ -174,9 +174,14 @@ export async function proposeWindowCore(
     // Diary move may have overtaken the read above, so whether the window
     // moves, from where, its rank and decision date, and everything moved with
     // it (its phases, the floor's change) come from this row, never from that
-    // read. Locked before the room, in the order a Diary move takes them.
+    // read. Still this proposer's live hold on this event, as it was found: one
+    // the office has moved to another event meanwhile is no longer theirs to
+    // move from here. Locked before the room, in the order a Diary move takes them.
     const lockedHold = mine === undefined ? null : (await tx.select().from(bookings)
-      .where(and(eq(bookings.id, mine.id), eq(bookings.kind, "hold"), eq(bookings.status, "active"), isNull(bookings.deletedAt)))
+      .where(and(
+        eq(bookings.id, mine.id), eq(bookings.eventId, eventId), eq(bookings.createdBy, actor.id),
+        eq(bookings.kind, "hold"), eq(bookings.status, "active"), isNull(bookings.deletedAt),
+      ))
       .for("update"))[0] ?? null;
     if (mine !== undefined && lockedHold === null) return deny(409, "WINDOW_DECIDED", "The office has confirmed this time; ask them to move it.");
     // The room as it stands now, held until this commits, so a room being
@@ -197,7 +202,10 @@ export async function proposeWindowCore(
         : decisionAt;
       [row] = await tx.update(bookings)
         .set({ spaceId: space.id, startsAt, endsAt, rank, decisionAt, nextActionDueAt, updatedAt: now })
-        .where(and(eq(bookings.id, lockedHold.id), eq(bookings.kind, "hold"), eq(bookings.status, "active")))
+        .where(and(
+          eq(bookings.id, lockedHold.id), eq(bookings.eventId, eventId), eq(bookings.createdBy, actor.id),
+          eq(bookings.kind, "hold"), eq(bookings.status, "active"),
+        ))
         .returning();
       if (row === undefined) return deny(409, "WINDOW_DECIDED", "The office has confirmed this time; ask them to move it.");
       changeKind = "booking.updated";
@@ -230,10 +238,10 @@ export async function proposeWindowCore(
       const decisionAt = decisionDateFor(startsAt, now);
       [row] = await tx.insert(bookings).values({
         venueId: eventRow.venueId, spaceId: space.id, eventId, kind: "hold", status: "active",
-        title: eventRow.name, eventType: eventRow.eventType, startsAt, endsAt,
+        title: eventTitleFor(eventRow, eventRow.timeZone), eventType: eventRow.eventType, startsAt, endsAt,
         rank: await nextRank(tx, space.id, startsAt, endsAt, null),
         jointFlag: false, decisionAt, ownerUserId,
-        nextAction: `Decide ${actor.name}'s proposed time for ${eventRow.name}`.slice(0, 500),
+        nextAction: `Decide ${actor.name}'s proposed time for ${eventTitleFor(eventRow, eventRow.timeZone)}`.slice(0, 500),
         nextActionDueAt: decisionAt, createdBy: actor.id,
       }).returning();
       if (row === undefined) return deny(500, "BOOKING_CREATE_FAILED", "The proposal could not be kept.");

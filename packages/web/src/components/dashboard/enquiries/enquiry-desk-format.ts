@@ -398,7 +398,7 @@ export function deskGreeting(nowMs: number, fullName: string | null, zone: strin
 }
 
 /** A run of the opening sentence; the counts and the wait are set in bold. */
-export type SummaryPart = string | { readonly strong: string; readonly tone?: "new" };
+export type SummaryPart = string | { readonly strong: string; readonly tone?: "new" | "alarm" };
 
 export function summaryText(parts: readonly SummaryPart[]): string {
   return parts.map((part) => typeof part === "string" ? part : part.strong).join("");

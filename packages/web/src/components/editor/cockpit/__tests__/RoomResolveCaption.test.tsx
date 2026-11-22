@@ -8,6 +8,7 @@ vi.mock("../../../../hooks/use-trades-hall-venue.js", () => ({ useTradesHallVenu
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
 import { useHallViewStore } from "../../../../stores/hall-view-store.js";
+import { useSurveyedRoomStore } from "../../../../stores/surveyed-room-store.js";
 
 function spaceNamed(name: string) {
   return SpaceSchema.parse({
@@ -69,5 +70,66 @@ describe("RoomResolveCaption for the drawn Grand Hall", () => {
     });
     const caption = screen.getByTestId("room-resolve-caption");
     expect(caption.textContent).not.toContain("surfaces");
+  });
+});
+
+describe("RoomResolveCaption for another room drawn as surveyed", () => {
+  const loading = { roomName: "Saloon", phase: "loading" as const, files: { settled: 1, expected: 3 }, failure: null };
+  const drawn = { roomName: "Saloon", phase: "ready" as const, files: { settled: 0, expected: null }, failure: null };
+  const failed = { roomName: "Saloon", phase: "failed" as const, files: { settled: 0, expected: null }, failure: "survey.json (http): HTTP 404" };
+
+  beforeEach(() => {
+    useEditorStore.setState({ space: spaceNamed("Saloon") });
+    useCockpitStore.getState().setLayerMode("mesh");
+    useSurveyedRoomStore.getState().publish(null);
+  });
+  afterEach(() => {
+    cleanup();
+    useEditorStore.setState({ space: null });
+    useSurveyedRoomStore.getState().publish(null);
+  });
+
+  it("counts the survey's files, then its photographs, in with working motion, then falls quiet", () => {
+    const { container } = render(<RoomResolveCaption />);
+    const caption = screen.getByTestId("room-resolve-caption");
+    expect(caption.getAttribute("data-visible")).toBe("false");
+    act(() => { useSurveyedRoomStore.getState().publish(loading); });
+    expect(caption.getAttribute("data-visible")).toBe("true");
+    expect(caption.textContent).toContain("Loading the Saloon as surveyed · 1 of 3 files");
+    expect(container.querySelector("[data-activity-indicator]")).not.toBeNull();
+    // Drawn, its model yet to say what it loads: nothing is claimed to be loading.
+    act(() => { useSurveyedRoomStore.getState().publish(drawn); });
+    expect(caption.getAttribute("data-visible")).toBe("false");
+    expect(container.querySelector("[data-activity-indicator]")).toBeNull();
+    act(() => { useSurveyedRoomStore.getState().reportPhotos({ expected: 3, settled: 1, failed: 0 }); });
+    expect(caption.textContent).toContain("Loading the Saloon's photographs · 1 of 3");
+    expect(container.querySelector("[data-activity-indicator]")).not.toBeNull();
+    act(() => { useSurveyedRoomStore.getState().reportPhotos({ expected: 3, settled: 3, failed: 0 }); });
+    expect(caption.getAttribute("data-visible")).toBe("false");
+    expect(container.querySelector("[data-activity-indicator]")).toBeNull();
+  });
+
+  it("keeps a still note when the survey, or a photograph, could not load", () => {
+    const { container } = render(<RoomResolveCaption />);
+    act(() => { useSurveyedRoomStore.getState().publish(failed); });
+    const caption = screen.getByTestId("room-resolve-caption");
+    expect(caption.getAttribute("data-visible")).toBe("true");
+    expect(caption.textContent).toContain("The surveyed Saloon could not load, so the room is drawn plainly.");
+    expect(container.querySelector("[data-activity-indicator]")).toBeNull();
+    act(() => {
+      useSurveyedRoomStore.getState().publish(drawn);
+      useSurveyedRoomStore.getState().reportPhotos({ expected: 3, settled: 3, failed: 1 });
+    });
+    expect(caption.textContent).toContain("Some of the Saloon's photographs could not load");
+    expect(container.querySelector("[data-activity-indicator]")).toBeNull();
+  });
+
+  it("leaves the capture's own word alone while the capture alone is shown", () => {
+    render(<RoomResolveCaption />);
+    act(() => {
+      useSurveyedRoomStore.getState().publish(failed);
+      useCockpitStore.getState().setLayerMode("splat");
+    });
+    expect(screen.getByTestId("room-resolve-caption").textContent).not.toContain("surveyed");
   });
 });
