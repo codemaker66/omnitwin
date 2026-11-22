@@ -976,6 +976,25 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
       expect(await eventCount(v.venueId)).toBe(2);
     });
 
+    it("a deal made from an enquiry whose link names a deleted event has an event of its own, as the join gives it; the enquiry's link stays", async () => {
+      const v = await venue("deal, deleted link");
+      const enquiryId = await enquiry(v);
+      const gone = await datelessEvent(v.venueId, "Removed");
+      await link(pool, "enquiries", enquiryId, gone);
+      await pool.query("UPDATE events SET deleted_at = now() WHERE id = $1", [gone]);
+
+      const deal = made(await createDeal(v, { title: "After the removal", sourceEnquiryId: enquiryId }));
+      expect(deal.eventId).not.toBeNull();
+      expect(deal.eventId).not.toBe(gone);
+      expect(await eventRow(deal.eventId)).toMatchObject({ name: "After the removal", client_name: "Fixture enquirer", event_type: "wedding" });
+      expect(await enquiryEvent(enquiryId)).toBe(gone);
+
+      await joinOldRecords();
+      await joinLeavesAlone([[enquiryId, "enquiry"], [deal.id, "opportunity"]]);
+      expect(await enquiryEvent(enquiryId)).toBe(gone);
+      expect(await dealEvent(deal.id)).toBe(deal.eventId);
+    });
+
     // The brief's cases.
 
     it("a deal made from an enquiry takes the enquiry's event; from an enquiry with none, one event for both", async () => {

@@ -53,8 +53,9 @@ import {
 //
 // Like ensureEnquiryEvent, it decides an enquiry already on the join's list
 // on today's data rather than skipping it (the join's step 0 then closes the
-// question), and an event it makes is named as Task 8 names an enquiry's,
-// and made by the person who made the deal.
+// question), and an event it makes for the enquiry is named as
+// ensureEnquiryEvent names one (makeEnquiryEvent), by the person who made
+// the deal.
 //
 // One open deal per event. The check here is a plain read; the unique index
 // opportunities_one_open_per_event is the guard when two writers put an open
