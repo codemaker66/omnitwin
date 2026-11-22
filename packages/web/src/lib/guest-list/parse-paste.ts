@@ -250,9 +250,11 @@ const SURNAME_FIRST_GUESS: Guess = { nameColumn: 1, secondNameColumn: 0, partyCo
  * One name word: letters of any script (with their marks), and hyphens or
  * apostrophes, straight or curly, only between letters. No digit, "@", full
  * stop or other punctuation, so an email address, a telephone number or a
- * number is never taken for a name.
+ * number is never taken for a name. The two hyphens that look like "-" are
+ * written as escapes (U+2010 hyphen, U+2011 non-breaking hyphen): they are
+ * matched here, never drawn, and are told apart only that way.
  */
-const NAME_WORD = /^\p{L}\p{M}*(?:[-‐‑'’]?\p{L}\p{M}*)*$/u;
+const NAME_WORD = /^\p{L}\p{M}*(?:[-\u2010\u2011'’]?\p{L}\p{M}*)*$/u;
 
 /** Two cells, each one name word: a surname and a first name, as a list written by hand has them. */
 function isTwoSingleWords(row: readonly string[]): boolean {

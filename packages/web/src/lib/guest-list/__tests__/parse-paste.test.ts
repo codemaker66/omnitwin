@@ -234,6 +234,9 @@ describe("parsePaste: a list written surname first", () => {
     expect(guessOf("O'Neil, Ailsa\nOkafor, Chidi")).toEqual([false, 1, 0, null]);
     expect(guessOf("O’Neil, Ailsa\nOkafor, Chidi")).toEqual([false, 1, 0, null]);
     expect(guessOf("Smith-Jones, Ana\nOkafor, Chidi")).toEqual([false, 1, 0, null]);
+    // The hyphen and the non-breaking hyphen a word processor writes (U+2010, U+2011).
+    expect(guessOf("Smith\u2010Jones, Ana\nOkafor, Chidi")).toEqual([false, 1, 0, null]);
+    expect(guessOf("Smith\u2011Jones, Ana\nOkafor, Chidi")).toEqual([false, 1, 0, null]);
     expect(guessOf("Ørsted, Åsa\nНовак, Ольга")).toEqual([false, 1, 0, null]);
     expect(guessOf("Sharma, प्रिया\nOkafor, Chidi")).toEqual([false, 1, 0, null]);
   });
