@@ -70,8 +70,7 @@ done by then, hold every pull request that touches a watched path until it is:
 after 1 December such a merge would deploy with Railway's old stored settings.
 
 On the slot's day, before step 1: merge master into pull request 2 and wait for
-its required checks to pass (the Security Audit job fails on master too; that
-known failure is not blocking). From then until step 7 is done, the merge
+its required checks to pass. From then until step 7 is done, the merge
 coordinator holds every merge that touches a watched path or `.railway/`.
 Otherwise pull request 2 falls behind master, its checks must run again, and it
 cannot merge at once.
