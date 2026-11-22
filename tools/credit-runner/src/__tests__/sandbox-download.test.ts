@@ -10,7 +10,8 @@ import { OutputTimeoutError, OutputTooLargeError } from "../sandbox/outputs.js";
 // settles must not keep a download, or its partial file, past the cap or the
 // deadline. No request leaves the machine: the fetch seam answers everything.
 
-const KEY = ["sk", "test", "download", "t".repeat(24)].join("-");
+// A synthetic key of the shape the client takes, built here so no key-shaped literal sits in the source.
+const KEY = ["sk", "ant", "api03", "d".repeat(32)].join("-");
 
 const dirs: string[] = [];
 afterEach(async () => {

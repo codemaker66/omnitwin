@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { keyFileExposure, readKey } from "../keys.js";
+import { isWorkspaceKey, keyFileExposure, readKey } from "../keys.js";
 import { ANTHROPIC_API_URL, keyOnlyToAnthropic, sdkSandboxApi, type SandboxApi } from "../sandbox/api.js";
 import { main } from "../sandbox/cli.js";
 import { describeError } from "../task.js";
@@ -402,6 +402,36 @@ describe("the key", () => {
     }
     await writeFile(file, `${KEY}\n`);
     expect(await readKey(file)).toBe(KEY);
+  });
+
+  it("is refused by the client before it is built when it is not one line of that shape, with a reason that names no part of it", async () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ["a second line", `${KEY}\nsecond-line`],
+      ["a control character", `${KEY}\u0007`],
+      ["a NUL inside", `${KEY.slice(0, 24)}\u0000${KEY.slice(24)}`],
+      ["a trailing space", `${KEY} `],
+      ["no key", ""],
+      ...REFUSED_KEYS.map(([what, key]) => [what, key] as const),
+    ];
+    for (const [what, key] of cases) {
+      const wire = seam(anyAnswer);
+      // Thrown when the client is made, or when it is first used: either way nothing may be sent and nothing of the key shown.
+      const error: unknown = await (async () => sdkSandboxApi(key, wire.fetch, {}).retrieveSession("sesn_1"))().then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(wire.seen, what).toEqual([]);
+      expect(error, what).toBeInstanceOf(Error);
+      for (const text of [error instanceof Error ? error.message : "", describeError(error)]) {
+        expect(text, what).toMatch(/workspace API key/u);
+        // No prefix, no length, no characters of it: no "sk-", no digit, nothing of its fill or its second line.
+        expect(text, what).not.toMatch(/sk-|\d|tttt|second-line/iu);
+      }
+      expect(() => sdkSandboxApi(key, wire.fetch, {}), what).toThrow(/workspace API key/u);
+    }
+    // The key the client takes, and the one rule readKey holds a file to.
+    expect(isWorkspaceKey(KEY)).toBe(true);
+    for (const [what, key] of cases) expect(isWorkspaceKey(key), what).toBe(false);
   });
 
   it.runIf(process.platform === "win32")("is stored by setup-keys.ps1's prompt loop only when it is a workspace API key, in a file only its owner can read", async () => {

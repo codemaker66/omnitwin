@@ -1405,9 +1405,12 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     expect(await readFile(path.join(runDir, "review.md"), "utf8")).toContain("- Cost: $3.25 (unknown: counted at the whole budget");
   });
 
+  // A synthetic key of the shape the real client takes (it refuses any other), built here so no key-shaped literal sits in the source.
+  const TEST_KEY = ["sk", "ant", "api03", "k".repeat(32)].join("-");
+
   it("creates a session with one attempt and a one-minute timeout, through the real SDK client", async () => {
     let calls = 0;
-    const failing = sdkSandboxApi("sk-test-not-a-key", () => {
+    const failing = sdkSandboxApi(TEST_KEY, () => {
       calls += 1;
       return Promise.resolve(new Response(JSON.stringify({ type: "error", error: { type: "api_error", message: "boom" } }), { status: 500, headers: { "content-type": "application/json" } }));
     });
@@ -1419,7 +1422,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       let aborted = false;
-      const hanging = sdkSandboxApi("sk-test-not-a-key", (_input, init) => {
+      const hanging = sdkSandboxApi(TEST_KEY, (_input, init) => {
         calls += 1;
         return new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener("abort", () => {
@@ -1451,7 +1454,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     try {
       // The launcher's own check is given a clean environment here, so the client's settings alone are tested.
       const api = sdkSandboxApi(
-        "sk-ant-test-key-value",
+        TEST_KEY,
         (input, init) => {
           seen.push({ url: typeof input === "string" ? input : input instanceof URL ? input.href : input.url, headers: new Headers(init?.headers) });
           return Promise.resolve(new Response(JSON.stringify({ id: "sesn_1", status: "idle" }), { status: 200, headers: { "content-type": "application/json" } }));
@@ -1468,7 +1471,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     }
     expect(seen.map((request) => new URL(request.url).origin)).toEqual([ANTHROPIC_API_URL, ANTHROPIC_API_URL]);
     for (const request of seen) {
-      expect(request.headers.get("x-api-key")).toBe("sk-ant-test-key-value");
+      expect(request.headers.get("x-api-key")).toBe(TEST_KEY);
       expect(request.headers.get("authorization")).toBeNull();
     }
   });
@@ -1490,7 +1493,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
       const route = routes[url.split("?")[0] ?? url];
       return Promise.resolve(route === undefined ? to(307, "https://elsewhere.example.invalid/v1/sessions") : route());
     };
-    const api = sdkSandboxApi("sk-ant-test-key-value", fake);
+    const api = sdkSandboxApi(TEST_KEY, fake);
 
     // Another host: followed for a file's content, with no key and no Authorization.
     const dir = await mkdtemp(path.join(tmpdir(), "credit-runner-redirect-"));
@@ -1498,7 +1501,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     expect(await api.downloadFile("file_1", path.join(dir, "patch-0001.patch"), 100)).toBe("saved");
     expect(await readFile(path.join(dir, "patch-0001.patch"), "utf8")).toBe("From abc\n");
     expect(seen.map((request) => [request.url, request.headers.get("x-api-key"), request.redirect])).toEqual([
-      ["https://api.anthropic.com/v1/files/file_1/content", "sk-ant-test-key-value", "manual"],
+      ["https://api.anthropic.com/v1/files/file_1/content", TEST_KEY, "manual"],
       ["https://files.example.invalid/blob", null, "manual"],
     ]);
     expect(seen[1]?.headers.get("authorization")).toBeNull();
@@ -1512,8 +1515,8 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     seen.length = 0;
     await expect(api.retrieveSession("sesn_2")).resolves.toMatchObject({ id: "sesn_3" });
     expect(seen.map((request) => [request.url, request.headers.get("x-api-key")])).toEqual([
-      ["https://api.anthropic.com/v1/sessions/sesn_2", "sk-ant-test-key-value"],
-      ["https://api.anthropic.com/v1/sessions/sesn_3", "sk-ant-test-key-value"],
+      ["https://api.anthropic.com/v1/sessions/sesn_2", TEST_KEY],
+      ["https://api.anthropic.com/v1/sessions/sesn_3", TEST_KEY],
     ]);
 
     // A POST sent to another host is refused; nothing more is sent.
@@ -1523,10 +1526,10 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
 
     // The wrapper itself sends nothing to another origin, and stops a redirect loop.
     seen.length = 0;
-    await expect(keyOnlyToAnthropic("sk-ant-test-key-value", fake)("https://elsewhere.example.invalid/v1/sessions", { method: "GET" })).rejects.toThrow(/only to https:\/\/api\.anthropic\.com/u);
+    await expect(keyOnlyToAnthropic(TEST_KEY, fake)("https://elsewhere.example.invalid/v1/sessions", { method: "GET" })).rejects.toThrow(/only to https:\/\/api\.anthropic\.com/u);
     expect(seen).toEqual([]);
-    const looping = keyOnlyToAnthropic("sk-ant-test-key-value", () => Promise.resolve(to(307, "/v1/loop")));
-    await expect(looping("https://api.anthropic.com/v1/loop", { method: "GET", headers: { "x-api-key": "sk-ant-test-key-value" } })).rejects.toThrow(/redirects/u);
+    const looping = keyOnlyToAnthropic(TEST_KEY, () => Promise.resolve(to(307, "/v1/loop")));
+    await expect(looping("https://api.anthropic.com/v1/loop", { method: "GET", headers: { "x-api-key": TEST_KEY } })).rejects.toThrow(/redirects/u);
   });
 
   it("never re-sends a POST on a 301, 302 or 303, keeps method and body only through a same-origin 307 or 308, and follows only https", async () => {
@@ -1540,7 +1543,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
       seen.push({ url, method: init?.method, body: init?.body, key: new Headers(init?.headers).get("x-api-key") });
       return Promise.resolve(seen.length === 1 ? first : ok());
     };
-    const post = { method: "POST", body: '{"a":1}', headers: { "x-api-key": "sk-ant-test-key-value" } };
+    const post = { method: "POST", body: '{"a":1}', headers: { "x-api-key": TEST_KEY } };
 
     // A POST redirected with 301, 302 or 303 is never re-sent, as a GET or as a POST.
     for (const status of [301, 302, 303]) {
@@ -1554,8 +1557,8 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
       seen.length = 0;
       await keyOnlyToAnthropic(post.headers["x-api-key"], via(to(status, "/v1/other")))(`${API}/v1/sessions`, post);
       expect(seen.map((request) => [request.url, request.method, request.body, request.key]), String(status)).toEqual([
-        [`${API}/v1/sessions`, "POST", '{"a":1}', "sk-ant-test-key-value"],
-        [`${API}/v1/other`, "POST", '{"a":1}', "sk-ant-test-key-value"],
+        [`${API}/v1/sessions`, "POST", '{"a":1}', TEST_KEY],
+        [`${API}/v1/other`, "POST", '{"a":1}', TEST_KEY],
       ]);
     }
 
@@ -1592,14 +1595,14 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
         },
       });
     const serving = (parts: readonly string[]) =>
-      sdkSandboxApi("sk-test-not-a-key", () => Promise.resolve(new Response(streamed(parts), { status: 200, headers: { "content-type": "application/octet-stream" } })));
+      sdkSandboxApi(TEST_KEY, () => Promise.resolve(new Response(streamed(parts), { status: 200, headers: { "content-type": "application/octet-stream" } })));
     expect(await serving(["From ", "abc", "\n"]).downloadFile("file_1", path.join(dir, "patch-0001.patch"), 100)).toBe("saved");
     expect(await readFile(path.join(dir, "patch-0001.patch"), "utf8")).toBe("From abc\n");
     // More than the cap allows, whatever the listing said: cut off, and nothing left on disk.
     await expect(serving(["0123456789", "0123456789"]).downloadFile("file_2", path.join(dir, "patch-0002.patch"), 15)).rejects.toBeInstanceOf(OutputTooLargeError);
     expect(await readdir(dir)).toEqual(["patch-0001.patch"]);
     // A file the API will not serve (the session's copy of an input).
-    const refusing = sdkSandboxApi("sk-test-not-a-key", () =>
+    const refusing = sdkSandboxApi(TEST_KEY, () =>
       Promise.resolve(
         new Response(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "no", details: { error_code: "file_not_downloadable" } } }), {
           status: 400,
@@ -1619,7 +1622,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
       const file = path.join(dir, `patch-000${String(index)}.patch`);
       let signal: AbortSignal | null = null;
       let cancelled = false;
-      const stalled = sdkSandboxApi("sk-test-not-a-key", (_input, init) => {
+      const stalled = sdkSandboxApi(TEST_KEY, (_input, init) => {
         signal = init?.signal ?? null;
         const body = new ReadableStream<Uint8Array>({
           start(controller) {
@@ -1677,7 +1680,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
         cancelled = true;
       },
     });
-    const api = sdkSandboxApi("sk-test-not-a-key", () => Promise.resolve(new Response(body, { status: 200, headers: { "content-type": "application/octet-stream" } })));
+    const api = sdkSandboxApi(TEST_KEY, () => Promise.resolve(new Response(body, { status: 200, headers: { "content-type": "application/octet-stream" } })));
     await expect(api.downloadFile("file_6", path.join(dir, "patch-0006.patch"), 10 * 1024)).rejects.toBeInstanceOf(OutputTooLargeError);
     // The cap is passed on the eleventh chunk; reading stops there, give or take the stream's read-ahead.
     expect(pulls).toBeGreaterThanOrEqual(11);
@@ -1694,7 +1697,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     ] as const) {
       const error: unknown = (() => {
         try {
-          sdkSandboxApi("sk-ant-test-key-value", undefined, { [name]: value });
+          sdkSandboxApi(TEST_KEY, undefined, { [name]: value });
           return null;
         } catch (caught) {
           return caught;
@@ -1704,7 +1707,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
       const message = error instanceof Error ? error.message : "";
       expect(message).toContain(name);
       expect(message).not.toContain(value.includes("://") ? new URL(value).host : value);
-      expect(message).not.toContain("sk-ant-test-key-value");
+      expect(message).not.toContain(TEST_KEY);
     }
     expect(anthropicEnvironmentProblems({ ANTHROPIC_BASE_URL: "https://gateway.example.invalid", ANTHROPIC_AUTH_TOKEN: "t" })).toHaveLength(2);
     // The official host is not a reason to refuse (a Claude Code shell exports it), and blank values are unset.
@@ -1715,12 +1718,12 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     const params = { agent: "agent_1", environment_id: "env_1" };
     const ok = { status: 200, headers: { "content-type": "application/json" } };
     // Broken JSON, and a body that is not JSON at all: both are 2xx answers whose session may exist.
-    const broken = await sdkSandboxApi("sk-test-not-a-key", () => Promise.resolve(new Response('{"id":"sesn_', ok)))
+    const broken = await sdkSandboxApi(TEST_KEY, () => Promise.resolve(new Response('{"id":"sesn_', ok)))
       .createSession(params)
       .catch((caught: unknown) => caught);
     expect(broken).toBeInstanceOf(Error);
     expect(isAmbiguousFailure(broken)).toBe(true);
-    const text = await sdkSandboxApi("sk-test-not-a-key", () =>
+    const text = await sdkSandboxApi(TEST_KEY, () =>
       Promise.resolve(new Response("created", { status: 201, headers: { "content-type": "text/plain" } })),
     )
       .createSession(params)
@@ -1732,7 +1735,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     try {
       // The headers arrive at once; the body then stalls. The SDK's own timeout stops at the headers.
       let signal: AbortSignal | null = null;
-      const stalled = sdkSandboxApi("sk-test-not-a-key", (_input, init) => {
+      const stalled = sdkSandboxApi(TEST_KEY, (_input, init) => {
         signal = init?.signal ?? null;
         const body = new ReadableStream<Uint8Array>({
           start(controller) {
@@ -1881,7 +1884,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     let createdAt = Number.NaN;
     const lookups: { readonly query: URLSearchParams; readonly waitedMs: number }[] = [];
     let waited = 0;
-    const api = sdkSandboxApi("sk-test-not-a-key", (input, init) => {
+    const api = sdkSandboxApi(TEST_KEY, (input, init) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       const method = init?.method ?? "GET";
       if (method === "POST" && url.pathname === "/v1/files") return Promise.resolve(json({ id: "file_1", type: "file" }));

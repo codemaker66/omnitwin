@@ -12,6 +12,15 @@ const execFileAsync = promisify(execFile);
  */
 const KEY_SHAPE = /^sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{20,}$/u;
 
+/**
+ * Whether `key` is one line of that shape and nothing else: the one rule for
+ * readKey and for the client (sdkSandboxApi refuses any other key before it is
+ * built, so nothing else is ever put in a header or an error).
+ */
+export function isWorkspaceKey(key: string): boolean {
+  return KEY_SHAPE.test(key);
+}
+
 export async function keyFilePresent(file: string): Promise<boolean> {
   try {
     await access(file);
@@ -40,7 +49,7 @@ export async function readKey(file: string): Promise<string> {
   for (const [kind, what] of OTHER_KINDS) {
     if (kind.test(key)) throw new Error(`${file} holds ${what}; store a workspace API key (sk-ant-api...) for the runner instead`);
   }
-  if (!KEY_SHAPE.test(key)) {
+  if (!isWorkspaceKey(key)) {
     throw new Error(`${file} does not hold an Anthropic API key the runner takes (expected a single line: sk-ant-api, two digits and a dash, then the key)`);
   }
   return key;

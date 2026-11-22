@@ -7,6 +7,7 @@ import type {
   BetaManagedAgentsStreamSessionEvents,
 } from "@anthropic-ai/sdk/resources/beta/sessions/events";
 import type { BetaManagedAgentsSession, SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
+import { isWorkspaceKey } from "../keys.js";
 import { chunksOf, OutputTimeoutError, writeCapped } from "./outputs.js";
 
 /** One event, as the live stream or the history list returns it. */
@@ -231,6 +232,18 @@ class KeyGuardRefusal extends Error {
   }
 }
 
+/**
+ * Refuses a key that is not one line of the workspace-key shape (isWorkspaceKey,
+ * the rule readKey holds a key file to) before it reaches a client or a header:
+ * fetch's own error for a header value it cannot send quotes the value whole.
+ * The reason names no part of the key.
+ */
+function refuseMalformedKey(apiKey: string): void {
+  if (!isWorkspaceKey(apiKey)) {
+    throw new Error("refusing the key: it is not one line in the shape of a workspace API key, so it is neither sent nor shown (read it from its key file with readKey)");
+  }
+}
+
 function urlOf(input: string | URL | Request): string {
   return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 }
@@ -263,10 +276,11 @@ function forwardedHeaders(apiKey: string, built: Headers): Headers {
  * only through a same-origin 307 or 308 (which keep the method and body); a
  * 301, 302 or 303 of it, or a redirect off the origin, is refused. A target
  * that is not https, or a Location that cannot be read, is never followed. At
- * most five redirects. Every refusal is a KeyGuardRefusal.
+ * most five redirects. Every refusal is a KeyGuardRefusal. A key that is not
+ * of the workspace shape is refused before the guard is made.
  */
 export function keyOnlyToAnthropic(apiKey: string, next: Fetch = globalThis.fetch): Fetch {
-  if (apiKey === "") throw new Error("keyOnlyToAnthropic needs the launcher's key");
+  refuseMalformedKey(apiKey);
   return async (input, init) => {
     let url = new URL(urlOf(input));
     if (url.origin !== ANTHROPIC_API_URL) throw new KeyGuardRefusal(`refusing a request to ${url.origin}: the key goes only to ${ANTHROPIC_API_URL}`);
@@ -321,7 +335,9 @@ const refusalsAreFinal: Middleware = async (request, next) => {
 
 /**
  * The key is passed in from the key file and handed straight to the client;
- * it never enters process.env, a log or an error message. It goes only to
+ * it never enters process.env, a log or an error message. One that is not a
+ * single line of the workspace-key shape is refused first, before any client
+ * is built, with a reason that names no part of it. It goes only to
  * ANTHROPIC_API_URL, as the X-Api-Key header and no other credential, through
  * keyOnlyToAnthropic. That guard allow-lists header names and the key's value,
  * and refuses an identity header; every other value is the one the client
@@ -332,6 +348,7 @@ const refusalsAreFinal: Middleware = async (request, next) => {
  * process.env except in tests: `env` and `fetchImpl` are test seams.
  */
 export function sdkSandboxApi(apiKey: string, fetchImpl?: Fetch, env: NodeJS.ProcessEnv = process.env): SandboxApi {
+  refuseMalformedKey(apiKey);
   const problems = anthropicEnvironmentProblems(env);
   if (problems.length > 0) {
     throw new Error(`refusing to start: ${problems.join("; ")}. Unset ${problems.length === 1 ? "it" : "them"} in this shell; the launcher talks only to ${ANTHROPIC_API_URL}.`);
