@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ManifestRowV2Schema, PhaseSchema, type HallkeeperSheetV2 } from "@omnitwin/types";
+import { EventInstructionsSchema, ManifestRowV2Schema, PhaseSchema, type HallkeeperSheetV2 } from "@omnitwin/types";
 import { summarizeSheet } from "../lib/hallkeeper-summary.js";
 
 // ---------------------------------------------------------------------------
@@ -30,32 +30,74 @@ const timing: HallkeeperSheetV2["timing"] = {
 };
 
 describe("summarizeSheet", () => {
-  it("counts every row across phases and zones, and those checked", () => {
-    expect(summarizeSheet(CONFIG, { phases, timing }, ["furniture|Centre|Round table|0", "dress|Centre|Tablecloth|1"])).toEqual({
+  // timing.setupBy is when setup STARTS (the name is historical): the board's
+  // "Ready by" is the sheet's, the planner's final time or else guests in.
+  // Unasked, the summary keeps the shape it has always had, key for key: the
+  // web's summary schema is strict, so a Day Board still running older web
+  // code would refuse any key it does not know and freeze its line until
+  // reloaded (#454 round 1).
+  it("counts every row across phases and zones, and those checked, ready when guests come in", () => {
+    expect(summarizeSheet(CONFIG, { phases, timing, instructions: null }, ["furniture|Centre|Round table|0", "dress|Centre|Tablecloth|1"])).toEqual({
       configId: CONFIG,
-      readyBy: "2026-10-03T15:00:00.000Z",
+      readyBy: "2026-10-03T17:30:00.000Z",
       eventStart: "2026-10-03T17:30:00.000Z",
       total: 4,
       checked: 2,
     });
   });
 
+  // The Day Board says "No time to set the room" on the sheet's own rule
+  // (sheetIntervals), so the summary carries when setup starts when the board
+  // asks for it (#454 YA5).
+  it("carries when setup starts when asked, so the board can tell when the window leaves no time to set the room", () => {
+    const instructions = EventInstructionsSchema.parse({ phaseDeadlines: [{ phase: "final", deadline: "2026-10-03T14:30:00.000Z" }] });
+    const asked = { setupFrom: true } as const;
+    expect(summarizeSheet(CONFIG, { phases, timing, instructions }, [], asked)).toMatchObject({
+      setupFrom: "2026-10-03T15:00:00.000Z", readyBy: "2026-10-03T14:30:00.000Z", eventStart: "2026-10-03T17:30:00.000Z",
+    });
+    expect(summarizeSheet(CONFIG, { phases, timing: { ...timing, setupBy: null, bufferMinutes: null }, instructions: null }, [], asked).setupFrom).toBeNull();
+    expect(summarizeSheet(CONFIG, { phases, timing: null, instructions: null }, [], asked).setupFrom).toBeNull();
+  });
+
+  it("leaves setupFrom out unless asked, even when setup has a start", () => {
+    const unasked = summarizeSheet(CONFIG, { phases, timing, instructions: null }, []);
+    expect(Object.keys(unasked).sort()).toEqual(["checked", "configId", "eventStart", "readyBy", "total"]);
+    expect(Object.keys(summarizeSheet(CONFIG, { phases, timing, instructions: null }, [], { setupFrom: false }))).not.toContain("setupFrom");
+  });
+
+  it("gives the planner's final time as the ready-by time", () => {
+    const instructions = EventInstructionsSchema.parse({ phaseDeadlines: [{ phase: "final", deadline: "2026-10-03T17:00:00.000Z" }] });
+    expect(summarizeSheet(CONFIG, { phases, timing, instructions }, []).readyBy).toBe("2026-10-03T17:00:00.000Z");
+  });
+
+  // #454 round 2 (ZC3): a final time written into a layout's metadata outside the
+  // API can carry a UTC offset. The sheet and the PDF read it; so must the board's
+  // line, as the same instant, never as a refused summary and a 500.
+  it("gives a planner's final time written with a UTC offset as the same instant", () => {
+    const instructions: HallkeeperSheetV2["instructions"] = {
+      ...EventInstructionsSchema.parse({}),
+      phaseDeadlines: [{ phase: "final", deadline: "2026-10-03T18:00:00+01:00", reason: "" }],
+    };
+    expect(summarizeSheet(CONFIG, { phases, timing, instructions }, []).readyBy).toBe("2026-10-03T17:00:00.000Z");
+  });
+
   it("does not count a mark left on a row a re-save removed, or the same mark twice", () => {
-    const summary = summarizeSheet(CONFIG, { phases, timing }, [
+    const summary = summarizeSheet(CONFIG, { phases, timing, instructions: null }, [
       "furniture|Centre|Chair|0", "furniture|Centre|Chair|0", "furniture|Centre|Trestle table|0",
     ]);
     expect(summary.checked).toBe(1);
     expect(summary.total).toBe(4);
   });
 
-  it("gives no ready-by time where no changeover rule sets one, and none without timing", () => {
-    expect(summarizeSheet(CONFIG, { phases, timing: { ...timing, setupBy: null, bufferMinutes: null } }, []).readyBy).toBeNull();
-    const untimed = summarizeSheet(CONFIG, { phases, timing: null }, []);
+  it("is ready when guests come in where no changeover rule opens the setup, and has no time without timing", () => {
+    expect(summarizeSheet(CONFIG, { phases, timing: { ...timing, setupBy: null, bufferMinutes: null }, instructions: null }, []).readyBy)
+      .toBe("2026-10-03T17:30:00.000Z");
+    const untimed = summarizeSheet(CONFIG, { phases, timing: null, instructions: null }, []);
     expect(untimed.readyBy).toBeNull();
     expect(untimed.eventStart).toBeNull();
   });
 
   it("reads nothing placed as none of none", () => {
-    expect(summarizeSheet(CONFIG, { phases: [], timing }, ["furniture|Centre|Chair|0"])).toMatchObject({ total: 0, checked: 0 });
+    expect(summarizeSheet(CONFIG, { phases: [], timing, instructions: null }, ["furniture|Centre|Chair|0"])).toMatchObject({ total: 0, checked: 0 });
   });
 });
