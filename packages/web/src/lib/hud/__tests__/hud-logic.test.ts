@@ -10,7 +10,7 @@ import { cardParamsFor, pieceCardId, stampSetup, type CardId, type CardParamsReq
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { floorCounts, handCardCounting, handCardIds, handCards } from "../hand-cards.js";
 import { journeySteps, nextMove } from "../journey.js";
-import { LAID_CLEARANCE_M, gapToOpenUp, roomFacts, roomStatus, seatLine, type RoomStatus, type RoomStatusId } from "../room-seals.js";
+import { LAID_CLEARANCE_M, gapToOpenUp, roomFacts, roomStatus, seatLine, warmGangwayDesignWhenIdle, type RoomStatus, type RoomStatusId } from "../room-seals.js";
 
 // The planner's own review, as it is, with its calls counted: one layout is to be asked about once.
 vi.mock("../../gangway-review-record.js", async (importOriginal) => {
@@ -262,6 +262,63 @@ describe("the journey", () => {
     facts(pair(0.5), 20);
     facts(pair(0.3), 20);
     expect(asked).not.toHaveBeenCalled();
+  });
+
+  // The room's gangway design is the dear part of a first Lay out and of a first review, and the planner keeps it by
+  // the room. So the screen has it worked out while the page is idle, by reviewing an empty floor.
+  it("works the room's gangway design out when the page is idle, and answers for no layout by it", () => {
+    const asked = vi.mocked(layoutGangwayReview);
+    const idleBefore: unknown = Reflect.get(globalThis, "requestIdleCallback");
+    const callOffBefore: unknown = Reflect.get(globalThis, "cancelIdleCallback");
+    vi.useFakeTimers();
+    try {
+      // Where the browser has no idle callback to ask, a short timer stands in.
+      vi.stubGlobal("requestIdleCallback", undefined);
+      vi.stubGlobal("cancelIdleCallback", undefined);
+      asked.mockClear();
+      warmGangwayDesignWhenIdle(GRAND_HALL_RENDER_DIMENSIONS, "grand-hall");
+      expect(asked).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1000);
+      expect(asked).toHaveBeenCalledTimes(1);
+      expect(asked).toHaveBeenLastCalledWith([], GRAND_HALL_RENDER_DIMENSIONS, "grand-hall", null);
+      // Called off before its moment (the room changed, or the screen left), it never runs.
+      asked.mockClear();
+      warmGangwayDesignWhenIdle(GRAND_HALL_RENDER_DIMENSIONS, "grand-hall")();
+      vi.advanceTimersByTime(1000);
+      expect(asked).not.toHaveBeenCalled();
+
+      // Where there is one, the browser is asked for an idle moment, with a limit on how long it may be put off.
+      const held: { run: (() => void) | null } = { run: null };
+      const ask = vi.fn((run: () => void): number => {
+        held.run = run;
+        return 7;
+      });
+      const callOff = vi.fn();
+      vi.stubGlobal("requestIdleCallback", ask);
+      vi.stubGlobal("cancelIdleCallback", callOff);
+      const stop = warmGangwayDesignWhenIdle(GRAND_HALL_RENDER_DIMENSIONS, "grand-hall");
+      expect(ask).toHaveBeenCalledWith(expect.any(Function), { timeout: 2000 });
+      vi.advanceTimersByTime(5000);
+      expect(asked).not.toHaveBeenCalled();
+      held.run?.();
+      expect(asked).toHaveBeenCalledTimes(1);
+      expect(asked).toHaveBeenLastCalledWith([], GRAND_HALL_RENDER_DIMENSIONS, "grand-hall", null);
+      stop();
+      expect(callOff).toHaveBeenCalledWith(7);
+    } finally {
+      vi.stubGlobal("requestIdleCallback", idleBefore);
+      vi.stubGlobal("cancelIdleCallback", callOffBefore);
+      vi.useRealTimers();
+    }
+
+    // It answered for no layout: the first real one at the planner's spacing is still put to the review.
+    const ROW_Z = -2.25;
+    const probe = facts([...stamp("round", -4, ROW_Z), ...stamp("round", 4, ROW_Z)], 20).aisles.tightestGapM;
+    if (probe === null) throw new Error("two rounds have a gap between them");
+    const half = (8 - probe) / 2 + LAID_CLEARANCE_M / 2;
+    asked.mockClear();
+    expect(facts([...stamp("round", -half, ROW_Z), ...stamp("round", half, ROW_Z)], 20).aisles.asLaid).toBe(true);
+    expect(asked).toHaveBeenCalledTimes(1);
   });
 
   it("leaves a room at the planner's own spacing ready to send, and says every other tight gap as before", () => {

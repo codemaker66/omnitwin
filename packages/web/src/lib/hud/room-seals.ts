@@ -109,6 +109,37 @@ function laidAsThePlannerLays(
   return gangwaysPass(items, room, roomSlug);
 }
 
+/** How long the page may stay busy before the design is worked out anyway. */
+const WARM_WITHIN_MS = 2000;
+/** The wait where the browser has no idle callback to ask (Safari before 17). */
+const WARM_WITHOUT_IDLE_MS = 200;
+const NOTHING_PLACED: readonly PlacedItem[] = [];
+
+/**
+ * Asks for the room's gangway design to be worked out when the page is next
+ * idle, and returns what calls that off. The planner keeps the design by the
+ * room (lib/auto-fill designatedGangways), and Lay out and the review both
+ * read it, so working it out here takes it off the frame in which a planner
+ * first lays the room out. It reviews an empty floor, where the design is
+ * all there is to work out. It answers for no layout: the review of a real
+ * one is still asked when that layout comes.
+ */
+export function warmGangwayDesignWhenIdle(room: SpaceDimensions, roomSlug: string | null): () => void {
+  const warm = (): void => {
+    layoutGangwayReview(NOTHING_PLACED, room, roomSlug, null);
+  };
+  if (typeof requestIdleCallback === "function" && typeof cancelIdleCallback === "function") {
+    const asked = requestIdleCallback(warm, { timeout: WARM_WITHIN_MS });
+    return () => {
+      cancelIdleCallback(asked);
+    };
+  }
+  const timer = setTimeout(warm, WARM_WITHOUT_IDLE_MS);
+  return () => {
+    clearTimeout(timer);
+  };
+}
+
 /**
  * Whether the narrowest gap is one to open up: every gap the circulation
  * scale calls blocked, and every one it calls tight unless it is no more than

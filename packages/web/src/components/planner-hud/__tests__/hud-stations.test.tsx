@@ -608,6 +608,31 @@ describe("the one primary key", () => {
     expect(usePlannerHudStore.getState().sheet).toBeNull();
   });
 
+  // A room's gangway design costs more than the review that reads it, and the first Lay out reads it too. The
+  // screen asks for it in an idle moment as soon as it knows the room, and calls that off as it leaves.
+  it("asks for the room's gangway design in an idle moment once the room is known, and calls it off as it leaves", () => {
+    const idleBefore: unknown = Reflect.get(globalThis, "requestIdleCallback");
+    const callOffBefore: unknown = Reflect.get(globalThis, "cancelIdleCallback");
+    const ask = vi.fn(() => 11);
+    const callOff = vi.fn();
+    vi.stubGlobal("requestIdleCallback", ask);
+    vi.stubGlobal("cancelIdleCallback", callOff);
+    try {
+      // No room yet: there is nothing to work out.
+      renderHud();
+      expect(ask).not.toHaveBeenCalledWith(expect.any(Function), { timeout: 2000 });
+      rememberTradesHallVenue(GRAND_HALL_SPACE.venueId, true);
+      act(() => { useEditorStore.setState({ space: GRAND_HALL_SPACE }); });
+      expect(ask).toHaveBeenCalledWith(expect.any(Function), { timeout: 2000 });
+      expect(callOff).not.toHaveBeenCalledWith(11);
+      cleanup();
+      expect(callOff).toHaveBeenCalledWith(11);
+    } finally {
+      vi.stubGlobal("requestIdleCallback", idleBefore);
+      vi.stubGlobal("cancelIdleCallback", callOffBefore);
+    }
+  });
+
   // Seen on the live site on 20 November: Lay out for 80 set eight rounds at the planner's own spacing, and the one
   // key then read "Open up the narrowest gap". What the planner has just laid is ready to send.
   it("offers Send once the planner has laid the room itself, and says its spacing as a plain figure", async () => {

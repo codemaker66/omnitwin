@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
-import { roomFacts, type RoomFacts } from "../../lib/hud/room-seals.js";
+import { roomFacts, warmGangwayDesignWhenIdle, type RoomFacts } from "../../lib/hud/room-seals.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useDoorClearSpaceStore } from "../../stores/door-clear-space-store.js";
@@ -64,6 +64,8 @@ export function HudFactsProvider({ eventGuests, children }: { readonly eventGues
     () => roomFacts({ items, guests: planned ?? eventGuests, roomSlug, doorSpaces: doorsRecorded ? doorSpaces : null, kind, room }),
     [items, planned, eventGuests, roomSlug, doorSpaces, doorsRecorded, kind, room],
   );
+  // Once the room is known, its gangway design is worked out in an idle moment, before a layout needs it.
+  useEffect(() => (roomSlug === null ? undefined : warmGangwayDesignWhenIdle(room, roomSlug)), [room, roomSlug]);
   return <HudFactsContext.Provider value={facts}>{children}</HudFactsContext.Provider>;
 }
 
