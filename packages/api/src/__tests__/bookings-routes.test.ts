@@ -471,8 +471,15 @@ describe("a hold's title from an enquiry with a blank name (blank-enquiry-name)"
     const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
     const conversion = source.slice(source.indexOf('server.post("/from-enquiry"'), source.indexOf('server.post("/viewings"'));
     const viewing = source.slice(source.indexOf('server.post("/viewings"'));
-    expect(conversion).toContain("enquiryTitleName(enquiry)");
-    expect(conversion).toContain("fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH)");
+    // The conversion takes its default title from the one statement of the
+    // naming, which titles by that name and cuts at a booking title's length
+    // (event-spine-writers-postgres pins the titles it produces).
+    expect(conversion).toContain("const naming = enquiryEventNaming(enquiry);");
+    expect(conversion).toContain("const title = input.title ?? naming.title;");
+    const naming = await readFile(resolve("src/services/enquiry-event.ts"), "utf-8");
+    expect(naming).toContain("const BOOKING_TITLE_LENGTH = 200;");
+    expect(naming).toContain("const who = enquiryTitleName(enquiry);");
+    expect(naming).toContain("`.slice(0, BOOKING_TITLE_LENGTH);");
     expect(viewing).toContain("email: enquiries.email");
     expect(viewing).toContain("enquiryTitleName(enquiry).slice(0, MAX_BOOKING_TITLE_LENGTH)");
     expect(source).not.toContain("enquiry.name.slice(");

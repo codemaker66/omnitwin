@@ -7,9 +7,7 @@ import {
   TransitionBookingSchema,
   UpdateBookingSchema,
   VIEWING_BOOKING_KIND,
-  holdsEmailAddress,
   isBookingEnquiry,
-  occasionLabel,
   type DiaryCommand,
 } from "@omnitwin/types";
 import { z } from "zod";
@@ -39,7 +37,7 @@ import {
 } from "../services/diary-commands.js";
 import { announcePromotionNotices, loadPromotionDraft } from "../services/hold-promotion.js";
 import { bindBookingToEvent, syncEventStatus } from "../services/event-binding.js";
-import { ensureEnquiryEvent, enquiryTitleName } from "../services/enquiry-event.js";
+import { ensureEnquiryEvent, enquiryEventNaming, enquiryTitleName } from "../services/enquiry-event.js";
 import { lockLiveRoom } from "../services/room-liveness.js";
 import { canReadDiary } from "../utils/query.js";
 
@@ -373,15 +371,15 @@ export async function bookingRoutes(
       return reply.status(OWNER_VENUE_MISMATCH.status).send({ error: OWNER_VENUE_MISMATCH.error, code: OWNER_VENUE_MISMATCH.code });
     }
 
-    const occasion = occasionLabel(enquiry.eventType);
-    const who = enquiryTitleName(enquiry);
-    const fallbackTitle = `${who}${occasion === null ? "" : ` — ${occasion}`}`;
-    // No client name for the event, which the Diary card and the handoff pack
-    // carry, when the enquiry's name is an email address (N7, A4): a guest who
-    // gave no name is filed under their email, and a name can hold another
-    // address (the email corrected since, or an address typed as a name).
-    const clientName = holdsEmailAddress(who) || who.toLowerCase() === enquiry.email.trim().toLowerCase() ? null : enquiry.name;
-    const title = input.title ?? fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH);
+    // The hold's default title, "<who> — <occasion>" cut to a booking title's
+    // length, and the client name for the event, which the Diary card and the
+    // handoff pack carry: none when the enquiry's name is an email address
+    // (N7, A4), since a guest who gave no name is filed under their email and
+    // a name can hold another address. One statement of it, shared with the
+    // event an enquiry gets when it is first worked (enquiryEventNaming).
+    const naming = enquiryEventNaming(enquiry);
+    const clientName = naming.clientName;
+    const title = input.title ?? naming.title;
     // A new event takes the hold's title unless it holds an email address,
     // which eventNameFor counts as no title (the bind itself drops only an
     // address cut at 200 characters, titleWithoutEnquiryEmail): the event is

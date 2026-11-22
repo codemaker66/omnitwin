@@ -538,6 +538,48 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
     expect({ name: fromReply.name, client_name: fromReply.client_name }).toEqual({ name: fromHold.name, client_name: fromHold.client_name });
   });
 
+  // The hold route's own naming (POST /bookings/from-enquiry given no title):
+  // the hold's title and its new event's client name, pinned as they stand.
+  describe("the hold route names a hold made from an enquiry", () => {
+    /** A hold made from the enquiry with no title of its own, on its own day: its title and its event's client name. */
+    async function holdNaming(v: SpineVenue, enquiryId: string, day: number): Promise<{ readonly title: string; readonly clientName: string | null }> {
+      const hold = await holdFromEnquiry(v, enquiryId, day);
+      return { title: hold.title, clientName: (await eventRow(hold.eventId)).client_name };
+    }
+    const emailOf = (enquiryId: string): string => `${enquiryId}@event-spine.invalid`;
+
+    it("after a plain name and its occasion; a padded name is trimmed in the title and kept as stored for the client", async () => {
+      const v = await venue("hold naming, plain");
+      expect(await holdNaming(v, await enquiry(v, { name: "Iona Reid" }), 10)).toEqual({ title: "Iona Reid — Wedding", clientName: "Iona Reid" });
+      expect(await holdNaming(v, await enquiry(v, { name: "  Iona Reid  " }), 11))
+        .toEqual({ title: "Iona Reid — Wedding", clientName: "  Iona Reid  " });
+    });
+
+    it("after the email, with no client, when the name is an email address or blank", async () => {
+      const v = await venue("hold naming, email");
+      const ownEmail = await enquiry(v);
+      await pool.query("UPDATE enquiries SET name = email WHERE id = $1", [ownEmail]);
+      expect(await holdNaming(v, ownEmail, 12)).toEqual({ title: `${emailOf(ownEmail)} — Wedding`, clientName: null });
+      const otherAddress = await enquiry(v, { name: "someone.else@example.test" });
+      expect(await holdNaming(v, otherAddress, 13)).toEqual({ title: "someone.else@example.test — Wedding", clientName: null });
+      const blank = await enquiry(v, { name: "   " });
+      expect(await holdNaming(v, blank, 14)).toEqual({ title: `${emailOf(blank)} — Wedding`, clientName: null });
+    });
+
+    it("after the name alone when the occasion is blank or none", async () => {
+      const v = await venue("hold naming, no occasion");
+      expect(await holdNaming(v, await enquiry(v, { name: "Iona Reid", eventType: null }), 15)).toEqual({ title: "Iona Reid", clientName: "Iona Reid" });
+      expect(await holdNaming(v, await enquiry(v, { name: "Iona Reid", eventType: "   " }), 16)).toEqual({ title: "Iona Reid", clientName: "Iona Reid" });
+    });
+
+    it("cut at a booking title's 200 characters when the name is long, the client keeping the whole name", async () => {
+      const v = await venue("hold naming, long");
+      const name = `Iona Reid-${"x".repeat(185)}`;
+      expect(name).toHaveLength(195);
+      expect(await holdNaming(v, await enquiry(v, { name }), 17)).toEqual({ title: `${name} — We`, clientName: name });
+    });
+  });
+
   it("opens an enquiry as an event; a second press returns the same one", async () => {
     const v = await venue("opened twice");
     const enquiryId = await enquiry(v);
