@@ -4,7 +4,7 @@ import type { AgentCreateParams } from "@anthropic-ai/sdk/resources/beta/agents/
 import type { BetaLimitedNetwork, EnvironmentCreateParams } from "@anthropic-ai/sdk/resources/beta/environments/environments";
 import { z } from "zod";
 import { AGENT_EFFORT, AGENT_MODEL } from "../task.js";
-import type { AgentRef, EnvironmentRef, SandboxApi } from "./api.js";
+import type { AgentModel, AgentRef, EnvironmentRef, SandboxApi } from "./api.js";
 import { promptSha } from "./brief.js";
 
 export const ENVIRONMENT_NAME = "venviewer-night-sandbox";
@@ -24,6 +24,8 @@ const NETWORKING: BetaLimitedNetwork = {
 
 const TOOLSET = "agent_toolset_20260401";
 const WEB_TOOLS = ["web_fetch", "web_search"] as const;
+/** The toolset's tools the agent may have on: bash and the file tools. */
+const TOOLSET_TOOLS: ReadonlySet<string> = new Set(["bash", "edit", "read", "write", "glob", "grep"]);
 
 /**
  * The container: Anthropic's cloud, with NETWORKING. Postgres comes from
@@ -98,15 +100,33 @@ export function environmentDifferences(environment: EnvironmentRef): string[] {
   return differences;
 }
 
+/** The effort level of an agent's model, whichever form the API gives it in; null when it gives none. */
+function effortOf(effort: AgentModel["effort"]): string | null {
+  if (effort === undefined || effort === null) return null;
+  return typeof effort === "string" ? effort : effort.type;
+}
+
 /**
- * How an agent version differs from what the code sets up: anything beyond
- * one agent toolset with the web tools off (an MCP toolset, a custom tool, an
- * MCP server, other agents it may start, a skill). A web tool whose switch is missing
- * takes the toolset's default, and an unknown default counts as on. Empty when
- * it matches.
+ * How an agent version differs from what the code sets up (agentParams): its
+ * model id, effort or speed; its system prompt (compared by promptSha, so the
+ * message names hashes, not the text); and anything beyond one agent toolset
+ * whose only enabled tools are bash and the file tools (TOOLSET_TOOLS), with
+ * one config per tool name: an MCP toolset, a custom tool, a web tool or any
+ * other tool switched on, an MCP server, other agents it may start, a skill. A
+ * web tool whose switch is missing takes the toolset's default, and an unknown
+ * default counts as on. Empty when it matches.
  */
-export function agentDifferences(agent: AgentRef): string[] {
+export function agentDifferences(agent: AgentRef, system: string): string[] {
   const differences: string[] = [];
+  if (agent.model.id !== AGENT_MODEL) differences.push(`it runs ${agent.model.id}, not ${AGENT_MODEL}`);
+  const effort = effortOf(agent.model.effort);
+  if (effort === null) differences.push(`its effort is not reported, so it cannot be held to ${AGENT_EFFORT}`);
+  else if (effort !== AGENT_EFFORT) differences.push(`its effort is ${effort}, not ${AGENT_EFFORT}`);
+  const speed = agent.model.speed ?? "standard";
+  if (speed !== "standard") differences.push(`its speed is ${speed}, not standard`);
+  if (agent.system !== system) {
+    differences.push(`its system prompt (sha ${agent.system === null ? "none" : promptSha(agent.system)}) is not the one this code sets up (sha ${promptSha(system)})`);
+  }
   for (const tool of agent.tools) {
     if (tool.type === "mcp_toolset") differences.push(`it has an MCP toolset (${tool.mcp_server_name ?? "unnamed"})`);
     else if (tool.type === "custom") differences.push(`it has a custom tool (${tool.name ?? "unnamed"})`);
@@ -115,9 +135,14 @@ export function agentDifferences(agent: AgentRef): string[] {
   const toolsets = agent.tools.filter((tool) => tool.type === TOOLSET);
   if (toolsets.length !== 1) differences.push(`it has ${String(toolsets.length)} agent toolsets, not one`);
   for (const toolset of toolsets) {
-    for (const name of WEB_TOOLS) {
-      if (toolset.configs?.find((config) => config.name === name)?.enabled ?? toolset.default_config?.enabled ?? true) differences.push(`${name} is on`);
-    }
+    const configs = toolset.configs ?? [];
+    const named = new Map<string, number>();
+    for (const config of configs) named.set(config.name, (named.get(config.name) ?? 0) + 1);
+    // Two configs for one tool leave which one the platform applies unknown.
+    for (const [name, count] of named) if (count > 1) differences.push(`it has ${String(count)} configs named ${name}`);
+    const on = new Set(configs.filter((config) => config.enabled && !TOOLSET_TOOLS.has(config.name)).map((config) => config.name));
+    for (const name of WEB_TOOLS) if (!named.has(name) && (toolset.default_config?.enabled ?? true)) on.add(name);
+    for (const name of on) differences.push(`${name} is on`);
   }
   if (agent.mcp_servers.length > 0) differences.push(`it has MCP servers (${agent.mcp_servers.map((server) => server.name).join(", ")})`);
   if (agent.multiagent !== null) differences.push("it can start other agents (multiagent is set)");
@@ -162,9 +187,9 @@ function paramsSha(params: object): string {
  * hash of its whole params changed, not only the system prompt's. Then, on
  * every setup and every run, the live environment and the agent version that
  * sessions are pinned to are checked against what the code sets up (its
- * networking; the agent's tools, MCP servers, other agents and skills): any
- * difference, such as an edit in the Console, refuses the start and says what
- * differs.
+ * networking; the agent's model, effort, speed, system prompt, tools, MCP
+ * servers, other agents and skills): any difference, such as an edit in the
+ * Console, refuses the start and says what differs.
  */
 export async function ensureSandbox(api: SandboxApi, stateFile: string, system: string, log: (line: string) => void): Promise<SandboxState> {
   const environmentWanted = environmentParams();
@@ -218,7 +243,7 @@ export async function ensureSandbox(api: SandboxApi, stateFile: string, system: 
   const state: SandboxState = { environmentId: environment.id, agentId: agent.id, agentVersion: agent.version, promptSha: promptSha(system), agentSha, environmentSha };
   await writeState(stateFile, state);
 
-  const differences = [...environmentDifferences(environment), ...agentDifferences(await api.retrieveAgent(agent.id, agent.version))];
+  const differences = [...environmentDifferences(environment), ...agentDifferences(await api.retrieveAgent(agent.id, agent.version), system)];
   if (differences.length > 0) {
     throw new Error(
       `the sandbox no longer matches what this launcher sets up: ${differences.join("; ")}. Put it back in the Console, or remove ${stateFile} so that setup creates a new environment and agent.`,

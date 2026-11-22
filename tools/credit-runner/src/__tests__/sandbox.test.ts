@@ -1030,10 +1030,46 @@ describe("sandbox launcher", () => {
       [{ tools: [toolset(false), { type: "custom", name: "fetch_url" }] }, "it has a custom tool (fetch_url)"],
       [{ multiagent: { type: "coordinator", agents: [] } }, "it can start other agents"],
       [{ skills: [{ skill_id: "xlsx" }] }, "it has skills (xlsx)"],
+      // The model, as agents.retrieve returns it: the effort as { type }, a speed only when set.
+      [{ model: { id: "claude-sonnet-5-5", effort: { type: "high" } } }, "it runs claude-sonnet-5-5, not claude-opus-5-5"],
+      [{ model: { id: "claude-opus-5-5", effort: { type: "low" } } }, "its effort is low, not high"],
+      [{ model: { id: "claude-opus-5-5" } }, "its effort is not reported, so it cannot be held to high"],
+      [{ model: { id: "claude-opus-5-5", effort: { type: "high" }, speed: "fast" } }, "its speed is fast, not standard"],
+      [{ system: "a prompt edited in the Console" }, `its system prompt (sha ${promptSha("a prompt edited in the Console")}) is not the one this code sets up (sha ${promptSha("prompt one")})`],
+      [{ system: null }, "its system prompt (sha none)"],
+      // Any other tool of the toolset switched on, and two configs for one tool (the first used to win).
+      [{ tools: [{ ...toolset(false), configs: [...(toolset(false).configs ?? []), { name: "computer", enabled: true }] }] }, "computer is on"],
+      [
+        {
+          tools: [
+            {
+              type: "agent_toolset_20260401",
+              default_config: { enabled: true },
+              configs: [
+                { name: "web_fetch", enabled: false },
+                { name: "web_fetch", enabled: true },
+                { name: "web_search", enabled: false },
+              ],
+            },
+          ],
+        },
+        "it has 2 configs named web_fetch",
+      ],
     ];
     for (const [drift, said] of agentDrifts) {
       api.liveAgentOverride = drift;
       await expect(ensureSandbox(api, stateFile, "prompt one", () => undefined), said).rejects.toThrow(said);
+    }
+    // What still matches: the effort as a bare level, speed standard, and bash and the file tools listed on.
+    const fileTools = ["bash", "edit", "read", "write", "glob", "grep"].map((name) => ({ name, enabled: true }));
+    const matching: readonly Partial<Omit<AgentRef, "id" | "version">>[] = [
+      { model: { id: "claude-opus-5-5", effort: "high" } },
+      { model: { id: "claude-opus-5-5", effort: { type: "high" }, speed: "standard" } },
+      { tools: [{ ...toolset(false), configs: [...(toolset(false).configs ?? []), ...fileTools] }] },
+    ];
+    for (const drift of matching) {
+      api.liveAgentOverride = drift;
+      await expect(ensureSandbox(api, stateFile, "prompt one", () => undefined), JSON.stringify(drift)).resolves.toMatchObject({ agentVersion: 1 });
     }
     api.liveAgentOverride = null;
     await expect(ensureSandbox(api, stateFile, "prompt one", () => undefined)).resolves.toMatchObject({ agentVersion: 1 });

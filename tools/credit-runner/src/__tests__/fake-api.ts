@@ -16,6 +16,7 @@ import {
 } from "../sandbox/api.js";
 import { OutputTimeoutError, writeCapped } from "../sandbox/outputs.js";
 import { agentParams, environmentParams } from "../sandbox/setup.js";
+import { AGENT_EFFORT, AGENT_MODEL } from "../task.js";
 
 /** An environment as the API returns it, from the params it was created or updated with. */
 function liveEnvironmentConfig(config: EnvironmentCreateParams["config"]): EnvironmentRef["config"] {
@@ -39,8 +40,23 @@ function liveEnvironmentConfig(config: EnvironmentCreateParams["config"]): Envir
   };
 }
 
+/**
+ * The model as the API returns it: the effort always as `{ type }` (on create, a
+ * missing effort becomes the per-model default; on update it keeps the stored one).
+ */
+function liveModel(model: AgentUpdateParams["model"], previous?: AgentRef["model"]): AgentRef["model"] {
+  if (model === undefined) return previous ?? { id: AGENT_MODEL, effort: { type: AGENT_EFFORT } };
+  if (typeof model === "string") return { id: model, effort: previous?.effort ?? { type: AGENT_EFFORT } };
+  const effort = model.effort ?? previous?.effort ?? AGENT_EFFORT;
+  return { id: model.id, effort: typeof effort === "string" ? { type: effort } : effort, ...(model.speed === undefined || model.speed === null ? {} : { speed: model.speed }) };
+}
+
 /** An agent version as the API returns it, from the params it was created or updated with. */
-function liveAgent(version: number, params: Pick<AgentUpdateParams, "tools" | "mcp_servers" | "multiagent" | "skills" | "metadata">, previous?: AgentRef): AgentRef {
+function liveAgent(
+  version: number,
+  params: Pick<AgentUpdateParams, "model" | "system" | "tools" | "mcp_servers" | "multiagent" | "skills" | "metadata">,
+  previous?: AgentRef,
+): AgentRef {
   // As the API merges metadata: a key set to null is removed, an omitted one kept.
   const metadata: Record<string, string> = { ...(previous?.metadata ?? {}) };
   for (const [key, value] of Object.entries(params.metadata ?? {})) {
@@ -50,6 +66,8 @@ function liveAgent(version: number, params: Pick<AgentUpdateParams, "tools" | "m
   return {
     id: "agent_1",
     version,
+    model: liveModel(params.model, previous?.model),
+    system: params.system === undefined ? (previous?.system ?? null) : params.system,
     tools:
       params.tools === undefined
         ? (previous?.tools ?? [])

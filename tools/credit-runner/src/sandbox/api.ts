@@ -35,10 +35,24 @@ export interface AgentTool {
   readonly configs?: readonly { readonly name: string; readonly enabled: boolean }[];
 }
 
+/**
+ * An agent's model, as agents.retrieve returns it in SDK 0.131
+ * (BetaManagedAgentsModelConfig): the id, the effort as `{ type }` (always
+ * present, the per-model default when none was set; a bare level is read too),
+ * and the speed (`fast` is priced higher; absent means standard).
+ */
+export interface AgentModel {
+  readonly id: string;
+  readonly effort?: { readonly type: string } | string | null | undefined;
+  readonly speed?: string | null | undefined;
+}
+
 /** An agent version, as far as the launcher checks its boundary (BetaManagedAgentsAgent fits it). */
 export interface AgentRef {
   readonly id: string;
   readonly version: number;
+  readonly model: AgentModel;
+  readonly system: string | null;
   readonly tools: readonly AgentTool[];
   readonly mcp_servers: readonly { readonly name: string }[];
   /** Non-null when the agent may start other agents, with their own tools. */
