@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { ZodError } from "zod";
 import {
   BeoDocumentSchema,
@@ -1275,29 +1275,43 @@ export async function compileOpsHandoffPackFromConfiguration(
       await tx.select({ id: events.id }).from(events).where(eq(events.id, input.eventId)).for("key share");
     }
     await tx.select({ id: configurations.id }).from(configurations).where(eq(configurations.id, input.configId)).for("key share");
-    // The sheet and the event read again under those locks. A writer that
-    // held them FOR UPDATE (an approval, an erasure) has committed by now, and
-    // none can start on this layout while the compile holds it: the pack
-    // copies the event, the layout and the sheet as they now read, never text
-    // an erasure took out while this waited.
-    const snapshots = await latestApprovedSnapshots(tx, input.configId);
-    const snapshot = snapshots[0] ?? null;
-    if (snapshot === null) throw new OpsHandoffApprovedSnapshotRequiredError(input.configId);
-    // And one compile of this approved snapshot at a time, whichever event it
-    // is for, as the version below is counted per snapshot. NO KEY UPDATE, so
-    // rows that only reference the snapshot (a new pack among them) are not
-    // held up. Always taken after the event and the layout, so none cross.
-    await tx.select({ id: configurationSheetSnapshots.id })
-      .from(configurationSheetSnapshots)
-      .where(eq(configurationSheetSnapshots.id, snapshot.id))
+    // The newest approved sheet, read and locked in one statement, and the
+    // event read again, under those locks. A writer that held the event or
+    // the layout FOR UPDATE (an approval, an erasure) has committed by now,
+    // and none can start on this layout while the compile holds it. NO KEY
+    // UPDATE on the sheet holds up no row that only references it (a new pack
+    // among them) and lets one compile of it run at a time, whichever event
+    // it is for, as the version below is counted per sheet. A writer of the
+    // sheet that holds the layout only FOR KEY SHARE (the piece-note
+    // retention) is waited on here, and READ COMMITTED then returns the row
+    // as that writer left it: the pack copies the event, the layout and the
+    // sheet as they now read, never text an erasure or a retention took out
+    // while this waited. Always taken after the event and the layout, so none
+    // cross.
+    const [newest] = await tx.select().from(configurationSheetSnapshots)
+      .where(and(eq(configurationSheetSnapshots.configurationId, input.configId), isNotNull(configurationSheetSnapshots.approvedAt)))
+      .orderBy(desc(configurationSheetSnapshots.version))
+      .limit(1)
       .for("no key update");
+    if (newest === undefined) throw new OpsHandoffApprovedSnapshotRequiredError(input.configId);
+    const snapshot = hydrateSnapshot(newest);
+    // The approved sheet before it, read after that lock, only for what changed.
+    const [before] = await tx.select().from(configurationSheetSnapshots)
+      .where(and(
+        eq(configurationSheetSnapshots.configurationId, input.configId),
+        isNotNull(configurationSheetSnapshots.approvedAt),
+        lt(configurationSheetSnapshots.version, newest.version),
+      ))
+      .orderBy(desc(configurationSheetSnapshots.version))
+      .limit(1);
+    const previousSnapshot = before === undefined ? null : hydrateSnapshot(before);
     const eventGraph = input.eventId === null ? null : await loadEventGraph(tx, input.eventId);
     if (eventGraph !== null && !eventGraphBindsConfiguration(eventGraph, input.configId, config.venueId)) {
       throw new OpsHandoffEventBindingRequiredError(input.configId, eventGraph.event.id);
     }
     const draft = compileOpsHandoffDraft({
       snapshot,
-      previousSnapshot: snapshots[1] ?? null,
+      previousSnapshot,
       eventGraph,
       clientNotes: input.clientNotes,
     });

@@ -33,8 +33,10 @@ import {
 // one can wait on it; but its foreign keys take visible KEY SHARE locks on
 // the layout, room and venue it names. An erasure of the person holds their
 // record and later asks for their layouts, so an enquiry they send from
-// their own public-preview layout can meet it in a circle, and one side
-// answers RETRY (people-erasure.ts). It is not a precedent for taking a row
+// their own public-preview layout can meet it in a circle, which PostgreSQL
+// ends by rolling one side back: the erasure answers RETRY, or this link
+// fails and the enquiry is kept with no person while the erasure completes
+// (people-erasure.ts; the doc's by-hand list). It is not a precedent for taking a row
 // lock before an advisory lock. The route runs this function
 // in a savepoint: should it throw, the savepoint is rolled back and the
 // transaction-level advisory lock taken inside it is released with it, which

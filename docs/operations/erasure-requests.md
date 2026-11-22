@@ -177,13 +177,25 @@ now reads; a client's copy is left out, because their link is revoked or what th
 written before the erasure takes the proposal is found by it. A client's answer on someone else's proposal that
 commits after the erasure's reads counts as made after the erasure.
 
-What can still meet the erasure in a circle is a real deadlock, which PostgreSQL ends by rolling one side back; the
-erasure then answers `RETRY` (nothing is half-done; try again): a booking written between its reads and its locks;
-two erasures of one household's members at the same moment (erase household members one after the other); the demo
-layout review; and an enquiry the person sends from their own public-preview layout at that moment. A hallkeeper's
-task tick, issue update or acknowledgement, a sheet tick, a handoff compile and the piece-note retention take the
-event or the layout first, so they wait for the erasure and then read what it left (an acknowledgement of a change
-the erasure deleted answers that the change is not found).
+A booking written from one of their enquiries, or onto one of their events, between the erasure's reads and its
+locks makes the erasure answer `RETRY` itself (nothing is half-done; try again).
+
+These can still meet the erasure in a circle, a real deadlock that PostgreSQL ends by rolling one side back: two
+erasures of one household's members at the same moment (erase household members one after the other); the demo
+layout review; and an enquiry the person sends from their own public-preview layout at that moment. When the erasure
+is the side rolled back, it answers `RETRY`. When the other side is, the review fails, or the enquiry is kept with no
+person, and the erasure completes. That enquiry was not there when the erasure read theirs, so it keeps their name,
+address, phone and message, and their address's guest lead stays with it: erase both by hand (below).
+
+A hallkeeper's task tick, issue update or acknowledgement, a sheet tick, a handoff compile and the piece-note
+retention take the event or the layout first, so they wait for the erasure instead of meeting it. A tick then writes
+only its status, and an issue update only the fields it names, quoting the title as its update returns it; the
+compile and the retention read only after the lock, so they copy what the erasure left; an acknowledgement reads its
+change again and answers that it is not found if the erasure deleted it. Each waits as long as the erasure, or a
+people rehearsal (up to its 150-second budget), holds the rows. A request kept waiting past the API's 30-second
+connection timeout loses its connection while its write still commits; trying it again is safe (a tick sent with its
+idempotency key is answered from the first, an acknowledgement returns the one already made, an issue update applies
+the same change again).
 
 Then erase by hand what the booking or the contract does not need (section 3).
 
@@ -199,7 +211,9 @@ can repeat a day-of contact and piece notes; an event's mission (`event_mission_
 `event_mission_acknowledgements`), whose tasks are replayed from a baseline the mission checks by its digest, so the
 route leaves those copies as they are: read them; a field that holds only their name, typed in a casing written
 nowhere else, other than an event's client name or a message's author; a decision prepared on one of their bookings at the very moment of the erasure (it
-takes no lock the erasure holds, so its reason can stay: read the decisions on their bookings afterwards); and a
+takes no lock the erasure holds, so its reason can stay: read the decisions on their bookings afterwards); an enquiry
+they sent from their own public-preview layout while the erasure ran, kept with no person when PostgreSQL rolled its
+link back (read the enquiries from their address in those minutes); and a
 **deleted** record of theirs (a
 duplicate deleted instead of merged): the route does not treat it as theirs, the 24-month pass erases it in time,
 or erase it by hand. Read the step 2 stores' text before replying.

@@ -79,10 +79,14 @@ import { liveContact, type PeopleTx } from "./people-records.js";
 // prepared on one of their bookings in the same moment keeps its reason; an
 // answer on someone else's proposal written after the reads counts as written
 // after the erasure; a booking written between the reads and the locks makes
-// the erasure answer RETRY; and these can still meet it in a circle (RETRY):
-// two erasures of one household's members at once, the demo layout review,
-// and an enquiry the person sends from their own public-preview layout
-// (its foreign key holds the layout while it waits for their record).
+// the erasure answer RETRY itself (ErasureMovedOn, not a deadlock); and these
+// can still meet it in a circle, which PostgreSQL ends by rolling one side
+// back: two erasures of one household's members at once, the demo layout
+// review, and an enquiry the person sends from their own public-preview
+// layout (its foreign key holds the layout while it waits for their record).
+// When the erasure is rolled back it answers RETRY; when the other side is,
+// the erasure completes, and such an enquiry is kept with no person (the
+// doc's by-hand list).
 //
 // Refused, changing nothing:
 //   - a confirmed booking, or a provisional one still live (the privacy
@@ -619,8 +623,11 @@ async function findAnswersElsewhere(
  *     (configuration-reviews.ts); the handoff compile the event and the
  *     layout, then the sheet (ops-compiler.ts); a hallkeeper's sheet tick the
  *     event, then the layout (hallkeeper-sheet.ts);
- *   - the planner and the piece-note retention a layout's pieces and saved
- *     revisions before its sheets (placed-objects, piece-note-retention.ts).
+ *   - a hallkeeper's task tick, issue update and acknowledgement the event
+ *     first (event-day-ops.ts, routes/event-plan-lifecycle.ts);
+ *   - the piece-note retention the layout first, reading after it; then, as
+ *     the planner does, a layout's pieces and saved revisions before its
+ *     sheets (placed-objects, piece-note-retention.ts).
  * So: decisions, bookings, proposals (theirs, the nearby ones and those they
  * answered on), enquiries, deals, events, layouts, the layouts' pieces and
  * revisions whose text names them, sheets. A booking written

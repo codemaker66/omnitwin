@@ -81,8 +81,30 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       // The sheet approval and the pack compile record their actor.
       await f.pool.query("DELETE FROM general_audit_log WHERE actor_user_id = ANY($1::uuid[])", [Object.values(f.users)]);
     }
+    await watcher?.end();
     await f?.close();
   });
+
+  // The lock polls go through a client of their own, never the fixture's pool
+  // of four, which a case's erasure and its writers can fill while they wait.
+  let watcher: Client | undefined;
+  async function watching(): Promise<Client> {
+    if (watcher === undefined) {
+      if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
+      const client = new Client({ connectionString: PLATFORM_TARGET });
+      await client.connect();
+      watcher = client;
+    }
+    return watcher;
+  }
+
+  /** Keeps a request or pass a case starts, so the case's finally can let it
+   *  settle once the holder lets go: a case that fails mid-wait leaves nothing
+   *  running into the next. The case still sees its rejection when it awaits it. */
+  function kept<T>(inFlight: Promise<unknown>[], promise: Promise<T>): Promise<T> {
+    inFlight.push(promise.catch(() => undefined));
+    return promise;
+  }
 
   function post(url: string, who: PeopleFixtureUser, payload: object = {}): Promise<LightMyRequestResponse> {
     return f.server.inject({ method: "POST", url, headers: f.bearer(who), payload });
@@ -257,15 +279,16 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
 
   /** Waits until at least so many statements like the pattern (ILIKE) wait on a lock. */
   async function waitForStatement(pattern: string, what: string, atLeast = 1): Promise<void> {
+    const watch = await watching();
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      const { rows } = await f.pool.query<{ n: number }>(
+      const { rows } = await watch.query<{ n: number }>(
         `SELECT count(*)::int AS n FROM pg_stat_activity
           WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE $1`,
         [pattern]);
       if ((rows[0]?.n ?? 0) >= atLeast) return;
       await new Promise((resolve) => { setTimeout(resolve, 100); });
     }
-    const { rows: waiting } = await f.pool.query<{ query: string }>(
+    const { rows: waiting } = await watch.query<{ query: string }>(
       "SELECT left(query, 160) AS query FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'");
     throw new Error(`Nothing waited on a lock: ${what}; waiting instead: ${waiting.map((row) => row.query).join(" | ") || "nothing"}`);
   }
@@ -1225,8 +1248,9 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     }
   });
 
-  /** An approved layout, a table and two chairs, with planner notes. */
-  async function approvedPlan(name: string, specialInstructions: string): Promise<string> {
+  /** An approved layout, a table and two chairs, with planner notes, and a
+   *  note on the table when one is given (it reaches the setup task's detail). */
+  async function approvedPlan(name: string, specialInstructions: string, tableNote?: string): Promise<string> {
     const plan = await layout(name, { specialInstructions, dayOfContact: null, phaseDeadlines: [],
       accessNotes: "TEST ONLY deliveries by the service entrance", accessibility: null,
       dietary: { vegetarian: 0, vegan: 0, glutenFree: 0, nutFree: 0, halal: 0, kosher: 0, otherAllergies: "" }, doorSchedule: null });
@@ -1237,7 +1261,8 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     if (table === undefined || chair === undefined) throw new Error("No assets");
     const tableId = randomUUID();
     await f.db.insert(schema.placedObjects).values([
-      { id: tableId, configurationId: plan, assetDefinitionId: table.id, positionX: "1", positionY: "0", positionZ: "1", metadata: { groupId: tableId } },
+      { id: tableId, configurationId: plan, assetDefinitionId: table.id, positionX: "1", positionY: "0", positionZ: "1",
+        metadata: tableNote === undefined ? { groupId: tableId } : { groupId: tableId, notes: tableNote } },
       { configurationId: plan, assetDefinitionId: chair.id, positionX: "1", positionY: "0", positionZ: "0", metadata: { groupId: tableId } },
       { configurationId: plan, assetDefinitionId: chair.id, positionX: "1", positionY: "0", positionZ: "2", metadata: { groupId: tableId } },
     ].map((piece) => ({ ...piece, coordinateSpace: "real_m_v1" as const, coordinateWriteToken: randomUUID() })));
@@ -1254,22 +1279,24 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     const asked = await enquiry({ email, contactId: person, name: "Isla Compiled" });
     const hold = await bound({ enquiryId: asked, kind: "hold", title: "TEST ONLY Isla's released hold" });
     await f.pool.query("UPDATE bookings SET status = 'released' WHERE id = $1", [hold.id]);
-    // Her approved layout, named for her with notes naming her, linked to her
-    // event, which is named for her too: all of it is what a pack copies.
+    // Her approved layout, named for her with notes naming her (her table's
+    // note reaches the setup task), linked to her event, which is named for
+    // her too: all of it is what a pack copies.
     await f.pool.query("UPDATE events SET name = 'Isla Compiled — Dinner' WHERE id = $1", [hold.eventId]);
-    const plan = await approvedPlan("Isla Compiled's dinner plan", "Isla Compiled arrives at six");
+    const plan = await approvedPlan("Isla Compiled's dinner plan", "Isla Compiled arrives at six", "TEST ONLY Isla Compiled sits here");
     await laidOutFrom(hold.eventId, plan);
     // Something holds her layout, so the erasure stops there holding her
     // event; the compile for that event arrives and must wait on the event.
     if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
     const stopper = new Client({ connectionString: PLATFORM_TARGET });
     await stopper.connect();
+    const inFlight: Promise<unknown>[] = [];
     try {
       await stopper.query("BEGIN");
       await stopper.query("SELECT id FROM configurations WHERE id = $1 FOR SHARE", [plan]);
-      const erasing = post(`/people/${person}/erase`, "admin");
+      const erasing = kept(inFlight, post(`/people/${person}/erase`, "admin"));
       await waitForLockWait("configurations");
-      const compiling = post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", { eventId: hold.eventId });
+      const compiling = kept(inFlight, post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", { eventId: hold.eventId }));
       await waitForLockWait("events", "for key share");
       await stopper.query("COMMIT");
       const erased = await erasing;
@@ -1278,17 +1305,21 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       expect(compiled.statusCode, compiled.body).toBe(201);
     } finally {
       await stopper.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
       await stopper.end();
     }
-    // The pack was compiled from what the erasure left: its BEO and tasks
-    // carry none of her name.
+    // The pack was compiled from what the erasure left: its BEO and its tasks
+    // carry none of her name, and say "Erased" where they did.
     const pack = only((await f.pool.query<{ id: string }>(
       "SELECT id FROM handoff_packs WHERE config_id = $1 ORDER BY version DESC LIMIT 1", [plan])).rows, "pack").id;
     expect(await count("beo_documents WHERE handoff_pack_id = $1 AND (title ILIKE '%Isla Compiled%' OR body ILIKE '%Isla Compiled%')", [pack]))
       .toBe(0);
-    expect(await count("beo_documents WHERE handoff_pack_id = $1 AND title ILIKE '%Erased%'", [pack])).toBeGreaterThan(0);
+    expect(await count("beo_documents WHERE handoff_pack_id = $1 AND title ILIKE '%Erased%' AND body ILIKE '%Erased%'", [pack]))
+      .toBeGreaterThan(0);
     expect(await count("ops_tasks WHERE handoff_pack_id = $1 AND (title ILIKE '%Isla Compiled%' OR detail ILIKE '%Isla Compiled%')", [pack]))
       .toBe(0);
+    expect(await count("ops_tasks WHERE handoff_pack_id = $1 AND kind = 'setup' AND detail LIKE '%Notes: TEST ONLY Erased sits here%'", [pack]))
+      .toBeGreaterThan(0);
   });
 
   it("compiles a layout's pack with no event beside her erasure: the compile waits on her layout, never in a circle", async () => {
@@ -1306,12 +1337,13 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
     const stopper = new Client({ connectionString: PLATFORM_TARGET });
     await stopper.connect();
+    const inFlight: Promise<unknown>[] = [];
     try {
       await stopper.query("BEGIN");
       await stopper.query("SELECT id FROM configuration_sheet_snapshots WHERE id = $1 FOR SHARE", [sheet]);
-      const erasing = post(`/people/${person}/erase`, "admin");
+      const erasing = kept(inFlight, post(`/people/${person}/erase`, "admin"));
       await waitForLockWait("configuration_sheet_snapshots");
-      const compiling = post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", {});
+      const compiling = kept(inFlight, post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", {}));
       await waitForLockWait("configurations", "for key share");
       await stopper.query("COMMIT");
       const erased = await erasing;
@@ -1320,6 +1352,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       expect(compiled.statusCode, compiled.body).toBe(201);
     } finally {
       await stopper.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
       await stopper.end();
     }
   });
@@ -1338,22 +1371,26 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     expect(packed.statusCode, packed.body).toBe(201);
     const task = only((await f.pool.query<{ id: string }>(`SELECT t.id FROM ops_tasks t JOIN handoff_packs p ON p.id = t.handoff_pack_id
       WHERE p.config_id = $1 AND t.status = 'todo' LIMIT 1`, [plan])).rows, "task").id;
+    // The task is named for her, so its tick's status line quotes her name
+    // unless it quotes the title as the erasure left it.
+    await f.pool.query("UPDATE ops_tasks SET title = 'Isla Ticked''s place cards' WHERE id = $1", [task]);
     // Something holds her layout, so the erasure stops there holding her
     // event; a tick of her sheet and one of her task arrive and must each
     // wait on the event, before any row of theirs is touched.
     if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
     const stopper = new Client({ connectionString: PLATFORM_TARGET });
     await stopper.connect();
+    const inFlight: Promise<unknown>[] = [];
     try {
       await stopper.query("BEGIN");
       await stopper.query("SELECT id FROM configurations WHERE id = $1 FOR SHARE", [plan]);
-      const erasing = post(`/people/${person}/erase`, "admin");
+      const erasing = kept(inFlight, post(`/people/${person}/erase`, "admin"));
       await waitForLockWait("configurations");
-      const ticking = f.server.inject({ method: "PATCH", url: `/hallkeeper/${plan}/progress?eventId=${hold.eventId}`,
-        headers: f.bearer("admin"), payload: { rowKey: "TEST ONLY row 1", checked: true } });
+      const ticking = kept(inFlight, f.server.inject({ method: "PATCH", url: `/hallkeeper/${plan}/progress?eventId=${hold.eventId}`,
+        headers: f.bearer("admin"), payload: { rowKey: "TEST ONLY row 1", checked: true } }));
       await waitForLockWait("events", "for key share");
-      const doing = f.server.inject({ method: "PATCH", url: `/ops-tasks/${task}/status`,
-        headers: f.bearer("admin"), payload: { status: "in_progress" } });
+      const doing = kept(inFlight, f.server.inject({ method: "PATCH", url: `/ops-tasks/${task}/status`,
+        headers: f.bearer("admin"), payload: { status: "in_progress" } }));
       await waitForLockWait("events", "for key share", 2);
       await stopper.query("COMMIT");
       const erased = await erasing;
@@ -1364,10 +1401,14 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       expect(done.statusCode, done.body).toBe(200);
     } finally {
       await stopper.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
       await stopper.end();
     }
     expect(await count("hallkeeper_progress WHERE config_id = $1 AND event_id = $2", [plan, hold.eventId])).toBe(1);
-    expect(await value("SELECT status AS value FROM ops_tasks WHERE id = $1", [task])).toBe("in_progress");
+    expect(await value("SELECT row_to_json(t) AS value FROM (SELECT title, status FROM ops_tasks WHERE id = $1) t", [task]))
+      .toEqual({ title: "Erased's place cards", status: "in_progress" });
+    expect(await value("SELECT message AS value FROM ops_status_updates WHERE event_id = $1 AND message LIKE 'Task %'", [hold.eventId]))
+      .toBe("Task \"Erased's place cards\" moved from todo to in_progress.");
   });
 
   it("acknowledges a change her erasure deletes: the acknowledgement waits on her event, then finds the change gone", async () => {
@@ -1391,12 +1432,13 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
     const stopper = new Client({ connectionString: PLATFORM_TARGET });
     await stopper.connect();
+    const inFlight: Promise<unknown>[] = [];
     try {
       await stopper.query("BEGIN");
       await stopper.query("SELECT id FROM configurations WHERE id = $1 FOR SHARE", [plan]);
-      const erasing = post(`/people/${person}/erase`, "admin");
+      const erasing = kept(inFlight, post(`/people/${person}/erase`, "admin"));
       await waitForLockWait("configurations");
-      const acknowledging = post(`/events/${hold.eventId}/change-acknowledgements`, "hallkeeper", { changeId: change });
+      const acknowledging = kept(inFlight, post(`/events/${hold.eventId}/change-acknowledgements`, "hallkeeper", { changeId: change }));
       await waitForLockWait("events", "for key share");
       await stopper.query("COMMIT");
       const erased = await erasing;
@@ -1405,6 +1447,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       expect(acknowledged.statusCode, acknowledged.body).toBe(404);
     } finally {
       await stopper.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
       await stopper.end();
     }
     expect(await count("event_plan_changes WHERE id = $1", [change])).toBe(0);
@@ -1412,32 +1455,37 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
   });
 
   it("rewords a revision saved while her erasure waited for her layout: pieces and revisions are found once it is held", async () => {
+    // Her name holds double quotes, which a revision's JSON text escapes: the
+    // erasure finds it only by searching for the name as JSON writes it.
+    const name = "Isla \"Izzy\" Saved";
     const email = `isla.saved-${randomUUID().slice(0, 8)}@example.test`;
-    const person = await f.addPerson({ name: "Isla Saved", emails: [email] });
+    const person = await f.addPerson({ name, emails: [email] });
     peopleIds.push(person);
     leadEmails.push(email);
-    const asked = await enquiry({ email, contactId: person, name: "Isla Saved" });
+    const asked = await enquiry({ email, contactId: person, name });
     const plan = await layout("TEST ONLY her plan");
     await proposal({ enquiryId: asked, layoutId: plan, title: "TEST ONLY her quote" });
     if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
     const stopper = new Client({ connectionString: PLATFORM_TARGET });
     await stopper.connect();
+    const inFlight: Promise<unknown>[] = [];
     let revision = "";
     try {
       await stopper.query("BEGIN");
       await stopper.query("SELECT id FROM configurations WHERE id = $1 FOR SHARE", [plan]);
-      const erasing = post(`/people/${person}/erase`, "admin");
+      const erasing = kept(inFlight, post(`/people/${person}/erase`, "admin"));
       await waitForLockWait("configurations");
       // The autosave commits a revision holding every piece, one labelled for
       // her, while the erasure waits for the layout.
       revision = only((await f.pool.query<{ id: string }>(`INSERT INTO configuration_layout_revisions (configuration_id, revision, source, payload)
         VALUES ($1, 1, 'authenticated_batch', $2::jsonb) RETURNING id`,
-        [plan, JSON.stringify({ objects: [{ metadata: { displayLabel: "Table for Isla Saved" } }] })])).rows, "revision").id;
+        [plan, JSON.stringify({ objects: [{ metadata: { displayLabel: `Table for ${name}` } }] })])).rows, "revision").id;
       await stopper.query("COMMIT");
       const erased = await erasing;
       expect(erased.statusCode, erased.body).toBe(200);
     } finally {
       await stopper.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
       await stopper.end();
     }
     expect(await value("SELECT payload AS value FROM configuration_layout_revisions WHERE id = $1", [revision]))
@@ -1464,12 +1512,13 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
     const holder = new Client({ connectionString: PLATFORM_TARGET });
     await holder.connect();
+    const inFlight: Promise<unknown>[] = [];
     try {
       await holder.query("BEGIN");
       await holder.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [guestLeadLockKey(email)]);
-      const erasing = post(`/people/${person}/erase`, "admin");
+      const erasing = kept(inFlight, post(`/people/${person}/erase`, "admin"));
       await waitForStatement("%pg_advisory_xact_lock%", "the erasure at her address's lead lock");
-      const removing = removeLapsedPieceNotes(f.db, [plan], false);
+      const removing = kept(inFlight, removeLapsedPieceNotes(f.db, [plan], false));
       await waitForLockWait("configurations", "for key share");
       await holder.query("COMMIT");
       const erased = await erasing;
@@ -1477,11 +1526,50 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       expect(await removing).toMatchObject({ sheets: 1 });
     } finally {
       await holder.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
       await holder.end();
     }
     expect(await value(`SELECT row_to_json(s) AS value FROM (SELECT payload->'instructions'->'dayOfContact' AS contact,
       payload->'floorPlan'->'objects'->0 AS piece FROM configuration_sheet_snapshots WHERE id = $1) s`, [sheet]))
       .toEqual({ contact: null, piece: {} });
+  });
+
+  it("compiles a pack beside the piece-note retention from the sheet as the retention leaves it: it reads the sheet in the statement that locks it", async () => {
+    // A layout whose table carries an allergy note, compiled once already:
+    // that pack's setup task copies the note.
+    const plan = await approvedPlan("TEST ONLY a lapsed plan", "TEST ONLY nothing to note", "TEST ONLY nut allergy at this table");
+    const first = await post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", {});
+    expect(first.statusCode, first.body).toBe(201);
+    const noted = only((await f.pool.query<{ id: string }>(`SELECT t.id FROM ops_tasks t JOIN handoff_packs p ON p.id = t.handoff_pack_id
+      WHERE p.config_id = $1 AND t.kind = 'setup' AND t.detail LIKE '%nut allergy%' LIMIT 1`, [plan])).rows, "noted task").id;
+    // Something holds that task, so the retention stops after taking the note
+    // out of the sheet and before it commits; a compile arrives, waits for the
+    // sheet, and must then read it as the retention left it.
+    if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
+    const holder = new Client({ connectionString: PLATFORM_TARGET });
+    await holder.connect();
+    const inFlight: Promise<unknown>[] = [];
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM ops_tasks WHERE id = $1 FOR UPDATE", [noted]);
+      const removing = kept(inFlight, removeLapsedPieceNotes(f.db, [plan], false));
+      await waitForStatement("%update \"ops_tasks\"%", "the retention at the first pack's task");
+      const compiling = kept(inFlight, post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", {}));
+      await waitForLockWait("configuration_sheet_snapshots", "for no key update");
+      await holder.query("COMMIT");
+      expect(await removing).toMatchObject({ sheets: 1, opsTasks: 1 });
+      // The sheet as the retention left it compiles to what the retention
+      // made of the first pack, so the compile hands that back (200); one
+      // that compiled the note would have written a second pack (201).
+      const compiled = await compiling;
+      expect([200, 201], compiled.body).toContain(compiled.statusCode);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
+      await holder.end();
+    }
+    expect(await count("ops_tasks t JOIN handoff_packs p ON p.id = t.handoff_pack_id WHERE p.config_id = $1 AND t.detail LIKE '%nut allergy%'", [plan]))
+      .toBe(0);
   });
 
   it("keeps an issue reworded when its update waited on her erasure: the update writes only what it names", async () => {
@@ -1497,17 +1585,18 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       .returning({ id: schema.eventDayIssues.id }), "issue").id;
     // Her address's lead lock is held, so the erasure stops after rewording
     // the issue and before it commits; the hallkeeper's update then reads the
-    // old text and waits on the row.
+    // old text and waits on her event.
     if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
     const holder = new Client({ connectionString: PLATFORM_TARGET });
     await holder.connect();
+    const inFlight: Promise<unknown>[] = [];
     try {
       await holder.query("BEGIN");
       await holder.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [guestLeadLockKey(email)]);
-      const erasing = post(`/people/${person}/erase`, "admin");
+      const erasing = kept(inFlight, post(`/people/${person}/erase`, "admin"));
       await waitForStatement("%pg_advisory_xact_lock%", "the erasure at her address's lead lock");
-      const patching = f.server.inject({ method: "PATCH", url: `/events/${hold.eventId}/issues/${issue}`,
-        headers: f.bearer("admin"), payload: { status: "resolved" } });
+      const patching = kept(inFlight, f.server.inject({ method: "PATCH", url: `/events/${hold.eventId}/issues/${issue}`,
+        headers: f.bearer("admin"), payload: { status: "resolved" } }));
       // The update takes her event first, as the erasure did: it waits there.
       await waitForLockWait("events", "for key share");
       await holder.query("COMMIT");
@@ -1517,6 +1606,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       expect(patched.statusCode, patched.body).toBe(200);
     } finally {
       await holder.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
       await holder.end();
     }
     expect(await value("SELECT row_to_json(i) AS value FROM (SELECT title, detail, escalation_note, status FROM event_day_issues WHERE id = $1) i",

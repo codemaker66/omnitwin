@@ -209,8 +209,17 @@ export async function removeLapsedPieceNotes(
       // every read after it: a writer holding the layout FOR UPDATE (an
       // approval, an erasure) has committed before anything here is read, so
       // nothing it changed is written back, and its row order never meets
-      // this one (people-erasure.ts).
-      await tx.select({ id: configurations.id }).from(configurations).where(eq(configurations.id, configurationId)).for("key share");
+      // this one (people-erasure.ts). A dry run writes nothing back, so it
+      // takes no lock and waits on no one.
+      //
+      // A handoff compile reads the newest sheet in the statement that locks
+      // it (ops-compiler.ts), so one that waits on this pass's sheet copies it
+      // without the notes. One that took the sheet before this pass reaches
+      // it can still commit a pack whose setup tasks copy a note, after this
+      // read the tasks: the next pass finds those (pieceNotesHeld counts them).
+      if (!dryRun) {
+        await tx.select({ id: configurations.id }).from(configurations).where(eq(configurations.id, configurationId)).for("key share");
+      }
       const pieces = await tx.select({ id: placedObjects.id }).from(placedObjects)
         .where(and(eq(placedObjects.configurationId, configurationId), pieceHasNote));
 
