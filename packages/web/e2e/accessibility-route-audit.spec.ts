@@ -577,7 +577,7 @@ const routeSpecs: readonly RouteSpec[] = [
     routeName: "the planner's paper, a seated list's table plan",
     contrastTarget: "client",
     path: `/plan/${GUEST_LIST_PLAN_ID}/guests/paper?kit=on&sheet=table-plan`,
-    readyText: "Please find your table",
+    readyText: "2 guests have no seat, so they are not on it",
     mockRoutes: seedSeatedGuestList,
   },
 ];
