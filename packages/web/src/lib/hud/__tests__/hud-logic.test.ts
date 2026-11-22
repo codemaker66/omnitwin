@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../../constants/scale.js";
 import { BANQUET_CHAIR_CLEARANCE_M } from "../../auto-fill.js";
 import { getCatalogueItem } from "../../catalogue.js";
@@ -11,6 +11,12 @@ import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { floorCounts, handCardCounting, handCardIds, handCards } from "../hand-cards.js";
 import { journeySteps, nextMove } from "../journey.js";
 import { LAID_CLEARANCE_M, gapToOpenUp, roomFacts, roomStatus, seatLine, type RoomStatus, type RoomStatusId } from "../room-seals.js";
+
+// The planner's own review, as it is, with its calls counted: one layout is to be asked about once.
+vi.mock("../../gangway-review-record.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../gangway-review-record.js")>();
+  return { ...real, layoutGangwayReview: vi.fn(real.layoutGangwayReview) };
+});
 
 const TURINI = "burgess-turini-18-3";
 
@@ -229,6 +235,35 @@ describe("the journey", () => {
 
   // The planner's own Lay out keeps 0.6 m behind every chair, and the circulation scale calls anything under 0.9 m
   // tight. Read by the scale alone, every room the planner had just laid was sent straight back to be opened up.
+  // The review measures every piece against every gangway, and its answer is the layout's and the room's alone.
+  it("asks the planner's review once for a layout, and never where it could not change the answer", () => {
+    const asked = vi.mocked(layoutGangwayReview);
+    const ROW_Z = -2.25;
+    const probe = facts([...stamp("round", -4, ROW_Z), ...stamp("round", 4, ROW_Z)], 20).aisles.tightestGapM;
+    if (probe === null) throw new Error("two rounds have a gap between them");
+    const reach = (8 - probe) / 2;
+    const pair = (gapM: number): PlacedItem[] => [...stamp("round", -(reach + gapM / 2), ROW_Z), ...stamp("round", reach + gapM / 2, ROW_Z)];
+
+    // One layout, its other facts worked out three times over (a guest count typed, the kind of day chosen).
+    const layout = pair(LAID_CLEARANCE_M);
+    asked.mockClear();
+    expect(facts(layout, 20).aisles.asLaid).toBe(true);
+    expect(facts(layout, 40).aisles.asLaid).toBe(true);
+    expect(facts(layout, 20, "wedding").aisles.asLaid).toBe(true);
+    expect(asked).toHaveBeenCalledTimes(1);
+    // The same pieces in a new list are a layout that may have changed: asked again.
+    expect(facts([...layout], 20).aisles.asLaid).toBe(true);
+    expect(asked).toHaveBeenCalledTimes(2);
+
+    // Not asked where the answer is settled without it: no tight gap, a gap under the spacing, no way through.
+    asked.mockClear();
+    facts([], 20);
+    facts(pair(1), 20);
+    facts(pair(0.5), 20);
+    facts(pair(0.3), 20);
+    expect(asked).not.toHaveBeenCalled();
+  });
+
   it("leaves a room at the planner's own spacing ready to send, and says every other tight gap as before", () => {
     expect(LAID_CLEARANCE_M).toBe(BANQUET_CHAIR_CLEARANCE_M);
     // Two rounds of ten side by side where one of Lay out's rows stands, clear of the room's gangways: the gap

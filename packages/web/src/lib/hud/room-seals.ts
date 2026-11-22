@@ -56,6 +56,31 @@ export const LAID_CLEARANCE_M = 0.6;
 const LAID_CLEARANCE_SLACK_M = 0.005;
 
 /**
+ * The last layout the planner's review was asked about, and what it said. The
+ * review measures every piece against every gangway, and its answer is the
+ * layout's and the room's alone. The room's other facts are worked out again
+ * when a guest count is typed or the kind of day is chosen, and the same
+ * layout is not asked about twice. A layout is a new list of pieces each time
+ * it changes, so the list itself is the key; and the screen takes a moved
+ * piece only once it has come to rest (planner-hud/hud-facts.tsx), so no
+ * frame of a drag asks.
+ */
+let lastReview: {
+  readonly items: readonly PlacedItem[];
+  readonly room: SpaceDimensions;
+  readonly roomSlug: string | null;
+  readonly passes: boolean;
+} | null = null;
+
+/** Whether the planner's own review finds no gangway of this layout under its guidance. */
+function gangwaysPass(items: readonly PlacedItem[], room: SpaceDimensions, roomSlug: string | null): boolean {
+  if (lastReview !== null && lastReview.items === items && lastReview.room === room && lastReview.roomSlug === roomSlug) return lastReview.passes;
+  const passes = layoutGangwayReview(items, room, roomSlug, null).items.length === 0;
+  lastReview = { items, room, roomSlug, passes };
+  return passes;
+}
+
+/**
  * Whether a tight narrowest gap is the planner's own spacing and nothing
  * worse. Lay out keeps LAID_CLEARANCE_M between a table's chairs and whatever
  * stands next to them (the next table's chairs, or a piece already on the
@@ -81,7 +106,7 @@ function laidAsThePlannerLays(
 ): boolean {
   if (circulation.band !== "tight" || circulation.tightestGapM === null || room === null) return false;
   if (circulation.tightestGapM < LAID_CLEARANCE_M - LAID_CLEARANCE_SLACK_M) return false;
-  return layoutGangwayReview(items, room, roomSlug, null).items.length === 0;
+  return gangwaysPass(items, room, roomSlug);
 }
 
 /**
