@@ -37,7 +37,10 @@ arrival is the floor's record of the door.
   SHARE` while it is judged and written. A Diary move or exit (`FOR UPDATE`)
   goes wholly before or after it, so an add that waited is judged against
   where the move left the booking. A move or a proposal moves the arrivals
-  not yet marked by the booking's own shift, in its transaction.
+  not yet marked by the booking's own shift, in its transaction. Every write
+  takes the booking before the arrival, as a move does: the floor's taps and
+  the office's removal hold it `FOR KEY SHARE` first (`holdBookingOf`), so
+  one made during a move waits for it rather than deadlocking with it.
 - **Facts at the door.** First tap wins: the arrival is held from the tap's
   read until it commits, so a second tap waits and reads the first back. A tap
   that writes an arrival time must fall between twelve hours before the

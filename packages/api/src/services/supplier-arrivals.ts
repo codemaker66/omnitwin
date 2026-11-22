@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import {
   SUPPLIER_ARRIVAL_LEAD_MS,
   SUPPLIER_ARRIVAL_STAY_MS,
@@ -25,6 +25,9 @@ import type { RequestActor } from "./requests.js";
 // second. The booking is held FOR SHARE while an add or a change is judged
 // and written, so a Diary move or exit of it (FOR UPDATE) goes wholly before
 // or wholly after: never an arrival filed against where the booking was.
+// Every write here takes the booking before the arrival, the order a Diary
+// move takes them; the floor's taps and the office's removal hold it FOR KEY
+// SHARE (holdBookingOf), so they wait for a move and never deadlock with it.
 //
 // The floor (anyone who records what a room is doing) marks a supplier
 // arrived and gone: the first tap wins and a second reads it back, so two
@@ -312,6 +315,27 @@ async function recordDoor(conn: ArrivalConn, row: ArrivalRow, action: SupplierAr
   });
 }
 
+/**
+ * The booking an arrival belongs to, held FOR KEY SHARE before the arrival is
+ * touched, found through the arrival within the venue. A Diary move takes the
+ * booking FOR UPDATE and then its arrivals not yet marked; a write that took
+ * the arrival first would then wait on the booking (the history's key onto it
+ * takes KEY SHARE) while the move waited on the arrival, a deadlock that
+ * PostgreSQL ends by failing one of them. In the move's order, one waits for
+ * the other instead. KEY SHARE is the lock that key takes anyway, and it
+ * conflicts only with FOR UPDATE: a tap and a move wait for each other, while
+ * the office's adds and changes (FOR SHARE) and other taps are not held up.
+ */
+async function holdBookingOf(conn: ArrivalConn, venueId: string, id: string): Promise<void> {
+  await conn.select({ id: bookings.id }).from(bookings)
+    .where(and(
+      eq(bookings.venueId, venueId),
+      inArray(bookings.id, conn.select({ id: bookingSupplierArrivals.bookingId }).from(bookingSupplierArrivals)
+        .where(and(eq(bookingSupplierArrivals.id, id), eq(bookingSupplierArrivals.venueId, venueId)))),
+    ))
+    .for("key share");
+}
+
 /** The office removes an arrival, from the revision it saw, while nobody has marked it in. */
 export async function removeArrival(
   db: Database,
@@ -322,6 +346,7 @@ export async function removeArrival(
 ): Promise<{ readonly ok: true } | ArrivalDeny> {
   if (!canAdministerVenue(actor, venueId)) return deny(403, "FORBIDDEN", "Forbidden");
   return db.transaction(async (tx): Promise<{ readonly ok: true } | ArrivalDeny> => {
+    await holdBookingOf(tx, venueId, id);
     const [removed] = await tx.delete(bookingSupplierArrivals)
       .where(and(
         eq(bookingSupplierArrivals.id, id),
@@ -389,6 +414,7 @@ export async function recordArrivalStep(
 ): Promise<SupplierArrival | ArrivalDeny> {
   if (!canRecordObservation(actor, venueId)) return deny(403, "FORBIDDEN", "Forbidden");
   return db.transaction(async (tx): Promise<SupplierArrival | ArrivalDeny> => {
+    await holdBookingOf(tx, venueId, id);
     const found = await doorArrival(tx, venueId, id, true);
     // Off the Diary, only someone already in is still the floor's to mark.
     if (found === null || (!found.live && found.arrival.arrivedAt === null)) return NOT_FOUND();
@@ -440,6 +466,7 @@ export async function undoArrivalStep(
 ): Promise<SupplierArrival | ArrivalDeny> {
   if (!canRecordObservation(actor, venueId)) return deny(403, "FORBIDDEN", "Forbidden");
   return db.transaction(async (tx): Promise<SupplierArrival | ArrivalDeny> => {
+    await holdBookingOf(tx, venueId, id);
     const found = await doorArrival(tx, venueId, id);
     if (found === null || !(found.live || (step === "left" && found.arrival.arrivedAt !== null))) return NOT_FOUND();
     const scope = and(eq(bookingSupplierArrivals.id, id), eq(bookingSupplierArrivals.venueId, venueId));

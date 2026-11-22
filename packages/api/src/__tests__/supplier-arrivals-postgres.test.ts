@@ -10,6 +10,7 @@ import { supplierArrivalRoutes } from "../routes/supplier-arrivals.js";
 import { transitionBookingCore, updateBookingCore, type MutationActor } from "../services/booking-mutations.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 import { clearLapsedSupplierContacts } from "../services/supplier-arrival-retention.js";
+import { moveArrivalsWithBooking } from "../services/supplier-arrivals.js";
 import { proposeWindowCore } from "../services/window-proposals.js";
 
 // ---------------------------------------------------------------------------
@@ -153,6 +154,33 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
   /** The office's own account, as the Diary's cores take it. */
   function office(f: Fixture): MutationActor {
     return { id: f.people.admin, venueId: f.venueId, role: "admin", platformRole: "none" };
+  }
+
+  /** Waits until `count` statements of this suite's pool are waiting on a lock. */
+  async function waitingOnLocks(count: number): Promise<void> {
+    await expect.poll(async () => Number((await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM pg_stat_activity WHERE application_name = current_setting('application_name') AND wait_event_type = 'Lock'",
+    )).rows[0]?.count), { timeout: 5000 }).toBe(count);
+  }
+
+  /**
+   * A Diary move of a booking in the order updateBookingCore makes it: the
+   * booking FOR UPDATE, then its arrivals not yet marked moved by `deltaMs`
+   * (the service's own moveArrivalsWithBooking), then the commit. It holds the
+   * booking until `moveOn` is called, so a test decides what meets it there.
+   */
+  async function diaryMoveHolding(bookingId: string, deltaMs: number): Promise<{ readonly moveOn: () => void; readonly done: Promise<void> }> {
+    const held = gate();
+    const done = db.transaction(async (tx) => {
+      await tx.select({ id: schema.bookings.id }).from(schema.bookings).where(eq(schema.bookings.id, bookingId)).for("update");
+      held.enter();
+      await held.open;
+      await moveArrivalsWithBooking(tx, bookingId, deltaMs);
+    });
+    // Its outcome is read with allSettled; this only keeps a failure from going unhandled meanwhile.
+    done.catch(() => undefined);
+    await held.entered;
+    return { moveOn: held.release, done };
   }
 
   async function call(
@@ -443,6 +471,37 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
     expect([added.status, added.code]).toEqual([409, "BOOKING_NOT_ACTIVE"]);
   });
 
+  it("lets a tap at the door wait for a Diary move of its booking, never deadlock with it, and mark the supplier where the move left them", async () => {
+    const f = await fixture();
+    const { tonight, made } = await dueTonight(f);
+    const move = await diaryMoveHolding(tonight.id, HOUR);
+    // The floor marks the supplier in while the move holds the booking: the
+    // tap waits for the booking before it touches the arrival the move shifts.
+    const tap = call(f, "hallkeeper", "POST", `/venues/${f.venueId}/supplier-arrivals/${made.id}/arrived`);
+    await waitingOnLocks(1);
+    move.moveOn();
+    const [moved] = await Promise.allSettled([move.done]);
+    const tapped = await tap;
+    expect([moved.status, tapped.status]).toEqual(["fulfilled", 200]);
+    expect(tapped.data).toMatchObject({ arrivedByName: "Jamie", arrivesAt: new Date(Date.parse(made.arrivesAt) + HOUR).toISOString() });
+  });
+
+  it("lets the office's removal wait for a Diary move of its booking, never deadlock with it, and refuse it as stale once the move has moved the supplier", async () => {
+    const f = await fixture();
+    const { tonight, made } = await dueTonight(f);
+    const move = await diaryMoveHolding(tonight.id, HOUR);
+    const removing = call(f, "admin", "DELETE", `/venues/${f.venueId}/supplier-arrivals/${made.id}?expectedRevision=${String(made.revision)}`);
+    await waitingOnLocks(1);
+    move.moveOn();
+    const [moved] = await Promise.allSettled([move.done]);
+    const removed = await removing;
+    // The move went first and moved the supplier, so the removal was made
+    // from an older copy: refused, as any change from an old copy is, and the
+    // supplier stays where the move left them.
+    expect([moved.status, removed.status, removed.code]).toEqual(["fulfilled", 409, "STALE_ARRIVAL"]);
+    expect((await stored(made.id)).arrivesAt.toISOString()).toBe(new Date(Date.parse(made.arrivesAt) + HOUR).toISOString());
+  });
+
   it("lets a collection come the morning after, and keeps a door change to the door", async () => {
     const f = await fixture();
     const vases = await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
@@ -558,9 +617,7 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
     });
     await held.entered;
     const again = proposeWindowCore(db, proposer, eventId, window(start));
-    await expect.poll(async () => Number((await pool.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM pg_stat_activity WHERE application_name = current_setting('application_name') AND wait_event_type = 'Lock'",
-    )).rows[0]?.count), { timeout: 5000 }).toBe(1);
+    await waitingOnLocks(1);
     held.release();
     const [byOffice, byProposer] = await Promise.all([officeMove, again]);
     expect(byOffice.ok && byProposer.ok).toBe(true);
