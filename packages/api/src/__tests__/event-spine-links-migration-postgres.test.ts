@@ -772,15 +772,20 @@ describe.skipIf(target === undefined)("the spine: the join beside a live writer"
       first_response_recorded_at = created_at WHERE id = $1`, [enquiryId]);
   }
 
-  /** Returns as soon as the backend is seen waiting for a lock (the join's one bounded wait lasts 100 ms). */
-  async function waitingOnALock(pid: number): Promise<void> {
+  /**
+   * True as soon as the backend is seen waiting for a lock; false once `finished` says its statement
+   * is over without that having been seen. The join's bounded wait lasts 100 ms, so a runner that
+   * stalls past it misses the wait: the caller then tries again rather than failing.
+   */
+  async function waitingOnALock(pid: number, finished: () => boolean): Promise<boolean> {
     for (let tries = 0; tries < 600; tries += 1) {
       const [row] = (await pool.query<{ waiting: boolean }>(
         "SELECT wait_event_type = 'Lock' AS waiting FROM pg_stat_activity WHERE pid = $1", [pid])).rows;
-      if (row?.waiting === true) return;
+      if (row?.waiting === true) return true;
+      if (finished()) return false;
       await new Promise((done) => setTimeout(done, 5));
     }
-    throw new Error("The join never waited");
+    return false;
   }
 
   /** An enquiry with a hold in the event (so the join joins it there first) and an open deal of it. */
@@ -834,8 +839,8 @@ describe.skipIf(target === undefined)("the spine: the join beside a live writer"
       await join.query("BEGIN");
       const started = Date.now();
       expect(await runOn(join)).toEqual({ joined: 1, events_made: 0, listed: 0 });
-      // Its deal update gave up on the uncommitted deal after 100 ms (in each of two rounds), not after
-      // the connection's three seconds.
+      // Its deal update gave up on the uncommitted deal after 100 ms (once in the run: a deal that gave
+      // up is not tried again in it), not after the connection's three seconds.
       expect(Date.now() - started).toBeLessThan(2_500);
       // The writer takes its event last, as writers do: the join holds nothing that waits it.
       await writer.query("SELECT id FROM events WHERE id = $1 FOR NO KEY UPDATE NOWAIT", [x]);
@@ -856,32 +861,45 @@ describe.skipIf(target === undefined)("the spine: the join beside a live writer"
     const v = await venueIn(pool, "event taken for update beside the join");
     const x = await eventIn(pool, v.venueId, "X");
     const { enquiryId, deal: mine } = await heldWithDeal(v, x);
-    const writer = await connection(), join = await connection();
-    try {
-      const pid = (await join.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid;
-      if (pid === undefined) throw new Error("No backend");
-      await writer.query("BEGIN");
-      await writer.query("INSERT INTO opportunities (venue_id, title, stage, event_id) VALUES ($1, 'The writer''s deal', 'qualified', $2)",
-        [v.venueId, x]);
-      await join.query("BEGIN");
-      const running = runOn(join);
-      // Failures are read where these are awaited below, not reported twice.
-      running.catch(() => undefined);
-      await waitingOnALock(pid);
-      // While the join waits for the writer's deal, the writer asks for the event FOR UPDATE, which waits
-      // for the join's key share: a ring, until the join's bounded wait gives up.
-      const taking = writer.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [x]);
-      taking.catch(() => undefined);
-      expect(await running).toEqual({ joined: 1, events_made: 0, listed: 0 });
-      await join.query("COMMIT");
-      expect((await taking).rows).toEqual([{ id: x }]);
-      await writer.query("COMMIT");
-    } finally {
-      await writer.query("ROLLBACK");
-      await join.query("ROLLBACK");
-      writer.release();
-      join.release();
+    // The join must be seen inside its 100 ms wait. A runner that stalls past it misses the wait;
+    // both transactions are then rolled back (the fixture rows were committed before) and the case
+    // runs again, up to three times. It fails only if the wait is never seen.
+    let seen = false;
+    for (let attempt = 1; attempt <= 3 && !seen; attempt += 1) {
+      const writer = await connection(), join = await connection();
+      try {
+        const pid = (await join.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid;
+        if (pid === undefined) throw new Error("No backend");
+        await writer.query("BEGIN");
+        await writer.query("INSERT INTO opportunities (venue_id, title, stage, event_id) VALUES ($1, 'The writer''s deal', 'qualified', $2)",
+          [v.venueId, x]);
+        await join.query("BEGIN");
+        let finished = false;
+        const running = runOn(join).finally(() => { finished = true; });
+        // Failures are read where these are awaited below, not reported twice.
+        running.catch(() => undefined);
+        seen = await waitingOnALock(pid, () => finished);
+        if (!seen) {
+          // Missed: let the run end, then roll both back (below) and try again.
+          await running.catch(() => undefined);
+          continue;
+        }
+        // While the join waits for the writer's deal, the writer asks for the event FOR UPDATE, which waits
+        // for the join's key share: a ring, until the join's bounded wait gives up.
+        const taking = writer.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [x]);
+        taking.catch(() => undefined);
+        expect(await running).toEqual({ joined: 1, events_made: 0, listed: 0 });
+        await join.query("COMMIT");
+        expect((await taking).rows).toEqual([{ id: x }]);
+        await writer.query("COMMIT");
+      } finally {
+        await writer.query("ROLLBACK");
+        await join.query("ROLLBACK");
+        writer.release();
+        join.release();
+      }
     }
+    if (!seen) throw new Error("The join was never seen waiting, in three tries");
     expect([await linkOf("enquiries", enquiryId), await linkOf("opportunities", mine), await reviewsOf(mine)]).toEqual([x, null, []]);
     expect((await pool.query<Row>("SELECT * FROM spine_join_old_records()")).rows[0]).toEqual({ joined: 0, events_made: 0, listed: 1 });
     expect(await reviewsOf(mine)).toEqual([{ reason: "second_open_deal", candidate_event_ids: [x] }]);
