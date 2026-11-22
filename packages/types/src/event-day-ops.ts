@@ -145,8 +145,9 @@ export const EventDayOpsBoardSchema = z.object({
 export type EventDayOpsBoard = z.infer<typeof EventDayOpsBoardSchema>;
 
 /** The most earlier-press keys a replayed status carries. A queued row keeps
- *  the keys of the device's presses on one task since the server last
- *  answered it: on the floor that is a handful (Start, Done, Block, a
+ *  the keys of the board's earlier presses on one task that the server did
+ *  not refuse (on their way, failed or landed), and of the rows it
+ *  replaced: on the floor that is a handful (Start, Done, Block, a
  *  correction), so twenty is several times the most a day needs, while the
  *  body stays a few kilobytes and the server's check a short list. A row
  *  past it keeps the newest twenty: the press most likely to be the task's
@@ -168,11 +169,12 @@ export const UpdateOpsTaskStatusInputSchema = z.object({
    *  undoes a later press. A live press, and a row queued before replays
    *  carried it, send none and are applied as pressed. */
   expectedStatus: OpsTaskStatusSchema.optional(),
-  /** Meaningful only with expectedStatus: the idempotency keys of this
-   *  device's earlier presses for the task, kept in the queued row (#418,
-   *  ruling A). The replay is also written when the task's last write was
-   *  made under one of them: a press of the device whose answer was lost,
-   *  or that landed while this one sat queued. Absent or empty, only
+  /** Meaningful only with expectedStatus: the idempotency keys of the
+   *  board's earlier presses for the task, and of the presses whose queued
+   *  rows this one replaced, kept in the queued row (#418, ruling A). The
+   *  replay is also written when the task's last write was made under one
+   *  of them: a press whose answer was lost, or that landed while this one
+   *  sat queued. Absent or empty, only
    *  expectedStatus decides. */
   earlierPressKeys: z.array(IdempotencyKeySchema).max(MAX_EARLIER_PRESS_KEYS).optional(),
 }).strict();

@@ -504,6 +504,43 @@ describe.skipIf(target === undefined)("a queued task status replayed on the migr
     }
   }, 60000);
 
+  // Two live presses sent at once under one key (review DS1, DR2): the key's
+  // unique index (migration 0030, task_completion_events_idempotency_unique)
+  // refuses the second, which answers 500 and writes nothing; the board
+  // keeps it queued, and its replay gets the recorded answer. Answering it
+  // 200 would need the recorded-key check under the row lock on the live
+  // path too.
+  it("KNOWN LIMIT: answers the second of two live presses sent at once under one key with a 500, writing it nowhere, and its replay with the recorded answer", async () => {
+    const { taskId, eventId } = await newTask();
+    const holder = await lockPool.connect();
+    let committed = false;
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM ops_tasks WHERE id = $1 FOR UPDATE", [taskId]);
+      const body: StatusBody = { status: "in_progress", idempotencyKey: `start-${taskId}` };
+      const first = send(taskId, body);
+      const second = send(taskId, body);
+      await lockWaiters(2);
+      await holder.query("COMMIT");
+      committed = true;
+      const answers = await Promise.all([first, second]);
+
+      expect(answers.map((answer) => answer.statusCode).sort()).toEqual([200, 500]);
+      const after = await recorded(taskId, eventId);
+      expect(after.completions).toEqual([{ fromStatus: "todo", toStatus: "in_progress", idempotencyKey: `start-${taskId}` }]);
+      expect(after.statusUpdates).toBe(1);
+      expect(after.planChanges).toBe(1);
+
+      const replay = await send(taskId, { ...body, expectedStatus: "todo" });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.body.data?.status).toBe("in_progress");
+      expect(await recorded(taskId, eventId)).toEqual(after);
+    } finally {
+      if (!committed) await holder.query("ROLLBACK");
+      holder.release();
+    }
+  }, 60000);
+
   // The stamp the order of writes rests on (DS5): a completion event is
   // stamped as it is inserted under the row lock (clock_timestamp()), not
   // when its transaction began (the column's default, now()). A write that

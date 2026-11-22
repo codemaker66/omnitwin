@@ -15,6 +15,10 @@
 //   - `handle.put(key, value)`   — upsert.
 //   - `handle.get(key)`          — returns StoredValue<T> | null.
 //   - `handle.delete(key)`       — idempotent.
+//   - `handle.deleteIf(key, matches)` — deletes only while the entry still
+//     matches, compared and deleted in one step of the store.
+//   - `handle.upsert(key, compute)`   — writes what `compute` makes of the
+//     entry the key holds now, read and written in one step of the store.
 //   - `handle.list()`            — iterate all keys (sync queue).
 //
 // `StoredValue<T>` wraps the payload with a `storedAt` ISO-8601 string

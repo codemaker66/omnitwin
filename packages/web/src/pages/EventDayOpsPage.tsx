@@ -378,12 +378,17 @@ function refusedAsUnknownField(err: unknown): boolean {
     && "keys" in issue && Array.isArray(issue.keys) && issue.keys.includes("expectedStatus"));
 }
 
-/** Sends a queued status. A bridge for deploy skew (#418, ruling C; the API
- *  deploys first): until the API knows the status a replay was pressed
- *  against, it refuses that field and the earlier-press keys with it, and
- *  the replay is sent once more as it used to be, under the same key, and
- *  applied as before. To be removed once the API that knows both fields is
- *  live (task T-733). */
+/** Sends a queued status. A bridge for a web that runs ahead of the API
+ *  (#418, ruling C): one merge publishes both, and this page can be live
+ *  before the API's build and pre-deploy step finish, or the API be rolled
+ *  back to a build without the fields. Such an API refuses the status a
+ *  replay was pressed against, and the earlier-press keys with it, and the
+ *  replay is sent once more as it used to be, under the same key, and
+ *  applied as on master. An API that knew expectedStatus but not
+ *  earlierPressKeys (never deployed) would name only the keys, so this
+ *  would not fire and the replay would be refused. To be removed once the
+ *  API that knows both fields is live and no rollback to one without them
+ *  is planned (task T-733). */
 async function sendQueuedStatus(opsTaskId: string, input: UpdateOpsTaskStatusInput): Promise<OpsTask> {
   try {
     return await updateOpsTaskStatus(opsTaskId, input);
