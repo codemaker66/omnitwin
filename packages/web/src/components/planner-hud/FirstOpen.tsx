@@ -44,7 +44,7 @@ interface FirstAnswer {
 // three read as a set (a single piece's close portrait beside two of them outweighed both).
 const ANSWERS: readonly FirstAnswer[] = [
   { kind: "wedding", name: "Wedding", line: "Ceremony, dinner and dancing", art: "/models/furniture/setup-round/setup-v2/white-chiavari.webp" },
-  { kind: "corporate", name: "Corporate", line: "Conference, dinner or awards", art: "/models/furniture/setup-long-table/setup-v2/white-set-turini.webp" },
+  { kind: "corporate", name: "Corporate", line: "Conference, dinner or awards", art: "/models/furniture/setup-long-table/setup-v2/black-set-chiavari.webp" },
   { kind: "other", name: "Something else", line: "Tell us what you have in mind", art: "/models/furniture/setup-dance-floor/setup-v2/floor.webp" },
 ];
 
