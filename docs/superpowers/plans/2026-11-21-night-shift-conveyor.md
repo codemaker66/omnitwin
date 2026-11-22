@@ -359,7 +359,7 @@ it("leaves each event once in events.jsonl after two calls", async () => {
 
 **Files:**
 - Create: `src/shift/steps.ts`
-- Modify: `src/sandbox/brief.ts` (rule text: after the precondition, write `/mnt/session/outputs/precondition.json` as `{"ok":true}` or `{"ok":false}` and stop when it is false), `src/sandbox/outputs.ts` (`planOutputs` brings back only the format-patch files and `diff.patch`, and leaves every other output in the sandbox; add `precondition.json` to the files it brings back, under that name, under the same size caps). `SandboxApi.listSessions` already exists; nothing changes in `src/sandbox/api.ts`.
+- Already in the launcher, nothing to modify: `src/sandbox/brief.ts` has the agent write `/mnt/session/outputs/precondition.json` as `{"ok":true}` or `{"ok":false}` after the precondition and stop when it is false; `planOutputs` in `src/sandbox/outputs.ts` brings back only the format-patch files, `diff.patch` and `precondition.json` (under that name, under the same size caps) and leaves every other output in the sandbox; the review rejects a `precondition.json` that is false or unreadable. `SandboxApi.listSessions` already exists; nothing changes in `src/sandbox/api.ts`.
 - Test: `src/__tests__/shift-steps.test.ts`
 
 **Interfaces:**
@@ -368,7 +368,7 @@ it("leaves each event once in events.jsonl after two calls", async () => {
 ```ts
 export interface StepDeps {
   readonly settings: ShiftSettings; readonly ledgerFile: string; readonly queueDir: string;
-  apiFor(pot: Pot): Promise<SandboxApi>;        // reads that pot's key file and builds the client
+  apiFor(pot: Pot): Promise<SandboxApi>;        // reads that pot's key file and builds the client with sdkSandboxApi, never new Anthropic()
   masterFacts(): Promise<{ readonly baseSha: string; readonly projectRules: string; readonly verifyScript: string }>;
   now(): Date; log(line: string): void;
 }
