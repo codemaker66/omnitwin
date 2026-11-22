@@ -901,7 +901,7 @@ describe("sandbox launcher", () => {
     expect(logged).toHaveLength(events.length);
   });
 
-  it("starts nothing when the budget does not fit the lane, the org or the night", async () => {
+  it("starts nothing when the budget does not fit the lane, the org or the --job label's own cap", async () => {
     const prior = `${JSON.stringify({ ts: "2026-11-05T09:00:00.000Z", lane: "sandbox", job: "a4-trial:x", model: "m", requests: 1, inputTokens: 1, outputTokens: 1, costUsd: 108, batchId: null })}\n`;
     const config = await workspace(prior);
     const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
@@ -911,9 +911,12 @@ describe("sandbox launcher", () => {
     const limits = { laneCapUsd: 110, orgCapUsd: 190 };
     const otherLane = await readCreditLedger(await writeTemp(`${JSON.stringify({ ts: "t", lane: "batches", job: "a1", costUsd: 187 })}\n`));
     expect(checkSpend(otherLane, "sandbox", 4.5, limits).reason).toContain("org cap");
-    const night = await readCreditLedger(await writeTemp(`${JSON.stringify({ ts: "t", lane: "sandbox", job: "night-1:a", costUsd: 22 })}\n`));
-    expect(checkSpend(night, "sandbox", 4.5, { ...limits, nightCapUsd: 25 }, "night-1:").ok).toBe(false);
-    expect(checkSpend(night, "sandbox", 2.5, { ...limits, nightCapUsd: 25 }, "night-1:").ok).toBe(true);
+    const labelled = await readCreditLedger(await writeTemp(`${JSON.stringify({ ts: "t", lane: "sandbox", job: "trial-1:a", costUsd: 22 })}\n`));
+    expect(checkSpend(labelled, "sandbox", 4.5, { ...limits, jobCapUsd: 25 }, "trial-1:")).toEqual({
+      ok: false,
+      reason: "the $4.50 budget does not fit the job 'trial-1' cap: $22.00 of $25.00 is spent",
+    });
+    expect(checkSpend(labelled, "sandbox", 2.5, { ...limits, jobCapUsd: 25 }, "trial-1:").ok).toBe(true);
     const broken = await readCreditLedger(await writeTemp("{not json\n"));
     expect(checkSpend(broken, "sandbox", 1, limits).ok).toBe(false);
   });

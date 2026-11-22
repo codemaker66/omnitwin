@@ -27,7 +27,8 @@ export interface JobOptions {
   readonly job: string;
   readonly budgetUsd: number;
   readonly timeoutMinutes: number;
-  readonly nightCapUsd?: number | undefined;
+  /** The --job label's own cap: its spend so far in the ledger plus this budget must fit (--job-cap). */
+  readonly jobCapUsd?: number | undefined;
   readonly baseSha: string;
   /** AGENTS.md at the base commit, already filtered by nightRulesFromAgentsMd. */
   readonly projectRules: string;
@@ -74,8 +75,10 @@ function refuseUnhonouredSpec(task: Task): void {
 /**
  * What a session is booked at. The platform's figure, once the platform says
  * the session has stopped; otherwise the larger of that snapshot and the whole
- * budget (which the platform's cap bounds), marked unknown, so the ledger never
- * under-counts a session that may still be spending.
+ * budget, marked unknown. The platform checks its cap before each model
+ * request, so one request already in flight can still take a session that may
+ * be spending past max(snapshot, budget): the booking is the bound the cap
+ * gives, not a strict upper bound.
  */
 export function bookedCost(stopped: boolean, snapshotUsd: number | null, budgetUsd: number): { readonly costUsd: number; readonly costKnown: boolean } {
   if (stopped && snapshotUsd !== null) return { costUsd: snapshotUsd, costKnown: true };
@@ -206,7 +209,7 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
     ledger,
     config.lane,
     options.budgetUsd,
-    { laneCapUsd: config.laneCapUsd, orgCapUsd: config.orgCapUsd, nightCapUsd: options.nightCapUsd },
+    { laneCapUsd: config.laneCapUsd, orgCapUsd: config.orgCapUsd, jobCapUsd: options.jobCapUsd },
     `${options.job}:`,
   );
   if (!check.ok) return { kind: "skipped", taskId: task.id, reason: check.reason };

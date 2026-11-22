@@ -170,8 +170,8 @@ describe("--budget and --timeout overrides", () => {
     expect(() => timeoutOverride("1.5")).toThrow(/whole number/u);
   });
 
-  it("leave --night-cap without a ceiling of its own", () => {
-    expect(boundedNumber("1000", "--night-cap")).toBe(1000);
+  it("leave --job-cap without a ceiling of its own", () => {
+    expect(boundedNumber("1000", "--job-cap")).toBe(1000);
   });
 });
 

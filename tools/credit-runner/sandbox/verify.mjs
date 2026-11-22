@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// The night launcher's own check, run inside the Managed Agents sandbox.
+// The sandbox launcher's verifier, run inside the Managed Agents sandbox.
 //
 // It is uploaded read-only to /mnt/session/uploads/ with task.json beside it,
 // and the agent runs it with exactly `node /mnt/session/uploads/verify.mjs`.
 // The launcher reads this script's raw output from the session's tool result,
-// never the agent's account of it. It proves, on the agent's final commit:
+// never the agent's account of it. It checks, on the agent's final commit:
 //
 //   1. the branch sits on the base commit the launcher chose, is clean, and
 //      every commit carries the task trailer;

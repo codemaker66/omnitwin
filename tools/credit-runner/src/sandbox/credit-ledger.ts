@@ -92,8 +92,8 @@ export interface SpendLimits {
   readonly laneCapUsd: number;
   /** Every lane's allowance in the org this cycle. */
   readonly orgCapUsd: number;
-  /** Tonight's allowance for this lane, when a night is being run. */
-  readonly nightCapUsd?: number | undefined;
+  /** This --job label's allowance in this lane: its spend so far plus the budget must fit (--job-cap). */
+  readonly jobCapUsd?: number | undefined;
 }
 
 export interface SpendCheck {
@@ -110,7 +110,7 @@ export function checkSpend(
   lane: string,
   budgetUsd: number,
   limits: SpendLimits,
-  nightPrefix?: string,
+  jobPrefix?: string,
 ): SpendCheck {
   if (ledger.badLines > 0) {
     return { ok: false, reason: `the credit ledger has ${String(ledger.badLines)} unreadable line(s); fix it before spending` };
@@ -122,9 +122,9 @@ export function checkSpend(
     [org, limits.orgCapUsd, "org"],
     [laneSpent, limits.laneCapUsd, `lane '${lane}'`],
   ];
-  if (limits.nightCapUsd !== undefined && nightPrefix !== undefined) {
-    const night = spent(ledger.lines, (line) => line.lane === lane && line.job.startsWith(nightPrefix));
-    checks.push([night, limits.nightCapUsd, `night '${nightPrefix}'`]);
+  if (limits.jobCapUsd !== undefined && jobPrefix !== undefined) {
+    const job = spent(ledger.lines, (line) => line.lane === lane && line.job.startsWith(jobPrefix));
+    checks.push([job, limits.jobCapUsd, `job '${jobPrefix.replace(/:$/u, "")}'`]);
   }
   for (const [used, cap, label] of checks) {
     if (used + budgetUsd > cap + 1e-9) {

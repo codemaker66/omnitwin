@@ -60,7 +60,7 @@ async function gitEntryAbove(folder: string): Promise<boolean> {
  * session starts.
  */
 export const ATTENDED = `Run it by hand and attended until the night-shift conveyor's ledger v2 lands: the
-ledger line is written only after the launcher has finished with a session, and nothing
+ledger line is written only once the launcher has stopped a session and read its cost, and nothing
 locks the check-then-spend step, so a launcher that dies or is started twice at once can
 leave a running session unrecorded. Do not schedule or loop \`sandbox run\`.`;
 
@@ -73,7 +73,7 @@ ${ATTENDED}
 From the repo root:
   pnpm --filter @omnitwin/credit-runner sandbox status
   pnpm --filter @omnitwin/credit-runner sandbox setup
-  pnpm --filter @omnitwin/credit-runner sandbox run <spec.md> --job <label> [--budget <usd>] [--timeout <min>] [--night-cap <usd>]
+  pnpm --filter @omnitwin/credit-runner sandbox run <spec.md> --job <label> [--budget <usd>] [--timeout <min>] [--job-cap <usd>]
   pnpm --filter @omnitwin/credit-runner sandbox collect <session-id> <spec.md> --run-dir <dir> --base <sha> [--budget <usd>]
       rebuilds a finished session's record and review from its history; starts and charges nothing
 
@@ -82,7 +82,7 @@ Options:
   --budget <usd>     the session's hard spend cap, at most 50 (default: the spec's budget_usd); on collect,
                      what a session whose cost cannot be read is counted at
   --timeout <min>    interrupt the agent after this many whole minutes, at most 240 (default: the spec's)
-  --night-cap <usd>  refuse the run if the spend so far under this --job label plus its budget
+  --job-cap <usd>    refuse the run if the spend so far under this --job label plus its budget
                      passes this
   --config <file>    default: tools/credit-runner/sandbox.config.json (copy the .example.json
                      beside it and fill in your own paths, the real file is git-ignored)
@@ -105,7 +105,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       job: { type: "string" },
       budget: { type: "string" },
       timeout: { type: "string" },
-      "night-cap": { type: "string" },
+      "job-cap": { type: "string" },
       "run-dir": { type: "string" },
       base: { type: "string" },
       config: { type: "string" },
@@ -198,7 +198,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     job: values.job,
     budgetUsd: budgetOverride(values.budget) ?? task.budgetUsd,
     timeoutMinutes: timeoutOverride(values.timeout) ?? task.timeoutMinutes,
-    nightCapUsd: boundedNumber(values["night-cap"], "--night-cap"),
+    jobCapUsd: boundedNumber(values["job-cap"], "--job-cap"),
     baseSha,
     projectRules,
     verifyScript,
