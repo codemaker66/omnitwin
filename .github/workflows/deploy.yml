@@ -41,15 +41,33 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+# The job's token reads this repository and nothing more.
+permissions:
+  contents: read
+
 jobs:
   migrate:
     name: Apply DB migrations
-    # Only proceed if CI actually succeeded.
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Only a CI run that succeeded on a push to this repository's master.
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 10
     steps:
+      # Before anything is fetched: the commit must already be on master.
+      - name: Refuse a commit master does not contain
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          status="$(gh api "repos/${REPO}/compare/${HEAD_SHA}...master" --jq .status)"
+          case "${status}" in
+            identical|ahead) echo "master contains ${HEAD_SHA}." ;;
+            *) echo "::error::master does not contain ${HEAD_SHA} (compare status: ${status}); not deploying."; exit 1 ;;
+          esac
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
