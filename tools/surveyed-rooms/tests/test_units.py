@@ -6,6 +6,8 @@ bit for bit equal. The GHR1 comparison runs the old relief-mesh.mjs (copied byte
 a shim modules.mjs) against relief-mesh-room.mjs; it needs a node install with meshoptimizer
 (SURVEYED_ROOMS_NODE_ROOT, default: the checkout these tools are in) and is skipped without one.
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -378,8 +380,10 @@ class MarginViews(unittest.TestCase):
     def test_a_clear_view_is_taken_from_the_first_station_of_the_blocks_sequence_that_has_one(self):
         """T-739. One sequence serves both steps. A texel none of its block's ranked stations saw clear takes the
         first station of the block's sequence that saw it clear, and beyond the ranking the sequence goes by how
-        much of the block a station saw at all, not by its data cost or by how much it saw clear: on the Saloon's
-        walls, of two clear views from outside a ranking, that one lay nearer its surroundings."""
+        much of the block a station saw at all, not by its data cost or by how much it saw clear. One sequence is
+        the simpler code and the closest to the first build; the Saloon does not tell the two orders apart (of the
+        209 texels whose clear view had changed station, the lean was one wall's, and it does not fail after Holm's
+        correction over the 24 tests, p 0.94)."""
         lv, B = self.lv, self.B
         S, n = 9, 2 * B.BLOCK
         self.assertGreater(S, lv.RANKED)
@@ -618,6 +622,91 @@ class MarginViews(unittest.TestCase):
                 none = np.kron(labels < 0, np.ones((B.BLOCK, B.BLOCK))).astype(bool)
                 self.assertGreater(int((none & any_clear).sum()), 0, seed)
                 self.assertTrue(np.all(out[none & any_clear] >= 0), seed)               # blocks without a label among them
+
+    def test_main_hands_both_steps_the_blocks_sequence(self):
+        """T-739, (7). main() itself, where the tests above build the chain themselves: the step that gives a clear
+        view to a texel none of its block's ranked stations saw clear asks block_sequence's sequence, and so does the
+        doubtful step. The statistics come in by main()'s own --stats-cache; the grid, the stations, candidates(),
+        solve_labels() and the depth sweep are stood in for; ranked_lists, texel_labels, block_sequence, clear_views,
+        doubtful_views and the labels file are main()'s. One row of two blocks and eight stations. On its two texels
+        that only stations beyond the ranking saw clear, the first form of the first step (whole_order: past the
+        ranking by data cost in the first block, as in (1), and by clear cover in the second, as in (2)) takes
+        station 6 and the one sequence takes 7; on its doubtful texel the old order would take 6 and the ranking
+        alone none. So main() handing either step another order fails here. No gate room parts the two orders of
+        the first step: the box's room gives no clear view from outside a ranking, and in the pier's room every
+        texel that only stations beyond its block's ranking saw clear was seen clear by one station alone."""
+        lv, B = self.lv, self.B
+        n = B.BLOCK
+        S, H, W = 8, n, 2 * n
+        second = n                                                   # the second block begins at this column
+        seen = np.zeros((S, H, W), bool)
+        seen[:6] = True                                              # stations 0 to 5 saw both blocks
+        seen[:6, n - 1, n - 1] = False                               # but texel (7, 7),
+        clear = seen.copy()
+        clear[:6, 0, 0] = clear[:6, 0, second] = False               # and each block's (0, 0) only within a margin
+        # The first block. Station 6, a seventh candidate (data cost 0.6), saw three texels from (0, 0) on, all clear,
+        # and (7, 7) within a margin; station 7, no candidate, saw the whole block, six texels of it clear.
+        seen[6, 0, :3] = clear[6, 0, :3] = seen[6, n - 1, n - 1] = True
+        seen[7, :, :n] = True
+        clear[7, 0, :6] = True
+        # The second block, where neither is a candidate. Station 6 saw 20 texels from (0, 0) on, all clear; station
+        # 7 saw the whole block, five texels of it clear.
+        seen[6, :2, second:] = clear[6, :2, second:] = True
+        seen[6, 2, second:second + 4] = clear[6, 2, second:second + 4] = True
+        seen[7, :, second:] = True
+        clear[7, 0, second:second + 5] = True
+        keep = np.zeros((S, 1, 2), bool)
+        keep[:6] = True
+        keep[6, 0, 0] = True
+        D = np.where(keep, 0.1 * np.arange(S).reshape(S, 1, 1), np.inf)
+        cover = np.moveaxis(B.block_sum(np.moveaxis(clear, 0, -1).astype(np.float32), 1, 2), -1, 0) / n ** 2
+        work = os.path.join(T1, "label-views-main")
+        shutil.rmtree(work, ignore_errors=True)
+        os.makedirs(work)
+        cache = os.path.join(work, "stats.npz")
+        np.savez(cache, cover=cover, rgb=np.zeros((S, 1, 2, 3), np.float32), lap=np.zeros((S, 1, 2), np.float32),
+                 lum2=np.zeros((S, 1, 2), np.float32), foot=np.full((S, 1, 2), np.inf, np.float32),
+                 visbits=B.pack_bits(clear), seenbits=B.pack_bits(seen), nvalid=np.full((1, 2), n * n, np.float32),
+                 views_left_out=np.array([int((seen & ~clear).sum()), 0]), occluder_margin=np.float64(0.05))
+        grid = mock.Mock(depth=np.zeros((H, W), np.float32), valid=np.ones((H, W), bool), n=np.array([0.0, 0.0, 1.0]),
+                         points=lambda r, c, d: np.stack([r, c, d], -1).astype(np.float64))
+        args = mock.Mock(wall="south", data=work, region=None, out=os.path.join(work, "proj"), stats_cache=cache)
+        no = np.zeros((S, 1, 2), bool)
+        cand = dict(D=D, keep=keep, glare=no, occl=no, glare_changed=np.zeros((1, 2), bool))
+        stand_ins = [(lv, "parse", lambda: args), (B, "below_normal_priority", lambda: None), (B, "use_data", lambda path: None),
+                     (B, "Grid", lambda wall: grid), (lv.P, "stations", lambda: [dict(id=k, t=np.zeros(3)) for k in range(S)]),
+                     (lv, "candidates", lambda stats: cand),
+                     (lv, "solve_labels", lambda D, wr, wd: (np.zeros((1, 2), np.int64), "stood in", [])),
+                     (lv, "sweep", lambda grid, sts, ranked, keep, stats, rb: (np.zeros((1, 2, len(lv.DEPTHS)), np.float32), np.zeros((1, 2), bool))),
+                     (B, "wait_while_quiet", lambda: None), (lv.P, "load_depth", lambda sid: sid),
+                     (B, "occluder_clearance", lambda cube, v, dist, cos: np.full(len(v), 0.01, np.float32))]
+        with contextlib.ExitStack() as stack:
+            for target, name, value in stand_ins:
+                stack.enter_context(mock.patch.object(target, name, value))
+            stack.enter_context(self.margin(0.05))
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            lv.main()
+        with np.load(os.path.join(work, "proj", "labels-south.npz")) as lb:
+            tl, ranked, label, seenbits, clearbits = (lb[k] for k in ("texel_label", "ranked", "label", "seenbits", "clearbits"))
+        with open(os.path.join(work, "proj", "labels-south.json"), encoding="utf-8") as f:
+            margin = json.load(f)["occluder_margin"]
+        self.assertTrue(np.array_equal(B.unpack_bits(clearbits, W), clear) and np.array_equal(B.unpack_bits(seenbits, W), seen))
+        self.assertEqual(ranked.reshape(2, -1).tolist(), [[0, 1, 2, 3, 4, 5]] * 2)
+        sequence = lv.block_sequence(ranked, label, seenbits, W)    # from the labels file's own arrays
+        self.assertEqual(sequence[0, 0, lv.RANKED:].tolist(), [7, 0, 1, 2, 3, 4, 5, 6])    # 7 saw all 64 texels, 0 to 5 all but (7, 7)
+        self.assertEqual(sequence[0, 1, lv.RANKED:].tolist(), [0, 1, 2, 3, 4, 5, 7, 6])
+        expected = np.zeros((H, W), np.int16)                        # station 0, the label, saw every other texel clear
+        expected[0, 0] = expected[0, second] = 7                     # the first of the sequence that saw it clear
+        expected[n - 1, n - 1] = 7                                   # the first of the sequence that saw it at all
+        self.assertEqual(tl.tolist(), expected.tolist())
+        old = [self.old_order(D[:, 0, b], keep[:, 0, b], cover[:, 0, b], 0) for b in (0, 1)]
+        self.assertEqual(old, [list(range(S))] * 2)                  # the label, the other candidates by data cost, then by clear cover
+        for c in (0, second):
+            self.assertEqual(next(int(s) for s in sequence[0, c // n] if s >= 0 and clear[s, 0, c]), tl[0, c])
+            self.assertEqual(next(s for s in old[c // n] if clear[s, 0, c]), 6)  # the old order took 6
+        self.assertEqual(next(s for s in old[0] if seen[s, n - 1, n - 1]), 6)    # so would it for the doubtful texel,
+        self.assertFalse(seen[ranked[0, 0], n - 1, n - 1].any())                 # and the ranking alone gives it none
+        self.assertEqual((margin["texels_given_a_clear_view_from_outside_the_ranking"], margin["texels_given_a_doubtful_view"]), (2, 1))
 
     def test_a_statistics_cache_is_good_for_its_own_margin_alone(self):
         lv = self.lv

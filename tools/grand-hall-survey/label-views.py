@@ -511,10 +511,11 @@ def clear_views(sequence, tlab, clearbits):
     any other. The sequence is the one doubtful_views asks, so past the ranked six a station comes by how much of
     the block it saw AT ALL. This step first had an order of its own (whole_order, now gone): past the ranked six,
     the block's remaining candidates by data cost, then the other stations by how much of the block they saw
-    clear. On the Saloon's walls that order did the worse (T-739: on the 209 texels where it took another clear
-    station than the first build had, from the stations that saw most of the block at all, the first build's
-    view lay nearer its surroundings more often, almost all of that on one wall; tools/surveyed-rooms/README.md
-    has the figures).
+    clear. One sequence replaced it because it is the simpler code and the closest to the first build, not because
+    the Saloon's walls showed that order worse (T-739): on the 209 texels where it took another clear station than
+    the first build had, the lean towards the first build's view was one wall's, which does not fail after Holm's
+    correction over the 24 tests (p 0.94), and the study cannot tell the two orders apart
+    (tools/surveyed-rooms/README.md has the figures).
     A block without a label: the borrowed ranking (the nearest labelled block's ranked stations) leads, then the
     at-all half, so a texel a station saw clear there does not become a hole. On a real wall that is not reached.
     A clear texel counts in its station's cover of the block; candidates() keeps, wherever any station's cover is
@@ -588,7 +589,7 @@ def doubtful_views(grid, sts, tlab, stats, sequence):
     r, c = np.nonzero(B.unpack_bits(none_clear, tlab.shape[1]) & (tlab < 0))
     pick = np.full(len(r), -1, np.int64)
     if len(r):
-        o = sequence[r // B.BLOCK, c // B.BLOCK]                # (n, stations): each texel's block's sequence
+        o = sequence[r // B.BLOCK, c // B.BLOCK]                # (n, places): the ranking, then every station by how much of the block it saw
         for k in range(o.shape[1]):
             s = o[:, k]
             sv = np.where(s >= 0, s, 0).astype(np.int64)

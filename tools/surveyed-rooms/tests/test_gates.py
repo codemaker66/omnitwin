@@ -953,13 +953,17 @@ class OccluderMarginManyStations(unittest.TestCase):
     that saw them clear. A doubtful view is left for the texels no station sees clear, and it is the first of the
     same sequence that saw the texel at all, not the one that passes farthest from the pier's edge: on the
     Saloon's walls the farthest view showed the edge as often and put far more texels in another station's
-    picture. Both steps ask one sequence because the Saloon's walls bore that out too: of two clear views from
-    outside a ranking, the one from the station that saw more of the block at all lay nearer its surroundings
-    than the one the first step's own order took (T-739; the README has the numbers). The order among the
-    stations beyond a ranking is held by a unit test (test_units.MarginViews), not here. Nor can this room tell
-    the rules for a doubtful view apart: it labels identically under the farthest view (every array of its labels
-    file; none of its 672 doubtful texels lies on the plain wall), so test_3's 0 is the first step's and the
-    margin's doing. The box's room above is where those rules part (OccluderMargin.test_5).
+    picture. Both steps ask one sequence because it is the simpler code and the closest to the first build, not
+    because the Saloon's walls showed the first step's own order worse: of the 209 texels whose clear view had
+    changed station, the lean was one wall's, and it does not fail after Holm's correction over the 24 tests
+    (p 0.94); the study cannot tell the two orders apart (T-739; the README has the numbers). This room cannot
+    tell them apart either: each texel here that only stations beyond its block's ranking see clear is seen clear
+    by one of them alone (test_1), so any order past the ranking gives it the same view. The order among those
+    stations, and main()'s handing of the one sequence to both steps, are held by unit tests
+    (test_units.MarginViews), not here. Nor can this room tell the rules for a doubtful view apart: it labels
+    identically under the farthest view (every array of its labels file; none of its 672 doubtful texels lies on
+    the plain wall), so test_3's 0 is the first step's and the margin's doing. The box's room above is where
+    those rules part (OccluderMargin.test_5).
 
     What this world can prove is asserted here and no threshold is loosened: no doubtful texel that any station
     saw clear, and no plain texel left that shows the pier (exactly 0). That a margin of 0 changes nothing is
@@ -1015,6 +1019,7 @@ class OccluderMarginManyStations(unittest.TestCase):
         beyond = self.clear.any(axis=0) & ~ranked_clear
         self.assertGreater(int(beyond.sum()), 1000, "no texel is clear only to a station outside its block's ranking: the test proves nothing")
         self.assertTrue(np.all(beyond <= o["band"]))                                    # all beside the pier
+        self.assertTrue(np.all(self.clear[:, beyond].sum(axis=0) == 1))                 # each clear to one station: no order past the ranking can differ here
         self.assertTrue(np.all(self.own[beyond]), f"{int((~self.own[beyond]).sum())} of {int(beyond.sum())} such texels did not take a clear view")
         self.assertFalse((self.ranked == tl[None])[:, beyond].any())                    # and from outside the ranking
         self.assertEqual(o["report"]["occluder_margin"]["texels_given_a_clear_view_from_outside_the_ranking"], int(beyond.sum()))
