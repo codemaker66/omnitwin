@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { grandHallExits } from "../../../lib/auto-fill.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../../lib/door-clear-spaces.js";
 import {
@@ -14,6 +15,7 @@ import {
   useEventKindQuestion,
   type OpenedLayout,
 } from "../../../lib/event-kind-record.js";
+import { DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "../../../lib/furniture-defaults.js";
 import { doorBlockers } from "../../../lib/keep-doors-clear.js";
 import { resetPlacedIdCounter, type PlacedItem } from "../../../lib/placement.js";
 import { plannerFeatureEnabled, setPlannerChromeFeatures, setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
@@ -590,6 +592,25 @@ describe("the one primary key", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open up the narrowest gap" }));
     expect(chosenIds()).toHaveLength(2);
     expect(usePlannerHudStore.getState().sheet).toBeNull();
+  });
+
+  // Seen on the live site on 20 November: Lay out for 80 set eight rounds at the planner's own spacing, and the one
+  // key then read "Open up the narrowest gap". What the planner has just laid is ready to send.
+  it("offers Send once the planner has laid the room itself, and says its spacing as a plain figure", () => {
+    renderHud();
+    recordDoors();
+    setGuests(80);
+    const round = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
+    if (round === undefined) throw new Error("the planner's round table is in the catalogue");
+    act(() => { usePlacementStore.getState().autoArrangeBanquet(round.id, 80, 10, grandHallExits()); });
+    expect(tables()).toHaveLength(8);
+    // The receipt for what was laid stands where the status line does, until it has had its moment.
+    act(() => { usePlacementNoticeStore.getState().dismiss(); });
+    expect(statusLine().textContent).toContain("80 of 80 seated");
+    expect(statusLine().textContent).toContain("Doors clear");
+    expect(statusLine().textContent).toContain("Narrowest aisle 0.6 m");
+    expect(within(statusLine()).queryByRole("button", { name: /Narrowest aisle/u })).toBeNull();
+    expect(primaryKey().textContent).toBe("Send to the events team");
   });
 
   it("sends to the events team once every guest has a seat", () => {

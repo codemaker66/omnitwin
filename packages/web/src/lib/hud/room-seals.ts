@@ -34,6 +34,29 @@ export interface RoomFacts {
   readonly kind: PlannerEventKind | null;
 }
 
+/**
+ * The clear passage the planner's own Lay out keeps behind every chair, to the
+ * next table's chairs, metres (lib/auto-fill, BANQUET_CHAIR_CLEARANCE_M). A
+ * copy, held to its original by a test (lib/hud/__tests__/hud-logic.test.ts):
+ * the screen is behind a flag, and reading the original from here would put
+ * its export into a file every planner downloads.
+ */
+export const LAID_CLEARANCE_M = 0.6;
+/** A room laid by that rule measures the clearance to a hair either side of it. */
+const LAID_CLEARANCE_SLACK_M = 0.005;
+
+/**
+ * Whether the narrowest gap is one to open up: no way through, or narrower
+ * than the planner itself lays a room. A gap Lay out made by its own rule is
+ * said, as a figure, and asks for nothing: the planner does not send someone
+ * back to undo what it has just done for them.
+ */
+export function gapToOpenUp(aisles: RoomFacts["aisles"]): boolean {
+  if (aisles.tightestGapM === null) return false;
+  if (aisles.band === "blocked") return true;
+  return aisles.band === "tight" && aisles.tightestGapM < LAID_CLEARANCE_M - LAID_CLEARANCE_SLACK_M;
+}
+
 function everyTableDressed(items: readonly PlacedItem[]): boolean {
   let tables = 0;
   for (const item of items) {
@@ -119,7 +142,7 @@ function doorsStatus(doors: NonNullable<RoomFacts["doors"]>): RoomStatus {
 function aislesStatus(aisles: RoomFacts["aisles"]): RoomStatus | null {
   if (aisles.tightestGapM === null) return null;
   const gap = metres(aisles.tightestGapM);
-  if (aisles.band === "tight" || aisles.band === "blocked") {
+  if (gapToOpenUp(aisles)) {
     const pair = aisles.tightestPair;
     const where = pair === null ? "" : `, between ${pair.aLabel} and ${pair.bLabel}`;
     return { id: "aisles", text: `Narrowest aisle ${gap}`, attention: true, detail: `The narrowest gap is ${gap}${where}.` };

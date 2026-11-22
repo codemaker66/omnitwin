@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { BANQUET_CHAIR_CLEARANCE_M } from "../../auto-fill.js";
 import { getCatalogueItem } from "../../catalogue.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../door-clear-spaces.js";
 import type { PlacedItem } from "../../placement.js";
@@ -7,7 +8,7 @@ import { cardParamsFor, pieceCardId, stampSetup, type CardId, type CardParamsReq
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { floorCounts, handCardCounting, handCardIds, handCards } from "../hand-cards.js";
 import { journeySteps, nextMove } from "../journey.js";
-import { roomFacts, roomStatus, seatLine, type RoomStatus, type RoomStatusId } from "../room-seals.js";
+import { LAID_CLEARANCE_M, gapToOpenUp, roomFacts, roomStatus, seatLine, type RoomStatus, type RoomStatusId } from "../room-seals.js";
 
 const TURINI = "burgess-turini-18-3";
 
@@ -222,5 +223,39 @@ describe("the journey", () => {
     expect(nextMove(facts(blocking, 60), false)).toMatchObject({ id: "clear-door", step: "layout" });
     expect(nextMove(facts(blocking, 60), false).text).toMatch(/^Move .+ clear of the door$/u);
     expect(nextMove(facts([...stamp("round", 0, 0), ...stamp("round", 2.3, 0)], 20), false)).toMatchObject({ id: "open-gap", text: "Open up the narrowest gap" });
+  });
+
+  // The planner's own Lay out keeps 0.6 m behind every chair, and the circulation scale calls anything under 0.9 m
+  // tight. Read by the scale alone, every room the planner had just laid was sent straight back to be opened up.
+  it("leaves a room laid at the planner's own spacing ready to send, and asks only for a gap narrower than that", () => {
+    expect(LAID_CLEARANCE_M).toBe(BANQUET_CHAIR_CLEARANCE_M);
+    // Two rounds of ten side by side: the gap between their chairs is their distance apart, less a round's reach.
+    const probe = facts([...stamp("round", -4, 0), ...stamp("round", 4, 0)], 20).aisles.tightestGapM;
+    if (probe === null) throw new Error("two rounds have a gap between them");
+    const reach = (8 - probe) / 2;
+    const apart = (gapM: number): ReturnType<typeof facts> =>
+      facts([...stamp("round", -(reach + gapM / 2), 0), ...stamp("round", reach + gapM / 2, 0)], 20);
+
+    const laid = apart(LAID_CLEARANCE_M);
+    expect(laid.aisles.tightestGapM).toBeCloseTo(LAID_CLEARANCE_M, 3);
+    expect(laid.aisles.band).toBe("tight");
+    expect(gapToOpenUp(laid.aisles)).toBe(false);
+    expect(nextMove(laid, false)).toMatchObject({ id: "send", text: "Send to the events team" });
+    expect(said(laid, "aisles")).toMatchObject({ text: "Narrowest aisle 0.6 m", attention: false });
+
+    const narrower = apart(0.5);
+    expect(narrower.aisles.band).toBe("tight");
+    expect(gapToOpenUp(narrower.aisles)).toBe(true);
+    expect(nextMove(narrower, false)).toMatchObject({ id: "open-gap" });
+    expect(said(narrower, "aisles")).toMatchObject({ attention: true });
+
+    const shut = apart(0.3);
+    expect(shut.aisles.band).toBe("blocked");
+    expect(nextMove(shut, false)).toMatchObject({ id: "open-gap" });
+    expect(said(shut, "aisles")).toMatchObject({ attention: true });
+
+    // Wider than tight was never asked about, and is not now.
+    expect(gapToOpenUp(apart(1).aisles)).toBe(false);
+    expect(gapToOpenUp(facts([], 20).aisles)).toBe(false);
   });
 });
