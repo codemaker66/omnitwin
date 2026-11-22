@@ -57,6 +57,15 @@ import {
 // ensureEnquiryEvent names one (makeEnquiryEvent), by the person who made
 // the deal.
 //
+// Where a deal's enquiry links a deleted event, the two writers read that
+// enquiry differently, each as its own step of the join reads it: this one
+// as the deal loop does (the enquiry has a link, so the deal gets an event of
+// its own and the link stays), ensureEnquiryEvent as having no link (step 1
+// never reads a linked enquiry; its departure ii), so the enquiry's next
+// worked act joins the deal's event, or refuses when its bookings reach
+// another. Nothing soft-deletes an event today; whatever first does must
+// settle both writers together.
+//
 // One open deal per event. The check here is a plain read; the unique index
 // opportunities_one_open_per_event is the guard when two writers put an open
 // deal on one event at the same moment. Its violation aborts the deal's

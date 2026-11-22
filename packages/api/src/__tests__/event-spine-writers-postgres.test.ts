@@ -137,7 +137,9 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
     await server.register(opportunityRoutes, { db: spine.db, prefix: "/opportunities" });
     await server.ready();
   }, 180_000);
-  afterAll(async () => { await server?.close(); await spine?.close(); });
+  // Closing the pool and dropping the migrated throwaway database (DROP DATABASE ... WITH (FORCE)) can pass
+  // the 10 s default hook budget on a loaded runner, so the clean-up has its own.
+  afterAll(async () => { await server?.close(); await spine?.close(); }, 120_000);
 
   const venue = (label: string): Promise<SpineVenue> => venueIn(pool, label);
   const datelessEvent = (venueId: string, name: string): Promise<string> => eventIn(pool, venueId, name);
@@ -993,6 +995,68 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
       await joinLeavesAlone([[enquiryId, "enquiry"], [deal.id, "opportunity"]]);
       expect(await enquiryEvent(enquiryId)).toBe(gone);
       expect(await dealEvent(deal.id)).toBe(deal.eventId);
+    });
+
+    it("a deal made from an enquiry reached only through its floor plan takes the plan's one event with its enquiry, and makes none; the join changes nothing", async () => {
+      const v = await venue("deal, plan only");
+      const enquiryId = await enquiry(v);
+      const plansEvent = await datelessEvent(v.venueId, "The plan's event");
+      await planLinkedTo(v, enquiryId, [plansEvent]);
+      const before = await eventCount(v.venueId);
+
+      const deal = made(await fromEnquiry(v, enquiryId));
+      expect(deal.eventId).toBe(plansEvent);
+      expect(await enquiryEvent(enquiryId)).toBe(plansEvent);
+      expect(await eventCount(v.venueId)).toBe(before);
+
+      await joinOldRecords();
+      await joinLeavesAlone([[enquiryId, "enquiry"], [deal.id, "opportunity"]]);
+      expect(await dealEvent(deal.id)).toBe(plansEvent);
+      expect(await eventCount(v.venueId)).toBe(before);
+    });
+
+    it("a deal made from an enquiry on the join's list that reaches one event by then takes it with its enquiry; the join then closes the question as joined", async () => {
+      const v = await venue("deal, listed enquiry");
+      const enquiryId = await enquiry(v);
+      const stays = await datelessEvent(v.venueId, "The event that stays");
+      const leaves = await datelessEvent(v.venueId, "The event it leaves");
+      await interestIn(v, enquiryId, stays, v.rooms.saloon);
+      await interestIn(v, enquiryId, leaves, v.rooms.reception);
+      await joinOldRecords();
+      expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+      // Its booking in the second event is removed, so one event remains.
+      await pool.query("UPDATE bookings SET deleted_at = now() WHERE enquiry_id = $1 AND event_id = $2", [enquiryId, leaves]);
+      const events = await eventCount(v.venueId);
+
+      // The join skips a deal whose enquiry is listed; the writer decides on today's data.
+      const deal = made(await fromEnquiry(v, enquiryId));
+      expect(deal.eventId).toBe(stays);
+      expect(await enquiryEvent(enquiryId)).toBe(stays);
+      expect(await eventCount(v.venueId)).toBe(events);
+
+      // The next run closes the question as joined, to that event, by nobody, and changes nothing else.
+      await joinOldRecords();
+      const questions = (await pool.query<{ resolution: string | null; resolved_event_id: string | null; resolved_by: string | null; resolved: boolean }>(
+        `SELECT resolution, resolved_event_id, resolved_by, resolved_at IS NOT NULL AS resolved
+           FROM event_link_reviews WHERE subject_kind = 'enquiry' AND subject_id = $1`, [enquiryId])).rows;
+      expect(questions).toEqual([{ resolution: "joined", resolved_event_id: stays, resolved_by: null, resolved: true }]);
+      expect(await joinsRecordedFor(enquiryId)).toBe(0);
+      await joinLeavesAlone([[deal.id, "opportunity"]]);
+      expect(await dealEvent(deal.id)).toBe(stays);
+      expect(await eventCount(v.venueId)).toBe(events);
+    });
+
+    it("an edit naming an enquiry on a deal with no event leaves the enquiry alone", async () => {
+      const v = await venue("edit, deal with no event");
+      // A deal made before deals took their event, still waiting for the join.
+      const dealId = await dealIn(pool, v.venueId, "qualified");
+      const enquiryId = await enquiry(v);
+
+      const moved = await patchDeal(bearer(v.admin), dealId, { sourceEnquiryId: enquiryId });
+      expect(moved.statusCode, moved.body).toBe(200);
+      expect(await dealRow(dealId)).toEqual({ event_id: null, stage: "qualified" });
+      expect(await enquiryEvent(enquiryId)).toBeNull();
+      expect(await eventCount(v.venueId)).toBe(0);
     });
 
     // The brief's cases.
