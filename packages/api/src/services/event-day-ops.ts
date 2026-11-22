@@ -396,7 +396,10 @@ const WRITTEN_UNDER_THE_ROW_LOCK = sql`clock_timestamp()`;
  *  latest completion event of the task, by the database's own order, left
  *  the status the task holds and carries one of them. Only the latest
  *  counts: an earlier write under one of the keys, followed by anyone
- *  else's, does not. Read while the task's row is held. */
+ *  else's, does not. Read while the task's row is held. The status check is
+ *  defensive: every status write here inserts its event in the same
+ *  transaction, so it holds today; it refuses the key once anything changes
+ *  the status without an event. */
 async function lastWriteMadeUnder(
   tx: DatabaseOrTransaction,
   task: OpsTaskRow,

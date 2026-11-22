@@ -147,7 +147,9 @@ describe.skipIf(target === undefined)("a queued task status replayed on the migr
 
   /** Waits until this many of the route's connections are queued on a lock.
    *  On a loaded machine both replays took more than five seconds to reach
-   *  it, so the wait allows twenty. */
+   *  it, so the wait allows twenty; the route's connections wait up to 25 s
+   *  on a lock (lock_timeout below), so the first to arrive is still waiting
+   *  when the last does. */
   async function lockWaiters(expected: number): Promise<void> {
     const deadline = Date.now() + 20_000;
     for (;;) {
@@ -161,10 +163,41 @@ describe.skipIf(target === undefined)("a queued task status replayed on the migr
     }
   }
 
+  /** Sends one status while a connection of its own holds the task's row,
+   *  waits until the status is queued on that lock and a little longer,
+   *  reads the database's clock while still holding the row, then lets go.
+   *  Resolves the answer and that reading. */
+  async function sendWhileHeld(taskId: string, body: StatusBody): Promise<{ readonly answer: Answer; readonly heldAt: Date }> {
+    const holder = await lockPool.connect();
+    let committed = false;
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM ops_tasks WHERE id = $1 FOR UPDATE", [taskId]);
+      const answer = send(taskId, body);
+      await lockWaiters(1);
+      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      const heldAt = (await holder.query<{ at: Date }>("SELECT clock_timestamp() AS at")).rows[0]?.at;
+      await holder.query("COMMIT");
+      committed = true;
+      if (heldAt === undefined) throw new Error("no clock reading from the row's holder");
+      return { answer: await answer, heldAt };
+    } finally {
+      if (!committed) await holder.query("ROLLBACK");
+      holder.release();
+    }
+  }
+
+  async function completionTimes(taskId: string): Promise<readonly Date[]> {
+    const rows = await db.select({ createdAt: schema.taskCompletionEvents.createdAt })
+      .from(schema.taskCompletionEvents)
+      .where(eq(schema.taskCompletionEvents.opsTaskId, taskId));
+    return rows.map((row) => row.createdAt);
+  }
+
   beforeAll(async () => {
     if (target === undefined) throw new Error("Explicit test database required");
     pool = new Pool({ connectionString: target, application_name: applicationName, max: 6,
-      options: "-c statement_timeout=10000 -c lock_timeout=8000" });
+      options: "-c statement_timeout=30000 -c lock_timeout=25000" });
     lockPool = new Pool({ connectionString: target, application_name: `${applicationName}_lock`, max: 2,
       options: "-c statement_timeout=15000" });
     expect((await pool.query<{ name: string }>("SELECT current_database() AS name")).rows[0]?.name).toBe("venviewer_platform_test");
@@ -332,6 +365,60 @@ describe.skipIf(target === undefined)("a queued task status replayed on the migr
     expect(await recorded(taskId, eventId)).toEqual(before);
   });
 
+  // Only the latest write counts (review of d9d5eeb4, DS3): another device
+  // moves the task on and back to the status this device's keyed press left,
+  // so an earlier event under the key has the task's status, but it is not
+  // the task's last write.
+  it("refuses a replay when another device moved the task on and back after this device's keyed press", async () => {
+    const { taskId, eventId } = await newTask();
+    expect((await send(taskId, { status: "in_progress", idempotencyKey: `start-${taskId}` })).statusCode).toBe(200);
+    expect((await send(taskId, { status: "blocked", idempotencyKey: `block-elsewhere-${taskId}` })).statusCode).toBe(200);
+    expect((await send(taskId, { status: "in_progress", idempotencyKey: `start-elsewhere-${taskId}` })).statusCode).toBe(200);
+    const before = await recorded(taskId, eventId);
+
+    const replay = await send(taskId, {
+      status: "done", idempotencyKey: `done-${taskId}`, expectedStatus: "todo", earlierPressKeys: [`start-${taskId}`],
+    });
+
+    expect(replay.statusCode).toBe(409);
+    expect(await recorded(taskId, eventId)).toEqual(before);
+  });
+
+  // The last write must also have left the status the task holds (DS6).
+  // Every status write today inserts its event in the same transaction, so
+  // this guards against a writer that changes the status without one: here,
+  // a direct UPDATE after this device's keyed press.
+  it("refuses a replay whose key made the latest completion event when the task's status was changed since without one", async () => {
+    const { taskId, eventId } = await newTask();
+    expect((await send(taskId, { status: "in_progress", idempotencyKey: `start-${taskId}` })).statusCode).toBe(200);
+    await db.update(schema.opsTasks).set({ status: "blocked" }).where(eq(schema.opsTasks.id, taskId));
+    const before = await recorded(taskId, eventId);
+
+    const replay = await send(taskId, {
+      status: "done", idempotencyKey: `done-${taskId}`, expectedStatus: "todo", earlierPressKeys: [`start-${taskId}`],
+    });
+
+    expect(replay.statusCode).toBe(409);
+    expect(await recorded(taskId, eventId)).toEqual(before);
+  });
+
+  // DS8: a replay of the status the task already holds, set by another
+  // device, is refused like any other once neither condition holds (a live
+  // press would be answered 200 with nothing written). Nothing is written
+  // either way, and the 409 carries the task holding that status: T-734's
+  // notice must not call such a press refused.
+  it("refuses a replay of the status another device has already set, with the task holding it, and writes nothing", async () => {
+    const { taskId, eventId } = await newTask();
+    expect((await send(taskId, { status: "done", idempotencyKey: `done-elsewhere-${taskId}` })).statusCode).toBe(200);
+    const before = await recorded(taskId, eventId);
+
+    const replay = await send(taskId, { status: "done", idempotencyKey: `done-${taskId}`, expectedStatus: "todo" });
+
+    expect(replay.statusCode).toBe(409);
+    expect(replay.body.details).toEqual({ task: expect.objectContaining({ status: "done" }) });
+    expect(await recorded(taskId, eventId)).toEqual(before);
+  });
+
   it("refuses more earlier keys than a device keeps, or a key longer than any it makes", async () => {
     const { taskId, eventId } = await newTask();
     const before = await recorded(taskId, eventId);
@@ -383,5 +470,63 @@ describe.skipIf(target === undefined)("a queued task status replayed on the migr
       if (!committed) await holder.query("ROLLBACK");
       holder.release();
     }
+  }, 60000);
+
+  // The recorded answer under the lock (DS4): an 'online' drain and a Sync
+  // press send the same queued row at once. Both pass the check made before
+  // the transaction; the one that waited finds the key recorded under the
+  // lock and gets its recorded answer, not a 409 for a press that applied.
+  it("answers the same queued row sent twice at once with one write and, for the second, its recorded answer", async () => {
+    const { taskId, eventId } = await newTask();
+    const holder = await lockPool.connect();
+    let committed = false;
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM ops_tasks WHERE id = $1 FOR UPDATE", [taskId]);
+      const body: StatusBody = { status: "in_progress", idempotencyKey: `start-${taskId}`, expectedStatus: "todo" };
+      const first = send(taskId, body);
+      const second = send(taskId, body);
+      await lockWaiters(2);
+      await holder.query("COMMIT");
+      committed = true;
+      const answers = await Promise.all([first, second]);
+
+      expect(answers.map((answer) => answer.statusCode)).toEqual([200, 200]);
+      expect(answers.map((answer) => answer.body.data?.status)).toEqual(["in_progress", "in_progress"]);
+      const after = await recorded(taskId, eventId);
+      expect(after.completions).toEqual([{ fromStatus: "todo", toStatus: "in_progress", idempotencyKey: `start-${taskId}` }]);
+      expect(after.statusUpdates).toBe(1);
+      expect(after.planChanges).toBe(1);
+    } finally {
+      if (!committed) await holder.query("ROLLBACK");
+      holder.release();
+    }
+  }, 60000);
+
+  // The stamp the order of writes rests on (DS5): a completion event is
+  // stamped as it is inserted under the row lock (clock_timestamp()), not
+  // when its transaction began (the column's default, now()). A write that
+  // waited on the row is stamped after the holder let go, on the live path
+  // and on the replay's.
+  it("stamps a live press's completion event as it is written under the row lock, not when its transaction began", async () => {
+    const { taskId } = await newTask();
+
+    const { answer, heldAt } = await sendWhileHeld(taskId, { status: "in_progress", idempotencyKey: `start-${taskId}` });
+
+    expect(answer.statusCode).toBe(200);
+    const times = await completionTimes(taskId);
+    expect(times).toHaveLength(1);
+    expect(times[0]?.getTime()).toBeGreaterThanOrEqual(heldAt.getTime());
+  }, 60000);
+
+  it("stamps a replay's completion event as it is written under the row lock, not when its transaction began", async () => {
+    const { taskId } = await newTask();
+
+    const { answer, heldAt } = await sendWhileHeld(taskId, { status: "in_progress", idempotencyKey: `start-${taskId}`, expectedStatus: "todo" });
+
+    expect(answer.statusCode).toBe(200);
+    const times = await completionTimes(taskId);
+    expect(times).toHaveLength(1);
+    expect(times[0]?.getTime()).toBeGreaterThanOrEqual(heldAt.getTime());
   }, 60000);
 });
