@@ -229,9 +229,9 @@ function laterWrite(a: ServerTaskWrite, b: ServerTaskWrite): ServerTaskWrite {
   return Date.parse(b.updatedAt) >= Date.parse(a.updatedAt) ? b : a;
 }
 
-/** Keeps the latest write the server has told this page of for a task, from
- *  a read of the board or an answer, whichever came back first. Resolves
- *  whether this one is it. */
+/** Keeps, for a task, the write with the latest updatedAt that the server
+ *  has told this page of, from a read of the board or an answer, in
+ *  whatever order they come back. Returns whether this one is it. */
 function learnServerTask(known: Map<string, ServerTaskWrite>, task: OpsTask): boolean {
   const write: ServerTaskWrite = { status: task.status, updatedAt: task.updatedAt };
   const before = known.get(task.id);
@@ -250,8 +250,20 @@ interface TaskPress {
   /** The task as the server had last told this page when this was pressed. */
   readonly seen: ServerTaskWrite;
   outcome: "sending" | "landed" | "unsent" | "refused";
-  /** Once it has landed: the task as the server's answer gave it. */
+  /** Once it has landed, and only when the answer showed its own status:
+   *  the write it made, as the answer gave it (pressLanded). */
   landed?: ServerTaskWrite;
+}
+
+/** A press the server answered: landed, and its own write only when the
+ *  answer shows the status it pressed. A key the server had recorded
+ *  already is answered with the task as it stands, which may be another
+ *  device's later write and is not this press's (#418, ruling B; review
+ *  DQ1). Its key still counts among a later press's earlier keys, so the
+ *  server applies that press while this one's write is the task's last. */
+function pressLanded(press: TaskPress, answer: OpsTask): void {
+  press.outcome = "landed";
+  if (answer.status === press.input.status) press.landed = { status: answer.status, updatedAt: answer.updatedAt };
 }
 
 /** The presses made on this page, task by task, oldest first. */
@@ -412,10 +424,7 @@ async function replayQueuedTaskStatus(presses: TaskPresses, op: QueuedTaskStatus
     if (press !== undefined) await refusePress(presses, op.opsTaskId, press);
     return undefined;
   }
-  if (press !== undefined) {
-    press.outcome = "landed";
-    press.landed = { status: answer.status, updatedAt: answer.updatedAt };
-  }
+  if (press !== undefined) pressLanded(press, answer);
   await ack();
   return answer;
 }
@@ -534,17 +543,21 @@ export function EventDayOpsPage(): ReactElement {
   const refreshInFlight = useRef<{ readonly eventId: string; readonly read: Promise<BoardRead> } | null>(null);
   // Every status pressed on this page, task by task, with what became of it
   // (audit hallkeeper-web-6; #418). A live press is sent as pressed. A press
-  // that fails is queued with the status the task held when it was pressed,
-  // and the server writes its replay only while the task still holds that
-  // status (409 otherwise): that is what keeps a stale replay from undoing a
-  // later press, after a reload, on another tab or another device too. This
-  // page queues or replays only its latest press that the server did not
-  // refuse, acks a row only while it still holds the press being acked, and
-  // acks a row queued before a press here that landed, which only saves the
-  // server a refusal. Limits: a press made after one whose answer was lost
-  // (the server applied it) is replayed against the status before it and
-  // refused; and a page that had not yet read a write made elsewhere has its
-  // queued press refused, even when that press came after the write.
+  // that fails is queued with the status the task held when it was pressed
+  // and the keys of the presses made here before it, and the server writes
+  // its replay only while the task still holds that status, or while the
+  // task's last write was made under one of those keys (409 otherwise):
+  // that is what keeps a stale replay from undoing a later press, after a
+  // reload, on another tab or another device too. This page queues or
+  // replays only its latest press that the server did not refuse, acks a
+  // row only while it still holds the press being acked, and acks a row
+  // queued before a press here that landed (ackOlderQueuedPresses). Accepted
+  // limits (#418, ruling A): a page that had not yet read a write made
+  // elsewhere has its queued press refused, even when that press came after
+  // the write (order 2); a press queued on one tab while an earlier press of
+  // another tab is still on its way, and then lands, is refused (order 3);
+  // and a queued press is written over another device that moved the task
+  // on and back to the status it was pressed against (order 5).
   const taskPresses = useRef<TaskPresses>(new Map());
   // The latest write the server has told this page of, task by task: what a
   // press is replayed against, never a status drawn for a press not landed.
@@ -871,8 +884,7 @@ export function EventDayOpsPage(): ReactElement {
     setPendingWrites((count) => count + 1);
     void updateOpsTaskStatus(task.id, input)
       .then((updated) => {
-        press.outcome = "landed";
-        press.landed = { status: updated.status, updatedAt: updated.updatedAt };
+        pressLanded(press, updated);
         learnServerTask(serverTasks.current, updated);
         setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, updated) } : prev);
         setNotice("Task status updated.");

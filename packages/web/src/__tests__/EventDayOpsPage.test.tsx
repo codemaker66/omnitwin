@@ -1583,10 +1583,12 @@ describe("EventDayOpsPage", () => {
     // the device coming back online ("d", which replays what is queued), and
     // the answer to that replay ("r"). Every order runs twice: with each
     // request decided as it is sent, and with a replay decided only when it
-    // is answered, after any later press that landed meanwhile. At the end
-    // the connection is back for good. In every order the server must end on
-    // the latest status pressed that it did not refuse, with nothing sent
-    // again under a new key and nothing left in the queue. (Round four: the
+    // is answered, after any later press that landed meanwhile. A further
+    // set adds another device's Block ("w") while a lost Start's replay is on
+    // its way. At the end the connection is back for good. In every order the
+    // server must end on the latest status pressed, here or on that other
+    // device, that it did not refuse, with nothing sent again under a new
+    // key and nothing left in the queue. (Round four: the
     // 39 orders with a lost answer before a later press that failed, run as
     // expected failures in round three, now pass: the later press names the
     // lost one's key.)
@@ -1639,16 +1641,28 @@ describe("EventDayOpsPage", () => {
           ["p0", "p1", "p2", "a2", "a1", "a0", "d", "r"],
         ].map((schedule) => ({ fates, schedule }))),
       ];
+      // DQ1 (review of d9d5eeb4): Start's answer is lost, its replay is
+      // decided when it is answered, and another device blocks the task
+      // ("w") while that replay is on its way, just before it is answered.
+      // The replay is answered from Start's key with the other device's
+      // Block, which is not Start's own write. Every two-press schedule and
+      // every fate of Done.
+      const OTHER_WRITER: readonly Order[] = FATES.flatMap((done) => schedules(2).map((schedule): Order => ({
+        fates: ["lost", done],
+        schedule: [...schedule.slice(0, schedule.indexOf("r")), "w", ...schedule.slice(schedule.indexOf("r"))],
+        lateReplay: true,
+      })));
       const ORDERS: readonly Order[] = [
         ...IN_SEND_ORDER.map((order): Order => ({ ...order, lateReplay: false })),
         ...IN_SEND_ORDER.map((order): Order => ({ ...order, lateReplay: true })),
+        ...OTHER_WRITER,
       ];
 
       // Ruling D (#411's treatment): every pull request runs a smaller table,
       // each fate combination once, with the schedules and both replay modes
       // taken in turn so each appears; the named orders (a reload, another
       // device, two pages, orders 1 and 4) are cases of their own below.
-      // VENVIEWER_FULL_SWEEPS=1 runs all 640.
+      // VENVIEWER_FULL_SWEEPS=1 runs all 688.
       const FULL_SWEEPS = process.env["VENVIEWER_FULL_SWEEPS"] === "1";
       const TWO_PRESS_SCHEDULES = schedules(2);
       const THREE_PRESS_SCHEDULES = [...new Set(IN_SEND_ORDER.filter((order) => order.fates.length === 3).map((order) => order.schedule.join()))]
@@ -1660,6 +1674,11 @@ describe("EventDayOpsPage", () => {
         ...product([FATES, FATES, FATES]).map((fates, index): Order => ({
           fates, schedule: THREE_PRESS_SCHEDULES[index % THREE_PRESS_SCHEDULES.length] ?? [], lateReplay: Math.floor(index / 2) % 2 === 1,
         })),
+        // Another device's write: every schedule with Done failing and queued
+        // behind Start's replay (DQ1's shape), and Done's other fates on the
+        // schedule of DQ1's own case.
+        ...OTHER_WRITER.filter((order) => order.fates[1] === "fails"
+          || order.schedule.join() === "p0,a0,d,p1,a1,w,r"),
       ];
       const TABLE = FULL_SWEEPS ? ORDERS : PER_PULL_REQUEST;
       let judged = 0;
@@ -1669,17 +1688,22 @@ describe("EventDayOpsPage", () => {
           const label = PRESSES[Number(event.slice(1))]?.label ?? "?";
           if (event === "d") return "online";
           if (event === "r") return "replay answered";
+          if (event === "w") return "another device blocks";
           return event.startsWith("p") ? label : `${label} answered`;
         };
         const fates = order.fates.map((fate, index) => `${PRESSES[index]?.label ?? "?"} ${fate}`).join(", ");
         return `${fates}: ${order.schedule.map(words).join(", ")}${order.lateReplay ? " (replay decided when answered)" : ""}`;
       }
 
-      /** The status the server must end on: the latest press it did not refuse. */
+      /** The status the server must end on: the latest press it did not
+       *  refuse, here or on another device ("w", a Block). */
       function lastPressed(order: Order): string {
-        return order.fates.map((fate, at) => (fate === "refused" ? null : PRESSES[at]?.status ?? null))
-          .filter((status): status is NonNullable<typeof status> => status !== null)
-          .at(-1) ?? "todo";
+        return order.schedule.flatMap((event): string[] => {
+          if (event === "w") return ["blocked"];
+          if (!event.startsWith("p")) return [];
+          const at = Number(event.slice(1));
+          return order.fates[at] === "refused" ? [] : [PRESSES[at]?.status ?? "todo"];
+        }).at(-1) ?? "todo";
       }
 
       /** Plays an order through the page and the stand-in server, then lets
@@ -1700,7 +1724,8 @@ describe("EventDayOpsPage", () => {
         };
         for (const event of order.schedule) {
           const press = PRESSES[Number(event.slice(1))];
-          if (event === "d") await online();
+          if (event === "w") server.writeAs("blocked");
+          else if (event === "d") await online();
           else if (event === "r") await answer(server.answerReplay);
           else if (event.startsWith("a")) await answer(() => { server.answerPress(press?.status ?? ""); });
           else await pressOn(press?.label ?? "Start");
@@ -1712,14 +1737,22 @@ describe("EventDayOpsPage", () => {
         return { server, queue };
       }
 
-      it("runs every fate combination, every schedule and both replay modes (all 640 orders with VENVIEWER_FULL_SWEEPS=1)", () => {
+      it("runs every fate combination, every schedule and both replay modes, and another device's write behind a lost Start's replay (all 688 orders with VENVIEWER_FULL_SWEEPS=1)", () => {
         expect(schedules(2)).toHaveLength(12);
-        expect(ORDERS).toHaveLength(2 * (16 * 12 + 64 * 2));
-        expect(TABLE).toHaveLength(FULL_SWEEPS ? 640 : 16 + 64);
-        const seen = (pick: (order: Order) => string): ReadonlySet<string> => new Set(TABLE.map(pick));
-        expect(seen((order) => order.fates.join())).toEqual(new Set(IN_SEND_ORDER.map((order) => order.fates.join())));
-        expect(seen((order) => order.schedule.join())).toEqual(new Set(IN_SEND_ORDER.map((order) => order.schedule.join())));
-        expect(seen((order) => String(order.lateReplay))).toEqual(new Set(["false", "true"]));
+        expect(ORDERS).toHaveLength(2 * (16 * 12 + 64 * 2) + 4 * 12);
+        expect(TABLE).toHaveLength(FULL_SWEEPS ? 688 : 16 + 64 + 15);
+        const ownOnly = TABLE.filter((order) => !order.schedule.includes("w"));
+        const otherWriter = TABLE.filter((order) => order.schedule.includes("w"));
+        const seen = (orders: readonly Order[], pick: (order: Order) => string): ReadonlySet<string> => new Set(orders.map(pick));
+        expect(seen(ownOnly, (order) => order.fates.join())).toEqual(new Set(IN_SEND_ORDER.map((order) => order.fates.join())));
+        expect(seen(ownOnly, (order) => order.schedule.join())).toEqual(new Set(IN_SEND_ORDER.map((order) => order.schedule.join())));
+        expect(seen(ownOnly, (order) => String(order.lateReplay))).toEqual(new Set(["false", "true"]));
+        // Another device's write: Start's answer lost and its replay decided
+        // when answered, on every schedule and with every fate of Done.
+        expect(otherWriter.every((order) => order.fates[0] === "lost" && order.lateReplay)).toBe(true);
+        expect(seen(otherWriter, (order) => order.schedule.filter((event) => event !== "w").join()))
+          .toEqual(new Set(TWO_PRESS_SCHEDULES.map((schedule) => schedule.join())));
+        expect(seen(otherWriter, (order) => order.fates[1] ?? "")).toEqual(new Set(FATES));
       });
 
       const ends = async (order: Order): Promise<void> => {
@@ -1867,6 +1900,40 @@ describe("EventDayOpsPage", () => {
         expect(statusesSent()).toEqual(["in_progress", "in_progress", "done"]);
         expect(server.keys()).toBe(2);
         expect(await queue.list()).toEqual([]);
+      });
+
+      // DQ1 (review of d9d5eeb4): a replay answered from its recorded key
+      // carries the task as it stands, which can be another device's later
+      // write. It is not this press's own landed write, so a press queued
+      // behind it is still replayed against what this page knew, and the
+      // other device's later Block stands.
+      it("refuses Done's replay over another device's later block when a lost Start's replay is answered from its key while Done sits queued (DQ1)", async () => {
+        const queue = await realQueue();
+        const server = fakeServer({ fateOf: (status) => (status === "in_progress" ? "lost" : "fails"), lateReplay: true });
+        renderPage();
+        await screen.findByText("Set 12 x Round Table");
+        await pressOn("Start");
+        await answer(server.answerAll);
+        // Online: Start's replay is on its way, and held.
+        act(() => { window.dispatchEvent(new Event("online")); });
+        await settle();
+        await pressOn("Done");
+        await answer(() => { server.answerPress("done"); });
+        // A colleague blocks the task after Done was pressed here.
+        server.writeAs("blocked");
+        await answer(server.answerReplay);
+        await answer(server.answerAll);
+
+        await syncOn();
+        await answer(server.answerAll);
+
+        const [start, , , replay] = mockUpdateOpsTaskStatus.mock.calls.map(([, input]) => input as UpdateOpsTaskStatusInput);
+        expect(replay).toEqual(expect.objectContaining({ status: "done", expectedStatus: "todo", earlierPressKeys: [start?.idempotencyKey] }));
+        const refusal: unknown = mockUpdateOpsTaskStatus.mock.settledResults.at(-1)?.value;
+        expect(refusal instanceof ApiError ? refusal.status : null).toBe(409);
+        expect(server.status()).toBe("blocked");
+        expect(await queue.list()).toEqual([]);
+        await waitFor(() => { expect(shownStatus()).toBe("Blocked"); });
       });
 
       it("acks a replay the server refuses because the task moved on, and shows the task as the answer gives it", async () => {
