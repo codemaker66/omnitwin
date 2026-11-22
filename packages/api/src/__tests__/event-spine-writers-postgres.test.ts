@@ -1042,6 +1042,36 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
       expect(await eventCount(v.venueId)).toBe(1);
     });
 
+    it("Create opportunity on an enquiry whose booking sits in an event with another enquiry's open deal is refused naming it, and keeps nothing it wrote", async () => {
+      const v = await venue("crm press refused");
+      const shared = await datelessEvent(v.venueId, "The shared event");
+      const theirs = await enquiry(v);
+      await link(pool, "enquiries", theirs, shared);
+      const openDeal = await dealIn(pool, v.venueId, "qualified", theirs);
+      await link(pool, "opportunities", openDeal, shared);
+      const pressed = await enquiry(v);
+      await interestIn(v, pressed, shared, v.rooms.saloon);
+      /** What the press writes before it reaches the deal's event (a person with their email point, a household and its membership), and after. */
+      const written = async (): Promise<Record<string, number>> => (await pool.query<Record<string, number>>(
+        `SELECT (SELECT count(*)::int FROM contacts WHERE venue_id = $1) AS people,
+                (SELECT count(*)::int FROM contact_points WHERE venue_id = $1) AS points,
+                (SELECT count(*)::int FROM client_accounts WHERE venue_id = $1) AS organisations,
+                (SELECT count(*)::int FROM account_memberships WHERE venue_id = $1) AS memberships,
+                (SELECT count(*)::int FROM opportunities WHERE venue_id = $1) AS deals,
+                (SELECT count(*)::int FROM events WHERE venue_id = $1) AS events`, [v.venueId])).rows[0] ?? {};
+      const before = await written();
+
+      const refused = await fromEnquiry(v, pressed);
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(refused.json<unknown>()).toEqual({ error: OPEN_DEAL_REFUSAL, code: "EVENT_HAS_OPEN_DEAL", dealId: openDeal });
+      // The whole press rolled back: no deal, event, link, person or household of its own is left.
+      expect(await written()).toEqual(before);
+      const [left] = (await pool.query<{ event_id: string | null; contact_id: string | null }>(
+        "SELECT event_id, contact_id FROM enquiries WHERE id = $1", [pressed])).rows;
+      expect(left).toEqual({ event_id: null, contact_id: null });
+      expect(await dealsOf(pressed)).toBe(0);
+    });
+
     it("a lost deal does not stand in the way of a new one, on the same event; a platform admin reopening the lost one beside it is refused plainly", async () => {
       const v = await venue("lost, then a new deal");
       const enquiryId = await enquiry(v);
