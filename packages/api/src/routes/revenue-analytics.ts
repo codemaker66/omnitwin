@@ -354,14 +354,19 @@ async function loadPipelineSummary(db: Database, venueId: string) {
       .from(proposals).where(live)
       .groupBy(proposals.status).orderBy(proposals.status),
     db.select({ count: sql<number>`count(*)`.mapWith(Number) }).from(enquiries).where(eq(enquiries.venueId, venueId)),
-    // Accepted, now or before the office filed it with Archive: archiving
-    // keeps the record an acceptance made (routes/proposals.ts everAccepted).
-    // Only an archived proposal counts by its history: one a platform admin
-    // moved out of accepted to declined, withdrawn or sent was reversed.
+    // Proposals whose answer was acceptance: accepted now, or archived
+    // straight from accepted (the office files a won proposal with Archive).
+    // An archived proposal's answer is read as migration 0083 and a client's
+    // link read it (routes/proposals.ts presentedStatus): the status its
+    // newest move into archived came from. One a platform admin moved out of
+    // accepted (to declined, withdrawn or sent) does not count, archived later
+    // or not. This differs on purpose from everAccepted (routes/proposals.ts),
+    // the delete lock, where any acceptance ever recorded is the safe rule.
     db.select({ count: sql<number>`count(*)`.mapWith(Number) }).from(proposals).where(and(live, or(
       eq(proposals.status, "accepted"),
-      and(eq(proposals.status, "archived"), sql`EXISTS (SELECT 1 FROM ${proposalStatusHistory}
-        WHERE ${proposalStatusHistory.proposalId} = ${outerColumn(proposals.id)} AND ${proposalStatusHistory.toStatus} = 'accepted')`),
+      and(eq(proposals.status, "archived"), sql`(SELECT ${proposalStatusHistory.fromStatus} FROM ${proposalStatusHistory}
+        WHERE ${proposalStatusHistory.proposalId} = ${outerColumn(proposals.id)} AND ${proposalStatusHistory.toStatus} = 'archived'
+        ORDER BY ${proposalStatusHistory.createdAt} DESC LIMIT 1) = 'accepted'`),
     ))),
   ]);
   return buildPipelineSummary({

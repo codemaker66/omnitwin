@@ -249,10 +249,10 @@ describe.skipIf(testUrl === undefined)("analytics authority on isolated PostgreS
   });
 
   // Archive is how the office files a won proposal, and an acceptance it
-  // files is still an acceptance (audit api-proposals-money-3), as the
-  // proposal's own lock and client link read it (routes/proposals.ts
-  // everAccepted). The Proposal status card's "accepted" still reads the
-  // statuses the proposals have now.
+  // files is still an acceptance (audit api-proposals-money-3), as a
+  // client's link reads it (routes/proposals.ts presentedStatus). The
+  // Proposal status card's "accepted" still reads the statuses the
+  // proposals have now.
   it("still counts an accepted proposal once it is archived, and never a declined one", async () => {
     await pool.query(
       "INSERT INTO enquiries (venue_id, name, email) VALUES ($1, 'Web enquiry', 'web@example.test'), ($1, 'Phone enquiry', 'phone@example.test')",
@@ -288,10 +288,14 @@ describe.skipIf(testUrl === undefined)("analytics authority on isolated PostgreS
   // A platform admin may move an accepted proposal back to declined,
   // withdrawn or sent (state-machines/proposal.ts); a venue role can only
   // archive it. The history row to accepted stays, but the acceptance was
-  // reversed, so only an archived proposal keeps counting by its history.
-  it("no longer counts an acceptance a platform admin reversed", async () => {
+  // reversed. An archived proposal counts only when its newest move into
+  // archived came from accepted (migration 0083's rule): a reversed
+  // acceptance archived later is not counted, one archived straight from
+  // accepted is.
+  it("no longer counts an acceptance a platform admin reversed, even once it is archived", async () => {
     await pool.query(
-      "INSERT INTO enquiries (venue_id, name, email) VALUES ($1, 'Web enquiry', 'web@example.test'), ($1, 'Phone enquiry', 'phone@example.test')",
+      `INSERT INTO enquiries (venue_id, name, email) VALUES ($1, 'Web enquiry', 'web@example.test'), ($1, 'Phone enquiry', 'phone@example.test'),
+        ($1, 'Walk-in enquiry', 'walk-in@example.test'), ($1, 'Agency enquiry', 'agency@example.test')`,
       [VENUE],
     );
     const moved = async (title: string, moves: readonly (readonly [string, string])[]): Promise<void> => {
@@ -310,12 +314,14 @@ describe.skipIf(testUrl === undefined)("analytics authority on isolated PostgreS
     await moved("Henderson wedding", [["draft", "sent"], ["sent", "accepted"], ["accepted", "declined"]]);
     await moved("Merchants' dinner", [["draft", "sent"], ["sent", "accepted"], ["accepted", "withdrawn"]]);
     await moved("Bakers' lunch", [["draft", "sent"], ["sent", "accepted"], ["accepted", "sent"]]);
+    await moved("Turners' ball", [["draft", "sent"], ["sent", "accepted"], ["accepted", "declined"], ["declined", "archived"]]);
+    await moved("Coopers' banquet", [["draft", "sent"], ["sent", "accepted"], ["accepted", "archived"]]);
 
     const pipeline = await server.inject({ method: "GET", url: PRICED_ROUTES[0], headers: headers("staff") });
     expect(pipeline.statusCode, pipeline.body).toBe(200);
     expect(pipeline.json<{ data: Record<string, unknown> }>().data).toMatchObject({
-      enquiryCount: 2, proposalCount: 4, acceptedProposalCount: 1, conversionPercent: 50,
-      proposalStatusCounts: { accepted: 1, declined: 1, withdrawn: 1, sent: 1 },
+      enquiryCount: 4, proposalCount: 6, acceptedProposalCount: 2, conversionPercent: 50,
+      proposalStatusCounts: { accepted: 1, declined: 1, withdrawn: 1, sent: 1, archived: 2 },
     });
     const dashboard = await server.inject({ method: "GET", url: PRICED_ROUTES[1], headers: headers("staff") });
     expect(dashboard.statusCode, dashboard.body).toBe(200);

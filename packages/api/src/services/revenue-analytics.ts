@@ -68,10 +68,11 @@ export function buildPipelineSummary(input: {
   readonly pipelineValueMinor: number;
   readonly enquiryCount: number;
   readonly proposalStatusCounts: Readonly<Record<string, number>>;
-  /** Proposals accepted, now or before the office archived them: an
-   *  acceptance filed with Archive is still one (routes/proposals.ts
-   *  everAccepted). Not proposalStatusCounts.accepted, which reads only the
-   *  statuses the proposals have now. */
+  /** Proposals whose answer was acceptance: accepted now, or archived
+   *  straight from accepted (an acceptance filed with Archive is still one;
+   *  migration 0083's rule, as routes/proposals.ts presentedStatus reads it).
+   *  Not proposalStatusCounts.accepted, which reads only the statuses the
+   *  proposals have now. */
   readonly acceptedProposalCount: number;
 }): PipelineSummary {
   const proposalStatusCounts = { ...input.proposalStatusCounts };
