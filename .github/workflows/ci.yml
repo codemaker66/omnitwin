@@ -684,7 +684,10 @@ jobs:
     # whose tolerances the publish step holds a copy of. T0 compares the two,
     # so a change to that file runs these tests as well; without that, a drift
     # that began in the reader would show only when someone next touched the
-    # tools. Like the GPU scope
+    # tools. Only those four tolerances are compared: the publish step's other
+    # copies of the reader's rules (the schema version, the patterns for a
+    # file's name, a slug and a hash, the length of a relief's id) are tied by
+    # no test, and relief-container.ts is not in the list below. Like the GPU scope
     # job, the comparison reads two snapshots, never history: on a pull request
     # the merge commit's first parent (exactly this change), on a push the
     # previous head. Any doubt (no base, a base that cannot be fetched, a
