@@ -389,6 +389,12 @@ const STOP_POLL_MS = 10_000;
 const ARCHIVE_ATTEMPTS = 3;
 /** Waits before each metadata lookup after an unclear create: the API may still be making the session. */
 const LOOKUP_WAITS_MS = [0, 5_000, 15_000, 30_000] as const;
+/**
+ * How long before its create the lookup after an unclear create starts
+ * listing sessions: slack for a clock on this machine that runs ahead of the
+ * API's, so the session's own created_at still falls inside the listing.
+ */
+export const LOOKUP_CLOCK_SKEW_MS = 10 * 60_000;
 /** How long after the deadline's interrupt the launcher keeps following a session: by default, and at most. */
 export const DEFAULT_GRACE_MS = 10 * 60_000;
 export const MAX_GRACE_MS = 60 * 60_000;
@@ -514,7 +520,7 @@ async function createOrFind(
   sleep: (ms: number) => Promise<void>,
   log: (line: string) => void,
 ): Promise<SessionRef> {
-  const createdSince = new Date(Date.now() - 10 * 60_000).toISOString(); // slack for clock skew
+  const createdSince = new Date(Date.now() - LOOKUP_CLOCK_SKEW_MS).toISOString();
   try {
     return await api.createSession(params);
   } catch (error) {

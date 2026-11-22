@@ -46,7 +46,7 @@ import {
 } from "../sandbox/outputs.js";
 import { unquoteGitPath } from "../sandbox/patches.js";
 import { ADVISORY_FLAG, type Review } from "../sandbox/review.js";
-import { centsString, invokesVerifier, parseVerifyOutput, runSession, SessionMayExistError, type SessionRunResult } from "../sandbox/session.js";
+import { centsString, invokesVerifier, LOOKUP_CLOCK_SKEW_MS, parseVerifyOutput, runSession, SessionMayExistError, type SessionRunResult } from "../sandbox/session.js";
 import { ensureSandbox } from "../sandbox/setup.js";
 import { MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
 import { FakeApi, PROJECT_RULES } from "./fake-api.js";
@@ -1887,8 +1887,10 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     for (const { query } of lookups) {
       expect(query.get("include_archived")).toBe("true");
       expect(query.has("created_at[lte]")).toBe(false);
-      expect(Date.parse(query.get("created_at[gte]") ?? "")).toBeLessThanOrEqual(createdAt);
+      // From the clock-skew slack before the create, so a clock here that runs ahead of the API's still lists it.
+      expect(Date.parse(query.get("created_at[gte]") ?? "")).toBeLessThanOrEqual(createdAt - LOOKUP_CLOCK_SKEW_MS);
     }
+    expect(LOOKUP_CLOCK_SKEW_MS).toBe(10 * 60_000);
   });
 
   it("never adopts an earlier session of the same lane, job and task after a failed create: the per-run id must match too", async () => {
