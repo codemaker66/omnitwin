@@ -4,7 +4,7 @@
 
 **Goal:** Turn the one-job-per-command cloud sandbox launcher into an unattended service that takes jobs from a queue, spends a list of credit pots safely, and delivers draft pull requests.
 
-**Architecture:** A scheduled task runs `shift tick` every two minutes. A tick takes a lock, loads every job folder, advances each job one step (reserve, start, follow, collect, publish), writes one snapshot file for the dashboard, and exits. All state lives in files under a work root on D:, so any tick resumes where the last one stopped. The agents work in Claude Managed Agents sessions; this PC only dispatches, collects and publishes.
+**Architecture:** A scheduled task runs `shift tick` every two minutes. A tick takes a lock, loads every job folder, advances each job one step (reserve, start, follow, collect, publish), writes one snapshot file for the dashboard, and exits. All state lives in files under a work root outside the repository, set in the private settings file, so any tick resumes where the last one stopped. The agents work in Claude Managed Agents sessions; this PC only dispatches, collects and publishes.
 
 **Tech Stack:** TypeScript (strict), Node 22, the pnpm workspace package `@omnitwin/credit-runner`, `@anthropic-ai/sdk` 0.131.0 (Managed Agents beta), zod 4, vitest, the `git` and `gh` command lines, gitleaks, Windows Task Scheduler.
 
@@ -25,7 +25,7 @@
 - Amounts are integer cents wherever two amounts are added or compared.
 - Session budget: default $5, never above $50 (the existing `src/task.ts` limits).
 - Branch `credit/<job id>`; commit trailer `Credit-Runner-Task: <job id>` (both exist today).
-- Defaults from the spec: tick every 2 minutes, day ceiling $40, 2 sessions at once per pot, dispatch pauses at 8 or more open night-shift pull requests, pot reserve $10, alarm after 30 minutes with work, credit and room but no start.
+- Defaults from the spec: tick every 2 minutes, 2 sessions at once per pot, dispatch pauses at 8 or more open night-shift pull requests, alarm after 30 minutes with work, credit and room but no start. The spec asks for a day ceiling and a small pot reserve without naming figures; the plan's own defaults are a day ceiling of $40 and a pot reserve of $10, and the settings file overrides both.
 
 ## Review Focus
 
@@ -47,7 +47,7 @@ All paths are under `tools/credit-runner/`.
 | `src/shift/ledger.ts` | Version 2 ledger: reserve, settle and release lines, per pot and cycle. |
 | `src/shift/pots.ts` | Cycle arithmetic and choosing which pot pays. Pure. |
 | `src/shift/jobs.ts` | Job folders, the state file, legal moves, admitting a brief. |
-| `src/sandbox/session.ts` | Modified: the blocking loop is split into start, follow once, finish. |
+| `src/sandbox/session.ts` | Modified: the blocking loop is split into start, follow once, finish (the launcher's stop rule and its lookup after an unclear create stay as they are). |
 | `src/shift/steps.ts` | One function per move of a job. |
 | `src/shift/publish.ts` | Branch from the patch, the public-repository gates, the draft pull request. |
 | `src/shift/board.ts` | The snapshot file read by the owner's local dashboard. |
@@ -58,21 +58,21 @@ All paths are under `tools/credit-runner/`.
 | `src/__tests__/fake-api.ts` | `FakeApi`, moved out of `sandbox.test.ts` so shift tests share it. |
 | `install-shift-task.ps1` | Registers the scheduled task. |
 
-The old local lane (`src/night.ts`, `src/claude.ts`, `run-night.ps1`) has been removed from the package before this plan starts.
+The old local lane (`src/night.ts`, `src/claude.ts`, `run-night.ps1`) has been removed from the package before this plan starts, and so have the unused `src/proc.ts` and `src/env.ts` that went with it. The launcher already has `listSessions(createdSince)` on `SandboxApi` (`src/sandbox/api.ts`), the ledger writer in `src/sandbox/credit-ledger.ts` and `FakeApi` in `src/__tests__/fake-api.ts`.
 
 ---
 
 ### Task 1: Land the existing launcher on a fresh branch
 
-**Files:** everything under `tools/credit-runner/` from the 5 November launcher, with the old local lane removed, plus `pnpm-lock.yaml`.
+**Files:** everything under `tools/credit-runner/` as the pull request that lands the launcher has it (the sandbox lane only, the old local lane removed), plus `pnpm-lock.yaml`. If that pull request has merged, this task is already done: check that master holds the package and go on to Task 2.
 
-**Interfaces:** Produces the package as it ran on 5 November, on a branch cut from today's `origin/master`.
+**Interfaces:** Produces the sandbox launcher as that pull request lands it, on a branch cut from today's `origin/master`.
 
 - [ ] **Step 1:** Create a worktree on a new branch `night-shift/land-launcher` from `origin/master` (use superpowers:using-git-worktrees). Never work in the shared checkout.
 - [ ] **Step 2:** Bring the launcher's package onto the branch without the local lane. Resolve `pnpm-lock.yaml` by taking master's file and running `pnpm install --lockfile-only`.
 - [ ] **Step 3:** Run `pnpm --filter @omnitwin/credit-runner test`, then `typecheck`, then `lint`. Expected: every test passes and both checks exit 0.
 - [ ] **Step 4:** Check whether `.github/workflows/ci.yml` runs this package's tests. If it does not, add the package to the existing test job in this same change.
-- [ ] **Step 5:** Move `FakeApi` from `src/__tests__/sandbox.test.ts` to `src/__tests__/fake-api.ts` and import it back. Run the tests again: same count passes.
+- [ ] **Step 5:** Check that `FakeApi` lives in `src/__tests__/fake-api.ts` (the landing pull request moved it out of `sandbox.test.ts`) and that the shift's tests can import it. Run the tests again: the same count passes (121 passed and 2 skipped on Windows, where the verifier's signal case and the POSIX key-mode case run only on Linux).
 - [ ] **Step 6:** Commit with explicit pathspecs, push, open a pull request titled "credit-runner: land the cloud sandbox launcher", and wait for green CI. Later tasks branch from this.
 
 ### Task 2: Settings
@@ -154,7 +154,7 @@ export function committedCents(ledger: Ledger, pot: string, cycle: string): numb
 /** The same sum over every pot, for lines whose time falls on that local day (YYYY-MM-DD). */
 export function dayCommittedCents(ledger: Ledger, localDay: string): number;
 ```
-`cycle` is the cycle's start day. A line in the old format (no `v`) is read as a settle for pot `"legacy"` in cycle `"legacy"`, so it never counts against a live cycle.
+`cycle` is the cycle's start day. A line in the launcher's own format (`src/sandbox/credit-ledger.ts`: `ts`, `lane`, `job`, `costUsd`, and `costKnown: false` when the cost is a booking at the whole budget, with no `v`) is read as a settle for pot `"legacy"` in cycle `"legacy"` (carrying its `costKnown`), so it never counts against a live cycle.
 
 - [ ] **Step 1: Write the failing tests**
 ```ts
@@ -175,7 +175,7 @@ it("settles in the cycle the job was reserved in, leaving the new cycle at zero"
 it("reports an unreadable line instead of dropping it", async () => {
   expect((await readLedger(fileWith('{"v":2,"kind":"reserve"\n'))).badLines).toBe(1);
 });
-it("reads a 5 November line as legacy", async () => {
+it("reads a line in the launcher's own format (no v) as legacy", async () => {
   const l = await readLedger(fileWith(oldLine));
   expect(l.lines[0]).toMatchObject({ kind: "settle", pot: "legacy", cycle: "legacy", costCents: 84 });
 });
@@ -238,7 +238,7 @@ it("respects the running limit", () => {
 
 **Files:**
 - Create: `src/shift/jobs.ts`
-- Modify: `src/task.ts` (the strict front-matter schema near lines 54 to 82: add `source`, `sensitive`, `kind`)
+- Modify: `src/task.ts` (the strict front-matter schema, lines 17 to 45: add `source`, `sensitive`, `kind`)
 - Test: `src/__tests__/shift-jobs.test.ts`
 
 **Interfaces:**
@@ -305,8 +305,8 @@ it("never leaves a partial state file", async () => {
 ### Task 6: Split the session loop into start, follow once, finish
 
 **Files:**
-- Modify: `src/sandbox/session.ts` (`runSession` at lines 268 to 362, `finishRun` at 205 to 258, `EventTally` at 129 to 202)
-- Test: `src/__tests__/sandbox-follow.test.ts`; the 13 cases in `sandbox.test.ts` must pass unchanged
+- Modify: `src/sandbox/session.ts` (`runSession` at lines 518 to 634, `finishRun` at 276 to 350, `stopSession` at 401 to 450, `createOrFind` at 479 to 508, `EventTally` at 170 to 269; `recollectSession` at 636 stays; export `createOrFind` and `stopSession`, which `startSession` and `finishSession` use and Task 7 reuses)
+- Test: `src/__tests__/sandbox-follow.test.ts`; the 64 cases in `sandbox.test.ts` must pass unchanged
 
 **Interfaces:**
 - Produces:
@@ -323,9 +323,9 @@ export interface FollowResult {
 }
 /** Rebuilds everything from the session's whole history. Holds no memory between calls. */
 export function followOnce(api: SandboxApi, sessionId: string, runDir: string, alreadyDenied: readonly string[]): Promise<FollowResult>;
-export function finishSession(api: SandboxApi, sessionId: string, runDir: string, follow: FollowResult, timedOut: boolean): Promise<SessionRunResult>;
+export function finishSession(api: SandboxApi, sessionId: string, runDir: string, follow: FollowResult, timedOut: boolean, seams?: { readonly sleep?: (ms: number) => Promise<void>; readonly log?: (line: string) => void }): Promise<SessionRunResult>;
 ```
-`doing` is the newest of: the first line of the latest `agent.message`, or the latest bash command, cut to 120 characters, with that event's `processed_at`. `followOnce` rewrites `events.jsonl` from the history each call and sends one denial for each approval ask not in `alreadyDenied`. `runSession` keeps its signature and is rebuilt from these three.
+`doing` is the newest of: the first line of the latest `agent.message`, or the latest bash command, cut to 120 characters, with that event's `processed_at`. `followOnce` rewrites `events.jsonl` from the history each call and sends one denial for each approval ask not in `alreadyDenied`. `startSession` is the first half of `runSession`: the two uploads, then `createOrFind` (one create attempt with a one-minute deadline; any failure but a server refusal is looked up by the session's metadata, and a session it cannot rule out surfaces as `SessionMayExistError`, which the caller books at the whole budget). `finishSession` is its last half and keeps the launcher's stop rule: it rebuilds the tally from the history (as `recollectSession` does), runs `stopSession` (read the platform's status; if it does not report idle or terminated, send the interrupt again with retries, poll up to 18 times 10 seconds apart, and archive the session if it still runs), and only then reads the platform's totals and the outputs; the result says `stopped`, `archived`, `runningAfterFinish` and `stopInterrupted`. `runSession` keeps its signature and is rebuilt from these three.
 
 - [ ] **Step 1: Write the failing tests**
 ```ts
@@ -352,18 +352,18 @@ it("leaves each event once in events.jsonl after two calls", async () => {
 ```
 - [ ] **Step 2:** Run. Expected: FAIL.
 - [ ] **Step 3:** Implement the split.
-- [ ] **Step 4:** Run `sandbox-follow.test.ts` and `sandbox.test.ts`. Expected: all PASS, the 13 old cases untouched.
+- [ ] **Step 4:** Run `sandbox-follow.test.ts` and `sandbox.test.ts`. Expected: all PASS, the 64 old cases untouched.
 - [ ] **Step 5:** Commit.
 
 ### Task 7: The steps of a job
 
 **Files:**
 - Create: `src/shift/steps.ts`
-- Modify: `src/sandbox/api.ts` (add `listSessions`), `src/sandbox/brief.ts` (rule text: after the precondition, write `/mnt/session/outputs/precondition.json` as `{"ok":true}` or `{"ok":false}` and stop when it is false)
+- Modify: `src/sandbox/brief.ts` (rule text: after the precondition, write `/mnt/session/outputs/precondition.json` as `{"ok":true}` or `{"ok":false}` and stop when it is false), `src/sandbox/outputs.ts` (`planOutputs` brings back only the format-patch files and `diff.patch`, and leaves every other output in the sandbox; add `precondition.json` to the files it brings back, under that name, under the same size caps). `SandboxApi.listSessions` already exists; nothing changes in `src/sandbox/api.ts`.
 - Test: `src/__tests__/shift-steps.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 2 to 6. `ensureSandbox(api, stateFile, system, log)` from `src/sandbox/setup.ts` is called with `<workRoot>/state/<pot id>.json`, because an environment and an agent belong to one organisation.
+- Consumes: Tasks 2 to 6, and `bookedCost(stopped, snapshotUsd, budgetUsd)` from `src/sandbox/launcher.ts`. `ensureSandbox(api, stateFile, system, log)` from `src/sandbox/setup.ts` is called with `<workRoot>/state/<pot id>.json`, because an environment and an agent belong to one organisation.
 - Produces:
 ```ts
 export interface StepDeps {
@@ -377,13 +377,13 @@ export function startStep(job: JobState, deps: StepDeps): Promise<JobState>;
 export function followStep(job: JobState, deps: StepDeps): Promise<JobState>;
 export function collectStep(job: JobState, deps: StepDeps): Promise<JobState>;
 export function isCreditGone(error: unknown): boolean;   // an APIError whose message contains "credit balance is too low"
-// added to SandboxApi in src/sandbox/api.ts:
-listSessions(): AsyncIterable<{ readonly id: string; readonly metadata: Readonly<Record<string, string>> }>;
+// already on SandboxApi (src/sandbox/api.ts:116), used as it is: lists the sessions created since a time
+listSessions(createdSince: string): AsyncIterable<SessionListing>;   // SessionListing = Pick<BetaManagedAgentsSession, "id" | "status" | "metadata">
 ```
 - `reserveStep`: waiting to reserved. Writes the reserve line first, then saves the job. With no pot, the job stays waiting and `reason` carries the choice's reason.
-- `startStep`: reserved to building. A job that already has a `sessionId` is moved to building without creating anything. Otherwise it creates the session with `metadata: { lane: "shift", job: <id>, task: <id> }` and saves the id before doing anything else. A job reserved more than 10 minutes with no id looks for a session of that pot whose metadata names it and adopts it; finding none, it writes a release line and returns to waiting.
-- `followStep`: calls `followOnce`, saves `doing` and the denied asks. At `startedAt + timeoutMinutes` it sends one `user.interrupt` and sets `interruptedAt`; 10 minutes after that it treats the session as finished and timed out. A finished session moves to collected.
-- `collectStep`: `finishSession`, then `reviewRun`. It writes the settle line at the platform's figure (the whole budget when the figure cannot be read). `precondition.json` with `ok: false` gives thrown-out with reason "the defect is no longer there". A rejected review gives thrown-out with the review's reasons. Ready for review gives `held` when the job is sensitive, otherwise `ready`.
+- `startStep`: reserved to building. A job that already has a `sessionId` is moved to building without creating anything. Otherwise it creates the session through `startSession` (the launcher's `createOrFind`: one attempt, a one-minute deadline, a lookup by metadata after any failure but a server refusal) with `metadata: { lane: "shift", job: <id>, task: <id> }`, and saves the id before doing anything else. When `startSession` throws `SessionMayExistError` (the create failed unclearly and the lookup found nothing, so a session may still start), the job is not released: it writes the settle line at the whole budget with `costKnown: false`, adds one to `attempts` and returns to waiting. A job reserved more than 10 minutes with no id (the tick died between the reserve line and the saved id) looks for a session of that pot with `listSessions` whose metadata names it and adopts it; finding none, it writes a release line and returns to waiting.
+- `followStep`: calls `followOnce`, saves `doing` and the denied asks. At `startedAt + timeoutMinutes` it sends `user.interrupt`, retried with back-off (up to 5 attempts, as the launcher's `sendInterrupt` does), and sets `interruptedAt` once one has reached the session; if every attempt fails it stays as it is and the next tick sends it again. 10 minutes after `interruptedAt` it stops following, treats the session as timed out and moves it to collected. A session the stream says has finished also moves to collected. Neither move trusts the stream: collecting runs the stop rule.
+- `collectStep`: `finishSession` (which confirms the stop or interrupts again and archives, taking up to about three minutes for a session that will not stop, inside the tick's lock), then `reviewRun`. It writes the settle line through `bookedCost`: the platform's figure, with `costKnown: true`, only when the platform reported the session stopped (idle or terminated); otherwise the larger of the last snapshot and the whole budget, with `costKnown: false`, so a session that may still be spending is never under-counted (the whole budget too when the figure cannot be read). `precondition.json` with `ok: false` gives thrown-out with reason "the defect is no longer there". A rejected review gives thrown-out with the review's reasons. Ready for review gives `held` when the job is sensitive, otherwise `ready`.
 - An outside failure (a connection error, a 429 or a 5xx) never moves a job that already has a session id: it stays where it is, the reason is recorded and the next tick tries again, so a running session is never left behind. Only a failure to create the session adds one to `attempts` and returns the job to waiting; a second one gives failed. Every move from reserved back to waiting writes a release line first. `isCreditGone` writes a release line, returns the job to waiting and records the pot as empty until its cycle ends in `<workRoot>/pots/<id>.json`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -403,15 +403,28 @@ it("adopts an orphan session by its metadata", async () => {
   const job = await startStep(reservedElevenMinutesAgo, depsWith(api));
   expect([job.sessionId, api.created]).toEqual(["sesn_orphan", 0]);
 });
-it("interrupts once at the time limit", async () => {
-  const api = new FakeApi({ history: runningHistory });
+it("retries the interrupt at the time limit and sends it once it has arrived", async () => {
+  const api = new FakeApi({ history: runningHistory, sendOutcome: (_event, attempt) => (attempt < 3 ? "fail" : "ok") });
   const once = await followStep(pastTimeout(buildingJob), depsWith(api));
   await followStep(once, depsWith(api));
-  expect(api.interrupts).toBe(1);
+  expect([api.sent.filter((e) => e.type === "user.interrupt").length, once.interruptedAt === null]).toEqual([1, false]);
 });
-it("settles at the platform's figure and clears the reserve", async () => {
-  await collectStep(collectedJob, depsWith(new FakeApi({ listCostCents: 84 })));
+it("archives a session that will not stop and books the whole budget as unknown", async () => {
+  const api = new FakeApi({ history: runningHistory, statuses: ["running"], listCostCents: 84 });
+  await collectStep(interruptedJob, depsWith(api));
+  expect(api.archived).toEqual(["sesn_1"]);
+  expect(await settleLine(ledgerFile, "job-a")).toMatchObject({ costCents: 600, costKnown: false });   // max(snapshot 84, budget 600)
+});
+it("settles at the platform's figure once the session has stopped, and clears the reserve", async () => {
+  await collectStep(collectedJob, depsWith(new FakeApi({ statuses: ["idle"], listCostCents: 84 })));
   expect(committedCents(await readLedger(ledgerFile), "pot-1", "2030-01-01")).toBe(84);
+});
+it("books the whole budget as unknown after an unclear create that finds nothing", async () => {
+  const job = await startStep(reservedJob, depsWith(new FakeApi({ createError: new TypeError("terminated") })));
+  expect([job.status, job.attempts, (await settleLine(ledgerFile, reservedJob.id)).costKnown]).toEqual(["waiting", 1, false]);
+});
+it("brings back precondition.json and no other non-patch output", () => {
+  expect(planOutputs([out("precondition.json"), out("report.md"), out("0001-fix.patch")]).downloads.map((d) => d.localName)).toEqual(["patch-0001.patch", "precondition.json"]);
 });
 it("holds a sensitive job instead of making it ready", async () => {
   expect((await collectStep({ ...collectedJob, sensitive: true }, okDeps)).status).toBe("held");
@@ -427,7 +440,7 @@ it("marks the pot empty and frees the job when the credit is gone", async () => 
 });
 ```
 - [ ] **Step 2:** Run. Expected: FAIL.
-- [ ] **Step 3:** Implement. `FakeApi` gains a session list, a create failure and counters.
+- [ ] **Step 3:** Implement. The test sketches above stand for the real fixture: `FakeApi` takes `(connections, files)` and already records the sessions created, the events that reached the session (`sent`) and every attempt (`sendAttempts`), the archived ids, the statuses `retrieveSession` reports in turn, `listCostCents`, `createError` and `earlierSessions`; extend it only where a test needs more, and write each test against those fields.
 - [ ] **Step 4:** Run this file and `sandbox.test.ts`. Expected: PASS.
 - [ ] **Step 5:** Commit.
 
@@ -443,7 +456,7 @@ A one-off with real spend, capped at $3. Do it only after the owner has confirme
 - Consumes: `startSession`, `followOnce`, `finishSession`, the ledger, `Pot`.
 - Produces: `runFramesTrial(deps: { settings: ShiftSettings; pot: Pot; now(): Date; log(l: string): void }): Promise<{ readonly frames: readonly string[]; readonly costCents: number; readonly minutes: number }>` and `framesEnvironmentParams(): EnvironmentCreateParams`.
 
-The trial's environment is separate (`venviewer-frames-trial`) and adds four hosts to the launcher's two: `cdn.playwright.dev`, `playwright.download.prss.microsoft.com`, `archive.ubuntu.com`, `security.ubuntu.com`. The kickoff is a plain `user.message`, with no verifier and no outcome: clone `origin/master`, `pnpm install --frozen-lockfile`, `pnpm --filter @omnitwin/types build`, `pnpm --filter @omnitwin/web exec playwright install --with-deps chromium`, then a throwaway spec under `packages/web/e2e/` that uses the repository's own Playwright config and saves `/pricing` and `/privacy` at 1366 by 641, 1536 by 704 and 1920 by 953 into `/mnt/session/outputs/`. Budget $3, time limit 30 minutes.
+The trial's environment is separate (`venviewer-frames-trial`) and adds four hosts to the launcher's two: `cdn.playwright.dev`, `playwright.download.prss.microsoft.com`, `archive.ubuntu.com`, `security.ubuntu.com`. The kickoff is a plain `user.message`, with no verifier and no outcome: clone `origin/master`, `pnpm install --frozen-lockfile`, `pnpm --filter @omnitwin/types build`, `pnpm --filter @omnitwin/web exec playwright install --with-deps chromium`, then a throwaway spec under `packages/web/e2e/` that uses the repository's own Playwright config and saves `/pricing` and `/privacy` at 1366 by 641, 1536 by 704 and 1920 by 953 into `/mnt/session/outputs/`. Budget $3, time limit 30 minutes. The launcher's `planOutputs` brings back only patches and `precondition.json`, so the trial lists the session's outputs itself (`api.listOutputFiles`) and downloads the six PNG files with `api.downloadFile`, which streams and takes a byte cap, under names it chooses (`frame-1.png` to `frame-6.png`).
 
 - [ ] **Step 1:** Write the test: `framesEnvironmentParams()` keeps networking `limited`, its allowed hosts equal the six expected names, and the session is created with a budget amount of `"300"`.
 - [ ] **Step 2:** Run. Expected: FAIL. Implement. Run. Expected: PASS. Commit.
@@ -475,7 +488,7 @@ export function findPrivateText(diff: string, privateNames: readonly string[]): 
 export function prBody(job: JobState, review: Review, result: SessionRunResult): string;
 export function openPrCount(deps: PublishDeps): Promise<number>;
 ```
-`publishJob`, in the publisher's own clone and never the shared checkout: fetch; create `credit/<id>` at the job's base; apply the returned format-patch files in order; require `git diff <base> HEAD` to equal the returned `diff.patch`; run gitleaks over the new commits; require `findPrivateText` to be empty; require a clean `git merge-tree` against `origin/<baseBranch>`; push; `gh pr create --draft`. The pull request's body says the second review is missing until the reviewer exists. With no token it returns `{ ok: false, reason: "no GitHub token yet", retry: false }` and the job stays ready. At the open pull request limit it returns `retry: true`.
+`publishJob`, in the publisher's own clone and never the shared checkout: fetch; create `credit/<id>` at the job's base; apply the returned format-patch files in order (the launcher saves them under its own names, `patch-0001.patch` and on, with `diff.patch`, in the run's `outputs` folder); require `git diff <base> HEAD` to equal the returned `diff.patch`; run gitleaks over the new commits; require `findPrivateText` to be empty; require a clean `git merge-tree` against `origin/<baseBranch>`; push; `gh pr create --draft`. The pull request's body says the second review is missing until the reviewer exists. With no token it returns `{ ok: false, reason: "no GitHub token yet", retry: false }` and the job stays ready. At the open pull request limit it returns `retry: true`.
 
 The publisher's clone runs with `core.autocrlf=false`, and the diff check compares after turning CRLF into LF.
 
