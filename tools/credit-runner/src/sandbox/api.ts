@@ -1,6 +1,6 @@
 import Anthropic, { toFile, type ClientOptions } from "@anthropic-ai/sdk";
-import type { BetaManagedAgentsAgent, AgentCreateParams, AgentUpdateParams } from "@anthropic-ai/sdk/resources/beta/agents/agents";
-import type { BetaEnvironment, EnvironmentCreateParams } from "@anthropic-ai/sdk/resources/beta/environments/environments";
+import type { AgentCreateParams, AgentUpdateParams } from "@anthropic-ai/sdk/resources/beta/agents/agents";
+import type { BetaEnvironment, EnvironmentCreateParams, EnvironmentUpdateParams } from "@anthropic-ai/sdk/resources/beta/environments/environments";
 import type {
   BetaManagedAgentsEventParams,
   BetaManagedAgentsSessionEvent,
@@ -24,8 +24,26 @@ export interface EventStream {
 }
 
 /** The parts of each resource the launcher reads. */
-export type EnvironmentRef = Pick<BetaEnvironment, "id" | "archived_at">;
-export type AgentRef = Pick<BetaManagedAgentsAgent, "id" | "version">;
+export type EnvironmentRef = Pick<BetaEnvironment, "id" | "archived_at" | "config">;
+
+/** One entry of an agent's tools, as far as the launcher checks it: a toolset's switches, or what an MCP toolset or custom tool is. */
+export interface AgentTool {
+  readonly type: string;
+  readonly name?: string;
+  readonly mcp_server_name?: string;
+  readonly default_config?: { readonly enabled: boolean };
+  readonly configs?: readonly { readonly name: string; readonly enabled: boolean }[];
+}
+
+/** An agent version, as far as the launcher checks its boundary (BetaManagedAgentsAgent fits it). */
+export interface AgentRef {
+  readonly id: string;
+  readonly version: number;
+  readonly tools: readonly AgentTool[];
+  readonly mcp_servers: readonly { readonly name: string }[];
+  /** Non-null when the agent may start other agents, with their own tools. */
+  readonly multiagent: object | null;
+}
 export type SessionRef = Pick<BetaManagedAgentsSession, "id" | "status">;
 export type SessionTotals = Pick<BetaManagedAgentsSession, "id" | "status" | "usage">;
 export type SessionListing = Pick<BetaManagedAgentsSession, "id" | "status" | "metadata">;
@@ -85,8 +103,10 @@ export function isAmbiguousFailure(error: unknown): boolean {
 export interface SandboxApi {
   createEnvironment(params: EnvironmentCreateParams): Promise<EnvironmentRef>;
   retrieveEnvironment(id: string): Promise<EnvironmentRef>;
+  updateEnvironment(id: string, params: EnvironmentUpdateParams): Promise<EnvironmentRef>;
   createAgent(params: AgentCreateParams): Promise<AgentRef>;
-  retrieveAgent(id: string): Promise<AgentRef>;
+  /** The given version (the one sessions are pinned to), or the latest when none is given. */
+  retrieveAgent(id: string, version?: number): Promise<AgentRef>;
   updateAgent(id: string, params: AgentUpdateParams): Promise<AgentRef>;
   uploadFile(name: string, data: string): Promise<string>;
   /** One attempt, no retries: see CREATE_SESSION_TIMEOUT_MS. */
@@ -159,8 +179,9 @@ export function sdkSandboxApi(apiKey: string, fetchImpl?: ClientOptions["fetch"]
   return {
     createEnvironment: (params) => client.beta.environments.create(params),
     retrieveEnvironment: (id) => client.beta.environments.retrieve(id),
+    updateEnvironment: (id, params) => client.beta.environments.update(id, params),
     createAgent: (params) => client.beta.agents.create(params),
-    retrieveAgent: (id) => client.beta.agents.retrieve(id),
+    retrieveAgent: (id, version) => client.beta.agents.retrieve(id, version === undefined ? {} : { version }),
     updateAgent: (id, params) => client.beta.agents.update(id, params),
     async uploadFile(name, data) {
       const file = await client.files.upload({ file: await toFile(Buffer.from(data, "utf8"), name) });

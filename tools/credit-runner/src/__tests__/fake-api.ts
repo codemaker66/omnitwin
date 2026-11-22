@@ -1,5 +1,6 @@
+import type { AgentCreateParams, AgentUpdateParams } from "@anthropic-ai/sdk/resources/beta/agents/agents";
+import type { EnvironmentCreateParams, EnvironmentUpdateParams } from "@anthropic-ai/sdk/resources/beta/environments/environments";
 import type { BetaManagedAgentsEventParams } from "@anthropic-ai/sdk/resources/beta/sessions/events";
-import { writeCapped } from "../sandbox/outputs.js";
 import type { SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
 import type {
   AgentRef,
@@ -12,6 +13,54 @@ import type {
   SessionRef,
   SessionTotals,
 } from "../sandbox/api.js";
+import { writeCapped } from "../sandbox/outputs.js";
+import { agentParams, environmentParams } from "../sandbox/setup.js";
+
+/** An environment as the API returns it, from the params it was created or updated with. */
+function liveEnvironmentConfig(config: EnvironmentCreateParams["config"]): EnvironmentRef["config"] {
+  if (config?.type !== "cloud") return { type: "self_hosted" };
+  const net = config.networking;
+  const packages = config.packages;
+  return {
+    type: "cloud",
+    networking:
+      net?.type === "limited"
+        ? { type: "limited", allow_mcp_servers: net.allow_mcp_servers ?? false, allow_package_managers: net.allow_package_managers ?? false, allowed_hosts: [...(net.allowed_hosts ?? [])] }
+        : { type: "unrestricted" },
+    packages: {
+      apt: [...(packages?.apt ?? [])],
+      cargo: [...(packages?.cargo ?? [])],
+      gem: [...(packages?.gem ?? [])],
+      go: [...(packages?.go ?? [])],
+      npm: [...(packages?.npm ?? [])],
+      pip: [...(packages?.pip ?? [])],
+    },
+  };
+}
+
+/** An agent version as the API returns it, from the params it was created or updated with. */
+function liveAgent(version: number, params: Pick<AgentUpdateParams, "tools" | "mcp_servers" | "multiagent">, previous?: AgentRef): AgentRef {
+  return {
+    id: "agent_1",
+    version,
+    tools:
+      params.tools === undefined
+        ? (previous?.tools ?? [])
+        : (params.tools ?? []).map((tool) =>
+            tool.type === "agent_toolset_20260401"
+              ? {
+                  type: tool.type,
+                  default_config: { enabled: tool.default_config?.enabled ?? true },
+                  configs: (tool.configs ?? []).map((config) => ({ name: config.name, enabled: config.enabled ?? true })),
+                }
+              : tool.type === "mcp_toolset"
+                ? { type: tool.type, mcp_server_name: tool.mcp_server_name }
+                : { type: tool.type, name: tool.name },
+          ),
+    mcp_servers: params.mcp_servers === undefined ? (previous?.mcp_servers ?? []) : (params.mcp_servers ?? []).map((server) => ({ name: server.name })),
+    multiagent: params.multiagent === undefined ? (previous?.multiagent ?? null) : params.multiagent,
+  };
+}
 
 export const HEAD = "a".repeat(40);
 
@@ -46,6 +95,17 @@ export class FakeApi implements SandboxApi {
   agentUpdates = 0;
   agentCreates = 0;
   environmentCreates = 0;
+  /** The params each create and update was sent. */
+  readonly environmentParams: EnvironmentCreateParams[] = [];
+  readonly environmentUpdates: EnvironmentUpdateParams[] = [];
+  readonly agentParams: AgentCreateParams[] = [];
+  readonly agentUpdateParams: AgentUpdateParams[] = [];
+  /** Someone changed the environment, or the agent the launcher runs, in the Console. */
+  liveEnvironmentOverride: EnvironmentRef["config"] | null = null;
+  liveAgentOverride: Partial<Omit<AgentRef, "id" | "version">> | null = null;
+  /** Until a test creates or changes them, the environment and agent are as an earlier run of this code made them. */
+  private environmentConfig: EnvironmentRef["config"] = liveEnvironmentConfig(environmentParams().config);
+  private readonly agentVersions = new Map<number, AgentRef>();
   failOutputs = false;
   /** Thrown by createSession; with `createdAnyway` the session exists all the same, as after a reset connection. */
   createError: Error | null = null;
@@ -79,20 +139,40 @@ export class FakeApi implements SandboxApi {
     private readonly files: Record<string, string | null> = DEFAULT_FILES,
   ) {}
 
-  createEnvironment = (): Promise<EnvironmentRef> => {
+  createEnvironment = (params: EnvironmentCreateParams): Promise<EnvironmentRef> => {
     this.environmentCreates += 1;
-    return Promise.resolve({ id: "env_1", archived_at: null });
+    this.environmentParams.push(params);
+    this.environmentConfig = liveEnvironmentConfig(params.config);
+    return Promise.resolve(this.liveEnvironment());
   };
-  retrieveEnvironment = (): Promise<EnvironmentRef> => Promise.resolve({ id: "env_1", archived_at: null });
-  createAgent = (): Promise<AgentRef> => {
+  retrieveEnvironment = (): Promise<EnvironmentRef> => Promise.resolve(this.liveEnvironment());
+  updateEnvironment = (_id: string, params: EnvironmentUpdateParams): Promise<EnvironmentRef> => {
+    this.environmentUpdates.push(params);
+    if (params.config !== undefined) this.environmentConfig = liveEnvironmentConfig(params.config);
+    return Promise.resolve(this.liveEnvironment());
+  };
+  createAgent = (params: AgentCreateParams): Promise<AgentRef> => {
     this.agentCreates += 1;
-    return Promise.resolve({ id: "agent_1", version: 1 });
+    this.agentParams.push(params);
+    this.agentVersions.set(1, liveAgent(1, params));
+    return Promise.resolve(this.agentAt(1));
   };
-  retrieveAgent = (): Promise<AgentRef> => Promise.resolve({ id: "agent_1", version: 1 + this.agentUpdates });
-  updateAgent = (): Promise<AgentRef> => {
+  /** The given version, or the latest; as the Console shows it, where a test has someone change it there. */
+  retrieveAgent = (_id: string, version?: number): Promise<AgentRef> => Promise.resolve(this.agentAt(version ?? this.agentVersions.size));
+  updateAgent = (_id: string, params: AgentUpdateParams): Promise<AgentRef> => {
     this.agentUpdates += 1;
-    return Promise.resolve({ id: "agent_1", version: 1 + this.agentUpdates });
+    this.agentUpdateParams.push(params);
+    const version = this.agentVersions.size + 1;
+    this.agentVersions.set(version, liveAgent(version, params, this.agentVersions.get(version - 1)));
+    return Promise.resolve(this.agentAt(version));
   };
+  private liveEnvironment(): EnvironmentRef {
+    return { id: "env_1", archived_at: null, config: this.liveEnvironmentOverride ?? this.environmentConfig };
+  }
+  private agentAt(version: number): AgentRef {
+    const agent = this.agentVersions.get(version) ?? liveAgent(version, agentParams("an earlier run's prompt"));
+    return this.liveAgentOverride === null ? agent : { ...agent, ...this.liveAgentOverride };
+  }
   uploadFile = (name: string, data: string) => {
     this.uploads.push({ name, data });
     return Promise.resolve(`file_${String(this.uploads.length)}`);

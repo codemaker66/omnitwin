@@ -22,10 +22,13 @@ import {
   DOWNLOAD_TIMEOUT_MS,
   isAmbiguousFailure,
   sdkSandboxApi,
+  type AgentRef,
+  type AgentTool,
+  type EnvironmentRef,
   type SandboxApi,
   type SessionEvent,
 } from "../sandbox/api.js";
-import { outcomeFor, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
+import { outcomeFor, promptSha, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "../sandbox/credit-ledger.js";
 import { collectSandboxJob, runSandboxJob, type JobOptions, type LauncherConfig } from "../sandbox/launcher.js";
 import { isWindowsDeviceName, MAX_OUTPUT_BYTES, MAX_OUTPUTS_TOTAL_BYTES, OutputTooLargeError, planOutputs, writeCapped } from "../sandbox/outputs.js";
@@ -643,6 +646,118 @@ describe("sandbox launcher", () => {
     const explicit = parseTask("---\nid: robots-wildcards\nacceptance: x\nenabled: true\nread_only: false\nmodel: claude-opus-5-5\neffort: high\n---\nDo it.", "spec.md");
     const record = await job(new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy)), await workspace(), happy, { task: explicit });
     expect(record.kind).toBe("ran");
+  });
+
+  it("creates the sandbox with limited networking, the exact host list, no MCP and the web tools off", async () => {
+    const config = await workspace();
+    const api = new FakeApi([]);
+    await ensureSandbox(api, path.join(config.workRoot, "state.json"), "prompt one", () => undefined);
+    expect(api.environmentParams).toHaveLength(1);
+    expect(api.environmentParams[0]?.config).toEqual({
+      type: "cloud",
+      networking: { type: "limited", allow_package_managers: true, allow_mcp_servers: false, allowed_hosts: ["github.com", "nodejs.org"] },
+      packages: { apt: ["postgresql"], npm: ["pnpm@9.15.4"] },
+    });
+    expect(api.agentParams).toHaveLength(1);
+    expect(api.agentParams[0]?.mcp_servers ?? []).toEqual([]);
+    expect(api.agentParams[0]?.tools).toEqual([
+      {
+        type: "agent_toolset_20260401",
+        default_config: { enabled: true, permission_policy: { type: "always_allow" } },
+        configs: [
+          { name: "web_fetch", enabled: false },
+          { name: "web_search", enabled: false },
+        ],
+      },
+    ]);
+  });
+
+  it("refuses to start when the live environment or agent no longer matches what the code sets up, naming the difference", async () => {
+    const config = await workspace();
+    const stateFile = path.join(config.workRoot, "state.json");
+    const api = new FakeApi([]);
+    await ensureSandbox(api, stateFile, "prompt one", () => undefined);
+    type Networking = Extract<EnvironmentRef["config"], { type: "cloud" }>["networking"];
+    const limited: Extract<Networking, { type: "limited" }> = { type: "limited", allow_package_managers: true, allow_mcp_servers: false, allowed_hosts: ["github.com", "nodejs.org"] };
+    const cloud = (networking: Networking): EnvironmentRef["config"] => ({
+      type: "cloud",
+      networking,
+      packages: { apt: ["postgresql"], cargo: [], gem: [], go: [], npm: ["pnpm@9.15.4"], pip: [] },
+    });
+    const environmentDrifts: readonly (readonly [EnvironmentRef["config"], string])[] = [
+      [cloud({ type: "unrestricted" }), "its networking is unrestricted, not limited"],
+      [cloud({ ...limited, allowed_hosts: ["github.com", "nodejs.org", "example.com"] }), "it allows example.com, which the code does not"],
+      [cloud({ ...limited, allowed_hosts: ["github.com"] }), "it no longer allows nodejs.org"],
+      [cloud({ ...limited, allow_mcp_servers: true }), "it allows MCP servers"],
+      [cloud({ ...limited, allow_package_managers: false }), "it does not allow the package registries"],
+      [{ type: "self_hosted" }, "it is self_hosted, not a cloud container"],
+    ];
+    for (const [drift, said] of environmentDrifts) {
+      api.liveEnvironmentOverride = drift;
+      await expect(ensureSandbox(api, stateFile, "prompt one", () => undefined), said).rejects.toThrow(said);
+    }
+    api.liveEnvironmentOverride = null;
+
+    const toolset = (webFetch: boolean): AgentTool => ({
+      type: "agent_toolset_20260401",
+      default_config: { enabled: true },
+      configs: [
+        { name: "web_fetch", enabled: webFetch },
+        { name: "web_search", enabled: false },
+      ],
+    });
+    const agentDrifts: readonly (readonly [Partial<Omit<AgentRef, "id" | "version">>, string])[] = [
+      [{ tools: [toolset(true)] }, "web_fetch is on"],
+      // A toolset whose switches are gone: its default turns the web tools on.
+      [{ tools: [{ type: "agent_toolset_20260401", default_config: { enabled: true }, configs: [] }] }, "web_search is on"],
+      [{ tools: [toolset(false), { type: "mcp_toolset", mcp_server_name: "docs" }], mcp_servers: [{ name: "docs" }] }, "it has an MCP toolset (docs)"],
+      [{ mcp_servers: [{ name: "docs" }] }, "it has MCP servers (docs)"],
+      [{ tools: [toolset(false), { type: "custom", name: "fetch_url" }] }, "it has a custom tool (fetch_url)"],
+      [{ multiagent: { type: "coordinator", agents: [] } }, "it can start other agents"],
+    ];
+    for (const [drift, said] of agentDrifts) {
+      api.liveAgentOverride = drift;
+      await expect(ensureSandbox(api, stateFile, "prompt one", () => undefined), said).rejects.toThrow(said);
+    }
+    api.liveAgentOverride = null;
+    await expect(ensureSandbox(api, stateFile, "prompt one", () => undefined)).resolves.toMatchObject({ agentVersion: 1 });
+  });
+
+  it("checks the live sandbox on every run, before anything is uploaded or a session created", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    await ensureSandbox(api, path.join(config.workRoot, "state.json"), "prompt one", () => undefined);
+    api.liveEnvironmentOverride = { type: "cloud", networking: { type: "unrestricted" }, packages: { apt: [], cargo: [], gem: [], go: [], npm: [], pip: [] } };
+    await expect(job(api, config)).rejects.toThrow("its networking is unrestricted, not limited");
+    expect(api.uploads).toHaveLength(0);
+    expect(api.sessions).toHaveLength(0);
+  });
+
+  it("checks the agent version sessions are pinned to, not a newer one made in the Console", async () => {
+    const config = await workspace();
+    const stateFile = path.join(config.workRoot, "state.json");
+    const api = new FakeApi([]);
+    await ensureSandbox(api, stateFile, "prompt one", () => undefined);
+    // Someone adds a version with web_fetch on; sessions still run the version the state pins.
+    await api.updateAgent("agent_1", { tools: [{ type: "agent_toolset_20260401", configs: [{ name: "web_fetch", enabled: true }] }] });
+    await expect(ensureSandbox(api, stateFile, "prompt one", () => undefined)).resolves.toMatchObject({ agentVersion: 1 });
+  });
+
+  it("keeps a hash of the whole agent and environment params, and brings a sandbox set up from an older state file up to date once", async () => {
+    const config = await workspace();
+    const stateFile = path.join(config.workRoot, "state.json");
+    const api = new FakeApi([]);
+    await ensureSandbox(api, stateFile, "prompt one", () => undefined);
+    // A state file from before the whole params were hashed: it holds only the prompt's.
+    const { environmentId, agentId, agentVersion } = JSON.parse(await readFile(stateFile, "utf8")) as Record<string, unknown>;
+    await writeFile(stateFile, JSON.stringify({ environmentId, agentId, agentVersion, promptSha: promptSha("prompt one") }));
+    await ensureSandbox(api, stateFile, "prompt one", () => undefined);
+    expect([api.environmentCreates, api.environmentUpdates.length, api.agentCreates, api.agentUpdates]).toEqual([1, 1, 1, 1]);
+    // The updates carry the whole params, so nothing widened on a newer version is inherited.
+    expect(api.environmentUpdates[0]?.config).toEqual(api.environmentParams[0]?.config);
+    expect(api.agentUpdateParams[0]).toMatchObject({ tools: api.agentParams[0]?.tools, mcp_servers: [], multiagent: null });
+    await ensureSandbox(api, stateFile, "prompt one", () => undefined);
+    expect([api.environmentUpdates.length, api.agentUpdates]).toEqual([1, 1]);
   });
 
   it("creates the environment and agent once and versions the agent when its prompt changes", async () => {
