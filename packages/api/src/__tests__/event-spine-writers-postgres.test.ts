@@ -720,6 +720,37 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
     expect(await enquiryEvent(enquiryId)).toBe(result.eventId);
   });
 
+  it("an enquiry on the join's list that reaches one event by the time it is worked joins it; the join then closes its question as joined", async () => {
+    const v = await venue("listed, then worked");
+    const enquiryId = await enquiry(v);
+    const stays = await datelessEvent(v.venueId, "The event that stays");
+    const left = await datelessEvent(v.venueId, "The event it leaves");
+    await interestIn(v, enquiryId, stays, v.rooms.saloon);
+    await interestIn(v, enquiryId, left, v.rooms.reception);
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+
+    // Its booking in the second event is removed, so one event remains.
+    await pool.query("UPDATE bookings SET deleted_at = now() WHERE enquiry_id = $1 AND event_id = $2", [enquiryId, left]);
+    const events = await eventCount(v.venueId);
+
+    // Unlike the join, the writer does not skip a listed enquiry: it decides on today's data.
+    const replied = await reportReply(v, enquiryId);
+    expect(replied.statusCode, replied.body).toBe(200);
+    expect(await enquiryEvent(enquiryId)).toBe(stays);
+    expect(await eventCount(v.venueId)).toBe(events);
+
+    // The next run closes the question as joined, to that event, by nobody, and changes nothing else.
+    await joinOldRecords();
+    const questions = (await pool.query<{ reason: string; resolution: string | null; resolved_event_id: string | null; resolved_by: string | null; resolved: boolean }>(
+      `SELECT reason, resolution, resolved_event_id, resolved_by, resolved_at IS NOT NULL AS resolved
+         FROM event_link_reviews WHERE subject_kind = 'enquiry' AND subject_id = $1`, [enquiryId])).rows;
+    expect(questions).toEqual([{ reason: "reaches_many_events", resolution: "joined", resolved_event_id: stays, resolved_by: null, resolved: true }]);
+    expect(await joinsRecordedFor(enquiryId)).toBe(0);
+    expect(await enquiryEvent(enquiryId)).toBe(stays);
+    expect(await eventCount(v.venueId)).toBe(events);
+  });
+
   it("an event made for an enquiry stores its occasion trimmed, a blank one as none, as the join stores it", async () => {
     const v = await venue("occasions");
     const madeWith = async (eventType: string | null): Promise<string | null> => (await eventRow(await createEventFor(spine.db, {
