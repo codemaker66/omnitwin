@@ -28,6 +28,7 @@ export interface PatchInspection {
   readonly deleted: readonly string[];
   /** Old names of renamed or copied files. */
   readonly movedAway: readonly string[];
+  /** Binary patches, and text hunks that add a NUL byte (which makes git and GitHub show the file as binary). */
   readonly binary: readonly string[];
   /** Lines the patches add to and remove from files that are not tests. */
   readonly sourceLinesAdded: number;
@@ -108,6 +109,28 @@ function tail(text: string, chars = 600): string {
 
 function hasControlCharacter(name: string): boolean {
   return Array.from(name).some((char) => (char.codePointAt(0) ?? 0) < 0x20 || char === "\u007f");
+}
+
+/**
+ * Files that a text hunk gives a NUL byte. `git apply` reads such a hunk as
+ * text, but git (a NUL in a file's first 8000 bytes is its only test) and
+ * GitHub then show the file as binary, so nobody could read the change there:
+ * it counts as a binary change. Each hunk's file is named by git, from that
+ * file's own section of the series.
+ */
+async function filesGivenNul(repo: string, bodies: readonly string[]): Promise<string[]> {
+  const files: string[] = [];
+  for (const body of bodies) {
+    for (const section of body.split(/^(?=diff --git )/mu)) {
+      const hunks = section.search(/^@@/mu);
+      if (hunks < 0 || !section.slice(hunks).split("\n").some((line) => line.startsWith("+") && line.includes("\u0000"))) continue;
+      const named = await gitResult(repo, ["apply", "--numstat", "-z"], Buffer.from(section, "utf8"));
+      const entries = named.code === 0 ? parseNumstat(named.stdout) : [];
+      if (entries.length === 0) throw new Error(`a hunk adds a NUL byte to a file git cannot name: ${tail(named.stderr)}`);
+      for (const entry of entries) files.push(entry.name);
+    }
+  }
+  return files;
 }
 
 function emptyInspection(commits: readonly (string | null)[], problems: readonly string[], texts: readonly string[]): PatchInspection {
@@ -229,7 +252,7 @@ export async function inspectPatches(
 
         const movedAway = [...oldNames].filter((name) => !newNames.has(name));
         const created = [...newNames].filter((name) => !atBase.has(name) && !deleted.has(name));
-        const binary = forward.filter((entry) => entry.added === null).map((entry) => entry.name);
+        const binary = [...new Set([...forward.filter((entry) => entry.added === null).map((entry) => entry.name), ...(await filesGivenNul(repo, bodies))])];
         const sources = forward.filter((entry) => !isTestFile(entry.name));
         const changed = [
           ...[...newNames].map((name) => `${created.includes(name) ? "A" : deleted.has(name) ? "D" : "M"} ${name}`),

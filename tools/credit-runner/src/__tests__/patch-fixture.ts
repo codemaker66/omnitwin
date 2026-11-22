@@ -29,6 +29,16 @@ export interface Commit {
   readonly gitlink?: Readonly<Record<string, string>>;
   /** Paths made executable (mode 100755) through the index. */
   readonly chmodX?: readonly string[];
+  /** Index entries moved to a new path with their mode and object: a gitlink, which `git mv` cannot move without a checkout. */
+  readonly moveEntry?: Readonly<Record<string, string>>;
+}
+
+/** Links in the base commit itself, staged through the index (nothing is made on disk). */
+export interface BaseLinks {
+  /** Path to target. */
+  readonly symlink?: Readonly<Record<string, string>>;
+  /** Path to commit id. */
+  readonly gitlink?: Readonly<Record<string, string>>;
 }
 
 /** The fix most tests use: the source and its test, in one commit. */
@@ -58,6 +68,16 @@ function git(cwd: string, args: readonly string[], input?: string): string {
   return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", input, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 }
 
+function stageLinks(repo: string, links: BaseLinks): void {
+  for (const [file, target] of Object.entries(links.symlink ?? {})) {
+    const blob = git(repo, ["hash-object", "-w", "--stdin"], target);
+    git(repo, ["update-index", "--add", "--cacheinfo", `120000,${blob},${file}`]);
+  }
+  for (const [file, sha] of Object.entries(links.gitlink ?? {})) {
+    git(repo, ["update-index", "--add", "--cacheinfo", `160000,${sha},${file}`]);
+  }
+}
+
 async function writeFiles(repo: string, files: Readonly<Record<string, string | Buffer>>): Promise<void> {
   for (const [file, data] of Object.entries(files)) {
     await mkdir(path.dirname(path.join(repo, file)), { recursive: true });
@@ -69,12 +89,13 @@ async function writeFiles(repo: string, files: Readonly<Record<string, string | 
  * Builds a repository at `root` whose master is the base, commits `commits` on
  * a branch, and returns the branch's format-patch files and diff.
  * `localAttributes` goes in .git/info/attributes: attributes the agent could set
- * in its container without committing them.
+ * in its container without committing them. `baseLinks` puts symlinks and
+ * gitlinks in the base commit.
  */
 export async function patchFixture(
   root: string,
   commits: readonly Commit[],
-  options: { readonly baseFiles?: Readonly<Record<string, string>>; readonly localAttributes?: string } = {},
+  options: { readonly baseFiles?: Readonly<Record<string, string>>; readonly baseLinks?: BaseLinks; readonly localAttributes?: string } = {},
 ): Promise<PatchFixture> {
   const repo = path.join(root, "origin");
   await mkdir(repo, { recursive: true });
@@ -86,6 +107,7 @@ export async function patchFixture(
   git(repo, ["config", "uploadpack.allowFilter", "true"]);
   await writeFiles(repo, options.baseFiles ?? BASE_FILES);
   git(repo, ["add", "."]);
+  stageLinks(repo, options.baseLinks ?? {});
   git(repo, ["commit", "--quiet", "-m", "base"]);
   const base = git(repo, ["rev-parse", "HEAD"]);
   if (options.localAttributes !== undefined) await writeFile(path.join(repo, ".git", "info", "attributes"), options.localAttributes);
@@ -101,13 +123,12 @@ export async function patchFixture(
       await mkdir(path.dirname(path.join(repo, to)), { recursive: true });
       git(repo, ["mv", from, to]);
     }
-    for (const [file, target] of Object.entries(commit.symlink ?? {})) {
-      const blob = git(repo, ["hash-object", "-w", "--stdin"], target);
-      git(repo, ["update-index", "--add", "--cacheinfo", `120000,${blob},${file}`]);
-    }
+    stageLinks(repo, { symlink: commit.symlink ?? {}, gitlink: commit.gitlink ?? {} });
     for (const file of commit.chmodX ?? []) git(repo, ["update-index", "--chmod=+x", "--", file]);
-    for (const [file, sha] of Object.entries(commit.gitlink ?? {})) {
-      git(repo, ["update-index", "--add", "--cacheinfo", `160000,${sha},${file}`]);
+    for (const [from, to] of Object.entries(commit.moveEntry ?? {})) {
+      const [mode = "", object = ""] = git(repo, ["ls-files", "--stage", "--", from]).split(/\s+/u);
+      git(repo, ["update-index", "--force-remove", "--", from]);
+      git(repo, ["update-index", "--add", "--cacheinfo", `${mode},${object},${to}`]);
     }
     const body = commit.body === undefined ? "" : `${commit.body}\n\n`;
     git(repo, ["commit", "--quiet", "-m", `${commit.subject}\n\n${body}Credit-Runner-Task: robots-wildcards`]);

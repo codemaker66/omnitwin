@@ -71,9 +71,10 @@ async function verify(
   outputs: string,
   mutation?: string,
   acceptanceTimeoutMinutes?: number,
+  acceptance = ACCEPTANCE,
 ): Promise<{ result: VerifyOutput; exitCode: number | null; stdout: string }> {
   const taskFile = path.join(path.dirname(repo), "task.json");
-  await writeFile(taskFile, JSON.stringify({ id: "t1", baseSha: base, repoDir: repo, acceptance: ACCEPTANCE, mutation, acceptanceTimeoutMinutes }));
+  await writeFile(taskFile, JSON.stringify({ id: "t1", baseSha: base, repoDir: repo, acceptance, mutation, acceptanceTimeoutMinutes }));
   const child = spawnSync(process.execPath, [VERIFY, taskFile], {
     encoding: "utf8",
     env: { ...process.env, VERIFY_OUTPUTS_DIR: outputs },
@@ -157,6 +158,23 @@ describe("sandbox verify.mjs", () => {
     expect(result.base?.exitCode).toBeNull();
     expect(result.ok).toBe(false);
     expect(result.problems).toContain("the acceptance command timed out without the fix, which proves nothing about the tests");
+  });
+
+  // Git Bash on Windows reports a shell killed by a signal as an exit status
+  // (`kill -9 $$` reads as 2304), so this runs where CI runs: Linux.
+  it.skipIf(process.platform === "win32")("does not count a run without the fix that ended by a signal as the test failing", async () => {
+    const { repo, base, outputs } = await repoWith(BROKEN);
+    await commit(repo, { "lib.mjs": FIXED, "__tests__/lib.test.mjs": TEST });
+    // Passes on the branch; without the fix the shell kills itself instead of exiting.
+    const { result } = await verify(repo, base, outputs, undefined, undefined, `${ACCEPTANCE} || kill -9 $$`);
+    expect(result.branch?.exitCode).toBe(0);
+    expect(result.base?.mode).toBe("revert-source");
+    expect(result.base?.exitCode).toBeNull();
+    expect(result.base?.timedOut).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.problems).toEqual([
+      "the acceptance command without the fix ended with no exit code (a signal, or it never started), which proves nothing about the tests",
+    ]);
   });
 
   it("flags a new source file, even beside a line removed elsewhere, whose test may fail without it on a missing module", async () => {

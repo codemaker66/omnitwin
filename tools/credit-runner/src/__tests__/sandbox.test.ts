@@ -433,6 +433,55 @@ describe("sandbox launcher", () => {
     expect(record.review.changed).toContain("M README.md");
   });
 
+  it("rejects an edit to a symlink, or a move of a gitlink, that is already at the base", async () => {
+    // A modified symlink carries no mode line in the patch: only the base's own entry shows what it is.
+    const baseLinks = { symlink: { "packages/api/src/link.ts": "services/page-check.ts" }, gitlink: { "vendor/lib": "d".repeat(40) } };
+    const edited = await reviewOf(await fixture([{ ...FIX, symlink: { "packages/api/src/link.ts": "../../../../.github/workflows/ci.yml" } }], { baseLinks }));
+    expect(edited.review.verdict).toBe("rejected");
+    expect(edited.review.reasons).toEqual(["packages/api/src/link.ts: is a symlink at the base"]);
+
+    // git writes the move as a rename with no mode line, so again only the base's entry shows it.
+    const moved = await reviewOf(await fixture([{ ...FIX, moveEntry: { "vendor/lib": "vendor/lib2" } }], { baseLinks }));
+    expect(moved.review.verdict).toBe("rejected");
+    expect(moved.review.reasons).toEqual(["vendor/lib: is a submodule link (gitlink) at the base"]);
+    expect(moved.review.changed).toEqual(expect.arrayContaining(["A vendor/lib2", "R vendor/lib"]));
+  });
+
+  it("rejects a hand-written change of a file into a symlink in place", async () => {
+    // git writes a type change as a delete and a create; a hand-written patch can change the mode in place.
+    const linked = await fixture([{ ...FIX, write: { ...FIX.write, "README.md": "../../outside" } }]);
+    const name = Object.keys(linked.patches)[0] ?? "";
+    const original = linked.patches[name] ?? "";
+    const inPlace = original.replace(
+      /(diff --git a\/README\.md b\/README\.md\n)index ([0-9a-f]+\.\.[0-9a-f]+) 100644\n/u,
+      "$1old mode 100644\nnew mode 120000\nindex $2\n",
+    );
+    expect(inPlace).not.toBe(original);
+    const record = await reviewOf(linked, { outputs: outputsOf(linked, { [name]: inPlace }) });
+    expect(record.review.verdict).toBe("rejected");
+    expect(record.review.reasons).toContain("README.md: changes a mode 100644 => 120000, a symlink");
+  });
+
+  it("rejects a path holding a control character, written in git's quoted form", async () => {
+    const plain = await fixture([{ ...FIX, write: { ...FIX.write, "docs/ab.md": "notes\n" } }]);
+    const name = Object.keys(plain.patches)[0] ?? "";
+    const quoted = (plain.patches[name] ?? "").replaceAll("a/docs/ab.md", '"a/docs/a\\tb.md"').replaceAll("b/docs/ab.md", '"b/docs/a\\tb.md"');
+    const record = await reviewOf(plain, { outputs: outputsOf(plain, { [name]: quoted }) });
+    expect(record.review.verdict).toBe("rejected");
+    expect(record.review.reasons).toContain('a path holds a control character: "docs/a\\tb.md"');
+  });
+
+  it("counts added text holding a NUL byte as a binary change, as git and GitHub show it", async () => {
+    // git apply reads the hunk as text, but git and GitHub call a file holding a NUL binary, so no one could read it there.
+    const notes = await fixture([{ ...FIX, write: { ...FIX.write, "docs/notes.md": "hidden text\n" } }]);
+    const name = Object.keys(notes.patches)[0] ?? "";
+    const withNul = (notes.patches[name] ?? "").replace("+hidden text", "+hidden\u0000text");
+    expect(withNul).toContain("\u0000");
+    const record = await reviewOf(notes, { outputs: outputsOf(notes, { [name]: withNul }) });
+    expect(record.review.verdict).toBe("rejected");
+    expect(record.review.reasons).toEqual(["binary change: docs/notes.md (it cannot be read or scanned as text)"]);
+  });
+
   it("rejects a .patch output that is not a format-patch file, instead of ignoring it", async () => {
     const record = await reviewOf(happy, { outputs: outputsOf(happy, { "extra.patch": "diff --git a/.github/x b/.github/x\n+on: push\n" }) });
     expect(record.review.reasons).toContain("extra.patch came back but is not a format-patch file, so the review cannot account for it");
