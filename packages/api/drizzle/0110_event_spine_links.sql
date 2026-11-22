@@ -40,7 +40,8 @@
 --      call of it: each proposal, deal and enquiry with no event joins the one
 --      event a path reaches, goes on the list when paths disagree, or gets an
 --      event of its own when it must have one and nothing reaches any. The
---      nightly Event rules workflow, and a run by hand, call it again.
+--      nightly Event rules workflow, and a run by hand asked to join, call it
+--      again.
 --   8. spine_undo_joins(), the join's undo, read from its own record: an
 --      operator's tool, run by hand. This file never calls it.
 --
@@ -253,10 +254,10 @@ ON CONFLICT DO NOTHING;
 -- 7. The join of old records -------------------------------------------------
 -- The one repeatable step that joins proposals, deals and enquiries made
 -- before the links to their events, never by a guess. It is the only writer
--- of event_link_joins. It runs below, and again every night and when run by
--- hand, beside live writers. Run twice, the second run changes nothing, unless
--- a chain of records needed more than the four rounds one run makes (see
--- Enquiries, below): the next run finishes such a chain.
+-- of event_link_joins. It runs below, and again every night and when a run
+-- by hand asks for it, beside live writers. Run twice, the second run changes
+-- nothing, unless a chain of records needed more than the four rounds one run
+-- makes (see Enquiries, below): a later run finishes such a chain.
 --
 -- Locks. It takes no table lock, and every row lock it asks for is SKIP
 -- LOCKED, so it never waits for one of those: each record is decided first
@@ -298,8 +299,9 @@ ON CONFLICT DO NOTHING;
 -- enquiry to the one live event its bookings, deals and proposals sit in, or
 -- lists it when they sit in several. Steps 1 to 3 are repeated while a round
 -- joins anything (at most four rounds; a chain that needs a fifth round is
--- finished by the next run), so an enquiry whose deals or proposals were
--- joined in one round is settled from all of them together in the next, and the result never depends on the order records are read in.
+-- finished by a later run), so an enquiry whose deals or proposals were
+-- joined in one round is settled from all of them together in the next, and
+-- the result never depends on the order records are read in.
 -- An event is made for an enquiry, by step 1, 2 or 3, only when nothing of
 -- its own (held dates, deals, proposals, floor plan) reaches a live event, and
 -- in step 3 only after every proposal that reaches an existing event has been
@@ -615,7 +617,7 @@ BEGIN
       IF NOT v_second THEN
         PERFORM 1 FROM "events" e WHERE e."id" = v_target AND e."deleted_at" IS NULL FOR KEY SHARE SKIP LOCKED;
         CONTINUE WHEN NOT FOUND;
-        -- The one wait (see above): an open deal a writer has put on the same
+        -- The first wait (see above): an open deal a writer has put on the same
         -- event and not committed is met here by the one-open-deal index. The
         -- update waits for that writer at most deal_update_wait, once in a run;
         -- if it commits, this deal is listed instead, and if not, the deal is

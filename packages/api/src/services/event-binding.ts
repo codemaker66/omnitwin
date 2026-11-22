@@ -51,7 +51,10 @@ import { bookings, enquiries, eventPhases, events, venues } from "../db/schema.j
 // when anything else of the enquiry's own (its bookings, deals, proposals or
 // floor plan) reaches a different live event: the join of old records lists
 // such an enquiry for a person, and the bind does not choose for them; the
-// booking still joins its event as before. A booking a person moves
+// booking still joins its event as before. (An enquiry whose link already
+// names a deleted event is not listed, since the join reads only enquiries
+// with no link: its link stays, and the spine's count shows it as a link to a
+// closed event.) A booking a person moves
 // to another event takes the link with it when it was the enquiry's last
 // live booking in the old event (followBookingToEvent; a released or
 // cancelled one left there does not count). The link is moved, never
@@ -266,8 +269,9 @@ export async function followBookingToEvent(
  * enquiry that may have an event, the enquiry's link is written to it, unless
  * anything else of the enquiry's own (its bookings, deals, proposals or floor
  * plan) reaches a different live event of its venue: then the link is left as
- * it is, for the join's list. Call inside the booking write's transaction,
- * before the booking is inserted.
+ * it is. An empty one is for the join's list; one that names a deleted event
+ * stays, and the spine's count shows it. Call inside the booking write's
+ * transaction, before the booking is inserted.
  */
 export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target: BindTarget): Promise<BindOutcome> {
   if (target.join === "event") {

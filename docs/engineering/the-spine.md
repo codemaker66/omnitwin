@@ -51,7 +51,9 @@ The bind writes an enquiry's link only when nothing else of the enquiry's own (i
 bookings, deals and proposals, or its floor plan) reaches another live event of its
 venue; otherwise the booking joins its event as before and the link is left for the
 list, where the join puts the enquiry for a person. Joining is never a guess, in the
-bind as in the join.
+bind as in the join. (One case is not listed: an enquiry whose link already names a
+deleted event keeps that link, and the join reads only enquiries with no link. The
+count shows it as a link to a closed event.)
 
 Until the next pull request lands, the join is what joins new enquiries, deals and
 proposals, so the count can read above zero between a record being made and the
@@ -60,9 +62,9 @@ next run.
 ## The join of old records
 
 `spine_join_old_records()` returns `(joined, events_made, listed)`. The migration
-calls it once; the nightly run, and a run by hand asked to join, calls it again. Run
+calls it once; the nightly run, and a run by hand asked to join, call it again. Run
 twice, the second run changes nothing, unless a chain of records needed more than the
-four rounds one run makes (below): the next run finishes it. It is the only writer
+four rounds one run makes (below): a later run finishes it. It is the only writer
 of `event_link_joins`, the record of every
 join it made (what makes it undoable). Its steps:
 
@@ -179,8 +181,9 @@ error's message is printed: the workflow log is public.
 
 **Every night, and by hand.** The Event rules workflow
 ([`event-rules.yml`](../../.github/workflows/event-rules.yml), "Event rules (reports
-only; blocks nothing)") runs the command with `--join` once a night, and whenever
-someone runs it from the Actions page: right after a release, say. **Run it from
+only; blocks nothing)") runs the command once a night with `--join`, and whenever
+someone runs it from the Actions page (right after a release, say; by hand it reads
+only unless asked to join, as below). **Run it from
 master**: the job runs only on master's code, so a run started from another branch
 does nothing. **By hand it reads only, unless its `join` box is ticked** (the input
 defaults to false); the schedule joins every night whatever that default. A join by
@@ -276,8 +279,9 @@ the spine's migration is the newest one applied; once a later migration has been
 applied on top of it, removing its row breaks the prefix, and the way back is
 forward. Stop the joins (step 1), run the undo (step 2), then take the spine's code
 out by a new commit that keeps the migration file and its journal entry. The columns
-stay, empty and nullable; the older writers ignore them. (The backup branch remains
-the last resort.)
+stay, nullable, holding only the links that writers other than the join wrote (the
+bind's, in this pull request) and any join the undo left alone; the older writers
+ignore them. (The backup branch remains the last resort.)
 
 1. **Stop the joins.** Disable the Event rules workflow (Actions → Event rules →
    Disable workflow; it stops nothing else), or remove `--join` from it. Otherwise
