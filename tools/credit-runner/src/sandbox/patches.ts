@@ -28,7 +28,7 @@ export interface PatchInspection {
   readonly deleted: readonly string[];
   /** Old names of renamed or copied files. */
   readonly movedAway: readonly string[];
-  /** Binary patches, and text hunks that add a NUL byte (which makes git and GitHub show the file as binary). */
+  /** Binary patches, text hunks that add a NUL byte, and paths the base's .gitattributes keeps from being diffed as text: git and GitHub show all of them as binary. */
   readonly binary: readonly string[];
   /** Lines the patches add to and remove from files that are not tests. */
   readonly sourceLinesAdded: number;
@@ -128,6 +128,25 @@ async function filesGivenNul(repo: string, bodies: readonly string[]): Promise<s
       const entries = named.code === 0 ? parseNumstat(named.stdout) : [];
       if (entries.length === 0) throw new Error(`a hunk adds a NUL byte to a file git cannot name: ${tail(named.stderr)}`);
       for (const entry of entries) files.push(entry.name);
+    }
+  }
+  return files;
+}
+
+/**
+ * Paths the base's own .gitattributes keeps from being diffed as text (`-diff`,
+ * `diff=false`, or `binary`, which unsets diff): git and GitHub show a change
+ * to them as binary whatever the patch wrote, so it counts as a binary change.
+ * git reads the attributes from the base commit itself.
+ */
+async function filesTheBaseCallsBinary(repo: string, baseSha: string, paths: readonly string[]): Promise<string[]> {
+  const files: string[] = [];
+  for (let start = 0; start < paths.length; start += 200) {
+    const fields = (await git(repo, ["check-attr", "-z", `--source=${baseSha}`, "diff", "--", ...paths.slice(start, start + 200)])).split("\0");
+    // -z prints path, attribute and value, each ended by a NUL.
+    for (let index = 0; index + 2 < fields.length; index += 3) {
+      const value = fields[index + 2];
+      if (value === "unset" || value === "false") files.push(fields[index] ?? "");
     }
   }
   return files;
@@ -252,7 +271,13 @@ export async function inspectPatches(
 
         const movedAway = [...oldNames].filter((name) => !newNames.has(name));
         const created = [...newNames].filter((name) => !atBase.has(name) && !deleted.has(name));
-        const binary = [...new Set([...forward.filter((entry) => entry.added === null).map((entry) => entry.name), ...(await filesGivenNul(repo, bodies))])];
+        const binary = [
+          ...new Set([
+            ...forward.filter((entry) => entry.added === null).map((entry) => entry.name),
+            ...(await filesGivenNul(repo, bodies)),
+            ...(await filesTheBaseCallsBinary(repo, options.baseSha, touched)),
+          ]),
+        ];
         const sources = forward.filter((entry) => !isTestFile(entry.name));
         const changed = [
           ...[...newNames].map((name) => `${created.includes(name) ? "A" : deleted.has(name) ? "D" : "M"} ${name}`),

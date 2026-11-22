@@ -8,7 +8,7 @@ import { FrontmatterError, parseFrontmatter } from "../frontmatter.js";
 import { protectedPathViolations } from "../git.js";
 import { ledgerHasSession } from "../sandbox/credit-ledger.js";
 import { keyFileExposure, readKey, unexpectedPrincipals } from "../keys.js";
-import { DEFAULT_MODEL, MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
+import { AGENT_EFFORT, AGENT_MODEL, MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
 
 describe("parseFrontmatter", () => {
   it("reads scalars, quoted strings, both list forms and the body", () => {
@@ -77,12 +77,15 @@ describe("parseTask", () => {
       id: "fix-thing",
       title: "fix-thing",
       enabled: true,
-      model: DEFAULT_MODEL,
-      effort: "high",
+      // A spec's defaults are the sandbox agent's own model and effort.
+      model: AGENT_MODEL,
+      effort: AGENT_EFFORT,
       budgetUsd: 5,
       timeoutMinutes: 60,
       install: true,
       readOnly: false,
+      allowedTools: undefined,
+      extraAllowedTools: [],
       spec: "Do the thing.",
     });
   });
@@ -93,8 +96,9 @@ describe("parseTask", () => {
     expect([task.budgetUsd, task.timeoutMinutes]).toEqual([MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES]);
   });
 
-  it("still parses the tool keys of existing specs", () => {
-    expect(() => parseTask("---\nid: a\nacceptance: x\nallowed_tools: [Read]\nextra_allowed_tools: [Bash(pnpm *)]\n---\nb", "a.md")).not.toThrow();
+  it("still parses the tool keys, so the launcher can refuse them by name", () => {
+    const task = parseTask("---\nid: a\nacceptance: x\nallowed_tools: [Read]\nextra_allowed_tools: [Bash(pnpm *)]\n---\nb", "a.md");
+    expect([task.allowedTools, task.extraAllowedTools]).toEqual([["Read"], ["Bash(pnpm *)"]]);
   });
 
   it.each([

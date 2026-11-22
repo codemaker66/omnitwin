@@ -1,12 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Task } from "../task.js";
+import { AGENT_EFFORT, AGENT_MODEL, type Task } from "../task.js";
 import type { SandboxApi } from "./api.js";
 import { sandboxSystemPrompt } from "./brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "./credit-ledger.js";
 import { reviewRun, type Review } from "./review.js";
 import { isStopped, listCostUsd, recollectSession, runSession, SessionMayExistError, type SessionRunResult } from "./session.js";
-import { AGENT_EFFORT, AGENT_MODEL, ensureSandbox } from "./setup.js";
+import { ensureSandbox } from "./setup.js";
 
 export interface LauncherConfig {
   /** Run records, state and specs live here (outside the repository). */
@@ -40,10 +40,14 @@ export interface JobOptions {
   readonly graceMs?: number;
 }
 
+/** The base a spec may name: every run starts from master. */
+const MASTER_REFS = new Set(["master", "origin/master", "refs/heads/master", "refs/remotes/origin/master"]);
+
 /**
  * Spec keys this lane would otherwise ignore: it runs every spec it is given,
- * on one agent with one model, effort and full toolset. A spec asking for
- * anything else is refused, never run as something it did not ask for.
+ * from master, on one agent with one model and effort and its full toolset, and
+ * the agent always installs. A spec asking for anything else is refused, never
+ * run as something it did not ask for.
  */
 export function unhonouredSpecKeys(task: Task): string[] {
   const keys: string[] = [];
@@ -51,6 +55,10 @@ export function unhonouredSpecKeys(task: Task): string[] {
   if (task.readOnly) keys.push("read_only: true (the sandbox agent always has its full toolset)");
   if (task.model !== AGENT_MODEL) keys.push(`model: ${task.model} (the sandbox agent runs ${AGENT_MODEL})`);
   if (task.effort !== AGENT_EFFORT) keys.push(`effort: ${task.effort} (the sandbox agent runs at ${AGENT_EFFORT})`);
+  if (task.base !== undefined && !MASTER_REFS.has(task.base)) keys.push(`base: ${task.base} (every run starts from master)`);
+  if (!task.install) keys.push("install: false (the sandbox agent always installs)");
+  if (task.allowedTools !== undefined) keys.push("allowed_tools (the sandbox agent has one fixed toolset)");
+  if (task.extraAllowedTools.length > 0) keys.push("extra_allowed_tools (the sandbox agent has one fixed toolset)");
   return keys;
 }
 

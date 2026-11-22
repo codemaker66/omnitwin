@@ -1,12 +1,20 @@
 import { z } from "zod";
 import { parseFrontmatter } from "./frontmatter.js";
 
-export const DEFAULT_MODEL = "claude-opus-5-5";
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type Effort = (typeof EFFORTS)[number];
 
 /**
- * Tool rules. The sandbox lane takes none from a spec (its agent has one fixed
- * toolset); the keys still parse so existing specs keep working. A rule is never
- * allowed to start with "-": it would read as a command-line flag.
+ * The sandbox agent's model and effort: one source for the agent setup.ts
+ * creates, a spec's defaults, and the only values the lane runs.
+ */
+export const AGENT_MODEL = "claude-opus-5-5";
+export const AGENT_EFFORT: Effort = "high";
+
+/**
+ * Tool rules. The sandbox lane honours none (its agent has one fixed toolset),
+ * so it refuses a spec that sets them; they still parse, for a clear refusal. A
+ * rule is never allowed to start with "-": it would read as a command-line flag.
  */
 const toolList = z.array(z.string().regex(/^(?!-)\S/u, "a tool rule must not start with \"-\" or whitespace"));
 
@@ -21,8 +29,8 @@ const frontmatterSchema = z
       .regex(/^[a-z0-9][a-z0-9-]{0,62}$/u, "id must be lowercase letters, digits and dashes (it names the branch and folder)"),
     title: z.string().min(1).optional(),
     enabled: z.boolean().default(true),
-    model: z.string().regex(/^[a-z0-9.\-[\]]+$/u).default(DEFAULT_MODEL),
-    effort: z.enum(["low", "medium", "high", "xhigh", "max"]).default("high"),
+    model: z.string().regex(/^[a-z0-9.\-[\]]+$/u).default(AGENT_MODEL),
+    effort: z.enum(EFFORTS).default(AGENT_EFFORT),
     budget_usd: z.number().positive().max(MAX_BUDGET_USD).default(5),
     timeout_minutes: z.number().int().positive().max(MAX_TIMEOUT_MINUTES).default(60),
     acceptance: z.string().min(1),
@@ -44,8 +52,6 @@ const frontmatterSchema = z
   })
   .strict();
 
-export type Effort = z.infer<typeof frontmatterSchema>["effort"];
-
 export interface Task {
   readonly id: string;
   readonly title: string;
@@ -58,6 +64,9 @@ export interface Task {
   readonly install: boolean;
   readonly readOnly: boolean;
   readonly base: string | undefined;
+  /** As the spec set them (undefined and empty when it did not): the sandbox lane refuses either. */
+  readonly allowedTools: readonly string[] | undefined;
+  readonly extraAllowedTools: readonly string[];
   readonly mutation?: string | undefined;
   readonly precondition?: string | undefined;
   readonly spec: string;
@@ -80,6 +89,8 @@ export function parseTask(text: string, file: string): Task {
     install: fm.install,
     readOnly: fm.read_only,
     base: fm.base,
+    allowedTools: fm.allowed_tools,
+    extraAllowedTools: fm.extra_allowed_tools,
     mutation: fm.mutation,
     precondition: fm.precondition,
     spec: body,

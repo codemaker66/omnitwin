@@ -4,7 +4,7 @@ import path from "node:path";
 import type { BetaManagedAgentsSession, SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
 import { isAmbiguousFailure, type OutputFile, type SandboxApi, type SessionEvent, type SessionRef } from "./api.js";
 import { outcomeFor, type RunFacts, VERIFY_COMMAND, verifyTaskJson } from "./brief.js";
-import { MAX_OUTPUT_BYTES, MAX_OUTPUTS_TOTAL_BYTES, OutputTooLargeError, planOutputs } from "./outputs.js";
+import { MAX_OUTPUT_BYTES, MAX_OUTPUTS_TOTAL_BYTES, OutputTimeoutError, OutputTooLargeError, planOutputs } from "./outputs.js";
 import type { SandboxState } from "./setup.js";
 
 export interface SessionRunOptions {
@@ -308,8 +308,10 @@ async function finishRun(
         continue;
       }
     } catch (error) {
-      if (!(error instanceof OutputTooLargeError)) throw error;
-      refusedOutputs.push(`${JSON.stringify(file.filename)} ran past its size limit while downloading; cut off and removed`);
+      // Past its cap or its deadline: a reason the review rejects on, not a failed run.
+      if (error instanceof OutputTooLargeError) refusedOutputs.push(`${JSON.stringify(file.filename)} ran past its size limit while downloading; cut off and removed`);
+      else if (error instanceof OutputTimeoutError) refusedOutputs.push(`${JSON.stringify(file.filename)} took longer than ${String(error.minutes)} min to download; abandoned`);
+      else throw error;
       continue;
     }
     room -= (await stat(local)).size;

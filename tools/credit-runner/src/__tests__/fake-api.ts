@@ -13,7 +13,7 @@ import type {
   SessionRef,
   SessionTotals,
 } from "../sandbox/api.js";
-import { writeCapped } from "../sandbox/outputs.js";
+import { OutputTimeoutError, writeCapped } from "../sandbox/outputs.js";
 import { agentParams, environmentParams } from "../sandbox/setup.js";
 
 /** An environment as the API returns it, from the params it was created or updated with. */
@@ -119,6 +119,8 @@ export class FakeApi implements SandboxApi {
   listedSizes: Record<string, number> = {};
   /** The outputs downloadFile was asked for, by name. */
   readonly downloads: string[] = [];
+  /** Outputs whose download passes its deadline, by name. */
+  stalledDownloads: string[] = [];
   /** Streams opened: one per connection. */
   opened = 0;
   failArchive = false;
@@ -275,6 +277,7 @@ export class FakeApi implements SandboxApi {
     this.downloads.push(filename);
     const text = this.files[filename];
     if (text === null || text === undefined) return "not-downloadable";
+    if (this.stalledDownloads.includes(filename)) throw new OutputTimeoutError(5 * 60_000);
     await writeCapped([Buffer.from(text, "utf8")], destination, maxBytes);
     return "saved";
   };

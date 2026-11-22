@@ -5,23 +5,25 @@ import type { OutputFile } from "./api.js";
  * Which of a session's outputs come to this machine, and under what names.
  *
  * Only the files the review reads are downloaded: the format-patch files
- * (`NNNN-<subject>.patch`, as `git format-patch` names them) and `diff.patch`.
- * Each is saved under a name the launcher chooses (`patch-0001.patch`, ...,
- * `diff.patch`), never the agent's, with the fixed suffix `.patch`. A listed
- * size over the cap is refused before anything is downloaded, and the
- * download itself is cut off at the cap. Any other output ending in `.patch`
- * is refused, so the review rejects the run rather than ignore a patch it
- * cannot account for; every other output (the report, logs, the verifier's
- * JSON) stays in the sandbox.
+ * (`NNNN-<subject>.patch`, as `git format-patch` names them), `diff.patch` and
+ * `precondition.json`. Each is saved under a name the launcher chooses
+ * (`patch-0001.patch`, ..., `diff.patch`, `precondition.json`), never the
+ * agent's. A listed size over the cap is refused before anything is
+ * downloaded, and the download itself is cut off at the cap. Any other output
+ * ending in `.patch`, or more than MAX_PATCH_OUTPUTS of them, is refused, so the
+ * review rejects the run rather than ignore a patch it cannot account for; every
+ * other output (logs, the verifier's JSON) stays in the sandbox.
  */
 
 /** The largest one output can be. A large generated change fits; a runaway log renamed .patch does not. */
 export const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 /** The largest a run's downloads can be together. */
 export const MAX_OUTPUTS_TOTAL_BYTES = 64 * 1024 * 1024;
+/** The most .patch outputs a run may leave: past this none is read, and the run is rejected. */
+export const MAX_PATCH_OUTPUTS = 50;
 
 export interface OutputPlan {
-  /** In the order the review reads them: the format-patch files by name, then diff.patch. */
+  /** In the order the review reads them: the format-patch files by name, then diff.patch, then precondition.json. */
   readonly downloads: readonly { readonly file: OutputFile; readonly localName: string }[];
   /** Why a listed output the launcher would read was not downloaded; each rejects the run. */
   readonly refused: readonly string[];
@@ -55,25 +57,38 @@ export function planOutputs(files: readonly OutputFile[]): OutputPlan {
   const left: string[] = [];
   const patches: OutputFile[] = [];
   const diffs: OutputFile[] = [];
+  const preconditions: OutputFile[] = [];
+  const baseOf = (file: OutputFile): string => segmentsOf(file.filename).pop() ?? "";
+  const patchOutputs = files.filter((file) => baseOf(file).toLowerCase().endsWith(".patch")).length;
+  if (patchOutputs > MAX_PATCH_OUTPUTS) {
+    refused.push(`${String(patchOutputs)} .patch outputs came back, more than the ${String(MAX_PATCH_OUTPUTS)} the launcher reads; none was downloaded`);
+  }
   for (const file of files) {
     const segments = segmentsOf(file.filename);
     const base = segments[segments.length - 1] ?? "";
-    if (!base.toLowerCase().endsWith(".patch")) {
+    const isPatch = base.toLowerCase().endsWith(".patch");
+    if (isPatch && patchOutputs > MAX_PATCH_OUTPUTS) continue;
+    if (!isPatch && base !== "precondition.json") {
       left.push(file.filename);
       continue;
     }
     const shown = JSON.stringify(file.filename);
     if (segments.some(isWindowsDeviceName)) refused.push(`${shown} names a Windows device; not downloaded`);
+    else if (base === "precondition.json") preconditions.push(file);
     else if (base === "diff.patch") diffs.push(file);
     else if (FORMAT_PATCH.test(base)) patches.push(file);
     else refused.push(`${shown} came back but is not a format-patch file or diff.patch, so the review cannot account for it; not downloaded`);
   }
-  if (diffs.length > 1) refused.push(`${String(diffs.length)} files named diff.patch came back; none was downloaded`);
+  const single = (found: readonly OutputFile[], name: string): OutputFile[] => {
+    if (found.length > 1) refused.push(`${String(found.length)} files named ${name} came back; none was downloaded`);
+    return found.length === 1 ? [...found] : [];
+  };
 
   const byName = (a: OutputFile, b: OutputFile): number => (a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0);
   const wanted = [
     ...[...patches].sort(byName).map((file, index) => ({ file, localName: `patch-${String(index + 1).padStart(4, "0")}.patch` })),
-    ...(diffs.length === 1 && diffs[0] !== undefined ? [{ file: diffs[0], localName: "diff.patch" }] : []),
+    ...single(diffs, "diff.patch").map((file) => ({ file, localName: "diff.patch" })),
+    ...single(preconditions, "precondition.json").map((file) => ({ file, localName: "precondition.json" })),
   ];
   const downloads: { file: OutputFile; localName: string }[] = [];
   let total = 0;
@@ -96,6 +111,17 @@ export class OutputTooLargeError extends Error {
   constructor(destination: string, maxBytes: number) {
     super(`a download to ${destination} passed its ${String(maxBytes)}-byte limit and was cut off`);
     this.name = "OutputTooLargeError";
+  }
+}
+
+/** A download that ran past its deadline: abandoned, and its partial file removed once the abort reaches it. */
+export class OutputTimeoutError extends Error {
+  readonly minutes: number;
+  constructor(timeoutMs: number) {
+    const minutes = timeoutMs / 60_000;
+    super(`a download took longer than ${String(minutes)} min and was abandoned`);
+    this.name = "OutputTimeoutError";
+    this.minutes = minutes;
   }
 }
 

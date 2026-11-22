@@ -7,7 +7,7 @@ import type {
   BetaManagedAgentsStreamSessionEvents,
 } from "@anthropic-ai/sdk/resources/beta/sessions/events";
 import type { BetaManagedAgentsSession, SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
-import { chunksOf, writeCapped } from "./outputs.js";
+import { chunksOf, OutputTimeoutError, writeCapped } from "./outputs.js";
 
 /** One event, as the live stream or the history list returns it. */
 export type SessionEvent = BetaManagedAgentsStreamSessionEvents | BetaManagedAgentsSessionEvent;
@@ -246,7 +246,7 @@ export function sdkSandboxApi(apiKey: string, fetchImpl?: ClientOptions["fetch"]
           await writeCapped(response.body === null ? [] : chunksOf(response.body), destination, maxBytes);
           return "saved";
         },
-        () => new Anthropic.APIConnectionTimeoutError({ message: `downloading an output took over ${String(DOWNLOAD_TIMEOUT_MS / 60_000)} min` }),
+        () => new OutputTimeoutError(DOWNLOAD_TIMEOUT_MS),
       ),
   };
 }

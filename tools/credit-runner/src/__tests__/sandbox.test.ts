@@ -31,14 +31,23 @@ import {
 import { outcomeFor, promptSha, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "../sandbox/credit-ledger.js";
 import { collectSandboxJob, runSandboxJob, type JobOptions, type LauncherConfig } from "../sandbox/launcher.js";
-import { isWindowsDeviceName, MAX_OUTPUT_BYTES, MAX_OUTPUTS_TOTAL_BYTES, OutputTooLargeError, planOutputs, writeCapped } from "../sandbox/outputs.js";
+import {
+  isWindowsDeviceName,
+  MAX_OUTPUT_BYTES,
+  MAX_OUTPUTS_TOTAL_BYTES,
+  MAX_PATCH_OUTPUTS,
+  OutputTimeoutError,
+  OutputTooLargeError,
+  planOutputs,
+  writeCapped,
+} from "../sandbox/outputs.js";
 import { unquoteGitPath } from "../sandbox/patches.js";
 import { ADVISORY_FLAG } from "../sandbox/review.js";
 import { centsString, invokesVerifier, parseVerifyOutput, SessionMayExistError } from "../sandbox/session.js";
 import { ensureSandbox } from "../sandbox/setup.js";
 import { parseTask } from "../task.js";
 import { FakeApi } from "./fake-api.js";
-import { FIX, PAGE_CHECK, PAGE_CHECK_TEST, patchFixture, type Commit, type PatchFixture } from "./patch-fixture.js";
+import { BASE_FILES, FIX, PAGE_CHECK, PAGE_CHECK_TEST, patchFixture, type Commit, type PatchFixture } from "./patch-fixture.js";
 
 // Every ledger write goes through this spy, so a test can show that one did not happen.
 vi.mock("../sandbox/credit-ledger.js", async (importOriginal) => {
@@ -515,6 +524,43 @@ describe("sandbox launcher", () => {
     );
   });
 
+  it("reads precondition.json: a failed precondition rejects the run, and so does one it cannot read", async () => {
+    const failed = await reviewOf(happy, { outputs: outputsOf(happy, { "precondition.json": '{"ok":false}' }) });
+    expect(failed.review.reasons).toContain("the precondition failed: the code the task cites has moved, so the task no longer applies as written");
+    const garbled = await reviewOf(happy, { outputs: outputsOf(happy, { "precondition.json": "yes" }) });
+    expect(garbled.review.reasons).toContain('precondition.json holds neither {"ok":true} nor {"ok":false}');
+    const passed = await reviewOf(happy, { outputs: outputsOf(happy, { "precondition.json": '{"ok":true}\n' }) });
+    expect(passed.review.reasons).toEqual([]);
+    expect(passed.result.outputs.map((file) => path.basename(file))).toEqual(["patch-0001.patch", "diff.patch", "precondition.json"]);
+  });
+
+  it("turns a download that passes its deadline into a reason, as one past its size cap, and still writes the review", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    api.stalledDownloads = ["diff.patch"];
+    const record = await job(api, config);
+    if (record.kind !== "ran") throw new Error(record.reason);
+    expect(record.review.reasons).toContain('"diff.patch" took longer than 5 min to download; abandoned');
+    expect(record.review.reasons).toContain("diff.patch did not come back");
+    expect(await readFile(path.join(record.runDir, "review.md"), "utf8")).toMatch(/^# REJECTED/u);
+  });
+
+  it("counts a path the base's .gitattributes marks binary or -diff as a binary change, even when the patch writes it as text", async () => {
+    const marked = await fixture([{ ...FIX, write: { ...FIX.write, "docs/notes.md": "new\n", "data/table.dat": "1 2 3\n" } }], {
+      baseFiles: { ...BASE_FILES, ".gitattributes": "*.md -diff\n*.dat binary\n", "docs/notes.md": "old\n" },
+      formatPatchArgs: ["--text"],
+    });
+    // Written as text, so git apply and its numstat read both as text.
+    expect(Object.values(marked.patches).join("")).toContain("+new");
+    expect(Object.values(marked.patches).join("")).toContain("+1 2 3");
+    const record = await reviewOf(marked);
+    expect(record.review.verdict).toBe("rejected");
+    expect([...record.review.reasons].sort()).toEqual([
+      "binary change: data/table.dat (it cannot be read or scanned as text)",
+      "binary change: docs/notes.md (it cannot be read or scanned as text)",
+    ]);
+  });
+
   it("brings back only the outputs the review reads, refusing device names and sizes over the cap before downloading", async () => {
     const config = await workspace();
     const api = new FakeApi(
@@ -625,12 +671,16 @@ describe("sandbox launcher", () => {
     expect(ledger.lines.map((line) => line.costUsd)).toEqual([2.87]);
   });
 
-  it("refuses a spec whose enabled, read_only, model or effort the sandbox lane would not honour, before anything starts", async () => {
+  it("refuses a spec with any key the sandbox lane would not honour, before anything starts", async () => {
     for (const [line, said] of [
       ["enabled: false", "enabled: false"],
       ["read_only: true", "read_only: true"],
       ["model: claude-sonnet-5", "model: claude-sonnet-5"],
       ["effort: low", "effort: low"],
+      ["base: origin/feature-x", "base: origin/feature-x"],
+      ["install: false", "install: false"],
+      ["allowed_tools: [Read]", "allowed_tools"],
+      ["extra_allowed_tools: [Bash(pnpm *)]", "extra_allowed_tools"],
     ] as const) {
       const spec = parseTask(`---\nid: robots-wildcards\nacceptance: x\n${line}\n---\nDo it.`, "spec.md");
       const config = await workspace();
@@ -643,9 +693,14 @@ describe("sandbox launcher", () => {
       await expect(collectSandboxJob({ api, task: spec, sessionId: "sesn_1", runDir, baseSha: happy.base, repoUrl: happy.url }), line).rejects.toThrow(said);
     }
     // The defaults, and the values the lane runs, are accepted.
-    const explicit = parseTask("---\nid: robots-wildcards\nacceptance: x\nenabled: true\nread_only: false\nmodel: claude-opus-5-5\neffort: high\n---\nDo it.", "spec.md");
-    const record = await job(new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy)), await workspace(), happy, { task: explicit });
-    expect(record.kind).toBe("ran");
+    for (const base of ["master", "origin/master"]) {
+      const explicit = parseTask(
+        `---\nid: robots-wildcards\nacceptance: x\nenabled: true\nread_only: false\nmodel: claude-opus-5-5\neffort: high\ninstall: true\nbase: ${base}\n---\nDo it.`,
+        "spec.md",
+      );
+      const record = await job(new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy)), await workspace(), happy, { task: explicit });
+      expect(record.kind, base).toBe("ran");
+    }
   });
 
   it("creates the sandbox with limited networking, the exact host list, no MCP and the web tools off", async () => {
@@ -1053,7 +1108,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
         (caught: unknown) => (settled = caught),
       );
       await vi.advanceTimersByTimeAsync(DOWNLOAD_TIMEOUT_MS + 1);
-      expect(settled).toBeInstanceOf(Anthropic.APIConnectionTimeoutError);
+      expect(settled).toBeInstanceOf(OutputTimeoutError);
     } finally {
       vi.useRealTimers();
     }
@@ -1285,6 +1340,11 @@ describe("sandbox brief", () => {
     }
     expect(prompt).toMatch(/TypeScript stays strict/u);
     expect(prompt.indexOf("## Fixed rules")).toBeLessThan(prompt.indexOf("## Project instructions"));
+    // It names what the launcher reads back, and asks for nothing that stays in the sandbox unread.
+    expect(prompt).toContain("The launcher reads only the format-patch files, diff.patch and precondition.json");
+    expect(prompt).toContain('/mnt/session/outputs/precondition.json` as `{"ok":true}`');
+    expect(prompt).not.toContain("report.md");
+    expect(prompt).not.toContain("/mnt/session/outputs/logs");
   });
 
   it("puts the base, branch, acceptance and precondition in the kickoff", () => {
@@ -1293,7 +1353,9 @@ describe("sandbox brief", () => {
     expect(description).toContain("credit/robots-wildcards");
     expect(description).toContain(task.acceptance);
     expect(description).toContain("Precondition");
+    expect(description).toContain("precondition.json");
     expect(rubric).toContain('"ok":true');
+    expect(rubric).not.toContain("report.md");
   });
 
   it("plans downloads from the listing alone: launcher-chosen names, a fixed suffix, sizes checked first", () => {
@@ -1322,6 +1384,23 @@ describe("sandbox brief", () => {
     expect(capped.refused).toEqual([`"0005-x.patch" would take the run's downloads past ${String(MAX_OUTPUTS_TOTAL_BYTES)} bytes; not downloaded`]);
     // Two diffs: neither is taken.
     expect(planOutputs([file("diff.patch"), file("logs/diff.patch")]).refused).toEqual(["2 files named diff.patch came back; none was downloaded"]);
+
+    // precondition.json comes back under its own name, after the patches; one only.
+    expect(planOutputs([file("precondition.json"), file("report.md"), file("0001-fix.patch")]).downloads.map((entry) => entry.localName)).toEqual([
+      "patch-0001.patch",
+      "precondition.json",
+    ]);
+    expect(planOutputs([file("precondition.json"), file("logs/precondition.json")]).refused).toEqual([
+      "2 files named precondition.json came back; none was downloaded",
+    ]);
+    expect(planOutputs([file("NUL/precondition.json")]).refused).toEqual(['"NUL/precondition.json" names a Windows device; not downloaded']);
+
+    // At most 50 .patch outputs are read: more refuses the run, and none is downloaded or listed one by one.
+    const flood = [...Array.from({ length: MAX_PATCH_OUTPUTS + 1 }, (_, index) => file(`${String(index + 1).padStart(4, "0")}-x.patch`)), file("stray.patch"), file("diff.patch")];
+    const flooded = planOutputs(flood);
+    expect(flooded.downloads).toEqual([]);
+    expect(flooded.refused).toEqual([`${String(MAX_PATCH_OUTPUTS + 3)} .patch outputs came back, more than the ${String(MAX_PATCH_OUTPUTS)} the launcher reads; none was downloaded`]);
+    expect(planOutputs(Array.from({ length: MAX_PATCH_OUTPUTS }, (_, index) => file(`${String(index + 1).padStart(4, "0")}-x.patch`))).downloads).toHaveLength(MAX_PATCH_OUTPUTS);
   });
 
   it("knows the names Windows opens as devices, with or without an extension, in any case", () => {

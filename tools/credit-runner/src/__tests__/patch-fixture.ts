@@ -90,12 +90,18 @@ async function writeFiles(repo: string, files: Readonly<Record<string, string | 
  * a branch, and returns the branch's format-patch files and diff.
  * `localAttributes` goes in .git/info/attributes: attributes the agent could set
  * in its container without committing them. `baseLinks` puts symlinks and
- * gitlinks in the base commit.
+ * gitlinks in the base commit. `formatPatchArgs` are added to `git format-patch`
+ * (`--text`, say, to write a file the attributes call binary as text).
  */
 export async function patchFixture(
   root: string,
   commits: readonly Commit[],
-  options: { readonly baseFiles?: Readonly<Record<string, string>>; readonly baseLinks?: BaseLinks; readonly localAttributes?: string } = {},
+  options: {
+    readonly baseFiles?: Readonly<Record<string, string>>;
+    readonly baseLinks?: BaseLinks;
+    readonly localAttributes?: string;
+    readonly formatPatchArgs?: readonly string[];
+  } = {},
 ): Promise<PatchFixture> {
   const repo = path.join(root, "origin");
   await mkdir(repo, { recursive: true });
@@ -137,7 +143,7 @@ export async function patchFixture(
   const commitList = git(repo, ["rev-list", "--reverse", `${base}..${head}`]).split("\n").filter((line) => line !== "");
 
   const patchDir = path.join(root, "patches");
-  git(repo, ["format-patch", "--quiet", `${base}..${head}`, "-o", patchDir]);
+  git(repo, ["format-patch", "--quiet", ...(options.formatPatchArgs ?? []), `${base}..${head}`, "-o", patchDir]);
   const patches: Record<string, string> = {};
   for (const name of (await readdir(patchDir)).sort()) patches[name] = await readFile(path.join(patchDir, name), "utf8");
   const diff = `${git(repo, ["diff", base, head])}\n`;

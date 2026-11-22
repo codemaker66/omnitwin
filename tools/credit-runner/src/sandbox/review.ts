@@ -61,6 +61,17 @@ function afterFinish(result: SessionRunResult): string {
   return `${interrupt}, and it had not stopped when the launcher gave up (archiving failed too)`;
 }
 
+/** What precondition.json says: `{"ok":true}` or `{"ok":false}`, and null for anything else. */
+function preconditionResult(text: string): boolean | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== "object" || parsed === null || Object.keys(parsed).length !== 1 || !("ok" in parsed)) return null;
+    return typeof parsed.ok === "boolean" ? parsed.ok : null;
+  } catch {
+    return null;
+  }
+}
+
 function short(sha: string | null): string {
   return sha === null ? "(none)" : sha.slice(0, 12);
 }
@@ -78,11 +89,18 @@ export async function reviewRun(result: SessionRunResult, options: ReviewOptions
   const reasons: string[] = [];
   const flags: string[] = [];
   // Downloaded under the launcher's names, in order: patch-0001.patch, ...,
-  // then diff.patch (outputs.ts). An output the review would read but that was
-  // not downloaded (a name it cannot account for, a size over the cap) rejects.
+  // then diff.patch and precondition.json (outputs.ts). An output the review
+  // would read but that was not downloaded (a name it cannot account for, a
+  // size over the cap, a deadline passed) rejects.
   reasons.push(...result.refusedOutputs);
   const outputs = [...result.outputs].sort();
   const diffFile = outputs.find((file) => path.basename(file) === "diff.patch") ?? null;
+  const preconditionFile = outputs.find((file) => path.basename(file) === "precondition.json") ?? null;
+  if (preconditionFile !== null) {
+    const precondition = preconditionResult(await readFile(preconditionFile, "utf8"));
+    if (precondition === false) reasons.push("the precondition failed: the code the task cites has moved, so the task no longer applies as written");
+    else if (precondition === null) reasons.push('precondition.json holds neither {"ok":true} nor {"ok":false}');
+  }
   // A format-patch file is known by its `From <sha>` line, whatever its name.
   const patches: string[] = [];
   for (const file of outputs) {

@@ -3,14 +3,12 @@ import path from "node:path";
 import type { AgentCreateParams } from "@anthropic-ai/sdk/resources/beta/agents/agents";
 import type { BetaLimitedNetwork, EnvironmentCreateParams } from "@anthropic-ai/sdk/resources/beta/environments/environments";
 import { z } from "zod";
-import type { Effort } from "../task.js";
+import { AGENT_EFFORT, AGENT_MODEL } from "../task.js";
 import type { AgentRef, EnvironmentRef, SandboxApi } from "./api.js";
 import { promptSha } from "./brief.js";
 
 export const ENVIRONMENT_NAME = "venviewer-night-sandbox";
 export const AGENT_NAME = "venviewer-night-fixer";
-export const AGENT_MODEL = "claude-opus-5-5";
-export const AGENT_EFFORT: Effort = "high";
 
 /**
  * Deny-by-default egress. Package registries are open for pnpm, github.com
