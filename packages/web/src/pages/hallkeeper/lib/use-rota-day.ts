@@ -23,6 +23,9 @@ export interface RotaDay {
   readonly people: readonly RotaPerson[];
   /** When what it holds was read; null before the first read lands. */
   readonly readAtMs: number | null;
+  /** A read is under way: the first, a refresh, or a Try again after a
+   *  failure, while the failure stays on screen. */
+  readonly reading: boolean;
   /** Read again, unless it was read in the last five minutes; `now` reads at once. */
   readonly refresh: (now?: boolean) => void;
 }
@@ -42,6 +45,7 @@ interface Held {
   readonly shifts: readonly RotaShift[];
   readonly people: readonly RotaPerson[];
   readonly readAtMs: number | null;
+  readonly reading: boolean;
 }
 
 export function useRotaDay(
@@ -73,13 +77,13 @@ export function useRotaDay(
     if (venueId === null || key === "") return;
     const reading = new AbortController();
     readAtMs.current = Date.now();
-    setHeld((current) => (current?.key === key ? current : { key, status: "loading", ...NOTHING }));
+    setHeld((current) => (current?.key === key ? { ...current, reading: true } : { key, status: "loading", ...NOTHING, reading: true }));
     const startedAtMs = Date.now();
     Promise.all(weeks.split(",").map((start) => getRotaFloorWeek(venueId, start, reading.signal)))
       .then((read) => {
         if (reading.signal.aborted) return;
         if (read.some((week) => week.access === "own")) {
-          setHeld({ key, status: "ready", ...NOTHING, readAtMs: startedAtMs });
+          setHeld({ key, status: "ready", ...NOTHING, readAtMs: startedAtMs, reading: false });
           return;
         }
         const shifts = new Map<string, RotaShift>();
@@ -88,18 +92,18 @@ export function useRotaDay(
           for (const shift of week.shifts) shifts.set(shift.id, shift);
           for (const person of week.people) people.set(person.id, person);
         }
-        setHeld({ key, status: "ready", shifts: [...shifts.values()], people: [...people.values()], readAtMs: startedAtMs });
+        setHeld({ key, status: "ready", shifts: [...shifts.values()], people: [...people.values()], readAtMs: startedAtMs, reading: false });
       })
       .catch(() => {
         if (reading.signal.aborted) return;
         // A failure is read again at the next refresh, not five minutes on.
         readAtMs.current = null;
-        setHeld((current) => (current?.key === key ? { ...current, status: "error" } : { key, status: "error", ...NOTHING }));
+        setHeld((current) => (current?.key === key ? { ...current, status: "error", reading: false } : { key, status: "error", ...NOTHING, reading: false }));
       });
     return () => { reading.abort(); };
   }, [venueId, key, weeks, attempt]);
 
-  if (key === "") return { status: "idle", ...NOTHING, refresh };
-  if (held?.key !== key) return { status: "loading", ...NOTHING, refresh };
-  return { status: held.status, shifts: held.shifts, people: held.people, readAtMs: held.readAtMs, refresh };
+  if (key === "") return { status: "idle", ...NOTHING, reading: false, refresh };
+  if (held?.key !== key) return { status: "loading", ...NOTHING, reading: true, refresh };
+  return { status: held.status, shifts: held.shifts, people: held.people, readAtMs: held.readAtMs, reading: held.reading, refresh };
 }

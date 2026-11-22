@@ -15,7 +15,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Bell, Clock, WifiOff } from "lucide-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { formatWallDay, formatWallTime, msToWallInput, shiftRange, wallInputToMs, type BoardRange } from "../diary/lib/board-time.js";
-import { ActivityStatus } from "../../components/shared/Activity.js";
+import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
 import { CALENDAR_REUSE_MS, useCalendar } from "../diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
@@ -324,6 +324,55 @@ function dayRefreshFailed(at: string, readAt: string | null): string {
     : `Couldn't refresh at ${at}. Showing the day as it was at ${readAt}.`;
 }
 
+/** The rota could not be read: said above the rooms, with a Try again named
+ *  for what it reads, which shows the read while it runs. When a read lands
+ *  and the notice goes with the keyboard in it, the keyboard goes to the day,
+ *  not to the document. */
+function RotaNotice({ shown, readAt, reading, onRetry, focusAfter }: {
+  readonly shown: boolean;
+  /** When the crew still shown was read; null before any read landed. */
+  readonly readAt: string | null;
+  readonly reading: boolean;
+  readonly onRetry: () => void;
+  /** Where the keyboard goes once the notice it was in has gone. */
+  readonly focusAfter: () => void;
+}): ReactElement | null {
+  const noticeRef = useRef<HTMLDivElement>(null);
+  const hadFocus = useRef(false);
+  useEffect(() => {
+    if (shown) return;
+    // The notice holding the keyboard has gone: focus fell to the document.
+    if (hadFocus.current && (document.activeElement === null || document.activeElement === document.body)) focusAfter();
+    hadFocus.current = false;
+  }, [shown, focusAfter]);
+  if (!shown) return null;
+  return (
+    <div
+      ref={noticeRef}
+      className="dayboard-notice"
+      role="status"
+      onFocus={() => { hadFocus.current = true; }}
+      onBlur={(event) => { hadFocus.current = noticeRef.current?.contains(event.relatedTarget) === true; }}
+    >
+      <p>{readAt === null
+        ? "The rota could not be read, so who is on setup is not shown. The board tries again each minute."
+        : `Who is on setup is as read at ${readAt}; the rota could not be read since. The board tries again each minute.`}</p>
+      {/* Never disabled: a disabled button drops the keyboard's place to the page. */}
+      <button
+        type="button"
+        className="dayboard-button dayboard-rota-retry"
+        aria-label="Try again to read the rota"
+        aria-busy={reading}
+        aria-disabled={reading}
+        onClick={() => { if (!reading) onRetry(); }}
+      >
+        {reading && <ActivityIndicator size={14} />}
+        Try again
+      </button>
+    </div>
+  );
+}
+
 export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactElement {
   const user = useAuthStore((state) => state.user);
   const venueId = user?.venueId ?? null;
@@ -352,7 +401,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const nowMs = useBoardClock(boundaryMs);
   const corrected = useClockCorrected();
 
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [chosenDate, setSelectedDate] = useState<string | null>(null);
   const [roomId, setRoomIdState] = useState("");
   const [focus, setFocusState] = useState<BoardFocus>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -360,6 +409,9 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // drawn afresh, when the day is read again once the venue's night hours
   // arrive, opens its form as it was left.
   const supplierForms = useSupplierForms();
+  // The wall shows today, whatever day this screen had stepped to before it
+  // became the wall: it has no day controls to come back with.
+  const selectedDate = wall ? null : chosenDate;
   const browsingToday = selectedDate === null;
   // A count on the plane and a room from the list are two ways to narrow the
   // rooms; choosing one lets the other go, so the list never comes up empty
@@ -421,8 +473,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const board = useMemo(
     () => (data === null
       ? null
-      : deriveDayBoard(data, nowMs, timeZone, requestsApi.requests, observationsApi.observations)),
-    [data, nowMs, timeZone, requestsApi.requests, observationsApi.observations],
+      : deriveDayBoard(data, nowMs, timeZone, requestsApi.requests, observationsApi.observations, dayBoundaryHour)),
+    [data, nowMs, timeZone, requestsApi.requests, observationsApi.observations, dayBoundaryHour],
   );
   const nextBoundaryMs = board?.nextBoundaryMs ?? null;
   useEffect(() => { setBoundaryMs(nextBoundaryMs); }, [nextBoundaryMs]);
@@ -441,7 +493,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     return seen;
   }, [lanes, dayKey]);
   const eventIds = useMemo(() => [...seenToday.events.keys()], [seenToday]);
-  const floor = useFloorChanges(eventIds, venueId !== null);
+  // Read for the board's own day: another day's changes are that day's.
+  const floor = useFloorChanges(eventIds, venueId !== null, range);
   // A move reaches the board through the live calendar; its change is read
   // with it, not at the next minute.
   const refreshFloor = floor.refresh;
@@ -454,7 +507,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     const changes = changesForDay(eventId, floor.byEvent.get(eventId), seenToday);
     if (changes.length === 0) return [];
     const movedOff = changes.some((change) => seenToday.sources.has(change.sourceId) && movedOffDay(change, range));
-    return [{ eventId, title, changes, movedOff, surface: `left:${eventId}` }];
+    const truncated = floor.byEvent.get(eventId)?.truncated === true;
+    return [{ eventId, title, changes, movedOff, truncated, surface: `left:${eventId}` }];
   }), [seenToday, onBoard, floor.byEvent, range]);
   // Where the keyboard goes when a notice it was in leaves the page: the
   // day's sentence, or the board's title on a day with none.
@@ -568,16 +622,24 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const zone = useMemo(() => zoneNote(timeZone, deviceZone()), [timeZone]);
   const days = useMemo(() => lanes.map(roomDay), [lanes]);
   const busyLanes = lanes.filter((lane) => lane.slots.length > 0).length;
+  // The wall shows every room in use, whatever this screen was narrowed to
+  // before it became the wall: it says nothing of a filter and offers no way
+  // out of one, so a filter carried onto it would hide rooms from the
+  // corridor with nothing on screen to say so. (In the app the switch also
+  // remounts the board under the staff shell, which drops the filter; the
+  // wall does not rely on that.)
+  const shownRoomId = wall ? "" : roomId;
+  const shownFocus: BoardFocus = wall ? "all" : focus;
   // A room with nothing on is one name in a line, not a row to scroll past;
   // a room chosen from the list keeps its row either way, and a count on
   // the plane shows only the rooms it names. The room of an open slot stays
   // whatever the filter says, so the slot never closes under a hand that is
   // using it (a Done that takes a function out of "Live").
-  const focusDays = days.filter((day) => (roomId === ""
-    ? day.slots.length > 0 && roomInFocus(day, focus)
-    : day.room.id === roomId));
+  const focusDays = days.filter((day) => (shownRoomId === ""
+    ? day.slots.length > 0 && roomInFocus(day, shownFocus)
+    : day.room.id === shownRoomId));
   const shownDays = days.filter((day) => focusDays.includes(day) || day.room.id === selected?.room.id);
-  const freeRooms = roomId === "" && focus === "all" && busyLanes > 0 ? lanes.filter((lane) => lane.slots.length === 0).map((lane) => lane.room.name) : [];
+  const freeRooms = shownRoomId === "" && shownFocus === "all" && busyLanes > 0 ? lanes.filter((lane) => lane.slots.length === 0).map((lane) => lane.room.name) : [];
   const readAt = readAtCorrectedMs === null ? null : formatWallTime(readAtCorrectedMs, timeZone);
   const others = live.presence.filter((person) => person.userId !== user?.id).map((person) => person.name);
   // Today the plane counts every request nobody has, as the list and the
@@ -650,13 +712,14 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // A rota that could not be read is said above the rooms, as what changed
   // is, on a day with a turn-round: the crew the slots and the sentence still
   // show is as last read, and before any read they show none.
-  const crewNotice = rota.status !== "error" || !anyTurnRound(lanes) ? null : (
-    <div className="dayboard-notice" role="status">
-      <p>{rotaReadAt === null
-        ? "The rota could not be read, so who is on setup is not shown. The board tries again each minute."
-        : `Who is on setup is as read at ${rotaReadAt}; the rota could not be read since. The board tries again each minute.`}</p>
-      <button type="button" className="dayboard-button" onClick={() => { rota.refresh(true); }}>Try again</button>
-    </div>
+  const crewNotice = (
+    <RotaNotice
+      shown={rota.status === "error" && anyTurnRound(lanes)}
+      readAt={rotaReadAt}
+      reading={rota.reading}
+      onRetry={() => { refreshRota(true); }}
+      focusAfter={focusTheDay}
+    />
   );
   const selectedEventId = selected?.slot.eventId ?? null;
   const selectedEntry = selectedEventId === null ? undefined : floor.byEvent.get(selectedEventId);
@@ -749,12 +812,14 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const plane = board === null || busyLanes === 0 ? null : (
     <div className="dayboard-plane ws-plane" role="group" aria-label="The day in numbers">
       {stages.map((stage) => {
-        // Said as the desks say their stages: "At risk, 2".
-        const spoken = `${stage.label}, ${String(stage.count)}`;
+        // Said as the desks say their stages: "At risk, 2"; with what the
+        // count covers that its filter cannot show, when there is any.
+        const spoken = `${stage.label}, ${String(stage.count)}${stage.note === null ? "" : `, ${stage.note}`}`;
         const face = (
           <>
             <b data-focus={stage.focus} data-alert={stage.focus === "risk" && stage.count > 0 ? "true" : undefined} aria-hidden="true">{String(stage.count)}</b>
             <span aria-hidden="true"><i className="dayboard-stage-dot" data-focus={stage.focus} />{stage.label}</span>
+            {stage.note !== null && <small className="dayboard-stage-note" aria-hidden="true">{stage.note}</small>}
           </>
         );
         return wall
@@ -799,7 +864,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         </div>
       ) : null}
       {crewNotice}
-      {status !== "error" && board !== null && busyLanes === 0 && roomId === "" ? (
+      {status !== "error" && board !== null && busyLanes === 0 && shownRoomId === "" ? (
         <p className="dayboard-notice">{selectedDate === null ? "Nothing scheduled today." : "Nothing scheduled on this day."}</p>
       ) : null}
       {/* What changed could not be read: the marks stand as last read, and say so. */}
@@ -818,6 +883,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
             title={entry.title}
             movedOff={entry.movedOff}
             changes={entry.changes}
+            truncated={entry.truncated}
             timeZone={timeZone}
             nowMs={nowMs}
             onAcknowledge={acknowledgesChanges
@@ -841,7 +907,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           plaque={plaque}
           nowMs={nowMs}
           venueSlug={venue.slug}
-          selectedId={selectedId}
+          selectedId={wall ? null : selectedId}
           onOpen={openSlot}
           wall={wall}
           frozen={frozen}

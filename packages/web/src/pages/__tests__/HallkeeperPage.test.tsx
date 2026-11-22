@@ -660,6 +660,46 @@ describe("HallkeeperPage carries the corridor's event", () => {
     expect(writes).toEqual([expect.stringContaining(`/progress?eventId=${tonight}`)]);
     expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null);
   });
+
+  // The live re-read of the shared checks (#370) fetches its token and this
+  // device's queue before it asks the server. A sheet closed in between has
+  // nobody to show the answer to, so the request is not sent. In a unit test it
+  // landed after the test's own fetch had been put back and was reported as
+  // real traffic against whichever test was running (master at cdb6eb8f).
+  it("sends no re-read for a sheet that was closed while the re-read was getting ready", async () => {
+    const tonight = "00000000-0000-4000-8000-0000000000e1";
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      if (url.includes(`/progress?eventId=${tonight}`) && init?.method !== "PATCH") {
+        return Promise.resolve(jsonResponse({ configId: CONFIG_A, eventId: tonight, linkedEvents: 2, checked: {} }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const reads = (): number => fetchMock.mock.calls.filter(([input]) => requestUrl(input).includes("/progress")).length;
+
+    const view = render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}?eventId=${tonight}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: false });
+    // The page starts listening in an effect, which can run a turn after the row is on screen.
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    const whenLoaded = reads();
+
+    // From here every look at this device's queue waits, so the re-read stops between its token and its request.
+    const waiting: (() => void)[] = [];
+    vi.mocked(listPendingProgress).mockImplementation(() => new Promise<readonly QueuedProgressOp[]>((resolve) => {
+      waiting.push(() => { resolve([]); });
+    }));
+    act(() => { window.dispatchEvent(new Event("online")); });
+    await waitFor(() => { expect(waiting.length).toBeGreaterThan(0); });
+
+    view.unmount();
+    for (const goOn of waiting) goOn();
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    expect(reads()).toBe(whenLoaded);
+  });
 });
 
 // T-648: the Martyn's Law readiness section renders on every sheet, outside

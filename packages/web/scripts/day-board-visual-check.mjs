@@ -6,9 +6,11 @@
 //      phase-locked (every breath shares one animation-delay — the epoch);
 //      the copper ring breathing on an unowned request, pulsing on an urgent
 //      one, still once owned; the UNOWNED rail and the next-action line;
+//      every line's label ("Also now" the longest) on one line;
 //   2. reduced motion: every animation computed to "none" while the verbs
 //      still carry the full meaning;
-//   3. the phone: every room in one column, the page no wider than the screen;
+//   3. the phone: every room in one column, the page no wider than the screen,
+//      and the next action still at the top after the rooms scroll 900 px;
 //   4. the wall register (?register=wall);
 //   5. an open slot, with the request region mounted;
 //   6. (goal 19 S4) the open slot's conversation: the request card on the
@@ -88,6 +90,9 @@ function calendarFixture(now) {
     rooms: ROOMS,
     entries: [
       booking(B(1), grand, -60, 120, "Chamber banquet", "dinner", now),
+      // Inside the banquet's hours, its welcome drinks clearing down: what
+      // else the Grand Hall is doing now, on its "Also now" line.
+      booking(B("a"), grand, -40, -5, "Welcome drinks", "reception", now),
       booking(B(2), saloon, 25, 180, "Craft ceilidh", "ceilidh", now),
       booking(B(3), reception, 50, 240, "Board afternoon", "conference", now),
       booking(B(8), adam, 8, 60, "Press briefing", "conference", now),
@@ -96,6 +101,9 @@ function calendarFixture(now) {
       // Back-to-back pair whose changeover the conflict below flags.
       booking(B(6), saloon, 200, 260, "Turnover pair A", "dinner", now),
       booking(B(7), saloon, 262, 320, "Turnover pair B", "dinner", now),
+      // Half an hour after the board afternoon against the house hour: short,
+      // and nothing the Diary holds against it, so its turn-round says itself.
+      booking(B(9), reception, 270, 330, "Evening drinks", "reception", now),
     ],
     conflicts: {
       conflicts: [
@@ -286,6 +294,29 @@ async function readSlabs(page) {
   });
 }
 
+/** Each line's label: its words, the lines they take and whether they fit
+ *  its column: [{ words, lines, fits }]. */
+async function readLineLabels(page) {
+  return page.locator(".dayboard-line-label").evaluateAll((labels) => labels.map((label) => {
+    const range = document.createRange();
+    range.selectNodeContents(label);
+    return {
+      words: label.textContent ?? "",
+      lines: new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size,
+      fits: label.scrollWidth <= label.clientWidth,
+    };
+  }));
+}
+
+/** Whether every line's label, "Also now" among them, is on one line inside
+ *  its column; and the labels read, for the check's own words. */
+function labelsOnOneLine(labels) {
+  return {
+    ok: labels.some((label) => label.words === "Also now") && labels.every((label) => label.lines === 1 && label.fits),
+    read: labels.map((label) => `${label.words} ${String(label.lines)}`).join(", "),
+  };
+}
+
 const failures = [];
 function check(label, ok) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}`);
@@ -316,7 +347,22 @@ try {
   ].every((words) => text.includes(words)));
   check("NOW plaque on the ruler", /NOW\d{1,2}:\d{2}/u.test(text));
   const shortGaps = await page.locator(".dayboard-bar-gap").count();
-  check(`short changeovers drawn against the rule on their rooms' bars (${String(shortGaps)})`, shortGaps === 2);
+  check(`short changeovers drawn against the rule on their rooms' bars (${String(shortGaps)})`, shortGaps === 3);
+  // The rule on the bar is a picture nothing reads aloud: the words carry it.
+  check("a short turn-round says how long it has and what the rule needs", /Turn-round 30 min · needs 1 h/u.test(text));
+  // The pair the Diary holds at risk says its one reason once in its room:
+  // on Next, and on the later line only in the words a screen reader hears.
+  const nextAtRisk = page.locator(".dayboard-slab.is-next", { hasText: "Turnover pair A" });
+  const laterAtRisk = page.locator(".dayboard-slab.is-line", { hasText: "Turnover pair B" });
+  check("a pair at risk says why once in its room: on Next, and on the later line in the words a screen reader hears",
+    (await nextAtRisk.count()) === 1 && /this changeover needs 60/u.test(await nextAtRisk.innerText())
+    && (await laterAtRisk.count()) === 1 && /Changeover at risk/iu.test(await laterAtRisk.innerText())
+    && !/this changeover needs 60/u.test(await laterAtRisk.innerText())
+    && /this changeover needs 60/u.test((await laterAtRisk.getAttribute("aria-label")) ?? ""));
+  // A desk gives the line's labels a column "Also now" fits on one line. (A
+  // phone keeps the narrower one: its slots take two lines there anyway.)
+  const officeLabels = labelsOnOneLine(await readLineLabels(page));
+  check(`every line's label on one line, inside its column (${officeLabels.read})`, officeLabels.ok);
   check("the next action is the urgent request nobody owns", /^Take now:/u.test((await page.locator(".dayboard-next").innerText()).trim()));
   check("UNOWNED rail lists the two requests nobody has", (await page.locator(".dayboard-rail-item").count()) === 2);
 
@@ -371,12 +417,53 @@ try {
     && (await phone.locator(".dayboard[data-layout='phone']").count()) === 1 && (await phone.locator(".dayboard-room").count()) >= 2);
   await phone.screenshot({ path: join(OUT, "phone.png"), fullPage: true });
 
+  // This hallkeeper's next action stays at the top while the rooms scroll
+  // under it (D7), as laid out, not as the stylesheet reads: the wheel
+  // scrolls whatever a hand would, the rooms move up 900 px and the next
+  // action stays at the top of the screen. A wheel's scroll lands over a
+  // few frames, so each position is read until it settles.
+  const top = async (selector) => (await phone.locator(selector).first().boundingBox())?.y ?? Number.NaN;
+  const settle = async (read, want) => {
+    let value = await read();
+    for (let attempt = 0; attempt < 30 && !(Math.abs(value - want) <= 1); attempt += 1) {
+      await phone.waitForTimeout(100);
+      value = await read();
+    }
+    return value;
+  };
+  const roomsAt = await top(".dayboard-rooms");
+  await phone.mouse.move(195, 600);
+  await phone.mouse.wheel(0, 900);
+  const roomsMoved = roomsAt - await settle(() => top(".dayboard-rooms"), roomsAt - 900);
+  const nextAt = await top(".dayboard-next");
+  check(`phone: the next action stays at the top while the rooms scroll 900 px under it (rooms moved ${String(Math.round(roomsMoved))} px, next action at y ${String(Math.round(nextAt))})`,
+    Math.abs(roomsMoved - 900) <= 1 && Math.abs(nextAt) <= 1);
+  await phone.screenshot({ path: join(OUT, "phone-scrolled.png") });
+  await phone.mouse.wheel(0, -900);
+  await settle(() => top(".dayboard-rooms"), roomsAt);
+
   // ---- Pass 4: the wall ----------------------------------------------------
   const wallContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const wall = await preparePage(wallContext, "/hallkeeper/today?register=wall");
-  check("wall: the dark register, without the day controls", (await wall.locator(".dayboard[data-register='wall']").count()) === 1
+  check("wall: the forest frame, without the day controls", (await wall.locator(".dayboard[data-register='wall']").count()) === 1
     && (await wall.getByRole("button", { name: "Previous day" }).count()) === 0);
+  const wallLabels = labelsOnOneLine(await readLineLabels(wall));
+  check(`wall: every line's label on one line, inside its column (${wallLabels.read})`, wallLabels.ok);
   await wall.screenshot({ path: join(OUT, "wall.png"), fullPage: true });
+
+  // The office narrows the rooms to those at risk, then becomes the wall:
+  // the wall says nothing of a filter, so it shows every room in use. The
+  // switch remounts the board under the staff shell and reads the day again
+  // (a frame of "Loading the day's bookings…"), so the rooms are awaited.
+  const narrowed = await preparePage(wallContext);
+  await narrowed.getByRole("button", { name: /^At risk, /u }).click();
+  const officeRooms = await narrowed.locator(".dayboard-room").count();
+  await narrowed.getByRole("button", { name: "Wall display" }).click();
+  await narrowed.locator(".dayboard[data-register='wall'] .dayboard-room").first().waitFor({ timeout: 10_000 });
+  const wallRooms = await narrowed.locator(".dayboard-room").count();
+  check(`wall: every room in use, after the office was narrowed to those at risk (office ${String(officeRooms)}, wall ${String(wallRooms)})`,
+    officeRooms === 1 && wallRooms === ROOMS.length);
+  await narrowed.screenshot({ path: join(OUT, "wall-after-filter.png"), fullPage: true });
 
   // ---- Pass 5: an open slot ------------------------------------------------
   await page.locator(".dayboard-slab[data-state='live']").click();

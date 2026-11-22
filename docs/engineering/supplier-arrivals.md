@@ -12,7 +12,7 @@ arrival is the floor's record of the door.
 | Part | Code |
 | --- | --- |
 | Contracts, limits and retention | `packages/types/src/supplier-arrivals.ts` (`SupplierArrivalSchema`, the strict create and update schemas, `SUPPLIER_ARRIVAL_RETENTION`) |
-| Tables | `packages/api/drizzle/0109_booking_supplier_arrivals.sql` (`booking_supplier_arrivals`, `booking_supplier_arrival_events`) |
+| Tables | `packages/api/drizzle/0111_booking_supplier_arrivals.sql` (`booking_supplier_arrivals`, `booking_supplier_arrival_events`) |
 | Routes | `packages/api/src/routes/supplier-arrivals.ts` (`/venues/:venueId/supplier-arrivals`) |
 | Rules | `packages/api/src/services/supplier-arrivals.ts` |
 | Retention pass | `packages/api/src/services/supplier-arrival-retention.ts`, run by `scripts/run-cleanup.ts` and `POST /admin/cleanup`; dry run at `POST /admin/retention/supplier-contacts` |

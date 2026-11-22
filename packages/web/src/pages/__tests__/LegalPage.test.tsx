@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MEASUREMENT_DECLINED_KEY, measurementDeclined, setMeasurementDeclined } from "../../observability/measurement-choice.js";
 import {
   DIETARY_MEMORY_CONSENT,
   DIETARY_MEMORY_MONTHS_UNUSED,
@@ -54,8 +57,44 @@ function textOf(type: (typeof TYPES)[number]): string {
 
 afterEach(() => {
   cleanup();
+  // The choice's own memory and the tab's copy too, so one test's press never reaches the next.
+  setMeasurementDeclined(false);
   window.localStorage.clear();
+  window.sessionStorage.clear();
 });
+
+/** The switch's status lines: measured, and declined where the browser would
+ *  not keep it (kept for the tab, or for this page only). */
+const MEASURED = "Your visits may be measured, as described above.";
+const NOT_KEPT_TAB = "This browser would not let us keep your choice, so it holds only in this tab, until you close it.";
+const NOT_KEPT_PAGE = "This browser would not let us keep your choice, so it holds only until you leave this page.";
+const STORAGE_REFUSED = "This browser blocks our site's storage, so your visits in this browser are never measured.";
+
+/** A storage that reads but will not write (full), over the given map. */
+const fullStorage = (kept: Map<string, string>): Pick<Storage, "getItem" | "setItem" | "removeItem"> => ({
+  getItem: (key: string) => kept.get(key) ?? null,
+  setItem: () => { throw new Error("QuotaExceededError"); },
+  removeItem: (key: string) => { kept.delete(key); },
+});
+
+/** Runs with a browser storage that will not write (full), over a map the
+ *  test can change as another tab would, and puts the real one back after: a
+ *  spy on happy-dom's storage is not restored and leaks into later tests.
+ *  With `tabFull`, this tab's session storage is full too. */
+function withFullStorage(run: (kept: Map<string, string>) => void, tabFull = false): void {
+  const realLocal = window.localStorage;
+  const realSession = window.sessionStorage;
+  const kept = new Map<string, string>();
+  Object.defineProperty(window, "localStorage", { configurable: true, value: fullStorage(kept) });
+  if (tabFull) Object.defineProperty(window, "sessionStorage", { configurable: true, value: fullStorage(new Map()) });
+  try {
+    run(kept);
+  } finally {
+    setMeasurementDeclined(false);
+    Object.defineProperty(window, "localStorage", { configurable: true, value: realLocal });
+    Object.defineProperty(window, "sessionStorage", { configurable: true, value: realSession });
+  }
+}
 
 describe("every document", () => {
   it.each(TYPES)("renders its own heading — %s", (type) => {
@@ -80,15 +119,18 @@ describe("every document", () => {
   it.each(TYPES)("shows a machine-readable last-updated date — %s", (type) => {
     render(<LegalPage type={type} />);
     const time = document.querySelector("time");
-    // Each document carries its own date: the accessibility statement changed
-    // in the v1.0 final review; the terms on 11 November, when the Grand Hall's
-    // dimensions became measured; the privacy policy on 12 November, when it
-    // said what the Day Board keeps of suppliers and for how long.
-    const expected = type === "terms"
-      ? { iso: "2026-11-11", text: "11 November 2026" }
-      : type === "privacy"
-        ? { iso: "2026-11-12", text: "12 November 2026" }
-        : { iso: "2026-11-08", text: "8 November 2026" };
+    // Each document carries its own date: the terms on 11 November, when the
+    // Grand Hall's dimensions became measured; the accessibility statement on
+    // 18 November, when the tool hints its More panel cut off left its known
+    // problems; and the privacy policy on the day it went live, when it
+    // described the page-speed measurements, their lawful basis and their
+    // switch (T-685), and again on 22 November, when it said what the Day Board
+    // keeps of suppliers and for how long (T-692).
+    const expected = {
+      terms: { iso: "2026-11-11", text: "11 November 2026" },
+      accessibility: { iso: "2026-11-18", text: "18 November 2026" },
+      privacy: { iso: "2026-11-22", text: "22 November 2026" },
+    }[type];
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
   });
@@ -120,6 +162,216 @@ describe("every document", () => {
 });
 
 describe("the privacy policy", () => {
+  // T-685: before the page-speed timings may be switched on, the page says what
+  // they are and offers a way to object that works on every browser.
+  it("says what the page-speed measurements are, and its switch turns them off in this browser", () => {
+    render(<LegalPage type="privacy" />);
+    const page = document.body.textContent ?? "";
+    expect(page).toContain("How fast our pages are");
+    expect(page).toContain("delete them after 90 days");
+    expect(page).toContain("It does not send the address of the page you opened");
+    // Only what is true of the real system (12 November 2026): one of the four
+    // is a layout score, not a time; the host's own request logs record the
+    // address; and Safari clears the stored choice.
+    // CLS is followed until the page is hidden, not only while it loads (13 November).
+    expect(page).toContain("how much its content shifted while it was open (four measurements, each rated good, needs improvement or poor)");
+    expect(page).not.toContain("shifted as it loaded");
+    expect(page).not.toContain("four timings");
+    expect(page).toContain("our own server does not log it; our hosting provider's standard request logs record it");
+    expect(page).not.toContain("we do not keep that with the timings or log it");
+    expect(page).toContain("until the browser clears our site's data (Safari does this after about a week without a visit)");
+    // 13 November (Blake: "Apply all three"): what is kept, the GPC and DNT
+    // sentence as the code keeps it (a signal only the server sees discards
+    // the report), and a lawful basis, with no claim of running no analytics.
+    // Later on 13 November (Blake: "Apply all three", "Add the sentence"): all
+    // a row keeps beside the measurement, how long, and why no consent.
+    expect(page).toContain("We keep each measurement with only the kind of page, the kind of device and the day it arrived (not the time). We use them only to make the site faster, and delete them after 90 days.");
+    expect(page).not.toContain("with only the day it arrived");
+    expect(page).toContain("Page-speed measurements");
+    expect(page).toContain("Deleted 90 days after the day they arrived.");
+    // Later on 13 November (Blake: "Name every condition"): PECR Schedule A1
+    // paragraph 5(1)(b) to (e), not a part of them.
+    expect(page).toContain("Nor is consent required for measuring how fast our pages are: the same Regulations allow it when it is done only to collect statistics about how the site is used so that we can improve it, the information is shared with no one except to help us improve the site, you are given clear and comprehensive information about its purpose, and you have a simple, free way to object and have not used it, such as the \"Don't measure my visits\" switch (see \"How fast our pages are\").");
+    expect(page).not.toContain("you are told about it");
+    // And (Blake: "Strip browser details, say so"): the error monitor's timing
+    // records, sent whether or not anything failed, in both places it is named;
+    // "internet address", as the page also calls a page's URL its address
+    // (Blake, 20 November 2026: "Say "internet address"").
+    expect(page).toContain("Our server also sends it a timing record for about one request in ten, saying which kind of request it was and how long it took, with no internet address, identifier or browser details.");
+    expect(page).toContain("Error monitoring. It records technical diagnostics when something in the site fails, so that we can fix it, and a timing record for about one request in ten, with no internet address, identifier or browser details.");
+    expect(page).not.toContain("with no address, identifier");
+    expect(page).toContain("your visit is not measured, and anything that arrives with either signal is discarded");
+    expect(page).not.toContain("nothing is measured or sent");
+    expect(page).toContain("Measuring how fast our pages are");
+    expect(page).toContain("Article 6(1)(f): our legitimate interest in a fast, working site.");
+    expect(page).toContain("We run no third-party analytics product");
+    expect(page).not.toContain("We run no analytics product");
+    // The storage list names what the switch keeps.
+    expect(page).toContain("Your page-speed choice");
+    const button = screen.getByRole("button", { name: "Don't measure my visits" });
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("status").textContent).toBe(MEASURED);
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(measurementDeclined()).toBe(true);
+    expect(screen.getByRole("status").textContent).toBe("Your visits in this browser are not measured.");
+    // And back: the switch and its status say so too (#355's code review).
+    fireEvent.click(button);
+    expect(measurementDeclined()).toBe(false);
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("status").textContent).toBe(MEASURED);
+  });
+
+  // Blake, 13 November 2026 ("Keep it for the tab"): kept for the tab, and said so.
+  it("says plainly when the browser would not keep the choice, and that it holds for this tab", () => {
+    withFullStorage(() => {
+      render(<LegalPage type="privacy" />);
+      fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT_TAB);
+    });
+  });
+
+  it("says it holds only on this page where the tab will not keep it either", () => {
+    withFullStorage(() => {
+      render(<LegalPage type="privacy" />);
+      fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
+      expect(screen.getByRole("button", { name: "Don't measure my visits" }).getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT_PAGE);
+    }, true);
+  });
+
+  // #355's reviews (13 November 2026): the switch read once, when shown, so a
+  // return to the page said the choice was kept when the browser had not kept it.
+  it("still says so when the visitor comes back to the page", () => {
+    withFullStorage(() => {
+      const first = render(<LegalPage type="privacy" />);
+      fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT_TAB);
+      first.unmount();
+      render(<LegalPage type="privacy" />);
+      expect(screen.getByRole("button", { name: "Don't measure my visits" }).getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT_TAB);
+    });
+  });
+
+  // #355's verifications (13 November): the switch must follow another tab's
+  // press made while this tab was away from the page, even over this tab's
+  // own press that the browser would not keep, and undo a choice kept from an
+  // earlier visit.
+  it("shows another tab's press made while the visitor was away from the page", () => {
+    withFullStorage((kept) => {
+      const first = render(<LegalPage type="privacy" />);
+      fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT_TAB);
+      first.unmount();
+      // Another tab, with room by then, turns it on and then off while this one is on another page.
+      kept.set(MEASUREMENT_DECLINED_KEY, "1");
+      fireEvent(window, new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: null, newValue: "1" }));
+      kept.delete(MEASUREMENT_DECLINED_KEY);
+      fireEvent(window, new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: "1", newValue: null }));
+      render(<LegalPage type="privacy" />);
+      expect(screen.getByRole("button", { name: "Don't measure my visits" }).getAttribute("aria-pressed")).toBe("false");
+      expect(screen.getByRole("status").textContent).toBe(MEASURED);
+    });
+  });
+
+  it("undoes a choice kept from an earlier visit", () => {
+    window.localStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
+    render(<LegalPage type="privacy" />);
+    const button = screen.getByRole("button", { name: "Don't measure my visits" });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("status").textContent).toBe("Your visits in this browser are not measured.");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("status").textContent).toBe(MEASURED);
+    expect(measurementDeclined()).toBe(false);
+  });
+
+  // #355's code review: a press in another tab of this browser shows here too.
+  it("shows a choice made in another tab of this browser", () => {
+    render(<LegalPage type="privacy" />);
+    const button = screen.getByRole("button", { name: "Don't measure my visits" });
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    window.localStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
+    fireEvent(window, new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: null, newValue: "1" }));
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("status").textContent).toBe("Your visits in this browser are not measured.");
+    window.localStorage.removeItem(MEASUREMENT_DECLINED_KEY);
+    fireEvent(window, new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: "1", newValue: null }));
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("status").textContent).toBe(MEASURED);
+  });
+
+  // #355's review (13 November 2026): where the browser refuses its storage
+  // altogether, the visitor is never measured, whatever they press, so the
+  // status must not say the choice lasts only until they leave; and it says
+  // why the press changes nothing (Blake, 13 November: "Change both").
+  it("says a browser that refuses its storage is never measured, and why, whatever is pressed", () => {
+    const real = window.localStorage;
+    const refuse = (): never => { throw new Error("blocked"); };
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: { getItem: refuse, setItem: refuse, removeItem: refuse },
+    });
+    try {
+      render(<LegalPage type="privacy" />);
+      const button = screen.getByRole("button", { name: "Don't measure my visits" });
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByRole("status").textContent).toBe(STORAGE_REFUSED);
+      // #355's review (WZ9, 18 November 2026): a press that changed nothing
+      // said nothing to a screen reader, so the switch says it is unavailable,
+      // with the status line as its description.
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      const described = button.getAttribute("aria-describedby") ?? "";
+      expect(document.getElementById(described)).toBe(screen.getByRole("status"));
+      fireEvent.click(button);
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByRole("status").textContent).toBe(STORAGE_REFUSED);
+    } finally {
+      Object.defineProperty(window, "localStorage", { configurable: true, value: real });
+      setMeasurementDeclined(false);
+    }
+  });
+
+  it("leaves the switch available, with no description, wherever the browser keeps the choice", () => {
+    render(<LegalPage type="privacy" />);
+    const button = screen.getByRole("button", { name: "Don't measure my visits" });
+    expect(button.hasAttribute("aria-disabled")).toBe(false);
+    expect(button.hasAttribute("aria-describedby")).toBe(false);
+    fireEvent.click(button);
+    expect(button.hasAttribute("aria-disabled")).toBe(false);
+    expect(measurementDeclined()).toBe(true);
+  });
+
+  // #355's review (WZ9): the sentences that say to use the switch (its own
+  // paragraph, the lawful basis, the cookies paragraph and the storage list)
+  // link to it, and every such link on every document has its target there.
+  it.each(TYPES)("links each mention of the switch to the switch on the same page — %s", (type) => {
+    const page = textOf(type);
+    const mentions = page.split("\"Don't measure my visits\" switch").length - 1;
+    const links = [...document.querySelectorAll<HTMLAnchorElement>("a[href^='#']")]
+      .filter((link) => link.textContent === "\"Don't measure my visits\" switch");
+    expect(links).toHaveLength(mentions);
+    if (type === "privacy") expect(mentions).toBeGreaterThanOrEqual(4);
+    for (const link of links) {
+      const target = document.getElementById(link.getAttribute("href")?.slice(1) ?? "");
+      expect(target).toBe(screen.getByRole("button", { name: "Don't measure my visits" }));
+    }
+  });
+
+  // The sitemap tells search engines when each policy last changed; a policy
+  // re-dated without its sitemap entry would say otherwise (13 November 2026).
+  it("dates each policy in the sitemap as the page dates itself", () => {
+    const sitemap = readFileSync(resolve("public/sitemap.xml"), "utf8");
+    for (const [type, path] of [["privacy", "/privacy"], ["terms", "/terms"], ["accessibility", "/accessibility"]] as const) {
+      const { unmount } = render(<LegalPage type={type} />);
+      const iso = document.querySelector("time")?.getAttribute("datetime") ?? "";
+      const entry = new RegExp(`<loc>https://venviewer\\.com${path}</loc>\\s*<lastmod>([0-9-]+)</lastmod>`, "u").exec(sitemap);
+      expect(entry?.[1], path).toBe(iso);
+      unmount();
+    }
+  });
+
   it("says what the dietary note is, who reads it, that logs leave it out, and how long it is kept", () => {
     const text = textOf("privacy");
     expect(text).toContain("Dietary and allergy notes for an event");
@@ -378,15 +630,15 @@ describe("the accessibility statement", () => {
     expect(text).toContain("4.5:1");
   });
 
-  it("lists the planner's single-key shortcuts and its cut-off tool hints as known problems", () => {
+  it("lists the planner's single-key shortcuts as a known problem, and no longer the tool hints its panel cut off", () => {
     render(<LegalPage type="accessibility" />);
     const known = document.getElementById("known-problems")?.textContent ?? "";
     expect(known).toContain("Single-key shortcuts in the planner");
     expect(known).toContain("WCAG success criterion 2.1.4, Character Key Shortcuts");
-    expect(known).toContain("Hints in the planner's tools panel");
-    expect(known).toContain("is cut off at the panel's edge");
-    // On screen the button is a three-dot icon; its name is for screen readers.
-    expect(known).toContain("a button marked with three dots");
+    // E23 draws each hint outside the More planner tools panel, where it reads
+    // in full (e2e: "desktop keeps keyboard shortcut hints").
+    expect(known).not.toContain("Hints in the planner's tools panel");
+    expect(known).not.toContain("cut off");
   });
 
   it("commits to a response time for access problems", () => {

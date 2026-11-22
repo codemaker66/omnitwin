@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   EVENT_ARCHITECT_OPS_REVIEW_ROLES,
@@ -34,6 +36,8 @@ import {
   compilesHandoffPack,
   diaryVenueOf,
   hasRole,
+  opensDiary,
+  replyVenueOf,
 } from "../role-capabilities.js";
 import { NAV_ITEMS, canShowNavItem } from "../../components/dashboard/DashboardLayout.js";
 import { canOpenDashboardView, dashboardViewFromSearchValue } from "../../pages/DashboardPage.js";
@@ -437,6 +441,52 @@ describe("who is offered the general AI draft panel", () => {
     expect(canDraftWithAI({ role: "planner", venueId: "venue-1", platformRole: "admin" })).toBe(true);
     expect(canDraftWithAI({ ...placed, role: "planner", platformRole: "operator" })).toBe(false);
     expect(canDraftWithAI(null)).toBe(false);
+  });
+});
+
+// POST /enquiries/:id/first-response and GET /enquiries/reply-alarm read
+// isVenueCommercialMember: admin, manager, staff or sales, at their own venue,
+// whatever their platform role. The desk offers "Record a reply" and reads the
+// alarm for exactly those people, so neither is a refusal.
+describe("who records replies and reads the reply-time alarm", () => {
+  it("is the venue's commercial team at its own venue", () => {
+    for (const role of USER_ROLES) {
+      const commercial = ["admin", "manager", "staff", "sales"].includes(role);
+      expect(replyVenueOf({ role, venueId: "venue-1" }), role).toBe(commercial ? "venue-1" : null);
+    }
+    expect(COMMERCIAL_ROLES).toEqual(["admin", "manager", "staff", "sales"]);
+  });
+
+  it("is nobody without a venue, a platform admin acting for none included", () => {
+    expect(replyVenueOf({ role: "staff", venueId: null })).toBeNull();
+    expect(replyVenueOf({ role: "admin", venueId: null })).toBeNull();
+    expect(replyVenueOf({ role: "hallkeeper", venueId: "venue-1" })).toBeNull();
+    expect(replyVenueOf(null)).toBeNull();
+  });
+});
+
+// The Diary page (/diary) is offered by the staff header and Find, and its
+// route admits, by one rule: its readers, and a platform admin whatever its
+// venue role, as GET /calendar's canReadDiary admits (canManageVenue passes a
+// platform admin). The route used to check the role alone, so a platform admin
+// holding a customer's role was offered the Diary and then refused it.
+describe("who opens the Diary", () => {
+  it("is every Diary reader, and a platform admin whatever its role, and nobody else", () => {
+    for (const role of USER_ROLES) {
+      for (const platformRole of ["none", "operator", "admin"] as const) {
+        expect(opensDiary({ role, platformRole }), `${role} (platformRole ${platformRole})`)
+          .toBe(platformRole === "admin" || hasRole(DIARY_ROLES, role));
+      }
+    }
+    expect(opensDiary(null)).toBe(false);
+    expect(opensDiary(undefined)).toBe(false);
+  });
+
+  it("is the rule the /diary route admits by, not a role list of its own", () => {
+    const source = readFileSync(resolve("src/router.tsx"), "utf8");
+    const route = /staffPage\("\/diary",[\s\S]*?<\/ProtectedRoute>\)/u.exec(source)?.[0] ?? "";
+    expect(route).toContain("<ProtectedRoute admits={opensDiary}>");
+    expect(route).not.toContain("allowedRoles");
   });
 });
 

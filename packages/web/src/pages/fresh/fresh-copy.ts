@@ -218,6 +218,19 @@ export const FRESH_ENQUIRY_SUBMIT = "Send enquiry";
 export const FRESH_ENQUIRY_SENDING = "Sending…";
 export const FRESH_ENQUIRY_EMAIL_REQUIRED = "Enter your email address.";
 export const FRESH_ENQUIRY_EMAIL_INVALID = "Enter a valid email address.";
+
+/**
+ * Why Send holds the date, in the owner's words (FreshEnquiry's
+ * eventDateRefusal names which). Blake chose on 13 November 2026 that the
+ * forms refuse a date before today, and on 14 November these three
+ * sentences, word for word: a date before the guest's own today; a year
+ * past the last the API takes (a doubled key gives 20277), "Four digits";
+ * and a day the calendar does not have (30 February), "From the calendar".
+ */
+export const FRESH_ENQUIRY_DATE_BEFORE_TODAY = "Choose a date from today onwards.";
+export const FRESH_ENQUIRY_DATE_AFTER_LAST = "Choose a year with four digits.";
+export const FRESH_ENQUIRY_DATE_NOT_A_DATE = "Choose a date from the calendar.";
+
 export const FRESH_ENQUIRY_SENT_TITLE = "Enquiry sent";
 export const FRESH_ENQUIRY_SENT_LINE =
   "The events team will reply by email.";
@@ -342,6 +355,9 @@ export function allFreshCopy(): readonly string[] {
     FRESH_ENQUIRY_SENDING,
     FRESH_ENQUIRY_EMAIL_REQUIRED,
     FRESH_ENQUIRY_EMAIL_INVALID,
+    FRESH_ENQUIRY_DATE_BEFORE_TODAY,
+    FRESH_ENQUIRY_DATE_AFTER_LAST,
+    FRESH_ENQUIRY_DATE_NOT_A_DATE,
     FRESH_ENQUIRY_SENT_TITLE,
     FRESH_ENQUIRY_SENT_LINE,
     FRESH_ENQUIRY_ERROR,

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { dayNumber } from "./pricing-desk.js";
-import { isCalendarDate } from "./event-brief-draft.js";
+import { isCalendarDate } from "./calendar-date.js";
 
 // ---------------------------------------------------------------------------
 // The competitor watch (Blake approved the proposal on 17 October 2026):

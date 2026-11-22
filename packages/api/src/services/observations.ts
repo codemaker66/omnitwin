@@ -2,6 +2,7 @@ import { and, asc, eq, gt, lt } from "drizzle-orm";
 import type { ObservationListQuery, RecordObservation, SlotObservation } from "@omnitwin/types";
 import { bookingObservations, bookings } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { clipName } from "../utils/clip-name.js";
 import { canReadDiary, canRecordObservation } from "../utils/query.js";
 import type { RequestActor } from "./requests.js";
 
@@ -111,7 +112,8 @@ export async function recordObservationCore(
       observedAt: new Date(observedAtMs),
       recordedAt: new Date(nowMs),
       actorUserId: actor.id,
-      actorName: actor.name,
+      // A name longer than the column is kept to it, never refused.
+      actorName: clipName(actor.name),
       actorRole: actor.role,
       idempotencyKey: input.idempotencyKey,
     })

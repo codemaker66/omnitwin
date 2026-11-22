@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { test as base, type Route } from "@playwright/test";
 import { GENERATED_ROOM_SPLAT_BUNDLES } from "../../src/data/generated/trades-hall-splat-bundles.js";
 import { captureCacheDirectory, capturePathPrefix, readStagedTile, stagedFixtureTiles } from "./capture-fixture-cache.js";
+import { describeWorkerLoop, watchWorkerEventLoop, type WorkerLoopWatch } from "./stage-timeline.js";
 
 const bundle = GENERATED_ROOM_SPLAT_BUNDLES.find((room) => room.roomSlug === "reception-room");
 if (bundle === undefined) throw new Error("Reception Room capture descriptor is missing");
@@ -13,7 +14,27 @@ interface StagedReception {
   readonly requestedFiles: ReadonlySet<string>;
 }
 
-export const test = base.extend<{ stagedReception: StagedReception }>({
+export const test = base.extend<{ stagedReception: StagedReception; workerEventLoop: WorkerLoopWatch }>({
+  // The CARD A2 cases (this file's only users) time the Playwright worker's own event loop from
+  // before the browser context opens until the case ends, pass or fail: the page's requests all go
+  // through this worker, so the page's clock alone cannot say which side stalled
+  // (support/stage-timeline.ts). The line is printed at teardown, so a case that failed or timed
+  // out before its evidence still leaves it in the job log.
+  workerEventLoop: [
+    // eslint-disable-next-line no-empty-pattern -- Playwright reads a fixture's needs from this destructuring; it needs none
+    async ({}, use, testInfo) => {
+      const watch = watchWorkerEventLoop();
+      try {
+        await use(watch);
+      } finally {
+        const delay = watch.stop();
+        // eslint-disable-next-line no-console -- deliberate: CARD-A2 timing evidence in the runner output
+        console.log(`[CARD-A2 worker] ${testInfo.title.slice(0, 60)} (attempt ${String(testInfo.retry + 1)}, ${testInfo.status ?? "unknown"}): ${describeWorkerLoop(delay)}`);
+        await testInfo.attach("worker-event-loop.json", { body: JSON.stringify(delay, null, 2), contentType: "application/json" });
+      }
+    },
+    { auto: true },
+  ],
   stagedReception: async ({ page, baseURL }, use) => {
     if (baseURL === undefined) throw new Error("The capture fixture requires an explicit loopback HTTP baseURL");
     const appUrl = new URL(baseURL);

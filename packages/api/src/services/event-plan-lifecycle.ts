@@ -66,12 +66,13 @@ export function serializeEventPlanChange(row: ChangeRow): ChangeFeedItem {
 }
 
 /** A change as the floor reads it: for a Diary move, also where it put the
- *  booking (the place is whole or absent, as the table's CHECK keeps it). */
-export function serializeFloorChange(row: ChangeRow): FloorChange {
+ *  booking (the place is whole or absent, as the table's CHECK keeps it), and
+ *  whether it has no place of its own on the board's day (FloorChangeSchema). */
+export function serializeFloorChange(row: ChangeRow, eventWide: boolean): FloorChange {
   const movedTo = row.moveToSpaceId !== null && row.moveToStartsAt !== null && row.moveToEndsAt !== null
     ? { spaceId: row.moveToSpaceId, startsAt: toIso(row.moveToStartsAt), endsAt: toIso(row.moveToEndsAt) }
     : null;
-  return FloorChangeSchema.parse({ ...serializeEventPlanChange(row), movedTo });
+  return FloorChangeSchema.parse({ ...serializeEventPlanChange(row), movedTo, eventWide });
 }
 
 export function serializeNotification(row: NotificationRow, readAt: Date | null): Notification {
@@ -138,12 +139,17 @@ export async function recordEventPlanChange(
         moveToStartsAt: parsed.bookingMove.to.startsAt,
         moveToEndsAt: parsed.bookingMove.to.endsAt,
         moveChainId: parsed.bookingMove.chainId,
+        moveTold: parsed.bookingMove.told,
       }),
     }).returning();
 
     if (change === undefined) {
       throw new Error("event plan change insert returned no row");
     }
+
+    // A booking move the floor is not told of (one into the past) is kept as
+    // history and rings no bell.
+    if (parsed.bookingMove?.told === false) return serializeEventPlanChange(change);
 
     const severity = notificationSeverityForRisk(parsed.riskLevel);
     await tx.insert(eventPlanNotifications).values(audienceRoles.map((audienceRole) => ({
