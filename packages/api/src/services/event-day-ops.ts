@@ -385,8 +385,9 @@ async function recordedStatusAnswer(
 }
 
 /** When a status write is made: the database's own clock while the task's
- *  row is held. Every status write first takes the row (SELECT … FOR NO KEY
- *  UPDATE, the lock its UPDATE takes anyway), then stamps the task's
+ *  row is held. Every status write first takes the task's event (FOR KEY
+ *  SHARE, the house order an erasure keeps), then the row (SELECT … FOR NO
+ *  KEY UPDATE, the lock its UPDATE takes anyway), then stamps the task's
  *  updated_at and inserts its completion event with this, so both follow
  *  the order the writes were made in. A column default, now(), is the time
  *  the transaction began, and the API's new Date() is another machine's
@@ -428,11 +429,15 @@ async function lastWriteMadeUnder(
  * queued). Otherwise it is refused, so a stale replay never undoes a later
  * press.
  *
- * One decision under the task's row lock: the SELECT … FOR NO KEY UPDATE
- * holds the row from the comparison, through the look at the task's last
- * write, to the write and its completion event. A second replay or a live
- * press that reaches the row meanwhile waits for this transaction to
- * commit, and a replay that waited reads the row as committed. A key recorded meanwhile
+ * One decision under the task's row lock. The task's event is taken first
+ * (FOR KEY SHARE), the house order an erasure keeps (people-erasure.ts): it
+ * locks the event, then rewords the task, so a replay holding the task's
+ * row that then reached the event through the completion event's key would
+ * meet it in a deadlock. Then the SELECT … FOR NO KEY UPDATE holds the row
+ * from the comparison, through the look at the task's last write, to the
+ * write and its completion event. A second replay or a live press that
+ * reaches the row meanwhile waits for this transaction to commit, and a
+ * replay that waited reads the row as committed. A key recorded meanwhile
  * gets its recorded answer; a refusal writes nothing: no completion event,
  * board line or recorded key.
  */
@@ -444,6 +449,7 @@ async function updateOpsTaskStatusIfStillHeld(
 ): Promise<UpdateOpsTaskStatusResult> {
   const expected = parsed.expectedStatus;
   return db.transaction(async (tx) => {
+    await tx.select({ id: events.id }).from(events).where(eq(events.id, joined.event.id)).for("key share");
     const [current] = await tx.select().from(opsTasks).where(eq(opsTasks.id, joined.task.id)).limit(1).for("no key update");
     if (current === undefined) throw new EventDayTaskNotFoundError(joined.task.id);
     const recorded = parsed.idempotencyKey === undefined

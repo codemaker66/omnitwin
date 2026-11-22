@@ -603,4 +603,42 @@ describe.skipIf(target === undefined)("a queued task status replayed on the migr
     expect(served.updatedAt).toBe(`${stored.slice(0, 23)}Z`);
     expect(Date.parse(served.updatedAt)).toBe(Date.parse(`${stored.slice(0, 23)}Z`));
   });
+
+  // The house lock order (#247, people-erasure.ts): an erasure locks the
+  // event FOR UPDATE, then rewords the event's rows, the task among them. A
+  // status write takes the event first (FOR KEY SHARE), then the task's row,
+  // so it waits on such an erasure rather than meeting it. Taken the other
+  // way round (the task's row, then the event through the completion
+  // event's key), the two deadlock and PostgreSQL rolls one back.
+  it.each([
+    ["a live press", { status: "in_progress" } as const],
+    ["a replay", { status: "in_progress", expectedStatus: "todo" } as const],
+  ])("waits on an erasure holding the task's event when %s arrives, and writes once it lets go", async (_name, body) => {
+    const { taskId, eventId } = await newTask();
+    const erasure = await lockPool.connect();
+    let committed = false;
+    try {
+      await erasure.query("BEGIN");
+      await erasure.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [eventId]);
+      const answer = send(taskId, { ...body, idempotencyKey: `start-${taskId}` });
+      await lockWaiters(1);
+      // What the erasure does next: reword the event's task.
+      await erasure.query("UPDATE ops_tasks SET title = 'TEST ONLY reworded' WHERE id = $1", [taskId]);
+      await erasure.query("COMMIT");
+      committed = true;
+
+      const answered = await answer;
+      expect({ statusCode: answered.statusCode, code: answered.body.code }).toEqual({ statusCode: 200, code: undefined });
+      expect(answered.body.data?.status).toBe("in_progress");
+      const [row] = await db.select({ title: schema.opsTasks.title, status: schema.opsTasks.status })
+        .from(schema.opsTasks).where(eq(schema.opsTasks.id, taskId));
+      expect(row).toEqual({ title: "TEST ONLY reworded", status: "in_progress" });
+      expect((await recorded(taskId, eventId)).completions).toEqual([
+        { fromStatus: "todo", toStatus: "in_progress", idempotencyKey: `start-${taskId}` },
+      ]);
+    } finally {
+      if (!committed) await erasure.query("ROLLBACK");
+      erasure.release();
+    }
+  }, 60000);
 });
