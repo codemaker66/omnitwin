@@ -1,4 +1,4 @@
-import Anthropic, { toFile, type ClientOptions } from "@anthropic-ai/sdk";
+import Anthropic, { toFile, type ClientOptions, type Middleware } from "@anthropic-ai/sdk";
 import type { AgentCreateParams, AgentUpdateParams } from "@anthropic-ai/sdk/resources/beta/agents/agents";
 import type { BetaEnvironment, EnvironmentCreateParams, EnvironmentUpdateParams } from "@anthropic-ai/sdk/resources/beta/environments/environments";
 import type {
@@ -152,10 +152,10 @@ export const ANTHROPIC_API_URL = "https://api.anthropic.com";
  * Environment variables through which the SDK would send the key, or another
  * credential, somewhere else or with extra headers. The client sets its host
  * and its auth itself, so ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN would be
- * ignored; the SDK always adds ANTHROPIC_CUSTOM_HEADERS. Any of them set to
- * something else refuses the start, so nobody believes they took effect
- * (ANTHROPIC_BASE_URL may be the official host, which a Claude Code shell
- * exports). A variable is named, never its value.
+ * ignored; the SDK always adds ANTHROPIC_CUSTOM_HEADERS, which keyOnlyToAnthropic
+ * then drops or refuses. Any of them set to something else refuses the start,
+ * so nobody believes they took effect (ANTHROPIC_BASE_URL may be the official
+ * host, which a Claude Code shell exports). A variable is named, never its value.
  */
 export function anthropicEnvironmentProblems(env: NodeJS.ProcessEnv): string[] {
   const value = (name: string): string => env[name]?.trim() ?? "";
@@ -170,43 +170,106 @@ export function anthropicEnvironmentProblems(env: NodeJS.ProcessEnv): string[] {
 type Fetch = NonNullable<ClientOptions["fetch"]>;
 
 const MAX_REDIRECTS = 5;
-/** The headers that carry a credential: never sent to another host. */
-const CREDENTIAL_HEADERS = ["x-api-key", "authorization"] as const;
+
+/**
+ * Every header SDK 0.131 builds for the launcher's requests besides the key,
+ * read from its request builder (client.ts buildHeaders, the platform headers,
+ * each resource's anthropic-beta and accept, the stainless helper headers): the
+ * only ones forwarded. It has no idempotency header; the retry count is
+ * x-stainless-retry-count. Anything else, from ANTHROPIC_CUSTOM_HEADERS for one,
+ * is dropped.
+ */
+const FORWARDED_HEADERS: ReadonlySet<string> = new Set([
+  "accept",
+  "anthropic-beta",
+  "anthropic-version",
+  "content-type",
+  "user-agent",
+  "x-stainless-arch",
+  "x-stainless-helper",
+  "x-stainless-helper-method",
+  "x-stainless-lang",
+  "x-stainless-os",
+  "x-stainless-package-version",
+  "x-stainless-retry-count",
+  "x-stainless-runtime",
+  "x-stainless-runtime-version",
+  "x-stainless-timeout",
+]);
+
+/** Headers that carry an identity of their own: any of them refuses the request rather than being dropped quietly. */
+const IDENTITY_HEADERS: ReadonlySet<string> = new Set(["authorization", "proxy-authorization", "cookie"]);
+
+/** The Files API's content endpoint: the one answer that may come from another host (storage, say). */
+const FILE_CONTENT_PATH = /^\/v1\/files\/[^/]+\/content$/u;
+
+/**
+ * A request the key guard will not send or follow. Retrying cannot change the
+ * answer, so the client passes it to the caller as it is (refusalsAreFinal).
+ */
+class KeyGuardRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "KeyGuardRefusal";
+  }
+}
 
 function urlOf(input: string | URL | Request): string {
   return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 }
 
 /**
- * Wraps `next` so a request goes only to ANTHROPIC_API_URL, and redirects are
- * followed here rather than by fetch (which forwards X-Api-Key to another host).
- * A redirect within ANTHROPIC_API_URL keeps the headers. One to another host is
- * followed only for a GET or HEAD (a download handed to storage, say), with
- * every credential header removed for the rest of the chain. Any other request
- * is followed only through a same-origin 307 or 308 (which keep the method and
- * body); a 301, 302 or 303 of it, or a redirect off the origin, is refused. A
- * target that is not https is never followed. At most five redirects.
+ * The headers to send: only FORWARDED_HEADERS, and X-Api-Key, which must be
+ * `apiKey`. An identity header, or any other key, refuses the request.
  */
-export function keyOnlyToAnthropic(next: Fetch = globalThis.fetch): Fetch {
+function forwardedHeaders(apiKey: string, built: Headers): Headers {
+  const forwarded = new Headers();
+  for (const [name, value] of built) {
+    if (IDENTITY_HEADERS.has(name)) throw new KeyGuardRefusal(`refusing a request that carries a ${name} header: the launcher sends its own key and no other credential`);
+    if (FORWARDED_HEADERS.has(name)) forwarded.set(name, value);
+  }
+  if (built.get("x-api-key") !== apiKey) throw new KeyGuardRefusal("refusing a request whose X-Api-Key is not the launcher's key");
+  forwarded.set("x-api-key", apiKey);
+  return forwarded;
+}
+
+/**
+ * Wraps `next` so a request goes only to ANTHROPIC_API_URL, with only the
+ * headers the SDK builds (FORWARDED_HEADERS) and `apiKey` as X-Api-Key; an
+ * Authorization, a cookie or another key refuses it. Redirects are followed
+ * here rather than by fetch (which forwards X-Api-Key to another host). A
+ * redirect within ANTHROPIC_API_URL keeps the headers. One to another host is
+ * followed only for a GET or HEAD of a file's content (FILE_CONTENT_PATH: a
+ * download handed to storage), with the key removed for the rest of the chain;
+ * every JSON endpoint refuses it, so no status, cost or event comes from
+ * another host. Any other method is followed only through a same-origin 307 or
+ * 308 (which keep the method and body); a 301, 302 or 303 of it, or a redirect
+ * off the origin, is refused. A target that is not https is never followed. At
+ * most five redirects. Every refusal is a KeyGuardRefusal.
+ */
+export function keyOnlyToAnthropic(apiKey: string, next: Fetch = globalThis.fetch): Fetch {
+  if (apiKey === "") throw new Error("keyOnlyToAnthropic needs the launcher's key");
   return async (input, init) => {
     let url = new URL(urlOf(input));
-    if (url.origin !== ANTHROPIC_API_URL) throw new Error(`refusing a request to ${url.origin}: the key goes only to ${ANTHROPIC_API_URL}`);
+    if (url.origin !== ANTHROPIC_API_URL) throw new KeyGuardRefusal(`refusing a request to ${url.origin}: the key goes only to ${ANTHROPIC_API_URL}`);
     const method = (init?.method ?? "GET").toUpperCase();
-    const headers = new Headers(init?.headers);
+    const headers = forwardedHeaders(apiKey, new Headers(init?.headers));
+    const download = (method === "GET" || method === "HEAD") && FILE_CONTENT_PATH.test(url.pathname);
     for (let hops = 0; ; hops += 1) {
       const response = await next(url.href, { ...init, method, headers, redirect: "manual" });
       const location = response.headers.get("location");
       if (![301, 302, 303, 307, 308].includes(response.status) || location === null) return response;
       await response.body?.cancel();
-      if (hops === MAX_REDIRECTS) throw new Error(`more than ${String(MAX_REDIRECTS)} redirects from ${ANTHROPIC_API_URL}`);
+      if (hops === MAX_REDIRECTS) throw new KeyGuardRefusal(`more than ${String(MAX_REDIRECTS)} redirects from ${ANTHROPIC_API_URL}`);
       const target = new URL(location, url);
-      if (target.protocol !== "https:") throw new Error(`refusing to follow a redirect to ${target.protocol}, only https is followed`);
+      if (target.protocol !== "https:") throw new KeyGuardRefusal(`refusing to follow a redirect to ${target.protocol}, only https is followed`);
       if (method !== "GET" && method !== "HEAD") {
         // Only a 307 or 308 keeps the method and the body by definition; a 301, 302 or 303 would re-send as GET (or re-POST), so none is followed.
-        if (response.status !== 307 && response.status !== 308) throw new Error(`refusing to follow a ${String(response.status)} redirect of a ${method} request`);
-        if (target.origin !== url.origin) throw new Error(`refusing to follow a ${method} redirect to ${target.origin}`);
+        if (response.status !== 307 && response.status !== 308) throw new KeyGuardRefusal(`refusing to follow a ${String(response.status)} redirect of a ${method} request`);
+        if (target.origin !== url.origin) throw new KeyGuardRefusal(`refusing to follow a ${method} redirect to ${target.origin}`);
       } else if (target.origin !== url.origin || target.origin !== ANTHROPIC_API_URL) {
-        for (const name of CREDENTIAL_HEADERS) headers.delete(name);
+        if (!download) throw new KeyGuardRefusal(`refusing to follow a redirect of ${url.pathname} to ${target.origin}: only a file download may leave ${ANTHROPIC_API_URL}`);
+        headers.delete("x-api-key");
       }
       url = target;
     }
@@ -214,18 +277,40 @@ export function keyOnlyToAnthropic(next: Fetch = globalThis.fetch): Fetch {
 }
 
 /**
+ * SDK 0.131 retries an error thrown by its fetch as a connection failure (twice
+ * more by default) and then wraps it as "Connection error."; an error thrown by
+ * middleware reaches the caller as it is, unless it, or an error in its cause
+ * chain, came from fetch or is an abort, an APIConnectionError or a
+ * RetryableError (client.ts makeRequest, core/middleware.ts isRetryableError).
+ * So a KeyGuardRefusal is thrown again from here as a new error with no cause:
+ * it is never re-sent, and the caller sees its reason. Real connection failures
+ * keep the SDK's retries.
+ */
+const refusalsAreFinal: Middleware = async (request, next) => {
+  try {
+    return await next(request);
+  } catch (error) {
+    if (error instanceof KeyGuardRefusal) throw new KeyGuardRefusal(error.message);
+    throw error;
+  }
+};
+
+/**
  * The key is passed in from the key file and handed straight to the client;
  * it never enters process.env, a log or an error message. It goes only to
  * ANTHROPIC_API_URL, as the X-Api-Key header and no other credential, through
- * keyOnlyToAnthropic. `env` and `fetchImpl` are test seams: the SDK itself
- * reads process.env.
+ * keyOnlyToAnthropic, which also drops every header the SDK did not build.
+ * `env` and `fetchImpl` are test seams. The SDK itself reads process.env
+ * whatever `env` says, but the guard does not depend on which one was checked:
+ * the client fixes its host and auth, and keyOnlyToAnthropic drops or refuses
+ * what ANTHROPIC_CUSTOM_HEADERS adds.
  */
 export function sdkSandboxApi(apiKey: string, fetchImpl?: Fetch, env: NodeJS.ProcessEnv = process.env): SandboxApi {
   const problems = anthropicEnvironmentProblems(env);
   if (problems.length > 0) {
     throw new Error(`refusing to start: ${problems.join("; ")}. Unset ${problems.length === 1 ? "it" : "them"} in this shell; the launcher talks only to ${ANTHROPIC_API_URL}.`);
   }
-  const client = new Anthropic({ apiKey, authToken: null, baseURL: ANTHROPIC_API_URL, fetch: keyOnlyToAnthropic(fetchImpl) });
+  const client = new Anthropic({ apiKey, authToken: null, baseURL: ANTHROPIC_API_URL, fetch: keyOnlyToAnthropic(apiKey, fetchImpl), middleware: [refusalsAreFinal] });
   return {
     createEnvironment: (params) => client.beta.environments.create(params),
     retrieveEnvironment: (id) => client.beta.environments.retrieve(id),

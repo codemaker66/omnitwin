@@ -98,9 +98,33 @@ export function parseTask(text: string, file: string): Task {
   };
 }
 
+/** How many causes describeError follows before it stops. */
+const MAX_CAUSES = 4;
+
+/**
+ * One line for the CLI: the error's message, then its cause chain (the SDK's
+ * "Connection error." keeps the real reason in its cause), each message once,
+ * at most MAX_CAUSES deep.
+ */
 export function describeError(error: unknown): string {
   if (error instanceof z.ZodError) {
     return error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
   }
-  return error instanceof Error ? error.message : String(error);
+  const messageOf = (value: unknown): string => (value instanceof Error ? value.message : String(value)).replace(/\s*\r?\n\s*/gu, " ").trim();
+  const first = messageOf(error);
+  const causes: string[] = [];
+  const seen = new Set<unknown>([error]);
+  let cause: unknown = error instanceof Error ? error.cause : undefined;
+  let more = false;
+  for (let depth = 0; cause !== undefined && cause !== null && !seen.has(cause); depth += 1) {
+    if (depth === MAX_CAUSES) {
+      more = true;
+      break;
+    }
+    seen.add(cause);
+    const text = messageOf(cause);
+    if (text !== "" && text !== first && !causes.includes(text)) causes.push(text);
+    cause = cause instanceof Error ? cause.cause : undefined;
+  }
+  return causes.length === 0 ? first : `${first} (caused by: ${causes.join("; caused by: ")}${more ? "; ..." : ""})`;
 }
