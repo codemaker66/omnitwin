@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, desc, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import {
+  CLOSED_ENQUIRY_STATES,
   ENQUIRY_FUNNEL_FIELDS,
   ENQUIRY_REPLY_ALARM_DEFAULT_HOURS,
   ENQUIRY_REPLY_ALARM_FROM,
@@ -12,6 +13,7 @@ import {
   FIRST_RESPONSE_REPORT_WINDOW_DAYS,
   NON_BOOKING_ENQUIRY_TYPES,
   RecordFirstResponseSchema,
+  type EnquiryEventResult,
   type RecordFirstResponseResult,
   type ReplyAlarm,
 } from "@omnitwin/types";
@@ -25,6 +27,7 @@ import { calculatePrice, type PricingRuleInput } from "../services/price-calcula
 import { sendEmailAsync } from "../services/email.js";
 import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
 import { lockFirstResponse, stampFirstResponse } from "../services/enquiry-funnel.js";
+import { ensureEnquiryEvent, type EnquiryEventRefusal } from "../services/enquiry-event.js";
 import { outerColumn } from "../utils/outer-column.js";
 
 // ---------------------------------------------------------------------------
@@ -127,6 +130,26 @@ function asSeenBy(user: JwtUser, row: EnquiryRow): EnquiryRow | CustomerEnquiry 
 /** Who may date a reported reply further back than the report window. */
 const BACKDATING_ROLES: ReadonlySet<string> = new Set(FIRST_RESPONSE_BACKDATING_ROLES);
 const DAY_MS = 86_400_000;
+
+/** Enquiry states in which no further work is expected (event-spine.ts). */
+const CLOSED_STATES: ReadonlySet<string> = new Set(CLOSED_ENQUIRY_STATES);
+
+/** Why an enquiry is not opened as an event (POST /enquiries/:id/event), as its team reads it. */
+const ENQUIRY_EVENT_REFUSALS = {
+  ENQUIRY_NOT_FOUND: { status: 404, error: "Enquiry not found", code: "NOT_FOUND" },
+  ENQUIRY_NOT_SENT: {
+    status: 422,
+    error: "This enquiry has not been sent yet, so it cannot be opened as an event.",
+    code: "ENQUIRY_NOT_SENT",
+  },
+  NOT_A_BOOKING_ENQUIRY: { status: 422, error: "This request asks to book nothing, so it has no event.", code: "NOT_A_BOOKING_ENQUIRY" },
+  ENQUIRY_CLOSED: { status: 422, error: "This enquiry is closed, so it is not opened as an event.", code: "ENQUIRY_CLOSED" },
+  ENQUIRY_REACHES_SEVERAL_EVENTS: {
+    status: 409,
+    error: "This enquiry's dates, deals or proposals already sit in more than one event, so a person needs to choose which. It will be on the list of joins to check.",
+    code: "ENQUIRY_REACHES_SEVERAL_EVENTS",
+  },
+} as const satisfies Record<EnquiryEventRefusal, { readonly status: number; readonly error: string; readonly code: string }>;
 
 // ---------------------------------------------------------------------------
 // Plugin
@@ -399,6 +422,11 @@ export async function enquiryRoutes(
           byUserId: isVenueCommercialMember(request.user, row.venueId) ? request.user.id : null,
           channel: "decision",
         });
+        // An approval works the enquiry: it gets its event now, as the join
+        // would give it one (services/enquiry-event.ts; the row is already
+        // locked by the update above). A turn-down makes none. A refusal is
+        // no error: the decision stands.
+        if (parsed.data.status === "approved") await ensureEnquiryEvent(tx, row.id, request.user.id);
         const [stamped] = await tx.select().from(enquiries).where(eq(enquiries.id, row.id)).limit(1);
         return stamped ?? row;
       }
@@ -533,6 +561,14 @@ export async function enquiryRoutes(
         byUserId: respondedBy,
         channel: parsed.data.channel,
       });
+      // A recorded reply works the enquiry, unless it is closed: it gets its
+      // event now (services/enquiry-event.ts). Its state is read again under
+      // the lock lockFirstResponse took, since a turn-down may have committed
+      // after the read above. A refusal is no error: the reply is recorded.
+      const [current] = await tx.select({ state: enquiries.state }).from(enquiries).where(eq(enquiries.id, enquiry.id)).limit(1);
+      if (result.stamp !== null && current !== undefined && !CLOSED_STATES.has(current.state)) {
+        await ensureEnquiryEvent(tx, enquiry.id, request.user.id);
+      }
       await tx.insert(generalAuditLog).values({
         actorUserId: request.user.id,
         action: "enquiry.first_response_reported",
@@ -571,6 +607,36 @@ export async function enquiryRoutes(
       },
       changed: stamped.changed,
     };
+    return { data };
+  });
+
+  // POST /enquiries/:id/event — the venue's commercial team opens an enquiry
+  // as an event on purpose: its own event, or the one event its dates,
+  // deals, proposals or floor plan already reach, or a new one
+  // (services/enquiry-event.ts, which decides as the join of old records
+  // decides). A second press answers with the same event. Refused when they
+  // reach several events (the list of joins to check decides which), and for
+  // a draft, a request that books nothing, or a closed enquiry with nothing to
+  // join.
+  server.post("/:id/event", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+    const [enquiry] = await db.select({ id: enquiries.id, venueId: enquiries.venueId })
+      .from(enquiries).where(eq(enquiries.id, params.data.id)).limit(1);
+    if (enquiry === undefined) {
+      return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
+    }
+    if (!canManageCommercial(request.user, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    const outcome = await db.transaction((tx) => ensureEnquiryEvent(tx, enquiry.id, request.user.id));
+    if (!outcome.ok) {
+      const refusal = ENQUIRY_EVENT_REFUSALS[outcome.code];
+      return reply.status(refusal.status).send({ error: refusal.error, code: refusal.code });
+    }
+    const data: EnquiryEventResult = { enquiryId: enquiry.id, eventId: outcome.eventId, created: outcome.created };
     return { data };
   });
 

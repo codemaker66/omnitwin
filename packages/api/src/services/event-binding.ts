@@ -13,6 +13,7 @@ import {
   summariseEventBookings,
   type EventStatus,
 } from "@omnitwin/types";
+import { z } from "zod";
 import type { Database } from "../db/client.js";
 import { bookings, enquiries, eventPhases, events, venues } from "../db/schema.js";
 
@@ -137,13 +138,17 @@ const EVENT_TYPE_LENGTH = 80;
  *  occasion and the venue's own day of its start, or by the occasion alone
  *  when it has no start (eventNameFor): an event named "" failed every read
  *  of its name, the client's schedule and home, the Diary range and the
- *  room's timeline among them. The occasion is cut to the column's width
- *  first, and the name made from it as stored, so syncEventStatus still
+ *  room's timeline among them. The occasion is trimmed (as JavaScript trims),
+ *  none when blank, then cut to the column's width, as the join of old
+ *  records stores it, so a hold's, a writer's and the join's events store
+ *  the same; the name is made from it as stored, so syncEventStatus still
  *  knows the name for a made one. */
 export async function createEventFor(conn: BindConn, seed: EventSeed): Promise<string> {
   const [venue] = await conn.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, seed.venueId)).limit(1);
   if (venue === undefined) throw new Error("A new event's venue is missing");
-  const eventType = seed.eventType === null ? null : seed.eventType.slice(0, EVENT_TYPE_LENGTH);
+  const occasion = seed.eventType?.trim() ?? "";
+  // Cut by characters, as the column and the join's left() count them.
+  const eventType = occasion === "" ? null : Array.from(occasion).slice(0, EVENT_TYPE_LENGTH).join("");
   const [created] = await conn.insert(events).values({
     venueId: seed.venueId,
     createdBy: seed.createdBy,
@@ -314,44 +319,64 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
   return { ok: true, eventId, created: joined === null };
 }
 
+/** What of an enquiry's own reaches a live event of its venue (readEnquiryReach). */
+export interface EnquiryReach {
+  /** The live events its undeleted bookings sit in (A), together with those its
+   *  undeleted deals and proposals are joined to (C): the join's M. */
+  readonly held: readonly string[];
+  /** The live events its floor plan is linked to (B). */
+  readonly plan: readonly string[];
+}
+
+const EnquiryReachRow = z.object({ held: z.array(z.string()), plan: z.array(z.string()) });
+
 /**
- * Whether anything of the enquiry's own reaches a live event of its venue
- * other than `eventId`, read as the join of old records reads it (step 1 of
- * spine_join_old_records, the spine's links migration): (A) an undeleted
- * booking of the enquiry sits in it; (C) an undeleted deal (source_enquiry_id)
- * or undeleted proposal (enquiry_id) of the enquiry is joined to it; (B) the
- * enquiry's floor plan is linked to it (event_configuration_links). When one
- * does, the join would list the enquiry rather than choose, so the bind does
- * not choose for it either. Plain reads, under the enquiry's lock the caller
- * already holds; no lock is taken here.
+ * What of the enquiry's own reaches a live event of its venue, read as the
+ * join of old records reads it (step 1 of spine_join_old_records, the spine's
+ * links migration): (A) the events its undeleted bookings sit in; (C) those its
+ * undeleted deals (source_enquiry_id) and undeleted proposals (enquiry_id) are
+ * joined to; (B) those its floor plan is linked to (event_configuration_links).
+ * Each set distinct and in id order, as the join holds them. Plain reads,
+ * under the enquiry's lock the caller already holds; no lock is taken here.
+ */
+export async function readEnquiryReach(
+  conn: BindConn,
+  enquiry: { readonly id: string; readonly venueId: string; readonly configurationId: string | null },
+): Promise<EnquiryReach> {
+  const result = await conn.execute(sql`
+    SELECT
+      ARRAY(SELECT DISTINCT e.id::text
+        FROM (SELECT b.event_id FROM bookings b WHERE b.enquiry_id = ${enquiry.id} AND b.deleted_at IS NULL
+              UNION ALL
+              SELECT o.event_id FROM opportunities o WHERE o.source_enquiry_id = ${enquiry.id} AND o.deleted_at IS NULL
+              UNION ALL
+              SELECT p.event_id FROM proposals p WHERE p.enquiry_id = ${enquiry.id} AND p.deleted_at IS NULL) k
+        JOIN events e ON e.id = k.event_id
+        WHERE e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL
+        ORDER BY 1) AS held,
+      ARRAY(SELECT DISTINCT e.id::text
+        FROM event_configuration_links k JOIN events e ON e.id = k.event_id
+        WHERE k.configuration_id = ${enquiry.configurationId}
+          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL
+        ORDER BY 1) AS plan
+  `);
+  const reach = EnquiryReachRow.safeParse(result.rows[0]);
+  if (!reach.success) throw new Error("The enquiry's reach returned no answer");
+  return reach.data;
+}
+
+/**
+ * Whether anything of the enquiry's own (readEnquiryReach) reaches a live
+ * event of its venue other than `eventId`. When one does, the join would list
+ * the enquiry rather than choose, so the bind does not choose for it either.
  */
 async function enquiryReachesAnotherEvent(
   conn: BindConn,
   enquiry: { readonly id: string; readonly venueId: string; readonly configurationId: string | null },
   eventId: string,
 ): Promise<boolean> {
-  const result = await conn.execute(sql`
-    SELECT EXISTS (
-      SELECT 1 FROM bookings b JOIN events e ON e.id = b.event_id
-        WHERE b.enquiry_id = ${enquiry.id} AND b.deleted_at IS NULL
-          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
-      UNION ALL
-      SELECT 1 FROM opportunities o JOIN events e ON e.id = o.event_id
-        WHERE o.source_enquiry_id = ${enquiry.id} AND o.deleted_at IS NULL
-          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
-      UNION ALL
-      SELECT 1 FROM proposals p JOIN events e ON e.id = p.event_id
-        WHERE p.enquiry_id = ${enquiry.id} AND p.deleted_at IS NULL
-          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
-      UNION ALL
-      SELECT 1 FROM event_configuration_links k JOIN events e ON e.id = k.event_id
-        WHERE k.configuration_id = ${enquiry.configurationId}
-          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
-    ) AS reaches
-  `);
-  const reaches = result.rows[0]?.["reaches"];
-  if (typeof reaches !== "boolean") throw new Error("The enquiry's reach returned no answer");
-  return reaches;
+  const reach = await readEnquiryReach(conn, enquiry);
+  return [...reach.held, ...reach.plan].some((id) => id !== eventId);
 }
 
 interface SpanBooking {

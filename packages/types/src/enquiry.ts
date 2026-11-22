@@ -267,6 +267,22 @@ export const GuestEnquirySchema = z
 export type GuestEnquiry = z.infer<typeof GuestEnquirySchema>;
 
 // ---------------------------------------------------------------------------
+// An enquiry opened as an event (POST /enquiries/:id/event, the venue's
+// commercial team). The enquiry's own event when it has one; else the one
+// event its dates, deals, proposals or floor plan already reach; else a new
+// one. Refused when they reach several (the list of joins to check decides).
+// ---------------------------------------------------------------------------
+
+export const EnquiryEventResultSchema = z.object({
+  enquiryId: EnquiryIdSchema,
+  eventId: z.uuid(),
+  /** True only when this request made the event. */
+  created: z.boolean(),
+});
+
+export type EnquiryEventResult = z.infer<typeof EnquiryEventResultSchema>;
+
+// ---------------------------------------------------------------------------
 // Occasions — what an enquiry is for, in words a person reads. They live in
 // occasion.ts, which imports nothing, so naming an event (event-name.ts)
 // never bundles these schemas; they are offered here under the same names.

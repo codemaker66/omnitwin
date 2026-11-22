@@ -9,6 +9,7 @@ import { paginate } from "../utils/pagination.js";
 import { canManageCommercial } from "../utils/query.js";
 import { QUOTE_STATES, canTransitionQuote } from "../state-machines/proposal.js";
 import { multiplyMinor, sumMinor } from "../services/money.js";
+import { ensureEnquiryEvent } from "../services/enquiry-event.js";
 
 // ---------------------------------------------------------------------------
 // Quote routes — T-427 phase 2.
@@ -209,6 +210,18 @@ export async function quoteRoutes(
 
     // Quote + line items in one transaction — no orphan headers.
     const created = await db.transaction(async (tx) => {
+      // Pricing an enquiry works it: the enquiry gets its event now, locked
+      // before the quote that references it is written, whether or not the
+      // quote also names a deal (services/enquiry-event.ts). A refusal is no
+      // error: the quote is made. A proposal it names is taken first, as the
+      // lock order has it (a proposal, then its enquiry): sending a proposal
+      // holds the proposal, then stamps its enquiry's first reply.
+      const enquiryId = parsed.data.enquiryId ?? null;
+      if (enquiryId !== null) {
+        const proposalId = parsed.data.proposalId ?? null;
+        if (proposalId !== null) await tx.select({ id: proposals.id }).from(proposals).where(eq(proposals.id, proposalId)).for("key share");
+        await ensureEnquiryEvent(tx, enquiryId, request.user.id);
+      }
       const [quote] = await tx.insert(quotes).values({
         venueId: parsed.data.venueId,
         opportunityId: parsed.data.opportunityId ?? null,

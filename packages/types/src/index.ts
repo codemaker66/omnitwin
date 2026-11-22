@@ -1047,6 +1047,7 @@ export {
   CreateEnquirySchema,
   GuestEnquirySchema,
   GuestEnquiryEmailSchema,
+  EnquiryEventResultSchema,
   GUEST_ENQUIRY_LIMITS,
   GUEST_ENQUIRY_LATEST_EVENT_DATE,
   GUEST_ENQUIRY_SOURCES,
@@ -1068,6 +1069,7 @@ export {
   type GuestEnquiry,
   type GuestEnquirySource,
   type EnquirySource,
+  type EnquiryEventResult,
 } from "./enquiry.js";
 
 export { eventDisplayName, eventNameFor, eventTitleFor, holdsEmailAddress, type EventNameInput, type NamedEvent } from "./event-name.js";
