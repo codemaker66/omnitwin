@@ -31,8 +31,10 @@ import type { SheetIssue } from "./sheet-paper-check.js";
 // Timing policy (Ship Friday, gate line 20): times come from the Diary and
 // nowhere else. We resolve which event(s) this configuration belongs to,
 // find the live booking that holds THIS room, and read `eventStart` from
-// that booking's own window. `setupBy` is the earliest scheduled phase in
-// the same room on the same day when one exists, otherwise the venue's own
+// that booking's own window. `setupBy` (a historical name: it is when the
+// setup window OPENS, never when the room must be ready; read the sheet's
+// times through sheetTimes() in @omnitwin/types) is the earliest scheduled
+// phase in the same room on the same day when one exists, otherwise the venue's own
 // turnaround rule for that room and event type — resolved through the same
 // `resolveTurnaroundRule` the calendar conflict rail enforces — and null
 // when the venue has recorded neither. There is no house constant: the
@@ -403,9 +405,16 @@ export function buildSheetApproval(
  * Pure "booked window + room phase + venue turnaround → Timing" step,
  * extracted so the arithmetic is unit-testable without a database.
  *
- * `eventStart` is the Diary booking's own start — never a default hour.
+ * `eventStart` is the Diary booking's own start — never a default hour. It is
+ * when guests come in, as the Day Board (doors) and the Diary read a booking.
  *
- * `setupBy` has two honest sources and no invented third:
+ * `setupBy` is when the setup window OPENS; the name is historical and stays
+ * because approved snapshots are frozen. It was printed as "Ready by" until
+ * 18 November 2026, an hour early on the crowded day's breakfast (Setup from
+ * 07:00, doors 08:00). The sheet's Ready by is `sheetTimes().readyBy`: the
+ * planner's final-touches time, else `eventStart`.
+ *
+ * `setupBy` has two honest sources and no invented third, both window starts:
  *   1. the earliest scheduled phase in the SAME room on the SAME day, when it
  *      is earlier than the booking — the planner said when work begins, and
  *      that is more specific than any rule;
@@ -421,7 +430,7 @@ export function buildSheetApproval(
  * wrong about — and which looked identical on the page to a derived one.
  *
  * `bufferMinutes` always reports the REAL gap, never the rule's nominal value,
- * so a phase-derived deadline cannot claim a buffer it does not have.
+ * so a phase-derived setup start cannot claim a window it does not have.
  *
  * Returns null for an unparseable instant rather than emitting "Invalid
  * Date" into a frozen snapshot.
@@ -567,8 +576,9 @@ export async function resolveTiming(
 
   // Bound the phase search to the booking's own day. Without it the earliest
   // phase of a multi-day event — or of another event sharing the layout —
-  // became this sheet's set-up deadline, and `bufferMinutes` reported
-  // thousands of minutes as though that were a real buffer.
+  // became this sheet's setup start (timing.setupBy, when the setup window
+  // opens), and `bufferMinutes` reported thousands of minutes as though that
+  // were a real buffer.
   const dayStart = new Date(booking.startsAt.getTime() - 24 * 60 * 60_000);
   const [phase] = await db.select({ startsAt: eventPhases.startsAt })
     .from(eventPhases)
