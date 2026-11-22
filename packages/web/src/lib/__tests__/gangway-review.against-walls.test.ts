@@ -3,6 +3,12 @@
 // API takes it, and pieces slid flush along every wall of the three shaped rooms a centimetre at a time.
 // Each review is judged by gangway-against-walls.ts, which holds it to the slow way: nothing the shared
 // schema refuses, 0.00 m only for a wall a piece lies against, and real floor inside the room.
+//
+// The two sweeps (the alcoves and the slide) run at the density sweep-density.ts gives: every pull request
+// runs them coarser, chairs every 9 cm through the alcoves and pieces slid 20 cm at a time; the full density
+// (3 cm and 1 cm) runs only with VENVIEWER_FULL_SWEEPS=1, on no schedule. From the repository root:
+//   VENVIEWER_FULL_SWEEPS=1 pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/gangway-review.against-walls.test.ts
+// The hand-picked cases run alike at both densities.
 import { ConfigurationMetadataSchema, GangwayReviewSchema, type GangwayReview } from "@omnitwin/types";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Space } from "../../api/spaces.js";
@@ -31,6 +37,7 @@ import {
   verdictOn,
   type Room,
 } from "./gangway-against-walls.js";
+import { SWEEP_DENSITY } from "./sweep-density.js";
 import { insideWalls, nearestOnShape, squareIntoRoom, standsOnTheFloor, TOUCHING, type Shape, type Wall } from "./walls-the-slow-way.js";
 
 const CHAIR = piece("burgess-turini-18-3");
@@ -236,14 +243,16 @@ describe("the gangway review of a unit with a piece that touches a wall only at 
 
 // ---------------------------------------------------------------------------
 // Lone chairs set all through the Saloon's four alcoves and the floor before
-// their mouths, every 3 cm from flush against the back wall and flush against
-// the side wall beside the pier, turned 0, 15, 30 and 45 degrees: wholly on the
-// floor, against a wall or clear of it. Where a chair's gap to a corner beyond
-// the pier is measured through the pier, the judge says so (falseGap).
+// their mouths, every 3 cm (every 9 cm on a pull request: sweep-density.ts)
+// from flush against the back wall and flush against the side wall beside the
+// pier, 0.9 m out and 1.8 m along, turned 0, 15, 30 and 45 degrees: wholly on
+// the floor, against a wall or clear of it. Where a chair's gap to a corner
+// beyond the pier is measured through the pier, the judge says so (falseGap).
 // ---------------------------------------------------------------------------
 
 describe("lone chairs set through the Saloon's alcoves", () => {
   const CHAIR_IN_ALCOVES = piece("banquet-chair");
+  const { alcoves } = SWEEP_DENSITY;
 
   it.each([0, 15, 30, 45])("turned %i°: no gap measured through a pier, and nothing else the slow way finds wrong", (degrees) => {
     const r = room("Saloon");
@@ -261,11 +270,11 @@ describe("lone chairs set through the Saloon's alcoves", () => {
     // Each alcove by the way into it from the room (east +1, west −1) and the way from its pier along it (north +1, south −1).
     for (const east of [1, -1]) {
       for (const north of [1, -1]) {
-        for (let i = 0; i <= 30; i += 1) {
-          for (let j = 0; j <= 60; j += 1) {
+        for (let i = 0; i <= alcoves.stepsOut; i += 1) {
+          for (let j = 0; j <= alcoves.stepsAlong; j += 1) {
             // From flush against the back wall, x = ±6.55, out past the mouth; from flush against the pier's side wall, z = ±0.15, along the alcove.
-            const x = east * (6.55 - reachX - 0.03 * i);
-            const z = north * (0.15 + reachZ + 0.03 * j);
+            const x = east * (6.55 - reachX - alcoves.stepM * i);
+            const z = north * (0.15 + reachZ + alcoves.stepM * j);
             const chair = createPlacedItem(CHAIR_IN_ALCOVES.id, x, z, turn, null, 0, "chair-1");
             const shape: Shape = { kind: "box", x, z, halfW, halfD, turn };
             if (!standsOnTheFloor(r.walls, shape)) continue;
@@ -279,11 +288,12 @@ describe("lone chairs set through the Saloon's alcoves", () => {
         }
       }
     }
-    console.log(`alcoves | chairs turned ${String(degrees)}°: ${inWords(tally)}; within a millimetre of a corner of the walls, not judged ${String(inTheBand)}`);
-    // Six at 15° and six at 30°, of some six thousand each.
+    console.log(`alcoves (${SWEEP_DENSITY.name}) | chairs turned ${String(degrees)}°: ${inWords(tally)}; within a millimetre of a corner of the walls, not judged ${String(inTheBand)}`);
+    // At the full density, six at 15° and six at 30°, of some six thousand each; the coarser chairs are some of the same.
     expect(inTheBand).toBeLessThanOrEqual(6);
-    expect(tally.units).toBeGreaterThan(4000);
-    expect(tally.againstAWall).toBeGreaterThan(100);
+    expect(tally.units).toBeGreaterThan(alcoves.judged.above);
+    expect(tally.units).toBeLessThanOrEqual(alcoves.judged.atMost);
+    expect(tally.againstAWall).toBeGreaterThan(alcoves.againstAWallAbove);
     expect(faultsOf(tally)).toEqual(NO_FAULTS);
   }, 600_000);
 });
@@ -322,7 +332,10 @@ describe("recording the review of a piece set against a wall", () => {
 // A piece slid flush along every wall of a room, a centimetre at a time, from
 // wholly before the wall's first end to wholly past its last: past every
 // corner, pier, alcove mouth and door recess, and at each the place where its
-// end is exactly at the wall's. Every place where the piece's middle is on the
+// end is exactly at the wall's. On a pull request it is slid 20 cm at a time
+// (sweep-density.ts), every twentieth of those places, and set at the four where
+// its end is exactly at one of the wall's, which that stride need not reach.
+// Every place where the piece's middle is on the
 // floor is judged, whether or not the piece then pokes through another wall:
 // a drag can leave it so.
 // ---------------------------------------------------------------------------
@@ -364,20 +377,24 @@ describe.each(SHAPED_ROOMS)("pieces slid flush along the walls of the %s", (name
     const tally = emptyTally();
     let places = 0;
     const half = halfAlong(item, lie);
+    const { slide } = SWEEP_DENSITY;
     for (const wall of r.straight) {
       const length = Math.hypot(wall[2] - wall[0], wall[3] - wall[1]);
-      const steps = Math.round((length + 2 * half + 0.6) / 0.01);
-      for (let i = 0; i <= steps; i += 1) {
-        const along = -(half + 0.3) + i * 0.01;
+      const steps = Math.round((length + 2 * half + 0.6) / slide.stepM);
+      const alongs = Array.from({ length: steps + 1 }, (_, i) => -(half + 0.3) + i * slide.stepM);
+      // Where the piece's end is exactly at one of the wall's, either side of it: a stride coarser than a centimetre need not reach them.
+      if (slide.withEndsExactly) alongs.push(-half, half, length - half, length + half);
+      for (const along of alongs) {
         const slid = flushAgainst(r, wall, item, lie, along);
         places += 1;
         if (!insideWalls(r.walls, slid.x, slid.z)) continue;
         count(tally, verdictOn(r, [slid]), `flush against ${JSON.stringify(wall)} at (${slid.x.toFixed(3)}, ${slid.z.toFixed(3)}) turned ${slid.rotationY.toFixed(3)}`);
       }
     }
-    console.log(`slid ${name} | ${what}: places ${String(places)}, ${inWords(tally)}`);
-    expect(tally.units).toBeGreaterThan(1000);
-    expect(tally.againstAWall).toBeGreaterThan(500);
+    console.log(`slid (${SWEEP_DENSITY.name}) ${name} | ${what}: places ${String(places)}, ${inWords(tally)}`);
+    expect(tally.units).toBeGreaterThan(slide.judged.above);
+    expect(tally.units).toBeLessThanOrEqual(slide.judged.atMost);
+    expect(tally.againstAWall).toBeGreaterThan(slide.againstAWallAbove);
     expect(faultsOf(tally)).toEqual(NO_FAULTS);
   }, 600_000);
 });

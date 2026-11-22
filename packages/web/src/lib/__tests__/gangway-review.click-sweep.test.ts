@@ -5,6 +5,11 @@
 // directly and left out every one within a centimetre of a wall). Each click is the real path
 // (gangway-against-walls.ts setDown), and each review is judged there by the slow way: nothing the shared
 // schema refuses, 0.00 m only for a wall a piece lies against, real floor inside the room.
+//
+// Every pull request clicks coarser, a pointer every 0.92 m (every fourth pointer of the full sweep), at the
+// density sweep-density.ts gives; the full sweep, every 0.23 m, runs only with VENVIEWER_FULL_SWEEPS=1, on
+// no schedule. From the repository root:
+//   VENVIEWER_FULL_SWEEPS=1 pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/gangway-review.click-sweep.test.ts
 import { afterEach, describe, expect, it } from "vitest";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
@@ -28,9 +33,12 @@ import {
   verdictOn,
   type Verdict,
 } from "./gangway-against-walls.js";
+import { SWEEP_DENSITY } from "./sweep-density.js";
 
-/** A step no multiple of which is a grid line, so the pointers fall all over each grid cell. */
+/** The full sweep's step: no multiple of it is a grid line, so the pointers fall all over each grid cell. */
 const POINTER_STEP = 0.23;
+/** The step this run takes: the full one or a whole multiple of it, from the same first pointer, so every pointer is one of the full sweep's (to within rounding). */
+const { clicks } = SWEEP_DENSITY;
 
 /** The catalogue's pieces that stand on the floor, one for each footprint: pieces of one kind, shape and size are set down alike. */
 function oneOfEachFootprint(): readonly (readonly [string, string, boolean])[] {
@@ -81,8 +89,8 @@ describe.each(SHAPED_ROOMS)("the gangway review of what a click sets down in the
     const verdicts = new Map<string, Verdict>();
     for (const snapEnabled of [true, false]) {
       for (const turn of [0, Math.PI / 2]) {
-        for (let x = Math.min(...xs) + POINTER_STEP / 2; x < Math.max(...xs); x += POINTER_STEP) {
-          for (let z = Math.min(...zs) + POINTER_STEP / 2; z < Math.max(...zs); z += POINTER_STEP) {
+        for (let x = Math.min(...xs) + POINTER_STEP / 2; x < Math.max(...xs); x += clicks.pointerStepM) {
+          for (let z = Math.min(...zs) + POINTER_STEP / 2; z < Math.max(...zs); z += clicks.pointerStepM) {
             const set = setDown(item, seats, x, z, turn, snapEnabled);
             if (set === null) continue;
             const spot = set.map((placed) => `${placed.catalogueItemId} ${String(placed.x)} ${String(placed.z)} ${String(placed.rotationY)}`).join("|");
@@ -96,19 +104,21 @@ describe.each(SHAPED_ROOMS)("the gangway review of what a click sets down in the
     }
     addUp(inAll, tally);
     sweeps += 1;
-    console.log(`swept ${name} | ${what}: spots ${String(verdicts.size)}, clicks ${inWords(tally)}`);
-    expect(tally.units).toBeGreaterThan(1000);
+    console.log(`swept (${SWEEP_DENSITY.name}) ${name} | ${what}: spots ${String(verdicts.size)}, clicks ${inWords(tally)}`);
+    expect(tally.units).toBeGreaterThan(clicks.judgedEach.above);
+    expect(tally.units).toBeLessThanOrEqual(clicks.judgedEach.atMost);
     expect(faultsOf(tally)).toEqual(NO_FAULTS);
   }, 900_000);
 });
 
 describe("the gangway review of what a click sets down, in all three rooms", () => {
   it("held every item of every click to the slow way", () => {
-    console.log(`swept in all: clicks ${inWords(inAll)}`);
+    console.log(`swept in all (${SWEEP_DENSITY.name}): clicks ${inWords(inAll)}`);
     // Run on its own, or beside only some of the sweeps, this has nothing to add up: each sweep has spoken for itself.
     if (sweeps < SHAPED_ROOMS.length * IN_HAND.length) return;
-    expect(inAll.units).toBeGreaterThan(100_000);
-    expect(inAll.againstAWall).toBeGreaterThan(30_000);
+    expect(inAll.units).toBeGreaterThan(clicks.judgedInAll.above);
+    expect(inAll.units).toBeLessThanOrEqual(clicks.judgedInAll.atMost);
+    expect(inAll.againstAWall).toBeGreaterThan(clicks.againstAWallInAllAbove);
     expect({ refused: inAll.refused, withoutFloor: inAll.withoutFloor, offTheFloor: inAll.offTheFloor, falseZero: inAll.falseZero, falseGap: inAll.falseGap, unsaid: inAll.unsaid }).toEqual({ refused: 0, withoutFloor: 0, offTheFloor: 0, falseZero: 0, falseGap: 0, unsaid: 0 });
   });
 });
