@@ -12,6 +12,7 @@ import {
   link,
   openSpineDatabase,
   platformTarget,
+  proposal as proposalIn,
   venue as venueIn,
   type SpineActor,
   type SpineDatabase,
@@ -388,6 +389,78 @@ describe.skipIf(target === undefined)("the spine: the bind joins the enquiry's o
     await joinOldRecords();
     expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
     expect(await enquiryEvent(enquiryId)).toBeNull();
+  });
+
+  it("a hold on an enquiry whose proposal is in another event makes its own event and writes no link; the join lists it", async () => {
+    const v = await venue("proposal elsewhere");
+    const enquiryId = await enquiryIn(pool, v.venueId);
+    const proposalsEvent = await datelessEvent(v.venueId, "The proposal's event");
+    const proposalId = await proposalIn(pool, v.venueId, "draft", { enquiryId });
+    await link(pool, "proposals", proposalId, proposalsEvent);
+    const before = await eventCount(v.venueId);
+
+    const hold = await holdFromEnquiry(v.admin, holdBody(v, enquiryId));
+    expect(hold.eventId).not.toBe(proposalsEvent);
+    expect(await eventCount(v.venueId)).toBe(before + 1);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([{ reason: "reaches_many_events", resolved_at: null }]);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+  });
+
+  /** What of an enquiry's own the join does not read: each reaches the event elsewhere and is set aside. */
+  interface UnreadReach {
+    readonly label: string;
+    readonly place: (v: SpineVenue, enquiryId: string, elsewhere: string) => Promise<void>;
+  }
+  const unreadReaches: readonly UnreadReach[] = [
+    {
+      label: "a soft-deleted deal",
+      place: async (v, enquiryId, elsewhere) => {
+        const dealId = await dealIn(pool, v.venueId, "qualified", enquiryId);
+        await link(pool, "opportunities", dealId, elsewhere);
+        await pool.query("UPDATE opportunities SET deleted_at = now() WHERE id = $1", [dealId]);
+      },
+    },
+    {
+      label: "a soft-deleted proposal",
+      place: async (v, enquiryId, elsewhere) => {
+        const proposalId = await proposalIn(pool, v.venueId, "draft", { enquiryId });
+        await link(pool, "proposals", proposalId, elsewhere);
+        await pool.query("UPDATE proposals SET deleted_at = now() WHERE id = $1", [proposalId]);
+      },
+    },
+    {
+      label: "a soft-deleted booking",
+      place: async (v, enquiryId, elsewhere) => {
+        await interestIn(v, enquiryId, elsewhere, 30, v.rooms.saloon);
+        await pool.query("UPDATE bookings SET deleted_at = now() WHERE enquiry_id = $1 AND event_id = $2", [enquiryId, elsewhere]);
+      },
+    },
+    {
+      label: "a deal in a soft-deleted event",
+      place: async (v, enquiryId, elsewhere) => {
+        const dealId = await dealIn(pool, v.venueId, "qualified", enquiryId);
+        await link(pool, "opportunities", dealId, elsewhere);
+        await pool.query("UPDATE events SET deleted_at = now() WHERE id = $1", [elsewhere]);
+      },
+    },
+  ];
+
+  it.each(unreadReaches)("a hold still writes the link when the only other reach is $label; the join lists nothing", async ({ label, place }) => {
+    const v = await venue(`unread ${label}`);
+    const enquiryId = await enquiryIn(pool, v.venueId);
+    const elsewhere = await datelessEvent(v.venueId, "Reached by what the join sets aside");
+    await place(v, enquiryId, elsewhere);
+
+    const hold = await holdFromEnquiry(v.admin, holdBody(v, enquiryId));
+    expect(hold.eventId).not.toBe(elsewhere);
+    expect(await enquiryEvent(enquiryId)).toBe(hold.eventId);
+
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([]);
+    expect(await enquiryEvent(enquiryId)).toBe(hold.eventId);
   });
 
   it("a hold on an enquiry whose floor plan is linked to another event makes its own event and writes no link; the join lists it", async () => {
