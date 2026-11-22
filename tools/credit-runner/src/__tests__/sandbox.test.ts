@@ -49,7 +49,7 @@ import { ADVISORY_FLAG } from "../sandbox/review.js";
 import { centsString, invokesVerifier, parseVerifyOutput, runSession, SessionMayExistError } from "../sandbox/session.js";
 import { ensureSandbox } from "../sandbox/setup.js";
 import { parseTask } from "../task.js";
-import { FakeApi } from "./fake-api.js";
+import { FakeApi, PROJECT_RULES } from "./fake-api.js";
 import { BASE_FILES, FIX, PAGE_CHECK, PAGE_CHECK_TEST, patchFixture, type Commit, type PatchFixture } from "./patch-fixture.js";
 
 // Every ledger write goes through this spy, so a test can show that one did not happen.
@@ -252,7 +252,7 @@ function job(api: SandboxApi, config: LauncherConfig, from: PatchFixture = happy
     timeoutMinutes: 60,
     baseSha: from.base,
     repoUrl: from.url,
-    projectRules: "# Rules\n\nTypeScript stays strict.\n",
+    projectRules: PROJECT_RULES,
     verifyScript: "// verify",
     ...extra,
   });

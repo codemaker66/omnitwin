@@ -15,6 +15,7 @@ import {
   type SessionTotals,
 } from "../sandbox/api.js";
 import { OutputTimeoutError, writeCapped } from "../sandbox/outputs.js";
+import { sandboxSystemPrompt } from "../sandbox/brief.js";
 import { agentParams, environmentParams } from "../sandbox/setup.js";
 import { AGENT_EFFORT, AGENT_MODEL } from "../task.js";
 
@@ -90,6 +91,9 @@ function liveAgent(
 }
 
 export const HEAD = "a".repeat(40);
+
+/** The project rules the tests' jobs pass, so an agent version made by an earlier run of this code has the system prompt they set up. */
+export const PROJECT_RULES = "# Rules\n\nTypeScript stays strict.\n";
 
 export interface Connection {
   readonly history: readonly SessionEvent[];
@@ -202,7 +206,7 @@ export class FakeApi implements SandboxApi {
     return { id: "env_1", archived_at: null, config: this.liveEnvironmentOverride ?? this.environmentConfig };
   }
   private agentAt(version: number): AgentRef {
-    const agent = this.agentVersions.get(version) ?? liveAgent(version, agentParams("an earlier run's prompt"));
+    const agent = this.agentVersions.get(version) ?? liveAgent(version, agentParams(sandboxSystemPrompt(PROJECT_RULES)));
     return this.liveAgentOverride === null ? agent : { ...agent, ...this.liveAgentOverride };
   }
   uploadFile = (name: string, data: string) => {
