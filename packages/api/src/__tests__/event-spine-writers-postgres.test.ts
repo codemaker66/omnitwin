@@ -578,6 +578,9 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
       await sender.query("COMMIT");
     } catch (error) {
       await sender.query("ROLLBACK");
+      // The quote request is never left running into the next case: it is
+      // settled here, whatever it answers, before the failure is passed on.
+      await quoted?.catch(() => undefined);
       throw error;
     } finally {
       sender.release();
