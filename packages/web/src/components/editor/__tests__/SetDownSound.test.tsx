@@ -3,7 +3,11 @@ import { advance } from "@react-three/fiber";
 import type { Space } from "@omnitwin/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
+import * as configApi from "../../../api/configurations.js";
+import type { PlacedObject } from "../../../api/configurations.js";
 import {
+  announceFurnitureLandedInPlace,
+  beginFurnitureSettle,
   carryFurniture,
   clearAllFurnitureSettles,
   dropInFurniture,
@@ -11,7 +15,7 @@ import {
   releaseFurniture,
   subscribeFurnitureLandings,
 } from "../../../lib/furniture-motion.js";
-import { createPlacedItem, type PlacedItem } from "../../../lib/placement.js";
+import { createPlacedItem, snapPositionToGrid, type PlacedItem } from "../../../lib/placement.js";
 import { renderSetDown, type SetDownInput } from "../../../lib/set-down/render.js";
 import { roomState, roomAcousticsFor } from "../../../lib/set-down/room-acoustics.js";
 import { renderRoomTail, tailOnsetSeconds } from "../../../lib/set-down/tail.js";
@@ -26,6 +30,7 @@ import {
 } from "../../../lib/set-down/renderer.js";
 import type { BandValues } from "../../../lib/set-down/bands.js";
 import type { TailOptions } from "../../../lib/set-down/worker-protocol.js";
+import type * as ConfigurationsModule from "../../../api/configurations.js";
 import type * as RegistryModule from "../../../lib/sound-registry.js";
 import type * as RenderModule from "../../../lib/set-down/render.js";
 import type * as TailModule from "../../../lib/set-down/tail.js";
@@ -35,6 +40,7 @@ import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { mountInStubRoot, type StubRoot } from "../../__tests__/stub-r3f-root.js";
+import { EditorBridge, __resetEditorBridgeMountCountForTests, placedItemToEditor } from "../EditorBridge.js";
 import { FurnitureMotion } from "../FurnitureMotion.js";
 import { SetDownSound } from "../SetDownSound.js";
 import { __setSetDownRendererFactoryForTests } from "../set-down-driver.js";
@@ -132,6 +138,18 @@ vi.mock("../../../lib/set-down/tail.js", async (importOriginal) => {
   const actual = await importOriginal<typeof TailModule>();
   return { ...actual, renderRoomTail: vi.fn(actual.renderRoomTail) };
 });
+
+// The layout's server, for the tests that record the timeline through the bridge: loads, autosaves.
+vi.mock("../../../api/configurations.js", async (importOriginal) => ({
+  ...await importOriginal<typeof ConfigurationsModule>(),
+  getConfig: vi.fn(),
+  getPublicConfig: vi.fn(),
+  authBatchSave: vi.fn(),
+  publicBatchSave: vi.fn(),
+}));
+vi.mock("../../../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
+vi.mock("../../../api/spaces.js", () => ({ getSpace: vi.fn(async () => Promise.reject(new Error("no space in tests"))) }));
+vi.mock("../../../api/action-log.js", () => ({ postActionBatch: vi.fn(() => Promise.resolve({ accepted: 0, duplicates: 0 })) }));
 
 // --- A renderer whose answers the test gives -------------------------------------------------
 
@@ -981,3 +999,295 @@ describe("the adaptive render policy (R100)", () => {
     expect(plays()).toHaveLength(1);
   });
 });
+
+// --- The timeline recording, with snap on (R87) -------------------------------------------------
+
+// The planner as it runs: the bridge records every move on the editor's
+// timeline, snap is on (a 1 m grid), and a drag is one history gesture with
+// its grid settle inside it. A drag that ends where it began drops its step
+// from the timeline, and must still be heard; an undo, a redo or a load that
+// comes while a piece is coming down must never be.
+
+describe("with the timeline recording, and snap on (R87)", () => {
+  const LAYOUT_ID = "00000000-0000-4000-8000-00000000c0f1";
+  const CHAIR_ID = "00000000-0000-4000-8000-000000000c01";
+
+  // The server takes every save, the one the bridge sends as it unmounts included, giving each new piece its own id.
+  beforeEach(() => {
+    vi.mocked(configApi.publicBatchSave).mockImplementation((_id, batch) => Promise.resolve({
+      revision: 2,
+      objects: batch.map((item, index) => servedObject(item.id ?? `00000000-0000-4000-8000-0000000005${String(index).padStart(2, "0")}`, item.assetDefinitionId, item.positionX, item.positionZ)),
+    }));
+  });
+
+  /** Pieces in a layout as it stands open: the editor's document and the scene's, nothing on the timeline. */
+  function openLayout(items: readonly PlacedItem[]): void {
+    useEditorStore.setState({
+      configId: LAYOUT_ID, configRevision: 1, isPublicPreview: true, spaceId: GRAND_HALL.id, venueId: GRAND_HALL.venueId,
+      objects: items.map((item) => placedItemToEditor(item, undefined)),
+    });
+    usePlacementStore.setState({ placedItems: [...items], snapEnabled: true });
+  }
+
+  async function mountWithBridge(): Promise<void> {
+    __resetEditorBridgeMountCountForTests();
+    mounted = mountInStubRoot(<><EditorBridge /><FurnitureMotion /><SetDownSound /></>);
+    frame();
+    frame();
+    registry.frame = 0;
+    await arm();
+  }
+
+  function at(id: string): PlacedItem {
+    const item = usePlacementStore.getState().placedItems.find((placed) => placed.id === id);
+    if (item === undefined) throw new Error(`no piece ${id}`);
+    return item;
+  }
+
+  /** Moves the pieces by these steps inside the open gesture, the hand carrying them unless motion is reduced. */
+  async function carryBy(ids: readonly string[], steps: readonly (readonly [number, number])[]): Promise<void> {
+    const moving = new Set(ids);
+    for (const [dx, dz] of steps) {
+      act(() => {
+        usePlacementStore.getState().moveItemsByDelta(moving, dx, dz);
+        if (!reduced) carryFurniture(moving, dx * 8, dz * 8);
+      });
+      await frames(1);
+    }
+  }
+
+  /**
+   * A mouse drag as SelectionSystem makes one: a history gesture opened at the
+   * press, the moves, then settleDrop (the snapped position written at once,
+   * the spring taking the offset, the pieces let go) and the gesture closed.
+   * The steps are exact binary fractions, so a snap back lands exactly where
+   * the piece began.
+   */
+  async function drag(ids: readonly string[], steps: readonly (readonly [number, number])[]): Promise<void> {
+    const moving = new Set(ids);
+    const token = useEditorStore.getState().beginHistoryGesture();
+    await carryBy(ids, steps);
+    act(() => {
+      const placement = usePlacementStore.getState();
+      const primary = at(ids[0] ?? "");
+      const [x, , z] = snapPositionToGrid(primary.x, primary.z);
+      if (placement.snapEnabled && (x !== primary.x || z !== primary.z)) {
+        placement.moveItemsByDelta(moving, x - primary.x, z - primary.z);
+        for (const id of ids) beginFurnitureSettle(id, primary.x - x, primary.z - z);
+      }
+      if (reduced) announceFurnitureLandedInPlace(moving, "let-go", 0.6);
+      else releaseFurniture(moving);
+      if (token !== null) useEditorStore.getState().endHistoryGesture(token);
+    });
+    await settle();
+  }
+
+  /** A touch lift the browser cancels, as returnLiftedPiece handles it: back where it was, and set down there. */
+  async function cancelledLift(ids: readonly string[], steps: readonly (readonly [number, number])[]): Promise<void> {
+    const moving = new Set(ids);
+    const origin = at(ids[0] ?? "");
+    const token = useEditorStore.getState().beginHistoryGesture();
+    await carryBy(ids, steps);
+    act(() => {
+      const primary = at(ids[0] ?? "");
+      usePlacementStore.getState().moveItemsByDelta(moving, origin.x - primary.x, origin.z - primary.z);
+      if (reduced) announceFurnitureLandedInPlace(moving, "let-go", 0.6);
+      else releaseFurniture(moving);
+      if (token !== null) useEditorStore.getState().endHistoryGesture(token);
+    });
+    await settle();
+  }
+
+  it("voices a chair dragged about 0.3 m, whose snap takes it back where it began", async () => {
+    const chair = createPlacedItem(catalogueId("chiavari-chair"), 2, 1);
+    openLayout([chair]);
+    await mountWithBridge();
+    await drag([chair.id], [[0.125, 0], [0.125, 0], [0.0625, 0]]);
+    expect(at(chair.id)).toMatchObject({ x: 2, z: 1 });
+    // The gesture's step was dropped from the timeline: the case that once read as an undo.
+    expect(useEditorStore.getState().history.past).toEqual([]);
+    await answerAll();
+    await frames(10);
+    expect(plays()).toHaveLength(1);
+    expect(plays()[0]?.voice.tap).toMatchObject({ slug: "chiavari-chair", played: "exact" });
+    expect(registry.drops).toEqual([]);
+  });
+
+  it.each([false, true])("voices a touch lift the browser cancelled, back where it began (reduced motion: %s, R85)", async (reducedMotion) => {
+    reduced = reducedMotion;
+    const chair = createPlacedItem(catalogueId("chiavari-chair"), 2, 1);
+    openLayout([chair]);
+    await mountWithBridge();
+    await cancelledLift([chair.id], [[0.25, 0.125], [0.25, 0.125], [0.25, 0.25]]);
+    expect(at(chair.id)).toMatchObject({ x: 2, z: 1 });
+    expect(useEditorStore.getState().history.past).toEqual([]);
+    await answerAll();
+    await frames(10);
+    expect(plays()).toHaveLength(1);
+    expect(registry.drops).toEqual([]);
+  });
+
+  it("keeps silent a chair an undo takes back while it comes down", async () => {
+    const chair = createPlacedItem(catalogueId("chiavari-chair"), 2, 1);
+    openLayout([chair]);
+    await mountWithBridge();
+    await drag([chair.id], [[0.5, 0], [0.75, 0], [0.75, 0]]);
+    expect(at(chair.id)).toMatchObject({ x: 4, z: 1 });
+    expect(useEditorStore.getState().history.past).toHaveLength(1);
+    act(() => { useEditorStore.getState().undo(); });
+    expect(at(chair.id)).toMatchObject({ x: 2, z: 1 });
+    await answerAll();
+    await frames(10);
+    expect(plays()).toEqual([]);
+    expect(registry.drops.map((drop) => drop.drop)).toEqual(["undone"]);
+  });
+
+  it("keeps silent a chair in hand when an undo came, as the resting hand sets it down", async () => {
+    const chair = createPlacedItem(catalogueId("chiavari-chair"), 2, 1);
+    openLayout([chair]);
+    await mountWithBridge();
+    useEditorStore.getState().beginHistoryGesture();
+    await carryBy([chair.id], [[0.5, 0], [0.5, 0]]);
+    // The undo takes back the drag's own moves; the hand rests, and sets the chair down 0.4 s on.
+    act(() => { useEditorStore.getState().undo(); });
+    expect(at(chair.id)).toMatchObject({ x: 2, z: 1 });
+    await frames(40);
+    await answerAll();
+    await frames(10);
+    expect(plays()).toEqual([]);
+    expect(registry.drops.map((drop) => drop.drop)).toEqual(["undone"]);
+  });
+
+  it("keeps silent a piece coming down when a redo comes", async () => {
+    const moved = createPlacedItem(catalogueId("chiavari-chair"), 2, 1);
+    const dropped = createPlacedItem(catalogueId("chiavari-chair"), -2, -1);
+    openLayout([moved, dropped]);
+    await mountWithBridge();
+    await drag([moved.id], [[0.5, 0], [0.75, 0], [0.75, 0]]);
+    await answerAll();
+    await frames(10);
+    expect(plays()).toHaveLength(1);
+    act(() => { useEditorStore.getState().undo(); });
+    await frames(5);
+    // A drop-in records nothing, so the redo is still there to come while it falls.
+    act(() => { dropInFurniture(dropped.id); });
+    await settle();
+    act(() => { useEditorStore.getState().redo(); });
+    expect(at(moved.id)).toMatchObject({ x: 4, z: 1 });
+    await answerAll();
+    await frames(10);
+    expect(plays()).toHaveLength(1);
+    expect(registry.drops.map((drop) => drop.drop)).toEqual(["undone"]);
+  });
+
+  it("keeps silent a piece coming down when a load comes, though nothing was on the timeline", async () => {
+    const chair = createPlacedItem(catalogueId("chiavari-chair"), 2, 1, 0, null, 0, CHAIR_ID);
+    openLayout([chair]);
+    await mountWithBridge();
+    act(() => { dropInFurniture(chair.id); });
+    await settle();
+    expect(renderer.pending("exact")).toHaveLength(1);
+    vi.mocked(configApi.getPublicConfig).mockResolvedValue(servedLayout([servedObject(CHAIR_ID, chair.catalogueItemId, 2, 1)]));
+    await act(async () => { await useEditorStore.getState().loadConfiguration(LAYOUT_ID, false); });
+    expect(at(CHAIR_ID)).toMatchObject({ x: 2, z: 1 });
+    await answerAll();
+    await frames(10);
+    expect(plays()).toEqual([]);
+    expect(registry.drops.map((drop) => drop.drop)).toEqual(["undone"]);
+  });
+
+  /** A piece as the server sends it. */
+  function servedObject(id: string, catalogueItemId: string, x: number, z: number): PlacedObject {
+    return {
+      id, configurationId: LAYOUT_ID, assetDefinitionId: catalogueItemId, positionX: x.toFixed(3), positionY: "0.000", positionZ: z.toFixed(3),
+      rotationX: "0.00000", rotationY: "0.00000", rotationZ: "0.00000", scale: "1.000", sortOrder: 0, metadata: null,
+    };
+  }
+
+  /** The layout as the server sends it, in the room the planner shows. */
+  function servedLayout(objects: readonly PlacedObject[]): ConfigurationsModule.Configuration {
+    return {
+      id: LAYOUT_ID, spaceId: GRAND_HALL.id, venueId: GRAND_HALL.venueId, userId: null, name: "Burns supper",
+      isPublicPreview: true, revision: 2, objects: [...objects], updatedAt: "2026-11-22T10:00:00.000Z",
+    };
+  }
+
+  // What never sounds, with the bridge recording and snap on (M-8).
+
+  it("posts and plays nothing for a load through the bridge", async () => {
+    openLayout([createPlacedItem(catalogueId("chiavari-chair"), 2, 1)]);
+    await mountWithBridge();
+    const round = "00000000-0000-4000-8000-000000000c02";
+    vi.mocked(configApi.getPublicConfig).mockResolvedValue(servedLayout([
+      servedObject(CHAIR_ID, catalogueId("chiavari-chair"), 3, 2),
+      servedObject(round, catalogueId("round-table-6ft"), -3, -2),
+    ]));
+    await act(async () => { await useEditorStore.getState().loadConfiguration(LAYOUT_ID, false); });
+    expect(usePlacementStore.getState().placedItems.map((item) => item.id).sort()).toEqual([CHAIR_ID, round].sort());
+    await settle();
+    await frames(30);
+    expect(renderer.renders()).toEqual([]);
+    expect(plays()).toEqual([]);
+  });
+
+  it("posts and plays nothing for an undo or a redo through the bridge", async () => {
+    openLayout([]);
+    await mountWithBridge();
+    await place("chiavari-chair", 2, 1);
+    await answerAll();
+    await frames(10);
+    expect(plays()).toHaveLength(1);
+    expect(useEditorStore.getState().history.past).toHaveLength(1);
+    const renders = renderer.renders().length;
+    act(() => { useEditorStore.getState().undo(); });
+    await settle();
+    await frames(10);
+    expect(usePlacementStore.getState().placedItems).toEqual([]);
+    act(() => { useEditorStore.getState().redo(); });
+    await settle();
+    await frames(30);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+    expect(renderer.renders()).toHaveLength(renders);
+    expect(plays()).toHaveLength(1);
+  });
+
+  it("posts and plays nothing for an autosave that gives a placed piece the server's id", async () => {
+    openLayout([]);
+    await mountWithBridge();
+    const chair = await place("chiavari-chair", 2, 1);
+    await answerAll();
+    await frames(10);
+    expect(plays()).toHaveLength(1);
+    const renders = renderer.renders().length;
+    // The bridge's autosave waits 3 s after the last change.
+    pass(3_500);
+    await settle();
+    await frames(30);
+    expect(configApi.publicBatchSave).toHaveBeenCalled();
+    expect(usePlacementStore.getState().placedItems.map((item) => item.id)).not.toContain(chair.id);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+    expect(renderer.renders()).toHaveLength(renders);
+    expect(plays()).toHaveLength(1);
+  });
+
+  it("plays nothing for the placement ghost, which it renders ahead", async () => {
+    localStorage.setItem(RENDER_MODE_STORAGE_KEY, JSON.stringify({ light: "ahead", table: "exact" }));
+    openLayout([]);
+    await mountWithBridge();
+    act(() => { useCatalogueStore.getState().selectItem(catalogueId("chiavari-chair")); });
+    for (let i = 0; i < 6; i++) {
+      pass(300);
+      act(() => { usePlacementStore.setState({ ghostPosition: [-4 + i * 1.5, 0, -2] }); });
+      await settle();
+      await answerAll();
+    }
+    await frames(30);
+    act(() => { usePlacementStore.setState({ ghostPosition: null }); });
+    await settle();
+    await frames(10);
+    expect(renderer.renders("ahead").length).toBeGreaterThan(0);
+    expect(renderer.renders("exact")).toEqual([]);
+    expect(plays()).toEqual([]);
+  });
+});
+

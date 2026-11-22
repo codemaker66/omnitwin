@@ -36,7 +36,7 @@ import {
 } from "../../lib/sound-registry.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
-import { useEditorStore } from "../../stores/editor-store.js";
+import { editorHistoryTravels, useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { AdaptiveRenderPolicy, type ContactTiming, type RenderClass } from "./set-down-policy.js";
 
@@ -57,8 +57,9 @@ import { AdaptiveRenderPolicy, type ContactTiming, type RenderClass } from "./se
 //   and the tap logs why. The surfaces under its feet are read again at
 //   contact; a change takes a matching variant or the drop's render, logged
 //   stale (Review Focus 5).
-// - Silence: a landing whose gesture an undo or redo ended (R87), or whose
-//   piece is gone (R89), is dropped. Nothing is asked for before the first
+// - Silence: a landing whose gesture an undo, a redo, a reset or a load left
+//   (R87, the editor's own count of its travels), or whose piece is gone
+//   (R89), is dropped. Nothing is asked for before the first
 //   gesture, while sound is Off, in a hidden tab, or where module Workers are
 //   refused (R83). Loads, undo, redo and other people's changes never start a
 //   piece down, so they are silent by construction.
@@ -116,7 +117,7 @@ interface Landing {
   readonly delaySeconds: number;
   /** Reduced motion: down at once, with no contact frame. */
   readonly inPlace: boolean;
-  /** The history epoch its gesture began in (R87). */
+  /** The editor's travels when its gesture began (R87). */
   readonly epoch: number;
 }
 
@@ -193,30 +194,6 @@ interface AheadSlot {
   next: AheadRequest | null;
 }
 
-/** The slice of the editor's history a travel is read from: each step's stable sequence number. */
-interface HistoryStacks {
-  readonly past: readonly { readonly seq: number }[];
-  readonly future: readonly { readonly seq: number }[];
-}
-
-/**
- * Whether the history moved other than forward (R87): an undo, a redo, a
- * reset or load, or steps forgotten. A new step, a step merged into the last,
- * or ids renamed by a save keep the same epoch. Sequence numbers are the
- * history's own stable names for its steps (editor-history.ts).
- */
-function historyTravelled(previous: HistoryStacks, next: HistoryStacks): boolean {
-  if (previous === next) return false;
-  const lastBefore = previous.past.at(-1)?.seq ?? 0;
-  const lastNow = next.past.at(-1)?.seq ?? 0;
-  const redoBefore = previous.future.at(-1)?.seq;
-  const redoNow = next.future.at(-1)?.seq;
-  if (lastBefore === lastNow && redoBefore === redoNow) return false;
-  if (redoBefore !== undefined && lastNow === redoBefore) return true;
-  if (next.future.length === 0 && lastNow > lastBefore) return false;
-  return true;
-}
-
 /** A room's name in keys: its slug and id, never with a "|". */
 function spaceKeyOf(space: { readonly slug: string; readonly id: string } | null): string {
   return space === null ? "none" : `${space.slug}:${space.id}`.replace(/\|/gu, "/");
@@ -263,8 +240,6 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   let tailKey: string | null = null;
   let roomTimer: ReturnType<typeof setTimeout> | null = null;
 
-  let history: HistoryStacks = useEditorStore.getState().history;
-  let historyEpoch = 0;
   /** The epoch each piece in hand was taken up in: its landing's gesture began then (R87). */
   const takenUpIn = new Map<string, number>();
 
@@ -586,7 +561,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   const land = (flight: Flight, presentDelay: number): void => {
     if (flight.done) return;
     const atMs = flight.contactAtMs ?? nowMs();
-    if (flight.epoch !== historyEpoch) {
+    if (flight.epoch !== editorHistoryTravels()) {
       drop(flight, "undone");
       return;
     }
@@ -640,7 +615,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
 
   /** Reduced motion: the piece is down already, so its render plays as it answers (R84). */
   const playInPlace = (flight: Flight, render: SetDownRendered): void => {
-    if (flight.epoch !== historyEpoch) {
+    if (flight.epoch !== editorHistoryTravels()) {
       drop(flight, "undone");
       return;
     }
@@ -682,7 +657,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       finish(flight);
       return;
     }
-    if (flight.epoch !== historyEpoch) {
+    if (flight.epoch !== editorHistoryTravels()) {
       drop(flight, "undone");
       return;
     }
@@ -820,10 +795,6 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   let selectedItemId = useCatalogueStore.getState().selectedItemId;
 
   const stopEditor = useEditorStore.subscribe((state) => {
-    if (state.history !== history) {
-      if (historyTravelled(history, state.history)) historyEpoch += 1;
-      history = state.history;
-    }
     if (spaceKeyOf(state.space) !== spaceKey) changeSpace(state.space);
     else space = state.space;
   });
@@ -863,7 +834,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
 
   return {
     pickedUp(id) {
-      takenUpIn.set(id, historyEpoch);
+      takenUpIn.set(id, editorHistoryTravels());
       if (!canSound()) return;
       const item = placedItem(id);
       if (item === null) return;
@@ -876,7 +847,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     },
 
     dropStarted(id, landing, handSpeed, delaySeconds) {
-      const epoch = takenUpIn.get(id) ?? historyEpoch;
+      const epoch = takenUpIn.get(id) ?? editorHistoryTravels();
       takenUpIn.delete(id);
       gatherLanding({ id, landing, handSpeed, delaySeconds, inPlace: false, epoch });
     },
@@ -892,7 +863,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
 
     landedInPlace(id, landing, handSpeed) {
       takenUpIn.delete(id);
-      gatherLanding({ id, landing, handSpeed, delaySeconds: 0, inPlace: true, epoch: historyEpoch });
+      gatherLanding({ id, landing, handSpeed, delaySeconds: 0, inPlace: true, epoch: editorHistoryTravels() });
     },
 
     frame(deltaSeconds) {

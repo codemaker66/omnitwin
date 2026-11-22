@@ -562,6 +562,21 @@ function flushActionLogToServer(revision: number): void {
 }
 
 let interactionEpoch = 0;
+/**
+ * Travels through the timeline (T-700, R87): each undo, redo, reset and load
+ * adds one. It never goes back, and nothing else moves it: not a new change, a
+ * gesture's own steps (one that ends where it began, and so drops its step,
+ * included), the key edits' epochs, a save's id remap or another person's
+ * change. The set-down sound keeps a landing whose gesture the timeline left
+ * from ever sounding by it.
+ */
+let historyTravels = 0;
+
+/** How many times the timeline has travelled (undo, redo, reset, load) in this page. */
+export function editorHistoryTravels(): number {
+  return historyTravels;
+}
+
 let lastRecordAt = Number.NEGATIVE_INFINITY;
 let autosaveRequester: (() => void) | null = null;
 let activeHistoryGesture: {
@@ -1134,6 +1149,8 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // A kept copy that restores nothing has done its work.
       if (localDraft !== null && restoredDraft === null) forgetPlannerDraft(localDraft);
       const restoreBase = staleDraftBase ?? serverObjects;
+      // The document is replaced from here: the timeline has travelled (R87).
+      historyTravels += 1;
       const leftBehind = lostOnLeaving ?? get().leftBehind;
       configurationSession += 1;
       yieldedIds.clear();
@@ -1603,6 +1620,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
   },
 
   reset: () => {
+    historyTravels += 1;
     configurationLoadRequest += 1;
     configurationSession += 1;
     publicConfigurationHandoff.clear();
@@ -1643,6 +1661,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     const step = performUndo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
     actionEmitter.afterUndo(s.history); // G4: seals the popped gesture + logs history.undo
+    historyTravels += 1;
     interactionEpoch++;
     set(historyStepPatch(step));
     notifyLocalChange(s.objects, step.objects);
@@ -1657,6 +1676,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     const step = performRedo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
     actionEmitter.afterRedo(step.history); // G4: logs history.redo
+    historyTravels += 1;
     interactionEpoch++;
     set(historyStepPatch(step));
     notifyLocalChange(s.objects, step.objects);
