@@ -10,6 +10,7 @@ import { supplierArrivalRoutes } from "../routes/supplier-arrivals.js";
 import { transitionBookingCore, updateBookingCore, type MutationActor } from "../services/booking-mutations.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 import { clearLapsedSupplierContacts } from "../services/supplier-arrival-retention.js";
+import { moveArrivalsWithBooking } from "../services/supplier-arrivals.js";
 import { proposeWindowCore } from "../services/window-proposals.js";
 
 // ---------------------------------------------------------------------------
@@ -66,6 +67,15 @@ function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> 
     promise.then(() => true, () => true),
     new Promise<boolean>((done) => { setTimeout(() => { done(false); }, ms); }),
   ]);
+}
+
+/** A gate a transaction waits at, so a test decides when it commits. */
+function gate(): { readonly entered: Promise<void>; readonly enter: () => void; readonly open: Promise<void>; readonly release: () => void } {
+  let enter: () => void = () => undefined;
+  let release: () => void = () => undefined;
+  const entered = new Promise<void>((resolve) => { enter = resolve; });
+  const open = new Promise<void>((resolve) => { release = resolve; });
+  return { entered, enter, open, release };
 }
 
 /** The SQLSTATE a statement fails with, or null when it succeeds. */
@@ -144,6 +154,33 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
   /** The office's own account, as the Diary's cores take it. */
   function office(f: Fixture): MutationActor {
     return { id: f.people.admin, venueId: f.venueId, role: "admin", platformRole: "none" };
+  }
+
+  /** Waits until `count` statements of this suite's pool are waiting on a lock. */
+  async function waitingOnLocks(count: number): Promise<void> {
+    await expect.poll(async () => Number((await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM pg_stat_activity WHERE application_name = current_setting('application_name') AND wait_event_type = 'Lock'",
+    )).rows[0]?.count), { timeout: 5000 }).toBe(count);
+  }
+
+  /**
+   * A Diary move of a booking in the order updateBookingCore makes it: the
+   * booking FOR UPDATE, then its arrivals not yet marked moved by `deltaMs`
+   * (the service's own moveArrivalsWithBooking), then the commit. It holds the
+   * booking until `moveOn` is called, so a test decides what meets it there.
+   */
+  async function diaryMoveHolding(bookingId: string, deltaMs: number): Promise<{ readonly moveOn: () => void; readonly done: Promise<void> }> {
+    const held = gate();
+    const done = db.transaction(async (tx) => {
+      await tx.select({ id: schema.bookings.id }).from(schema.bookings).where(eq(schema.bookings.id, bookingId)).for("update");
+      held.enter();
+      await held.open;
+      await moveArrivalsWithBooking(tx, bookingId, deltaMs);
+    });
+    // Its outcome is read with allSettled; this only keeps a failure from going unhandled meanwhile.
+    done.catch(() => undefined);
+    await held.entered;
+    return { moveOn: held.release, done };
   }
 
   async function call(
@@ -434,6 +471,37 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
     expect([added.status, added.code]).toEqual([409, "BOOKING_NOT_ACTIVE"]);
   });
 
+  it("lets a tap at the door wait for a Diary move of its booking, never deadlock with it, and mark the supplier where the move left them", async () => {
+    const f = await fixture();
+    const { tonight, made } = await dueTonight(f);
+    const move = await diaryMoveHolding(tonight.id, HOUR);
+    // The floor marks the supplier in while the move holds the booking: the
+    // tap waits for the booking before it touches the arrival the move shifts.
+    const tap = call(f, "hallkeeper", "POST", `/venues/${f.venueId}/supplier-arrivals/${made.id}/arrived`);
+    await waitingOnLocks(1);
+    move.moveOn();
+    const [moved] = await Promise.allSettled([move.done]);
+    const tapped = await tap;
+    expect([moved.status, tapped.status]).toEqual(["fulfilled", 200]);
+    expect(tapped.data).toMatchObject({ arrivedByName: "Jamie", arrivesAt: new Date(Date.parse(made.arrivesAt) + HOUR).toISOString() });
+  });
+
+  it("lets the office's removal wait for a Diary move of its booking, never deadlock with it, and refuse it as stale once the move has moved the supplier", async () => {
+    const f = await fixture();
+    const { tonight, made } = await dueTonight(f);
+    const move = await diaryMoveHolding(tonight.id, HOUR);
+    const removing = call(f, "admin", "DELETE", `/venues/${f.venueId}/supplier-arrivals/${made.id}?expectedRevision=${String(made.revision)}`);
+    await waitingOnLocks(1);
+    move.moveOn();
+    const [moved] = await Promise.allSettled([move.done]);
+    const removed = await removing;
+    // The move went first and moved the supplier, so the removal was made
+    // from an older copy: refused, as any change from an old copy is, and the
+    // supplier stays where the move left them.
+    expect([moved.status, removed.status, removed.code]).toEqual(["fulfilled", 409, "STALE_ARRIVAL"]);
+    expect((await stored(made.id)).arrivesAt.toISOString()).toBe(new Date(Date.parse(made.arrivesAt) + HOUR).toISOString());
+  });
+
   it("lets a collection come the morning after, and keeps a door change to the door", async () => {
     const f = await fixture();
     const vases = await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
@@ -518,6 +586,50 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
     expect(after.leavesBy?.toISOString()).toBe(new Date(Date.parse(due.leavesBy ?? "") + DAY).toISOString());
     expect(after.revision).toBe(2);
     expect((await stored(inAlready.id)).arrivesAt.toISOString()).toBe(inAlready.arrivesAt);
+  });
+
+  it("moves a proposal's suppliers from where the hold stands under its lock, when a Diary move lands between the proposal's read and that lock", async () => {
+    const f = await fixture();
+    const eventId = randomUUID();
+    await db.insert(schema.events).values({ id: eventId, venueId: f.venueId, name: "TEST ONLY proposed supper", eventType: "dinner", createdBy: f.people.admin, guestCount: 60 });
+    const proposer = { id: f.people.admin, name: "Elaine", role: "admin", venueId: f.venueId, platformRole: "none" as const };
+    const start = evening(8);
+    const window = (from: Date) => ({ spaceId: f.dinner.spaceId, startsAt: from.toISOString(), endsAt: new Date(from.getTime() + 3 * HOUR).toISOString(), idempotencyKey: randomUUID() });
+    const proposed = await proposeWindowCore(db, proposer, eventId, window(start));
+    if (!proposed.ok) throw new Error(`proposal refused: ${proposed.code}`);
+    const bookingId = proposed.slot.bookingId;
+    // The caterer, not yet marked in, three hours before the doors.
+    const due = (await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
+      bookingId, arrivesAt: new Date(start.getTime() - 3 * HOUR).toISOString(), leavesBy: new Date(start.getTime() - 2 * HOUR).toISOString(),
+    }))).data as SupplierArrival;
+
+    // The office drags the hold two hours later in the Diary. Before that
+    // commits, the same window is proposed again: the proposal reads the hold
+    // where it stood, then waits at the hold's lock until the move commits.
+    const held = gate();
+    const officeMove = db.transaction(async (tx) => {
+      const moved = await updateBookingCore(tx, office(f), bookingId, {
+        startsAt: new Date(start.getTime() + 2 * HOUR).toISOString(), endsAt: new Date(start.getTime() + 5 * HOUR).toISOString(),
+      });
+      held.enter();
+      await held.open;
+      return moved;
+    });
+    await held.entered;
+    const again = proposeWindowCore(db, proposer, eventId, window(start));
+    await waitingOnLocks(1);
+    held.release();
+    const [byOffice, byProposer] = await Promise.all([officeMove, again]);
+    expect(byOffice.ok && byProposer.ok).toBe(true);
+
+    // The hold is back at the window proposed, and the caterer with it: three
+    // hours before the doors, not five, and moved twice.
+    const [hold] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, bookingId));
+    expect(hold?.startsAt.toISOString()).toBe(start.toISOString());
+    const after = await stored(due.id);
+    expect(after.arrivesAt.toISOString()).toBe(due.arrivesAt);
+    expect(after.leavesBy?.toISOString()).toBe(due.leavesBy);
+    expect(after.revision).toBe(3);
   });
 
   it("keeps a supplier marked in until the tap is taken back, and holds a tap to the day", async () => {
@@ -619,6 +731,22 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
       "INSERT INTO booking_supplier_arrival_events (venue_id, booking_id, arrival_id, supplier_name, action, actor_name) VALUES ($1, $2, $3, 'x', 'removed', 'Elaine')",
       [f.venueId, tonight.id, removable.id],
     ))).toBe("23514");
+
+    // Gone for someone nobody marked in marks them in too, by the same hand at
+    // the same moment, and the history holds that arrival as well as the Gone.
+    const band = (await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
+      bookingId: tonight.id, supplierName: "The Kelvin Reelers", arrivesAt: new Date(tonight.startsAt.getTime() - HOUR).toISOString(), leavesBy: null,
+    }))).data as SupplierArrival;
+    const gone = (await call(f, "porter", "POST", `/venues/${f.venueId}/supplier-arrivals/${band.id}/left`)).data as SupplierArrival;
+    expect(gone).toMatchObject({ arrivedByName: "Ngozi", leftByName: "Ngozi" });
+    const bandHistory = await db.select().from(schema.bookingSupplierArrivalEvents)
+      .where(eq(schema.bookingSupplierArrivalEvents.arrivalId, band.id))
+      .orderBy(asc(schema.bookingSupplierArrivalEvents.at), asc(schema.bookingSupplierArrivalEvents.action));
+    expect(bandHistory.map((row) => [row.action, row.actorName, row.actorUserId, row.at.toISOString()])).toEqual([
+      ["arrived", "Ngozi", f.people.porter, gone.arrivedAt],
+      ["left", "Ngozi", f.people.porter, gone.leftAt],
+    ]);
+    expect(gone.arrivedAt).toBe(gone.leftAt);
   });
 
   it("holds its own rules: times in order, gone only after in, no blank words, its booking's suppliers going with it, names kept when an account goes", async () => {

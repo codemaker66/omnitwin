@@ -20,7 +20,7 @@ describe("migration floor_change_move_places", () => {
     const added = [...statements.matchAll(/ADD COLUMN "([a-z_]+)" ([^,\n]+)/gu)];
     const declared = Object.values(getTableColumns(eventPlanChanges)).map((column) => column.name).filter((name) => name.startsWith("move_"));
     expect(added.map((match) => match[1])).toEqual(declared);
-    expect(declared).toHaveLength(7);
+    expect(declared).toHaveLength(8);
     for (const match of added) expect(match[2] ?? "").not.toMatch(/\b(NOT NULL|DEFAULT|REFERENCES)\b/iu);
   });
 

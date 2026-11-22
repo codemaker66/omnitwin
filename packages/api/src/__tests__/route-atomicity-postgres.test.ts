@@ -6,6 +6,7 @@ import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
 import { claimConfigRoutes } from "../routes/claim-config.js";
+import { configurationRoutes } from "../routes/configurations.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
 import { quoteRoutes } from "../routes/quotes.js";
 import { proposalRoutes } from "../routes/proposals.js";
@@ -70,6 +71,7 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
     const db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
+    await server.register(configurationRoutes, { db, prefix: "/configurations" });
     await server.register(publicConfigRoutes, { db, prefix: "/public" });
     await server.register(quoteRoutes, { db, prefix: "/quotes" });
     await server.register(proposalRoutes, { db, prefix: "/proposals" });
@@ -153,6 +155,84 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
       const result = await pool.query<{ thumbnail_url: string | null }>("SELECT thumbnail_url FROM configurations WHERE id = $1", [CONFIG]);
       expect(result.rows[0]?.thumbnail_url).toBeNull();
     });
+  });
+
+  it("keeps both keys when two layout metadata saves of different keys land at once", async () => {
+    // Event details saving instructions while the planner records its gangway
+    // review: each old handler read the same stored blob, and the later write
+    // dropped the other's key. The merge now happens in the UPDATE itself, and
+    // a key neither save names (the schema keeps unknown keys) survives both.
+    await pool.query(`UPDATE configurations SET review_status = 'draft', metadata = '{"fixtureKept":"Kept","gangwayReview":{"items":[]}}'::jsonb WHERE id = $1`, [CONFIG]);
+    const save = (metadata: Record<string, unknown> | null) => server.inject({
+      method: "PATCH", url: `/configurations/${CONFIG}`, headers: headers(), payload: { metadata },
+    }).then((r) => r);
+    const stored = async (): Promise<{ metadata: unknown; kind: string | null }> => {
+      const result = await pool.query<{ metadata: unknown; kind: string | null }>(
+        "SELECT metadata, jsonb_typeof(metadata) AS kind FROM configurations WHERE id = $1", [CONFIG]);
+      const row = result.rows[0];
+      if (row === undefined) throw new Error("fixture layout missing");
+      return row;
+    };
+    const review = { items: [] };
+    await withBlocker(async (client) => {
+      await client.query("SELECT id FROM configurations WHERE id = $1 FOR UPDATE", [CONFIG]);
+      const responses = Promise.all([
+        save({ instructions: { specialInstructions: "Load in at 08:00" } }),
+        save({ gangwayReview: review }),
+      ]);
+      await waitForBlockedQueries(2);
+      await client.query("COMMIT");
+      expect((await responses).map((r) => r.statusCode)).toEqual([200, 200]);
+    });
+    const merged = await stored();
+    expect(merged.kind).toBe("object");
+    expect(merged.metadata).toMatchObject({
+      fixtureKept: "Kept",
+      gangwayReview: review,
+      instructions: { specialInstructions: "Load in at 08:00" },
+    });
+
+    // A key cannot be nulled on its own: the schema refuses it, and nothing is written.
+    expect((await save({ gangwayReview: null })).statusCode).toBe(400);
+    expect((await stored()).metadata).toEqual(merged.metadata);
+
+    // An explicit null clears the column to SQL NULL (pg reads a jsonb 'null'
+    // as null too, so ask the database), and the next save starts from {}.
+    expect((await save(null)).statusCode).toBe(200);
+    const cleared = await pool.query<{ cleared: boolean }>("SELECT metadata IS NULL AS cleared FROM configurations WHERE id = $1", [CONFIG]);
+    expect(cleared.rows[0]?.cleared).toBe(true);
+    expect((await save({ fixtureAfter: "one" })).statusCode).toBe(200);
+    expect(await stored()).toEqual({ metadata: { fixtureAfter: "one" }, kind: "object" });
+
+    // A stored value that is not an object starts again from {} too, instead
+    // of `||` wrapping it into an array.
+    for (const odd of ["null", "[1]", "\"text\""]) {
+      await pool.query("UPDATE configurations SET metadata = $2::jsonb WHERE id = $1", [CONFIG, odd]);
+      expect((await save({ fixtureAfter: "two" })).statusCode).toBe(200);
+      expect(await stored()).toEqual({ metadata: { fixtureAfter: "two" }, kind: "object" });
+    }
+  });
+
+  it("keeps an event kind of null as an answer: a skip saved over a kind leaves the key, as null, beside the rest", async () => {
+    // #253: an absent eventKind means the planner never asked, and null that the
+    // person skipped. The schema takes null for eventKind alone, and the merge in
+    // the UPDATE keeps the key with a JSON null, so the layout opens answered and
+    // is never asked again (web lib/event-kind-record, shouldAskEventKind).
+    await pool.query(`UPDATE configurations SET review_status = 'draft', metadata = '{"fixtureKept":"Kept"}'::jsonb WHERE id = $1`, [CONFIG]);
+    const save = (metadata: Record<string, unknown>) => server.inject({
+      method: "PATCH", url: `/configurations/${CONFIG}`, headers: headers(), payload: { metadata },
+    }).then((r) => r);
+    const stored = async (): Promise<{ metadata: unknown; held: boolean; kind: string | null }> => {
+      const result = await pool.query<{ metadata: unknown; held: boolean; kind: string | null }>(
+        "SELECT metadata, metadata ? 'eventKind' AS held, jsonb_typeof(metadata -> 'eventKind') AS kind FROM configurations WHERE id = $1", [CONFIG]);
+      const row = result.rows[0];
+      if (row === undefined) throw new Error("fixture layout missing");
+      return row;
+    };
+    expect((await save({ eventKind: "wedding" })).statusCode).toBe(200);
+    expect(await stored()).toEqual({ metadata: { fixtureKept: "Kept", eventKind: "wedding" }, held: true, kind: "string" });
+    expect((await save({ eventKind: null })).statusCode).toBe(200);
+    expect(await stored()).toEqual({ metadata: { fixtureKept: "Kept", eventKind: null }, held: true, kind: "null" });
   });
 
   function appendLine(amount: number): Promise<{ statusCode: number; body: string }> {
@@ -294,6 +374,68 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
       expect((await responses).map((r) => r.statusCode).sort()).toEqual([201, 409]);
       const result = await pool.query<{ current_version: number }>("SELECT current_version FROM proposals WHERE id = $1", [PROPOSAL]);
       expect(result.rows[0]?.current_version).toBe(1);
+    });
+  });
+
+  // A version naming its quote is written from the quote row and its lines as
+  // stored (routes/proposals.ts storedQuoteSnapshot), the row held FOR SHARE
+  // so a line added at that moment is in both the lines and the totals.
+  function createVersionWithQuote(): Promise<{ statusCode: number; body: string }> {
+    return server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/versions`, headers: headers(), payload: {
+      schemaVersion: "venviewer.proposal-version.v1", title: "Fixture", clientMessage: null,
+      configurationId: null, layoutRevision: null, capacityNote: null,
+      quote: { quoteId: QUOTE, currency: "GBP", lineItems: [{ description: "Base", quantity: 1, unitAmountMinor: 10000, lineTotalMinor: 10000 }],
+        subtotalMinor: 10000, totalMinor: 10000 },
+    } }).then((r) => r);
+  }
+  async function appendLineAndTotals(client: PoolClient): Promise<void> {
+    await client.query("INSERT INTO quote_line_items (quote_id, description, quantity, unit_amount_minor, line_total_minor, sort_order) VALUES ($1, 'Additional', 1, 2000, 2000, 1)", [QUOTE]);
+    await client.query("UPDATE quotes SET subtotal_minor = 12000, total_minor = 12000 WHERE id = $1", [QUOTE]);
+  }
+  async function storedVersionQuote(): Promise<unknown> {
+    const result = await pool.query<{ quote: unknown }>("SELECT payload->'quote' AS quote FROM proposal_versions WHERE proposal_id = $1", [PROPOSAL]);
+    return result.rows.map((row) => row.quote);
+  }
+  const APPENDED_QUOTE = {
+    quoteId: QUOTE, currency: "GBP", subtotalMinor: 12000, totalMinor: 12000,
+    lineItems: [
+      { description: "Base", quantity: 1, unitAmountMinor: 10000, lineTotalMinor: 10000 },
+      { description: "Additional", quantity: 1, unitAmountMinor: 2000, lineTotalMinor: 2000 },
+    ],
+  };
+
+  it("waits for a line being added to the version's quote, and keeps both the line and the new totals", async () => {
+    await pool.query("UPDATE quotes SET proposal_id = $1, currency = 'GBP' WHERE id = $2", [PROPOSAL, QUOTE]);
+    await withBlocker(async (client) => {
+      // As POST /quotes/:id/line-items does: the quote row, then a line and the totals.
+      await client.query("SELECT id FROM quotes WHERE id = $1 FOR UPDATE", [QUOTE]);
+      await appendLineAndTotals(client);
+      const response = createVersionWithQuote();
+      await waitForBlockedQueries(1);
+      await client.query("COMMIT");
+      const answered = await response;
+      expect(answered.statusCode, answered.body).toBe(201);
+      expect(await storedVersionQuote()).toEqual([APPENDED_QUOTE]);
+    });
+  });
+
+  // The harm the lock prevents: the quote row read before a line is committed
+  // and its lines read after. The line table is held here only to place that
+  // commit between the two reads; without the row lock the totals are the old
+  // ones, the lines the new ones, and the save is refused for a quote that was
+  // never wrong.
+  it("never reads a version's quote totals before a line commits and its lines after", async () => {
+    await pool.query("UPDATE quotes SET proposal_id = $1, currency = 'GBP' WHERE id = $2", [PROPOSAL, QUOTE]);
+    await withBlocker(async (client) => {
+      await client.query("SELECT id FROM quotes WHERE id = $1 FOR UPDATE", [QUOTE]);
+      await client.query("LOCK TABLE quote_line_items IN ACCESS EXCLUSIVE MODE");
+      await appendLineAndTotals(client);
+      const response = createVersionWithQuote();
+      await waitForBlockedQueries(1);
+      await client.query("COMMIT");
+      const answered = await response;
+      expect(answered.statusCode, answered.body).toBe(201);
+      expect(await storedVersionQuote()).toEqual([APPENDED_QUOTE]);
     });
   });
 

@@ -10,7 +10,9 @@
 #   native-image — actual Linux API image and native decoder boundary checks
 #   test       — required migrated PostgreSQL regressions and workspace Vitest
 #   e2e        — four CPU shards, with the exact GPU file excluded before sharding
-#   gate-tooling — receipt, inventory, source and worker boundary regressions
+#   gate-tooling — receipt, inventory, source and worker boundary regressions,
+#                  and the Railway watch list's shape (compared with
+#                  railway.json only if that file comes back)
 #   gpu-scope    — decides whether the change reaches the renderer, tour or benchmark
 #   gpu-required — authenticated, bounded hardware run of all five Twin cases,
 #                  only for changes in the GPU scope (Blake, 26 September 2026)
@@ -91,6 +93,10 @@ jobs:
       - name: Lint (ESLint)
         run: pnpm -r lint
 
+      # The set-down listening page has no package of its own, so pnpm -r skips it.
+      - name: Lint the set-down listening page
+        run: pnpm exec eslint tools/set-down-listening/page.ts
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -114,6 +120,11 @@ jobs:
 
       - name: Typecheck (tsc --noEmit)
         run: pnpm -r typecheck
+
+      # The set-down listening page has no package of its own, so pnpm -r skips it; this is CI's only check on it
+      # besides the lint (tools/set-down-listening/README.md).
+      - name: Typecheck the set-down listening page
+        run: node packages/web/node_modules/typescript/bin/tsc -p tools/set-down-listening/tsconfig.json
 
   # A gate that never compiles the product is not a gate. Until this job
   # existed, Vercel was the first thing to discover a broken bundle —
@@ -156,7 +167,7 @@ jobs:
         # here instead (T-685).
         env:
           REQUIRE_WEB_DIST: "1"
-        run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/twin-chunk-budget.test.ts src/__tests__/public-copy-sweep.test.ts
+        run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/twin-chunk-budget.test.ts src/__tests__/public-copy-sweep.test.ts src/__tests__/hud-chunk-isolation.test.ts
 
   native-image:
     name: API Native Image
@@ -364,6 +375,16 @@ jobs:
           --no-psqlrc --set=ON_ERROR_STOP=1
           --command="CREATE DATABASE venviewer_pricing_guard_test"
 
+      - name: Create dedicated web vitals test database
+        # web-vitals-postgres builds the whole API on its own migrated
+        # database and skips without its URL.
+        env:
+          PGPASSWORD: postgres
+        run: >-
+          psql --host=127.0.0.1 --port=55476 --username=postgres --dbname=postgres
+          --no-psqlrc --set=ON_ERROR_STOP=1
+          --command="CREATE DATABASE venviewer_web_vitals_test"
+
       - name: Create dedicated test databases for the suites that once skipped
         # These suites skipped on every run until their databases were made
         # here (audit api-schema-db-2, 11 November 2026). Each names its
@@ -415,6 +436,7 @@ jobs:
           # Plan 19 L5: deposits and contract signatures (helpers/payments-db.ts).
           VENVIEWER_PAYMENTS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_payments_test
           VENVIEWER_PRICING_GUARD_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_pricing_guard_test
+          VENVIEWER_WEB_VITALS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_web_vitals_test
           # The suites that skipped on every run before 11 November 2026.
           VENVIEWER_READINESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_readiness_test
           VENVIEWER_PHASE_LAYOUT_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/omnitwin_timeline_0060_ci
@@ -532,9 +554,19 @@ jobs:
         # against an unreachable mirror apt spends about 10 minutes per try
         # waiting out each fetch, and two tries pushed shards past the job's
         # 30-minute limit. 180 s is about five times the normal time.
+        #
+        # The apt-get that --with-deps starts runs as root under sudo, so
+        # timeout cannot always stop it, and left running it keeps installing
+        # fonts while the tests start (seen in run 43062420466). It is stopped
+        # before the apt-free install.
         run: |
           if timeout --kill-after=10 180 pnpm --filter @omnitwin/web exec playwright install --with-deps chromium; then exit 0; fi
           echo "::warning::playwright install --with-deps failed or ran past 180 s; the Ubuntu apt mirror may be unreachable"
+          sudo pkill -TERM -x apt-get || true
+          sudo pkill -TERM -x dpkg || true
+          for _ in $(seq 1 15); do pgrep -x apt-get >/dev/null || pgrep -x dpkg >/dev/null || break; sleep 1; done
+          sudo pkill -KILL -x apt-get || true
+          sudo pkill -KILL -x dpkg || true
           echo "::warning::Installing Chromium without apt; relying on the runner image's own system libraries"
           pnpm --filter @omnitwin/web exec playwright install chromium
 
@@ -598,6 +630,131 @@ jobs:
           sys.exit(0 if result.wasSuccessful() else 1)
           PY
 
+      - name: Railway watch list is valid, and equals railway.json's if that file exists
+        # .railway/watch-patterns.json is the one list of paths that make
+        # Railway rebuild the API; .railway/railway.ts and the production
+        # receipt read it. A list file that is missing, is not JSON or is not
+        # a non-empty list of paths fails the step with an annotation on that
+        # file. railway.json was deleted in T-722, so the step then prints
+        # that there is nothing to compare. If railway.json ever comes back
+        # (for example a revert of its deletion, which Railway would read
+        # until 1 December 2026), its build.watchPatterns must equal the
+        # list, in the same order.
+        run: |
+          node --input-type=module <<'JS'
+          import { existsSync, readFileSync } from 'node:fs';
+          const readJson = (file) => {
+            try {
+              return JSON.parse(readFileSync(file, 'utf8'));
+            } catch (error) {
+              console.log(`::error file=${file}::is missing or is not valid JSON`);
+              console.log(String(error));
+              process.exit(1);
+            }
+          };
+          const list = readJson('.railway/watch-patterns.json');
+          if (!Array.isArray(list) || list.length === 0 || !list.every((path) => typeof path === 'string' && path !== '')) {
+            console.log('::error file=.railway/watch-patterns.json::must be a non-empty list of paths');
+            process.exit(1);
+          }
+          if (!existsSync('railway.json')) {
+            console.log('railway.json is absent: nothing to compare.');
+            process.exit(0);
+          }
+          const old = readJson('railway.json')?.build?.watchPatterns;
+          if (JSON.stringify(old) !== JSON.stringify(list)) {
+            console.log('::error file=.railway/watch-patterns.json::differs from build.watchPatterns in railway.json, which Railway reads until it is deleted');
+            console.log(`railway.json:        ${JSON.stringify(old)}`);
+            console.log(`watch-patterns.json: ${JSON.stringify(list)}`);
+            process.exit(1);
+          }
+          console.log(`The ${list.length} watch paths match railway.json.`);
+          JS
+
+  survey-tools:
+    name: Survey tools
+    # tools/surveyed-rooms builds a room's survey files by running the Grand
+    # Hall's own scripts (tools/grand-hall-survey) through small seams, so an
+    # edit to either folder can break the other. Its static, unit and gate
+    # tests (T0, T1, T4) run on made-up inputs and need no scan data; the
+    # three cases that need the twin's manifest skip themselves. On a hosted
+    # runner that is half a minute of tests after a minute of installs, which
+    # only a change to either folder needs to pay. One file outside them
+    # counts as theirs: the web reader's record checks (survey-record.ts),
+    # whose tolerances the publish step holds a copy of. T0 compares the two,
+    # so a change to that file runs these tests as well; without that, a drift
+    # that began in the reader would show only when someone next touched the
+    # tools. Like the GPU scope
+    # job, the comparison reads two snapshots, never history: on a pull request
+    # the merge commit's first parent (exactly this change), on a push the
+    # previous head. Any doubt (no base, a base that cannot be fetched, a
+    # commit that is not a two-parent merge) runs the tests.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Did the survey tools, or the reader they copy, change?
+        id: scope
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            # Read from the commit's header, which this one-commit checkout has.
+            BASE_SHA=$(git cat-file -p HEAD | awk 'BEGIN { header = 1 } header && $0 == "" { header = 0 } header && $1 == "parent" { count++; if (count == 1) first = $2 } END { if (count == 2) print first }')
+          else
+            BASE_SHA="$EVENT_BEFORE"
+          fi
+          RUN=true
+          if printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$' \
+            && [ "$BASE_SHA" != 0000000000000000000000000000000000000000 ] \
+            && git fetch --no-tags --depth=1 origin "$BASE_SHA" \
+            && git diff --quiet "$BASE_SHA" HEAD -- tools/surveyed-rooms tools/grand-hall-survey \
+              packages/web/src/components/surveyed-room/survey-record.ts; then
+            RUN=false
+            echo "The survey tools and the web reader they copy are as they were at $BASE_SHA: their tests are not run."
+          else
+            echo "The survey tools or the web reader changed, or no base could be compared: their tests run."
+          fi
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+
+      - name: Install pnpm
+        if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        # The relief comparisons mesh with this checkout's own meshoptimizer;
+        # without it they would skip themselves.
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Python
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python deps
+        if: steps.scope.outputs.run == 'true'
+        run: python3 -m pip install numpy scipy Pillow
+
+      - name: Static, unit and gate tests (T0, T1, T4)
+        if: steps.scope.outputs.run == 'true'
+        working-directory: tools/surveyed-rooms/tests
+        run: python3 -X utf8 -m unittest test_static test_units test_gates
+
   gpu-scope:
     name: GPU scope
     # The operator-run GPU benchmark is required only when a change can reach
@@ -620,26 +777,33 @@ jobs:
       - name: Checkout the head commit
         uses: actions/checkout@v5
 
-      - name: Fetch the base commit the comparison needs
-        env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$' && [ "$BASE_SHA" != 0000000000000000000000000000000000000000 ]; then
-            git fetch --no-tags --depth=1 origin "$BASE_SHA" || echo "Base $BASE_SHA could not be fetched; the change stays in GPU scope."
-          else
-            echo "No base commit to compare; the change stays in GPU scope."
-          fi
-
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
           package-manager-cache: false
 
+      - name: Fetch the base commit the comparison needs
+        id: base
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          # gpu-scope.mjs chooses the base: on a pull request the merge commit's first parent
+          # (exactly this change; read from the commit header, which this one-commit checkout
+          # has), only when the merge has two parents; on a push the previous head. Any
+          # other case, or a failure here, leaves no base and the change in GPU scope.
+          BASE_SHA=$(node .github/gpu/gpu-scope.mjs --event "$GITHUB_EVENT_NAME" --before "$EVENT_BEFORE" --head "$GITHUB_SHA") || BASE_SHA=""
+          echo "sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          if printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$' && [ "$BASE_SHA" != 0000000000000000000000000000000000000000 ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA" || echo "Base $BASE_SHA could not be fetched; the change stays in GPU scope."
+          else
+            echo "No base commit to compare; the change stays in GPU scope."
+          fi
+
       - name: Decide whether this change needs the GPU run
         id: scope
         env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ steps.base.outputs.sha }}
         run: node .github/gpu/gpu-scope.mjs --base "$BASE_SHA" --head "$GITHUB_SHA" --output gpu-scope.json
 
       - name: Preserve the scope decision
@@ -743,8 +907,11 @@ jobs:
       - name: Independently decide the GPU scope
         id: scope
         env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: node .github/gpu/gpu-scope.mjs --base "$BASE_SHA" --head "$GITHUB_SHA" --output browser-gate-evidence/gpu-scope.json
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          # The same base as the GPU scope job, chosen by the same function in gpu-scope.mjs.
+          BASE_SHA=$(node .github/gpu/gpu-scope.mjs --event "$GITHUB_EVENT_NAME" --before "$EVENT_BEFORE" --head "$GITHUB_SHA") || BASE_SHA=""
+          node .github/gpu/gpu-scope.mjs --base "$BASE_SHA" --head "$GITHUB_SHA" --output browser-gate-evidence/gpu-scope.json
 
       - name: Download all CPU shard receipts from this run attempt
         uses: actions/download-artifact@v4

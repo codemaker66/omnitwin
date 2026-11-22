@@ -59,6 +59,9 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
     schema.supplierCoordinationPacks, schema.supplierCoordinationPackItems, schema.supplierCoordinationShareTokens,
     schema.supplierAcknowledgements, schema.eventPlanNotifications, schema.generalAuditLog,
     schema.events, schema.eventPlanNotificationReads,
+    // The bell list asks of each bell whether the Diary move it announced was
+    // replaced (routes/event-plan-lifecycle.ts), so it reads the change feed too.
+    schema.eventPlanChanges,
   ];
 
   beforeAll(async () => {

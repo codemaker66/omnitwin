@@ -21,11 +21,13 @@ import { newArrivalKey, type SupplierArrivalsApi } from "./lib/use-supplier-arri
 // one before the boundary hour is that night, so nothing is saved until the
 // venue's boundary hour is read. A change goes from the copy the form was
 // opened on, so a colleague's newer change is refused rather than overwritten;
-// an add carries one key however often it is saved, so it is made once. Each
-// refusal says so in words, beside the supplier it is about (or the booking,
-// once the supplier has gone from the board), and the keyboard's place is
-// kept: on the control that opened a form or a question, else "Add a
-// supplier".
+// an add carries one key however often it is saved, so it is made once. An
+// open form and what is typed in it are kept above the panel, for its board
+// day and booking, so a panel drawn afresh (the day read again once the
+// venue's night hours arrive) opens it as it was left. Each refusal says so
+// in words, beside the supplier it is about (or the booking, once the
+// supplier has gone from the board), and the keyboard's place is kept: on the
+// control that opened a form or a question, else "Add a supplier".
 // ---------------------------------------------------------------------------
 
 type ArrivalsActions = Pick<SupplierArrivalsApi,
@@ -45,6 +47,36 @@ const EMPTY_DRAFT: Draft = { supplierName: "", category: "", arrives: "", leaves
 
 /** Where the keyboard goes back to after the add form closes, or a supplier goes. */
 const ADD_TARGET = "add";
+
+/** Said while the venue's night hours are unread; no longer true once they are. */
+const NIGHT_HOURS_UNREAD = "The venue’s night hours are not read yet, so these times cannot be placed. Save again in a moment.";
+
+/** A form open in a booking's panel: the add form, with the key its add
+ *  carries, or a change, from the revision it was opened on. */
+type OpenForm =
+  | { readonly kind: "add"; readonly key: string }
+  | { readonly kind: "change"; readonly id: string; readonly revision: number };
+
+/**
+ * The office's open forms, kept above the booking's panel by board day and
+ * booking (formKey), each with what is typed in it once anything is. A panel
+ * drawn afresh, as when the board reads its day again once the venue's night
+ * hours arrive, or a slot closed and opened again, opens the same form as it
+ * was left, an add with the key it is saved with. A form is let go when it is
+ * cancelled or its change is made.
+ */
+export type SupplierForms = Map<string, { readonly form: OpenForm; readonly draft: Draft | null }>;
+
+/** One store of open forms for as long as the board is open. */
+export function useSupplierForms(): SupplierForms {
+  const [forms] = useState<SupplierForms>(() => new Map());
+  return forms;
+}
+
+/** Where a booking's open form is kept: one per board day and booking. */
+function formKey(boardDate: string, bookingId: string): string {
+  return `${boardDate}|${bookingId}`;
+}
 
 function draftOf(arrival: SupplierArrival, timeZone: string): Draft {
   const clock = (iso: string | null): string => (iso === null ? "" : msToWallInput(Date.parse(iso), timeZone).slice(11, 16));
@@ -75,9 +107,13 @@ function dueWords(times: SupplierTimes, timeZone: string, nowMs: number): string
   return `${arrives}, leaving by ${sameDate ? "" : `${day(times.leavesMs)} at `}${clock(times.leavesMs)}.${twice}`;
 }
 
-function SupplierForm({ title, initial, boardDay, dayBoundaryHour, boundary, timeZone, nowMs, busy, submitLabel, onSubmit, onCancel }: {
+function SupplierForm({ title, initial, restored, onDraft, boardDay, dayBoundaryHour, boundary, timeZone, nowMs, busy, submitLabel, onSubmit, onCancel }: {
   readonly title: string;
   readonly initial: Draft;
+  /** Drawn again as it was left, rather than opened just now. */
+  readonly restored: boolean;
+  /** Told what is typed as it is typed, to keep it above the panel. */
+  readonly onDraft: (draft: Draft) => void;
   /** The board's day the times are typed for, YYYY-MM-DD on the venue's clock. */
   readonly boardDay: string;
   readonly dayBoundaryHour: number;
@@ -93,9 +129,18 @@ function SupplierForm({ title, initial, boardDay, dayBoundaryHour, boundary, tim
   const [draft, setDraft] = useState<Draft>(initial);
   const [problem, setProblem] = useState("");
   const id = useId();
-  // Opening the form takes the keyboard to its first field.
+  // Opening the form takes the keyboard to its first field. A form drawn
+  // again as it was left takes it only if the keyboard lost its place to the
+  // document; a place held elsewhere, such as the day's arrows, stays. Decided
+  // once, as the form appears.
   const firstRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { firstRef.current?.focus(); }, []);
+  const restoredOnOpen = useRef(restored);
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!restoredOnOpen.current || active === null || active === document.body) firstRef.current?.focus();
+  }, []);
+  // What is typed is kept above the panel as it stands.
+  useEffect(() => { onDraft(draft); }, [draft, onDraft]);
   const field = (name: keyof Draft) => ({
     id: `${id}-${name}`,
     value: draft[name],
@@ -114,7 +159,7 @@ function SupplierForm({ title, initial, boardDay, dayBoundaryHour, boundary, tim
     }
     if (boundary !== "known") {
       // Which night a time after midnight falls on is the venue's boundary hour's to say.
-      setProblem("The venue’s night hours are not read yet, so these times cannot be placed. Save again in a moment.");
+      setProblem(NIGHT_HOURS_UNREAD);
       return;
     }
     if (times.skipped !== null) {
@@ -151,8 +196,9 @@ function SupplierForm({ title, initial, boardDay, dayBoundaryHour, boundary, tim
         <label htmlFor={`${id}-contact`} className="is-wide">Contact on the day<input {...field("contact")} maxLength={160} autoComplete="off" /></label>
         <label htmlFor={`${id}-note`} className="is-wide">Note<textarea {...field("note")} maxLength={500} rows={2} /></label>
       </div>
-      {/* Mounted while empty, so a screen reader hears what is put in it. */}
-      <p className="dayboard-supplier-problem" role="status">{problem}</p>
+      {/* Mounted while empty, so a screen reader hears what is put in it.
+          Once the night hours are read, saying they are not goes. */}
+      <p className="dayboard-supplier-problem" role="status">{problem === NIGHT_HOURS_UNREAD && boundary === "known" ? "" : problem}</p>
       <div className="dayboard-supplier-form-actions">
         <button type="submit" className="dayboard-seen-button" aria-busy={busy} aria-disabled={busy}>
           {busy && <ActivityIndicator size={14} />}
@@ -206,13 +252,10 @@ function tapSaid(name: string, act: "step" | "undo", which: SupplierArrivalStep)
   return act === "step" ? `${name} marked ${mark}.` : `${name} no longer marked ${mark}.`;
 }
 
-/** What the panel has open: the add form (with the key its add carries), a change form, or neither. */
-type Editing =
-  | { readonly kind: "add"; readonly key: string }
-  | { readonly kind: "change"; readonly id: string; readonly revision: number }
-  | null;
+/** What the panel has open: the add form, a change form, or neither. */
+type Editing = OpenForm | null;
 
-export function SuppliersSection({ slot, arrivals, boardDate, dayBoundaryHour, boundary, timeZone, nowMs, today, canPlan, canMark, actions }: {
+export function SuppliersSection({ slot, arrivals, boardDate, dayBoundaryHour, boundary, timeZone, nowMs, today, canPlan, canMark, actions, forms }: {
   readonly slot: DayBoardSlot;
   readonly arrivals: readonly SupplierArrival[];
   /** The board's day, YYYY-MM-DD on the venue's clock: new times are typed for it. */
@@ -230,8 +273,25 @@ export function SuppliersSection({ slot, arrivals, boardDate, dayBoundaryHour, b
   /** The floor, on today's board: marks the door and undoes a mistaken tap. Never the wall. */
   readonly canMark: boolean;
   readonly actions: ArrivalsActions;
+  /** The open forms, kept above the panel: one drawn afresh opens its form as it was left. */
+  readonly forms: SupplierForms;
 }): ReactElement | null {
-  const [editing, setEditing] = useState<Editing>(null);
+  // The form open here is this board day's and booking's, kept above the
+  // panel, so a panel drawn afresh opens it again with what was typed.
+  const keptAt = formKey(boardDate, slot.bookingId);
+  const kept = forms.get(keptAt);
+  const [editing, setOpen] = useState<Editing>(() => kept?.form ?? null);
+  const setEditing = (next: Editing): void => {
+    if (next === null) forms.delete(keptAt);
+    else forms.set(keptAt, { form: next, draft: null });
+    setOpen(next);
+  };
+  /** What is typed in the open form, kept with it while it is the one open. */
+  const keepDraft = (form: OpenForm) => (draft: Draft): void => {
+    if (forms.get(keptAt)?.form === form) forms.set(keptAt, { form, draft });
+  };
+  /** What was typed in a form before the panel was drawn afresh, if anything. */
+  const typed = (form: OpenForm): Draft | null => (kept?.form === form ? kept.draft : null);
   const [removing, setRemoving] = useState<string | null>(null);
   // The control each arrival's tap went from, so its own button shows the work.
   const [working, setWorking] = useState<ReadonlyMap<string, string>>(new Map());
@@ -322,7 +382,9 @@ export function SuppliersSection({ slot, arrivals, boardDate, dayBoundaryHour, b
                 {opened !== null ? (
                   <SupplierForm
                     title={`Change ${arrival.supplierName}`}
-                    initial={draftOf(arrival, timeZone)}
+                    initial={typed(opened) ?? draftOf(arrival, timeZone)}
+                    restored={typed(opened) !== null}
+                    onDraft={keepDraft(opened)}
                     boardDay={dueDay(arrival)}
                     dayBoundaryHour={dayBoundaryHour}
                     boundary={boundary}
@@ -429,7 +491,9 @@ export function SuppliersSection({ slot, arrivals, boardDate, dayBoundaryHour, b
       {canPlan && adding !== null && (
         <SupplierForm
           title="Add a supplier"
-          initial={EMPTY_DRAFT}
+          initial={typed(adding) ?? EMPTY_DRAFT}
+          restored={typed(adding) !== null}
+          onDraft={keepDraft(adding)}
           boardDay={boardDate}
           dayBoundaryHour={dayBoundaryHour}
           boundary={boundary}
@@ -439,10 +503,11 @@ export function SuppliersSection({ slot, arrivals, boardDate, dayBoundaryHour, b
           submitLabel="Add"
           onSubmit={(fields) => {
             // The same key however often this form is saved: a resend after a lost answer adds nothing twice.
-            void actions.add({ bookingId: slot.bookingId, ...fields }, adding.key).then((outcome) => {
+            void actions.add({ bookingId: slot.bookingId, ...fields }, adding.key).then(({ outcome, arrival: made }) => {
               if (outcome !== "saved") return;
               setEditing(null);
-              setSaid(`${fields.supplierName} added.`);
+              // Said as the server keeps them: a resend answers with the first add, whatever was typed since.
+              setSaid(`${made?.supplierName ?? fields.supplierName} added.`);
               keepFocus(ADD_TARGET);
             });
           }}

@@ -34,6 +34,13 @@ export const SUPPLIER_ARRIVALS_INTERVAL_MS = 60_000;
  *  arrival is no longer on the board (said against its booking); or not made. */
 export type ArrivalOutcome = "saved" | "stale" | "gone" | "failed";
 
+/** What became of an add, and the supplier as the server keeps them once made:
+ *  for a Save sent again after a lost answer, the first one made. */
+export interface AddOutcome {
+  readonly outcome: ArrivalOutcome;
+  readonly arrival: SupplierArrival | null;
+}
+
 /** The key a booking's add form keeps its busy state and failure under. */
 export function newArrivalKey(bookingId: string): string {
   return `new:${bookingId}`;
@@ -57,7 +64,7 @@ export interface SupplierArrivalsApi {
   readonly step: (arrival: SupplierArrival, step: SupplierArrivalStep) => Promise<ArrivalOutcome>;
   readonly undo: (arrival: SupplierArrival, step: SupplierArrivalStep) => Promise<ArrivalOutcome>;
   /** An add, with the key that names it: the same key on a second Save never adds twice. */
-  readonly add: (body: CreateSupplierArrival, idempotencyKey: string) => Promise<ArrivalOutcome>;
+  readonly add: (body: CreateSupplierArrival, idempotencyKey: string) => Promise<AddOutcome>;
   /** A change, from the revision the form was opened on. */
   readonly change: (arrival: SupplierArrival, openedRevision: number, body: Omit<UpdateSupplierArrival, "expectedRevision">) => Promise<ArrivalOutcome>;
   readonly remove: (arrival: SupplierArrival) => Promise<ArrivalOutcome>;
@@ -196,8 +203,15 @@ export function useSupplierArrivals(
     run(arrival.id, "mark that", () => recordSupplierArrivalStep(place, arrival.id, which), aboutOf(arrival)), [run, place]);
   const undo = useCallback((arrival: SupplierArrival, which: SupplierArrivalStep) =>
     run(arrival.id, "take that back", () => undoSupplierArrivalStep(place, arrival.id, which), aboutOf(arrival)), [run, place]);
-  const add = useCallback((body: CreateSupplierArrival, idempotencyKey: string) =>
-    run(newArrivalKey(body.bookingId), "add that", () => createSupplierArrival(place, body, idempotencyKey), null), [run, place]);
+  const add = useCallback(async (body: CreateSupplierArrival, idempotencyKey: string): Promise<AddOutcome> => {
+    // What the server answers with, which a Save sent again finds is the first add.
+    const made: { arrival: SupplierArrival | null } = { arrival: null };
+    const outcome = await run(newArrivalKey(body.bookingId), "add that", async () => {
+      made.arrival = await createSupplierArrival(place, body, idempotencyKey);
+      return made.arrival;
+    }, null);
+    return { outcome, arrival: made.arrival };
+  }, [run, place]);
   const change = useCallback((arrival: SupplierArrival, openedRevision: number, body: Omit<UpdateSupplierArrival, "expectedRevision">) =>
     run(arrival.id, "save that", () => updateSupplierArrival(place, arrival.id, { ...body, expectedRevision: openedRevision }), aboutOf(arrival)), [run, place]);
   const remove = useCallback((arrival: SupplierArrival) =>

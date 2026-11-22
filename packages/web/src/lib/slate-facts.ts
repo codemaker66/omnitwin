@@ -20,13 +20,40 @@ import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 const VENUE_TIME_ZONE = "Europe/London";
 
-const DAY = new Intl.DateTimeFormat("en-GB", {
-  timeZone: VENUE_TIME_ZONE,
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
+const DAY = new Map<string, Intl.DateTimeFormat>();
+
+/** The seats meter's shape as fractions of its width (card-dock spec §9). */
+export interface MeterShape {
+  /** Seats placed. */
+  readonly fill: number;
+  /** The end of the seats in hand (equal to fill with nothing in hand). */
+  readonly handTo: number;
+  /** Where the part past the room's published seats begins, or null. */
+  readonly overFrom: number | null;
+  /** Everyone has a seat. */
+  readonly full: boolean;
+}
+
+/**
+ * The meter: seats over guests (with no event, the room's published seats),
+ * the bar scaled to whichever is larger once the seats in hand are counted.
+ */
+export function meterShape({ guests, seats, limit, inHand }: {
+  readonly guests: number | null;
+  readonly seats: number;
+  readonly limit: number | null;
+  readonly inHand: number;
+}): MeterShape {
+  const wanted = guests ?? limit ?? 0;
+  const scale = Math.max(wanted, seats + inHand, seats);
+  if (scale <= 0) return { fill: 0, handTo: 0, overFrom: null, full: false };
+  return {
+    fill: seats / scale,
+    handTo: (seats + inHand) / scale,
+    overFrom: limit !== null && seats + inHand > limit ? limit / scale : null,
+    full: wanted > 0 && seats >= wanted,
+  };
+}
 
 const ISO_DAY = new Map<string, Intl.DateTimeFormat>();
 
@@ -41,10 +68,22 @@ export function venueDay(startsAt: string, timeZone: string | null): string {
   return format.format(new Date(startsAt));
 }
 
-/** "Sat 28 Nov 2026 · Grand Hall", the day in the venue's own time; the room alone without a date. */
-export function slateEyebrow({ startsAt, roomName }: { readonly startsAt: string | null; readonly roomName: string }): string {
+/** "Sat 28 Nov 2026 · Grand Hall", the day in the venue's own time (the
+ *  house's when the slate does not know the venue's zone); the room alone
+ *  without a date. */
+export function slateEyebrow({ startsAt, roomName, timeZone = null }: {
+  readonly startsAt: string | null;
+  readonly roomName: string;
+  readonly timeZone?: string | null;
+}): string {
   if (startsAt === null) return roomName;
-  const parts = DAY.formatToParts(new Date(startsAt));
+  const zone = timeZone ?? VENUE_TIME_ZONE;
+  let format = DAY.get(zone);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat("en-GB", { timeZone: zone, weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    DAY.set(zone, format);
+  }
+  const parts = format.formatToParts(new Date(startsAt));
   const part = (type: Intl.DateTimeFormatPartTypes): string => parts.find((entry) => entry.type === type)?.value ?? "";
   return `${part("weekday")} ${part("day")} ${part("month")} ${part("year")} · ${roomName}`;
 }

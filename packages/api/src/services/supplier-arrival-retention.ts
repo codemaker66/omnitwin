@@ -19,7 +19,7 @@ import { sqlStateOf } from "./dietary-memory.js";
 // What stays is the venue's record: the supplier's name, when they were due,
 // the door, and the door marks with the names of the staff who made them.
 // Those names are the record of who was in the building and are kept after
-// a member of staff's account is closed (Blake's decision): no pass here or
+// a member of staff's account is deleted (Blake's decision): no pass here or
 // anywhere erases them. The door's history (booking_supplier_arrival_events)
 // holds no contact or note, so it has nothing for this pass to clear.
 //

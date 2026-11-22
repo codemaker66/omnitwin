@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement, type ReactNode, type RefObject } from "react";
 import { useParams } from "react-router-dom";
 import { AlertCircle, Bell, Check, CircleDashed, Clock, NotebookPen, RefreshCw, Send, ShieldAlert, Truck } from "lucide-react";
-import type {
-  ChangeFeedItem, EventDayIssue, EventDayIssueSeverity, EventDayIssueStatus,
-  EventDayOpsBoard, OpsTask, OpsTaskStatus, SupplierInstruction,
+import {
+  eventDisplayName,
+  type ChangeFeedItem, type EventDayIssue, type EventDayIssueSeverity, type EventDayIssueStatus,
+  type EventDayOpsBoard, type OpsTask, type OpsTaskStatus, type SupplierInstruction,
 } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
 import { createEventDayIssue, getEventDayOpsBoard, updateEventDayIssue, updateOpsTaskStatus } from "../api/event-day-ops.js";
@@ -810,7 +811,7 @@ export function EventDayOpsPage(): ReactElement {
       <header className="event-day-hero">
         <div>
           <p className="event-day-kicker">{eventDayKicker(bookedStartsAt ?? readyBoard.event.startsAt, timeZone, nowMs)}</p>
-          <h1>{readyBoard.event.name}</h1>
+          <h1>{eventDisplayName(readyBoard.event, timeZone)}</h1>
           <p>
             {formatEventDate(bookedStartsAt ?? readyBoard.event.startsAt, timeZone)}
             {" · "}{formatTime(bookedStartsAt ?? readyBoard.event.startsAt, timeZone)}

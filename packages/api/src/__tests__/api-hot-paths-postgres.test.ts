@@ -830,6 +830,142 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
       expect(sends.rows[0]?.count).toBe(0);
     });
 
+    // T-695 api-diary-bookings-7: a two-day event's bookings in one room were
+    // one span, so another client's dinner between its days was never
+    // measured. The route passes the venue's own days to the engine.
+    it("measures the changeover before another client's dinner between a two-day event's days", async () => {
+      const a = await venue("two-day room");
+      const staff = await a.actor("staff");
+      const room = a.rooms[0] ?? "";
+      const ink = (title: string, startsAt: string, hours: number, eventId?: string): typeof schema.bookings.$inferInsert => ({
+        venueId: a.venueId, spaceId: room, kind: "ink", title, startsAt: new Date(startsAt),
+        endsAt: new Date(Date.parse(startsAt) + hours * HOUR), ...(eventId === undefined ? {} : { eventId }),
+      });
+      // Friday 17 and Saturday 18 September 2027, 09:00 to 17:00 BST; the dinner 19:00 to 23:00 BST on the Friday.
+      const [friday] = await insertBoundBookings(db, [ink("Conference, day one", "2027-09-17T08:00:00.000Z", 8)]);
+      if (friday?.eventId === null || friday?.eventId === undefined) throw new Error("The conference has no event");
+      const [, dinner] = await insertBoundBookings(db, [
+        ink("Conference, day two", "2027-09-18T08:00:00.000Z", 8, friday.eventId),
+        ink("Dinner", "2027-09-17T18:00:00.000Z", 4),
+      ]);
+      if (dinner === undefined) throw new Error("The dinner was not booked");
+      await db.insert(schema.turnaroundRules).values({ venueId: a.venueId, spaceId: null, eventType: null, name: "House changeover", minutes: 180 });
+
+      const response = await server.inject({
+        method: "GET", headers: bearer(staff),
+        url: `/calendar?venueId=${a.venueId}&from=2027-09-16T23:00:00.000Z&to=2027-09-19T23:00:00.000Z`,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const report = response.json<{ data: { conflicts: { conflicts: { type: string; entryIds: string[] }[] } } }>().data.conflicts;
+      expect(report.conflicts.filter((conflict) => conflict.type === "insufficient_turnaround").map((conflict) => conflict.entryIds))
+        .toEqual([[friday.id, dinner.id]]);
+    });
+
+    // T-695 review D4: the route reads the venue's own zone. A New York
+    // evening ending 21:00 EDT and its 09:00 EDT morning are two New York
+    // days, but one London day (02:00 and 14:00 BST): read in London, they
+    // would join and a 07:00 show-round between them would be warned.
+    // Review Y3: the same two days in the other room, with no show-round
+    // there, give a signal that does not rest on viewings: an occupancy is
+    // named by its last booking, so the changeover from another client's
+    // reception before the evening names the evening only when the days part.
+    it("parts an event's days at the venue's own midnight, not London's", async () => {
+      const a = await venue("New York room");
+      await db.update(schema.venues).set({ timezone: "America/New_York" }).where(eq(schema.venues.id, a.venueId));
+      const staff = await a.actor("staff");
+      const [room, otherRoom] = [a.rooms[0] ?? "", a.rooms[1] ?? ""];
+      const piece = (title: string, kind: "ink" | "viewing", startsAt: string, hours: number, eventId?: string, spaceId = room): typeof schema.bookings.$inferInsert => ({
+        venueId: a.venueId, spaceId, kind, title, startsAt: new Date(startsAt),
+        endsAt: new Date(Date.parse(startsAt) + hours * HOUR), ...(eventId === undefined ? {} : { eventId }),
+      });
+      // Friday 17 September 2027 18:00-21:00 EDT, then Saturday 09:00-12:00 EDT; a show-round Saturday 07:00 EDT.
+      const [evening] = await insertBoundBookings(db, [piece("Gala, evening", "ink", "2027-09-17T22:00:00.000Z", 3)]);
+      if (evening?.eventId === null || evening?.eventId === undefined) throw new Error("The gala has no event");
+      await insertBoundBookings(db, [
+        piece("Gala, morning", "ink", "2027-09-18T13:00:00.000Z", 3, evening.eventId),
+        piece("Show-round", "viewing", "2027-09-18T11:00:00.000Z", 0.5),
+      ]);
+      // The other room: the same evening and morning of a dinner dance, and another client's reception 16:00-17:30 EDT on the Friday.
+      const [danceEvening] = await insertBoundBookings(db, [piece("Dinner dance, evening", "ink", "2027-09-17T22:00:00.000Z", 3, undefined, otherRoom)]);
+      if (danceEvening?.eventId === null || danceEvening?.eventId === undefined) throw new Error("The dinner dance has no event");
+      const [, reception] = await insertBoundBookings(db, [
+        piece("Dinner dance, morning", "ink", "2027-09-18T13:00:00.000Z", 3, danceEvening.eventId, otherRoom),
+        piece("Reception", "ink", "2027-09-17T20:00:00.000Z", 1.5, undefined, otherRoom),
+      ]);
+      if (reception === undefined) throw new Error("The reception was not booked");
+      await db.insert(schema.turnaroundRules).values({ venueId: a.venueId, spaceId: null, eventType: null, name: "House changeover", minutes: 60 });
+
+      const response = await server.inject({
+        method: "GET", headers: bearer(staff),
+        url: `/calendar?venueId=${a.venueId}&from=2027-09-17T04:00:00.000Z&to=2027-09-19T04:00:00.000Z`,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const report = response.json<{ data: { conflicts: { conflicts: { type: string; entryIds: string[] }[] } } }>().data.conflicts;
+      // Read in London (or UTC) the dance's days join and the pair would be [reception, the dance's morning].
+      expect(report.conflicts.filter((conflict) => conflict.type === "insufficient_turnaround").map((conflict) => conflict.entryIds))
+        .toEqual([[reception.id, danceEvening.id]]);
+      expect(report.conflicts.filter((conflict) => conflict.type === "viewing_overlap")).toEqual([]);
+    });
+
+    // T-695 review Y4: a zone the column holds but no clock knows (written by
+    // hand, or before writes were checked) is read as the house's, as the
+    // rota and the room day read it; the Diary does not answer 500.
+    it("reads the Diary of a venue whose stored zone no clock knows", async () => {
+      const a = await venue("unreadable zone");
+      await db.update(schema.venues).set({ timezone: "Nowhere/Never_Land" }).where(eq(schema.venues.id, a.venueId));
+      const staff = await a.actor("staff");
+      const room = a.rooms[0] ?? "";
+      const ink = (title: string, startsAt: string, eventId?: string): typeof schema.bookings.$inferInsert => ({
+        venueId: a.venueId, spaceId: room, kind: "ink", title, startsAt: new Date(startsAt),
+        endsAt: new Date(Date.parse(startsAt) + 3 * HOUR), ...(eventId === undefined ? {} : { eventId }),
+      });
+      // Two pieces of one event that do not touch, so the engine asks which day each is.
+      const [first] = await insertBoundBookings(db, [ink("Conference, day one", "2027-09-17T08:00:00.000Z")]);
+      if (first?.eventId === null || first?.eventId === undefined) throw new Error("The conference has no event");
+      await insertBoundBookings(db, [ink("Conference, day two", "2027-09-18T08:00:00.000Z", first.eventId)]);
+
+      const response = await server.inject({
+        method: "GET", headers: bearer(staff),
+        url: `/calendar?venueId=${a.venueId}&from=2027-09-16T23:00:00.000Z&to=2027-09-19T23:00:00.000Z`,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.json<{ data: { entries: { id: string }[] } }>().data.entries.map((entry) => entry.id)).toContain(first.id);
+    });
+
+    // T-695 api-diary-bookings-5: the owner recorded on a hold may since have
+    // moved to another venue or stopped working the Diary. Such a hold is
+    // reported as nobody's, as the reminder's own rule says, never emailed.
+    it("tells no owner who has moved venue or role: those holds are reported as having no owner", async () => {
+      const a = await venue("reminder owners A");
+      const b = await venue("reminder owners B");
+      const now = Date.now();
+      const stays = await a.actor("staff");
+      const moved = await a.actor("sales");
+      const demoted = await a.actor("manager");
+      const hold = (ownerUserId: string, title: string, inDays: number): typeof schema.bookings.$inferInsert => ({
+        venueId: a.venueId, spaceId: a.rooms[0] ?? "", kind: "hold", title, rank: 1, ownerUserId,
+        decisionAt: new Date(now + 3 * DAY), startsAt: new Date(now + inDays * DAY), endsAt: new Date(now + inDays * DAY + 4 * HOUR),
+      });
+      const rows = await insertBoundBookings(db, [
+        hold(stays.id, "Owner still here", 10), hold(moved.id, "Owner moved venue", 11), hold(demoted.id, "Owner no longer on the Diary", 12),
+      ]);
+      await db.update(schema.users).set({ venueId: b.venueId }).where(eq(schema.users.id, moved.id));
+      await db.update(schema.users).set({ role: "client" }).where(eq(schema.users.id, demoted.id));
+
+      const sentTo: string[] = [];
+      const summary = await runHoldReminderPass({
+        db, dryRun: false, now: new Date(now + 60_000),
+        send: (payload) => { sentTo.push(payload.to); return Promise.resolve(true); },
+      });
+      const outcomes = Object.fromEntries(summary.reminders
+        .filter((row) => rows.some((booking) => booking.id === row.bookingId))
+        .map((row) => [row.holdTitle, row.outcome]));
+      expect(outcomes).toEqual({ "Owner still here": "sent", "Owner moved venue": "no_owner", "Owner no longer on the Diary": "no_owner" });
+      expect(sentTo).toContain(`${stays.id}@hot-paths.invalid`);
+      expect(sentTo).not.toContain(`${moved.id}@hot-paths.invalid`);
+      expect(sentTo).not.toContain(`${demoted.id}@hot-paths.invalid`);
+    });
+
     it("lets one replay retry a failed reminder send, dedupes the others, and never reclaims a sent one", async () => {
       // No provider in this gate: a reclaimed send ends as dev_mode, which is
       // how the test sees that the provider step was reached again.

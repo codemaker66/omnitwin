@@ -21,6 +21,10 @@ export function gotItLabel(count: number): string {
   return count === 1 ? "Got it" : `Got all ${String(count)}`;
 }
 
+/** Said with an event's changes when more of them wait than one read holds
+ *  (the newest come first; the rest follow as these are acknowledged). */
+export const MORE_WAITING = "More changes to this event are waiting than the board shows at once. The rest appear once the floor has these.";
+
 /**
  * Each change with its title and time, its sentence, and where it stood and
  * stands (Was and Now) when those differ. A Diary move's Was and Now carry
@@ -64,11 +68,13 @@ export function ChangeList({ changes, timeZone, nowMs }: {
  * room taken away) it is no longer on the day, and its changes say the rest.
  * One Got it for all of them, as on the panel.
  */
-export function LeftTheDay({ title, movedOff, changes, timeZone, nowMs, onAcknowledge, sending, note }: {
+export function LeftTheDay({ title, movedOff, changes, truncated, timeZone, nowMs, onAcknowledge, sending, note }: {
   readonly title: string;
   /** A waiting Diary move put the function on another day. */
   readonly movedOff: boolean;
   readonly changes: readonly FloorChange[];
+  /** More of the event's changes wait than the read holds. */
+  readonly truncated: boolean;
   readonly timeZone: string;
   readonly nowMs: number;
   /** Null where nothing may be acknowledged (the wall, a role that only reads). */
@@ -83,6 +89,7 @@ export function LeftTheDay({ title, movedOff, changes, timeZone, nowMs, onAcknow
         <strong>{title}</strong> {movedOff ? "has moved off this day." : "is no longer on this day."}
       </p>
       <ChangeList changes={changes} timeZone={timeZone} nowMs={nowMs} />
+      {truncated && <p className="dayboard-changes-more">{MORE_WAITING}</p>}
       {onAcknowledge !== null && (
         // Never disabled: a disabled button drops the keyboard's place to the
         // page, and on a failed send nothing would bring it back.

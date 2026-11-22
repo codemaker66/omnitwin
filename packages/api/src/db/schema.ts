@@ -27,6 +27,11 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type {
+  DecisionActionClass,
+  DecisionBody,
+  DecisionEventKind,
+  DecisionReceipt,
+  DecisionStatus,
   AIUsageAttempt,
   AIUsageFeature,
   AIUsageOutcome,
@@ -34,6 +39,8 @@ import type {
   AgentTrajectory,
   BookingLostReason,
   EngagementEventKind,
+  WebVitalDeviceClass,
+  WebVitalName,
   FirstResponseChannel,
   CaptureInclude,
   CaptureSourceKind,
@@ -2881,9 +2888,11 @@ export const eventPlanChanges = pgTable("event_plan_changes", {
   // floor_change_move_places), kept as data so the next move is compared by
   // room id and instant, never by reading the words back: where the floor last
   // knew the booking (before the first move nobody has acknowledged), where
-  // this move put it, and the run of unacknowledged moves it belongs to. NULL
-  // together on every other change. The rooms carry no key: the record stays
-  // true if a room is later removed.
+  // this move put it, the run of unacknowledged moves it belongs to, and
+  // whether the floor was told of it (a move into the past is kept, told to no
+  // one, so the next move is compared with the place the floor last knew).
+  // NULL together on every other change. The rooms carry no key: the record
+  // stays true if a room is later removed.
   moveKnownSpaceId: uuid("move_known_space_id"),
   moveKnownStartsAt: timestamp("move_known_starts_at", { withTimezone: true }),
   moveKnownEndsAt: timestamp("move_known_ends_at", { withTimezone: true }),
@@ -2891,6 +2900,7 @@ export const eventPlanChanges = pgTable("event_plan_changes", {
   moveToStartsAt: timestamp("move_to_starts_at", { withTimezone: true }),
   moveToEndsAt: timestamp("move_to_ends_at", { withTimezone: true }),
   moveChainId: uuid("move_chain_id"),
+  moveTold: boolean("move_told"),
 }, (table) => [
   index("event_plan_changes_event_created_idx").on(table.eventId, table.createdAt),
   index("event_plan_changes_venue_created_idx").on(table.venueId, table.createdAt),
@@ -2898,7 +2908,7 @@ export const eventPlanChanges = pgTable("event_plan_changes", {
   index("event_plan_changes_proposal_idx").on(table.proposalId),
   index("event_plan_changes_handoff_idx").on(table.handoffPackId),
   index("event_plan_changes_booking_move_idx").on(table.sourceId, table.createdAt).where(sql`${table.moveChainId} IS NOT NULL`),
-  check("event_plan_changes_booking_move_places", sql`num_nonnulls(${table.moveKnownSpaceId}, ${table.moveKnownStartsAt}, ${table.moveKnownEndsAt}, ${table.moveToSpaceId}, ${table.moveToStartsAt}, ${table.moveToEndsAt}, ${table.moveChainId}) = 0 OR (num_nulls(${table.moveKnownSpaceId}, ${table.moveKnownStartsAt}, ${table.moveKnownEndsAt}, ${table.moveToSpaceId}, ${table.moveToStartsAt}, ${table.moveToEndsAt}, ${table.moveChainId}) = 0 AND ${table.moveKnownEndsAt} > ${table.moveKnownStartsAt} AND ${table.moveToEndsAt} > ${table.moveToStartsAt} AND ${table.sourceKind} = 'event')`),
+  check("event_plan_changes_booking_move_places", sql`num_nonnulls(${table.moveKnownSpaceId}, ${table.moveKnownStartsAt}, ${table.moveKnownEndsAt}, ${table.moveToSpaceId}, ${table.moveToStartsAt}, ${table.moveToEndsAt}, ${table.moveChainId}, ${table.moveTold}) = 0 OR (num_nulls(${table.moveKnownSpaceId}, ${table.moveKnownStartsAt}, ${table.moveKnownEndsAt}, ${table.moveToSpaceId}, ${table.moveToStartsAt}, ${table.moveToEndsAt}, ${table.moveChainId}, ${table.moveTold}) = 0 AND ${table.moveKnownEndsAt} > ${table.moveKnownStartsAt} AND ${table.moveToEndsAt} > ${table.moveToStartsAt} AND ${table.sourceKind} = 'event')`),
 ]);
 
 export const eventPlanNotifications = pgTable("event_plan_notifications", {
@@ -6607,7 +6617,7 @@ export const bookingObservations = pgTable("booking_observations", {
 ]);
 
 // ---------------------------------------------------------------------------
-// Supplier arrivals (T-692, migration 0109) — who comes to the building for a
+// Supplier arrivals (T-692, migration 0111) — who comes to the building for a
 // booking, when, and at which door. The office enters them; the floor marks
 // each one arrived and gone. Arrival and leaving are first-tap-wins facts and
 // never move the revision, which guards the office's own edits. An arrival
@@ -6663,7 +6673,7 @@ export const bookingSupplierArrivals = pgTable("booking_supplier_arrivals", {
 export const SUPPLIER_ARRIVAL_EVENT_ACTIONS = ["arrived", "left", "arrived-undone", "left-undone", "removed"] as const;
 export type SupplierArrivalEventAction = (typeof SUPPLIER_ARRIVAL_EVENT_ACTIONS)[number];
 
-// The door's history (migration 0109): one row per mark, mark taken back and
+// The door's history (migration 0111): one row per mark, mark taken back and
 // removal, in the same transaction as the change. It outlives a removed
 // arrival, so it has no key onto it. A mark names the person; a removal keeps
 // only the account (booking_supplier_arrival_events_named_at_the_door).
@@ -6690,7 +6700,7 @@ export const bookingSupplierArrivalEvents = pgTable("booking_supplier_arrival_ev
 ]);
 
 // ---------------------------------------------------------------------------
-// Opening and lock-up (T-693, migration 0110) — the venue's own checks, in its
+// Opening and lock-up (T-693, migration 0112) — the venue's own checks, in its
 // own words, and each day's ticks. A check is never deleted: one taken off the
 // list is retired, and new words make a new check, so a day keeps what was
 // ticked on it in the words it was ticked against. A tick is first-tap-wins
@@ -6999,4 +7009,86 @@ export const venueEngagementEvents = pgTable("venue_engagement_events", {
   index("venue_engagement_events_enquiry_idx").on(table.enquiryId).where(sql`${table.enquiryId} IS NOT NULL`),
   index("venue_engagement_events_proposal_idx").on(table.proposalId, table.kind, table.recordedAt).where(sql`${table.proposalId} IS NOT NULL`),
   index("venue_engagement_events_space_idx").on(table.spaceId).where(sql`${table.spaceId} IS NOT NULL`),
+]);
+
+// Goal 09 M1, migration 0108: prepared decisions and their history. What a
+// decision was prepared as (`body`) never changes; where it stands changes
+// once, from prepared, with its receipt (decisions_guard_update). The history
+// is append-only. services/decisions.ts is the only writer.
+export const decisions = pgTable("decisions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "restrict" }),
+  actionClass: varchar("action_class", { length: 40 }).$type<DecisionActionClass>().notNull(),
+  status: varchar("status", { length: 20 }).$type<DecisionStatus>().notNull().default("prepared"),
+  subjectKind: varchar("subject_kind", { length: 20 }).$type<"booking">().notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  body: jsonb("body").$type<DecisionBody>().notNull(),
+  /** Why, in the asker's words: erasable, the only column that may change after a decision is decided. */
+  reason: text("reason"),
+  preparedBy: uuid("prepared_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  preparedAt: timestamp("prepared_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  supersedes: uuid("supersedes").references((): AnyPgColumn => decisions.id, { onDelete: "restrict" }),
+  supersededBy: uuid("superseded_by").references((): AnyPgColumn => decisions.id, { onDelete: "restrict" }),
+  receipt: jsonb("receipt").$type<DecisionReceipt>(),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+}, (table) => [
+  index("decisions_venue_status_prepared_idx").on(table.venueId, table.status, table.preparedAt.desc()),
+  index("decisions_subject_idx").on(table.subjectKind, table.subjectId),
+  check("decisions_action_class", sql`${table.actionClass} IN ('booking_time_move', 'guest_count_change', 'stock_shortage', 'service_request')`),
+  check("decisions_status", sql`${table.status} IN ('prepared', 'executed', 'declined', 'failed', 'superseded', 'withdrawn')`),
+  check("decisions_subject_kind", sql`${table.subjectKind} IN ('booking')`),
+  check("decisions_body_object", sql`jsonb_typeof(${table.body}) = 'object'`),
+  check("decisions_reason", sql`${table.reason} IS NULL OR char_length(${table.reason}) BETWEEN 1 AND 500`),
+  check("decisions_window", sql`${table.expiresAt} > ${table.preparedAt}`),
+  check("decisions_receipt", sql`(${table.status} IN ('executed', 'declined', 'failed')) = (${table.receipt} IS NOT NULL AND jsonb_typeof(${table.receipt}) = 'object')`),
+  check("decisions_decided_at", sql`(${table.status} = 'prepared') = (${table.decidedAt} IS NULL)`),
+  check("decisions_superseded", sql`(${table.status} = 'superseded') = (${table.supersededBy} IS NOT NULL)`),
+  check("decisions_not_self", sql`${table.supersedes} IS DISTINCT FROM ${table.id} AND ${table.supersededBy} IS DISTINCT FROM ${table.id}`),
+]);
+
+export const decisionEvents = pgTable("decision_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  decisionId: uuid("decision_id").notNull().references(() => decisions.id, { onDelete: "restrict" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "restrict" }),
+  kind: varchar("kind", { length: 20 }).$type<DecisionEventKind>().notNull(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  detail: jsonb("detail").$type<Record<string, string | number | boolean | null>>().notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`clock_timestamp()`).notNull(),
+}, (table) => [
+  index("decision_events_decision_created_idx").on(table.decisionId, table.createdAt),
+  check("decision_events_kind", sql`${table.kind} IN ('prepared', 'executed', 'declined', 'failed', 'stale', 'withdrawn', 'execution_error')`),
+  check("decision_events_detail", sql`jsonb_typeof(${table.detail}) = 'object'`),
+]);
+
+// ---------------------------------------------------------------------------
+// Migration 0109: field web vitals (goal 07).
+//
+// One row per vital of a sampled page load: the route's pattern (never an
+// address), a device class, the value on its vital's step (WEB_VITAL_STEPS, so
+// its precision names no browser) and the rating it earns; not how the page
+// was reached. Nothing about the visitor. Only the UTC day it arrived, not the
+// moment, and written in shuffled hourly batches of at least ten samples of
+// one vital, page, device class and day (createWebVitalsBatch), so neither row
+// order, xmin nor restore history pairs a row with a host's request log. Kept
+// WEB_VITAL_RETENTION_DAYS, then removed by the nightly
+// cleanup. Written only by routes/public-web-vitals.ts, through its batch.
+// ---------------------------------------------------------------------------
+
+export const webVitalSamples = pgTable("web_vital_samples", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).default(sql`date_trunc('day', now(), 'UTC')`).notNull(),
+  page: varchar("page", { length: 160 }).notNull(),
+  device: varchar("device", { length: 10 }).$type<WebVitalDeviceClass>().notNull(),
+  metric: varchar("metric", { length: 8 }).$type<WebVitalName>().notNull(),
+  value: doublePrecision("value").notNull(),
+  rating: varchar("rating", { length: 20 }).notNull(),
+}, (table) => [
+  check("web_vital_samples_page_shape", sql`${table.page} ~ '^/$|^(/([a-z][a-z-]{0,39}|:[A-Za-z]{1,40}|\\*))+$'`),
+  check("web_vital_samples_device_check", sql`${table.device} IN ('phone', 'tablet', 'desktop')`),
+  check("web_vital_samples_metric_check", sql`${table.metric} IN ('LCP', 'INP', 'CLS', 'TTFB')`),
+  check("web_vital_samples_rating_check", sql`${table.rating} IN ('good', 'needs-improvement', 'poor')`),
+  check("web_vital_samples_value_check", sql`${table.value} >= 0`),
+  // The cleanup and the p75 report both read by day alone.
+  index("web_vital_samples_recorded_idx").on(table.recordedAt),
 ]);

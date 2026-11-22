@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator } from "./Activity.js";
+import { ActivityIndicator, ActivityStatus } from "./Activity.js";
 import { useEscapeToClose, useFocusTrap } from "../../lib/use-focus-trap.js";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +50,10 @@ interface ConfirmModalProps {
   readonly confirmColor?: string;
   readonly showNoteField?: boolean;
   readonly inFlight?: boolean;
+  /** Another change is still saving: the confirm waits (disabled) and this
+   *  line says why, so a press is never dropped by the caller's busy guard.
+   *  Cancel stays live, because nothing of this dialog's own is in flight. */
+  readonly waitingMessage?: string | null;
   readonly errorMessage?: string | null;
   readonly onConfirm: (note?: string) => void;
   readonly onCancel: () => void;
@@ -57,9 +61,10 @@ interface ConfirmModalProps {
 
 export function ConfirmModal({
   title, message, confirmLabel = "Confirm", confirmColor = "var(--vv-oxblood)",
-  showNoteField = false, inFlight = false, errorMessage = null, onConfirm, onCancel,
+  showNoteField = false, inFlight = false, waitingMessage = null, errorMessage = null, onConfirm, onCancel,
 }: ConfirmModalProps): React.ReactElement {
   const [note, setNote] = useState("");
+  const waiting = waitingMessage !== null && !inFlight;
   const trapRef = useFocusTrap<HTMLDivElement>();
   useEscapeToClose(onCancel, !inFlight);
 
@@ -102,6 +107,11 @@ export function ConfirmModal({
             onChange={(e) => { setNote(e.target.value); }}
           />
         )}
+        {waiting && (
+          <div style={{ marginBottom: 12, fontSize: 13, color: "var(--vv-forest-soft)" }}>
+            <ActivityStatus>{waitingMessage}</ActivityStatus>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button
             type="button"
@@ -113,8 +123,8 @@ export function ConfirmModal({
           </button>
           <button
             type="button"
-            style={{ ...btnBase, background: confirmColor, color: "var(--vv-ivory-3)", opacity: inFlight ? 0.7 : 1 }}
-            disabled={inFlight}
+            style={{ ...btnBase, background: confirmColor, color: "var(--vv-ivory-3)", opacity: inFlight || waiting ? 0.7 : 1, cursor: waiting ? "default" : "pointer" }}
+            disabled={inFlight || waiting}
             onClick={() => { onConfirm(showNoteField ? note : undefined); }}
             aria-busy={inFlight}
           >

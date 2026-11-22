@@ -1,0 +1,15 @@
+[
+  "/Dockerfile",
+  "/.railwayignore",
+  "/railway.json",
+  "/package.json",
+  "/pnpm-lock.yaml",
+  "/pnpm-workspace.yaml",
+  "/tsconfig.base.json",
+  "/packages/api/**",
+  "/packages/types/**",
+  "/packages/reconstruction-foundry/**",
+  "/tools/reconstruction-foundry/**",
+  "/tools/capture-factory/**",
+  "/tools/twin-forge/**"
+]

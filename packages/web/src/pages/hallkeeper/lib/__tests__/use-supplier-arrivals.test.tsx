@@ -3,9 +3,9 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import type { ReactElement } from "react";
 import type { CreateSupplierArrival, SupplierArrival, SupplierArrivalStep, UpdateSupplierArrival } from "@omnitwin/types";
 import { ApiError } from "../../../../api/client.js";
-import { SuppliersSection } from "../../DayBoardSuppliers.js";
+import { SuppliersSection, useSupplierForms } from "../../DayBoardSuppliers.js";
 import type { DayBoardSlot } from "../day-board-state.js";
-import { newArrivalKey, useSupplierArrivals, type ArrivalOutcome } from "../use-supplier-arrivals.js";
+import { newArrivalKey, useSupplierArrivals, type AddOutcome, type ArrivalOutcome } from "../use-supplier-arrivals.js";
 
 // ---------------------------------------------------------------------------
 // The board's arrivals: a change answers with the arrival as it now stands
@@ -95,9 +95,12 @@ describe("useSupplierArrivals", () => {
     await waitFor(() => { expect(result.current.status).toBe("ready"); });
     const body = { bookingId: BOOKING, supplierName: "The Kelvin Reelers", category: null, arrivesAt: arrival().arrivesAt, leavesBy: null, entrance: null, contact: null, note: null };
     api.create.mockResolvedValueOnce(arrival());
-    await act(async () => { await result.current.add(body, "00000000-0000-4000-8000-00000000ce01"); });
-    // The add's key goes with it, so a resend is the same add on the server.
+    let made: AddOutcome | null = null;
+    await act(async () => { made = await result.current.add(body, "00000000-0000-4000-8000-00000000ce01"); });
+    // The add's key goes with it, so a resend is the same add on the server,
+    // and the answer is the supplier as the server keeps them.
     expect(api.create).toHaveBeenCalledWith(VENUE, body, "00000000-0000-4000-8000-00000000ce01");
+    expect(made).toEqual({ outcome: "saved", arrival: arrival() });
     expect(result.current.byBooking.get(BOOKING)?.map((item) => item.id)).toEqual([BAND]);
     // Moved to Friday: it leaves Saturday's board at once rather than at the next read.
     api.update.mockResolvedValueOnce(arrival({ arrivesAt: "2026-11-13T11:00:00.000Z", leavesBy: null, revision: 2 }));
@@ -190,9 +193,10 @@ describe("useSupplierArrivals with the panel", () => {
 
   function Panel(): ReactElement {
     const arrivals = useSupplierArrivals(VENUE, SAT, true);
+    const forms = useSupplierForms();
     return (
       <SuppliersSection slot={SLOT} arrivals={arrivals.byBooking.get(BOOKING) ?? []} boardDate="2026-11-14" dayBoundaryHour={4} boundary="known"
-        timeZone="Europe/London" nowMs={Date.parse("2026-11-14T12:00:00.000Z")} today canPlan canMark={false} actions={arrivals} />
+        timeZone="Europe/London" nowMs={Date.parse("2026-11-14T12:00:00.000Z")} today canPlan canMark={false} actions={arrivals} forms={forms} />
     );
   }
 

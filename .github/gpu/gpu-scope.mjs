@@ -83,6 +83,39 @@ export function decideFromGit(base, head, cwd = process.cwd()) {
   return { schemaVersion: 1, policy: GPU_SCOPE_POLICY, base, head, ...decision };
 }
 
+const PARENT = /^parent ([0-9a-f]{40})$/u;
+
+/** The parents a raw commit object (`git cat-file commit`) names in its header, which ends at the first blank line. */
+export function commitParents(raw) {
+  requireThat(typeof raw === 'string', 'commit object missing');
+  const end = raw.indexOf('\n\n');
+  return (end === -1 ? raw : raw.slice(0, end)).split('\n')
+    .flatMap((line) => { const match = PARENT.exec(line); return match ? [match[1]] : []; });
+}
+
+/**
+ * The commit a change is compared with. A pull request runs on GitHub's merge commit, whose first
+ * parent is the base branch as merged, so the comparison is exactly the pull request's change. Not
+ * pull_request.base.sha: that can be an older base (#421, 13 Nov 2026, was charged with master's own
+ * later Twin files). Anything but a two-parent merge fails closed: no base, so the GPU run is
+ * required. A push compares with the previous head.
+ */
+export function selectBase({ event, before, mergeCommit }) {
+  if (event === 'pull_request') {
+    const parents = typeof mergeCommit === 'string' ? commitParents(mergeCommit) : [];
+    return parents.length === 2 ? parents[0] : '';
+  }
+  return typeof before === 'string' ? before : '';
+}
+
+export function baseFromGit(event, before, head, cwd = process.cwd()) {
+  if (event !== 'pull_request') return selectBase({ event, before });
+  if (!COMMIT.test(head)) return '';
+  let mergeCommit = null;
+  try { mergeCommit = git(['cat-file', 'commit', head], cwd); } catch { return ''; }
+  return selectBase({ event, before, mergeCommit });
+}
+
 function args(argv) {
   const values = new Map();
   requireThat(argv.length % 2 === 0, 'options require values');
@@ -95,6 +128,14 @@ function args(argv) {
 
 function main() {
   const values = args(process.argv.slice(2));
+  if (values.has('--event')) {
+    // Base selection only: print the commit to compare with, or an empty line when there is none.
+    const head = values.get('--head');
+    requireThat(typeof head === 'string' && values.has('--before') && values.size === 3,
+      'expected --event, --before and --head');
+    process.stdout.write(`${baseFromGit(values.get('--event'), values.get('--before'), head)}\n`);
+    return;
+  }
   const base = values.get('--base') ?? '', head = values.get('--head'), output = values.get('--output');
   requireThat(typeof head === 'string' && typeof output === 'string' && values.size === 3, 'expected --base, --head and --output');
   const decision = decideFromGit(base, head);

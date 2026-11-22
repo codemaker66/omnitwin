@@ -51,6 +51,10 @@ export const RIBBON_COPY = {
   /** What the client's side sees of everyone else's bookings in the room. */
   busySpan: "Booked",
   heldSpan: "Held",
+  /** A booking stored without a title whose event has no name either (API-9):
+   *  the office's word for it, and the client's for their own. */
+  untitledBooking: "Untitled booking",
+  clientUntitledBooking: "Your booking",
   venueRuleName: "venue's",
   clientHint: "Drag to move · pull an end to resize · or type a time, then propose it",
   clientDraftNote: "Nothing is booked yet. Place the bar where you would like your event, then propose that time to the office.",

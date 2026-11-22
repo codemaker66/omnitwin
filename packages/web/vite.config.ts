@@ -111,7 +111,20 @@ export default defineConfig(({ mode }) => {
       // Transform the planner's static import graph when the dev server starts.
       // Otherwise its first navigation pays a long module-transform waterfall;
       // this does not load the route in the browser or affect production bundles.
-      warmup: { clientFiles: ["./src/pages/EditorPage.tsx"] },
+      // Warmup follows static imports only, so the planner's lazy entries are
+      // listed too: on a freshly started server these (the Assembly, the
+      // capture layer, its loader and its two workers' graphs) were the only
+      // modules the first captured-room navigation still had to transform.
+      warmup: {
+        clientFiles: [
+          "./src/pages/EditorPage.tsx",
+          "./src/floor/assembly/GrandAssembly.tsx",
+          "./src/components/scene/NativeSplatLayer.tsx",
+          "./src/lib/native-splat-loader.ts",
+          "./src/lib/native-splat-worker.ts",
+          "./src/lib/native-cpu-sort-worker.ts",
+        ],
+      },
     },
     worker: { format: "es" },
     optimizeDeps: {

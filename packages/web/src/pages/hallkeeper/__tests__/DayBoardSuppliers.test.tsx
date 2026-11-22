@@ -3,10 +3,10 @@ import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { SupplierArrival } from "@omnitwin/types";
-import { SuppliersSection } from "../DayBoardSuppliers.js";
+import { SuppliersSection, type SupplierForms } from "../DayBoardSuppliers.js";
 import type { DayBoundary } from "../lib/board-day.js";
 import type { DayBoardSlot } from "../lib/day-board-state.js";
-import { newArrivalKey, type ArrivalOutcome, type SupplierArrivalsApi } from "../lib/use-supplier-arrivals.js";
+import { newArrivalKey, type AddOutcome, type ArrivalOutcome, type SupplierArrivalsApi } from "../lib/use-supplier-arrivals.js";
 
 // ---------------------------------------------------------------------------
 // The booking's suppliers in its panel: when each is due and by which door;
@@ -41,11 +41,14 @@ function arrival(overrides: Partial<SupplierArrival> = {}): SupplierArrival {
 }
 
 const saved = (): Promise<ArrivalOutcome> => Promise.resolve("saved");
+/** An add the server made, answering with the supplier as it keeps them. */
+const added = (body: { readonly supplierName: string }): Promise<AddOutcome> =>
+  Promise.resolve({ outcome: "saved", arrival: arrival({ id: "00000000-0000-4000-8000-0000000005af", supplierName: body.supplierName }) });
 
 function actions(overrides: Partial<SupplierArrivalsApi> = {}): SupplierArrivalsApi {
   return {
     status: "ready", reading: false, arrivals: [], earlier: [], byBooking: new Map(), busy: new Set(), failures: new Map(), refresh: vi.fn(),
-    step: vi.fn(saved), undo: vi.fn(saved), add: vi.fn(saved), change: vi.fn(saved), remove: vi.fn(saved), ...overrides,
+    step: vi.fn(saved), undo: vi.fn(saved), add: vi.fn(added), change: vi.fn(saved), remove: vi.fn(saved), ...overrides,
   };
 }
 
@@ -66,6 +69,8 @@ interface Shown {
   readonly canPlan?: boolean;
   readonly canMark?: boolean;
   readonly api?: SupplierArrivalsApi;
+  /** The open forms kept above the panel; a new store unless a case shares one. */
+  readonly forms?: SupplierForms;
 }
 
 function show(shown: Shown) {
@@ -81,6 +86,7 @@ function show(shown: Shown) {
     canPlan: shown.canPlan ?? false,
     canMark: shown.canMark ?? false,
     actions: shown.api ?? actions(),
+    forms: shown.forms ?? new Map(),
   };
   const view = render(<SuppliersSection {...props} />);
   return { api: props.actions, props, view };
@@ -238,7 +244,7 @@ describe("SuppliersSection", () => {
   });
 
   it("sends one key with every Save of one add form, so a resend adds once, and a new key with the next form", async () => {
-    const add = vi.fn((_body: unknown, _key: string): Promise<ArrivalOutcome> => Promise.resolve("failed"));
+    const add = vi.fn((_body: unknown, _key: string): Promise<AddOutcome> => Promise.resolve({ outcome: "failed", arrival: null }));
     show({ canPlan: true, api: actions({ add }) });
     fireEvent.click(screen.getByRole("button", { name: "Add a supplier" }));
     const form = screen.getByRole("form", { name: "Add a supplier" });
@@ -258,6 +264,77 @@ describe("SuppliersSection", () => {
     fireEvent.click(within(next).getByRole("button", { name: "Add" }));
     await act(async () => { await Promise.resolve(); });
     expect(add.mock.calls[2]?.[1]).not.toBe(first?.[1]);
+  });
+
+  it("says the supplier added as the server keeps them, when a Save sent again answers with the first one made", async () => {
+    // The first Save landed and its answer was lost; the name was edited
+    // before Save again, and the server answers with the first add.
+    const add = vi.fn((_body: unknown, _key: string): Promise<AddOutcome> =>
+      Promise.resolve({ outcome: "saved", arrival: arrival({ supplierName: "DJ Morven" }) }));
+    show({ canPlan: true, api: actions({ add }) });
+    fireEvent.click(screen.getByRole("button", { name: "Add a supplier" }));
+    const form = screen.getByRole("form", { name: "Add a supplier" });
+    fillAdd(form, "DJ Morven and band", "00:30");
+    fireEvent.click(within(form).getByRole("button", { name: "Add" }));
+    await waitFor(() => { expect(screen.queryByRole("form", { name: "Add a supplier" })).toBeNull(); });
+    expect(document.querySelector(".dayboard-sr")?.textContent).toBe("DJ Morven added.");
+  });
+
+  it("keeps an open form and what is typed in it above the panel, so a panel drawn again opens it as it was, for its own day and booking", async () => {
+    const forms: SupplierForms = new Map();
+    const add = vi.fn((_body: unknown, _key: string): Promise<AddOutcome> => Promise.resolve({ outcome: "failed", arrival: null }));
+    const first = show({ canPlan: true, api: actions({ add }), forms });
+    fireEvent.click(screen.getByRole("button", { name: "Add a supplier" }));
+    fillAdd(screen.getByRole("form", { name: "Add a supplier" }), "Night porter", "00:30");
+    fireEvent.click(within(screen.getByRole("form", { name: "Add a supplier" })).getByRole("button", { name: "Add" }));
+    await act(async () => { await Promise.resolve(); });
+    // The board goes, and comes back with the day read again: the keyboard,
+    // left with the document, goes back to the form.
+    first.view.unmount();
+    const again = show({ canPlan: true, api: actions({ add }), forms });
+    const form = screen.getByRole("form", { name: "Add a supplier" });
+    expect(within(form).getByLabelText<HTMLInputElement>("Supplier").value).toBe("Night porter");
+    expect(within(form).getByLabelText<HTMLInputElement>("Arrives").value).toBe("00:30");
+    expect(within(form).getByText("Due Sun 15 Nov at 00:30.")).toBeTruthy();
+    expect(document.activeElement).toBe(within(form).getByLabelText("Supplier"));
+    // Saved again, it is the same add: the key it was first saved with.
+    fireEvent.click(within(form).getByRole("button", { name: "Add" }));
+    await act(async () => { await Promise.resolve(); });
+    expect(add).toHaveBeenCalledTimes(2);
+    expect(add.mock.calls[1]?.[1]).toBe(add.mock.calls[0]?.[1]);
+    again.view.unmount();
+    // Another day's panel for the booking opens nothing typed for this one.
+    const sunday = show({ canPlan: true, api: actions({ add }), forms, boardDate: "2026-11-15" });
+    expect(screen.queryByRole("form", { name: "Add a supplier" })).toBeNull();
+    sunday.view.unmount();
+    // Back on its own day it is there again, but leaves the keyboard where it is held.
+    const arrows = document.createElement("button");
+    document.body.append(arrows);
+    arrows.focus();
+    const back = show({ canPlan: true, api: actions({ add }), forms });
+    expect(screen.getByRole("form", { name: "Add a supplier" })).toBeTruthy();
+    expect(document.activeElement).toBe(arrows);
+    arrows.remove();
+    back.view.unmount();
+    // Cancelled, the form is let go.
+    show({ canPlan: true, api: actions({ add }), forms });
+    fireEvent.click(within(screen.getByRole("form", { name: "Add a supplier" })).getByRole("button", { name: "Cancel" }));
+    cleanup();
+    show({ canPlan: true, api: actions({ add }), forms });
+    expect(screen.queryByRole("form", { name: "Add a supplier" })).toBeNull();
+    cleanup();
+
+    // A change keeps what was typed, and goes from the copy it was opened on.
+    const change = vi.fn((_arrival: SupplierArrival, _revision: number, _body: unknown): Promise<ArrivalOutcome> => Promise.resolve("saved"));
+    const opened = show({ canPlan: true, arrivals: [arrival()], api: actions({ change }), forms });
+    fireEvent.click(screen.getByRole("button", { name: "Change The Kelvin Reelers" }));
+    fireEvent.change(within(screen.getByRole("form", { name: "Change The Kelvin Reelers" })).getByLabelText("Note"), { target: { value: "Six players" } });
+    opened.view.unmount();
+    show({ canPlan: true, arrivals: [arrival({ revision: 2, note: "Five players, and a piper" })], api: actions({ change }), forms });
+    const changing = screen.getByRole("form", { name: "Change The Kelvin Reelers" });
+    expect(within(changing).getByLabelText<HTMLTextAreaElement>("Note").value).toBe("Six players");
+    fireEvent.click(within(changing).getByRole("button", { name: "Save" }));
+    await waitFor(() => { expect(change).toHaveBeenCalledWith(expect.objectContaining({ id: BAND }), 1, expect.objectContaining({ note: "Six players" })); });
   });
 
   it("places no time on the board's night until the venue's night hours are read, and says so", async () => {
