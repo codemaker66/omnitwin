@@ -1,11 +1,12 @@
-import { execFileSync } from "node:child_process";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdtemp, readdir, readFile, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withBaseCommit } from "../sandbox/base-repo.js";
-import { ATTENDED, main, USAGE } from "../sandbox/cli.js";
+import { ATTENDED, isInsideFolder, main, USAGE } from "../sandbox/cli.js";
 import { masterFacts } from "../sandbox/master.js";
 import { boundedNumber, budgetOverride, timeoutOverride } from "../sandbox/overrides.js";
 import { sandboxConfigSchema } from "../sandbox/sandbox-config.js";
@@ -47,6 +48,77 @@ describe("the CLI's own words", () => {
       await rm(root, { recursive: true, force: true });
     }
     expect(written.join("")).toContain(ATTENDED);
+  });
+
+  it("runs as a command when started through a junction or a symlinked folder", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "credit-runner-link-"));
+    const link = path.join(root, "package");
+    await symlink(PACKAGE_DIR, link, process.platform === "win32" ? "junction" : "dir");
+    try {
+      const child = spawnSync(process.execPath, [path.join(PACKAGE_DIR, "node_modules", "tsx", "dist", "cli.mjs"), path.join(link, "src", "sandbox", "cli-entry.ts"), "--help"], {
+        encoding: "utf8",
+        windowsHide: true,
+      });
+      expect(child.status).toBe(0);
+      expect(child.stdout).toContain(ATTENDED);
+    } finally {
+      await removeLink(link);
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+/** Removes a junction or symlink itself, never what it points at. */
+async function removeLink(link: string): Promise<void> {
+  if (process.platform === "win32") await rmdir(link);
+  else await unlink(link);
+}
+
+describe("the key folder", () => {
+  const REPO_ROOT = path.resolve(PACKAGE_DIR, "../..");
+
+  it("refuses a key folder inside the repository, before any key is read, and follows a junction to find out", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "credit-runner-keys-"));
+    const link = path.join(root, "into-repo");
+    await symlink(path.join(REPO_ROOT, "tools"), link, process.platform === "win32" ? "junction" : "dir");
+    const configWith = async (keyDir: string): Promise<string> => {
+      const file = path.join(root, "sandbox.config.json");
+      await writeFile(file, JSON.stringify({ workRoot: path.join(root, "work"), ledgerFile: path.join(root, "ledger.jsonl"), keyDir, keyFile: "pot-1.key", lane: "sandbox", laneCapUsd: 1, orgCapUsd: 2 }));
+      return file;
+    };
+    const quiet = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      for (const command of ["setup", "run", "collect"]) {
+        await expect(main([command, "--config", await configWith(path.join(REPO_ROOT, "keys"))]), command).rejects.toThrow(/inside the repository/u);
+      }
+      // A folder that only reaches the repository through a junction is inside it too.
+      await expect(main(["setup", "--config", await configWith(path.join(link, "keys"))])).rejects.toThrow(/inside the repository/u);
+      // Outside it, setup goes on to look for the key file.
+      await expect(main(["setup", "--config", await configWith(path.join(root, "keys"))])).rejects.toThrow(/no key file at/u);
+    } finally {
+      quiet.mockRestore();
+      await removeLink(link);
+      await rm(root, { recursive: true, force: true });
+    }
+    expect(isInsideFolder(path.join(REPO_ROOT, "keys"), REPO_ROOT)).toBe(true);
+    expect(isInsideFolder(REPO_ROOT, REPO_ROOT)).toBe(true);
+    expect(isInsideFolder(`${REPO_ROOT}-keys`, REPO_ROOT)).toBe(false);
+    expect(isInsideFolder(path.dirname(REPO_ROOT), REPO_ROOT)).toBe(false);
+  });
+
+  it.runIf(process.platform === "win32")("setup-keys.ps1 refuses a key folder inside the repository before it asks for a key", () => {
+    const args = ["-NoProfile", "-NonInteractive", "-File", path.join(PACKAGE_DIR, "setup-keys.ps1"), "-KeyDir", "keys-test-refused"];
+    let child = spawnSync("pwsh", args, { cwd: REPO_ROOT, encoding: "utf8", windowsHide: true });
+    if (child.error !== undefined) child = spawnSync("powershell", args, { cwd: REPO_ROOT, encoding: "utf8", windowsHide: true });
+    expect(child.status).not.toBe(0);
+    expect(`${child.stdout}${child.stderr}`).toContain("inside the repository");
+    expect(existsSync(path.join(REPO_ROOT, "keys-test-refused"))).toBe(false);
+  });
+
+  it("keeps key files out of git, in the package and at the repository root", () => {
+    for (const file of ["keys/pot-1.key", "tools/credit-runner/pot-1.key"]) {
+      expect(spawnSync("git", ["-C", REPO_ROOT, "check-ignore", "-q", file]).status, file).toBe(0);
+    }
   });
 });
 

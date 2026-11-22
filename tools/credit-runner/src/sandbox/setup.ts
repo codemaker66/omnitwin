@@ -43,10 +43,10 @@ export function environmentParams(): EnvironmentCreateParams {
 }
 
 /**
- * Bash and file tools only. The web tools are off, and there is no MCP server.
- * Calls run without asking (`always_allow`): the container holds no secret and
- * reaches no service that accepts writes, so a pause for approval would only
- * stall an unattended run.
+ * Bash and file tools only. The web tools are off, and there is no MCP server
+ * and no skill. Calls run without asking (`always_allow`): the container holds
+ * no secret and reaches no service that accepts writes, so a pause for approval
+ * would only stall an unattended run.
  */
 export function agentParams(system: string): AgentCreateParams {
   return {
@@ -62,14 +62,20 @@ export function agentParams(system: string): AgentCreateParams {
       },
     ],
     mcp_servers: [],
+    skills: [],
     metadata: { promptSha: promptSha(system) },
   };
 }
 
+/** A host as DNS compares it: letter case and a trailing dot make no difference. */
+function dnsName(host: string): string {
+  return host.toLowerCase().replace(/\.$/u, "");
+}
+
 /**
  * How the live environment differs from what the code sets up: anything but a
- * cloud container with exactly NETWORKING (its host list, MCP and registry
- * switches). Empty when it matches.
+ * cloud container with exactly NETWORKING (its host list, compared as DNS
+ * names, and its MCP and registry switches). Empty when it matches.
  */
 export function environmentDifferences(environment: EnvironmentRef): string[] {
   const { config } = environment;
@@ -77,8 +83,8 @@ export function environmentDifferences(environment: EnvironmentRef): string[] {
   const { networking } = config;
   if (networking.type !== "limited") return [`its networking is ${networking.type}, not limited`];
   const differences: string[] = [];
-  const wanted = new Set(NETWORKING.allowed_hosts);
-  const allowed = new Set(networking.allowed_hosts);
+  const wanted = new Set(NETWORKING.allowed_hosts.map(dnsName));
+  const allowed = new Set(networking.allowed_hosts.map(dnsName));
   const extra = [...allowed].filter((host) => !wanted.has(host));
   const missing = [...wanted].filter((host) => !allowed.has(host));
   if (extra.length > 0) differences.push(`it allows ${extra.join(", ")}, which the code does not`);
@@ -95,7 +101,7 @@ export function environmentDifferences(environment: EnvironmentRef): string[] {
 /**
  * How an agent version differs from what the code sets up: anything beyond
  * one agent toolset with the web tools off (an MCP toolset, a custom tool, an
- * MCP server, other agents it may start). A web tool whose switch is missing
+ * MCP server, other agents it may start, a skill). A web tool whose switch is missing
  * takes the toolset's default, and an unknown default counts as on. Empty when
  * it matches.
  */
@@ -115,6 +121,7 @@ export function agentDifferences(agent: AgentRef): string[] {
   }
   if (agent.mcp_servers.length > 0) differences.push(`it has MCP servers (${agent.mcp_servers.map((server) => server.name).join(", ")})`);
   if (agent.multiagent !== null) differences.push("it can start other agents (multiagent is set)");
+  if (agent.skills.length > 0) differences.push(`it has skills (${agent.skills.map((skill) => skill.skill_id).join(", ")})`);
   return differences;
 }
 
@@ -155,7 +162,7 @@ function paramsSha(params: object): string {
  * hash of its whole params changed, not only the system prompt's. Then, on
  * every setup and every run, the live environment and the agent version that
  * sessions are pinned to are checked against what the code sets up (its
- * networking; the agent's tools, MCP servers and other agents): any
+ * networking; the agent's tools, MCP servers, other agents and skills): any
  * difference, such as an edit in the Console, refuses the start and says what
  * differs.
  */
@@ -186,9 +193,23 @@ export async function ensureSandbox(api: SandboxApi, stateFile: string, system: 
     log(`Created agent ${agent.id} version ${String(agent.version)}.`);
   } else if (known.agentSha !== agentSha) {
     const current = await api.retrieveAgent(known.agentId);
-    const { name, description, model, system: prompt, tools, mcp_servers, metadata } = agentWanted;
-    // The whole params, so nothing set on a newer version (in the Console, say) carries over.
-    agent = await api.updateAgent(known.agentId, { version: current.version, name, description, model, system: prompt, tools, mcp_servers, multiagent: null, metadata });
+    const { name, description, model, system: prompt, tools, mcp_servers, skills, metadata } = agentWanted;
+    // An update keeps whatever it omits, so every field is sent, skills emptied
+    // and every metadata key of the current version cleared first: nothing set
+    // on a newer version (in the Console, say) carries over.
+    const cleared: Record<string, string | null> = Object.fromEntries(Object.keys(current.metadata).map((key) => [key, null]));
+    agent = await api.updateAgent(known.agentId, {
+      version: current.version,
+      name,
+      description,
+      model,
+      system: prompt,
+      tools,
+      mcp_servers,
+      skills,
+      multiagent: null,
+      metadata: { ...cleared, ...metadata },
+    });
     log(`Updated agent ${agent.id} to version ${String(agent.version)} (its settings changed).`);
   } else {
     agent = { id: known.agentId, version: known.agentVersion };

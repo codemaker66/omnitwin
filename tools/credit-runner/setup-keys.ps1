@@ -14,6 +14,7 @@
     .\tools\credit-runner\setup-keys.ps1 -KeyDir <folder>   # another folder
 
   The key folder is the `keyDir` of your sandbox.config.json; keep the two equal.
+  A folder inside the repository is refused.
 #>
 param(
   [ValidatePattern('^[a-z][a-z0-9-]*$')]
@@ -22,7 +23,15 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-$dir = $KeyDir
+# One full path for every step: a relative -KeyDir is taken from this window's
+# location (the .NET calls below would otherwise read it from another folder).
+$here = (Get-Location).ProviderPath
+$dir = if ([System.IO.Path]::IsPathRooted($KeyDir)) { [System.IO.Path]::GetFullPath($KeyDir) } else { [System.IO.Path]::GetFullPath((Join-Path $here $KeyDir)) }
+# A key folder inside the repository is one careless `git add` from the public record.
+$repo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+if (($dir.TrimEnd('\') + '\').StartsWith($repo.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw "The key folder $dir is inside the repository; choose one outside it (the default is under your profile)."
+}
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $me = $identity.Name
 $mySid = $identity.User.Value

@@ -1,10 +1,10 @@
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { expandHome } from "../config.js";
 import { keyFileExposure, keyFilePresent, readKey } from "../keys.js";
-import { describeError, parseTask } from "../task.js";
+import { parseTask } from "../task.js";
 import { sdkSandboxApi } from "./api.js";
 import { sandboxSystemPrompt } from "./brief.js";
 import { ledgerHasSession, readCreditLedger, spent } from "./credit-ledger.js";
@@ -15,6 +15,28 @@ import { sandboxConfigSchema } from "./sandbox-config.js";
 import { ensureSandbox, readState } from "./setup.js";
 
 const PACKAGE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const REPO_ROOT = path.resolve(PACKAGE_DIR, "../..");
+
+/** Whether `child` is `parent` or inside it (both already real paths; Windows compares without case). */
+export function isInsideFolder(child: string, parent: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+/** The real path, through junctions and symlinks, of a folder that may not exist yet: its nearest existing ancestor's, with the rest appended. */
+async function realPathOf(folder: string): Promise<string> {
+  const rest: string[] = [];
+  for (let current = path.resolve(folder); ; ) {
+    try {
+      return path.join(await realpath(current), ...rest);
+    } catch (error) {
+      const parent = path.dirname(current);
+      if (parent === current || !(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      rest.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
 
 /**
  * Said in the usage and printed at the start of every `run`: the launcher is
@@ -84,11 +106,16 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   const raw = sandboxConfigSchema.parse(JSON.parse(await readFile(values.config ?? path.join(PACKAGE_DIR, "sandbox.config.json"), "utf8")));
   const config = { ...raw, workRoot: path.resolve(expandHome(raw.workRoot)), ledgerFile: path.resolve(expandHome(raw.ledgerFile)) };
-  const keyFile = path.join(path.resolve(expandHome(raw.keyDir)), raw.keyFile);
+  const keyDir = path.resolve(expandHome(raw.keyDir));
+  const keyFile = path.join(keyDir, raw.keyFile);
   const stateFile = path.join(config.workRoot, "state.json");
+  // A key folder in the repository is one careless `git add` from the public record.
+  const keyDirInRepository = isInsideFolder(await realPathOf(keyDir), await realPathOf(REPO_ROOT));
+  const keyDirProblem = `the key folder ${keyDir} is inside the repository; keep it outside (keyDir in the config, -KeyDir for setup-keys.ps1)`;
 
   if (command === "status") {
     const present = await keyFilePresent(keyFile);
+    if (keyDirInRepository) out(`Warning: ${keyDirProblem}`);
     out(`Key file ${keyFile}: ${present ? "present" : "missing"}${present ? `, ${(await keyFileExposure(keyFile)).join("; ") || "private"}` : ""}`);
     const state = await readState(stateFile);
     out(state === null ? "Sandbox: not set up" : `Sandbox: environment ${state.environmentId}, agent ${state.agentId} v${String(state.agentVersion)}`);
@@ -99,6 +126,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
+  if (keyDirInRepository) throw new Error(keyDirProblem);
   if (!(await keyFilePresent(keyFile))) throw new Error(`no key file at ${keyFile}; store one with setup-keys.ps1`);
   const exposure = await keyFileExposure(keyFile);
   if (exposure.length > 0) throw new Error(`${keyFile} is not private: ${exposure.join("; ")}`);
@@ -161,25 +189,4 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   out(`${record.review.verdict}: ${costText(record)}; review at ${path.join(record.runDir, "review.md")}`);
   return record.review.verdict === "ready-for-review" ? 0 : 2;
-}
-
-/** Run as the command (`pnpm ... sandbox`), not when a test imports this module. */
-function invokedDirectly(): boolean {
-  const script = process.argv[1];
-  if (script === undefined) return false;
-  const here = fileURLToPath(import.meta.url);
-  const resolved = path.resolve(script);
-  return process.platform === "win32" ? resolved.toLowerCase() === here.toLowerCase() : resolved === here;
-}
-
-if (invokedDirectly()) {
-  main(process.argv.slice(2)).then(
-    (code) => {
-      process.exitCode = code;
-    },
-    (error: unknown) => {
-      process.stderr.write(`credit-runner sandbox: ${describeError(error)}\n`);
-      process.exitCode = 1;
-    },
-  );
 }

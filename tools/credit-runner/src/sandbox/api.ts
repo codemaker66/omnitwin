@@ -43,6 +43,8 @@ export interface AgentRef {
   readonly mcp_servers: readonly { readonly name: string }[];
   /** Non-null when the agent may start other agents, with their own tools. */
   readonly multiagent: object | null;
+  readonly skills: readonly { readonly skill_id: string }[];
+  readonly metadata: Readonly<Record<string, string>>;
 }
 export type SessionRef = Pick<BetaManagedAgentsSession, "id" | "status">;
 export type SessionTotals = Pick<BetaManagedAgentsSession, "id" | "status" | "usage">;
@@ -164,18 +166,60 @@ export function anthropicEnvironmentProblems(env: NodeJS.ProcessEnv): string[] {
   return problems;
 }
 
+type Fetch = NonNullable<ClientOptions["fetch"]>;
+
+const MAX_REDIRECTS = 5;
+/** The headers that carry a credential: never sent to another host. */
+const CREDENTIAL_HEADERS = ["x-api-key", "authorization"] as const;
+
+function urlOf(input: string | URL | Request): string {
+  return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+}
+
+/**
+ * Wraps `next` so a request goes only to ANTHROPIC_API_URL, and redirects are
+ * followed here rather than by fetch (which forwards X-Api-Key to another host).
+ * A redirect within ANTHROPIC_API_URL keeps the headers. One to another host is
+ * followed only for a GET or HEAD (a download handed to storage, say), with
+ * every credential header removed for the rest of the chain; any other request
+ * redirected away is refused. At most five redirects.
+ */
+export function keyOnlyToAnthropic(next: Fetch = globalThis.fetch): Fetch {
+  return async (input, init) => {
+    let url = new URL(urlOf(input));
+    if (url.origin !== ANTHROPIC_API_URL) throw new Error(`refusing a request to ${url.origin}: the key goes only to ${ANTHROPIC_API_URL}`);
+    let method = (init?.method ?? "GET").toUpperCase();
+    const headers = new Headers(init?.headers);
+    for (let hops = 0; ; hops += 1) {
+      const response = await next(url.href, { ...init, method, headers, redirect: "manual" });
+      const location = response.headers.get("location");
+      if (![301, 302, 303, 307, 308].includes(response.status) || location === null) return response;
+      await response.body?.cancel();
+      if (hops === MAX_REDIRECTS) throw new Error(`more than ${String(MAX_REDIRECTS)} redirects from ${ANTHROPIC_API_URL}`);
+      const target = new URL(location, url);
+      if (response.status === 303) method = "GET";
+      if (target.origin !== url.origin || target.origin !== ANTHROPIC_API_URL) {
+        if (method !== "GET" && method !== "HEAD") throw new Error(`refusing to follow a ${method} redirect to ${target.origin}`);
+        for (const name of CREDENTIAL_HEADERS) headers.delete(name);
+      }
+      url = target;
+    }
+  };
+}
+
 /**
  * The key is passed in from the key file and handed straight to the client;
  * it never enters process.env, a log or an error message. It goes only to
- * ANTHROPIC_API_URL, as the X-Api-Key header and no other credential.
- * `env` is a test seam: the SDK itself reads process.env.
+ * ANTHROPIC_API_URL, as the X-Api-Key header and no other credential, through
+ * keyOnlyToAnthropic. `env` and `fetchImpl` are test seams: the SDK itself
+ * reads process.env.
  */
-export function sdkSandboxApi(apiKey: string, fetchImpl?: ClientOptions["fetch"], env: NodeJS.ProcessEnv = process.env): SandboxApi {
+export function sdkSandboxApi(apiKey: string, fetchImpl?: Fetch, env: NodeJS.ProcessEnv = process.env): SandboxApi {
   const problems = anthropicEnvironmentProblems(env);
   if (problems.length > 0) {
     throw new Error(`refusing to start: ${problems.join("; ")}. Unset ${problems.length === 1 ? "it" : "them"} in this shell; the launcher talks only to ${ANTHROPIC_API_URL}.`);
   }
-  const client = new Anthropic({ apiKey, authToken: null, baseURL: ANTHROPIC_API_URL, ...(fetchImpl === undefined ? {} : { fetch: fetchImpl }) });
+  const client = new Anthropic({ apiKey, authToken: null, baseURL: ANTHROPIC_API_URL, fetch: keyOnlyToAnthropic(fetchImpl) });
   return {
     createEnvironment: (params) => client.beta.environments.create(params),
     retrieveEnvironment: (id) => client.beta.environments.retrieve(id),

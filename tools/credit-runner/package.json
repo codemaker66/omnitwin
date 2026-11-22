@@ -7,7 +7,7 @@
     "test": "vitest run",
     "lint": "eslint src sandbox",
     "typecheck": "tsc --noEmit",
-    "sandbox": "tsx src/sandbox/cli.ts"
+    "sandbox": "tsx src/sandbox/cli-entry.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",

@@ -39,7 +39,13 @@ function liveEnvironmentConfig(config: EnvironmentCreateParams["config"]): Envir
 }
 
 /** An agent version as the API returns it, from the params it was created or updated with. */
-function liveAgent(version: number, params: Pick<AgentUpdateParams, "tools" | "mcp_servers" | "multiagent">, previous?: AgentRef): AgentRef {
+function liveAgent(version: number, params: Pick<AgentUpdateParams, "tools" | "mcp_servers" | "multiagent" | "skills" | "metadata">, previous?: AgentRef): AgentRef {
+  // As the API merges metadata: a key set to null is removed, an omitted one kept.
+  const metadata: Record<string, string> = { ...(previous?.metadata ?? {}) };
+  for (const [key, value] of Object.entries(params.metadata ?? {})) {
+    if (value === null) Reflect.deleteProperty(metadata, key);
+    else metadata[key] = value;
+  }
   return {
     id: "agent_1",
     version,
@@ -59,6 +65,8 @@ function liveAgent(version: number, params: Pick<AgentUpdateParams, "tools" | "m
           ),
     mcp_servers: params.mcp_servers === undefined ? (previous?.mcp_servers ?? []) : (params.mcp_servers ?? []).map((server) => ({ name: server.name })),
     multiagent: params.multiagent === undefined ? (previous?.multiagent ?? null) : params.multiagent,
+    skills: params.skills === undefined ? (previous?.skills ?? []) : (params.skills ?? []).map((skill) => ({ skill_id: skill.skill_id })),
+    metadata,
   };
 }
 
