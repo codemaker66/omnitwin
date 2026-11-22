@@ -52,6 +52,22 @@ export interface PatchInspection {
 /** A JavaScript or TypeScript file, whose new names a test can fail on when the change is taken away. */
 const CODE_FILE = /\.[cm]?[jt]sx?$/iu;
 
+/**
+ * Why the git on this machine cannot run the review, from what `git --version`
+ * printed; null when it can. The review reads each step's attributes from the
+ * base with `--attr-source`, which git 2.41.0 brought: an older git refuses
+ * the option, and every run is then rejected as "could not be inspected".
+ */
+export function gitVersionProblem(versionOutput: string): string | null {
+  const line = versionOutput.trim();
+  const match = /^git version (\d+)\.(\d+)/u.exec(line);
+  if (match === null) return `could not read git's version from ${JSON.stringify(line.slice(0, 80))}; the review needs git 2.41 or newer`;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  if (major > 2 || (major === 2 && minor >= 41)) return null;
+  return `git ${String(major)}.${String(minor)} is older than 2.41, which the review needs for --attr-source: every run would be rejected as "could not be inspected" after it is paid for; upgrade git`;
+}
+
 /** The modes a returned patch may create or leave: a regular or an executable file. */
 const REGULAR_MODES = new Set(["100644", "100755"]);
 
@@ -209,7 +225,7 @@ async function binaryInStep(repo: string, scratch: string, baseSha: string, befo
  * `git write-tree --missing-ok`: without it, git first fetches every blob the
  * index names and the throwaway repository lacks, which is the whole base,
  * though the tree only names them. The base's .gitattributes decides every
- * step, not one the series edits (`--attr-source`, git 2.42 or newer), a
+ * step, not one the series edits (`--attr-source`, git 2.41 or newer), a
  * global attributes file is left out, and patterns match names by case, as on
  * Linux and GitHub, though a Windows clone would otherwise ignore case. Text
  * conversion and external diff drivers are off.

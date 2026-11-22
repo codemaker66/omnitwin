@@ -10,6 +10,7 @@ import { withBaseCommit } from "../sandbox/base-repo.js";
 import { ATTENDED, isInsideFolder, main, USAGE } from "../sandbox/cli.js";
 import { masterFacts } from "../sandbox/master.js";
 import { boundedNumber, budgetOverride, timeoutOverride } from "../sandbox/overrides.js";
+import { gitVersionProblem } from "../sandbox/patches.js";
 import { sandboxConfigSchema } from "../sandbox/sandbox-config.js";
 import { MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES } from "../task.js";
 
@@ -67,6 +68,33 @@ describe("the CLI's own words", () => {
       await rm(root, { recursive: true, force: true });
     }
   }, 120_000);
+});
+
+describe("status", () => {
+  it("names the git the review will use, and warns when it is older than the 2.41 the review needs", async () => {
+    // git 2.41.0 brought --attr-source; an older git fails every review, after the run is paid for.
+    for (const fine of ["git version 2.41.0", "git version 2.56.1\n", "git version 2.50.0.windows.1", "git version 3.0.0"]) expect(gitVersionProblem(fine), fine).toBeNull();
+    for (const old of ["git version 2.40.1", "git version 2.9.5", "git version 1.99.0"]) {
+      expect(gitVersionProblem(old), old).toMatch(/^git \d+\.\d+ is older than 2\.41, which the review needs for --attr-source/u);
+    }
+    expect(gitVersionProblem("not a version")).toMatch(/^could not read git's version/u);
+
+    const root = await mkdtemp(path.join(tmpdir(), "credit-runner-status-"));
+    const config = path.join(root, "sandbox.config.json");
+    await writeFile(config, JSON.stringify({ workRoot: path.join(root, "work"), ledgerFile: path.join(root, "ledger.jsonl"), keyDir: path.join(root, "keys"), keyFile: "pot-1.key", lane: "sandbox", laneCapUsd: 1, orgCapUsd: 2 }));
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      written.push(String(chunk));
+      return true;
+    });
+    try {
+      expect(await main(["status", "--config", config])).toBe(0);
+    } finally {
+      spy.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    }
+    expect(written.join("")).toMatch(/^Git: \d+\.\d+\S* \(the review needs 2\.41 or newer\)$/mu);
+  });
 });
 
 /** Removes a junction or symlink itself, never what it points at. */

@@ -1,8 +1,10 @@
 import { lstat, readFile, realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { expandHome } from "../config.js";
+import { git } from "../git.js";
 import { keyFileExposure, keyFilePresent, readKey } from "../keys.js";
 import { parseTask } from "../task.js";
 import { sdkSandboxApi } from "./api.js";
@@ -11,6 +13,7 @@ import { ledgerHasSession, readCreditLedger, spent } from "./credit-ledger.js";
 import { collectSandboxJob, runSandboxJob } from "./launcher.js";
 import { masterFacts } from "./master.js";
 import { budgetOverride, boundedNumber, timeoutOverride } from "./overrides.js";
+import { gitVersionProblem } from "./patches.js";
 import { sandboxConfigSchema } from "./sandbox-config.js";
 import { ensureSandbox, readState } from "./setup.js";
 
@@ -144,6 +147,10 @@ export async function main(argv: readonly string[]): Promise<number> {
     out(
       `Spend: lane '${config.lane}' $${spent(ledger.lines, (line) => line.lane === config.lane).toFixed(2)} of $${config.laneCapUsd.toFixed(2)}; all lanes $${spent(ledger.lines).toFixed(2)} of $${config.orgCapUsd.toFixed(2)}${ledger.badLines > 0 ? `; ${String(ledger.badLines)} unreadable line(s)` : ""}`,
     );
+    // The review runs on this machine's git: one too old for it rejects every run, after the session is paid for.
+    const gitVersion = await git(tmpdir(), ["--version"]).catch((error: unknown) => `git --version failed: ${error instanceof Error ? error.message : String(error)}`);
+    const gitProblem = gitVersionProblem(gitVersion);
+    out(gitProblem === null ? `Git: ${gitVersion.replace(/^git version /u, "")} (the review needs 2.41 or newer)` : `Warning: ${gitProblem}`);
     return 0;
   }
 
