@@ -26,7 +26,7 @@ import type { BodyPart, Foot, PartKind, SetDownBody } from "./bodies.js";
 import { contactSeconds, decaySeconds, knockSeconds, modeEnergy, partModes, surfaceModes } from "./modes.js";
 import { kWeighted, momentaryMaxOfWeighted } from "./analysis.js";
 import type { Reflection } from "./reflections.js";
-import { SURFACES, surfaceKey, type SurfaceKind, type SurfaceResponse } from "./surfaces.js";
+import { SURFACES, surfaceKey, type SurfaceKind, type SurfaceResponse } from "./surface-data.js";
 import type { Stereo } from "./tail.js";
 
 /**

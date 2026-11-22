@@ -482,6 +482,24 @@ describe("the set-down engine stays behind the scene's lazy import (T-700, R78)"
     });
   }
 
+  it("keeps the Worker to what it renders from: none of the catalogue, the rooms or any component (R101)", async () => {
+    const path = await import("node:path");
+    const fs = await import("node:fs/promises");
+    const reached = await staticImportClosure("src/lib/set-down/set-down.worker.ts");
+    const files = [...reached].map((file) => path.relative(path.resolve("."), file).split(path.sep).join("/"));
+    expect(files).toContain("src/lib/set-down/render.ts");
+    // The catalogue (and the asset catalogue it loads), the rooms and the Grand Hall's spec are the
+    // main thread's, which resolves a surface for a room; the Worker only renders the input it is sent.
+    expect(files.filter((file) => !file.startsWith("src/lib/"))).toEqual([]);
+    expect(files.filter((file) => ["src/lib/catalogue.ts", "src/lib/set-down/rooms.ts", "src/lib/set-down/surfaces.ts"].includes(file))).toEqual([]);
+    const packageImports: string[] = [];
+    for (const file of reached) {
+      const code = (await fs.readFile(file, "utf-8")).replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
+      if (/(?:^|[;\n])\s*(?:import|export)\s+(?!type\s)[^;]*?\bfrom\s+["']@omnitwin\//u.test(code)) packageImports.push(path.basename(file));
+    }
+    expect(packageImports).toEqual([]);
+  });
+
   it("loads the driver only by the shell's dynamic import", async () => {
     const { codeOnly } = await readSource("src/components/editor/SetDownSound.tsx");
     expect(codeOnly).toMatch(/\bimport\(["']\.\/set-down-driver\.js["']\)/);
