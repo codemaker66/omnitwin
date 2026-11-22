@@ -23,6 +23,7 @@ import { usePlanSent, usePlannerHudStore, type HudSheet } from "../../stores/pla
 import { useToolStore } from "../../stores/tool-store.js";
 import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
+import { tellTheEvent } from "./event-answer.js";
 import { useHudFacts } from "./hud-facts.js";
 import { CloseGlyph, MinusGlyph, PlusGlyph } from "./glyphs.js";
 import { handKeyboardOn } from "./keyboard-hand-off.js";
@@ -114,7 +115,7 @@ function EventSheet(): ReactElement {
             className="hud-choice"
             aria-checked={kind === option.kind}
             tabIndex={radioTabIndex(kind === option.kind, index === 0, kind !== null)}
-            onClick={() => { usePlannerEventStore.getState().setEventKind(option.kind); }}
+            onClick={() => { tellTheEvent(option.kind); }}
           >
             <span className="hud-choice__name">{option.name}</span>
             <span className="hud-choice__line">{option.line}</span>

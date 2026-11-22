@@ -5,6 +5,15 @@ import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../../lib/door-clear-spaces.js";
+import {
+  deviceAsksEventKind,
+  deviceEventKind,
+  openLayoutEventKind,
+  rememberDeviceEventKind,
+  resetEventKindQuestionForTesting,
+  useEventKindQuestion,
+  type OpenedLayout,
+} from "../../../lib/event-kind-record.js";
 import { doorBlockers } from "../../../lib/keep-doors-clear.js";
 import { resetPlacedIdCounter, type PlacedItem } from "../../../lib/placement.js";
 import { plannerFeatureEnabled, setPlannerChromeFeatures, setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
@@ -19,6 +28,7 @@ import { usePlacementStore } from "../../../stores/placement-store.js";
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { HUD_SENT_STORAGE_KEY, usePlannerHudStore } from "../../../stores/planner-hud-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
+import { resetEventAnswerForTesting } from "../event-answer.js";
 import { HudFrame } from "../HudFrame.js";
 import { HudSheets } from "../HudSheets.js";
 
@@ -145,6 +155,11 @@ function chosenIds(): readonly string[] {
   return [...useSelectionStore.getState().selectedIds];
 }
 
+/** Where a device keeps its answers to the event's question: lib/event-kind-record's own key, which it does not export. */
+const EVENT_KIND_STORAGE_KEY = "venviewer.planner.eventKind";
+/** A layout's review state as the editor starts with it, put back after a test that locks one. */
+const REVIEW_STATUS_AT_REST = useEditorStore.getState().reviewStatus;
+
 beforeEach(() => {
   sequence = 0;
   resetPlacedIdCounter();
@@ -165,6 +180,10 @@ afterEach(() => {
   window.localStorage.removeItem(HUD_SENT_STORAGE_KEY);
   useEditorStore.setState({ configId: null });
   usePlannerEventStore.getState().setEventKind(null);
+  resetEventAnswerForTesting();
+  resetEventKindQuestionForTesting();
+  window.localStorage.removeItem(EVENT_KIND_STORAGE_KEY);
+  useEditorStore.setState({ reviewStatus: REVIEW_STATUS_AT_REST });
   setPlannerFeaturesForTesting(null);
   setPlannerChromeFeatures({});
 });
@@ -1004,6 +1023,10 @@ describe("the first screen", () => {
     const answers = within(within(first).getByRole("group", { name: "What are you planning?" })).getAllByRole("button");
     expect(answers.map((answer) => answer.querySelector(".hud-first-open__name")?.textContent)).toEqual(["Wedding", "Corporate", "Something else"]);
     expect(answers.every((answer) => answer.querySelector("img") !== null)).toBe(true);
+    // One family: the set-ups' own renders (one camera, one light, one ground), never a single piece's portrait.
+    const photographs = answers.map((answer) => answer.querySelector("img")?.getAttribute("src") ?? "");
+    expect(photographs.every((source) => source.startsWith("/models/furniture/setup-") && source.includes("/setup-v2/"))).toBe(true);
+    expect(new Set(photographs).size).toBe(3);
     expect(within(first).queryAllByRole("radio")).toEqual([]);
     expect(within(first).queryByRole("radiogroup")).toBeNull();
     expect(answers.every((answer) => !answer.hasAttribute("aria-checked"))).toBe(true);
@@ -1121,6 +1144,153 @@ describe("the first screen", () => {
     ask();
     renderHud({ eventGuests: 80 });
     expect(screen.queryByTestId("hud-first-open")).toBeNull();
+  });
+
+  it("shows photographs the site serves", async () => {
+    ask();
+    renderHud();
+    const sources = Array.from(screen.getByTestId("hud-first-open").querySelectorAll("img"), (img) => img.getAttribute("src") ?? "");
+    expect(sources).toHaveLength(3);
+    for (const source of sources) {
+      const file = await readFile(resolve("public", source.slice(1)));
+      expect(file.byteLength).toBeGreaterThan(1024);
+    }
+  });
+
+  // "What are you planning?" has one kept answer for a layout: the record the default planner's own question writes
+  // (lib/event-kind-record). This screen tells the same record, so a reload does not ask again, and neither planner
+  // asks a layout the other has asked.
+  describe("and the layout's kept answer", () => {
+    const NEW_DRAFT = { isPublicPreview: true, search: "", metadata: null, floorEmptyAtOpen: true } as const;
+
+    /** A layout opens, as the editor's load opens it: a guest's new, empty draft unless said otherwise. */
+    function open(configId: string, layout: Partial<OpenedLayout> = {}): void {
+      act(() => {
+        useEditorStore.setState({ configId });
+        openLayoutEventKind({ configId, ...NEW_DRAFT, ...layout });
+      });
+    }
+
+    it("keeps an answer with the layout: for a guest's draft, on this device", () => {
+      open("draft-1");
+      ask();
+      renderHud();
+      fireEvent.click(screen.getByRole("button", { name: /Wedding/u }));
+      expect(usePlannerEventStore.getState().eventKind).toBe("wedding");
+      expect(useEventKindQuestion.getState().answer).toBe("wedding");
+      expect(deviceEventKind("draft-1")).toBe("wedding");
+      // The default planner's receipt is not this screen's to show, and is not left waiting for that planner.
+      expect(useEventKindQuestion.getState().receipt).toBeNull();
+    });
+
+    it("keeps Start with an empty hall as not sure yet, and does not ask that layout again when it next opens", () => {
+      open("draft-2");
+      ask();
+      renderHud();
+      fireEvent.click(screen.getByRole("button", { name: "Start with an empty hall" }));
+      expect(useEventKindQuestion.getState().answer).toBeNull();
+      expect(deviceEventKind("draft-2")).toBeNull();
+      // The page opened again: the same draft, its answer read from this device.
+      cleanup();
+      act(() => { resetEventKindQuestionForTesting(); });
+      open("draft-2");
+      ask();
+      renderHud();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+      expect(screen.getByTestId("planner-hud").getAttribute("data-first-open")).toBeNull();
+    });
+
+    it("keeps Escape the same way", () => {
+      open("draft-escape");
+      ask();
+      renderHud();
+      press("Escape");
+      expect(deviceEventKind("draft-escape")).toBeNull();
+    });
+
+    it("does not ask a layout the default planner has already asked", () => {
+      rememberDeviceEventKind("draft-3", null);
+      open("draft-3");
+      ask();
+      renderHud();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    });
+
+    it("does not ask a layout that was not new as it opened, however empty its floor is now", () => {
+      open("draft-4", { floorEmptyAtOpen: false });
+      ask();
+      renderHud();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    });
+
+    it("does not ask while the layout cannot be changed", () => {
+      open("draft-locked");
+      // Sent for review: the layout is locked for its planner until the venue answers.
+      act(() => { useEditorStore.setState({ reviewStatus: "submitted" }); });
+      expect(useEditorStore.getState().lockReason).toBe("in-review");
+      ask();
+      renderHud();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    });
+
+    it("does not ask on a device that has been told not to", () => {
+      deviceAsksEventKind("?event-question=off");
+      ask();
+      renderHud();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    });
+
+    it("asks a new, empty layout nothing has answered", () => {
+      open("draft-new");
+      ask();
+      renderHud();
+      expect(screen.getByTestId("hud-first-open")).toBeTruthy();
+    });
+
+    // A slow connection: the question is on the screen before the layout has opened, and a quick hand answers it.
+    it("keeps an answer given before the layout had opened, once it opens", async () => {
+      ask();
+      renderHud();
+      fireEvent.click(screen.getByRole("button", { name: /Corporate/u }));
+      expect(usePlannerEventStore.getState().eventKind).toBe("corporate");
+      open("draft-5");
+      await act(async () => { await Promise.resolve(); });
+      expect(usePlannerEventStore.getState().eventKind).toBe("corporate");
+      expect(useEventKindQuestion.getState().answer).toBe("corporate");
+      expect(deviceEventKind("draft-5")).toBe("corporate");
+      expect(useEventKindQuestion.getState().receipt).toBeNull();
+    });
+
+    it("lets a layout that opens with its own answer keep it over one given too early", async () => {
+      rememberDeviceEventKind("draft-6", "wedding");
+      ask();
+      renderHud();
+      fireEvent.click(screen.getByRole("button", { name: /Corporate/u }));
+      open("draft-6");
+      await act(async () => { await Promise.resolve(); });
+      expect(usePlannerEventStore.getState().eventKind).toBe("wedding");
+      expect(deviceEventKind("draft-6")).toBe("wedding");
+    });
+
+    it("takes a change of answer in Your event to the same record", () => {
+      open("draft-7");
+      renderHud();
+      act(() => { usePlannerHudStore.getState().openSheet("event"); });
+      fireEvent.click(screen.getByRole("radio", { name: /Wedding/u }));
+      expect(deviceEventKind("draft-7")).toBe("wedding");
+      fireEvent.click(screen.getByRole("radio", { name: /Something else/u }));
+      expect(usePlannerEventStore.getState().eventKind).toBe("other");
+      expect(deviceEventKind("draft-7")).toBe("other");
+      expect(useEventKindQuestion.getState().receipt).toBeNull();
+    });
+
+    it("marks the layout as no longer new once something stands on its floor", () => {
+      open("draft-8");
+      renderHud();
+      expect(useEventKindQuestion.getState().askable).toBe(true);
+      setPlaced(rounds(1));
+      expect(useEventKindQuestion.getState().askable).toBe(false);
+    });
   });
 });
 

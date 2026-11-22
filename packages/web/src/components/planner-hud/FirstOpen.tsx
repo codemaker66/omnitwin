@@ -5,6 +5,7 @@ import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { usePlannerEventStore, type PlannerEventKind } from "../../stores/planner-event-store.js";
 import { usePlannerHudStore } from "../../stores/planner-hud-store.js";
+import { tellTheEvent, useTheLayoutsQuestion } from "./event-answer.js";
 import { useHudFacts } from "./hud-facts.js";
 import { useKeyboardHandOff } from "./keyboard-hand-off.js";
 import "./hud-first-open.css";
@@ -19,7 +20,9 @@ import "./hud-first-open.css";
 // it leads to. An answer says what the day is and opens Your event, so the
 // guest count is the next thing asked; the quiet words under them leave the
 // hall empty for someone who would rather begin with their own hands. Either
-// way it is not asked again on this page.
+// way it is not asked again: the answer, or the wish not to give one yet, is
+// kept with the layout (event-answer.ts), where the default planner's own
+// question keeps it, so neither planner asks a layout the other has asked.
 //
 // It is the shelf, risen (the HUD's design note, "Sheets are the shelf, grown"): the
 // same surface over the shelf's own contents, which stand aside while it
@@ -37,16 +40,20 @@ interface FirstAnswer {
   readonly art: string;
 }
 
+// Three of one family: the set-ups' own renders, which share one camera, one light and one ground, so the
+// three read as a set (a single piece's close portrait beside two of them outweighed both).
 const ANSWERS: readonly FirstAnswer[] = [
   { kind: "wedding", name: "Wedding", line: "Ceremony, dinner and dancing", art: "/models/furniture/setup-round/setup-v2/white-chiavari.webp" },
-  { kind: "corporate", name: "Corporate", line: "Conference, dinner or awards", art: "/models/furniture/lectern/crafted-v4/preview.webp" },
+  { kind: "corporate", name: "Corporate", line: "Conference, dinner or awards", art: "/models/furniture/setup-long-table/setup-v2/white-set-turini.webp" },
   { kind: "other", name: "Something else", line: "Tell us what you have in mind", art: "/models/furniture/setup-dance-floor/setup-v2/floor.webp" },
 ];
 
 /**
  * Whether the first screen is showing: an empty floor, no kind of event, no
- * guest count, not yet answered or put aside on this page, and no sheet open
- * (a step pressed on the journey, or the view's tools, is answered first).
+ * guest count, not yet answered or put aside on this page, no sheet open (a
+ * step pressed on the journey, or the view's tools, is answered first), and a
+ * layout the question is asked of (event-answer.ts: one that has been asked
+ * already, here or in the default planner, is not asked again).
  */
 export function useFirstOpenShowing(): boolean {
   const { plane } = useHudFacts();
@@ -58,17 +65,20 @@ export function useFirstOpenShowing(): boolean {
   const done = usePlannerHudStore((state) => state.firstOpenDone);
   const sheetOpen = usePlannerHudStore((state) => state.sheet !== null);
   const guestsUnknown = plane.guests === null || plane.guests === 0;
-  return floorEmpty && kindUnknown && guestsUnknown && !done && !sheetOpen;
+  const layoutAsks = useTheLayoutsQuestion(floorEmpty);
+  return floorEmpty && kindUnknown && guestsUnknown && !done && !sheetOpen && layoutAsks;
 }
 
 function answer(kind: PlannerEventKind): void {
-  usePlannerEventStore.getState().setEventKind(kind);
+  tellTheEvent(kind);
   const hud = usePlannerHudStore.getState();
   hud.finishFirstOpen();
   hud.openSheet("event");
 }
 
+/** Put aside is an answer too: not sure yet. Kept, so the same layout does not ask again on its next opening. */
 function putAside(): void {
+  tellTheEvent(null);
   usePlannerHudStore.getState().finishFirstOpen();
 }
 
