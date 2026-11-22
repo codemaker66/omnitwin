@@ -917,6 +917,47 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These five cases were absent from sourceRunId, sourceReports and the earlier admissions; they stub the API before transport and run in hosted Chromium, so they prove the question, its number key, Lay out's starting shape, a guest's answer kept on the device, the panel in hand after the Grand Hall's welcome, an Escape meant for that welcome leaving the question asking, and the PATCH a signed-in layout's answer sends, not the API's own write, a real phone, the captured hall or the look; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
+    },
+    {
+      "date": "2026-11-22",
+      "reason": "The planner's kit, stage 1a (PR #472, T-719): a guest list an event planner keeps on their own device, behind ?kit=on. Six ordinary cases drive the real pages with the API intercepted before transport: the plan's read is answered, and anything else that would leave the app's own origin is refused and still counted. A planner opens a plan's guest list, pastes 180 names, takes the room's 18 tables, seats everyone and reaches the print dialog within 10 clicks and 3 typed fields, with every request and WebSocket recorded and a canary name in none of them; the list is still there after a reload; the socket check notices a socket that leaves the app; the table plan prints readable, on whole A4 pages, with its version on every page; guests by table and covers carry their version on every printed page and place cards on none, read from Chromium's own PDF page by page; and the footer check notices a footer that does not repeat.",
+      "sourceCommit": "aa6c984c801cebe665decbc02b08f568265785c2",
+      "sourceFile": "packages/web/e2e/guest-list-journey.spec.ts",
+      "sourceFileGitBlobSha256": "b103a9769f783de5fdae21b78e0b1dcc6cf12150ba2abf9a4e4c63212dea5a1f",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/guest-list-journey.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "c5c4e2b587878ad41bd05345840f73620cb7c7fbb6d703677723f02a2b432b3e",
+      "caseIds": [
+        "bbd1071729c1c81f8dd4-07dc197fcfa6b3fff895",
+        "bbd1071729c1c81f8dd4-091679297164c175b894",
+        "bbd1071729c1c81f8dd4-63b4ca9d5d706979190e",
+        "bbd1071729c1c81f8dd4-6ebe2b97d878547b4c26",
+        "bbd1071729c1c81f8dd4-953780f01564727da078",
+        "bbd1071729c1c81f8dd4-b8cf704dec6652a982cf"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These six cases were absent from sourceRunId, sourceReports and the earlier admissions; they answer the plan's read before transport, keep the list in the browser's own IndexedDB and print through Chromium's PDF, so they prove the step count, what leaves the page, the reload and the printed pages in Chromium, not a planner's first use of the page, print in Firefox or Safari, real paper or a phone; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
+    },
+    {
+      "date": "2026-11-22",
+      "reason": "The planner's kit, stage 1a (PR #472, T-719): the route accessibility audit takes the kit's pages, nine ordinary cases, three routes each at desktop, tablet and mobile: the planner's guest list with no guests yet; the same list seated, put into the browser's IndexedDB before the page opens (ten of twelve guests at two of three tables); and the paper's table plan for that list, which says how many guests have no seat. Each is held to the audit's existing checks: named controls, landmarks, reduced motion, contrast and focus-visible. The file's 33 earlier cases keep their identities.",
+      "sourceCommit": "aa6c984c801cebe665decbc02b08f568265785c2",
+      "sourceFile": "packages/web/e2e/accessibility-route-audit.spec.ts",
+      "sourceFileGitBlobSha256": "dc3afb64ac1b1eb09bc7ed3c450c589975e3a3a95e14ea777a8c5f55f80fa0f4",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/accessibility-route-audit.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "792e099def2dd3109f8daffae0eaed29b79b75473bb77f156fd34ea2501b234a",
+      "caseIds": [
+        "c44af26be19d92edde78-005a21cf4c5bb6031439",
+        "c44af26be19d92edde78-00d942d4ff8252df6ab7",
+        "c44af26be19d92edde78-23e204cf091af128b973",
+        "c44af26be19d92edde78-41b6c07a2e70d0e615dd",
+        "c44af26be19d92edde78-4bc9c7a4b31db2516008",
+        "c44af26be19d92edde78-5aa6a258dd47c0e03659",
+        "c44af26be19d92edde78-6e1b0329abf09cd3bfb0",
+        "c44af26be19d92edde78-79f2259a52bcb0e73c98",
+        "c44af26be19d92edde78-95363ac17aa5254189df"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These nine cases were absent from sourceRunId, sourceReports and the earlier admissions; they answer the plan's read before transport and seed invented guests, so they prove the audit's automated checks at three widths in hosted Chromium, not a screen reader, forced colours, print or a person's judgement of the pages; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, all 42 of its cases, so a re-listing reproduces these identities, not this hash."
     }
   ],
   "cases": [
@@ -5477,6 +5518,162 @@
       "suitePath": [
         "plan-event-kind.spec.ts",
         "the first-open event question"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "bbd1071729c1c81f8dd4-953780f01564727da078",
+      "file": "guest-list-journey.spec.ts",
+      "title": "from opening the page to the print dialog in the step budget, and nothing is sent",
+      "suitePath": [
+        "guest-list-journey.spec.ts",
+        "the guest list journey"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "bbd1071729c1c81f8dd4-07dc197fcfa6b3fff895",
+      "file": "guest-list-journey.spec.ts",
+      "title": "the list is still there after a reload",
+      "suitePath": [
+        "guest-list-journey.spec.ts",
+        "the guest list journey"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "bbd1071729c1c81f8dd4-091679297164c175b894",
+      "file": "guest-list-journey.spec.ts",
+      "title": "the socket check notices a socket that leaves the app",
+      "suitePath": [
+        "guest-list-journey.spec.ts",
+        "the guest list journey"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "bbd1071729c1c81f8dd4-6ebe2b97d878547b4c26",
+      "file": "guest-list-journey.spec.ts",
+      "title": "the table plan prints readable, on whole A4 pages, with its version on every page",
+      "suitePath": [
+        "guest-list-journey.spec.ts",
+        "the guest list journey"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "bbd1071729c1c81f8dd4-63b4ca9d5d706979190e",
+      "file": "guest-list-journey.spec.ts",
+      "title": "guests by table and covers carry their version on every printed page, and place cards on none",
+      "suitePath": [
+        "guest-list-journey.spec.ts",
+        "the guest list journey"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "bbd1071729c1c81f8dd4-b8cf704dec6652a982cf",
+      "file": "guest-list-journey.spec.ts",
+      "title": "the check notices a footer that does not repeat",
+      "suitePath": [
+        "guest-list-journey.spec.ts",
+        "the guest list journey"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-95363ac17aa5254189df",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the planner's guest list has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-6e1b0329abf09cd3bfb0",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the planner's guest list, seated has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-4bc9c7a4b31db2516008",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the planner's paper, a seated list's table plan has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-00d942d4ff8252df6ab7",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the planner's guest list has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-5aa6a258dd47c0e03659",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the planner's guest list, seated has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-005a21cf4c5bb6031439",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the planner's paper, a seated list's table plan has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-79f2259a52bcb0e73c98",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the planner's guest list has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-41b6c07a2e70d0e615dd",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the planner's guest list, seated has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-23e204cf091af128b973",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the planner's paper, a seated list's table plan has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
