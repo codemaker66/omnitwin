@@ -117,6 +117,14 @@ describe.skipIf(paymentsTestUrl === undefined)("deposits through the routes on m
     it("is none while its proposal has none, even when the proposal's plan is linked to an event", async () => {
       const f = await accepted({ ownEvent: false });
       expect(f.proposalEventId).toBeNull();
+      // The fixture still links the proposal's plan to an event, or this case proves nothing.
+      const linked = await pool.query(
+        `SELECT 1 FROM proposals p
+         JOIN event_configuration_links k ON k.configuration_id = p.configuration_id
+         WHERE p.id = $1 AND k.event_id = $2`,
+        [f.proposalId, f.eventId],
+      );
+      expect(linked.rowCount).toBe(1);
       const res = await ask(f, { basis: "amount", amountMinor: 50_000 });
       expect(res.status).toBe(201);
       expect(await requestEvent(res.body.data?.id ?? "")).toBeNull();
