@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { expandHome } from "../config.js";
 import { FrontmatterError, parseFrontmatter } from "../frontmatter.js";
-import { protectedPathViolations } from "../git.js";
+import { gitResult, protectedPathViolations } from "../git.js";
 import { ledgerHasSession } from "../sandbox/credit-ledger.js";
 import { keyFileExposure, readKey, unexpectedPrincipals } from "../keys.js";
 import { AGENT_EFFORT, AGENT_MODEL, MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
@@ -183,6 +183,36 @@ describe("protected paths", () => {
   it("matches a Dockerfile and its variants, not a note that mentions one", () => {
     expect(protectedPathViolations(["Dockerfile", "packages/api/Dockerfile.worker", "packages/web/dockerfile"])).toHaveLength(3);
     expect(protectedPathViolations([".claude/gotchas/dockerfile-arg-scope.md", "docs/Dockerfiles.md"])).toEqual([]);
+  });
+});
+
+describe("gitResult", () => {
+  it("answers with git's own exit code when git exits before reading its stdin, and opens no stdin without input", async () => {
+    const uncaught: unknown[] = [];
+    const record = (error: unknown): void => {
+      uncaught.push(error);
+    };
+    process.on("uncaughtException", record);
+    try {
+      // Far more than a pipe holds, to commands that read no stdin: git exits first, so the
+      // write fails (EPIPE on Linux, EOF on Windows). git's exit code and stderr still answer.
+      const flood = Buffer.alloc(8 * 1024 * 1024, 0x61);
+      const version = await gitResult(tmpdir(), ["--version"], flood);
+      expect(version.code).toBe(0);
+      expect(version.stdout).toMatch(/^git version /u);
+      const unknown = await gitResult(tmpdir(), ["no-such-subcommand"], flood);
+      expect(unknown.code).not.toBe(0);
+      expect(unknown.code).not.toBeNull();
+      expect(unknown.stderr).toContain("no-such-subcommand");
+      // Input that git does read arrives whole; with no input, git reads an empty stdin at once.
+      expect((await gitResult(tmpdir(), ["hash-object", "--stdin"], Buffer.from("hello\n"))).stdout.trim()).toBe("ce013625030ba8dba906f756967f9e9ca394464a");
+      expect((await gitResult(tmpdir(), ["hash-object", "--stdin"])).stdout.trim()).toBe("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
+      // A stream error is reported after the process closes, so give it time to surface.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } finally {
+      process.off("uncaughtException", record);
+    }
+    expect(uncaught).toEqual([]);
   });
 });
 

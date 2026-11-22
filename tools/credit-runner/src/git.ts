@@ -42,7 +42,10 @@ export interface GitResult {
 /**
  * The same call as git(), for a command whose failure is an answer rather than
  * an error (`git apply --check`) or that reads stdin (`git mailinfo`). It never
- * throws for a non-zero exit.
+ * throws for a non-zero exit. stdin is opened only when there is input; git
+ * may exit before reading all of it (it failed early, or the command reads no
+ * stdin), and the failed write that follows (EPIPE on Linux, EOF on Windows)
+ * is not git's answer: its exit code and stderr are.
  */
 export function gitResult(cwd: string, args: readonly string[], input?: Buffer): Promise<GitResult> {
   return new Promise((resolve, reject) => {
@@ -50,16 +53,20 @@ export function gitResult(cwd: string, args: readonly string[], input?: Buffer):
       windowsHide: true,
       timeout: 120_000,
       env: gitEnv(),
+      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
     child.on("error", reject);
     child.on("close", (code) => {
       resolve({ code, stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8") });
     });
-    child.stdin.end(input ?? Buffer.alloc(0));
+    if (child.stdin !== null) {
+      child.stdin.on("error", () => undefined);
+      child.stdin.end(input);
+    }
   });
 }
 
