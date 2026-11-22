@@ -594,7 +594,7 @@ const PRIVACY: LegalDocument = {
               term: "Suppliers coming to an event",
               detail:
                 `A supplier's contact for the day and the note about them are removed ${String(SUPPLIER_CONTACT_DAYS)} days after the booking ends. `
-                + "The supplier's name, when they were due, and when they arrived and left stay with the booking's records, with the names of the staff who marked them in and out: they are the venue's record of who was in the building, and are kept after a member of staff's account is closed.",
+                + "The supplier's name, when they were due, and when they arrived and left stay with the booking's records, with the names of the staff who marked them in and out: they are the venue's record of who was in the building, and are kept after a member of staff's account is deleted.",
             },
             {
               term: "Opening and lock-up checks",

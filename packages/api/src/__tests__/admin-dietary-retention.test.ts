@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 
 // ---------------------------------------------------------------------------
@@ -30,6 +30,11 @@ const clearLapsedSupplierContacts = vi.fn();
 vi.mock("../services/supplier-arrival-retention.js", () => ({
   clearLapsedSupplierContacts: (...args: unknown[]) => clearLapsedSupplierContacts(...args) as unknown,
 }));
+const eraseLapsedPeople = vi.fn();
+vi.mock("../services/people-retention.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../services/people-retention.js")>(),
+  eraseLapsedPeople: (...args: unknown[]) => eraseLapsedPeople(...args) as unknown,
+}));
 vi.mock("../services/cleanup.js", () => ({
   cleanupPreviewConfigurations: () => Promise.resolve(0),
   cleanupOrphanedFiles: () => Promise.resolve(0),
@@ -40,10 +45,17 @@ const { buildServer } = await import("../index.js");
 let server: FastifyInstance;
 beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
+// The 24-month switch unset here, whatever the developer's own .env says.
+afterEach(() => { vi.unstubAllEnvs(); });
 beforeEach(() => {
+  vi.stubEnv("PEOPLE_RETENTION_STARTS_ON", "");
   removeLapsedDietaryNotes.mockReset();
   removeUnusedRememberedNotes.mockReset();
   clearLapsedSupplierContacts.mockReset();
+  // A default for the cases that are not about suppliers.
+  clearLapsedSupplierContacts.mockResolvedValue({ dryRun: false, arrivals: 0 });
+  eraseLapsedPeople.mockReset();
+  eraseLapsedPeople.mockResolvedValue({ dryRun: false, off: false, people: 2, keptForBooking: 1, enquiries: 3, deferred: { people: 4, enquiries: 1 }, outOfTime: false });
 });
 
 const token = (payload: Record<string, unknown>): string => JSON.stringify(payload);
@@ -59,6 +71,23 @@ describe("POST /admin/retention/dietary-notes (the rehearsal)", () => {
     expect(res.statusCode).toBe(403);
     expect(removeLapsedDietaryNotes).not.toHaveBeenCalled();
     expect(removeUnusedRememberedNotes).not.toHaveBeenCalled();
+  });
+
+  it("reports who the 24-month pass would erase, changing nothing, to a platform admin only", async () => {
+    const forbidden = await server.inject({
+      method: "POST", url: "/admin/retention/people", headers: { authorization: `Bearer ${venueAdmin}` },
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(eraseLapsedPeople).not.toHaveBeenCalled();
+    eraseLapsedPeople.mockResolvedValueOnce({ dryRun: true, people: 4, keptForBooking: 1, enquiries: 6 });
+    const res = await server.inject({
+      method: "POST", url: "/admin/retention/people", headers: { authorization: `Bearer ${platformAdmin}` },
+    });
+    expect(res.statusCode).toBe(200);
+    // With POST /admin/cleanup's own setting: here, off.
+    expect(res.json<{ data: unknown }>().data).toEqual({ dryRun: true, people: 4, keptForBooking: 1, enquiries: 6,
+      firstDay: { startsOn: null, on: false, reason: "PEOPLE_RETENTION_STARTS_ON is unset" } });
+    expect(eraseLapsedPeople.mock.calls[0]?.[1]).toEqual({ dryRun: true });
   });
 
   it("runs the pass as a dry run and reports it", async () => {
@@ -91,11 +120,27 @@ describe("POST /admin/cleanup", () => {
     expect(body.message).toContain("removed the allergy note from 2 layout(s) and 3 event sheet(s) past their retention, and from 5 logged change(s)");
     expect(body.message).toContain("removed the notes on single pieces from 1 layout(s)");
     expect(body.message).toContain("removed 1 remembered note(s) unused for the agreed period");
+    expect(body.message).toContain("erased 2 person(s) and 3 enquiry(ies) 24 months after the last contact, leaving 5 for another run");
+    expect(eraseLapsedPeople.mock.calls[0]?.[1]).toBeUndefined();
     expect(body.message).toContain("cleared the contact and note from 6 supplier arrival(s) past their retention");
     expect(removeUnusedRememberedNotes.mock.calls[0]?.[1]).toBeUndefined();
     expect(clearLapsedSupplierContacts.mock.calls[0]?.[1]).toBeUndefined();
     // The real pass: no dry run and no storage step.
     expect(removeLapsedDietaryNotes.mock.calls[0]?.[1]).toBeUndefined();
+  });
+
+  it("says the 24-month pass is off, and why, while no first day has come", async () => {
+    removeLapsedDietaryNotes.mockResolvedValueOnce(RESULT);
+    removeUnusedRememberedNotes.mockResolvedValueOnce({ dryRun: false, removed: 0 });
+    eraseLapsedPeople.mockResolvedValueOnce({ dryRun: false, off: true, people: 0, keptForBooking: 0, enquiries: 0,
+      deferred: { people: 0, enquiries: 0 }, outOfTime: false });
+    const res = await server.inject({
+      method: "POST", url: "/admin/cleanup", headers: { authorization: `Bearer ${platformAdmin}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const message = res.json<{ data: { message: string } }>().data.message;
+    expect(message).toContain("the 24-month people pass is off (PEOPLE_RETENTION_STARTS_ON is unset)");
+    expect(message).not.toContain("24 months after the last contact");
   });
 });
 

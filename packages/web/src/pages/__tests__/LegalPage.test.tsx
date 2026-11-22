@@ -406,7 +406,7 @@ describe("the privacy policy", () => {
     // The period comes from the one definition the nightly pass runs on (Blake, 12 November 2026).
     expect(text).toContain(`removed ${String(SUPPLIER_ARRIVAL_RETENTION.daysAfterBooking)} days after the booking ends`);
     // The names on the door marks are kept, and the page says so.
-    expect(text).toContain("they are the venue's record of who was in the building, and are kept after a member of staff's account is closed");
+    expect(text).toContain("they are the venue's record of who was in the building, and are kept after a member of staff's account is deleted");
   });
 
   it("gives the lawful basis for suppliers' contacts and the names on door marks: legitimate interests", () => {

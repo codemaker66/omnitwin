@@ -179,6 +179,9 @@ function initialDraft(configId: string): EnquiryDraft {
   return { ...EMPTY_DRAFT, email: contact.email ?? "", phone: contact.phone ?? "", name: contact.name ?? "", ...readStored(DRAFT_KEY_PREFIX + configId) };
 }
 
+/** Send's words while the enquiry is on its way, on the button and in its status. */
+const SENDING_WORDS = "Sending your layout…";
+
 const VISUALLY_HIDDEN: React.CSSProperties = {
   position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap",
 };
@@ -797,12 +800,15 @@ export function GuestEnquiryModal({ configId, onClose, onSubmitted }: GuestEnqui
               // field clicks this button too).
               if (dateRef.current !== null) dateRef.current.min = guestToday();
             }}
+            aria-busy={isSubmitting}
             style={{
               width: "100%", padding: "14px 20px", fontSize: 15, fontWeight: 700,
               display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
               fontFamily: "'Inter', system-ui, sans-serif",
+              // Solid while sending: half-transparent copper left the dark
+              // words at about 2.5:1 on the card; this is about 6.5:1 (T-732).
               background: isSubmitting
-                ? "rgba(201, 138, 91,0.5)"
+                ? GOLD
                 : `linear-gradient(135deg, ${GOLD}, #c98a5b)`,
               border: "none", borderRadius: 12, cursor: isSubmitting ? "wait" : "pointer",
               color: CHARCOAL, letterSpacing: 0.3,
@@ -813,8 +819,15 @@ export function GuestEnquiryModal({ configId, onClose, onSubmitted }: GuestEnqui
             onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 24px rgba(201, 138, 91,0.25)`; }}
           >
             {isSubmitting && <ActivityIndicator size={20} />}
-            {isSubmitting ? "Sending your layout\u2026" : "Send to Events Team"}
+            {isSubmitting ? SENDING_WORDS : "Send to Events Team"}
           </button>
+          {/* A screen reader does not reliably read the button's new words once
+              it is pressed and disabled, so the work is said in one polite status beside it,
+              the one the activity convention asks for. Always mounted, so a
+              screen reader hears the words arrive. */}
+          <span role="status" aria-live="polite" aria-atomic="true" style={VISUALLY_HIDDEN}>
+            {isSubmitting ? SENDING_WORDS : ""}
+          </span>
 
           {/* Trust signal */}
           <p style={{
