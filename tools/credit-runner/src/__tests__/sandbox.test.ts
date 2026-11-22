@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,6 +15,7 @@ import type {
   BetaManagedAgentsUserToolConfirmationEvent,
 } from "@anthropic-ai/sdk/resources/beta/sessions/events";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { gitEnv } from "../git.js";
 import { nightRulesFromAgentsMd } from "../project-rules.js";
 import {
   ANTHROPIC_API_URL,
@@ -511,6 +513,31 @@ describe("sandbox launcher", () => {
     expect(record.review.reasons).toEqual(["binary change: docs/notes.md (it cannot be read or scanned as text)"]);
   });
 
+  it("counts a text hunk to a file the base holds as binary as a binary change: git reads the base's file and the patched one", async () => {
+    // A NUL on the base file's second line, within git's first 8,000 bytes; no hunk below shows it in an added line.
+    const early = `${["header", "\u0000", ...Array.from({ length: 30 }, (_, index) => `line ${String(index + 1)}`)].join("\n")}\n`;
+    const binaryBase = { baseFiles: { ...BASE_FILES, "assets/model.bin": early }, formatPatchArgs: ["--text"] };
+    const expected = ["binary change: assets/model.bin (it cannot be read or scanned as text)"];
+
+    // An edit far from the NUL: the hunk holds no NUL at all.
+    const away = await fixture([{ ...FIX, write: { ...FIX.write, "assets/model.bin": early.replace("line 25", "line twenty-five") } }], binaryBase);
+    expect(Object.values(away.patches).join("")).toContain("+line twenty-five");
+    expect(Object.values(away.patches).join("")).not.toContain("\u0000");
+    expect((await reviewOf(away)).review.reasons).toEqual(expected);
+    // The NUL removed: the patched file is text, the base's is not.
+    const cleaned = await fixture([{ ...FIX, write: { ...FIX.write, "assets/model.bin": early.replace("\u0000\n", "") } }], binaryBase);
+    expect((await reviewOf(cleaned)).review.reasons).toEqual(expected);
+    // Deleted with a text hunk.
+    const deleted = await fixture([{ ...FIX, remove: ["assets/model.bin"] }], binaryBase);
+    expect((await reviewOf(deleted)).review.reasons).toEqual(expected);
+
+    // A NUL added past git's first 8,000 bytes of a text file: git and GitHub show the file as text, and so does the review.
+    const long = `${"x".repeat(99)}\n`.repeat(90);
+    const late = await fixture([{ ...FIX, write: { ...FIX.write, "docs/long.md": `${long}tail\u0000end\n` } }], { baseFiles: { ...BASE_FILES, "docs/long.md": long } });
+    expect(Object.values(late.patches).join("")).toContain("+tail\u0000end");
+    expect((await reviewOf(late)).review.reasons).toEqual([]);
+  });
+
   it("rejects a .patch output that is not a format-patch file, instead of ignoring it", async () => {
     const stray = "diff --git a/.github/x b/.github/x\n+on: push\n";
     // Not a name format-patch writes: refused without being downloaded.
@@ -577,6 +604,48 @@ describe("sandbox launcher", () => {
       "binary change: data/table.dat (it cannot be read or scanned as text)",
       "binary change: docs/notes.md (it cannot be read or scanned as text)",
     ]);
+
+    // The base's attributes decide, not the ones the patches leave: dropping -diff in the same change does not make it text.
+    const unmarked = await fixture([{ ...FIX, write: { ...FIX.write, ".gitattributes": "# none\n", "data/table.dat": "1 2 3\n" } }], {
+      baseFiles: { ...BASE_FILES, ".gitattributes": "*.dat -diff\n", "data/table.dat": "1 2\n" },
+      formatPatchArgs: ["--text"],
+    });
+    expect([...(await reviewOf(unmarked)).review.reasons].sort()).toEqual([
+      "binary change: data/table.dat (it cannot be read or scanned as text)",
+      "protected path changed: .gitattributes (git attributes)",
+    ]);
+    // Patterns match names by case on every platform, as on Linux and GitHub (a Windows clone would otherwise ignore case).
+    const cased = await fixture([{ ...FIX, write: { ...FIX.write, "docs/z.cap": "two\n" } }], {
+      baseFiles: { ...BASE_FILES, ".gitattributes": "*.CAP -diff\n", "docs/z.cap": "one\n" },
+      formatPatchArgs: ["--text"],
+    });
+    expect((await reviewOf(cased)).review.reasons).toEqual([]);
+  });
+
+  it("applies the patches only to its throwaway repository, whatever GIT_* variables the shell exports", async () => {
+    // A repository standing in for the checkout the launcher is started from (inside a git hook, say).
+    const decoy = fileURLToPath((await fixture([FIX])).url);
+    const edited = await fixture([{ ...FIX, write: { ...FIX.write, "docs/notes.md": "new\n" } }], {
+      baseFiles: { ...BASE_FILES, ".gitattributes": "*.md -diff\n", "docs/notes.md": "old\n" },
+      formatPatchArgs: ["--text"],
+    });
+    const state = async () => [
+      (await readFile(path.join(decoy, ".git", "index"))).toString("base64"),
+      execFileSync("git", ["-C", decoy, "count-objects", "-v"], { encoding: "utf8", env: gitEnv() }),
+    ];
+    const before = await state();
+    const pointed = { GIT_DIR: path.join(decoy, ".git"), GIT_WORK_TREE: decoy, GIT_INDEX_FILE: path.join(decoy, ".git", "index"), GIT_OBJECT_DIRECTORY: path.join(decoy, ".git", "objects") };
+    const saved = Object.fromEntries(Object.keys(pointed).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, pointed);
+    try {
+      expect((await reviewOf(edited)).review.reasons).toEqual(["binary change: docs/notes.md (it cannot be read or scanned as text)"]);
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, key);
+        else process.env[key] = value;
+      }
+    }
+    expect(await state()).toEqual(before);
   });
 
   it("brings back only the outputs the review reads, refusing device names and sizes over the cap before downloading", async () => {

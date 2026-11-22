@@ -9,12 +9,14 @@ import { REPO_URL } from "./brief.js";
  * git on this machine and never from anything the agent printed.
  *
  * The patches are read in a throwaway repository holding the base commit's
- * trees (base-repo.ts; git fetches the few blobs `--check` needs). They are
- * never applied: `git mailsplit` and `git mailinfo` split each file as `git am`
- * would, then `git apply --check` (against the base in the throwaway index),
- * `--numstat -z` (forwards and reversed, for new and old names) and
- * `--summary` (created, deleted and mode-changed files) read them, and
- * `git ls-tree` reads the base's own entry for every path they name.
+ * trees (base-repo.ts; git fetches into it the few blobs it reads). `git
+ * mailsplit` and `git mailinfo` split each file as `git am` would, then `git
+ * apply --check` (against the base in the throwaway index), `--numstat -z`
+ * (forwards and reversed, for new and old names) and `--summary` (created,
+ * deleted and mode-changed files) read them, and `git ls-tree` reads the
+ * base's own entry for every path they name. To classify binary files as git
+ * does, a series that passes `--check` is then applied to the throwaway
+ * index, and nowhere else (filesGitCallsBinary).
  */
 export interface PatchInspection {
   /** The `From <sha>` of each format-patch file, in file order (null: none). */
@@ -28,7 +30,11 @@ export interface PatchInspection {
   readonly deleted: readonly string[];
   /** Old names of renamed or copied files. */
   readonly movedAway: readonly string[];
-  /** Binary patches, text hunks that add a NUL byte, and paths the base's .gitattributes keeps from being diffed as text: git and GitHub show all of them as binary. */
+  /**
+   * Binary patch sections, whose content the patch does not show as text, and
+   * files git's own diff of the base and the patched result calls binary
+   * (filesGitCallsBinary), which git and GitHub show as "Binary files differ".
+   */
   readonly binary: readonly string[];
   /** Lines the patches add to and remove from files that are not tests. */
   readonly sourceLinesAdded: number;
@@ -112,44 +118,40 @@ function hasControlCharacter(name: string): boolean {
 }
 
 /**
- * Files that a text hunk gives a NUL byte. `git apply` reads such a hunk as
- * text, but git (a NUL in a file's first 8000 bytes is its only test) and
- * GitHub then show the file as binary, so nobody could read the change there:
- * it counts as a binary change. Each hunk's file is named by git, from that
- * file's own section of the series.
+ * The files git itself calls binary in the change from the base to the
+ * patched result, as `git diff` and GitHub do: a NUL in the first 8,000 bytes
+ * of the base's file or of the patched one, or a base .gitattributes that
+ * unsets diff for the path (`-diff`, or `binary`). Nobody could read such a
+ * change there, whatever the patch wrote, so it counts as a binary change.
+ *
+ * The series is applied to the throwaway index only (it holds the base; git
+ * fetches the blobs it needs into the throwaway repository), and git then
+ * compares that index with the base. The base's .gitattributes decides, not one
+ * the series edits (`--attr-source`, git 2.42 or newer), a global attributes
+ * file is left out, and patterns match names by case, as on Linux and GitHub,
+ * though a Windows clone would otherwise ignore case. Text conversion and
+ * external diff drivers are off.
  */
-async function filesGivenNul(repo: string, bodies: readonly string[]): Promise<string[]> {
-  const files: string[] = [];
-  for (const body of bodies) {
-    for (const section of body.split(/^(?=diff --git )/mu)) {
-      const hunks = section.search(/^@@/mu);
-      if (hunks < 0 || !section.slice(hunks).split("\n").some((line) => line.startsWith("+") && line.includes("\u0000"))) continue;
-      const named = await gitResult(repo, ["apply", "--numstat", "-z"], Buffer.from(section, "utf8"));
-      const entries = named.code === 0 ? parseNumstat(named.stdout) : [];
-      if (entries.length === 0) throw new Error(`a hunk adds a NUL byte to a file git cannot name: ${tail(named.stderr)}`);
-      for (const entry of entries) files.push(entry.name);
-    }
-  }
-  return files;
-}
-
-/**
- * Paths the base's own .gitattributes keeps from being diffed as text (`-diff`,
- * `diff=false`, or `binary`, which unsets diff): git and GitHub show a change
- * to them as binary whatever the patch wrote, so it counts as a binary change.
- * git reads the attributes from the base commit itself.
- */
-async function filesTheBaseCallsBinary(repo: string, baseSha: string, paths: readonly string[]): Promise<string[]> {
-  const files: string[] = [];
-  for (let start = 0; start < paths.length; start += 200) {
-    const fields = (await git(repo, ["check-attr", "-z", `--source=${baseSha}`, "diff", "--", ...paths.slice(start, start + 200)])).split("\0");
-    // -z prints path, attribute and value, each ended by a NUL.
-    for (let index = 0; index + 2 < fields.length; index += 3) {
-      const value = fields[index + 2];
-      if (value === "unset" || value === "false") files.push(fields[index] ?? "");
-    }
-  }
-  return files;
+async function filesGitCallsBinary(repo: string, scratch: string, baseSha: string, series: string): Promise<string[]> {
+  await git(repo, ["apply", "--cached", "--whitespace=nowarn", series]);
+  const diff = await git(repo, [
+    "-c",
+    "core.ignorecase=false",
+    "-c",
+    `core.attributesFile=${path.join(scratch, "no-global-attributes")}`,
+    `--attr-source=${baseSha}`,
+    "diff",
+    "--cached",
+    "-z",
+    "--numstat",
+    "--no-renames",
+    "--no-textconv",
+    "--no-ext-diff",
+    baseSha,
+  ]);
+  return parseNumstat(diff)
+    .filter((entry) => entry.added === null)
+    .map((entry) => entry.name);
 }
 
 function emptyInspection(commits: readonly (string | null)[], problems: readonly string[], texts: readonly string[]): PatchInspection {
@@ -271,11 +273,13 @@ export async function inspectPatches(
 
         const movedAway = [...oldNames].filter((name) => !newNames.has(name));
         const created = [...newNames].filter((name) => !atBase.has(name) && !deleted.has(name));
+        // A binary patch section hides its content from the scan whatever it
+        // holds; git's diff of the applied series classifies everything else.
+        // A series that does not apply is rejected already and is not applied.
         const binary = [
           ...new Set([
             ...forward.filter((entry) => entry.added === null).map((entry) => entry.name),
-            ...(await filesGivenNul(repo, bodies)),
-            ...(await filesTheBaseCallsBinary(repo, options.baseSha, touched)),
+            ...(check.code === 0 ? await filesGitCallsBinary(repo, scratch, options.baseSha, series) : []),
           ]),
         ];
         const sources = forward.filter((entry) => !isTestFile(entry.name));
