@@ -465,7 +465,12 @@ describe("the new chrome stays behind its lazy import (T-671)", () => {
 // ---------------------------------------------------------------------------
 
 describe("the set-down engine stays behind the scene's lazy import (T-700, R78)", () => {
-  const LAZY_SOUND = ["src/components/editor/set-down-driver.ts", "src/components/editor/set-down-policy.ts"];
+  const LAZY_SOUND = [
+    "src/components/editor/set-down-driver.ts",
+    "src/components/editor/set-down-policy.ts",
+    "src/components/editor/set-down-ahead.ts",
+    "src/components/editor/set-down-room.ts",
+  ];
 
   for (const entry of ["src/components/editor/PlannerScene.tsx", "src/pages/EditorPage.tsx", "src/App.tsx", "src/components/planner-chrome/RoomStage.tsx"]) {
     it(`reaches only the registry's fatigue of the engine from ${entry} by static imports`, async () => {

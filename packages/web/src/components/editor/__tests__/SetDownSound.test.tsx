@@ -20,7 +20,7 @@ import { renderSetDown, type SetDownInput } from "../../../lib/set-down/render.j
 import { roomState, roomAcousticsFor } from "../../../lib/set-down/room-acoustics.js";
 import { renderRoomTail, tailOnsetSeconds } from "../../../lib/set-down/tail.js";
 import { presentDelayFor, setDownStartTime, type AudioClock } from "../../../lib/set-down/timing.js";
-import { settleSpeedFor } from "../../../lib/set-down/voice.js";
+import { settleSpeedFor, voiceInput } from "../../../lib/set-down/voice.js";
 import {
   SetDownCancelled,
   type SetDownPriority,
@@ -34,6 +34,7 @@ import type * as ConfigurationsModule from "../../../api/configurations.js";
 import type * as RegistryModule from "../../../lib/sound-registry.js";
 import type * as RenderModule from "../../../lib/set-down/render.js";
 import type * as TailModule from "../../../lib/set-down/tail.js";
+import type * as VoiceModule from "../../../lib/set-down/voice.js";
 import type { SetDownVoice, VenSoundTapDrop } from "../../../lib/sound-registry.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -138,6 +139,11 @@ vi.mock("../../../lib/set-down/tail.js", async (importOriginal) => {
   const actual = await importOriginal<typeof TailModule>();
   return { ...actual, renderRoomTail: vi.fn(actual.renderRoomTail) };
 });
+// A render input's builder, watched, so a test can make it fail where the driver calls it.
+vi.mock("../../../lib/set-down/voice.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof VoiceModule>();
+  return { ...actual, voiceInput: vi.fn(actual.voiceInput) };
+});
 
 // The layout's server, for the tests that record the timeline through the bridge: loads, autosaves.
 vi.mock("../../../api/configurations.js", async (importOriginal) => ({
@@ -172,6 +178,8 @@ class FakeRenderer implements SetDownRenderer {
   readonly jobs: FakeJob[] = [];
   readonly cancelled: string[] = [];
   disposed = false;
+  /** Thrown by the next cancel or tail call, as a client in a bad state might throw. */
+  failNext: { cancel?: Error; tail?: Error } = {};
   private readonly rejectors = new Map<FakeJob, (reason: Error) => void>();
 
   get broken(): boolean { return false; }
@@ -204,6 +212,11 @@ class FakeRenderer implements SetDownRenderer {
   }
 
   tail(rt: BandValues, options: TailOptions, key: string): Promise<SetDownTail> {
+    const fault = this.failNext.tail;
+    if (fault !== undefined) {
+      delete this.failNext.tail;
+      throw fault;
+    }
     return new Promise((resolve, reject) => {
       const job: FakeJob = {
         kind: "tail", priority: "tail", key, input: null, rt, options, state: "pending",
@@ -220,6 +233,11 @@ class FakeRenderer implements SetDownRenderer {
   }
 
   cancel(matches: (key: string) => boolean): void {
+    const fault = this.failNext.cancel;
+    if (fault !== undefined) {
+      delete this.failNext.cancel;
+      throw fault;
+    }
     for (const job of this.jobs) {
       if (job.state !== "pending" || !matches(job.key)) continue;
       job.state = "cancelled";
@@ -424,7 +442,10 @@ afterEach(() => {
   // Nothing in the scene ever renders on the main thread.
   expect(renderSetDown).not.toHaveBeenCalled();
   expect(renderRoomTail).not.toHaveBeenCalled();
+  // Back to the engine's own builder, with any fault a test queued and did not reach dropped.
+  vi.mocked(voiceInput).mockReset();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   localStorage.clear();
 });
@@ -950,7 +971,7 @@ describe("the adaptive render policy (R100)", () => {
     expect(renderer.pending("exact")).toHaveLength(1);
   });
 
-  it("renders a new piece ahead while its ghost shows, not again as the ghost only moves, again when its supports change, and cancels when the ghost leaves (condition 2)", async () => {
+  it("renders a new piece ahead while its ghost shows, not again as the ghost moves within a metre, again when its supports change, and cancels when the ghost leaves (condition 2)", async () => {
     localStorage.setItem(RENDER_MODE_STORAGE_KEY, JSON.stringify({ light: "ahead", table: "exact" }));
     await mountArmed();
     stand("staging-deck-6x4", 6, 0);
@@ -962,10 +983,10 @@ describe("the adaptive render policy (R100)", () => {
     expect(first?.input?.kind).toBe("drop");
     for (let i = 1; i <= 5; i++) {
       pass(300);
-      act(() => { usePlacementStore.setState({ ghostPosition: [-4 + i * 0.3, 0, -2] }); });
+      act(() => { usePlacementStore.setState({ ghostPosition: [-4 + i * 0.18, 0, -2] }); });
       await settle();
     }
-    expect(renderer.renders("ahead"), "moving over the same floor renders nothing more").toHaveLength(1);
+    expect(renderer.renders("ahead"), "moving within a metre over the same floor renders nothing more").toHaveLength(1);
     first?.answer(15);
     await settle();
     pass(300);
@@ -1291,3 +1312,224 @@ describe("with the timeline recording, and snap on (R87)", () => {
   });
 });
 
+// --- Renders ahead, as the piece moves (R102, M-1, M-3) -----------------------------------------
+
+describe("renders ahead as the piece moves (R102)", () => {
+  beforeEach(() => {
+    localStorage.setItem(RENDER_MODE_STORAGE_KEY, JSON.stringify({ light: "ahead", table: "exact" }));
+  });
+
+  /** Moves the carried pieces along, the hand still carrying them, and lets 300 ms pass before the next frame. */
+  async function carryAlong(ids: ReadonlySet<string>, dx: number): Promise<void> {
+    act(() => {
+      usePlacementStore.getState().moveItemsByDelta(ids, dx, 0);
+      carryFurniture(ids, Math.sign(dx), 0);
+    });
+    pass(300);
+    frame();
+    await settle();
+  }
+
+  it("asks a carried chair's again once it is more than a metre from where the last was taken, and not before", async () => {
+    await mountArmed();
+    const chair = stand("chiavari-chair", 0, 2);
+    const ids = new Set([chair.id]);
+    act(() => { carryFurniture(ids, 1, 0); });
+    await settle();
+    const [first] = renderer.pending("ahead", "light");
+    expect(first?.input?.seed).toBe(1);
+    first?.answer(15);
+    await settle();
+    await carryAlong(ids, 0.4);
+    await carryAlong(ids, 0.4);
+    expect(renderer.renders("ahead"), "0.8 m over the same floor asks nothing more").toHaveLength(1);
+    await carryAlong(ids, 0.4);
+    const asked = renderer.renders("ahead");
+    expect(asked, "1.2 m from where the first was taken").toHaveLength(2);
+    expect(asked[1]?.input?.seed, "a fresh variant, from where the chair is now").toBe(1);
+  });
+
+  it("asks the ghost's again once it has moved more than a metre, with one in flight at a time", async () => {
+    await mountArmed();
+    act(() => { useCatalogueStore.getState().selectItem(catalogueId("chiavari-chair")); });
+    act(() => { usePlacementStore.setState({ ghostPosition: [-4, 0, -2] }); });
+    await settle();
+    expect(renderer.pending("ahead", "light")).toHaveLength(1);
+    pass(300);
+    act(() => { usePlacementStore.setState({ ghostPosition: [-2.5, 0, -2] }); });
+    await settle();
+    expect(renderer.renders("ahead"), "the first is still in flight, so the new one waits").toHaveLength(1);
+    renderer.pending("ahead", "light")[0]?.answer(15);
+    await settle();
+    expect(renderer.renders("ahead")).toHaveLength(2);
+    expect(renderer.pending("ahead", "light")).toHaveLength(1);
+  });
+
+  it("asks each class at most once every 250 ms, whichever piece asks", async () => {
+    await mountArmed();
+    const chair = stand("chiavari-chair", 0, 2);
+    act(() => { carryFurniture([chair.id], 1, 0); });
+    await settle();
+    renderer.pending("ahead", "light")[0]?.answer(15);
+    await settle();
+    // Another chair's ghost shows 50 ms later: its class asked 50 ms ago, so it waits out the rest.
+    pass(50);
+    act(() => { useCatalogueStore.getState().selectItem(catalogueId("chiavari-chair")); });
+    act(() => { usePlacementStore.setState({ ghostPosition: [-4, 0, -2] }); });
+    await settle();
+    expect(renderer.renders("ahead")).toHaveLength(1);
+    pass(150);
+    await settle();
+    expect(renderer.renders("ahead")).toHaveLength(1);
+    pass(60);
+    await settle();
+    expect(renderer.renders("ahead")).toHaveLength(2);
+    expect(renderer.renders("ahead")[1]?.input?.kind).toBe("drop");
+  });
+
+  it("forgets an older render ahead waiting behind the running one when the newest asks for what is running (M-3)", async () => {
+    await mountArmed();
+    stand("staging-deck-6x4", -1.2, 2);
+    const chair = stand("chiavari-chair", 0, 2);
+    const ids = new Set([chair.id]);
+    act(() => { carryFurniture(ids, 1, 0); });
+    await settle();
+    const [overFloor] = renderer.pending("ahead", "light");
+    expect(overFloor?.input?.surfaces.some((surface) => surface.kind === "stage-deck")).toBe(false);
+    // Onto the deck: a new variant waits behind the running one...
+    await carryAlong(ids, -0.95);
+    // ...and back over the floor, which is what is running: nothing need wait any more.
+    await carryAlong(ids, 0.95);
+    overFloor?.answer(15);
+    await settle();
+    pass(300);
+    await settle();
+    expect(renderer.renders("ahead")).toHaveLength(1);
+  });
+
+  it("never lets a bare round's variant stand in for a clothed round's set-down (M-1, R81)", async () => {
+    localStorage.setItem(RENDER_MODE_STORAGE_KEY, JSON.stringify({ light: "exact", table: "ahead" }));
+    await mountArmed();
+    act(() => { useCatalogueStore.getState().selectItem(catalogueId("round-table-6ft")); });
+    act(() => { usePlacementStore.setState({ ghostPosition: [2, 0, 1] }); });
+    await settle();
+    const [ghosted] = renderer.pending("ahead", "table");
+    expect(ghosted?.input?.clothed).toBe(false);
+    ghosted?.answer(15);
+    await settle();
+    act(() => { useCatalogueStore.getState().clearSelection(); });
+    // The bare round the ghost showed takes its variant...
+    const bare = stand("round-table-6ft", 2, 1);
+    act(() => { dropInFurniture(bare.id); });
+    await settle();
+    await frames(8);
+    expect(plays().map((played) => played.voice.tap?.played)).toEqual(["variant"]);
+    // ...a clothed one in the same place does not: its hem is in its own render, or it is not heard.
+    const clothed = stand("round-table-6ft", 2, 1, { clothed: true });
+    act(() => { dropInFurniture(clothed.id); });
+    await settle();
+    await frames(8);
+    expect(plays().map((played) => played.voice.tap?.played)).toEqual(["variant"]);
+    expect(registry.drops.map((drop) => drop.drop)).toEqual(["too-late"]);
+  });
+});
+
+// --- What fails in its listeners and frame (M-4, R86) -------------------------------------------
+
+describe("what fails in its listeners and its frame (M-4)", () => {
+  let reported: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    reported = vi.fn();
+    vi.stubGlobal("reportError", reported);
+  });
+
+  it("reports what fails as the ghost moves, and never throws it into the placement store", async () => {
+    localStorage.setItem(RENDER_MODE_STORAGE_KEY, JSON.stringify({ light: "ahead", table: "exact" }));
+    await mountArmed();
+    act(() => { useCatalogueStore.getState().selectItem(catalogueId("chiavari-chair")); });
+    const fault = new Error("a render input that cannot be built");
+    vi.mocked(voiceInput).mockImplementationOnce(() => { throw fault; });
+    expect(() => { act(() => { usePlacementStore.setState({ ghostPosition: [-4, 0, -2] }); }); }).not.toThrow();
+    expect(reported).toHaveBeenCalledWith(fault);
+  });
+
+  it("reports what fails at a contact, plays the frame's other landing, and keeps the scene's frame going", async () => {
+    await mountArmed();
+    await place("chiavari-chair", -2, 1);
+    await place("chiavari-chair", 2, 1);
+    await answerAll();
+    const fault = new Error("supports that cannot be read");
+    vi.mocked(voiceInput).mockImplementationOnce(() => { throw fault; });
+    await frames(6);
+    expect(reported).toHaveBeenCalledWith(fault);
+    expect(plays()).toHaveLength(1);
+    await place("chiavari-chair", 0, 3);
+    await answerAll();
+    await frames(6);
+    expect(plays()).toHaveLength(2);
+  });
+
+  it("reports what fails as the room changes, and never throws it into the editor store", async () => {
+    await mountArmed();
+    const fault = new Error("a client that cannot cancel");
+    renderer.failNext.cancel = fault;
+    expect(() => { act(() => { useEditorStore.setState({ space: SALOON }); }); }).not.toThrow();
+    expect(reported).toHaveBeenCalledWith(fault);
+  });
+
+  it("reports what fails as sound comes back on, and never throws it into the setting", async () => {
+    registry.mode = "off";
+    await mountArmed();
+    const fault = new Error("a client that cannot take a tail");
+    renderer.failNext.tail = fault;
+    registry.mode = "quiet";
+    expect(() => { act(() => { for (const listener of [...registry.settings]) listener(); }); }).not.toThrow();
+    expect(reported).toHaveBeenCalledWith(fault);
+  });
+});
+
+// --- The tail while sound cannot play (M-5) -----------------------------------------------------
+
+describe("the room's tail while sound cannot play (M-5)", () => {
+  function soundSettingChanged(): void {
+    act(() => { for (const listener of [...registry.settings]) listener(); });
+  }
+
+  it("makes no tail while sound is Off, and asks for it when sound comes back on", async () => {
+    registry.mode = "off";
+    await mountArmed();
+    act(() => { usePlacementStore.setState({ placedItems: [createPlacedItem(catalogueId("round-table-6ft-white"), 1, 1)] }); });
+    pass(300);
+    await settle();
+    expect(renderer.tails()).toEqual([]);
+    registry.mode = "quiet";
+    soundSettingChanged();
+    await settle();
+    expect(renderer.tails()).toHaveLength(1);
+  });
+
+  it("makes no tail in a hidden tab, and asks for it when the page is shown", async () => {
+    hiddenState.hidden = true;
+    await mountArmed();
+    expect(renderer.tails()).toEqual([]);
+    hiddenState.hidden = false;
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    await settle();
+    expect(renderer.tails()).toHaveLength(1);
+  });
+
+  it("cancels a tail still waiting when sound goes Off, and asks again when it is back on", async () => {
+    await mountArmed();
+    const [first] = renderer.tails();
+    expect(first?.state).toBe("pending");
+    registry.mode = "off";
+    soundSettingChanged();
+    expect(first?.state).toBe("cancelled");
+    registry.mode = "quiet";
+    soundSettingChanged();
+    await settle();
+    expect(renderer.tails()).toHaveLength(2);
+    expect(renderer.tails()[1]?.state).toBe("pending");
+  });
+});

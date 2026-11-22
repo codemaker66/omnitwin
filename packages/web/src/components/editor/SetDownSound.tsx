@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { Camera } from "three";
 import { subscribeFurnitureLandings, type FurnitureLandingListener } from "../../lib/furniture-motion.js";
+import { reportAsync } from "../../lib/report-async.js";
 import { getPlannerSoundSettings, logSetDownDrop, subscribePlannerSound, subscribePlannerSoundArmed } from "../../lib/sound-registry.js";
 import type { SetDownDriver } from "./set-down-driver.js";
 
@@ -36,13 +37,6 @@ function whenIdle(work: () => void): () => void {
   }
   const timer = window.setTimeout(work, IDLE_FALLBACK_MS);
   return () => { window.clearTimeout(timer); };
-}
-
-/** Reported, never swallowed (as the landings' listeners, R86). */
-function reportAsync(error: unknown): void {
-  const host: { reportError?: (error: unknown) => void } = globalThis;
-  if (typeof host.reportError === "function") host.reportError(error);
-  else queueMicrotask(() => { throw error; });
 }
 
 export function SetDownSound(): null {
@@ -125,7 +119,14 @@ export function SetDownSound(): null {
   }, []);
 
   useFrame((_state, delta) => {
-    driverRef.current?.frame(delta);
+    const driver = driverRef.current;
+    if (driver === null) return;
+    // What fails in the sound's frame is reported, and never stops the scene's frame loop (R86).
+    try {
+      driver.frame(delta);
+    } catch (error: unknown) {
+      reportAsync(error);
+    }
   });
 
   return null;
