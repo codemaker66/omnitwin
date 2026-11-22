@@ -299,7 +299,7 @@ export interface ProposalEventContext {
 
 
 
-export async function loadProposalEventContext(db: Database, proposal: ProposalRow): Promise<ProposalEventContext | null> {
+export async function loadProposalEventContext(db: Database | ProposalTransaction, proposal: ProposalRow): Promise<ProposalEventContext | null> {
   if (proposal.configurationId === null) return null;
 
   const [linkedEvent] = await db
@@ -373,18 +373,81 @@ async function moveDealFor(
 async function recordProposalLifecycleChange(
   db: Database,
   proposal: ProposalRow,
-  input: {
-    readonly actorUserId: string | null;
-    readonly actorRole: EventPlanAudienceRole;
-    readonly actorLabel: string;
-    readonly sourceKind: "proposal" | "proposal_comment" | "proposal_response";
-    readonly sourceId: string;
-    readonly title: string;
-    readonly summary: string;
-    readonly affectedSurfaces: readonly EventPlanChangeSurface[];
-    readonly includeHallkeeperWhenHandoffExists: boolean;
-    readonly logger: FastifyBaseLogger;
-  },
+  input: LifecycleChangeInput,
+): Promise<void> {
+  const act = input.clientAct;
+  // Every announcement is written in one transaction that first holds the
+  // proposal FOR KEY SHARE: the house order, the proposal before the event
+  // and layout that the change's foreign keys take. That waits only on a
+  // writer holding the proposal FOR UPDATE, as an erasure of the person does
+  // from early in its pass until it commits, so the two never wait on each
+  // other. Read again under that lock: a title the erasure has reworded since
+  // is announced as it now reads, and a client's act it has erased (their
+  // link revoked, or what they wrote deleted or without their name) is not
+  // copied at all. A client's answer on someone else's proposal that commits
+  // after an erasure's reads is outside that erasure: it counts as made after
+  // it.
+  try {
+    await db.transaction(async (tx) => {
+      const [held] = await tx.select({ id: proposals.id, title: proposals.title }).from(proposals)
+        .where(eq(proposals.id, proposal.id)).for("key share");
+      if (act !== undefined && (!(await linkStillOpen(tx, act.linkTokenId)) || !(await stillAsWritten(tx, act.written)))) return;
+      const title = held?.title ?? proposal.title;
+      const now = (text: string): string => (title === proposal.title || proposal.title === "" ? text : text.split(proposal.title).join(title));
+      await announceProposalChange(tx, { ...proposal, title }, { ...input, title: now(input.title), summary: now(input.summary) });
+    });
+  } catch (err) {
+    input.logger.error({
+      event: "proposal.lifecycle_announcement_failed",
+      proposalId: proposal.id,
+      venueId: proposal.venueId,
+      configurationId: proposal.configurationId,
+      sourceKind: input.sourceKind,
+      sourceId: input.sourceId,
+      lost: "all of it: the proposal could not be held and read again",
+      err,
+    }, "proposal change committed but its announcement could not be written");
+  }
+}
+
+interface LifecycleChangeInput {
+  readonly actorUserId: string | null;
+  readonly actorRole: EventPlanAudienceRole;
+  readonly actorLabel: string;
+  readonly sourceKind: "proposal" | "proposal_comment" | "proposal_response";
+  readonly sourceId: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly affectedSurfaces: readonly EventPlanChangeSurface[];
+  readonly includeHallkeeperWhenHandoffExists: boolean;
+  readonly logger: FastifyBaseLogger;
+  /** A client's act through their link, read again before it is copied. */
+  readonly clientAct?: ClientAct;
+}
+
+interface ClientAct {
+  readonly linkTokenId: string;
+  /** The comment the act wrote: their words, or an acceptance's note. */
+  readonly written: Pick<typeof proposalComments.$inferSelect, "id" | "authorName" | "authorEmail" | "body">;
+}
+
+/** The comment still reads as the client wrote it. An erasure deletes it on
+ *  their own proposal, and takes their name and address out of it on
+ *  someone else's. */
+async function stillAsWritten(tx: ProposalTransaction, written: ClientAct["written"]): Promise<boolean> {
+  const [row] = await tx.select({ authorName: proposalComments.authorName, authorEmail: proposalComments.authorEmail, body: proposalComments.body })
+    .from(proposalComments).where(eq(proposalComments.id, written.id)).limit(1);
+  return row !== undefined && row.authorName === written.authorName && row.authorEmail === written.authorEmail
+    && row.body === written.body;
+}
+
+/** The copies: the event's change and notices, or the team's notices. Each
+ *  write keeps a transaction (a savepoint inside a client's copy) of its
+ *  own, so one that fails loses only itself. */
+async function announceProposalChange(
+  db: Database | ProposalTransaction,
+  proposal: ProposalRow,
+  input: LifecycleChangeInput,
 ): Promise<void> {
   // What was being written when it failed, so the log says what was lost.
   let writing = "all of it: the proposal's event could not be read";
@@ -401,13 +464,13 @@ async function recordProposalLifecycleChange(
     if (context === null) {
       if (input.sourceKind === "proposal") return;
       writing = "the team's notices";
-      await notifyCommercialTeam(db, {
+      await db.transaction((notices) => notifyCommercialTeam(notices, {
         venueId: proposal.venueId,
         title: input.title,
         body: input.summary,
         severity: input.sourceKind === "proposal_response" ? "attention" : "info",
         actionPath: proposalDeskPath(proposal.id),
-      });
+      }));
       return;
     }
 
@@ -449,14 +512,14 @@ async function recordProposalLifecycleChange(
 
     if (input.sourceKind !== "proposal" && outsideEvents.length > 0) {
       writing = "only the copy for roles that do not read events; the event's change and notices were written";
-      await notifyVenueRoles(db, {
+      await db.transaction((notices) => notifyVenueRoles(notices, {
         venueId: proposal.venueId,
         title: input.title,
         body: input.summary,
         severity: input.sourceKind === "proposal_response" ? "attention" : "info",
         actionPath: proposalDeskPath(proposal.id),
         audienceRoles: outsideEvents,
-      });
+      }));
     }
   } catch (err) {
     // Loud, with the ids needed to find the row that went unannounced, and
@@ -1568,6 +1631,17 @@ async function holdProposal(tx: ProposalTransaction, id: string): Promise<Propos
   return row;
 }
 
+/** Whether the client's link still opens the proposal, read again under the
+ *  proposal's lock. An erasure revokes the person's links in the same
+ *  transaction as it takes their words (services/people-erasure.ts), so an
+ *  answer that waited on it is refused instead of written after it. */
+async function linkStillOpen(tx: ProposalTransaction | Database, tokenId: string): Promise<boolean> {
+  const [token] = await tx.select({ revokedAt: proposalShareTokens.revokedAt }).from(proposalShareTokens)
+    .where(eq(proposalShareTokens.id, tokenId))
+    .limit(1);
+  return token !== undefined && token.revokedAt === null;
+}
+
 const STATUS_CHANGED = {
   error: "The proposal changed while this was on its way. Reload it to see where it stands.",
   code: "PROPOSAL_STATUS_CHANGED",
@@ -2036,6 +2110,7 @@ export async function proposalShareRoutes(
       // read. A second request for changes at once is kept as it would have
       // been a moment later, without moving the proposal again.
       const held = await holdProposal(tx, resolved.proposal.id);
+      if (!(await linkStillOpen(tx, resolved.shareToken.id))) return "gone" as const;
       const current = held?.status ?? null;
       if (current !== read && !(kind === "request_changes" && read === "sent" && current === "changes_requested")) {
         return "changed" as const;
@@ -2081,6 +2156,7 @@ export async function proposalShareRoutes(
       const version = kind === "comment" && reading !== undefined && shows !== null && reading <= shows ? reading : shows;
       return { comment, moved: moves, version };
     });
+    if (result === "gone") return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     if (result === "changed") return reply.status(409).send(STATUS_CHANGED);
     if (result === "version") return reply.status(409).send(VERSION_CHANGED);
     const { comment } = result;
@@ -2096,6 +2172,7 @@ export async function proposalShareRoutes(
       words: comment.body,
     });
     await recordProposalLifecycleChange(db, resolved.proposal, {
+      clientAct: { linkTokenId: resolved.shareToken.id, written: comment },
       actorUserId: null,
       actorRole: "client",
       actorLabel: notice.actorLabel,
@@ -2152,6 +2229,7 @@ export async function proposalShareRoutes(
       // once; anything else that landed since the read (a withdrawal) stands.
       const held = await holdProposal(tx, resolved.proposal.id);
       if (held === undefined) return "changed" as const;
+      if (!(await linkStillOpen(tx, resolved.shareToken.id))) return "gone" as const;
       if (read !== undefined && read !== sentVersionOf(held)) return "version" as const;
       if (held.status === "accepted") return "already" as const;
       if (held.status !== resolved.proposal.status) return "changed" as const;
@@ -2166,7 +2244,7 @@ export async function proposalShareRoutes(
         changedBy: null,
         note: parsed.data.body ?? "Client approved via share link",
       });
-      await tx.insert(proposalComments).values({
+      const [note] = await tx.insert(proposalComments).values({
         proposalId: resolved.proposal.id,
         shareTokenId: resolved.shareToken.id,
         kind: "approval_note",
@@ -2175,10 +2253,12 @@ export async function proposalShareRoutes(
         body: parsed.data.body ?? "Client approved the proposal.",
         isClientVisible: true,
         authorType: "client",
-      });
-      return { accepted: sentVersionOf(held) };
+      }).returning();
+      if (note === undefined) throw new Error("proposal comment insert returned no row");
+      return { accepted: sentVersionOf(held), note };
     });
     if (outcome === "already") return { data: { status: "accepted", already: true } };
+    if (outcome === "gone") return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     if (outcome === "changed") return reply.status(409).send(STATUS_CHANGED);
     if (outcome === "version") return reply.status(409).send(VERSION_CHANGED);
     await moveDealFor(db, resolved.proposal, "accepted", null, request.log);
@@ -2192,6 +2272,7 @@ export async function proposalShareRoutes(
       words: parsed.data.body,
     });
     await recordProposalLifecycleChange(db, resolved.proposal, {
+      clientAct: { linkTokenId: resolved.shareToken.id, written: outcome.note },
       actorUserId: null,
       actorRole: "client",
       actorLabel: notice.actorLabel,

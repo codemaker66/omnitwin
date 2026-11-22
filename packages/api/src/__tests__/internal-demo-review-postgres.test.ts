@@ -211,8 +211,15 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect((await state(venue)).config?.name).toBe("Fixed by the venue");
   });
 
-  async function approvedFixture() {
+  /** An approved sheet; `booked` books its room from 08:00 with a Setup phase there from 07:00 first. */
+  async function approvedFixture(options: { booked?: boolean } = {}) {
     const f = await fixture();
+    if (options.booked === true) {
+      await db.insert(schema.bookings).values({ venueId: f.venueId, spaceId: f.roomId, eventId: f.eventId, kind: "ink", status: "active",
+        title: "DEMO ONLY — booked rehearsal", startsAt: new Date("2026-11-14T08:00:00.000Z"), endsAt: new Date("2026-11-14T10:00:00.000Z") });
+      await db.insert(schema.eventPhases).values({ eventId: f.eventId, spaceId: f.roomId, name: "Setup", sortOrder: 0, durationMinutes: 60,
+        startsAt: new Date("2026-11-14T07:00:00.000Z") });
+    }
     expect((await post(f, "submit", { notifyTeam: false })).statusCode).toBe(200);
     expect((await post(f, "start-review")).statusCode).toBe(200);
     expect((await post(f, "approve", { notifyTeam: false })).statusCode).toBe(200);
@@ -357,7 +364,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
   });
 
   it("counts the approved sheet's rows and marks for the Day Board, whatever the live layout now holds", async () => {
-    const f = await approvedFixture();
+    const f = await approvedFixture({ booked: true });
     const rows = f.frozen.phases.flatMap((phase) => phase.zones.flatMap((zone) => zone.rows));
     const [first] = rows;
     if (first === undefined) throw new Error("The approved fixture must have a row");
@@ -367,15 +374,34 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
       { configId: f.configId, eventId: f.eventId, rowKey: first.key, checkedBy: f.userId },
       { configId: f.configId, eventId: f.eventId, rowKey: "furniture|Centre|Removed trestle|0", checkedBy: f.userId },
     ]);
-    const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}`, headers: f.headers });
+    const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}&setupFrom=true`, headers: f.headers });
     expect(response.statusCode).toBe(200);
     expect(response.json<{ data: unknown }>().data).toEqual({
       configId: f.configId,
-      readyBy: f.frozen.timing?.setupBy ?? null,
-      eventStart: f.frozen.timing?.eventStart ?? null,
+      // The booking's start is when guests come in, and with no planner's final
+      // time the room is ready then: never at 07:00, when the Setup phase opens
+      // the window (timing.setupBy), which the summary carries as setupFrom
+      // when the Day Board asks for it.
+      readyBy: "2026-11-14T08:00:00.000Z",
+      eventStart: "2026-11-14T08:00:00.000Z",
+      setupFrom: "2026-11-14T07:00:00.000Z",
       total: rows.length,
       checked: 1,
     });
+    // Unasked, or asked in words the route does not read, it answers in the
+    // shape older web code knows, key for key: that code's summary schema is
+    // strict, and a Day Board left open would otherwise freeze its line.
+    for (const query of ["", "&setupFrom=false", "&setupFrom=yes"]) {
+      const older = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}${query}`, headers: f.headers });
+      expect(older.statusCode, query).toBe(200);
+      expect(older.json<{ data: unknown }>().data, query).toEqual({
+        configId: f.configId,
+        readyBy: "2026-11-14T08:00:00.000Z",
+        eventStart: "2026-11-14T08:00:00.000Z",
+        total: rows.length,
+        checked: 1,
+      });
+    }
   });
 
   it("preserves authentication and tenant denial ahead of unavailable approved evidence", async () => {

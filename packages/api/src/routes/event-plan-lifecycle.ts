@@ -21,6 +21,7 @@ import {
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canAccessInternalEvent } from "../utils/query.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import {
   serializeAcknowledgement,
   serializeEventPlanChange,
@@ -311,13 +312,29 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
       return { data: HallkeeperAcknowledgementSchema.parse(serializeAcknowledgement(existing)) };
     }
 
-    const [acknowledgement] = await db.insert(eventPlanChangeAcknowledgements).values({
-      changeId: change.id,
-      eventId: eventRow.id,
-      acknowledgedBy: request.user.id,
-      acknowledgedByRole: role,
-      note: body.data.note ?? null,
-    }).returning();
+    // The event first (FOR KEY SHARE), as an erasure takes it (people-erasure.ts),
+    // so this waits behind an erasure of the event's person rather than meeting
+    // it. Then the change again, held FOR KEY SHARE until this commits: an
+    // erasure that deleted it has committed by now, and the answer is 404.
+    const inserted = await db.transaction(async (tx) => {
+      await tx.select({ id: events.id }).from(events).where(eq(events.id, eventRow.id)).for("key share");
+      const [still] = await tx.select({ id: eventPlanChanges.id }).from(eventPlanChanges)
+        .where(eq(eventPlanChanges.id, change.id)).for("key share");
+      if (still === undefined) return "gone" as const;
+      return tx.insert(eventPlanChangeAcknowledgements).values({
+        changeId: change.id,
+        eventId: eventRow.id,
+        acknowledgedBy: request.user.id,
+        acknowledgedByRole: role,
+        note: body.data.note ?? null,
+      }).returning();
+    }).catch((err: unknown) => {
+      if (lockConflictOf(err) !== null) return null;
+      throw err;
+    });
+    if (inserted === null) return reply.status(409).send(RETRY_ANSWER);
+    if (inserted === "gone") return reply.status(404).send({ error: "Change not found", code: "NOT_FOUND" });
+    const [acknowledgement] = inserted;
 
     if (acknowledgement === undefined) {
       return reply.status(500).send({ error: "Failed to acknowledge change", code: "ACKNOWLEDGEMENT_CREATE_FAILED" });

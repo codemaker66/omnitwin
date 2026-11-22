@@ -314,6 +314,12 @@ class CheckRoom(unittest.TestCase):
         for value in ("2026-18-11", "2026-02-30", "2026-13-45", "2026-07-11\n", "２０２６-07-11", "0000-01-01"):
             said = self.errors(lambda r: r["source"].__setitem__("captured", value))
             self.assertIn("schema $.source.captured", said, repr(value))
+            # A well-formed date that is on no calendar gets the calendar's message, which says what is asked
+            # and does not speak for the reader: the reader takes the year 0000, refused here and by publish
+            # alone (the safe side). The others fail the pattern first and are told so.
+            if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+                self.assertIn("from the year 0001", said, repr(value))
+            self.assertNotIn("refuses any other", said, repr(value))
         self.assertEqual(self.errors(lambda r: r["source"].__setitem__("captured", "2024-02-29")), "")
 
     def test_a_revision_the_reader_refuses_fails_before_a_build(self):
@@ -351,7 +357,10 @@ class CheckRoom(unittest.TestCase):
         said = problems(SALOON, ppm(100, 6.089), "saloon-ppm100.room.json")
         self.assertIn("survey.floorPhoto.ppm 100", said)
         self.assertIn("floor.extent.x", said)
-        self.assertIn("more than 100", said)
+        # The advice names a resolution that is always enough: just above 100 the extent's rounding to a
+        # micrometre can still lose the half texel (the review found outlines refused at 100.0001 and 100.001).
+        self.assertIn("101 or more", said)
+        self.assertNotIn("give floorPhoto.ppm more than 100", said)
         self.assertEqual(problems(SALOON, ppm(101, 6.089), "saloon-ppm101.room.json"), "")
         self.assertIn("survey.floorPhoto.ppm 60", problems(SALOON, ppm(60), "saloon-ppm60.room.json"))    # 7.67 mm short
         # A floor that happens to fit is no fault at any resolution (the Saloon's own outline at 100: 1 mm and 3 mm).
@@ -667,6 +676,10 @@ class SurveyRecord(unittest.TestCase):
         self.assertIn("kind", faults(lambda r: r["walls"][0].__setitem__("kind", "glass")))
         self.assertIn("orientation", faults(lambda r: r["floor"].__setitem__("orientation", "rows from planner -z")))
         self.assertIn("does not increase", faults(lambda r: r["floor"]["extent"]["x"].reverse()))
+        # A vertex past any room is a fault like any other and never a traceback: Python's `**` raises on a
+        # float that overflows, where the reader's Math.hypot gives a number and refuses the record.
+        for far in (1e160, 1e200):
+            self.assertIn("outline segment", faults(lambda r, far=far: r["room"]["outline"][0].__setitem__(0, far)), far)
 
     def test_record_faults_refuse_what_the_readers_shapes_refuse(self):
         """The reader's Zod shapes, value by value: a whole-string match (JavaScript's `$` is the
@@ -973,10 +986,16 @@ TOLERANCES = ("WALL_LENGTH_TOLERANCE", "ATLAS_ROW_TOLERANCE", "OVERHEAD_EXTENT_T
 
 
 def reader_tolerances(text):
-    """{name: value} of each of TOLERANCES that the reader's source exports as a plain number."""
+    """{name: value} of each of TOLERANCES that the reader's source exports as a plain number, on the one line of
+    the file that assigns the name. A name assigned on two lines is not taken, whatever the lines say and comments
+    included: this reads text, not TypeScript, and cannot tell an old value parked in a comment from the export
+    below it. Nor is a name whose one assigning line is not the plain export from its first column (a type
+    annotation, a doc comment before it on the line, a second name declared with it, an indent)."""
     found = {}
     for name in TOLERANCES:
-        m = re.search(rf"^export const {name} = ([0-9]+(?:\.[0-9]+)?(?:e-?[0-9]+)?);", text, re.M)
+        assigns = re.compile(rf"(?<![\w$]){name}(?![\w$])[ \t]*(?::[^=]*)?=(?![=>])")      # NAME = or NAME: type =, never == or =>
+        assigned = [line for line in text.splitlines() if assigns.search(line)]
+        m = re.match(rf"export const {name} = ([0-9]+(?:\.[0-9]+)?(?:e-?[0-9]+)?);", assigned[0]) if len(assigned) == 1 else None
         if m:
             found[name] = float(m.group(1))
     return found
@@ -987,9 +1006,14 @@ class ReaderTolerances(unittest.TestCase):
     languages together: the reader must export each one as a plain number, and each must be publish's,
     or records that one side takes the other refuses. Nothing here skips: a reader that is not
     there, or that no longer exports one of them (a rename, a dropped rule, a value written as a
-    sum), fails, because the reader lives in this tree. CI's Survey tools job runs when the reader
-    changes as well as when the tools do, so a drift that starts on either side is seen.
-    SURVEYED_ROOMS_READER names another copy of the reader to compare with."""
+    sum), or that assigns one on two lines, fails, because the reader lives in this tree. CI's Survey
+    tools job runs when the reader changes as well as when the tools do, so a drift that starts on
+    either side is seen. SURVEYED_ROOMS_READER names another copy of the reader to compare with.
+
+    Only these four are tied. publish.py's other copies of the reader's rules (the schema version;
+    the patterns for a file's name, a slug and a hash; the twelve bytes of a relief's id, which is
+    relief-container.ts's) are compared by no test here: a change to one of them in the reader alone
+    shows only when a record the tools wrote is read by the web's own parser."""
 
     def test_publish_holds_the_readers_tolerances(self):
         from roombuild import publish
@@ -998,10 +1022,40 @@ class ReaderTolerances(unittest.TestCase):
             text = f.read()
         found = reader_tolerances(text)
         absent = [name for name in TOLERANCES if name not in found]
-        self.assertEqual(absent, [], "the reader must export each of these as `export const NAME = number;` "
+        self.assertEqual(absent, [], "the reader must export each of these as `export const NAME = number;` from the first column "
+                                     "of one line, and assign the name on no other line, not even in a comment "
                                      "(publish.py holds a copy of each: change the two together)")
         for name, value in found.items():
             self.assertEqual(getattr(publish, name), value, name)
+
+    def test_a_name_assigned_on_two_lines_is_not_taken(self):
+        real = "export const HEIGHT_TOLERANCE = 0.005;"
+        plain = "".join(f"export const {name} = 0.005;\n" for name in TOLERANCES)
+        every = dict.fromkeys(TOLERANCES, 0.005)
+        others = {name: 0.005 for name in TOLERANCES if name != "HEIGHT_TOLERANCE"}
+        self.assertEqual(reader_tolerances(plain), every)
+        self.assertEqual(reader_tolerances(plain.replace("\n", "\r\n")), every)       # as Windows may check the file out
+        self.assertEqual(reader_tolerances(plain.replace(real, real + " // metres")), every)
+        # Found in review: the old value parked in a block comment above the real export, which now says 50 mm.
+        # TypeScript compiles the second line; the first matching line used to be taken, and the drift went unseen.
+        parked = f"/*\n{real}\n*/\n"
+        self.assertEqual(reader_tolerances(parked + plain.replace(real, "export const HEIGHT_TOLERANCE = 0.05;")), others)
+        # The same where the real export is written in a way the plain pattern does not see, so that the parked copy
+        # was the one match and the wrong one; and each of those alone is not taken either, not being the plain form.
+        for drifted in ("export const HEIGHT_TOLERANCE = 5 / 100;", "/** metres */ export const HEIGHT_TOLERANCE = 0.05;",
+                        "export const A = 1, HEIGHT_TOLERANCE = 0.05;", "  export const HEIGHT_TOLERANCE = 0.05;",
+                        "export const HEIGHT_TOLERANCE: number = 0.05;"):
+            self.assertEqual(reader_tolerances(parked + plain.replace(real, drifted)), others, drifted)
+            self.assertEqual(reader_tolerances(plain.replace(real, drifted)), others, drifted)
+        self.assertEqual(reader_tolerances(plain + "  const HEIGHT_TOLERANCE = 0.05;\n"), others)   # or shadowed in a block
+        # A comment that quotes the assignment is a second line too: text cannot tell which one TypeScript compiles.
+        self.assertEqual(reader_tolerances("// export const HEIGHT_TOLERANCE = 0.05;\n" + plain), others)
+        self.assertEqual(reader_tolerances("/**\n * HEIGHT_TOLERANCE = 0.05 until the floor is laid again\n */\n" + plain), others)
+        # A line that only uses the name assigns nothing, and a longer name that holds it is another name.
+        used = ("if (gap > HEIGHT_TOLERANCE) fail();\nconst ok = gap <= HEIGHT_TOLERANCE;\nconst same = HEIGHT_TOLERANCE === 0.005;\n"
+                "const check = (HEIGHT_TOLERANCE) => 1;\nexport const HEIGHT_TOLERANCE_MM = 5;\nexport const $HEIGHT_TOLERANCE = 5;\n"
+                "// within HEIGHT_TOLERANCE of the tallest wall\n")
+        self.assertEqual(reader_tolerances(used + plain), every)
 
 
 class OneBlasThread(unittest.TestCase):
