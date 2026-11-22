@@ -5,7 +5,6 @@ import {
   deviceAsksEventKind,
   dismissEventKindReceipt,
   eventKindFloorTaken,
-  eventKindFromSearch,
   shouldAskEventKind,
   useEventKindQuestion,
   type EventKindAnswer,
@@ -72,6 +71,19 @@ export function tellTheEvent(answer: EventKindAnswer): void {
 }
 
 /**
+ * Whether the address already names the event (`?event=wedding`), as a link
+ * from the venue's wedding page would. The record reads the address the same
+ * way as a layout opens (lib/event-kind-record, eventKindFromSearch). This is
+ * a copy, held to that reading by a test: the record's own function is used
+ * nowhere outside its file, so reading it from this screen would add its name
+ * to a file every planner downloads.
+ */
+export function addressNamesTheEvent(search: string): boolean {
+  const named = new URLSearchParams(search).get("event");
+  return named === "wedding" || named === "corporate" || named === "other";
+}
+
+/**
  * Whether the open layout is one the question is asked of, by the default
  * planner's own rule (shouldAskEventKind): new as it opened, still empty,
  * never answered, free to change, not opened from an event, on a device that
@@ -101,7 +113,7 @@ export function useTheLayoutsQuestion(floorEmpty: boolean): boolean {
 
   const eventLinked = (new URLSearchParams(address).get("eventId")?.trim() ?? "") !== "";
   if (!deviceAsks || eventLinked) return false;
-  if (!ours || !question.known) return eventKindFromSearch(address) === undefined;
+  if (!ours || !question.known) return !addressNamesTheEvent(address);
   return shouldAskEventKind({
     editable: unlocked && !previewing,
     askable: question.askable,

@@ -10,6 +10,7 @@ import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../../lib/door-clear-spaces.js"
 import {
   deviceAsksEventKind,
   deviceEventKind,
+  eventKindFromSearch,
   openLayoutEventKind,
   rememberDeviceEventKind,
   resetEventKindQuestionForTesting,
@@ -32,7 +33,7 @@ import { usePlacementStore } from "../../../stores/placement-store.js";
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { HUD_SENT_STORAGE_KEY, usePlannerHudStore } from "../../../stores/planner-hud-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
-import { resetEventAnswerForTesting } from "../event-answer.js";
+import { addressNamesTheEvent, resetEventAnswerForTesting } from "../event-answer.js";
 import { HudFrame } from "../HudFrame.js";
 import { HudSheets } from "../HudSheets.js";
 
@@ -1288,6 +1289,28 @@ describe("the first screen", () => {
       ask();
       renderHud();
       expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    });
+
+    // The record's own reading of the address is used nowhere outside its file, so this screen keeps a copy of it
+    // (reading the original from here would add its name to a file every planner downloads). Held to it here.
+    it("reads an event named in the address exactly as the record does", () => {
+      const addresses = ["", "?event=wedding", "?event=corporate", "?event=other", "?event=party", "?event=", "?event=Wedding", "?x=1&event=wedding", "?event=wedding&event=party", "?eventId=abc"];
+      for (const address of addresses) {
+        expect(addressNamesTheEvent(address), address).toBe(eventKindFromSearch(address) !== undefined);
+      }
+      expect(addresses.filter(addressNamesTheEvent)).toEqual(["?event=wedding", "?event=corporate", "?event=other", "?x=1&event=wedding", "?event=wedding&event=party"]);
+    });
+
+    it("does not ask before the layout has been read where the address already names the event", () => {
+      const before = window.location.href;
+      window.history.replaceState(null, "", "/plan?event=wedding");
+      try {
+        ask();
+        renderHud();
+        expect(screen.queryByTestId("hud-first-open")).toBeNull();
+      } finally {
+        window.history.replaceState(null, "", before);
+      }
     });
 
     it("asks a new, empty layout nothing has answered", () => {
