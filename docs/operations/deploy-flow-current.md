@@ -20,14 +20,14 @@ system. T-093 owns the gated v1 deploy orchestration.
 | Area | Evidence |
 |---|---|
 | Web build config | `packages/web/vercel.json` builds `@omnitwin/types` then `@omnitwin/web`, outputs `dist`, rewrites SPA routes to `index.html`, and redirects `omnitwin-web.vercel.app` to `venviewer.com`. |
-| API deploy config | `railway.json` builds the root `Dockerfile`, starts `node dist/index.js`, runs one replica, and probes `/health/ready`. |
+| API deploy config | `.railway/railway.ts`, applied to Railway's stored settings, builds the root `Dockerfile`, starts `node --conditions=omnitwin-dist dist/index.js`, runs one replica, and probes `/health/ready`. |
 | API container | `Dockerfile` builds `@omnitwin/types` then `@omnitwin/api`, deploys a production-only API bundle, runs as a non-root user, and defines a `/health/live` Docker healthcheck. |
 | CI | `.github/workflows/ci.yml` runs audit, lint, typecheck, build, native image, tests, four E2E shards, the required GPU job and the browser release gate on pushes to `master` and `release/**` and on PRs targeting either. The GPU job needs a manual operator run per CI request (`.github/gpu/README.md`). |
 | Migration workflow | `.github/workflows/deploy.yml` runs only after the `CI` workflow succeeds on `master`, checks out the CI head SHA, and runs `pnpm --filter @omnitwin/api db:migrate` with the production `DATABASE_URL` secret. |
 | Manual ops workflows | `.github/workflows/apply-migration-0018.yml`, `.github/workflows/backfill-layout-urls.yml`, and `.github/workflows/cleanup.yml` are manual or scheduled database operations, not general deploy orchestration. |
 | Health probes | The API exposes `/health`, `/health/live`, `/health/db`, `/health/ready`, and `/health/version`. |
 
-The API's Railway settings are also kept in `.railway/railway.ts`, Railway's new format, because Railway stops reading `railway.json` on 1 December 2026: [the Railway config move](railway-config-move.md).
+The API's Railway settings live in `.railway/railway.ts`, Railway's new format, and reach Railway's stored settings through a reviewed apply. Until T-722 they were in `railway.json`, which was deleted because Railway stops reading such files on 1 December 2026: [the Railway config move](railway-config-move.md).
 
 ## Current Flow
 
@@ -36,7 +36,8 @@ The API's Railway settings are also kept in `.railway/railway.ts`, Railway's new
 3. The web deployment is expected to be handled by the Vercel project connected
    to this repository, using `packages/web/vercel.json`.
 4. The API deployment is handled by Railway's GitHub integration, using
-   `railway.json` and the root `Dockerfile`. Railway builds on the push, runs
+   Railway's stored settings (declared in `.railway/railway.ts`) and the root
+   `Dockerfile`. Railway builds on the push, runs
    the pre-deploy command that migrates inside the image
    ([Deploy ordering](../engineering/deploy-ordering.md), PR #63), and keeps the
    previous container live until the new one answers `/health/ready` with a
@@ -84,8 +85,9 @@ that did not exist yet for about eleven minutes. Two layers now keep a
 container from serving ahead of its schema:
 
 1. **The pre-deploy migrate** ([Deploy ordering](../engineering/deploy-ordering.md),
-   PR #63): `railway.json`'s `preDeployCommand` runs the tail gate and applies
-   pending migrations inside the built image, with the service's own
+   PR #63): Railway's pre-deploy command, declared in `.railway/railway.ts`,
+   runs the tail gate and applies pending migrations inside the built image,
+   with the service's own
    `DATABASE_URL`, before Railway promotes the container. This is what does
    the work on an ordinary release.
 2. **The readiness probe** (T-653): `GET /health/ready` still runs the
@@ -101,11 +103,12 @@ container from serving ahead of its schema:
 On an ordinary release the pre-deploy has already migrated when the first
 probe arrives, so the probe passes at once and nothing waits. The probe
 matters when the first layer did not run: a removed or skipped pre-deploy
-command, a dashboard setting that drifted from `railway.json`, or a ledger
+command, a stored setting that drifted from `.railway/railway.ts`, or a ledger
 the pre-deploy failed to write. Then Railway retries the probe until a 2xx
 and only then makes the new deployment active (its documented behaviour),
 so the previous container keeps serving while the Deploy workflow's own
-migration lands; `railway.json` raises `healthcheckTimeout` from 60 s to
+migration lands; `healthcheckTimeout`, first in `railway.json` and now in
+`.railway/railway.ts`, was raised from 60 s to
 2700 s to cover CI plus Deploy. If the probe never passes within 45 minutes
 the deployment is marked failed and the old one stays, so a cancelled or
 red master CI never puts a migration-bearing build live. A release without

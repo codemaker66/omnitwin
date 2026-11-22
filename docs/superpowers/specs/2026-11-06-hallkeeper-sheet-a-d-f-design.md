@@ -1,12 +1,12 @@
 # Hallkeeper sheet: A, then D, with F as the day's cover (T-696)
 
-Blake chose on 6 November 2026, asked as a button after six studies made in Sunburst Studio
-([gallery](https://claude.ai/artifact/WboGUWt6ZzqjDoDhZi5y4s)): "A + D, F as cover". Page 1 becomes A (the brief
-with the room), page 2 becomes D (the five steps to tick), and F prints as a once-a-day cover.
+Blake chose on 6 November 2026, asked as a button after six studies made in Sunburst Studio: "A + D, F as cover".
+Page 1 becomes A (the brief with the room), page 2 becomes D (the five steps to tick), and F prints as a once-a-day
+cover.
 
 Evidence: two blind reviewers per page (one look, the ten questions a hallkeeper asks; calm / glance / finish).
-Today's sheet 8 / 7.5 / 8; A 8 / 9 / 8; D 8 / 9 / 8.5; F 8 / 8 / 8. Studies, prompts and reviews:
-`D:/claude/hallkeeper-sheet-alternatives-20261106/`.
+Today's sheet 8 / 7.5 / 8; A 8 / 9 / 8; D 8 / 9 / 8.5; F 8 / 8 / 8. The studies, prompts, reviews and gallery are
+kept outside the repo.
 
 The task was first noted here as T-687. That number went to the redesigned planner (#358), so this work is T-696.
 
@@ -106,10 +106,12 @@ that fails without it:
   turned against a side wall stands tall on the page, and offers a name only its short side); else along the row of
   pieces it stands in, end to end
   (the top table's three trestles), starting from its own piece's middle and never set off that piece, so a name at
-  a row's end names the end piece; else just beside its piece, its letters (capital tops to descenders) 1.5 pt from
-  that piece and at least twice as far from every other piece, number and name, so it never reads as a neighbour's;
+  a row's end names the end piece; else just beside its piece, its ink (its glyphs' own outlines, so a name with no
+  descenders sits as near its piece above it as below) 1.5 pt from that piece and at least twice as far from every
+  other piece, number and name, so it never reads as a neighbour's;
   else the caption names it ("No room to name on this plan: …", Blake's wording of 14 November, by his question
-  form; "Too small to name here" read as if the piece were too small). The 60% plan had dropped "Top table". The
+  form; "Too small to name here" read as if the piece were too small, and both glance testers of the chairs line
+  found it ambiguous). The 60% plan had dropped "Top table". The
   setup page's small plan sets names the same way and names under itself any it has no room for, so the crew handed
   that page alone can match names to pieces. At its scale (about 6 to 10 pt a metre) a name rarely has that much
   floor beside its piece: there the names are mostly table numbers on their tables, or in its caption. A short name
@@ -119,12 +121,186 @@ that fails without it:
   written as the setup's own lines write runs ("Tables 1–3, 5, 7–8") or as people do ("tables 4 and 5", "table
   4 & 5", "4 or 5"), for "Table 4" labels too. A further name joins a run only where the run goes on or its clause
   ends after it; a word after it makes it a count ("Table 7, 1 coeliac", "table 4 and 2 more guests"), and a time
-  is never a table ("Table 4, 10:30 cake"). After "tables" and an "and", "or" or "&" the run is meant ("Tables 4
+  is never a table ("Table 4, 10:30 cake"). A time is a clock's two-digit minutes after a colon or point, so
+  shorthand with no space after a table's colon still names it ("Table 5:2 coeliacs" rings 5); #443's review
+  reads any digit after a point as a decimal (below). After "tables" and
+  an "and", "or" or "&" the run is meant ("Tables 4
   and 5 are nut-free"), but a comma never carries a run into a number a word follows ("Tables 4 and 5, 2
   coeliacs" rings 4 and 5). "And a guest" names no table A.
 - **Balanced panel lines** never break a word that plain wrapping kept whole ("dairy-fr / ee meals").
 - With nothing set out in steps, the plan's numbered notes print under "Nothing is placed in this layout yet.".
 - The ready-by caption reads "60 min before guests come in", matching Guests in beside it.
+
+### As built: the chairs line (14 November)
+
+Study D sets the chairs at the tables as a tick line of their own after the tables ("120 Chiavari chairs · 110 at the
+rounds · 10 at the top table"), and both page 2 re-testers of 12 November asked for a chair total. It is built on
+branch `claude/hallkeeper-chairs-line`, for its own PR after #415:
+
+- On the setup's own page the tables that seat chairs lead their step, as a crew sets a room, and a line of the
+  chairs set at them follows: "120 Chiavari Wedding Chair · 110 at Tables 1–11 (10 each) · 10 at Top table". The
+  tables' own lines drop "10 chairs each".
+- Its name is the plan's chair model when the chairs the plan seats are all one model and as many as the tables'
+  lines count, which is how the store counts them; otherwise "Chairs for the tables", the store's words for chairs
+  known only by count. Its count is the tables' lines' own total.
+- Its place names the tables by the planner's names only when they name every table its line counts, else by the
+  line's own name with the count ("110 at 11 × 6ft Round Table (10 each)"); "(N each)" only where the place holds
+  more than one table and every one seats the same. See "As built: the review of #443".
+- The seated chairs' notes print under that line, where the crew sets those chairs, so "Notes on the plan" keeps
+  only the notes no line carries.
+- Only a table's line seats chairs, as the store already rules: an old copy's "Table Centrepiece with 10 chairs"
+  adds none.
+- A setup short enough to sit under the brief on page 1 keeps "10 chairs each" on each table's line and no chairs
+  line, so a short sheet stays one page. Page 1 keeps the tables-first order too: the tables that seat chairs lead
+  their step there as on the setup's own page (zone order before this branch). With no chairs line to claim them,
+  the seated chairs' notes go to the next line that carries them (an older copy's chair sash), else among the
+  plan's notes after the steps. The line's 20 pt had put two short sheets' Martyn's Law prompts overleaf.
+- Glance test of page 2 (two fresh Opus testers, the brief verbatim): 8 / 8 / 8. Both found the chair total and
+  its split. Their next asks were every access need in Keep in view with its place, the store's pull on the setup
+  page, and the duty manager's phone, which the data does not hold.
+
+### As built: the review of #443 (18 November)
+
+The release lead's review of `68da0373` (two lenses, three skeptics per finding) held one major and seven minors
+or nits on the chairs line and on H8 and H9; HG1, HG4 and HH2 were refuted. Its rulings, as built, each test seen
+to fail first:
+
+- **A place names only tables its line counts** (HG2). The planner saves only the names typed in, so eleven
+  rounds with Table 5 alone named read "110 at Table 5, 10 each". A place now uses the planner's names only when
+  they name every table the line counts, counted by piece, not by name; otherwise it is the line's own name with
+  its count, "110 at 11 × 6ft Round Table (10 each)", or the bare name for one table. The count is tied to "×" by
+  a no-break space, so a line never ends "at 11" (read as Table 11).
+  - A name covers the unnamed pieces of its kind set end to end with the named one along both pieces' own long
+    sides, whichever way they are turned (a square piece either way): measured in each piece's own frame, the
+    other's long sides within 0.05 m of its own and their ends within 0.15 m, both inclusive. This is the seat
+    note's own rule, in metres: the plan's, which sets a top table's name along its trestles, joins on the page,
+    across it only, by category, and only when a name does not fit its piece. The wedding names only its middle
+    trestle "Top table", so this is what keeps "10 at Top table"; the same three trestles set apart read "10 at 3 ×
+    Trestle Table (White Cloth)", and a top table set on the slant keeps its name. Rows set back to back, and a
+    chevron's tables turned alike side by side, stand side to side, so a solid boardroom with its head trestle
+    named "Chair" keeps the count form.
+    Round tables never form such a line. A name typed on two pieces apart ("Table 5" twice) covers neither, so the
+    place takes the count form. Without a plan that lists every piece, the names count only when each piece has
+    its own. (Ruling (1) and HI5 of the second review, below.)
+  - The board meeting's line changes with this: one trestle of six is named "Chair", so "10 at Chair" (the
+    finding's own defect) is now "10 at 6 × 6ft Trestle Table".
+- **The count at each table** (HG3) is in brackets after its last table, where no list's comma can claim it:
+  "24 at Tables 12, 14–15 (8 each)", not "…, 14–15, 8 each" (read as Table 8). It is tied to that table by
+  no-break spaces (U+00A0), and the sheet's wrap now breaks only at a plain space (U+0020; a pasted tab still
+  breaks, read as a space first), so "(8 each)" stays on its last table's line. Only where that table's name and
+  "(8 each)" together are wider than the column does the line break at the no-break space before the bracket,
+  which stays whole; a word is cut between its characters only where it alone is wider than the column (the
+  second review's HI4). Inter's U+00A0 is its own space
+  glyph, as wide as a space, and reads back as U+00A0. "(N each)" prints only where the place holds more than one
+  table, each its own piece: one table's chairs are all at it ("10 at Top table"), and four at each trestle of a
+  top table is not four at the table.
+- **A decimal is never a table** (HH1). After "table", a number followed by a point and any digit is a measurement
+  or a clock time ("a table 1.2 m from the fire exit", "12.30"); after a colon only a clock's two-digit minutes are
+  a time, so "Table 5:2 coeliacs" still rings 5. The "Table N" labels' whole-phrase match takes the same decimal
+  guard, and since the second review (HJ2) the same clock guard, so both label styles ring nothing for "Seat her at
+  a table 1.2 m from the fire exit", "Move table 2.5 m back" or "Cake on the buffet table 2:30pm". "Table 5.2
+  coeliacs" no longer rings either; "Coeliacs at the end of Table 5." and "Table 5. Two coeliacs" still ring 5.
+- **A name above or below its piece is set on its glyphs** (HH3). Its line goes where the nearest glyph's ink sits
+  1.5 pt from the piece: straight down or up for a glyph over the piece, by the gap's reach for one just beside it,
+  so a letter off a narrow piece never comes nearer than 1.5 pt either. "Easel: seating plan" over the board's
+  projector had its letters over the piece 2.93 pt from it, with a neighbour allowed at 3.0; now 1.5. The rule
+  bounds the nearest glyph only: where a deeper letter stands just beside a narrow piece, the letters over it may
+  sit up to about 3.4 pt away. Clearance stays on the whole name's ink box, grown by 3 pt. The white under the
+  name stops short of its piece, since descenders or capitals off the piece may now reach past that edge beside
+  it: half the piece's outline short of the edge (0.275 pt for a 0.55 pt outline), so the outline, stroked astride
+  the edge, prints whole (the second review's HJ1). Right and left are unchanged.
+- **The chairs line claims its chairs' notes only where it prints** (HG7): `sheetSetupSteps(sheet, { chairsLine:
+  false })` gives the setup under the brief, where an older copy's chair sash carries a seated chair's note again
+  and a one-page sheet cannot grow by a "Notes on the plan" heading.
+- **The paper-reading helper** (HG5) takes the form from the page layout ("Setup, in order" on page 1 or not),
+  demands exactly that form, and reads the chairs line's count and places from the PDF's own runs: they must add up,
+  match what the phone's table rows seat kind by kind, and a place's "(N each)" times its tables must be its entry.
+
+### As built: the second review of #443 (20 November)
+
+The release lead held `0663a223` for two regressions from the first round (HI1, HJ1) and a ruling on the seat
+note's rule; the rest were nits. Each change was seen to fail first (the HJ3 and HJ4 tests, which pin what
+already held, through deliberate breaks); the bullets above carry ruling (1), HI4, HI5, HJ1, HJ2 and HJ5 where they
+belong. One more:
+
+- **A planner's spaces print as spaces** (HI1). Planner text is read where the sheet's data comes in
+  (`generateSheetPdfV2`): any run of spaces, a pasted no-break, figure or narrow no-break space among them, prints
+  and wraps as one plain space. No House face sets U+2007 or U+202F (a calendar's "10:30 AM" carries U+202F), so
+  the first round's wrap, which kept them, printed a missing-glyph box and dropped the note out of Newsreader
+  Italic. So the only ties on the paper are the sheet's own no-break spaces, the seat note's; the wrap ties at
+  U+00A0 alone.
+
+### As built: Setup from, then Ready by (18 November 2026, before F)
+
+Blake chose, by the question form: "Setup from + Ready by (Recommended)". The sheet printed `timing.setupBy` as its
+finish line ("Ready by", "Room ready"), but both of that field's sources start a window: the room's earliest phase
+before the booking (the Day Board's setup start) or the booking start less the room's changeover time. The crowded
+day's Grand Hall breakfast (Setup phase 07:00, doors 08:00) printed "Room ready 07:00".
+
+- **One rule, `sheetTimes()` in `@omnitwin/types`,** read by the PDF, the phone card, the print line and the Day
+  Board's line (through the API's summary). Setup from is `timing.setupBy`; guests in is `timing.eventStart`, the
+  booking's start; Ready by is the planner's typed final-touches time when given, else guests in. The frozen
+  snapshot keeps its shape: `setupBy` keeps its historical name, documented at its definition as the window's start,
+  so approved sheets print the new times from fields they already hold.
+- **Guests in is the booking's start**, as the Day Board (doors) and the Diary ("Doors in") read it, which is what
+  Blake's option named. The planner's When ribbon reads a booking the other way (the hire window, opening with a
+  Setup phase inside it); that disagreement is older than this fix, is shared by the Day Board and the Diary, and is
+  left for its own ruling. For a booking whose inner handles were dragged on the ribbon, every surface still reads
+  the setup start as guests in.
+- **The header has five facts:** Setup from (with "60 min to set the room"), Ready by ("when guests come in", or "15
+  min before guests come in"), Guests in (day and zone), Guests, Room. Widths start at 108, 126, 96 and 74 pt, the
+  room the rest (a time's numeral is 79 pt), with 8 pt either side of each rule. No one set of widths holds on one
+  line every caption a sheet can print: measured in the sheet's fonts over every day of 2026-27 and every setup and
+  ready-by offset up to a day, "Wed 30 Sept · UK time" is 80.1 pt, "Dinner banquet" 54.6, "4 h 44 min before guests
+  come in" 119.3, "20 h 44 min before guests come in" 123.8 and "No changeover time for this room" 118.7. A sheet
+  prints one caption a fact, so its widths follow its own captions: a caption wider than its cell borrows what the
+  other facts leave beyond their own widest line (overline, numeral, the room's name at its first size, caption), the
+  smallest shortfall first; one that still cannot get a whole line parts after its middle dot when both parts fit, and
+  otherwise wraps, evened out so no word sits alone, and the rules between the facts reach its last line. A sheet
+  whose captions fit keeps the header's widths and height (#454 review, round 1).
+- **What keeps to one line** (#454 review, round 2, measured on the composition itself in each of the venue's rooms,
+  beside the widest date and layout words of 2026-27): Setup from and Ready by, whenever both are in minutes or
+  single-figure hours. So the release lead's wedding (setup from 08:00, final touches 13:30, guests in at 16:00: "5 h
+  30 min to set the room", "2 h 30 min before guests come in") keeps one line, where at 10 pt beside the rules its
+  Ready by parted on every day in every room but the Saloon; the gaps closed to 8 pt for it, and the numerals stand at
+  least 7 pt clear of the rules. Still parting, evened out: a caption in two-figure hours (a setup window of 10 h or
+  more, or a Ready by 10 h or more before guests come in) in the Robert Adam Room and the North Gallery, and in the
+  Reception Room when both are; "No changeover time for this room" beside a planner's ready-by time; a time on another
+  day; the planner's time with no booking.
+- **The day** opens with "Setup starts" (the header's label is "Setup from"; the day's lines are events) and names
+  guests coming in "Guests in", as the header does. The planner's final-touches time is the room's ready-by time, so it
+  always folds into "Room ready" and lends it its reason. A room ready as guests come in is one moment and prints
+  once, "Room ready, guests in", so a sheet without a planner's final time keeps its line count. A deadline is late
+  after Ready by. Minutes are counted between times floored to the minute, as the clock prints them; a phase given
+  twice counts its earliest readable time, and a time that cannot be read prints no line, as `sheetTimes` skips it.
+- **A planner's final time after guests come in is kept and said, never moved:** the Ready by figure and its caption
+  ("15 min after guests come in") in brick; in the day, Room ready after Guests in, its time in brick with "After
+  guests come in"; on the rail, Room ready stands after Guests in, in time order, with "after doors" under it (at the
+  same minute or before, Room ready leads); on the phone card, the figure in brick and "The planner's ready time is
+  15 min after guests come in."; on the print line and the Day Board's line, ", 15 min after guests come in", in
+  words. A deadline between the doors and that later ready-by time reads the same way: "After guests come in" in the
+  day and under its step, "after doors" on the rail. Cost if wrong: a planner who meant a later finish (candles lit
+  once guests are in) sees a warning on every surface.
+- **A final time at or before setup starts** is shown as entered, and every surface says "No time to set the room"
+  in brick (`sheetTimes`' `noTimeToSet`: Setup from at or after Ready by): Setup from's caption on the PDF and under
+  the day's Room ready, with its time in brick; Setup from in brick and the note on the phone card; on the print line
+  and the Day Board's line (the summary carries `setupFrom` when the board asks, with `setupFrom=true`, because older
+  web code reads the summary with a strict schema and a Day Board left open on it must keep its line). The words
+  state the fact and never read as an instruction to the crew; they replaced "Not before the room's ready-by time"
+  (`d0cae047`, then #454's review).
+- **Missing data:** no booking keeps "No booking holds this room yet" and "Confirm the time first"; a planner's final
+  time without a booking is still Ready by, in brick, "The planner's time · no booking holds this room yet", in those
+  words on the phone card, the print line and the Day Board's line too; with neither, the print line says "No booking
+  holds this room yet" (#454 review, round 2). No setup start shows Setup from "—" with "No changeover time
+  for this room", and Ready by at guests in.
+- A time on another day than guests come in carries its day: the PDF's captions ("Fri 13 Nov · 13 h to set the
+  room"), and its rail, the phone card, the print line and the Day Board's line through `sheetClock` ("Fri 16:00").
+  Durations under two hours stay in minutes; longer ones read "2 h 30 min".
+- **Page counts hold:** the wedding 3, the board meeting 2, a short sheet 1, the breakfast 1, and a short sheet
+  dated Wednesday 30 September 1. The wedding's day gains
+  "08:00 Setup starts", page 1's last free line (its day now ends 752 pt from the top), so page 1 no longer points to
+  the planner's words; they open page 2 under its head, the existing fallback. The wedding fixture's setup start
+  moved from 13:30 to 08:00: under the field's meaning 13:30 contradicted its own 10:00 structure deadline.
 
 ## F: the day at the venue (its own PR, after A and D)
 

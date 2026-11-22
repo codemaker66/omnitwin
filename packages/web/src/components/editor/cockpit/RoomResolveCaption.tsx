@@ -5,13 +5,16 @@ import { useEditorStore } from "../../../stores/editor-store.js";
 import { hallSurfacesCaption, hallSurfacesLoading, roomResolveCaption } from "../../../lib/room-resolve-model.js";
 import { useModelledGrandHall } from "../../grand-hall/hall-space.js";
 import { useHallViewStore } from "../../../stores/hall-view-store.js";
+import { useSurveyedRoomStore } from "../../../stores/surveyed-room-store.js";
+import { surveyedRoomCaption, surveyedRoomWorking } from "../../surveyed-room/room-status.js";
 import "./RoomResolveCaption.css";
 
 /**
  * Reports real capture progress and preserves terminal failure notices.
  * Working motion ends after the captured sources draw or fail, and pauses
  * in Model view where hidden captures cannot draw. The drawn Grand Hall
- * reports its own surveyed surfaces the same way. Retained text lets a
+ * reports its own surveyed surfaces the same way, and so does any other room
+ * drawn as surveyed. Retained text lets a
  * successful caption fade out without disappearing during the transition.
  */
 export function RoomResolveCaption(): ReactElement {
@@ -23,10 +26,17 @@ export function RoomResolveCaption(): ReactElement {
   const modelledHall = useModelledGrandHall();
   const surfaces = useHallViewStore((s) => s.surfaces);
   const drawnHall = modelledHall && layerMode !== "splat";
+  // Another room drawn as surveyed (components/surveyed-room) speaks the same
+  // way while its model is what shows: its files arriving, and a lasting note
+  // if it, or a photograph of it, could not load.
+  const surveyed = useSurveyedRoomStore((s) => s.status);
+  const surveyedCaption = drawnHall || layerMode === "splat" ? null : surveyedRoomCaption(surveyed);
   const caption = drawnHall ? hallSurfacesCaption(surfaces)
-    : resolve.phase === "developing" && layerMode === "mesh" ? null
-      : roomResolveCaption(resolve.phase, roomName, resolve.loadedChunks, resolve.totalChunks);
-  const working = drawnHall ? hallSurfacesLoading(surfaces) : resolve.phase === "developing";
+    : surveyedCaption !== null ? surveyedCaption
+      : resolve.phase === "developing" && layerMode === "mesh" ? null
+        : roomResolveCaption(resolve.phase, roomName, resolve.loadedChunks, resolve.totalChunks);
+  const working = drawnHall ? hallSurfacesLoading(surfaces)
+    : surveyedCaption !== null ? surveyedRoomWorking(surveyed) : resolve.phase === "developing";
 
   const lastCaptionRef = useRef("");
   if (caption !== null) lastCaptionRef.current = caption;

@@ -527,7 +527,11 @@ export async function updateOpsTaskStatus(
   }
 
   return db.transaction(async (tx) => {
-    // The task's row first, so the stamps below are taken while it is held
+    // The event first (FOR KEY SHARE, which the rows below take through their
+    // keys anyway), the house order an erasure keeps (people-erasure.ts): this
+    // waits on an erasure of the event's person rather than meeting it.
+    await tx.select({ id: events.id }).from(events).where(eq(events.id, joined.event.id)).for("key share");
+    // Then the task's row, so the stamps below are taken while it is held
     // (WRITTEN_UNDER_THE_ROW_LOCK). The transition is still decided above,
     // before the lock, as it always was (review DS9, a follow-up).
     await tx.select({ id: opsTasks.id }).from(opsTasks).where(eq(opsTasks.id, joined.task.id)).for("no key update");
@@ -647,13 +651,21 @@ export async function updateEventDayIssue(
     : null;
 
   return db.transaction(async (tx) => {
+    // The event first (FOR KEY SHARE, which the rows below take through their
+    // keys anyway), the house order an erasure keeps (people-erasure.ts): this
+    // waits on an erasure of the event's person rather than meeting it.
+    await tx.select({ id: events.id }).from(events).where(eq(events.id, input.eventId)).for("key share");
+    // Only the columns the change names: the rest keep what the row holds
+    // when this runs, not what was read before (an erasure that rewrote the
+    // text meanwhile stays done), and the status line quotes the title as
+    // the update returns it.
     const [updated] = await tx.update(eventDayIssues).set({
-      title: parsed.title ?? existing.title,
-      detail: parsed.detail ?? existing.detail,
-      severity: parsed.severity ?? existing.severity,
+      ...(parsed.title === undefined ? {} : { title: parsed.title }),
+      ...(parsed.detail === undefined ? {} : { detail: parsed.detail }),
+      ...(parsed.severity === undefined ? {} : { severity: parsed.severity }),
       status: nextStatus,
-      assignedTo: parsed.assignedTo === undefined ? existing.assignedTo : parsed.assignedTo,
-      escalationNote: parsed.escalationNote === undefined ? existing.escalationNote : parsed.escalationNote,
+      ...(parsed.assignedTo === undefined ? {} : { assignedTo: parsed.assignedTo }),
+      ...(parsed.escalationNote === undefined ? {} : { escalationNote: parsed.escalationNote }),
       resolvedAt,
       updatedAt: new Date(),
     }).where(eq(eventDayIssues.id, existing.id)).returning();

@@ -984,25 +984,24 @@ def reader_tolerances(text):
 
 class ReaderTolerances(unittest.TestCase):
     """publish.py copies the web reader's tolerances (survey-record.ts), and no compiler ties the two
-    languages together: each one the reader exports must be publish's, or records that one side
-    takes the other refuses. SURVEYED_ROOMS_READER names another copy of the reader to compare with."""
+    languages together: the reader must export each one as a plain number, and each must be publish's,
+    or records that one side takes the other refuses. Nothing here skips: a reader that is not
+    there, or that no longer exports one of them (a rename, a dropped rule, a value written as a
+    sum), fails, because the reader lives in this tree. CI's Survey tools job runs when the reader
+    changes as well as when the tools do, so a drift that starts on either side is seen.
+    SURVEYED_ROOMS_READER names another copy of the reader to compare with."""
 
     def test_publish_holds_the_readers_tolerances(self):
         from roombuild import publish
-        if not os.path.exists(READER):
-            self.skipTest(f"no reader at {READER}")
+        self.assertTrue(os.path.exists(READER), f"no reader at {READER}")
         with open(READER, encoding="utf-8") as f:
             text = f.read()
         found = reader_tolerances(text)
+        absent = [name for name in TOLERANCES if name not in found]
+        self.assertEqual(absent, [], "the reader must export each of these as `export const NAME = number;` "
+                                     "(publish.py holds a copy of each: change the two together)")
         for name, value in found.items():
             self.assertEqual(getattr(publish, name), value, name)
-        # A name the file mentions but does not export as a plain number would otherwise skip in silence.
-        unread = [name for name in TOLERANCES if name not in found and name in text]
-        self.assertEqual(unread, [], "the reader names these tolerances, but not as `export const NAME = number;`")
-        absent = [name for name in TOLERANCES if name not in found]
-        if absent:
-            self.skipTest(f"the reader here has no {', '.join(absent)} (they come with the reader of #444, not yet merged; "
-                          f"until then publish refuses records this reader takes); compared {', '.join(found) or 'none'}")
 
 
 class OneBlasThread(unittest.TestCase):
