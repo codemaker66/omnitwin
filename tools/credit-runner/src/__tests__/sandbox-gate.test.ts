@@ -1,9 +1,32 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { gitEnv } from "../git.js";
 import { inspectPatches, type PatchInspection } from "../sandbox/patches.js";
-import { BASE_FILES, patchFixture, type Commit } from "./patch-fixture.js";
+import { BASE_FILES, PAGE_CHECK, PAGE_CHECK_TEST, patchFixture, type Commit } from "./patch-fixture.js";
+
+// The review removes its throwaway repository when it is done. A test that sets
+// `look` sees that repository once the inspection has finished with it, before
+// the removal; every other call passes straight through.
+const throwaway = vi.hoisted(() => ({ look: undefined as ((repo: string, baseSha: string) => void) | undefined }));
+vi.mock("../sandbox/base-repo.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../sandbox/base-repo.js")>();
+  function withBaseCommit<T>(repoUrl: string, sha: string, use: (repo: string, scratch: string) => Promise<T>, log?: (line: string) => void): Promise<T> {
+    return actual.withBaseCommit(
+      repoUrl,
+      sha,
+      async (repo, scratch) => {
+        const result = await use(repo, scratch);
+        throwaway.look?.(repo, sha);
+        return result;
+      },
+      log,
+    );
+  }
+  return { ...actual, withBaseCommit };
+});
 
 // The patch gate's binary rule, read against what git itself prints for each
 // commit (`git log -p`, format-patch): "Binary files differ" only where git
@@ -114,5 +137,45 @@ describe("the patch gate's binary rule, commit by commit", () => {
       { subject: "Add it back elsewhere", write: { "assets/n.bin": BINARY } },
     ]);
     expect([...split.binary].sort()).toEqual(["assets/m.bin", "assets/n.bin"]);
+  }, SLOW);
+});
+
+describe("the throwaway repository the patch gate reads in", () => {
+  it("still lacks every blob of the base that no commit touches after a series of two commits", async () => {
+    // The base is fetched without blobs, and git fetches one only when a command
+    // reads it. The tree written between the two steps must not fetch the rest
+    // of the base: in the real repository that is all of master's media.
+    const untouched = ["assets/k.bin", "assets/m.bin", "data/table.dat", PAGE_CHECK, PAGE_CHECK_TEST];
+    const seen: { readonly blobs: ReadonlyMap<string, string>; readonly missing: ReadonlySet<string> }[] = [];
+    throwaway.look = (repo, baseSha) => {
+      const read = (args: readonly string[]): string =>
+        execFileSync("git", ["-C", repo, "-c", "core.quotePath=false", ...args], { encoding: "utf8", env: gitEnv() });
+      const blobs = new Map<string, string>();
+      for (const entry of read(["ls-tree", "-r", "-z", baseSha]).split("\0")) {
+        const match = /^[0-7]{6} blob ([0-9a-f]+)\t([\s\S]+)$/u.exec(entry);
+        if (match !== null) blobs.set(match[2] ?? "", match[1] ?? "");
+      }
+      const missing = new Set(
+        read(["rev-list", "--objects", "--missing=print", baseSha])
+          .split("\n")
+          .filter((line) => line.startsWith("?"))
+          .map((line) => line.slice(1)),
+      );
+      seen.push({ blobs, missing });
+    };
+    try {
+      await inspect([
+        { subject: "Edit the notes", write: { "docs/t.md": TEXT.replace("text 3\n", "text three\n") } },
+        { subject: "Edit the readme", write: { "README.md": "# Fixture, edited\n" } },
+      ]);
+    } finally {
+      throwaway.look = undefined;
+    }
+    expect(seen).toHaveLength(1);
+    const blobs = seen[0]?.blobs ?? new Map<string, string>();
+    const missing = seen[0]?.missing ?? new Set<string>();
+    expect(untouched.filter((file) => !blobs.has(file))).toEqual([]);
+    // Fetched into the throwaway repository though nothing in the series reads it.
+    expect(untouched.filter((file) => !missing.has(blobs.get(file) ?? ""))).toEqual([]);
   }, SLOW);
 });

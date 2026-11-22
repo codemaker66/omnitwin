@@ -205,12 +205,14 @@ async function binaryInStep(repo: string, scratch: string, baseSha: string, befo
  *
  * The patches are applied to the throwaway index only, one at a time (it holds
  * the base; git fetches the blobs it needs into the throwaway repository), and
- * each step is compared with the tree before it (`git write-tree`). The base's
- * .gitattributes decides every step, not one the series edits
- * (`--attr-source`, git 2.42 or newer), a global attributes file is left out,
- * and patterns match names by case, as on Linux and GitHub, though a Windows
- * clone would otherwise ignore case. Text conversion and external diff drivers
- * are off.
+ * each step is compared with the tree before it. That tree is written with
+ * `git write-tree --missing-ok`: without it, git first fetches every blob the
+ * index names and the throwaway repository lacks, which is the whole base,
+ * though the tree only names them. The base's .gitattributes decides every
+ * step, not one the series edits (`--attr-source`, git 2.42 or newer), a
+ * global attributes file is left out, and patterns match names by case, as on
+ * Linux and GitHub, though a Windows clone would otherwise ignore case. Text
+ * conversion and external diff drivers are off.
  */
 async function filesGitCallsBinary(repo: string, scratch: string, baseSha: string, steps: readonly string[]): Promise<string[]> {
   const found = new Set<string>();
@@ -218,7 +220,7 @@ async function filesGitCallsBinary(repo: string, scratch: string, baseSha: strin
   for (const [index, step] of steps.entries()) {
     await git(repo, ["apply", "--cached", "--whitespace=nowarn", step]);
     for (const file of await binaryInStep(repo, scratch, baseSha, before)) found.add(file);
-    if (index < steps.length - 1) before = await git(repo, ["write-tree"]);
+    if (index < steps.length - 1) before = await git(repo, ["write-tree", "--missing-ok"]);
   }
   return [...found];
 }
