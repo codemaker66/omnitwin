@@ -4,7 +4,7 @@ import path from "node:path";
 import type { BetaManagedAgentsSession, SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
 import { isAmbiguousFailure, type OutputFile, type SandboxApi, type SessionEvent, type SessionRef } from "./api.js";
 import { outcomeFor, type RunFacts, VERIFY_COMMAND, verifyTaskJson } from "./brief.js";
-import { MAX_OUTPUT_BYTES, MAX_OUTPUTS_TOTAL_BYTES, OutputTimeoutError, OutputTooLargeError, planOutputs } from "./outputs.js";
+import { OUTPUT_CAPS, type OutputCaps, OutputTimeoutError, OutputTooLargeError, planOutputs } from "./outputs.js";
 import type { SandboxState } from "./setup.js";
 
 export interface SessionRunOptions {
@@ -27,6 +27,8 @@ export interface SessionRunOptions {
   /** Test seams: every wait (back-off, polls, lookups) goes through `sleep`. */
   readonly sleep?: (ms: number) => Promise<void>;
   readonly graceMs?: number;
+  /** Test seam: the byte caps on what comes back (default OUTPUT_CAPS). */
+  readonly outputCaps?: OutputCaps;
 }
 
 /**
@@ -78,12 +80,10 @@ export interface SessionRunResult {
   readonly outputs: readonly string[];
   /** Each downloaded output's local path, and the name it had in the sandbox. */
   readonly outputNames: Readonly<Record<string, string>>;
-  /** Why outputs the review would read were not downloaded (a name it cannot account for, a size over the cap); each rejects the run. */
+  /** Why outputs the review would read were not downloaded (a name it cannot account for, a size over the cap, a deadline passed, the API would not serve it); each rejects the run. */
   readonly refusedOutputs: readonly string[];
-  /** Outputs the review does not read, left in the sandbox (the report, logs). */
+  /** Outputs the review does not read, left in the sandbox and never requested (the report, logs, the session's copies of its inputs). */
   readonly leftOutputs: readonly string[];
-  /** Wanted outputs the API would not serve. */
-  readonly skippedOutputs: readonly string[];
 }
 
 /**
@@ -281,6 +281,7 @@ async function finishRun(
   timedOut: boolean,
   stopping: Stopping,
   sleep: (ms: number) => Promise<void>,
+  caps: OutputCaps = OUTPUT_CAPS,
 ): Promise<SessionRunResult> {
   // The platform's own totals: the cost includes the session-hour fee. It is
   // final only if the session has stopped.
@@ -293,18 +294,19 @@ async function finishRun(
     if (attempt < 5) await sleep(2000); // indexing lags the idle event by a second or two
   }
   // Only what the review reads comes to this machine, under the launcher's names (outputs.ts).
-  const plan = planOutputs(files);
+  const plan = planOutputs(files, caps);
   const outputs: string[] = [];
   const outputNames: Record<string, string> = {};
   const refusedOutputs = [...plan.refused];
-  const skippedOutputs: string[] = [];
-  let room = MAX_OUTPUTS_TOTAL_BYTES;
+  // What the run may still bring back, counted on the bytes actually saved, whatever the listing said.
+  let room = caps.total;
   for (const { file, localName } of plan.downloads) {
     const local = path.join(runDir, "outputs", localName);
     try {
-      const saved = await api.downloadFile(file.id, local, Math.min(MAX_OUTPUT_BYTES, room));
+      const saved = await api.downloadFile(file.id, local, Math.min(caps.perOutput, room));
       if (saved === "not-downloadable") {
-        skippedOutputs.push(file.filename);
+        // The review would read it, so a missing one is a reason, never a quiet gap in the series.
+        refusedOutputs.push(`${JSON.stringify(file.filename)} is listed, but the API would not serve it; not downloaded`);
         continue;
       }
     } catch (error) {
@@ -346,7 +348,6 @@ async function finishRun(
     outputNames,
     refusedOutputs,
     leftOutputs: plan.left,
-    skippedOutputs,
   };
 }
 
@@ -626,7 +627,7 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
     stopping = await stopSession(api, sessionId, tally, sleep, log);
   }
 
-  return finishRun(api, sessionId, runDir, tally, run.timedOut, stopping, sleep);
+  return finishRun(api, sessionId, runDir, tally, run.timedOut, stopping, sleep, options.outputCaps);
 }
 
 /**

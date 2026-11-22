@@ -2,16 +2,17 @@ import type { AgentCreateParams, AgentUpdateParams } from "@anthropic-ai/sdk/res
 import type { EnvironmentCreateParams, EnvironmentUpdateParams } from "@anthropic-ai/sdk/resources/beta/environments/environments";
 import type { BetaManagedAgentsEventParams } from "@anthropic-ai/sdk/resources/beta/sessions/events";
 import type { SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
-import type {
-  AgentRef,
-  EnvironmentRef,
-  EventStream,
-  OutputFile,
-  SandboxApi,
-  SessionEvent,
-  SessionListing,
-  SessionRef,
-  SessionTotals,
+import {
+  DOWNLOAD_TIMEOUT_MS,
+  type AgentRef,
+  type EnvironmentRef,
+  type EventStream,
+  type OutputFile,
+  type SandboxApi,
+  type SessionEvent,
+  type SessionListing,
+  type SessionRef,
+  type SessionTotals,
 } from "../sandbox/api.js";
 import { OutputTimeoutError, writeCapped } from "../sandbox/outputs.js";
 import { agentParams, environmentParams } from "../sandbox/setup.js";
@@ -285,7 +286,7 @@ export class FakeApi implements SandboxApi {
     this.downloads.push(filename);
     const text = this.files[filename];
     if (text === null || text === undefined) return "not-downloadable";
-    if (this.stalledDownloads.includes(filename)) throw new OutputTimeoutError(5 * 60_000);
+    if (this.stalledDownloads.includes(filename)) throw new OutputTimeoutError(DOWNLOAD_TIMEOUT_MS);
     await writeCapped([Buffer.from(text, "utf8")], destination, maxBytes);
     return "saved";
   };

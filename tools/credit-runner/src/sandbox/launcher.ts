@@ -4,6 +4,7 @@ import { AGENT_EFFORT, AGENT_MODEL, type Task } from "../task.js";
 import type { SandboxApi } from "./api.js";
 import { sandboxSystemPrompt } from "./brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "./credit-ledger.js";
+import type { OutputCaps } from "./outputs.js";
 import { reviewRun, type Review } from "./review.js";
 import { isStopped, listCostUsd, recollectSession, runSession, SessionMayExistError, type SessionRunResult } from "./session.js";
 import { ensureSandbox } from "./setup.js";
@@ -35,9 +36,10 @@ export interface JobOptions {
   readonly repoUrl?: string | undefined;
   readonly now?: () => Date;
   readonly log?: (line: string) => void;
-  /** Test seams, passed to runSession: every wait, and the time allowed after the interrupt. */
+  /** Test seams, passed to runSession: every wait, the time allowed after the interrupt, and the byte caps on what comes back. */
   readonly sleep?: (ms: number) => Promise<void>;
   readonly graceMs?: number;
+  readonly outputCaps?: OutputCaps;
 }
 
 /** The base a spec may name: every run starts from master. */
@@ -210,6 +212,7 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
       },
       ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
       ...(options.graceMs === undefined ? {} : { graceMs: options.graceMs }),
+      ...(options.outputCaps === undefined ? {} : { outputCaps: options.outputCaps }),
     });
   } catch (error) {
     // Nothing is spent before a session exists. Once one does (or may), it is

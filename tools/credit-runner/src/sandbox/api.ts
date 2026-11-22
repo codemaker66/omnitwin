@@ -124,7 +124,8 @@ export interface SandboxApi {
   listOutputFiles(sessionId: string): Promise<OutputFile[]>;
   /**
    * Streams one output to `destination`, cut off past `maxBytes` (an
-   * OutputTooLargeError, the partial file removed). "not-downloadable" for a
+   * OutputTooLargeError) or DOWNLOAD_TIMEOUT_MS (an OutputTimeoutError), the
+   * partial file removed before either is thrown. "not-downloadable" for a
    * file the API will not serve, such as an input mounted into the session.
    */
   downloadFile(fileId: string, destination: string, maxBytes: number): Promise<"saved" | "not-downloadable">;
@@ -280,22 +281,52 @@ export function sdkSandboxApi(apiKey: string, fetchImpl?: Fetch, env: NodeJS.Pro
       }
       return files;
     },
-    downloadFile: (fileId, destination, maxBytes) =>
-      withDeadline(
-        DOWNLOAD_TIMEOUT_MS,
-        async (signal): Promise<"saved" | "not-downloadable"> => {
-          let response: Response;
-          try {
-            response = await client.files.download(fileId, {}, { signal });
-          } catch (error) {
-            if (isNotDownloadable(error)) return "not-downloadable";
-            throw error;
-          }
-          // Streamed to disk a chunk at a time, never buffered whole.
-          await writeCapped(response.body === null ? [] : chunksOf(response.body), destination, maxBytes);
-          return "saved";
-        },
-        () => new OutputTimeoutError(DOWNLOAD_TIMEOUT_MS),
-      ),
+    async downloadFile(fileId, destination, maxBytes) {
+      // One deadline over the whole download. At the deadline the request is
+      // aborted and the body's reader cancelled (chunksOf), and writeCapped
+      // removes the partial file before the OutputTimeoutError reaches the caller.
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        controller.abort(new OutputTimeoutError(DOWNLOAD_TIMEOUT_MS));
+      }, DOWNLOAD_TIMEOUT_MS);
+      try {
+        let response: Response;
+        try {
+          response = await untilAborted(client.files.download(fileId, {}, { signal: controller.signal }), controller.signal);
+        } catch (error) {
+          if (controller.signal.aborted) throw new OutputTimeoutError(DOWNLOAD_TIMEOUT_MS);
+          if (isNotDownloadable(error)) return "not-downloadable";
+          throw error;
+        }
+        // Streamed to disk a chunk at a time, never buffered whole.
+        await writeCapped(response.body === null ? [] : chunksOf(response.body, controller.signal), destination, maxBytes);
+        return "saved";
+      } finally {
+        clearTimeout(timer);
+      }
+    },
   };
+}
+
+/** `pending`, or a rejection as soon as `signal` aborts, whichever comes first: a request that ignores the abort is not waited for. */
+function untilAborted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  // Once the abort has answered, the request's own late failure is not reported.
+  pending.catch(() => undefined);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      reject(new Error("aborted"));
+    };
+    if (signal.aborted) onAbort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    pending.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
 }

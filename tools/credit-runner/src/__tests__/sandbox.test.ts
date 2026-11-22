@@ -157,9 +157,10 @@ function happyEvents(fixture: PatchFixture, options: { command?: string; output?
   ];
 }
 
-/** A session's outputs for a fixture, as the Files API lists them. */
-function outputsOf(fixture: PatchFixture, overrides: Record<string, string | null> = {}): Record<string, string | null> {
-  return { "verify.mjs": null, ...fixture.patches, "diff.patch": fixture.diff, "report.md": "## Summary\nFixed.\n", "precondition.json": '{"ok":true}\n', ...overrides };
+/** A session's outputs for a fixture, as the Files API lists them. An override of null is listed but not served; undefined leaves it out. */
+function outputsOf(fixture: PatchFixture, overrides: Record<string, string | null | undefined> = {}): Record<string, string | null> {
+  const all = { "verify.mjs": null, ...fixture.patches, "diff.patch": fixture.diff, "report.md": "## Summary\nFixed.\n", "precondition.json": '{"ok":true}\n', ...overrides };
+  return Object.fromEntries(Object.entries(all).filter((entry): entry is [string, string | null] => entry[1] !== undefined));
 }
 
 const dirs: string[] = [];
@@ -274,7 +275,6 @@ describe("sandbox launcher", () => {
     expect(record.result.outputs.map((file) => path.basename(file))).toEqual(["patch-0001.patch", "diff.patch", "precondition.json"]);
     expect(Object.values(record.result.outputNames)).toEqual(["0001-Match-robots.patch", "diff.patch", "precondition.json"]);
     expect(record.result.leftOutputs).toEqual(["verify.mjs", "report.md"]);
-    expect(record.result.skippedOutputs).toEqual([]);
     expect(record.result.refusedOutputs).toEqual([]);
     expect(record.review.patches.map((file) => path.basename(file))).toEqual(["patch-0001.patch"]);
   });
@@ -563,17 +563,17 @@ describe("sandbox launcher", () => {
   });
 
   it("rejects a run with no precondition.json when the task has a precondition, and a case-variant name does not count", async () => {
-    const missing = await reviewOf(happy, { outputs: outputsOf(happy, { "precondition.json": null }) });
+    const missing = await reviewOf(happy, { outputs: outputsOf(happy, { "precondition.json": undefined }) });
     expect(missing.review.verdict).toBe("rejected");
     expect(missing.review.reasons).toEqual([expect.stringContaining("left no precondition.json")]);
-    const variant = await reviewOf(happy, { outputs: outputsOf(happy, { "precondition.json": null, "Precondition.json": '{"ok":true}\n' }) });
+    const variant = await reviewOf(happy, { outputs: outputsOf(happy, { "precondition.json": undefined, "Precondition.json": '{"ok":true}\n' }) });
     expect(variant.review.verdict).toBe("rejected");
     expect(variant.review.reasons).toEqual([expect.stringContaining("left no precondition.json")]);
     expect(variant.result.outputs.map((file) => path.basename(file))).not.toContain("precondition.json");
     // A task with no precondition needs none.
     const bare = parseTask("---\nid: robots-wildcards\nacceptance: x\n---\nDo it.", "spec.md");
     const config = await workspace();
-    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy, { "precondition.json": null }));
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy, { "precondition.json": undefined }));
     const record = await job(api, config, happy, { task: bare });
     if (record.kind !== "ran") throw new Error(record.reason);
     expect(record.review.reasons).toEqual([]);
@@ -588,6 +588,32 @@ describe("sandbox launcher", () => {
     expect(record.review.reasons).toContain('"diff.patch" took longer than 5 min to download; abandoned');
     expect(record.review.reasons).toContain("diff.patch did not come back");
     expect(await readFile(path.join(record.runDir, "review.md"), "utf8")).toMatch(/^# REJECTED/u);
+  });
+
+  it("counts the run's total on the bytes received, so a later download is cut off whatever the listing said", async () => {
+    const name = Object.keys(happy.patches)[0] ?? "";
+    const patchBytes = Buffer.byteLength(happy.patches[name] ?? "", "utf8");
+    const diffBytes = Buffer.byteLength(happy.diff, "utf8");
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    // Each output listed at one byte, so the plan takes them all; the bytes received pass the run's total during diff.patch.
+    api.listedSizes = { [name]: 1, "diff.patch": 1, "precondition.json": 1 };
+    const outputCaps = { perOutput: 1024 * 1024, total: patchBytes + Math.floor(diffBytes / 2) };
+    const record = await job(api, config, happy, { outputCaps });
+    if (record.kind !== "ran") throw new Error(record.reason);
+    expect(api.downloads).toEqual([name, "diff.patch", "precondition.json"]);
+    expect(record.result.refusedOutputs).toEqual(['"diff.patch" ran past its size limit while downloading; cut off and removed']);
+    expect((await readdir(path.join(record.runDir, "outputs"))).sort()).toEqual(["patch-0001.patch", "precondition.json"]);
+  });
+
+  it("rejects a run when an output the review reads is listed but the API will not serve it", async () => {
+    const name = Object.keys(happy.patches)[0] ?? "";
+    const record = await reviewOf(happy, { outputs: outputsOf(happy, { [name]: null }) });
+    expect(record.review.verdict).toBe("rejected");
+    expect(record.review.reasons).toEqual([`${JSON.stringify(name)} is listed, but the API would not serve it; not downloaded`, "no format-patch files came back"]);
+    // An output the review does not read (the session's copy of an input) is never asked for.
+    expect(record.result.leftOutputs).toContain("verify.mjs");
+    expect(Object.keys(record.result)).not.toContain("skippedOutputs");
   });
 
   it("counts a path the base's .gitattributes marks binary or -diff as a binary change, even when the patch writes it as text", async () => {
@@ -1143,6 +1169,8 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
       vi.useRealTimers();
     }
     expect(CREATE_SESSION_TIMEOUT_MS).toBeLessThan(10 * 60_000);
+    // A stalled output holds the ledger line back until its deadline, so the deadline stays short.
+    expect(DOWNLOAD_TIMEOUT_MS).toBeLessThanOrEqual(5 * 60_000);
   });
 
   it("sends the key only to api.anthropic.com as X-Api-Key, with no other credential, whatever the SDK's environment says", async () => {
@@ -1303,29 +1331,81 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     );
     expect(await refusing.downloadFile("file_3", path.join(dir, "diff.patch"), 100)).toBe("not-downloadable");
 
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    try {
+    // A body that stalls after its first bytes, one that errors when the fetch is aborted and one that
+    // ignores the abort: at the deadline the fetch's signal is aborted, the body's reader cancelled, and
+    // the partial file is gone by the time the download rejects.
+    for (const [index, honoursAbort] of [
+      [4, true],
+      [5, false],
+    ] as const) {
+      const file = path.join(dir, `patch-000${String(index)}.patch`);
+      let signal: AbortSignal | null = null;
+      let cancelled = false;
       const stalled = sdkSandboxApi("sk-test-not-a-key", (_input, init) => {
+        signal = init?.signal ?? null;
         const body = new ReadableStream<Uint8Array>({
           start(controller) {
             controller.enqueue(new TextEncoder().encode("From "));
-            init?.signal?.addEventListener("abort", () => {
-              controller.error(new DOMException("aborted", "AbortError"));
-            });
+            if (honoursAbort) {
+              init?.signal?.addEventListener("abort", () => {
+                controller.error(new DOMException("aborted", "AbortError"));
+              });
+            }
+          },
+          cancel() {
+            cancelled = true;
           },
         });
         return Promise.resolve(new Response(body, { status: 200, headers: { "content-type": "application/octet-stream" } }));
       });
-      let settled: unknown = "pending";
-      void stalled.downloadFile("file_4", path.join(dir, "patch-0004.patch"), 100).then(
-        () => (settled = "resolved"),
-        (caught: unknown) => (settled = caught),
-      );
-      await vi.advanceTimersByTimeAsync(DOWNLOAD_TIMEOUT_MS + 1);
-      expect(settled).toBeInstanceOf(OutputTimeoutError);
-    } finally {
-      vi.useRealTimers();
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      let pending: Promise<unknown> = Promise.resolve();
+      try {
+        pending = stalled.downloadFile(`file_${String(index)}`, file, 100).then(
+          () => "resolved",
+          (caught: unknown) => caught,
+        );
+        // The first bytes reach the disk (real file I/O, so wait for it without the faked clock).
+        for (let turn = 0; turn < 500 && !(await readdir(dir)).includes(path.basename(file)); turn += 1) await new Promise((resolve) => setImmediate(resolve));
+        expect(await readdir(dir)).toContain(path.basename(file));
+        await vi.advanceTimersByTimeAsync(DOWNLOAD_TIMEOUT_MS - 1);
+        expect((signal as AbortSignal | null)?.aborted, String(index)).toBe(false);
+        await vi.advanceTimersByTimeAsync(2);
+        expect((signal as AbortSignal | null)?.aborted, String(index)).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(await pending).toBeInstanceOf(OutputTimeoutError);
+      expect(await readdir(dir), String(index)).not.toContain(path.basename(file));
+      // A body that ignores the abort is stopped by cancelling its reader.
+      if (!honoursAbort) expect(cancelled).toBe(true);
     }
+  });
+
+  it("reads a download only as far as its cap and cancels the rest of the body, never holding it whole", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "credit-runner-download-"));
+    dirs.push(dir);
+    let pulls = 0;
+    let cancelled = false;
+    const chunk = new Uint8Array(1024).fill(0x61);
+    // A thousand 1 KiB chunks, produced only when read.
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls > 1000) controller.close();
+        else controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const api = sdkSandboxApi("sk-test-not-a-key", () => Promise.resolve(new Response(body, { status: 200, headers: { "content-type": "application/octet-stream" } })));
+    await expect(api.downloadFile("file_6", path.join(dir, "patch-0006.patch"), 10 * 1024)).rejects.toBeInstanceOf(OutputTooLargeError);
+    // The cap is passed on the eleventh chunk; reading stops there, give or take the stream's read-ahead.
+    expect(pulls).toBeGreaterThanOrEqual(11);
+    expect(pulls).toBeLessThanOrEqual(14);
+    expect(cancelled).toBe(true);
+    expect(await readdir(dir)).toEqual([]);
   });
 
   it("refuses to start while the environment would send the key or another credential elsewhere, naming the variable but never its value", () => {
@@ -1373,7 +1453,9 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       // The headers arrive at once; the body then stalls. The SDK's own timeout stops at the headers.
+      let signal: AbortSignal | null = null;
       const stalled = sdkSandboxApi("sk-test-not-a-key", (_input, init) => {
+        signal = init?.signal ?? null;
         const body = new ReadableStream<Uint8Array>({
           start(controller) {
             controller.enqueue(new TextEncoder().encode('{"id":"sesn_'));
@@ -1391,9 +1473,12 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
       );
       await vi.advanceTimersByTimeAsync(CREATE_SESSION_TIMEOUT_MS - 1);
       expect(settled).toBe("pending");
+      expect((signal as AbortSignal | null)?.aborted).toBe(false);
       await vi.advanceTimersByTimeAsync(2);
       expect(settled).toBeInstanceOf(Error);
       expect(isAmbiguousFailure(settled)).toBe(true);
+      // The deadline aborted the request itself, so the body stops being read.
+      expect((signal as AbortSignal | null)?.aborted).toBe(true);
     } finally {
       vi.useRealTimers();
     }
@@ -1588,6 +1673,15 @@ describe("sandbox brief", () => {
       expect(planOutputs([file(name)]).downloads, name).toEqual([]);
     }
     expect(planOutputs([file("patches/0001-a.patch")]).downloads.map((entry) => entry.localName)).toEqual(["patch-0001.patch"]);
+    // Ordered by base name, as format-patch numbers a series, whatever folder the listing puts a file in.
+    expect(planOutputs([file("b/0001-a.patch"), file("a/0002-b.patch")]).downloads.map((entry) => [entry.file.filename, entry.localName])).toEqual([
+      ["b/0001-a.patch", "patch-0001.patch"],
+      ["a/0002-b.patch", "patch-0002.patch"],
+    ]);
+    // A listed size that is not a whole number of bytes is called invalid, not large.
+    for (const size of [-1, 1.5, Number.NaN]) {
+      expect(planOutputs([file("0001-a.patch", size)]).refused, String(size)).toEqual([`"0001-a.patch" is listed with an invalid size (${String(size)}); not downloaded`]);
+    }
 
     // Sizes: one over the per-output cap, then the run's total cap.
     expect(planOutputs([file("0001-a.patch", MAX_OUTPUT_BYTES + 1)]).refused).toHaveLength(1);

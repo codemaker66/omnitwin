@@ -10,9 +10,10 @@ import type { OutputFile } from "./api.js";
  * (`patch-0001.patch`, ..., `diff.patch`, `precondition.json`), never the
  * agent's. A listed size over the cap is refused before anything is
  * downloaded, and the download itself is cut off at the cap. Any other output
- * ending in `.patch`, or more than MAX_PATCH_OUTPUTS of them, is refused, so the
- * review rejects the run rather than ignore a patch it cannot account for; every
- * other output (logs, the verifier's JSON) stays in the sandbox.
+ * ending in `.patch`, or more than MAX_PATCH_OUTPUTS of them, is refused, and
+ * so is one of these the API lists but will not serve, so the review rejects
+ * the run rather than ignore a patch it cannot account for; every other output
+ * (logs, the verifier's JSON) stays in the sandbox and is never requested.
  */
 
 /** The largest one output can be. A large generated change fits; a runaway log renamed .patch does not. */
@@ -21,6 +22,16 @@ export const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 export const MAX_OUTPUTS_TOTAL_BYTES = 64 * 1024 * 1024;
 /** The most .patch outputs a run may leave: past this none is read, and the run is rejected. */
 export const MAX_PATCH_OUTPUTS = 50;
+
+/** The two byte caps on what comes back; tests pass smaller ones. */
+export interface OutputCaps {
+  /** The largest one output can be. */
+  readonly perOutput: number;
+  /** The largest a run's downloads can be together. */
+  readonly total: number;
+}
+
+export const OUTPUT_CAPS: OutputCaps = { perOutput: MAX_OUTPUT_BYTES, total: MAX_OUTPUTS_TOTAL_BYTES };
 
 export interface OutputPlan {
   /** In the order the review reads them: the format-patch files by name, then diff.patch, then precondition.json. */
@@ -51,8 +62,17 @@ function segmentsOf(filename: string): string[] {
     .filter((part) => part !== "");
 }
 
-/** Decides, from the listing alone, what to download and under what names. Nothing is fetched. */
-export function planOutputs(files: readonly OutputFile[]): OutputPlan {
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Decides, from the listing alone, what to download and under what names.
+ * Nothing is fetched. The format-patch files are taken in the order of their
+ * base names, the order format-patch numbers a series in, whatever folder the
+ * listing puts each in.
+ */
+export function planOutputs(files: readonly OutputFile[], caps: OutputCaps = OUTPUT_CAPS): OutputPlan {
   const refused: string[] = [];
   const left: string[] = [];
   const patches: OutputFile[] = [];
@@ -84,9 +104,10 @@ export function planOutputs(files: readonly OutputFile[]): OutputPlan {
     return found.length === 1 ? [...found] : [];
   };
 
-  const byName = (a: OutputFile, b: OutputFile): number => (a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0);
+  // By base name, then by the whole name so the order never depends on the listing's.
+  const bySeries = (a: OutputFile, b: OutputFile): number => compareText(baseOf(a), baseOf(b)) || compareText(a.filename, b.filename);
   const wanted = [
-    ...[...patches].sort(byName).map((file, index) => ({ file, localName: `patch-${String(index + 1).padStart(4, "0")}.patch` })),
+    ...[...patches].sort(bySeries).map((file, index) => ({ file, localName: `patch-${String(index + 1).padStart(4, "0")}.patch` })),
     ...single(diffs, "diff.patch").map((file) => ({ file, localName: "diff.patch" })),
     ...single(preconditions, "precondition.json").map((file) => ({ file, localName: "precondition.json" })),
   ];
@@ -94,10 +115,12 @@ export function planOutputs(files: readonly OutputFile[]): OutputPlan {
   let total = 0;
   for (const entry of wanted) {
     const { filename, sizeBytes } = entry.file;
-    if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > MAX_OUTPUT_BYTES) {
-      refused.push(`${JSON.stringify(filename)} is listed at ${String(sizeBytes)} bytes, over the ${String(MAX_OUTPUT_BYTES)}-byte limit for one output; not downloaded`);
-    } else if (total + sizeBytes > MAX_OUTPUTS_TOTAL_BYTES) {
-      refused.push(`${JSON.stringify(filename)} would take the run's downloads past ${String(MAX_OUTPUTS_TOTAL_BYTES)} bytes; not downloaded`);
+    if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0) {
+      refused.push(`${JSON.stringify(filename)} is listed with an invalid size (${String(sizeBytes)}); not downloaded`);
+    } else if (sizeBytes > caps.perOutput) {
+      refused.push(`${JSON.stringify(filename)} is listed at ${String(sizeBytes)} bytes, over the ${String(caps.perOutput)}-byte limit for one output; not downloaded`);
+    } else if (total + sizeBytes > caps.total) {
+      refused.push(`${JSON.stringify(filename)} would take the run's downloads past ${String(caps.total)} bytes; not downloaded`);
     } else {
       total += sizeBytes;
       downloads.push(entry);
@@ -114,7 +137,7 @@ export class OutputTooLargeError extends Error {
   }
 }
 
-/** A download that ran past its deadline: abandoned, and its partial file removed once the abort reaches it. */
+/** A download that ran past its deadline: abandoned, its body's reader cancelled and its partial file removed before this is thrown. */
 export class OutputTimeoutError extends Error {
   readonly minutes: number;
   constructor(timeoutMs: number) {
@@ -125,16 +148,43 @@ export class OutputTimeoutError extends Error {
   }
 }
 
-/** A web stream's chunks; a reader the caller stops early is cancelled, so the download stops too. */
-export async function* chunksOf(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
+/** Why `signal` was aborted, as an Error to throw. */
+function abortReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  return reason instanceof Error ? reason : new Error("the download was aborted");
+}
+
+/**
+ * A web stream's chunks. A reader the caller stops early is cancelled, so the
+ * download stops too. When `signal` aborts, the reader is cancelled at once,
+ * which ends a read still waiting even on a body that ignores the abort, and
+ * the chunks end by throwing the signal's reason.
+ */
+export async function* chunksOf(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
   const reader = body.getReader();
+  const cancel = (): void => {
+    reader.cancel(signal?.reason).catch(() => undefined);
+  };
+  // Read through a function: the abort can come while a read waits.
+  const abortedBy = (): AbortSignal | null => (signal?.aborted === true ? signal : null);
+  signal?.addEventListener("abort", cancel, { once: true });
   try {
     for (;;) {
-      const { done, value } = await reader.read();
-      if (done) return;
-      yield value;
+      const before = abortedBy();
+      if (before !== null) throw abortReason(before);
+      const read = await reader.read().catch((error: unknown) => {
+        // A body the abort errors: the abort is the reason, not the body's error.
+        const aborted = abortedBy();
+        throw aborted !== null ? abortReason(aborted) : error instanceof Error ? error : new Error(String(error));
+      });
+      // A cancel ends the waiting read as if the body had ended: the abort decides.
+      const during = abortedBy();
+      if (during !== null) throw abortReason(during);
+      if (read.done) return;
+      yield read.value;
     }
   } finally {
+    signal?.removeEventListener("abort", cancel);
     await reader.cancel().catch(() => undefined);
   }
 }
