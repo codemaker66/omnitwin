@@ -110,6 +110,33 @@ describe("a receipt someone is holding", () => {
 });
 
 describe("the engine's notices (v2 has no other place for them)", () => {
+  // #388: a reload that puts back a piece holding a note this browser is not
+  // shown says so while the loading screen stands, before the chrome mounts.
+  it("shows a notice already standing when it mounts, once, after the region's first render", () => {
+    act(() => { usePlacementNoticeStore.getState().dismiss(); });
+    const line = "Table 2 stayed where it is, because it has a note that cannot be shown here.";
+    act(() => { postPlacementNotice(line); });
+    const receipts: string[] = [];
+    const stopCounting = usePlannerChromeStore.subscribe((state, previous) => {
+      if (state.receipt !== null && state.receipt !== previous.receipt) receipts.push(state.receipt.text);
+    });
+    let atFirstCommit: string | null | undefined;
+    render(
+      <div ref={(element) => { if (element !== null && atFirstCommit === undefined) atFirstCommit = element.querySelector(".pc-receipt-region")?.textContent ?? null; }}>
+        <Receipt />
+      </div>,
+    );
+    stopCounting();
+    // The region was there, quiet, before the line went in: a region made holding its words may never be read.
+    expect(atFirstCommit).toBe("");
+    expect(screen.getByRole("status").textContent).toBe(line);
+    expect(screen.getAllByText(line)).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /^Undo/u })).toBeNull();
+    // One notice, one receipt: said once.
+    expect(receipts).toEqual([line]);
+    act(() => { usePlacementNoticeStore.getState().dismiss(); });
+  });
+
   it("shows an undoable notice with Undo, and a plain one (a refusal) without", () => {
     render(<Receipt />);
     act(() => { postPlacementNotice("Pasted 3 tables from the Grand Hall", { undo: true }); });

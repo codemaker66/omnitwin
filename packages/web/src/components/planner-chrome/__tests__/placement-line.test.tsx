@@ -278,4 +278,30 @@ describe("the engine's line in the new chrome, in its receipt (ruling C2 on #388
     expect(receipts).toEqual([line]);
     expect(usePlannerChromeStore.getState().receipt).toMatchObject({ text: line, undo: false });
   });
+
+  it("says a reload's line about a piece it put back, standing as the chrome mounts, once in the receipt", async () => {
+    const [first] = rounds(1);
+    if (first === undefined) throw new Error("no rounds");
+    // A page never told Table 1 holds a note removes it, and keeps the work on this device.
+    await open([first], []);
+    act(() => { useEditorStore.getState().removeObject(first.table); });
+    expect(useEditorStore.getState().objects.some((object) => object.id === first.table)).toBe(false);
+
+    // The reload the API's sentence asks for: the read now marks Table 1, and the kept work is restored over it.
+    useEditorStore.getState().reset();
+    await open([first], [first.table]);
+    const line = "Table 1 stayed where it is, because it has a note that cannot be shown here.";
+    expect(usePlacementNoticeStore.getState().notice?.text).toBe(line);
+    expect(useEditorStore.getState().objects.some((object) => object.id === first.table)).toBe(true);
+
+    // The new chrome comes in after the load, its chunk on demand: the line was there before it.
+    const receipts: string[] = [];
+    const stopCounting = usePlannerChromeStore.subscribe((state, previous) => {
+      if (state.receipt !== null && state.receipt !== previous.receipt) receipts.push(state.receipt.text);
+    });
+    await openTheNewChrome();
+    stopCounting();
+    saidOnceInTheReceipt(line);
+    expect(receipts).toEqual([line]);
+  });
 });

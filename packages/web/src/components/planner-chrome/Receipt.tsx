@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from "react";
 import { useEditorStore } from "../../stores/editor-store.js";
-import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
+import { usePlacementNoticeStore, type PlacementNotice } from "../../stores/placement-notice-store.js";
 import { usePlannerChromeStore, type Receipt as ReceiptShown } from "../../stores/planner-chrome-store.js";
 import { Kbd } from "./Kbd.js";
 import { QuietKey } from "./Keys.js";
@@ -12,7 +12,8 @@ import "./receipt.css";
 // in a status region: "Table 7 put back in store · Undo · Ctrl Z". Undo is
 // the dock's own undo. A newer receipt replaces the older and has its own
 // five seconds. The region stays mounted so each new line is announced. Under v2
-// it is also where the placement engine's notices appear. Focus or the
+// it is also where the placement engine's notices appear, one standing when the
+// chrome mounts among them. Focus or the
 // pointer on the line holds it (WCAG 2.2.1); a line that goes while it has
 // focus hands focus to the dock's Undo, not to the page.
 // ---------------------------------------------------------------------------
@@ -81,11 +82,25 @@ export function Receipt(): ReactElement {
 
   // The engine's notices (lane E's one channel): v1 shows them in its own strip, v2 here.
   // A receipt one Undo takes back keeps its Undo; a refusal is the line alone.
-  useEffect(() => usePlacementNoticeStore.subscribe((state, previous) => {
-    const notice = state.notice;
-    if (notice === null || notice.id === previous.notice?.id) return;
-    usePlannerChromeStore.getState().postReceipt(notice.text, { undo: notice.undo === true });
-  }), []);
+  // A notice already standing when the chrome mounts is shown too: a reload that puts back a
+  // piece holding a note this browser is not shown says so while the loading screen stands,
+  // before this chrome's chunk is there (#388). It goes in after the region's first render,
+  // as every line does, so the region that says it was there before it; each notice once.
+  const shownNotice = useRef<number | null>(null);
+  useEffect(() => {
+    const show = (notice: PlacementNotice): void => {
+      if (shownNotice.current === notice.id) return;
+      shownNotice.current = notice.id;
+      usePlannerChromeStore.getState().postReceipt(notice.text, { undo: notice.undo === true });
+    };
+    const standing = usePlacementNoticeStore.getState().notice;
+    if (standing !== null) show(standing);
+    return usePlacementNoticeStore.subscribe((state, previous) => {
+      const notice = state.notice;
+      if (notice === null || notice.id === previous.notice?.id) return;
+      show(notice);
+    });
+  }, []);
 
   return (
     <div className="pc-receipt-region" role="status">

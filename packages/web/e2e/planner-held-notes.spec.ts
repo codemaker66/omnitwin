@@ -16,8 +16,9 @@ import { HELD_PIECE_OMITTED_SENTENCE, PlannerSaveServer, SAVE_GRAND_HALL, signIn
 // Where the person reads it: today's chrome (v1) shows the planner's
 // placement notice under the room. "Keep mine" is offered only by the new
 // chrome's slate (v2), and only to someone signed in; the new chrome shows the
-// same line in its own notice above the dock (ruling C2 on #388), and it is
-// read there, once on the page.
+// same line in its receipt above the dock (the release lead's ruling of 22
+// November 2026 on #388's merge with master), and it is read there, once on
+// the page, a line standing when the chrome arrives included.
 //
 // Edits go through the planner's own stores and commands, by importing the
 // modules Vite serves to the app (one module instance per URL), as
@@ -142,9 +143,9 @@ async function undoSteps(page: Page): Promise<number> {
   });
 }
 
-/** The line the new chrome shows above its dock, in its own notice. */
+/** The line the new chrome shows above its dock, in its receipt. */
 function lineAboveTheDock(page: Page): Locator {
-  return page.locator("[data-pc-zone='above-dock'] [data-testid='placement-notice']");
+  return page.locator("[data-pc-zone='above-dock'] .pc-receipt .pc-receipt__text");
 }
 
 /** The planner's placement notice store: what any chrome would show. */
@@ -304,6 +305,21 @@ test("v2: Keep mine over a newer version keeps a table someone has since written
   expect(server.heldNotes.get(TABLE_2)).toBe(THEIR_NOTE);
   expect(await pieceIds(page)).toEqual(expect.arrayContaining([TABLE_1, TABLE_2]));
   expect(await heldIds(page)).toEqual([TABLE_2]);
+
+  // Table 1 holds no note this browser knows of, so it goes; meanwhile the server comes to hold one on it, by a
+  // write that leaves the revision as it was, and refuses the save that leaves it out. The reload its sentence
+  // asks for puts Table 1 back as the page opens, and the new chrome, arriving after, says so.
+  await onSelection(page, [TABLE_1], "removeSelection");
+  await expect.poll(() => pieceIds(page), { timeout: 10_000 }).toEqual([TABLE_2]);
+  server.heldNotes.set(TABLE_1, THEIR_NOTE);
+  expect(await saveByHand(page, true)).toBe(false);
+  await openPlan(page, "v2");
+  const stayedOnReload = "Table 1 stayed where it is, because it has a note that cannot be shown here.";
+  await expect(lineAboveTheDock(page)).toHaveText(stayedOnReload);
+  await expect(page.getByText(stayedOnReload, { exact: true })).toHaveCount(1);
+  expect(await pieceIds(page)).toEqual(expect.arrayContaining([TABLE_1, TABLE_2]));
+  expect(storedIds(server)).toContain(TABLE_1);
+  expect(server.heldNotes.get(TABLE_1)).toBe(THEIR_NOTE);
 });
 
 test("v2: Undo will not take away a table that has come to hold a note this browser is not shown", async ({ page }) => {
