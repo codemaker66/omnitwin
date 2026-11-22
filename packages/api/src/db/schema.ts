@@ -818,7 +818,7 @@ export const enquiries = pgTable("enquiries", {
   utmMedium: varchar("utm_medium", { length: 100 }),
   utmCampaign: varchar("utm_campaign", { length: 100 }),
   acquisitionChannel: varchar("acquisition_channel", { length: 20 }).$type<AcquisitionChannel>(),
-  // Migration 0110 (the spine): the event this enquiry is for, at its own
+  // The spine's links migration (`*_event_spine_links`): the event this enquiry is for, at its own
   // venue. Moved, never emptied (trigger enquiries_event_link_kept); withheld
   // from the enquiry's customer (routes/enquiries.ts asSeenBy).
   eventId: uuid("event_id"),
@@ -903,7 +903,7 @@ export const clientAccounts = pgTable("client_accounts", {
   accountType: varchar("account_type", { length: 60 }).notNull().default("event_client"),
   primaryContactId: uuid("primary_contact_id").references((): AnyPgColumn => contacts.id, { onDelete: "set null" }),
   // Typed as AnyPgColumn: enquiries -> events -> client_accounts -> enquiries
-  // is a cycle of keys since 0110, which TypeScript cannot infer through.
+  // is a cycle of keys since the spine's links migration (`*_event_spine_links`), which TypeScript cannot infer through.
   sourceEnquiryId: uuid("source_enquiry_id").references((): AnyPgColumn => enquiries.id, { onDelete: "set null" }),
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1080,7 +1080,7 @@ export const opportunities = pgTable("opportunities", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueId: uuid("venue_id").notNull().references(() => venues.id),
   // Typed as AnyPgColumn: opportunities -> events -> client_accounts is a
-  // cycle of keys since 0110, which TypeScript cannot infer through.
+  // cycle of keys since the spine's links migration (`*_event_spine_links`), which TypeScript cannot infer through.
   clientAccountId: uuid("client_account_id").references((): AnyPgColumn => clientAccounts.id, { onDelete: "set null" }),
   primaryContactId: uuid("primary_contact_id").references(() => contacts.id, { onDelete: "set null" }),
   sourceEnquiryId: uuid("source_enquiry_id").references(() => enquiries.id, { onDelete: "set null" }),
@@ -1098,7 +1098,7 @@ export const opportunities = pgTable("opportunities", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  // Migration 0110 (the spine): the event this deal is for, at its own venue.
+  // The spine's links migration (`*_event_spine_links`): the event this deal is for, at its own venue.
   // Moved, never emptied (trigger opportunities_event_link_kept).
   eventId: uuid("event_id"),
 }, (table) => [
@@ -1696,12 +1696,12 @@ export const events = pgTable("events", {
   // CRM spine linkage (Canon §2.4, T-487) — events join the Sell→Hold journey
   // instead of floating free of the pipeline. clientName stays as the legacy
   // denormalised label; these FKs are authoritative where present. Since
-  // migration 0110 the account must be the event's own venue's
+  // the spine's links migration (`*_event_spine_links`) the account must be the event's own venue's
   // (events_client_account_venue_fk below; its ON DELETE SET NULL
   // ("client_account_id") lives in the migration).
   clientAccountId: uuid("client_account_id"),
   // Typed as AnyPgColumn: opportunities and enquiries name events in their
-  // keys since 0110, a cycle TypeScript cannot infer through.
+  // keys since the spine's links migration (`*_event_spine_links`), a cycle TypeScript cannot infer through.
   opportunityId: uuid("opportunity_id").references((): AnyPgColumn => opportunities.id, { onDelete: "set null" }),
   // Headcount triple (Canon §2.4, R2): guaranteed = contract floor, expected
   // = working number, setFor = what the room is physically set for. The
@@ -2547,7 +2547,7 @@ export const proposals = pgTable("proposals", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  // Migration 0110 (the spine): the event this proposal is for, at its own
+  // The spine's links migration (`*_event_spine_links`): the event this proposal is for, at its own
   // venue. Moved, never emptied (trigger proposals_event_link_kept).
   eventId: uuid("event_id"),
 }, (table) => [
@@ -3977,7 +3977,7 @@ export const eventBindingReviews = pgTable("event_binding_reviews", {
   ),
 ]);
 
-// Migration 0110 (the spine): every join of a record to its event that the
+// The spine's links migration (`*_event_spine_links`): every join of a record to its event that the
 // spine made, so each can be undone (undoneAt). eventId has no key: the
 // record must outlive an event the undo removes. One join in force per record.
 export const eventLinkJoins = pgTable("event_link_joins", {
@@ -4004,10 +4004,10 @@ export const eventLinkJoins = pgTable("event_link_joins", {
   ),
 ]);
 
-// Migration 0110 (the spine): the list of joins a person should check, one
+// The spine's links migration (`*_event_spine_links`): the list of joins a person should check, one
 // question per row: the record, why its join was in doubt, the events it
 // could belong to, and, once answered, who answered and what they chose. One
-// open question per record and reason. Migration 0110 copies October's two
+// open question per record and reason. The spine's links migration (`*_event_spine_links`) copies October's two
 // kinds of question from event_binding_reviews (bindingReviewId names the
 // source row, whose text is read there; detail here holds kinds and counts,
 // never a name); its notes of a derived status are not questions and stay there.

@@ -869,7 +869,7 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     expect((listed.body["data"] as Record<string, unknown>[]).every((row) => !("firstResponseAt" in row) && !("eventId" in row))).toBe(true);
     const staffView = await call("GET", `/enquiries/${enquiryId}`, asStaff());
     expect(staffView.body["data"]).toMatchObject({ firstResponseChannel: "email", firstResponseBy: people.staff });
-    // The event the venue filed it under is its team's to read (the spine, 0110).
+    // The event the venue filed it under is its team's to read (the spine's links migration, `*_event_spine_links`).
     expect(staffView.body["data"]).toHaveProperty("eventId", null);
   });
 

@@ -25,7 +25,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/hold-promotion-postgres.test.ts",
   // The bind (migration 0090): zero holds or inks without an event.
   "src/__tests__/booking-event-bind-postgres.test.ts",
-  // The spine's links (0110), on a database of its own: venue-pinned keys, a link moved never emptied, one open deal per event.
+  // The spine's links migration (`*_event_spine_links`), on a database of its own: venue-pinned keys, a link moved never emptied, one open deal per event.
   "src/__tests__/event-spine-links-schema-postgres.test.ts",
   // ...and its join of old records, run by the migrator over rows written before it: never a guess, and repeatable.
   "src/__tests__/event-spine-links-migration-postgres.test.ts",
@@ -33,7 +33,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/event-spine-bind-postgres.test.ts",
   // ...and the count: records without their event, nine numbers that must read zero.
   "src/__tests__/event-spine-invariant-postgres.test.ts",
-  // ...and the operator's read the deploy and nightly runs make: the join, both counts, one line of JSON.
+  // ...and the operator's read the nightly run and a run by hand make: the join, both counts, one line of JSON.
   "src/__tests__/event-rules-check-postgres.test.ts",
   "src/__tests__/enquiry-bookings-postgres.test.ts",
   // A booking stored with an empty title keeps its venue's Diary range readable (API-9).

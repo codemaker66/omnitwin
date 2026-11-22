@@ -10,7 +10,7 @@ import { sqlList, type InvariantReader } from "./event-binding.js";
 // ---------------------------------------------------------------------------
 // The spine's count (stage 1, the links): nine numbers that must all read
 // zero once every proposal, deal and enquiry that must have an event has one.
-// Read-only: one statement, nine sub-selects, each scoped to one venue when a
+// Read-only: one statement, nine numbers from thirteen sub-selects, each scoped to one venue when a
 // venue is named.
 //
 // It is the definition in @omnitwin/types (event-spine.ts) in SQL, and it
