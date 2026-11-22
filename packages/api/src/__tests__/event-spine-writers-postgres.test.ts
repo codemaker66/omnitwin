@@ -24,6 +24,7 @@ import {
   link,
   openSpineDatabase,
   platformTarget,
+  proposal as proposalIn,
   venue as venueIn,
   type SpineActor,
   type SpineDatabase,
@@ -142,7 +143,10 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
     post(actor, `/enquiries/${enquiryId}/event`);
   const bookViewing = (v: SpineVenue, enquiryId: string, day: number): Promise<LightMyRequestResponse> =>
     post(v.admin, "/bookings/viewings", { enquiryId, spaceId: v.rooms.saloon, startsAt: at("11:00", day), endsAt: at("11:30", day) });
-  const priceQuote = (v: SpineVenue, links: { readonly enquiryId: string; readonly opportunityId?: string }): Promise<LightMyRequestResponse> =>
+  const priceQuote = (
+    v: SpineVenue,
+    links: { readonly enquiryId: string; readonly opportunityId?: string; readonly proposalId?: string },
+  ): Promise<LightMyRequestResponse> =>
     post(v.admin, "/quotes", {
       venueId: v.venueId, ...links, name: "Fixture quote", currency: "GBP",
       lineItems: [{ description: "Room hire", quantity: 1, unitAmountMinor: 150_000 }],
@@ -522,6 +526,46 @@ describe.skipIf(target === undefined)("the spine's writers: an enquiry gets its 
     expect(await questionsOn(alone)).toEqual([]);
     expect(await questionsOn(withDeal)).toEqual([]);
   });
+
+  it("a quote naming a proposal waits on the proposal before taking its enquiry, so a proposal being sent never deadlocks with it", async () => {
+    const v = await venue("quote against a send");
+    const enquiryId = await enquiry(v);
+    const proposalId = await proposalIn(pool, v.venueId, "draft", { enquiryId });
+    const sender = await pool.connect();
+    let quoted: Promise<LightMyRequestResponse> | undefined;
+    let waiting: readonly { readonly query: string; readonly blockers: readonly number[] }[] = [];
+    let senderPid = 0;
+    try {
+      // As a send does (proposals.ts): the proposal FOR UPDATE, then its enquiry's first reply stamped.
+      await sender.query("BEGIN");
+      senderPid = (await sender.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid ?? 0;
+      await sender.query("SELECT id FROM proposals WHERE id = $1 FOR UPDATE", [proposalId]);
+      quoted = priceQuote(v, { enquiryId, proposalId });
+      await blocked(1);
+      waiting = (await pool.query<{ query: string; blockers: number[] }>(
+        "SELECT query, pg_blocking_pids(pid) AS blockers FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+        [APPLICATION_NAME],
+      )).rows;
+      // The quote has not taken the enquiry, so the send's stamp does not wait on it.
+      await sender.query(`UPDATE enquiries SET first_response_at = now(), first_response_by = $2, first_response_channel = 'email',
+        first_response_recorded_at = now() WHERE id = $1`, [enquiryId, v.admin.id]);
+      await sender.query("COMMIT");
+    } catch (error) {
+      await sender.query("ROLLBACK");
+      throw error;
+    } finally {
+      sender.release();
+    }
+    const response = await quoted;
+    // Both finish: the send committed above, and the quote is made, never a 500.
+    expect(response?.statusCode, response?.body).toBe(201);
+    // What the quote waited on: the proposal's key share, held up by the send alone.
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]?.query).toMatch(/from "proposals" .* for key share/u);
+    expect(waiting[0]?.blockers).toEqual([senderPid]);
+    expect((await enquiryRow(enquiryId)).first_response_at).not.toBeNull();
+    expect(await enquiryEvent(enquiryId)).not.toBeNull();
+  }, 30_000);
 
   it("names an enquiry's event as its first hold would be titled", async () => {
     expect(enquiryEventNaming({ name: "Iona Reid", email: "iona@example.test", eventType: "wedding" }))
