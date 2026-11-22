@@ -222,7 +222,10 @@ refused for leaving one out says the server's sentence with no Retry, and a
 table holding the person's own note goes in two saves; in the new chrome Keep
 mine keeps a table someone has since written a note on, and Undo will not take
 one away (`planner-held-notes.spec.ts`); this changes the inventory from 427
-to 432 and the CPU partition from 422 to 427.
+to 432 and the CPU partition from 422 to 427. On 22 November 2026 the spec reads
+the new chrome's line in its receipt and its Keep mine case goes on to a reload
+that puts a table back; no identity changed, and the admission's source commit
+and hashes were taken again from that spec.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
