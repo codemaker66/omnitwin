@@ -16,6 +16,7 @@
 
 - The repository is public. No email address, account name, key value or key-file content in code, tests, logs or commits. Tests use `example.com` and `.invalid` only.
 - An API key or the GitHub token is read from its file at the moment of use and handed straight to the SDK client or to the `git` or `gh` child process. It never enters the tick's own `process.env`, a log line, an error message or any file.
+- Every Anthropic client is built only through `sdkSandboxApi` in `src/sandbox/api.ts`, never with `new Anthropic(...)`: it fixes the host to `https://api.anthropic.com`, sends no auth token, refuses to start while `ANTHROPIC_BASE_URL` names another host or `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_CUSTOM_HEADERS` is set, and never forwards the key on a redirect to another host.
 - TypeScript strict, no `any`. zod validates every file read from disk. Follow the package's existing patterns: `src/sandbox/*` and the `FakeApi` tests.
 - All service state lives under the work root (set when the shift is installed; it lies outside the repository), never in the repository.
 - A pot is used only when its settings entry says `confirmedNoCard: true` and `hold` is null.
