@@ -46,7 +46,7 @@ import {
 } from "../sandbox/outputs.js";
 import { unquoteGitPath } from "../sandbox/patches.js";
 import { ADVISORY_FLAG } from "../sandbox/review.js";
-import { centsString, invokesVerifier, parseVerifyOutput, SessionMayExistError } from "../sandbox/session.js";
+import { centsString, invokesVerifier, parseVerifyOutput, runSession, SessionMayExistError } from "../sandbox/session.js";
 import { ensureSandbox } from "../sandbox/setup.js";
 import { parseTask } from "../task.js";
 import { FakeApi } from "./fake-api.js";
@@ -1088,6 +1088,9 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     if (record.kind !== "ran") throw new Error(record.reason);
     expect(api.sessions).toHaveLength(1);
     expect(api.listCalls).toBe(1);
+    // The lookup reaches back to before the create (FakeApi lists a session only from createdSince on, as the API does).
+    expect(api.listedSince).toHaveLength(1);
+    expect(Date.parse(api.listedSince[0] ?? "")).toBeLessThanOrEqual(Date.parse(api.createTimes[0] ?? ""));
     // Found by the run's own metadata, not by the other session in the list.
     expect(api.sessions[0]?.metadata).toMatchObject({ lane: "sandbox", job: "a4-trial", task: "robots-wildcards", run: expect.any(String) });
     expect(record.result.sessionId).toBe("sesn_1");
@@ -1565,6 +1568,52 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     expect(record.result.runningAfterFinish).toBe(false);
     expect(record.costKnown).toBe(false);
     expect(record.costUsd).toBe(4.5);
+  });
+
+  it("looks a failed create up through the real SDK client from before it was sent, archived sessions included, after waits of 0, 5, 15 and 30 s", async () => {
+    const runDir = await mkdtemp(path.join(tmpdir(), "credit-runner-lookup-"));
+    dirs.push(runDir);
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    let createdAt = Number.NaN;
+    const lookups: { readonly query: URLSearchParams; readonly waitedMs: number }[] = [];
+    let waited = 0;
+    const api = sdkSandboxApi("sk-test-not-a-key", (input, init) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      const method = init?.method ?? "GET";
+      if (method === "POST" && url.pathname === "/v1/files") return Promise.resolve(json({ id: "file_1", type: "file" }));
+      if (method === "POST" && url.pathname === "/v1/sessions") {
+        createdAt = Date.now();
+        return Promise.resolve(json({ type: "error", error: { type: "api_error", message: "overloaded" } }, 500));
+      }
+      if (method === "GET" && url.pathname === "/v1/sessions") {
+        lookups.push({ query: url.searchParams, waitedMs: waited });
+        waited = 0;
+        return Promise.resolve(json({ data: [], next_page: null }));
+      }
+      return Promise.resolve(json({ type: "error", error: { type: "not_found_error", message: url.pathname } }, 404));
+    });
+    const error: unknown = await runSession({
+      api,
+      state: { environmentId: "env_1", agentId: "agent_1", agentVersion: 1, promptSha: "x" },
+      facts: { task, baseSha: BASE, branch: "credit/robots-wildcards" },
+      budgetUsd: 4.5,
+      timeoutMinutes: 60,
+      runDir,
+      verifyScript: "// verify",
+      title: "lookup",
+      metadata: { lane: "sandbox", job: "a4-trial", task: "robots-wildcards" },
+      sleep: (ms) => {
+        waited += ms;
+        return Promise.resolve();
+      },
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SessionMayExistError);
+    expect(lookups.map((lookup) => lookup.waitedMs)).toEqual([0, 5_000, 15_000, 30_000]);
+    for (const { query } of lookups) {
+      expect(query.get("include_archived")).toBe("true");
+      expect(query.has("created_at[lte]")).toBe(false);
+      expect(Date.parse(query.get("created_at[gte]") ?? "")).toBeLessThanOrEqual(createdAt);
+    }
   });
 
   it("never adopts an earlier session of the same lane, job and task after a failed create: the per-run id must match too", async () => {

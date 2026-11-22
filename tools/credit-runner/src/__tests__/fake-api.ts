@@ -122,6 +122,9 @@ export class FakeApi implements SandboxApi {
   /** listSessions fails this many times before it answers. */
   listFailures = 0;
   listCalls = 0;
+  /** The `createdSince` of each listSessions call, and the time of each createSession call, as ISO times. */
+  readonly listedSince: string[] = [];
+  readonly createTimes: string[] = [];
   /** Sessions already in the list before this run's create, such as an earlier run of the same task. */
   earlierSessions: SessionListing[] = [];
   /** Sizes the Files API lists, by output name, where they differ from the text's own. */
@@ -140,7 +143,7 @@ export class FakeApi implements SandboxApi {
   /** retrieveSession fails this many times before it answers. */
   retrieveFailures = 0;
   sendOutcome: (event: BetaManagedAgentsEventParams, attempt: number) => SendOutcome = () => "ok";
-  private readonly created: SessionListing[] = [];
+  private readonly created: (SessionListing & { readonly createdAt: string })[] = [];
   private connection = 0;
   private listed = 0;
   private retrieved = 0;
@@ -190,7 +193,9 @@ export class FakeApi implements SandboxApi {
   };
   createSession = (params: SessionCreateParams): Promise<SessionRef> => {
     this.sessions.push(params);
-    if (this.createError === null || this.createdAnyway) this.created.push({ id: "sesn_1", status: "running", metadata: { ...params.metadata } });
+    const createdAt = new Date().toISOString();
+    this.createTimes.push(createdAt);
+    if (this.createError === null || this.createdAnyway) this.created.push({ id: "sesn_1", status: "running", metadata: { ...params.metadata }, createdAt });
     return this.createError === null ? Promise.resolve({ id: "sesn_1", status: "running" }) : Promise.reject(this.createError);
   };
   retrieveSession = (): Promise<SessionTotals> => {
@@ -213,11 +218,14 @@ export class FakeApi implements SandboxApi {
       },
     });
   };
-  listSessions = (): AsyncIterable<SessionListing> => {
+  /** As the API filters: a session this run created is listed only from `createdSince` on (ISO times compare as text). */
+  listSessions = (createdSince: string): AsyncIterable<SessionListing> => {
     this.listCalls += 1;
+    this.listedSince.push(createdSince);
     const fail = this.listFailures > 0;
     if (fail) this.listFailures -= 1;
-    const sessions: SessionListing[] = [{ id: "sesn_other", status: "idle", metadata: { lane: "sandbox", job: "other" } }, ...this.earlierSessions, ...this.created];
+    const ours = this.created.filter((session) => session.createdAt >= createdSince).map(({ id, status, metadata }) => ({ id, status, metadata }));
+    const sessions: SessionListing[] = [{ id: "sesn_other", status: "idle", metadata: { lane: "sandbox", job: "other" } }, ...this.earlierSessions, ...ours];
     return (async function* () {
       await Promise.resolve();
       if (fail) throw new Error("connection reset");
