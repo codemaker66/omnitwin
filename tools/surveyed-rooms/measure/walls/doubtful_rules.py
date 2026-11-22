@@ -6,7 +6,8 @@
 a texel that stations saw, and none of them clear of an occluder's margin, must still take a view. Here every such
 texel is sampled from EVERY station that saw it (one sample from the station's panorama at the wall's relief), and
 each view is judged against the same station's own picture of the clean wall beside it: the median luminance of
-the texels within 10 cm that this station saw clear, on the same surface (wallviews.py). That is the measure of
+the texels of a 41 x 41 square round it, the texel left out, that this station saw clear, on the same surface
+(wallviews.py). That is the measure of
 16 November 2026 for an occluder's rim; its DARK judgement is a ratio and does not depend on a station's exposure,
 while OFF and the distance are absolute levels and do. Each rule then picks its
 station for every texel, and is scored:

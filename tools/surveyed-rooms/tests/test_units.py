@@ -881,6 +881,27 @@ class WallMeasure(unittest.TestCase):
         self.assertEqual((f(1, 3, 0, 9), f(0, 3, 0, 9), f(4, 0, 9, 0)), (0.0, 1.0, 1.0))     # a control all one way
         self.assertEqual(f(np.int64(8), np.int64(1), np.int64(61), np.int64(183)), tail(8, 1, 61, 183))   # numpy's integers
 
+    def test_the_chance_that_a_family_of_raw_tests_names_some_wall(self):
+        # Guards chance_of_reaching and chance_of_any, behind the records' chance that the per-wall tests, taken
+        # raw at 0.05, name some wall by chance alone (TM4): a sign test on 5 patches or fewer cannot reach 0.05;
+        # on 6 only all six one way does, either way; a family's chance is one less the product of each one's
+        # chance of not reaching it, which for few patches is far below 1 - 0.95^k.
+        from fractions import Fraction  # noqa: PLC0415
+        from math import comb  # noqa: PLC0415
+        wv = self.wv
+        self.assertEqual([wv.chance_of_reaching(n) for n in range(6)], [0.0] * 6)
+        self.assertEqual(wv.chance_of_reaching(6), 2 / 64)
+        self.assertEqual(wv.chance_of_reaching(np.int64(6)), 2 / 64)            # a count straight from numpy
+        for n in (9, 17, 38):                                       # against the definition, in fractions
+            want = Fraction(sum(comb(n, w) for w in range(n + 1) if wv.sign_test(w, n - w) < 0.05), 2 ** n)
+            self.assertEqual(wv.chance_of_reaching(n), float(want), n)
+            self.assertLess(wv.chance_of_reaching(n), 0.05)         # the exact test is conservative
+        self.assertEqual(wv.chance_of_any([]), 0.0)
+        self.assertEqual(wv.chance_of_any([6, 6]), 1 - (1 - 2 / 64) ** 2)
+        self.assertEqual(wv.chance_of_any([5, 0, 3]), 0.0)
+        saloon = [4, 9, 26, 0, 9, 12, 1, 1, 1, 4, 9, 17, 2, 4, 11, 2, 4, 11, 1, 0, 3, 5, 21, 38]    # the first build against the third
+        self.assertTrue(0.27 < wv.chance_of_any(saloon) < 0.28 < 0.70 < 1 - 0.95 ** 24)
+
     def test_a_patch_is_one_unit_whatever_is_left_out_of_it(self):
         wv = self.wv
         mask = np.zeros((40, 74), bool)
@@ -914,7 +935,8 @@ class WallMeasure(unittest.TestCase):
 class CompareBuilds(unittest.TestCase):
     """measure/walls/compare_builds.py: its per-wall computation (compare_wall) and its bar (wall_tests), on tiny
     made-up walls. Each wall starts as grey plaster at 100 levels on one surface, every texel on station 0 in both
-    builds, seen clear by it and coloured in both photographs; each test changes what it needs."""
+    builds, seen clear by it and coloured in both photographs; each test changes what it needs. And
+    labels_diff.py's check of a build's labels against the forecast written before it (against_forecast)."""
 
     @classmethod
     def setUpClass(cls):
@@ -930,6 +952,9 @@ class CompareBuilds(unittest.TestCase):
             spec = importlib.util.spec_from_file_location("compare_builds", os.path.join(walls, "compare_builds.py"))
             cls.cb = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(cls.cb)                         # reads no argument and no file: that is all main()'s
+            spec = importlib.util.spec_from_file_location("labels_diff", os.path.join(walls, "labels_diff.py"))
+            cls.ld = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(cls.ld)                         # likewise
         finally:
             if before is None:
                 sys.modules.pop("wallviews", None)
@@ -1169,6 +1194,87 @@ class CompareBuilds(unittest.TestCase):
         self.assertEqual((row["as_the_reference_in_all"], row["unlike_the_reference_in_all"]), (12, 20))
         self.assertEqual((row["as_the_reference"]["texels"], row["unlike_the_reference"]["texels"]), (12, 16))
         self.assertEqual(row["unlike_the_reference"]["paired_by_own_patch"]["patches"], 4)    # its own patches: one a group judged
+
+    def test_apart_from_s_own_patches_are_its_own_texels_judged_or_not(self):
+        # Guards the unit of the test stated before the Saloon's fourth build (TM3): unlike_the_reference's own
+        # patches are the connected patches of every changed texel whose station is the reference's neither, judged
+        # or not, and of nothing else. Two blobs of such texels, a column apart, are joined at one texel. Where that
+        # texel went back to the reference's station they are two own patches (numbered by all the changed texels
+        # they would be one); where it is of their own kind but under a photo patch, not judged, they are one
+        # (numbered by the judged texels alone they would be two). By patch, every texel whose label differs, they
+        # are one either way.
+        H, W = 30, 60
+        blobs, joint = np.zeros((H, W), bool), np.zeros((H, W), bool)
+        blobs[14:17, 20:23] = blobs[14:17, 24:27] = True
+        joint[15, 23] = True                                        # touches both blobs; nothing else does
+        base = self.wall(H, W)                                      # the third build (old) and the reference: station 0 everywhere
+        base["reference"] = np.zeros((H, W), np.int32)
+        base["new"][blobs] = 1                                      # the fourth build: neither the third's station nor the first's
+        base["L2"][blobs] = 40.0                                    # and every texel of both blobs turns dark
+        back = self.copy(base)
+        back["old"][joint] = 2                                      # the third build had another station there
+        back["new"][joint] = 0                                      # and the fourth went back to the reference's
+        hidden = self.copy(base)
+        hidden["new"][joint] = 1                                    # of the blobs' own kind
+        hidden["covered"][joint] = True                             # under a photo patch: not judged
+        one = dict(worse=1, better=0, unchanged=0, p_exact=1.0, p_worse=0.5)
+        two = dict(worse=2, better=0, unchanged=0, p_exact=0.5, p_worse=0.25)
+        for name, w, own, in_all, like in (("joined by a texel back on the reference's station", back, two, 18, 1),
+                                           ("joined by an unjudged texel of their own kind", hidden, one, 19, 0)):
+            with self.subTest(name):
+                row, masks = self.compare(w)
+                part = row["unlike_the_reference"]
+                self.assertTrue(np.array_equal(masks["unlike_the_reference"], blobs))       # the same 18 judged texels each time
+                self.assertEqual((row["unlike_the_reference_in_all"], row["as_the_reference_in_all"]), (in_all, like))
+                self.assertEqual(part["paired_by_own_patch"]["patches"], own["worse"])
+                for key in self.cb.JUDGEMENTS:                      # dark, off and farther: every texel of both blobs turned worse
+                    self.assertEqual(part["paired_by_own_patch"][key], own, key)
+                    self.assertEqual(part["paired_by_patch"][key], one, key)
+                self.assertEqual(part["paired_by_patch"]["patches"], 1)
+
+    def test_labels_diff_checks_every_count_a_forecast_names(self):
+        # Guards labels_diff.py --expect (TM6), with which a build's labels are checked against the forecast written
+        # before it was made: every total and every per-wall count the forecast names is compared, so a build whose
+        # totals match while a wall's count does not is refused, and so is a count the build does not make.
+        rows = [dict(wall="front", differ=3, doubtful_to_clear=2, hole_to_clear=1, unexplained=0),
+                dict(wall="rear", differ=1, doubtful_to_clear=1, hole_to_clear=0, unexplained=0)]
+        total = dict(differ=4, doubtful_to_clear=3, hole_to_clear=1, unexplained=0)
+        forecast = dict(total=dict(differ=4, doubtful_to_clear=3, hole_to_clear=1),
+                        walls=dict(front=dict(differ=3, doubtful_to_clear=2), rear=dict(hole_to_clear=0)))
+        self.assertEqual(self.ld.against_forecast(total, rows, forecast), [])
+        # The same totals, and the texels on the wrong walls: one each way.
+        moved = dict(forecast, walls=dict(front=dict(doubtful_to_clear=1), rear=dict(doubtful_to_clear=2)))
+        self.assertEqual(self.ld.against_forecast(total, rows, moved),
+                         ["front doubtful_to_clear: expected 1, found 2", "rear doubtful_to_clear: expected 2, found 1"])
+        # A count the build does not make, and a wall it does not have, are differences, not matches.
+        absent = dict(total=dict(clear_to_doubtful=0), walls=dict(window=dict(differ=0)))
+        self.assertEqual(self.ld.against_forecast(total, rows, absent),
+                         ["total clear_to_doubtful: expected 0, found None", "window differ: expected 0, found None"])
+
+    def test_labels_diff_compares_every_array_of_a_wall_s_photographs(self):
+        # Guards labels_diff.py --photographs: every file the walls step wrote for the wall (its tiles and their
+        # 2.5 mm .fine files, never another wall's whose name begins with this one's), and every array in them, by
+        # dtype, shape and bytes, so that the same bytes read as another dtype or shape are not the same array.
+        import tempfile  # noqa: PLC0415
+        rgb = np.arange(24, dtype=np.float32).reshape(2, 4, 3)
+        arrays = {"wall-w-0.npz": dict(rgb=rgb, weight=np.ones((2, 4), np.float32), valid=np.ones((2, 4), bool)),
+                  "wall-w-0.fine.npz": dict(rgb8=np.zeros((4, 8, 3), np.uint8), valid=np.ones((4, 8), bool)),
+                  "wall-w-front-0.npz": dict(rgb=rgb)}                  # another wall, which must not be counted
+        with tempfile.TemporaryDirectory() as root:
+            works = [os.path.join(root, k) for k in ("a", "b")]
+            for work in works:
+                os.makedirs(os.path.join(work, "proj"))
+                for name, content in arrays.items():
+                    np.savez(os.path.join(work, "proj", name), **content)
+            self.assertEqual(self.ld.same_photographs(*works, "w"), dict(files=2, arrays=5, identical=5, differ=[]))
+            np.savez(os.path.join(works[1], "proj", "wall-w-front-0.npz"), rgb=rgb + 1)
+            self.assertEqual(self.ld.same_photographs(*works, "w")["identical"], 5)
+            np.savez(os.path.join(works[1], "proj", "wall-w-0.npz"), **dict(arrays["wall-w-0.npz"], rgb=rgb.view(np.int32)))
+            self.assertEqual(self.ld.same_photographs(*works, "w")["differ"], ["wall-w-0.npz: rgb"])     # the same bytes, another dtype
+            np.savez(os.path.join(works[1], "proj", "wall-w-1.npz"), rgb=rgb)
+            got = self.ld.same_photographs(*works, "w")
+            self.assertEqual((got["files"], got["identical"]), (3, 4))
+            self.assertEqual(got["differ"], ["wall-w-1.npz: in one build only", "wall-w-0.npz: rgb"])
 
 
 class Windows(unittest.TestCase):
