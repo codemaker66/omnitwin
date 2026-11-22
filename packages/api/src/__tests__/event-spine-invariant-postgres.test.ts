@@ -1,6 +1,12 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  CLOSED_ENQUIRY_STATES,
+  NON_BOOKING_ENQUIRY_TYPES,
+  OPEN_OPPORTUNITY_STAGES,
+  SENT_PROPOSAL_STATUSES,
+} from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
   SPINE_INVARIANT_FIELDS,
@@ -393,6 +399,38 @@ describe.skipIf(target === undefined)("the spine: the count of records without t
       "SELECT indexname FROM pg_indexes WHERE tablename = 'opportunities' AND indexname = 'opportunities_one_open_per_event'")).rows;
     expect(indexes).toEqual([{ indexname: "opportunities_one_open_per_event" }]);
     expect(await readSpineInvariant(db, v.venueId)).toEqual(ALL_ZERO);
+  });
+
+  it("the join's four lists, as the database holds them, are the definition's", async () => {
+    // spine_join_old_records() carries its own copy of the definition's lists,
+    // frozen when a migration wrote it, while the count reads them from
+    // @omnitwin/types as values. Read from the database, never from the file:
+    // when a migration replaces the function, this reads the replacement.
+    const [fn] = (await pool.query<{ prosrc: string }>(
+      "SELECT prosrc FROM pg_proc WHERE proname = 'spine_join_old_records'")).rows;
+    if (fn === undefined) throw new Error("spine_join_old_records() is missing from the database");
+    const frozen = new Map<string, readonly string[]>();
+    for (const match of fn.prosrc.matchAll(/(\w+)\s+CONSTANT\s+text\[\]\s*:=\s*ARRAY\[([^\]]*)\]/gu)) {
+      const [, name, items] = match;
+      if (name === undefined || items === undefined) continue;
+      frozen.set(name, [...items.matchAll(/'([^']*)'/gu)].map((item) => item[1] ?? ""));
+    }
+    const definition: Record<string, readonly string[]> = {
+      open_deal_stages: OPEN_OPPORTUNITY_STAGES,
+      sent_proposal_statuses: SENT_PROPOSAL_STATUSES,
+      closed_enquiry_states: CLOSED_ENQUIRY_STATES,
+      non_booking_enquiry_types: NON_BOOKING_ENQUIRY_TYPES,
+    };
+    const asSet = (values: readonly string[]): string[] => [...new Set(values)].sort();
+    for (const [name, values] of Object.entries(definition)) {
+      const held = frozen.get(name);
+      expect(held, `spine_join_old_records() no longer declares ${name}; a migration that replaces the function must keep its four lists`).toBeDefined();
+      expect(asSet(held ?? []),
+        `spine_join_old_records()'s ${name} differs from the definition in @omnitwin/types. `
+        + "The join's lists are frozen in the database: a change to the definition needs a migration that replaces "
+        + "spine_join_old_records() with the new list, in the same change.",
+      ).toEqual(asSet(values));
+    }
   });
 
   it("reads every venue when none is named", async () => {

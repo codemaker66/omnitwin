@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool, PoolClient } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { defaultEventPhaseInputs } from "@omnitwin/types";
 import { readSpineInvariant, type SpineInvariant } from "../services/event-spine-invariant.js";
 import {
   deal as dealIn,
@@ -376,6 +377,20 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
   const phaseCount = (eventId: string | null): Promise<number> =>
     count("SELECT count(*)::int AS count FROM event_phases WHERE event_id = $1", [eventId]);
 
+  interface PhaseRead { readonly template_key: string | null; readonly name: string; readonly sort_order: number; readonly duration_minutes: number }
+
+  /** An event's phases as key, name, order and minutes, in order. */
+  const phasesOf = async (eventId: string | null): Promise<PhaseRead[]> =>
+    (await legacy.query<PhaseRead>(
+      "SELECT template_key, name, sort_order, duration_minutes FROM event_phases WHERE event_id = $1 ORDER BY sort_order",
+      [eventId],
+    )).rows;
+
+  /** The house's default phases, as the API gives a new event (defaultEventPhaseInputs). */
+  const DEFAULT_PHASES: readonly PhaseRead[] = defaultEventPhaseInputs().map((phase, index) => ({
+    template_key: phase.templateKey ?? null, name: phase.name, sort_order: index, duration_minutes: phase.durationMinutes,
+  }));
+
   const depositEvent = async (requestId: string): Promise<string | null> =>
     (await legacy.query<{ event_id: string | null }>("SELECT event_id FROM proposal_deposit_requests WHERE id = $1", [requestId])).rows[0]?.event_id ?? null;
 
@@ -483,6 +498,8 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
     expect(new Set([await eventOf("enquiries", a.enquiry), await eventOf("opportunities", a.deal), await eventOf("proposals", a.proposal)]).size).toBe(1);
     expect(await eventRow(await eventOf("enquiries", a.enquiry))).toMatchObject({ status: "draft", guest_count: 0, starts_at: null, deleted_at: null });
     expect(await phaseCount(await eventOf("enquiries", a.enquiry))).toBe(8);
+    // ...and they are the house's default phases, key, name, order and minutes, as the API makes them.
+    expect(await phasesOf(await eventOf("enquiries", a.enquiry))).toEqual(DEFAULT_PHASES);
     // B and F: the event one path reaches.
     expect(await eventOf("enquiries", b.enquiry)).toBe(b.event);
     expect(await eventOf("proposals", b.proposal)).toBe(b.event);

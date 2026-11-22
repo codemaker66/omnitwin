@@ -233,7 +233,9 @@ these four points, or replace the function in the same file:
   table, not by column.
 - **A new deal stage, proposal status, enquiry state or request type that books
   nothing** must replace `spine_join_old_records()` in the same file: its four lists
-  are written into it, not read from the definition in `@omnitwin/types`.
+  are written into it, not read from the definition in `@omnitwin/types`, and
+  `event-spine-invariant-postgres.test.ts` fails, reading the function from the
+  database, until they agree again.
 
 ## Repairs by hand
 
