@@ -806,12 +806,26 @@ function dateField(): HTMLInputElement {
   return screen.getByLabelText<HTMLInputElement>("Date of the event");
 }
 
-/** The calendar day `days` days before now, in UTC, as the model keeps days. */
-function daysAgo(days: number): string {
-  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+/** The calendar day `days` days before `now`, in UTC, as the model keeps days. */
+function daysAgo(days: number, now: number): string {
+  return new Date(now - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Reads the clock once and holds Date there (timers stay real), so the test and
+ * the page read the same day even when a run crosses 00:00 UTC.
+ */
+function pinnedNow(): number {
+  const now = Date.now();
+  vi.useFakeTimers({ toFake: ["Date"], now });
+  return now;
 }
 
 describe("the guest list page: the event's date", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("keeps the date when the field is left, never while a year is half typed", async () => {
     const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
     open(PAGE, store);
@@ -849,11 +863,14 @@ describe("the guest list page: the event's date", () => {
   });
 
   it("refuses a date that would remove the list at once, says so beside the field, and changes nothing", async () => {
+    const now = pinnedNow();
+    const thirtyDaysAgo = daysAgo(30, now);
+    const twentyNineDaysAgo = daysAgo(29, now);
     const { store } = await storeHolding(listOf({ eventDate: "2099-06-12", guests: [guest(1, "Ailsa Fraser")] }));
     open(PAGE, store);
     await desk();
     const field = dateField();
-    for (const typed of ["0027-06-12", daysAgo(30), "2020-01-01"]) {
+    for (const typed of ["0027-06-12", thirtyDaysAgo, "2020-01-01"]) {
       field.focus();
       fireEvent.change(field, { target: { value: typed } });
       fireEvent.blur(field);
@@ -870,9 +887,9 @@ describe("the guest list page: the event's date", () => {
 
     // The next date that can stand clears the words.
     field.focus();
-    fireEvent.change(field, { target: { value: daysAgo(29) } });
+    fireEvent.change(field, { target: { value: twentyNineDaysAgo } });
     fireEvent.blur(field);
-    expect(currentList().eventDate).toBe(daysAgo(29));
+    expect(currentList().eventDate).toBe(twentyNineDaysAgo);
     expect(screen.queryByText(DATE_REFUSED)).toBeNull();
 
     // So does clearing the date.
@@ -929,9 +946,10 @@ describe("the guest list page: the event's date", () => {
   });
 
   it("offers the earliest date it would take today as the field's least value, as a help", async () => {
+    const earliest = earliestEventDate(pinnedNow());
     open(PAGE, memoryStore());
     await desk();
-    expect(dateField().getAttribute("min")).toBe(earliestEventDate(Date.now()));
+    expect(dateField().getAttribute("min")).toBe(earliest);
   });
 });
 
