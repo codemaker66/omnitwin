@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CalendarDays, ChevronDown, ChevronUp } from "lucide-react";
+import { eventDisplayName } from "@omnitwin/types";
 import { useClientEventSchedule } from "../../../hooks/use-client-event-schedule.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { customerEventPath } from "../../../lib/event-access.js";
@@ -34,7 +35,7 @@ export function ClientEventScheduleDock({ initiallyCollapsed = false }: { readon
   return <footer ref={dockRef} data-schedule-state={result.status} className={`cockpit-bottom client-event-dock${collapsed ? " is-collapsed" : ""}`} aria-label="Your event schedule">
     <div className="client-event-dock__header">
       <div className="client-event-dock__identity"><CalendarDays size={21} aria-hidden="true" /><div>
-        <strong>{result.data?.event.name ?? "Your event schedule"}</strong>
+        <strong>{result.data === null ? "Your event schedule" : eventDisplayName(result.data.event, result.data.venue.timezone)}</strong>
         <small>{result.data !== null ? "Planning schedule · Working plan" : result.status === "none" ? "No event linked to this layout"
           : result.status === "loading" ? collapsed ? <ActivityStatus>Opening your schedule…</ActivityStatus> : "Your room plan"
             : result.status === "sign-in-required" ? "Sign in to view your schedule" : "Schedule unavailable · open for details"}</small>

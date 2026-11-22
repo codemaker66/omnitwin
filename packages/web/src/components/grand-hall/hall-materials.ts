@@ -46,6 +46,7 @@ import type { HallPhotos, HallPhotoKind } from "./hall-photos.js";
 import type { HallDetailLayer } from "./hall-detail.js";
 import { createOakFloorMaterial } from "./hall-floor.js";
 import { doorLeafMask, doorLeafPosition, doorLeafTurn, type DoorSwingUniforms } from "./hall-doors.js";
+import { photographLift } from "../../lib/film-toe.js";
 
 type Shading = "gloss" | "metal" | "photo" | "photoGloss" | "paint";
 
@@ -414,13 +415,16 @@ function paintSurface(mood: HallMoodUniforms, sun: HallSun | null): Material {
   const room = bakedIrradiance(mood);
   const direct = sun === null ? vec3(0) : sunIrradiance(sun);
   const [pr, pg, pb] = HALL_GLAZING_PAINT;
-  const bars = vec3(pr, pg, pb).mul(room.add(direct).add(k).div(scanIrradiance().add(k)));
+  const bars: Node<"vec3"> = vec3(pr, pg, pb).mul(room.add(direct).add(k).div(scanIrradiance().add(k)));
   const albedo = mix(color(REVEAL_PAINT).rgb, color(REVEAL_STONE).rgb, stone);
   const sky = mood.daylight.rgb.mul(mood.daylightIntensity).mul(REVEAL_SKY_VIEW);
   const reveals = albedo.mul(room.add(sky).add(direct));
   const material = new MeshStandardNodeMaterial({ roughness: 0.38, metalness: 0, fog: false });
   material.colorNode = vec3(0);
-  material.emissiveNode = mix(bars, reveals, outside);
+  // The bars give the curve's toe back as the photographs do (lib/film-toe.ts),
+  // or they would sit darker than the photographed frames they are matched to.
+  // The reveals are art direction, lit as surfaces, and keep the toe.
+  material.emissiveNode = mix(photographLift(bars), reveals, outside);
   material.roughnessNode = mix(float(0.38), float(0.85), stone);
   return material;
 }
@@ -466,7 +470,9 @@ function createSurface(style: SurfaceStyle, mood: HallMoodUniforms, photos: Hall
   if (style.shading === "photo" || style.shading === "photoGloss") {
     const kind = style.photo ?? "walls";
     const wall = kind === "walls" ? wallTexel(photos, true, options.detail) : null;
-    const photographed = relitPhoto(photos, kind, mood, sun, wall, wall === null ? null : wallCutEdge(options.section, wall.level));
+    // A photograph is shown with the light Neutral's toe will take out again
+    // added (lib/film-toe.ts photographLift), so it draws with the photographs' own toe.
+    const photographed = photographLift(relitPhoto(photos, kind, mood, sun, wall, wall === null ? null : wallCutEdge(options.section, wall.level)));
     // A near wall's slivers past the cut are drawn as the section's room line (outsideSliver).
     const line = wall === null ? null : options.sliverColour;
     const sliver = line === null ? null : outsideSliver(options.section);
@@ -587,12 +593,12 @@ export function createDoorLeafMaterials(
     } else if (key === "wallPhoto") {
       // Above the dado the walls' photograph is matte, on the leaves as on the relief they replace.
       const photo = new MeshBasicNodeMaterial({ fog: false });
-      photo.colorNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail));
+      photo.colorNode = photographLift(relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail)));
       material = photo;
     } else if (key === "wallPhotoGloss") {
       const photo = new MeshStandardNodeMaterial({ roughness: table.wallPhotoGloss.roughness ?? 0.42, metalness: 0, fog: false });
       photo.colorNode = vec3(0);
-      photo.emissiveNode = relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail));
+      photo.emissiveNode = photographLift(relitPhoto(photos, "walls", mood, sun, wallTexel(photos, false, detail)));
       material = photo;
     } else {
       material = createSurface(table[key], mood, photos, sun, { glazing: null, alphaToCoverage: false, section, detail: null, sliverColour: null });

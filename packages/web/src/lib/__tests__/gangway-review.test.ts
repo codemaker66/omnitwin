@@ -6,7 +6,6 @@ import {
   GRAND_HALL_WALL_NAMES,
   designatedGangways,
   fillRefillIds,
-  gangwayFlag,
   gangwayReview,
   grandHallExits,
   planGangwayFill,
@@ -14,6 +13,7 @@ import {
   underGuidance,
 } from "../auto-fill.js";
 import { getCatalogueItemBySlug } from "../catalogue.js";
+import { gangwayFlag } from "../live-aisles.js";
 import type { PlacedItem } from "../placement.js";
 import { cardParamsFor, stampSetup } from "../setup-cards.js";
 

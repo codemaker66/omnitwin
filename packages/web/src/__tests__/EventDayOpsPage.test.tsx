@@ -468,6 +468,12 @@ describe("EventDayOpsPage", () => {
     expect(screen.queryByText("Loading event-day board")).toBeNull();
   });
 
+  it("names an event stored without a name by its occasion and the venue's day (the event-name ruling)", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), event: { ...boardFixture().event, name: "" } });
+    renderPage();
+    expect(await screen.findByRole("heading", { level: 1, name: "Wedding, 12 June 2026" })).toBeTruthy();
+  });
+
   it("says the board is unavailable when the board cannot be read, without waiting for the feed, and Retry reads both again", async () => {
     mockGetEventDayOpsBoard.mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());

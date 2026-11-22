@@ -41,24 +41,23 @@ export function resolveProgressMutation(
  * layout opened with the last event's ticks and the Day Board counted them
  * as tonight's.
  *
- * The event the hallkeeper arrived from (?eventId=) decides, when the layout
- * is linked to it or it is an event of the layout's own venue: the Day Board
- * can offer a layout for an event that reaches it only through a frozen phase
- * plan, with no link row, and that event's ticks must be its own, never
- * another event's. An id that is neither (a stale bookmark, another venue's
- * event) is ignored, as the sheet's times ignore it (`resolveTiming`). With
- * no event named, the layout's only linked event; otherwise none. Ticks
- * stored before events were recorded carry none, so they are never counted
- * towards any event.
+ * The event the hallkeeper arrived from (?eventId=) decides when the layout
+ * serves it: linked, a live variant, or the latest frozen phase plan in the
+ * layout's room, which is how the Day Board offers a layout with no link row
+ * (`linkedEventIds`). Any other id (a stale bookmark, a hand-edited link,
+ * another event of the venue or another venue's) is ignored, exactly as the
+ * sheet's times ignore it (`resolveTiming`), so ticks and times always name
+ * the same event (T-695 api-eventday-sheet-6). With no event named, the
+ * layout's only event; otherwise none. Ticks stored before events were
+ * recorded carry none, so they are never counted towards any event.
  */
 export function progressEventFor(input: {
+  /** The events the layout serves (hallkeeper-sheet-v2-data.ts linkedEventIds). */
   readonly linkedEventIds: readonly string[];
   readonly requestedEventId: string | null;
-  /** The requested event is a live event of the layout's venue. */
-  readonly requestedIsVenueEvent: boolean;
 }): string | null {
-  const { linkedEventIds, requestedEventId, requestedIsVenueEvent } = input;
-  if (requestedEventId !== null && (requestedIsVenueEvent || linkedEventIds.includes(requestedEventId))) return requestedEventId;
+  const { linkedEventIds, requestedEventId } = input;
+  if (requestedEventId !== null && linkedEventIds.includes(requestedEventId)) return requestedEventId;
   return linkedEventIds.length === 1 ? linkedEventIds[0] ?? null : null;
 }
 

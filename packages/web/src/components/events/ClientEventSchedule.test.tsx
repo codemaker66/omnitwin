@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { ClientEventSchedule } from "@omnitwin/types";
-import { ClientEventPhases, scheduleTimeLabel } from "./ClientEventSchedule.js";
+import { ClientEventHeading, ClientEventPhases, scheduleTimeLabel } from "./ClientEventSchedule.js";
 import { CockpitBottom } from "../editor/cockpit/CockpitBottom.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
@@ -84,6 +84,26 @@ describe("customer planning schedule", () => {
       vi.unstubAllGlobals();
       shell.remove();
     }
+  });
+
+  it("names an event stored without a name by its occasion and the venue's day, on the event page and in the planner's dock (the event-name ruling)", async () => {
+    const untitled: ClientEventSchedule = { ...data, event: { ...data.event, name: "", eventType: "wedding", startsAt: "2027-03-14T18:00:00.000Z" } };
+    render(<ClientEventHeading data={untitled} />);
+    expect(screen.getByRole("heading", { level: 1, name: "Wedding, 14 March 2027" })).toBeTruthy();
+    cleanup();
+    useAuthStore.getState().setUser({ id: "owner", role: "client", platformRole: "none", venueId: null, name: "Owner", email: "owner@example.test" });
+    request.mockResolvedValue(untitled);
+    render(<MemoryRouter initialEntries={[`/plan/${CONFIG}?eventId=${EVENT}`]}><CockpitBottom /></MemoryRouter>);
+    expect(await screen.findByText("Wedding, 14 March 2027")).toBeTruthy();
+  });
+
+  it("names an event stored under the client's email by its occasion and the venue's day, never the address", () => {
+    const filed: ClientEventSchedule = {
+      ...data, event: { ...data.event, name: "guest@example.test — Wedding", eventType: "wedding", startsAt: "2027-03-14T18:00:00.000Z" },
+    };
+    render(<ClientEventHeading data={filed} />);
+    expect(screen.getByRole("heading", { level: 1, name: "Wedding, 14 March 2027" })).toBeTruthy();
+    expect(screen.queryByText(/guest@example\.test/u)).toBeNull();
   });
 
   it("shows shared activity, clears it on failure, and retries into a populated schedule", async () => {

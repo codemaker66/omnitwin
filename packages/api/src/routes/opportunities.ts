@@ -35,6 +35,7 @@ import { nextActionForStage } from "../services/deal-next-action.js";
 import type { PeopleConn, PeopleTx } from "../services/people-records.js";
 import { mergedPerson } from "./people.js";
 import { lostToRefusal, recordLoss } from "../services/competitor-watch-data.js";
+import { LIVE_QUOTE_STATUSES } from "../services/commercial-pipeline.js";
 
 const IdParam = z.object({ id: z.uuid() });
 const TaskParam = z.object({ id: z.uuid(), taskId: z.uuid() });
@@ -57,10 +58,6 @@ function commercialScope(user: JwtUser): { ok: true; venueId: string | null } | 
   }
   return { ok: false };
 }
-
-/** A quote a deal's value can be filled from: not replaced by another, and
- *  not declined or run out. */
-const LIVE_QUOTE_STATUSES = ["draft", "issued", "accepted"];
 
 /** A deal closes as won or lost only with the reason it did: the pipeline's
  *  history is what a team learns from (roadmap X1). */
@@ -398,7 +395,7 @@ export async function opportunityRoutes(
         .where(and(
           eq(quotes.venueId, opportunity.venueId),
           isNull(quotes.deletedAt),
-          inArray(quotes.status, LIVE_QUOTE_STATUSES),
+          inArray(quotes.status, [...LIVE_QUOTE_STATUSES]),
           or(
             eq(quotes.opportunityId, opportunity.id),
             inArray(quotes.proposalId, db.select({ id: proposals.id }).from(proposals)
@@ -481,10 +478,18 @@ export async function opportunityRoutes(
     if (parsed.data.currency !== undefined) updateData.currency = parsed.data.currency;
     if (parsed.data.nextAction !== undefined) updateData.nextAction = parsed.data.nextAction;
     if (parsed.data.nextActionDueAt !== undefined) updateData.nextActionDueAt = isoToDate(parsed.data.nextActionDueAt);
-    if (toStage !== undefined) {
-      updateData.stage = toStage;
+    if (toStage !== undefined) updateData.stage = toStage;
+    // What a stage brings is written only on a real move: a save naming the
+    // stage the deal already has keeps its step, its date and its closing date.
+    if (toStage !== undefined && toStage !== fromStage) {
       if (toStage === "won" || toStage === "lost") updateData.closedAt = new Date();
-      if (parsed.data.nextAction === undefined) updateData.nextAction = nextActionForStage(toStage);
+      // The stage's own step replaces the old one, and the old step's date
+      // goes with it unless the move names one: a deal only waiting on the
+      // client is not overdue.
+      if (parsed.data.nextAction === undefined) {
+        updateData.nextAction = nextActionForStage(toStage);
+        if (parsed.data.nextActionDueAt === undefined) updateData.nextActionDueAt = null;
+      }
     }
 
     type Updated =

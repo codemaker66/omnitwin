@@ -1,9 +1,10 @@
-import { EventIdSchema, type EventPhaseGraph } from "@omnitwin/types";
+import { EventIdSchema, eventDisplayName, type EventPhaseGraph } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
 import { getConfig, getConfigSummaries, type ConfigurationSummary } from "../api/configurations.js";
 import { getEventPhaseGraph } from "../api/events.js";
 import { getVenue } from "../api/spaces.js";
 import { getClientEventSchedule } from "../api/client-event-schedule.js";
+import { VENUE_TIME_ZONE } from "../pages/diary/lib/board-time.js";
 
 export interface LinkedLayoutChoice {
   readonly configurationId: string;
@@ -132,7 +133,7 @@ export async function resolveEventLinkedLayouts(input: {
     if (input.spaceSlug !== null && requestedRoom === undefined) throw new Error("The requested room is not in this event's venue.");
     const roomIds = new Set(rooms.map((room) => room.id));
     return {
-      eventName: schedule.event.name,
+      eventName: eventDisplayName(schedule.event, schedule.venue.timezone),
       roomName: requestedRoom?.name ?? null,
       layouts: schedule.layouts.filter((layout) => roomIds.has(layout.space.id) && (requestedRoom === undefined || layout.space.id === requestedRoom.id))
         .map((layout) => ({ configurationId: layout.id, name: layout.name, spaceName: layout.space.name })),
@@ -181,5 +182,7 @@ export async function resolveEventLinkedLayouts(input: {
       layouts.push({ configurationId: config.id, name: config.name, spaceName: room.name });
     }
   }
-  return { eventName: graph.event.name, roomName: requestedRoom?.name ?? null, layouts, unavailableCount };
+  // An event stored without a name is called by its occasion and the venue's day.
+  const eventName = eventDisplayName(graph.event, venue.timezone ?? VENUE_TIME_ZONE);
+  return { eventName, roomName: requestedRoom?.name ?? null, layouts, unavailableCount };
 }

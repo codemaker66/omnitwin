@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { OPPORTUNITY_STAGES, type OpportunityStage } from "@omnitwin/types";
+import { OPPORTUNITY_STAGES, type OpportunityStage, type QuoteStatus } from "@omnitwin/types";
 import { opportunities } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
@@ -26,6 +26,12 @@ export const OPEN_PIPELINE_STAGES: readonly OpportunityStage[] =
  *  mixed-currency sum would be a lie dressed as a total; when multi-currency
  *  arrives this must become a per-currency breakdown rather than a cast. */
 export const PIPELINE_VALUE_CURRENCY = "GBP";
+
+/** A quote still standing for its deal or proposal: one superseded by a
+ *  sibling, declined or expired is kept on record, but its figures are no
+ *  longer the offer. The deal panel's quote and a proposal version's quote
+ *  both read this one list. */
+export const LIVE_QUOTE_STATUSES: readonly QuoteStatus[] = ["draft", "issued", "accepted"];
 
 /**
  * Sum of the estimated value of every OPEN opportunity, in minor units.

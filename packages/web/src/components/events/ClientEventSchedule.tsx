@@ -1,5 +1,5 @@
 import { CalendarDays, Clock3, MapPin } from "lucide-react";
-import type { ClientEventSchedule } from "@omnitwin/types";
+import { eventDisplayName, type ClientEventSchedule } from "@omnitwin/types";
 import { Link, useLocation } from "react-router-dom";
 import { ActivityStatus } from "../shared/Activity.js";
 import type { useClientEventSchedule } from "../../hooks/use-client-event-schedule.js";
@@ -51,7 +51,7 @@ export function ClientEventScheduleState({ result }: { readonly result: ReturnTy
 export function ClientEventHeading({ data }: { readonly data: ClientEventSchedule }): React.ReactElement {
   return <div className="client-event-heading">
     <p className="client-event-kicker"><CalendarDays size={15} aria-hidden="true" />Your event</p>
-    <h1>{data.event.name}</h1>
+    <h1>{eventDisplayName(data.event, data.venue.timezone)}</h1>
     <p>{data.venue.name} <span aria-hidden="true">·</span> {data.event.guestCount.toLocaleString("en-GB")} guests</p>
   </div>;
 }

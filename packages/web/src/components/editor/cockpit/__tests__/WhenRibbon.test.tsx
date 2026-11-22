@@ -470,6 +470,40 @@ describe("WhenRibbon", () => {
     await waitFor(() => { expect(screen.getByRole("status").textContent).toContain("Confirmed 13:00 – 15:00."); });
   });
 
+  it("API-9: a booking stored without a title is named by its event on the office's bar and in the confirm question, and one with no event says it is untitled", async () => {
+    // Rows written before #350 can carry an empty or blank title, and GET
+    // /calendar reads them as stored (#382). The office still sees whose
+    // booking each bar is.
+    getCalendarMock.mockResolvedValue(calendarFixture([
+      booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT, kind: "hold", state: "hold", title: "", eventName: "Chamber dinner" }),
+      booking(GHOST, NOON + 300 * MIN, NOON + 420 * MIN, { title: "   ", eventName: null }),
+    ]));
+    renderRibbon();
+    const ingot = await screen.findByTestId("when-ribbon-ingot");
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(ingot.querySelector(".when-ribbon__ingot-title")?.textContent).toBe("Chamber dinner");
+    expect(ingot.getAttribute("aria-label")).toMatch(/^Chamber dinner, 13:00 – 15:00\. /u);
+    const ghost = screen.getByTestId("when-ribbon-ghost");
+    expect(ghost.textContent).toBe("Untitled booking");
+    expect(ghost.getAttribute("title")).toBe("Untitled booking · 18:00 – 20:00");
+    fireEvent.click(screen.getByTestId("when-ribbon-confirm-hold"));
+    expect(screen.getByTestId("when-ribbon-confirm-time").textContent).toContain("Confirm 13:00 – 15:00 for Chamber dinner?");
+  });
+
+  it("API-9: the keyboard names the confirmed booking it stops at, even one stored without a title", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([
+      booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT }),
+      booking(GHOST, NOON + 120 * MIN, NOON + 240 * MIN, { title: "", eventName: "Burns supper" }),
+    ]));
+    renderRibbon();
+    const ingot = await screen.findByTestId("when-ribbon-ingot");
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    fireEvent.keyDown(ingot, { key: "ArrowRight" });
+    expect(document.querySelector(".when-ribbon__sr")?.textContent).toBe(
+      "Stopped at \"Burns supper\" — two confirmed bookings cannot share a room.",
+    );
+  });
+
   it("goal 19 S6: the office sees the phase grips and their legend; a hallkeeper sees neither; a confirmed booking offers no confirm", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT })]));
     renderRibbon();

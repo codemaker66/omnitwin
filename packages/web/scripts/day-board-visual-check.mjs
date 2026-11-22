@@ -96,6 +96,9 @@ function calendarFixture(now) {
       // Back-to-back pair whose changeover the conflict below flags.
       booking(B(6), saloon, 200, 260, "Turnover pair A", "dinner", now),
       booking(B(7), saloon, 262, 320, "Turnover pair B", "dinner", now),
+      // Half an hour after the board afternoon against the house hour: short,
+      // and nothing the Diary holds against it, so its turn-round says itself.
+      booking(B(9), reception, 270, 330, "Evening drinks", "reception", now),
     ],
     conflicts: {
       conflicts: [
@@ -316,7 +319,13 @@ try {
   ].every((words) => text.includes(words)));
   check("NOW plaque on the ruler", /NOW\d{1,2}:\d{2}/u.test(text));
   const shortGaps = await page.locator(".dayboard-bar-gap").count();
-  check(`short changeovers drawn against the rule on their rooms' bars (${String(shortGaps)})`, shortGaps === 2);
+  check(`short changeovers drawn against the rule on their rooms' bars (${String(shortGaps)})`, shortGaps === 3);
+  // The rule on the bar is a picture nothing reads aloud: the words carry it.
+  check("a short turn-round says how long it has and what the rule needs", /Turn-round 30 min · needs 1 h/u.test(text));
+  const laterAtRisk = page.locator(".dayboard-slab.is-line", { hasText: "Turnover pair B" });
+  check("a later function at risk says why on its line, and in the words a screen reader hears", (await laterAtRisk.count()) === 1
+    && /this changeover needs 60/u.test(await laterAtRisk.innerText())
+    && /this changeover needs 60/u.test((await laterAtRisk.getAttribute("aria-label")) ?? ""));
   check("the next action is the urgent request nobody owns", /^Take now:/u.test((await page.locator(".dayboard-next").innerText()).trim()));
   check("UNOWNED rail lists the two requests nobody has", (await page.locator(".dayboard-rail-item").count()) === 2);
 
@@ -374,9 +383,23 @@ try {
   // ---- Pass 4: the wall ----------------------------------------------------
   const wallContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const wall = await preparePage(wallContext, "/hallkeeper/today?register=wall");
-  check("wall: the dark register, without the day controls", (await wall.locator(".dayboard[data-register='wall']").count()) === 1
+  check("wall: the forest frame, without the day controls", (await wall.locator(".dayboard[data-register='wall']").count()) === 1
     && (await wall.getByRole("button", { name: "Previous day" }).count()) === 0);
   await wall.screenshot({ path: join(OUT, "wall.png"), fullPage: true });
+
+  // The office narrows the rooms to those at risk, then becomes the wall:
+  // the wall says nothing of a filter, so it shows every room in use. The
+  // switch remounts the board under the staff shell and reads the day again
+  // (a frame of "Loading the day's bookings…"), so the rooms are awaited.
+  const narrowed = await preparePage(wallContext);
+  await narrowed.getByRole("button", { name: /^At risk, /u }).click();
+  const officeRooms = await narrowed.locator(".dayboard-room").count();
+  await narrowed.getByRole("button", { name: "Wall display" }).click();
+  await narrowed.locator(".dayboard[data-register='wall'] .dayboard-room").first().waitFor({ timeout: 10_000 });
+  const wallRooms = await narrowed.locator(".dayboard-room").count();
+  check(`wall: every room in use, after the office was narrowed to those at risk (office ${String(officeRooms)}, wall ${String(wallRooms)})`,
+    officeRooms === 1 && wallRooms === ROOMS.length);
+  await narrowed.screenshot({ path: join(OUT, "wall-after-filter.png"), fullPage: true });
 
   // ---- Pass 5: an open slot ------------------------------------------------
   await page.locator(".dayboard-slab[data-state='live']").click();
