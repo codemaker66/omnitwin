@@ -1081,6 +1081,43 @@ class CompareBuilds(unittest.TestCase):
         self.assertEqual((row["as_the_reference"]["texels"], row["unlike_the_reference"]["texels"]), (12, 16))
         self.assertEqual(row["unlike_the_reference"]["paired_by_own_patch"]["patches"], 4)    # its own patches: one a group judged
 
+    def test_apart_from_s_own_patches_are_its_own_texels_judged_or_not(self):
+        # Guards the unit of the test stated before the Saloon's fourth build (TM3): unlike_the_reference's own
+        # patches are the connected patches of every changed texel whose station is the reference's neither, judged
+        # or not, and of nothing else. Two blobs of such texels, a column apart, are joined at one texel. Where that
+        # texel went back to the reference's station they are two own patches (numbered by all the changed texels
+        # they would be one); where it is of their own kind but under a photo patch, not judged, they are one
+        # (numbered by the judged texels alone they would be two). By patch, every texel whose label differs, they
+        # are one either way.
+        H, W = 30, 60
+        blobs, joint = np.zeros((H, W), bool), np.zeros((H, W), bool)
+        blobs[14:17, 20:23] = blobs[14:17, 24:27] = True
+        joint[15, 23] = True                                        # touches both blobs; nothing else does
+        base = self.wall(H, W)                                      # the third build (old) and the reference: station 0 everywhere
+        base["reference"] = np.zeros((H, W), np.int32)
+        base["new"][blobs] = 1                                      # the fourth build: neither the third's station nor the first's
+        base["L2"][blobs] = 40.0                                    # and every texel of both blobs turns dark
+        back = self.copy(base)
+        back["old"][joint] = 2                                      # the third build had another station there
+        back["new"][joint] = 0                                      # and the fourth went back to the reference's
+        hidden = self.copy(base)
+        hidden["new"][joint] = 1                                    # of the blobs' own kind
+        hidden["covered"][joint] = True                             # under a photo patch: not judged
+        one = dict(worse=1, better=0, unchanged=0, p_exact=1.0, p_worse=0.5)
+        two = dict(worse=2, better=0, unchanged=0, p_exact=0.5, p_worse=0.25)
+        for name, w, own, in_all, like in (("joined by a texel back on the reference's station", back, two, 18, 1),
+                                           ("joined by an unjudged texel of their own kind", hidden, one, 19, 0)):
+            with self.subTest(name):
+                row, masks = self.compare(w)
+                part = row["unlike_the_reference"]
+                self.assertTrue(np.array_equal(masks["unlike_the_reference"], blobs))       # the same 18 judged texels each time
+                self.assertEqual((row["unlike_the_reference_in_all"], row["as_the_reference_in_all"]), (in_all, like))
+                self.assertEqual(part["paired_by_own_patch"]["patches"], own["worse"])
+                for key in self.cb.JUDGEMENTS:                      # dark, off and farther: every texel of both blobs turned worse
+                    self.assertEqual(part["paired_by_own_patch"][key], own, key)
+                    self.assertEqual(part["paired_by_patch"][key], one, key)
+                self.assertEqual(part["paired_by_patch"]["patches"], 1)
+
 
 class Windows(unittest.TestCase):
     def test_tops_match_window_relief(self):
