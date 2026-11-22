@@ -35,6 +35,7 @@ import {
   serializeNotification,
 } from "../services/event-plan-lifecycle.js";
 import { pgErrorCode } from "../services/booking-mutations.js";
+import { outerColumn } from "../utils/outer-column.js";
 
 const PG_FOREIGN_KEY_VIOLATION = "23503";
 
@@ -291,7 +292,7 @@ const phaseEnds = sql`${changedPhase.startsAt} + make_interval(mins => ${changed
 function changeHasNoPlace(day: BoardDay | null): SQL {
   const unheldOnDay = day === null ? sql`false` : sql`(${onDay(changedPhase.startsAt, phaseEnds, day)} and not exists (
     select 1 from ${bookings} as ${sql.identifier(BOARD_BOOKING)}
-    where ${boardBooking.eventId} = ${eventPlanChanges.eventId}
+    where ${boardBooking.eventId} = ${outerColumn(eventPlanChanges.eventId)}
       and ${boardBooking.spaceId} = ${changedPhase.spaceId}
       and ${boardBooking.status} = 'active'
       and ${boardBooking.kind} <> 'prospect'
