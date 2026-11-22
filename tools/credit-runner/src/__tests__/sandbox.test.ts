@@ -48,7 +48,7 @@ import { unquoteGitPath } from "../sandbox/patches.js";
 import { ADVISORY_FLAG, type Review } from "../sandbox/review.js";
 import { centsString, invokesVerifier, LOOKUP_CLOCK_SKEW_MS, parseVerifyOutput, runSession, SessionMayExistError, type SessionRunResult } from "../sandbox/session.js";
 import { ensureSandbox } from "../sandbox/setup.js";
-import { MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
+import { MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
 import { FakeApi, PROJECT_RULES } from "./fake-api.js";
 import { BASE_FILES, FIX, PAGE_CHECK, PAGE_CHECK_TEST, patchFixture, type Commit, type PatchFixture } from "./patch-fixture.js";
 
@@ -974,6 +974,11 @@ describe("sandbox launcher", () => {
     expect(checkSpend(labelled, "sandbox", 2.5, { ...limits, jobCapUsd: 25 }, "trial-1:").ok).toBe(true);
     const broken = await readCreditLedger(await writeTemp("{not json\n"));
     expect(checkSpend(broken, "sandbox", 1, limits).ok).toBe(false);
+    // A budget that is not a positive finite number is refused before any cap is compared: a NaN or a
+    // negative one would fit every cap by arithmetic alone.
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0, -1]) {
+      expect(checkSpend(labelled, "sandbox", bad, limits), String(bad)).toEqual({ ok: false, reason: `the budget must be a positive number of dollars, not ${String(bad)}` });
+    }
   });
 
   it("books a session at the platform's figure before its outputs are read, so a failed output listing books nothing more", async () => {
@@ -2042,20 +2047,30 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     expect(await readFile(path.join(runs, stampDir ?? "", "kickoff.md"), "utf8")).toMatch(new RegExp(`^Run id \\(the session's metadata \`run\`\\): ${runId}\\n`, "u"));
   });
 
-  it("refuses a time limit or grace period outside its bounds before anything is uploaded or created", async () => {
+  it("refuses a budget, a time limit or a grace period outside its bounds before anything is uploaded or created", async () => {
     const runDir = await mkdtemp(path.join(tmpdir(), "credit-runner-bounds-"));
     dirs.push(runDir);
-    const cases: readonly { readonly timeoutMinutes?: number; readonly graceMs?: number }[] = [
-      { timeoutMinutes: Number.NaN },
-      { timeoutMinutes: 0 },
-      { timeoutMinutes: -1 },
-      { timeoutMinutes: MAX_TIMEOUT_MINUTES + 1 },
-      { timeoutMinutes: Number.POSITIVE_INFINITY },
-      { graceMs: Number.NaN },
-      { graceMs: -1 },
-      { graceMs: 60 * 60_000 + 1 },
+    const budget = /^budgetUsd must be from 0\.01 to 50, not /u;
+    const timeout = /^timeoutMinutes must be more than 0 and at most 240/u;
+    const grace = /^graceMs must be from 0 to 3600000/u;
+    const cases: readonly { readonly budgetUsd?: number; readonly timeoutMinutes?: number; readonly graceMs?: number; readonly refused: RegExp }[] = [
+      // A NaN budget would reach the create as "NaN" cents, and its ledger line could not be written.
+      { budgetUsd: Number.NaN, refused: budget },
+      { budgetUsd: 0, refused: budget },
+      { budgetUsd: 0.009, refused: budget },
+      { budgetUsd: -1, refused: budget },
+      { budgetUsd: MAX_BUDGET_USD + 0.01, refused: budget },
+      { budgetUsd: Number.POSITIVE_INFINITY, refused: budget },
+      { timeoutMinutes: Number.NaN, refused: timeout },
+      { timeoutMinutes: 0, refused: timeout },
+      { timeoutMinutes: -1, refused: timeout },
+      { timeoutMinutes: MAX_TIMEOUT_MINUTES + 1, refused: timeout },
+      { timeoutMinutes: Number.POSITIVE_INFINITY, refused: timeout },
+      { graceMs: Number.NaN, refused: grace },
+      { graceMs: -1, refused: grace },
+      { graceMs: 60 * 60_000 + 1, refused: grace },
     ];
-    for (const bad of cases) {
+    for (const { refused, ...bad } of cases) {
       const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
       const run = runSession({
         api,
@@ -2070,7 +2085,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
         sleep: instant,
         ...bad,
       });
-      await expect(run, String(Object.entries(bad))).rejects.toThrow(bad.timeoutMinutes === undefined ? /^graceMs must be from 0 to 3600000/u : /^timeoutMinutes must be more than 0 and at most 240/u);
+      await expect(run, String(Object.entries(bad))).rejects.toThrow(refused);
       expect(api.uploads).toHaveLength(0);
       expect(api.sessions).toHaveLength(0);
     }

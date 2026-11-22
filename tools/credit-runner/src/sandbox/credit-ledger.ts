@@ -103,7 +103,9 @@ export interface SpendCheck {
 
 /**
  * A job may start only if its whole budget fits under every cap at once. A
- * ledger with unreadable lines is refused: they may hide spend.
+ * budget that is not a positive finite number is refused (a NaN or a negative
+ * one would fit every cap by arithmetic alone), and so is a ledger with
+ * unreadable lines: they may hide spend.
  */
 export function checkSpend(
   ledger: CreditLedger,
@@ -112,6 +114,9 @@ export function checkSpend(
   limits: SpendLimits,
   jobPrefix?: string,
 ): SpendCheck {
+  if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) {
+    return { ok: false, reason: `the budget must be a positive number of dollars, not ${String(budgetUsd)}` };
+  }
   if (ledger.badLines > 0) {
     return { ok: false, reason: `the credit ledger has ${String(ledger.badLines)} unreadable line(s); fix it before spending` };
   }

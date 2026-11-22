@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { BetaManagedAgentsSession, SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
-import { MAX_TIMEOUT_MINUTES } from "../task.js";
+import { MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES } from "../task.js";
 import { isAmbiguousFailure, type OutputFile, type SandboxApi, type SessionEvent, type SessionRef } from "./api.js";
 import { outcomeFor, type RunFacts, VERIFY_COMMAND, verifyTaskJson } from "./brief.js";
 import { OUTPUT_CAPS, type OutputCaps, OutputTimeoutError, OutputTooLargeError, planOutputs } from "./outputs.js";
@@ -549,6 +549,37 @@ async function createOrFind(
   }
 }
 
+/** A run's spend and time bounds, as a caller passes them to runSession or runSandboxJob. */
+export interface RunBounds {
+  readonly budgetUsd: number;
+  readonly timeoutMinutes: number;
+  readonly graceMs?: number | undefined;
+}
+
+/**
+ * Throws a RangeError unless every bound is one the launcher can honour, so a
+ * caller's mistake stops the run before anything is read, set up, uploaded or
+ * created. The budget is from one cent (the least a session budget takes) to
+ * the spec's ceiling (MAX_BUDGET_USD): a NaN would otherwise reach the create
+ * as "NaN" cents and leave a ledger line that cannot be written. The time
+ * limit is above 0 and at most the spec's ceiling, fractional allowed here,
+ * and the grace period from 0 to MAX_GRACE_MS: a NaN, negative or
+ * out-of-range delay would make setTimeout fire at once.
+ */
+export function checkRunBounds(bounds: RunBounds): void {
+  const { budgetUsd, timeoutMinutes } = bounds;
+  if (!Number.isFinite(budgetUsd) || budgetUsd < 0.01 || budgetUsd > MAX_BUDGET_USD) {
+    throw new RangeError(`budgetUsd must be from 0.01 to ${String(MAX_BUDGET_USD)}, not ${String(budgetUsd)}`);
+  }
+  if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0 || timeoutMinutes > MAX_TIMEOUT_MINUTES) {
+    throw new RangeError(`timeoutMinutes must be more than 0 and at most ${String(MAX_TIMEOUT_MINUTES)}, not ${String(timeoutMinutes)}`);
+  }
+  const graceMs = bounds.graceMs ?? DEFAULT_GRACE_MS;
+  if (!Number.isFinite(graceMs) || graceMs < 0 || graceMs > MAX_GRACE_MS) {
+    throw new RangeError(`graceMs must be from 0 to ${String(MAX_GRACE_MS)}, not ${String(graceMs)}`);
+  }
+}
+
 /**
  * Runs one task in one Managed Agents session and collects what it left. The
  * session is created with its kickoff in `initial_events`, so it is running
@@ -559,16 +590,8 @@ async function createOrFind(
  */
 export async function runSession(options: SessionRunOptions): Promise<SessionRunResult> {
   const { api, state, facts, runDir, timeoutMinutes } = options;
-  // The timers' bounds, checked before anything is uploaded or created: a NaN,
-  // a negative or an out-of-range delay would make setTimeout fire at once.
-  // The time limit has the spec's ceiling (task.ts), fractional allowed here.
-  if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0 || timeoutMinutes > MAX_TIMEOUT_MINUTES) {
-    throw new RangeError(`timeoutMinutes must be more than 0 and at most ${String(MAX_TIMEOUT_MINUTES)}, not ${String(timeoutMinutes)}`);
-  }
+  checkRunBounds(options);
   const graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
-  if (!Number.isFinite(graceMs) || graceMs < 0 || graceMs > MAX_GRACE_MS) {
-    throw new RangeError(`graceMs must be from 0 to ${String(MAX_GRACE_MS)}, not ${String(graceMs)}`);
-  }
   const log = options.log ?? (() => undefined);
   const sleep = options.sleep ?? defaultSleep;
   await mkdir(path.join(runDir, "outputs"), { recursive: true });
