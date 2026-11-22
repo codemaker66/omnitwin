@@ -2383,6 +2383,52 @@ describe("EventDayOpsPage", () => {
       expect(await queue.list()).toEqual([]);
     });
 
+    // A write PostgreSQL rolled back for a lock conflict (an erasure of the
+    // event's person holding the event, #247) answers 409 RETRY: nothing was
+    // written, and the same request may succeed. The press keeps its row and
+    // its key, on a replay and on a live press, and the next drain writes it.
+    it("keeps a replay the API rolled back for a lock conflict (409 RETRY) queued, and writes it at the next drain", async () => {
+      const queue = await realQueue();
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      mockUpdateOpsTaskStatus
+        .mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
+        .mockRejectedValueOnce(new ApiError(409, "Someone else changed this at the same moment. Please try again.", "RETRY"))
+        .mockResolvedValue(task("in_progress"));
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+      fireEvent.click(screen.getByRole("button", { name: "Start" }));
+      await screen.findByText("Task saved on this device and will sync when the connection returns.");
+
+      await replayQueue();
+      expect(await queuedStatuses(queue)).toEqual(["in_progress"]);
+      await replayQueue();
+
+      const sent = mockUpdateOpsTaskStatus.mock.calls.map(([, input]) => (input as UpdateOpsTaskStatusInput).idempotencyKey);
+      expect(sent).toHaveLength(3);
+      expect(new Set(sent).size).toBe(1);
+      expect(await queue.list()).toEqual([]);
+    });
+
+    it("queues a live press the API rolled back for a lock conflict (409 RETRY), and writes it at the next drain", async () => {
+      const queue = await realQueue();
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      mockUpdateOpsTaskStatus
+        .mockRejectedValueOnce(new ApiError(409, "Someone else changed this at the same moment. Please try again.", "RETRY"))
+        .mockResolvedValue(task("in_progress"));
+      renderPage();
+      await screen.findByText("Set 12 x Round Table");
+      fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+      await waitFor(async () => { expect(await queuedStatuses(queue)).toEqual(["in_progress"]); });
+      expect(screen.queryByText("Task update was rejected by the server.")).toBeNull();
+      await replayQueue();
+
+      const sent = mockUpdateOpsTaskStatus.mock.calls.map(([, input]) => (input as UpdateOpsTaskStatusInput).idempotencyKey);
+      expect(sent).toHaveLength(2);
+      expect(new Set(sent).size).toBe(1);
+      expect(await queue.list()).toEqual([]);
+    });
+
     it("replays a row queued before replays carried a status, without one", async () => {
       const queue = await realQueue();
       await queue.enqueueTaskStatus(TASK_ID, { status: "done", idempotencyKey: "queued-by-an-older-page" });
