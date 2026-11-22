@@ -1,12 +1,13 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { expandHome } from "../config.js";
 import { FrontmatterError, parseFrontmatter } from "../frontmatter.js";
 import { protectedPathViolations } from "../git.js";
 import { ledgerHasSession } from "../sandbox/credit-ledger.js";
-import { readKey, unexpectedPrincipals } from "../keys.js";
+import { keyFileExposure, readKey, unexpectedPrincipals } from "../keys.js";
 import { DEFAULT_MODEL, MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
 
 describe("parseFrontmatter", () => {
@@ -212,6 +213,39 @@ describe("key files", () => {
     // Narrow grants count too: a user's temp folder can also grant a sandbox group and an unresolved SID.
     const sandboxAcl = `${file} HOST\\SandboxGroup:(I)(M)\r\n   S-1-5-21-1-2-3-1001:(I)(M)\r\n   host\\U:(I)(F)`;
     expect(unexpectedPrincipals(sandboxAcl, file, expected)).toEqual(["HOST\\SandboxGroup", "S-1-5-21-1-2-3-1001"]);
+  });
+
+  // Each platform's CI runs its own branch of keyFileExposure on a real file.
+  it.runIf(process.platform === "win32")("reads a real key file's ACL: private when only its owner may open it, exposed once Everyone may", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "credit-runner-acl-"));
+    try {
+      const file = path.join(dir, "test.key");
+      await writeFile(file, "not a key\n");
+      // The owner as keyFileExposure names it; inherited grants removed, as setup-keys.ps1 does.
+      const owner = `${process.env.USERDOMAIN ?? ""}\\${userInfo().username}`;
+      execFileSync("icacls", [file, "/inheritance:r", "/grant:r", `${owner}:F`], { windowsHide: true });
+      expect(await keyFileExposure(file)).toEqual([]);
+      execFileSync("icacls", [file, "/grant", "*S-1-1-0:R"], { windowsHide: true }); // Everyone, by its well-known SID
+      const exposure = await keyFileExposure(file);
+      expect(exposure).toHaveLength(1);
+      expect(exposure[0]).toMatch(/^readable by '/u);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("reads a real key file's mode: private at 0600, exposed at 0644", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "credit-runner-mode-"));
+    try {
+      const file = path.join(dir, "test.key");
+      await writeFile(file, "not a key\n");
+      await chmod(file, 0o600);
+      expect(await keyFileExposure(file)).toEqual([]);
+      await chmod(file, 0o644);
+      expect(await keyFileExposure(file)).toEqual(["mode allows group/other access (644)"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("accepts one key line and never echoes a malformed file", async () => {

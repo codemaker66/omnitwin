@@ -90,12 +90,40 @@ function isNotDownloadable(error: unknown): boolean {
   return typeof details === "object" && details !== null && "error_code" in details && details.error_code === "file_not_downloadable";
 }
 
+/** The only host the key is ever sent to. */
+export const ANTHROPIC_API_URL = "https://api.anthropic.com";
+
+/**
+ * Environment variables through which the SDK would send the key, or another
+ * credential, somewhere else or with extra headers. The client sets its host
+ * and its auth itself, so ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN would be
+ * ignored; the SDK always adds ANTHROPIC_CUSTOM_HEADERS. Any of them set to
+ * something else refuses the start, so nobody believes they took effect
+ * (ANTHROPIC_BASE_URL may be the official host, which a Claude Code shell
+ * exports). A variable is named, never its value.
+ */
+export function anthropicEnvironmentProblems(env: NodeJS.ProcessEnv): string[] {
+  const value = (name: string): string => env[name]?.trim() ?? "";
+  const problems: string[] = [];
+  const baseUrl = value("ANTHROPIC_BASE_URL");
+  if (baseUrl !== "" && baseUrl.replace(/\/+$/u, "") !== ANTHROPIC_API_URL) problems.push(`ANTHROPIC_BASE_URL is set to a host other than ${ANTHROPIC_API_URL}`);
+  if (value("ANTHROPIC_AUTH_TOKEN") !== "") problems.push("ANTHROPIC_AUTH_TOKEN is set");
+  if (value("ANTHROPIC_CUSTOM_HEADERS") !== "") problems.push("ANTHROPIC_CUSTOM_HEADERS is set");
+  return problems;
+}
+
 /**
  * The key is passed in from the key file and handed straight to the client;
- * it never enters process.env, a log or an error message.
+ * it never enters process.env, a log or an error message. It goes only to
+ * ANTHROPIC_API_URL, as the X-Api-Key header and no other credential.
+ * `env` is a test seam: the SDK itself reads process.env.
  */
-export function sdkSandboxApi(apiKey: string, baseURL?: string, fetchImpl?: ClientOptions["fetch"]): SandboxApi {
-  const client = new Anthropic({ apiKey, ...(baseURL === undefined ? {} : { baseURL }), ...(fetchImpl === undefined ? {} : { fetch: fetchImpl }) });
+export function sdkSandboxApi(apiKey: string, fetchImpl?: ClientOptions["fetch"], env: NodeJS.ProcessEnv = process.env): SandboxApi {
+  const problems = anthropicEnvironmentProblems(env);
+  if (problems.length > 0) {
+    throw new Error(`refusing to start: ${problems.join("; ")}. Unset ${problems.length === 1 ? "it" : "them"} in this shell; the launcher talks only to ${ANTHROPIC_API_URL}.`);
+  }
+  const client = new Anthropic({ apiKey, authToken: null, baseURL: ANTHROPIC_API_URL, ...(fetchImpl === undefined ? {} : { fetch: fetchImpl }) });
   return {
     createEnvironment: (params) => client.beta.environments.create(params),
     retrieveEnvironment: (id) => client.beta.environments.retrieve(id),

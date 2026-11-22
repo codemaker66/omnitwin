@@ -15,7 +15,15 @@ import type {
 } from "@anthropic-ai/sdk/resources/beta/sessions/events";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { nightRulesFromAgentsMd } from "../project-rules.js";
-import { CREATE_SESSION_TIMEOUT_MS, isAmbiguousFailure, sdkSandboxApi, type SandboxApi, type SessionEvent } from "../sandbox/api.js";
+import {
+  ANTHROPIC_API_URL,
+  anthropicEnvironmentProblems,
+  CREATE_SESSION_TIMEOUT_MS,
+  isAmbiguousFailure,
+  sdkSandboxApi,
+  type SandboxApi,
+  type SessionEvent,
+} from "../sandbox/api.js";
 import { outcomeFor, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "../sandbox/credit-ledger.js";
 import { collectSandboxJob, runSandboxJob, type JobOptions, type LauncherConfig } from "../sandbox/launcher.js";
@@ -778,7 +786,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
 
   it("creates a session with one attempt and a one-minute timeout, through the real SDK client", async () => {
     let calls = 0;
-    const failing = sdkSandboxApi("sk-test-not-a-key", "https://api.example.invalid", () => {
+    const failing = sdkSandboxApi("sk-test-not-a-key",() => {
       calls += 1;
       return Promise.resolve(new Response(JSON.stringify({ type: "error", error: { type: "api_error", message: "boom" } }), { status: 500, headers: { "content-type": "application/json" } }));
     });
@@ -790,7 +798,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       let aborted = false;
-      const hanging = sdkSandboxApi("sk-test-not-a-key", "https://api.example.invalid", (_input, init) => {
+      const hanging = sdkSandboxApi("sk-test-not-a-key",(_input, init) => {
         calls += 1;
         return new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener("abort", () => {
@@ -811,16 +819,72 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     expect(CREATE_SESSION_TIMEOUT_MS).toBeLessThan(10 * 60_000);
   });
 
+  it("sends the key only to api.anthropic.com as X-Api-Key, with no other credential, whatever the SDK's environment says", async () => {
+    const seen: { url: string; headers: Headers }[] = [];
+    const saved = { base: process.env.ANTHROPIC_BASE_URL, token: process.env.ANTHROPIC_AUTH_TOKEN };
+    // What the SDK would read on its own: another host, and a token to send beside the key.
+    process.env.ANTHROPIC_BASE_URL = "https://gateway.example.invalid";
+    process.env.ANTHROPIC_AUTH_TOKEN = "synthetic-token-value";
+    try {
+      // The launcher's own check is given a clean environment here, so the client's settings alone are tested.
+      const api = sdkSandboxApi(
+        "sk-ant-test-key-value",
+        (input, init) => {
+          seen.push({ url: typeof input === "string" ? input : input instanceof URL ? input.href : input.url, headers: new Headers(init?.headers) });
+          return Promise.resolve(new Response(JSON.stringify({ id: "sesn_1", status: "idle" }), { status: 200, headers: { "content-type": "application/json" } }));
+        },
+        {},
+      );
+      await api.retrieveSession("sesn_1");
+      await api.createSession({ agent: "agent_1", environment_id: "env_1" });
+    } finally {
+      if (saved.base === undefined) Reflect.deleteProperty(process.env, "ANTHROPIC_BASE_URL");
+      else process.env.ANTHROPIC_BASE_URL = saved.base;
+      if (saved.token === undefined) Reflect.deleteProperty(process.env, "ANTHROPIC_AUTH_TOKEN");
+      else process.env.ANTHROPIC_AUTH_TOKEN = saved.token;
+    }
+    expect(seen.map((request) => new URL(request.url).origin)).toEqual([ANTHROPIC_API_URL, ANTHROPIC_API_URL]);
+    for (const request of seen) {
+      expect(request.headers.get("x-api-key")).toBe("sk-ant-test-key-value");
+      expect(request.headers.get("authorization")).toBeNull();
+    }
+  });
+
+  it("refuses to start while the environment would send the key or another credential elsewhere, naming the variable but never its value", () => {
+    for (const [name, value] of [
+      ["ANTHROPIC_BASE_URL", "https://gateway.example.invalid"],
+      ["ANTHROPIC_AUTH_TOKEN", "synthetic-token-value"],
+      ["ANTHROPIC_CUSTOM_HEADERS", "X-Extra: synthetic-header-value"],
+    ] as const) {
+      const error: unknown = (() => {
+        try {
+          sdkSandboxApi("sk-ant-test-key-value", undefined, { [name]: value });
+          return null;
+        } catch (caught) {
+          return caught;
+        }
+      })();
+      expect(error, name).toBeInstanceOf(Error);
+      const message = error instanceof Error ? error.message : "";
+      expect(message).toContain(name);
+      expect(message).not.toContain(value.includes("://") ? new URL(value).host : value);
+      expect(message).not.toContain("sk-ant-test-key-value");
+    }
+    expect(anthropicEnvironmentProblems({ ANTHROPIC_BASE_URL: "https://gateway.example.invalid", ANTHROPIC_AUTH_TOKEN: "t" })).toHaveLength(2);
+    // The official host is not a reason to refuse (a Claude Code shell exports it), and blank values are unset.
+    expect(anthropicEnvironmentProblems({ ANTHROPIC_BASE_URL: `${ANTHROPIC_API_URL}/`, ANTHROPIC_AUTH_TOKEN: "  ", ANTHROPIC_CUSTOM_HEADERS: "" })).toEqual([]);
+  });
+
   it("bounds the whole create, response body included, and reads a 2xx it cannot read as a create that may have happened", async () => {
     const params = { agent: "agent_1", environment_id: "env_1" };
     const ok = { status: 200, headers: { "content-type": "application/json" } };
     // Broken JSON, and a body that is not JSON at all: both are 2xx answers whose session may exist.
-    const broken = await sdkSandboxApi("sk-test-not-a-key", "https://api.example.invalid", () => Promise.resolve(new Response('{"id":"sesn_', ok)))
+    const broken = await sdkSandboxApi("sk-test-not-a-key",() => Promise.resolve(new Response('{"id":"sesn_', ok)))
       .createSession(params)
       .catch((caught: unknown) => caught);
     expect(broken).toBeInstanceOf(Error);
     expect(isAmbiguousFailure(broken)).toBe(true);
-    const text = await sdkSandboxApi("sk-test-not-a-key", "https://api.example.invalid", () =>
+    const text = await sdkSandboxApi("sk-test-not-a-key",() =>
       Promise.resolve(new Response("created", { status: 201, headers: { "content-type": "text/plain" } })),
     )
       .createSession(params)
@@ -831,7 +895,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       // The headers arrive at once; the body then stalls. The SDK's own timeout stops at the headers.
-      const stalled = sdkSandboxApi("sk-test-not-a-key", "https://api.example.invalid", (_input, init) => {
+      const stalled = sdkSandboxApi("sk-test-not-a-key",(_input, init) => {
         const body = new ReadableStream<Uint8Array>({
           start(controller) {
             controller.enqueue(new TextEncoder().encode('{"id":"sesn_'));
