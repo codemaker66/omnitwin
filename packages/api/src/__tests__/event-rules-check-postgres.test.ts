@@ -360,9 +360,15 @@ describe.skipIf(target === undefined)("the event rules on a database the spine's
     expectNoConnectionDetails(run, before.url);
     expect(run.code).toBe(2);
     const printed = UnreadLineSchema.parse(theLine(run));
-    const spineTag = (await loadBundledJournal()).map((entry) => entry.tag).find((tag) => tag.endsWith("_event_spine_links"));
-    expect(printed.migrations.pending).toEqual([spineTag]);
-    expect(printed.migrations.applied).toBe(printed.migrations.local - 1);
+    // Pending is the spine's migration and every one after it; applied is every one before it. True
+    // whether or not later migrations follow the spine's.
+    const tags = (await loadBundledJournal()).map((entry) => entry.tag);
+    const spineTag = tags.find((tag) => tag.endsWith("_event_spine_links"));
+    if (spineTag === undefined) throw new Error("The journal holds no *_event_spine_links migration");
+    const spinePlace = tags.indexOf(spineTag);
+    expect(printed.migrations.pending).toEqual(tags.slice(spinePlace));
+    expect(printed.migrations.applied).toBe(spinePlace);
+    expect(printed.migrations.local).toBe(tags.length);
     // The join fails first, on the function the migration makes; then the read, on what it adds.
     const joinRun = printed.joinRun;
     if (joinRun === undefined || !("error" in joinRun)) throw new Error("The join did not fail");
