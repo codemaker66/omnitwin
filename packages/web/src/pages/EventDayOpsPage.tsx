@@ -206,9 +206,10 @@ async function readAcknowledgedChangeIds(eventId: string): Promise<ReadonlySet<s
 
 /** A failure the same request may get past: no answer, the server's own
  *  failure, a timeout or a rate limit, or a write PostgreSQL rolled back for
- *  a lock conflict (409 with code RETRY, the API's RETRY_ANSWER; #247). In
- *  each nothing was written, so a press keeps its row and its key for the
- *  next drain. */
+ *  a lock conflict (409 with code RETRY, the API's RETRY_ANSWER; #247),
+ *  which wrote nothing. In each a press keeps its row and its key for the
+ *  next drain; a write that did land before its answer was lost is answered
+ *  from its key. */
 function isRetriableError(err: unknown): boolean {
   if (!(err instanceof ApiError)) return true;
   if (err.status === 0 || err.status >= 500 || err.status === 408 || err.status === 429) return true;
