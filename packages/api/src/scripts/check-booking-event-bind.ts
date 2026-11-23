@@ -1,5 +1,10 @@
-import { createDbConnection } from "../db/client.js";
-import { checkEventRules, describeFailure, exitCodeOf, isFailedJoin } from "../services/event-rules-check.js";
+import {
+  checkEventRules,
+  describeFailure,
+  exitCodeOf,
+  isFailedJoin,
+  openEventRulesConnection,
+} from "../services/event-rules-check.js";
 
 // ---------------------------------------------------------------------------
 // The event rules, read against a real database: the operator's command, and
@@ -39,12 +44,18 @@ import { checkEventRules, describeFailure, exitCodeOf, isFailedJoin } from "../s
 //
 // Exit codes: 0 = the rules hold (and the join, when asked for, ran);
 // 1 = a count is not zero, or the join failed though the counts were read;
-// 2 = setup error (no DATABASE_URL, an unknown argument) or the read failed.
+// 2 = setup error (no DATABASE_URL, an unknown argument), the read failed, or
+// the run stopped on a failure outside any statement (then no line of JSON).
 // Neither the connection string nor a database error's message is printed:
 // a failure is named by its error's name and its SQLSTATE (or system code),
 // because the workflow's log is public with the repository. An undefined
 // function, table or column is said in plain words: the spine's migration is
-// not applied to this database.
+// not applied to this database. That holds outside the check too: the
+// command's own pool names an idle connection's failure the same way
+// (openEventRulesConnection), and what escapes main (a driver's error on a
+// connection in use between two statements, which pg-pool does not listen
+// for, or a rejection nobody awaits) is named the same way and ends the run
+// at once with 2, never reaching Node's own report of a message and stack.
 //
 // main runs unconditionally: this file is only ever a command, so nothing
 // can make it exit 0 without having run.
@@ -64,7 +75,9 @@ async function main(args: readonly string[]): Promise<void> {
     process.exitCode = 2;
     return;
   }
-  const connection = createDbConnection(databaseUrl);
+  const connection = openEventRulesConnection(databaseUrl, (line) => {
+    process.stderr.write(`[event-rules] ${line}\n`);
+  });
   try {
     const outcome = await checkEventRules(connection.db, { join: args.includes("--join") });
     if (isFailedJoin(outcome.joinRun)) {
@@ -84,6 +97,14 @@ async function main(args: readonly string[]): Promise<void> {
     }
   }
 }
+
+/** A failure that escaped main: named, never described, and the run ends; going on would not be safe. */
+function stopOnEscape(failure: unknown): void {
+  process.exitCode = 2;
+  process.stderr.write(`[event-rules] the check stopped: ${describeFailure(failure)}\n`, () => { process.exit(2); });
+}
+process.on("uncaughtException", stopOnEscape);
+process.on("unhandledRejection", stopOnEscape);
 
 await main(process.argv.slice(2)).catch((error: unknown) => {
   process.stderr.write(`[event-rules] the check failed: ${describeFailure(error)}\n`);

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import type { Pool } from "pg";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { Database } from "../db/client.js";
@@ -12,6 +13,7 @@ import {
   checkEventRules,
   exitCodeOf,
   isFailedJoin,
+  openEventRulesConnection,
   type EventRulesOutcome,
   type EventRulesReport,
 } from "../services/event-rules-check.js";
@@ -53,6 +55,11 @@ import {
 //      read or written, and otherwise prints one line of JSON, with the
 //      migration state, never the connection string, exiting 0 when the rules
 //      hold.
+//   6. The command's own pool names an idle connection's failure by its
+//      SQLSTATE alone, never by its message.
+//   7. A command whose connection is ended mid-read stops with exit 2, and
+//      both streams hold only its own named lines: no message, no stack, no
+//      connection details.
 //
 // The second block runs the command against a database the spine's migration
 // has not reached: the join and the read fail, it exits 2, and the line says
@@ -343,6 +350,59 @@ describe.skipIf(target === undefined)("the event rules: the operator's read and 
       joinRun: { joined: 0, eventsMade: 0, listed: 0 },
     });
     for (const field of SPINE_INVARIANT_FIELDS) expect(printed[field]).toBe(0);
+  }, 120_000);
+
+  it("names an idle connection's failure on the command's own pool by its SQLSTATE alone, never by its message", async () => {
+    const lines: string[] = [];
+    const connection = openEventRulesConnection(spine.url, (line) => { lines.push(line); });
+    try {
+      // One client, back in the pool and idle once the statement is done; its backend is then ended.
+      const pid = z.object({ pid: z.number().int() }).parse((await connection.db.execute(sql`SELECT pg_backend_pid() AS pid`)).rows[0]).pid;
+      expect((await pool.query("SELECT pg_terminate_backend($1) AS ended", [pid])).rows).toEqual([{ ended: true }]);
+      await expect.poll(() => lines.length, { timeout: 10_000 }).toBeGreaterThan(0);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(/^an idle connection failed: \w+ \(SQLSTATE 57P01\)$/u);
+    } finally {
+      await connection.close();
+    }
+  }, 60_000);
+
+  it("stops with 2 when its connection is ended mid-read, printing only its own named lines: no message, no stack, no connection details", async () => {
+    const holder = await pool.connect();
+    let running: Promise<CommandRun> | undefined;
+    try {
+      // The read waits on October's list while the holder has it.
+      await holder.query("BEGIN");
+      await holder.query("LOCK TABLE event_binding_reviews IN ACCESS EXCLUSIVE MODE");
+      const holderPid = z.object({ pid: z.number().int() }).parse((await holder.query("SELECT pg_backend_pid() AS pid")).rows[0]).pid;
+      let finished = false;
+      const isFinished = (): boolean => finished;
+      const started = runCommand(spine.url, []).finally(() => { finished = true; });
+      running = started;
+
+      // The command is seen waiting for the table (its read waits up to its 15 s statement limit), then ended.
+      let pid: number | undefined;
+      while (pid === undefined && !isFinished()) {
+        const [row] = (await pool.query<{ pid: number }>(`SELECT pid FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> $1`, [holderPid])).rows;
+        pid = row?.pid;
+        if (pid === undefined) await new Promise((done) => setTimeout(done, 20));
+      }
+      if (pid === undefined) throw new Error("The command was never seen waiting for the table");
+      expect((await pool.query("SELECT pg_terminate_backend($1) AS ended", [pid])).rows).toEqual([{ ended: true }]);
+      const run = await started;
+
+      expectNoConnectionDetails(run, spine.url);
+      expect(run.code).toBe(2);
+      const lines = run.stderr.split("\n").filter((line) => line !== "");
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) expect(line).toMatch(/^\[event-rules\] [^:]+: \w+( \(SQLSTATE [0-9A-Z]{5}\)| \(E[A-Z]{2,20}\))?$/u);
+      expect(run.stderr).not.toContain(" at ");
+    } finally {
+      await holder.query("ROLLBACK");
+      holder.release();
+      await running?.catch(() => undefined);
+    }
   }, 120_000);
 });
 

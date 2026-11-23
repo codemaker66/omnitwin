@@ -1,7 +1,12 @@
+import { Pool as NeonPool } from "@neondatabase/serverless";
+import { Pool as PgPool } from "pg";
 import { sql, type SQL } from "drizzle-orm";
+import { drizzle as neonDrizzle } from "drizzle-orm/neon-serverless";
+import { drizzle as pgDrizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
-import type { Database } from "../db/client.js";
+import { NEON_POOL_IDLE_TIMEOUT_MS, isLocalDatabaseUrl, type Database, type DatabaseConnection } from "../db/client.js";
 import { loadBundledJournal, readMigrationReadiness } from "../db/migration-readiness.js";
+import * as schema from "../db/schema.js";
 import { sqlStateOf } from "../utils/sql-state.js";
 import { readBindInvariant, type BindInvariant, type InvariantReader } from "./event-binding.js";
 import { readSpineInvariant, spineInvariantHolds, type SpineInvariant } from "./event-spine-invariant.js";
@@ -33,7 +38,9 @@ import { readSpineInvariant, spineInvariantHolds, type SpineInvariant } from "./
 // Nothing here returns a database error's message: a failure is named by its
 // error's name and SQLSTATE (or system code), and an undefined function,
 // table or column (42883, 42P01, 42703) is said in plain words to mean that
-// the spine's migration is not applied to the database.
+// the spine's migration is not applied to the database. The command's own
+// connection (openEventRulesConnection) names an idle client's failure the
+// same way.
 // ---------------------------------------------------------------------------
 
 /**
@@ -106,6 +113,36 @@ export function describeFailure(failure: unknown): string {
   }
   const code = typeof failure === "object" && failure !== null && "code" in failure ? failure.code : undefined;
   return typeof code === "string" && /^E[A-Z]{2,20}$/u.test(code) ? `${name} (${code})` : name;
+}
+
+/**
+ * The command's own connection, for a log that is public: the driver
+ * db/client.ts's createDbConnection chooses (PostgreSQL over TCP for a local
+ * URL, else Neon over a WebSocket, with the same idle limit), but its pool's
+ * error handler gives `report` an idle client's failure as describeFailure
+ * names it, never its message (the shared pool's handler prints the message,
+ * for the API's private log). pg-pool listens only on idle clients: an error
+ * on a client in use between two statements reaches no pool handler, and the
+ * command's process handlers name it (scripts/check-booking-event-bind.ts).
+ */
+export function openEventRulesConnection(databaseUrl: string, report: (line: string) => void): DatabaseConnection {
+  const pool = isLocalDatabaseUrl(databaseUrl)
+    ? new PgPool({ connectionString: databaseUrl })
+    : new NeonPool({ connectionString: databaseUrl, idleTimeoutMillis: NEON_POOL_IDLE_TIMEOUT_MS });
+  pool.on("error", (error) => {
+    report(`an idle connection failed: ${describeFailure(error)}`);
+  });
+  const db: Database = pool instanceof PgPool
+    ? pgDrizzle(pool, { schema })
+    : neonDrizzle(pool, { schema });
+  let closing: Promise<void> | undefined;
+  return {
+    db,
+    close: () => {
+      closing ??= pool.end();
+      return closing;
+    },
+  };
 }
 
 export function isFailedJoin(run: JoinRun | FailedJoinRun | undefined): run is FailedJoinRun {
