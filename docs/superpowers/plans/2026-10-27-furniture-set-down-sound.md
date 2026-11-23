@@ -22,7 +22,7 @@
 
 **Task number.** This is T-700, renumbered on 13 Nov 2026 (the repository's T-677 is the foundry's shared-lock migration). Commits made before then say T-677; the branch names keep `t677`. The #416 review's rulings R46–R53 (`docs/sessions/2026-11-13.md`) amend this plan where noted.
 
-Paths below are relative to `packages/web/src/` unless they start with `tools/`, `docs/` or `packages/`. The worktree is `E:/claude/furniture-sound`, on branch `claude/furniture-sound-t677`.
+Paths below are relative to `packages/web/src/` unless they start with `tools/`, `docs/` or `packages/`. The branch is `claude/furniture-sound-t677`.
 
 ## Global Constraints
 
@@ -50,9 +50,9 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
   | The tail | idle slices of ≤ 4 ms each, ≤ 150 ms in total; 1.2 x the longest band's reverberation time in seconds at any rate, its memory per rate stated in `tail.ts` (R46; the plan's first cap was 2 MB) |
   | Voices at once | ≤ 8 |
   | Engine and data | ≤ 32 KB gzipped for the Worker's and the driver's chunks together, lazy with the planner (R101, R103; the first figure was 25 KB, before the engine's rulings through R102 were built) |
-- **This PC is short of memory** (system commit at 92–97 %). Run Vitest on single files (`pnpm --filter @omnitwin/web exec vitest run <file>`). CI runs the full suites. Check free memory before the ray tracer and any browser run (`D:/claude/furniture-rebuild-20261026/tools/wait-memory.sh`).
+- **This PC is short of memory** (system commit at 92–97 %). Run Vitest on single files (`pnpm --filter @omnitwin/web exec vitest run <file>`). CI runs the full suites. Check free memory before the ray tracer and any browser run (the house's `wait-memory.sh`, kept outside the repo).
 - **No edits** to `components/meshes/crafted/*` or `crafted-furniture.test.ts`: four T-675 PRs are open on them.
-- **Commits.** Commit with explicit pathspecs. Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never commit in `C:/Users/blake/omnitwin2`.
+- **Commits.** Commit with explicit pathspecs. Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never commit in the shared checkout that other sessions work in.
 
 ## Review Focus
 
@@ -525,7 +525,7 @@ Values as planned; their primary sources are cited in `modes.ts`:
 
 **Interfaces:**
 - Consumes: every `lib/set-down/*` module from PR 1.
-- Produces: `D:/claude/furniture-sound-20261027/listening/index.html`, a single self-contained file, published as a private claude.ai page.
+- Produces: `tools/set-down-listening/out/index.html` (ignored by Git; `--out <folder>` builds elsewhere), a single self-contained file, published as a private claude.ai page.
 
 **What the page does:**
 - **Controls:** a room (six), what it lands on (the room's floor, a stage deck, the dance floor, a table top for AV), a piece (all 44, by family), dressing (empty ↔ `referenceDinner(room)`, a slider from 0 to 100 % that takes that share of its items), a distance (2–6 m), "Set it down", "Move it" (a settle), and "Lay out a dinner" (a cascade of 8 from the reference layout).
@@ -543,7 +543,7 @@ Values as planned; their primary sources are cited in `modes.ts`:
   - "Set it down" starts the audio without errors in the console;
   - the reverberation readout for the Grand Hall shows a lower mid band at 100 % dressing than at 0 %.
 - [ ] **Step 2:** Write `page.ts`, `page.html` and `build.mjs`. `build.mjs` uses esbuild, resolved from Vite's own dependency with `createRequire`, to bundle `page.ts` as an IIFE and inline it into `page.html`.
-- [ ] **Step 3:** Build with `node tools/set-down-listening/build.mjs D:/claude/furniture-sound-20261027/listening/index.html`, then run `wait-memory.sh 8704 6656 2`. When memory allows, run `node tools/set-down-listening/page.check.mjs D:/claude/furniture-sound-20261027/listening/index.html`. Expected: PASS. If memory doesn't allow, say the check is not run, and why.
+- [ ] **Step 3:** Build with `node tools/set-down-listening/build.mjs`, then wait until the machine has memory to spare. When it does, run `node tools/set-down-listening/page.check.mjs`. Expected: PASS. If memory doesn't allow, say the check is not run, and why.
 - [ ] **Step 4:** Publish with `Artifact` (icon "sound", with a one-sentence description). Send Blake the link.
 - [ ] **Step 5:** Commit `tools/set-down-listening/*` with the message "A listening page for the set-downs, built from the engine itself (T-700)". Push, and open PR "Furniture set-down sound, 2 of 3: the listening page (T-700)".
 - [ ] **Step 6, the ear test:** after Blake has listened (on laptop speakers, earbuds and his phone), ask him with `AskUserQuestion`:

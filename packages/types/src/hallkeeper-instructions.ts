@@ -49,12 +49,14 @@ export const DayOfContactSchema = z.object({
 export type DayOfContact = z.infer<typeof DayOfContactSchema>;
 
 // ---------------------------------------------------------------------------
-// PhaseDeadline — override the global setupBy with a per-phase milestone
+// PhaseDeadline — a per-phase milestone inside the setup window
 //
 // If the planner wants "structure done by 1pm, furniture by 2:30pm,
-// dress by 4pm" we store that here. The sheet renderer then draws a
-// timing chart. An empty array = no per-phase milestones, only the
-// global setupBy applies.
+// dress by 4pm" we store that here, and the sheet lists them in its day
+// and against its steps. The final-touches deadline is the room's Ready by
+// (sheetTimes); without one, the room is ready when guests come in. None of
+// them is the sheet's timing.setupBy, which is when the setup window OPENS.
+// An empty array = no per-phase milestones.
 // ---------------------------------------------------------------------------
 
 export const PhaseDeadlineSchema = z.object({
@@ -81,9 +83,10 @@ export const EventInstructionsSchema = z.object({
   /** Day-of contact block — who the hallkeeper rings on the day. */
   dayOfContact: DayOfContactSchema.nullable().default(null),
   /**
-   * Per-phase deadlines — optional override of the global setupBy time.
-   * Capped at one deadline per phase; SETUP_PHASES has 5 entries today,
-   * the cap moves with it.
+   * Per-phase deadlines — optional milestones; the final-touches one is
+   * the room's Ready by. Capped at as many deadlines as SETUP_PHASES has
+   * entries (5 today; the cap moves with it). A phase given twice is not
+   * refused here: the sheet counts its earliest readable deadline.
    */
   phaseDeadlines: z.array(PhaseDeadlineSchema).max(SETUP_PHASES.length).default([]),
   /**
@@ -131,11 +134,14 @@ export type EventInstructions = z.infer<typeof EventInstructionsSchema>;
 // ---------------------------------------------------------------------------
 // ConfigurationMetadataSchema — the shape of configurations.metadata JSONB
 //
-// Currently only "instructions" is defined. Future additions (e.g.
-// seating-chart, dietary flags) go alongside it without breaking
+// "instructions", "gangwayReview" and "eventKind" are defined. Future additions (e.g.
+// seating-chart, dietary flags) go alongside them without breaking
 // existing records since the schema uses .passthrough() to tolerate
 // unknown keys.
 // ---------------------------------------------------------------------------
+
+/** The kinds of event the planner asks about on a new layout's first open (T-674). */
+export const PlannerEventKindSchema = z.enum(["wedding", "corporate", "other"]);
 
 export const ConfigurationMetadataSchema = z.object({
   instructions: EventInstructionsSchema.optional(),
@@ -145,6 +151,15 @@ export const ConfigurationMetadataSchema = z.object({
    * written by the planner with the layout (packages/web lib/gangway-review-record).
    */
   gangwayReview: GangwayReviewSchema.optional(),
+  /**
+   * The kind of event the layout is for, as the planner asks it on a new
+   * layout's first open (T-674): absent until asked, null when the person
+   * skipped the question. The planner reads it for the chair a new seat gets
+   * and the shape Lay out starts with (web lib/event-kind-record). No default,
+   * for the same reason as protectedPremises: an absent key keeps every
+   * existing blob, and the sheet's sourceHash, exactly as it was.
+   */
+  eventKind: PlannerEventKindSchema.nullable().optional(),
 }).loose();
 export type ConfigurationMetadata = z.infer<typeof ConfigurationMetadataSchema>;
 

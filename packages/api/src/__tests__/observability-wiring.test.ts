@@ -9,8 +9,9 @@ import {
   requestLogSerializer,
   scrubBreadcrumb,
   scrubTransaction,
+  type ScrubbableTransaction,
 } from "../observability/redact.js";
-import { WEB_VITALS_TRANSACTION, buildSentryOptions } from "../observability/sentry.js";
+import { WEB_VITALS_TRANSACTION, buildSentryOptions, hasParentSpan, isUnroutedRequest } from "../observability/sentry.js";
 
 // ---------------------------------------------------------------------------
 // The wiring: the redaction in observability/redact.ts reaches the server only
@@ -80,11 +81,68 @@ describe("the API's Sentry options", () => {
     expect(options.environment).toBe("production");
     expect(options.tracesSampleRate).toBe(0.1);
     expect(options.beforeSend).toBeTypeOf("function");
-    expect(options.beforeSendTransaction).toBe(scrubTransaction);
+    // The transaction scrubber, behind the drops of a caller's trace and of a
+    // request no route matched (below).
+    const own: ScrubbableTransaction = {
+      type: "transaction",
+      request: { url: "https://api.example.test/people/search?q=someone" },
+      contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", op: "http.server", data: { "http.route": "/people/search" } } },
+    };
+    expect(options.beforeSendTransaction?.(structuredClone(own), {})).toEqual(scrubTransaction(structuredClone(own)));
     expect(options.beforeBreadcrumb).toBe(scrubBreadcrumb);
     // The page-speed reports' route is left out of tracing; the real SDK,
     // route and server show it in web-vitals-tracing.test.ts.
     expect(options.ignoreTransactions).toEqual([WEB_VITALS_TRANSACTION]);
+  });
+
+  // #355's verifications (13 and 14 November 2026): a caller's trace headers
+  // can set the sampling draw, and the late part of a request already sent
+  // repeats the request's own URL without its route, so no record with a
+  // parent span is sent; and this process asks for no trace headers on its
+  // own calls out. The real SDK shows both in sentry-timing-records.test.ts
+  // (no record it sends has a parent; a plain request's record has none).
+  it("send no timing record with a parent span, and ask the SDK for no trace headers on calls out", () => {
+    const trace = { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001" };
+    const parented: ScrubbableTransaction = { type: "transaction", contexts: { trace: { ...trace, parent_span_id: "00000000000000aa" } } };
+    const own: ScrubbableTransaction = { type: "transaction", contexts: { trace } };
+    expect(hasParentSpan(parented)).toBe(true);
+    expect(hasParentSpan(own)).toBe(false);
+    expect(options.beforeSendTransaction?.(parented, {})).toBeNull();
+    expect(options.beforeSendTransaction?.(own, {})).not.toBeNull();
+    expect(options.tracePropagationTargets).toEqual([]);
+  });
+
+  // #355's review at 33db2ba1 (WX1) and the verification of its fix (18
+  // November 2026): a request no route matched (an unknown path's
+  // rate-limited 429, a malformed URL's 400) has only the segment rules for
+  // its own path, which keep an email-shaped segment or a phone number, so its
+  // record is never sent, whichever span roots it: the SDK's http.server span,
+  // or, for a GET whose path looks like a static file, Fastify's own.
+  it("send no timing record of a request no route matched, and judge only a request's own record", () => {
+    const trace = { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001" };
+    const request = (data: Record<string, unknown>): ScrubbableTransaction => ({
+      type: "transaction",
+      request: { url: "https://api.example.test/old-path/someone@example.test" },
+      contexts: { trace: { ...trace, op: "http.server", data } },
+    });
+    const limited = request({ "http.response.status_code": 429 });
+    const caughtAll = request({ "http.route": "*", "http.response.status_code": 204 });
+    const routed = request({ "http.route": "/venues/:venueId", "http.response.status_code": 200 });
+    // Each sign alone: the SDK's request span, kept with no URL; and Fastify's
+    // own request span, with only its path (a static-looking GET's record, or
+    // a WebSocket upgrade's).
+    const bareServer: ScrubbableTransaction = { type: "transaction", contexts: { trace: { ...trace, op: "http.server", data: { "http.response.status_code": 400 } } } };
+    const fastifyRoot = (data: Record<string, unknown>): ScrubbableTransaction => ({
+      type: "transaction",
+      contexts: { trace: { ...trace, op: "request_handler.fastify", data } },
+    });
+    const staticLike = fastifyRoot({ "url.path": "/old/someone@example.test/photo.png", "http.response.status_code": 429 });
+    const routedStatic = fastifyRoot({ "url.path": "/files/abc/photo.png", "http.route": "/files/:fileId/photo.png", "http.response.status_code": 200 });
+    const otherWork: ScrubbableTransaction = { type: "transaction", contexts: { trace: { ...trace, op: "db", data: {} } } };
+    expect([limited, caughtAll, routed, bareServer, staticLike, routedStatic, otherWork].map(isUnroutedRequest))
+      .toEqual([true, true, false, true, true, false, false]);
+    for (const unrouted of [limited, caughtAll, bareServer, staticLike]) expect(options.beforeSendTransaction?.(unrouted, {})).toBeNull();
+    for (const kept of [routed, routedStatic, otherWork]) expect(options.beforeSendTransaction?.(kept, {})).not.toBeNull();
   });
 
   it("name SENTRY_ENVIRONMENT over NODE_ENV when it is set", () => {

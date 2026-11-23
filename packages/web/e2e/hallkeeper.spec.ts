@@ -350,9 +350,9 @@ test.describe("Hallkeeper Page — on a phone", () => {
 });
 
 // A dinner on Saturday 3 October 2026 whose planner recorded the facts a
-// hallkeeper must keep in view (roadmap N4): the room ready by 16:00 for an
-// 18:30 start, a hearing loop and wheelchair spaces, allergen meals, a contact
-// and a florist's deadline.
+// hallkeeper must keep in view (roadmap N4): setup from 16:00 and the room
+// ready as guests come in at 18:30, a hearing loop and wheelchair spaces,
+// allergen meals, a contact and a florist's deadline.
 const FACTS_SHEET = HallkeeperSheetV2Schema.parse({
   ...MOCK_SHEET,
   timing: { eventStart: "2026-10-03T17:30:00.000Z", setupBy: "2026-10-03T15:00:00.000Z", bufferMinutes: 150 },
@@ -374,7 +374,9 @@ test.describe("Hallkeeper Page — the facts in view", () => {
     await mockSheetData(page, FACTS_SHEET);
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
 
-    await expect(page.locator(".hkf-times")).toHaveText(/^Ready by\s*16:00\s*Starts\s*18:30$/u);
+    // timing.setupBy opens the setup window; with no final time from the
+    // planner the room is ready when guests come in (Blake, 18 Nov 2026).
+    await expect(page.locator(".hkf-times")).toHaveText(/^Setup from\s*16:00\s*Ready by\s*18:30\s*Guests in\s*18:30$/u);
     const band = page.getByRole("region", { name: "Keep in view" });
     await expect(band.getByText("Hearing loop in Centre")).toBeVisible();
     await expect(band.getByText("4 wheelchair spaces")).toBeVisible();

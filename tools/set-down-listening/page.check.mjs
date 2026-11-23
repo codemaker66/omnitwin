@@ -5,21 +5,26 @@
 //     the room send (RoomState.send, checked against sqrt(32 pi / R_ref) x reverberantGain, worked out here from
 //     the engine's roomConstant, independently of the page and of roomSend), and both the output and the echo
 //     carry sound after a set-down;
+//   - the arrow keys move the room choice and keep the focus on the chosen chip;
 //   - the first press waits for the limiter, and a press that has to finish a tail says so;
 //   - the Grand Hall's mid-band readout is lower with the dinner laid than empty;
 //   - nothing scrolls sideways at 400 px;
 //   - with stand-ins for the artifact's database: one write per pause, never before it, to timings/<device>;
 //     use() resolving null; a full store; `unavailable` twice, then a later change saving; a store that never
 //     answers, noted within about 10 s.
-//   node tools/set-down-listening/page.check.mjs [built.html] [screenshot directory]
+//   node tools/set-down-listening/page.check.mjs [--out <folder>]
+// It checks <folder>/index.html and writes its screenshots beside it. The default folder is
+// tools/set-down-listening/out/, build.mjs's default.
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const built = process.argv[2] ?? "D:/claude/furniture-sound-20261027/listening/index.html";
-const shots = process.argv[3] ?? "D:/claude/furniture-sound-20261027/listening";
+const outFlag = process.argv.indexOf("--out");
+const shots = outFlag >= 0 ? process.argv[outFlag + 1] : join(here, "out");
+if (shots === undefined || shots.startsWith("--")) throw new Error("--out needs a folder");
+const built = join(shots, "index.html");
 const web = createRequire(new URL("../../packages/web/package.json", import.meta.url));
 const { chromium } = web("@playwright/test");
 const esbuild = createRequire(web.resolve("vite/package.json"))("esbuild");
@@ -36,6 +41,16 @@ let failures = 0;
 function check(name, ok, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail === "" ? "" : `: ${detail}`}`);
   if (!ok) failures += 1;
+}
+
+/** Whether a wait comes true in time: a timeout is a failed check, not a crash that skips the summary. */
+async function cameTrue(wait) {
+  try {
+    await wait;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // The room send the Grand Hall's voices should carry (RoomState.send, ruling R58), worked out here the long way
@@ -189,8 +204,7 @@ try {
   check("at rest: 3 m", (await text(tab, "distance-value")) === "3.0 m");
   for (const hz of BANDS) check(`at rest: RT ${hz} Hz drawn`, /^\d+\.\d\d s$/.test(await text(tab, `rt-${hz}`)), await text(tab, `rt-${hz}`));
   check("nothing plays before a gesture", (await tab.locator("#page").getAttribute("data-audio")) === "none");
-  await tailReady(tab);
-  check("the tail is rendered at rest", true, await text(tab, "tail-ms"));
+  check("the tail is rendered at rest", await cameTrue(tailReady(tab)), await text(tab, "tail-ms"));
   check("without a database the page says it does not save", (await status(tab)).includes("does not save"), await status(tab));
 
   await tab.click("#set-down");
@@ -252,6 +266,15 @@ try {
   await tab.click("#room-grand-hall");
   await tab.waitForTimeout(400);
   await tab.screenshot({ path: join(shots, "check-desktop.png"), fullPage: true });
+  await tab.locator("#room-grand-hall").focus();
+  await tab.keyboard.press("ArrowRight");
+  check(
+    "ArrowRight on the Grand Hall chooses the Saloon and keeps the focus on it",
+    (await text(tab, "room-name")) === "The Saloon" &&
+      (await tab.locator("#room-saloon").getAttribute("aria-checked")) === "true" &&
+      (await tab.evaluate(() => document.activeElement?.id)) === "room-saloon",
+    `${await text(tab, "room-name")}, focus on #${await tab.evaluate(() => document.activeElement?.id ?? "")}`,
+  );
   check("no console errors or warnings on the desktop", desk.errors.length === 0, desk.errors.join(" | "));
   await desk.context.close();
 
@@ -274,8 +297,8 @@ try {
 
   // --- The device figures, with a database that answers --------------------------------------------
   const kept = await open(browser, { runtime: "ok" });
-  await kept.tab.waitForFunction(() => document.getElementById("save-status")?.textContent?.includes("are saved"), null, { timeout: 5000 });
-  check("with a database the page says it saves", true, await status(kept.tab));
+  const saysSaved = await cameTrue(kept.tab.waitForFunction(() => document.getElementById("save-status")?.textContent?.includes("are saved"), null, { timeout: 5000 }));
+  check("with a database the page says it saves", saysSaved, await status(kept.tab));
   await tailReady(kept.tab);
   // The tail made at rest is saved after its own pause; wait for it, then time a press's write.
   await kept.tab.waitForFunction(() => window.__writes.length >= 1, null, { timeout: 5000 });

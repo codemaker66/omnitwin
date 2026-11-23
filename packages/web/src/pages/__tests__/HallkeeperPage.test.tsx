@@ -974,6 +974,17 @@ describe("HallkeeperPage paper that knows its version", () => {
     expect(document.querySelector(".hk-print-version")?.textContent).toBe("v7, issued 16 Oct 14:02, printed 17 Oct 07:15");
   });
 
+  // #454 round 2 (ZB2): the printed page's times line, for a room no booking holds yet.
+  it("prints a planner's time with no booking, and says whose time it is", async () => {
+    serve(HallkeeperSheetV2Schema.parse({
+      ...sheet(CONFIG_A, "Smith wedding"),
+      instructions: { phaseDeadlines: [{ phase: "final", deadline: "2026-10-17T16:30:00.000Z" }] },
+    }));
+    mount();
+    await screen.findByTestId("paper-copy-stamp");
+    expect(document.querySelector(".hk-print-only")?.textContent).toContain("Ready by 17:30 · The planner's time · no booking holds this room yet");
+  });
+
   it("calls a sheet printed before approval a draft and keeps the venue's clock", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-17T05:02:00.000Z"));

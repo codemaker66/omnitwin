@@ -25,6 +25,167 @@ function venueDay(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 }
 
+// -------------------------------------------------------------- the times --
+//
+// Blake, 18 November 2026: "Setup from + Ready by". One rule, read by the
+// printed sheet, the phone card and the Day Board's line alike:
+//
+//   Setup from  the snapshot's timing.setupBy. Its name is historical: both
+//               of its sources START a window (the earliest room phase before
+//               the booking, as the Day Board reads setup; or the booking less
+//               the room's changeover time).
+//   Guests in   the booking's start, timing.eventStart: the Day Board's doors
+//               and the Diary's "Doors in".
+//   Ready by    the planner's typed final-touches time when they gave one,
+//               otherwise when guests come in.
+//
+// Frozen snapshots already hold every field this reads, so no stored shape
+// changes. A planner's final time after guests come in is kept, never moved
+// or hidden: every surface says it is after guests come in.
+//
+// The sheet's warnings are worded here once, so every surface says them in
+// the same words: facts, never words a crew could take as an instruction.
+
+/** The setup window opens at or after Ready by (setupMinutes <= 0). */
+export const NO_TIME_TO_SET = "No time to set the room";
+/** No booking holds the room and the planner gave no final time. */
+export const NO_BOOKING = "No booking holds this room yet";
+/** Ready by is the planner's final time, and no booking holds the room. */
+export const PLANNER_TIME_NO_BOOKING = "The planner's time · no booking holds this room yet";
+
+/** What the sheet's three instants say together; sheetIntervals reads them, from a sheet or from the Day Board's summary. */
+export interface SheetIntervals {
+  /** Whole minutes from Ready by to guests in: positive before, negative after, 0 as they come in. Null without both. */
+  readonly readyBeforeGuestsMinutes: number | null;
+  /** Whole minutes from Setup from to Ready by; null without both. */
+  readonly setupMinutes: number | null;
+  /** The window leaves no time to set the room: Setup from at or after Ready by (setupMinutes <= 0). */
+  readonly noTimeToSet: boolean;
+}
+
+/** The sheet's times on one rule. Instants are ISO strings, printed on the venue's clock. */
+export interface SheetTimes extends SheetIntervals {
+  /** When the room's setup window opens; null when no room phase or changeover time sets it. */
+  readonly setupFrom: string | null;
+  /** When the room must be ready: the planner's final-touches time, else guests in. Null only when neither is known. */
+  readonly readyBy: string | null;
+  /** When guests come in (the booking's start); null when no booking holds the room. */
+  readonly guestsIn: string | null;
+  /** Ready by is the planner's own final-touches time. */
+  readonly readyFromPlanner: boolean;
+}
+
+const MINUTE_MS = 60_000;
+
+function instantMs(iso: string | null | undefined): number | null {
+  if (iso === null || iso === undefined) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** The minute an instant prints as: the clock drops its seconds, so every comparison here does too. */
+const minuteOf = (ms: number): number => Math.floor(ms / MINUTE_MS);
+const minutesBetween = (fromMs: number, toMs: number): number => minuteOf(toMs) - minuteOf(fromMs);
+
+type SheetInstructions = HallkeeperSheetV2["instructions"];
+type SheetDeadline = NonNullable<SheetInstructions>["phaseDeadlines"][number];
+
+/**
+ * A phase's deadline: the earliest one with a readable time. The schema lets
+ * a planner give a phase twice, so a list's order never decides which counts;
+ * an unreadable time is skipped everywhere, never fatal.
+ */
+function phaseDeadline(instructions: SheetInstructions, phase: SetupPhase): SheetDeadline | null {
+  let earliest: SheetDeadline | null = null;
+  let earliestMs = Number.POSITIVE_INFINITY;
+  for (const deadline of instructions?.phaseDeadlines ?? []) {
+    const ms = deadline.phase === phase ? instantMs(deadline.deadline) : null;
+    if (ms === null || ms >= earliestMs) continue;
+    earliest = deadline;
+    earliestMs = ms;
+  }
+  return earliest;
+}
+
+/** The minutes between the sheet's instants, each read as the clock prints it. */
+export function sheetIntervals(instants: { readonly setupFrom: string | null; readonly readyBy: string | null; readonly guestsIn: string | null }): SheetIntervals {
+  const setupMs = instantMs(instants.setupFrom);
+  const readyMs = instantMs(instants.readyBy);
+  const guestsMs = instantMs(instants.guestsIn);
+  const setupMinutes = setupMs === null || readyMs === null ? null : minutesBetween(setupMs, readyMs);
+  return {
+    readyBeforeGuestsMinutes: readyMs === null || guestsMs === null ? null : minutesBetween(readyMs, guestsMs),
+    setupMinutes,
+    noTimeToSet: setupMinutes !== null && setupMinutes <= 0,
+  };
+}
+
+export function sheetTimes(sheet: Pick<HallkeeperSheetV2, "timing" | "instructions">): SheetTimes {
+  const timing = sheet.timing;
+  const guestsIn = instantMs(timing?.eventStart) === null ? null : timing?.eventStart ?? null;
+  const setupFrom = guestsIn === null || instantMs(timing?.setupBy) === null ? null : timing?.setupBy ?? null;
+  const final = phaseDeadline(sheet.instructions, "final");
+  const readyBy = final?.deadline ?? guestsIn;
+  return { setupFrom, readyBy, guestsIn, readyFromPlanner: final !== null, ...sheetIntervals({ setupFrom, readyBy, guestsIn }) };
+}
+
+/**
+ * A setup or ready-by time as every surface prints it, on the venue's clock:
+ * "16:00" on the day guests come in (or with no booking to name that day),
+ * led by its weekday on another day ("Fri 16:00"), so a setup start the
+ * evening before never reads as the guests' own day.
+ */
+export function sheetClock(iso: string, guestsIn: string | null, timeZone: string): string {
+  const at = new Date(iso);
+  const clock = at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone });
+  if (guestsIn === null || instantMs(guestsIn) === null || venueDay(iso, timeZone) === venueDay(guestsIn, timeZone)) return clock;
+  return `${at.toLocaleDateString("en-GB", { weekday: "short", timeZone })} ${clock}`;
+}
+
+/** How a deadline stands to the sheet's times. */
+interface Lateness {
+  /** After the room's ready-by time, or after guests come in. */
+  readonly late: boolean;
+  /** Late because it falls after guests come in, though not after a ready-by time later still. */
+  readonly afterGuests: boolean;
+}
+
+/**
+ * A deadline is late after the room's ready-by minute. When the planner's
+ * ready-by time is after guests come in, a deadline between the two is not
+ * late against it, but the crew are working with guests in the room: it reads
+ * as after guests come in, as Room ready does.
+ */
+function lateness(ms: number, times: SheetTimes): Lateness {
+  const readyMs = instantMs(times.readyBy);
+  const guestsMs = instantMs(times.guestsIn);
+  if (readyMs !== null && minuteOf(ms) > minuteOf(readyMs)) return { late: true, afterGuests: false };
+  if (guestsMs !== null && minuteOf(ms) > minuteOf(guestsMs)) return { late: true, afterGuests: true };
+  return { late: false, afterGuests: false };
+}
+
+/** "45 min", "2 h", "2 h 30 min": minutes under two hours stay minutes, as the sheet has always said them. */
+export function sheetDurationWords(minutes: number): string {
+  const whole = Math.abs(Math.round(minutes));
+  if (whole < 120) return `${String(whole)} min`;
+  const rest = whole % 60;
+  return `${String(Math.floor(whole / 60))} h${rest === 0 ? "" : ` ${String(rest)} min`}`;
+}
+
+/** How Ready by stands to guests coming in: "when guests come in", "15 min before guests come in" or "15 min after guests come in"; null without both times. */
+export function readyByWords(times: Pick<SheetIntervals, "readyBeforeGuestsMinutes">): string | null {
+  const minutes = times.readyBeforeGuestsMinutes;
+  if (minutes === null) return null;
+  if (minutes === 0) return "when guests come in";
+  return `${sheetDurationWords(minutes)} ${minutes > 0 ? "before" : "after"} guests come in`;
+}
+
+/** The setup window in words: "60 min to set the room", or NO_TIME_TO_SET when it leaves none; null without both times. */
+export function setupFromWords(times: Pick<SheetIntervals, "setupMinutes" | "noTimeToSet">): string | null {
+  if (times.setupMinutes === null) return null;
+  return times.noTimeToSet ? NO_TIME_TO_SET : `${sheetDurationWords(times.setupMinutes)} to set the room`;
+}
+
 // ---------------------------------------------------------------- the day --
 
 export interface DayLine {
@@ -32,10 +193,14 @@ export interface DayLine {
   readonly at: string;
   readonly title: string;
   readonly detail: string | null;
-  /** Room ready and Event starts: the two times the day turns on. */
+  /** Room ready and Guests in: the two times the day turns on. */
   readonly emphasis: boolean;
-  /** A planner's phase deadline later than the room's ready-by time. */
+  /** Falls after the time it must come before: a phase deadline after the room's ready-by time or after guests come in, or Room ready after guests come in. */
   readonly late: boolean;
+  /** Late because it falls after guests come in: Room ready at a planner's final time after the doors, or a deadline between the doors and that time. */
+  readonly afterGuests: boolean;
+  /** Room ready at or before setup starts: the window leaves no time to set the room (NO_TIME_TO_SET). */
+  readonly noTimeToSet: boolean;
   /** Falls on another venue-local day than the event starts (the night before, after midnight). */
   readonly otherDay: boolean;
 }
@@ -43,42 +208,52 @@ export interface DayLine {
 const BRIEFING_DETAIL = "Evacuation, invacuation, lockdown and communication";
 
 /**
- * Every time on the sheet in one sequence: phase deadlines, the ready-by
- * time, the start, each door's opening and locking, and the team briefing.
- * A final-touches deadline at the ready-by time is the same moment, so it
- * folds into "Room ready" and lends it its reason.
+ * Every time on the sheet in one sequence: setup starting, phase deadlines,
+ * the room ready, guests coming in, each door's opening and locking, and the
+ * team briefing. The planner's final-touches time is the room's ready-by time
+ * (sheetTimes), so it folds into "Room ready" and lends it its reason; and a
+ * room ready as guests come in is one moment, printed once as "Room ready,
+ * guests in". A time that cannot be read prints no line.
  */
 export function sheetRunningOrder(sheet: HallkeeperSheetV2): DayLine[] {
   const timeZone = sheet.venue.timezone;
   const ins = sheet.instructions;
-  const setupBy = sheet.timing?.setupBy ?? null;
-  const setupByMs = setupBy === null ? null : Date.parse(setupBy);
-  const eventDay = sheet.timing === null ? null : venueDay(sheet.timing.eventStart, timeZone);
+  const times = sheetTimes(sheet);
+  const final = phaseDeadline(ins, "final");
+  const eventDay = times.guestsIn === null ? null : venueDay(times.guestsIn, timeZone);
   const lines: (DayLine & { readonly ms: number })[] = [];
-  const add = (at: string, title: string, detail: string | null, emphasis = false, late = false): void => {
-    lines.push({ at, ms: Date.parse(at), title, detail, emphasis, late, otherDay: eventDay !== null && venueDay(at, timeZone) !== eventDay });
+  type Marks = Partial<Pick<DayLine, "emphasis" | "late" | "afterGuests" | "noTimeToSet">>;
+  const add = (at: string, title: string, detail: string | null, marks: Marks = {}): void => {
+    const ms = instantMs(at);
+    if (ms === null) return;
+    lines.push({
+      at, ms, title, detail,
+      emphasis: marks.emphasis ?? false, late: marks.late ?? false, afterGuests: marks.afterGuests ?? false, noTimeToSet: marks.noTimeToSet ?? false,
+      otherDay: eventDay !== null && venueDay(at, timeZone) !== eventDay,
+    });
   };
   const text = (value: string): string | null => (value.trim().length > 0 ? value.trim() : null);
 
-  let readyDetail: string | null = null;
+  if (times.setupFrom !== null) add(times.setupFrom, "Setup starts", null);
   for (const deadline of ins?.phaseDeadlines ?? []) {
-    const ms = Date.parse(deadline.deadline);
-    if (deadline.phase === "final" && setupByMs !== null && ms === setupByMs) {
-      readyDetail = text(deadline.reason);
-      continue;
-    }
-    add(deadline.deadline, `${phaseLabel(deadline.phase)} done`, text(deadline.reason), false, setupByMs !== null && ms > setupByMs);
+    const ms = instantMs(deadline.deadline);
+    if (deadline === final || ms === null) continue;
+    add(deadline.deadline, `${phaseLabel(deadline.phase)} done`, text(deadline.reason), lateness(ms, times));
   }
-  if (setupBy !== null) add(setupBy, "Room ready", readyDetail, true);
-  if (sheet.timing !== null) add(sheet.timing.eventStart, "Event starts", null, true);
+  const together = times.readyBeforeGuestsMinutes === 0;
+  const afterGuests = times.readyBeforeGuestsMinutes !== null && times.readyBeforeGuestsMinutes < 0;
+  if (times.readyBy !== null) {
+    add(times.readyBy, together ? "Room ready, guests in" : "Room ready", final === null ? null : text(final.reason),
+      { emphasis: true, late: afterGuests, afterGuests, noTimeToSet: times.noTimeToSet });
+  }
+  if (times.guestsIn !== null && !together) add(times.guestsIn, "Guests in", null, { emphasis: true });
   for (const door of ins?.doorSchedule?.entries ?? []) {
     for (const event of door.events) add(event.at, `${door.label} ${event.kind === "open" ? "opens" : "locks"}`, text(event.note));
   }
   const briefingAt = ins?.protectedPremises?.briefingAt;
-  if (briefingAt !== undefined && Number.isFinite(Date.parse(briefingAt))) add(briefingAt, "Team briefing", BRIEFING_DETAIL);
+  if (briefingAt !== undefined) add(briefingAt, "Team briefing", BRIEFING_DETAIL);
 
   return lines
-    .filter((line) => Number.isFinite(line.ms))
     .sort((a, b) => a.ms - b.ms)
     .map(({ ms: _ms, ...line }) => line);
 }
@@ -151,11 +326,34 @@ export function sheetStoreList(sheet: HallkeeperSheetV2): StoreGroup[] {
 
 // ------------------------------------------------------------ setup steps --
 
+/**
+ * Chairs set at the tables of one of a step's lines: how many, how many at
+ * each table when the place holds more than one table and every one seats the
+ * same, and the tables: by the planner's names when they name every table the
+ * line counts ("Tables 1–11", "Top table"), else the line's own name with its
+ * count ("11 × 6ft Round Table", the count tied to its sign by a no-break space).
+ */
+export interface SeatsAt {
+  readonly qty: number;
+  readonly each: number | null;
+  readonly tables: string;
+}
+
 export interface SetupItem {
   readonly name: string;
   readonly qty: number;
-  /** Chairs set at these tables, read from the generator's "with N chairs". */
+  /**
+   * Chairs set at these tables, read from the generator's "with N chairs":
+   * what a setup short enough to sit under the brief prints on the table's
+   * own line. Null on every line but a table's that seats chairs.
+   */
   readonly chairs: { readonly total: number; readonly each: number | null } | null;
+  /**
+   * On the line of chairs that follows a step's tables: the chairs each table
+   * line seats, which the setup's own page prints instead (study D). Null on
+   * every other line.
+   */
+  readonly seats: readonly SeatsAt[] | null;
   /** Where the pieces go, busiest zone first. */
   readonly where: readonly { readonly zone: Zone; readonly qty: number }[];
   /** The planner's notes, each printed only at its first row in the setup. */
@@ -195,7 +393,8 @@ export function formatTableLabels(labels: readonly string[]): string {
 export interface SetupStep {
   readonly phase: SetupPhase;
   readonly label: string;
-  readonly deadline: { readonly at: string; readonly reason: string | null; readonly late: boolean; readonly otherDay: boolean } | null;
+  /** The phase's earliest readable deadline; late and afterGuests read as the day's lines do. */
+  readonly deadline: { readonly at: string; readonly reason: string | null; readonly late: boolean; readonly afterGuests: boolean; readonly otherDay: boolean } | null;
   readonly items: readonly SetupItem[];
 }
 
@@ -241,21 +440,198 @@ interface ItemDraft {
   notes: string[];
   accessory: boolean;
   labels: string[];
+  /** The plan pieces its rows list, by id. */
+  pieces: string[];
+}
+
+/** The chairs at each of an item's tables, when every one seats the same; null when they differ or some seat none. */
+function chairsEach(draft: ItemDraft): number | null {
+  return draft.chairEach.size === 1 && !draft.someBare ? [...draft.chairEach][0] ?? null : null;
+}
+
+/**
+ * The chairs the plan seats at its tables, which have no line of their own:
+ * the generator folds each into its table's "… with N chairs". They are the
+ * plan's chairs that no line lists (an accessory's line may list the chairs
+ * it dresses). Their model names them when they are all one model and as
+ * many as the tables' lines count, so the line agrees with the store.
+ */
+function seatedChairs(sheet: HallkeeperSheetV2, seatedTotal: number): { readonly name: string; readonly notes: readonly string[] } {
+  const listed = new Set<string>();
+  for (const phase of sheet.phases) for (const zone of phase.zones) for (const row of zone.rows) {
+    if (!row.isAccessory) for (const position of row.positions) listed.add(position.objectId);
+  }
+  const seated = (sheet.floorPlan?.objects ?? []).filter((object) => object.category === "chair" && !listed.has(object.objectId));
+  const models = new Set(seated.map((chair) => chair.name));
+  const [model] = models;
+  return {
+    name: models.size === 1 && model !== undefined && seated.length === seatedTotal ? model : SEATED_CHAIRS,
+    notes: seated.flatMap((chair) => (chair.note === undefined ? [] : [chair.note])),
+  };
+}
+
+/** A table's line as the generator writes it, "… with N chairs": the table, and the chairs seated at each. Only a table's line seats chairs. */
+function tableWithChairs(row: { readonly name: string; readonly category: string }): { readonly name: string; readonly each: number } | null {
+  const seated = row.category === "table" ? WITH_CHAIRS.exec(row.name) : null;
+  return seated?.[1] === undefined || seated[2] === undefined ? null : { name: seated[1], each: Number(seated[2]) };
+}
+
+type PlanPiece = NonNullable<HallkeeperSheetV2["floorPlan"]>["objects"][number];
+
+/** A point or a direction on the floor, in metres: x across the room, z down it. */
+interface FloorPoint { readonly x: number; readonly z: number }
+
+/** A piece's corners on the floor, turned as the plan turns it (the API's footprintCorners). */
+function cornersOf(piece: PlanPiece): readonly FloorPoint[] {
+  const halfW = piece.widthM * piece.scale / 2;
+  const halfD = piece.depthM * piece.scale / 2;
+  const c = Math.cos(piece.rotationY);
+  const s = Math.sin(piece.rotationY);
+  return [[-halfW, -halfD], [halfW, -halfD], [halfW, halfD], [-halfW, halfD]]
+    .map(([u = 0, v = 0]) => ({ x: piece.x + c * u + s * v, z: piece.z - s * u + c * v }));
+}
+
+/** How far two pieces in one line may stand apart, and still set end to end, in metres. */
+const END_TO_END_M = 0.15;
+/** How far their sides may differ and still stand in one line, in metres. */
+const IN_LINE_M = 0.05;
+/** The float error every edge forgives, so each holds inclusively wherever the pieces stand (a 0.15 m gap joins at any x), in metres. */
+const EDGE_M = 1e-6;
+
+/**
+ * The ways a piece's own long side runs, whichever way it is turned: a unit
+ * direction on the floor, with the piece's half-length that way and its
+ * half-width across it. Its width's way when it is longer than deep, its
+ * depth's when deeper; both for a square piece.
+ */
+function longSides(piece: PlanPiece): readonly { readonly way: FloorPoint; readonly halfLength: number; readonly halfWidth: number }[] {
+  const halfW = piece.widthM * piece.scale / 2;
+  const halfD = piece.depthM * piece.scale / 2;
+  const c = Math.cos(piece.rotationY);
+  const s = Math.sin(piece.rotationY);
+  const widthWay = { way: { x: c, z: -s }, halfLength: halfW, halfWidth: halfD };
+  const depthWay = { way: { x: s, z: c }, halfLength: halfD, halfWidth: halfW };
+  if (Math.abs(halfW - halfD) <= EDGE_M) return [widthWay, depthWay];
+  return halfW > halfD ? [widthWay] : [depthWay];
+}
+
+/**
+ * Whether `other` stands end to end with `piece` along one of `piece`'s own
+ * long sides, measured in that frame: its two long sides at most IN_LINE_M
+ * from `piece`'s, and its nearer end at most END_TO_END_M beyond `piece`'s
+ * end, each edge inclusive.
+ */
+function inLineWith(piece: PlanPiece, other: PlanPiece): boolean {
+  const corners = cornersOf(other);
+  return longSides(piece).some(({ way, halfLength, halfWidth }) => {
+    const along = corners.map((corner) => (corner.x - piece.x) * way.x + (corner.z - piece.z) * way.z);
+    const across = corners.map((corner) => (corner.z - piece.z) * way.x - (corner.x - piece.x) * way.z);
+    const sides = Math.abs(Math.min(...across) + halfWidth) <= IN_LINE_M + EDGE_M
+      && Math.abs(Math.max(...across) - halfWidth) <= IN_LINE_M + EDGE_M;
+    const gap = Math.max(Math.min(...along) - halfLength, -halfLength - Math.max(...along));
+    return sides && gap <= END_TO_END_M + EDGE_M;
+  });
+}
+
+/**
+ * Two box pieces set end to end along their own long sides, whichever way
+ * they are turned (a top table's trestles across the room, down it or on the
+ * slant): each in line with the other, measured in its own frame. Rows set
+ * back to back, and a chevron's tables side by side, stand side to side, not
+ * end to end.
+ */
+function endToEnd(a: PlanPiece, b: PlanPiece): boolean {
+  return a.collisionType === "box" && b.collisionType === "box" && inLineWith(a, b) && inLineWith(b, a);
+}
+
+/**
+ * Whether the planner's names cover every one of an item's tables, each name
+ * one run of pieces: a name covers the pieces it is typed on and the unnamed
+ * pieces of the item set end to end with one of them (endToEnd), and all the
+ * pieces it is typed on must be in that one run, so "Table 5" typed on two
+ * tables apart names neither. This is the seat note's own rule, in metres. It
+ * is not the plan's, which joins on the page, across it only, by category, and
+ * only when a name does not fit its piece. Without a plan that lists every
+ * piece, the names cover the tables only when there is one for each.
+ */
+function namesCover(draft: ItemDraft, names: readonly string[], plan: ReadonlyMap<string, PlanPiece> | null): boolean {
+  const pieces = plan === null ? [] : draft.pieces.flatMap((id) => { const piece = plan.get(id); return piece === undefined ? [] : [piece]; });
+  if (pieces.length !== draft.qty) return names.length === draft.qty;
+  const nameOf = (piece: PlanPiece): string => piece.label?.trim() ?? "";
+  const covered = new Set<PlanPiece>();
+  for (const name of new Set(pieces.map(nameOf).filter((label) => label.length > 0))) {
+    const typedOn = pieces.filter((piece) => nameOf(piece) === name);
+    const [first] = typedOn;
+    if (first === undefined) continue;
+    // Its run: from the first piece it is typed on, through pieces of that name or of none, each end to end with one in it.
+    const run = new Set([first]);
+    for (let grown = true; grown;) {
+      grown = false;
+      for (const piece of pieces) {
+        const own = nameOf(piece);
+        if (run.has(piece) || (own.length > 0 && own !== name) || ![...run].some((member) => endToEnd(piece, member))) continue;
+        run.add(piece);
+        grown = true;
+      }
+    }
+    if (typedOn.some((piece) => !run.has(piece))) return false;
+    for (const piece of run) covered.add(piece);
+  }
+  return covered.size === draft.qty;
+}
+
+/**
+ * Where one item's tables seat their chairs: the tables by the planner's
+ * names only when they cover every table the line counts, each name one run
+ * of pieces, so a line of eleven with Table 5 named reads "11 × 6ft Round
+ * Table", never "Table 5". The count at each table only where the place holds
+ * more than one table, each its own piece: one table's chairs are all at it,
+ * and four at each trestle of a top table is not four at the table.
+ */
+function seatsAt(draft: ItemDraft, plan: ReadonlyMap<string, PlanPiece> | null): SeatsAt {
+  const names = [...new Set(draft.labels.map((label) => label.trim()).filter((label) => label.length > 0))];
+  const named = names.length > 0 && namesCover(draft, names, plan);
+  const tables = named ? formatTableLabels(names) : draft.qty > 1 ? `${String(draft.qty)}\u00A0× ${draft.name}` : draft.name;
+  const several = named ? names.length > 1 && names.length === draft.qty : draft.qty > 1;
+  return { qty: draft.chairTotal, each: several ? chairsEach(draft) : null, tables };
+}
+
+export interface SetupStepsOptions {
+  /**
+   * Whether the chairs at a step's tables get a line of their own (the
+   * setup's own page) and claim their chairs' notes. False for a setup short
+   * enough to sit under the brief on page 1, which keeps each table's chairs
+   * on its own line: there the chairs' notes go to the next line that carries
+   * them, or among the plan's notes.
+   */
+  readonly chairsLine?: boolean;
 }
 
 /**
  * The phases a room is built in, each item merged across the zones it is
  * set in (one dance floor is one line, not three), with the planner's
- * deadline for the phase. A note prints once, where it first belongs, so an
- * allergy on a table does not repeat on its linen.
+ * deadline for the phase. The tables that seat chairs lead their step, and
+ * (unless `chairsLine` is false) a line of their own follows them with the
+ * chairs: how many go to which tables, with the seated chairs' notes. A note
+ * prints once, where it first belongs, so an allergy on a table does not
+ * repeat on its linen.
  */
-export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
-  const setupBy = sheet.timing?.setupBy ?? null;
+export function sheetSetupSteps(sheet: HallkeeperSheetV2, { chairsLine = true }: SetupStepsOptions = {}): SetupStep[] {
+  // Late means after the room's ready-by time (sheetTimes), or after guests
+  // come in, never after the setup window merely opens: a step due at 07:30
+  // for 08:00 doors is on time.
+  const times = sheetTimes(sheet);
   const timeZone = sheet.venue.timezone;
-  const eventDay = sheet.timing === null ? null : venueDay(sheet.timing.eventStart, timeZone);
+  const eventDay = times.guestsIn === null ? null : venueDay(times.guestsIn, timeZone);
   const seenNotes = new Set<string>();
   const planNotes = new Map<string, string>();
   for (const object of sheet.floorPlan?.objects ?? []) if (object.note !== undefined) planNotes.set(object.objectId, object.note);
+  const plan = sheet.floorPlan === null || sheet.floorPlan === undefined ? null : new Map(sheet.floorPlan.objects.map((object) => [object.objectId, object]));
+  let seatedTotal = 0;
+  for (const phase of sheet.phases) for (const zone of phase.zones) for (const row of zone.rows) {
+    seatedTotal += row.qty * (tableWithChairs(row)?.each ?? 0);
+  }
+  const chairs = seatedChairs(sheet, seatedTotal);
   const anyWhole = wholeNotes([...planNotes.values()]);
   // A row's notes are its own pieces' notes, so only those can stand whole in
   // it; two notes that happen to read as a third piece's note stay two. A row
@@ -267,18 +643,18 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
   return sheet.phases.filter((phase) => phase.zones.some((zone) => zone.rows.length > 0)).map((phase) => {
     const drafts = new Map<string, ItemDraft>();
     for (const zone of phase.zones) for (const row of zone.rows) {
-      const chairs = WITH_CHAIRS.exec(row.name);
-      const name = chairs?.[1] ?? row.name;
+      const table = tableWithChairs(row);
+      const name = table?.name ?? row.name;
       const key = `${name}|${String(row.afterDepth)}|${String(row.isAccessory)}`;
-      const draft = drafts.get(key) ?? { name, qty: 0, chairTotal: 0, chairEach: new Set<number>(), someBare: false, where: new Map<Zone, number>(), notes: [], accessory: row.isAccessory, labels: [] };
+      const draft = drafts.get(key) ?? { name, qty: 0, chairTotal: 0, chairEach: new Set<number>(), someBare: false, where: new Map<Zone, number>(), notes: [], accessory: row.isAccessory, labels: [], pieces: [] };
       draft.qty += row.qty;
       draft.labels.push(...(row.labels ?? []));
-      if (chairs?.[2] !== undefined) {
-        const each = Number(chairs[2]);
-        draft.chairTotal += row.qty * each;
-        draft.chairEach.add(each);
-      } else {
+      draft.pieces.push(...row.positions.map((position) => position.objectId));
+      if (table === null) {
         draft.someBare = true;
+      } else {
+        draft.chairTotal += row.qty * table.each;
+        draft.chairEach.add(table.each);
       }
       draft.where.set(zone.zone, (draft.where.get(zone.zone) ?? 0) + row.qty);
       for (const note of splitNotes(row.notes, wholeOf(row.positions))) {
@@ -288,25 +664,49 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
       }
       drafts.set(key, draft);
     }
-    const deadline = sheet.instructions?.phaseDeadlines.find((candidate) => candidate.phase === phase.phase) ?? null;
+    // The tables that seat chairs lead the step, as a crew sets a room: then the chairs at them, then the rest in order.
+    const seatingTables = [...drafts.values()].filter((draft) => draft.chairEach.size > 0);
+    const drafted = [...seatingTables, ...[...drafts.values()].filter((draft) => draft.chairEach.size === 0)];
+    const items: SetupItem[] = drafted.map((draft) => ({
+      name: draft.name,
+      qty: draft.qty,
+      chairs: draft.chairEach.size === 0 ? null : { total: draft.chairTotal, each: chairsEach(draft) },
+      seats: null,
+      where: [...draft.where].map(([zone, qty]) => ({ zone, qty })).sort((a, b) => b.qty - a.qty),
+      notes: draft.notes,
+      accessory: draft.accessory,
+      labels: draft.labels,
+    }));
+    // The chairs' notes are claimed only where their line prints, so under the brief a later line still carries them.
+    if (chairsLine && seatingTables.length > 0) {
+      const notes: string[] = [];
+      for (const note of chairs.notes) {
+        if (seenNotes.has(note)) continue;
+        seenNotes.add(note);
+        notes.push(note);
+      }
+      items.splice(seatingTables.length, 0, {
+        name: chairs.name,
+        qty: seatingTables.reduce((sum, draft) => sum + draft.chairTotal, 0),
+        chairs: null,
+        seats: seatingTables.map((draft) => seatsAt(draft, plan)),
+        where: [],
+        notes,
+        accessory: false,
+        labels: [],
+      });
+    }
+    const deadline = phaseDeadline(sheet.instructions, phase.phase);
     return {
       phase: phase.phase,
       label: phaseLabel(phase.phase),
       deadline: deadline === null ? null : {
         at: deadline.deadline,
         reason: deadline.reason.trim().length > 0 ? deadline.reason.trim() : null,
-        late: setupBy !== null && Date.parse(deadline.deadline) > Date.parse(setupBy),
+        ...lateness(Date.parse(deadline.deadline), times),
         otherDay: eventDay !== null && venueDay(deadline.deadline, timeZone) !== eventDay,
       },
-      items: [...drafts.values()].map((draft) => ({
-        name: draft.name,
-        qty: draft.qty,
-        chairs: draft.chairEach.size === 0 ? null : { total: draft.chairTotal, each: draft.chairEach.size === 1 && !draft.someBare ? [...draft.chairEach][0] ?? null : null },
-        where: [...draft.where].map(([zone, qty]) => ({ zone, qty })).sort((a, b) => b.qty - a.qty),
-        notes: draft.notes,
-        accessory: draft.accessory,
-        labels: draft.labels,
-      })),
+      items,
     };
   });
 }
@@ -398,27 +798,36 @@ function bareLabel(label: string): boolean {
   return /^\p{N}+$/u.test(label) || label.length < 2;
 }
 
-/** A label as a pattern that matches it only as a whole phrase, in any case. */
+/**
+ * A label as a pattern that matches it only as a whole phrase, in any case,
+ * and never as the hours of a clock time or the whole part of a decimal ("the
+ * buffet table 2:30pm" does not name Table 2, nor "a table 1.2 m from the exit"
+ * Table 1), as the runs below read a name.
+ */
 function wholePhrase(label: string): RegExp {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}]|:[0-5]\\d(?!\\d)|\\.\\d)`, "iu");
 }
 
 // A run of tables' names after "table" or "tables", as the setup's own lines
 // write one ("Tables 1–3, 5, 7–8") or as people do ("tables 4 and 5", "table
 // A & B"). A name is a range of numbers, a number or a code with one ("12",
-// "4b", "A1"), or one letter, never a time ("10:30"). The names after the
+// "4b", "A1"), or one letter, never a clock time or a decimal: a number with
+// two-digit minutes after a colon ("10:30"), or with any digit after a point
+// ("12.30", "a table 1.2 m from the exit"). Shorthand with no space after a
+// table's colon still names it when no clock's minutes follow ("Table 5:2
+// coeliacs"). The names after the
 // first are joined by a comma, "and", "or" or "&", and are of the first one's
 // kind. Each joins only where the run goes on or its clause ends after it: a
 // word after it makes it a count ("Table 7, 1 coeliac", "table 4 and 2 guests").
 // After "tables" and an "and", "or" or "&" the run is meant ("Tables 4 and 5
 // are nut-free"); a comma never carries one into a number a word follows.
 const TABLE_WORD = /(?<![\p{L}\p{N}])(tables?)\s+/giu;
-const FIRST_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{L}))(?![\p{L}\p{N}]|[:.]\d)/yu;
+const FIRST_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{L}))(?![\p{L}\p{N}]|:[0-5]\d(?!\d)|\.\d)/yu;
 /** What joins a further name to a run: a comma, "and", "or" or "&", alone or after a comma. */
 const JOINER = /\s*,\s*(?:(?:and|or|AND|OR)\s+|&\s*)?|\s*&\s*|\s+(?:and|or|AND|OR)\s+/yu;
 /** A further name in the run; a letter only as a capital, so "and a guest" adds no table A. */
-const NEXT_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{Lu}))(?![\p{L}\p{N}]|[:.]\d)/yu;
+const NEXT_NAME = /(?:(\d+)[–—-](\d+)|(\p{L}?\p{N}+\p{L}?)|(\p{Lu}))(?![\p{L}\p{N}]|:[0-5]\d(?!\d)|\.\d)/yu;
 /** What may follow a name that joins a run: another joiner, or the end of its clause. */
 const RUN_GOES_ON = /[ \t]*(?:[,&:;.)!?–—\n]|-[ \t]|(?:and|or|AND|OR)(?![\p{L}\p{N}])|$)/yu;
 

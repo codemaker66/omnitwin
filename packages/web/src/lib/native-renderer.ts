@@ -1,5 +1,5 @@
 import type { WebGPURenderer } from "three/webgpu";
-import { Color, type Camera, type Object3D, type Scene } from "three";
+import { Color, NeutralToneMapping, type Camera, type Object3D, type Scene } from "three";
 import type { RootState } from "@react-three/fiber";
 import { waitForNativeGpuWork } from "./native-gpu-completion.js";
 import { getGpuRenderer, type GpuRendererContext } from "./device-tier.js";
@@ -18,8 +18,19 @@ const renderScopes = new WeakMap<object, NativeRenderScope>();
 interface ComposedView {
   readonly scene: Object3D;
   readonly camera: Camera;
+  /** The frame leaves through Khronos PBR Neutral (drawsThroughNeutral), read before its composer runs. */
+  readonly neutral: boolean;
 }
 const composedViews = new WeakMap<object, ComposedView>();
+
+/**
+ * Whether what the renderer draws leaves through Khronos PBR Neutral. The
+ * hall's photographs add what that curve's toe will take (lib/film-toe.ts), so
+ * under any other curve, or none, they must add nothing.
+ */
+function drawsThroughNeutral(renderer: object): boolean {
+  return Reflect.get(renderer, "toneMapping") === NeutralToneMapping;
+}
 
 /**
  * Runs a registered composer's main frame (its scene pass, its post passes and
@@ -31,7 +42,9 @@ const composedViews = new WeakMap<object, ComposedView>();
  */
 export function withNativeComposedFrame(renderer: object, scene: Object3D, camera: Camera, compose: () => void): void {
   const previous = composedViews.get(renderer);
-  composedViews.set(renderer, { scene, camera });
+  // The curve is read now: three's pipeline takes the renderer's own off while
+  // its passes draw and applies it itself in its last one (RenderPipeline.render).
+  composedViews.set(renderer, { scene, camera, neutral: drawsThroughNeutral(renderer) });
   try {
     compose();
   } finally {
@@ -51,7 +64,9 @@ function exposureOf(renderer: object): number {
  * Inside a composed frame (withNativeComposedFrame) the nested draw of its own
  * scene and camera is the main draw. A material may ask whether the draw it
  * is in is that main draw, and with what exposure (scene-grade.ts
- * sceneOutput): every draw declares it here. */
+ * sceneOutput): every draw declares it here. For that material the main draw
+ * counts only where Khronos PBR Neutral follows it: the renderer's own curve
+ * for a plain draw, the composed frame's for its scene pass. */
 export function withNativeRenderScope(
   renderer: Pick<WebGPURenderer, "getRenderTarget">,
   scene: Object3D,
@@ -63,10 +78,11 @@ export function withNativeRenderScope(
   const canvas = previous === undefined
     ? renderer.getRenderTarget() === null
     : composed !== undefined && composed.scene === scene && composed.camera === camera;
+  const neutral = previous === undefined ? drawsThroughNeutral(renderer) : composed?.neutral === true;
   const scope: NativeRenderScope = { scene, camera, canvas, completions: [] };
   renderScopes.set(renderer, scope);
   try {
-    withMainDraw(canvas, exposureOf(renderer), draw);
+    withMainDraw(canvas && neutral, exposureOf(renderer), draw);
   } catch (reason: unknown) {
     for (const completion of scope.completions) completion.fail(reason);
     throw reason;
@@ -278,6 +294,44 @@ export function nativeRendererGpuString(renderer: { readonly backend: object }):
   const backend: object = renderer.backend;
   if (!("isWebGLBackend" in backend) || backend.isWebGLBackend !== true || !("gl" in backend)) return null;
   return isGpuRendererContext(backend.gl) ? getGpuRenderer(backend.gl) : null;
+}
+
+/** What a view is drawn with, as its own renderer holds it. */
+export interface NativeDrawingBackend {
+  readonly backend: "webgpu" | "webgl2";
+  /**
+   * The GPU as the backend's own device names it (WebGPU: its adapter's
+   * vendor, architecture and description) or its context does (WebGL2: the
+   * renderer string); null where the browser withholds it.
+   */
+  readonly gpu: string | null;
+}
+
+function ownText(holder: object, key: string): string {
+  const value: unknown = Reflect.get(holder, key);
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * The backend a renderer draws with, read from the renderer itself: evidence
+ * of what drew a frame, which a second `navigator.gpu.requestAdapter()` is
+ * not (that says only that WebGPU could be had). Null for anything but the
+ * native renderer, and until its backend can draw: unless told to use WebGL2,
+ * r186 starts a renderer on a WebGPU backend and swaps in the WebGL2 one while
+ * it initialises where no device can be had, so a WebGPU backend counts only
+ * once it holds its device.
+ */
+export function nativeDrawingBackend(renderer: object | null): NativeDrawingBackend | null {
+  if (renderer === null || !isNativeRenderer(renderer)) return null;
+  const backend: object = renderer.backend;
+  if (isNativeWebGLBackend(backend)) return { backend: "webgl2", gpu: nativeRendererGpuString(renderer) };
+  if (!("isWebGPUBackend" in backend) || backend.isWebGPUBackend !== true) return null;
+  if (!("device" in backend) || typeof backend.device !== "object" || backend.device === null) return null;
+  const device: object = backend.device;
+  if (!("adapterInfo" in device) || typeof device.adapterInfo !== "object" || device.adapterInfo === null) return { backend: "webgpu", gpu: null };
+  const info: object = device.adapterInfo;
+  const gpu = [ownText(info, "vendor"), ownText(info, "architecture"), ownText(info, "description")].filter((part) => part.length > 0).join(" ");
+  return { backend: "webgpu", gpu: gpu.length > 0 ? gpu : null };
 }
 
 /** Actual negotiated WebGPU limit; null means the native WebGL2 backend. */

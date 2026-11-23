@@ -12,20 +12,31 @@ spec's budgets (section 9: 2 ms a set-down, 150 ms a tail).
 ## Build and check
 
 ```sh
-node tools/set-down-listening/build.mjs                 # writes D:/claude/furniture-sound-20261027/listening/index.html
-node tools/set-down-listening/page.check.mjs            # Playwright check of that file, screenshots beside it
+pnpm --filter @omnitwin/web exec playwright install chromium   # once: the browser the check drives
+node tools/set-down-listening/build.mjs                          # writes tools/set-down-listening/out/index.html
+node tools/set-down-listening/page.check.mjs                     # Playwright check of that file, screenshots beside it
+node tools/set-down-listening/build.mjs --out <folder>           # or build into <folder>/index.html
+node tools/set-down-listening/page.check.mjs --out <folder>      # and check that folder's page
 ```
 
-`build.mjs` bundles `page.ts` with Vite's own esbuild (resolved through
-`createRequire`) into one IIFE and inlines it into `page.html`. The output is
-page content only, as the Artifact host expects: the host adds the document,
-the charset and the viewport. On this PC, run the check through the browser
-hold after `wait-memory.sh`, and type-check and lint through the heavy hold:
+`out/` is ignored by Git. `build.mjs` bundles `page.ts` with Vite's own
+esbuild (resolved through `createRequire`) into one IIFE and inlines it into
+`page.html`. The output is page content only, as the Artifact host expects:
+the host adds the document, the charset and the viewport.
+
+Type-check and lint the page with:
 
 ```sh
 node packages/web/node_modules/typescript/bin/tsc -p tools/set-down-listening/tsconfig.json
 node_modules/.bin/eslint tools/set-down-listening/page.ts
 ```
+
+CI runs both, in its Typecheck and Lint jobs. They are the only checks CI makes
+on the page: the folder has no package of its own, so `pnpm -r` skips it, and
+the browser check stays a local step. On a machine short of memory, run the
+check, the type-check and the lint one at a time, when the machine has a few
+gigabytes free and no other heavy job or browser run is going; the check starts
+Chromium and renders every room's tail.
 
 The page is published as a private claude.ai artifact with
 `capabilities: { db: {} }`.

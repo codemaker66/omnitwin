@@ -7,9 +7,9 @@
 // export of this file), and this file imports nothing.
 //
 // They live under src so that a unit test can run the very same code against
-// controls it builds (__tests__/in-page-controls.test.ts). The audits' rule
-// for a control no person can reach is pinned there, with no end-to-end case
-// of its own.
+// controls it builds (src/__tests__/browser-audit-controls.test.tsx). The
+// audits' rule for a control no person can reach is pinned there, with no
+// end-to-end case of its own.
 // -----------------------------------------------------------------------------
 
 /** A control the accessibility audit found with no accessible name. */

@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import type { BandValues } from "../bands.js";
 import { CATALOGUE_ITEMS } from "../../catalogue.js";
 import { createPlacedItem, type PlacedItem } from "../../placement.js";
@@ -13,8 +16,16 @@ import {
   roomSend,
   roomState,
 } from "../room-acoustics.js";
-import { ROOM_ACOUSTICS, ROOM_PLANS, UNCALIBRATED, domeGeometry, type RoomAcoustics, type RoomSlug } from "../rooms.js";
-import { CALIBRATION_RANGE, fittedCalibration } from "./tracer-results.js";
+import {
+  ROBERT_ADAM,
+  ROOM_ACOUSTICS,
+  ROOM_PLANS,
+  UNCALIBRATED,
+  domeGeometry,
+  type RoomAcoustics,
+  type RoomSlug,
+} from "../rooms.js";
+import { CALIBRATION_RANGE, TRACER_DIR, fittedCalibration } from "./tracer-results.js";
 
 const NO_CONTENTS: BandValues = [0, 0, 0, 0, 0, 0, 0];
 const BANDS = [0, 1, 2, 3, 4, 5, 6] as const;
@@ -45,6 +56,69 @@ function midBand(rt: BandValues): number {
 /** The room as surveyed: Eyring as calculated, without the tracer's calibration. */
 function surveyed(room: RoomAcoustics): RoomAcoustics {
   return { ...room, calibration: UNCALIBRATED };
+}
+
+type Point = readonly [number, number];
+
+const point = z.tuple([z.number(), z.number()]);
+/** The parts of T-662's room config (tools/surveyed-rooms/room.schema.json) the Robert Adam Room's model rests on. */
+const roomOutline = z.object({
+  walls: z.object({
+    vertices: z.array(point).min(3),
+    segments: z.array(z.object({ id: z.string(), height: z.number(), sagitta: z.number().optional() })),
+  }),
+  floor: z.object({
+    levels: z.array(z.object({ id: z.string(), height: z.number(), outline: z.array(point).optional() })),
+  }),
+  ceiling: z.object({
+    height: z.number(),
+    regions: z.array(z.object({ id: z.string(), height: z.number(), outline: z.array(point).min(3) })),
+  }),
+  openings: z.array(
+    z.object({ id: z.string(), kind: z.string(), width: z.number(), sill: z.number(), head: z.number() }),
+  ),
+});
+
+/** T-662's measured outline of the Robert Adam Room (#442), validated. */
+function robertAdamOutline(): z.infer<typeof roomOutline> {
+  const file = resolve(TRACER_DIR, "../surveyed-rooms/robert-adam-room.room.json");
+  const outline = roomOutline.parse(JSON.parse(readFileSync(file, "utf8")));
+  expect(outline.walls.segments).toHaveLength(outline.walls.vertices.length);
+  return outline;
+}
+
+/** The i-th vertex, wrapping round the closed outline. */
+function vertexAt(vertices: readonly Point[], i: number): Point {
+  const vertex = vertices[((i % vertices.length) + vertices.length) % vertices.length];
+  if (vertex === undefined) throw new Error("an outline has no vertices");
+  return vertex;
+}
+
+/** A polygon's area by the shoelace formula. */
+function shoelace(points: readonly Point[]): number {
+  let twice = 0;
+  points.forEach((a, i) => {
+    const b = vertexAt(points, i + 1);
+    twice += a[0] * b[1] - b[0] * a[1];
+  });
+  return Math.abs(twice) / 2;
+}
+
+/** The circular segment between a chord and its arc, from the chord and the arc's sagitta. */
+function circularSegment(chord: number, sagitta: number): { areaM2: number; arcM: number } {
+  const rise = Math.abs(sagitta);
+  const radius = (chord * chord) / (8 * rise) + rise / 2;
+  const angle = 2 * Math.asin(chord / (2 * radius));
+  return { areaM2: ((radius * radius) / 2) * (angle - Math.sin(angle)), arcM: radius * angle };
+}
+
+/** An area in m2 agrees with the outline's to 0.01 m2 (the Robert Adam Room's test says why). */
+function expectWithinOutline(model: number, outline: number): void {
+  expect(Math.abs(model - outline)).toBeLessThan(0.01);
+}
+
+function areaOfRole(room: RoomAcoustics, role: RoomAcoustics["surfaces"][number]["role"]): number {
+  return room.surfaces.filter((surface) => surface.role === role).reduce((sum, surface) => sum + surface.areaM2, 0);
 }
 
 /** Each factor is finite and inside the tracer fit's clamp. */
@@ -100,11 +174,144 @@ describe("Trades Hall rooms", () => {
     const room = ROOM_ACOUSTICS["robert-adam-room"];
     const ceilings = room.surfaces.filter((surface) => surface.role === "ceiling");
     expect(ceilings.map((surface) => surface.material)).toEqual(["plaster-lath"]);
-    expect(ceilings[0]?.areaM2).toBeCloseTo(11.2 * 7.6 + 9.8 * 5.6, 9);
+    // Its plan: the measured outline's whole floor (R96), recomputed below.
+    expect(ceilings[0]?.areaM2).toBeCloseTo(ROBERT_ADAM.lower.floorM2 + ROBERT_ADAM.upper.floorM2, 9);
     expect(GRAND_HALL.surfaces.find((surface) => surface.role === "floor")?.material).toBe("oak-boards-joists");
     expect(ROOM_ACOUSTICS.saloon.surfaces.find((surface) => surface.role === "floor")?.material).toBe(
       "parquet-timber-subfloor",
     );
+  });
+
+  it("takes the Robert Adam Room's floors, walls and air from T-662's measured outline (R96)", () => {
+    // Recomputed here from tools/surveyed-rooms/robert-adam-room.room.json by
+    // polygons, independently of the 1 cm raster that gave rooms.ts its mean
+    // heights. Areas agree to 0.01 m2: the outline's vertices and the screen
+    // wall's sagitta are given to the millimetre, so the arc they make differs
+    // from the README's circle (r 1.052 m) by a few thousandths of a m2.
+    const outline = robertAdamOutline();
+    const vertices = outline.walls.vertices;
+    const segments = outline.walls.segments;
+    const ids = segments.map((segment) => segment.id);
+    const level = (id: string) => outline.floor.levels.find((entry) => entry.id === id);
+    const upperFloor = level("upper")?.height ?? Number.NaN;
+    const liftBay = outline.ceiling.regions.find((entry) => entry.id === "lift-bay")?.height ?? Number.NaN;
+    const screen = segments.findIndex((segment) => segment.sagitta !== undefined);
+    // The one curved wall bows into the room (a negative sagitta), so the
+    // segment between its chord and its arc comes off the outline's floor.
+    expect(segments.filter((segment) => segment.sagitta !== undefined)).toHaveLength(1);
+    expect(segments[screen]?.sagitta).toBeLessThan(0);
+    const chordStart = vertexAt(vertices, screen);
+    const chordEnd = vertexAt(vertices, screen + 1);
+    const arc = circularSegment(
+      Math.hypot(chordEnd[0] - chordStart[0], chordEnd[1] - chordStart[1]),
+      segments[screen]?.sagitta ?? Number.NaN,
+    );
+    // The upper section: from the arch's east jamb round to its west jamb,
+    // closed along the top riser's line.
+    const firstUpper = ids.indexOf("archjamb-e");
+    const lastUpper = ids.indexOf("archjamb-w");
+    expect(firstUpper).toBeGreaterThan(0);
+    expect(screen).toBeGreaterThan(firstUpper);
+    expect(lastUpper).toBeGreaterThan(screen);
+    expect(lastUpper - firstUpper + 1).toBe(24);
+    const riserZ = vertexAt(vertices, firstUpper)[1];
+    const total = shoelace(vertices) - arc.areaM2;
+    const upper = shoelace(vertices.slice(firstUpper, lastUpper + 2)) - arc.areaM2;
+    expect(total).toBeCloseTo(164.5, 1); // README, "Whole room"
+    expectWithinOutline(ROBERT_ADAM.upper.floorM2, upper);
+    expectWithinOutline(ROBERT_ADAM.lower.floorM2, total - upper);
+    const room = ROOM_ACOUSTICS["robert-adam-room"];
+    expectWithinOutline(areaOfRole(room, "floor"), total);
+    expectWithinOutline(areaOfRole(room, "ceiling"), total);
+    // The steps: the alcove's width between its walls, from the first riser
+    // (step-1's front) to the top one. South of the riser line, so the lower
+    // section's.
+    const alcove = Math.abs(vertexAt(vertices, ids.indexOf("alcove-w"))[0] - vertexAt(vertices, ids.indexOf("alcove-e"))[0]);
+    const firstRiserZ = Math.min(...(level("step-1")?.outline ?? []).map((corner) => corner[1]));
+    expect(ROBERT_ADAM.lower.stepsM2).toBeCloseTo(alcove * (riserZ - firstRiserZ), 3);
+
+    // Walls: each one's length (the screen wall's arc) times its measured
+    // height above its section's floor; the lift's gate up to the bay's ceiling.
+    let lowerWalls = 0;
+    let upperWalls = 0;
+    segments.forEach((segment, i) => {
+      const a = vertexAt(vertices, i);
+      const b = vertexAt(vertices, i + 1);
+      const length = i === screen ? arc.arcM : Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const height = segment.id === "lift-head" ? liftBay : segment.height;
+      if (i >= firstUpper && i <= lastUpper) upperWalls += length * (height - upperFloor);
+      else lowerWalls += length * height;
+    });
+    expectWithinOutline(ROBERT_ADAM.lower.wallM2, lowerWalls);
+    expectWithinOutline(ROBERT_ADAM.upper.wallM2, upperWalls);
+
+    // The arch: its width between the jambs' faces; its head at the jambs'
+    // measured heights (the upper ceiling's, within 5 mm); the wall over it up
+    // to the alcove's raised panel.
+    const archWidth = Math.abs(vertexAt(vertices, lastUpper + 1)[0] - vertexAt(vertices, firstUpper)[0]);
+    expect(ROBERT_ADAM.arch.widthM).toBeCloseTo(archWidth, 3);
+    for (const jamb of ["archjamb-e", "archjamb-w"]) {
+      const height = segments.find((segment) => segment.id === jamb)?.height ?? Number.NaN;
+      expect(Math.abs(height - ROBERT_ADAM.arch.headM)).toBeLessThan(0.005);
+    }
+    const alcovePanel = outline.ceiling.regions.find((entry) => entry.id === "panel-alcove")?.height ?? Number.NaN;
+    expect(ROBERT_ADAM.arch.alcoveCeilingM).toBeCloseTo(alcovePanel, 9);
+    const overArch = ROBERT_ADAM.arch.widthM * (ROBERT_ADAM.arch.alcoveCeilingM - ROBERT_ADAM.arch.headM);
+    const extent = areaOfRole(room, "wall") + areaOfRole(room, "opening");
+    expectWithinOutline(extent, lowerWalls + upperWalls + overArch);
+    expect(room.surfaces.some((surface) => surface.material === "velour-drape")).toBe(false);
+
+    // Openings: every one the outline holds, at its size. The windows and the
+    // glazed entrance screen are its windows, the doors its doors; the way to
+    // the lift's landing is the only other, and is counted as wall.
+    const size = (id: string): readonly number[] => {
+      const opening = outline.openings.find((entry) => entry.id === id);
+      if (opening === undefined) throw new Error(`the outline has no opening ${id}`);
+      return [opening.width, opening.sill, opening.head];
+    };
+    const windows = ["window-west", "window-east"];
+    const doors = ["door-lobby", "door-west", "door-corridor", "door-north-east", "door-north-west"];
+    expect(ROBERT_ADAM.windows).toEqual(windows.map(size));
+    expect(ROBERT_ADAM.entranceScreen).toEqual(size("entrance-screen"));
+    expect(ROBERT_ADAM.doors).toEqual(doors.map(size));
+    const ofKind = (kind: string) =>
+      outline.openings
+        .filter((entry) => entry.kind === kind)
+        .map((entry) => entry.id)
+        .sort();
+    expect(ofKind("window")).toEqual([...windows, "entrance-screen"].sort());
+    expect(ofKind("door")).toEqual([...doors].sort());
+    expect(outline.openings.map((entry) => entry.id).sort()).toEqual(
+      [...windows, "entrance-screen", ...doors, "lift-landing"].sort(),
+    );
+
+    // Air: each section's ceiling regions over its floor, by polygons. The
+    // lower section's undrawn ceiling is the beams' soffit; the upper's is its
+    // largest region, the flat ceiling, with the raised field and the arch's
+    // head drawn over it. The model's mean heights come from a 1 cm raster,
+    // rounded to the millimetre, where the cross beams override the panels
+    // they overlap by 2-3 cm; the polygons count those 0.38 m2 twice, about
+    // 0.15 m3 in the lower section. So each section's air agrees within 0.1 %.
+    const isUpper = (corners: readonly Point[]): boolean =>
+      corners.reduce((sum, corner) => sum + corner[1], 0) / corners.length > riserZ;
+    const lowerRegions = outline.ceiling.regions.filter((entry) => !isUpper(entry.outline));
+    const upperRegions = outline.ceiling.regions.filter((entry) => isUpper(entry.outline));
+    const upperBase = upperRegions.reduce((best, entry) => (shoelace(entry.outline) > shoelace(best.outline) ? entry : best));
+    const raised = outline.floor.levels.filter((entry) => entry.id !== "upper");
+    const lowerAir =
+      outline.ceiling.height * (total - upper) +
+      lowerRegions.reduce((sum, entry) => sum + shoelace(entry.outline) * (entry.height - outline.ceiling.height), 0) -
+      raised.reduce((sum, entry) => sum + (entry.outline === undefined ? 0 : shoelace(entry.outline)) * entry.height, 0);
+    const upperAir =
+      (upperBase.height - upperFloor) * upper +
+      upperRegions
+        .filter((entry) => entry !== upperBase)
+        .reduce((sum, entry) => sum + shoelace(entry.outline) * (entry.height - upperBase.height), 0);
+    const lowerModel = ROBERT_ADAM.lower.floorM2 * ROBERT_ADAM.lower.meanHeightM;
+    const upperModel = ROBERT_ADAM.upper.floorM2 * ROBERT_ADAM.upper.meanHeightM;
+    expect(Math.abs(lowerModel - lowerAir) / lowerAir).toBeLessThan(0.001);
+    expect(Math.abs(upperModel - upperAir) / upperAir).toBeLessThan(0.001);
+    expect(room.volumeM3).toBeCloseTo(lowerModel + upperModel, 9);
   });
 
   // The next two check the survey and its EST curtains against the first hand

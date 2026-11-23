@@ -91,6 +91,7 @@ import { HallContext } from "../grand-hall/HallContext.js";
 import { HallOpeningHour } from "../grand-hall/HallOpeningHour.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
+import { usePlannerSurveyedRoom } from "../surveyed-room/use-planner-surveyed-room.js";
 import { assemblyMode } from "../../floor/assembly/flag.js";
 import { hasSeenLayout, useAssemblyRecall } from "../../floor/assembly/recall.js";
 import { AssemblyReplay } from "../../floor/assembly/AssemblyReplay.js";
@@ -99,6 +100,11 @@ import { AssemblyReplay } from "../../floor/assembly/AssemblyReplay.js";
 // may play, and fetched as soon as it may.
 const loadGrandAssembly = () => import("../../floor/assembly/GrandAssembly.js");
 const GrandAssembly = lazy(loadGrandAssembly);
+
+// The planner HUD's parts of this scene (the stage's hold on the camera, the line round what is chosen): one module,
+// fetched only where a screen has asked for them, so the planner without the HUD downloads none of it.
+type HudScene = typeof import("../planner-hud/hud-scene.js");
+const loadHudScene = (): Promise<HudScene> => import("../planner-hud/hud-scene.js");
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -112,6 +118,8 @@ void probeGpu();
 
 const COMPACT_PLANNER_MAX_VIEWPORT_WIDTH = 1099;
 const CAMERA_INTERACTION_SETTLE_MS = 420;
+/** The planner camera's vertical field of view, degrees: what the canvas is made with, and what a room's opening view is fitted to. */
+const PLANNER_CAMERA_FOV = 55;
 
 export interface PlannerCanvasGlOptions {
   readonly antialias: boolean;
@@ -333,6 +341,8 @@ export function PlannerScene({ inCanvas }: {
   // Its capture, where one may be shown, appears only when asked for.
   const realHall = useModelledGrandHall();
   const hallMood = useHallViewStore((state) => state.mood);
+  // A planner screen that shows the hall as a stage says so (hall-stage.ts).
+  const hallStageAsked = useHallViewStore((state) => state.stage !== null);
   // The opening framing is the hall's Room view on landscape screens; on
   // portrait ones it is no named view.
   const markHallOpeningPose = useCallback((framed: boolean) => {
@@ -508,6 +518,14 @@ export function PlannerScene({ inCanvas }: {
   const captureDrawn = splatActive && loadedChunks > 0;
   // The drawn hall stands in a dark room; everything else on parchment.
   const hallDrawn = realHall && meshVisible;
+  // Another Trades Hall room drawn as surveyed, where this device asks for it. Only the seam is imported here
+  // (surveyed-room/use-planner-surveyed-room.ts): the code that loads and draws a room is fetched where a survey
+  // is asked for, and hands back the room's model and its opening view (the planner's own from far enough back
+  // to hold the room as surveyed). Both are null while it arrives or if it cannot, and the plain shell stays.
+  // Its photographs stand as the hall's do, and its pose is held while the survey is the room's, whichever
+  // layer shows, as the hall's is: one that came and went with the layer would open the camera afresh each time.
+  const surveyedRoom = usePlannerSurveyedRoom(space, !realHall, dimensions, PLANNER_CAMERA_FOV);
+  const photographed = hallDrawn || (surveyedRoom.model !== null && meshVisible);
   // The real sun, moon and sky over the drawn hall, where this device asks for them.
   const hallSkyAsked = useMemo(() => typeof window !== "undefined" && hallSkyRequested(window.location.search), []);
   const skyLit = hallSkyAsked && hallDrawn && !timelinePreviewActive;
@@ -516,6 +534,18 @@ export function PlannerScene({ inCanvas }: {
   // (The drawn hall is never shown under the timeline's frozen preview.)
   const assemblyStage = assemblyAsked && hallDrawn && !walkMode;
   const [assemblyCamera, setAssemblyCamera] = useState(false);
+  // The stage holds the live camera of the drawn hall (never drawn under the frozen preview), and not an assembling one.
+  const hallStage = hallStageAsked && hallDrawn && !assemblyCamera;
+  // The HUD's parts of the scene arrive as soon as a screen asks for either of them. Should the fetch fail, the room
+  // is left an ordinary orbit with the planner's other marks, and nothing else of it is disturbed.
+  const hudSceneAsked = hallStageAsked || plannerFeatureEnabled("chosenMark");
+  const [hudScene, setHudScene] = useState<HudScene | null>(null);
+  useEffect(() => {
+    if (!hudSceneAsked) return undefined;
+    let current = true;
+    void loadHudScene().then((parts) => { if (current) setHudScene(parts); }, () => undefined);
+    return () => { current = false; };
+  }, [hudSceneAsked]);
   // A room known not to be the drawn Grand Hall lets a held layout go at once.
   const assemblyElsewhere = space !== null && !realHall;
   // The Assembly's code is fetched as soon as it may play here (the Grand Hall,
@@ -575,7 +605,7 @@ export function PlannerScene({ inCanvas }: {
   const cameraInteractionClearTimer = useRef<number | null>(null);
   const sceneWarmupSignature = timelinePreviewActive
     ? `frozen:${frozenRoom?.envelopeKey ?? "unavailable"}`
-    : `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${sceneLayerMode}:${String(hasAsset)}:shell:${String(meshVisible)}`;
+    : `${space?.id ?? "fallback-grand-hall"}:${surveyedRoom.model !== null ? "surveyed" : roomVariant}:${sceneLayerMode}:${String(hasAsset)}:shell:${String(meshVisible)}`;
 
   const clearCameraInteractionTimer = useCallback((): void => {
     if (cameraInteractionClearTimer.current === null) return;
@@ -642,13 +672,13 @@ export function PlannerScene({ inCanvas }: {
           frameloop="demand"
           dpr={canvasDpr}
           gl={canvasGl}
-          camera={{ fov: 55, near: 0.1, far: 200 }}
+          camera={{ fov: PLANNER_CAMERA_FOV, near: 0.1, far: 200 }}
           style={{ width: "100%", height: "100%" }}
         >
-          <color attach="background" args={[hallDrawn ? "#120e0b" : "#eee9de"]} />
-          {!timelinePreviewActive && !hallDrawn && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
+          <color attach="background" args={[photographed ? "#120e0b" : "#eee9de"]} />
+          {!timelinePreviewActive && !photographed && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
           <SceneProvider />
-          <CaptureToneMapping captureShown={captureDrawn} photographedRoom={hallDrawn} />
+          <CaptureToneMapping captureShown={captureDrawn} photographedRoom={photographed} />
           <PlannerRenderPipeline enabled={!captureDrawn} profile={governed.profile} sceneNormals={renderProfile.ambientOcclusion !== null} />
           <RenderGovernor profile={renderProfile} baseRatio={profileDpr} enabled={governorEnabled} />
           <PipelineRetention />
@@ -671,7 +701,9 @@ export function PlannerScene({ inCanvas }: {
             <RoomLighting variant={!timelinePreviewActive && roomGeometry === null ? "grand-hall" : "polygon"} />
           )}
           {meshVisible && (realHall ? (
-            <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} sunlit={skyLit} multisampled={governed.profile.sceneSamples > 0} />
+            <GrandHallModel mood={hallMood} view={walkMode ? "walk" : "auto"} sunlit={skyLit} multisampled={governed.profile.sceneSamples > 0} stage={hallStage} />
+          ) : surveyedRoom.model !== null ? (
+            surveyedRoom.model
           ) : roomGeometry !== null ? (
             <RoomMesh geometry={roomGeometry} variant={roomVariant} includeLighting={false} />
           ) : (
@@ -681,7 +713,7 @@ export function PlannerScene({ inCanvas }: {
             </>
           ))}
           {timelinePreviewActive && frozenRoom !== null && <FrozenLayoutRoom room={frozenRoom} />}
-          {!timelinePreviewActive && roomGeometry !== null && (!realHall || !meshVisible) && (
+          {!timelinePreviewActive && roomGeometry !== null && !photographed && (
             <InkArchitectureLayer
               polygon={roomGeometry.wallPolygon}
               ceilingHeightM={roomGeometry.ceilingHeight}
@@ -735,15 +767,18 @@ export function PlannerScene({ inCanvas }: {
           </>}
           <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>
             {!timelinePreviewActive && <FurnitureContactShadows />}
+            {!timelinePreviewActive && hudScene !== null && plannerFeatureEnabled("chosenMark") && <hudScene.ChosenMarks />}
             {!timelinePreviewActive && hallDrawn && <TableCandles />}
             <PlacedFurniture />
           </group>
           {realHall && !timelinePreviewActive && <HallViewDirector />}
           <CockpitPlanningCamera suspended={timelinePreviewActive || assemblyCamera} />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive || assemblyCamera}
-            defaultPose={realHall ? HALL_VIEW_POSES.room : null}
+            defaultPose={realHall ? HALL_VIEW_POSES.room : surveyedRoom.opening}
             onOpeningPose={realHall ? markHallOpeningPose : undefined}
             captureUnavailableKey={captureFailed && captureInUse ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
+          {/* After the rig: it sets the lens and squares the camera up once the rig has moved it. */}
+          {hallStage && hudScene !== null && <hudScene.HallStage />}
           {walkMode && interiorWalk !== null && !walkCameraDisabled && (!captureFailed || !captureInUse) && (
             <InteriorCamera
               key={`${roomSlug ?? "walk"}:${interiorWalk === hallWalkData ? "model" : "capture"}`}
@@ -772,6 +807,8 @@ export function PlannerScene({ inCanvas }: {
         <PlannerSoundReceipt />
         {assemblyStage && <AssemblyReplay />}
       </div>
+      {/* The survey's loader, where one is asked for: beside the canvas, drawing nothing. */}
+      {surveyedRoom.loader}
       {showArrival && <PlannerArrival onEnter={enterRoom} />}
     </PlannerCanvasBoundary>
   );
