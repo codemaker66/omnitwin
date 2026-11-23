@@ -52,6 +52,22 @@ describe("the CLI's own words", () => {
     expect(written.join("")).toContain(ATTENDED);
   });
 
+  it("refuses --night-cap, saying it was renamed to --job-cap, before it prints or reads anything", async () => {
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      written.push(String(chunk));
+      return true;
+    });
+    try {
+      for (const flag of [["--night-cap", "5"], ["--night-cap=5"]]) {
+        await expect(main(["run", "spec.md", "--job", "trial-1", ...flag, "--config", "missing.json"]), flag.join(" ")).rejects.toThrow(/^--night-cap was renamed to --job-cap/u);
+      }
+    } finally {
+      spy.mockRestore();
+    }
+    expect(written).toEqual([]);
+  });
+
   it("runs as a command when started through a junction or a symlinked folder", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "credit-runner-link-"));
     const link = path.join(root, "package");

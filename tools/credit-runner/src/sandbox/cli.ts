@@ -101,6 +101,10 @@ function costText(record: { readonly costUsd: number; readonly costKnown: boolea
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
+  // The parser would refuse it too, but only as an unknown option: an old script learns what replaced it.
+  if (argv.some((arg) => arg === "--night-cap" || arg.startsWith("--night-cap="))) {
+    throw new Error("--night-cap was renamed to --job-cap, the cap on the spend under one --job label; nothing was run");
+  }
   const { values, positionals } = parseArgs({
     args: argv.filter((arg) => arg !== "--"),
     allowPositionals: true,
