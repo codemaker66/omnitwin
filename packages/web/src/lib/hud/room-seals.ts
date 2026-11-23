@@ -52,8 +52,14 @@ export interface RoomFacts {
  * its export into a file every planner downloads.
  */
 export const LAID_CLEARANCE_M = 0.6;
-/** A gap measured a hair under that spacing is that spacing. */
-const LAID_CLEARANCE_SLACK_M = 0.005;
+/**
+ * Arithmetic only: two outlines set exactly that far apart can measure a few
+ * parts in ten to the sixteenth under it. Lay out's own rooms measure over its
+ * spacing (0.63 m and more, in every room and chair tried), so nothing wider
+ * than this is owed to it, and a gap set by hand under the spacing is asked
+ * about like any other.
+ */
+const LAID_CLEARANCE_EPSILON_M = 1e-9;
 
 /**
  * The last layout the planner's review was asked about, and what it said. The
@@ -105,7 +111,7 @@ function laidAsThePlannerLays(
   roomSlug: string | null,
 ): boolean {
   if (circulation.band !== "tight" || circulation.tightestGapM === null || room === null) return false;
-  if (circulation.tightestGapM < LAID_CLEARANCE_M - LAID_CLEARANCE_SLACK_M) return false;
+  if (circulation.tightestGapM < LAID_CLEARANCE_M - LAID_CLEARANCE_EPSILON_M) return false;
   return gangwaysPass(items, room, roomSlug);
 }
 

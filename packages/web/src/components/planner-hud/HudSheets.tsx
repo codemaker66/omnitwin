@@ -23,7 +23,7 @@ import { usePlanSent, usePlannerHudStore, type HudSheet } from "../../stores/pla
 import { useToolStore } from "../../stores/tool-store.js";
 import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
-import { tellTheEvent } from "./event-answer.js";
+import { tellTheEvent, useEventAnswerHold, useEventAnswerUnsaved, type EventAnswerHold } from "./event-answer.js";
 import { useHudFacts } from "./hud-facts.js";
 import { CloseGlyph, MinusGlyph, PlusGlyph } from "./glyphs.js";
 import { handKeyboardOn } from "./keyboard-hand-off.js";
@@ -96,8 +96,22 @@ const KINDS: readonly { readonly kind: PlannerEventKind; readonly name: string; 
 /** A step of the guest count's keys. */
 const GUEST_STEP = 10;
 
+/** Why the event's answer is held as it is, said under its choices. */
+const EVENT_HELD_WORDS: Readonly<Record<EventAnswerHold, string>> = {
+  "in-review": "This layout is with the events team, so its event stays as it is for now.",
+  preview: "Leave the preview to change the event.",
+};
+const EVENT_HELD_ID = "hud-event-held";
+/** What became of an answer the layout could not yet keep, said under its choices. */
+const EVENT_UNSAVED_WORDS = {
+  retrying: "Not saved yet. It is tried again while this page stays open.",
+  "this-visit": "Kept for this visit only.",
+} as const;
+
 function EventSheet(): ReactElement {
   const kind = usePlannerEventStore((state) => state.eventKind);
+  const held = useEventAnswerHold();
+  const unsaved = useEventAnswerUnsaved();
   const guests = useCockpitStore((state) => state.plannedGuestCount);
   const setGuests = (next: number | null): void => {
     useCockpitStore.getState().setPlannedGuestCount(next === null ? null : Math.min(MAX_GUEST_FLOW_AGENTS, Math.max(1, Math.round(next))));
@@ -106,7 +120,7 @@ function EventSheet(): ReactElement {
     <>
       <SheetTitle>{JOURNEY_LABELS.event}</SheetTitle>
       <p className="hud-sheet__lede">Two things shape the room: what the day is, and how many are coming. Both can change later.</p>
-      <div className="hud-choices" role="radiogroup" aria-label="What are you planning?" onKeyDown={onRadioGroupKeyDown}>
+      <div className="hud-choices" role="radiogroup" aria-label="What are you planning?" aria-describedby={held === null ? undefined : EVENT_HELD_ID} onKeyDown={onRadioGroupKeyDown}>
         {KINDS.map((option, index) => (
           <button
             key={option.kind}
@@ -114,13 +128,24 @@ function EventSheet(): ReactElement {
             role="radio"
             className="hud-choice"
             aria-checked={kind === option.kind}
+            aria-disabled={held === null ? undefined : true}
             tabIndex={radioTabIndex(kind === option.kind, index === 0, kind !== null)}
-            onClick={() => { tellTheEvent(option.kind); }}
+            onClick={() => {
+              // Held while the layout cannot change. And the chosen answer pressed again (an arrow key that comes
+              // back to it presses it) is not a new answer: nothing is written.
+              if (held !== null || option.kind === kind) return;
+              tellTheEvent(option.kind);
+            }}
           >
             <span className="hud-choice__name">{option.name}</span>
             <span className="hud-choice__line">{option.line}</span>
           </button>
         ))}
+      </div>
+      {held === null ? null : <p className="hud-sheet__say" id={EVENT_HELD_ID}>{EVENT_HELD_WORDS[held]}</p>}
+      {/* Always there, so what appears in it is read out. */}
+      <div role="status">
+        {unsaved === null ? null : <p className="hud-sheet__say">{EVENT_UNSAVED_WORDS[unsaved]}</p>}
       </div>
       <div className="hud-sheet__section">
         <h3 className="hud-sheet__heading">Guests</h3>

@@ -348,8 +348,9 @@ describe("the journey", () => {
       expect(gapToOpenUp(room.aisles), String(wider)).toBe(false);
       expect(nextMove(room, false), String(wider)).toMatchObject({ id: "send" });
     }
-    // Narrower is asked about, as it always was.
-    for (const narrower of [0.5, 0.58]) {
+    // Narrower is asked about, as it always was, right up to the spacing itself: a gap set by hand a tenth of a
+    // millimetre under it is under it (and its figure, cut to 0.5 m, is said with the accent it needs).
+    for (const narrower of [0.5, 0.58, 0.596, 0.5999]) {
       const room = apart(narrower);
       expect(room.aisles.band, String(narrower)).toBe("tight");
       expect(room.aisles.asLaid, String(narrower)).toBe(false);
