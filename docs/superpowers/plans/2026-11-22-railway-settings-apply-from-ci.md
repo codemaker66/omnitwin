@@ -19,11 +19,12 @@ package, `yaml`, for the CI check alone. Railway's tool 5.74.0 as a release file
 Railway's kit 3.17.0 from `.railway/package-lock.json`.
 
 **Spec:** `docs/superpowers/specs/2026-11-22-railway-settings-apply-from-ci-design.md` (sections 6, 8, 9 and
-12; section 14 lists what the release lead's review changed). Read it with this plan: the plan argues from it.
-The founder approved it on 22 November 2026.
+12; section 14 lists what the release lead's two review passes changed). Read it with this plan: the plan
+argues from it. The founder approved it on 22 November 2026.
 
-Written 22 November 2026, and amended the same day to follow the design's review round. Nothing here is built
-yet.
+Written 22 November 2026, and amended to follow the design's two review rounds and what the build of Tasks 1
+to 5 found. Each of those five tasks ends with an "As built" note: what the code holds beyond this plan's
+first wording, so that the plan matches the code a reviewer reads.
 
 ## The whole build, in order
 
@@ -46,10 +47,10 @@ without the founder's approval on GitHub.
 | Left open | Decision | Why |
 |---|---|---|
 | Which of Railway's release files is the tool, and how the runtime is pinned | The tool: `railway-v5.74.0-x86_64-unknown-linux-musl.tar.gz` from Railway's releases on GitHub. The runtime: Node's own Linux file for one exact version, the one the API's image pins on the day (22.23.2 on 22 November). Each is fetched with `curl` and checked against a SHA-256 kept in `.github/railway-settings/pins.json`, which also holds the SHA-256 of the program inside | Railway's CLI page lists pre-built files as an official way to install and describes no way for its install script to pin a version or check a sum. The npm route brings an installer's dependencies into a public lockfile (`.railway/README.md`). GitHub's release record gives a SHA-256 for each file and marks that release immutable. 5.74.0 made the plan seen on 22 November. No action but checkout is allowed, so the runtime cannot come from `setup-node` |
-| How the history of runs is read for the last change applied | GitHub's API, with the run's own token: this workflow's runs on `master`, newest first, then each one's jobs. The last agreement is the newest run in which the step `Nothing is left to change` or `Already up to date` succeeded. With none, or when the read fails, there is no last agreement and step 1 shows the trusted places in full | A step's name and result are written by GitHub, not by the commit being run |
+| How the history of runs is read for the last change applied | GitHub's API, with the run's own token: this workflow's runs, newest first, then a candidate's jobs and its review history. Only one kind of run counts (design 6.2): on `master`, started by a push or by hand, in this repository and not a fork, whose step `Nothing is left to change` succeeded in the job "Apply this plan", after an approval its review history records for `railway-settings`. A run that only found Railway up to date does not count. With none, or when the read fails, step 1 shows the trusted places in full and old values are hidden | A step's name and result, and a review's record, are written by GitHub, not by the commit being run |
 | The files inside `.github/railway-settings/`, and how their tests run in CI | That folder holds only what an approved job runs or reads: ten modules, four scripts and the pins. The tests, the fixtures, the CI check and its YAML reader live in `.github/railway-settings-check/`. CI's tooling job runs them with `node --test`, as it runs `.github/gpu/*.test.mjs` (`ci.yml:612-619`) | A test or a CI rule is not code the approvals trust, so changing one should not start a run or be shown in step 1. Both folders are outside the pnpm workspace (`packages/*`, `tools/*`), so no manifest or lockfile on a watched path changes |
 | The comment at the top of the Deploy workflow | Rewritten in pull request 2, where the token steps land (`deploy.yml:18-21`). It says that a Railway token now lives in one protected environment, and points at the design | A comment-only change, in a file that is not a watched path and not a trusted place |
-| How step 3 reads other workflows' executing jobs and Railway's state | Jobs: GitHub's API, for the workflow files in a fixed list. Railway: `railway deployment list --json`, through the one tool entry, written to a file on the runner; only a verdict is printed. Step 2 makes the same read of Railway first, so he knows before the second approval and the token is proven able to make it. The running build: the production receipt's method (`production-receipt.yml:85-96` and `117-132`), with the address held in the trusted folder | Each reader is the narrowest one that answers the question. The list of workflows is checked by CI, so a new migration workflow cannot be forgotten |
+| How step 3 reads other workflows' executing jobs | GitHub's API, for the workflow files in a fixed list. (Railway's own state is the design's now: `railway deployment list --service <name> --json`, through the one tool entry, to a file on the runner, in step 2 and again in step 3; only a verdict is printed.) The running build: the production receipt's method (`production-receipt.yml:85-96` and `117-132`), with the address held in the trusted folder | Each reader is the narrowest one that answers the question. The list of workflows is checked by CI, so a new migration workflow cannot be forgotten |
 | The rehearsal mode | Pull request 1's workflow is the rehearsal. Its two approved jobs name the environment, install and verify everything, read nothing from Railway and hold no reference to a secret. Going live is pull request 2, a reviewed change | A rehearsal that cannot touch a token needs no switch to trust |
 | The exact words of the summaries | The table in Task 10, tested word for word | One place to read and to change them |
 | The README's new home, and "After the move" | `docs/operations/railway-settings.md`, moved in pull request 3. The same pull request edits "After the move" | Its merge changes `.railway/` without changing a setting, so the run it starts is read-only, with the founder watching |
@@ -60,14 +61,18 @@ without the founder's approval on GitHub.
    Step 3 must know whether to wait for a redeploy, so any other value is applied by hand until it is added.
 2. **A refusal prints its one sentence and then fixed reasons.** The reasons are chosen from a short list and
    name settings only, never a value from Railway.
-3. **The fifth call of design 6.2 is a switch in the code, not a choice made while a run waits.** The wait of
-   6.6 comes after the token step, so a run cannot find out that it needs the fallback and still hold the
-   token. The switch is set by what Task 6 proves, and it is off.
-4. **The reviewer is matched by user id, not by name.** Design 6.1 asks for exactly the founder's user. A name
+3. **The reviewer is matched by user id, not by name.** Design 6.1 asks for exactly the founder's user. A name
    can be changed; the id GitHub gives the repository's owner cannot.
-5. **A bypass answer that is present is always checked.** Design 6.1 lets the workflow skip the bypass rule
-   when the build proves a run's token cannot see it. If the field is there and is not "no", the gate refuses
-   whatever the build proved.
+4. **The reader refuses more than design 6.3 lists.** The build kept refusals for shapes that could be read
+   in more than one way or that would be applied with no line to read: a group or a setting named twice, an
+   update with no detail, an empty value anywhere in what the file declares for a changed group, a count of
+   replicas it cannot count. Task 2's "As built" note lists them. Each is applied by hand.
+5. **An empty plan that the reader refuses is not called up to date.** Design section 2 says a plan with no
+   change says "already up to date". A plan with no change but made for another copy of the folder, or by
+   another version of the tool, proves nothing about this commit. Step 2 fails with the reason, and step 3
+   checks the refusals before it looks at whether anything is pending.
+6. **A read of Railway's state that returns no deployment at all is unreadable, not quiet.** The service has
+   deployments, so an empty list means the read did not see them.
 
 ## Not in this plan
 
@@ -156,13 +161,13 @@ that owns the code.
 | `.github/railway-settings/tool.mjs` | The one place a process is started: the tool, by exact command; the runtime, to evaluate the settings file and to install the kit, with no token. Also the check of what was installed |
 | `.github/railway-settings/evaluate-settings.mjs` | The script the runtime runs to evaluate `.railway/railway.ts` |
 | `.github/railway-settings/declared.mjs` | What the file declares, in the names Railway stores; the settings file's own check |
-| `.github/railway-settings/gate.mjs` | The rules of design 6.1; the currency check; the last commit at which Railway and the file agreed |
+| `.github/railway-settings/gate.mjs` | The rules of design 6.1; the currency check; the last change this workflow applied |
 | `.github/railway-settings/look.mjs` | The look of design 6.5: executing jobs, Railway's state, the running build |
 | `.github/railway-settings/redeploy.mjs` | The verdict of design 6.6 from GitHub's deployment records |
 | `.github/railway-settings/flow.mjs` | The order of the two token steps, with everything outside injected |
 | `.github/railway-settings/words.mjs` | Every sentence and summary |
 | `.github/railway-settings/cli.mjs` | Wiring only: reads the environment, calls the modules, writes outputs and summaries |
-| `.github/railway-settings/install-runtime.sh`, `install-tool.sh`, `since-last.sh`, `run.sh` | Fetch and verify the runtime and the tool; fetch the trusted places as they last agreed; start `cli.mjs` under the pinned runtime |
+| `.github/railway-settings/install-runtime.sh`, `install-tool.sh`, `since-last.sh`, `run.sh` | Fetch and verify the runtime and the tool; fetch the trusted places as they were at the last change applied; start `cli.mjs` under the pinned runtime |
 | `.github/railway-settings/pins.json` | The tool's and the runtime's version, file name and two SHA-256 sums each |
 | `.github/railway-settings-check/*.test.mjs`, `fixtures.mjs` | The tests, and made-up plans shaped like the one seen on 22 November |
 | `.github/railway-settings-check/check-workflows.mjs` | The CI check of design 6.7 |
@@ -241,20 +246,25 @@ declaredNow: { build: {}, deploy: <change().after> } }`.
    Split the bracket's contents at an arrow so that both sides are JSON; exactly one split must work.
 2. The new value is `after` at that name. It must equal `<new>` (deep, key order ignored).
 3. The old value is shown only when it equals `declaredLast` at that name (`null` and missing are equal).
-   Otherwise the line says Railway holds something else.
+   When `declaredLast` is known and differs, the line says `(Railway holds something else)`. When there is
+   no `declaredLast` at all, the old value reads `(hidden)`: nothing is known to compare it with.
 4. When `ctx.declaredNow[field]` does not equal the change's `after`, the kit and the tool read the file
-   differently: every old value of that change is hidden and one line says so.
+   differently: every old value of that change reads `(hidden)` and one line says so.
 
 The lines, sorted by name, then one last line binding everything the file declares for the changed groups:
 
 ```
 deploy.drainingSeconds: (not set) -> 30
 deploy.healthcheckTimeout: 2700 -> 3000
+deploy.sleepApplication: (hidden) -> false
 deploy.startCommand: (Railway holds something else) -> "node server.js"
 1 change is outside what this workflow applies.
 (old values hidden: the kit and the tool read the file differently)
 declared: 3f9a0c1e5b7d2a46
 ```
+
+(The lines above show every form at once. One plan would not hold `(hidden)` beside a shown old value for
+the same group.)
 
 Values are compact JSON. `declared:` is the first 16 hex characters of the SHA-256 of the changes' `after`
 objects, keys sorted. A change that is not allowed is counted, never described.
@@ -316,7 +326,7 @@ Expected: FAIL, `Cannot find module` for `plan-lines.mjs`.
 - [ ] **Step 4: Run the tests**
 
 Run: `node --test .github/railway-settings-check/plan-lines.test.mjs`
-Expected: PASS, 11 tests.
+Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -325,7 +335,18 @@ git add .github/railway-settings/plan-lines.mjs .github/railway-settings-check/f
 git commit -m "feat(ci): read a Railway plan and write its lines (T-751)"
 ```
 
-**What a person sees:** nothing yet. CI's tooling job runs eleven more tests.
+**As built.** Beyond the interfaces above, `plan-lines.mjs` holds:
+- two more exports, used by Task 4 so that both modules write a line the same way: `showValue(value)`
+  (compact JSON with keys sorted, `(not set)` for `null` or missing) and `writeLine(name, oldText, newValue)`;
+- `readPlan` also requires `changeSet.version === 1` and every change to be an object, and its one sentence
+  never quotes the text it was given;
+- a name is `build` or `deploy` and then dotted parts of letters, digits, `_` and `-`. A name every object
+  answers to (`constructor`, say) is read as a setting's own key or not at all;
+- the old value reads `(hidden)` in the two cases of rules 3 and 4;
+- the lines are ordered by name, whatever order Railway gives them.
+Its test file holds 19 tests: the 11 above and 8 for these.
+
+**What a person sees:** nothing yet. CI's tooling job runs these tests.
 
 ### Task 2: What step 3 refuses
 
@@ -356,6 +377,23 @@ git commit -m "feat(ci): read a Railway plan and write its lines (T-751)"
 - "Resources" in design 6.3 means what the file's project holds: services, databases and volumes. The fifth
   reason covers them: the file declares one service, so a plan that adds, removes or touches any other
   resource is not "an update to this service".
+- The refusals are worked out for a plan with no change too. A plan for another copy of the folder holds no
+  line and one reason, and Task 9 reads the reasons before it asks whether anything is pending.
+
+**As built.** The build kept these refusals beyond the list above. Each uses one of the ten sentences, so
+none adds words:
+- `a line could not be read` also when: a group (`build`, `deploy`) is updated twice in one plan; a setting
+  is named twice; a detail names another group than its change's `field`; an update has no detail at all;
+  `before` or `after` is not an object; a count of replicas cannot be counted;
+- `it empties <name>` also for an empty value anywhere in `after`, whether or not a detail names it. Empty
+  means not set, blank text, or a list or map that holds nothing but empty values. Nought and `false` are
+  values;
+- `it lowers the number of replicas` also when replicas are given as one number (`numReplicas`), and when a
+  detail's own old value says there were more than `before` shows;
+- `it is not an update to this service's build or deploy settings` also when the run names no service;
+- `the plan is for another version of the tool` and `... another copy of the settings folder` also when the
+  context holds no version or no tree to compare with.
+Its test file holds 32 tests: the 13 below and 19 for these.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -442,9 +480,12 @@ git commit -m "feat(ci): the changes the Railway settings workflow refuses to ap
 config plan --out <workdir>/plan.json
 config apply --plan <workdir>/plan.json --yes
 config plan --detailed-exit-code
-deployment list --service <service> --json --limit 5
+deployment list --service <service> --json
 ```
 
+    The last is written as design 6.2 writes it. Its flags are the tool's own (`railway deployment list
+    --help`: `-s, --service`, `--json`). It takes no `--limit`: the tool's default of 20 is more than the look
+    needs, and a flag the design does not write is a flag the list does not allow.
   - `commandsFor(step, workdir, service): string[][]`, the calls to Railway each approved job may make
     (design 6.2). For `'plan'`: `config plan --out`, then `deployment list`. For `'apply'`: `config plan --out`,
     `deployment list`, `config apply --plan ... --yes`, `config plan --detailed-exit-code`. So step 2 cannot
@@ -452,21 +493,33 @@ deployment list --service <service> --json --limit 5
   - `assertAllowed(argv, workdir, service, step?): void`. Throws `not an allowed command` unless `argv` equals
     one of the five, element for element. With a `step` it must also be `--version` or one of
     `commandsFor(step, ...)`. `service` must match `^[@A-Za-z0-9._/-]+$`.
-  - `runTool(argv, { toolPath, runtimeDir, token, workdir, service, timeoutMs, step }): Promise<{ code: number }>`.
-    It calls `assertAllowed` first, with `step`. It starts `toolPath` with no shell, `stdin` closed, and standard output
-    and error written to `tool-<n>.out` and `tool-<n>.err` in `workdir`. The child's environment is built
-    from nothing: `PATH` (the pinned runtime's `bin` first, then the tool's folder, then this process's own),
-    `HOME`, `_` set to `toolPath`, `RAILWAY_NO_AUTO_UPDATE=1`, `CI=true`, `NO_COLOR=1`, and `RAILWAY_TOKEN`
-    set to `token` for every command but `--version`. On a timeout it kills the child and returns
-    `{ code: 124 }`. It returns the exit code and nothing else.
+  - `runTool(argv, { toolPath, runtimeDir, token, workdir, service, timeoutMs, step, standIn? }): Promise<{ code: number }>`.
+    It calls `assertAllowed` first, with `step`. A call to Railway must say which step makes it: with no
+    `step` it is refused, and only `--version`, which contacts nothing and gets no token, needs none. It
+    also requires `toolPath`, `runtimeDir` (without it the tool would evaluate the settings file with
+    whatever `node` the runner has), a time limit, and a token for every call to Railway (without one the
+    tool could fall back to a sign-in it finds in the home folder); it starts nothing when one is missing.
+    It starts `toolPath` with no shell, `stdin` closed, and standard output and error written to
+    `tool-<n>.out` and `tool-<n>.err` in `workdir`, where `n` is the command's place among the five, from 1
+    (`toolOutputPaths(argv, workdir, service)` gives the two paths; a command run again writes over its own
+    files). The child's environment is built from nothing: `PATH` (the pinned runtime's `bin` first, then
+    the tool's folder, then this process's own), `HOME`, `_` set to `toolPath`, `RAILWAY_NO_AUTO_UPDATE=1`,
+    `CI=true`, `NO_COLOR=1`, and `RAILWAY_TOKEN` set to `token` for every command but `--version`. It returns
+    the exit code and nothing else: `124` when the child was stopped at the time limit, `127` when it could
+    not be started, `125` when it ended without a code. `standIn` is for the tests alone: a Node script
+    started in the tool's place with the same arguments and environment. `cli.mjs` never passes it, and
+    Task 11's check refuses the word in `cli.mjs`.
   - `evaluateSettings(file, { runtimePath }?): Promise<{ project: object, partial: string | null, takesContext: boolean }>`.
     It starts `runtimePath` (or `process.execPath` when none is given, as in tests) with
     `--experimental-strip-types --disable-warning=ExperimentalWarning evaluate-settings.mjs <file>` and an
     environment that holds `PATH` only, and parses what it prints.
-  - `reinstallKit(dir, { runtimeDir }): Promise<{ code: number }>`. It starts the pinned runtime on its own
-    npm (`<runtimeDir>/lib/node_modules/npm/bin/npm-cli.js`) with `ci --ignore-scripts` in `dir`, with an
-    environment that holds `PATH` and `HOME` only. npm checks every package against the lockfile's hash, so
-    this is both the install and design 6.2's "checked against its lockfile".
+  - `reinstallKit(dir, { runtimeDir, runtimePath? }): Promise<{ code: number }>`. It starts the pinned
+    runtime on its own npm (`<runtimeDir>/lib/node_modules/npm/bin/npm-cli.js`) with `ci --ignore-scripts` in
+    `dir`, with an environment that holds `PATH` and `HOME` only. npm checks every package against the
+    lockfile's hash, so this is both the install and design 6.2's "checked against its lockfile". The
+    runtime's program is `<runtimeDir>/bin/node` unless `runtimePath` names another: the tests give the Node
+    that runs them, with a stand-in for npm under a made-up `runtimeDir`. npm's own words go to the log; it
+    holds no token, and they say why an install failed.
   - `verifyPinned({ toolPath, runtimePath, pins }): Promise<string[]>`. The SHA-256 of each of the two
     programs must equal `binarySha256` of its entry in `pins` (Task 12). It returns plain problems, empty
     when both match. It starts no process.
@@ -501,7 +554,9 @@ for (const argv of [
   ['config', 'plan', '--json'],
   ['config', 'plan', '--out', '/elsewhere/plan.json'],
   ['config', 'plan', '--out', P, '--environment', 'other'],
-  ['deployment', 'list', '--service', 'another', '--json', '--limit', '5'],
+  ['deployment', 'list', '--service', 'another', '--json'],
+  ['deployment', 'list', '--service', S, '--json', '--limit', '5'],
+  ['deployment', 'list', '--json'],
   ['up'], ['redeploy'], ['variables'], ['config', 'migrate', '--apply'], [],
 ]) test(`refuses: ${argv.join(' ') || '(nothing)'}`, () => assert.throws(() => assertAllowed(argv, W, S), /not an allowed command/));
 test('step 2 may read the plan and the state, and nothing else', () => {
@@ -533,12 +588,22 @@ test('installing the kit gets no token and runs no script', async () => {
 test('a program that is not the pinned one is found out', async () => {
   // Two small files stand in for the tool and the runtime. With pins made from them: []. Change one byte of either: a problem.
 });
+test('a call to Railway that does not say which step makes it is not started', async () => {
+  for (const argv of allowedCommands(W, S).slice(1))
+    await assert.rejects(runTool(argv, { ...options, step: undefined }), /not an allowed command/);
+  assert.deepEqual(await runTool(['--version'], { ...options, step: undefined, token: undefined }), { code: 0 });
+});
+test('a tool with no time limit, no path, no pinned runtime or no token is not started', async () => { /* each rejects; the stand-in leaves no file */ });
+test('each of the five commands writes to files of its own', async () => {
+  // toolOutputPaths gives tool-1 ... tool-5 for the five, in the order of allowedCommands
+});
 ```
 
 - [ ] **Step 2: Run it to see it fail.** `node --test .github/railway-settings-check/tool.test.mjs`. Expected:
   FAIL, module not found.
 - [ ] **Step 3: Write `tool.mjs` and `evaluate-settings.mjs`.** The stand-ins in the tests are small Node
-  scripts the test writes to a temporary folder and starts through `process.execPath`.
+  scripts the test writes to a temporary folder. The tool's stand-in is started through `runTool`'s
+  `standIn`; npm's through `reinstallKit`'s `runtimePath`.
 - [ ] **Step 4: Run the tests.** Expected: PASS.
 - [ ] **Step 5: Commit**
 
@@ -546,6 +611,23 @@ test('a program that is not the pinned one is found out', async () => {
 git add .github/railway-settings/tool.mjs .github/railway-settings/evaluate-settings.mjs .github/railway-settings-check/tool.test.mjs
 git commit -m "feat(ci): one entry for Railway's tool, by exact command (T-751)"
 ```
+
+**As built.** Beyond the first wording of this task, `tool.mjs` holds:
+- `toolOutputPaths` and the numbered output files: `tool-1` is `--version`, `tool-2` the plan with `--out`,
+  `tool-3` the apply, `tool-4` the closing plan, `tool-5` the list of deployments. Tasks 20 and 21 read
+  Railway's state from `tool-5.out` and nothing else from these files;
+- the tests-only `standIn`, and `reinstallKit`'s `runtimePath`;
+- a work folder or a service name that begins with `-` allows no command at all: it could be read as a flag;
+- a step that is not `'plan'` or `'apply'` gets no command, not even the version;
+- `evaluateSettings` rejects with one plain sentence, the script's own or
+  `The settings file could not be evaluated.`, and never with anything else the script printed. A runtime
+  that is named and cannot be started is never replaced by another;
+- `verifyPinned` treats a pin that is not a checksum, or a program that cannot be read, as a problem.
+`evaluate-settings.mjs` notes any use of the context, not only a declared parameter: a parameter with a
+default, or `arguments`, does not show in a function's length. It loads the kit from beside the settings
+file, and it is the one module that imports a path it is given (Task 11, rule 18).
+One change is still to make there: the list of deployments loses `--limit 5`, as written above.
+Its test file holds 33 tests.
 
 **What a person sees:** nothing yet.
 
@@ -630,6 +712,15 @@ git add .github/railway-settings/declared.mjs .github/railway-settings-check/dec
 git commit -m "feat(ci): what the Railway settings file declares, read with no token (T-751)"
 ```
 
+**As built.** Beyond the interfaces above, `declared.mjs` holds:
+- `checkSettingsProject` also refuses: a `variables` map with any key beside `managed: false`; a service
+  whose name `tool.mjs` would not give to Railway's tool; a service that declares variables of its own; a
+  `build` or `deploy` that is not a map. A problem never names a variable;
+- `storedSettings` throws when the project is not exactly one service, and gives an empty map for a group the
+  file leaves out;
+- `expectedLines` writes its lines with Task 1's `showValue` and `writeLine`, in the order Task 1 orders them.
+Its test file holds 10 tests.
+
 **What a person sees:** nothing yet.
 
 ### Task 5: The gate
@@ -644,53 +735,82 @@ git commit -m "feat(ci): what the Railway settings file declares, read with no t
   - `TRUSTED_PLACES = ['.railway', '.github/railway-settings', '.github/workflows/railway-settings.yml']`
   - `BYPASS_VISIBLE`, a constant `true` or `false`. Task 13 proves which and Task 14 sets it. Until then it
     is `true`.
-  - `AGREED_STEPS = { plan: 'Already up to date', apply: 'Nothing is left to change' }`
+  - `AGREED_JOBS = { plan: "Read Railway's plan", apply: 'Apply this plan' }`, the two approved jobs' names
+    as the workflow file writes them.
+  - `AGREED_STEPS = { apply: 'Nothing is left to change' }`, the one step whose success means a change was
+    applied and nothing was left.
   - `checkEnvironmentRules({ environment, branchPolicies, ownerId, bypassVisible }): string[]`. `environment`
     is the answer of `GET /repos/{owner}/{repo}/environments/railway-settings`, or `null` when the answer was
     not a success. `branchPolicies` is the answer of
     `GET .../environments/railway-settings/deployment-branch-policies`, or `null` when that answer was not a
-    success or had a further page. `ownerId` is the user id of the repository's owner, as a number. It
-    returns problems in plain words, empty when the rules are as design 6.1. It refuses on each of these:
-    1. `environment` or `branchPolicies` is `null`;
+    success or had a further page. `ownerId` is the user id of the repository's owner, as a whole number
+    above nought: text never matches, so the caller converts it (Task 12). It returns problems in plain
+    words, empty when the rules are as design 6.1. It refuses on each of these:
+    1. `environment` or `branchPolicies` is `null`, or the answer's `name` is not the environment's;
     2. a field it reads is missing or of the wrong kind: `protection_rules`, a reviewers rule's `reviewers`
        and `prevent_self_review`, `deployment_branch_policy` and its two booleans, `total_count`,
-       `branch_policies`;
+       `branch_policies`. The bypass field is the only exemption, and only as refusal 8 says;
     3. more than one page: `total_count` is not the number of `branch_policies` returned;
     4. reviewers other than exactly the founder's user: not exactly one rule of type `required_reviewers`,
        or not exactly one reviewer in it, or that reviewer's `type` is not `User`, or its `reviewer.id` is
        not `ownerId`;
     5. "prevent self-review" on: `prevent_self_review` is not exactly `false`;
-    6. branch policies other than exactly one, of type branch, named `master`: `deployment_branch_policy` is
-       not `{ protected_branches: false, custom_branch_policies: true }`, or `branch_policies` is not one
+    6. a branch rule in any mode but chosen branches: `deployment_branch_policy` is `null` (no branch policy
+       at all), or its `protected_branches` is not exactly `false`, or its `custom_branch_policies` is not
+       exactly `true`, or it holds any other key;
+    7. branch policies other than exactly one, of type branch, named `master`: `branch_policies` is not one
        entry whose `name` is `master` and whose `type` is `branch`;
-    7. a bypass answer other than "no": `can_admins_bypass` is present and is not exactly `false`; or it is
-       missing and `bypassVisible` is `true`.
+    8. a bypass answer other than "no": `can_admins_bypass` is present and is not exactly `false` (an
+       explicit `null` is present, and refuses); or it is missing and `bypassVisible` is not `false`.
     A rule of another type (a wait timer, say) is not a refusal: design 6.1 does not list one, and it can
     only add a wait.
-  - `bypassChecked(environment): boolean`. True when `can_admins_bypass` is present. When it is false the
-    summaries say so (Task 10).
+  - `bypassChecked(environment): boolean`. True when the answer holds the key `can_admins_bypass`, whatever
+    its value. When it is false the summaries say so (Task 10).
   - `checkRunIsCurrent({ ref, placesAtRun, placesAtMasterHead }): string[]`. The currency check. Each
     `places` is `{ settings, code, workflow }`: the git id of each trusted place, in `TRUSTED_PLACES`' order,
     two tree ids and one file id. Empty when `ref` is `refs/heads/master` and all three ids are 40 hex
     characters and equal on both sides.
-  - `lastAgreedCommit({ runs, jobsByRunId, currentRunId }): { sha: string, runId: number } | null`. `runs` is
-    `workflow_runs` from `GET .../actions/workflows/railway-settings.yml/runs?branch=master`, newest first.
-    `jobsByRunId[id]` is `jobs` from `GET .../actions/runs/{id}/jobs?filter=latest`. The answer is the
-    newest run, other than the current one, with `head_branch === 'master'`, in which the job named
-    `Apply this plan` has a step named `Nothing is left to change` with conclusion `success`, or the job
-    named `Read Railway's plan` has a step named `Already up to date` with conclusion `success`. With none it
-    is `null`. There is no fixed commit to fall back on: a commit could rewrite one.
+  - `lastAgreedCommit({ runs, jobsByRunId, approvalsByRunId, currentRunId, repository }): { sha: string, runId: number } | null`.
+    The last change applied (design 6.2, step 1). The function keeps its first name; what it means is "the
+    newest run that applied". `runs` is `workflow_runs` from
+    `GET .../actions/workflows/railway-settings.yml/runs`, newest first. `jobsByRunId[id]` is `jobs` from
+    `GET .../actions/runs/{id}/jobs?filter=latest`. `approvalsByRunId[id]` is the answer of
+    `GET .../actions/runs/{id}/approvals`, the run's review history. `repository` is this repository's full
+    name. Only one kind of run counts. All of these must hold:
+    1. it is not the current run;
+    2. its `path` is `.github/workflows/railway-settings.yml`;
+    3. its `event` is `push` or `workflow_dispatch`;
+    4. its `head_branch` is `master`;
+    5. it ran in this repository and not in a fork: `repository.full_name` and `head_repository.full_name`
+       both equal `repository`;
+    6. its `head_sha` is 40 hex characters;
+    7. its step 3 applied: the job named `Apply this plan` has conclusion `success`, and its step named
+       `Nothing is left to change` has conclusion `success`;
+    8. after an approval: its review history holds an entry whose `state` is `approved` and whose
+       `environments` name `railway-settings` (any letter case).
+    Every other run is ignored: a run that only found Railway up to date, a rehearsal, a refused or failed
+    apply, a pull-request run from a fork under the same workflow path. With none it is `null`. There is no
+    fixed commit to fall back on: a commit could rewrite one. A history that was not read in a shape this
+    code knows is `null` too, and so is a run that passes 1 to 6 whose jobs were not read, or one that
+    passes 7 whose review history was not read: an older run is never given in a newer one's place.
+    **A tag named `master`.** GitHub's run object gives `head_branch: "master"` for a tag of that name as
+    for the branch, so this function cannot tell them apart. The caller's containment check carries it
+    (Task 12): the run's own commit must contain the commit this returns, or the answer is dropped.
 
 **The bypass field's special case** (design 6.1). GitHub's REST page "Get an environment" does not list
 `can_admins_bypass` in its answer, though the answer to the owner's sign-in has it. Task 13 proves once
 whether a run's own token sees it. If it does, `BYPASS_VISIBLE` stays `true` and a missing field is a refusal
-like any other. If it does not, `BYPASS_VISIBLE` becomes `false`: the workflow does not check that rule, every
-summary says so, and the rule rests on the founder's own look at the box (Task 16). No stronger token is ever
-used to read it.
+like any other. If the key is not in the answer at all, `BYPASS_VISIBLE` becomes `false`: the workflow does
+not check that rule, every summary says so, and the rule rests on the founder's own look at the box
+(Task 16). It is the only field exempt from "a missing field", and only then. A key that is there with the
+value `null` is not missing: it refuses, and Task 13 says what follows if that is what a run's token is
+given. No stronger token is ever used to read it.
 
-The fields of refusals 2 to 6 are in GitHub's REST pages "Get an environment" and "List deployment branch
-policies". The jobs endpoint is on the page "REST API endpoints for workflow jobs"
-(`docs.github.com/en/rest/actions/workflow-jobs`): read it before writing the fixture.
+The fields of refusals 2 to 7 are in GitHub's REST pages "Get an environment" and "List deployment branch
+policies". The review history is "Get the review history for a workflow run", on the page "REST API endpoints
+for workflow runs"; its answer is a list of `{ state, environments: [{ name }], user, comment }`, and
+`state` is `approved`, `rejected` or `pending`. The jobs endpoint is on the page "REST API endpoints for
+workflow jobs" (`docs.github.com/en/rest/actions/workflow-jobs`): read it before writing the fixture.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -716,13 +836,22 @@ for (const [name, spoil] of [
   ['a reviewer with the owner\'s name and another id', (g) => { reviewers(g).reviewers[0].reviewer = { id: 2002, login: 'the-owner' }; }],
   ['self-review prevented', (g) => { reviewers(g).prevent_self_review = true; }],
   ['the self-review answer missing', (g) => { delete reviewers(g).prevent_self_review; }],
-  ['any branch may deploy', (g) => { g.environment.deployment_branch_policy = null; }],
-  ['protected branches, not a named one', (g) => { g.environment.deployment_branch_policy = { protected_branches: true, custom_branch_policies: false }; }],
+  ['no branch policy at all: any branch may deploy', (g) => { g.environment.deployment_branch_policy = null; }],
+  ['the branch policy missing from the answer', (g) => { delete g.environment.deployment_branch_policy; }],
+  ['the protected-branches mode on', (g) => { g.environment.deployment_branch_policy = { protected_branches: true, custom_branch_policies: false }; }],
+  ['the protected-branches mode on beside custom policies', (g) => { g.environment.deployment_branch_policy.protected_branches = true; }],
+  ['custom policies off', (g) => { g.environment.deployment_branch_policy = { protected_branches: false, custom_branch_policies: false }; }],
+  ['a branch mode this code does not know', (g) => { g.environment.deployment_branch_policy.made_up_mode = true; }],
   ['a second branch rule', (g) => { g.branchPolicies = { total_count: 2, branch_policies: [{ name: 'master', type: 'branch' }, { name: 'release/*', type: 'branch' }] }; }],
   ['a tag named master', (g) => { g.branchPolicies.branch_policies[0].type = 'tag'; }],
   ['a branch rule with no type', (g) => { delete g.branchPolicies.branch_policies[0].type; }],
   ['administrators may bypass', (g) => { g.environment.can_admins_bypass = true; }],
   ['the bypass answer missing, when a run can see it', (g) => { delete g.environment.can_admins_bypass; }],
+  ['the bypass answer given as null', (g) => { g.environment.can_admins_bypass = null; }],
+  ['the bypass answer given as null, when the build proved a run cannot see it', (g) => { g.environment.can_admins_bypass = null; g.bypassVisible = false; }],
+  ['the owner\'s id given as text', (g) => { g.ownerId = '1001'; }],
+  ['no owner\'s id given', (g) => { g.ownerId = undefined; }],
+  ['the answer is for another environment', (g) => { g.environment.name = 'production'; }],
 ]) test(`refuses: ${name}`, () => { const g = good(); spoil(g); assert.notDeepEqual(checkEnvironmentRules(g), []); });
 
 test('when the build has proven a run cannot see the bypass answer, its absence is not a refusal', () => {
@@ -748,10 +877,47 @@ test('a run is current only on master, with all three trusted places as master h
                      { ref: 'refs/heads/master', placesAtRun: places({ code: '' }), placesAtMasterHead: places({ code: '' }) }])
     assert.notDeepEqual(checkRunIsCurrent(bad), []);
 });
-test('the last agreed commit is the newest run whose apply left nothing to change', () => { /* ... */ });
-test('a run that said already up to date counts', () => { /* ... */ });
-test('a rehearsal, a failed apply, a run on another branch and this run itself do not count', () => { /* ... */ });
-test('with no such run there is no last agreed commit', () => { /* null */ });
+
+// The last change applied. Made-up runs, jobs and review histories, in GitHub's shapes.
+const REPO = 'made-up-owner/made-up-repo';
+const applied = (id, over) => ({ id, path: '.github/workflows/railway-settings.yml', event: 'push', head_branch: 'master',
+  head_sha: String(id % 10).repeat(40), repository: { full_name: REPO }, head_repository: { full_name: REPO }, ...over });
+const jobsApplied = [{ name: "Read Railway's plan", conclusion: 'success', steps: [] },
+  { name: 'Apply this plan', conclusion: 'success', steps: [{ name: 'Nothing is left to change', conclusion: 'success' }] }];
+const approved = [{ state: 'approved', environments: [{ name: 'railway-settings' }] }];
+const last = (runs, jobs = {}, approvals = {}) => lastAgreedCommit({ runs, currentRunId: 99, repository: REPO,
+  jobsByRunId: Object.fromEntries(runs.map((r) => [r.id, jobs[r.id] ?? jobsApplied])),
+  approvalsByRunId: Object.fromEntries(runs.map((r) => [r.id, approvals[r.id] ?? approved])) });
+
+test('the last change applied is the newest run on master that applied after a recorded approval', () => {
+  assert.deepEqual(last([applied(3), applied(2)]), { sha: '3'.repeat(40), runId: 3 });
+  assert.deepEqual(last([applied(4, { event: 'workflow_dispatch' })]), { sha: '4'.repeat(40), runId: 4 });
+});
+// Design 6.2 names these four. Each is ignored, and the older run that applied is the answer.
+test('a pull-request run from a fork, under the same workflow path, is ignored', () => {
+  const fork = applied(5, { event: 'pull_request', head_repository: { full_name: 'another-owner/made-up-repo' } });
+  assert.equal(last([fork, applied(2)]).runId, 2);
+  // and a fork that names itself a push on master, under the same path
+  assert.equal(last([applied(6, { head_repository: { full_name: 'another-owner/made-up-repo' } }), applied(2)]).runId, 2);
+});
+test('a run on another branch is ignored', () => assert.equal(last([applied(5, { head_branch: 'other' }), applied(2)]).runId, 2));
+test('a run whose apply was skipped is ignored: finding Railway up to date applies nothing', () => {
+  const skipped = [{ name: "Read Railway's plan", conclusion: 'success', steps: [{ name: 'Already up to date', conclusion: 'success' }] },
+                   { name: 'Apply this plan', conclusion: 'skipped', steps: [] }];
+  assert.equal(last([applied(5), applied(2)], { 5: skipped }).runId, 2);
+});
+test('a run with no recorded approval is ignored', () => {
+  for (const history of [[], [{ state: 'rejected', environments: [{ name: 'railway-settings' }] }],
+                         [{ state: 'approved', environments: [{ name: 'production' }] }], [{ state: 'pending', environments: [{ name: 'railway-settings' }] }]])
+    assert.equal(last([applied(5), applied(2)], {}, { 5: history }).runId, 2);
+});
+test('a rehearsal, a refused or failed apply, another workflow\'s path, another kind of start and this run itself are ignored', () => { /* ... */ });
+test('an approval for the environment in other letters still counts', () => { /* 'Railway-Settings' */ });
+test('with no run that applied there is no last change applied', () => assert.equal(last([applied(5, { head_branch: 'other' })]), null));
+test('a history that could not be read gives none: never an older run in a newer one\'s place, never an error', () => {
+  // runs not a list; a candidate's jobs missing; a run that applied whose review history is missing
+});
+test('no commit is fixed in the code to fall back on', () => { /* the module's text holds no 40 hex characters */ });
 ```
 
 - [ ] **Step 2: Run it to see it fail.** `node --test .github/railway-settings-check/gate.test.mjs`. Expected:
@@ -765,11 +931,29 @@ git add .github/railway-settings/gate.mjs .github/railway-settings-check/gate.te
 git commit -m "feat(ci): read the Railway settings gate's rules back (T-751)"
 ```
 
+**As built, and what this round changes.** The code of this task holds, beyond the first wording:
+- `AGREED_JOBS`; a refusal when the answer's `name` is not the environment's (other letters are the same
+  environment to GitHub, so the name is compared without regard to case); a refusal when `protection_rules`
+  is not a list of typed rules, or holds more than one `branch_policy` rule; `deployment_branch_policy` must
+  hold exactly its two booleans;
+- a bypass answer that is present must be exactly `false`: `true` and any other value, `null` included, each
+  refuse with their own plain sentence;
+- `ownerId` must be a whole number above nought. The code never converts text;
+- `checkRunIsCurrent` never takes an id that could not be read as unchanged, even when both sides hold the
+  same unreadable value;
+- `lastAgreedCommit` needs this run's own number, so that it cannot take itself for an earlier run.
+Still to change there, from the design's second review round: `lastAgreedCommit` as written above. A run
+that found Railway already up to date counted in the first build; it no longer does. `AGREED_STEPS` loses
+its `plan` key. The function gains `approvalsByRunId` and `repository`, and reads a run's `path`,
+`repository` and `head_repository`. Its tests "a run that said already up to date counts" and its
+neighbours give way to the ones above.
+
 **What a person sees:** nothing yet.
 
 ### Task 6: Proof, with no token: Railway's record of a redeploy that an apply starts
 
-Design section 9, fourth item. Design 6.6 relies on it, and Task 7 builds on its shape.
+Design section 9, not yet proven: that Railway posts a deployment record to GitHub for a redeploy an apply
+starts. Design 6.6 relies on it, and Task 7 builds on its shape.
 
 **Files:** none in the repository. The result goes into Task 7's fixture and the day's session log.
 
@@ -801,9 +985,11 @@ Expected: `in_progress` in the same second as the record, `success` about a minu
   - that it was created after the apply began;
   and the three states and their order. No id goes into the repository.
 
-**If it is false** (no such record, or it was not made by Railway's app): design section 9's own fallback.
-`FALLBACK_READ` of Task 7 is set to `true`: step 3 reads the deployment's state with the token, through the
-fifth call of design 6.2, and prints only the verdict.
+**If it is false** (no such record, or it was not made by Railway's app): design 6.6's own fallback.
+`FALLBACK_READ` of Task 7 is set to `true`: step 3 reads the tool's list of deployments again, through the
+fifth call of design 6.2, counts it by `listVerdict` (Task 7), and prints only the verdict. If that list
+cannot show all four things design 6.6 asks of it, the fallback cannot confirm, and every apply ends as not
+confirmed: say so to the release lead and the founder before pull request 2.
 
 **What a person sees:** a paragraph in the session log saying what the record showed.
 
@@ -823,10 +1009,22 @@ fifth call of design 6.2, and prints only the verdict.
     that is `waiting` is waiting for a review and does not count.
   - `railwayBusy(list): 'idle' | 'busy' | 'unreadable'`. `list` is the parsed output of `deployment list`.
     Steps 2 and 3 both use it: step 2 to tell him before the second approval, step 3 just before the apply.
-    Busy when any entry's `status` is `BUILDING`, `DEPLOYING`, `INITIALIZING`, `WAITING` or `QUEUED`. Idle when
-    every status is `SUCCESS`, `FAILED`, `CRASHED`, `REMOVED` or `REMOVING`. Anything else, including an input
-    that is not a list of objects with a `status`, is unreadable. The words are those on Railway's CLI page
-    for `railway deployment`; the field's name is confirmed in Task 18.
+    Every status that is not final counts as busy (design 6.5). The final ones are `FINAL_STATUSES`:
+    `SUCCESS`, `FAILED`, `CRASHED` and `REMOVED`. So `BUILDING`, `DEPLOYING`, `INITIALIZING`, `WAITING`,
+    `QUEUED` and `REMOVING` are busy, and so is a word this code has never seen. Idle only when every entry's
+    status is final. Unreadable when the input is not a list, is an empty list, or holds an entry that is
+    not an object with a `status` of text. The words are those on Railway's CLI page for
+    `railway deployment`; the field's name is confirmed in Task 18.
+  - `LIST_FIELDS = { service, createdAt, status, commit }`, the names of the fields of one entry of that list
+    that carry its service, its time of creation, its status and its commit. Each is `null` until Task 18 has
+    seen it and Task 19 has written it; `status` starts as `'status'`.
+  - `listVerdict(list, { service, head, appliedAt, fields = LIST_FIELDS }): 'live' | 'failed' | 'waiting' | 'cannot'`.
+    The fallback's counting rule (design 6.6). An entry counts only when all four hold: it is of the one
+    service; it was created after `appliedAt`; it is for `head`, `master`'s head as read just before the
+    apply; and then its status decides. `SUCCESS` is `live`. Another final status is `failed`. A status that
+    is not final is `waiting`, and so is a list in which no entry counts yet. `cannot` when any of the four
+    field names is `null`, when the list is unreadable as `railwayBusy` reads it, or when an entry lacks one
+    of the four fields: the output cannot show all four, so the fallback cannot confirm, and the job fails.
   - `watchedPathChanged(patterns, files): boolean`. The production receipt's rule
     (`production-receipt.yml:93`): drop the leading `/`, a dot is a dot, `**` is anything, and the whole path
     must match.
@@ -875,10 +1073,34 @@ test('a Deploy job that is executing counts; one that waits for review does not'
   assert.equal(executingJobs({ 1: [{ status: 'waiting' }, { status: 'completed' }] }), 0);
   assert.equal(executingJobs({ 1: [{ status: 'in_progress' }], 2: [{ status: 'queued' }] }), 2);
 });
-test('Railway is busy while it builds or deploys, idle otherwise, and unreadable when the shape is not known', () => {
-  assert.equal(railwayBusy([{ status: 'SUCCESS' }, { status: 'REMOVED' }]), 'idle');
-  for (const s of ['BUILDING', 'DEPLOYING', 'INITIALIZING', 'WAITING', 'QUEUED']) assert.equal(railwayBusy([{ status: 'SUCCESS' }, { status: s }]), 'busy');
-  for (const bad of [null, {}, 'SUCCESS', [{}], [{ status: 'A_NEW_WORD' }], [{ state: 'SUCCESS' }]]) assert.equal(railwayBusy(bad), 'unreadable');
+test('every status that is not final counts as busy', () => {
+  assert.equal(railwayBusy([{ status: 'SUCCESS' }, { status: 'REMOVED' }, { status: 'FAILED' }, { status: 'CRASHED' }]), 'idle');
+  for (const s of ['BUILDING', 'DEPLOYING', 'INITIALIZING', 'WAITING', 'QUEUED', 'REMOVING', 'A_NEW_WORD'])
+    assert.equal(railwayBusy([{ status: 'SUCCESS' }, { status: s }]), 'busy', s);
+});
+test('a state that cannot be read is unreadable, never quiet', () => {
+  for (const bad of [null, {}, 'SUCCESS', [], [{}], [{ status: 7 }], [{ state: 'SUCCESS' }], [{ status: 'SUCCESS' }, null]])
+    assert.equal(railwayBusy(bad), 'unreadable');
+});
+// The fallback's counting rule, with made-up field names in place of the ones Task 18 will see.
+const F = { service: 'made_up_service', createdAt: 'made_up_created', status: 'status', commit: 'made_up_commit' };
+const entry = (over) => ({ made_up_service: 'example-api', made_up_created: '2026-01-01T10:00:05Z', status: 'SUCCESS', made_up_commit: 'e'.repeat(40), ...over });
+const listed = (list, fields = F) => listVerdict(list, { service: 'example-api', head: 'e'.repeat(40), appliedAt: '2026-01-01T10:00:00Z', fields });
+test('the fallback counts only a deployment of the one service, made after the apply, for master\'s head', () => {
+  assert.equal(listed([entry()]), 'live');
+  assert.equal(listed([entry({ status: 'FAILED' })]), 'failed');
+  assert.equal(listed([entry({ status: 'DEPLOYING' })]), 'waiting');
+  for (const over of [{ made_up_service: 'another' }, { made_up_created: '2026-01-01T09:59:59Z' }, { made_up_commit: 'f'.repeat(40) }])
+    assert.equal(listed([entry(over)]), 'waiting', JSON.stringify(over));   // it does not count, so nothing is confirmed yet
+});
+test('when the list cannot show all four, the fallback cannot confirm', () => {
+  assert.equal(listed([entry()], { ...F, commit: null }), 'cannot');           // the documented list carries no commit
+  assert.equal(listVerdict([entry()], { service: 'example-api', head: 'e'.repeat(40), appliedAt: '2026-01-01T10:00:00Z' }), 'cannot');   // nothing seen yet
+  for (const key of ['made_up_service', 'made_up_created', 'status', 'made_up_commit']) {
+    const lacking = entry(); delete lacking[key];
+    assert.equal(listed([lacking]), 'cannot', key);
+  }
+  assert.equal(listed([]), 'cannot');
 });
 test('the running build contains master, or nothing the API is built from changed since', () => {
   assert.equal(buildContainsHead({ relation: 'identical', patterns: PATTERNS, files: [] }), 'contains');
@@ -971,15 +1193,17 @@ git commit -m "feat(ci): a command that says whether a change touches a watched 
   - `SIX_HOURS = 21600`
   - `planStep(deps): Promise<{ ok: boolean, key: string, code?: number }>`. When `ok` is true the key is
     `stateQuiet` or `stateBusy`, the sentence step 2's summary will carry.
-  - `applyStep(deps, { lines, plannedAt }): Promise<{ outcome: 'applied' | 'refused' | 'failed' | 'left-over', key: string, code?: number, appliedAt?: string, head?: string, reasons?: string[], after?: 'live' | 'failed' | 'unknown' }>`.
+  - `applyStep(deps, { lines, plannedAt }): Promise<{ outcome: 'applied' | 'refused' | 'failed' | 'left-over', key: string, code?: number, appliedAt?: string, head?: string, reasons?: string[], after?: 'live' | 'failed' | 'cannot' }>`.
     `reasons` are Task 2's, given with the key `hand`.
   - `deps = { token, tool, readText, context, github, probe, recheck, now, fallbackRead, afterVerdict }`.
+    `afterVerdict(text, { head, appliedAt })` is Task 7's `listVerdict` on the parsed text, for the one
+    service.
     `tool(argv)` returns `{ code }`. `readText(name)` reads a file in WORK. `context` is Task 1's `ctx`.
     `github.executing()` returns `jobsByRunId` for the runs in progress of `MIGRATION_WORKFLOWS`.
     `github.head()` returns `{ sha, at }`: `master`'s head and GitHub's own time for that read. `probe()`
     returns `{ relation, patterns, files }`. `recheck()` returns a list of problems (Task 21 wires it to
     `reinstallKit` and `verifyPinned`). `now()` is seconds. `fallbackRead` is the switch of design 6.2's
-    fifth call; `afterVerdict(text)` reads its output. `key` names a sentence of Task 10.
+    fifth call; `afterVerdict` reads its output. `key` names a sentence of Task 10.
 
 **The order, which the tests pin.** It is design 6.2's.
 
@@ -1001,7 +1225,10 @@ So every run, a check included, proves the token can make both reads before a re
 2. An empty `token`: `refused`, `noToken`.
 3. **First call:** `config plan --out`. Non-zero: `failed`, `planFailed`.
 4. Render it. Its lines must equal `lines` exactly. Else `refused`, `linesDiffer`.
-5. It must be pending with no refusals. Not pending: `refused`, `upToDate`. Refusals: `refused`, `hand`.
+5. It must have no refusals, and then it must be pending, in that order. Refusals: `refused`, `hand`, with
+   the reasons. Only then, not pending: `refused`, `upToDate`. The order matters: a plan with no change that
+   was made for another copy of the folder holds a refusal and nothing pending, and it must never read as
+   up to date.
 6. **Second call:** `deployment list`. Then the look. `executingJobs(await github.executing()) > 0`, or
    `railwayBusy` is `busy`: `refused`, `busy`. `buildContainsHead(await probe())` is `behind`: `refused`,
    `behind`. Anything that could not be read (`github.executing` or `probe` throws, `deployment list` exits
@@ -1011,8 +1238,10 @@ So every run, a check included, proves the token can make both reads before a re
 9. **Third call:** `config apply --plan ... --yes`. Non-zero: `failed`, `applyFailed`, with the code.
 10. **Fourth call:** `config plan --detailed-exit-code`. `0`: `applied`. `2`: `left-over`, `leftOver`. Other:
     `left-over`, `closingUnread`, with the code.
-11. **Fifth call, only when `fallbackRead` is true and the outcome is `applied`:** `deployment list`, every
-    30 seconds until `afterVerdict` says `live` or `failed`, for at most 75 minutes. The answer is `after`.
+11. **Fifth call, only when `fallbackRead` is true and the outcome is `applied`:** the same list of
+    deployments again, every 30 seconds until `afterVerdict` says `live`, `failed` or `cannot`, for at most
+    75 minutes. The answer is `after`; still `waiting` at the end is `cannot`. A call that exits non-zero is
+    `cannot` at once. Anything but `live` fails the job in Task 21.
 
 - [ ] **Step 1: Write the failing tests.** A fake `tool` records each `argv` and answers from a script; a fake
   `readText` returns a plan from `fixtures.mjs`.
@@ -1047,6 +1276,13 @@ test('step 3 does not apply when its own lines differ from step 2\'s', async () 
   assert.deepEqual([r.outcome, r.key, calls(run)], ['refused', 'linesDiffer', ['config plan --out']]);
 });
 test('step 3 does not apply a plan it refuses, and says why', async () => { /* an emptied setting: key 'hand', reasons, no apply */ });
+test('an empty plan for another copy of the folder is refused, never called up to date', async () => {
+  // step 2 passed on no lines; step 3's own plan holds no change and a sourceTree that is not this commit's
+  assert.deepEqual([r.outcome, r.key, r.reasons], ['refused', 'hand', ['the plan is for another copy of the settings folder']]);
+});
+test('an empty plan with nothing against it is up to date, and nothing is applied', async () => {
+  assert.deepEqual([r.outcome, r.key, calls(run)], ['refused', 'upToDate', ['config plan --out']]);
+});
 for (const [name, spoil] of [['a Deploy job is executing', /* ... */], ['Railway is building', /* ... */],
   ['Railway\'s state cannot be read', /* ... */], ['production is behind master\'s API code', /* ... */],
   ['the running build cannot be placed', /* ... */], ['master\'s head cannot be read', /* ... */]])
@@ -1069,6 +1305,10 @@ test('with the fallback switched on, the fifth call is the state read again, aft
   assert.equal(r.after, 'live');
 });
 test('the fallback read is not made when the apply did not succeed', async () => { /* a failed apply; a left-over plan */ });
+test('a fallback that cannot confirm says so, and does not go on asking', async () => {
+  // afterVerdict answers 'cannot' at the first read: one fifth call, r.after 'cannot'
+  // the fifth call exits 1: r.after 'cannot'; still 'waiting' when the 75 minutes of the fake clock run out: 'cannot'
+});
 test('a closing plan that is not empty is left-over, not applied', async () => { /* exit 2: leftOver; exit 1: closingUnread */ });
 test('a failed apply never reaches the closing plan, and reports its exit code', async () => { /* ... */ });
 test('every command the flow gives the tool is one its own step may make', async () => {
@@ -1113,7 +1353,7 @@ git commit -m "feat(ci): the order of the two Railway settings token steps (T-75
 | `bypassUnseen` | This run cannot see whether administrators may bypass the gate. That rule rests on the founder's own check. |
 | `vouch` | This step cannot vouch for the workflow file itself: a changed workflow file is the code that ran this step. |
 | `trust` | Approving "Read Railway's plan" gives this commit's code the Railway token. |
-| `noHistory` | No earlier run shows when Railway and the file last agreed. Everything the next steps run or read is shown in full. |
+| `noHistory` | No earlier run of this workflow applied a change. Everything the next steps run or read is shown in full. |
 | `rehearsal` | Rehearsal. No token is stored. Nothing was read from Railway. This step waited for its own approval. |
 | `noToken` | No token is stored in the environment. Nothing was read from Railway. |
 | `planFailed` | Railway's plan could not be read. Exit code {code}. |
@@ -1141,6 +1381,7 @@ git commit -m "feat(ci): the order of the two Railway settings token steps (T-75
 | `live` | Railway reports the new deployment live at commit {sha}. |
 | `redeployFailed` | Applied, but Railway reports that the new deployment failed. The previous deployment keeps serving. |
 | `notConfirmed` | Applied. The redeploy is not confirmed: no record of it by Railway, for master's head, reached GitHub. |
+| `cannotConfirm` | Applied. The redeploy is not confirmed: Railway's own list could not show that it is live. |
 
 **The three summaries.** Each is a heading and plain lines. Each ends with `bypassUnseen` when the gate could
 not see the bypass answer (`bypassChecked` of Task 5 is false).
@@ -1151,7 +1392,7 @@ Step 1, `gateWords({ sha, pullRequest, rules, lastAgreed, changed, expected, ver
 ## Railway settings: what this run trusts
 Commit abc1234 (pull request #123), on master.
 The gate: one reviewer, the repository's owner. Self-review allowed. master only. Administrators cannot bypass.
-Railway and the file last agreed at commit def5678 (run 456).
+This workflow last applied a change at commit def5678 (run 456).
 Changed since then, in what the next steps run or read:
 - .railway/railway.ts
 What the file changes, in Railway's names:
@@ -1163,23 +1404,26 @@ Approving "Read Railway's plan" gives this commit's code the Railway token.
 
 With nothing changed it says `Nothing changed in what the next steps run or read.` and
 `The file declares what it declared then.` With `lastAgreed` null it says `noHistory` in place of the two
-"last agreed" and "changed since" lines, leaves out "What the file changes", and then shows every file of
+"last applied" and "changed since" lines, leaves out "What the file changes", and then shows every file of
 `full` (a list of `{ path, text }` for the trusted places): the path, its number of lines, and its text in a
-folded block. With no pull request found it names the commit alone. When the bypass answer was not seen, the
+folded block. That is every run until this workflow has applied its first change: a run that only finds
+Railway up to date does not count as one (design 6.2). With no pull request found it names the commit alone. When the bypass answer was not seen, the
 gate's line ends `Whether administrators can bypass: not seen by this run.`
 
 Step 2, `planWords({ render, sha, expected, state, bypassChecked })`: the heading `## Railway's plan`, then
 the lines of Task 1. A line that `lineMark` marks is followed on the same line by
 `   [yours to judge: <the mark>]`. Then, when `expected` is known, one of:
 `This is what the file's change predicts.` when the lines without their last equal `expected`; or
-`Railway differs from the last agreed state in more than the file's change.` Then `redeploys`, then `shape`
+`Railway differs from what was last applied in more than the file's change.` Then `redeploys`, then `shape`
 when any line is marked, then the sentence for `state` (`stateQuiet` or `stateBusy`), then `staged` and
-`deployRun`. For a plan with refusals: the lines, then `hand`, then `Why:` and each reason, then the sentence
-for `state`. For a plan that is not pending: `upToDate`, then the sentence for `state`.
+`deployRun`. For a plan with refusals, whether or not it holds a change: the lines, then `hand`, then `Why:`
+and each reason, then the sentence for `state`. Only for a plan with no refusals and nothing pending:
+`upToDate`, then the sentence for `state`. The refusals are looked at first, as in Task 9.
 
 Step 3, `applyWords({ result, redeploy, headMoved, bypassChecked })`: the heading `## Apply this plan`, the
 sentence for `result.key`, then for `hand` the line `Why:` and each of `result.reasons`, then for an applied
-plan the sentence for the redeploy's state, then `headMoved` when true.
+plan the sentence for the redeploy's state (`live`, `redeployFailed`, `notConfirmed`, or `cannotConfirm` when
+the fallback's list could not show it), then `headMoved` when true.
 
 In `redeploys` and `live` the commit is `master`'s head, because that is what Railway deploys. It can be
 newer than the run's commit when the trusted places are the same in both.
@@ -1190,7 +1434,8 @@ newer than the run's commit when the trusted places are the same in both.
   agreement shows each file's path and text and no "What the file changes"; one that each of the four marks
   appears on its line and brings `shape`, and that a plan with no marked line has neither; one that step 2's
   summary carries `stateQuiet` or `stateBusy`, word for word, in each of its three forms (a plan to apply, a
-  refused plan, already up to date), and never both; one that all three
+  refused plan, already up to date), and never both; one that a plan with no change and one refusal reads
+  `hand` and its reason, and never `upToDate`; one that all three
   summaries end with `bypassUnseen` when the answer was not seen, and none does when it was; one that no
   sentence holds a `{` once its values are filled.
 - [ ] **Step 2: Run it to see it fail.** `node --test .github/railway-settings-check/words.test.mjs`.
@@ -1256,9 +1501,10 @@ file that came back would be read by Railway until 1 December 2026 and ignored a
 3. An environment name that equals `railway-settings`, ignoring case and outer spaces, is allowed only in
    `railway-settings.yml`.
 4. No job calls a reusable workflow (`jobs.<id>.uses`) from outside `./.github/workflows/`.
-5. No expression names a secret whose name begins `RAILWAY`, in any letter case, except as rule 13 allows. No
-   expression reads the `secrets` context whole (`toJSON(secrets)`) or by a computed name, and no job passes
-   `secrets: inherit`.
+5. No workflow but `railway-settings.yml` names a secret that begins `RAILWAY`, in any letter case and in
+   either way of writing it (`secrets.NAME`, `secrets['NAME']`). No workflow reads the `secrets` context
+   whole (`toJSON(secrets)`) or by a computed name, and no job passes `secrets: inherit`: any of those could
+   name such a secret without writing it.
 6. A file whose `run` text holds `db:migrate`, `drizzle-kit migrate` or `apply-migration-` is in
    `MIGRATION_WORKFLOWS` (Task 7).
 
@@ -1283,33 +1529,47 @@ In `railway-settings.yml`, also:
     places. Every `run` is, after trimming, one of the lines in `RUN_LINES`, a list held in the check; every
     such line begins `bash .github/railway-settings/` and holds no `${{`. No step sets `shell` or
     `working-directory`.
-13. `${{ secrets.RAILWAY_SETTINGS_TOKEN }}` appears at most once in `plan` and at most once in `apply`, each
-    time as the value of `env.RAILWAY_SETTINGS_TOKEN` of the step whose `run` is the plan or apply line. The
-    `secrets` context is used nowhere else in the file.
-14. `plan` has a step named `Already up to date` and `apply` a step named `Nothing is left to change`
-    (`AGREED_STEPS`, Task 5), or the file is in rehearsal form and has neither.
+13. The `secrets` context appears in this file in two ways only, each written as a literal (design 6.7).
+    `secrets.RAILWAY_SETTINGS_TOKEN`: at most once in `plan` and at most once in `apply`, each time as the
+    whole value `${{ secrets.RAILWAY_SETTINGS_TOKEN }}` of `env.RAILWAY_SETTINGS_TOKEN` of the step whose
+    `run` is the plan or apply line. `secrets.GITHUB_TOKEN`: only as the whole value of a step's
+    `env.GITHUB_TOKEN`, where a step needs it. Index syntax (`secrets[`, with any spacing) and
+    `toJSON(secrets)` appear nowhere in the file, in any letter case, in an expression or outside one, not
+    even for the allowed names. The check reads the file's text for these, not only its parsed values.
+14. The two approved jobs are named as `AGREED_JOBS` names them, and `apply` has a step named
+    `Nothing is left to change` (`AGREED_STEPS`, Task 5), or the file is in rehearsal form and has none.
 15. The file uses no anchor, alias, merge key or tag.
+16. Each step is held to its own calls (design 6.7). The check, run as a program, asks `tool.mjs` itself:
+    `commandsFor('plan', ...)` must be exactly the plan with `--out` and the list of deployments, and
+    `commandsFor('apply', ...)` exactly design 6.2's four. And in `cli.mjs` every call of `runTool` passes a
+    `step`, and none passes `standIn`.
 
 In the trusted folder (`checkTrustedFolder`):
 
-16. It holds no name that is not in `TRUSTED_FILES`, and no folder.
-17. Each `.mjs` imports only `node:` built-ins and `./<a name in TRUSTED_FILES>`. Only `tool.mjs` imports
-    `node:child_process`. No import is computed.
-18. No file names the job's environment file or its path file (`GITHUB_ENV`, `GITHUB_PATH`).
-19. No shell script names a path of the repository outside the trusted places: every word in it that begins
+17. It holds no name that is not in `TRUSTED_FILES`, and no folder.
+18. Each `.mjs` imports only `node:` built-ins and `./<a name in TRUSTED_FILES>`. Only `tool.mjs` imports
+    `node:child_process`. No import is computed, with one exception the check knows by the file's name:
+    `evaluate-settings.mjs`. Its whole job is to import the settings file it is given, and to load Railway's
+    kit from beside that file. So in that one file the check allows exactly one computed `import(` and
+    exactly one `createRequire(`, whose one use asks for the literal `railway/iac`. A second of either
+    fails. So does either in any other module. And no module imports `evaluate-settings.mjs`: it is only
+    started, by `tool.mjs`, in an environment that holds `PATH` and nothing else.
+19. No file names the job's environment file or its path file (`GITHUB_ENV`, `GITHUB_PATH`).
+20. No shell script names a path of the repository outside the trusted places: every word in it that begins
     `.github/` or `.railway` begins with one of `TRUSTED_PLACES`, and it holds no `../`.
 
 In the settings folder:
 
-20. `checkSettingsProject` (Task 4) passes on the evaluated file.
-21. `.railway/railway.ts` imports only Railway's kit (`railway`, `railway/iac`) and files inside `.railway/`
+21. `checkSettingsProject` (Task 4) passes on the evaluated file.
+22. `.railway/railway.ts` imports only Railway's kit (`railway`, `railway/iac`) and files inside `.railway/`
     (a relative path with no `..`). A `require`, a computed `import(` or a `node:` built-in is refused.
-22. `checkWatchList` and `checkNoOldFile` pass.
+23. `checkWatchList` and `checkNoOldFile` pass.
 
 - [ ] **Step 1: Write the failing tests.** `files()` reads the committed workflows. `plant(name, edit)` returns
   `checkWorkflows` of the same files with one edited or added. A small in-memory `railway-settings.yml` in
-  rehearsal form, `REHEARSAL`, stands in until Task 14 commits the real one. The comments name the five
-  plantings design section 9 lists.
+  rehearsal form, `REHEARSAL`, stands in until Task 14 commits the real one; `LIVE` is the same file with the
+  two token steps of Tasks 20 and 21, so that the rules about the token can be tested before those tasks.
+  The comments name the seven plantings design section 9 lists.
 
 ```js
 test('the committed workflows pass', () => assert.deepEqual(checkWorkflows({ ...files(), 'railway-settings.yml': REHEARSAL }), []));
@@ -1344,6 +1604,27 @@ test('a RAILWAY secret named outside the token step fails, in any workflow and a
     assert.ok(plant(file, addEnvSomewhere(expr)).length > 0, `${file}: ${expr}`);
 });
 test('the token outside its one step fails inside the settings workflow too', () => { /* a second step; the gate job; a step whose run is not the plan or apply line; another secret's name */ });
+test('the two literal ways of naming a secret pass in the live form', () => {
+  assert.deepEqual(checkWorkflows({ ...files(), 'railway-settings.yml': LIVE }), []);
+  // and with ${{ secrets.GITHUB_TOKEN }} in place of ${{ github.token }} as a step's env.GITHUB_TOKEN
+});
+// Design section 9: a secret read by index syntax
+test('a secret read by index syntax fails in the settings workflow, even the allowed one in its own step', () => {
+  for (const expr of ["${{ secrets['RAILWAY_SETTINGS_TOKEN'] }}", '${{ secrets["RAILWAY_SETTINGS_TOKEN"] }}', "${{ secrets [ 'GITHUB_TOKEN' ] }}",
+                      "${{ secrets[format('RAILWAY_{0}_TOKEN', 'SETTINGS')] }}", '${{ SECRETS[env.NAME] }}'])
+    assert.ok(checkWorkflows({ ...files(), 'railway-settings.yml': LIVE.replace('${{ secrets.RAILWAY_SETTINGS_TOKEN }}', () => expr) }).length > 0, expr);
+});
+// Design section 9: toJSON(secrets)
+test('toJSON(secrets) fails anywhere in the settings workflow', () => {
+  for (const [job, step] of [['gate', { run: RUN_LINES[0], env: { ALL: '${{ toJSON(secrets) }}' } }],
+                             ['plan', { run: RUN_LINES[0], env: { ALL: '${{ tojson( secrets ) }}' } }],
+                             ['apply', { name: 'a step named toJSON(secrets)', run: RUN_LINES[0] }]])
+    assert.ok(checkWorkflows({ ...files(), 'railway-settings.yml': withStep(LIVE, job, step) }).length > 0, job);
+});
+test('a secret that is neither of the two fails in the settings workflow', () => { /* secrets.MADE_UP_NAME; secrets.GITHUB_TOKEN as anything but env.GITHUB_TOKEN */ });
+test('each step is held to its own calls', () => {
+  // the check fails when commandsFor('plan') holds the apply; when cli.mjs calls runTool with no step; when cli.mjs names standIn
+});
 
 test('an environment name built from an expression fails in any workflow', () => { /* '${{ inputs.target }}', { name: '${{ vars.E }}' } */ });
 test('a push that is not master and the three trusted places fails', () => { /* another branch; no paths; one place missing; a fourth path; tags */ });
@@ -1364,6 +1645,13 @@ test('a module that reaches outside its folder fails', () => {
   for (const line of ["import x from '../railway-settings-check/fixtures.mjs';", "import y from '../../packages/api/src/a.js';",
                       "import z from 'yaml';", "const m = await import(name);", "import { spawn } from 'node:child_process';" /* in flow.mjs */])
     assert.ok(checkTrustedFolder({ ...trustedFolder(), 'flow.mjs': trustedFolder()['flow.mjs'] + '\n' + line }).length > 0, line);
+});
+test('only evaluate-settings.mjs may import a path it is given, and only once', () => {
+  const folder = trustedFolder(), script = folder['evaluate-settings.mjs'];
+  assert.deepEqual(checkTrustedFolder(folder), []);   // as committed: one computed import, one createRequire for 'railway/iac'
+  for (const more of ["await import(process.argv[3]);", "createRequire(fileUrl)('made-up-package');", "createRequire(import.meta.url)(name);"])
+    assert.ok(checkTrustedFolder({ ...folder, 'evaluate-settings.mjs': script + '\n' + more }).length > 0, more);
+  assert.ok(checkTrustedFolder({ ...folder, 'cli.mjs': folder['cli.mjs'] + "\nimport './evaluate-settings.mjs';" }).length > 0);
 });
 test('a file that writes to the job\'s environment file or path file fails', () => { /* GITHUB_ENV in run.sh; GITHUB_PATH in cli.mjs */ });
 test('a script that names a repository path outside the trusted places fails', () => { /* cat .github/workflows/deploy.yml; cat ../x; cat .github/railway-settings-check/a */ });
@@ -1438,11 +1726,20 @@ fails CI's tooling job, with the file and the reason beside it.
     - `gate`: reads the environment and its branch rules, both with their status and any further page; the
       git id of each trusted place at the run's commit and at `master`'s head, by walking GitHub's git trees
       endpoint down from each commit, so no process is started. Refuses by `checkEnvironmentRules`, with
-      `ownerId` from `GITHUB_REPOSITORY_OWNER_ID` and `bypassVisible` from `BYPASS_VISIBLE`, and by
-      `checkRunIsCurrent`. Any failed read here is a refusal. It then reads this workflow's last 30 runs on
-      `master` and their jobs and outputs `last_agreed_sha`, empty when `lastAgreedCommit` is `null`, when
-      that read fails, or when the run's commit does not contain the candidate (GitHub's compare is neither
-      `ahead` nor `identical`). `gate again` does the two refusals and skips the history.
+      `bypassVisible` from `BYPASS_VISIBLE`, and by `checkRunIsCurrent`. Any failed read here is a refusal.
+      **The owner's id** arrives as text, in `GITHUB_REPOSITORY_OWNER_ID`, and `checkEnvironmentRules` takes
+      a number. The conversion is here and nowhere else: text that is one or more digits with no leading
+      nought becomes that number; anything else (empty, a sign, a space, a letter) is a refusal before any
+      rule is read. `cli.test.mjs` tests both.
+      It then reads this workflow's last 30 runs and, newest first, each candidate's jobs, and the review
+      history of a candidate whose apply succeeded; it gives them to `lastAgreedCommit` with `repository`
+      from `GITHUB_REPOSITORY`, and outputs `last_agreed_sha`. The output is empty when `lastAgreedCommit` is
+      `null`, when any of those reads fails, or when the run's own commit does not contain the candidate
+      (GitHub's compare is neither `ahead` nor `identical`). **That containment check is also what carries a
+      tag named `master`:** GitHub's run object cannot tell such a tag from the branch, so
+      `lastAgreedCommit` cannot (Task 5). A commit that only a tag reached is not in `master`'s history, so
+      it is not contained in a run on `master`, and it is dropped here. `gate again` does the two refusals
+      and skips the history.
     - `show`: with a last agreed commit, installs that commit's kit in `WORK/last/.railway`, evaluates its
       file and the current one, and writes step 1's summary with the changed names and the expected lines.
       With none, it writes the summary with every file of the trusted places in full. It outputs
@@ -1473,8 +1770,13 @@ marked immutable, or any pair differs, stop and say so.
   holds a line that starts what it installed. `cli.test.mjs`, with an injected `fetch`: `gate` refuses when
   the environment's read answers 500, when the branch rules have a further page, and when a trusted place
   differs from `master`'s; `gate` still passes, with an empty `last_agreed_sha`, when only the history's read
-  fails; it sends the run's own token and no other header of authority; `show` with no last agreed commit
-  writes each trusted file's path and text; `evaluate` on a folder whose file manages variables refuses.
+  fails, or only a review history's; with `GITHUB_REPOSITORY_OWNER_ID` set to the text `1001` it passes
+  against a reviewer whose id is the number 1001, and with it empty, `01001`, `1001x`, ` 1001` or `-1` it
+  refuses and reads no rule; a run that applied after an approval gives its commit as `last_agreed_sha`
+  only when GitHub's compare says this run's commit contains it, so a commit that only a tag named `master`
+  reached gives none; it sends the run's own token and no other header of authority; `show` with no last
+  agreed commit writes each trusted file's path and text; `evaluate` on a folder whose file manages
+  variables refuses.
 - [ ] **Step 3: Run them to see them fail.** Expected: FAIL.
 - [ ] **Step 4: Write the six files.**
 - [ ] **Step 5: Run every test.** `node --test .github/railway-settings-check/*.test.mjs`. Expected: PASS.
@@ -1489,8 +1791,8 @@ git commit -m "feat(ci): fetch and verify the runtime and Railway's tool; wire t
 
 ### Task 13: Proof, with no token: the runner, the run's own token, and a job that never starts
 
-Design section 9, first item, second half (a job that is skipped does not create its environment) and second
-item (whether a run's own token can read the bypass rule). Task 14's workflow relies on both. The same run
+Design section 9, not yet proven: that a job which is skipped does not create its environment, and whether a
+run's own token can read the environment's bypass rule. Task 14's workflow relies on both. The same run
 settles what this plan could not read anywhere: that the pinned runtime and the tool install on a real
 runner, that the file evaluates there, that the checkout can be held to the trusted places, and which
 permissions the gate's reads need.
@@ -1548,7 +1850,7 @@ jobs:
           done
           curl --silent --show-error -H "Authorization: Bearer $GITHUB_TOKEN" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/Production" \
-            | jq '{bypass: (.can_admins_bypass | type), rules: [.protection_rules[]?.type]}'
+            | jq '{present: has("can_admins_bypass"), kind: (.can_admins_bypass | type), rules: [.protection_rules[]?.type]}'
   fails:
     runs-on: ubuntu-24.04
     permissions: {}
@@ -1579,7 +1881,7 @@ jobs:
 | `evaluate` | Passes, with no token | Read the error. The tool evaluates the file the same way, so step 2 would fail too |
 | `since-last.sh` | The names this pull request changed in the trusted places | Read the error: with no saved credentials the fetch of a public commit must still work |
 | The two reads of the environment | `200` twice | Add `actions: read` to the job, then `deployments: read`, and run again. The least set that gives `200` twice becomes the permissions of `gate` and of the second gate reads. **If no read-only set gives it:** stop. Design 6.1's read-back cannot be built with the run's own token. Take it back to the release lead and the founder; no stronger token and no read without a token is used |
-| The bypass field | `"bypass": "boolean"` | It is `"null"`: a run's token cannot see it. Task 14 sets `BYPASS_VISIBLE` to `false`. The workflow then does not check that rule, says so in every summary, and the rule rests on the founder's own look (Task 16) |
+| The bypass field. `jq`'s `type` says `null` for a key that is missing and for one that holds `null`, so the proof prints `present` beside it to tell them apart | `"present": true, "kind": "boolean"`: a run's token sees the answer | `"present": false`: a run's token cannot see it. Task 14 sets `BYPASS_VISIBLE` to `false`. The workflow then does not check that rule, says so in every summary, and the rule rests on the founder's own look (Task 16). `"present": true, "kind": "null"`: the key is there with no answer in it. The gate refuses that on every run (Task 5), and the design's exemption is for a missing field only. Stop, and take it to the release lead: the choice is between treating an explicit `null` as "cannot see" and not building the read-back of that rule at all |
 | `never` | Skipped | (it cannot run: its need failed) |
 
 - [ ] **Step 4: Read whether GitHub created the environment.**
@@ -1655,7 +1957,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: bash .github/railway-settings/run.sh gate
-      - name: Fetch the trusted places as they last agreed with Railway
+      - name: Fetch the trusted places as they were at the last change applied
         env:
           LAST_AGREED_SHA: ${{ steps.gate.outputs.last_agreed_sha }}
         run: bash .github/railway-settings/since-last.sh
@@ -1778,7 +2080,7 @@ Expected: `No watched path is touched.`, then nothing from each of the three sea
 
 - [ ] **Step 2: Open the pull request and send it to the release lead.** It carries, as evidence:
   - the count of tests and that all pass, from CI's tooling job;
-  - the name of each test that plants a violation (Task 11), with the five of design section 9 named first;
+  - the name of each test that plants a violation (Task 11), with the seven of design section 9 named first;
   - the results of Task 13, with a link to the closed draft pull request's run, and what they decided: the
     jobs' permissions, and whether the bypass rule is checked;
   - what Task 6 found in the public record;
@@ -1835,16 +2137,17 @@ rule, `master`, with no secrets listed; and a list of repository secrets with ne
 
 ### Task 17 (the founder taps; the builder reads): the rehearsal
 
-Design section 8, step 3. It proves design section 9's first item (each of two jobs in one run asks for its
-own approval) and third item (the phone app), that GitHub itself refuses a run from another branch, and that
-the approved jobs make no deployment record of their own.
+Design section 8, step 3. It proves three things design section 9 lists as not yet proven: that each of two
+jobs in one run asks for its own approval; that a run started from another branch is refused by the
+environment itself; and what GitHub's phone app shows. It also proves that the approved jobs make no
+deployment record of their own, and that GitHub still records their approvals.
 
 - [ ] **Step 1: The founder presses "Run workflow" on `master`,** on his phone, in GitHub's app if it offers
   the button, otherwise in the phone's browser.
   **What he should see:** step 1 finishes by itself. Its summary shows the gate's rules as he set them and the
-  commit. It says "No earlier run shows when Railway and the file last agreed" and then shows every file of
-  the trusted places in full. If Task 13 found the bypass answer is not seen by a run, it says so. Step 2
-  then waits for review.
+  commit. It says "No earlier run of this workflow applied a change" and then shows every file of the trusted
+  places in full. If Task 13 found the bypass answer is not seen by a run, it says so. Step 2 then waits for
+  review.
 - [ ] **Step 2: He approves step 2.** It finishes and says: Rehearsal. No token is stored. **Step 3 must then
   wait for a second review.** He approves it. It says the same.
 - [ ] **Step 3: The builder reads the run.**
@@ -1855,34 +2158,48 @@ gh api "repos/{owner}/{repo}/actions/runs/<run id>/jobs" --jq '.jobs[] | [.name,
 gh api "repos/{owner}/{repo}/deployments?environment=railway-settings" --jq length
 ```
 
-Expected: two approvals, each for `railway-settings`; three jobs, each `success`; `0` deployment records. If
-the list of approvals is empty although he approved twice, record what the run's page showed instead: with
-no deployment record GitHub may keep that history elsewhere.
+Expected: two approvals, each for `railway-settings`; three jobs, each `success`; `0` deployment records.
+
+**If the list of approvals is empty although he approved twice:** with no deployment record, GitHub keeps no
+review history a run can read. The last change applied is found through that history (Task 5), so no run
+could ever count: step 1 would show every file in full for ever, and old values would stay hidden. Then both
+approved jobs name the environment as a plain string, rule 11 of Task 11 is changed to that form in the same
+pull request, their own deployment records are left to design 6.6's four tests, which already filter them
+out, and steps 1 to 3 are done again.
 
 **If step 3 did not ask for its own approval:** stop here. No token is stored. The two approvals the design
 promises cannot come from one environment. The nearest thing that can is a second environment for step 3,
 with the same four rules and its own copy of the secret. That changes design 6.1, so it is the founder's
 decision before anything else is built.
 
-- [ ] **Step 4: A run from another branch.** The builder pushes a scratch branch whose copy of the workflow
-  differs in two places: `plan` has no `needs`, and its condition has no test of `master`. GitHub's own rule
-  is then the only thing between that branch and the environment. The builder starts it and reads it. Nobody
-  approves anything.
+- [ ] **Step 4: One more run shows GitHub's own rule at work** (design section 8, step 3). This is safe only
+  because no token exists yet: check first that the environment's page still lists no secret. The builder
+  pushes a throwaway branch. Its copy of the workflow differs from `master`'s in exactly two things:
+  1. no job has a condition: the `if` of `gate`, `plan` and `apply` is taken out;
+  2. step 1 does not refuse other branches: the step that reads the gate's rules back and checks the run is
+     current is taken out of `gate`, and the same step is taken out of `plan` and `apply`. The steps after it
+     in `gate` are taken out with it, since they read its output.
+  Nothing else changes: `plan` still needs `gate`, and both approved jobs still name the environment as
+  `master`'s copy does. GitHub's own branch rule is then the only thing between that branch and the
+  environment. The builder starts a run from the branch and reads it. Nobody approves anything. The branch is
+  never merged, no pull request is opened for it, and it is deleted as soon as the run has been read.
 
 ```bash
-gh workflow run railway-settings.yml --ref <scratch branch>
+gh workflow run railway-settings.yml --ref <throwaway branch>
 gh api "repos/{owner}/{repo}/actions/runs/<run id>/jobs" --jq '.jobs[] | [.name, .status, .conclusion, (.steps | length)] | @tsv'
 gh api "repos/{owner}/{repo}/actions/runs/<run id>/pending_deployments" --jq length
+git push origin --delete <throwaway branch>
 ```
 
-Expected: `Read Railway's plan` failed with no step run, and `0` reviews pending. The run's page says the
-branch may not deploy to the environment. Then the scratch branch is deleted.
+Expected: `Check the gate, show the change` succeeded; `Read Railway's plan` failed with no step run, refused
+by the environment itself; `Apply this plan` skipped; `0` reviews pending. The run's page says the branch may
+not deploy to the environment.
 
 **If GitHub let that job wait for review or run:** store no token. First find out whether `deployment: false`
 is the cause. GitHub's page "Deploying with GitHub Actions" says that with it reviewers "must still approve"
 and that branch policies restrict "which branches can use certain secrets", but its table of rules has no
-row for the branch rule. Run step 4 again from a scratch branch whose `plan` names the environment as a
-plain string. If GitHub refuses that one, both approved jobs use the plain form, rule 11 of Task 11 is
+row for the branch rule. Run step 4 again from a throwaway branch whose two approved jobs name the
+environment as a plain string. If GitHub refuses that one, both approved jobs use the plain form, rule 11 of Task 11 is
 changed to it in the same pull request, and their own deployment records are left to design 6.6's four tests,
 which already filter them out. If GitHub lets that one through too, stop and read the environment's branch
 rule again with the founder.
@@ -1905,7 +2222,8 @@ for two minutes, and discard it.
 
 - [ ] **Step 1: A plan from the file, as today.** From a clean checkout of `master` in the by-hand route's
   folder: `railway config plan --out <A>`. Expected: exit 0, and `A` holds no change.
-- [ ] **Step 2: A plan from a file evaluated beforehand** (design section 9, sixth item).
+- [ ] **Step 2: A plan from a file evaluated beforehand** (design section 9, not yet proven: whether the tool
+  can plan from a settings file evaluated beforehand).
 
 ```bash
 node --experimental-strip-types --disable-warning=ExperimentalWarning .github/railway-settings/evaluate-settings.mjs .railway/railway.ts > <E>
@@ -1924,14 +2242,22 @@ plans from `.railway/railway.ts`, as design 6.2 is written.
 - [ ] **Step 3: The shape of Railway's own state.**
 
 ```bash
-railway deployment list --service <the one service the file declares> --json --limit 5 > <L>
-node -e "const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(Array.isArray(d),Object.keys(d[0]??{}).sort().join(','),[...new Set(d.map(x=>x.status))].join(','))" <L>
+railway deployment list --service <the one service the file declares> --json > <L>
+node -e "const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));const keys=(o,p='')=>Object.entries(o??{}).flatMap(([k,v])=>v&&typeof v==='object'&&!Array.isArray(v)?[p+k,...keys(v,p+k+'.')]:[p+k]);console.log(Array.isArray(d),d.length,keys(d[0]).sort().join(','),[...new Set(d.map(x=>x.status))].join(','))" <L>
 ```
 
-Expected: `true`, a list of key names that includes `status`, and status words from Task 7's two lists.
-**If the field has another name or the words differ:** Task 19 corrects `railwayBusy` to what was seen.
+  The command is the one design 6.2 writes, with the flags the tool's own help gives (`--service`, `--json`).
+  It prints the names of an entry's fields, nested ones too, and the status words: no value but those words.
 
-- [ ] **Step 4: Staged changes** (design section 9, fifth item). The founder stages one small change on the
+Expected: `true`, a count, a list of key names that includes `status`, and status words from Railway's CLI
+page. From the key names, write down which field carries each of the four things design 6.6's fallback needs:
+the service, the time of creation, the status, and the commit. Railway's documented list shows no commit.
+**If the status field has another name or the words differ:** Task 19 corrects `railwayBusy` to what was seen.
+**If any of the four has no field:** `LIST_FIELDS` keeps `null` for it, and the fallback cannot confirm a
+redeploy (Task 7). That matters only if Task 6 turned out false.
+
+- [ ] **Step 4: Staged changes** (design section 9, not yet proven: what an apply does to changes left staged
+  on Railway's dashboard). The founder stages one small change on the
   dashboard and does not deploy it. The builder runs `railway config plan --json --out <C> > <R>` and prints
   only this:
 
@@ -1974,8 +2300,10 @@ Tasks 19 to 24. The token is stored only after pull request 2 has merged.
     New tests: the old two forms are refused; `--file` with any other path is refused. `recheck` then also
     requires that `.railway/node_modules` is absent and that the generated file's SHA-256 is the one written
     when it was made.
-  - The state's field name or words: `railwayBusy`'s tests use what was seen. If Task 6 set `FALLBACK_READ`
-    to `true`, `afterVerdict` is written here from the same shape, with its tests.
+  - The state's field name or words: `railwayBusy`'s tests use what was seen, and `LIST_FIELDS` gets the
+    names of the four fields Task 18 step 3 found, `null` for any it did not find. A new test: `listVerdict`
+    on an entry shaped as the real list is shaped, with made-up values. If Task 6 set `FALLBACK_READ` to
+    `true` and a field is `null`, say so before going on: every apply would end as not confirmed.
   - Staged changes seen: `renderPlan`'s context gains `staged: boolean`, a refusal `Railway holds staged
     changes` and the sentence in Task 10's table; `applyStep` refuses with it.
 - [ ] **Step 2: Run to see them fail, change the modules, run to see them pass.**
@@ -2005,10 +2333,14 @@ Tasks 19 to 24. The token is stored only after pull request 2 has merged.
     pins and `sourceTree` read as the gate reads it for the run's commit, reads `master`'s head for the
     `redeploys` sentence, reads the word in `WORK/state` for the sentence about Railway, writes step 2's
     summary with its marks, and outputs `mode=live`, `pending`, `lines` (the JSON of the list, without marks)
-    and `planned_at`. It never reads the state call's own output.
-  - `agreed`: prints `Railway and the file agree at this commit.` Task 21 uses it too.
-- In the workflow, job `plan`'s last step becomes three. The first of them is the one step of this job that
-  holds the token. The second gate read stays where it is, before the tool is installed.
+    and `planned_at`. It never reads the state call's own output. It looks at the refusals before it looks at
+    whether anything is pending, as Task 9 does: a plan with no change and a refusal is written as `hand`
+    with its reason, never as `upToDate`, and the step fails, because such a plan proves nothing about this
+    commit. A plan with changes and refusals is written the same way and the step passes with `pending=true`:
+    step 3 is then asked for, and refuses.
+- In the workflow, job `plan`'s last step becomes two. The first of them is the one step of this job that
+  holds the token. The second gate read stays where it is, before the tool is installed. There is no step
+  for "already up to date": the summary says it, and such a run is not a change applied (Task 5).
 
 ```yaml
       - name: Read Railway's plan, with the token
@@ -2021,12 +2353,8 @@ Tasks 19 to 24. The token is stored only after pull request 2 has merged.
           DECLARED_LAST: ${{ needs.gate.outputs.declared_last }}
           GITHUB_TOKEN: ${{ github.token }}
         run: bash .github/railway-settings/run.sh render
-      - name: Already up to date
-        if: steps.render.outputs.pending == 'false'
-        run: bash .github/railway-settings/run.sh agreed
 ```
 
-  The last step's name is what Task 5's `lastAgreedCommit` looks for.
   If Task 18 chose the generated file, the `evaluate` step also writes `WORK/evaluated/railway.ts` and removes
   `.railway/node_modules`, before the token step.
 
@@ -2051,12 +2379,15 @@ test('the step that writes the lines comes after the token step and holds no sec
   In `cli.test.mjs`: `render` on a fixture plan writes the lines of Task 1 into the summary file and the
   outputs file; a plan that changes the health check has its line marked in the summary, unmarked in the
   outputs, and the `shape` sentence below; `render` on a file that is not a plan exits non-zero and prints
-  only the `planFailed` sentence; neither file holds any of `planIds`. With `WORK/state` holding `quiet` the
-  summary has `stateQuiet`; with `busy` it has `stateBusy`; with the file missing or holding any other word
-  `render` exits non-zero. `plan`, with a stand-in tool whose state call exits 1, exits non-zero and writes
-  only `stateFailed` with the code; with a stand-in whose state call prints a shape `railwayBusy` does not
-  know, it exits non-zero and writes only `stateUnknown`; with a stand-in that prints the text
-  `MADE-UP-STATE-OUTPUT` among readable entries, that text is in no log, summary or output.
+  only the `planFailed` sentence; neither file holds any of `planIds`. A plan with no change made for another
+  copy of the folder is written as `hand` with its reason, the word "up to date" is nowhere in the summary,
+  and `render` exits non-zero; a plan with no change and nothing against it is written as `upToDate`, with
+  `pending=false`. With `WORK/state` holding `quiet` the summary has `stateQuiet`; with `busy` it has
+  `stateBusy`; with the file missing or holding any other word `render` exits non-zero. `plan`, with an
+  injected tool whose state call exits 1, exits non-zero and writes only `stateFailed` with the code; with
+  one whose state call writes a shape `railwayBusy` does not know, it exits non-zero and writes only
+  `stateUnknown`; with one that writes the text `MADE-UP-STATE-OUTPUT` among readable entries, that text is
+  in no log, summary or output. The state is read from `tool-5.out` (Task 3) and from no other file.
 - [ ] **Step 2: Run to see them fail.** Expected: FAIL. (The `apply` half of the first test passes after
   Task 21.)
 - [ ] **Step 3: Edit the workflow, `cli.mjs` and `RUN_LINES`.**
@@ -2080,8 +2411,10 @@ is building or deploying just now.
   `railwayEnvironmentOnGitHub`, `FALLBACK_READ` (Task 7), `applyWords`.
 - Produces, in `cli.mjs`:
   - `apply`: builds `deps`, with its `tool` held to step 3's commands (`runTool`'s `step: 'apply'`), and
-    calls `applyStep` with `LINES` and `PLANNED_AT` from job `plan`'s outputs. So this one step makes design 6.2's calls to Railway, in its order, each to a file in WORK: the plan, the
-    state, the apply, the closing plan, and the state again only if `FALLBACK_READ` is `true`. Its
+    calls `applyStep` with `LINES` and `PLANNED_AT` from job `plan`'s outputs. So this one step makes
+    design 6.2's calls to Railway, in its order, each to a file in WORK: the plan, the state, the apply, the
+    closing plan, and the same list of deployments again only if `FALLBACK_READ` is `true`. Its
+    `afterVerdict` is `listVerdict` (Task 7) for the one service, `master`'s head and the apply's time. Its
     `readText` prints `::add-mask::` for each of `planIds` the moment the second plan is read. Its `recheck`
     is `reinstallKit('.railway')` then `verifyPinned` for the tool and the runtime: just before the apply,
     the kit is checked against its lockfile and the tool against its checksum once more. Its
@@ -2099,7 +2432,12 @@ is building or deploying just now.
     after 10 minutes: `notConfirmed`, exit 1. A record that fails: `redeployFailed`, exit 1. A record that is
     live: `live`, exit 0. Still waiting after 75 minutes (900 seconds of pre-deploy, 2700 of health check,
     and the build): `notConfirmed`, exit 1. With `FALLBACK_READ` it uses `after` from the outcome in place of
-    the records. It writes step 3's summary in every case. An unconfirmed redeploy fails the job.
+    the records: `live` is `live`, exit 0; `failed` is `redeployFailed`, exit 1; `cannot` is `cannotConfirm`,
+    exit 1, because the tool's list could not show a deployment of the one service, created after the apply,
+    ended in success, for `master`'s head (design 6.6). It writes step 3's summary in every case. An
+    unconfirmed redeploy fails the job.
+  - `agreed`: prints `A change was applied and nothing is left to change.` It is the step whose success
+    Task 5's `lastAgreedCommit` looks for.
 - In the workflow, job `apply`'s last step becomes three, after the file's evaluation. The first of them is
   the one step of this job that holds the token.
 
@@ -2130,7 +2468,8 @@ is building or deploying just now.
   failed record exits 1 with `redeployFailed`; with none for 10 minutes exits 1 with `notConfirmed`; with
   only records that do not count (the job's own environment, another commit, made before the apply) exits 1
   with `notConfirmed`; on a refused outcome writes that outcome's sentence and reads no deployment record;
-  with `master` moved adds `headMoved`. In `check-workflows.test.mjs`: the first test of Task 20 now passes
+  with `master` moved adds `headMoved`; with the fallback switched on, an outcome whose `after` is `cannot`
+  exits 1 with `cannotConfirm` and one whose `after` is `live` exits 0. In `check-workflows.test.mjs`: the first test of Task 20 now passes
   for `apply`; `apply` has a step named `Nothing is left to change`; the live file holds no `rehearse`.
 - [ ] **Step 2: Run to see them fail.** Expected: FAIL.
 - [ ] **Step 3: Edit the workflow, `cli.mjs` and `RUN_LINES`.** Remove the `rehearse` commands.
@@ -2209,22 +2548,24 @@ the repository's own secrets list unchanged; the four rules still as he set them
 Design section 8, step 5, and design section 9's "a skipped job asks for none". Nothing before this task
 relies on that: until now step 3 ran in every rehearsal.
 
-With nothing at stake, this run also proves that the token can make both of step 2's reads: Railway's plan,
-and Railway's own state, which step 3 will need just before a real apply.
+With nothing at stake, this run also proves two of the things design section 9 lists under what a project
+token may run and what those calls return: the plan, and the list of deployments, which step 3 will need
+just before a real apply. The third, the apply, is first made in Task 27.
 
 - [ ] **Step 1: He presses "Run workflow" on `master` and approves step 2.**
-  **What he should see:** step 2 says "Already up to date. Railway holds what the file declares." and
-  "Railway is not building or deploying just now." Step 3 is skipped and asks for nothing. The run ends green.
+  **What he should see:** step 1 still shows every file in full: no run has applied a change yet. Step 2 says
+  "Already up to date. Railway holds what the file declares." and "Railway is not building or deploying just
+  now." Step 3 is skipped and asks for nothing. The run ends green.
 - [ ] **Step 2: The builder reads the run,** and nothing of the token.
 
 ```bash
-gh api "repos/{owner}/{repo}/actions/runs/<run id>/jobs" \
-  --jq '.jobs[] | [.name, .conclusion, ([.steps[] | select(.name == "Already up to date") | .conclusion] | first // "-")] | @tsv'
+gh api "repos/{owner}/{repo}/actions/runs/<run id>/jobs" --jq '.jobs[] | [.name, .conclusion] | @tsv'
 gh api "repos/{owner}/{repo}/actions/runs/<run id>/approvals" --jq length
 ```
 
-Expected: `Read Railway's plan` success with `Already up to date` success; `Apply this plan` skipped; `1`.
-From this run on, the history has a last agreement, and step 1 shows a change, not the files in full.
+Expected: `Check the gate, show the change` and `Read Railway's plan` success; `Apply this plan` skipped; `1`.
+This run does not count as a change applied (design 6.2), so the next run's first step shows the files in
+full again. That lasts until Task 27.
 
 | If instead | Then |
 |---|---|
@@ -2262,7 +2603,9 @@ From this run on, the history has a last agreement, and step 1 shows a change, n
 1. What the settings folder is, and the three trusted places.
 2. How a setting changes now: a pull request, then the run's three steps, with design section 2's picture.
 3. What each summary means, the marked lines and why they are his to judge, and what to do for each row of
-   design 6.8.
+   design 6.8. Why step 1 shows every file in full, and step 2 shows `(hidden)` for old values, until this
+   workflow has applied a change: only such a run counts as the last change applied, and a run that found
+   Railway up to date does not.
 4. What is still applied by hand, and how (the old README's "Install the kit", "Preview" and "Apply", kept).
 5. Who may approve. Only the founder approves a `railway-settings` review, and only he changes that
    environment. His yes in a chat lets nothing else approve: the approval is his own, on GitHub's review
@@ -2316,9 +2659,11 @@ before and after the edit, and compare the two outputs. Expected: identical.
 
 - [ ] **Step 1: Merge pull request 3.** A run of "Railway settings" starts by itself, because the merge
   changes `.railway/`.
-  **What the founder should see:** step 1's summary names the pull request, lists `.railway/README.md` and
-  `.railway/railway.ts` as changed, and says "The file declares what it declared then."
-- [ ] **Step 2: He approves step 2.** Expected: "Already up to date." Step 3 is skipped.
+  **What the founder should see:** step 1's summary names the pull request and, as no run has applied a
+  change yet, shows every file of the trusted places in full: `.railway/` now holds four files and no
+  README.
+- [ ] **Step 2: He approves step 2.** Expected: "Already up to date." and whether Railway is busy. Step 3 is
+  skipped.
 - [ ] **Step 3: The builder reads the run** with the two commands of Task 24, step 2. Expected: the same.
 
 **If step 2 shows lines:** a comment-only change produced a plan, which step 4 of Task 25 says cannot be. He
@@ -2328,13 +2673,19 @@ does not approve step 3. A person compares the lines with the file.
 
 ### Task 27 (a person watches): the first real settings change
 
-Design section 9, last item. This task has no date: it is done when someone's pull request first changes a
-setting in `.railway/railway.ts`. Until then the apply itself has run only against the fakes of Task 9. Both
-reads it leans on, the plan and Railway's own state, have been made with the token on every run since
-Task 24.
+Design section 9: the first real settings change is watched to the end by a person. This task has no date:
+it is done when someone's pull request first changes a setting in `.railway/railway.ts`. Until then the
+apply itself has run only against the fakes of Task 9, and what a project token may do with an apply is not
+yet seen (design section 9). Both reads it leans on, the plan and Railway's own state, have been made with
+the token on every run since Task 24.
 
-- [ ] **Step 1: Before the first approval,** a person reads step 1's summary against the pull request's diff.
-  The lines under "What the file changes" must be exactly that change.
+This is also the first run that can count as a change applied. So on this run step 1 still shows every file
+in full and has no "What the file changes", and step 2's lines show `(hidden)` where an old value would be.
+From the next run on, step 1 shows what changed since this one, and old values are shown again.
+
+- [ ] **Step 1: Before the first approval,** a person reads the pull request's diff beside step 1's summary:
+  the settings file shown in full must be the merged one, and nothing else in the trusted places may differ
+  from what `master` held before the pull request.
 - [ ] **Step 2: Before the second approval,** the founder reads step 2's lines, judges any marked line, reads
   whether Railway is busy just now, and looks at Railway's dashboard for staged changes. If Railway is busy
   he waits. No Deploy run is approved until step 3 has finished.
@@ -2344,6 +2695,10 @@ Task 24.
   commit step 3 named). Expected: green.
 - [ ] **Step 5: Record in the session log** what was seen, and anything the lines or the wait got wrong. This
   is also the second sighting of Task 6's record, the first made by this workflow.
+- [ ] **Step 6: Read that the run now counts.** Press "Run workflow" once more, or wait for the next run.
+  Its first step must say "This workflow last applied a change at commit ..." and name this run. If it
+  shows the files in full again, read this run's review history as Task 17 step 3 does: the last change
+  applied is found only through a recorded approval.
 
 | If instead | Then |
 |---|---|
@@ -2366,10 +2721,13 @@ receipt.
 | Whether a run's own token sees the bypass answer | Task 13; if not, design 6.1's own special case |
 | That a job which never starts does not create its environment | Task 13; if false, Task 16 moves before pull request 1's merge |
 | That two jobs in one environment each ask for an approval, with `deployment: false` | Task 17; if false, stop and ask the founder |
-| That the branch rule still holds with `deployment: false`. GitHub's page implies it and its table of rules has no row for it | Task 17 step 4; if not, the plain form, with the jobs' own records filtered out |
+| That GitHub records a run's approvals in its review history when the job makes no deployment record | Task 17 step 3; if not, the plain form, with the jobs' own records filtered out. Without it no run could count as a change applied |
+| That a run from another branch is refused by the environment itself, and that the branch rule still holds with `deployment: false`. GitHub's page implies it and its table of rules has no row for it | Task 17 step 4, from a throwaway branch, before any token exists; if not, the plain form |
 | What GitHub's phone app shows | Task 17; if lacking, the phone's browser |
 | That the tool can plan from a file evaluated beforehand | Task 18 step 2; if not, design 6.2 as written |
-| The shape of `railway deployment list --json` | Task 18 step 3, then Task 19 |
+| The shape of `railway deployment list --json`, and whether it can show the four things the fallback counts by. Railway's documented list carries no commit | Task 18 step 3, then Task 19. If it cannot show all four, the fallback cannot confirm; that matters only if Task 6 turns out false |
+| What a project token may do with an apply, and what the apply returns | Not before Task 27, which is watched. A failed apply ends with a fixed sentence and its exit code, and nothing it wrote |
+| What a present bypass answer of `null` would mean for a run's token | Task 13 tells it apart from a missing one; if that is what a run is given, stop |
 | Whether the tool can see staged changes | Task 18 step 4 |
 | What an apply does to staged changes | Not proven by this plan. Held by a rule printed before every second approval |
 | That the tool plans with only a project token | Task 24, with a named fix |
