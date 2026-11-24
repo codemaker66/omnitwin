@@ -7,7 +7,7 @@ import { z } from "zod";
  * credit pot. This lane writes the full shape; other lanes' lines are read for
  * their spend only, so a line needs just its lane, job, time and cost to count.
  */
-const lineSchema = z.object({
+const lineSchema = z.strictObject({
   ts: z.string(),
   lane: z.string(),
   job: z.string(),
@@ -16,7 +16,14 @@ const lineSchema = z.object({
   inputTokens: z.number(),
   outputTokens: z.number(),
   costUsd: z.number(),
+  /** The session the line charges; null when its id is not known (a create whose outcome was unclear). */
   batchId: z.string().nullable(),
+  /**
+   * The run's own id, the session's metadata `run`: on every line this lane
+   * writes, so a line booked before the session's id was known still names the
+   * session it charges (ledgerHasSession).
+   */
+  runId: z.string().optional(),
   /** Present, and false, when no final cost could be read (the session may not have stopped): costUsd is then the whole budget, or the last figure if higher. */
   costKnown: z.literal(false).optional(),
 });
@@ -64,23 +71,49 @@ export async function appendCreditLine(file: string, line: CreditLine): Promise<
   await appendFile(file, `${JSON.stringify(lineSchema.parse(line))}\n`, "utf8");
 }
 
-/** Whether a ledger line charges this session (its `batchId`), for a collect that must not assume it was charged. */
-export async function ledgerHasSession(file: string, sessionId: string): Promise<boolean> {
-  let text: string;
+/** The sessions (`batchId`) and runs (`runId`) the ledger's lines charge, read from every line that parses as JSON. */
+export interface LedgerBookings {
+  readonly sessionIds: ReadonlySet<string>;
+  readonly runIds: ReadonlySet<string>;
+}
+
+export function bookingsIn(text: string): LedgerBookings {
+  const sessionIds = new Set<string>();
+  const runIds = new Set<string>();
+  for (const raw of text.split("\n")) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (typeof parsed !== "object" || parsed === null) continue;
+    if ("batchId" in parsed && typeof parsed.batchId === "string") sessionIds.add(parsed.batchId);
+    if ("runId" in parsed && typeof parsed.runId === "string") runIds.add(parsed.runId);
+  }
+  return { sessionIds, runIds };
+}
+
+/** Whether a line charges the session: by its id, or by its run id (the session's metadata `run`) against a line's runId. */
+export function charges(bookings: LedgerBookings, sessionId: string | null, runId?: string | null): boolean {
+  return (sessionId !== null && bookings.sessionIds.has(sessionId)) || (typeof runId === "string" && bookings.runIds.has(runId));
+}
+
+export async function readLedgerBookings(file: string): Promise<LedgerBookings> {
   try {
-    text = await readFile(file, "utf8");
+    return bookingsIn(await readFile(file, "utf8"));
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return bookingsIn("");
     throw error;
   }
-  return text.split("\n").some((raw) => {
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      return typeof parsed === "object" && parsed !== null && "batchId" in parsed && parsed.batchId === sessionId;
-    } catch {
-      return false;
-    }
-  });
+}
+
+/**
+ * Whether a ledger line charges this session, by its id or by its run id (see
+ * charges), for a collect or a run that must not assume it was charged.
+ */
+export async function ledgerHasSession(file: string, sessionId: string, runId?: string): Promise<boolean> {
+  return charges(await readLedgerBookings(file), sessionId, runId);
 }
 
 export function spent(lines: readonly SpendLine[], filter: (line: SpendLine) => boolean = () => true): number {

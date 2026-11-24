@@ -1,12 +1,12 @@
 import { execFileSync, spawn } from "node:child_process";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { expandHome } from "../config.js";
 import { FrontmatterError, parseFrontmatter } from "../frontmatter.js";
 import { gitCommandName, gitResult, protectedPathViolations } from "../git.js";
-import { ledgerHasSession } from "../sandbox/credit-ledger.js";
+import { appendCreditLine, ledgerHasSession } from "../sandbox/credit-ledger.js";
 import { keyFileExposure, readKey, unexpectedPrincipals } from "../keys.js";
 import { AGENT_EFFORT, AGENT_MODEL, MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
 
@@ -269,6 +269,28 @@ describe("ledgerHasSession", () => {
       // The id must be the line's batchId, not merely appear in it.
       await writeFile(file, `${JSON.stringify({ ts: "t", lane: "sandbox", job: "sesn_1", costUsd: 1, batchId: "sesn_2" })}\n`);
       expect(await ledgerHasSession(file, "sesn_1")).toBe(false);
+      // A line booked before the session's id was known (an unclear create) names the run: the session's metadata `run` finds it.
+      await writeFile(file, `${JSON.stringify({ ts: "t", lane: "sandbox", job: "j", costUsd: 4.5, costKnown: false, batchId: null, runId: "run-1" })}\n`);
+      expect(await ledgerHasSession(file, "sesn_1", "run-1")).toBe(true);
+      expect(await ledgerHasSession(file, "sesn_1", "run-2")).toBe(false);
+      expect(await ledgerHasSession(file, "sesn_1")).toBe(false);
+      // Only a string runId counts.
+      await writeFile(file, `${JSON.stringify({ ts: "t", lane: "sandbox", job: "j", costUsd: 4.5, batchId: null, runId: null })}\n`);
+      expect(await ledgerHasSession(file, "sesn_1", "null")).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("writes a line's run id, and refuses a line with a key the ledger does not know", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "ledger-line-"));
+    try {
+      const file = path.join(root, "ledger.jsonl");
+      const line = { ts: "2026-11-05T09:00:00.000Z", lane: "sandbox", job: "a4-trial:x", model: "m", requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 4.5, batchId: null };
+      await appendCreditLine(file, { ...line, costKnown: false, runId: "run-1" });
+      expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ ...line, costKnown: false, runId: "run-1" });
+      await expect(appendCreditLine(file, { ...line, ...{ note: "extra" } })).rejects.toThrow();
+      expect((await readFile(file, "utf8")).trim().split("\n")).toHaveLength(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

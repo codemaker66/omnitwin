@@ -242,6 +242,9 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   const runDir = path.join(config.workRoot, "runs", task.id, stamp(now()));
   await mkdir(runDir, { recursive: true });
 
+  // Set from runSession's callbacks; an object so the compiler does not narrow it to its first values.
+  const started: { runId: string | null; sessionId: string | null; booked: boolean } = { runId: null, sessionId: null, booked: false };
+  // Every line names the run beside the session, so a line booked before the session's id was known still finds it.
   const emptyLine = (sessionId: string | null) => ({
     ts: now().toISOString(),
     lane: config.lane,
@@ -251,10 +254,8 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
     inputTokens: 0,
     outputTokens: 0,
     batchId: sessionId,
+    ...(started.runId === null ? {} : { runId: started.runId }),
   });
-
-  // Set from runSession's callbacks; an object so the compiler does not narrow it to its first values.
-  const started: { sessionId: string | null; booked: boolean } = { sessionId: null, booked: false };
   // The session's one ledger line, from the platform's figure. runSession
   // hands the totals over (onCostKnown) as soon as the final status is read,
   // before any output is downloaded, so a download that stalls or fails cannot
@@ -283,6 +284,9 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
       title: `${options.job}: ${task.title}`.slice(0, 200),
       metadata: { lane: config.lane, job: options.job, task: task.id },
       log,
+      beforeCreate: (runId) => {
+        started.runId = runId;
+      },
       onSessionCreated: (id) => {
         started.sessionId = id;
       },
@@ -307,7 +311,8 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
         const cost = bookedCost(snapshot !== null && isStopped(snapshot.status), snapshot === null ? null : listCostUsd(snapshot), options.budgetUsd);
         await appendCreditLine(config.ledgerFile, { ...emptyLine(sessionId), ...ledgerCost(cost) });
       } else if (error instanceof SessionMayExistError) {
-        await appendCreditLine(config.ledgerFile, { ...emptyLine(null), ...ledgerCost(bookedCost(false, null, options.budgetUsd)) });
+        // Booked under the run id it carries, so the session, should it turn up, is found by its metadata `run`.
+        await appendCreditLine(config.ledgerFile, { ...emptyLine(null), runId: error.runId, ...ledgerCost(bookedCost(false, null, options.budgetUsd)) });
       }
     } catch (bookingError) {
       throw new BookingFailedError(error, bookingError);

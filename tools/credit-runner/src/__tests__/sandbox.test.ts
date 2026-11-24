@@ -32,7 +32,7 @@ import {
   type SessionEvent,
 } from "../sandbox/api.js";
 import { outcomeFor, promptSha, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
-import { appendCreditLine, checkSpend, readCreditLedger } from "../sandbox/credit-ledger.js";
+import { appendCreditLine, checkSpend, ledgerHasSession, readCreditLedger } from "../sandbox/credit-ledger.js";
 import { collectSandboxJob, inlineCode, reviewMarkdown, runSandboxJob, type JobOptions, type JobRecord, type LauncherConfig } from "../sandbox/launcher.js";
 import {
   isWindowsDeviceName,
@@ -304,7 +304,8 @@ describe("sandbox launcher", () => {
       costUsd: 2.87,
       batchId: "sesn_1",
     });
-    expect(Object.keys(line).sort()).toEqual(["batchId", "costUsd", "inputTokens", "job", "lane", "model", "outputTokens", "requests", "ts"]);
+    expect(Object.keys(line).sort()).toEqual(["batchId", "costUsd", "inputTokens", "job", "lane", "model", "outputTokens", "requests", "runId", "ts"]);
+    expect(line.runId).toBe(created?.metadata?.run);
     const review = await readFile(path.join(record.runDir, "review.md"), "utf8");
     expect(review).toContain("READY FOR REVIEW");
     expect(review).toContain("The verifier ran, and precondition.json was written, inside the agent's own container, so both are advisory");
@@ -2201,6 +2202,26 @@ describe("sandbox launcher, its books", () => {
     const second = ((await job(unclear, await workspace(), happy, { sleep: instant }).catch((caught: unknown) => caught)) as Error).message;
     expect(second.indexOf("a session may still be running")).toBeGreaterThanOrEqual(0);
     expect(second.indexOf("a session may still be running")).toBeLessThan(second.indexOf("disk full"));
+  });
+
+  it("names the run on the line it books for an unclear create, so the session it charges is found by its run id when it turns up", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    api.createError = new Anthropic.InternalServerError(500, { type: "error" }, "overloaded", new Headers());
+    await expect(job(api, config, happy, { sleep: instant })).rejects.toBeInstanceOf(SessionMayExistError);
+    const runId = String(api.sessions[0]?.metadata?.run);
+    const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
+    expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: null, runId });
+    // The session, had the create made it after all, is found by its metadata run id; another run's is not.
+    expect(await ledgerHasSession(config.ledgerFile, "sesn_late", runId)).toBe(true);
+    expect(await ledgerHasSession(config.ledgerFile, "sesn_late", "another-run")).toBe(false);
+
+    // Every line the launcher writes names its run beside its session.
+    const ran = await workspace();
+    const followed = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    const record = await job(followed, ran);
+    if (record.kind !== "ran") throw new Error(record.reason);
+    expect(JSON.parse((await readFile(ran.ledgerFile, "utf8")).trim())).toMatchObject({ batchId: "sesn_1", runId: String(followed.sessions[0]?.metadata?.run) });
   });
 });
 

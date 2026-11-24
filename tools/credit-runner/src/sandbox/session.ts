@@ -23,6 +23,8 @@ export interface SessionRunOptions {
   readonly metadata: Readonly<Record<string, string>>;
   readonly maxIterations?: number;
   readonly log?: (line: string) => void;
+  /** Called with the run id (the session's metadata `run`) just before the create is sent: from then on a session may exist. */
+  readonly beforeCreate?: (runId: string) => void;
   /** Called as soon as the session exists, so a later failure can still be charged to it. */
   readonly onSessionCreated?: (sessionId: string) => void;
   /**
@@ -628,6 +630,7 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
   const runId = randomUUID();
   await writeFile(path.join(runDir, "kickoff.md"), `Run id (the session's metadata \`run\`): ${runId}\n\n${outcome.description}\n---\n\n${outcome.rubric}`, "utf8");
 
+  options.beforeCreate?.(runId);
   const session = await createOrFind(
     api,
     {
