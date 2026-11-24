@@ -84,8 +84,10 @@ export async function seedCrowdedDay(
   await db.insert(schema.spaces).values(day.rooms.map((room) => {
     // A fixture space is one rectangle, so a room published in sections is
     // written as its first section: for the Robert Adam Room, the lower one.
-    // The production seed (db/seed.ts) still stores that room as its upper
-    // section, so this fixture's room and the production planner's differ.
+    // The production seed (db/seed.ts) stores that room as its upper section,
+    // so this fixture's row and the production row differ. The planner draws
+    // neither: it has its own outline for the room, looked up by name
+    // (packages/web/src/data/room-geometries.ts).
     const stated = TRADES_HALL_ROOM_DIMENSIONS[room.slug]?.extents[0];
     const size = {
       lengthM: stated?.lengthM ?? UNSTATED_ROOM.lengthM,
