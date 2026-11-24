@@ -143,6 +143,17 @@ describe("GuestTables", () => {
     expect(within(item).getByRole("button", { name: "Ailsa Fraser" }).getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("while a guest is chosen, a full table does not offer to take them", () => {
+    const list = listOf({
+      tables: [table(1, 1), table(2, 2), table(3, 2)],
+      guests: [guest(1, "Ailsa Fraser", uuid(1), 1), guest(2, "Chidi Okafor"), guest(3, "Morag Kerr", uuid(3), 1), guest(4, "Niall Reid", uuid(3), 2)],
+    });
+    render(<Harness initial={list} moving={uuid(1002)} />);
+    expect(within(row(1)).queryByRole("button", { name: /^Seat here/u })).toBeNull();
+    expect(within(row(3)).queryByRole("button", { name: /^Seat here/u })).toBeNull();
+    expect(within(row(2)).getByRole("button", { name: "Seat here at table 2" })).toBeTruthy();
+  });
+
   it("names a table when the field is left, not while it is typed in", () => {
     const onChange = vi.fn<() => void>();
     render(<Harness initial={listOf({ tables: [table(1)] })} onChange={onChange} />);

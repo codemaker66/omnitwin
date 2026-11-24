@@ -149,7 +149,8 @@ function TableRow(props: TableRowProps): ReactElement {
       <div className="gl-table__state">
         <span className="gl-table__count">{`${String(count)} of ${String(table.seats)}`}</span>
         {free > 0 && <span className="gl-chip" data-tone="copper">{`${String(free)} free`}</span>}
-        {moving !== null && !movingHere && (
+        {/* A full table offers nothing to the chosen guest: it could only refuse. */}
+        {moving !== null && !movingHere && free > 0 && (
           <button type="button" className="gl-button gl-button--place" onClick={() => { onPlace(table.id); }}>
             Seat here<span className="gl-sr-only">{` at table ${number}`}</span>
           </button>
