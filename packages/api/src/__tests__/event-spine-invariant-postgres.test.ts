@@ -310,6 +310,30 @@ describe.skipIf(target === undefined)("the spine: the count of records without t
     expect(await readSpineInvariant(db, v.venueId)).toEqual({ ...ALL_ZERO, ...expected });
   });
 
+  // One clause of the must-have rules at a time, with nothing else that would count the record.
+  const CLAUSE_CASES: readonly (readonly [string, Arrange, Partial<SpineInvariant>])[] = [
+    ["a withdrawn proposal with no event whose deposit request is in force", async (v) => {
+      await depositRequestFor(await proposal(v.venueId, "withdrawn"), null);
+    }, { proposalsWithoutEvent: 1, depositRequestsWithoutEvent: 1 }],
+    ["a draft proposal with no event, written for a lost deal", async (v) => {
+      await proposal(v.venueId, "draft", { opportunityId: await deal(v.venueId, "lost") });
+    }, { proposalsWithoutEvent: 1 }],
+    ["a deleted open deal with no event", async (v) => {
+      await pool.query("UPDATE opportunities SET deleted_at = now() WHERE id = $1", [await deal(v.venueId, "qualified")]);
+    }, {}],
+    ["an agreement whose proposal, with no event, was deleted", async (v) => {
+      const proposalId = await proposal(v.venueId, "archived");
+      await agreementFor(proposalId);
+      await deleteProposal(proposalId);
+    }, {}],
+  ];
+
+  it.each(CLAUSE_CASES)("counts %s as the definition says", async (label, arrange, expected) => {
+    const v = await venue(`clause ${label}`);
+    await arrange(v);
+    expect(await readSpineInvariant(db, v.venueId)).toEqual({ ...ALL_ZERO, ...expected });
+  });
+
   // A link to a deleted event, through each kind of record that must have an event; one that need not is not counted.
   const CLOSED_EVENT_CASES: readonly (readonly [string, Arrange, Partial<SpineInvariant>])[] = [
     ["an open deal", async (v) => { await link("opportunities", await deal(v.venueId, "qualified"), await deletedEvent(v)); },
