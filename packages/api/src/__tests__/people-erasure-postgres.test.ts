@@ -381,7 +381,8 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     const { rows: snapshots } = await f.pool.query<{ snapshot: unknown }>(
       "SELECT snapshot FROM record_merges WHERE id = ANY($1::uuid[])", [[mergeId, oldestMerge]]);
     expect(snapshots).toHaveLength(2);
-    expect(JSON.stringify(snapshots)).not.toMatch(/erasable|erase-|morag|7700|M\.|crm/iu);
+    // The phones by their whole number: a bare "7700" also matched timestamps (".877000Z") and ids, at random.
+    expect(JSON.stringify(snapshots)).not.toMatch(/erasable|erase-|morag|(?:\+?44|0) ?7700 ?90011[12]|M\.|crm/iu);
     // The undone merge copied someone live again: it is theirs, untouched.
     expect(JSON.stringify(await value("SELECT snapshot AS value FROM record_merges WHERE id = $1", [partedMerge]))).toMatch(/Ruth Parted/u);
     expect(await count("contacts WHERE id = $1 AND erased_at IS NULL AND name = 'Ruth Parted'", [parted])).toBe(1);
