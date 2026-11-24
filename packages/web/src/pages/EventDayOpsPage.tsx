@@ -259,8 +259,11 @@ interface TaskPress {
   /** Once it has landed, and only when the answer showed its own status:
    *  the write it made, as the answer gave it (pressLanded). */
   landed?: ServerTaskWrite;
-  /** The drain held its queued row back while a press made here before it
-   *  was on its way; that press settling sends it (releaseHeldBack). */
+  /** Its queued row waits for a press made here before it, or for this
+   *  page's replay of the task's row, still on its way: pressed meanwhile
+   *  with a status the task may already hold (setTaskStatus), or held back
+   *  by the drain. That one settling sends it (releaseHeldBack, or the
+   *  drain once more). */
   heldBack?: boolean;
 }
 
@@ -579,9 +582,12 @@ export function EventDayOpsPage(): ReactElement {
   // its replay only while the task still holds that status, or while the
   // task's last write was made under one of those keys (409 otherwise):
   // that is what keeps a stale replay from undoing a later press, after a
-  // reload, on another tab or another device too. This page queues or
-  // replays only its latest press that the server did not refuse, acks a
-  // row only while it still holds the press being acked, and acks a row
+  // reload, on another tab or another device too. A press of a status the
+  // task may already hold, made while an earlier press here or this page's
+  // replay of the task's row is still on its way, waits for it, queued, and
+  // is replayed once it settles (R5Q1). This page queues or replays only its
+  // latest press that the server did not refuse, acks a row only while it
+  // still holds the press being acked, and acks a row
   // queued before a press here that landed (ackOlderQueuedPresses). Accepted
   // limits (#418, ruling A): a page that had not yet read a write made
   // elsewhere has its queued press refused, even when that press came after
@@ -738,6 +744,9 @@ export function EventDayOpsPage(): ReactElement {
   const draining = useRef(false);
   const drainAgain = useRef(false);
   const flushQueueRef = useRef<() => void>(() => undefined);
+  // The tasks whose queued row the drain is replaying now: a press made on
+  // one of them meanwhile waits for that replay (setTaskStatus, R5Q1).
+  const replaying = useRef<Set<string>>(new Set());
   const flushQueue = useCallback(() => {
     if (draining.current) return;
     draining.current = true;
@@ -762,9 +771,21 @@ export function EventDayOpsPage(): ReactElement {
             // so what reaches this catch is the device's own storage failing.
             // The task is shown as the answer gives it, a refusal included,
             // unless a later write has been read already.
-            const answered = await replayQueuedTaskStatus(taskPresses.current, op);
+            replaying.current.add(op.opsTaskId);
+            let answered: OpsTask | undefined;
+            try {
+              answered = await replayQueuedTaskStatus(taskPresses.current, op);
+            } finally {
+              replaying.current.delete(op.opsTaskId);
+            }
             if (answered !== undefined && learnServerTask(serverTasks.current, answered)) {
               setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, answered) } : prev);
+            }
+            // A press made while this replay was on its way goes once this
+            // drain ends, if nothing else of the task's is on its way.
+            if (standingPress(taskPresses.current, op.opsTaskId)?.heldBack === true
+              && !(taskPresses.current.get(op.opsTaskId) ?? []).some((made) => made.outcome === "sending")) {
+              drainAgain.current = true;
             }
             continue;
           }
@@ -933,19 +954,48 @@ export function EventDayOpsPage(): ReactElement {
     const input = { status, idempotencyKey: makeIdempotencyKey(task.id, status) };
     // The rule at taskPresses. A live press is sent as pressed, against nothing.
     const presses = taskPresses.current;
+    const earlier = presses.get(task.id) ?? [];
     const press: TaskPress = {
       input,
       pressedAt: new Date().toISOString(),
       seen: serverTasks.current.get(task.id) ?? { status: task.status, updatedAt: task.updatedAt },
       outcome: "sending",
     };
-    presses.set(task.id, [...(presses.get(task.id) ?? []), press]);
+    presses.set(task.id, [...earlier, press]);
+    // Unless the task may already hold this status on the server (as this
+    // page last knew it, or as a press made here before it may have left
+    // it) while a press here before it, or this page's replay of the task's
+    // row, is still on its way (review R5Q1). The server answers a status
+    // the task holds with nothing written, so sent now this one would be
+    // answered first, and the earlier one would then land over it. It waits
+    // instead, queued: drawn as pressed and counted in the pending sync, then
+    // replayed against what the earlier one wrote once it settles. A press of
+    // any other status is written as it arrives, as before.
+    const known = serverTasks.current.get(task.id)?.status;
+    const mayHold = new Set([
+      ...(known === undefined ? [] : [known]),
+      ...earlier.filter((made) => made.outcome !== "refused").map((made) => made.input.status),
+    ]);
+    if (mayHold.has(status) && (replaying.current.has(task.id) || earlier.some((made) => made.outcome === "sending"))) {
+      press.outcome = "unsent";
+      press.heldBack = true;
+      void enqueueEventDayTaskStatus(task.id, queuedInput(presses, task.id, press))
+        .then(refreshPendingCount)
+        .catch(() => {
+          setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, task) } : prev);
+          setNotice("Task could not be saved on this device. Please try again.");
+        });
+      return;
+    }
     setPendingWrites((count) => count + 1);
     void updateOpsTaskStatus(task.id, input)
       .then((updated) => {
         pressLanded(press, updated);
-        learnServerTask(serverTasks.current, updated);
-        setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, updated) } : prev);
+        // Drawn only when it is the latest write this page knows of, as a
+        // replay's answer is (review R5Q2).
+        if (learnServerTask(serverTasks.current, updated)) {
+          setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, updated) } : prev);
+        }
         setNotice("Task status updated.");
         void refreshBoard();
         // This status reached the server after anything queued for the task
