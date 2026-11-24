@@ -1,6 +1,7 @@
-import { useEffect, type ReactElement } from "react";
+import { useEffect, useReducer, type ReactElement } from "react";
 import { isRouteErrorResponse, useRouteError, type RouteObject } from "react-router-dom";
-import { RecoveryScreen } from "./error-boundary.js";
+import { classifyError, RecoveryScreen } from "./error-boundary.js";
+import { browserSaysOnline } from "./lib/online-status.js";
 import { captureBoundaryError } from "./observability/sentry.js";
 
 // ---------------------------------------------------------------------------
@@ -15,28 +16,63 @@ import { captureBoundaryError } from "./observability/sentry.js";
 //     module") reloads the page once, so the new build's chunks are asked
 //     for. A sessionStorage guard stops a second reload within a minute; a
 //     failure inside that minute is real, and goes the way of any other;
+//   - a chunk can also fail for want of a network (fresh read
+//     web-shell-api-3), and a reload then only swaps the page, and whatever
+//     was typed on it, for the browser's own offline error. So the reload
+//     goes only where it would be served: the browser says it is online
+//     (navigator.onLine is false only with no network at all, and true on
+//     Wi-Fi that leads nowhere) and the app's own server answers a question
+//     asked past every cache. Otherwise the recovery screen says the server
+//     could not be reached, the tab's one reload stays unspent for a real
+//     deploy, and Sentry is not told: the device's network is not a fault in
+//     the app;
 //   - any other error reaches Sentry once and shows AppErrorBoundary's
 //     recovery screen.
 //
 // Vite's own preload failure (`vite:preloadError`) takes the same one reload,
-// except a script's failure while optional code loads (loadOptional): a
-// measurement that will not load costs only itself.
+// asked for the same way, except a script's failure while optional code loads
+// (loadOptional): a measurement that will not load costs only itself. It never
+// prevents the default: whether a reload would be served is known only once
+// the server has answered, so the import fails on into whoever asked for it.
+// For a page that is the route boundary, which waits on the same answer.
 // ---------------------------------------------------------------------------
 
-const CHUNK_LOAD_FAILURE = /dynamically imported module|Importing a module script failed|error loading dynamically imported module/iu;
+const SCRIPT_LOAD_FAILURE = /dynamically imported module|Importing a module script failed|error loading dynamically imported module/iu;
+/** Vite's own words when a page's stylesheet will not preload. */
+const STYLESHEET_PRELOAD_FAILURE = /^Unable to preload CSS for /u;
 
 /** When this tab last reloaded for a stale chunk (milliseconds since epoch). */
 export const CHUNK_RELOAD_GUARD_KEY = "venviewer.chunk-reload-at";
 const CHUNK_RELOAD_GUARD_MS = 60_000;
+/** How long the app's own server has to answer before a reload counts as one
+ *  that would not be served. A working connection answers a HEAD in well
+ *  under a second; the page draws nothing while it waits. */
+const ORIGIN_ANSWER_MS = 5_000;
 
 /** The page the reload acts on: a seam for tests, the window otherwise. */
 export const stalePage = {
   reload(): void { window.location.reload(); },
 };
 
-/** True for the errors browsers raise when a code-split chunk will not load. */
+function isScriptLoadError(error: unknown): boolean {
+  return error instanceof Error && SCRIPT_LOAD_FAILURE.test(error.message);
+}
+
+/** True for the errors raised when a code-split chunk will not load: the
+ *  browser's own for a script, and Vite's for a page's stylesheet. */
 export function isChunkLoadError(error: unknown): boolean {
-  return error instanceof Error && CHUNK_LOAD_FAILURE.test(error.message);
+  return isScriptLoadError(error) || (error instanceof Error && STYLESHEET_PRELOAD_FAILURE.test(error.message));
+}
+
+/** Whether this tab's one reload is free: none taken in the last minute, and
+ *  session storage there to remember it. */
+function staleChunkReloadFree(now: number): boolean {
+  try {
+    const last = Number(window.sessionStorage.getItem(CHUNK_RELOAD_GUARD_KEY));
+    return !(Number.isFinite(last) && last > 0 && now - last < CHUNK_RELOAD_GUARD_MS);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -45,14 +81,50 @@ export function isChunkLoadError(error: unknown): boolean {
  * session storage is unavailable, so a page that cannot remember never loops.
  */
 export function claimStaleChunkReload(now: number = Date.now()): boolean {
+  if (!staleChunkReloadFree(now)) return false;
   try {
-    const last = Number(window.sessionStorage.getItem(CHUNK_RELOAD_GUARD_KEY));
-    if (Number.isFinite(last) && last > 0 && now - last < CHUNK_RELOAD_GUARD_MS) return false;
     window.sessionStorage.setItem(CHUNK_RELOAD_GUARD_KEY, String(now));
     return true;
   } catch {
     return false;
   }
+}
+
+/** Whether the app's own server answers now, past every cache: whether a
+ *  reload would be served. */
+async function originAnswers(): Promise<boolean> {
+  const question = new AbortController();
+  const timer = setTimeout(() => { question.abort(); }, ORIGIN_ANSWER_MS);
+  try {
+    const response = await fetch("/", { method: "HEAD", cache: "no-store", signal: question.signal });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+type ReloadOutcome = "reloading" | "unserved" | "refused";
+
+/** The question in flight, shared by Vite's listener and the route boundary,
+ *  so one failure that both see asks once and reloads once. */
+let pendingReload: Promise<ReloadOutcome> | null = null;
+
+/** Reload for a stale chunk if the server answers and the tab's reload is
+ *  still free; "unserved" when the server does not answer. */
+function reloadIfServed(): Promise<ReloadOutcome> {
+  if (pendingReload !== null) return pendingReload;
+  const attempt = originAnswers().then((answered): ReloadOutcome => {
+    if (!answered) return "unserved";
+    if (!claimStaleChunkReload()) return "refused";
+    stalePage.reload();
+    return "reloading";
+  });
+  pendingReload = attempt;
+  const settle = (): void => { if (pendingReload === attempt) pendingReload = null; };
+  void attempt.then(settle, settle);
+  return attempt;
 }
 
 /** How many loads of optional code are under way. */
@@ -68,8 +140,7 @@ let optionalLoads = 0;
  * it falls to the import's own handler. For a route that is the route
  * boundary, which reloads on that same error; for this optional code it is
  * the caller's catch. A stylesheet that will not preload ("Unable to preload
- * CSS") reloads as ever: only a route's chunk has one, and the route boundary
- * does not recognise that error.
+ * CSS") is asked about as ever: only a page's chunk has one.
  */
 export async function loadOptional<T>(load: () => Promise<T>): Promise<T> {
   optionalLoads += 1;
@@ -80,14 +151,13 @@ export async function loadOptional<T>(load: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Vite's preload failure: the same one reload, before the import rejects,
+/** Vite's preload failure: the same one reload, once the server has answered,
  *  except a script's failure while optional code loads (loadOptional). */
 export function installStaleChunkReload(target: Window = window): void {
   target.addEventListener("vite:preloadError", (event) => {
-    if (optionalLoads > 0 && isChunkLoadError(event.payload)) return;
-    if (!claimStaleChunkReload()) return;
-    event.preventDefault();
-    stalePage.reload();
+    if (optionalLoads > 0 && isScriptLoadError(event.payload)) return;
+    if (!browserSaysOnline() || !staleChunkReloadFree(Date.now())) return;
+    void reloadIfServed();
   });
 }
 
@@ -97,15 +167,29 @@ function asError(value: unknown): Error {
   return new Error(typeof value === "string" ? value : "Unexpected route error");
 }
 
+/** "asking": the server is being asked whether a reload would be served.
+ *  "unreachable": it would not, or the browser has no network at all. */
+type Decision = "reload" | "report" | "unreachable" | "asking";
+
+const ANSWERED: Readonly<Record<ReloadOutcome, Decision>> = {
+  reloading: "reload",
+  unserved: "unreachable",
+  refused: "report",
+};
+
 // Decided once per thrown value, so a second render (StrictMode, a parent's
-// update) neither claims the guard again nor reports again.
-const decisions = new WeakMap<object, "reload" | "report">();
+// update) neither asks or claims the guard again nor reports again.
+const decisions = new WeakMap<object, Decision>();
 const reported = new WeakSet();
 
-function decide(key: object, error: Error): "reload" | "report" {
+function decide(key: object, error: Error): Decision {
   const known = decisions.get(key);
   if (known !== undefined) return known;
-  const decision = isChunkLoadError(error) && claimStaleChunkReload() ? "reload" : "report";
+  let decision: Decision = "report";
+  if (isChunkLoadError(error)) {
+    if (!browserSaysOnline()) decision = "unreachable";
+    else if (staleChunkReloadFree(Date.now())) decision = "asking";
+  }
   decisions.set(key, decision);
   return decision;
 }
@@ -116,20 +200,28 @@ export function RouteErrorFallback(): ReactElement | null {
   const error = asError(thrown);
   const key: object = typeof thrown === "object" && thrown !== null ? thrown : error;
   const decision = decide(key, error);
+  const [, answered] = useReducer((count: number) => count + 1, 0);
 
   useEffect(() => {
-    if (decision === "reload") {
-      stalePage.reload();
-      return;
+    if (decision === "asking") {
+      let live = true;
+      const record = (outcome: ReloadOutcome): void => {
+        decisions.set(key, ANSWERED[outcome]);
+        if (live) answered();
+      };
+      void reloadIfServed().then(record, () => { record("refused"); });
+      return () => { live = false; };
     }
-    if (reported.has(key)) return;
-    reported.add(key);
-    void captureBoundaryError(error, { componentStack: "" });
+    if (decision === "report" && !reported.has(key)) {
+      reported.add(key);
+      void captureBoundaryError(error, { componentStack: "" });
+    }
+    return undefined;
   }, [decision, error, key]);
 
-  // A reload is on its way; the recovery screen would only flash.
-  if (decision === "reload") return null;
-  return <RecoveryScreen error={error} />;
+  // A reload is on its way, or may be; the recovery screen would only flash.
+  if (decision === "reload" || decision === "asking") return null;
+  return <RecoveryScreen error={error} kind={decision === "unreachable" ? "network" : classifyError(error)} />;
 }
 
 /** Every route under one pathless root that catches what they throw. A route

@@ -79,6 +79,9 @@ afterEach(() => {
 async function cityWithStaleFront(): Promise<readonly string[]> {
   const asked: string[] = [];
   vi.stubGlobal("fetch", vi.fn((url: string) => {
+    // The page's question to its own server before it spends its reload
+    // (route-error-boundary.tsx): answered, as after a deploy. Not the city's.
+    if (url === "/") return Promise.resolve({ ok: true, status: 200 });
     asked.push(url);
     if (url === CONTEXT_MODEL_FRONT_URL || url === CONTEXT_MODEL_URL) {
       return Promise.resolve({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(cityModel()) });
@@ -105,9 +108,9 @@ function expectTheCityTookItsOwnFrontBack(asked: readonly string[]): void {
 }
 
 describe("a measured front whose chunk a deploy has replaced", () => {
-  it("resolves to nothing once the page has claimed its one reload, and the city keeps a front", async () => {
+  it("rejects, the page reloads once its own server has answered, and the city keeps a front", async () => {
     const asked = await cityWithStaleFront();
-    expect(reload).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => { expect(reload).toHaveBeenCalledTimes(1); });
     expectTheCityTookItsOwnFrontBack(asked);
   });
 
