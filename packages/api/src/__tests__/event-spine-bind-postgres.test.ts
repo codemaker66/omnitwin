@@ -13,6 +13,7 @@ import {
   link,
   openSpineDatabase,
   platformTarget,
+  proposal as proposalIn,
   venue as venueIn,
   type SpineActor,
   type SpineDatabase,
@@ -337,8 +338,9 @@ describe.skipIf(target === undefined)("the spine: the bind joins the enquiry's o
   // ---------------------------------------------------------------------------
   // The enquiry's link is written only where the join would agree: when
   // nothing else of the enquiry's own (its bookings, its deals and proposals,
-  // its floor plan) reaches a different live event of its venue. The join of
-  // old records is the outside reference, so each case runs it after the hold.
+  // its floor plan, and what a proposal of it with no event reaches) reaches a
+  // different live event of its venue. The join of old records is the outside
+  // reference, so each case runs it after the hold.
 
   interface OpenQuestion { readonly reason: string; readonly resolved_at: Date | null }
 
@@ -423,6 +425,57 @@ describe.skipIf(target === undefined)("the spine: the bind joins the enquiry's o
     await joinOldRecords();
     expect(await questionsOn(enquiryId)).toEqual([{ reason: "paths_disagree", resolved_at: null }]);
     expect(await enquiryEvent(enquiryId)).toBeNull();
+  });
+
+  /** A floor plan of the venue, linked to each event named. */
+  async function planLinkedTo(v: SpineVenue, ...eventIds: readonly string[]): Promise<string> {
+    const [plan] = (await pool.query<{ id: string }>(
+      "INSERT INTO configurations (space_id, venue_id, name, layout_style) VALUES ($1, $2, 'Fixture plan', 'dinner-rounds') RETURNING id",
+      [v.rooms.hall, v.venueId],
+    )).rows;
+    if (plan === undefined) throw new Error("Plan fixture missing");
+    for (const eventId of eventIds) {
+      await pool.query("INSERT INTO event_configuration_links (event_id, configuration_id, link_type) VALUES ($1, $2, 'source_configuration')",
+        [eventId, plan.id]);
+    }
+    return plan.id;
+  }
+
+  it("a hold on an enquiry whose sent proposal, with no event, has a floor plan linked to another event writes no link; the join lists it", async () => {
+    const v = await venue("proposal's plan elsewhere");
+    const enquiryId = await enquiryIn(pool, v.venueId);
+    const plansEvent = await datelessEvent(v.venueId, "The proposal's plan's event");
+    await proposalIn(pool, v.venueId, "sent", { enquiryId, configurationId: await planLinkedTo(v, plansEvent) });
+    const before = await eventCount(v.venueId);
+
+    const hold = await holdFromEnquiry(v.admin, holdBody(v, enquiryId));
+    expect(hold.eventId).not.toBe(plansEvent);
+    expect(await eventCount(v.venueId)).toBe(before + 1);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([{ reason: "paths_disagree", resolved_at: null }]);
+    expect(await enquiryEvent(enquiryId)).toBeNull();
+  });
+
+  it("a hold still writes the link when its enquiry's proposals reach no other live event: one deleted, one whose plan's only event is deleted", async () => {
+    const v = await venue("proposals reach nothing else");
+    const enquiryId = await enquiryIn(pool, v.venueId);
+    const deleted = await proposalIn(pool, v.venueId, "sent", {
+      enquiryId, configurationId: await planLinkedTo(v, await datelessEvent(v.venueId, "A deleted proposal's plan's event")),
+    });
+    await pool.query("UPDATE proposals SET deleted_at = now() WHERE id = $1", [deleted]);
+    const gone = await datelessEvent(v.venueId, "Since deleted");
+    await pool.query("UPDATE events SET deleted_at = now() WHERE id = $1", [gone]);
+    const live = await proposalIn(pool, v.venueId, "sent", { enquiryId, configurationId: await planLinkedTo(v, gone) });
+
+    const hold = await holdFromEnquiry(v.admin, holdBody(v, enquiryId));
+    expect(await enquiryEvent(enquiryId)).toBe(hold.eventId);
+
+    await joinOldRecords();
+    expect(await questionsOn(enquiryId)).toEqual([]);
+    const [joined] = (await pool.query<{ event_id: string | null }>("SELECT event_id FROM proposals WHERE id = $1", [live])).rows;
+    expect(joined?.event_id).toBe(hold.eventId);
   });
 
   it("a hold still writes the link when its enquiry's bookings sit in one event only, or nothing reaches any event; the join lists neither", async () => {

@@ -4,6 +4,7 @@ import {
   EVENT_CONFIRMED_STATUSES,
   EVENT_PIPELINE_STATUSES,
   EventStatusSchema,
+  SENT_PROPOSAL_STATUSES,
   bookingKindNeedsEvent,
   defaultEventPhaseInputs,
   deriveEventStatus,
@@ -268,7 +269,8 @@ export async function followBookingToEvent(
  * one its enquiry's bookings already have, or a new one. Bound through an
  * enquiry that may have an event, the enquiry's link is written to it, unless
  * anything else of the enquiry's own (its bookings, deals, proposals or floor
- * plan) reaches a different live event of its venue: then the link is left as
+ * plan, or what a proposal of it with no event reaches) reaches a different
+ * live event of its venue: then the link is left as
  * it is. An empty one is for the join's list; one that names a deleted event
  * stays, and the spine's count shows it. Call inside the booking write's
  * transaction, before the booking is inserted.
@@ -320,10 +322,15 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
  * spine_join_old_records, the spine's links migration): (A) an undeleted
  * booking of the enquiry sits in it; (C) an undeleted deal (source_enquiry_id)
  * or undeleted proposal (enquiry_id) of the enquiry is joined to it; (B) the
- * enquiry's floor plan is linked to it (event_configuration_links). When one
- * does, the join would list the enquiry rather than choose, so the bind does
- * not choose for it either. Plain reads, under the enquiry's lock the caller
- * already holds; no lock is taken here.
+ * enquiry's floor plan is linked to it (event_configuration_links), or an
+ * undeleted proposal of the enquiry with no event reaches it, as the join's
+ * proposals_reach reads one: through its deal's event, through its deposit
+ * request in force, or through its floor plan when the plan is linked to
+ * exactly one live event; a plan linked to several reaches them all, but only
+ * for a proposal that must have an event. When one does, the join would list
+ * the enquiry rather than choose, so the bind does not choose for it either.
+ * Plain reads, under the enquiry's lock the caller already holds; no lock is
+ * taken here.
  */
 async function enquiryReachesAnotherEvent(
   conn: BindConn,
@@ -347,6 +354,27 @@ async function enquiryReachesAnotherEvent(
       SELECT 1 FROM event_configuration_links k JOIN events e ON e.id = k.event_id
         WHERE k.configuration_id = ${enquiry.configurationId}
           AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
+      UNION ALL
+      SELECT 1 FROM proposals s
+        CROSS JOIN LATERAL (
+          SELECT e.id AS event_id FROM opportunities o JOIN events e ON e.id = o.event_id
+            WHERE o.id = s.opportunity_id AND e.venue_id = s.venue_id AND e.deleted_at IS NULL
+          UNION ALL
+          SELECT e.id FROM proposal_deposit_requests d JOIN events e ON e.id = d.event_id
+            WHERE d.proposal_id = s.id AND d.cancelled_at IS NULL AND e.deleted_at IS NULL
+          UNION ALL
+          SELECT pl.id
+          FROM (SELECT y.id, count(*) OVER () AS reached
+            FROM (SELECT DISTINCT e.id FROM event_configuration_links k JOIN events e ON e.id = k.event_id
+              WHERE k.configuration_id = s.configuration_id AND e.venue_id = s.venue_id AND e.deleted_at IS NULL) y) pl
+          WHERE pl.reached = 1
+            OR s.status IN (${sqlList(SENT_PROPOSAL_STATUSES)})
+            OR EXISTS (SELECT 1 FROM proposal_contract_versions a WHERE a.proposal_id = s.id)
+            OR EXISTS (SELECT 1 FROM proposal_deposit_requests d WHERE d.proposal_id = s.id AND d.cancelled_at IS NULL)
+            OR (s.status = 'draft' AND (s.opportunity_id IS NOT NULL OR s.enquiry_id IS NOT NULL))
+        ) r
+        WHERE s.enquiry_id = ${enquiry.id} AND s.venue_id = ${enquiry.venueId}
+          AND s.deleted_at IS NULL AND s.event_id IS NULL AND r.event_id <> ${eventId}
     ) AS reaches
   `);
   const reaches = result.rows[0]?.["reaches"];

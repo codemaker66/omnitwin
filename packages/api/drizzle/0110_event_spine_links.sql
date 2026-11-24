@@ -300,26 +300,50 @@ ON CONFLICT DO NOTHING;
 -- venue. Listed is an open question of the join's own (resolved_at IS NULL,
 -- binding_review_id IS NULL). A listed record is never touched; a deal or a
 -- proposal whose enquiry is listed, and a proposal whose open deal has no
--- event, wait with it. A proposal that would have an event made for it and
--- its enquiry together also waits, unlisted, while another undeleted proposal
--- of the same enquiry, itself with no event, reaches a live event through its
--- deal, its deposit request in force or its plan, or must have an event while
--- its plan reaches several (and so would be listed). A question's detail
--- holds counts and kinds, never a name.
+-- event, wait with it. A question's detail holds counts and kinds, never a
+-- name.
+--
+-- What a proposal with no event reaches is one rule, written once
+-- (proposals_reach, below): a live event through its deal's event, through
+-- its deposit request in force, or through its floor plan when the plan is
+-- linked to exactly one; a plan linked to several reaches them all, but only
+-- for a proposal that must have an event. It is read for an enquiry's
+-- proposals (by enquiry_id) and for a deal's (by opportunity_id), so nothing
+-- is made for either while a proposal of it reaches an existing event.
 --
 -- Enquiries. After a run no enquiry that may become an event is left without
 -- one while an undeleted booking, deal or proposal of it has a live event,
 -- unless it is listed or a writer held one of its rows. Step 1 joins an
 -- enquiry to the one live event its bookings, deals and proposals sit in, or
--- lists it when they sit in several. Steps 1 to 3 are repeated while a round
--- joins anything (at most four rounds; a chain that needs a fifth round is
--- finished by a later run), so an enquiry whose deals or proposals were
--- joined in one round is settled from all of them together in the next, and
--- the result never depends on the order records are read in.
+-- lists it when they sit in several, or when its floor plan, or a proposal of
+-- it with no event, reaches another. With none, it joins the one live event
+-- its floor plan and its proposals with no event reach, or lists it when they
+-- reach several. Steps 1 to 3 are repeated while a round joins anything (at
+-- most four rounds; a chain that needs a fifth round is finished by a later
+-- run), so an enquiry whose deals or proposals were joined in one round is
+-- settled from all of them together in the next, and the result never
+-- depends on the order records are read in.
 -- An event is made for an enquiry, by step 1, 2 or 3, only when nothing of
--- its own (held dates, deals, proposals, floor plan) reaches a live event, and
--- in step 3 only after every proposal that reaches an existing event has been
--- joined.
+-- its own (held dates, deals, proposals, floor plan, and what its proposals
+-- with no event reach) reaches a live event, and in step 3 only after every
+-- proposal that reaches an existing event has been joined.
+--
+-- Deals. Step 2 joins a deal to its enquiry's live event. With none, an open
+-- deal waits for its enquiry when the enquiry may become an event, has none,
+-- and something of the enquiry's own reaches one; otherwise it joins the one
+-- live event its own proposals with no event reach, or is listed when they
+-- reach several, and an event is made for it only when they reach none. An
+-- open deal is listed, not joined, where an open deal already is. A closed
+-- deal that reaches no event is left.
+--
+-- Proposals. Step 3 joins a proposal to its deal's live event, else its
+-- enquiry's, else the one its deposit request in force names, and lists it
+-- when its deposit request names another or a deleted event; one that must
+-- have an event is listed, too, when its floor plan is linked to a live event
+-- other than that one. With none of these, one that must have an event joins
+-- its floor plan's one live event, is listed when the plan reaches several,
+-- or has an event made; one that need not joins its plan's one live event as
+-- history when it is over, and is otherwise left.
 CREATE OR REPLACE FUNCTION "spine_join_old_records"()
   RETURNS TABLE ("joined" integer, "events_made" integer, "listed" integer)
   LANGUAGE plpgsql
@@ -347,6 +371,40 @@ DECLARE
   -- The longest a deal's update may wait for a writer's uncommitted open deal
   -- on the same event: below deadlock_timeout (1 s by default).
   deal_update_wait CONSTANT text := '100ms';
+  -- (Rule: what a proposal with no event reaches) an undeleted proposal with
+  -- no event reaches a live event of its venue through its deal's event,
+  -- through its deposit request in force, or through its floor plan when the
+  -- plan is linked to exactly one; a plan linked to several reaches them all,
+  -- but only for a proposal that must have an event (the rule of step 3,
+  -- written out again here: sent; or with an agreement; or with a deposit
+  -- request in force; or a draft for a deal or an enquiry). Written once, here,
+  -- and run with EXECUTE ... USING for the proposals of one record, at its
+  -- venue ($1): an enquiry's ($2, by enquiry_id) or a deal's ($3, by
+  -- opportunity_id), with sent_proposal_statuses as $4. It returns the events
+  -- reached, each once and in order, or '{}'.
+  proposals_reach CONSTANT text := $reach$
+    SELECT coalesce(array_agg(DISTINCT r."event_id" ORDER BY r."event_id"), '{}')
+    FROM "proposals" s
+    CROSS JOIN LATERAL (
+      SELECT e."id" AS "event_id" FROM "opportunities" o JOIN "events" e ON e."id" = o."event_id"
+        WHERE o."id" = s."opportunity_id" AND e."venue_id" = s."venue_id" AND e."deleted_at" IS NULL
+      UNION ALL
+      SELECT e."id" FROM "proposal_deposit_requests" d JOIN "events" e ON e."id" = d."event_id"
+        WHERE d."proposal_id" = s."id" AND d."cancelled_at" IS NULL AND e."deleted_at" IS NULL
+      UNION ALL
+      SELECT pl."id"
+      FROM (SELECT y."id", count(*) OVER () AS "reached"
+        FROM (SELECT DISTINCT e."id" FROM "event_configuration_links" k JOIN "events" e ON e."id" = k."event_id"
+          WHERE k."configuration_id" = s."configuration_id" AND e."venue_id" = s."venue_id" AND e."deleted_at" IS NULL) y) pl
+      WHERE pl."reached" = 1
+        OR s."status" = ANY ($4)
+        OR EXISTS (SELECT 1 FROM "proposal_contract_versions" a WHERE a."proposal_id" = s."id")
+        OR EXISTS (SELECT 1 FROM "proposal_deposit_requests" d WHERE d."proposal_id" = s."id" AND d."cancelled_at" IS NULL)
+        OR (s."status" = 'draft' AND (s."opportunity_id" IS NOT NULL OR s."enquiry_id" IS NOT NULL))
+    ) r
+    WHERE s."venue_id" = $1 AND s."deleted_at" IS NULL AND s."event_id" IS NULL
+      AND (s."enquiry_id" = $2 OR s."opportunity_id" = $3)
+  $reach$;
 
   this_enquiry record;
   this_deal record;
@@ -361,6 +419,9 @@ DECLARE
   v_c uuid[];                -- the live events its undeleted deals and proposals are joined to
   v_m uuid[];                -- the two together
   v_b uuid[];                -- the live events a floor plan is linked to
+  v_p uuid[];                -- the live events proposals with no event reach (proposals_reach)
+  v_bp uuid[];               -- an enquiry's floor plan's events and its proposals' (v_b and v_p) together
+  v_must boolean;            -- the proposal must have an event
   v_candidates uuid[];
   v_target uuid;
   v_path text;
@@ -438,8 +499,9 @@ BEGIN
         WHERE l."subject_kind" = 'enquiry' AND l."subject_id" = this_enquiry."id"
           AND l."resolved_at" IS NULL AND l."binding_review_id" IS NULL);
       -- (Rule: what of an enquiry's own reaches an event) its held dates (A),
-      -- its deals and proposals (C) and its floor plan (B); steps 2 and 3 ask
-      -- the same question of a record's enquiry.
+      -- its deals and proposals with an event (C), and (B) its floor plan with
+      -- what its proposals with no event reach (proposals_reach); steps 2 and
+      -- 3 ask the same question of a record's enquiry.
       v_a := ARRAY(SELECT DISTINCT e."id" FROM "bookings" b JOIN "events" e ON e."id" = b."event_id"
         WHERE b."enquiry_id" = this_enquiry."id" AND b."deleted_at" IS NULL
           AND e."venue_id" = this_enquiry."venue_id" AND e."deleted_at" IS NULL
@@ -458,6 +520,8 @@ BEGIN
         WHERE k."configuration_id" = this_enquiry."configuration_id"
           AND e."venue_id" = this_enquiry."venue_id" AND e."deleted_at" IS NULL
         ORDER BY e."id");
+      EXECUTE proposals_reach INTO v_p USING this_enquiry."venue_id", this_enquiry."id", NULL::uuid, sent_proposal_statuses;
+      v_bp := ARRAY(SELECT DISTINCT y FROM unnest(v_b || v_p) AS y ORDER BY y);
 
       v_reason := NULL;
       v_target := NULL;
@@ -466,10 +530,13 @@ BEGIN
         v_reason := 'reaches_many_events';
         v_candidates := v_m;
         v_detail := format('Its held dates, deals and proposals sit in %s events.', cardinality(v_m));
-      ELSIF cardinality(v_m) = 1 AND NOT (v_b <@ v_m) THEN
+      ELSIF cardinality(v_m) = 1 AND NOT (v_bp <@ v_m) THEN
         v_reason := 'paths_disagree';
-        v_candidates := ARRAY(SELECT DISTINCT y FROM unnest(v_m || v_b) AS y ORDER BY y);
-        v_detail := 'Its held dates, deals and proposals sit in one event, and its floor plan is linked to another.';
+        v_candidates := ARRAY(SELECT DISTINCT y FROM unnest(v_m || v_bp) AS y ORDER BY y);
+        v_detail := CASE WHEN v_p <@ v_m
+          THEN 'Its held dates, deals and proposals sit in one event, and its floor plan is linked to another.'
+          ELSE 'Its held dates, deals and proposals sit in one event, and a proposal of it with no event reaches another.'
+        END;
       ELSIF cardinality(v_m) = 1 THEN
         v_target := v_m[1];
         v_path := CASE
@@ -478,13 +545,19 @@ BEGIN
             AND o."deleted_at" IS NULL AND o."event_id" = v_target) THEN 'deal'
           ELSE 'proposal'
         END;
-      ELSIF cardinality(v_b) > 1 THEN
+      ELSIF cardinality(v_bp) > 1 THEN
         v_reason := 'reaches_many_events';
-        v_candidates := v_b;
-        v_detail := format('Its floor plan is linked to %s events.', cardinality(v_b));
-      ELSIF cardinality(v_b) = 1 THEN
-        v_target := v_b[1];
-        v_path := 'plan_link';
+        v_candidates := v_bp;
+        v_detail := CASE
+          WHEN cardinality(v_p) = 0 THEN format('Its floor plan is linked to %s events.', cardinality(v_bp))
+          WHEN cardinality(v_b) = 0 THEN format('Its proposals with no event reach %s events.', cardinality(v_bp))
+          ELSE format('Its floor plan and its proposals with no event reach %s events between them.', cardinality(v_bp))
+        END;
+      ELSIF cardinality(v_bp) = 1 THEN
+        v_target := v_bp[1];
+        -- Its own floor plan's link; otherwise a proposal of it with no event
+        -- reaches it.
+        v_path := CASE WHEN v_target = ANY (v_b) THEN 'plan_link' ELSE 'proposal' END;
       ELSIF this_enquiry."state" <> ALL (closed_enquiry_states)
         -- (Rule: an open enquiry) not in CLOSED_ENQUIRY_STATES; (Rule: a worked
         -- enquiry, enquiryWorked) a first reply; a live hold, booking or
@@ -588,29 +661,54 @@ BEGIN
       v_second := false;
       v_make := false;
       v_for_enquiry := false;
+      v_reason := NULL;
+      v_path := 'enquiry';
+      IF v_target IS NULL AND this_deal."stage" = ANY (open_deal_stages) THEN
+        -- No live event of its enquiry's reaches it. When the enquiry may
+        -- become one and has none, and something of the enquiry's own reaches
+        -- an event (with what its proposals with no event reach: the rule of
+        -- step 1), step 1 could not settle the enquiry (a row it could not
+        -- have at once, or one a writer changed since): the deal waits for it.
+        v_for_enquiry := v_q_id IS NOT NULL AND v_q_event IS NULL AND v_q_may_become;
+        IF v_for_enquiry AND NOT v_q_reaches THEN
+          EXECUTE proposals_reach INTO v_p USING this_deal."venue_id", v_q_id, NULL::uuid, sent_proposal_statuses;
+          v_q_reaches := cardinality(v_p) > 0;
+        END IF;
+        CONTINUE deal_loop WHEN v_for_enquiry AND v_q_reaches;
+        -- Otherwise what its own proposals with no event reach decides
+        -- (proposals_reach): one live event, it joins it (the one-open-deal
+        -- rule below still lists it where an open deal already is); several,
+        -- it is listed; none, an event is made, for its enquiry when that may
+        -- become one and has none (the deal then joins it through its
+        -- enquiry).
+        EXECUTE proposals_reach INTO v_p USING this_deal."venue_id", NULL::uuid, this_deal."id", sent_proposal_statuses;
+        IF cardinality(v_p) > 1 THEN
+          v_reason := 'reaches_many_events';
+          v_candidates := v_p;
+          v_detail := format('Its proposals with no event reach %s events.', cardinality(v_p));
+          v_for_enquiry := false;
+        ELSIF cardinality(v_p) = 1 THEN
+          v_target := v_p[1];
+          v_path := 'proposal';
+          v_for_enquiry := false;
+        ELSE
+          v_make := true;
+        END IF;
+      ELSIF v_target IS NULL THEN
+        -- A closed deal that reaches no event is left.
+        CONTINUE deal_loop;
+      END IF;
       IF v_target IS NOT NULL THEN
         -- (Rule: an open deal) at a stage in OPEN_OPPORTUNITY_STAGES. An open
         -- deal is not joined where an open deal already is.
         v_second := this_deal."stage" = ANY (open_deal_stages) AND EXISTS (SELECT 1 FROM "opportunities" o
           WHERE o."event_id" = v_target AND o."id" <> this_deal."id"
             AND o."deleted_at" IS NULL AND o."stage" = ANY (open_deal_stages));
-      ELSIF this_deal."stage" = ANY (open_deal_stages) THEN
-        -- Nothing reaches it: an event is made, for its enquiry when that may
-        -- become one and has none (the deal then joins it through its
-        -- enquiry). When something of that enquiry's own reaches an event
-        -- (step 1 could not settle it: a row it could not have at once), the
-        -- deal waits for the enquiry.
-        v_for_enquiry := v_q_id IS NOT NULL AND v_q_event IS NULL AND v_q_may_become;
-        CONTINUE deal_loop WHEN v_for_enquiry AND v_q_reaches;
-        v_make := true;
-      ELSE
-        -- A closed deal that reaches no event is left.
-        CONTINUE deal_loop;
       END IF;
 
       EXIT WHEN v_locked;
-      -- What will be written: its enquiry first when the event is made for
-      -- it, then the deal, still with no event and still as read.
+      -- What it will write or list: its enquiry first when the event is made
+      -- for it, then the deal, still with no event and still as read.
       IF v_for_enquiry THEN
         PERFORM 1 FROM "enquiries" q WHERE q."id" = v_q_id AND q."event_id" IS NULL FOR NO KEY UPDATE SKIP LOCKED;
         CONTINUE deal_loop WHEN NOT FOUND;
@@ -627,6 +725,14 @@ BEGIN
     -- Decided again under the locks: an enquiry it will write must be one it holds.
     CONTINUE WHEN v_for_enquiry AND v_enquiry_locked IS DISTINCT FROM v_q_id;
 
+    IF v_reason IS NOT NULL THEN
+      INSERT INTO "event_link_reviews" ("venue_id", "subject_kind", "subject_id", "reason", "candidate_event_ids", "detail")
+      VALUES (this_deal."venue_id", 'opportunity', this_deal."id", v_reason, v_candidates, v_detail)
+      ON CONFLICT DO NOTHING;
+      GET DIAGNOSTICS v_rows = ROW_COUNT;
+      v_listed := v_listed + v_rows;
+      CONTINUE;
+    END IF;
     IF v_target IS NOT NULL THEN
       IF NOT v_second THEN
         PERFORM 1 FROM "events" e WHERE e."id" = v_target AND e."deleted_at" IS NULL FOR KEY SHARE SKIP LOCKED;
@@ -643,7 +749,7 @@ BEGIN
           UPDATE "opportunities" SET "event_id" = v_target WHERE "id" = this_deal."id";
           PERFORM set_config('lock_timeout', v_lock_timeout, true);
           INSERT INTO "event_link_joins" ("venue_id", "subject_kind", "subject_id", "event_id", "path", "event_made")
-          VALUES (this_deal."venue_id", 'opportunity', this_deal."id", v_target, 'enquiry', false);
+          VALUES (this_deal."venue_id", 'opportunity', this_deal."id", v_target, v_path, false);
           v_joined := v_joined + 1;
         EXCEPTION
           WHEN unique_violation THEN
@@ -663,7 +769,8 @@ BEGIN
       IF v_second THEN
         INSERT INTO "event_link_reviews" ("venue_id", "subject_kind", "subject_id", "reason", "candidate_event_ids", "detail")
         VALUES (this_deal."venue_id", 'opportunity', this_deal."id", 'second_open_deal', ARRAY[v_target],
-          'The event its enquiry is joined to already has an open deal.')
+          CASE v_path WHEN 'proposal' THEN 'The one event its proposals with no event reach already has an open deal.'
+            ELSE 'The event its enquiry is joined to already has an open deal.' END)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS v_rows = ROW_COUNT;
         v_listed := v_listed + v_rows;
@@ -760,6 +867,19 @@ BEGIN
       FROM "proposal_deposit_requests" d
       WHERE d."proposal_id" = this_proposal."id" AND d."cancelled_at" IS NULL;
       v_asked := (SELECT e."id" FROM "events" e WHERE e."id" = v_request_event AND e."deleted_at" IS NULL);
+      -- Its floor plan's live events.
+      v_b := ARRAY(SELECT DISTINCT e."id" FROM "event_configuration_links" k JOIN "events" e ON e."id" = k."event_id"
+        WHERE k."configuration_id" = this_proposal."configuration_id"
+          AND e."venue_id" = this_proposal."venue_id" AND e."deleted_at" IS NULL
+        ORDER BY e."id");
+      -- (Rule: a proposal that must have an event, proposalMustHaveEvent; the
+      -- loop reads undeleted proposals only) sent; or with an agreement; or
+      -- with a deposit request in force; or a draft for a deal or an enquiry.
+      v_must := this_proposal."status" = ANY (sent_proposal_statuses)
+        OR EXISTS (SELECT 1 FROM "proposal_contract_versions" a WHERE a."proposal_id" = this_proposal."id")
+        OR v_request IS NOT NULL
+        OR (this_proposal."status" = 'draft'
+          AND (this_proposal."opportunity_id" IS NOT NULL OR this_proposal."enquiry_id" IS NOT NULL));
 
       v_reason := NULL;
       v_target := NULL;
@@ -774,73 +894,60 @@ BEGIN
         v_reason := 'paths_disagree';
         v_candidates := ARRAY(SELECT y FROM unnest(ARRAY[v_base, v_asked]) AS y ORDER BY y);
         v_detail := format('Its %s is in one event, and its deposit request names another.', v_path);
-      ELSIF v_base IS NOT NULL THEN
-        v_target := v_base;
-      ELSIF v_asked IS NOT NULL THEN
-        v_target := v_asked;
-        v_path := 'deposit_request';
-      ELSE
-        v_b := ARRAY(SELECT DISTINCT e."id" FROM "event_configuration_links" k JOIN "events" e ON e."id" = k."event_id"
-          WHERE k."configuration_id" = this_proposal."configuration_id"
-            AND e."venue_id" = this_proposal."venue_id" AND e."deleted_at" IS NULL
-          ORDER BY e."id");
-        -- (Rule: a proposal that must have an event, proposalMustHaveEvent; the
-        -- loop reads undeleted proposals only) sent; or with an agreement; or
-        -- with a deposit request in force; or a draft for a deal or an enquiry.
-        IF this_proposal."status" = ANY (sent_proposal_statuses)
-          OR EXISTS (SELECT 1 FROM "proposal_contract_versions" a WHERE a."proposal_id" = this_proposal."id")
-          OR v_request IS NOT NULL
-          OR (this_proposal."status" = 'draft'
-            AND (this_proposal."opportunity_id" IS NOT NULL OR this_proposal."enquiry_id" IS NOT NULL)) THEN
-          IF cardinality(v_b) > 1 THEN
-            v_reason := 'reaches_many_events';
-            v_candidates := v_b;
-            v_detail := format('Its floor plan is linked to %s events.', cardinality(v_b));
-          ELSIF cardinality(v_b) = 1 THEN
-            v_target := v_b[1];
-            v_path := 'plan_link';
-          ELSE
-            v_make := true;
-            v_path := 'new_event';
-            v_for_enquiry := v_q_id IS NOT NULL AND v_q_event IS NULL AND v_q_may_become;
-          END IF;
-        ELSIF this_proposal."status" <> 'draft' AND cardinality(v_b) = 1 THEN
-          -- One that need not have an event (it is over) joins its plan's one
-          -- live event as history. It is never listed nor given an event, and a
-          -- draft made from a plan alone waits until it is sent.
+      ELSIF v_base IS NOT NULL OR v_asked IS NOT NULL THEN
+        -- The event of its deal or enquiry, else the one its deposit request
+        -- names. One that must have an event is listed when its floor plan is
+        -- linked to a live event other than that one. One that need not (it
+        -- is over) joins it as history, whatever its plan reaches.
+        v_target := coalesce(v_base, v_asked);
+        IF v_base IS NULL THEN
+          v_path := 'deposit_request';
+        END IF;
+        IF v_must AND NOT (v_b <@ ARRAY[v_target]) THEN
+          v_reason := 'paths_disagree';
+          v_candidates := ARRAY(SELECT DISTINCT y FROM unnest(v_b || v_target) AS y ORDER BY y);
+          v_detail := CASE v_path
+            WHEN 'deposit_request' THEN 'Its deposit request names one event, and its floor plan is linked to another.'
+            ELSE format('Its %s is in one event, and its floor plan is linked to another.', v_path)
+          END;
+          v_target := NULL;
+        END IF;
+      ELSIF v_must THEN
+        IF cardinality(v_b) > 1 THEN
+          v_reason := 'reaches_many_events';
+          v_candidates := v_b;
+          v_detail := format('Its floor plan is linked to %s events.', cardinality(v_b));
+        ELSIF cardinality(v_b) = 1 THEN
           v_target := v_b[1];
           v_path := 'plan_link';
         ELSE
-          CONTINUE proposal_loop;
+          v_make := true;
+          v_path := 'new_event';
+          v_for_enquiry := v_q_id IS NOT NULL AND v_q_event IS NULL AND v_q_may_become;
         END IF;
+      ELSIF this_proposal."status" <> 'draft' AND cardinality(v_b) = 1 THEN
+        -- One that need not have an event (it is over) joins its plan's one
+        -- live event as history. It is never listed nor given an event, and a
+        -- draft made from a plan alone waits until it is sent.
+        v_target := v_b[1];
+        v_path := 'plan_link';
+      ELSE
+        CONTINUE proposal_loop;
       END IF;
 
       -- An event is made last: not in phase 1, and in phase 2 for its enquiry
-      -- only when nothing of the enquiry's own reaches a live event, and no
-      -- other proposal of it without an event reaches one through its deal,
-      -- its deposit request or (when that would join or list it) its plan.
-      -- Otherwise it is left: the next round or run settles the enquiry first.
-      -- (A proposal that joins an existing event never carries its enquiry;
-      -- step 1 of the next round joins the enquiry from all of them.)
+      -- only when nothing of the enquiry's own reaches a live event (the rule
+      -- of step 1, with what its proposals with no event reach). Otherwise it
+      -- is left: the next round or run settles the enquiry first. (A proposal
+      -- that joins an existing event never carries its enquiry; step 1 of the
+      -- next round joins the enquiry from all of them.)
       IF v_make THEN
         CONTINUE proposal_loop WHEN v_phase = 1;
+        IF v_for_enquiry AND NOT v_q_reaches THEN
+          EXECUTE proposals_reach INTO v_p USING this_proposal."venue_id", v_q_id, NULL::uuid, sent_proposal_statuses;
+          v_q_reaches := cardinality(v_p) > 0;
+        END IF;
         CONTINUE proposal_loop WHEN v_for_enquiry AND v_q_reaches;
-        CONTINUE proposal_loop WHEN v_for_enquiry AND EXISTS (
-          SELECT 1 FROM "proposals" s
-          CROSS JOIN LATERAL (SELECT count(DISTINCT e."id") AS "reached"
-            FROM "event_configuration_links" k JOIN "events" e ON e."id" = k."event_id"
-            WHERE k."configuration_id" = s."configuration_id" AND e."venue_id" = s."venue_id" AND e."deleted_at" IS NULL) pl
-          WHERE s."enquiry_id" = v_q_id AND s."id" <> this_proposal."id" AND s."deleted_at" IS NULL AND s."event_id" IS NULL
-            AND (EXISTS (SELECT 1 FROM "opportunities" o JOIN "events" e ON e."id" = o."event_id"
-                  WHERE o."id" = s."opportunity_id" AND e."venue_id" = s."venue_id" AND e."deleted_at" IS NULL)
-              OR EXISTS (SELECT 1 FROM "proposal_deposit_requests" d JOIN "events" e ON e."id" = d."event_id"
-                  WHERE d."proposal_id" = s."id" AND d."cancelled_at" IS NULL AND e."deleted_at" IS NULL)
-              OR pl."reached" = 1
-              -- The rule of step 3: one that must have an event is listed when its plan reaches several.
-              OR (pl."reached" > 1 AND (s."status" = ANY (sent_proposal_statuses)
-                OR EXISTS (SELECT 1 FROM "proposal_contract_versions" a WHERE a."proposal_id" = s."id")
-                OR EXISTS (SELECT 1 FROM "proposal_deposit_requests" d WHERE d."proposal_id" = s."id" AND d."cancelled_at" IS NULL)
-                OR (s."status" = 'draft' AND (s."opportunity_id" IS NOT NULL OR s."enquiry_id" IS NOT NULL))))));
       END IF;
 
       EXIT WHEN v_locked;
