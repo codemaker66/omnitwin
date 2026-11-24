@@ -29,7 +29,7 @@ The limit was never money. It was the conveyor around the agents, and the supply
 
 ## Not goals
 
-- It does not make the chats' weekly allowances bigger, and it does not run chat work.
+- It does not make the chats' weekly allowance bigger, and it does not run chat work.
 - It does not merge. Merges stay with the merge queue until the owner decides otherwise from a week of numbers.
 - It does not judge the captured rooms or splat scenes. Those need a GPU and the production asset, so they stay with the chats.
 - It is not a general agent platform. It serves this repository; the repository is a setting, not a rewrite.
@@ -156,7 +156,7 @@ The stills are in the mockups folder of the shift's design folder (`r3-*.png`, a
 
 ## Order of work
 
-1. **Keep what exists safe, and learn two things.** Land the launcher through the public-repository checks. Read each pot's balance and end date. The owner links any unlinked pots, creates the API keys and the repository-limited GitHub token, and confirms no card on each pot. Run the frames trial, since its answer shapes the queue.
+1. **Keep what exists safe, and learn two things.** Land the launcher through the public-repository checks. For each pot the shift will use, the owner reads its balance and end date, creates its API key and confirms it has no card. The owner also creates the repository-limited GitHub token. Run the frames trial, since its answer shapes the queue.
 2. **The conveyor.** Job folders, the tick, pots with reserve and settle, re-attach, delivery, the controls, the scheduled task. Done when a night runs unattended with every chat closed, its pull requests carry green CI, and the ledger matches the Console within fifty cents.
 3. **The board.** The snapshot, the tab, the stale-heartbeat alarm. Done when it passes the dashboard's tests and true-size checks, and stopping the task makes the alarm fire.
 4. **The reviewer in the loop**, the pause rules and a morning summary.
