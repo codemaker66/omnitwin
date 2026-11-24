@@ -1,5 +1,5 @@
 import { lazy, type ErrorInfo } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router-dom";
 
@@ -77,7 +77,7 @@ function settled(): Promise<void> {
 let reload: ReturnType<typeof vi.spyOn>;
 let consoleError: ReturnType<typeof vi.spyOn>;
 /** The browser's own word on whether it has a network. */
-let onLine: ReturnType<typeof vi.spyOn>;
+let onLine: MockInstance<() => boolean>;
 /** The network, as the reload's question to the app's own server meets it:
  *  answered by default, as after a deploy. */
 const origin = vi.fn<typeof fetch>();
