@@ -8,6 +8,8 @@ import {
   covers,
   placeCards,
   markPrinted,
+  letterOf,
+  groupAZ,
 } from "../paper.js";
 import { parsePaste, takeNames, type ParsedPaste } from "../parse-paste.js";
 
@@ -118,6 +120,26 @@ describe("sortKey and planLabel", () => {
   });
 });
 
+describe("letterOf and groupAZ", () => {
+  it("gives a key's first letter upper-cased with accents folded, and # for anything else", () => {
+    expect(letterOf("fraser Ailsa")).toBe("F");
+    expect(letterOf("Éireann")).toBe("E");
+    expect(letterOf("Øvergaard Kari")).toBe("Ø");
+    expect(letterOf("007")).toBe("#");
+    expect(letterOf("")).toBe("#");
+  });
+
+  it("orders by key then label and groups by letter, # first, keeping what else each entry carries", () => {
+    const groups = groupAZ([
+      { key: "Reid ann", label: "reid, ann", n: 1 },
+      { key: "007", label: "007", n: 2 },
+      { key: "Reid Ann", label: "Reid, Ann", n: 3 },
+      { key: "Fraser Ailsa", label: "Fraser, Ailsa", n: 4 },
+    ]);
+    expect(groups.map((g) => [g.letter, g.entries.map((e) => e.n)])).toEqual([["#", [2]], ["F", [4]], ["R", [1, 3]]]);
+  });
+});
+
 describe("tablePlanAZ", () => {
   it("puts only seated guests on the table plan and counts the rest", () => {
     const plan = tablePlanAZ(list172of180());
@@ -221,6 +243,17 @@ describe("tablePlanAZ", () => {
       ["F", ["Fraser, Ailsa"]],
     ]);
     expect(plan.groups.flatMap((g) => g.entries).filter((e) => e.label.endsWith(","))).toEqual([]);
+  });
+
+  it("keeps one group a letter where the order puts one letter with another (Ł with L, Ø with O)", () => {
+    const names = ["Ada Lamb", "Mary Łoś", "Ada Lowe", "Per Olsen", "Kari Øvergaard", "Ola Owen"];
+    const plan = tablePlanAZ(listOf(names.map((name, at) => guestAt(at + 1, name, 1, at + 1)), [tableAt(1)]));
+    expect(lettersAndLabels(plan)).toEqual([
+      ["L", ["Lamb, Ada", "Lowe, Ada"]],
+      ["Ł", ["Łoś, Mary"]],
+      ["O", ["Olsen, Per", "Owen, Ola"]],
+      ["Ø", ["Øvergaard, Kari"]],
+    ]);
   });
 
   it("returns nothing for an empty list", () => {

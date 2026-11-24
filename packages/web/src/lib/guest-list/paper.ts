@@ -83,11 +83,39 @@ export function planLabel(name: string, sortBy: SortBy): string {
 }
 
 /** The upper-cased first letter of a key, accents folded; `#` when it is not a letter. */
-function groupLetter(key: string): string {
+export function letterOf(key: string): string {
   const folded = key.normalize("NFD").replace(/\p{M}/gu, "");
   const first = Array.from(folded)[0];
   if (first === undefined || !/^\p{L}$/u.test(first)) return NOT_A_LETTER;
   return Array.from(first.toUpperCase())[0] ?? NOT_A_LETTER;
+}
+
+function byLetterOrder([a]: readonly [string, unknown], [b]: readonly [string, unknown]): number {
+  if (a === NOT_A_LETTER) return b === NOT_A_LETTER ? 0 : -1;
+  if (b === NOT_A_LETTER) return 1;
+  return BASE_ORDER.compare(a, b);
+}
+
+/**
+ * The A to Z, as the table plan and the list page both show it: entries in
+ * order of their sort key (accents and case together, ties broken by label),
+ * grouped under the letter of each key, one group a letter. `#` comes first,
+ * then the letters in a reader's order. A letter that the order puts with
+ * another (L with a stroke beside L, O with a slash beside O) keeps a group of
+ * its own, so a letter is never split round another's names.
+ */
+export function groupAZ<T extends { readonly key: string; readonly label: string }>(
+  entries: readonly T[],
+): readonly { readonly letter: string; readonly entries: readonly T[] }[] {
+  const sorted = [...entries].sort((a, b) => BASE_ORDER.compare(a.key, b.key) || FULL_ORDER.compare(a.label, b.label));
+  const byLetter = new Map<string, T[]>();
+  for (const entry of sorted) {
+    const letter = letterOf(entry.key);
+    const group = byLetter.get(letter);
+    if (group === undefined) byLetter.set(letter, [entry]);
+    else group.push(entry);
+  }
+  return [...byLetter.entries()].sort(byLetterOrder).map(([letter, group]) => ({ letter, entries: group }));
 }
 
 // ---------------------------------------------------------------------------
@@ -136,30 +164,15 @@ export function tablePlanAZ(list: GuestList): {
   readonly notSeated: number;
 } {
   const seated = seatedGuests(list);
-  const entries = seated
-    .map(({ guest, table }) => ({
-      key: sortKey(guest.name, list.sortBy),
-      label: planLabel(guest.name, list.sortBy),
-      table: table.number,
-    }))
-    .sort((a, b) => BASE_ORDER.compare(a.key, b.key) || FULL_ORDER.compare(a.label, b.label));
-
-  const byLetter = new Map<string, { label: string; table: number }[]>();
-  for (const entry of entries) {
-    const letter = groupLetter(entry.key);
-    const group = byLetter.get(letter) ?? [];
-    group.push({ label: entry.label, table: entry.table });
-    byLetter.set(letter, group);
-  }
-
-  const groups = [...byLetter.entries()]
-    .sort(([a], [b]) => {
-      if (a === NOT_A_LETTER) return b === NOT_A_LETTER ? 0 : -1;
-      if (b === NOT_A_LETTER) return 1;
-      return BASE_ORDER.compare(a, b);
-    })
-    .map(([letter, group]) => ({ letter, entries: group }));
-
+  const entries = seated.map(({ guest, table }) => ({
+    key: sortKey(guest.name, list.sortBy),
+    label: planLabel(guest.name, list.sortBy),
+    table: table.number,
+  }));
+  const groups = groupAZ(entries).map(({ letter, entries: group }) => ({
+    letter,
+    entries: group.map(({ label, table }) => ({ label, table })),
+  }));
   return { groups, notSeated: list.guests.length - seated.length };
 }
 

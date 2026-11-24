@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactElement } from "react";
 import { GuestListSchema, type Guest, type GuestList } from "../../lib/guest-list/model.js";
-import { planLabel, sortKey } from "../../lib/guest-list/paper.js";
+import { groupAZ, planLabel, sortKey } from "../../lib/guest-list/paper.js";
 import { removeGuest, renameGuest } from "../../lib/guest-list/seating.js";
 
 // ---------------------------------------------------------------------------
@@ -30,17 +30,7 @@ const EMPTY: Readonly<Record<GuestFilter, string>> = {
   "to-seat": "Everyone has a seat.",
 };
 
-const NOT_A_LETTER = "#";
-const BASE_ORDER = new Intl.Collator("en-GB", { sensitivity: "base" });
-const FULL_ORDER = new Intl.Collator("en-GB");
 const PARTY_MAX = GuestListSchema.shape.guests.element.shape.party.maxLength ?? 60;
-
-/** The upper-cased first letter of a key, accents folded; `#` when it is not a letter (as the table plan groups). */
-function letterOf(key: string): string {
-  const first = Array.from(key.normalize("NFD").replace(/\p{M}/gu, ""))[0];
-  if (first === undefined || !/^\p{L}$/u.test(first)) return NOT_A_LETTER;
-  return Array.from(first.toUpperCase())[0] ?? NOT_A_LETTER;
-}
 
 interface Entry {
   readonly guest: Guest;
@@ -60,16 +50,8 @@ function entriesOf(list: GuestList, filter: GuestFilter): readonly { readonly le
     if (filter === "to-seat" && seat !== null) continue;
     entries.push({ guest, key: sortKey(guest.name, list.sortBy), label: planLabel(guest.name, list.sortBy), seat });
   }
-  entries.sort((a, b) => BASE_ORDER.compare(a.key, b.key) || FULL_ORDER.compare(a.label, b.label));
-
-  const groups: { letter: string; entries: Entry[] }[] = [];
-  for (const entry of entries) {
-    const letter = letterOf(entry.key);
-    const last = groups[groups.length - 1];
-    if (last?.letter === letter) last.entries.push(entry);
-    else groups.push({ letter, entries: [entry] });
-  }
-  return groups;
+  // The table plan's own A to Z: the same order and the same letters, one section a letter.
+  return groupAZ(entries);
 }
 
 /** Keeps an element per guest id while it is mounted, for moving the focus to it. */
