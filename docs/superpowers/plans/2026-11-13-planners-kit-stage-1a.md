@@ -47,8 +47,7 @@ plan builds its stage 1 as far as "works on the planner's own device with no acc
   plain words; hover never moves the hovered element; nothing interrupts typing.
 - **The step budget (the spec's "done when"):** from opening the page to the print dialog in no more than 10
   clicks and 3 typed fields, with one paste.
-- **Spare the PC:** heavy local runs (`tsc`, builds, multi-file vitest, installs, Playwright) go through
-  the machine's queue for heavy checks, one at a time.
+- **Heavy local checks** (`tsc`, builds, multi-file vitest, installs, Playwright) run one at a time.
 - `packages/web/src/router.tsx` has CRLF line endings; keep them.
 
 ## Review Focus
@@ -542,7 +541,7 @@ it("sets noindex and no-referrer in the head and removes them on leaving", () =>
 - The storage-refused words stand as a notice on the sheet for as long as `kept` is false; the panel's keeping line shows while the list is kept.
 - Delete: "Delete the list from this device", then "Delete 180 names for good" or "Keep the list", inside the panel; offered only in the ready state and inert while the erase runs.
 
-**The screen** is the mock-up's second screen (the private page named in the lane's notes; Blake approved its look on 13 November: "Yes, build on it"). Copy the desk pattern from `src/components/dashboard/TeamView.tsx` and `TeamView.css`, with classes prefixed `gl-`:
+**The screen** is the mock-up's second screen (the private page named in the lane's notes; Blake approved its look on 13 November). Copy the desk pattern from `src/components/dashboard/TeamView.tsx` and `TeamView.css`, with classes prefixed `gl-`:
 
 - Root `<div className="gl" data-register="ivory">` on the sage ground; an ivory sheet; `<dl className="gl-plane ws-plane">` holding four counts that are also the filters (`<button aria-pressed>`): Guests, Seated, To seat, Tables; a ledger; and `<aside className="gl-panel" data-register="forest">`.
 - Sheet head: the title (editable, defaults to the plan's name), the date (optional), then one sentence of real counts: "172 of 180 guests have a seat. 8 are still to seat."
