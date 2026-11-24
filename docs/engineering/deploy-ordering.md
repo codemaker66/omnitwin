@@ -3,8 +3,9 @@
 **Since 10 October 2026.** Two things happen when master moves:
 
 1. Railway's GitHub integration rebuilds the API image (watch patterns in
-   `railway.json`) and promotes the new container once `/health/ready` is green,
-   about two and a half minutes after the push.
+   `.railway/watch-patterns.json`, applied to Railway's stored settings) and
+   promotes the new container once `/health/ready` is green, about two and a
+   half minutes after the push.
 2. The Deploy workflow (`.github/workflows/deploy.yml`) waits for master's CI to
    pass (about fourteen minutes), runs the read-only migration tail gate, then
    `drizzle-kit migrate` against the production database.
@@ -16,7 +17,8 @@ was on).
 
 ## What runs now
 
-`railway.json` carries a pre-deploy command:
+Railway's stored settings carry a pre-deploy command, declared in
+`.railway/railway.ts`:
 
 ```
 node --conditions=omnitwin-dist dist/scripts/migrate-before-deploy.js
@@ -43,7 +45,7 @@ files inside one transaction, so a kill at the cap leaves the ledger consistent.
 The workflow remains the audited second pass and keeps the explicit 0044
 approval gate.
 
-The pre-deploy command and its timeout are also kept in `.railway/railway.ts`, Railway's new format, because Railway stops reading `railway.json` on 1 December 2026: [the Railway config move](../operations/railway-config-move.md).
+The pre-deploy command and its timeout live in `.railway/railway.ts`, Railway's new format, and reach Railway's stored settings through a reviewed apply. Until T-722 they were in `railway.json`, which was deleted because Railway stops reading such files on 1 December 2026: [the Railway config move](../operations/railway-config-move.md).
 
 ## Evidence
 

@@ -382,8 +382,9 @@ export function eventSpanFromBookings(rows: readonly SpanBooking[]): { readonly 
   };
 }
 
-/** A booking's day, as the sheet's set-up deadline reads it (resolveTiming in
- *  hallkeeper-sheet-v2-data.ts): from a day before it starts to its end. */
+/** A booking's day, as the sheet's setup start reads it (resolveTiming in
+ *  hallkeeper-sheet-v2-data.ts: timing.setupBy, when the setup window opens):
+ *  from a day before it starts to its end. */
 const BOOKING_DAY_LEAD_MS = 24 * 60 * 60_000;
 
 export interface BookingMove {
@@ -426,7 +427,7 @@ export function phaseMovesWithBooking(
  * The event's timed phases follow a booking that moves (release audit
  * events-diary-3): every phase of the event in the booking's room on the
  * booking's day shifts by the same amount and goes to its new room, so the
- * Day Board, the sheet's set-up deadline and the conflict engine read where
+ * Day Board, the sheet's setup start and the conflict engine read where
  * and when the work now is. A phase inside another live booking of the same
  * event in that room belongs to that booking and stays. The shift is in
  * absolute time, as the booking's is, so a phase keeps its place relative to
