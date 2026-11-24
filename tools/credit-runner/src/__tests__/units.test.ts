@@ -178,6 +178,7 @@ describe("protected paths", () => {
       ["tools/credit-runner/CLAUDE.md", "agent instructions"],
       ["CLAUDE.local.md", "agent instructions"],
       ["GOAL.md", "agent goals"],
+      ["goals/EXECUTION.md", "agent goals"],
       [".claude/agents/deep-reviewer.md", "Claude Code config"],
       [".claude/skills/neon/SKILL.md", "Claude Code config"],
       [".claude/conventions/shipping-changes.md", "Claude Code config"],
@@ -223,6 +224,7 @@ describe("protected paths", () => {
         ".VSCode/tasks.json",
         ".DevContainer/devcontainer.json",
         "INFRA/x.sh",
+        "Goals/README.md",
       ]),
     ).toEqual([
       "agents.MD (agent instructions)",
@@ -236,6 +238,7 @@ describe("protected paths", () => {
       ".VSCode/tasks.json (VS Code config)",
       ".DevContainer/devcontainer.json (dev container config)",
       "INFRA/x.sh (infrastructure config)",
+      "Goals/README.md (agent goals)",
     ]);
     expect(protectedPathViolations(["AGENTS~1.MD", ".RAILW~1/railway.ts", "PNPM-W~1.YAM", ".VSCOD~1/tasks.json", ".DEVCO~1/devcontainer.json"])).toEqual([
       "AGENTS~1.MD (8.3 short name, which Windows can resolve to a protected file or folder)",
@@ -254,7 +257,8 @@ describe("protected paths", () => {
         "docs/agents-guide.md",
         "docs/agents/overview.md",
         "docs/GOAL.md",
-        "goals/README.md",
+        "docs/goals/README.md",
+        "packages/web/src/goals/plan.ts",
         "src/patches/x.ts",
         "packages/web/src/patches/fix.patch",
         "docs/claude/notes.md",

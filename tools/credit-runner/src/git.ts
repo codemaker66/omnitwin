@@ -177,7 +177,8 @@ export const PROTECTED_PATHS: readonly ProtectedPath[] = [
   // prompt is built from AGENTS.md at master, and interactive sessions follow
   // these files too.
   { pattern: /(^|\/)(AGENTS|CLAUDE|CLAUDE\.local)\.md$/iu, label: "agent instructions", paths: "AGENTS.md, CLAUDE.md and CLAUDE.local.md in any folder" },
-  { pattern: /^GOAL\.md$/iu, label: "agent goals", paths: "GOAL.md at the root" },
+  // GOAL.md sends agents to the goal cards and the execution board under goals/.
+  { pattern: /^(GOAL\.md$|goals\/)/iu, label: "agent goals", paths: "GOAL.md and anything under goals/ at the root" },
   // Agents, skills, commands, conventions and gotchas; in any folder, as a .claude folder below the root can hold the same.
   { pattern: /(^|\/)\.claude\//iu, label: "Claude Code config", paths: "anything else under a .claude/ folder" },
   { pattern: /(^|\/)\.claudeignore$/iu, label: "Claude Code ignore file", paths: ".claudeignore" },

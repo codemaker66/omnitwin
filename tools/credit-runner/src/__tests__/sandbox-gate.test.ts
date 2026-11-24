@@ -241,6 +241,7 @@ const NEWLY_PROTECTED: readonly { readonly file: string; readonly label: string;
   { file: "packages/web/CLAUDE.md", label: "agent instructions", atBase: false },
   { file: "CLAUDE.local.md", label: "agent instructions", atBase: false },
   { file: "GOAL.md", label: "agent goals", atBase: true },
+  { file: "goals/EXECUTION.md", label: "agent goals", atBase: true },
   { file: ".claude/agents/reviewer.md", label: "Claude Code config", atBase: true },
   { file: ".claude/skills/neon/SKILL.md", label: "Claude Code config", atBase: true },
   { file: ".claude/conventions/shipping.md", label: "Claude Code config", atBase: true },
@@ -261,7 +262,7 @@ const NEWLY_PROTECTED: readonly { readonly file: string; readonly label: string;
 ];
 
 /** Names close to those files that a run may still change. */
-const NEARBY = ["docs/agents-guide.md", "claude.md.txt", "src/patches/x.ts", "docs/GOAL.md", "goals/README.md", "packages/web/src/infra/client.ts"];
+const NEARBY = ["docs/agents-guide.md", "claude.md.txt", "src/patches/x.ts", "docs/GOAL.md", "docs/goals/README.md", "packages/web/src/infra/client.ts"];
 
 describe("the protected paths, read by the review from real patches", () => {
   it("rejects a change to each agent-instruction, deploy, install-time and editor file under its label, and lets nearby files through", async () => {
