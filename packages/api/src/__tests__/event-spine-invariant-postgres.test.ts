@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CLOSED_ENQUIRY_STATES,
+  CLOSED_OPPORTUNITY_STAGES,
   NON_BOOKING_ENQUIRY_TYPES,
   OPEN_OPPORTUNITY_STAGES,
   SENT_PROPOSAL_STATUSES,
@@ -431,6 +432,24 @@ describe.skipIf(target === undefined)("the spine: the count of records without t
         + "spine_join_old_records() with the new list, in the same change.",
       ).toEqual(asSet(values));
     }
+  });
+
+  it("the one-open-deal index's closed stages, as the database holds them, are the definition's", async () => {
+    // opportunities_one_open_per_event writes the closed stages out by hand
+    // (NOT IN, which PostgreSQL keeps as <> ALL (ARRAY[...])). Read from the
+    // database, so a migration that replaces the index is read too.
+    const [index] = (await pool.query<{ indexdef: string }>(
+      "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'opportunities_one_open_per_event'")).rows;
+    if (index === undefined) throw new Error("opportunities_one_open_per_event is missing from the database");
+    const list = /\(stage\)::text <> ALL \(\(ARRAY\[([^\]]*)\]\)/u.exec(index.indexdef)?.[1]
+      ?? /stage"? NOT IN \(([^)]*)\)/u.exec(index.indexdef)?.[1];
+    const held = [...(list ?? "").matchAll(/'([^']*)'/gu)].map((item) => item[1] ?? "");
+    expect(held.length, `no list of stages could be read from: ${index.indexdef}`).toBeGreaterThan(0);
+    const asSet = (values: readonly string[]): string[] => [...new Set(values)].sort();
+    expect(asSet(held),
+      "opportunities_one_open_per_event's stages differ from CLOSED_OPPORTUNITY_STAGES in @omnitwin/types. "
+      + "A change to the closed stages needs a migration that rebuilds the index with the new list, in the same change.",
+    ).toEqual(asSet(CLOSED_OPPORTUNITY_STAGES));
   });
 
   it("reads every venue when none is named", async () => {
