@@ -48,6 +48,12 @@ export type Saved =
   | { readonly kind: "saved"; readonly stamp: Stamp }
   /** Written over a stored copy the caller had not loaded (another tab's), or over a value that was not a list. */
   | { readonly kind: "saved-over-other"; readonly stamp: Stamp }
+  /**
+   * Nothing is stored where the caller had loaded a copy: the list was removed
+   * since (deleted in another tab, or the browser's stored data was cleared).
+   * Nothing was written, so a removed list is never written back.
+   */
+  | { readonly kind: "removed-elsewhere" }
   | { readonly kind: "not-kept" };
 
 export interface GuestListStore {
@@ -58,7 +64,8 @@ export interface GuestListStore {
    * copy's and the loaded copy's. `loaded` is the stamp of the copy the caller
    * last opened or saved, or null if none. A stored copy that is not that copy
    * is still replaced, and the answer says so, so the page can say so. The
-   * answer carries the stamp written: the caller's next `loaded`.
+   * answer carries the stamp written: the caller's next `loaded`. When nothing
+   * is stored and the caller had loaded a copy, nothing is written.
    */
   save(list: GuestList, loaded: Stamp | null): Promise<Saved>;
   erase(planId: string): Promise<void>;
@@ -86,6 +93,8 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
     if (!checked.success) return { kind: "not-kept" };
     try {
       const stored = await handle.get(checked.data.planId);
+      // The copy the caller loaded is gone: it was removed, and is not written back.
+      if (stored === null && loaded !== null) return { kind: "removed-elsewhere" };
       // What is stored is another's unless it is the very copy the caller loaded.
       // A stored value that is not a list is another's too; it is replaced.
       let anothers = false;

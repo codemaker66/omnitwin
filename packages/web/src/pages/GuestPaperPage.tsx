@@ -8,8 +8,7 @@ import {
   NOT_KEPT,
   NOT_OPENED,
   NOT_YET_PRINTED,
-  OTHER_TAB,
-  REMOVED_ELSEWHERE,
+  noticeWords,
   weekday,
 } from "../components/guest-list/words.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
@@ -305,15 +304,10 @@ function ReadyPaper({ planId, list }: { readonly planId: string; readonly list: 
           {unread
             ? <p className="gp-tools__notice" role="alert">{NOT_OPENED}</p>
             : !kept && <p className="gp-tools__notice" role="alert">{NOT_KEPT}</p>}
-          {notice?.kind === "other-tab" && (
-            <div className="gp-tools__notice" data-notice="other-tab" data-tone="attention">
-              <p>{OTHER_TAB}</p>
-              <button type="button" className="gp-link" onClick={closeNotice}>Close</button>
-            </div>
-          )}
-          {notice?.kind === "removed-elsewhere" && (
-            <div className="gp-tools__notice" data-notice="removed-elsewhere" data-tone="attention">
-              <p>{REMOVED_ELSEWHERE}</p>
+          {/* What another tab did to the list. A repair's count is the list page's to say; here the tools' "no seat" line shows it. */}
+          {notice !== null && notice.kind !== "repaired" && (
+            <div className="gp-tools__notice" data-notice={notice.kind} data-tone="attention">
+              <p>{noticeWords(notice)}</p>
               <button type="button" className="gp-link" onClick={closeNotice}>Close</button>
             </div>
           )}

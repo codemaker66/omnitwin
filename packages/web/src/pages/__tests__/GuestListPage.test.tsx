@@ -135,6 +135,9 @@ function firstReadRefused(inner: CacheBackend): CacheBackend {
 
 const NOT_KEPT_WORDS = "This browser is not keeping the list. It will be gone when you close this tab. Download it before you leave.";
 const NOT_OPENED = "The list kept here for this plan could not be opened just now. Reload the page to try again. Anything added here is not being kept.";
+const OTHER_TAB_WORDS = "This list was also changed in another tab. This tab's version was kept.";
+const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
+const ADDED_AFTER_DELETE_WORDS = "Names were added to this list in another tab after it was deleted here.";
 
 function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
   let resolve: (value: T) => void = () => undefined;
@@ -745,7 +748,7 @@ describe("the guest list page: what the device says", () => {
       window.dispatchEvent(new Event("focus"));
       await Promise.resolve();
     });
-    const words = await screen.findByText("This list was removed from this browser in another tab.");
+    const words = await screen.findByText(REMOVED_ELSEWHERE_WORDS);
     expect(words.closest("[role='status']")).not.toBeNull();
     expect(screen.getByText("There are no guests on this list yet.")).toBeTruthy();
     expect(screen.queryByText(/Ailsa Fraser|Fraser, Ailsa/)).toBeNull();
@@ -754,7 +757,53 @@ describe("the guest list page: what the device says", () => {
     expect((await store.open(PLAN_ID)).kind).toBe("new");
 
     fireEvent.click(within(words.closest("[data-notice]") ?? document.body).getByRole("button", { name: "Close" }));
-    expect(screen.queryByText("This list was removed from this browser in another tab.")).toBeNull();
+    expect(screen.queryByText(REMOVED_ELSEWHERE_WORDS)).toBeNull();
+  });
+
+  it("a change waiting here when another tab deletes the list is not written back: the page takes an empty list and says so", async () => {
+    const { store, backend } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    // A change here, still waiting to be kept, when the other tab deletes the list.
+    fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor" } });
+    await memoryStore(backend).erase(PLAN_ID);
+    await flush();
+
+    expect((await store.open(PLAN_ID)).kind).toBe("new");
+    const words = await screen.findByText(REMOVED_ELSEWHERE_WORDS);
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("removed-elsewhere");
+    expect(screen.getByText("There are no guests on this list yet.")).toBeTruthy();
+    expect(screen.queryByText(/Ailsa Fraser|Fraser, Ailsa/)).toBeNull();
+    expect(screen.getByLabelText<HTMLInputElement>("The event's name").value).toBe("");
+    expect(screen.queryByText(OTHER_TAB_WORDS)).toBeNull();
+    // Nothing is left to keep: the deleted name is not written later either.
+    await flush();
+    expect((await store.open(PLAN_ID)).kind).toBe("new");
+  });
+
+  it("after the list is deleted here, names another tab adds are taken up and said", async () => {
+    const { store, backend } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    const panel = screen.getByRole("complementary", { name: "The event" });
+    fireEvent.click(within(panel).getByRole("button", { name: "Delete the list from this device" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Delete 1 name for good" }));
+    expect(await screen.findByText("There are no guests on this list yet.")).toBeTruthy();
+    expect((await store.open(PLAN_ID)).kind).toBe("new");
+
+    // Another tab, holding no copy of the list, stores one.
+    expect((await memoryStore(backend).save(listOf({ guests: [guest(2, "Chidi Okafor")] }), null)).kind).toBe("saved");
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+
+    const words = await screen.findByText(ADDED_AFTER_DELETE_WORDS);
+    expect(words.closest("[role='status']")).not.toBeNull();
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("added-after-delete");
+    expect(screen.getByText("0 of 1 guest has a seat.")).toBeTruthy();
+    fireEvent.click(within(words.closest("[data-notice]") ?? document.body).getByRole("button", { name: "Close" }));
+    expect(screen.queryByText(ADDED_AFTER_DELETE_WORDS)).toBeNull();
   });
 
   it("a take-up from another tab clears the seat line and the date refusal, which spoke of the list before", async () => {

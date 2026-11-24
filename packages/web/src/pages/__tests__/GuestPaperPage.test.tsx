@@ -28,6 +28,8 @@ const PAPER = `/plan/${PLAN_ID}/guests/paper`;
 const CANARY = "Zanzibar-Q7";
 const TABLE_CANARY = "Morag Quillfeather";
 const TITLE = "Fraser and Okafor";
+const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
+const ADDED_AFTER_DELETE_WORDS = "Names were added to this list in another tab after it was deleted here.";
 const SHEET_LINKS = [
   ["Table plan", "table-plan"],
   ["Guests by table", "by-table"],
@@ -777,7 +779,7 @@ describe("the guest paper page: printing", () => {
     expect(within(tools()).queryByText("This list was also changed in another tab. This tab's version was kept.")).toBeNull();
   });
 
-  it("says in its tools when another tab removed the list from this browser, and the notice closes", async () => {
+  it("says in its tools when the list is no longer kept in this browser, and the notice closes", async () => {
     const backend = memoryBackend();
     const store = await storeHolding(list180(), backend);
     open(`${PAPER}?kit=on`, store);
@@ -788,10 +790,53 @@ describe("the guest paper page: printing", () => {
       window.dispatchEvent(new Event("focus"));
       await Promise.resolve();
     });
-    const words = await within(tools()).findByText("This list was removed from this browser in another tab.");
+    const words = await within(tools()).findByText(REMOVED_ELSEWHERE_WORDS);
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("removed-elsewhere");
     expect(state().list?.guests).toEqual([]);
     fireEvent.click(within(words.closest("[data-notice]") ?? tools()).getByRole("button", { name: "Close" }));
-    expect(within(tools()).queryByText("This list was removed from this browser in another tab.")).toBeNull();
+    expect(within(tools()).queryByText(REMOVED_ELSEWHERE_WORDS)).toBeNull();
+  });
+
+  it("a print waiting to be kept when another tab deletes the list is not written back, and the tools say so", async () => {
+    const backend = memoryBackend();
+    const store = await storeHolding(list180(), backend);
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    await memoryStore(backend).erase(PLAN_ID);
+
+    // The browser's own Print command, with no read of the device before it.
+    act(() => {
+      window.dispatchEvent(new Event("beforeprint"));
+    });
+    await act(async () => {
+      await state().flush();
+    });
+    expect((await memoryStore(backend).open(PLAN_ID)).kind).toBe("new");
+    expect(await within(tools()).findByText(REMOVED_ELSEWHERE_WORDS)).toBeTruthy();
+    expect(state().list?.guests).toEqual([]);
+  });
+
+  it("says in its tools when names were added in another tab after the list was deleted here", async () => {
+    const backend = memoryBackend();
+    const store = await storeHolding(list180(), backend);
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    // The list is deleted in this tab (from the list page, whose state this page shares).
+    await act(async () => {
+      await state().eraseList();
+    });
+    expect((await memoryStore(backend).open(PLAN_ID)).kind).toBe("new");
+    expect((await memoryStore(backend).save(list180({ title: "Theirs" }), null)).kind).toBe("saved");
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    const words = await within(tools()).findByText(ADDED_AFTER_DELETE_WORDS);
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("added-after-delete");
+    expect(state().list?.title).toBe("Theirs");
+    fireEvent.click(within(words.closest("[data-notice]") ?? tools()).getByRole("button", { name: "Close" }));
+    expect(within(tools()).queryByText(ADDED_AFTER_DELETE_WORDS)).toBeNull();
   });
 
   it("a print is not a change undo steps back through", async () => {

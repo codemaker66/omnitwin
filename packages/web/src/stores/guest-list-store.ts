@@ -22,8 +22,12 @@ export type KitPhase = "opening" | "ready" | "unreadable";
 export type KitNotice =
   | null
   | { readonly kind: "repaired"; readonly unseated: number }
+  /** A save here went over a copy another tab had kept. */
   | { readonly kind: "other-tab" }
-  | { readonly kind: "removed-elsewhere" };
+  /** The list this page held is no longer stored: an empty one was taken, and nothing was written back. */
+  | { readonly kind: "removed-elsewhere" }
+  /** The list was deleted in this tab, and a list another tab stored since has been taken up. */
+  | { readonly kind: "added-after-delete" };
 
 export interface GuestListState {
   readonly planId: string | null;
@@ -57,11 +61,13 @@ export interface GuestListState {
    * Takes up another tab's changes. When nothing here is unsaved and no save
    * is running, reads the device again and takes the stored list if it is not
    * the copy last opened or saved here, whichever way the two clocks point;
-   * undo is cleared then, as its steps belong to the list before. When nothing
-   * is stored any more and this session had opened or saved a list, another
-   * tab removed it: an empty list is taken, undo is cleared and the page says
-   * so, so the names are not written back. With a change unsaved, nothing is
-   * read: the save says if it went over another tab's copy.
+   * undo is cleared then, as its steps belong to the list before. A list that
+   * is found stored after it was deleted in this tab is taken up with a
+   * notice. When nothing is stored any more and this session had opened or
+   * saved a list, it was removed elsewhere: an empty list is taken, undo is
+   * cleared and the page says so, so the names are not written back. With a
+   * change unsaved, nothing is read: the save says if it went over another
+   * tab's copy, and writes nothing where the list has been removed.
    */
   refresh(): Promise<void>;
   reset(): void;
@@ -90,6 +96,12 @@ interface Session {
   running: Promise<void> | null;
   /** While erasing, nothing is saved. */
   erasing: boolean;
+  /**
+   * The list was deleted from the device in this tab, and this session has
+   * stored none since. A list found stored while this stands was put there by
+   * another tab after the delete, and the page says so when it takes it up.
+   */
+  erasedHere: boolean;
   /** False once replaced or reset. */
   live: boolean;
   /** For a session replaced with a change unsaved: the list still to be saved. */
@@ -157,10 +169,32 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
     const quiet = (session: Session): boolean => !session.unsaved && session.running === null && !session.erasing;
 
     /**
+     * The page takes an empty list in place of one that is no longer stored,
+     * and says why. Undo goes too: its steps belong to the list that was
+     * removed. Nothing is left to save, so the names are not written back.
+     */
+    function takeEmpty(session: Session, notice: KitNotice): void {
+      clearTimer(session);
+      session.unsaved = false;
+      session.loaded = null;
+      session.undo = [];
+      set({
+        list: emptyGuestList(session.planId, session.now()),
+        kept: true,
+        canUndo: false,
+        notice,
+        takeUps: get().takeUps + 1,
+      });
+    }
+
+    /**
      * Saves one at a time, in order, always the latest list, until nothing is
      * unsaved. A "not-kept" answer stops the loop; the next change tries again.
      * An unread session reads the device first and writes only when nothing is
      * stored; otherwise the change stays unsaved and the list is not kept.
+     * When the list has been removed from the device since this session loaded
+     * it, nothing is written: the page takes an empty list and says so, and a
+     * session no longer on the page drops its change.
      */
     function saveLoop(session: Session): Promise<void> {
       if (session.running !== null) return session.running;
@@ -188,7 +222,15 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             if (isCurrent(session)) set({ kept: false });
             return;
           }
+          if (answer.kind === "removed-elsewhere") {
+            // A change made while this save ran belongs to the removed list, and goes with it.
+            if (isCurrent(session)) takeEmpty(session, { kind: "removed-elsewhere" });
+            else session.unsaved = false;
+            return;
+          }
           session.loaded = answer.stamp;
+          // This session has stored a list itself since any delete here.
+          session.erasedHere = false;
           if (isCurrent(session)) {
             set(answer.kind === "saved-over-other" ? { kept: true, notice: { kind: "other-tab" } } : { kept: true });
           }
@@ -244,6 +286,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           timer: null,
           running: null,
           erasing: false,
+          erasedHere: false,
           live: true,
           final: null,
           unread: false,
@@ -353,7 +396,10 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         session.unsaved = false;
         if (session.running !== null) await session.running;
         // A list this session never read is not erased unseen: only the page is cleared.
-        if (!session.unread) await eraseSafely(session.store, session.planId);
+        if (!session.unread) {
+          await eraseSafely(session.store, session.planId);
+          session.erasedHere = true;
+        }
         // Anything changed while erasing is dropped with the rest of the list.
         clearTimer(session);
         session.unsaved = false;
@@ -391,16 +437,8 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             session.loaded = null;
             set({ unread: false, kept: true });
           } else if (session.loaded !== null) {
-            // This session opened or saved a list that is no longer stored: another tab removed it.
-            session.loaded = null;
-            session.undo = [];
-            set({
-              list: emptyGuestList(session.planId, session.now()),
-              kept: true,
-              canUndo: false,
-              notice: { kind: "removed-elsewhere" },
-              takeUps: get().takeUps + 1,
-            });
+            // This session opened or saved a list that is no longer stored: it was removed elsewhere.
+            takeEmpty(session, { kind: "removed-elsewhere" });
           }
           return;
         }
@@ -408,15 +446,21 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         const stored = stampOf(opened.list);
         // The stored copy is the one this session loaded: there is nothing to take.
         if (session.loaded !== null && sameStamp(stored, session.loaded)) return;
+        // Deleted in this tab, and stored again since: another tab added these names.
+        const addedAfterDelete = session.erasedHere;
+        session.erasedHere = false;
         session.unread = false;
         session.loaded = stored;
         session.undo = [];
+        let notice = get().notice;
+        if (addedAfterDelete) notice = { kind: "added-after-delete" };
+        else if (opened.repaired > 0) notice = { kind: "repaired", unseated: opened.repaired };
         set({
           list: opened.list,
           kept: true,
           unread: false,
           canUndo: false,
-          notice: opened.repaired > 0 ? { kind: "repaired", unseated: opened.repaired } : get().notice,
+          notice,
           takeUps: get().takeUps + 1,
         });
         if (opened.repaired > 0) {

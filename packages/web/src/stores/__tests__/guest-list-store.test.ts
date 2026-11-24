@@ -1012,6 +1012,171 @@ describe("guest list page state: another tab's changes are taken up", () => {
   });
 });
 
+describe("guest list page state: a list deleted elsewhere is never written back", () => {
+  /** This tab holds a kept list of two guests; another tab then deletes it from the device. */
+  async function keptThenDeletedElsewhere(): Promise<{ readonly backend: CacheBackend; readonly store: GuestListStore }> {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, title: "Ours", guests: [guest(1), guest(2)] }));
+    await state().flush();
+    await otherTabOn(backend).erase(PLAN_A);
+    return { backend, store };
+  }
+
+  it("with a change waiting when another tab deletes the list, the autosave writes nothing and the page takes an empty list and says so", async () => {
+    const { backend, store } = await keptThenDeletedElsewhere();
+    const put = vi.spyOn(backend, "put");
+    state().apply((list) => ({ ...list, guests: [...list.guests, guest(3)] }));
+    expect(state().canUndo).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+    await state().flush();
+
+    expect(put).not.toHaveBeenCalled();
+    expect(await backend.get(PLAN_A)).toBeNull();
+    expect(state().list?.guests).toEqual([]);
+    expect(state().list?.title).toBe("");
+    expect(state().list?.planId).toBe(PLAN_A);
+    expect(state().notice).toEqual({ kind: "removed-elsewhere" });
+    expect(state().canUndo).toBe(false);
+    expect(state().kept).toBe(true);
+    expect(state().takeUps).toBe(1);
+
+    // Nothing is left unsaved: no later save brings the names back.
+    const save = vi.spyOn(store, "save");
+    await vi.advanceTimersByTimeAsync(5000);
+    await state().flush();
+    expect(save).not.toHaveBeenCalled();
+    expect(await backend.get(PLAN_A)).toBeNull();
+    // Undo has nothing of the deleted list to bring back.
+    state().undo();
+    expect(state().list?.guests).toEqual([]);
+
+    // The next change here starts a new list.
+    state().apply(titled("A new start"));
+    await state().flush();
+    const kept = await loadedBy(otherTabOn(backend), PLAN_A);
+    expect([kept.list.title, kept.list.guests, kept.stamp.revision]).toEqual(["A new start", [], 1]);
+    expect(state().notice).toEqual({ kind: "removed-elsewhere" });
+  });
+
+  it("drops a change made while that save was running, with the rest of the deleted list", async () => {
+    const { backend, store } = await keptThenDeletedElsewhere();
+    const gate = deferred<undefined>();
+    const real = store.save.bind(store);
+    vi.spyOn(store, "save").mockImplementationOnce(async (list, loaded) => {
+      await gate.promise;
+      return real(list, loaded);
+    });
+    state().apply(titled("Typed first"));
+    const flushing = state().flush();
+    state().apply(titled("Typed while saving"));
+    gate.resolve(undefined);
+    await flushing;
+    await vi.advanceTimersByTimeAsync(5000);
+    await state().flush();
+
+    expect(state().list?.title).toBe("");
+    expect(state().list?.guests).toEqual([]);
+    expect(state().notice).toEqual({ kind: "removed-elsewhere" });
+    expect(await backend.get(PLAN_A)).toBeNull();
+  });
+
+  it("a session left with a change waiting drops it when the list was deleted elsewhere, and the plan opened next is not told", async () => {
+    const { backend, store } = await keptThenDeletedElsewhere();
+    state().apply(titled("Typed before leaving"));
+    await state().open(PLAN_B, store, clock());
+    await state().flush();
+
+    expect(await backend.get(PLAN_A)).toBeNull();
+    expect(state().planId).toBe(PLAN_B);
+    expect(state().notice).toBeNull();
+    expect(state().takeUps).toBe(0);
+    expect(state().list?.planId).toBe(PLAN_B);
+  });
+});
+
+describe("guest list page state: a list that comes back after it was deleted here is said", () => {
+  /** This tab holds a kept list and deletes it; another tab, which holds no copy, then stores a list. */
+  async function deletedHereThenAddedElsewhere(): Promise<{ readonly backend: CacheBackend; readonly store: GuestListStore }> {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+    await state().eraseList();
+    expect(await backend.get(PLAN_A)).toBeNull();
+    expect(state().notice).toBeNull();
+    return { backend, store };
+  }
+
+  async function anotherTabStoresAList(backend: CacheBackend, title: string): Promise<void> {
+    const answer = await otherTabOn(backend).save({ ...emptyGuestList(PLAN_A, "2026-11-14T09:00:00.000Z"), title, guests: [guest(7)] }, null);
+    expect(answer.kind).toBe("saved");
+  }
+
+  it("takes up a list another tab stored after the delete here, and says names were added", async () => {
+    const { backend } = await deletedHereThenAddedElsewhere();
+    await anotherTabStoresAList(backend, "Theirs");
+
+    await state().refresh();
+    expect(state().list?.title).toBe("Theirs");
+    expect(state().list?.guests).toEqual([guest(7)]);
+    expect(state().notice).toEqual({ kind: "added-after-delete" });
+    expect(state().takeUps).toBe(1);
+    expect(state().canUndo).toBe(false);
+  });
+
+  it("says it once: the mark clears on that take-up", async () => {
+    const { backend } = await deletedHereThenAddedElsewhere();
+    await anotherTabStoresAList(backend, "Theirs");
+    await state().refresh();
+    state().dismissNotice();
+
+    const tab = otherTabOn(backend);
+    const theirs = await loadedBy(tab, PLAN_A);
+    expect((await tab.save({ ...theirs.list, title: "Theirs again", updatedAt: "2026-11-14T10:00:00.000Z" }, theirs.stamp)).kind).toBe("saved");
+    await state().refresh();
+    expect(state().list?.title).toBe("Theirs again");
+    expect(state().notice).toBeNull();
+  });
+
+  it("the mark clears when this tab next stores a list itself", async () => {
+    const { backend } = await deletedHereThenAddedElsewhere();
+    state().apply(titled("A new start here"));
+    await state().flush();
+    expect(state().notice).toBeNull();
+
+    const tab = otherTabOn(backend);
+    const ours = await loadedBy(tab, PLAN_A);
+    expect((await tab.save({ ...ours.list, title: "Changed elsewhere", updatedAt: "2026-11-14T10:00:00.000Z" }, ours.stamp)).kind).toBe("saved");
+    await state().refresh();
+    expect(state().list?.title).toBe("Changed elsewhere");
+    expect(state().notice).toBeNull();
+  });
+
+  it("with nothing stored after the delete here, a read takes nothing and says nothing", async () => {
+    await deletedHereThenAddedElsewhere();
+    const before = state().list;
+    await state().refresh();
+    expect(state().list).toBe(before);
+    expect(state().notice).toBeNull();
+    expect(state().takeUps).toBe(0);
+  });
+
+  it("a delete that never touched the device (the list here was never read) leaves no mark", async () => {
+    const inner = memoryBackend();
+    await withBackend<unknown>(inner).put(PLAN_A, { ...emptyGuestList(PLAN_A, START), title: "Kept dinner", guests: [guest(1)] });
+    const store = createGuestListStore(withBackend<unknown>(readsRefusedAtFirst(inner, 1)));
+    await state().open(PLAN_A, store, clock());
+    expect(state().unread).toBe(true);
+    await state().eraseList();
+
+    await state().refresh();
+    expect(state().list?.title).toBe("Kept dinner");
+    expect(state().notice).toBeNull();
+  });
+});
+
 describe("guest list page state: tabs are told apart by the copy loaded, never by the clock", () => {
   const SAME_MOMENT = "2026-11-13T10:00:05.000Z";
 

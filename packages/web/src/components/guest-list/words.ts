@@ -13,6 +13,7 @@ import {
   KEEP_DAYS_AFTER_EVENT,
   type GuestList,
 } from "../../lib/guest-list/model.js";
+import type { KitNotice } from "../../stores/guest-list-store.js";
 
 /** "1 guest", "2 guests". */
 export function counted(n: number, one: string, many: string): string {
@@ -85,11 +86,33 @@ export const NOT_OPENED =
 /** The paper before its first print: one wording on both pages. */
 export const NOT_YET_PRINTED = "Not yet printed";
 
-/** A save found a newer copy kept by another tab, and kept this tab's over it. */
+/** A save found a copy kept by another tab that this tab had not loaded, and kept this tab's over it. */
 export const OTHER_TAB = "This list was also changed in another tab. This tab's version was kept.";
 
-/** Another tab deleted the list from this device, so this tab took an empty one rather than write the names back. */
-export const REMOVED_ELSEWHERE = "This list was removed from this browser in another tab.";
+/**
+ * The list this tab held is no longer stored, so the tab took an empty one
+ * rather than write the names back. The page cannot know which of the two
+ * causes it was, so it names both.
+ */
+export const REMOVED_ELSEWHERE =
+  "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
+
+/** The list was deleted in this tab, and a list another tab stored afterwards has been taken up. */
+export const ADDED_AFTER_DELETE = "Names were added to this list in another tab after it was deleted here.";
+
+/** The words of a notice from the page's state. Each is a fixed sentence, or a count in one. */
+export function noticeWords(notice: Exclude<KitNotice, null>): string {
+  switch (notice.kind) {
+    case "repaired":
+      return `${counted(notice.unseated, "guest was", "guests were")} sent back to seat, because their table or seat was no longer there.`;
+    case "other-tab":
+      return OTHER_TAB;
+    case "removed-elsewhere":
+      return REMOVED_ELSEWHERE;
+    case "added-after-delete":
+      return ADDED_AFTER_DELETE;
+  }
+}
 
 /** "180 names found. Only names and parties are taken. 1 other column is left on your computer." */
 export function foundWords(found: number, droppedColumns: number): string {

@@ -272,6 +272,39 @@ describe("guest list store: a revision travels with the list", () => {
   });
 });
 
+describe("guest list store: a list removed elsewhere is never written back", () => {
+  it("answers removed-elsewhere and writes nothing when nothing is stored where a copy had been loaded", async () => {
+    const { backend, a, b } = twoTabs();
+    await a.save(listFor(PLAN_A, { guests: [guestAt(1, null, null)] }), null);
+    const aLoaded = await loadedStamp(a, PLAN_A);
+    await b.erase(PLAN_A);
+
+    const put = vi.spyOn(backend, "put");
+    const changed = listFor(PLAN_A, { title: "Typed since", guests: [guestAt(1, null, null)], updatedAt: "2026-11-13T10:01:00.000Z" });
+    expect(await a.save(changed, aLoaded)).toEqual({ kind: "removed-elsewhere" });
+    expect(put).not.toHaveBeenCalled();
+    expect(await backend.get(PLAN_A)).toBeNull();
+    expect(await a.open(PLAN_A)).toEqual({ kind: "new" });
+  });
+
+  it("stores a first save, when nothing is stored and no copy had been loaded", async () => {
+    const { a, b } = twoTabs();
+    await a.save(listFor(PLAN_A), null);
+    await b.erase(PLAN_A);
+    // A tab that holds no copy (it opened after the removal, or took the empty list) starts again at revision 1.
+    expect(await b.save(listFor(PLAN_A, { title: "A new start" }), null)).toEqual({ kind: "saved", stamp: { revision: 1, updatedAt: NOW } });
+  });
+
+  it("puts no guest's name in that answer", async () => {
+    const { a, b } = twoTabs();
+    await a.save(listFor(PLAN_A), null);
+    const aLoaded = await loadedStamp(a, PLAN_A);
+    await b.erase(PLAN_A);
+    const answer = await a.save(listFor(PLAN_A, { guests: [guestAt(1, null, null, CANARY)] }), aLoaded);
+    expect(JSON.stringify(answer)).toBe('{"kind":"removed-elsewhere"}');
+  });
+});
+
 describe("guest list store: a list is checked before and after it is written", () => {
   it("does not write a list with an extra field, and keeps the earlier copy", async () => {
     const { raw, a } = twoTabs();

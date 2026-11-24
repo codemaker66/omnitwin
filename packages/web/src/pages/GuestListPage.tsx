@@ -10,8 +10,7 @@ import {
   DATE_REFUSED,
   NOT_KEPT,
   NOT_OPENED,
-  OTHER_TAB,
-  REMOVED_ELSEWHERE,
+  noticeWords,
   seatedSentence,
   toSeatSentence,
 } from "../components/guest-list/words.js";
@@ -630,13 +629,7 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
           )}
           {notice !== null && (
             <div className="gl-notice" data-notice={notice.kind} data-tone="attention">
-              <p>
-                {notice.kind === "repaired"
-                  ? `${counted(notice.unseated, "guest was", "guests were")} sent back to seat, because their table or seat was no longer there.`
-                  : notice.kind === "removed-elsewhere"
-                    ? REMOVED_ELSEWHERE
-                    : OTHER_TAB}
-              </p>
+              <p>{noticeWords(notice)}</p>
               <button type="button" className="gl-link" onClick={() => { closeAndRefocus(closeNotice, null); }}>Close</button>
             </div>
           )}
