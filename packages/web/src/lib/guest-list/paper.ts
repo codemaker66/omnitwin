@@ -33,13 +33,32 @@ function wordsOf(name: string): readonly string[] {
 }
 
 /**
+ * A name already written surname first, "Fraser, Ailsa Jean": exactly one
+ * comma, with words on both sides of it (a space after the comma or not). Its
+ * two parts' words, or null when the name is not written that way.
+ */
+function surnameFirst(name: string): { readonly surname: readonly string[]; readonly given: readonly string[] } | null {
+  const parts = name.split(",");
+  if (parts.length !== 2) return null;
+  const surname = wordsOf(parts[0] ?? "");
+  const given = wordsOf(parts[1] ?? "");
+  if (surname.length === 0 || given.length === 0) return null;
+  return { surname, given };
+}
+
+/**
  * The text a name is ordered by. For "last-word" the last word comes first and
  * the rest follow ("Ailsa Jean Fraser" is "Fraser Ailsa Jean"); a one-word name
- * is its own key. For "first-word" the name is ordered as written.
+ * is its own key. A name written "Fraser, Ailsa Jean" is already surname first
+ * ("Fraser Ailsa Jean"); any other name with a comma (two or more, or one at an
+ * end) is ordered as written. For "first-word" the name is ordered as written.
  */
 export function sortKey(name: string, sortBy: SortBy): string {
   const words = wordsOf(name);
   if (sortBy === "first-word") return words.join(" ");
+  const written = surnameFirst(name);
+  if (written !== null) return [...written.surname, ...written.given].join(" ");
+  if (name.includes(",")) return words.join(" ");
   const last = words[words.length - 1];
   if (last === undefined) return "";
   return [last, ...words.slice(0, -1)].join(" ");
@@ -47,10 +66,15 @@ export function sortKey(name: string, sortBy: SortBy): string {
 
 /**
  * The name as the table plan prints it: "Fraser, Ailsa Jean" for "last-word",
- * the name as written for "first-word", and a one-word name as it is.
+ * whether it was written "Ailsa Jean Fraser" or "Fraser, Ailsa Jean"; a
+ * one-word name as it is, and any other name with a comma as written. For
+ * "first-word", the name as written.
  */
 export function planLabel(name: string, sortBy: SortBy): string {
   if (sortBy === "first-word") return name;
+  const written = surnameFirst(name);
+  if (written !== null) return `${written.surname.join(" ")}, ${written.given.join(" ")}`;
+  if (name.includes(",")) return name;
   const words = wordsOf(name);
   const last = words[words.length - 1];
   if (last === undefined) return name;

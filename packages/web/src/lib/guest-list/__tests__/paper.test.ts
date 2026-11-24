@@ -9,6 +9,7 @@ import {
   placeCards,
   markPrinted,
 } from "../paper.js";
+import { parsePaste, takeNames, type ParsedPaste } from "../parse-paste.js";
 
 const PLAN_ID = "5b0a6f0e-7f0b-4d7e-9c3a-2f6f6f0a1b11";
 const NOW = "2026-11-13T10:00:00.000Z";
@@ -49,6 +50,17 @@ function list172of180(): GuestList {
   return listOf(guests, tables);
 }
 
+/** The names a paste gives, as the page takes them, each seated at table 1 in paste order. */
+function pastedAndSeated(parsed: ParsedPaste): GuestList {
+  const pick = { nameColumn: parsed.nameColumn, secondNameColumn: parsed.secondNameColumn, secondFirst: false, partyColumn: parsed.partyColumn };
+  const taken = takeNames(parsed, pick, 600).guests;
+  return listOf(taken.map((g, at) => guestAt(at + 1, g.name, 1, at + 1)), [tableAt(1, 24)]);
+}
+
+function lettersAndLabels(plan: ReturnType<typeof tablePlanAZ>): readonly (readonly [string, readonly string[]])[] {
+  return plan.groups.map((g) => [g.letter, g.entries.map((e) => e.label)] as const);
+}
+
 function threeGuests(): GuestList {
   return listOf(
     [
@@ -80,6 +92,29 @@ describe("sortKey and planLabel", () => {
   it("ignores extra spaces between words when finding the last word", () => {
     expect(sortKey("  Ailsa   Fraser ", "last-word")).toBe("Fraser Ailsa");
     expect(planLabel("  Ailsa   Fraser ", "last-word")).toBe("Fraser, Ailsa");
+  });
+
+  it("files a name written \"Surname, Given\" (one comma, words on both sides) under the surname", () => {
+    expect(sortKey("Fraser, Ailsa", "last-word")).toBe("Fraser Ailsa");
+    expect(planLabel("Fraser, Ailsa", "last-word")).toBe("Fraser, Ailsa");
+    expect(sortKey("Fraser,Ailsa", "last-word")).toBe("Fraser Ailsa");
+    expect(planLabel("Fraser,Ailsa", "last-word")).toBe("Fraser, Ailsa");
+    expect(sortKey("Fraser, Ailsa Jean", "last-word")).toBe("Fraser Ailsa Jean");
+    expect(planLabel("Fraser, Ailsa Jean", "last-word")).toBe("Fraser, Ailsa Jean");
+    expect(sortKey("  Mac  Leod ,  Morag ", "last-word")).toBe("Mac Leod Morag");
+    expect(planLabel("  Mac  Leod ,  Morag ", "last-word")).toBe("Mac Leod, Morag");
+  });
+
+  it("files a name with more than one comma, or a comma at an end, as written", () => {
+    for (const name of ["Fraser, Ailsa, Jean", "Fraser,", "Ailsa Fraser,", ", Ailsa", "Fraser ,", ","]) {
+      expect(sortKey(name, "last-word"), name).toBe(name);
+      expect(planLabel(name, "last-word"), name).toBe(name);
+    }
+  });
+
+  it("leaves a comma name as written for a first-word sort", () => {
+    expect(sortKey("Fraser, Ailsa", "first-word")).toBe("Fraser, Ailsa");
+    expect(planLabel("Fraser, Ailsa", "first-word")).toBe("Fraser, Ailsa");
   });
 });
 
@@ -149,6 +184,43 @@ describe("tablePlanAZ", () => {
     const plan = tablePlanAZ(list);
     expect(plan.notSeated).toBe(1);
     expect(plan.groups.flatMap((g) => g.entries).length).toBe(1);
+  });
+
+  it("files \"Surname, Given\" names under the surname's letter", () => {
+    const list = listOf(
+      [guestAt(1, "Fraser, Ailsa", 1, 1), guestAt(2, "McDonald, Hamish", 1, 2), guestAt(3, "Ada Canary", 1, 3)],
+      [tableAt(1)],
+    );
+    const plan = tablePlanAZ(list);
+    expect(plan.groups.map((g) => [g.letter, g.entries.map((e) => e.label)])).toEqual([
+      ["C", ["Canary, Ada"]],
+      ["F", ["Fraser, Ailsa"]],
+      ["M", ["McDonald, Hamish"]],
+    ]);
+  });
+
+  it("files a pasted one-column list that mixes \"Ada Canary\" and \"Fraser, Ailsa\" lines under the surnames", () => {
+    const parsed = parsePaste("Ada Canary\nFraser, Ailsa\nMary Example\nMcDonald, Hamish");
+    expect(parsed.columnCount).toBe(1);
+    const plan = tablePlanAZ(pastedAndSeated(parsed));
+    expect(lettersAndLabels(plan)).toEqual([
+      ["C", ["Canary, Ada"]],
+      ["E", ["Example, Mary"]],
+      ["F", ["Fraser, Ailsa"]],
+      ["M", ["McDonald, Hamish"]],
+    ]);
+    expect(plan.groups.flatMap((g) => g.entries).filter((e) => e.label.endsWith(","))).toEqual([]);
+  });
+
+  it("files a pasted sheet whose Name cell is \"Fraser, Ailsa\" under the surname", () => {
+    const parsed = parsePaste("Name\tParty\nFraser, Ailsa\tFraser\nAda Canary\tCanary");
+    expect(parsed.columnCount).toBe(2);
+    const plan = tablePlanAZ(pastedAndSeated(parsed));
+    expect(lettersAndLabels(plan)).toEqual([
+      ["C", ["Canary, Ada"]],
+      ["F", ["Fraser, Ailsa"]],
+    ]);
+    expect(plan.groups.flatMap((g) => g.entries).filter((e) => e.label.endsWith(","))).toEqual([]);
   });
 
   it("returns nothing for an empty list", () => {
