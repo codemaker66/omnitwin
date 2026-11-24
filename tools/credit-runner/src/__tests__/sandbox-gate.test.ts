@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { gitEnv } from "../git.js";
+import { reviewMarkdown } from "../sandbox/launcher.js";
 import { inspectPatches, type PatchInspection } from "../sandbox/patches.js";
 import { reviewRun, type Review } from "../sandbox/review.js";
 import type { SessionRunResult } from "../sandbox/session.js";
+import { parseTask } from "../task.js";
 import { BASE_FILES, PAGE_CHECK, PAGE_CHECK_TEST, patchFixture, type Commit } from "./patch-fixture.js";
 
 // The review removes its throwaway repository when it is done. A test that sets
@@ -282,4 +284,38 @@ describe("the protected paths, read by the review from real patches", () => {
     expect(result.reasons).toEqual([]);
     expect(result.verdict).toBe("ready-for-review");
   }, SLOW);
+});
+
+describe("review.md's words on building the branch", () => {
+  const task = parseTask(
+    ["---", "id: gate-check", "title: Gate check", "budget_usd: 1", "timeout_minutes: 30", 'acceptance: "pnpm test"', "---", "Check the gate."].join("\n"),
+    "gate-check.md",
+  );
+  const baseSha = "b".repeat(40);
+  const head = "c".repeat(40);
+  /** Fixed words, the same in every review: what was reviewed, the only way to build the branch, and the file that must not be applied. */
+  const BUILDING =
+    "The format-patch files (`patch-*.patch` in the `outputs` folder beside this file) are the reviewed form: this review read the change from them. Build the branch only with `git am` on them, in their numbered order, on a new branch made at the base commit. `diff.patch` is not verified: nothing checks that it holds the same change as the patches (this review only searches it for secret-shaped text), so it must not be applied.";
+
+  for (const verdict of ["ready-for-review", "rejected"] as const) {
+    it(`says near the top of a ${verdict} review that the patches are the reviewed form, built only with git am, and that diff.patch must not be applied`, () => {
+      const review: Review = {
+        verdict,
+        reasons: verdict === "rejected" ? ["protected path changed: AGENTS.md (agent instructions)"] : [],
+        flags: ["src/x.ts (script)"],
+        changed: ["M AGENTS.md"],
+        patches: ["patch-0001.patch"],
+        diffFile: "diff.patch",
+      };
+      const lines = reviewMarkdown(task, { kind: "ran", taskId: task.id, runDir: "run", branch: "credit/gate-check", baseSha, costUsd: 1, costKnown: true, result: sessionResult([], head, [head]), review }).split("\n");
+      const heading = lines.indexOf("## Building the branch");
+      expect(heading).toBeGreaterThan(0);
+      expect(lines.slice(heading + 1, heading + 3)).toEqual(["", BUILDING]);
+      // Before every section that carries what the run supplied.
+      expect(heading).toBeLessThan(lines.findIndex((line) => /^## (Why it is rejected|Look closely|Changed files)/u.test(line)));
+      // The run's branch is named as one to build, not one that exists.
+      expect(lines).toContain(`- Base: ${baseSha}; branch name: \`credit/gate-check\`, which does not exist yet: build it from the patches as below`);
+      expect(lines.join("\n")).not.toMatch(/branch to open/u);
+    });
+  }
 });

@@ -118,13 +118,18 @@ export function reviewMarkdown(task: Task, record: Extract<JobRecord, { kind: "r
     `# ${review.verdict === "ready-for-review" ? "READY FOR REVIEW" : "REJECTED"} · ${task.id} — ${task.title}`,
     "",
     `- Session: ${inlineCode(result.sessionId)} (${inlineCode(result.status)}, stopped: ${result.stopReason === null ? "unknown" : inlineCode(result.stopReason)})`,
-    `- Base: ${record.baseSha}; branch to open: ${record.branch}`,
+    `- Base: ${record.baseSha}; branch name: ${inlineCode(record.branch)}, which does not exist yet: build it from the patches as below`,
     `- Cost: $${record.costUsd.toFixed(2)}${record.costKnown ? " (platform list cost, includes the session-hour fee)" : " (unknown: counted at the whole budget, or the last figure if higher)"}; ${String(result.requests)} model requests; ${String(result.activeSeconds ?? "?")} active seconds`,
     `- Tokens: ${String(result.inputTokens)} uncached in, ${String(result.cacheReadTokens)} cache read, ${String(result.cacheCreationTokens)} cache written, ${String(result.outputTokens)} out`,
     `- Verifier (advisory): ${result.verify === null ? "no readable result" : result.verify.ok ? "ok" : "failed"} (${String(result.verifyRuns)} run(s))`,
     `- Grader: ${result.outcome === null ? "no verdict" : `${inlineCode(result.outcome.result)} after iteration ${String(result.outcome.iteration)}`}`,
     "",
     "This verdict is this machine's reading of the returned patches. The verifier ran, and precondition.json was written, inside the agent's own container, so both are advisory: a failing or unreadable result rejects the run, a passing one proves nothing. CI on the pull request is the acceptance authority.",
+    // Fixed words: the review reads only the format-patch files, and never compares diff.patch with them.
+    "",
+    "## Building the branch",
+    "",
+    "The format-patch files (`patch-*.patch` in the `outputs` folder beside this file) are the reviewed form: this review read the change from them. Build the branch only with `git am` on them, in their numbered order, on a new branch made at the base commit. `diff.patch` is not verified: nothing checks that it holds the same change as the patches (this review only searches it for secret-shaped text), so it must not be applied.",
   ];
   // Reasons, flags and changed entries can carry text the agent wrote (the
   // verifier's problems, file names, output names): each is one code span on
