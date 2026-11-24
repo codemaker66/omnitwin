@@ -39,6 +39,15 @@ export interface SessionRunOptions {
   readonly graceMs?: number;
   /** Test seam: the byte caps on what comes back (default OUTPUT_CAPS). */
   readonly outputCaps?: OutputCaps;
+  /**
+   * Stops the run as its deadline does (stopFollowing, in runSession): the
+   * launcher stops following and stopSession interrupts the session, waits for
+   * it and archives it if it will not stop; its cost is read and handed to
+   * onCostKnown; then nothing is downloaded and the run fails with a
+   * RunStoppedError. Aborted before the create, nothing is created. The
+   * reason, when a string (a signal's name), says what stopped it.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -321,6 +330,7 @@ async function finishRun(
   sleep: (ms: number) => Promise<void>,
   caps: OutputCaps = OUTPUT_CAPS,
   onCostKnown?: (totals: RunTotals) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<SessionRunResult> {
   // The platform's own totals: the cost includes the session-hour fee. It is
   // final only if the session has stopped.
@@ -352,8 +362,14 @@ async function finishRun(
   };
   await onCostKnown?.(totals);
   await writeFile(path.join(runDir, "session.json"), `${JSON.stringify(final, null, 2)}\n`, "utf8");
+  // Stopped (the deadline's path, through the abort): booked above, and nothing more is fetched.
+  const stopIfAborted = (): void => {
+    if (signal !== undefined && isAborted(signal)) throw new RunStoppedError(signal, totals);
+  };
+  stopIfAborted();
   let files: OutputFile[] = [];
   for (let attempt = 0; attempt < 6; attempt += 1) {
+    stopIfAborted();
     files = await api.listOutputFiles(sessionId);
     if (files.length > 0) break;
     if (attempt < 5) await sleep(2000); // indexing lags the idle event by a second or two
@@ -366,6 +382,7 @@ async function finishRun(
   // What the run may still bring back, counted on the bytes actually saved, whatever the listing said.
   let room = caps.total;
   for (const { file, localName } of plan.downloads) {
+    stopIfAborted();
     const local = path.join(runDir, "outputs", localName);
     try {
       const saved = await api.downloadFile(file.id, local, Math.min(caps.perOutput, room));
@@ -514,6 +531,39 @@ export class SessionMayExistError extends Error {
   }
 }
 
+/** Whether the run has been stopped; a function, so the compiler does not keep a first reading of `aborted`, which a signal changes. */
+function isAborted(signal: AbortSignal): boolean {
+  return signal.aborted;
+}
+
+/** What stopped a run, from its abort signal's reason: a signal's name, or "an abort". */
+function stoppedBy(signal: AbortSignal): string {
+  const reason: unknown = signal.reason;
+  return typeof reason === "string" && reason !== "" ? reason : "an abort";
+}
+
+/**
+ * The run was stopped through its abort signal (a signal to the launcher):
+ * before the create, so nothing was created or spent, or after it, once the
+ * session was stopped as at the deadline and its cost read and handed to
+ * onCostKnown; nothing more is downloaded, and the run is not reviewed.
+ */
+export class RunStoppedError extends Error {
+  readonly sessionId: string | null;
+  constructor(signal: AbortSignal, session: Pick<RunTotals, "sessionId" | "stopped" | "archived"> | null) {
+    const by = stoppedBy(signal);
+    super(
+      session === null
+        ? `stopped by ${by} before a session was created; nothing was spent`
+        : `stopped by ${by}: session ${session.sessionId} ${
+            session.stopped ? "has stopped" : session.archived ? "would not stop, so it was archived" : "had not stopped when its cost was read"
+          }; its cost was read, and the run stopped before its review; collect it to review what it left`,
+    );
+    this.name = "RunStoppedError";
+    this.sessionId = session?.sessionId ?? null;
+  }
+}
+
 async function findSession(api: SandboxApi, metadata: Readonly<Record<string, string>>, createdSince: string): Promise<SessionRef | null> {
   for await (const session of api.listSessions(createdSince)) {
     if (Object.entries(metadata).every(([key, value]) => session.metadata[key] === value)) return { id: session.id, status: session.status };
@@ -619,6 +669,8 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
   const graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
   const log = options.log ?? (() => undefined);
   const sleep = options.sleep ?? defaultSleep;
+  const { signal } = options;
+  if (signal !== undefined && isAborted(signal)) throw new RunStoppedError(signal, null);
   await mkdir(path.join(runDir, "outputs"), { recursive: true });
 
   const verifyFileId = await api.uploadFile("verify.mjs", options.verifyScript);
@@ -630,6 +682,8 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
   const runId = randomUUID();
   await writeFile(path.join(runDir, "kickoff.md"), `Run id (the session's metadata \`run\`): ${runId}\n\n${outcome.description}\n---\n\n${outcome.rubric}`, "utf8");
 
+  // A stop that came while the inputs uploaded: nothing is created. From the create on, it takes the deadline's path below.
+  if (signal !== undefined && isAborted(signal)) throw new RunStoppedError(signal, null);
   options.beforeCreate?.(runId);
   const session = await createOrFind(
     api,
@@ -642,6 +696,7 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
         { type: "file", file_id: verifyFileId, mount_path: "/verify.mjs" },
         { type: "file", file_id: taskFileId, mount_path: "/task.json" },
       ],
+      // SDK 0.131's create takes a spend cap but no time limit: a session whose launcher is killed runs until it stops or reaches this budget.
       budget: { type: "limit", max_list_cost: { amount: centsString(options.budgetUsd), currency: "USD" } },
       initial_events: [
         {
@@ -677,6 +732,11 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
   // Set by the timers, read by the loop: kept in one object so the compiler
   // does not narrow them to their first values.
   const run: { timedOut: boolean; giveUp: boolean; current: { close(): void } | null } = { timedOut: false, giveUp: false, current: null };
+  /** The deadline's last step: stop following, so stopSession, below, interrupts the session, waits for it and archives it if need be. */
+  const stopFollowing = (): void => {
+    run.giveUp = true;
+    run.current?.close();
+  };
   // Interrupt at the deadline (retried); stop waiting a grace period later, whatever happens.
   const interruptTimer = setTimeout(() => {
     run.timedOut = true;
@@ -685,10 +745,15 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
     log(`Time limit reached; interrupting ${sessionId}.`);
     void sendInterrupt(api, sessionId, tally, sleep);
   }, timeoutMinutes * 60_000);
-  const giveUpTimer = setTimeout(() => {
-    run.giveUp = true;
-    run.current?.close();
-  }, timeoutMinutes * 60_000 + graceMs);
+  const giveUpTimer = setTimeout(stopFollowing, timeoutMinutes * 60_000 + graceMs);
+  // A stop (a signal to the launcher) takes that path at once: no ask is answered from here on, and stopSession does the rest.
+  const onAbort = (): void => {
+    tally.answering = false;
+    log(`Stopped by ${signal === undefined ? "an abort" : stoppedBy(signal)}; stopping ${sessionId} as at the deadline.`);
+    stopFollowing();
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal !== undefined && isAborted(signal)) onAbort();
   // Read through functions: the handler and the timers change these between reads.
   const done = (): boolean => tally.finished || run.giveUp;
   const givenUp = (): boolean => run.giveUp;
@@ -724,13 +789,14 @@ export async function runSession(options: SessionRunOptions): Promise<SessionRun
       idleConnections = tally.handled > before ? 0 : idleConnections + 1;
     }
   } finally {
+    signal?.removeEventListener("abort", onAbort);
     clearTimeout(interruptTimer);
     clearTimeout(giveUpTimer);
     // Even a session the stream said had stopped is checked: one the platform still reports running is stopped too.
     stopping = await stopSession(api, sessionId, tally, sleep, log);
   }
 
-  return finishRun(api, sessionId, runDir, tally, run.timedOut, stopping, sleep, options.outputCaps, options.onCostKnown);
+  return finishRun(api, sessionId, runDir, tally, run.timedOut, stopping, sleep, options.outputCaps, options.onCostKnown, signal);
 }
 
 /**

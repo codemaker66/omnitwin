@@ -1,12 +1,13 @@
+import { writeSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AGENT_EFFORT, AGENT_MODEL, type Task } from "../task.js";
 import type { SandboxApi } from "./api.js";
 import { sandboxSystemPrompt } from "./brief.js";
-import { appendCreditLine, checkSpend, readCreditLedger } from "./credit-ledger.js";
+import { appendCreditLine, appendCreditLineSync, charges, checkSpend, type CreditLine, readCreditLedger, readLedgerBookingsSync } from "./credit-ledger.js";
 import type { OutputCaps } from "./outputs.js";
 import { reviewRun, type Review } from "./review.js";
-import { checkRunBounds, isStopped, listCostUsd, recollectSession, type RunTotals, runSession, SessionMayExistError, type SessionRunResult } from "./session.js";
+import { checkRunBounds, isStopped, listCostUsd, recollectSession, RunStoppedError, type RunTotals, runSession, SessionMayExistError, type SessionRunResult } from "./session.js";
 import { ensureSandbox } from "./setup.js";
 
 export interface LauncherConfig {
@@ -41,6 +42,14 @@ export interface JobOptions {
   readonly sleep?: (ms: number) => Promise<void>;
   readonly graceMs?: number;
   readonly outputCaps?: OutputCaps;
+  /** Stops the run as its deadline does (runSession's signal). With stopOnSignals, the first stop signal stops it the same way. */
+  readonly signal?: AbortSignal | undefined;
+  /**
+   * Handles STOP_SIGNALS while the run lasts, as the CLI's `run` does: the
+   * first stops the run as its deadline does; a second, or a SIGHUP at any
+   * point, books it at once and ends the process (see runSandboxJob).
+   */
+  readonly stopOnSignals?: StopOnSignals | undefined;
 }
 
 /** The base a spec may name: every run starts from master. */
@@ -211,6 +220,52 @@ function fenced(text: string): string[] {
   return [fence, body, fence];
 }
 
+/** The signals that stop a run (stopOnSignals): Ctrl-C (SIGINT), a kill (SIGTERM), a closed console window (SIGHUP, which Windows follows with a forced end a few seconds later) and Ctrl-Break (SIGBREAK). */
+export const STOP_SIGNALS: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"];
+
+/** What the at-once booking does with the process (stopOnSignals): the CLI takes the defaults; tests pass seams. */
+export interface StopOnSignals {
+  /** Ends the process once a second signal, or a SIGHUP, has been handled (default process.exit). */
+  readonly exit?: (code: number) => void;
+  /** Says what that signal did (default: written to stderr at once, synchronously). */
+  readonly print?: (line: string) => void;
+}
+
+/** The command that books a session the ledger has no line for, as the launcher names it. */
+export function bookCommand(sessionId: string): string {
+  return `pnpm --filter @omnitwin/credit-runner sandbox collect ${sessionId} --book`;
+}
+
+/** Writes a line to stderr synchronously: the process ends right after, so a buffered write could be lost. */
+function printNow(line: string): void {
+  try {
+    writeSync(2, `${line}\n`);
+  } catch {
+    // The console is gone (a closed window): the ledger line, written first, is what matters.
+  }
+}
+
+/**
+ * Installs a handler for each of STOP_SIGNALS and returns what removes them
+ * all. The first signal goes to `first`, unless it is a SIGHUP; every later
+ * one, and a SIGHUP at any point, goes to `atOnce`.
+ */
+function handleStopSignals(first: (name: NodeJS.Signals) => void, atOnce: (name: NodeJS.Signals) => void): () => void {
+  let received = 0;
+  const installed = STOP_SIGNALS.map((name) => {
+    const handler = (): void => {
+      received += 1;
+      if (received === 1 && name !== "SIGHUP") first(name);
+      else atOnce(name);
+    };
+    process.on(name, handler);
+    return { name, handler };
+  });
+  return () => {
+    for (const { name, handler } of installed) process.off(name, handler);
+  };
+}
+
 /**
  * One task, one session: check the bounds and the spend, run, record the
  * spend, review. The budget, time limit, grace period and output caps are
@@ -218,6 +273,14 @@ function fenced(text: string): string[] {
  * is read or the sandbox set up. The spend is recorded once, as soon as the
  * platform's final figure is read and before any output is downloaded, and
  * even when the run fails after its session started.
+ *
+ * Stopping (`signal`, or with stopOnSignals the first stop signal) takes the
+ * deadline's path: runSession interrupts the session, waits for it or archives
+ * it, and its cost is booked here as at any other end; the run then fails with
+ * a RunStoppedError. Before the create, nothing is created. A second signal,
+ * or a SIGHUP, has no time for that: once a create has been sent, the run is
+ * booked at once at its whole budget as unknown, unless it is booked already,
+ * and the process ends. The handlers are removed when the run ends.
  */
 export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   const { api, config, task } = options;
@@ -226,26 +289,10 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   checkRunBounds(options);
   refuseUnhonouredSpec(task);
 
-  const ledger = await readCreditLedger(config.ledgerFile);
-  const check = checkSpend(
-    ledger,
-    config.lane,
-    options.budgetUsd,
-    { laneCapUsd: config.laneCapUsd, orgCapUsd: config.orgCapUsd, jobCapUsd: options.jobCapUsd },
-    `${options.job}:`,
-  );
-  if (!check.ok) return { kind: "skipped", taskId: task.id, reason: check.reason };
-  log(`Spend check passed: ${check.reason}.`);
-
-  const state = await ensureSandbox(api, path.join(config.workRoot, "state.json"), sandboxSystemPrompt(options.projectRules), log);
-  const branch = `credit/${task.id}`;
-  const runDir = path.join(config.workRoot, "runs", task.id, stamp(now()));
-  await mkdir(runDir, { recursive: true });
-
-  // Set from runSession's callbacks; an object so the compiler does not narrow it to its first values.
-  const started: { runId: string | null; sessionId: string | null; booked: boolean } = { runId: null, sessionId: null, booked: false };
+  // Set from runSession's callbacks and read by the signal handlers; an object so the compiler does not narrow it to its first values.
+  const started: { runId: string | null; creating: boolean; sessionId: string | null; booked: boolean } = { runId: null, creating: false, sessionId: null, booked: false };
   // Every line names the run beside the session, so a line booked before the session's id was known still finds it.
-  const emptyLine = (sessionId: string | null) => ({
+  const emptyLine = (sessionId: string | null): Omit<CreditLine, "costUsd"> => ({
     ts: now().toISOString(),
     lane: config.lane,
     job: `${options.job}:${task.id}`,
@@ -256,75 +303,168 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
     batchId: sessionId,
     ...(started.runId === null ? {} : { runId: started.runId }),
   });
-  // The session's one ledger line, from the platform's figure. runSession
-  // hands the totals over (onCostKnown) as soon as the final status is read,
-  // before any output is downloaded, so a download that stalls or fails cannot
-  // hold the line back; every later path sees `booked` and writes no second one.
-  const bookTotals = async (totals: RunTotals): Promise<void> => {
-    await appendCreditLine(config.ledgerFile, {
-      ...emptyLine(totals.sessionId),
-      requests: totals.requests,
-      inputTokens: totals.inputTokens + totals.cacheReadTokens + totals.cacheCreationTokens,
-      outputTokens: totals.outputTokens,
-      ...ledgerCost(bookedCost(totals.stopped, totals.listCostUsd, options.budgetUsd)),
-    });
+  /**
+   * The run's one ledger line. `booked` is set before the write starts and
+   * cleared if it fails, and the write is synchronous (appendCreditLine), so a
+   * signal handler never meets a write under way: it sees the line written, or
+   * no line and no write.
+   */
+  const bookOnce = async (line: CreditLine): Promise<void> => {
+    if (started.booked) return;
     started.booked = true;
+    try {
+      await appendCreditLine(config.ledgerFile, line);
+    } catch (error) {
+      started.booked = false;
+      throw error;
+    }
   };
 
-  let result: SessionRunResult;
-  try {
-    result = await runSession({
-      api,
-      state,
-      facts: { task, baseSha: options.baseSha, branch },
-      budgetUsd: options.budgetUsd,
-      timeoutMinutes: options.timeoutMinutes,
-      runDir,
-      verifyScript: options.verifyScript,
-      title: `${options.job}: ${task.title}`.slice(0, 200),
-      metadata: { lane: config.lane, job: options.job, task: task.id },
-      log,
-      beforeCreate: (runId) => {
-        started.runId = runId;
-      },
-      onSessionCreated: (id) => {
-        started.sessionId = id;
-      },
-      onCostKnown: bookTotals,
-      ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
-      ...(options.graceMs === undefined ? {} : { graceMs: options.graceMs }),
-      ...(options.outputCaps === undefined ? {} : { outputCaps: options.outputCaps }),
-    });
-  } catch (error) {
-    // Nothing is spent before a session exists. Once one does (or may), it is
-    // charged once: already, when the failure came after the platform's figure
-    // was read (a download, say); otherwise the platform's figure if the
-    // session has stopped, or else the whole budget, marked unknown.
-    // runSession has already tried to stop it. A booking that fails here never
-    // hides the run's own error: both are reported, that one first.
-    const sessionId = started.sessionId;
-    try {
-      if (started.booked) {
-        // Booked from the platform's figure before the failure.
-      } else if (sessionId !== null) {
-        const snapshot = await api.retrieveSession(sessionId).catch(() => null);
-        const cost = bookedCost(snapshot !== null && isStopped(snapshot.status), snapshot === null ? null : listCostUsd(snapshot), options.budgetUsd);
-        await appendCreditLine(config.ledgerFile, { ...emptyLine(sessionId), ...ledgerCost(cost) });
-      } else if (error instanceof SessionMayExistError) {
-        // Booked under the run id it carries, so the session, should it turn up, is found by its metadata `run`.
-        await appendCreditLine(config.ledgerFile, { ...emptyLine(null), runId: error.runId, ...ledgerCost(bookedCost(false, null, options.budgetUsd)) });
-      }
-    } catch (bookingError) {
-      throw new BookingFailedError(error, bookingError);
+  const stop = new AbortController();
+  const signal = options.signal === undefined ? stop.signal : AbortSignal.any([options.signal, stop.signal]);
+  const seams = options.stopOnSignals;
+  // Read through a function: a signal handler changes it between reads.
+  const stopped = (): boolean => signal.aborted;
+  /**
+   * A second stop signal, or a SIGHUP: no time to wait for the session to
+   * stop. Once a create has been sent, a run not yet booked is booked now,
+   * synchronously, at its whole budget as unknown, unless the ledger already
+   * has a line for its session or run; then the process ends.
+   */
+  const bookAtOnce = (by: NodeJS.Signals): void => {
+    const exit = seams?.exit ?? ((code: number) => process.exit(code));
+    const print = seams?.print ?? printNow;
+    stop.abort(by);
+    if (!started.creating) {
+      print(`${by}: no session was created, so nothing was spent or booked`);
+      exit(1);
+      return;
     }
-    throw error;
+    const session = started.sessionId ?? `with run id ${started.runId ?? "unknown"}`;
+    let wrote = false;
+    if (!started.booked) {
+      started.booked = true;
+      try {
+        if (!charges(readLedgerBookingsSync(config.ledgerFile), started.sessionId, started.runId)) {
+          appendCreditLineSync(config.ledgerFile, { ...emptyLine(started.sessionId), ...ledgerCost(bookedCost(false, null, options.budgetUsd)) });
+          wrote = true;
+        }
+      } catch (error) {
+        started.booked = false;
+        const how = started.sessionId === null ? "book it with collect --book once its id is known" : `book it with ${bookCommand(started.sessionId)}`;
+        print(`session ${session} may still be running, and booking it failed (${error instanceof Error ? error.message : String(error)}); ${how}`);
+        exit(1);
+        return;
+      }
+    }
+    print(
+      wrote
+        ? `session ${session} may still be running; booked at its whole budget as unknown; collect it when it has stopped`
+        : `session ${session} may still be running; it is booked already, so nothing more was written; collect it when it has stopped`,
+    );
+    exit(1);
+  };
+  const removeHandlers =
+    seams === undefined
+      ? () => undefined
+      : handleStopSignals((name) => {
+          log(`${name}: stopping the run as at its deadline (interrupt, wait, archive if need be, book); a second signal books it at once and exits.`);
+          stop.abort(name);
+        }, bookAtOnce);
+
+  try {
+    const ledger = await readCreditLedger(config.ledgerFile);
+    const check = checkSpend(
+      ledger,
+      config.lane,
+      options.budgetUsd,
+      { laneCapUsd: config.laneCapUsd, orgCapUsd: config.orgCapUsd, jobCapUsd: options.jobCapUsd },
+      `${options.job}:`,
+    );
+    if (!check.ok) return { kind: "skipped", taskId: task.id, reason: check.reason };
+    log(`Spend check passed: ${check.reason}.`);
+    if (stopped()) throw new RunStoppedError(signal, null);
+
+    const state = await ensureSandbox(api, path.join(config.workRoot, "state.json"), sandboxSystemPrompt(options.projectRules), log);
+    const branch = `credit/${task.id}`;
+    const runDir = path.join(config.workRoot, "runs", task.id, stamp(now()));
+    await mkdir(runDir, { recursive: true });
+
+    // The session's one ledger line, from the platform's figure. runSession
+    // hands the totals over (onCostKnown) as soon as the final status is read,
+    // before any output is downloaded, so a download that stalls or fails cannot
+    // hold the line back; every later path sees `booked` and writes no second one.
+    const bookTotals = (totals: RunTotals): Promise<void> =>
+      bookOnce({
+        ...emptyLine(totals.sessionId),
+        requests: totals.requests,
+        inputTokens: totals.inputTokens + totals.cacheReadTokens + totals.cacheCreationTokens,
+        outputTokens: totals.outputTokens,
+        ...ledgerCost(bookedCost(totals.stopped, totals.listCostUsd, options.budgetUsd)),
+      });
+
+    let result: SessionRunResult;
+    try {
+      result = await runSession({
+        api,
+        state,
+        facts: { task, baseSha: options.baseSha, branch },
+        budgetUsd: options.budgetUsd,
+        timeoutMinutes: options.timeoutMinutes,
+        runDir,
+        verifyScript: options.verifyScript,
+        title: `${options.job}: ${task.title}`.slice(0, 200),
+        metadata: { lane: config.lane, job: options.job, task: task.id },
+        log,
+        signal,
+        // Synchronously before the create is sent: from here a second signal books the run.
+        beforeCreate: (runId) => {
+          started.runId = runId;
+          started.creating = true;
+        },
+        onSessionCreated: (id) => {
+          started.sessionId = id;
+        },
+        onCostKnown: bookTotals,
+        ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
+        ...(options.graceMs === undefined ? {} : { graceMs: options.graceMs }),
+        ...(options.outputCaps === undefined ? {} : { outputCaps: options.outputCaps }),
+      });
+    } catch (error) {
+      // Nothing is spent before a session exists. Once one does (or may), it is
+      // charged once: already, when the failure came after the platform's figure
+      // was read (a download, say, or a stop); otherwise the platform's figure if
+      // the session has stopped, or else the whole budget, marked unknown.
+      // runSession has already tried to stop it. A booking that fails here never
+      // hides the run's own error: both are reported, that one first.
+      const sessionId = started.sessionId;
+      try {
+        if (started.booked) {
+          // Booked from the platform's figure before the failure, or at once by a second signal.
+        } else if (sessionId !== null) {
+          const snapshot = await api.retrieveSession(sessionId).catch(() => null);
+          const cost = bookedCost(snapshot !== null && isStopped(snapshot.status), snapshot === null ? null : listCostUsd(snapshot), options.budgetUsd);
+          await bookOnce({ ...emptyLine(sessionId), ...ledgerCost(cost) });
+        } else if (error instanceof SessionMayExistError) {
+          // Booked under the run id it carries, so the session, should it turn up, is found by its metadata `run`.
+          await bookOnce({ ...emptyLine(null), runId: error.runId, ...ledgerCost(bookedCost(false, null, options.budgetUsd)) });
+        }
+      } catch (bookingError) {
+        throw new BookingFailedError(error, bookingError);
+      }
+      throw error;
+    }
+
+    // runSession booked it before the downloads; this covers only a runSession that did not call back.
+    if (!started.booked) await bookTotals(result);
+    // A stop that came during the last download: the run is booked, and is not reviewed.
+    if (stopped()) throw new RunStoppedError(signal, result);
+    const { costUsd, costKnown } = bookedCost(result.stopped, result.listCostUsd, options.budgetUsd);
+
+    return await writeRecord(task, runDir, branch, options.baseSha, options.repoUrl, result, costUsd, costKnown, log);
+  } finally {
+    removeHandlers();
   }
-
-  // runSession booked it before the downloads; this covers only a runSession that did not call back.
-  if (!started.booked) await bookTotals(result);
-  const { costUsd, costKnown } = bookedCost(result.stopped, result.listCostUsd, options.budgetUsd);
-
-  return writeRecord(task, runDir, branch, options.baseSha, options.repoUrl, result, costUsd, costKnown, log);
 }
 
 /**

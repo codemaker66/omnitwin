@@ -1,4 +1,5 @@
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFileSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { z } from "zod";
 
 /**
@@ -67,8 +68,18 @@ export async function readCreditLedger(file: string): Promise<CreditLedger> {
   return { lines, badLines };
 }
 
+/**
+ * Appends one line, synchronously: a signal handler (the launcher's at-once
+ * booking) then never runs while a line is half written.
+ */
+export function appendCreditLineSync(file: string, line: CreditLine): void {
+  appendFileSync(file, `${JSON.stringify(lineSchema.parse(line))}\n`, "utf8");
+}
+
+/** appendCreditLineSync behind a promise: the write is done, or has failed, before the call returns. */
 export async function appendCreditLine(file: string, line: CreditLine): Promise<void> {
-  await appendFile(file, `${JSON.stringify(lineSchema.parse(line))}\n`, "utf8");
+  appendCreditLineSync(file, line);
+  return Promise.resolve();
 }
 
 /** The sessions (`batchId`) and runs (`runId`) the ledger's lines charge, read from every line that parses as JSON. */
@@ -97,6 +108,16 @@ export function bookingsIn(text: string): LedgerBookings {
 /** Whether a line charges the session: by its id, or by its run id (the session's metadata `run`) against a line's runId. */
 export function charges(bookings: LedgerBookings, sessionId: string | null, runId?: string | null): boolean {
   return (sessionId !== null && bookings.sessionIds.has(sessionId)) || (typeof runId === "string" && bookings.runIds.has(runId));
+}
+
+/** readLedgerBookings for a signal handler, which cannot wait. */
+export function readLedgerBookingsSync(file: string): LedgerBookings {
+  try {
+    return bookingsIn(readFileSync(file, "utf8"));
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return bookingsIn("");
+    throw error;
+  }
 }
 
 export async function readLedgerBookings(file: string): Promise<LedgerBookings> {

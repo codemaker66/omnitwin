@@ -46,7 +46,17 @@ import {
 } from "../sandbox/outputs.js";
 import { unquoteGitPath } from "../sandbox/patches.js";
 import { ADVISORY_FLAG, type Review } from "../sandbox/review.js";
-import { centsString, invokesVerifier, listCostUsd, LOOKUP_CLOCK_SKEW_MS, parseVerifyOutput, runSession, SessionMayExistError, type SessionRunResult } from "../sandbox/session.js";
+import {
+  centsString,
+  invokesVerifier,
+  listCostUsd,
+  LOOKUP_CLOCK_SKEW_MS,
+  parseVerifyOutput,
+  RunStoppedError,
+  runSession,
+  SessionMayExistError,
+  type SessionRunResult,
+} from "../sandbox/session.js";
 import { ensureSandbox } from "../sandbox/setup.js";
 import { MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
 import { FakeApi, PROJECT_RULES } from "./fake-api.js";
@@ -2223,6 +2233,226 @@ describe("sandbox launcher, its books", () => {
     if (record.kind !== "ran") throw new Error(record.reason);
     expect(JSON.parse((await readFile(ran.ledgerFile, "utf8")).trim())).toMatchObject({ batchId: "sesn_1", runId: String(followed.sessions[0]?.metadata?.run) });
   });
+});
+
+describe("sandbox launcher, when it is stopped by a signal", () => {
+  const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"] as const;
+  const listeners = () => SIGNALS.map((name) => process.listenerCount(name));
+  const interrupts = (api: FakeApi) => api.sent.filter((event) => event.type === "user.interrupt").length;
+  /** A session that runs until it is stopped. */
+  const endless = () => new FakeApi([{ history: [running("e1")], stream: [running("e1")], hang: true }], outputsOf(happy));
+  /** Resolves once the launcher follows the session's stream, so the session exists. */
+  const following = async (api: FakeApi): Promise<void> => {
+    while (api.opened === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+  };
+  const ledgerLines = async (file: string): Promise<Record<string, unknown>[]> =>
+    (await readFile(file, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  /** The test seams for the at-once booking: what it printed, and the exit codes it asked for, instead of ending the test's process. */
+  const seams = () => {
+    const exits: number[] = [];
+    const printed: string[] = [];
+    return { exits, printed, stopOnSignals: { exit: (code: number) => void exits.push(code), print: (line: string) => void printed.push(line) } };
+  };
+
+  it("stops on an abort as at the deadline: interrupts, waits, books the platform's figure once it stops or the whole budget once archived, downloads nothing and says why it failed", async () => {
+    for (const [statuses, booked] of [
+      [["running", "idle"], { costUsd: 2.87 }],
+      [["running"], { costUsd: 4.5, costKnown: false }],
+    ] as const) {
+      const config = await workspace();
+      const api = endless();
+      api.statuses = [...statuses];
+      const stop = new AbortController();
+      const run = job(api, config, happy, { sleep: instant, signal: stop.signal }).catch((caught: unknown) => caught);
+      await following(api);
+      stop.abort("SIGINT");
+      const error = await run;
+      expect(error, statuses.join()).toBeInstanceOf(RunStoppedError);
+      expect((error as Error).message, statuses.join()).toMatch(/^stopped by SIGINT: session sesn_1 /u);
+      expect(interrupts(api), statuses.join()).toBeGreaterThanOrEqual(1);
+      expect(api.archived, statuses.join()).toEqual(statuses.length === 1 ? ["sesn_1"] : []);
+      const lines = await ledgerLines(config.ledgerFile);
+      expect(lines, statuses.join()).toEqual([expect.objectContaining({ batchId: "sesn_1", runId: String(api.sessions[0]?.metadata?.run), ...booked })]);
+      if (!("costKnown" in booked)) expect(lines[0], statuses.join()).not.toHaveProperty("costKnown");
+      expect(api.downloads, statuses.join()).toEqual([]);
+    }
+  });
+
+  it("handles the stop signals only while a run lasts: the first stops it as the deadline does, a second books the whole budget at once, once, and ends the process", async () => {
+    const before = listeners();
+    const config = await workspace();
+    const api = endless();
+    api.statuses = ["running"];
+    // The launcher's own interrupt is held until the second signal has been handled.
+    let atInterrupt: () => void = () => undefined;
+    const interrupted = new Promise<void>((resolve) => {
+      atInterrupt = resolve;
+    });
+    let resume: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const send = api.sendEvents;
+    api.sendEvents = async (id, events) => {
+      await send(id, events);
+      if (events[0]?.type === "user.interrupt") {
+        atInterrupt();
+        await held;
+      }
+    };
+    const { exits, printed, stopOnSignals } = seams();
+    vi.mocked(appendCreditLine).mockClear();
+    const run = job(api, config, happy, { sleep: instant, stopOnSignals }).catch((caught: unknown) => caught);
+    await following(api);
+    expect(listeners()).toEqual(before.map((count) => count + 1));
+
+    process.emit("SIGINT");
+    await interrupted;
+    // The first signal stops the run; it ends nothing and books nothing yet.
+    expect(exits).toEqual([]);
+    await expect(readFile(config.ledgerFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    process.emit("SIGINT");
+    const runId = String(api.sessions[0]?.metadata?.run);
+    expect(await ledgerLines(config.ledgerFile)).toEqual([expect.objectContaining({ batchId: "sesn_1", runId, costUsd: 4.5, costKnown: false, job: "a4-trial:robots-wildcards" })]);
+    expect(printed).toEqual(["session sesn_1 may still be running; booked at its whole budget as unknown; collect it when it has stopped"]);
+    expect(exits).toEqual([1]);
+
+    // A third writes nothing more.
+    process.emit("SIGTERM");
+    expect(exits).toEqual([1, 1]);
+    expect(printed[1]).toMatch(/^session sesn_1 may still be running; it is booked already/u);
+
+    resume();
+    expect(await run).toBeInstanceOf(RunStoppedError);
+    // The run's own booking found the session booked: still one line, and no write of its own.
+    expect(await ledgerLines(config.ledgerFile)).toHaveLength(1);
+    expect(appendCreditLine).not.toHaveBeenCalled();
+    expect(listeners()).toEqual(before);
+  });
+
+  it("books at once on a SIGHUP, the first signal included: a closed console window leaves no time to wait", async () => {
+    const config = await workspace();
+    const api = endless();
+    api.statuses = ["running"];
+    const { exits, printed, stopOnSignals } = seams();
+    vi.mocked(appendCreditLine).mockClear();
+    const run = job(api, config, happy, { sleep: instant, stopOnSignals }).catch((caught: unknown) => caught);
+    await following(api);
+    process.emit("SIGHUP");
+    expect(exits).toEqual([1]);
+    expect(printed).toEqual(["session sesn_1 may still be running; booked at its whole budget as unknown; collect it when it has stopped"]);
+    expect(await ledgerLines(config.ledgerFile)).toEqual([expect.objectContaining({ batchId: "sesn_1", costUsd: 4.5, costKnown: false })]);
+    // Here the process goes on (exit is a seam): the run stops, and books nothing more.
+    expect(await run).toBeInstanceOf(RunStoppedError);
+    expect(await ledgerLines(config.ledgerFile)).toHaveLength(1);
+    expect(appendCreditLine).not.toHaveBeenCalled();
+  });
+
+  it("creates nothing when it is stopped before the create, and books nothing", async () => {
+    // One signal while the inputs upload: the run fails before the create.
+    const once = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    const upload = api.uploadFile;
+    api.uploadFile = (name, data) => {
+      if (name === "verify.mjs") process.emit("SIGINT");
+      return upload(name, data);
+    };
+    const first = seams();
+    const error = await job(api, once, happy, { stopOnSignals: first.stopOnSignals }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RunStoppedError);
+    expect((error as Error).message).toBe("stopped by SIGINT before a session was created; nothing was spent");
+    expect(api.sessions).toHaveLength(0);
+    expect(first.exits).toEqual([]);
+    await expect(readFile(once.ledgerFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    // Two: the process ends at once, with nothing to book.
+    const twice = await workspace();
+    const again = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    const uploadAgain = again.uploadFile;
+    again.uploadFile = (name, data) => {
+      if (name === "verify.mjs") {
+        process.emit("SIGINT");
+        process.emit("SIGBREAK");
+      }
+      return uploadAgain(name, data);
+    };
+    const second = seams();
+    await expect(job(again, twice, happy, { stopOnSignals: second.stopOnSignals })).rejects.toBeInstanceOf(RunStoppedError);
+    expect(second.exits).toEqual([1]);
+    expect(second.printed).toEqual(["SIGBREAK: no session was created, so nothing was spent or booked"]);
+    expect(again.sessions).toHaveLength(0);
+    await expect(readFile(twice.ledgerFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    // Aborted before the run starts: nothing is set up, uploaded or created.
+    const early = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    await expect(job(early, await workspace(), happy, { signal: AbortSignal.abort("SIGTERM") })).rejects.toThrow("stopped by SIGTERM before a session was created");
+    expect([early.environmentCreates, early.agentCreates, early.uploads.length, early.sessions.length]).toEqual([0, 0, 0, 0]);
+  });
+
+  it("takes the may-exist path for a signal during an unclear create, and books at once under the run id for a second one", async () => {
+    // One signal while the create is in flight: the create fails unclearly, the lookup finds nothing, the whole budget is booked under the run id.
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    api.createError = new Anthropic.InternalServerError(500, { type: "error" }, "overloaded", new Headers());
+    const create = api.createSession;
+    api.createSession = (params) => {
+      process.emit("SIGINT");
+      return create(params);
+    };
+    const first = seams();
+    await expect(job(api, config, happy, { sleep: instant, stopOnSignals: first.stopOnSignals })).rejects.toBeInstanceOf(SessionMayExistError);
+    const runId = String(api.sessions[0]?.metadata?.run);
+    expect(await ledgerLines(config.ledgerFile)).toEqual([expect.objectContaining({ batchId: null, runId, costUsd: 4.5, costKnown: false })]);
+    expect(first.exits).toEqual([]);
+
+    // Two: the line is written at once, before the session's id is known, and the may-exist path adds none.
+    const twice = await workspace();
+    const again = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    again.createError = new Anthropic.InternalServerError(500, { type: "error" }, "overloaded", new Headers());
+    const createAgain = again.createSession;
+    again.createSession = (params) => {
+      process.emit("SIGINT");
+      process.emit("SIGINT");
+      return createAgain(params);
+    };
+    const second = seams();
+    vi.mocked(appendCreditLine).mockClear();
+    await expect(job(again, twice, happy, { sleep: instant, stopOnSignals: second.stopOnSignals })).rejects.toBeInstanceOf(SessionMayExistError);
+    const againRun = String(again.sessions[0]?.metadata?.run);
+    expect(second.printed).toEqual([`session with run id ${againRun} may still be running; booked at its whole budget as unknown; collect it when it has stopped`]);
+    expect(second.exits).toEqual([1]);
+    expect(await ledgerLines(twice.ledgerFile)).toEqual([expect.objectContaining({ batchId: null, runId: againRun, costUsd: 4.5, costKnown: false })]);
+    expect(appendCreditLine).not.toHaveBeenCalled();
+  });
+
+  it("leaves no handler behind, whether the run succeeds, fails or is refused, and installs none unless asked", async () => {
+    const before = listeners();
+    const ok = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    expect(await job(ok, await workspace(), happy, { stopOnSignals: seams().stopOnSignals })).toMatchObject({ kind: "ran" });
+    expect(listeners()).toEqual(before);
+    const failing = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    failing.failOutputs = true;
+    await expect(job(failing, await workspace(), happy, { stopOnSignals: seams().stopOnSignals })).rejects.toThrow("files API down");
+    expect(listeners()).toEqual(before);
+    const prior = `${JSON.stringify({ ts: "2026-11-05T09:00:00.000Z", lane: "sandbox", job: "a4-trial:x", model: "m", requests: 1, inputTokens: 1, outputTokens: 1, costUsd: 108, batchId: "sesn_old" })}\n`;
+    const refused = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    expect(await job(refused, await workspace(prior), happy, { stopOnSignals: seams().stopOnSignals })).toMatchObject({ kind: "skipped" });
+    expect(listeners()).toEqual(before);
+    // Without stopOnSignals (a caller of its own, a test), the process's signals are left alone.
+    const plain = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    const upload = plain.uploadFile;
+    let during: number[] = [];
+    plain.uploadFile = (name, data) => {
+      during = listeners();
+      return upload(name, data);
+    };
+    await job(plain, await workspace());
+    expect(during).toEqual(before);
+  }, 300_000);
 });
 
 describe("sandbox brief", () => {

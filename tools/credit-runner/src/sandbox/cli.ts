@@ -214,6 +214,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     projectRules,
     verifyScript,
     log: out,
+    // Ctrl-C, a kill, a closed window or Ctrl-Break stop the run and book it (see runSandboxJob); the handlers last only as long as the run.
+    stopOnSignals: {},
   });
   if (record.kind === "skipped") {
     out(`Not run: ${record.reason}`);
