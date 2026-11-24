@@ -24,6 +24,7 @@ import {
   metres,
   ROOM_DISPLAY_NAMES,
   ROOM_TRUTH_PROVENANCE,
+  VERIFIED_ROOM_NODES,
 } from "../src/twin/shell/twin-rooms.js";
 
 // ---------------------------------------------------------------------------
@@ -93,6 +94,27 @@ const STAT_CEILING = "Ceiling";
 const SECTIONED_NODE = "scan_105";
 /** A validated viewpoint in a room whose published size is not shown. */
 const NO_SIZE_NODE = "scan_126";
+/** U+00A0, written as an escape: the room list holds each floor together with it. */
+const NO_BREAK_SPACE = "\u00a0";
+
+/**
+ * A room's line in the Rooms panel, rebuilt from venue truth through
+ * lookUpRoom and not through the formatter the panel uses, so the two cannot
+ * agree by being the same code: the two capacities, then each floor the room
+ * shows a size for. A room with no size on record is its capacities alone.
+ */
+function expectedRoomLine(slug: string): string {
+  const nodeId = Object.keys(VERIFIED_ROOM_NODES).find((id) => VERIFIED_ROOM_NODES[id] === slug);
+  const room = nodeId === undefined ? null : lookUpRoom(nodeId);
+  if (room === null) throw new Error(`${slug} has no validated viewpoint to read its figures at.`);
+  const head = `${String(room.capacities.reception)} standing · ${String(room.capacities.dinner)} seated`;
+  const floors = (room.dimensions?.extents ?? []).map((extent) => {
+    const plan = `${metres(extent.lengthM)} × ${metres(extent.widthM)} m`;
+    const named = extent.section === undefined ? plan : `${extent.section} ${plan}`;
+    return named.split(" ").join(NO_BREAK_SPACE);
+  });
+  return floors.length === 0 ? head : `${head} · ${floors.join(` and${NO_BREAK_SPACE}`)}`;
+}
 
 const TOUR_PATH = "/tour";
 const MANIFEST_ROUTE = "**/twin/trades-hall/manifest.json";
@@ -532,6 +554,26 @@ test("the Rooms panel lists the published rooms, marks the one underfoot, and tr
     ROOMS_LEVEL_HERE,
     ROOMS_LEVEL_ONE_BELOW,
   ]);
+
+  // Every row's figures line, read as TEXT from the page and compared byte
+  // for byte, no-break spaces included. The screenshot baselines cannot hold
+  // a figure: one short figure in muted text is under their pixel tolerance,
+  // so a line that lost or changed its size would still match the image.
+  const roomLines: Record<string, string | null> = {};
+  for (const slug of ROOM_SELECTOR_ORDER) {
+    roomLines[slug] = await panel
+      .locator(`[data-testid="twin-rooms-row-${slug}"], [data-testid="twin-rooms-here-${slug}"]`)
+      .locator(".vv-twin-rooms-compare")
+      .evaluate((line) => line.textContent);
+  }
+  expect(roomLines).toEqual(
+    Object.fromEntries(ROOM_SELECTOR_ORDER.map((slug) => [slug, expectedRoomLine(slug)])),
+  );
+  // The room whose size is not shown says so by saying nothing: its line is
+  // the two capacities, with no figure and no separator left hanging.
+  const noSizeRoom = lookUpRoom(NO_SIZE_NODE);
+  if (noSizeRoom === null) throw new Error(`${NO_SIZE_NODE} is not a validated viewpoint.`);
+  expect(roomLines[noSizeRoom.slug]).toMatch(/^\d+ standing · \d+ seated$/);
 
   // The Saloon row carries the venue's own figures, joined rather than
   // restated, and its accessible name splices that same string byte for byte.
