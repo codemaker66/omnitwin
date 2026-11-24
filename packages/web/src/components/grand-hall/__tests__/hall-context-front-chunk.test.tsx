@@ -16,7 +16,9 @@ vi.mock("../hall-finish.js", async (importOriginal) => {
 /**
  * The front's import as a build runs it once a deploy has replaced its chunk. Vite's preload
  * helper (6.4: `baseModule().catch(handlePreloadError)`) first asks the page with a cancelable
- * `vite:preloadError`, rethrows if the page leaves it, and otherwise resolves to nothing.
+ * `vite:preloadError` and rethrows unless a listener prevents it. The page's listener never does
+ * (route-error-boundary.tsx), so the import rejects, and the page reloads only once its own server
+ * has answered. The resolve-to-nothing branch is Vite's own, kept so this stand-in stays faithful.
  */
 function staleChunkImport(): Promise<undefined> {
   const failure = new TypeError("Failed to fetch dynamically imported module: /assets/HallExterior-old.js");

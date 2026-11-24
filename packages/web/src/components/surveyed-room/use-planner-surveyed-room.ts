@@ -132,9 +132,10 @@ type SurveyedRoomCode = typeof import("./PlannerSurveyedRoom.js");
 
 /**
  * Where the surveyed room's code comes from: a seam for tests, the one dynamic
- * import otherwise. It resolves with nothing where the fetch failed and the
- * page took its one reload for a newer build (Vite's import helper swallows
- * the failure the page's handler claimed, route-error-boundary.tsx).
+ * import otherwise. Where the fetch fails it rejects: Vite's import helper
+ * rethrows, since the page's listener never prevents its default, and the
+ * page reloads for a newer build only once the app's own server has answered
+ * (route-error-boundary.tsx). An answer of nothing is still a failure.
  */
 export const surveyedRoomCode = {
   load(): Promise<SurveyedRoomCode | undefined> {
@@ -142,7 +143,9 @@ export const surveyedRoomCode = {
   },
 };
 
-/** The code's component, as React.lazy takes one; a failure where the code did not arrive. */
+/** The code's component, as React.lazy takes one; a failure where the code did
+ *  not arrive. No build resolves with nothing now (see surveyedRoomCode); the
+ *  check stays so such an answer could never be mounted. */
 function componentOf(code: SurveyedRoomCode | undefined): { readonly default: SurveyedRoomCode["PlannerSurveyedRoom"] } {
   if (code === undefined) throw new Error("it did not arrive, and the page is reloading for a newer build");
   return { default: code.PlannerSurveyedRoom };
