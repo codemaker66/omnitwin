@@ -29,6 +29,10 @@ import {
 //   contradictingEvents  events whose status disagrees with their Diary bookings
 //   proposalsWithoutEvent ... eventDealPointersInUse
 //                        the spine's nine counts (readSpineInvariant)
+//   enquiriesApartFromTheirBookings
+//                        enquiries whose link names an event that holds none
+//                        of their undeleted bookings, while some of those
+//                        bookings sit in another live event (expected 0)
 //   reviewList           what migration 0090 left for a person to look at,
 //                        counted by reason (event_binding_reviews)
 //   joinsToCheck         the open questions on the list of joins to check,
@@ -39,8 +43,9 @@ import {
 //                        half-migrated database shows itself
 //   joinRun              with --join only: { joined, eventsMade, listed }, or
 //                        { error } when the join failed
-// reviewList and joinsToCheck are information and never change the status:
-// a question that matters already shows in a count.
+// enquiriesApartFromTheirBookings, reviewList and joinsToCheck are
+// information and never change the status: a question that matters already
+// shows in a count, and an enquiry apart from its bookings is repaired by hand.
 //
 // Exit codes: 0 = the rules hold (and the join, when asked for, ran);
 // 1 = a count is not zero, or the join failed though the counts were read;

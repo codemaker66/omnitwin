@@ -14,6 +14,7 @@ import {
   exitCodeOf,
   isFailedJoin,
   openEventRulesConnection,
+  readEnquiriesApartFromTheirBookings,
   type EventRulesOutcome,
   type EventRulesReport,
 } from "../services/event-rules-check.js";
@@ -23,6 +24,7 @@ import {
   enquiry,
   event,
   insertReview,
+  link,
   openSpineDatabase,
   openSpineDatabaseBefore,
   platformTarget,
@@ -60,6 +62,8 @@ import {
 //   7. A command whose connection is ended mid-read stops with exit 2, and
 //      both streams hold only its own named lines: no message, no stack, no
 //      connection details.
+//   8. Enquiries apart from their bookings are a number of their own, which
+//      leaves the status and the counts alone.
 //
 // The second block runs the command against a database the spine's migration
 // has not reached: the join and the read fail, it exits 2, and the line says
@@ -130,6 +134,7 @@ const ReadLineSchema = z.object({
   disagreeingLinks: count,
   linksToClosedEvents: count,
   eventDealPointersInUse: count,
+  enquiriesApartFromTheirBookings: count,
   reviewList: z.record(z.string(), count),
   joinsToCheck: z.record(z.string(), count),
   migrations: MigrationsSchema,
@@ -236,11 +241,12 @@ describe.skipIf(target === undefined)("the event rules: the operator's read and 
     expect(report.unboundBookings).toBe(0);
     expect(report.contradictingEvents).toBe(0);
     expect(spineCounts(report)).toEqual(BEFORE_THE_JOIN);
+    expect(report.enquiriesApartFromTheirBookings).toBe(0);
     expect(report.reviewList).toEqual({});
     expect(report.joinsToCheck).toEqual({});
     expect(report.migrations).toEqual({ applied: journalTags.length, local: journalTags.length, pending: [] });
     expect(Object.keys(report)).toEqual(["status", "unboundBookings", "contradictingEvents", ...SPINE_INVARIANT_FIELDS,
-      "reviewList", "joinsToCheck", "migrations"]);
+      "enquiriesApartFromTheirBookings", "reviewList", "joinsToCheck", "migrations"]);
     expect(exitCodeOf(report)).toBe(1);
   });
 
@@ -344,6 +350,7 @@ describe.skipIf(target === undefined)("the event rules: the operator's read and 
       status: "holds",
       unboundBookings: 0,
       contradictingEvents: 0,
+      enquiriesApartFromTheirBookings: 0,
       joinsToCheck: { possibly_same_event: 1, reaches_many_events: 1 },
       reviewList: { event_status_derived: 1 },
       migrations: { applied: journalTags.length, local: journalTags.length, pending: [] },
@@ -404,6 +411,53 @@ describe.skipIf(target === undefined)("the event rules: the operator's read and 
       await running?.catch(() => undefined);
     }
   }, 120_000);
+
+  it("counts an enquiry apart from its bookings, not its near neighbours, and leaves the status and the counts alone", async () => {
+    const v = await venue(pool, "event rules apart");
+    let day = 0;
+    /** A live hold for the enquiry in the event, each on a day of its own; a deleted one when asked. */
+    const holdIn = async (enquiryId: string, eventId: string, deleted = false): Promise<void> => {
+      day += 1;
+      await pool.query(`INSERT INTO bookings (venue_id, space_id, event_id, enquiry_id, kind, status, title, starts_at, ends_at, deleted_at)
+        VALUES ($1, $2, $3, $4, 'hold', 'active', 'Held date', $5::timestamptz, $5::timestamptz + interval '4 hours',
+          CASE WHEN $6 THEN now() END)`,
+      [v.venueId, v.rooms.hall, eventId, enquiryId, new Date(Date.parse("2032-02-02T18:00:00Z") + day * 86_400_000).toISOString(), deleted]);
+    };
+    /** An enquiry linked to an event of its own name. */
+    const linked = async (name: string): Promise<{ readonly enquiryId: string; readonly linkedTo: string }> => {
+      const enquiryId = await enquiry(pool, v.venueId);
+      const linkedTo = await event(pool, v.venueId, name);
+      await link(pool, "enquiries", enquiryId, linkedTo);
+      return { enquiryId, linkedTo };
+    };
+    const before = readReport(await checkEventRules(db, { join: false }));
+
+    // Apart: linked to one event, its only booking in another live one.
+    const apart = await linked("Apart, linked");
+    await holdIn(apart.enquiryId, await event(pool, v.venueId, "Apart, booked"));
+    // Its near neighbours, none counted:
+    // the linked event holds one of its bookings, another sits elsewhere;
+    const both = await linked("Both, linked");
+    await holdIn(both.enquiryId, both.linkedTo);
+    await holdIn(both.enquiryId, await event(pool, v.venueId, "Both, elsewhere"));
+    // no bookings at all;
+    await linked("None");
+    // its only booking elsewhere is deleted;
+    const deletedBooking = await linked("Deleted booking, linked");
+    await holdIn(deletedBooking.enquiryId, await event(pool, v.venueId, "Deleted booking, elsewhere"), true);
+    // its only booking elsewhere sits in a deleted event.
+    const deletedEvent = await linked("Deleted event, linked");
+    const gone = await event(pool, v.venueId, "Since deleted");
+    await holdIn(deletedEvent.enquiryId, gone);
+    await pool.query("UPDATE events SET deleted_at = now() WHERE id = $1", [gone]);
+
+    expect(await readEnquiriesApartFromTheirBookings(db, v.venueId)).toBe(1);
+    const after = readReport(await checkEventRules(db, { join: false }));
+    expect(after.enquiriesApartFromTheirBookings).toBe(before.enquiriesApartFromTheirBookings + 1);
+    expect(after.status).toBe(before.status);
+    expect([after.unboundBookings, after.contradictingEvents, spineCounts(after)])
+      .toEqual([before.unboundBookings, before.contradictingEvents, spineCounts(before)]);
+  });
 });
 
 describe.skipIf(target === undefined)("the event rules on a database the spine's migration has not reached", () => {

@@ -164,20 +164,24 @@ statement limit and a 30 s idle-in-transaction limit (the job stops at five minu
 and every event the join links stays key-share-locked until it commits). A join that
 fails rolls back whole and is reported as `joinRun: { error }`, by its error's name
 and SQLSTATE only; the read still runs. Then one `REPEATABLE READ, READ ONLY`
-transaction reads the bind's two counts, the spine's nine, 0090's list
-(`reviewList`) and the open questions (`joinsToCheck`), and a short read-only
+transaction reads the bind's two counts, the spine's nine, the enquiries apart from
+their bookings (`enquiriesApartFromTheirBookings`, see "Repairs by hand"), 0090's
+list (`reviewList`) and the open questions (`joinsToCheck`), and a short read-only
 transaction reads the migration state: the migrations ledger against the journal
 the code ships (`migrations: { applied, local, pending }`).
 
 It prints one line of JSON: `status` (`holds` when all eleven counts are zero,
-`broken` when one is not), the counts, both lists, `migrations`, and `joinRun`
-(`{ joined, eventsMade, listed }`) with `--join`. The two lists never change the
+`broken` when one is not), the counts, `enquiriesApartFromTheirBookings`, both
+lists, `migrations`, and `joinRun` (`{ joined, eventsMade, listed }`) with
+`--join`. The two lists and `enquiriesApartFromTheirBookings` never change the
 status. When the read fails the line says `status: "unread"` with `readError`,
 and still carries `migrations` and the join's outcome. An undefined function, table
 or column is said in plain words: the spine's migration is not applied to this
 database. Exit 0 when the rules hold; 1 when a count is not zero or the join failed;
-2 for a setup error or a failed read. Neither the connection string nor a database
-error's message is printed: the workflow log is public.
+2 for a setup error, a failed read, or a run stopped by a failure outside any
+statement (a connection lost between two statements; then no line is printed).
+Neither the connection string nor a database error's message is printed: the
+workflow log is public.
 
 **Every night, and by hand.** The Event rules workflow
 ([`event-rules.yml`](../../.github/workflows/event-rules.yml), "Event rules (reports
@@ -281,6 +285,31 @@ Each of these runs in production only on the founder's word, in a transaction wi
   event is the occasion has to be decided first.
 - **A request in force on a soft-deleted proposal** (the gap above) is repaired by
   a person deciding whether the request still stands.
+- **An enquiry apart from its bookings** (`enquiriesApartFromTheirBookings` in the
+  line): its link names an event that holds none of its undeleted bookings, while
+  some of those bookings sit in another live event of its venue. No writer of this
+  release makes one and the join never does, so it is expected to read 0 right
+  after a release. An instance still running the previous release during the
+  switch-over can: the migration's join has given a worked enquiry with no held
+  date an event of its own, and the old code, which ignores the link, puts the
+  enquiry's first hold in a new event. Release in a quiet hour and read this number
+  in the after-merge read. A person repairs one, deciding first which event is the
+  occasion. If it is the enquiry's, move the booking into it from the Diary (an
+  edit may move a booking to another event of its venue). If it is the bookings',
+  move the enquiry's link to it, with the links of the enquiry's deals and
+  proposals that name the first event, in one transaction (a link is moved, never
+  emptied). They are found by id alone:
+
+  ```sql
+  SELECT q.id AS enquiry_id, q.venue_id, q.event_id AS linked_event
+  FROM enquiries q
+  WHERE q.event_id IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM bookings b
+      WHERE b.enquiry_id = q.id AND b.deleted_at IS NULL AND b.event_id = q.event_id)
+    AND EXISTS (SELECT 1 FROM bookings b JOIN events e ON e.id = b.event_id
+      WHERE b.enquiry_id = q.id AND b.deleted_at IS NULL
+        AND e.deleted_at IS NULL AND e.venue_id = q.venue_id AND e.id <> q.event_id);
+  ```
 
 ## Rolling back
 
