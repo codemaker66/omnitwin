@@ -46,7 +46,7 @@ import {
 } from "../sandbox/outputs.js";
 import { unquoteGitPath } from "../sandbox/patches.js";
 import { ADVISORY_FLAG, type Review } from "../sandbox/review.js";
-import { centsString, invokesVerifier, LOOKUP_CLOCK_SKEW_MS, parseVerifyOutput, runSession, SessionMayExistError, type SessionRunResult } from "../sandbox/session.js";
+import { centsString, invokesVerifier, listCostUsd, LOOKUP_CLOCK_SKEW_MS, parseVerifyOutput, runSession, SessionMayExistError, type SessionRunResult } from "../sandbox/session.js";
 import { ensureSandbox } from "../sandbox/setup.js";
 import { MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
 import { FakeApi, PROJECT_RULES } from "./fake-api.js";
@@ -2135,6 +2135,72 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
       expect(api.uploads).toHaveLength(0);
       expect(api.sessions).toHaveLength(0);
     }
+  });
+});
+
+describe("sandbox launcher, its books", () => {
+  it("reads the platform's cost only as whole cents in USD, and books any other figure at the whole budget as unknown, never at $0.00", async () => {
+    const cost = (list_cost: unknown) => listCostUsd({ usage: { list_cost } });
+    expect(cost({ amount: "287", currency: "USD" })).toBe(2.87);
+    expect(cost({ amount: "0", currency: "USD" })).toBe(0);
+    for (const unreadable of [
+      { amount: "", currency: "USD" },
+      { amount: null, currency: "USD" },
+      { amount: "1.5", currency: "USD" },
+      { amount: "abc", currency: "USD" },
+      { amount: "-5", currency: "USD" },
+      { amount: " 287", currency: "USD" },
+      { amount: "2e3", currency: "USD" },
+      { amount: 287, currency: "USD" },
+      { amount: "287", currency: "EUR" },
+      { amount: "287" },
+      undefined,
+      null,
+    ]) {
+      expect(cost(unreadable), JSON.stringify(unreadable)).toBeNull();
+    }
+
+    // An empty amount used to book $0.00 as known; "abc" made a NaN that no line could hold.
+    for (const [cents, currency] of [["", "USD"], ["abc", "USD"], ["287", "EUR"]] as const) {
+      const config = await workspace();
+      const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+      api.listCostCents = cents;
+      api.listCostCurrency = currency;
+      const record = await job(api, config);
+      if (record.kind !== "ran") throw new Error(record.reason);
+      const label = `${cents} ${currency}`;
+      expect([record.costUsd, record.costKnown], label).toEqual([4.5, false]);
+      const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
+      expect(line, label).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: "sesn_1" });
+    }
+  }, 300_000);
+
+  it("never lets a failed booking on the failure path replace the run's own error: both are reported, the original first", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    const real = api.retrieveSession;
+    let calls = 0;
+    api.retrieveSession = () => {
+      calls += 1;
+      return calls === 2 ? Promise.reject(new Error("final read failed")) : real();
+    };
+    vi.mocked(appendCreditLine).mockClear();
+    vi.mocked(appendCreditLine).mockRejectedValueOnce(new Error("disk full"));
+    const error: unknown = await job(api, config, happy, { sleep: instant }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    expect(message).toContain("final read failed");
+    expect(message).toContain("disk full");
+    expect(message.indexOf("final read failed")).toBeLessThan(message.indexOf("disk full"));
+    expect(appendCreditLine).toHaveBeenCalledTimes(1);
+
+    // An unclear create whose whole-budget line cannot be written: the create's own failure comes first.
+    const unclear = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    unclear.createError = new Anthropic.InternalServerError(500, { type: "error" }, "overloaded", new Headers());
+    vi.mocked(appendCreditLine).mockRejectedValueOnce(new Error("disk full"));
+    const second = ((await job(unclear, await workspace(), happy, { sleep: instant }).catch((caught: unknown) => caught)) as Error).message;
+    expect(second.indexOf("a session may still be running")).toBeGreaterThanOrEqual(0);
+    expect(second.indexOf("a session may still be running")).toBeLessThan(second.indexOf("disk full"));
   });
 });
 

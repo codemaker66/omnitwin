@@ -164,6 +164,8 @@ export class FakeApi implements SandboxApi {
   statuses: string[] = ["idle"];
   /** The platform's list cost in cents; null when the platform does not report one. */
   listCostCents: string | null = "287";
+  /** The currency the platform names with that cost. */
+  listCostCurrency = "USD";
   /** retrieveSession fails this many times before it answers. */
   retrieveFailures = 0;
   sendOutcome: (event: BetaManagedAgentsEventParams, attempt: number) => SendOutcome = () => "ok";
@@ -233,7 +235,7 @@ export class FakeApi implements SandboxApi {
       id: "sesn_1",
       status: status as SessionTotals["status"],
       usage: {
-        ...(this.listCostCents === null ? {} : { list_cost: { amount: this.listCostCents, currency: "USD" } }),
+        ...(this.listCostCents === null ? {} : { list_cost: { amount: this.listCostCents, currency: this.listCostCurrency as "USD" } }),
         active_seconds: 600,
         input_tokens: 110,
         output_tokens: 55,

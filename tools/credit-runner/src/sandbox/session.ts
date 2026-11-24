@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { BetaManagedAgentsSession, SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
+import type { SessionCreateParams } from "@anthropic-ai/sdk/resources/beta/sessions/sessions";
 import { MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES } from "../task.js";
 import { isAmbiguousFailure, type OutputFile, type SandboxApi, type SessionEvent, type SessionRef } from "./api.js";
 import { outcomeFor, type RunFacts, VERIFY_COMMAND, verifyTaskJson } from "./brief.js";
@@ -132,9 +132,22 @@ export function centsString(usd: number): string {
   return String(cents);
 }
 
-export function listCostUsd(session: Pick<BetaManagedAgentsSession, "usage">): number | null {
-  const amount = session.usage.list_cost?.amount;
-  return amount === undefined ? null : Number(amount) / 100;
+/**
+ * Dollars from a monetary amount as the platform reports it (SDK 0.131's
+ * BetaMonetaryAmount): a string of whole cents in USD. Anything else (no
+ * amount, an empty or decimal or signed one, a number, another currency) is
+ * null, never 0, so a figure that cannot be read is booked at the whole
+ * budget, as unknown.
+ */
+export function usdFromCents(money: unknown): number | null {
+  if (typeof money !== "object" || money === null || !("amount" in money) || !("currency" in money)) return null;
+  const { amount, currency } = money;
+  return currency === "USD" && typeof amount === "string" && /^\d+$/u.test(amount) ? Number(amount) / 100 : null;
+}
+
+/** The session's list cost so far (usdFromCents), or null when the platform reports none it can read. */
+export function listCostUsd(session: { readonly usage: { readonly list_cost?: unknown } }): number | null {
+  return usdFromCents(session.usage.list_cost);
 }
 
 function textOf(content: readonly { readonly type: string }[] | undefined): string {

@@ -296,16 +296,21 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
     // charged once: already, when the failure came after the platform's figure
     // was read (a download, say); otherwise the platform's figure if the
     // session has stopped, or else the whole budget, marked unknown.
-    // runSession has already tried to stop it.
+    // runSession has already tried to stop it. A booking that fails here never
+    // hides the run's own error: both are reported, that one first.
     const sessionId = started.sessionId;
-    if (started.booked) {
-      // Booked from the platform's figure before the failure.
-    } else if (sessionId !== null) {
-      const snapshot = await api.retrieveSession(sessionId).catch(() => null);
-      const cost = bookedCost(snapshot !== null && isStopped(snapshot.status), snapshot === null ? null : listCostUsd(snapshot), options.budgetUsd);
-      await appendCreditLine(config.ledgerFile, { ...emptyLine(sessionId), ...ledgerCost(cost) });
-    } else if (error instanceof SessionMayExistError) {
-      await appendCreditLine(config.ledgerFile, { ...emptyLine(null), ...ledgerCost(bookedCost(false, null, options.budgetUsd)) });
+    try {
+      if (started.booked) {
+        // Booked from the platform's figure before the failure.
+      } else if (sessionId !== null) {
+        const snapshot = await api.retrieveSession(sessionId).catch(() => null);
+        const cost = bookedCost(snapshot !== null && isStopped(snapshot.status), snapshot === null ? null : listCostUsd(snapshot), options.budgetUsd);
+        await appendCreditLine(config.ledgerFile, { ...emptyLine(sessionId), ...ledgerCost(cost) });
+      } else if (error instanceof SessionMayExistError) {
+        await appendCreditLine(config.ledgerFile, { ...emptyLine(null), ...ledgerCost(bookedCost(false, null, options.budgetUsd)) });
+      }
+    } catch (bookingError) {
+      throw new BookingFailedError(error, bookingError);
     }
     throw error;
   }
@@ -315,6 +320,18 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   const { costUsd, costKnown } = bookedCost(result.stopped, result.listCostUsd, options.budgetUsd);
 
   return writeRecord(task, runDir, branch, options.baseSha, options.repoUrl, result, costUsd, costKnown, log);
+}
+
+/**
+ * A run failed, and booking it on the failure path failed too: the message
+ * holds both, the run's own error first, and `errors` keeps both errors.
+ */
+export class BookingFailedError extends AggregateError {
+  constructor(original: unknown, bookingError: unknown) {
+    const messageOf = (value: unknown): string => (value instanceof Error ? value.message : String(value));
+    super([original, bookingError], `${messageOf(original)}; booking it in the credit ledger failed too: ${messageOf(bookingError)}`);
+    this.name = "BookingFailedError";
+  }
 }
 
 /** A known cost is a plain figure; an unknown one says so, for whoever reads the ledger. */
