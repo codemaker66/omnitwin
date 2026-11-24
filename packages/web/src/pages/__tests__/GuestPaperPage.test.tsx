@@ -2,10 +2,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock, type MockInstance } from "vitest";
-import { memoryBackend, withBackend } from "../../lib/idb-cache.js";
+import { memoryBackend, withBackend, type CacheBackend } from "../../lib/idb-cache.js";
 import { KIT_STORAGE_KEY } from "../../lib/guest-list/kit-switch.js";
 import { emptyGuestList, type Guest, type GuestList, type KitTable } from "../../lib/guest-list/model.js";
-import { createGuestListStore, type GuestListStore, type Opened } from "../../lib/guest-list/store.js";
+import { createGuestListStore, stampOf, type GuestListStore, type Opened } from "../../lib/guest-list/store.js";
 import { useGuestListStore } from "../../stores/guest-list-store.js";
 import { GuestPaperPage } from "../GuestPaperPage.js";
 
@@ -99,14 +99,25 @@ function list180(patch: Partial<GuestList> = {}): GuestList {
   };
 }
 
-function memoryStore(): GuestListStore {
-  return createGuestListStore(withBackend<unknown>(memoryBackend()));
+function memoryStore(backend: CacheBackend = memoryBackend()): GuestListStore {
+  return createGuestListStore(withBackend<unknown>(backend));
 }
 
-async function storeHolding(list: GuestList): Promise<GuestListStore> {
-  const store = memoryStore();
-  expect(await store.save(list, null)).toBe("saved");
+async function storeHolding(list: GuestList, backend: CacheBackend = memoryBackend()): Promise<GuestListStore> {
+  const store = memoryStore(backend);
+  expect((await store.save(list, null)).kind).toBe("saved");
   return store;
+}
+
+/**
+ * Another tab of the same browser changes the list: a device store of its own
+ * over the same storage opens what is kept, changes it and saves it.
+ */
+async function otherTabSaves(backend: CacheBackend, change: (kept: GuestList) => GuestList): Promise<void> {
+  const tab = memoryStore(backend);
+  const opened = await tab.open(PLAN_ID);
+  if (opened.kind !== "ready") throw new Error("nothing is kept for the other tab to change");
+  expect((await tab.save(change(opened.list), stampOf(opened.list))).kind).toBe("saved");
 }
 
 function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
@@ -696,9 +707,7 @@ describe("the guest paper page: printing", () => {
 
   it("prints the newest list kept on this device: a change made in another tab is taken up first, and nothing is lost", async () => {
     const backend = memoryBackend();
-    const store = createGuestListStore(withBackend<unknown>(backend));
-    const opened = list180();
-    expect(await store.save(opened, null)).toBe("saved");
+    const store = await storeHolding(list180(), backend);
     printSpy.mockImplementation(() => {
       expect(text(document.querySelector(".gp-leaf__title"))).toBe("Fraser and Okafor, at last");
     });
@@ -706,16 +715,19 @@ describe("the guest paper page: printing", () => {
     await paper("table-plan");
 
     // The list, changed in a second tab after this one opened it.
-    const otherTab = createGuestListStore(withBackend<unknown>(backend));
-    const changed = { ...opened, title: "Fraser and Okafor, at last", changedSincePrint: true, updatedAt: "2026-11-14T10:00:00.000Z" };
-    expect(await otherTab.save(changed, opened.updatedAt)).toBe("saved");
+    await otherTabSaves(backend, (theirs) => ({
+      ...theirs,
+      title: "Fraser and Okafor, at last",
+      changedSincePrint: true,
+      updatedAt: "2026-11-14T10:00:00.000Z",
+    }));
 
     fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
     await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
     await act(async () => {
       await state().flush();
     });
-    const kept = await otherTab.open(PLAN_ID);
+    const kept = await memoryStore(backend).open(PLAN_ID);
     if (kept.kind !== "ready") throw new Error("the list was not kept");
     expect(kept.list.title).toBe("Fraser and Okafor, at last");
     expect(kept.list.paperVersion).toBe(1);
@@ -724,15 +736,17 @@ describe("the guest paper page: printing", () => {
 
   it("takes up another tab's print when the window gains focus, so the next print never goes back a version", async () => {
     const backend = memoryBackend();
-    const store = createGuestListStore(withBackend<unknown>(backend));
-    const opened = list180();
-    expect(await store.save(opened, null)).toBe("saved");
+    const store = await storeHolding(list180(), backend);
     open(`${PAPER}?kit=on`, store);
     await paper("table-plan");
 
-    const otherTab = createGuestListStore(withBackend<unknown>(backend));
-    const printedThere = { ...opened, paperVersion: 4, changedSincePrint: false, printedAt: "2026-11-14T10:00:00.000Z", updatedAt: "2026-11-14T10:00:00.000Z" };
-    expect(await otherTab.save(printedThere, opened.updatedAt)).toBe("saved");
+    await otherTabSaves(backend, (theirs) => ({
+      ...theirs,
+      paperVersion: 4,
+      changedSincePrint: false,
+      printedAt: "2026-11-14T10:00:00.000Z",
+      updatedAt: "2026-11-14T10:00:00.000Z",
+    }));
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
       await Promise.resolve();
@@ -742,9 +756,7 @@ describe("the guest paper page: printing", () => {
 
   it("says in its tools when another tab changed the list and this tab's version was kept, and the notice closes", async () => {
     const backend = memoryBackend();
-    const store = createGuestListStore(withBackend<unknown>(backend));
-    const opened = list180();
-    expect(await store.save(opened, null)).toBe("saved");
+    const store = await storeHolding(list180(), backend);
     open(`${PAPER}?kit=on`, store);
     await paper("table-plan");
     const notices = tools().querySelector(".gp-tools__notices");
@@ -754,8 +766,7 @@ describe("the guest paper page: printing", () => {
     const fonts = deferred<undefined>();
     fontsReady(fonts.promise);
     fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
-    const otherTab = createGuestListStore(withBackend<unknown>(backend));
-    expect(await otherTab.save({ ...opened, title: "Theirs", updatedAt: "2026-11-14T10:00:00.000Z" }, opened.updatedAt)).toBe("saved");
+    await otherTabSaves(backend, (theirs) => ({ ...theirs, title: "Theirs", updatedAt: "2026-11-14T10:00:00.000Z" }));
     state().apply((list) => ({ ...list, title: "Ours", changedSincePrint: true }));
     fonts.resolve(undefined);
     await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
@@ -768,11 +779,10 @@ describe("the guest paper page: printing", () => {
 
   it("says in its tools when another tab removed the list from this browser, and the notice closes", async () => {
     const backend = memoryBackend();
-    const store = createGuestListStore(withBackend<unknown>(backend));
-    expect(await store.save(list180(), null)).toBe("saved");
+    const store = await storeHolding(list180(), backend);
     open(`${PAPER}?kit=on`, store);
     await paper("table-plan");
-    await createGuestListStore(withBackend<unknown>(backend)).erase(PLAN_ID);
+    await memoryStore(backend).erase(PLAN_ID);
 
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
@@ -795,9 +805,9 @@ describe("the guest paper page: printing", () => {
   it("says when the browser is not keeping the list", async () => {
     const refusing: GuestListStore = {
       open: () => Promise.resolve({ kind: "no-storage" }),
-      save: () => Promise.resolve("not-kept"),
+      save: () => Promise.resolve({ kind: "not-kept" }),
       erase: () => Promise.resolve(),
-      sweep: () => Promise.resolve(0),
+      sweep: () => Promise.resolve([]),
     };
     open(`${PAPER}?kit=on`, refusing);
     await paper("table-plan");
@@ -821,9 +831,9 @@ describe("the guest paper page: printing", () => {
   it("says, as an alert, when the list kept here could not be opened just now", async () => {
     const unread: GuestListStore = {
       open: () => Promise.resolve({ kind: "not-kept" }),
-      save: () => Promise.resolve("not-kept"),
+      save: () => Promise.resolve({ kind: "not-kept" }),
       erase: () => Promise.resolve(),
-      sweep: () => Promise.resolve(0),
+      sweep: () => Promise.resolve([]),
     };
     open(`${PAPER}?kit=on`, unread);
     await paper("table-plan");

@@ -24,20 +24,46 @@ export type Opened =
   /** This browser has no storage for a list (no IndexedDB): nothing is kept here, or can be. */
   | { readonly kind: "no-storage" };
 
-export type Saved = "saved" | "not-kept" | "newer-copy-kept-ours";
+/**
+ * What tells one stored copy of a list from every other: the count of saves
+ * that made it and the time its writer gave it. Two copies are the same copy
+ * only when both are equal. Nothing asks which of two copies is the newer, so
+ * a clock that is wrong, or that steps back, cannot hide a change.
+ */
+export interface Stamp {
+  readonly revision: number;
+  readonly updatedAt: string;
+}
+
+export function stampOf(list: GuestList): Stamp {
+  return { revision: list.revision, updatedAt: list.updatedAt };
+}
+
+export function sameStamp(a: Stamp, b: Stamp): boolean {
+  return a.revision === b.revision && a.updatedAt === b.updatedAt;
+}
+
+export type Saved =
+  /** Written over nothing, or over the very copy the caller had loaded. */
+  | { readonly kind: "saved"; readonly stamp: Stamp }
+  /** Written over a stored copy the caller had not loaded (another tab's), or over a value that was not a list. */
+  | { readonly kind: "saved-over-other"; readonly stamp: Stamp }
+  | { readonly kind: "not-kept" };
 
 export interface GuestListStore {
   open(planId: string): Promise<Opened>;
   /**
-   * Stores the list exactly as given (`updatedAt` is the caller's). `loadedUpdatedAt`
-   * is the `updatedAt` of the copy the caller last opened or saved, or null if none.
-   * When the device holds a valid copy newer than that, it is still replaced and
-   * the answer is "newer-copy-kept-ours", so the page can say so.
+   * Stores the list as given (`updatedAt` is the caller's) but for its
+   * `revision`, which is counted here: one more than the larger of the stored
+   * copy's and the loaded copy's. `loaded` is the stamp of the copy the caller
+   * last opened or saved, or null if none. A stored copy that is not that copy
+   * is still replaced, and the answer says so, so the page can say so. The
+   * answer carries the stamp written: the caller's next `loaded`.
    */
-  save(list: GuestList, loadedUpdatedAt: string | null): Promise<Saved>;
+  save(list: GuestList, loaded: Stamp | null): Promise<Saved>;
   erase(planId: string): Promise<void>;
-  /** Removes lists past their delete-after day; returns how many it removed. */
-  sweep(nowMs: number): Promise<number>;
+  /** Removes lists past their delete-after day; answers the plan ids of the lists it removed. */
+  sweep(nowMs: number): Promise<readonly string[]>;
 }
 
 export function createGuestListStore(handle: CacheHandle<unknown>): GuestListStore {
@@ -54,31 +80,32 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
     }
   }
 
-  async function save(list: GuestList, loadedUpdatedAt: string | null): Promise<Saved> {
+  async function save(list: GuestList, loaded: Stamp | null): Promise<Saved> {
     // A list that open would refuse is never written; the stored copy stays as it was.
     const checked = GuestListSchema.safeParse(list);
-    if (!checked.success) return "not-kept";
-    const toStore = checked.data;
+    if (!checked.success) return { kind: "not-kept" };
     try {
-      const stored = await handle.get(toStore.planId);
-      let newerCopy = false;
+      const stored = await handle.get(checked.data.planId);
+      // What is stored is another's unless it is the very copy the caller loaded.
+      // A stored value that is not a list is another's too; it is replaced.
+      let anothers = false;
+      let storedRevision = 0;
       if (stored !== null) {
         const parsed = GuestListSchema.safeParse(stored.value);
-        if (parsed.success) {
-          newerCopy =
-            loadedUpdatedAt === null ||
-            !(Date.parse(parsed.data.updatedAt) <= Date.parse(loadedUpdatedAt));
-        }
+        if (parsed.success) storedRevision = parsed.data.revision;
+        anothers = !(parsed.success && loaded !== null && sameStamp(stampOf(parsed.data), loaded));
       }
+      const toStore: GuestList = { ...checked.data, revision: Math.max(storedRevision, loaded?.revision ?? 0) + 1 };
+      const stamp = stampOf(toStore);
       await handle.put(toStore.planId, toStore);
       // Read back: put resolves before the browser commits, so a quota failure would otherwise pass as "saved".
       const back = await handle.get(toStore.planId);
-      if (back === null) return "not-kept";
+      if (back === null) return { kind: "not-kept" };
       const kept = GuestListSchema.safeParse(back.value);
-      if (!kept.success || kept.data.updatedAt !== toStore.updatedAt) return "not-kept";
-      return newerCopy ? "newer-copy-kept-ours" : "saved";
+      if (!kept.success || !sameStamp(stampOf(kept.data), stamp)) return { kind: "not-kept" };
+      return { kind: anothers ? "saved-over-other" : "saved", stamp };
     } catch {
-      return "not-kept";
+      return { kind: "not-kept" };
     }
   }
 
@@ -90,8 +117,8 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
     }
   }
 
-  async function sweep(nowMs: number): Promise<number> {
-    let removed = 0;
+  async function sweep(nowMs: number): Promise<readonly string[]> {
+    const removed: string[] = [];
     try {
       const rows = await handle.list();
       for (const row of rows) {
@@ -102,13 +129,14 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
           // Fails safe: a removal moment that cannot be read never removes a list.
           if (!(nowMs >= removeFrom)) continue;
           await handle.delete(row.key);
-          removed += 1;
+          // A list is kept under its plan's id.
+          removed.push(row.key);
         } catch {
           // This one could not be worked out or removed; carry on with the rest.
         }
       }
     } catch {
-      return 0;
+      // The lists could not be read: nothing was removed.
     }
     return removed;
   }
@@ -124,9 +152,9 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
 function noStorageStore(): GuestListStore {
   return {
     open: () => Promise.resolve({ kind: "no-storage" }),
-    save: () => Promise.resolve("not-kept"),
+    save: () => Promise.resolve({ kind: "not-kept" }),
     erase: () => Promise.resolve(),
-    sweep: () => Promise.resolve(0),
+    sweep: () => Promise.resolve([]),
   };
 }
 

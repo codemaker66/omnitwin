@@ -75,6 +75,13 @@ export const GuestListSchema = z.strictObject({
   changedSincePrint: z.boolean(),
   printedAt: z.iso.datetime().nullable(),
   updatedAt: z.iso.datetime(),
+  /**
+   * How many saves made the stored copy. The device store counts it; with
+   * `updatedAt` it tells one stored copy from another, so two tabs never have
+   * to compare their clocks. A list kept before this field existed reads as 0.
+   * It is not the paper's version.
+   */
+  revision: z.number().int().min(0).default(0),
 });
 
 export type Guest = z.infer<typeof GuestSchema>;
@@ -98,6 +105,7 @@ export function emptyGuestList(planId: string, nowIso: string): GuestList {
     changedSincePrint: false,
     printedAt: null,
     updatedAt: nowIso,
+    revision: 0,
   };
 }
 

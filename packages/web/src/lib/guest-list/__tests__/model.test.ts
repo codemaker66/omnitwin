@@ -135,6 +135,22 @@ describe("emptyGuestList and GuestListSchema", () => {
     expect(GuestListSchema.safeParse(list).success).toBe(true);
   });
 
+  it("starts at revision 0, and reads a list kept without a revision as revision 0", () => {
+    expect(list.revision).toBe(0);
+    const { revision, ...keptBefore } = list;
+    expect(revision).toBe(0);
+    const read = GuestListSchema.safeParse(keptBefore);
+    expect(read.success ? read.data.revision : null).toBe(0);
+    expect(GuestListSchema.safeParse({ ...list, revision: 7 }).success).toBe(true);
+  });
+
+  it("refuses a revision that is not a whole number of 0 or more", () => {
+    expect(GuestListSchema.safeParse({ ...list, revision: -1 }).success).toBe(false);
+    expect(GuestListSchema.safeParse({ ...list, revision: 1.5 }).success).toBe(false);
+    expect(GuestListSchema.safeParse({ ...list, revision: "1" }).success).toBe(false);
+    expect(GuestListSchema.safeParse({ ...list, revision: null }).success).toBe(false);
+  });
+
   it("refuses an extra field, a wrong version and a bad date", () => {
     expect(GuestListSchema.safeParse({ ...list, owner: "x" }).success).toBe(false);
     expect(GuestListSchema.safeParse({ ...list, version: 2 }).success).toBe(false);

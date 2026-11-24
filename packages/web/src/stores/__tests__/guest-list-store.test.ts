@@ -4,9 +4,11 @@ import { emptyGuestList, type Guest, type GuestList } from "../../lib/guest-list
 import { markPrinted } from "../../lib/guest-list/paper.js";
 import {
   createGuestListStore,
+  stampOf,
   type GuestListStore,
   type Opened,
   type Saved,
+  type Stamp,
 } from "../../lib/guest-list/store.js";
 import { AUTOSAVE_MS, UNDO_STEPS, useGuestListStore } from "../guest-list-store.js";
 
@@ -48,6 +50,28 @@ async function reopened(backend: CacheBackend, planId: string): Promise<Opened> 
 
 function storedTitle(opened: Opened): string | null {
   return opened.kind === "ready" ? opened.list.title : null;
+}
+
+/** Another tab of the same browser: a device store of its own over the same storage, used directly. */
+function otherTabOn(backend: CacheBackend): GuestListStore {
+  return createGuestListStore(withBackend<unknown>(backend));
+}
+
+/** What a tab holds after opening the plan: the list and the stamp of the copy it loaded. */
+async function loadedBy(tab: GuestListStore, planId: string): Promise<{ readonly list: GuestList; readonly stamp: Stamp }> {
+  const opened = await tab.open(planId);
+  if (opened.kind !== "ready") throw new Error("nothing stored to load");
+  return { list: opened.list, stamp: stampOf(opened.list) };
+}
+
+/** A clock that gives each of `moments` in turn, then stays on the last. */
+function clockOf(moments: readonly string[]): () => string {
+  let at = 0;
+  return () => {
+    const moment = moments[Math.min(at, moments.length - 1)] ?? START;
+    at += 1;
+    return moment;
+  };
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
@@ -96,11 +120,11 @@ describe("guest list page state: opening", () => {
   it("opens a stored list as it was kept", async () => {
     const { store } = device();
     const kept = { ...emptyGuestList(PLAN_A, START), title: "Dinner", guests: [guest(1)] };
-    expect(await store.save(kept, null)).toBe("saved");
+    expect((await store.save(kept, null)).kind).toBe("saved");
 
     await state().open(PLAN_A, store, clock());
     expect(state().phase).toBe("ready");
-    expect(state().list).toEqual(kept);
+    expect(state().list).toEqual({ ...kept, revision: 1 });
     expect(state().kept).toBe(true);
     expect(state().notice).toBeNull();
   });
@@ -240,7 +264,7 @@ describe("guest list page state: changes and autosave", () => {
     expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Second");
   });
 
-  it("passes the copy it opened or last saved, so another tab's newer copy is noticed", async () => {
+  it("passes the stamp of the copy it opened or last saved, so another tab's copy is noticed", async () => {
     const { store } = device();
     const save = vi.spyOn(store, "save");
     await state().open(PLAN_A, store, clock());
@@ -249,9 +273,44 @@ describe("guest list page state: changes and autosave", () => {
     const firstSaved = state().list?.updatedAt;
     state().apply(titled("Two"));
     await state().flush();
+    const secondSaved = state().list?.updatedAt;
+    state().apply(titled("Three"));
+    await state().flush();
 
     expect(save.mock.calls[0]?.[1]).toBeNull();
-    expect(save.mock.calls[1]?.[1]).toBe(firstSaved);
+    expect(save.mock.calls[1]?.[1]).toEqual({ revision: 1, updatedAt: firstSaved });
+    expect(save.mock.calls[2]?.[1]).toEqual({ revision: 2, updatedAt: secondSaved });
+  });
+
+  it("opens a stored list and passes its stamp with the first save", async () => {
+    const { backend, store } = device();
+    await withBackend<unknown>(backend).put(PLAN_A, { ...emptyGuestList(PLAN_A, START), title: "Kept", revision: 7 });
+    const save = vi.spyOn(store, "save");
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Changed"));
+    await state().flush();
+
+    expect(save.mock.calls[0]?.[1]).toEqual({ revision: 7, updatedAt: START });
+    expect(state().notice).toBeNull();
+    expect((await loadedBy(otherTabOn(backend), PLAN_A)).stamp.revision).toBe(8);
+  });
+
+  it("never reads the revision from the page's list: its own saves are not mistaken for another tab's", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    for (const title of ["One", "Two", "Three"]) {
+      state().apply(titled(title));
+      await state().flush();
+      expect(state().notice).toBeNull();
+    }
+    // The device counts three saves.
+    expect((await loadedBy(otherTabOn(backend), PLAN_A)).stamp.revision).toBe(3);
+
+    // Whatever the page's list says its revision is, the save goes by the stamp of the copy loaded.
+    state().apply((list) => ({ ...list, title: "Four", revision: 99 }));
+    await state().flush();
+    expect(state().notice).toBeNull();
+    expect((await loadedBy(otherTabOn(backend), PLAN_A)).stamp.revision).toBe(4);
   });
 
   it("makes no undo step and no save for a change that changes nothing", async () => {
@@ -322,7 +381,7 @@ describe("guest list page state: changes and autosave", () => {
 
   it("keeps the list in memory when a save is not kept, and tries again after the next change", async () => {
     const { backend, store } = device();
-    const save = vi.spyOn(store, "save").mockResolvedValueOnce("not-kept");
+    const save = vi.spyOn(store, "save").mockResolvedValueOnce({ kind: "not-kept" });
     await state().open(PLAN_A, store, clock());
 
     state().apply(titled("First"));
@@ -341,7 +400,7 @@ describe("guest list page state: changes and autosave", () => {
     expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Second");
   });
 
-  it("says when another tab had kept a newer copy, and keeps this one", async () => {
+  it("says when another tab had kept a copy this tab had not loaded, and keeps this one", async () => {
     const { backend, store } = device();
     await state().open(PLAN_A, store, clock());
     state().apply(titled("Ours"));
@@ -350,7 +409,7 @@ describe("guest list page state: changes and autosave", () => {
     // Another tab saves a later copy of the same list.
     const otherTab = createGuestListStore(withBackend<unknown>(backend));
     const theirs = { ...emptyGuestList(PLAN_A, "2026-11-14T09:00:00.000Z"), title: "Theirs" };
-    expect(await otherTab.save(theirs, null)).toBe("newer-copy-kept-ours");
+    expect((await otherTab.save(theirs, null)).kind).toBe("saved-over-other");
 
     state().apply(titled("Ours again"));
     await state().flush();
@@ -673,9 +732,9 @@ describe("guest list page state: a list the device could not read is never overw
 
     const noStorage: GuestListStore = {
       open: () => Promise.resolve({ kind: "no-storage" }),
-      save: () => Promise.resolve("not-kept"),
+      save: () => Promise.resolve({ kind: "not-kept" }),
       erase: () => Promise.resolve(),
-      sweep: () => Promise.resolve(0),
+      sweep: () => Promise.resolve([]),
     };
     await state().open(PLAN_A, noStorage, clock());
     expect(state().phase).toBe("ready");
@@ -727,13 +786,13 @@ describe("guest list page state: a list the device could not read is never overw
 });
 
 describe("guest list page state: another tab's changes are taken up", () => {
-  /** What another tab of the same browser writes: a later copy of the list, from the copy it had. */
+  /** What another tab of the same browser writes: a later copy of the list, from the copy it had. Answers the list as stored. */
   async function otherTabSaves(backend: CacheBackend, patch: Partial<GuestList>, updatedAt: string): Promise<GuestList> {
-    const before = await reopened(backend, PLAN_A);
-    if (before.kind !== "ready") throw new Error("nothing stored to change");
-    const theirs = { ...before.list, ...patch, updatedAt };
-    expect(await createGuestListStore(withBackend<unknown>(backend)).save(theirs, before.list.updatedAt)).toBe("saved");
-    return theirs;
+    const tab = otherTabOn(backend);
+    const before = await loadedBy(tab, PLAN_A);
+    const answer = await tab.save({ ...before.list, ...patch, updatedAt }, before.stamp);
+    expect(answer.kind).toBe("saved");
+    return (await loadedBy(tab, PLAN_A)).list;
   }
 
   it("takes a newer stored list when nothing is unsaved, clears undo, and saves the next change quietly", async () => {
@@ -953,10 +1012,127 @@ describe("guest list page state: another tab's changes are taken up", () => {
   });
 });
 
+describe("guest list page state: tabs are told apart by the copy loaded, never by the clock", () => {
+  const SAME_MOMENT = "2026-11-13T10:00:05.000Z";
+
+  /** This tab opens and saves once at SAME_MOMENT; another tab then saves a change carrying that same millisecond. */
+  async function bothSaveInOneMillisecond(): Promise<{ readonly backend: CacheBackend; readonly store: GuestListStore }> {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, () => SAME_MOMENT);
+    state().apply(titled("Ours"));
+    await state().flush();
+    expect(state().list?.updatedAt).toBe(SAME_MOMENT);
+
+    const other = otherTabOn(backend);
+    const theirs = await loadedBy(other, PLAN_A);
+    expect(theirs.stamp).toEqual({ revision: 1, updatedAt: SAME_MOMENT });
+    const answer = await other.save({ ...theirs.list, title: "Theirs", guests: [guest(1)], updatedAt: SAME_MOMENT }, theirs.stamp);
+    expect(answer).toEqual({ kind: "saved", stamp: { revision: 2, updatedAt: SAME_MOMENT } });
+    return { backend, store };
+  }
+
+  it("takes up another tab's save that carries the same millisecond as this tab's last save", async () => {
+    await bothSaveInOneMillisecond();
+    await state().refresh();
+    expect(state().list?.title).toBe("Theirs");
+    expect(state().list?.guests).toEqual([guest(1)]);
+    expect(state().canUndo).toBe(false);
+    expect(state().takeUps).toBe(1);
+    // Read again: the copy stored is now the one loaded, so nothing more is taken.
+    await state().refresh();
+    expect(state().takeUps).toBe(1);
+  });
+
+  it("with the same millisecond and a change here first, the save says it went over another tab's copy", async () => {
+    const { backend } = await bothSaveInOneMillisecond();
+    state().apply(titled("Ours again"));
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "other-tab" });
+    expect(state().kept).toBe(true);
+    expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Ours again");
+  });
+
+  it("a clock that steps back five minutes between this tab's two saves does not hide the later save from another tab", async () => {
+    const { backend, store } = device();
+    // The empty list, the first change, then the clock steps back five minutes before the second.
+    await state().open(PLAN_A, store, clockOf(["2026-11-13T10:00:00.000Z", "2026-11-13T10:00:10.000Z", "2026-11-13T09:55:10.000Z"]));
+    state().apply(titled("First"));
+    await state().flush();
+    const other = otherTabOn(backend);
+    const seen = await loadedBy(other, PLAN_A);
+    expect(seen.stamp).toEqual({ revision: 1, updatedAt: "2026-11-13T10:00:10.000Z" });
+
+    state().apply(titled("Second"));
+    await state().flush();
+    expect(state().list?.updatedAt).toBe("2026-11-13T09:55:10.000Z");
+
+    // Reading again, the other tab finds a copy that is not the one it loaded, though it is stamped earlier.
+    const later = await loadedBy(other, PLAN_A);
+    expect(later.stamp).toEqual({ revision: 2, updatedAt: "2026-11-13T09:55:10.000Z" });
+    expect(later.list.title).toBe("Second");
+    // Saving from the copy it loaded, it is told it went over another's.
+    const answer = await other.save({ ...seen.list, title: "Theirs", updatedAt: "2026-11-13T09:55:20.000Z" }, seen.stamp);
+    expect(answer.kind).toBe("saved-over-other");
+  });
+
+  /** Another tab saves, this tab opens, then the other tab's clock steps back five minutes and it saves again. */
+  async function otherTabSavesAfterItsClockStepsBack(): Promise<{ readonly backend: CacheBackend }> {
+    const { backend, store } = device();
+    const other = otherTabOn(backend);
+    const first = await other.save({ ...emptyGuestList(PLAN_A, "2026-11-13T10:00:00.000Z"), title: "First" }, null);
+    if (first.kind !== "saved") throw new Error("the first save was not kept");
+    await state().open(PLAN_A, store, clock());
+    expect(state().list?.title).toBe("First");
+
+    const second = await other.save(
+      { ...emptyGuestList(PLAN_A, "2026-11-13T09:55:01.000Z"), title: "Second", guests: [guest(2)] },
+      first.stamp,
+    );
+    expect(second).toEqual({ kind: "saved", stamp: { revision: 2, updatedAt: "2026-11-13T09:55:01.000Z" } });
+    return { backend };
+  }
+
+  it("takes up another tab's later save though it is stamped five minutes before the copy loaded here", async () => {
+    await otherTabSavesAfterItsClockStepsBack();
+    await state().refresh();
+    expect(state().list?.title).toBe("Second");
+    expect(state().list?.guests).toEqual([guest(2)]);
+    expect(state().takeUps).toBe(1);
+  });
+
+  it("says its save went over another tab's later save though that one is stamped before the copy loaded here", async () => {
+    const { backend } = await otherTabSavesAfterItsClockStepsBack();
+    state().apply(titled("Ours"));
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "other-tab" });
+    expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Ours");
+  });
+
+  it("opens a list kept without a revision, and its first save here stores revision 1 quietly", async () => {
+    const { backend, store } = device();
+    const { revision, ...keptBefore } = { ...emptyGuestList(PLAN_A, START), title: "Kept before", guests: [guest(1)] };
+    expect(revision).toBe(0);
+    await withBackend<unknown>(backend).put(PLAN_A, keptBefore);
+
+    await state().open(PLAN_A, store, clock());
+    expect(state().phase).toBe("ready");
+    expect(state().list?.title).toBe("Kept before");
+    expect(state().list?.guests).toEqual([guest(1)]);
+    state().apply(titled("Changed"));
+    await state().flush();
+
+    expect(state().notice).toBeNull();
+    expect(state().kept).toBe(true);
+    const kept = await loadedBy(otherTabOn(backend), PLAN_A);
+    expect(kept.stamp.revision).toBe(1);
+    expect(kept.list.title).toBe("Changed");
+  });
+});
+
 describe("guest list page state: nothing rejects and no name escapes", () => {
   it("resolves every action when every store call rejects, and logs nothing", async () => {
     const reject = (): Promise<never> => Promise.reject(new Error(`refused ${CANARY}`));
-    const save = (_list: GuestList, _loaded: string | null): Promise<Saved> => reject();
+    const save = (_list: GuestList, _loaded: Stamp | null): Promise<Saved> => reject();
     const store: GuestListStore = { open: reject, save, erase: reject, sweep: reject };
     const logs = [
       vi.spyOn(console, "log"),

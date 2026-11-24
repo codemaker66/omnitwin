@@ -10,7 +10,7 @@
 
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { emptyGuestList, type GuestList } from "../lib/guest-list/model.js";
-import type { GuestListStore, Opened, Saved } from "../lib/guest-list/store.js";
+import { sameStamp, stampOf, type GuestListStore, type Opened, type Saved, type Stamp } from "../lib/guest-list/store.js";
 
 /** A change is written to the device within this long of being made. */
 export const AUTOSAVE_MS = 600;
@@ -55,13 +55,13 @@ export interface GuestListState {
   flush(): Promise<void>;
   /**
    * Takes up another tab's changes. When nothing here is unsaved and no save
-   * is running, reads the device again and takes the stored list if it is
-   * newer than the copy last opened or saved here; undo is cleared then, as
-   * its steps belong to the older list. When nothing is stored any more and
-   * this session had opened or saved a list, another tab removed it: an empty
-   * list is taken, undo is cleared and the page says so, so the names are not
-   * written back. With a change unsaved, nothing is read: the save says if
-   * another tab had kept a newer copy, as before.
+   * is running, reads the device again and takes the stored list if it is not
+   * the copy last opened or saved here, whichever way the two clocks point;
+   * undo is cleared then, as its steps belong to the list before. When nothing
+   * is stored any more and this session had opened or saved a list, another
+   * tab removed it: an empty list is taken, undo is cleared and the page says
+   * so, so the names are not written back. With a change unsaved, nothing is
+   * read: the save says if it went over another tab's copy.
    */
   refresh(): Promise<void>;
   reset(): void;
@@ -78,8 +78,12 @@ interface Session {
   readonly now: () => string;
   /** Lists before each recorded change, oldest first. */
   undo: GuestList[];
-  /** The `updatedAt` of the copy last opened or saved, for the device's newer-copy check. */
-  loadedUpdatedAt: string | null;
+  /**
+   * The stamp of the stored copy this session last opened, took up or saved,
+   * or null when it holds none: what the device compares its stored copy with.
+   * It comes from the device's answers only, never from the page's list.
+   */
+  loaded: Stamp | null;
   /** A change has been made that the device has not yet been asked to keep. */
   unsaved: boolean;
   timer: ReturnType<typeof setTimeout> | null;
@@ -123,11 +127,11 @@ async function openSafely(store: GuestListStore, planId: string): Promise<Opened
   }
 }
 
-async function saveSafely(store: GuestListStore, list: GuestList, loaded: string | null): Promise<Saved> {
+async function saveSafely(store: GuestListStore, list: GuestList, loaded: Stamp | null): Promise<Saved> {
   try {
     return await store.save(list, loaded);
   } catch {
-    return "not-kept";
+    return { kind: "not-kept" };
   }
 }
 
@@ -170,7 +174,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
               return;
             }
             session.unread = false;
-            session.loadedUpdatedAt = null;
+            session.loaded = null;
             if (isCurrent(session)) set({ unread: false });
             // Check again what may have changed while reading (an erase, a reset).
             continue;
@@ -178,15 +182,15 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           const list = isCurrent(session) ? get().list : session.final;
           session.unsaved = false;
           if (list === null) return;
-          const answer = await saveSafely(session.store, list, session.loadedUpdatedAt);
-          if (answer === "not-kept") {
+          const answer = await saveSafely(session.store, list, session.loaded);
+          if (answer.kind === "not-kept") {
             session.unsaved = true;
             if (isCurrent(session)) set({ kept: false });
             return;
           }
-          session.loadedUpdatedAt = list.updatedAt;
+          session.loaded = answer.stamp;
           if (isCurrent(session)) {
-            set(answer === "newer-copy-kept-ours" ? { kept: true, notice: { kind: "other-tab" } } : { kept: true });
+            set(answer.kind === "saved-over-other" ? { kept: true, notice: { kind: "other-tab" } } : { kept: true });
           }
         }
       })();
@@ -235,7 +239,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           store,
           now,
           undo: [],
-          loadedUpdatedAt: null,
+          loaded: null,
           unsaved: false,
           timer: null,
           running: null,
@@ -256,7 +260,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
 
         switch (opened.kind) {
           case "ready":
-            session.loadedUpdatedAt = opened.list.updatedAt;
+            session.loaded = stampOf(opened.list);
             set({
               phase: "ready",
               list: opened.list,
@@ -331,7 +335,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         if (!session.unread) await eraseSafely(session.store, session.planId);
         if (!isCurrent(session) || get().phase !== "unreadable") return;
         session.undo = [];
-        session.loadedUpdatedAt = null;
+        session.loaded = null;
         set({
           phase: "ready",
           list: emptyGuestList(session.planId, session.now()),
@@ -356,7 +360,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         session.erasing = false;
         if (!isCurrent(session)) return;
         session.undo = [];
-        session.loadedUpdatedAt = null;
+        session.loaded = null;
         set({
           phase: "ready",
           list: emptyGuestList(session.planId, session.now()),
@@ -384,11 +388,11 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           if (session.unread) {
             // Nothing is stored: the device has been read after all.
             session.unread = false;
-            session.loadedUpdatedAt = null;
+            session.loaded = null;
             set({ unread: false, kept: true });
-          } else if (session.loadedUpdatedAt !== null) {
+          } else if (session.loaded !== null) {
             // This session opened or saved a list that is no longer stored: another tab removed it.
-            session.loadedUpdatedAt = null;
+            session.loaded = null;
             session.undo = [];
             set({
               list: emptyGuestList(session.planId, session.now()),
@@ -401,10 +405,11 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           return;
         }
         if (opened.kind !== "ready") return;
-        const loaded = session.loadedUpdatedAt;
-        if (loaded !== null && !(Date.parse(opened.list.updatedAt) > Date.parse(loaded))) return;
+        const stored = stampOf(opened.list);
+        // The stored copy is the one this session loaded: there is nothing to take.
+        if (session.loaded !== null && sameStamp(stored, session.loaded)) return;
         session.unread = false;
-        session.loadedUpdatedAt = opened.list.updatedAt;
+        session.loaded = stored;
         session.undo = [];
         set({
           list: opened.list,

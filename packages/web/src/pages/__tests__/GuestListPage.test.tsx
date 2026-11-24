@@ -7,7 +7,7 @@ import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { memoryBackend, withBackend, type CacheBackend } from "../../lib/idb-cache.js";
 import { KIT_STORAGE_KEY } from "../../lib/guest-list/kit-switch.js";
 import { deleteAfter, earliestEventDate, emptyGuestList, type Guest, type GuestList, type KitTable } from "../../lib/guest-list/model.js";
-import { createGuestListStore, type GuestListStore, type Opened } from "../../lib/guest-list/store.js";
+import { createGuestListStore, stampOf, type GuestListStore, type Opened } from "../../lib/guest-list/store.js";
 import { useGuestListStore } from "../../stores/guest-list-store.js";
 import { GuestListPage } from "../GuestListPage.js";
 
@@ -100,8 +100,19 @@ function memoryStore(backend: CacheBackend = memoryBackend()): GuestListStore {
 async function storeHolding(list: GuestList): Promise<{ readonly store: GuestListStore; readonly backend: CacheBackend }> {
   const backend = memoryBackend();
   const store = memoryStore(backend);
-  expect(await store.save(list, null)).toBe("saved");
+  expect((await store.save(list, null)).kind).toBe("saved");
   return { store, backend };
+}
+
+/**
+ * Another tab of the same browser changes the list: a device store of its own
+ * over the same storage opens what is kept, changes it and saves it.
+ */
+async function otherTabSaves(backend: CacheBackend, change: (kept: GuestList) => GuestList): Promise<void> {
+  const tab = memoryStore(backend);
+  const opened = await tab.open(PLAN_ID);
+  if (opened.kind !== "ready") throw new Error("nothing is kept for the other tab to change");
+  expect((await tab.save(change(opened.list), stampOf(opened.list))).kind).toBe("saved");
 }
 
 function refusingBackend(): CacheBackend {
@@ -427,17 +438,18 @@ describe("the guest list page: the desk", () => {
     expect(screen.getByRole("button", { name: "To seat 1" }).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("refuses a full table in fixed words and moves nobody", async () => {
+  it("offers a chosen guest no seat at a full table, and moves nobody", async () => {
     const { store } = await storeHolding(listOf({
-      tables: [table(1, 2)],
+      tables: [table(1, 2), table(2, 2)],
       guests: [guest(1, "Ailsa Fraser"), guest(2, "Chidi Okafor", uuid(1), 1), guest(3, "Morag Kerr", uuid(1), 2)],
     }));
     open(PAGE, store);
     await desk();
     fireEvent.click(screen.getByRole("button", { name: "To seat 1" }));
     fireEvent.click(screen.getByRole("button", { name: "Fraser, Ailsa" }));
-    fireEvent.click(screen.getByRole("button", { name: "Seat here at table 1" }));
-    expect(screen.getByText("That table is full.")).toBeTruthy();
+    // The table with room offers its seat; the full one offers none, so nothing there can be refused.
+    expect(screen.getByRole("button", { name: "Seat here at table 2" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Seat here at table 1" })).toBeNull();
     expect(currentList().guests[0]?.tableId).toBeNull();
   });
 
@@ -665,8 +677,7 @@ describe("the guest list page: what the device says", () => {
     const { store, backend } = await storeHolding(opened);
     open(PAGE, store);
     await desk();
-    const other = memoryStore(backend);
-    expect(await other.save({ ...opened, title: "Another tab", updatedAt: new Date(Date.now() + 60_000).toISOString() }, opened.updatedAt)).toBe("saved");
+    await otherTabSaves(backend, (kept) => ({ ...kept, title: "Another tab", updatedAt: new Date(Date.now() + 60_000).toISOString() }));
 
     fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor" } });
     await flush();
@@ -680,8 +691,13 @@ describe("the guest list page: what the device says", () => {
     await desk();
 
     // The paper, printed in a second tab: version 1.
-    const printed = { ...opened, paperVersion: 1, changedSincePrint: false, printedAt: new Date().toISOString(), updatedAt: new Date(Date.now() + 60_000).toISOString() };
-    expect(await memoryStore(backend).save(printed, opened.updatedAt)).toBe("saved");
+    await otherTabSaves(backend, (kept) => ({
+      ...kept,
+      paperVersion: 1,
+      changedSincePrint: false,
+      printedAt: new Date().toISOString(),
+      updatedAt: new Date(Date.now() + 60_000).toISOString(),
+    }));
 
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
@@ -704,8 +720,11 @@ describe("the guest list page: what the device says", () => {
     const { store, backend } = await storeHolding(opened);
     open(PAGE, store);
     await desk();
-    const changed = { ...opened, guests: [...opened.guests, guest(2, "Chidi Okafor")], updatedAt: new Date(Date.now() + 60_000).toISOString() };
-    expect(await memoryStore(backend).save(changed, opened.updatedAt)).toBe("saved");
+    await otherTabSaves(backend, (kept) => ({
+      ...kept,
+      guests: [...kept.guests, guest(2, "Chidi Okafor")],
+      updatedAt: new Date(Date.now() + 60_000).toISOString(),
+    }));
 
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
@@ -756,10 +775,11 @@ describe("the guest list page: what the device says", () => {
     expect(screen.getByText(refusal)).toBeTruthy();
     expect(said.textContent).toBe("Ailsa Fraser is at table 1, seat 1.");
 
-    const stored = await store.open(PLAN_ID);
-    if (stored.kind !== "ready") throw new Error("the list was not kept");
-    const theirs = { ...stored.list, guests: [{ ...guest(1, "Ailsa Fraser"), tableId: null, seat: null }], updatedAt: new Date(Date.parse(stored.list.updatedAt) + 60_000).toISOString() };
-    expect(await memoryStore(backend).save(theirs, stored.list.updatedAt)).toBe("saved");
+    await otherTabSaves(backend, (kept) => ({
+      ...kept,
+      guests: [{ ...guest(1, "Ailsa Fraser"), tableId: null, seat: null }],
+      updatedAt: new Date(Date.parse(kept.updatedAt) + 60_000).toISOString(),
+    }));
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
       await Promise.resolve();

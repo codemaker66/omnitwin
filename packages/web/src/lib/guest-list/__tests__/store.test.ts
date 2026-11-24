@@ -1,7 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { memoryBackend, withBackend, type CacheBackend } from "../../idb-cache.js";
 import { emptyGuestList, type Guest, type GuestList } from "../model.js";
-import { createGuestListStore, GUEST_LIST_DB, GUEST_LIST_STORE } from "../store.js";
+import { createGuestListStore, GUEST_LIST_DB, GUEST_LIST_STORE, stampOf, type GuestListStore, type Stamp } from "../store.js";
 
 const PLAN_A = "5b0a6f0e-7f0b-4d7e-9c3a-2f6f6f0a1b11";
 const PLAN_B = "6c1b7a1f-8a1c-4e8f-8d4b-3a7a7a1b2c22";
@@ -64,6 +64,13 @@ function twoTabs() {
 
 const store = () => createGuestListStore(withBackend<unknown>(memoryBackend()));
 
+/** The stamp of the copy a tab holds after opening the plan now. */
+async function loadedStamp(tab: GuestListStore, planId: string): Promise<Stamp> {
+  const opened = await tab.open(planId);
+  if (opened.kind !== "ready") throw new Error("nothing stored to load");
+  return stampOf(opened.list);
+}
+
 describe("guest list store: names", () => {
   it("names the database and the object store", () => {
     expect(GUEST_LIST_DB).toBe("venviewer-guest-lists");
@@ -80,26 +87,26 @@ describe("guest list store: open and save", () => {
     const s = store();
     const a = listFor(PLAN_A, { title: "Plan A", guests: [guestAt(1, null, null)] });
     const b = listFor(PLAN_B, { title: "Plan B" });
-    expect(await s.save(a, null)).toBe("saved");
-    expect(await s.save(b, null)).toBe("saved");
+    expect(await s.save(a, null)).toEqual({ kind: "saved", stamp: { revision: 1, updatedAt: NOW } });
+    expect(await s.save(b, null)).toEqual({ kind: "saved", stamp: { revision: 1, updatedAt: NOW } });
 
-    expect(await s.open(PLAN_A)).toEqual({ kind: "ready", list: a, repaired: 0 });
-    expect(await s.open(PLAN_B)).toEqual({ kind: "ready", list: b, repaired: 0 });
+    expect(await s.open(PLAN_A)).toEqual({ kind: "ready", list: { ...a, revision: 1 }, repaired: 0 });
+    expect(await s.open(PLAN_B)).toEqual({ kind: "ready", list: { ...b, revision: 1 }, repaired: 0 });
   });
 
-  it("stores the list exactly as given and sets no field of its own", async () => {
+  it("stores the list as given, and sets no field of its own but the revision", async () => {
     const s = store();
     const a = listFor(PLAN_A, { updatedAt: "2026-01-02T03:04:05.000Z" });
     await s.save(a, null);
-    expect(await s.open(PLAN_A)).toEqual({ kind: "ready", list: a, repaired: 0 });
+    expect(await s.open(PLAN_A)).toEqual({ kind: "ready", list: { ...a, revision: 1 }, repaired: 0 });
   });
 
   it("says not-kept, and does not throw, when storage refuses", async () => {
     const s = createGuestListStore(withBackend<unknown>(refusingBackend()));
     expect(await s.open(PLAN_A)).toEqual({ kind: "not-kept" });
-    expect(await s.save(listFor(PLAN_A), null)).toBe("not-kept");
+    expect(await s.save(listFor(PLAN_A), null)).toEqual({ kind: "not-kept" });
     await expect(s.erase(PLAN_A)).resolves.toBeUndefined();
-    expect(await s.sweep(Date.parse("2030-01-01T00:00:00Z"))).toBe(0);
+    expect(await s.sweep(Date.parse("2030-01-01T00:00:00Z"))).toEqual([]);
   });
 
   it("says unreadable for a stored value that is not a list, and leaves it in place", async () => {
@@ -134,46 +141,134 @@ describe("guest list store: open and save", () => {
     expect((await raw.get(PLAN_A))?.value).toEqual(stored);
   });
 
-  it("a second tab's newer copy is not overwritten unseen", async () => {
+  it("a second tab's copy is not overwritten unseen: the save says it went over another's", async () => {
     const { a, b } = twoTabs();
     const base = listFor(PLAN_A, { updatedAt: "2026-11-13T10:00:00.000Z" });
-    expect(await a.save(base, null)).toBe("saved");
+    expect((await a.save(base, null)).kind).toBe("saved");
 
     const openedA = await a.open(PLAN_A);
     const openedB = await b.open(PLAN_A);
     if (openedA.kind !== "ready" || openedB.kind !== "ready") throw new Error("not ready");
-    const aLoadedAt = openedA.list.updatedAt;
-    const bLoadedAt = openedB.list.updatedAt;
 
     const bChanged: GuestList = { ...openedB.list, title: "From B", updatedAt: "2026-11-13T10:05:00.000Z" };
-    expect(await b.save(bChanged, bLoadedAt)).toBe("saved");
+    expect(await b.save(bChanged, stampOf(openedB.list))).toEqual({
+      kind: "saved",
+      stamp: { revision: 2, updatedAt: "2026-11-13T10:05:00.000Z" },
+    });
 
     const aChanged: GuestList = { ...openedA.list, title: "From A", updatedAt: "2026-11-13T10:06:00.000Z" };
-    expect(await a.save(aChanged, aLoadedAt)).toBe("newer-copy-kept-ours");
+    expect(await a.save(aChanged, stampOf(openedA.list))).toEqual({
+      kind: "saved-over-other",
+      stamp: { revision: 3, updatedAt: "2026-11-13T10:06:00.000Z" },
+    });
 
     const final = await a.open(PLAN_A);
     expect(final.kind === "ready" ? final.list.title : null).toBe("From A");
   });
 
-  it("answers newer-copy-kept-ours when it never loaded one but one is stored", async () => {
+  it("answers saved-over-other when it never loaded a copy but one is stored", async () => {
     const { a, b } = twoTabs();
     await b.save(listFor(PLAN_A, { title: "Stored" }), null);
-    expect(await a.save(listFor(PLAN_A, { title: "Ours" }), null)).toBe("newer-copy-kept-ours");
+    expect((await a.save(listFor(PLAN_A, { title: "Ours" }), null)).kind).toBe("saved-over-other");
   });
 
   it("saves quietly when the stored copy is the one it loaded", async () => {
     const s = store();
     const first = listFor(PLAN_A, { updatedAt: "2026-11-13T10:00:00.000Z" });
-    await s.save(first, null);
+    const kept = await s.save(first, null);
+    if (kept.kind !== "saved") throw new Error("the first save was not kept");
     const next = { ...first, title: "Next", updatedAt: "2026-11-13T10:01:00.000Z" };
-    expect(await s.save(next, first.updatedAt)).toBe("saved");
+    expect(await s.save(next, kept.stamp)).toEqual({
+      kind: "saved",
+      stamp: { revision: 2, updatedAt: "2026-11-13T10:01:00.000Z" },
+    });
   });
 
-  it("saves over a stored value it cannot read, without a warning", async () => {
+  it("saves over a stored value it cannot read, and counts it as another's", async () => {
     const { raw, a } = twoTabs();
     await raw.put(PLAN_A, { junk: true });
-    expect(await a.save(listFor(PLAN_A), null)).toBe("saved");
+    expect(await a.save(listFor(PLAN_A), null)).toEqual({ kind: "saved-over-other", stamp: { revision: 1, updatedAt: NOW } });
     expect((await a.open(PLAN_A)).kind).toBe("ready");
+  });
+});
+
+describe("guest list store: a revision travels with the list", () => {
+  it("counts the saves that made the stored copy, whatever revision the list it is given says", async () => {
+    const { raw, a } = twoTabs();
+    const first = await a.save(listFor(PLAN_A, { revision: 40 }), null);
+    expect(first).toEqual({ kind: "saved", stamp: { revision: 1, updatedAt: NOW } });
+    expect((await raw.get(PLAN_A))?.value).toMatchObject({ revision: 1 });
+
+    if (first.kind !== "saved") throw new Error("the first save was not kept");
+    const second = await a.save(listFor(PLAN_A, { title: "Again", revision: 0 }), first.stamp);
+    expect(second).toEqual({ kind: "saved", stamp: { revision: 2, updatedAt: NOW } });
+    expect((await raw.get(PLAN_A))?.value).toMatchObject({ revision: 2, title: "Again" });
+  });
+
+  it("a stored list with no revision opens, and its first save stores revision 1", async () => {
+    const { raw, a } = twoTabs();
+    const { revision, ...keptBefore } = listFor(PLAN_A, { title: "Kept before", guests: [guestAt(1, null, null)] });
+    expect(revision).toBe(0);
+    await raw.put(PLAN_A, keptBefore);
+
+    const opened = await a.open(PLAN_A);
+    if (opened.kind !== "ready") throw new Error("the list kept before did not open");
+    expect(opened.list.revision).toBe(0);
+    expect(opened.list.title).toBe("Kept before");
+
+    const changed = { ...opened.list, title: "Changed", updatedAt: "2026-11-13T10:01:00.000Z" };
+    expect(await a.save(changed, stampOf(opened.list))).toEqual({
+      kind: "saved",
+      stamp: { revision: 1, updatedAt: "2026-11-13T10:01:00.000Z" },
+    });
+    expect((await raw.get(PLAN_A))?.value).toMatchObject({ revision: 1, title: "Changed" });
+  });
+
+  it("another tab's save in the same millisecond is still another's copy", async () => {
+    const { a, b } = twoTabs();
+    await a.save(listFor(PLAN_A), null);
+    const aLoaded = await loadedStamp(a, PLAN_A);
+    const bLoaded = await loadedStamp(b, PLAN_A);
+    expect(bLoaded).toEqual(aLoaded);
+
+    // The other tab's change carries the very millisecond of the copy both loaded.
+    expect(await b.save(listFor(PLAN_A, { title: "From B" }), bLoaded)).toEqual({ kind: "saved", stamp: { revision: 2, updatedAt: NOW } });
+    // A read finds a copy that is not the one loaded, though its time is the same.
+    expect(await loadedStamp(a, PLAN_A)).not.toEqual(aLoaded);
+    // And a save from the copy loaded says it went over another's.
+    expect(await a.save(listFor(PLAN_A, { title: "From A" }), aLoaded)).toEqual({
+      kind: "saved-over-other",
+      stamp: { revision: 3, updatedAt: NOW },
+    });
+  });
+
+  it("a clock that steps back five minutes between a tab's two saves does not hide the later save", async () => {
+    const { a, b } = twoTabs();
+    const first = await a.save(listFor(PLAN_A, { title: "First", updatedAt: "2026-11-13T10:00:00.000Z" }), null);
+    if (first.kind !== "saved") throw new Error("the first save was not kept");
+    const bLoaded = await loadedStamp(b, PLAN_A);
+
+    // The clock steps back: the later save carries the earlier time.
+    const second = await a.save(listFor(PLAN_A, { title: "Second", updatedAt: "2026-11-13T09:55:01.000Z" }), first.stamp);
+    expect(second).toEqual({ kind: "saved", stamp: { revision: 2, updatedAt: "2026-11-13T09:55:01.000Z" } });
+
+    // The other tab reads again: the copy stored is not the one it loaded.
+    expect(await loadedStamp(b, PLAN_A)).not.toEqual(bLoaded);
+    // And its save, from the copy it loaded, says it went over another's.
+    expect((await b.save(listFor(PLAN_A, { title: "From B", updatedAt: "2026-11-13T09:55:10.000Z" }), bLoaded)).kind).toBe("saved-over-other");
+  });
+
+  it("the revision written is one more than the larger of the stored and the loaded", async () => {
+    const { raw, a } = twoTabs();
+    await raw.put(PLAN_A, listFor(PLAN_A, { revision: 5 }));
+    // Never loaded, over a stored revision 5.
+    expect(await a.save(listFor(PLAN_A, { title: "Ours" }), null)).toEqual({ kind: "saved-over-other", stamp: { revision: 6, updatedAt: NOW } });
+    // Loaded a later revision than the one stored now.
+    await raw.put(PLAN_A, listFor(PLAN_A, { revision: 2 }));
+    expect(await a.save(listFor(PLAN_A, { title: "Ours" }), { revision: 6, updatedAt: NOW })).toEqual({
+      kind: "saved-over-other",
+      stamp: { revision: 7, updatedAt: NOW },
+    });
   });
 });
 
@@ -181,40 +276,41 @@ describe("guest list store: a list is checked before and after it is written", (
   it("does not write a list with an extra field, and keeps the earlier copy", async () => {
     const { raw, a } = twoTabs();
     const earlier = listFor(PLAN_A, { title: "Earlier" });
-    expect(await a.save(earlier, null)).toBe("saved");
+    expect((await a.save(earlier, null)).kind).toBe("saved");
     const withExtra = { ...listFor(PLAN_A, { title: "Later", updatedAt: "2026-11-14T10:00:00.000Z" }), dirty: true };
-    expect(await a.save(withExtra, earlier.updatedAt)).toBe("not-kept");
-    expect((await raw.get(PLAN_A))?.value).toEqual(earlier);
+    expect(await a.save(withExtra, await loadedStamp(a, PLAN_A))).toEqual({ kind: "not-kept" });
+    expect((await raw.get(PLAN_A))?.value).toEqual({ ...earlier, revision: 1 });
   });
 
   it("does not write 601 guests, and keeps the earlier copy", async () => {
     const { raw, a } = twoTabs();
     const earlier = listFor(PLAN_A, { guests: manyGuests(600) });
-    expect(await a.save(earlier, null)).toBe("saved");
+    expect((await a.save(earlier, null)).kind).toBe("saved");
     const tooMany = listFor(PLAN_A, { guests: manyGuests(601), updatedAt: "2026-11-14T10:00:00.000Z" });
-    expect(await a.save(tooMany, earlier.updatedAt)).toBe("not-kept");
-    expect((await raw.get(PLAN_A))?.value).toEqual(earlier);
+    expect(await a.save(tooMany, await loadedStamp(a, PLAN_A))).toEqual({ kind: "not-kept" });
+    expect((await raw.get(PLAN_A))?.value).toEqual({ ...earlier, revision: 1 });
   });
 
-  it("stores the parsed value, not the argument", async () => {
+  it("stores the parsed value with its revision, and leaves the argument as it was", async () => {
     const { raw, a } = twoTabs();
     const given = listFor(PLAN_A);
     await a.save(given, null);
     const kept = (await raw.get(PLAN_A))?.value;
-    expect(kept).toEqual(given);
+    expect(kept).toEqual({ ...given, revision: 1 });
     expect(kept).not.toBe(given);
+    expect(given.revision).toBe(0);
   });
 
   it("says not-kept when reading works and writing refuses", async () => {
     const backend = memoryBackend();
     const s = createGuestListStore(withBackend<unknown>(readOnlyBackend(backend)));
     expect(await s.open(PLAN_A)).toEqual({ kind: "new" });
-    expect(await s.save(listFor(PLAN_A), null)).toBe("not-kept");
+    expect(await s.save(listFor(PLAN_A), null)).toEqual({ kind: "not-kept" });
   });
 
   it("says not-kept when a put resolves but stores nothing", async () => {
     const s = createGuestListStore(withBackend<unknown>(forgetfulBackend(memoryBackend())));
-    expect(await s.save(listFor(PLAN_A), null)).toBe("not-kept");
+    expect(await s.save(listFor(PLAN_A), null)).toEqual({ kind: "not-kept" });
   });
 
   it("says not-kept when a put resolves but stores something else", async () => {
@@ -222,7 +318,27 @@ describe("guest list store: a list is checked before and after it is written", (
     const s = createGuestListStore(
       withBackend<unknown>(substitutingBackend(memoryBackend(), other)),
     );
-    expect(await s.save(listFor(PLAN_A), null)).toBe("not-kept");
+    expect(await s.save(listFor(PLAN_A), null)).toEqual({ kind: "not-kept" });
+  });
+
+  it("says not-kept unless the copy read back carries both the revision and the time written", async () => {
+    /** A valid stored list that is not the one written, as the device wraps it. */
+    const kept = (list: GuestList): unknown => ({ storedAt: NOW, value: list });
+    // The right time, another revision.
+    const otherRevision = createGuestListStore(
+      withBackend<unknown>(substitutingBackend(memoryBackend(), kept(listFor(PLAN_A, { title: "Other", revision: 9 })))),
+    );
+    expect(await otherRevision.save(listFor(PLAN_A), null)).toEqual({ kind: "not-kept" });
+    // The right revision, another time.
+    const otherTime = createGuestListStore(
+      withBackend<unknown>(substitutingBackend(memoryBackend(), kept(listFor(PLAN_A, { revision: 1, updatedAt: "2026-01-01T00:00:00.000Z" })))),
+    );
+    expect(await otherTime.save(listFor(PLAN_A), null)).toEqual({ kind: "not-kept" });
+    // The very copy written is kept.
+    const same = createGuestListStore(
+      withBackend<unknown>(substitutingBackend(memoryBackend(), kept(listFor(PLAN_A, { revision: 1 })))),
+    );
+    expect(await same.save(listFor(PLAN_A), null)).toEqual({ kind: "saved", stamp: { revision: 1, updatedAt: NOW } });
   });
 });
 
@@ -253,20 +369,34 @@ describe("guest list store: sweep", () => {
     // No date, last change 2027-01-01 10:00 UTC: removed from 2027-04-01 00:00 UTC.
     await s.save(listFor(PLAN_B, { updatedAt: "2027-01-01T10:00:00.000Z" }), null);
 
-    expect(await s.sweep(Date.parse("2027-03-31T23:59:59.999Z"))).toBe(0);
-    expect(await s.sweep(Date.parse("2027-04-01T00:00:00Z"))).toBe(1);
+    expect(await s.sweep(Date.parse("2027-03-31T23:59:59.999Z"))).toEqual([]);
+    expect(await s.sweep(Date.parse("2027-04-01T00:00:00Z"))).toEqual([PLAN_B]);
     expect(await s.open(PLAN_B)).toEqual({ kind: "new" });
     expect((await s.open(PLAN_A)).kind).toBe("ready");
 
-    expect(await s.sweep(Date.parse("2027-07-12T23:59:59.999Z"))).toBe(0);
-    expect(await s.sweep(Date.parse("2027-07-13T00:00:00Z"))).toBe(1);
+    expect(await s.sweep(Date.parse("2027-07-12T23:59:59.999Z"))).toEqual([]);
+    expect(await s.sweep(Date.parse("2027-07-13T00:00:00Z"))).toEqual([PLAN_A]);
     expect(await s.open(PLAN_A)).toEqual({ kind: "new" });
+  });
+
+  it("answers the plan of every list it removed, and of none it could not remove", async () => {
+    const backend = memoryBackend();
+    const s = createGuestListStore(withBackend<unknown>(backend));
+    await s.save(listFor(PLAN_A, { eventDate: "2027-06-13" }), null);
+    await s.save(listFor(PLAN_B, { eventDate: "2027-06-13" }), null);
+    expect([...await s.sweep(Date.parse("2028-01-01T00:00:00Z"))].sort()).toEqual([PLAN_A, PLAN_B].sort());
+
+    // A list past its day that storage refuses to remove is not answered: it is still kept.
+    await s.save(listFor(PLAN_A, { eventDate: "2027-06-13" }), null);
+    const readOnly = createGuestListStore(withBackend<unknown>(readOnlyBackend(backend)));
+    expect(await readOnly.sweep(Date.parse("2028-01-01T00:00:00Z"))).toEqual([]);
+    expect((await s.open(PLAN_A)).kind).toBe("ready");
   });
 
   it("leaves a value it cannot read alone", async () => {
     const { raw, a } = twoTabs();
     await raw.put(PLAN_A, { junk: true });
-    expect(await a.sweep(Date.parse("2099-01-01T00:00:00Z"))).toBe(0);
+    expect(await a.sweep(Date.parse("2099-01-01T00:00:00Z"))).toEqual([]);
     expect((await raw.get(PLAN_A))?.value).toEqual({ junk: true });
   });
 });
@@ -282,7 +412,7 @@ describe("guest list store: sweep fails safe", () => {
     // 30 days after 9999-12-31 is past the last date a JavaScript Date holds.
     await s.save(listFor(PLAN_A, { eventDate: "9999-12-31" }), null);
     await s.save(listFor(PLAN_B, { updatedAt: "2027-01-01T10:00:00.000Z" }), null);
-    expect(await s.sweep(Date.parse("2099-01-01T00:00:00Z"))).toBe(1);
+    expect(await s.sweep(Date.parse("2099-01-01T00:00:00Z"))).toEqual([PLAN_B]);
     expect((await s.open(PLAN_A)).kind).toBe("ready");
     expect(await s.open(PLAN_B)).toEqual({ kind: "new" });
   });
@@ -296,7 +426,7 @@ describe("guest list store: sweep fails safe", () => {
     const { createGuestListStore: make } = await import("../store.js");
     const s = make(withBackend<unknown>(memoryBackend()));
     await s.save(listFor(PLAN_A), null);
-    expect(await s.sweep(Date.parse("2099-01-01T00:00:00Z"))).toBe(0);
+    expect(await s.sweep(Date.parse("2099-01-01T00:00:00Z"))).toEqual([]);
     expect((await s.open(PLAN_A)).kind).toBe("ready");
   });
 });
@@ -313,8 +443,8 @@ describe("guestListStore on a device without IndexedDB", () => {
     const { guestListStore } = await import("../store.js");
     const s = guestListStore();
     expect(await s.open(PLAN_A)).toEqual({ kind: "no-storage" });
-    expect(await s.save(listFor(PLAN_A), null)).toBe("not-kept");
-    expect(await s.sweep(Date.parse("2099-01-01T00:00:00Z"))).toBe(0);
+    expect(await s.save(listFor(PLAN_A), null)).toEqual({ kind: "not-kept" });
+    expect(await s.sweep(Date.parse("2099-01-01T00:00:00Z"))).toEqual([]);
     await expect(s.erase(PLAN_A)).resolves.toBeUndefined();
     expect(guestListStore()).toBe(s);
   });

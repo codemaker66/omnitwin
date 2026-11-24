@@ -1222,7 +1222,7 @@ describe("a canary name through the kit", () => {
       saved: await noReject(() => store.save(list, null)),
       swept: await noReject(() => store.sweep(Date.now())),
     };
-    expect(answers).toEqual({ opened: { kind: "not-kept" }, saved: "not-kept", swept: 0 });
+    expect(answers).toEqual({ opened: { kind: "not-kept" }, saved: { kind: "not-kept" }, swept: [] });
     expect(carriesCanary(answers)).toBe(false);
   });
 
