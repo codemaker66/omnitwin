@@ -43,12 +43,19 @@ export function ClerkAuthBridge(): null {
         );
       });
     } else {
+      // Only a sign-out (or a sign-in that cannot load) lets go of the getter.
       setTokenGetter(null);
       useAuthStore.getState().setUser(null);
     }
+    // Leaving the getter in place as the bridge unmounts is deliberate. What a
+    // page sends as it goes (the planner's last save, the action log behind
+    // it) is built after every cleanup of that route change, and the next page
+    // may have no sign-in provider at all. Clerk's getToken reads the browser's
+    // one live session each time it is called and answers null once nobody is
+    // signed in, so it never speaks for a person who has signed out, nor for
+    // the last person once another has signed in.
     return () => {
       cancelled = true;
-      setTokenGetter(null);
     };
   }, [getToken, isLoaded, isSignedIn, signInUnavailable, identityId, email, retry]);
 
