@@ -81,6 +81,18 @@ let onLine: MockInstance<() => boolean>;
 /** The network, as the reload's question to the app's own server meets it:
  *  answered by default, as after a deploy. */
 const origin = vi.fn<typeof fetch>();
+/** Questions a test holds open, answered after it whatever happened: the
+ *  question in flight is shared, so one left open would hold the next test. */
+const heldQuestions: (() => void)[] = [];
+
+/** The next questions to the server wait until the test answers them. */
+function holdQuestion(): { readonly answer: (response: Response) => void; readonly fail: (error: Error) => void } {
+  let answer: (response: Response) => void = () => undefined;
+  let fail: (error: Error) => void = () => undefined;
+  origin.mockImplementation(() => new Promise<Response>((resolve, reject) => { answer = resolve; fail = reject; }));
+  heldQuestions.push(() => { fail(new TypeError("Failed to fetch")); });
+  return { answer: (response) => { answer(response); }, fail: (error) => { fail(error); } };
+}
 
 beforeEach(() => {
   captureBoundaryErrorMock.mockClear();
@@ -95,9 +107,11 @@ beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   vi.useRealTimers();
+  for (const release of heldQuestions.splice(0)) release();
+  await settled();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -129,6 +143,8 @@ describe("the route error boundary", () => {
     // Only once the app's own server has answered, past any cache.
     expect(origin).toHaveBeenCalledTimes(1);
     expect(origin).toHaveBeenCalledWith("/", expect.objectContaining({ method: "HEAD", cache: "no-store" }));
+    // A reload is on its way: nothing is drawn, not even the check's status.
+    await vi.waitFor(() => { expect(screen.queryByRole("status")).toBeNull(); }, LOAD_WAIT);
   });
 
   it("does not reload again while the guard is fresh: the recovery screen shows and Sentry hears of it", async () => {
@@ -187,8 +203,7 @@ describe("Vite's preload failure", () => {
   });
 
   it("shares one question to the server and one reload with the page's route boundary", async () => {
-    let answer: (response: Response) => void = () => undefined;
-    origin.mockImplementation(() => new Promise<Response>((resolve) => { answer = resolve; }));
+    const question = holdQuestion();
     const target = new EventTarget() as Window;
     installStaleChunkReload(target);
     target.dispatchEvent(new Event("vite:preloadError", { cancelable: true }));
@@ -198,7 +213,7 @@ describe("Vite's preload failure", () => {
     await settled();
     expect(screen.queryByRole("alert")).toBeNull();
 
-    answer(new Response(null, { status: 200 }));
+    question.answer(new Response(null, { status: 200 }));
     await vi.waitFor(() => { expect(reload).toHaveBeenCalledTimes(1); }, LOAD_WAIT);
     await settled();
     expect(reload).toHaveBeenCalledTimes(1);
@@ -297,8 +312,7 @@ describe("a chunk that cannot load for want of a network", () => {
   });
 
   it("online but the app's server does not answer (Wi-Fi that leads nowhere): one question, no reload, the network recovery screen, the guard unspent", async () => {
-    let fail: (error: Error) => void = () => undefined;
-    origin.mockImplementation(() => new Promise<Response>((_resolve, reject) => { fail = reject; }));
+    const question = holdQuestion();
     const target = new EventTarget() as Window;
     installStaleChunkReload(target);
     target.dispatchEvent(new Event("vite:preloadError", { cancelable: true }));
@@ -306,7 +320,7 @@ describe("a chunk that cannot load for want of a network", () => {
     await vi.waitFor(() => { expect(consoleError).toHaveBeenCalled(); }, LOAD_WAIT);
     await settled();
 
-    fail(new TypeError("Failed to fetch"));
+    question.fail(new TypeError("Failed to fetch"));
     expect(await screen.findByTestId("error-boundary-network", undefined, LOAD_WAIT)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Couldn't reach the server" })).toBeTruthy();
     await settled();
@@ -314,6 +328,21 @@ describe("a chunk that cannot load for want of a network", () => {
     expect(guard()).toBeNull();
     expect(origin).toHaveBeenCalledTimes(1);
     expect(captureBoundaryErrorMock).not.toHaveBeenCalled();
+  });
+
+  it("while the server is being asked, says it is checking the connection; then the network screen", async () => {
+    const question = holdQuestion();
+    open("/chunk");
+
+    const checking = await screen.findByRole("status", undefined, LOAD_WAIT);
+    expect(checking.textContent).toContain("Checking the connection");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(reload).not.toHaveBeenCalled();
+
+    question.fail(new TypeError("Failed to fetch"));
+    expect(await screen.findByTestId("error-boundary-network", undefined, LOAD_WAIT)).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it("online but the server answers with an error page: no reload, the network recovery screen, the guard unspent", async () => {
@@ -328,10 +357,13 @@ describe("a chunk that cannot load for want of a network", () => {
   it("online but the server never answers: the question gives up after five seconds, without a reload", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     let signal: AbortSignal | null = null;
+    let abandon: () => void = () => undefined;
     origin.mockImplementation((_input, init) => new Promise<Response>((_resolve, reject) => {
       signal = init?.signal ?? null;
-      signal?.addEventListener("abort", () => { reject(new DOMException("The question was abandoned", "AbortError")); });
+      abandon = () => { reject(new DOMException("The question was abandoned", "AbortError")); };
+      signal?.addEventListener("abort", abandon);
     }));
+    heldQuestions.push(() => { abandon(); });
     const target = new EventTarget() as Window;
     installStaleChunkReload(target);
     target.dispatchEvent(new Event("vite:preloadError", { cancelable: true }));

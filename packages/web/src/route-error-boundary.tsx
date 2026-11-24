@@ -1,5 +1,6 @@
 import { useEffect, useReducer, type ReactElement } from "react";
 import { isRouteErrorResponse, useRouteError, type RouteObject } from "react-router-dom";
+import { ActivityStatus } from "./components/shared/Activity.js";
 import { classifyError, RecoveryScreen } from "./error-boundary.js";
 import { browserSaysOnline } from "./lib/online-status.js";
 import { captureBoundaryError } from "./observability/sentry.js";
@@ -46,7 +47,7 @@ export const CHUNK_RELOAD_GUARD_KEY = "venviewer.chunk-reload-at";
 const CHUNK_RELOAD_GUARD_MS = 60_000;
 /** How long the app's own server has to answer before a reload counts as one
  *  that would not be served. A working connection answers a HEAD in well
- *  under a second; the page draws nothing while it waits. */
+ *  under a second; while it waits the page says it is checking the connection. */
 const ORIGIN_ANSWER_MS = 5_000;
 
 /** The page the reload acts on: a seam for tests, the window otherwise. */
@@ -219,9 +220,24 @@ export function RouteErrorFallback(): ReactElement | null {
     return undefined;
   }, [decision, error, key]);
 
-  // A reload is on its way, or may be; the recovery screen would only flash.
-  if (decision === "reload" || decision === "asking") return null;
+  // A reload is on its way; the recovery screen would only flash.
+  if (decision === "reload") return null;
+  if (decision === "asking") return <ConnectionCheck />;
   return <RecoveryScreen error={error} kind={decision === "unreachable" ? "network" : classifyError(error)} />;
+}
+
+/** While the app's own server is asked whether a reload would be served: the
+ *  house status on the recovery screen's own surface, so the page does not
+ *  stand empty for up to ORIGIN_ANSWER_MS and the answer replaces it in place. */
+function ConnectionCheck(): ReactElement {
+  return (
+    <div style={{
+      minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+      color: "#333", background: "#f5f5f0",
+    }}>
+      <ActivityStatus variant="panel">Checking the connection…</ActivityStatus>
+    </div>
+  );
 }
 
 /** Every route under one pathless root that catches what they throw. A route
