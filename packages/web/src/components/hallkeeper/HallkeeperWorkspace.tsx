@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { PHASE_METADATA, formatTableLabels, type HallkeeperSheetV2, type OpsTask } from "@omnitwin/types";
+import { NO_TIME_TO_SET, PHASE_METADATA, PLANNER_TIME_NO_BOOKING, formatTableLabels, readyByWords, sheetClock, sheetTimes, type HallkeeperSheetV2, type OpsTask } from "@omnitwin/types";
 import { ArrowLeft, ArrowRight, Check, ClipboardList, MapPin, Printer, Users, X } from "lucide-react";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { getHallkeeperRoomPlan, HALLKEEPER_PLAN_VENUE_SLUG } from "../../data/hallkeeper-room-plans.js";
@@ -85,9 +85,14 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
   // booking says 09:00 — so preferring it here made this card disagree with
   // the PDF printed from the same sheet. Gate line 20 requires them to agree.
   const plannedAt = data.timing?.eventStart ?? context?.graph?.event.startsAt ?? null;
-  const setupByAt = data.timing?.setupBy ?? null;
+  // The printed sheet's rule (sheetTimes): setup from timing.setupBy (when the
+  // window opens), ready by the planner's final time or else guests in.
+  const times = sheetTimes(data);
+  const readyAfterGuests = (times.readyBeforeGuestsMinutes ?? 0) < 0;
   const plannedDate = plannedAt === null ? "Date not supplied" : new Date(plannedAt).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: data.venue.timezone });
   const time = (value: string | null): string => value === null ? "Not provided" : new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: data.venue.timezone });
+  // A setup or ready-by time on another day than guests come in leads with its weekday ("Fri 16:00"), as the PDF prints it.
+  const clock = (value: string): string => sheetClock(value, times.guestsIn, data.venue.timezone);
   // The venue's clock is named only for a reader whose device keeps another.
   const zone = useMemo(() => zoneNote(data.venue.timezone, deviceZone()), [data.venue.timezone]);
   const eventDay = plannedAt === null ? null : venueDay(Date.parse(plannedAt), data.venue.timezone);
@@ -118,17 +123,22 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
       </aside>
       <div className="hkf-main">
         <header className="hkf-heading"><div><span className="hkf-overline">Hallkeeper sheet</span><h1>{data.space.name}</h1><p className="hkf-event-name" title={data.config.name}>{data.config.name}</p>{otherRooms.length > 0 && <details className="hkf-room-switch"><summary>{otherRooms.length === 1 ? "1 other room" : `${String(otherRooms.length)} other rooms`} in this event</summary><ul>{otherRooms.map((layout) => <li key={layout.configurationId}><Link to={roomLink(layout.configurationId)}>{layout.spaceName}<small>{layout.name}</small></Link></li>)}</ul></details>}<div className="hkf-facts">{data.approval !== null && <ApprovalStamp approval={data.approval} timeZone={data.venue.timezone} />}<span><Users size={15} /> {data.config.guestCount} guests</span><span>{data.totals.totalItems} pieces to set</span><button type="button" onClick={() => { setShowDetails(true); }}>Brief & contacts</button></div></div>
-          {/* The hour the room must be ready beside the hour the event starts
-              (roadmap N4): the deadline the whole setup works to. */}
+          {/* When setup starts, when the room must be ready and when guests
+              come in (roadmap N4; Blake, 18 Nov 2026): the window the whole
+              setup works to, as the printed sheet gives it. */}
           <div className="hkf-time-card">
             {data.timing === null
               ? <><span>{plannedAt !== null ? "Planned start" : "Not in the Diary yet"}</span><strong>{time(plannedAt)}</strong></>
               : <dl className="hkf-times">
-                <div><dt>Ready by</dt><dd>{setupByAt === null ? <span className="hkf-time-unset">Not set</span> : time(setupByAt)}</dd></div>
-                <div><dt>Starts</dt><dd>{time(plannedAt)}</dd></div>
+                <div><dt>Setup from</dt><dd className={times.noTimeToSet ? "hkf-time-late" : undefined}>{times.setupFrom === null ? <span className="hkf-time-unset">Not set</span> : clock(times.setupFrom)}</dd></div>
+                <div><dt>Ready by</dt><dd className={readyAfterGuests ? "hkf-time-late" : undefined}>{times.readyBy === null ? "Not provided" : clock(times.readyBy)}</dd></div>
+                <div><dt>Guests in</dt><dd>{time(plannedAt)}</dd></div>
               </dl>}
             <small>{plannedDate}{zone === null ? "" : ` · ${zone}`}</small>
-            {data.timing !== null && setupByAt === null && <small className="hkf-time-note">No changeover time is recorded for this room.</small>}
+            {data.timing !== null && times.setupFrom === null && <small className="hkf-time-note">No changeover time is recorded for this room.</small>}
+            {data.timing !== null && times.noTimeToSet && <small className="hkf-time-note hkf-time-late">{`${NO_TIME_TO_SET}.`}</small>}
+            {data.timing !== null && readyAfterGuests && <small className="hkf-time-note hkf-time-late">{`The planner’s ready time is ${readyByWords(times) ?? ""}.`}</small>}
+            {data.timing === null && times.readyBy !== null && <small className="hkf-time-note hkf-time-late">{`Ready by ${clock(times.readyBy)} · ${PLANNER_TIME_NO_BOOKING}`}</small>}
           </div>
         </header>
         {data.approval === null && <ApprovalBand status={reviewStatus} />}

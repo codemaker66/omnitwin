@@ -1,6 +1,13 @@
-import type { BookingKind, HallkeeperSheetSummary } from "@omnitwin/types";
+import {
+  NO_TIME_TO_SET,
+  PLANNER_TIME_NO_BOOKING,
+  readyByWords,
+  sheetClock,
+  sheetIntervals,
+  type BookingKind,
+  type HallkeeperSheetSummary,
+} from "@omnitwin/types";
 import type { LinkedLayoutChoice } from "../../../lib/event-linked-layouts.js";
-import { formatWallTime } from "../../diary/lib/board-time.js";
 
 // ---------------------------------------------------------------------------
 // The Day Board → setup sheet corridor (Ship Friday gate line 20).
@@ -129,18 +136,29 @@ export function describeSlotSheet(input: SlotSheetInput): SlotSheetState {
 }
 
 /**
- * The line under a sheet's door: when setup must be done, on the venue's
+ * The line under a sheet's door: when the room must be ready, on the venue's
  * clock, and how far the checklist has got. "Ready by 16:00 · 12 of 43
  * checked", "Ready by not set · All 43 checked", "… · Nothing placed yet".
+ * Ready by is the printed sheet's (sheetTimes, sent by the API's summary):
+ * the planner's final time, else guests in; one after guests come in is
+ * said, "Ready by 18:15, 15 min after guests come in", and one on another
+ * day leads with its weekday. The sheet's warnings follow in its own words:
+ * "No time to set the room" when setup starts at or after Ready by
+ * (sheetIntervals, on the summary's setupFrom), and the planner's time with
+ * no booking to hold the room.
  */
 export function sheetProgressLine(summary: HallkeeperSheetSummary, timeZone: string): string {
-  const ready = summary.readyBy === null
-    ? "Ready by not set"
-    : `Ready by ${formatWallTime(Date.parse(summary.readyBy), timeZone)}`;
+  const intervals = sheetIntervals({ setupFrom: summary.setupFrom ?? null, readyBy: summary.readyBy, guestsIn: summary.eventStart });
+  const after = (intervals.readyBeforeGuestsMinutes ?? 0) < 0 ? `, ${readyByWords(intervals) ?? ""}` : "";
+  const ready = summary.readyBy === null ? "Ready by not set" : `Ready by ${sheetClock(summary.readyBy, summary.eventStart, timeZone)}${after}`;
+  const warnings = [
+    summary.readyBy !== null && summary.eventStart === null ? PLANNER_TIME_NO_BOOKING : null,
+    intervals.noTimeToSet ? NO_TIME_TO_SET : null,
+  ].filter((warning): warning is string => warning !== null);
   const checks = summary.total === 0
     ? "Nothing placed yet"
     : summary.checked === summary.total
       ? `All ${String(summary.total)} checked`
       : `${String(summary.checked)} of ${String(summary.total)} checked`;
-  return `${ready} · ${checks}`;
+  return [ready, ...warnings, checks].join(" · ");
 }
