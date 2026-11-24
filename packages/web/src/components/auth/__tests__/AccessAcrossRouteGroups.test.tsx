@@ -1,11 +1,12 @@
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import { createMemoryRouter, Outlet, RouterProvider } from "react-router-dom";
+import { createMemoryRouter, Outlet, RouterProvider, useParams } from "react-router-dom";
 import { ClerkRouteProvider } from "../ClerkRouteProvider.js";
 import { ProtectedRoute } from "../ProtectedRoute.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { _resetTokenGetterForTests, getTokenGetter } from "../../../api/auth-bridge.js";
+import { useClientEventSchedule } from "../../../hooks/use-client-event-schedule.js";
 
 // ---------------------------------------------------------------------------
 // Fresh read web-shell-api-6. Each route group mounts a sign-in provider of
@@ -131,10 +132,34 @@ function StaffPages({ children }: { readonly children: ReactElement }): ReactEle
 
 const STAFF_ROLES = ["hallkeeper", "admin"] as const;
 
+/** A page that reads the event's schedule as the client pages do. */
+function EventSchedule(): ReactElement {
+  const { eventId = null } = useParams();
+  const schedule = useClientEventSchedule(eventId);
+  return <p>{`Event schedule: ${schedule.status}`}</p>;
+}
+
+const EVENT_ID = "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
+
+function scheduleRequests(): number {
+  return fetchMock.mock.calls.filter(([input]) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    return new URL(url).pathname.endsWith("/client-schedule");
+  }).length;
+}
+
 function open(path: string): ReturnType<typeof createMemoryRouter> {
   const router = createMemoryRouter([
     { path: "/", element: <p>Venue home</p> },
     { path: "/login", element: <p>Sign in</p> },
+    {
+      path: "/events/:eventId",
+      element: (
+        <PageOfItsOwn>
+          <ClerkRouteProvider><ProtectedRoute><EventSchedule /></ProtectedRoute></ClerkRouteProvider>
+        </PageOfItsOwn>
+      ),
+    },
     {
       path: "/hallkeeper/:configId",
       element: (
@@ -313,5 +338,19 @@ describe("a confirmed person moving between route groups", () => {
     await behind.release();
     expect(useAuthStore.getState()).toMatchObject({ user: null, isAuthenticated: false, accessStatus: "signed_out" });
     expect(screen.getByText("Sign in")).toBeTruthy();
+  });
+
+  it("asks for an event's schedule once across a crossing when the check behind the page gives the same person", async () => {
+    const router = await confirmedOnDashboard();
+    const confirmed = useAuthStore.getState().user;
+    const behind = holdNextCheck();
+    await go(router, `/events/${EVENT_ID}`);
+    await waitFor(() => { expect(scheduleRequests()).toBe(1); });
+
+    // The same person, field for field: the page's work is not started again.
+    await behind.release();
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(scheduleRequests()).toBe(1);
+    expect(useAuthStore.getState().user).toBe(confirmed);
   });
 });

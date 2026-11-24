@@ -35,6 +35,21 @@ describe("setUser", () => {
     expect(useAuthStore.getState().user).toBeNull();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
+
+  it("keeps the person it holds when an answer names them field for field, and takes any changed answer", () => {
+    useAuthStore.getState().setUser(mockUser);
+    const held = useAuthStore.getState().user;
+    useAuthStore.getState().setUser({ ...mockUser });
+    expect(useAuthStore.getState().user).toBe(held);
+
+    for (const changed of [{ id: "u2" }, { email: "other@test.com" }, { role: "hallkeeper" },
+      { platformRole: "admin" as const }, { venueId: "venue-2" }, { name: "Other" }]) {
+      useAuthStore.getState().setUser(mockUser);
+      const answer = { ...mockUser, ...changed };
+      useAuthStore.getState().setUser(answer);
+      expect(useAuthStore.getState().user).toBe(answer);
+    }
+  });
 });
 
 describe("setLoading", () => {

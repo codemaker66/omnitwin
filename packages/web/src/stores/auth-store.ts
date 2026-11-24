@@ -49,6 +49,12 @@ interface AuthActions {
 
 type AuthStore = AuthState & AuthActions;
 
+/** Every field of the person the API confirmed is the same. */
+function samePerson(held: AuthUser, answer: AuthUser): boolean {
+  return held.id === answer.id && held.email === answer.email && held.role === answer.role
+    && held.platformRole === answer.platformRole && held.venueId === answer.venueId && held.name === answer.name;
+}
+
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   isAuthenticated: false,
@@ -80,7 +86,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   setUser: (user) => {
     set((state) => ({
-      user,
+      // An answer that names the same person, field for field, keeps the
+      // object already held, so whatever is keyed on it (a page's schedule
+      // request, the planner's event bootstrap) is not started again by the
+      // check made behind the page on each move between route groups.
+      user: user !== null && state.user !== null && samePerson(state.user, user) ? state.user : user,
       isAuthenticated: user !== null,
       isLoading: false,
       error: null,
