@@ -212,13 +212,28 @@ reads.
 
 ## The lock rules later stages keep
 
-- One order: a person, then bookings, the proposal, the enquiry, the deal, the
-  event.
+The full order, combined with the Diary's, is kept in section 5.4 of the
+[spine's design](../superpowers/specs/2026-11-13-the-spine-design.md) ("The stage,
+the status and the dates").
+
+- One order: a person, then a decision, then bookings, the proposal, the enquiry,
+  the deal, the event. A decision (`decideDecision`, `services/decisions.ts`) is
+  taken `FOR UPDATE`, then the one booking it moves `FOR UPDATE`, then
+  `updateBookingCore` takes that booking again and reaches its event. A decision
+  moves only a booking's times, never its event, so its path never reaches an
+  enquiry, a deal or a proposal.
 - An enquiry row is locked `FOR NO KEY UPDATE`, never `FOR UPDATE`, before any row
   that references it is inserted in the same transaction.
 - New code takes an event only `FOR NO KEY UPDATE` (every row written onto an event
-  holds `FOR KEY SHARE` on it, which `FOR UPDATE` would wait for).
-- No table locks.
+  holds `FOR KEY SHARE` on it, which `FOR UPDATE` would wait for). The one exception
+  is the undo (`spine_undo_joins()`): it takes an event it removes, and that event's
+  phases, `FOR UPDATE SKIP LOCKED`, so it never waits; an event it cannot have at
+  once is left to its next run.
+- No table locks in product code. The spine's migration takes its tables first,
+  in the writers' order: one statement right after its 5 s lock limit locks
+  proposals, enquiries, opportunities, events and client_accounts, before any of
+  its other steps; a table it cannot have within the limit fails the release, and
+  nothing changes.
 
 ## What a later migration must keep
 

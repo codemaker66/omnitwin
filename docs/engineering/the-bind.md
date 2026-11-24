@@ -23,7 +23,7 @@ Every writer binds inside the booking's own transaction through
 
 | Writer | Path | Joins |
 | --- | --- | --- |
-| Enquiries desk, "Hold the date" | `POST /bookings/from-enquiry` (`routes/bookings.ts`) | the event the enquiry's other bookings already have, else a new one; the enquiry row is locked, so two holds at once share one event |
+| Enquiries desk, "Hold the date" | `POST /bookings/from-enquiry` (`routes/bookings.ts`) | the enquiry's own event (`enquiries.event_id`, when it names a live event of the venue), else the event the enquiry's other bookings already have, else a new one; it keeps the enquiry's link in step ([the spine](the-spine.md)); the enquiry row is locked, so two holds at once share one event |
 | Diary create | `createBookingCore` (REST and `/ws/diary` commands) | the named event (checked to be this venue's), else a new one |
 | Diary edit | `updateBookingCore` | may move a booking to another event of its venue; `eventId: null` on a hold or ink is refused (`EVENT_REQUIRED`) |
 | Diary transitions | `transitionBookingCore` | interest only made provisional or confirmed takes its enquiry's event or a new one |
