@@ -13,6 +13,7 @@ import { boundedNumber, budgetOverride, timeoutOverride } from "../sandbox/overr
 import { gitVersionProblem } from "../sandbox/patches.js";
 import { sandboxConfigSchema } from "../sandbox/sandbox-config.js";
 import { MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES } from "../task.js";
+import { FakeApi } from "./fake-api.js";
 
 const PACKAGE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -110,6 +111,56 @@ describe("status", () => {
       await rm(root, { recursive: true, force: true });
     }
     expect(written.join("")).toMatch(/^Git: \d+\.\d+\S* \(the review needs 2\.41 or newer\)$/mu);
+  });
+});
+
+describe("status and collect --book, with a session the ledger lacks", () => {
+  it("status names a lane session no ledger line charges and the command that books it; collect --book books it once, then adds nothing", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "credit-runner-unbooked-"));
+    const config = path.join(root, "sandbox.config.json");
+    const ledgerFile = path.join(root, "ledger.jsonl");
+    await writeFile(config, JSON.stringify({ workRoot: path.join(root, "work"), ledgerFile, keyDir: path.join(root, "keys"), keyFile: "pot-1.key", lane: "sandbox", laneCapUsd: 10, orgCapUsd: 20 }));
+    const api = new FakeApi([]);
+    api.statuses = ["running"];
+    api.sessionBudget = { type: "limit", max_list_cost: { amount: "450", currency: "USD" } };
+    api.earlierSessions = [
+      { id: "sesn_lost", status: "running", metadata: { lane: "sandbox", job: "trial-1", task: "x", run: "run-lost" } },
+      { id: "sesn_night", status: "running", metadata: { lane: "shift", job: "night-1", task: "y", run: "run-night" } },
+    ];
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const said = (): string => written.splice(0).join("");
+    try {
+      expect(await main(["status", "--config", config], { api })).toBe(0);
+      const status = said();
+      expect(status).toContain(
+        "Warning: session sesn_lost (running) was made by this lane and has no ledger line; book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_lost --book; run refuses until it is booked",
+      );
+      // The shift's sessions are not this lane's to book.
+      expect(status).not.toContain("sesn_night");
+      expect(status).not.toContain("sesn_other");
+
+      expect(await main(["collect", "sesn_lost", "--book", "--config", config], { api })).toBe(0);
+      expect(said()).toBe("booked session sesn_lost at $4.50 (unknown, as it has not stopped: counted at its whole budget, or the last figure if higher)\n");
+      expect(await main(["collect", "sesn_lost", "--book", "--config", config], { api })).toBe(0);
+      expect(said()).toBe("the ledger already has a line for session sesn_lost; nothing was added\n");
+      expect(JSON.parse((await readFile(ledgerFile, "utf8")).trim())).toMatchObject({ batchId: "sesn_lost", runId: "run-lost", job: "trial-1:x", costUsd: 4.5, costKnown: false });
+
+      expect(await main(["status", "--config", config], { api })).toBe(0);
+      expect(said()).toMatch(/^Unbooked sessions: none of lane 'sandbox' since \d{4}-\d\d-\d\dT/mu);
+      // Without a usable key, status says it could not look.
+      expect(await main(["status", "--config", config])).toBe(0);
+      expect(said()).toContain(`Unbooked sessions: not checked (no key file at ${path.join(root, "keys", "pot-1.key")})`);
+      // collect needs a session id, and either --book or the review's arguments.
+      await expect(main(["collect", "--config", config], { api })).rejects.toThrow(/or <session-id> --book to book the session alone$/u);
+      await expect(main(["collect", "sesn_lost", "--config", config], { api })).rejects.toThrow(/^collect needs <session-id> <spec\.md>/u);
+    } finally {
+      spy.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 

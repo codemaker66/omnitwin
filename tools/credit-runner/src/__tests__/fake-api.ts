@@ -168,6 +168,8 @@ export class FakeApi implements SandboxApi {
   listCostCurrency = "USD";
   /** retrieveSession fails this many times before it answers. */
   retrieveFailures = 0;
+  /** The budget retrieveSession reports; by default the last create's, or none. */
+  sessionBudget: SessionTotals["budget"] | undefined = undefined;
   sendOutcome: (event: BetaManagedAgentsEventParams, attempt: number) => SendOutcome = () => "ok";
   private readonly created: (SessionListing & { readonly createdAt: string })[] = [];
   private connection = 0;
@@ -224,16 +226,20 @@ export class FakeApi implements SandboxApi {
     if (this.createError === null || this.createdAnyway) this.created.push({ id: "sesn_1", status: "running", metadata: { ...params.metadata }, createdAt });
     return this.createError === null ? Promise.resolve({ id: "sesn_1", status: "running" }) : Promise.reject(this.createError);
   };
-  retrieveSession = (): Promise<SessionTotals> => {
+  /** The session asked for (sesn_1 by default), with the metadata it was created or listed with and its budget. */
+  retrieveSession = (id = "sesn_1"): Promise<SessionTotals> => {
     if (this.retrieveFailures > 0) {
       this.retrieveFailures -= 1;
       return Promise.reject(new Error("status unavailable"));
     }
     const status = this.statuses[Math.min(this.retrieved, this.statuses.length - 1)] ?? "idle";
     this.retrieved += 1;
+    const known = [...this.created, ...this.earlierSessions].find((session) => session.id === id);
     return Promise.resolve({
-      id: "sesn_1",
+      id,
       status: status as SessionTotals["status"],
+      metadata: { ...(known?.metadata ?? {}) },
+      budget: this.sessionBudget ?? this.sessions.at(-1)?.budget ?? null,
       usage: {
         ...(this.listCostCents === null ? {} : { list_cost: { amount: this.listCostCents, currency: this.listCostCurrency as "USD" } }),
         active_seconds: 600,
@@ -251,7 +257,8 @@ export class FakeApi implements SandboxApi {
     const fail = this.listFailures > 0;
     if (fail) this.listFailures -= 1;
     const ours = this.created.filter((session) => session.createdAt >= createdSince).map(({ id, status, metadata }) => ({ id, status, metadata }));
-    const sessions: SessionListing[] = [{ id: "sesn_other", status: "idle", metadata: { lane: "sandbox", job: "other" } }, ...this.earlierSessions, ...ours];
+    // The shift's own session is always listed: the launcher's checks must pass it by.
+    const sessions: SessionListing[] = [{ id: "sesn_other", status: "running", metadata: { lane: "shift", job: "other" } }, ...this.earlierSessions, ...ours];
     return (async function* () {
       await Promise.resolve();
       if (fail) throw new Error("connection reset");

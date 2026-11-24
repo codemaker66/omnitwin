@@ -4,10 +4,10 @@ import path from "node:path";
 import { AGENT_EFFORT, AGENT_MODEL, type Task } from "../task.js";
 import type { SandboxApi } from "./api.js";
 import { sandboxSystemPrompt } from "./brief.js";
-import { appendCreditLine, appendCreditLineSync, charges, checkSpend, type CreditLine, readCreditLedger, readLedgerBookingsSync } from "./credit-ledger.js";
+import { appendCreditLine, appendCreditLineSync, charges, checkSpend, type CreditLine, ledgerHasSession, readCreditLedger, readLedgerBookings, readLedgerBookingsSync } from "./credit-ledger.js";
 import type { OutputCaps } from "./outputs.js";
 import { reviewRun, type Review } from "./review.js";
-import { checkRunBounds, isStopped, listCostUsd, recollectSession, RunStoppedError, type RunTotals, runSession, SessionMayExistError, type SessionRunResult } from "./session.js";
+import { checkRunBounds, isStopped, listCostUsd, recollectSession, RunStoppedError, type RunTotals, runSession, SessionMayExistError, type SessionRunResult, usdFromCents } from "./session.js";
 import { ensureSandbox } from "./setup.js";
 
 export interface LauncherConfig {
@@ -373,6 +373,17 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
         }, bookAtOnce);
 
   try {
+    // Before the sandbox is read or anything created: a session this lane made that no line charges is spend the check below cannot count.
+    const unbooked = await unbookedSessions(api, config.ledgerFile, config.lane, now()).catch((error: unknown) => {
+      throw new Error(`could not list this lane's sessions to check that each has a ledger line (${error instanceof Error ? error.message : String(error)}); nothing was run`, {
+        cause: error,
+      });
+    });
+    if (unbooked.sessions.length > 0) {
+      const reason = `${unbooked.sessions.map(unbookedText).join("; ")}. The spend check cannot count a session the ledger lacks, so nothing runs until each is booked`;
+      return { kind: "skipped", taskId: task.id, reason };
+    }
+
     const ledger = await readCreditLedger(config.ledgerFile);
     const check = checkSpend(
       ledger,
@@ -465,6 +476,109 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   } finally {
     removeHandlers();
   }
+}
+
+/**
+ * How far before the ledger's earliest line the startup check lists sessions.
+ * The launcher books a session within MAX_TIMEOUT_MINUTES, MAX_GRACE_MS and
+ * its stop polls of creating it (under five and a half hours), so a day
+ * reaches every session the ledger's first lines could charge; a session older
+ * than that predates the ledger and never blocks a run.
+ */
+export const UNBOOKED_LOOKBACK_MS = 24 * 60 * 60_000;
+
+export interface UnbookedSession {
+  readonly id: string;
+  readonly status: string;
+}
+
+/**
+ * The sessions this lane made (metadata `lane` equal to `lane`, so another
+ * lane's, such as the shift's, are passed by) that no ledger line charges, by
+ * id or by run id (charges). Listed from the ledger's earliest dated line less
+ * UNBOOKED_LOOKBACK_MS, or from now less that when the ledger has none,
+ * archived sessions included.
+ */
+export async function unbookedSessions(api: SandboxApi, ledgerFile: string, lane: string, now: Date): Promise<{ readonly since: string; readonly sessions: readonly UnbookedSession[] }> {
+  const { lines } = await readCreditLedger(ledgerFile);
+  // A loop, not Math.min(...times): a long ledger spread into one call would overflow the stack.
+  let earliest = now.getTime();
+  for (const line of lines) {
+    const at = Date.parse(line.ts);
+    if (Number.isFinite(at) && at < earliest) earliest = at;
+  }
+  const since = new Date(earliest - UNBOOKED_LOOKBACK_MS).toISOString();
+  const bookings = await readLedgerBookings(ledgerFile);
+  const sessions: UnbookedSession[] = [];
+  for await (const session of api.listSessions(since)) {
+    if (session.metadata.lane === lane && !charges(bookings, session.id, session.metadata.run)) sessions.push({ id: session.id, status: session.status });
+  }
+  return { since, sessions };
+}
+
+/** One unbooked session, as the startup check refuses on it and `status` warns of it: the session, its status, and the command that books it. */
+export function unbookedText(session: UnbookedSession): string {
+  return `session ${session.id} (${session.status}) was made by this lane and has no ledger line; book it with ${bookCommand(session.id)}`;
+}
+
+/** Whether a ledger line charges the session, by its id or by the run id in its metadata (ledgerHasSession). */
+export async function sessionIsBooked(api: SandboxApi, ledgerFile: string, sessionId: string): Promise<boolean> {
+  const session = await api.retrieveSession(sessionId);
+  return ledgerHasSession(ledgerFile, session.id, session.metadata.run);
+}
+
+/**
+ * collect --book: books a session this lane made that no ledger line charges
+ * (by its id, or by the run id in its metadata), and adds nothing when one
+ * does, so it can be run again safely. A session the platform reports stopped
+ * is booked at the platform's figure; one it does not (still running), or
+ * whose figure cannot be read, at its whole budget as unknown: the budget the
+ * platform reports for it, or `budgetUsd` when it reports none.
+ */
+export async function bookSession(options: {
+  readonly api: SandboxApi;
+  readonly ledgerFile: string;
+  readonly lane: string;
+  readonly sessionId: string;
+  readonly budgetUsd?: number | undefined;
+  readonly now?: () => Date;
+}): Promise<{ readonly added: boolean; readonly text: string }> {
+  const session = await options.api.retrieveSession(options.sessionId);
+  const { metadata, usage } = session;
+  if (metadata.lane !== options.lane) {
+    throw new Error(
+      `session ${session.id} was not made by lane '${options.lane}' (its metadata lane is ${metadata.lane === undefined ? "missing" : JSON.stringify(metadata.lane)}); collect --book books only this lane's sessions`,
+    );
+  }
+  const runId = metadata.run;
+  if (await ledgerHasSession(options.ledgerFile, session.id, runId)) {
+    return { added: false, text: `the ledger already has a line for session ${session.id}; nothing was added` };
+  }
+  const stopped = isStopped(session.status);
+  const figure = listCostUsd(session);
+  const wholeBudget = usdFromCents(session.budget?.max_list_cost) ?? options.budgetUsd ?? null;
+  if (!(stopped && figure !== null) && wholeBudget === null) {
+    throw new Error(`session ${session.id} ${stopped ? "has no cost the platform reports" : "has not stopped"}, and the platform reports no budget for it; pass --budget <usd> to book it at that`);
+  }
+  const cost = bookedCost(stopped, figure, wholeBudget ?? 0);
+  const cacheCreation = (usage.cache_creation?.ephemeral_5m_input_tokens ?? 0) + (usage.cache_creation?.ephemeral_1h_input_tokens ?? 0);
+  await appendCreditLine(options.ledgerFile, {
+    ts: (options.now ?? (() => new Date()))().toISOString(),
+    lane: options.lane,
+    job: `${metadata.job ?? "unknown"}:${metadata.task ?? "unknown"}`,
+    model: AGENT_MODEL,
+    // Requests are counted from the session's events, which booking does not read.
+    requests: 0,
+    inputTokens: (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + cacheCreation,
+    outputTokens: usage.output_tokens ?? 0,
+    batchId: session.id,
+    ...(runId === undefined ? {} : { runId }),
+    ...ledgerCost(cost),
+  });
+  const how = cost.costKnown
+    ? "the platform's figure: it has stopped"
+    : `unknown, as ${stopped ? "the platform reports no figure it can read" : "it has not stopped"}: counted at its whole budget, or the last figure if higher`;
+  return { added: true, text: `booked session ${session.id} at $${cost.costUsd.toFixed(2)} (${how})` };
 }
 
 /**

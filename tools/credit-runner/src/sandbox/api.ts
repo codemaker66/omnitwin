@@ -62,7 +62,12 @@ export interface AgentRef {
   readonly metadata: Readonly<Record<string, string>>;
 }
 export type SessionRef = Pick<BetaManagedAgentsSession, "id" | "status">;
-export type SessionTotals = Pick<BetaManagedAgentsSession, "id" | "status" | "usage">;
+/**
+ * A session as retrieveSession reads it: its totals, and for collect --book its
+ * metadata (the run id that finds a line booked before its id was known) and
+ * its budget (the whole budget a session not known to have stopped is booked at).
+ */
+export type SessionTotals = Pick<BetaManagedAgentsSession, "id" | "status" | "usage" | "metadata" | "budget">;
 export type SessionListing = Pick<BetaManagedAgentsSession, "id" | "status" | "metadata">;
 
 /**

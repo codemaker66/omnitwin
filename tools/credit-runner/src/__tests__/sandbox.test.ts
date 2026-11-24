@@ -30,10 +30,21 @@ import {
   type EnvironmentRef,
   type SandboxApi,
   type SessionEvent,
+  type SessionListing,
 } from "../sandbox/api.js";
 import { outcomeFor, promptSha, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
 import { appendCreditLine, checkSpend, ledgerHasSession, readCreditLedger } from "../sandbox/credit-ledger.js";
-import { collectSandboxJob, inlineCode, reviewMarkdown, runSandboxJob, type JobOptions, type JobRecord, type LauncherConfig } from "../sandbox/launcher.js";
+import {
+  bookSession,
+  collectSandboxJob,
+  inlineCode,
+  reviewMarkdown,
+  runSandboxJob,
+  UNBOOKED_LOOKBACK_MS,
+  type JobOptions,
+  type JobRecord,
+  type LauncherConfig,
+} from "../sandbox/launcher.js";
 import {
   isWindowsDeviceName,
   MAX_OUTPUT_BYTES,
@@ -1364,10 +1375,11 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     const record = await job(api, config, happy, { sleep: instant });
     if (record.kind !== "ran") throw new Error(record.reason);
     expect(api.sessions).toHaveLength(1);
-    expect(api.listCalls).toBe(1);
+    // The startup check's listing, then one lookup.
+    expect(api.listCalls).toBe(2);
     // The lookup reaches back to before the create (FakeApi lists a session only from createdSince on, as the API does).
-    expect(api.listedSince).toHaveLength(1);
-    expect(Date.parse(api.listedSince[0] ?? "")).toBeLessThanOrEqual(Date.parse(api.createTimes[0] ?? ""));
+    expect(api.listedSince).toHaveLength(2);
+    expect(Date.parse(api.listedSince[1] ?? "")).toBeLessThanOrEqual(Date.parse(api.createTimes[0] ?? ""));
     // Found by the run's own metadata, not by the other session in the list.
     expect(api.sessions[0]?.metadata).toMatchObject({ lane: "sandbox", job: "a4-trial", task: "robots-wildcards", run: expect.any(String) });
     expect(record.result.sessionId).toBe("sesn_1");
@@ -1382,7 +1394,8 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     // A create still in flight could start the session after the last lookup.
     await expect(job(missing, config, happy, { sleep: instant })).rejects.toBeInstanceOf(SessionMayExistError);
     expect(missing.sessions).toHaveLength(1);
-    expect(missing.listCalls).toBe(4);
+    // The startup check's listing, then four lookups.
+    expect(missing.listCalls).toBe(5);
     const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
     expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: null });
 
@@ -1390,7 +1403,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     const refused = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
     refused.createError = new Anthropic.RateLimitError(429, { type: "error" }, "rate limited", new Headers());
     await expect(job(refused, config, happy, { sleep: instant })).rejects.toBeInstanceOf(Anthropic.RateLimitError);
-    expect(refused.listCalls).toBe(0);
+    expect(refused.listCalls).toBe(1);
     expect(isAmbiguousFailure(refused.createError)).toBe(false);
     expect(isAmbiguousFailure(missing.createError)).toBe(true);
   });
@@ -1399,7 +1412,12 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     const config = await workspace();
     const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
     api.createError = new Anthropic.APIConnectionTimeoutError();
-    api.listFailures = 4;
+    // Every lookup after the create fails; the startup check's listing, before it, answers.
+    const create = api.createSession;
+    api.createSession = (params) => {
+      api.listFailures = 4;
+      return create(params);
+    };
     await expect(job(api, config, happy, { sleep: instant })).rejects.toBeInstanceOf(SessionMayExistError);
     const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
     expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: null, job: "a4-trial:robots-wildcards" });
@@ -1937,14 +1955,17 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
   });
 
   it("never adopts an earlier session of the same lane, job and task after a failed create: the per-run id must match too", async () => {
-    const config = await workspace();
+    // The earlier session was booked when it ran, so the startup check passes it by.
+    const config = await workspace(
+      `${JSON.stringify({ ts: "2026-11-05T09:00:00.000Z", lane: "sandbox", job: "a4-trial:robots-wildcards", model: "m", requests: 1, inputTokens: 1, outputTokens: 1, costUsd: 1, batchId: "sesn_earlier" })}\n`,
+    );
     const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
     api.createError = new Anthropic.InternalServerError(500, { type: "error" }, "overloaded", new Headers());
     api.earlierSessions = [{ id: "sesn_earlier", status: "idle", metadata: { lane: "sandbox", job: "a4-trial", task: "robots-wildcards", run: "an-earlier-run" } }];
     await expect(job(api, config, happy, { sleep: instant })).rejects.toBeInstanceOf(SessionMayExistError);
-    expect(api.listCalls).toBe(4);
+    expect(api.listCalls).toBe(5);
     expect(api.opened).toBe(0);
-    const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
+    const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim().split("\n").at(-1) ?? "") as Record<string, unknown>;
     expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: null });
   });
 
@@ -1955,7 +1976,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     found.createdAnyway = true;
     const record = await job(found, await workspace(), happy, { sleep: instant });
     if (record.kind !== "ran") throw new Error(record.reason);
-    expect(found.listCalls).toBe(1);
+    expect(found.listCalls).toBe(2);
     expect(record.result.sessionId).toBe("sesn_1");
     expect(record.costUsd).toBeCloseTo(2.87);
 
@@ -1964,7 +1985,7 @@ describe("sandbox launcher, when the session or the API misbehaves", () => {
     const unread = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
     unread.createError = new SyntaxError("Unexpected end of JSON input");
     await expect(job(unread, config, happy, { sleep: instant })).rejects.toBeInstanceOf(SessionMayExistError);
-    expect(unread.listCalls).toBe(4);
+    expect(unread.listCalls).toBe(5);
     const line = JSON.parse((await readFile(config.ledgerFile, "utf8")).trim()) as Record<string, unknown>;
     expect(line).toMatchObject({ costUsd: 4.5, costKnown: false, batchId: null });
 
@@ -2453,6 +2474,127 @@ describe("sandbox launcher, when it is stopped by a signal", () => {
     await job(plain, await workspace());
     expect(during).toEqual(before);
   }, 300_000);
+});
+
+describe("sandbox launcher, the sessions the ledger lacks", () => {
+  /** A session this lane made that a killed launcher never booked. */
+  const lost = (extra: Partial<SessionListing> = {}): SessionListing => ({
+    id: "sesn_lost",
+    status: "running",
+    metadata: { lane: "sandbox", job: "trial-1", task: "x", run: "run-lost" },
+    ...extra,
+  });
+  const booking = (fields: Record<string, unknown>): string =>
+    `${JSON.stringify({ ts: "2026-11-20T09:00:00.000Z", lane: "sandbox", job: "trial-1:x", model: "m", requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 1, ...fields })}\n`;
+  const DAY_MS = 24 * 60 * 60_000;
+
+  it("refuses to run while a session this lane made has no ledger line, before any setup call or create, naming the session, its status and the command that books it", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    api.earlierSessions = [lost()];
+    const before = Date.now();
+    const record = await job(api, config);
+    const after = Date.now();
+    expect(record).toEqual({
+      kind: "skipped",
+      taskId: task.id,
+      reason: expect.stringContaining(
+        "session sesn_lost (running) was made by this lane and has no ledger line; book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_lost --book",
+      ),
+    });
+    expect([api.environmentCreates, api.agentCreates, api.environmentUpdates.length, api.agentUpdates, api.uploads.length, api.sessions.length]).toEqual([0, 0, 0, 0, 0, 0]);
+    await expect(readdir(config.workRoot)).rejects.toMatchObject({ code: "ENOENT" });
+    // With no ledger line yet, the listing reaches back a day from now, archived sessions included (the API seam lists them).
+    expect(api.listedSince).toHaveLength(1);
+    const since = Date.parse(api.listedSince[0] ?? "");
+    expect(since).toBeGreaterThanOrEqual(before - DAY_MS);
+    expect(since).toBeLessThanOrEqual(after - DAY_MS);
+    expect(UNBOOKED_LOOKBACK_MS).toBe(DAY_MS);
+
+    // From the ledger's earliest dated line less a day, whatever the lines' order or other lanes.
+    const dated = await workspace(`${booking({ ts: "2026-11-22T09:00:00.000Z", batchId: "sesn_a" })}${booking({ ts: "2026-11-20T09:00:00.000Z", lane: "batches", batchId: null })}${booking({ ts: "not a time", batchId: "sesn_b" })}`);
+    const listed = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    listed.earlierSessions = [lost()];
+    expect(await job(listed, dated)).toMatchObject({ kind: "skipped" });
+    expect(listed.listedSince).toEqual(["2026-11-19T09:00:00.000Z"]);
+
+    // A listing that fails refuses the run too: the check cannot say the books are whole.
+    const failing = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    failing.listFailures = 1;
+    await expect(job(failing, await workspace())).rejects.toThrow(/^could not list this lane's sessions to check that each has a ledger line \(connection reset\); nothing was run$/u);
+    expect([failing.environmentCreates, failing.uploads.length, failing.sessions.length]).toEqual([0, 0, 0]);
+  });
+
+  it("runs once the session is booked by its id or by its run id, and passes by another lane's session", async () => {
+    for (const [label, ledger, sessions] of [
+      ["booked by id", booking({ batchId: "sesn_lost" }), [lost()]],
+      ["booked by run id", booking({ batchId: null, runId: "run-lost", costKnown: false }), [lost()]],
+      ["another lane's", "", [lost({ metadata: { lane: "shift", job: "night", task: "x", run: "run-shift" } })]],
+    ] as const) {
+      const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+      api.earlierSessions = [...sessions];
+      expect(await job(api, await workspace(ledger)), label).toMatchObject({ kind: "ran" });
+    }
+  }, 300_000);
+
+  it("books a lane session the ledger lacks once (collect --book): the platform's figure once it has stopped, else its whole budget as unknown; again, it adds nothing", async () => {
+    const config = await workspace();
+    const stopped = new FakeApi([]);
+    stopped.earlierSessions = [lost({ id: "sesn_1", status: "idle" })];
+    vi.mocked(appendCreditLine).mockClear();
+    const first = await bookSession({ api: stopped, ledgerFile: config.ledgerFile, lane: "sandbox", sessionId: "sesn_1" });
+    expect(first).toEqual({ added: true, text: "booked session sesn_1 at $2.87 (the platform's figure: it has stopped)" });
+    expect(JSON.parse((await readFile(config.ledgerFile, "utf8")).trim())).toEqual({
+      ts: expect.any(String),
+      lane: "sandbox",
+      job: "trial-1:x",
+      model: "claude-opus-5-5",
+      requests: 0,
+      inputTokens: 110 + 3000 + 200,
+      outputTokens: 55,
+      costUsd: 2.87,
+      batchId: "sesn_1",
+      runId: "run-lost",
+    });
+    expect(await bookSession({ api: stopped, ledgerFile: config.ledgerFile, lane: "sandbox", sessionId: "sesn_1" })).toEqual({
+      added: false,
+      text: "the ledger already has a line for session sesn_1; nothing was added",
+    });
+    expect(appendCreditLine).toHaveBeenCalledTimes(1);
+
+    // Still running: the whole budget the platform reports for it, as unknown.
+    const runningLedger = await workspace();
+    const running = new FakeApi([]);
+    running.statuses = ["running"];
+    running.earlierSessions = [lost({ id: "sesn_1" })];
+    running.sessionBudget = { type: "limit", max_list_cost: { amount: "1250", currency: "USD" } };
+    expect(await bookSession({ api: running, ledgerFile: runningLedger.ledgerFile, lane: "sandbox", sessionId: "sesn_1" })).toMatchObject({ added: true });
+    expect(JSON.parse((await readFile(runningLedger.ledgerFile, "utf8")).trim())).toMatchObject({ costUsd: 12.5, costKnown: false, batchId: "sesn_1", runId: "run-lost" });
+
+    // No budget reported: --budget's, and without it a refusal that says so.
+    const unbudgeted = new FakeApi([]);
+    unbudgeted.statuses = ["running"];
+    unbudgeted.earlierSessions = [lost({ id: "sesn_1" })];
+    const noBudget = await workspace();
+    await expect(bookSession({ api: unbudgeted, ledgerFile: noBudget.ledgerFile, lane: "sandbox", sessionId: "sesn_1" })).rejects.toThrow(
+      "session sesn_1 has not stopped, and the platform reports no budget for it; pass --budget <usd> to book it at that",
+    );
+    await expect(readFile(noBudget.ledgerFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await bookSession({ api: unbudgeted, ledgerFile: noBudget.ledgerFile, lane: "sandbox", sessionId: "sesn_1", budgetUsd: 3.25 });
+    expect(JSON.parse((await readFile(noBudget.ledgerFile, "utf8")).trim())).toMatchObject({ costUsd: 3.25, costKnown: false });
+
+    // An unclear create's line, booked under the run id, already charges it.
+    const mayExist = await workspace(booking({ batchId: null, runId: "run-lost", costUsd: 4.5, costKnown: false }));
+    expect(await bookSession({ api: running, ledgerFile: mayExist.ledgerFile, lane: "sandbox", sessionId: "sesn_1" })).toMatchObject({ added: false });
+    expect((await readFile(mayExist.ledgerFile, "utf8")).trim().split("\n")).toHaveLength(1);
+
+    // Another lane's session is not this lane's to book.
+    const shift = new FakeApi([]);
+    shift.earlierSessions = [lost({ id: "sesn_1", metadata: { lane: "shift", job: "night", task: "x", run: "run-shift" } })];
+    await expect(bookSession({ api: shift, ledgerFile: (await workspace()).ledgerFile, lane: "sandbox", sessionId: "sesn_1" })).rejects.toThrow(
+      `session sesn_1 was not made by lane 'sandbox' (its metadata lane is "shift"); collect --book books only this lane's sessions`,
+    );
+  });
 });
 
 describe("sandbox brief", () => {

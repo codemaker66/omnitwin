@@ -6,11 +6,11 @@ import { parseArgs } from "node:util";
 import { expandHome } from "../config.js";
 import { git } from "../git.js";
 import { keyFileExposure, keyFilePresent, readKey } from "../keys.js";
-import { parseTask } from "../task.js";
-import { sdkSandboxApi } from "./api.js";
+import { describeError, parseTask } from "../task.js";
+import { type SandboxApi, sdkSandboxApi } from "./api.js";
 import { sandboxSystemPrompt } from "./brief.js";
-import { ledgerHasSession, readCreditLedger, spent } from "./credit-ledger.js";
-import { collectSandboxJob, runSandboxJob } from "./launcher.js";
+import { readCreditLedger, spent } from "./credit-ledger.js";
+import { bookCommand, bookSession, collectSandboxJob, runSandboxJob, sessionIsBooked, unbookedSessions, unbookedText } from "./launcher.js";
 import { masterFacts } from "./master.js";
 import { budgetOverride, boundedNumber, timeoutOverride } from "./overrides.js";
 import { gitVersionProblem } from "./patches.js";
@@ -77,13 +77,19 @@ From the repo root:
   pnpm --filter @omnitwin/credit-runner sandbox status
   pnpm --filter @omnitwin/credit-runner sandbox setup
   pnpm --filter @omnitwin/credit-runner sandbox run <spec.md> --job <label> [--budget <usd>] [--timeout <min>] [--job-cap <usd>]
-  pnpm --filter @omnitwin/credit-runner sandbox collect <session-id> <spec.md> --run-dir <dir> --base <sha> [--budget <usd>]
-      rebuilds a finished session's record and review from its history; starts and charges nothing
+  pnpm --filter @omnitwin/credit-runner sandbox collect <session-id> --book [--budget <usd>]
+      books a session of this lane that the ledger has no line for: the platform's figure once it
+      has stopped, else its whole budget as unknown; adds nothing when a line exists
+  pnpm --filter @omnitwin/credit-runner sandbox collect <session-id> <spec.md> --run-dir <dir> --base <sha> [--budget <usd>] [--book]
+      rebuilds a finished session's record and review from its history; starts nothing, and books
+      nothing unless --book is given
 
 Options:
   --job <label>      groups runs in the credit ledger, e.g. trial-1
   --budget <usd>     the session's hard spend cap, at most 50 (default: the spec's budget_usd); on collect,
-                     what a session whose cost cannot be read is counted at
+                     what a session whose cost cannot be read is counted at (with --book, only when the
+                     platform reports no budget for the session)
+  --book             on collect: book the session if the ledger has no line for it
   --timeout <min>    interrupt the agent after this many whole minutes, at most 240 (default: the spec's)
   --job-cap <usd>    refuse the run if the spend so far under this --job label plus its budget
                      passes this
@@ -100,7 +106,11 @@ function costText(record: { readonly costUsd: number; readonly costKnown: boolea
   return `$${record.costUsd.toFixed(2)}${record.costKnown ? "" : " (unknown: counted at the whole budget, or the last figure if higher)"}`;
 }
 
-export async function main(argv: readonly string[]): Promise<number> {
+/**
+ * The CLI. `seams.api`, a test seam, is used in place of the client built from
+ * the key file: no key folder is checked and no key read.
+ */
+export async function main(argv: readonly string[], seams: { readonly api?: SandboxApi } = {}): Promise<number> {
   // The parser would refuse it too, but only as an unknown option: an old script learns what replaced it.
   if (argv.some((arg) => arg === "--night-cap" || arg.startsWith("--night-cap="))) {
     throw new Error("--night-cap was renamed to --job-cap, the cap on the spend under one --job label; nothing was run");
@@ -115,6 +125,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       "job-cap": { type: "string" },
       "run-dir": { type: "string" },
       base: { type: "string" },
+      book: { type: "boolean" },
       config: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
@@ -151,6 +162,29 @@ export async function main(argv: readonly string[]): Promise<number> {
     out(
       `Spend: lane '${config.lane}' $${spent(ledger.lines, (line) => line.lane === config.lane).toFixed(2)} of $${config.laneCapUsd.toFixed(2)}; all lanes $${spent(ledger.lines).toFixed(2)} of $${config.orgCapUsd.toFixed(2)}${ledger.badLines > 0 ? `; ${String(ledger.badLines)} unreadable line(s)` : ""}`,
     );
+    // The startup check `run` makes, without refusing: this lane's sessions that no ledger line charges. It needs the key to list them.
+    const listingApi = async (): Promise<SandboxApi | string> => {
+      if (seams.api !== undefined) return seams.api;
+      if (keyDirProblem !== null) return keyDirProblem;
+      if (!present) return `no key file at ${keyFile}`;
+      if ((await keyFileExposure(keyFile)).length > 0) return `${keyFile} is not private`;
+      try {
+        return sdkSandboxApi(await readKey(keyFile));
+      } catch (error) {
+        return describeError(error);
+      }
+    };
+    const listing = await listingApi();
+    if (typeof listing === "string") out(`Unbooked sessions: not checked (${listing})`);
+    else {
+      try {
+        const found = await unbookedSessions(listing, config.ledgerFile, config.lane, new Date());
+        if (found.sessions.length === 0) out(`Unbooked sessions: none of lane '${config.lane}' since ${found.since}`);
+        for (const session of found.sessions) out(`Warning: ${unbookedText(session)}; run refuses until it is booked`);
+      } catch (error) {
+        out(`Unbooked sessions: not checked (listing the sessions failed: ${describeError(error)})`);
+      }
+    }
     // The review runs on this machine's git: one too old for it rejects every run, after the session is paid for.
     const gitVersion = await git(tmpdir(), ["--version"]).catch((error: unknown) => `git --version failed: ${error instanceof Error ? error.message : String(error)}`);
     const gitProblem = gitVersionProblem(gitVersion);
@@ -158,11 +192,14 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
-  if (keyDirProblem !== null) throw new Error(keyDirProblem);
-  if (!(await keyFilePresent(keyFile))) throw new Error(`no key file at ${keyFile}; store one with setup-keys.ps1`);
-  const exposure = await keyFileExposure(keyFile);
-  if (exposure.length > 0) throw new Error(`${keyFile} is not private: ${exposure.join("; ")}`);
-  const api = sdkSandboxApi(await readKey(keyFile));
+  const keyedApi = async (): Promise<SandboxApi> => {
+    if (keyDirProblem !== null) throw new Error(keyDirProblem);
+    if (!(await keyFilePresent(keyFile))) throw new Error(`no key file at ${keyFile}; store one with setup-keys.ps1`);
+    const exposure = await keyFileExposure(keyFile);
+    if (exposure.length > 0) throw new Error(`${keyFile} is not private: ${exposure.join("; ")}`);
+    return sdkSandboxApi(await readKey(keyFile));
+  };
+  const api = seams.api ?? (await keyedApi());
 
   if (command === "setup") {
     const { projectRules } = await masterFacts();
@@ -176,9 +213,15 @@ export async function main(argv: readonly string[]): Promise<number> {
     const spec = positionals[2];
     const runDir = values["run-dir"];
     const base = values.base;
-    if (sessionId === undefined || spec === undefined || runDir === undefined || base === undefined || !/^[0-9a-f]{40}$/u.test(base)) {
-      throw new Error("collect needs <session-id> <spec.md> --run-dir <dir> --base <40-hex sha>");
+    const needs = "collect needs <session-id> <spec.md> --run-dir <dir> --base <40-hex sha>, or <session-id> --book to book the session alone";
+    if (sessionId === undefined) throw new Error(needs);
+    if (values.book === true) {
+      // First, so a session that has not stopped (which collect cannot rebuild yet) is still booked.
+      const booked = await bookSession({ api, ledgerFile: config.ledgerFile, lane: config.lane, sessionId, budgetUsd: budgetOverride(values.budget) });
+      out(booked.text);
+      if (spec === undefined && runDir === undefined && base === undefined) return 0;
     }
+    if (spec === undefined || runDir === undefined || base === undefined || !/^[0-9a-f]{40}$/u.test(base)) throw new Error(needs);
     const task = parseTask(await readFile(spec, "utf8"), path.resolve(spec));
     const record = await collectSandboxJob({
       api,
@@ -189,10 +232,10 @@ export async function main(argv: readonly string[]): Promise<number> {
       budgetUsd: budgetOverride(values.budget),
       log: out,
     });
-    // collect writes no ledger line; whether the run left one is looked up, not assumed (a launcher that died leaves none).
-    const charged = (await ledgerHasSession(config.ledgerFile, sessionId))
-      ? "the ledger has a line for this session; collect added nothing"
-      : "the ledger has NO line for this session (its launcher may have died), and collect added none";
+    // Without --book, collect writes no ledger line; whether the session has one is looked up (by its id or its run id), not assumed.
+    const charged = (await sessionIsBooked(api, config.ledgerFile, sessionId))
+      ? "the ledger has a line for this session"
+      : `the ledger has NO line for this session; book it with ${bookCommand(sessionId)}`;
     out(`${record.review.verdict}: ${costText(record)} (${charged}); review at ${path.join(record.runDir, "review.md")}`);
     return record.review.verdict === "ready-for-review" ? 0 : 2;
   }
