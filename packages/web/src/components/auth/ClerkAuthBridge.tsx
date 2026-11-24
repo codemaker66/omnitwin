@@ -26,7 +26,11 @@ export function ClerkAuthBridge(): null {
       useAuthStore.getState().setLoading(true);
     } else if (isLoaded && isSignedIn) {
       setTokenGetter(getToken);
-      useAuthStore.getState().beginAccessCheck(email);
+      // Each route group mounts its own bridge. A person already confirmed for
+      // this same identity stays on the page while /auth/me is asked again
+      // behind it; its answer applies a changed role, or a refusal, as a first
+      // check's would. Any other identity is checked from nobody.
+      useAuthStore.getState().beginAccessCheck(email, identityId ?? null);
       // An explicit retry after email verification must not reuse older JWT claims.
       const request = retry > 0
         ? getToken({ skipCache: true }).then(() => cancelled ? null : getCurrentAuthUser())

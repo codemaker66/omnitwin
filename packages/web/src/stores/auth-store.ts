@@ -24,10 +24,21 @@ interface AuthState {
   readonly accessStatus: "signed_out" | "checking" | "ready" | "pending" | "error";
   readonly accessEmail: string | null;
   readonly accessRetry: number;
+  /** The sign-in identity (the provider's user id) that `user`, or the access
+   *  check under way, belongs to; null when none was given. */
+  readonly accessIdentity: string | null;
 }
 
 interface AuthActions {
-  readonly beginAccessCheck: (email: string) => void;
+  /**
+   * Start an access check for the signed-in identity. A person the API has
+   * already confirmed for this same identity stays (the sign-in provider is
+   * mounted again on each move between route groups) while the check runs
+   * behind the page; its answer then replaces them, or refuses them, exactly
+   * as a first check's would. Any other identity, or none given, starts from
+   * nobody.
+   */
+  readonly beginAccessCheck: (email: string, identity?: string | null) => void;
   readonly failAccessCheck: (message: string, pending: boolean) => void;
   readonly retryAccess: () => void;
   readonly setUser: (user: AuthUser | null) => void;
@@ -46,10 +57,16 @@ export const useAuthStore = create<AuthStore>((set) => ({
   accessStatus: "signed_out",
   accessEmail: null,
   accessRetry: 0,
+  accessIdentity: null,
 
-  beginAccessCheck: (email) => {
-    set({ user: null, isAuthenticated: false, isLoading: true, error: null,
-      accessStatus: "checking", accessEmail: email });
+  beginAccessCheck: (email, identity = null) => {
+    set((state) => {
+      const confirmedForThisIdentity = identity !== null && state.accessIdentity === identity
+        && state.accessStatus === "ready" && state.user !== null;
+      if (confirmedForThisIdentity) return state;
+      return { user: null, isAuthenticated: false, isLoading: true, error: null,
+        accessStatus: "checking", accessEmail: email, accessIdentity: identity };
+    });
   },
 
   failAccessCheck: (message, pending) => {
@@ -62,14 +79,16 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   setUser: (user) => {
-    set({
+    set((state) => ({
       user,
       isAuthenticated: user !== null,
       isLoading: false,
       error: null,
       accessStatus: user === null ? "signed_out" : "ready",
       accessEmail: user?.email ?? null,
-    });
+      // The API's answer for the identity whose check began it.
+      accessIdentity: user === null ? null : state.accessIdentity,
+    }));
   },
 
   setLoading: (isLoading) => { set({ isLoading }); },
@@ -82,6 +101,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       error: null,
       accessStatus: "signed_out",
       accessEmail: null,
+      accessIdentity: null,
     });
   },
 
