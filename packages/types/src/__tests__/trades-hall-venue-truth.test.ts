@@ -7,6 +7,7 @@ import {
   TRADES_HALL_PUBLISHED_ROOM_NAMES,
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_ROOM_DIMENSIONS,
+  TRADES_HALL_WITHHELD_ROOM_DIMENSIONS,
   TRADES_HALL_WEDDING_PRICING,
   VENUE_TRUTH_PROVENANCE,
   VENUE_TRUTH_STATEMENTS,
@@ -164,13 +165,26 @@ describe("room dimensions", () => {
     for (const text of texts) expect(text).not.toMatch(/\d/);
   });
 
-  it("keeps the Saloon and the Reception Room at the venue's published figures", () => {
-    // The Reception Room's survey traces a smaller, L-shaped room. The
-    // published figure stays until the planner's room changes with it (T-662).
+  it("keeps the Saloon at the venue's published figures", () => {
     expect(TRADES_HALL_ROOM_DIMENSIONS.saloon).toEqual({ extents: [{ lengthM: 12, widthM: 7, heightM: 5.4 }] });
-    expect(TRADES_HALL_ROOM_DIMENSIONS["reception-room"]).toEqual({
+  });
+
+  it("shows no size for the Reception Room, and keeps the venue's published one on record", () => {
+    // The survey traces a smaller, L-shaped room and the planner's own outline
+    // agrees with the survey, so no surface shows the published size until
+    // the venue confirms one (Blake's decision, 24 November 2026).
+    expect(TRADES_HALL_ROOM_DIMENSIONS["reception-room"]).toBeUndefined();
+    expect(TRADES_HALL_WITHHELD_ROOM_DIMENSIONS["reception-room"]).toEqual({
       extents: [{ lengthM: 13.4, widthM: 11.2, heightM: 3.2 }],
     });
+  });
+
+  it("never holds a room's dimensions as both shown and withheld", () => {
+    // A surface reads the shown record only. A room in both would be shown.
+    const shown = Object.keys(TRADES_HALL_ROOM_DIMENSIONS);
+    for (const slug of Object.keys(TRADES_HALL_WITHHELD_ROOM_DIMENSIONS)) {
+      expect(shown, slug).not.toContain(slug);
+    }
   });
 
   it("gives the Robert Adam Room as the two sections the venue publishes, lower first", () => {

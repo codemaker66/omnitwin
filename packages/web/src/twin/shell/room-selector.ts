@@ -147,11 +147,12 @@ const NO_BREAK_SPACE = "\u00a0";
  *
  * WHERE THE LINE MAY WRAP. A floor (its section's name, where it has one, and
  * its figure) is held together with no-break spaces, and "and" is tied to the
- * floor after it, so the only places a narrow row can break the line are at a
- * " · " and before "and". A sectioned room's line is the longest on the panel
- * and takes two lines there; with ordinary spaces it broke inside a figure and
- * left the unit alone on the second. A no-break space is as wide as a space,
- * so a line that fits is drawn exactly as before.
+ * floor after it, so a line break cannot fall inside a floor. The capacities
+ * and the separators before the floors are ordinary text and break as such.
+ * A sectioned room's line is the longest on the panel and takes two lines
+ * there, breaking before "and"; with ordinary spaces it broke inside a figure
+ * and left the unit alone on the second. A no-break space is as wide as a
+ * space, so a line that fits is drawn exactly as before.
  */
 export function formatRoomComparison(nodeId: string): string | null {
   const room = lookUpRoom(nodeId);

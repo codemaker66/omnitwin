@@ -233,6 +233,29 @@ describe("RoomDossier", () => {
     expect(marked("Dinner")).toBe(false);
   });
 
+  it("shows a room with no size on record by its capacities alone", () => {
+    // The Reception Room's published size is withheld. Its panel has the two
+    // capacity stats and nothing where a size or a ceiling height would be:
+    // no label, no dash, no empty row.
+    const reception: PublishedRoomSlug = "reception-room";
+    expect(TRADES_HALL_ROOM_DIMENSIONS[reception]).toBeUndefined();
+    render(<RoomDossier currentId="scan_126" venueName={VENUE} />);
+
+    const capacities = TRADES_HALL_ROOM_CAPACITIES[reception];
+    const labels = [...document.querySelectorAll(".vv-twin-dossier-stat-label")].map(
+      (label) => label.textContent,
+    );
+    expect(labels).toEqual(["Reception", "Dinner"]);
+    const values = [...document.querySelectorAll(".vv-twin-dossier-stat-value")].map(
+      (value) => value.textContent,
+    );
+    expect(values).toEqual([
+      `${String(capacities.reception)} standing`,
+      `${String(capacities.dinner)} seated`,
+    ]);
+    expect(document.querySelector(".vv-twin-dossier-stat--sections")).toBeNull();
+  });
+
   it("says nothing at all at a viewpoint whose room is unverified", () => {
     const { container } = render(
       <RoomDossier currentId={UNVERIFIED_NODE} venueName={VENUE} />,

@@ -14,6 +14,7 @@ import { HALL_LIT_YEARS } from "../../landing/rite-copy.js";
 import {
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_WEDDING_PRICING,
+  TRADES_HALL_WITHHELD_ROOM_DIMENSIONS,
 } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
@@ -284,6 +285,23 @@ describe("the room dossiers", () => {
       "Lower section 11.2 × 7.6 m · 2.8 m high",
       "Upper section 9.7 × 5.6 m · 2.18 m high",
     ]);
+  });
+
+  it("shows the Reception Room with no dimensions at all", () => {
+    render(<FreshPage />);
+    const index = FRESH_ROOMS.findIndex((room) => room.slug === "reception-room");
+    const open = screen.getAllByRole("button", { name: "Open the room" })[index];
+    if (open === undefined) throw new Error("the Reception Room has no card to open");
+    fireEvent.click(open);
+    // Its published size is withheld until the venue confirms one, so the
+    // card has no dimensions block, and the page states that size nowhere.
+    expect(document.querySelector("dialog.fr-dossier")?.hasAttribute("open")).toBe(true);
+    expect(document.querySelector(".fr-dossier-dims")).toBeNull();
+    const [withheld] = TRADES_HALL_WITHHELD_ROOM_DIMENSIONS["reception-room"]?.extents ?? [];
+    if (withheld === undefined) throw new Error("the Reception Room's size is no longer on record");
+    expect(document.body.textContent).not.toContain(
+      `${String(withheld.lengthM)} × ${String(withheld.widthM)}`,
+    );
   });
 });
 

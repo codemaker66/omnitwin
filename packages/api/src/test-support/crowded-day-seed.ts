@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   TRADES_HALL_ROOM_DIMENSIONS,
+  TRADES_HALL_WITHHELD_ROOM_DIMENSIONS,
   crowdedTradesHallDay,
   type CalendarBookingEntry,
   type CalendarPhaseEntry,
@@ -88,7 +89,11 @@ export async function seedCrowdedDay(
     // so this fixture's row and the production row differ. The planner draws
     // neither: it has its own outline for the room, looked up by name
     // (packages/web/src/data/room-geometries.ts).
-    const stated = TRADES_HALL_ROOM_DIMENSIONS[room.slug]?.extents[0];
+    // A room whose published size is withheld from the public pages (the
+    // Reception Room) keeps that size here: this is a fixture, not a page.
+    const stated = (
+      TRADES_HALL_ROOM_DIMENSIONS[room.slug] ?? TRADES_HALL_WITHHELD_ROOM_DIMENSIONS[room.slug]
+    )?.extents[0];
     const size = {
       lengthM: stated?.lengthM ?? UNSTATED_ROOM.lengthM,
       widthM: stated?.widthM ?? UNSTATED_ROOM.widthM,

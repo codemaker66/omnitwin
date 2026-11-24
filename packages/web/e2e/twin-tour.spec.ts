@@ -91,6 +91,8 @@ const STAT_DINNER = "Dinner";
 const STAT_CEILING = "Ceiling";
 /** The validated viewpoint in the one room the venue publishes in sections. */
 const SECTIONED_NODE = "scan_105";
+/** A validated viewpoint in a room whose published size is not shown. */
+const NO_SIZE_NODE = "scan_126";
 
 const TOUR_PATH = "/tour";
 const MANIFEST_ROUTE = "**/twin/trades-hall/manifest.json";
@@ -646,6 +648,18 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
     await wrappedDossierLines(page),
     "no dossier line may wrap at 375 × 812 in a room published in sections",
   ).toEqual([]);
+
+  // A room with no size on record: its two capacities, and no Dimensions or
+  // Ceiling stat at all (no label, no dash, no empty row).
+  const noSize = lookUpRoom(NO_SIZE_NODE);
+  if (noSize === null) throw new Error(`${NO_SIZE_NODE} has no validated room to assert.`);
+  expect(noSize.dimensions, "the room at this viewpoint shows no size").toBeNull();
+  await openTour(page, `?node=${NO_SIZE_NODE}`);
+  await expect(dossier.getByRole("heading", { name: noSize.name })).toBeVisible();
+  expect(await dossierStats(page)).toEqual({
+    [STAT_RECEPTION]: [`${String(noSize.capacities.reception)} standing`],
+    [STAT_DINNER]: [`${String(noSize.capacities.dinner)} seated`],
+  });
 
   expect(errors, "the dossier must not log an error").toEqual([]);
 });

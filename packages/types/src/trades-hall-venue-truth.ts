@@ -97,16 +97,16 @@ export interface RoomDimensions {
 }
 
 /** Room dimensions for the rooms on the official Trades Hall website's rooms
- *  page, read again on 22 November 2026. The Saloon and the Reception Room are
- *  as the venue publishes them. The Robert Adam Room is published in two
+ *  page, read again on 22 November 2026, that a public surface may show. The
+ *  Saloon is as the venue publishes it. The Robert Adam Room is published in two
  *  sections, lower and upper, and both are given here in that order: it is one
  *  room on two levels, and neither section's figures are the whole room's.
  *  The North and South Galleries are each published at 11.5 × 4 m; no height
  *  is stated for them here, because the page gives one for the North Gallery
  *  only and does not say what it is measured to (Blake's decisions, 22 November
- *  2026). The Reception Room keeps the published 13.4 × 11.2 m although its
- *  survey traces an L-shaped room that is smaller: that figure changes
- *  together with the planner's room, not before it (T-662).
+ *  2026). The Reception Room has no entry: its published size is withheld
+ *  (TRADES_HALL_WITHHELD_ROOM_DIMENSIONS below), so a surface shows its
+ *  capacities alone.
  *
  *  The Grand Hall is its panelled interior as the Matterport E57 capture of
  *  11 July 2026 measures it, 21.135 m by 10.59 m to about 2 cm, shown as
@@ -131,9 +131,25 @@ export const TRADES_HALL_ROOM_DIMENSIONS: Readonly<
       { section: "Upper", lengthM: 9.7, widthM: 5.6, heightM: 2.18 },
     ],
   },
-  "reception-room": { extents: [{ lengthM: 13.4, widthM: 11.2, heightM: 3.2 }] },
   "north-gallery": { extents: [{ lengthM: 11.5, widthM: 4 }] },
   "south-gallery": { extents: [{ lengthM: 11.5, widthM: 4 }] },
+} as const;
+
+/** Dimensions the venue publishes that no public surface shows, kept here so
+ *  the venue's own statement is not lost. Nothing that a visitor reads may
+ *  take a figure from this record; a room is in it or in
+ *  TRADES_HALL_ROOM_DIMENSIONS, never both.
+ *
+ *  The Reception Room: the venue's rooms page gives the figures below. The
+ *  building survey traces an L-shaped room about a third smaller in area, and
+ *  the planner's own outline of the room agrees with the survey
+ *  (packages/web/src/data/room-geometries.ts). Blake's decision, 24 November
+ *  2026: show the room's capacities and no size until the venue confirms
+ *  one. */
+export const TRADES_HALL_WITHHELD_ROOM_DIMENSIONS: Readonly<
+  Partial<Record<PublishedRoomSlug, RoomDimensions>>
+> = {
+  "reception-room": { extents: [{ lengthM: 13.4, widthM: 11.2, heightM: 3.2 }] },
 } as const;
 
 export interface WeddingRate {

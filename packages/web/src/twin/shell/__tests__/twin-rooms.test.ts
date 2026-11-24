@@ -4,6 +4,7 @@ import {
   CAPACITY_FORMATS,
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_ROOM_DIMENSIONS,
+  TRADES_HALL_WITHHELD_ROOM_DIMENSIONS,
   type PublishedRoomSlug,
   type RoomDimensions,
 } from "@omnitwin/types";
@@ -196,13 +197,25 @@ describe("formatRoomDimensions", () => {
   });
 
   it("appends nothing when there is no published note or remark", () => {
-    const truth = wholeRoom("reception-room");
+    const truth = wholeRoom("saloon");
     const [whole] = truth.extents;
     expect(whole.note).toBeUndefined();
     expect(truth.remark).toBeUndefined();
-    expect(formatRoomDimensions("reception-room")).toBe(
+    expect(formatRoomDimensions("saloon")).toBe(
       `${String(whole.lengthM)} × ${String(whole.widthM)} × ${String(whole.heightM)} m`,
     );
+  });
+
+  it("gives no line and no dimensions for a room whose size is withheld", () => {
+    // The Reception Room's published size is on record but not shown, so
+    // nothing reaches a surface through this module: not the line, and not
+    // the figures behind it.
+    expect(TRADES_HALL_WITHHELD_ROOM_DIMENSIONS["reception-room"]).toBeDefined();
+    expect(formatRoomDimensions("reception-room")).toBeNull();
+    const room = lookUpRoom("scan_126");
+    expect(room?.slug).toBe("reception-room");
+    expect(room?.dimensions).toBeNull();
+    expect(room?.dimensionLine).toBeNull();
   });
 
   it("gives a room with no stated height its length and width alone", () => {
