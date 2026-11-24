@@ -166,7 +166,107 @@ describe("protected paths", () => {
       ]),
     ).toHaveLength(11);
     expect(
-      protectedPathViolations(["packages/web/src/env.ts", "docs/environment.md", "packages/api/src/railway-client.ts", ".claude/agents/x.md"]),
+      protectedPathViolations(["packages/web/src/env.ts", "docs/environment.md", "packages/api/src/railway-client.ts", "docs/agents/x.md"]),
+    ).toEqual([]);
+  });
+
+  it("rejects agent instructions, deploy config, install-time code and editor tasks, each under its own label", () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ["AGENTS.md", "agent instructions"],
+      ["packages/web/AGENTS.md", "agent instructions"],
+      ["CLAUDE.md", "agent instructions"],
+      ["tools/credit-runner/CLAUDE.md", "agent instructions"],
+      ["CLAUDE.local.md", "agent instructions"],
+      ["GOAL.md", "agent goals"],
+      [".claude/agents/deep-reviewer.md", "Claude Code config"],
+      [".claude/skills/neon/SKILL.md", "Claude Code config"],
+      [".claude/conventions/shipping-changes.md", "Claude Code config"],
+      [".claude/gotchas/dockerfile-arg-scope.md", "Claude Code config"],
+      [".claude/commands/ship.md", "Claude Code config"],
+      ["packages/web/.claude/skills/x/SKILL.md", "Claude Code config"],
+      [".claudeignore", "Claude Code ignore file"],
+      ["skills-lock.json", "agent skills lock"],
+      [".railway/railway.ts", "Railway config"],
+      [".railway/watch-patterns.json", "Railway config"],
+      [".railwayignore", "Railway config"],
+      ["infra/runpod/bootstrap.sh", "infrastructure config"],
+      ["infra/dev-db/docker-compose.yml", "infrastructure config"],
+      ["patches/three@0.186.0.patch", "pnpm dependency patch, applied at install"],
+      [".pnpmfile.cjs", "pnpm hook file, run at install"],
+      ["packages/api/.pnpmfile.cjs", "pnpm hook file, run at install"],
+      ["tools/x/.pnpmfile.mjs", "pnpm hook file, run at install"],
+      ["pnpm-workspace.yaml", "pnpm workspace config"],
+      [".vscode/tasks.json", "VS Code config"],
+      ["packages/web/.vscode/settings.json", "VS Code config"],
+      [".devcontainer/devcontainer.json", "dev container config"],
+      [".devcontainer.json", "dev container config"],
+    ];
+    expect(protectedPathViolations(cases.map(([file]) => file))).toEqual(cases.map(([file, label]) => `${file} (${label})`));
+    // The settings and hooks under .claude/ keep their own labels.
+    expect(protectedPathViolations([".claude/settings.json", ".claude/hooks/pre.mjs"])).toEqual([
+      ".claude/settings.json (Claude settings)",
+      ".claude/hooks/pre.mjs (Claude hook)",
+    ]);
+  });
+
+  it("matches the new entries in any letter case, with NTFS's trailing dots, and by 8.3 short name", () => {
+    expect(
+      protectedPathViolations([
+        "agents.MD",
+        "docs/Agents.md",
+        "Goal.md.",
+        ".CLAUDE/Skills/x.md",
+        ".Railway/Railway.ts",
+        "PATCHES/x.patch",
+        ".PNPMFILE.CJS",
+        "Pnpm-Workspace.YAML",
+        ".VSCode/tasks.json",
+        ".DevContainer/devcontainer.json",
+        "INFRA/x.sh",
+      ]),
+    ).toEqual([
+      "agents.MD (agent instructions)",
+      "docs/Agents.md (agent instructions)",
+      "Goal.md. (agent goals)",
+      ".CLAUDE/Skills/x.md (Claude Code config)",
+      ".Railway/Railway.ts (Railway config)",
+      "PATCHES/x.patch (pnpm dependency patch, applied at install)",
+      ".PNPMFILE.CJS (pnpm hook file, run at install)",
+      "Pnpm-Workspace.YAML (pnpm workspace config)",
+      ".VSCode/tasks.json (VS Code config)",
+      ".DevContainer/devcontainer.json (dev container config)",
+      "INFRA/x.sh (infrastructure config)",
+    ]);
+    expect(protectedPathViolations(["AGENTS~1.MD", ".RAILW~1/railway.ts", "PNPM-W~1.YAM", ".VSCOD~1/tasks.json", ".DEVCO~1/devcontainer.json"])).toEqual([
+      "AGENTS~1.MD (8.3 short name, which Windows can resolve to a protected file or folder)",
+      ".RAILW~1/railway.ts (8.3 short name, which Windows can resolve to a protected file or folder)",
+      "PNPM-W~1.YAM (8.3 short name, which Windows can resolve to a protected file or folder)",
+      ".VSCOD~1/tasks.json (8.3 short name, which Windows can resolve to a protected file or folder)",
+      ".DEVCO~1/devcontainer.json (8.3 short name, which Windows can resolve to a protected file or folder)",
+    ]);
+  });
+
+  it("lets through nearby paths that are not those files", () => {
+    expect(
+      protectedPathViolations([
+        "claude.md.txt",
+        "docs/claude.md.txt",
+        "docs/agents-guide.md",
+        "docs/agents/overview.md",
+        "docs/GOAL.md",
+        "goals/README.md",
+        "src/patches/x.ts",
+        "packages/web/src/patches/fix.patch",
+        "docs/claude/notes.md",
+        ".claude-notes.md",
+        "docs/vscode.md",
+        "packages/web/src/infra/client.ts",
+        "docs/pnpm-workspace.md",
+        "src/pnpmfile.cjs",
+        "docs/devcontainer.md",
+        "docs/railway.md",
+        "docs/skills-lock.md",
+      ]),
     ).toEqual([]);
   });
 
@@ -187,18 +287,20 @@ describe("protected paths", () => {
   });
 
   it("treats an 8.3 short name as protected, since Windows can resolve it to .claude or .github", () => {
-    expect(protectedPathViolations(["CLAUDE~1/settings.local.json", "GITHUB~1/workflows/x.yml", ".claude/SETTIN~1.JSO"])).toEqual([
+    expect(protectedPathViolations(["CLAUDE~1/settings.local.json", "GITHUB~1/workflows/x.yml", "docs/SESSIO~1/x.md"])).toEqual([
       "CLAUDE~1/settings.local.json (8.3 short name, which Windows can resolve to a protected file or folder)",
       "GITHUB~1/workflows/x.yml (8.3 short name, which Windows can resolve to a protected file or folder)",
-      ".claude/SETTIN~1.JSO (8.3 short name, which Windows can resolve to a protected file or folder)",
+      "docs/SESSIO~1/x.md (8.3 short name, which Windows can resolve to a protected file or folder)",
     ]);
+    // Everything under .claude/ is protected, so a short name inside it is caught by that entry first.
+    expect(protectedPathViolations([".claude/SETTIN~1.JSO"])).toEqual([".claude/SETTIN~1.JSO (Claude Code config)"]);
     // A tilde that is not a short name's ~N passes.
     expect(protectedPathViolations(["docs/notes~draft.md", "src/~utils/format.ts", "packages/web/src/home~1x.css"])).toEqual([]);
   });
 
   it("matches a Dockerfile and its variants, not a note that mentions one", () => {
     expect(protectedPathViolations(["Dockerfile", "packages/api/Dockerfile.worker", "packages/web/dockerfile"])).toHaveLength(3);
-    expect(protectedPathViolations([".claude/gotchas/dockerfile-arg-scope.md", "docs/Dockerfiles.md"])).toEqual([]);
+    expect(protectedPathViolations(["docs/gotchas/dockerfile-arg-scope.md", "docs/Dockerfiles.md"])).toEqual([]);
   });
 });
 

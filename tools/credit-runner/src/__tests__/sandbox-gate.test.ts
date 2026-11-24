@@ -5,6 +5,8 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { gitEnv } from "../git.js";
 import { inspectPatches, type PatchInspection } from "../sandbox/patches.js";
+import { reviewRun, type Review } from "../sandbox/review.js";
+import type { SessionRunResult } from "../sandbox/session.js";
 import { BASE_FILES, PAGE_CHECK, PAGE_CHECK_TEST, patchFixture, type Commit } from "./patch-fixture.js";
 
 // The review removes its throwaway repository when it is done. A test that sets
@@ -177,5 +179,107 @@ describe("the throwaway repository the patch gate reads in", () => {
     expect(untouched.filter((file) => !blobs.has(file))).toEqual([]);
     // Fetched into the throwaway repository though nothing in the series reads it.
     expect(untouched.filter((file) => !missing.has(blobs.get(file) ?? ""))).toEqual([]);
+  }, SLOW);
+});
+
+/** A finished session whose outputs are `outputs` and whose verifier passed on the given commits. */
+function sessionResult(outputs: readonly string[], head: string, commits: readonly string[]): SessionRunResult {
+  return {
+    sessionId: "sesn_gate",
+    status: "idle",
+    stopped: true,
+    archived: false,
+    runningAfterFinish: false,
+    stopInterrupted: false,
+    stopReason: "end_turn",
+    timedOut: false,
+    listCostUsd: 1,
+    activeSeconds: 60,
+    requests: 1,
+    inputTokens: 1,
+    outputTokens: 1,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    verify: { ok: true, head, problems: [], commits, flags: [], baseTail: null },
+    verifyRuns: 1,
+    outcome: null,
+    errors: [],
+    deniedAsks: 0,
+    outputs,
+    outputNames: Object.fromEntries(outputs.map((file) => [file, path.basename(file)])),
+    refusedOutputs: [],
+    leftOutputs: [],
+  };
+}
+
+/** Makes the commits on `baseFiles`, saves their format-patch files and diff.patch under the launcher's names, and reviews them as the launcher does. */
+async function review(commits: readonly Commit[], baseFiles: Readonly<Record<string, string>>): Promise<Review> {
+  count += 1;
+  const dir = path.join(root, String(count));
+  const made = await patchFixture(dir, commits, { baseFiles });
+  const saved = path.join(dir, "outputs");
+  await mkdir(saved);
+  const outputs: string[] = [];
+  for (const [index, text] of Object.values(made.patches).entries()) {
+    const file = path.join(saved, `patch-${String(index + 1).padStart(4, "0")}.patch`);
+    await writeFile(file, text);
+    outputs.push(file);
+  }
+  const diffFile = path.join(saved, "diff.patch");
+  await writeFile(diffFile, made.diff);
+  outputs.push(diffFile);
+  return reviewRun(sessionResult(outputs, made.head, made.commits), { baseSha: made.base, repoUrl: made.url });
+}
+
+/** Agent instructions, deploy config, install-time code and editor tasks, each with the label a rejection names; `atBase` files exist before the run and are edited, the rest are created. */
+const NEWLY_PROTECTED: readonly { readonly file: string; readonly label: string; readonly atBase: boolean }[] = [
+  { file: "AGENTS.md", label: "agent instructions", atBase: true },
+  { file: "CLAUDE.md", label: "agent instructions", atBase: true },
+  { file: "packages/web/AGENTS.md", label: "agent instructions", atBase: false },
+  { file: "packages/web/CLAUDE.md", label: "agent instructions", atBase: false },
+  { file: "CLAUDE.local.md", label: "agent instructions", atBase: false },
+  { file: "GOAL.md", label: "agent goals", atBase: true },
+  { file: ".claude/agents/reviewer.md", label: "Claude Code config", atBase: true },
+  { file: ".claude/skills/neon/SKILL.md", label: "Claude Code config", atBase: true },
+  { file: ".claude/conventions/shipping.md", label: "Claude Code config", atBase: true },
+  { file: ".claude/gotchas/arg-scope.md", label: "Claude Code config", atBase: true },
+  { file: ".claude/commands/ship.md", label: "Claude Code config", atBase: false },
+  { file: ".claudeignore", label: "Claude Code ignore file", atBase: true },
+  { file: "skills-lock.json", label: "agent skills lock", atBase: true },
+  { file: ".railway/railway.ts", label: "Railway config", atBase: true },
+  { file: ".railwayignore", label: "Railway config", atBase: true },
+  { file: "infra/runpod/bootstrap.sh", label: "infrastructure config", atBase: true },
+  { file: "patches/three@0.186.0.patch", label: "pnpm dependency patch, applied at install", atBase: true },
+  { file: ".pnpmfile.cjs", label: "pnpm hook file, run at install", atBase: false },
+  { file: "packages/api/.pnpmfile.cjs", label: "pnpm hook file, run at install", atBase: false },
+  { file: "pnpm-workspace.yaml", label: "pnpm workspace config", atBase: true },
+  { file: ".vscode/tasks.json", label: "VS Code config", atBase: false },
+  { file: ".devcontainer/devcontainer.json", label: "dev container config", atBase: false },
+  { file: ".devcontainer.json", label: "dev container config", atBase: false },
+];
+
+/** Names close to those files that a run may still change. */
+const NEARBY = ["docs/agents-guide.md", "claude.md.txt", "src/patches/x.ts", "docs/GOAL.md", "goals/README.md", "packages/web/src/infra/client.ts"];
+
+describe("the protected paths, read by the review from real patches", () => {
+  it("rejects a change to each agent-instruction, deploy, install-time and editor file under its label, and lets nearby files through", async () => {
+    const base = { ...BASE_FILES, ...Object.fromEntries(NEWLY_PROTECTED.filter((entry) => entry.atBase).map((entry) => [entry.file, "at the base\n"])), "docs/agents-guide.md": "# Guide\n" };
+    const result = await review(
+      [
+        { subject: "Change the agent, deploy, install and editor files", write: Object.fromEntries(NEWLY_PROTECTED.map((entry) => [entry.file, "changed by the run\n"])) },
+        { subject: "Change nearby files", write: Object.fromEntries(NEARBY.map((file) => [file, "changed by the run\n"])) },
+      ],
+      base,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual(NEWLY_PROTECTED.map((entry) => `protected path changed: ${entry.file} (${entry.label})`).sort());
+    // Edits and new files alike: the review read each from the patches.
+    expect(result.changed).toEqual(expect.arrayContaining(NEWLY_PROTECTED.map((entry) => `${entry.atBase ? "M" : "A"} ${entry.file}`)));
+  }, SLOW);
+
+  it("passes a run that changes only the nearby files", async () => {
+    const result = await review([{ subject: "Change nearby files", write: Object.fromEntries(NEARBY.map((file) => [file, "changed by the run\n"])) }], { ...BASE_FILES, "docs/agents-guide.md": "# Guide\n" });
+    expect(result.reasons).toEqual([]);
+    expect(result.verdict).toBe("ready-for-review");
   }, SLOW);
 });

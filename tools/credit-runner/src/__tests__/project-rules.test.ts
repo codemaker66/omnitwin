@@ -2,7 +2,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { PROTECTED_PATHS } from "../git.js";
 import { nightRulesFromAgentsMd } from "../project-rules.js";
+import { outcomeFor, sandboxSystemPrompt } from "../sandbox/brief.js";
+import { parseTask } from "../task.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -101,5 +104,34 @@ describe("nightRulesFromAgentsMd", () => {
     expect(rules).toMatch(/TypeScript stays strict/u);
     expect(rules).toMatch(/regression coverage/u);
     expect(rules).toMatch(/Inspect git status/u);
+  });
+});
+
+describe("the brief's rule on protected paths", () => {
+  /** The fixed rule that tells the agent which files a run must never touch. */
+  const rule = sandboxSystemPrompt("# Rules\n")
+    .split("\n")
+    .find((line) => line.includes("Never create or edit"));
+
+  it("names every entry the review rejects, by its label and the paths it covers", () => {
+    expect(rule).toBeDefined();
+    for (const entry of PROTECTED_PATHS) {
+      expect(rule, entry.label).toContain(`(${entry.label})`);
+      expect(rule, entry.label).toContain(entry.paths);
+    }
+    for (const name of ["AGENTS.md", "CLAUDE.md", "GOAL.md", ".claude/", ".claudeignore", "skills-lock.json", ".railway/", ".railwayignore", "infra/", "patches/", ".pnpmfile.cjs", "pnpm-workspace.yaml", ".vscode/", ".devcontainer/", ".devcontainer.json"]) {
+      expect(rule, name).toContain(name);
+    }
+    expect(rule).toContain("any letter case");
+    expect(rule).toContain("8.3 short name");
+  });
+
+  it("gives the grader's rubric the same entries", () => {
+    const task = parseTask(
+      ["---", "id: rubric-check", "title: Rubric check", "budget_usd: 1", "timeout_minutes: 30", 'acceptance: "pnpm test"', "---", "Check the rubric."].join("\n"),
+      "rubric-check.md",
+    );
+    const { rubric } = outcomeFor({ task, baseSha: "b".repeat(40), branch: "credit/rubric-check" });
+    for (const entry of PROTECTED_PATHS) expect(rubric, entry.label).toContain(`(${entry.label})`);
   });
 });

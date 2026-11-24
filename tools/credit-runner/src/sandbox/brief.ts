@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { PROTECTED_PATHS } from "../git.js";
 import type { Task } from "../task.js";
 
 /** The public repository. The sandbox clones it read-only; it holds no credential to push. */
@@ -20,6 +21,15 @@ export interface RunFacts {
 }
 
 /**
+ * Every path the review rejects a change to, with why, as the agent's rule and
+ * the grader's rubric name them: built from the review's own list (git.ts), so
+ * neither can name less than the review rejects.
+ */
+function protectedPathList(): string {
+  return PROTECTED_PATHS.map(({ paths, label }) => `${paths} (${label})`).join("; ");
+}
+
+/**
  * The agent's system prompt: fixed sandbox rules first, then the repository's
  * rules (AGENTS.md without its interactive-only parts). It names no task, so
  * one agent version serves every night until AGENTS.md or these rules change.
@@ -32,7 +42,7 @@ export function sandboxSystemPrompt(projectRules: string): string {
     "Send long command output (install, builds, test suites) to files under /tmp and read only the tail. Never paste a whole log into the conversation: every token you read is paid for.",
     "Commit your work on the branch with clear messages (`git add <explicit paths>`, then `git commit`), each ending with the trailer line `Credit-Runner-Task: <task id>`. Leave nothing uncommitted.",
     "Never push, open a pull request, or try to log in anywhere. There are no credentials in this container; the launcher takes your patch from the outputs folder and a person reviews it.",
-    "Never create or edit deploy or environment config or shared records: .env files, Dockerfiles, railway.*, vercel.json, nixpacks.toml, .npmrc, .mcp.json, .gitattributes, anything under .github/ or .husky/, .claude/settings*.json or .claude/hooks/, docs/state/tasks.md or docs/sessions/ (in any letter case). Never add or change a symlink, a submodule or a binary file. Do not change pnpm-lock.yaml or add dependencies unless the task says so. The launcher reads your patches itself, and a branch that does any of this is rejected.",
+    `Never create or edit deploy, environment or install-time config, agent instructions, editor tasks or shared records. A branch that changes any of these is rejected, in any letter case (a bare file name means that file in any folder), and so is any path with a segment that is an 8.3 short name, such as CLAUDE~1: ${protectedPathList()}. Never add or change a symlink, a submodule or a binary file. Do not change pnpm-lock.yaml or add dependencies unless the task says so. The launcher reads your patches itself, and a branch that does any of this is rejected.`,
     "Never weaken, skip, delete or rename tests to make anything pass (a deleted or renamed test file is rejected). Run the task's acceptance command yourself and fix what fails.",
     `When the work is committed, run \`${VERIFY_COMMAND}\` as a bash call of its own: exactly that command, with nothing before or after it (no cd, no redirection, no second command). It prints one VERIFY_RESULT line, and the launcher reads that line only from such a call. It checks that the acceptance command passes on your branch and FAILS when your source change is reverted, or, for a task that only adds tests, when the task's mutation breaks the code under test. If it reports problems, fix them, commit, and run it again. Never edit, copy or imitate it.`,
     `Export the finished work: \`git format-patch <base sha>..HEAD -o ${OUTPUTS_DIR}/patches/\` and \`git diff <base sha> HEAD > ${OUTPUTS_DIR}/diff.patch\`. Leave no other file ending in .patch in ${OUTPUTS_DIR}: any other .patch file there rejects the run.`,
@@ -112,7 +122,7 @@ export function outcomeFor(facts: RunFacts): Outcome {
     `3. ${OUTPUTS_DIR}/diff.patch and ${OUTPUTS_DIR}/patches/ hold the branch's full change against ${baseSha}.`,
     "4. The change does what the task asks, and nothing the task did not ask for: no unrelated refactors, renames, formatting sweeps or dependency changes.",
     "5. No test was weakened, skipped or deleted, and the new or changed tests check the behaviour the task names, not an implementation detail.",
-    "6. No file under .github/ or .husky/, no env file, Dockerfile, railway, vercel, npm or MCP config, .gitattributes, Claude settings or hooks, docs/state/tasks.md or docs/sessions/ changed, and no symlink, submodule or binary file added or changed.",
+    `6. No protected path changed (in any letter case, or through an 8.3 short name): ${protectedPathList()}; and no symlink, submodule or binary file added or changed.`,
     `7. The final message explains the change and states the verifier's result and anything unverified${task.precondition === undefined ? "" : `, and ${OUTPUTS_DIR}/precondition.json records the precondition's result`}.`,
   ].join("\n");
   return { description: `${lines.join("\n")}\n`, rubric: `${rubric}\n` };

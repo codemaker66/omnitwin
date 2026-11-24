@@ -135,28 +135,63 @@ export function pathForMatching(file: string): string {
     .join("/");
 }
 
+export interface ProtectedPath {
+  /** Matched, ignoring case, against pathForMatching's form of a repo-relative path. */
+  readonly pattern: RegExp;
+  /** Why the path is protected, as a rejection names it. */
+  readonly label: string;
+  /** What the pattern covers, in the words the agent's brief uses (a bare file name matches in any folder). */
+  readonly paths: string;
+}
+
 /**
- * Deploy, environment and tooling config an unattended run must never change.
- * Matched, ignoring case, against pathForMatching's form of a repo-relative path.
+ * Deploy, environment and install-time config, agent instructions, editor
+ * tasks and shared records an unattended run must never change. The brief
+ * (brief.ts) names every entry to the agent by its paths and label, so an entry
+ * added here reaches the agent's rule and the grader's rubric with it. The
+ * first entry that matches gives the label.
  */
-export const PROTECTED_PATHS: readonly { readonly pattern: RegExp; readonly label: string }[] = [
-  { pattern: /(^|\/)\.env($|\.)/iu, label: "environment file" },
-  { pattern: /(^|\/)Dockerfile(\.[^/]*)?$/iu, label: "Dockerfile" },
-  { pattern: /(^|\/)\.dockerignore$/iu, label: "Docker config" },
-  { pattern: /(^|\/)railway\.(json|toml)$/iu, label: "Railway config" },
-  { pattern: /(^|\/)nixpacks\.toml$/iu, label: "Nixpacks config" },
-  { pattern: /(^|\/)vercel\.json$/iu, label: "Vercel config" },
-  { pattern: /(^|\/)\.npmrc$/iu, label: "npm config" },
-  { pattern: /^\.github\//iu, label: "GitHub workflow or config" },
-  { pattern: /^\.husky\//iu, label: "git hook" },
+export const PROTECTED_PATHS: readonly ProtectedPath[] = [
+  { pattern: /(^|\/)\.env($|\.)/iu, label: "environment file", paths: ".env and .env.* files" },
+  { pattern: /(^|\/)Dockerfile(\.[^/]*)?$/iu, label: "Dockerfile", paths: "Dockerfile and Dockerfile.*" },
+  { pattern: /(^|\/)\.dockerignore$/iu, label: "Docker config", paths: ".dockerignore" },
+  {
+    pattern: /(^|\/)(railway\.(json|toml)|\.railwayignore)$|^\.railway\//iu,
+    label: "Railway config",
+    paths: "railway.json, railway.toml, .railwayignore and anything under .railway/",
+  },
+  { pattern: /(^|\/)nixpacks\.toml$/iu, label: "Nixpacks config", paths: "nixpacks.toml" },
+  { pattern: /(^|\/)vercel\.json$/iu, label: "Vercel config", paths: "vercel.json" },
+  { pattern: /(^|\/)\.npmrc$/iu, label: "npm config", paths: ".npmrc" },
+  { pattern: /^\.github\//iu, label: "GitHub workflow or config", paths: "anything under .github/" },
+  { pattern: /^\.husky\//iu, label: "git hook", paths: "anything under .husky/" },
   // Attributes can mark a text file binary, hiding it from diffs and scans, or run filters on checkout.
-  { pattern: /(^|\/)\.gitattributes$/iu, label: "git attributes" },
-  { pattern: /^\.claude\/settings[^/]*\.json$/iu, label: "Claude settings" },
-  { pattern: /^\.claude\/hooks\//iu, label: "Claude hook" },
-  { pattern: /(^|\/)\.mcp\.json$/iu, label: "MCP config" },
-  { pattern: /\.(cmd|bat|com|exe)$/iu, label: "Windows executable (could shadow pnpm or vitest)" },
-  { pattern: /^docs\/state\/tasks\.md$/iu, label: "shared task ledger" },
-  { pattern: /^docs\/sessions\//iu, label: "session log" },
+  { pattern: /(^|\/)\.gitattributes$/iu, label: "git attributes", paths: ".gitattributes" },
+  { pattern: /^\.claude\/settings[^/]*\.json$/iu, label: "Claude settings", paths: ".claude/settings*.json" },
+  { pattern: /^\.claude\/hooks\//iu, label: "Claude hook", paths: "anything under .claude/hooks/" },
+  { pattern: /(^|\/)\.mcp\.json$/iu, label: "MCP config", paths: ".mcp.json" },
+  { pattern: /\.(cmd|bat|com|exe)$/iu, label: "Windows executable (could shadow pnpm or vitest)", paths: "any .cmd, .bat, .com or .exe file" },
+  { pattern: /^docs\/state\/tasks\.md$/iu, label: "shared task ledger", paths: "docs/state/tasks.md" },
+  { pattern: /^docs\/sessions\//iu, label: "session log", paths: "anything under docs/sessions/" },
+  // What later agents read as their instructions: the night run's own system
+  // prompt is built from AGENTS.md at master, and interactive sessions follow
+  // these files too.
+  { pattern: /(^|\/)(AGENTS|CLAUDE|CLAUDE\.local)\.md$/iu, label: "agent instructions", paths: "AGENTS.md, CLAUDE.md and CLAUDE.local.md in any folder" },
+  { pattern: /^GOAL\.md$/iu, label: "agent goals", paths: "GOAL.md at the root" },
+  // Agents, skills, commands, conventions and gotchas; in any folder, as a .claude folder below the root can hold the same.
+  { pattern: /(^|\/)\.claude\//iu, label: "Claude Code config", paths: "anything else under a .claude/ folder" },
+  { pattern: /(^|\/)\.claudeignore$/iu, label: "Claude Code ignore file", paths: ".claudeignore" },
+  // Where each installed agent skill is fetched from.
+  { pattern: /(^|\/)skills-lock\.json$/iu, label: "agent skills lock", paths: "skills-lock.json" },
+  // The GPU pods' image, template and start scripts (which handle the pods' keys) and the dev database's stack.
+  { pattern: /^infra\//iu, label: "infrastructure config", paths: "anything under infra/" },
+  // Code that runs on whichever machine installs the branch.
+  { pattern: /^patches\//iu, label: "pnpm dependency patch, applied at install", paths: "anything under patches/ at the root" },
+  { pattern: /(^|\/)\.pnpmfile\.[cm]?js$/iu, label: "pnpm hook file, run at install", paths: ".pnpmfile.cjs, .pnpmfile.mjs or .pnpmfile.js" },
+  { pattern: /(^|\/)pnpm-workspace\.yaml$/iu, label: "pnpm workspace config", paths: "pnpm-workspace.yaml" },
+  // Editors and dev containers can run tasks when a folder is opened.
+  { pattern: /(^|\/)\.vscode\//iu, label: "VS Code config", paths: "anything under a .vscode/ folder" },
+  { pattern: /(^|\/)(\.devcontainer\/|\.devcontainer\.json$)/iu, label: "dev container config", paths: "anything under a .devcontainer/ folder, and .devcontainer.json" },
 ];
 
 /**
