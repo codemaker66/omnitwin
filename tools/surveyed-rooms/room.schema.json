@@ -455,6 +455,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["type", "wall", "u", "v"],
+          "oneOf": [{ "required": ["like"] }, { "required": ["depth"] }],
           "description": "What the elevation shows in this rectangle stood before the wall when it was scanned (an open door's leaf, a plant): its texels are moved back to where the wall is before the photographs are chosen, so the wall behind is photographed from the stations that saw it past the thing, and measured without the lump. Give `like` or `depth`, not both.",
           "properties": {
             "type": { "const": "behind" },
@@ -462,7 +463,7 @@
             "u": { "type": "array", "items": { "$ref": "#/$defs/uRef" }, "minItems": 2, "maxItems": 2 },
             "v": { "$ref": "#/$defs/pair" },
             "like": { "enum": ["left", "right"], "description": "Each row takes the depth of the strip of wall just beyond the rectangle on this side (seen from inside the room)." },
-            "depth": { "type": "number", "description": "One depth for every row, metres before the wall's face (negative: behind it)." },
+            "depth": { "type": "number", "description": "One depth for every row, metres before the wall's face (negative: behind it, the other way from a recess's depth); check_room holds it inside survey.relief.depthRange (without a relief, inside what the wall views see)." },
             "note": { "$ref": "#/$defs/note" }
           }
         },

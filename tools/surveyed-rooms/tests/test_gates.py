@@ -1269,27 +1269,74 @@ class Behind(unittest.TestCase):
         beside = ~self.on_board & self.closed["coloured"] & o["coloured"] & (np.abs(o["U"] - 2.8) > 0.6)
         self.assertLess(float(np.abs(o["rgb"] - self.closed["rgb"])[beside].mean()), 0.01)
 
-    def test_5_the_checker_holds_the_edit_to_one_depth_and_a_strip_inside_the_wall(self):
+
+class BehindChecks(unittest.TestCase):
+    """check_room on `behind` edits (no build): one of `like` and `depth` (the schema's oneOf), a strip inside the
+    wall, a depth where the wall can be drawn, a rectangle that holds a texel, and a wall the corners step visits."""
+
+    def errors(self, change=None, **fields):
+        """check_room's errors for the T4 room with Behind's edit (the board's rectangle on the south wall, like
+        right), its fields changed (None drops one) and then `change` applied to the whole config."""
         import check_room  # noqa: PLC0415
-        schema = roomlib.load(os.path.join(ROOMS, "room.schema.json"))
+        edit = dict(type="behind", wall="south", u=list(LEAF["u"]), v=list(LEAF["v"]), like="right")
+        for key, value in fields.items():
+            if value is None:
+                edit.pop(key, None)
+            else:
+                edit[key] = value
+        cfg = config(RECT, ["east", "south", "west", "north"], edits=[edit])
+        if change:
+            change(cfg)
+        return "\n".join(check_room.check(cfg, roomlib.load(os.path.join(ROOMS, "room.schema.json")), None).errors)
 
-        def errors(**change):
-            cfg = json.loads(json.dumps(self.open["room"].cfg))
-            edit = cfg["edits"][0]
-            for key, value in change.items():
-                if value is None:
-                    edit.pop(key, None)
-                else:
-                    edit[key] = value
-            return "\n".join(check_room.check(cfg, schema, None).errors)
+    def test_1_one_depth_and_a_strip_inside_the_wall(self):
+        self.assertEqual(self.errors(), "")
+        self.assertEqual(self.errors(like=None, depth=0.02), "")
+        both, neither = self.errors(depth=0.0), self.errors(like=None)
+        self.assertIn("schema $.edits[0]", both)
+        self.assertIn("must match exactly one of oneOf (2 branches match)", both)
+        self.assertIn("schema $.edits[0]", neither)
+        self.assertIn("must match exactly one of oneOf (missing like; missing depth)", neither)
+        self.assertIn("the strip of wall beyond its right", self.errors(u=[5.5, 5.95]))          # 5 cm of wall left: the strip is 10
+        self.assertIn("the strip of wall beyond its left", self.errors(like="left", u=[0.05, 0.6]))
+        self.assertIn("schema", self.errors(like="above"))
 
-        self.assertEqual(errors(), "")
-        self.assertEqual(errors(like=None, depth=0.02), "")
-        self.assertIn("takes `like` or `depth`, not both", errors(depth=0.0))
-        self.assertIn("takes `like` or `depth`", errors(like=None))
-        self.assertIn("the strip of wall beyond its right", errors(u=[5.5, 5.95]))                # 5 cm of wall left: the strip is 10
-        self.assertIn("the strip of wall beyond its left", errors(like="left", u=[0.05, 0.6]))
-        self.assertIn("schema", errors(like="above"))
+    def test_2_a_depth_where_the_wall_can_be_drawn(self):
+        """depth is metres before the face, inside survey.relief.depthRange (here -0.8..0.5), or without a relief
+        inside what the wall views see (eyeInset - far .. eyeInset - near: -0.8..1.2)."""
+        for depth in (0.0, 0.02, 0.15, -0.02, -0.8, 0.5):
+            self.assertEqual(self.errors(like=None, depth=depth), "", depth)
+        for depth in (0.51, -0.81, 40, -5):
+            said = self.errors(like=None, depth=depth)
+            self.assertIn(f"depth {depth} m before the face (negative: behind it) is outside survey.relief.depthRange, -0.8..0.5 m", said)
+
+        def no_relief(cfg):
+            cfg["survey"].pop("relief")
+            cfg["survey"]["outputs"].pop("relief")
+
+        self.assertEqual(self.errors(no_relief, like=None, depth=1.0), "")
+        self.assertIn("is outside what the wall views see, -0.8..1.2 m", self.errors(no_relief, like=None, depth=1.3))
+
+    def test_3_a_rectangle_that_holds_a_texel(self):
+        """The wall views' texels are 1 cm here: a rectangle narrower or shorter than that may hold no texel centre."""
+        self.assertIn("is smaller than one texel of the wall views (10 mm a side)", self.errors(v=[1.001, 1.004]))
+        self.assertIn("is smaller than one texel of the wall views (10 mm a side)", self.errors(u=[2.5, 2.505]))
+        self.assertEqual(self.errors(u=[2.5, 2.51]), "")
+        self.assertEqual(self.errors(v=[1.0, 1.01], like=None, depth=0.0), "")
+
+    def test_4_a_wall_the_corners_step_visits(self):
+        """An edit on a wall the elevation order leaves out, or on an open one, would be listed and never applied."""
+        def order(cfg):
+            cfg["survey"]["wallViews"]["order"] = ["east", "south", "west"]
+
+        self.assertEqual(self.errors(order), "")
+        self.assertIn("wall north has no elevation (survey.wallViews.order leaves it out, or it is open)",
+                      self.errors(order, wall="north"))
+
+        def opened(cfg):
+            cfg["walls"]["segments"][3]["kind"] = "open"
+
+        self.assertIn("wall north has no elevation", self.errors(opened, wall="north"))
 
 
 # --- B26 in the corners step alone: which texels move, and to what depth --------------------------------------------
@@ -1335,6 +1382,28 @@ def behind_north(U, V):
     return d, np.ones(U.shape, bool)
 
 
+def behind_doorway(U, V):
+    """The south wall beside BEHIND_DOOR: its face (u 3.2..4.2, up to 2.0) shows the passage 0.6 m behind the wall;
+    above its head the strip right of u 3.2 is 2 cm before the face; a leaf stands before the wall left of the door,
+    from below the floor's line in the elevation (its bottom 5 cm) to 2.2 m."""
+    d = np.zeros(U.shape)
+    d[box(U, V, (3.2, 3.3), (2.0, 9.0))] = 0.02
+    d[box(U, V, (3.2, 4.2), (0.0, 2.0))] = -0.6
+    d[box(U, V, (2.5, 3.1), (-1.0, 2.2))] = 0.5
+    return d, np.ones(U.shape, bool)
+
+
+def behind_window(U, V):
+    """The north wall beside BEHIND_BAY: its face (u 3.2..4.2, v 1.0..1.6) shows the outside 0.5 m behind the wall;
+    the strip right of u 3.2 is the face below it and 6 cm before the face above it; a board stands before the
+    wall left of the window."""
+    d = np.zeros(U.shape)
+    d[box(U, V, (3.2, 3.3), (1.6, 9.0))] = 0.06
+    d[box(U, V, (3.2, 4.2), (1.0, 1.6))] = -0.5
+    d[box(U, V, (2.5, 3.1), (0.8, 1.8))] = 0.5
+    return d, np.ones(U.shape, bool)
+
+
 def corners_only(name, edits, reliefs, openings=()):
     """Writes the T4 room with these edits and openings, each wall's position tiles from reliefs[wall id] (a plain
     face where none is given), and runs the corners step. Returns the room, the step's log and, per wall, the
@@ -1369,7 +1438,8 @@ class BehindCorners(unittest.TestCase):
     one given depth, before the face. The edit moves nothing on any other wall, though the north wall holds a lump
     inside the same u and v range. Two edits on one wall each read the wall as scanned. Beside an open door the
     rows whose strip lies in the door's face (B7) take the nearest rows' depth, beside a window a depth
-    interpolated between the rows below and above it, and a rectangle may run down to the floor."""
+    interpolated between the rows below and above it, and a rectangle may run down to the floor. An edit that can
+    move nothing stops the build and says why."""
 
     @classmethod
     def setUpClass(cls):
@@ -1382,31 +1452,11 @@ class BehindCorners(unittest.TestCase):
         cls.lump2 = dict(u=(3.35, 3.55), v=(2.35, 2.55), d=0.3)
         cls.two = corners_only("behind-two", [dict(rect, like="right"), dict(type="behind", wall="south", **cls.second)],
                                dict(south=lambda U, V: behind_south(U, V, cls.lump2)))
-
-        def doorway(U, V):
-            """The open door's face (u 3.2..4.2, up to 2.0) shows the passage 0.6 m behind the wall; above its head the
-            right strip is 2 cm before the face; a leaf stands before the wall left of the door, from below the floor's
-            line in the elevation (its bottom 5 cm) to 2.2 m."""
-            d = np.zeros(U.shape)
-            d[box(U, V, (3.2, 3.3), (2.0, 9.0))] = 0.02
-            d[box(U, V, (3.2, 4.2), (0.0, 2.0))] = -0.6
-            d[box(U, V, (2.5, 3.1), (-1.0, 2.2))] = 0.5
-            return d, np.ones(U.shape, bool)
-
-        def window(U, V):
-            """The window's face (u 3.2..4.2, v 1.0..1.6) shows the outside 0.5 m behind the wall; the right strip is the
-            face below it and 6 cm before the face above it; a board stands before the wall left of the window."""
-            d = np.zeros(U.shape)
-            d[box(U, V, (3.2, 3.3), (1.6, 9.0))] = 0.06
-            d[box(U, V, (3.2, 4.2), (1.0, 1.6))] = -0.5
-            d[box(U, V, (2.5, 3.1), (0.8, 1.8))] = 0.5
-            return d, np.ones(U.shape, bool)
-
         cls.openings = corners_only(
             "behind-openings",
             [dict(type="behind", wall="south", u=[2.4, 3.2], v=[0.0, 2.4], like="right"),
              dict(type="behind", wall="north", u=[2.4, 3.2], v=[0.7, 1.9], like="right")],
-            dict(south=doorway, north=window), openings=[BEHIND_DOOR, BEHIND_BAY])
+            dict(south=behind_doorway, north=behind_window), openings=[BEHIND_DOOR, BEHIND_BAY])
 
     def south(self, build):
         s = build["walls"]["south"]
@@ -1508,6 +1558,38 @@ class BehindCorners(unittest.TestCase):
         self.assertLess(float(np.abs(depth[board] - want[board]).max()), 1e-5)
         self.assertGreater(float(np.ptp(want[board & (V > 1.0) & (V < 1.6)])), 0.05)
         self.assertRegex(self.openings["log"], r"north behind u 2\.400\.\.3\.200 v 0\.7\.\.1\.9: moved back \d+ texels \(60 rows took")
+
+    def test_8_an_edit_that_can_move_nothing_stops_the_build_and_says_why(self):
+        """Each fault has its own message: a strip blanked on every row by an opening beside the rectangle (B7), a
+        strip the mesh does not cover, and a rectangle between two texel rows or two texel columns."""
+        rect = dict(type="behind", wall="south", u=list(BEHIND_RECT["u"]), v=list(BEHIND_RECT["v"]), like="right")
+
+        def holed(U, V):
+            d, valid = behind_south(U, V)
+            return d, valid & ~box(U, V, BEHIND_RIGHT[:2])
+
+        for name, edit, reliefs, openings, said in (
+                ("opening", dict(rect, v=[0.5, 1.5]), dict(south=behind_doorway), [BEHIND_DOOR],
+                 "every row of the strip of wall beyond its right lies in an opening (B7)"),
+                ("hole", rect, dict(south=holed), [], "the strip of wall beyond its right holds no covered texel (a hole in the mesh)"),
+                ("row", dict(rect, v=[1.001, 1.004]), dict(south=behind_south), [],
+                 "the rectangle holds no texel row (its v range lies between two texel centres, 10 mm apart)"),
+                ("column", dict(rect, u=[2.401, 2.404]), dict(south=behind_south), [],
+                 "the rectangle holds no texel column (its u range lies between two texel centres, 10 mm apart)")):
+            with self.subTest(name):
+                with self.assertRaises(AssertionError) as stop:
+                    corners_only(f"behind-stop-{name}", [edit], reliefs, openings)
+                message = str(stop.exception)
+                self.assertIn("behind edit on wall south (u ", message)
+                self.assertIn(said, message)
+                self.assertNotIn("Traceback", message)
+
+    def test_9_each_config_here_is_one_the_checker_takes(self):
+        """Overlapping edits, a rectangle down to the floor and strips beside a door and a window are all allowed."""
+        import check_room  # noqa: PLC0415
+        schema = roomlib.load(os.path.join(ROOMS, "room.schema.json"))
+        for build in (self.like, self.depth, self.two, self.openings):
+            self.assertEqual(check_room.check(build["cfg"], schema, None).errors, [], build["cfg"]["edits"])
 
 
 # --- B19: the floor refills' roll direction -------------------------------------------------------------------

@@ -442,16 +442,32 @@ def check_edits(rep, room, wmap, openings):
             rep.fact(f"{label} {w['id']:<10} u {u0:7.3f}..{u1:7.3f}  v {v0}..{v1}  {e['id']}")
             continue
         if e["type"] == "behind":
-            if "like" in e and "depth" in e:
-                rep.error(f"{label}: takes `like` or `depth`, not both")
-            elif "like" not in e and "depth" not in e:
-                rep.error(f"{label}: takes `like` or `depth`: the side whose wall gives each row its depth, or one depth before the face")
-            elif "like" in e:
+            # The schema holds the edit to one of `like` and `depth`. The corners step moves texels only on the walls
+            # it visits, the elevation order's, and only those whose centres the rectangle holds.
+            wv = room["survey"]["wallViews"]
+            if w["segment"]["kind"] == "open" or w["id"] not in (wv.get("order") or [s["id"] for s in room["walls"]["segments"]]):
+                rep.error(f"{label}: wall {w['id']} has no elevation (survey.wallViews.order leaves it out, or it is open): "
+                          "the corners step would never move its texels")
+            texel = 1 / wv["ppm"]
+            if min(u1 - u0, v1 - v0) < texel - TOL:
+                rep.error(f"{label}: u {u0:.3f}..{u1:.3f} by v {v0}..{v1} is smaller than one texel of the wall views "
+                          f"({texel * 1000:g} mm a side), so it may hold no texel to move")
+            if "like" in e:
                 s0, s1 = (u1, u1 + roomlib.BEHIND_STRIP) if e["like"] == "right" else (u0 - roomlib.BEHIND_STRIP, u0)
                 if s0 < -TOL or s1 > w["length"] + TOL:
                     rep.error(f"{label}: the strip of wall beyond its {e['like']} (u {s0:.3f}..{s1:.3f}) runs outside wall {w['id']} "
                               f"(0..{w['length']:.3f}): give `depth`, or take the other side")
-            how = f"like the wall beyond its {e['like']}" if "like" in e else f"at {e.get('depth')} m before the face"
+            else:
+                # `depth` is metres before the face (recess.depth is metres behind it). It must lie where the wall can
+                # be drawn: the relief's range, or without a relief what the wall views see.
+                if "relief" in room["survey"]:
+                    (lo, hi), where = room["survey"]["relief"]["depthRange"], "survey.relief.depthRange"
+                else:
+                    (lo, hi), where = (wv["eyeInset"] - wv["far"], wv["eyeInset"] - wv["near"]), "what the wall views see"
+                if not lo - TOL <= e["depth"] <= hi + TOL:
+                    rep.error(f"{label}: depth {e['depth']} m before the face (negative: behind it) is outside {where}, "
+                              f"{lo:g}..{hi:g} m")
+            how = f"like the wall beyond its {e['like']}" if "like" in e else f"at {e['depth']} m before the face"
             rep.fact(f"{label} {w['id']:<10} u {u0:7.3f}..{u1:7.3f}  v {v0}..{v1}  {how}")
             continue
         if e["type"] == "patch":
