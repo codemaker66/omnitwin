@@ -1292,6 +1292,224 @@ class Behind(unittest.TestCase):
         self.assertIn("schema", errors(like="above"))
 
 
+# --- B26 in the corners step alone: which texels move, and to what depth --------------------------------------------
+# The walls' position tiles are written directly and only the corners step runs (seconds): no depth maps, no labels.
+
+BEHIND_RECT = dict(u=[2.4, 3.2], v=[0.5, 2.3])          # the edit's rectangle on the south wall: wider and taller than the board
+BEHIND_BOARD = dict(u=(2.5, 3.1), v=(0.6, 2.2), d=0.5)  # what stood before the wall
+BEHIND_RIGHT = (3.2, 3.3, 0.02)     # the 10 cm of wall just beyond the rectangle's right: 2 cm before the face, the face past it
+BEHIND_LEFT = (2.3, 2.4, -0.01)     # the 10 cm just beyond its left: 1 cm behind the face
+BEHIND_KEEP = dict(u=(2.41, 2.47), d=0.06)   # a moulding 4 cm before its rows' depth (0.02), in the board's rows: wall, it stays
+BEHIND_MOVE = dict(u=(3.13, 3.19), d=0.10)   # one 8 cm before it: it moves
+BEHIND_LUMP = dict(u=(2.6, 2.8), v=(1.0, 1.5), d=0.3)   # on the north wall, inside the rectangle's u and v: no edit names it
+BEHIND_DOOR = dict(id="door", wall="south", kind="door", headShape="square", centre=3.7, width=1.0, sill=0, head=2.0,
+                   glazing="none", stateInScan="open")  # its face, u 3.2..4.2, holds the right strip's lower rows
+BEHIND_BAY = dict(id="bay", wall="north", kind="window", headShape="square", centre=3.7, width=1.0, sill=1.0, head=1.6,
+                  glazing="none", dressing="none", stateInScan="closed")
+
+
+def box(U, V, us, vs=(-1.0, 9.0)):
+    return (U > us[0]) & (U < us[1]) & (V > vs[0]) & (V < vs[1])
+
+
+def behind_south(U, V, lump=None):
+    """The south wall for the corners-only cases (metres before its face). The strips just beyond the rectangle
+    differ left and right, and the right one differs from the wall past it, so the side and the width of the strip
+    both change the depth a row takes (a metre-wide strip on the right holds 90 cm of face). In the board's rows
+    two mouldings flank the board: one 4 cm before the depth its rows take (it is the wall and stays), one 8 cm."""
+    d = np.zeros(U.shape)
+    for u0, u1, depth in (BEHIND_LEFT, BEHIND_RIGHT):
+        d[box(U, V, (u0, u1))] = depth
+    rows = BEHIND_BOARD["v"]
+    d[box(U, V, BEHIND_KEEP["u"], rows)] = BEHIND_KEEP["d"]
+    d[box(U, V, BEHIND_MOVE["u"], rows)] = BEHIND_MOVE["d"]
+    d[box(U, V, BEHIND_BOARD["u"], rows)] = BEHIND_BOARD["d"]
+    if lump:
+        d[box(U, V, lump["u"], lump["v"])] = lump["d"]
+    return d, np.ones(U.shape, bool)
+
+
+def behind_north(U, V):
+    d = np.zeros(U.shape)
+    d[box(U, V, BEHIND_LUMP["u"], BEHIND_LUMP["v"])] = BEHIND_LUMP["d"]
+    return d, np.ones(U.shape, bool)
+
+
+def corners_only(name, edits, reliefs, openings=()):
+    """Writes the T4 room with these edits and openings, each wall's position tiles from reliefs[wall id] (a plain
+    face where none is given), and runs the corners step. Returns the room, the step's log and, per wall, the
+    positions written and the corrected positions (both with rows from the top)."""
+    work = os.path.join(T4, name)
+    room = write_room(work, config(RECT, ["east", "south", "west", "north"], openings, edits))
+    walls = {}
+    for w in room.walls:
+        U, V, P = write_wall(room, work, w, reliefs.get(w["id"], flat))
+        walls[w["id"]] = dict(U=U, V=V, P=P)
+    log = step(work, "corners").stdout
+    for w in room.walls:
+        tiles = sorted(room.tiles(w), key=lambda v: v["tile"])
+        walls[w["id"]]["fixed"] = np.concatenate(
+            [np.fromfile(os.path.join(work, "out-walls", f"{v['name']}.fixed.f32"), np.float32)
+             .reshape(v["pixels"][1], v["pixels"][0], 4)[::-1] for v in tiles], 1)
+    return dict(room=room, log=log, walls=walls, cfg=room.cfg)
+
+
+def depth_before(room, wall_id, points):
+    """Metres before the wall's face (along its normal, which points into the room) of E57 points."""
+    w = room.wmap[wall_id]
+    rel = points[..., :2].astype(np.float64) - np.array(w["cornerE57"])
+    return rel @ np.array(w["normalE57"], float)
+
+
+class BehindCorners(unittest.TestCase):
+    """What the corners step moves for a `behind` edit and where it puts it, on walls whose position tiles are
+    written directly. The rectangle is wider and taller than the board in it, and holds two mouldings beside the
+    board: only texels more than 6 cm before their row's depth move (the board, and the moulding 8 cm before), and
+    the one 4 cm before stays. The rows take their depth from the strip of wall on the named side, 10 cm wide; or
+    one given depth, before the face. The edit moves nothing on any other wall, though the north wall holds a lump
+    inside the same u and v range. Two edits on one wall each read the wall as scanned. Beside an open door the
+    rows whose strip lies in the door's face (B7) take the nearest rows' depth, beside a window a depth
+    interpolated between the rows below and above it, and a rectangle may run down to the floor."""
+
+    @classmethod
+    def setUpClass(cls):
+        rect = dict(type="behind", wall="south", u=list(BEHIND_RECT["u"]), v=list(BEHIND_RECT["v"]))
+        reliefs = dict(south=behind_south, north=behind_north)
+        cls.like = corners_only("behind-like", [dict(rect, like="right")], reliefs)
+        cls.depth = corners_only("behind-depth-plus", [dict(rect, depth=0.02)], reliefs)
+        # A second edit over the board's upper right corner and above the rectangle, where a lump stands proud.
+        cls.second = dict(u=[2.9, 3.6], v=[1.5, 2.6], depth=0.05)
+        cls.lump2 = dict(u=(3.35, 3.55), v=(2.35, 2.55), d=0.3)
+        cls.two = corners_only("behind-two", [dict(rect, like="right"), dict(type="behind", wall="south", **cls.second)],
+                               dict(south=lambda U, V: behind_south(U, V, cls.lump2)))
+
+        def doorway(U, V):
+            """The open door's face (u 3.2..4.2, up to 2.0) shows the passage 0.6 m behind the wall; above its head the
+            right strip is 2 cm before the face; a leaf stands before the wall left of the door, from below the floor's
+            line in the elevation (its bottom 5 cm) to 2.2 m."""
+            d = np.zeros(U.shape)
+            d[box(U, V, (3.2, 3.3), (2.0, 9.0))] = 0.02
+            d[box(U, V, (3.2, 4.2), (0.0, 2.0))] = -0.6
+            d[box(U, V, (2.5, 3.1), (-1.0, 2.2))] = 0.5
+            return d, np.ones(U.shape, bool)
+
+        def window(U, V):
+            """The window's face (u 3.2..4.2, v 1.0..1.6) shows the outside 0.5 m behind the wall; the right strip is the
+            face below it and 6 cm before the face above it; a board stands before the wall left of the window."""
+            d = np.zeros(U.shape)
+            d[box(U, V, (3.2, 3.3), (1.6, 9.0))] = 0.06
+            d[box(U, V, (3.2, 4.2), (1.0, 1.6))] = -0.5
+            d[box(U, V, (2.5, 3.1), (0.8, 1.8))] = 0.5
+            return d, np.ones(U.shape, bool)
+
+        cls.openings = corners_only(
+            "behind-openings",
+            [dict(type="behind", wall="south", u=[2.4, 3.2], v=[0.0, 2.4], like="right"),
+             dict(type="behind", wall="north", u=[2.4, 3.2], v=[0.7, 1.9], like="right")],
+            dict(south=doorway, north=window), openings=[BEHIND_DOOR, BEHIND_BAY])
+
+    def south(self, build):
+        s = build["walls"]["south"]
+        return s["U"], s["V"], s["P"], s["fixed"], depth_before(build["room"], "south", s["fixed"])
+
+    def moved_back(self, build, wall):
+        return [int(n) for n in re.findall(rf"^{wall} behind .*: moved back (\d+) texels", build["log"], re.M)]
+
+    def test_1_only_what_stands_more_than_6cm_before_its_rows_depth_moves(self):
+        U, V, P, fixed, _ = self.south(self.like)
+        board = box(U, V, BEHIND_BOARD["u"], BEHIND_BOARD["v"])
+        goes = box(U, V, BEHIND_MOVE["u"], BEHIND_BOARD["v"])
+        keep = box(U, V, BEHIND_KEEP["u"], BEHIND_BOARD["v"])
+        moved = np.any(fixed != P, axis=-1)
+        self.assertTrue(np.array_equal(fixed[keep], P[keep]), "the moulding 4 cm before its rows' depth was moved")
+        self.assertTrue(np.array_equal(moved, board | goes),
+                        f"moved {int(moved.sum())} texels, the board and the moulding 8 cm before hold {int((board | goes).sum())}")
+        self.assertEqual(self.moved_back(self.like, "south"), [int((board | goes).sum())])
+
+    def test_2_each_row_takes_the_depth_of_the_10cm_strip_on_the_named_side(self):
+        U, V, P, fixed, depth = self.south(self.like)
+        moved = box(U, V, BEHIND_BOARD["u"], BEHIND_BOARD["v"]) | box(U, V, BEHIND_MOVE["u"], BEHIND_BOARD["v"])
+        # the right strip's 2 cm; the left strip would give -1 cm, a strip a metre wide on the right the face's 0
+        self.assertLess(float(np.abs(depth[moved] - BEHIND_RIGHT[2]).max()), 1e-5)
+        self.assertTrue(np.array_equal(fixed[moved][:, 2], P[moved][:, 2]))                   # same height
+        along = (fixed[..., :2].astype(np.float64) - np.array(self.like["room"].wmap["south"]["cornerE57"])) \
+            @ np.array(self.like["room"].wmap["south"]["uE57"], float)
+        self.assertLess(float(np.abs(along[moved] - U[moved]).max()), 1e-5)                   # and the same place along it
+
+    def test_3_a_given_depth_is_before_the_face(self):
+        """depth 0.02 puts the rows 2 cm before the face, into the room (0.0 would not show the sign)."""
+        wall = self.depth["room"].wmap["south"]
+        into = (np.array(CENTRE) - np.array(wall["cornerE57"])) @ np.array(wall["normalE57"], float)
+        self.assertGreater(into, 0, "the wall's normal does not point into the room: the test proves nothing")
+        U, V, P, fixed, depth = self.south(self.depth)
+        moved = box(U, V, BEHIND_BOARD["u"], BEHIND_BOARD["v"]) | box(U, V, BEHIND_MOVE["u"], BEHIND_BOARD["v"])
+        self.assertLess(float(np.abs(depth[moved] - 0.02).max()), 1e-5)
+        self.assertTrue(np.array_equal(np.any(fixed != P, axis=-1), moved))                  # and the 6 cm counts from it
+        self.assertEqual(self.moved_back(self.depth, "south"), [int(moved.sum())])
+
+    def test_4_no_other_wall_moves(self):
+        """The north wall holds a lump 0.3 m proud inside the rectangle's u and v range: the edit names the south wall."""
+        north = self.like["walls"]["north"]
+        lump = box(north["U"], north["V"], BEHIND_LUMP["u"], BEHIND_LUMP["v"])
+        self.assertGreater(float(depth_before(self.like["room"], "north", north["P"])[lump].min()), 0.29)
+        for build in (self.like, self.depth, self.two):
+            for wid, w in build["walls"].items():
+                if wid != "south":
+                    self.assertTrue(np.array_equal(w["fixed"], w["P"]), f"{wid}: its .fixed.f32 is not its .position.f32")
+
+    def test_5_two_edits_each_read_the_wall_as_scanned(self):
+        """Where the second edit (depth 0.05) overlaps the first (like right: 0.02), the board, which it moves too, takes
+        its depth: it read the board where it was scanned, not where the first edit put it (5 cm is not 6 cm before
+        0.05). The moulding 8 cm before the first edit's depth is not 6 cm before the second's: it keeps the first's.
+        And the second moves a lump above the first's rectangle."""
+        U, V, P, fixed, depth = self.south(self.two)
+        u0, u1 = self.second["u"]
+        v0, v1 = self.second["v"]
+        second = (U >= u0) & (U <= u1) & (V >= v0) & (V <= v1)
+        board = box(U, V, BEHIND_BOARD["u"], BEHIND_BOARD["v"])
+        goes = box(U, V, BEHIND_MOVE["u"], BEHIND_BOARD["v"])
+        lump = box(U, V, self.lump2["u"], self.lump2["v"])
+        self.assertTrue((board & second).any() and (board & ~second).any() and (goes & second).any())
+        self.assertLess(float(np.abs(depth[board & second] - 0.05).max()), 1e-5)
+        self.assertLess(float(np.abs(depth[(board & ~second) | goes] - BEHIND_RIGHT[2]).max()), 1e-5)
+        self.assertLess(float(np.abs(depth[lump] - 0.05).max()), 1e-5)
+        self.assertTrue(np.array_equal(np.any(fixed != P, axis=-1), board | goes | lump))
+        self.assertEqual(self.moved_back(self.two, "south"), [int((board | goes).sum()), int(((board & second) | lump).sum())])
+
+    def test_6_beside_an_open_door_and_down_to_the_floor(self):
+        """The rectangle runs from the floor to 2.4 m beside an open door whose face (to 2.0 m) holds its strip's lower
+        rows: B7 blanks them, so those 200 rows take the depth of the nearest rows that have one (the strip above the
+        door's head, 2 cm before the face), not the passage's, and the log counts them. The leaf's lowest row, the
+        first above the floor, moves; its rows below the floor's line in the elevation are not the rectangle's, and
+        stay."""
+        s = self.openings["walls"]["south"]
+        U, V, P, fixed = s["U"], s["V"], s["P"], s["fixed"]
+        depth = depth_before(self.openings["room"], "south", fixed)
+        leaf = box(U, V, (2.5, 3.1), (0.0, 2.2))
+        below = box(U, V, (2.5, 3.1), (-1.0, 0.0))
+        self.assertEqual(int(below.sum()), 5 * 60)
+        self.assertTrue(np.array_equal(np.any(fixed != P, axis=-1), leaf))
+        self.assertLess(float(np.abs(depth[leaf] - 0.02).max()), 1e-5)
+        lowest = V == V[V > 0].min()
+        self.assertAlmostEqual(float(V[lowest][0]), 0.005, places=9)
+        self.assertEqual(int((leaf & lowest).sum()), 60)
+        self.assertRegex(self.openings["log"],
+                         rf"south behind u 2\.400\.\.3\.200 v 0\.0\.\.2\.4: moved back {int(leaf.sum())} texels \(200 rows took the nearest rows' depth\)")
+
+    def test_7_beside_a_window_rows_take_a_depth_interpolated_between_the_rows_below_and_above(self):
+        """The window's face (v 1.0..1.6) holds the strip's rows between the face below it (0) and 6 cm before the face
+        above it: B7 blanks those 60 rows, and each takes a depth on the line between the nearest rows either side."""
+        n = self.openings["walls"]["north"]
+        U, V, P, fixed = n["U"], n["V"], n["P"], n["fixed"]
+        depth = depth_before(self.openings["room"], "north", fixed)
+        board = box(U, V, (2.5, 3.1), (0.8, 1.8))
+        self.assertTrue(np.array_equal(np.any(fixed != P, axis=-1), board))
+        want = np.interp(V, [0.995, 1.605], [0.0, 0.06])           # the nearest rows below and above the window's face
+        self.assertLess(float(np.abs(depth[board] - want[board]).max()), 1e-5)
+        self.assertGreater(float(np.ptp(want[board & (V > 1.0) & (V < 1.6)])), 0.05)
+        self.assertRegex(self.openings["log"], r"north behind u 2\.400\.\.3\.200 v 0\.7\.\.1\.9: moved back \d+ texels \(60 rows took")
+
+
 # --- B19: the floor refills' roll direction -------------------------------------------------------------------
 
 class FloorRefills(unittest.TestCase):
