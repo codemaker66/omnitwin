@@ -69,7 +69,8 @@ import {
 // deadlock; and while a writer holds the event an enquiry's held dates sit in,
 // nothing is made for the enquiry or its deal. A third runs the undo beside a
 // writer: a record or an event the writer holds is left to the undo's next
-// run, never waited for. A fourth runs the migration while another
+// run, never waited for; and a made event a person renamed, or one of whose
+// phases was edited or given a time, stays with its record's link. A fourth runs the migration while another
 // connection holds proposals: it waits in its first lock, holding none of its
 // other tables, gives up after its own five seconds, leaves nothing behind,
 // and runs once the table is free.
@@ -1000,6 +1001,29 @@ describe.skipIf(target === undefined)("the spine: the undo beside a live writer"
       (SELECT count(*)::int FROM event_phases WHERE event_id = $1) AS phases,
       (SELECT count(*)::int FROM event_link_joins WHERE undone_at IS NULL) AS joins`, [made])).toEqual({ events: 0, phases: 0, joins: 0 });
     expect(await one(pool, "SELECT count(*)::int AS count FROM events WHERE id = $1", [x])).toEqual({ count: 1 });
+  }, 60_000);
+
+  // An event the join made that a person has since worked on stays, and so does its record's link:
+  // renamed (both of the event's edit paths move its updated_at), one of its phases edited (which
+  // moves the phase's updated_at), or a phase given a time. Untouched, it goes (the case above).
+  it.each([
+    ["renamed", "UPDATE events SET name = 'Renamed by a person', updated_at = updated_at + interval '1 minute' WHERE id = $1"],
+    ["given a note on a phase",
+      "UPDATE event_phases SET notes = 'Edited by a person', updated_at = updated_at + interval '1 minute' WHERE event_id = $1 AND sort_order = 0"],
+    ["given a time on a phase", "UPDATE event_phases SET starts_at = now() + interval '400 days' WHERE event_id = $1 AND sort_order = 0"],
+  ] as const)("keeps a made event a person has %s, and its enquiry's link", async (label, edit) => {
+    const v = await venueIn(pool, `undo keeps an event ${label}`);
+    const worked = await enquiryIn(pool, v.venueId, "under_review");
+    await pool.query(`UPDATE enquiries SET first_response_at = created_at, first_response_channel = 'email',
+      first_response_recorded_at = created_at WHERE id = $1`, [worked]);
+    await one(pool, "SELECT * FROM spine_join_old_records()");
+    const made = (await one(pool, "SELECT event_id FROM enquiries WHERE id = $1", [worked]))?.["event_id"];
+    if (typeof made !== "string") throw new Error("The join made no event for the worked enquiry");
+    expect((await pool.query(edit, [made])).rowCount).toBe(1);
+
+    await one(pool, "SELECT * FROM spine_undo_joins()");
+    expect(await one(pool, "SELECT count(*)::int AS count FROM events WHERE id = $1", [made])).toEqual({ count: 1 });
+    expect(await one(pool, "SELECT event_id FROM enquiries WHERE id = $1", [worked])).toEqual({ event_id: made });
   }, 60_000);
 });
 
