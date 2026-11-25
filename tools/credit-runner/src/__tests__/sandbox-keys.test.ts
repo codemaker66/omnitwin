@@ -590,7 +590,9 @@ describe("the key folder, inside any git work tree", () => {
     // A folder under a work tree, and one inside this repository (named, never created).
     const inWorktree = lines(await statusOf(path.join(worktree, "keys")));
     expect(inWorktree[0]).toMatch(/^Warning: the key folder .+ is inside a git work tree/u);
-    expect(inWorktree.slice(1).map((line) => line.split(" ")[0])).toEqual(["Key", "Sandbox:", "Spend:", "Git:"]);
+    expect(inWorktree.slice(1).map((line) => line.split(" ")[0])).toEqual(["Key", "Sandbox:", "Spend:", "Unbooked", "Git:"]);
+    // The unbooked-session check needs the key, and status does not read a key from a folder under a work tree.
+    expect(inWorktree.find((line) => line.startsWith("Unbooked"))).toMatch(/^Unbooked sessions: not checked \(the key folder .+ is inside a git work tree/u);
     const inRepo = lines(await statusOf(path.join(PACKAGE_DIR, "..", "..", "keys-status-test")));
     expect(inRepo[0]).toMatch(/^Warning: the key folder .+ is inside the repository/u);
     expect(existsSync(path.join(PACKAGE_DIR, "..", "..", "keys-status-test"))).toBe(false);
