@@ -1224,7 +1224,8 @@ This task does not wait on the gate.
   - "Nothing plays later than R80's window" covers every voice the scene hands over after warm-up: on a running clock, at its slot or dropped by its window; through a resume, aimed from its own play (R117) and dropped past 45 ms. It does not cover:
     - the first set-down after arming, which waits out the limiter's warm-up (above);
     - a voice already scheduled before a stall, which sounds late by the stall;
-    - a voice computed in the first 150 ms of a stall with the context still running, aimed late by the stall so far: the 150 ms fallback's trade-off against false re-anchors (R114).
+    - a voice computed in the first 150 ms of a stall with the context still running, aimed late by the stall so far: the 150 ms fallback's trade-off against false re-anchors (R114);
+    - a voice that is both late and waiting for a resume: R115 counts its 45 ms from the voice's aim, which can itself be up to 45 ms after its slot, so it can be heard up to about 90 ms after its slot (follow-up: a deadline of slot + 45 ms that the registry enforces).
   - A kept variant stands in from 1/30 s before the slot, scheduled to start exactly at it (R108).
   - Nothing starts more than 45 ms after its slot: a voice whose slot is reached later than that, behind a stalled main thread, is dropped and logged on the tap.
 - **Variants rendered ahead.** Heavy pieces render ahead at pickup (R48). Light and table pieces render ahead too once their class has switched (R100), at pickup and from the placement ghost. A variant is refreshed every metre and whenever the surfaces under it change.

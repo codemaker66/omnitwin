@@ -983,7 +983,8 @@ describe("the sound setting reaches v1 without the new chrome (T-700, T-671)", (
       expect(await stylesheetsUnder(reached, "src/components/planner-chrome/")).toEqual([
         "src/components/planner-chrome/Surfaces.tsx -> src/components/planner-chrome/chrome.css",
       ]);
-    });
+      // The whole planner's static import closure: about 18 s alone, and 20 s ran out once on a loaded machine.
+    }, 60_000);
   }
 
   it("keeps the core and the shortcut free of every chrome", async () => {
