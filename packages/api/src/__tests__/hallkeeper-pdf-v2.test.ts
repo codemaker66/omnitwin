@@ -2,8 +2,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import PDFDocument from "pdfkit";
-import type { EventInstructions, HallkeeperFloorPlan, HallkeeperSheetV2 } from "@omnitwin/types";
+import { crowdedTradesHallDay, type EventInstructions, type HallkeeperFloorPlan, type HallkeeperSheetV2 } from "@omnitwin/types";
 import { generateSheetPdfV2, sheetCopyLine, sheetQrTarget } from "../services/hallkeeper-pdf-v2.js";
+import { resolveTurnaroundRule } from "../services/calendar-conflicts.js";
+import { deriveSheetTiming } from "../services/hallkeeper-sheet-v2-data.js";
 import { brief, martynsLaw, setupPage } from "../services/sheet-pdf/blocks.js";
 import { Flow, PAGE_OPTIONS } from "../services/sheet-pdf/flow.js";
 import { planLabel } from "../services/sheet-pdf/plan-drawing.js";
@@ -12,7 +14,7 @@ import { INK, PAGE } from "../services/sheet-pdf/style.js";
 import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
 import { renderMetrics, __resetMetricsForTests } from "../observability/metrics.js";
 import { boardMeetingSheet, emptyDraftSheet, longTextSheet, weddingSheet } from "./fixtures/hallkeeper-sheet-fixtures.js";
-import { pdfImageCount, pdfPageContents, pdfPages, pdfRules, pdfText, plainSpaces, type PdfLine } from "./helpers/pdf-text.js";
+import { pdfImageCount, pdfPageContents, pdfPages, pdfRules, pdfText, pdfUprights, plainSpaces, type PdfLine } from "./helpers/pdf-text.js";
 import { printedSetupLines, roomDisagreements, setupForm } from "./helpers/sheet-paper-reading.js";
 
 // ---------------------------------------------------------------------------
@@ -119,13 +121,16 @@ describe("the four fixtures, laid out", () => {
     expectInsideMargins(pages);
   });
 
-  it("puts the day on page 1: ready-by time, guests, keep in view, the day in order and the store", async () => {
+  it("puts the day on page 1: setup and ready-by times, guests, keep in view, the day in order and the store", async () => {
+    // The day gained "08:00 Setup starts" (18 Nov 2026), so page 1 no longer
+    // has room to point to the planner's words: they open page 2, under its
+    // head (see "leads the setup page with the planner's words").
     const pages = pdfPages(await generateSheetPdfV2(await withPaperCheck(weddingSheet(), true)));
     const first = textOf(pages[0] ?? []);
-    for (const words of ["HALLKEEPER SHEET · TRADES HALL GLASGOW", "Mackenzie–Ross wedding breakfast", "READY BY", "13:30", "14:30", "120",
+    for (const words of ["HALLKEEPER SHEET · TRADES HALL GLASGOW", "Mackenzie–Ross wedding breakfast", "SETUP FROM 08:00", "READY BY 13:30", "GUESTS IN 14:30", "120",
       "KEEP IN VIEW", "Hearing loop in Centre", "2 nut-free", "Kirsty Mackenzie", "07700 900412",
-      "THE DAY, IN ORDER", "Room ready", "Event starts", "Sun 25 Oct", "Team briefing",
-      "FROM THE STORE", "Chiavari Wedding Chair", "FROM THE PLANNER"]) {
+      "THE DAY, IN ORDER", "08:00 Setup starts", "13:30 Room ready", "14:30 Guests in", "Sun 25 Oct", "Team briefing",
+      "FROM THE STORE", "Chiavari Wedding Chair"]) {
       expect(first, words).toContain(words);
     }
     expect(first).toContain("Approved by Fiona Grant · v3, issued 22 Oct 16:12, printed 24 Oct 07:42");
@@ -447,24 +452,27 @@ describe("times are the venue's", () => {
   const factsOf = async (timezone: string): Promise<string> =>
     textOf((pdfPages(await generateSheetPdfV2({ ...timed, venue: { ...timed.venue, timezone } }))[0] ?? []));
 
-  it("prints the venue's wall clock for the ready-by time and the start", async () => {
+  it("prints the venue's wall clock for setup, the ready-by time and the start", async () => {
+    // setupBy opens the setup window (its name is historical); with no final
+    // time from the planner the room is ready when guests come in.
     const text = await factsOf("Europe/London");
-    expect(text).toMatch(/READY BY 17:00/u);
+    expect(text).toMatch(/SETUP FROM 17:00 90 min to set the room/u);
+    expect(text).toMatch(/READY BY 18:30 when guests come in/u);
     expect(text).toMatch(/GUESTS IN 18:30/u);
-    // Measured from when guests come in, the fact beside it, not a "start" the sheet no longer names.
-    expect(text).toContain("90 min before guests come in");
   });
 
   it("prints a different venue's wall clock for the same instant and names its zone", async () => {
     const text = await factsOf("America/New_York");
-    expect(text).toMatch(/READY BY 12:00/u);
+    expect(text).toMatch(/SETUP FROM 12:00/u);
+    expect(text).toMatch(/READY BY 13:30/u);
     expect(text).toMatch(/GUESTS IN 13:30/u);
     expect(text).toContain("Eastern time");
   });
 
-  it("names the reason when the ready-by time cannot be derived", async () => {
+  it("names the reason when the setup time cannot be derived, and is still ready when guests come in", async () => {
     const text = pdfText(await generateSheetPdfV2({ ...BASE_SHEET, timing: { eventStart: "2026-06-15T17:30:00.000Z", setupBy: null, bufferMinutes: null } }));
     expect(text).toContain("No changeover time for this room");
+    expect(text).toMatch(/READY BY 18:30 when guests come in/u);
     expect(text).toMatch(/GUESTS IN 18:30/u);
     expect(text).not.toContain("min before guests come in");
   });
@@ -473,6 +481,247 @@ describe("times are the venue's", () => {
     const text = pdfText(await generateSheetPdfV2({ ...BASE_SHEET, timing: null }));
     expect(text).toContain("No booking holds this room yet");
     expect(text).toContain("Confirm the time first");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Setup from, then Ready by (Blake, 18 November 2026: "Setup from + Ready by").
+// The crowded day's Grand Hall breakfast books the room from 08:00 with its
+// Setup phase from 07:00: the sheet used to print "Ready by 07:00", an hour
+// before it had to be.
+// ---------------------------------------------------------------------------
+
+describe("Setup from, then Ready by (T-696)", () => {
+  /** The breakfast's timing as the data layer derives it: booking, room phase, the hall's changeover rule. */
+  function crowdedBreakfastSheet(instructions: EventInstructions | null): HallkeeperSheetV2 {
+    const day = crowdedTradesHallDay();
+    const booking = day.calendar.entries.find((entry) => entry.entryType === "booking" && entry.title === "Merchants' Breakfast Briefing");
+    if (booking?.entryType !== "booking") throw new Error("the crowded day has a Grand Hall breakfast");
+    const setup = day.calendar.entries.find((entry) => entry.entryType === "phase" && entry.eventId === booking.eventId && entry.spaceId === booking.spaceId);
+    if (setup?.entryType !== "phase") throw new Error("the breakfast has a Setup phase in its room");
+    const rule = resolveTurnaroundRule(day.calendar.turnaroundRules ?? [], booking.spaceId, booking.eventType);
+    const timing = deriveSheetTiming(new Date(booking.startsAt), new Date(setup.startsAt), rule?.minutes ?? null);
+    return { ...BASE_SHEET, config: { ...BASE_SHEET.config, name: booking.title }, timing, instructions };
+  }
+  const firstPage = async (sheet: HallkeeperSheetV2): Promise<string> => textOf(pdfPages(await generateSheetPdfV2(sheet))[0] ?? []);
+  const finalAt = (deadline: string, reason = ""): EventInstructions => ({ ...EMPTY_INSTRUCTIONS, phaseDeadlines: [{ phase: "final", deadline, reason }] });
+
+  it("heads the breakfast with setup from 07:00 and ready by 08:00, when guests come in", async () => {
+    const text = await firstPage(crowdedBreakfastSheet(null));
+    expect(text).toMatch(/SETUP FROM 07:00 60 min to set the room/u);
+    expect(text).toMatch(/READY BY 08:00 when guests come in/u);
+    expect(text).toMatch(/GUESTS IN 08:00/u);
+    expect(text).not.toMatch(/READY BY 07:00/u);
+  });
+
+  it("lists setup starting at 07:00 and the room ready as guests come in at 08:00, never ready at 07:00", async () => {
+    const text = await firstPage(crowdedBreakfastSheet(null));
+    expect(text).toContain("07:00 Setup starts");
+    expect(text).toContain("08:00 Room ready, guests in");
+    expect(text).not.toMatch(/07:00 Room ready/u);
+  });
+
+  it("takes the planner's final time as Ready by, measured before guests come in", async () => {
+    const text = await firstPage(crowdedBreakfastSheet(finalAt("2026-11-14T07:45:00.000Z", "Speakers' table dressed")));
+    expect(text).toMatch(/READY BY 07:45 15 min before guests come in/u);
+    expect(text).toContain("07:45 Room ready · Speakers' table dressed");
+    expect(text).toContain("08:00 Guests in");
+  });
+
+  it("shows a planner's final time after guests come in, in brick, and says so in the day", async () => {
+    const late = await generateSheetPdfV2(crowdedBreakfastSheet(finalAt("2026-11-14T08:15:00.000Z")));
+    const text = textOf(pdfPages(late)[0] ?? []);
+    expect(text).toMatch(/READY BY 08:15 15 min after guests come in/u);
+    expect(text).toMatch(/08:00 Guests in 08:15 Room ready After guests come in/u);
+    // pdfkit's fill colour for brick (#8a3522), as it writes it: the late copy sets
+    // more of page 1 in brick than the same sheet ready before guests come in.
+    const BRICK_FILL = "0.5411764705882353 0.20784313725490197 0.13333333333333333 scn";
+    const onTime = await generateSheetPdfV2(crowdedBreakfastSheet(finalAt("2026-11-14T07:45:00.000Z")));
+    const brick = (pdf: Buffer): number => (pdfPageContents(pdf)[0] ?? "").split(BRICK_FILL).length - 1;
+    expect(brick(late)).toBeGreaterThan(brick(onTime));
+  });
+
+  // ------------------------------------------------------ #454 review ----
+  // The release lead's findings. Round 1: the header's captions keep to one
+  // line where they fit (YB1); the new branches are tested in words and colour
+  // (YB11); one rule on every surface (YA5, YB5, YB6, and the rail's order).
+  // Round 2: a Ready by in hours keeps to one line in every room (ZA1).
+  describe("#454 review", () => {
+    const page1 = async (sheet: HallkeeperSheetV2): Promise<readonly PdfLine[]> => pdfPages(await generateSheetPdfV2(sheet))[0] ?? [];
+    /** A fact's caption as printed: the label-size lines under its numeral, in the column its overline heads. */
+    const captionOf = (lines: readonly PdfLine[], overline: string): readonly PdfLine[] => {
+      const head = lines.find((line) => line.text === overline && line.size === 6.6);
+      if (head === undefined) throw new Error(`no ${overline} overline`);
+      const next = lines.filter((line) => line.size === 6.6 && Math.abs(line.y - head.y) < 0.5 && line.x > head.x + 1).sort((a, b) => a.x - b.x)[0];
+      return lines.filter((line) => line.size === 7.5 && line.y < head.y - 30 && line.y > head.y - 62
+        && line.x >= head.x - 1 && (next === undefined || line.x < next.x - 1));
+    };
+    const words = (caption: readonly PdfLine[]): string => caption.map((line) => line.text).join(" ");
+    /** A Wednesday 30 September dinner banquet: the widest date of 2026-27 and the widest layout's words. */
+    const SEPT: HallkeeperSheetV2 = {
+      ...BASE_SHEET, config: { ...BASE_SHEET.config, layoutStyle: "dinner-banquet" },
+      timing: { eventStart: "2026-09-30T17:00:00.000Z", setupBy: "2026-09-30T14:00:00.000Z", bufferMinutes: 180 },
+    };
+
+    it("prints the widest date and layout words on one line each, beside a Ready by in minutes: a Wednesday 30 September dinner banquet ready 105 min before guests come in (YB1)", async () => {
+      const lines = await page1({ ...SEPT, instructions: finalAt("2026-09-30T15:15:00.000Z") });
+      for (const [overline, caption] of [["SETUP FROM", "75 min to set the room"], ["READY BY", "105 min before guests come in"],
+        ["GUESTS IN", "Wed 30 Sept · UK time"], ["GUESTS", "Dinner banquet"], ["ROOM", "21 × 10.5 m · 7 m high"]] as const) {
+        expect(captionOf(lines, overline).map((line) => line.text), overline).toEqual([caption]);
+      }
+      expect(lines.find((line) => line.text === "Grand Hall" && line.size > 18)?.size, "the room's name at full size").toBe(18.6);
+    });
+
+    /** Trades Hall's rooms at the sizes the seed gives them. */
+    const ROOMS: readonly HallkeeperSheetV2["space"][] = [
+      { name: "Grand Hall", widthM: 21.14, lengthM: 10.59, heightM: 6.7 },
+      { name: "Saloon", widthM: 12, lengthM: 7, heightM: 5.4 },
+      { name: "Reception Room", widthM: 13.4, lengthM: 11.2, heightM: 3.2 },
+      { name: "Robert Adam Room", widthM: 9.7, lengthM: 5.6, heightM: 2.18 },
+      { name: "North Gallery", widthM: 8, lengthM: 4, heightM: 3 },
+    ];
+
+    it("prints a Ready by in hours and minutes on one line beside a setup in hours, in every room: final touches 2 h 30 min before 16:00 doors, setup from 08:00 (ZA1)", async () => {
+      // Saturday 24 October 2026, on British Summer Time: setup from 08:00, the planner's final touches at 13:30, guests in at 16:00.
+      for (const space of ROOMS) {
+        const lines = await page1({ ...BASE_SHEET, space, timing: { eventStart: "2026-10-24T15:00:00.000Z", setupBy: "2026-10-24T07:00:00.000Z", bufferMinutes: 480 },
+          instructions: finalAt("2026-10-24T12:30:00.000Z") });
+        expect(captionOf(lines, "SETUP FROM").map((line) => line.text), space.name).toEqual(["5 h 30 min to set the room"]);
+        expect(captionOf(lines, "READY BY").map((line) => line.text), space.name).toEqual(["2 h 30 min before guests come in"]);
+        for (const overline of ["GUESTS IN", "GUESTS", "ROOM"]) expect(captionOf(lines, overline), `${space.name}, ${overline}`).toHaveLength(1);
+      }
+    });
+
+    it("prints the widest captions in single-figure hours on one line in every room, beside the widest date and layout words: 4 h 44 min to set the room, 4 h 44 min before guests come in (ZA1)", async () => {
+      // Wednesday 30 September 2026, on British Summer Time: setup from 10:12, the planner's final touches at 14:56, guests in at 19:40.
+      for (const space of ROOMS) {
+        const lines = await page1({ ...SEPT, space, timing: { eventStart: "2026-09-30T18:40:00.000Z", setupBy: "2026-09-30T09:12:00.000Z", bufferMinutes: 568 },
+          instructions: finalAt("2026-09-30T13:56:00.000Z") });
+        for (const [overline, caption] of [["SETUP FROM", "4 h 44 min to set the room"], ["READY BY", "4 h 44 min before guests come in"],
+          ["GUESTS IN", "Wed 30 Sept · UK time"], ["GUESTS", "Dinner banquet"]] as const) {
+          expect(captionOf(lines, overline).map((line) => line.text), `${space.name}, ${overline}`).toEqual([caption]);
+        }
+        expect(captionOf(lines, "ROOM"), `${space.name}, ROOM`).toHaveLength(1);
+      }
+    });
+
+    it("keeps the header's height when every caption fits one line: page 1 goes on where a June dinner's does (YB1)", async () => {
+      const dayHead = (lines: readonly PdfLine[]): number => lines.find((line) => line.text === "THE DAY, IN ORDER")?.y ?? Number.NaN;
+      expect(dayHead(await page1(SEPT))).toBeCloseTo(dayHead(await page1(BASE_SHEET)), 3);
+    });
+
+    it("keeps a short sheet dated Wednesday 30 September on one page (YB1)", async () => {
+      // A smoke check (ZA2): page 1 leaves about 85 pt below its last line, so a header a caption line taller would
+      // still keep one page. The header-height test above is what guards the band.
+      expect(pdfPages(await generateSheetPdfV2(SEPT))).toHaveLength(1);
+      expect(pdfPages(await generateSheetPdfV2({ ...SEPT, instructions: finalAt("2026-09-30T15:15:00.000Z") }))).toHaveLength(1);
+    });
+
+    it("parts a caption that needs two lines after its middle dot, never leaving a word alone, and the rule beside it reaches its second line (YB1)", async () => {
+      // Setup from Sunday 16:00 and the planner's final touches on Sunday at 22:00, for Monday's 19:00 guests.
+      const buf = await generateSheetPdfV2({ ...BASE_SHEET, timing: { eventStart: "2026-06-15T18:00:00.000Z", setupBy: "2026-06-14T15:00:00.000Z", bufferMinutes: 1620 },
+        instructions: finalAt("2026-06-14T21:00:00.000Z") });
+      const lines = pdfPages(buf)[0] ?? [];
+      // Setup from's caption has stood whole since the gaps beside the rules closed to 8 pt (ZA1); Ready by's still parts.
+      expect(captionOf(lines, "SETUP FROM").map((line) => line.text)).toEqual(["Sun 14 Jun · 6 h to set the room"]);
+      expect(captionOf(lines, "READY BY").map((line) => line.text)).toEqual(["Sun 14 Jun ·", "21 h before guests come in"]);
+      const wrapped = captionOf(lines, "READY BY");
+      for (const line of wrapped) expect(line.text.split(" ").length, line.text).toBeGreaterThan(1);
+      const last = wrapped[wrapped.length - 1];
+      const head = lines.find((line) => line.text === "SETUP FROM");
+      if (last === undefined || head === undefined) throw new Error("the caption's last line");
+      // The uprights between the facts start under the band's top rule and reach below the caption's last baseline.
+      const rules = (pdfUprights(buf)[0] ?? []).filter((rule) => rule.y2 < head.y + 20 && rule.y2 > head.y - 10);
+      expect(rules).toHaveLength(4);
+      for (const rule of rules) expect(rule.y, `the upright at x ${rule.x.toFixed(1)}`).toBeLessThan(last.y);
+    });
+
+    it("prints a planner's time with no booking as Ready by, in brick, and says whose time it is (YB11)", async () => {
+      const lines = await page1({ ...BASE_SHEET, timing: null, instructions: finalAt("2026-06-15T16:30:00.000Z") });
+      expect(lines.find((line) => line.text === "READY BY")?.color).toBe(INK.alert);
+      expect(lines.find((line) => line.size === 30 && line.text === "17:30")?.color).toBe(INK.alert);
+      const caption = captionOf(lines, "READY BY");
+      expect(words(caption)).toBe("The planner's time · no booking holds this room yet");
+      // Two lines, parted where one fact ends and the next begins.
+      expect(caption.map((line) => line.text)).toEqual(["The planner's time ·", "no booking holds this room yet"]);
+      expect(caption.map((line) => line.color)).toEqual(caption.map(() => INK.alert));
+    });
+
+    it("leads a time's caption with its day when setup starts or the room is ready on another day (YB11)", async () => {
+      const lines = await page1({ ...BASE_SHEET, timing: { eventStart: "2026-06-15T18:00:00.000Z", setupBy: "2026-06-14T15:00:00.000Z", bufferMinutes: 1620 },
+        instructions: finalAt("2026-06-14T21:00:00.000Z") });
+      expect(words(captionOf(lines, "SETUP FROM"))).toBe("Sun 14 Jun · 6 h to set the room");
+      expect(words(captionOf(lines, "READY BY"))).toBe("Sun 14 Jun · 21 h before guests come in");
+      expect(words(captionOf(lines, "GUESTS IN"))).toBe("Mon 15 Jun · UK time");
+      // The numerals keep the clock alone; the caption carries the day.
+      const head = lines.find((line) => line.text === "SETUP FROM");
+      const numerals = lines.filter((line) => line.size === 30 && head !== undefined && line.y < head.y - 20 && line.y > head.y - 40);
+      expect(numerals.map((line) => line.text)).toEqual(["16:00", "22:00", "19:00", "120"]);
+    });
+
+    it("sets No time to set the room in brick under Setup from (YB11, YA5)", async () => {
+      const lines = await page1(crowdedBreakfastSheet(finalAt("2026-11-14T06:45:00.000Z")));
+      expect(lines.find((line) => line.text === "SETUP FROM")?.color).toBe(INK.alert);
+      expect(lines.find((line) => line.size === 30 && line.text === "07:00")?.color).toBe(INK.alert);
+      expect(captionOf(lines, "SETUP FROM").map((line) => [line.text, line.color])).toEqual([["No time to set the room", INK.alert]]);
+    });
+
+    it("sets No changeover time for this room in brick under Setup from, on one line (YB11)", async () => {
+      const lines = await page1({ ...BASE_SHEET, timing: { eventStart: "2026-06-15T18:00:00.000Z", setupBy: null, bufferMinutes: null } });
+      expect(lines.find((line) => line.text === "SETUP FROM")?.color).toBe(INK.alert);
+      expect(captionOf(lines, "SETUP FROM").map((line) => [line.text, line.color])).toEqual([["No changeover time for this room", INK.alert]]);
+    });
+
+    it("says No time to set the room under the day's Room ready, with its time in brick (YA5)", async () => {
+      const lines = await page1(crowdedBreakfastSheet(finalAt("2026-11-14T06:45:00.000Z")));
+      expect(textOf(lines)).toMatch(/06:45 Room ready No time to set the room 07:00 Setup starts 08:00 Guests in/u);
+      expect(lines.find((line) => line.size === 9.2 && line.text === "06:45")?.color).toBe(INK.alert);
+      expect(lines.find((line) => line.size === 8 && line.text === "No time to set the room")?.color).toBe(INK.alert);
+    });
+
+    it("sets a Room ready after guests come in in brick in the day, as the header and the rail do (YB5)", async () => {
+      const lines = await page1(crowdedBreakfastSheet(finalAt("2026-11-14T08:15:00.000Z")));
+      expect(lines.find((line) => line.size === 9.2 && line.text === "08:15")?.color).toBe(INK.alert);
+      expect(lines.find((line) => line.size === 9.2 && line.text === "08:00")?.color).toBe(INK.accent);
+    });
+
+    /** The breakfast with a technical step: its lectern, due at `technical`, and the planner's final touches at `final`. */
+    const withTechnical = (final: string, technical: string): HallkeeperSheetV2 => ({
+      ...crowdedBreakfastSheet({ ...EMPTY_INSTRUCTIONS, phaseDeadlines: [{ phase: "final", deadline: final, reason: "" }, { phase: "technical", deadline: technical, reason: "" }] }),
+      phases: [...BASE_SHEET.phases, { phase: "technical", zones: [{ zone: "North wall", rows: [{
+        key: "technical|North wall|Lectern|0", name: "Lectern", category: "lectern", qty: 1, afterDepth: 0, isAccessory: false, notes: "", positions: [],
+      }] }] }],
+    });
+    /** The setup's rail: its stations' names left to right, and each time with the word under it. */
+    const railOf = (lines: readonly PdfLine[]): { readonly labels: readonly string[]; readonly times: readonly (readonly [string, string | null, string | null])[] } => {
+      const flags = lines.filter((line) => line.text === "late" || line.text === "after doors");
+      const labels = lines.filter((line) => line.size === 8.2 && !flags.includes(line)).sort((a, b) => a.x - b.x);
+      const times = lines.filter((line) => line.size === 12).sort((a, b) => a.x - b.x).map((time) => {
+        const under = flags.find((flag) => Math.abs((flag.x + flag.x2) / 2 - (time.x + time.x2) / 2) < 1 && time.y - flag.y > 8 && time.y - flag.y < 18);
+        return [time.text, time.color, under === undefined ? null : `${under.text} ${under.color ?? ""}`] as const;
+      });
+      return { labels: labels.map((line) => line.text), times };
+    };
+
+    it("orders the rail's Guests in before a Room ready after the doors, and says 'after doors' under it and under a step due between them (b, YB6)", async () => {
+      const pages = pdfPages(await generateSheetPdfV2(withTechnical("2026-11-14T08:15:00.000Z", "2026-11-14T08:10:00.000Z")));
+      const all = pages.flat();
+      expect(railOf(all)).toEqual({
+        labels: ["Furniture", "Technical", "Guests in", "Room ready"],
+        times: [["08:10", INK.alert, `after doors ${INK.alert}`], ["08:00", INK.quiet, null], ["08:15", INK.alert, `after doors ${INK.alert}`]],
+      });
+      expect(all.some((line) => line.text === "late")).toBe(false);
+      // The technical step's head gives the same reading, in words.
+      expect(textOf(all)).toMatch(/Technical by 08:10 after guests come in/u);
+    });
+
+    it("keeps Room ready before Guests in on the rail, both at the same minute, when the room is ready as guests come in (b)", async () => {
+      const all = pdfPages(await generateSheetPdfV2(withTechnical("2026-11-14T08:00:00.000Z", "2026-11-14T07:50:00.000Z"))).flat();
+      expect(railOf(all)).toEqual({
+        labels: ["Furniture", "Technical", "Room ready", "Guests in"],
+        times: [["07:50", INK.accent, null], ["08:00", INK.accent, null], ["08:00", INK.quiet, null]],
+      });
+    });
   });
 });
 
@@ -720,7 +969,11 @@ describe("A, then D (T-696): the brief with the room, then the setup to tick", (
   });
 
   it("opens the setup with the planner's words when page 1 is full, and page 1 says where they are", async () => {
-    const [first, second] = pdfPages(await render()).map((page) => textOf(page));
+    // The wedding less the service door's 18:00 locking: one day line fewer, the
+    // line "08:00 Setup starts" took (18 Nov 2026), so page 1 has room to point.
+    const sheet = weddingWith((instructions) => ({ ...instructions, doorSchedule: { entries: (instructions.doorSchedule?.entries ?? []).map((entry) =>
+      entry.label === "Service door" ? { ...entry, events: entry.events.filter((event) => event.kind === "open") } : entry) } }));
+    const [first, second] = pdfPages(await generateSheetPdfV2(await withPaperCheck(sheet, true))).map((page) => textOf(page));
     expect(first).toContain("FROM THE PLANNER On page 2, above the setup's steps.");
     expect(first).not.toContain("Petals only on the stairs");
     let at = 0;
@@ -1123,14 +1376,18 @@ describe("what #415's review found (T-696)", () => {
   });
 
   it("dates a rail time due on another day, and marks one due after the room is ready", async () => {
+    // The planner's final-touches time is the room's ready-by time (Blake, 18 Nov
+    // 2026), so the step due after it is the technical check moved past 13:30.
     const sheet = weddingWith((instructions) => ({ ...instructions, phaseDeadlines: instructions.phaseDeadlines.map((deadline) =>
       deadline.phase === "structure" ? { ...deadline, deadline: bst(16, 0, -1) }
-        : deadline.phase === "final" ? { ...deadline, deadline: bst(13, 45) } : deadline) }));
+        : deadline.phase === "technical" ? { ...deadline, deadline: bst(13, 45) } : deadline) }));
     const second = textOf((await pagesOf(sheet))[1] ?? []);
     const rail = second.slice(second.indexOf("SETUP, IN ORDER"), second.indexOf("Guests in"));
     expect(rail).toContain("Structure Fri 16:00");
     expect(rail).toContain("Furniture 11:00");
-    expect(rail).toContain("Final touches 13:45 late");
+    expect(rail).toContain("Technical 13:45 late");
+    expect(rail).toContain("Final touches 13:30");
+    expect(rail).not.toContain("13:30 late");
     expect(rail).not.toContain("11:00 late");
   });
 
@@ -1172,10 +1429,12 @@ describe("what #415's review found (T-696)", () => {
   });
 
   it("leads the setup page with the planner's words, under its head, when page 1 has no room even to point to them", async () => {
-    // Structure the day before and final touches after the ready-by time: the late line stacks, one line taller.
+    // Structure the day before and the technical check after the ready-by time (the planner's final
+    // touches, 13:30): the late line stacks, one line taller. The wedding itself has been one of these
+    // since its day gained "08:00 Setup starts" (18 Nov 2026).
     const dayBefore = weddingWith((instructions) => ({ ...instructions, phaseDeadlines: instructions.phaseDeadlines.map((deadline) =>
-      deadline.phase === "structure" ? { ...deadline, deadline: bst(16, 0, -1) } : deadline.phase === "final" ? { ...deadline, deadline: bst(13, 45) } : deadline) }));
-    for (const [name, sheet] of [["two more door times", weddingWithDoorTimes(2)], ["structure the day before, final touches late", dayBefore]] as const) {
+      deadline.phase === "structure" ? { ...deadline, deadline: bst(16, 0, -1) } : deadline.phase === "technical" ? { ...deadline, deadline: bst(13, 45) } : deadline) }));
+    for (const [name, sheet] of [["the wedding", weddingSheet()], ["two more door times", weddingWithDoorTimes(2)], ["structure the day before, technical late", dayBefore]] as const) {
       const pages = (await pagesOf(sheet)).map((page) => textOf(page));
       expect(pages[0], name).not.toContain("FROM THE PLANNER");
       const second = pages[1] ?? "";
@@ -1462,8 +1721,11 @@ describe("what #415's review found (T-696)", () => {
     expect(ringed).toHaveLength(4);
   });
 
-  it("sets 'late' whole under its time, in brick, for a step on another day too, on rails of five and of three steps", async () => {
-    // Technical and final touches both fall on the Sunday, after Saturday's ready-by time.
+  it("sets 'late' and 'after doors' whole under their times, in brick, for a step on another day too, on rails of five and of three steps", async () => {
+    // Technical and final touches both fall on the Sunday. The planner's final touches (Sun 00:10) are
+    // the room's ready-by time, after Saturday's guests come in, so the rail says "after doors" under
+    // Room ready and under the final touches' step (#454 round 1); the technical check (Sun 09:00) is
+    // after that ready-by time, so its step is late.
     const late = weddingWith((instructions) => ({ ...instructions, phaseDeadlines: instructions.phaseDeadlines.map((deadline) =>
       deadline.phase === "technical" ? { ...deadline, deadline: bst(9, 0, 1) } : deadline.phase === "final" ? { ...deadline, deadline: bst(0, 10, 1) } : deadline) }));
     const three: HallkeeperSheetV2 = { ...late, phases: late.phases.filter((phase) => phase.phase !== "structure" && phase.phase !== "dress") };
@@ -1479,8 +1741,8 @@ describe("what #415's review found (T-696)", () => {
       const rail = lines.filter((line) => line.y < head.y && line.y > end.y);
       expect(rail.filter((line) => /^\d$/u.test(line.text)).map((line) => line.text), what).toEqual(Array.from({ length: steps }, (_, n) => String(n + 1)));
       expect(textOf(rail), what).not.toContain("…");
-      const words = rail.filter((line) => line.text === "late");
-      expect(words, what).toHaveLength(2);
+      const words = rail.filter((line) => line.text === "late" || line.text === "after doors");
+      expect(words.map((line) => line.text).sort(), what).toEqual(["after doors", "after doors", "late"]);
       for (const word of words) {
         const time = rail.find((line) => line.size === 12 && Math.abs((line.x + line.x2) / 2 - (word.x + word.x2) / 2) < 1);
         expect(time?.text, what).toMatch(/^Sun \d\d:\d\d$/u);

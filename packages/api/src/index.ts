@@ -322,7 +322,8 @@ export async function buildServer(env: Env = validateEnv(), options: BuildServer
   // --- Health check ---
   // Returns 200 even if DB is down — this is a process liveness probe.
   //
-  // `/health/ready` is the Railway healthcheck path in `railway.json`.
+  // `/health/ready` is Railway's healthcheck path, declared in
+  // `.railway/railway.ts` and applied to Railway's stored settings.
   // The routes below follow the Kubernetes / CNCF liveness-vs-readiness
   // convention so the same container can be deployed without rewiring probes:
   //   - `/health/live`  mirrors `/health` (process-alive, do not restart).

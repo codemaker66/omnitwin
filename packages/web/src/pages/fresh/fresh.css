@@ -1328,6 +1328,11 @@
   color: var(--fr-ink-2);
   font-variant-numeric: tabular-nums;
 }
+/* One line per stated extent: a room published in two sections (the Robert
+   Adam Room) shows two, set solid like one block of figures. */
+.fr-dossier-dims p {
+  margin: 0;
+}
 .fr-dossier-pills {
   margin-bottom: 16px;
 }

@@ -17,10 +17,11 @@ function databaseError(code?: string): Error {
   return code === undefined ? error : Object.assign(error, { code, detail: `Failing row contains (${NOTE})` });
 }
 
-/** A query chain that resolves to `rows` however it is finished. */
+/** A query chain that resolves to `rows` however it is finished, row lock
+ *  (`.for(…)`) included: the piece-note pass holds each layout first. */
 function chain(rows: readonly unknown[]): unknown {
   const link: Record<string, unknown> = {};
-  for (const step of ["from", "where", "set", "returning"]) link[step] = (): unknown => link;
+  for (const step of ["from", "where", "for", "set", "returning"]) link[step] = (): unknown => link;
   link["then"] = (resolve: (value: readonly unknown[]) => unknown): unknown => resolve(rows);
   return link;
 }

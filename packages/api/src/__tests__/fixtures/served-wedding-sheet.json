@@ -22,8 +22,8 @@
    },
    "timing": {
     "eventStart": "2026-10-24T13:30:00.000Z",
-    "setupBy": "2026-10-24T12:30:00.000Z",
-    "bufferMinutes": 60
+    "setupBy": "2026-10-24T07:00:00.000Z",
+    "bufferMinutes": 390
    },
    "instructions": {
     "specialInstructions": "Ceremony is in the Saloon at 13:00; guests come through to the Grand Hall at 14:30 for the wedding breakfast.\nPetals only on the stairs, no confetti indoors. The bride's grandmother uses a wheelchair: table 3, aisle side, step-free route from the lift.",

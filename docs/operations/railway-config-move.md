@@ -1,8 +1,11 @@
 # Moving the API's Railway settings (T-722)
 
-The API's deploy settings are moving from `railway.json` to Railway's new format,
-`.railway/railway.ts`. This page says why, in what order, and how we know it
-worked. How to install and run Railway's tool: [`.railway/README.md`](../../.railway/README.md).
+The API's deploy settings moved from `railway.json` to Railway's new format,
+`.railway/railway.ts`, on 22 November 2026. This page says why, in what order,
+and how we know it worked: [the outcome](#the-outcome-22-november-2026) is
+recorded below. The sections before it are kept as they were written, as the
+record of the plan. How to install and run Railway's tool:
+[`.railway/README.md`](../../.railway/README.md).
 
 ## Why
 
@@ -60,12 +63,20 @@ reads, a deploy is the same. Doing both in one slot keeps that state to minutes.
 ## The slot's checklist
 
 Book it with the merge coordinator: a quiet hour, not beside a pull request that
-carries a database migration, not while a deploy is running. Pull request 2 is
-reviewed and green before the slot starts.
+carries a database migration, not while a deploy is running, and with no Deploy
+workflow run approved or running during the slot (its migration job would run
+beside Railway's own migration step). Pull request 2 is reviewed, and its
+required checks pass, before the slot starts.
 
 The slot must be done by 27 November 2026 at the latest. If it has not been
 done by then, hold every pull request that touches a watched path until it is:
 after 1 December such a merge would deploy with Railway's old stored settings.
+
+On the slot's day, before step 1: merge master into pull request 2 and wait for
+its required checks to pass. From then until step 7 is done, the merge
+coordinator holds every merge that touches a watched path or `.railway/`.
+Otherwise pull request 2 falls behind master, its checks must run again, and it
+cannot merge at once.
 
 1. On Railway's dashboard, check that the environment has no pending staged
    changes. If it has, stop.
@@ -73,18 +84,28 @@ after 1 December such a merge would deploy with Railway's old stored settings.
    with the file outside the repository. Read its change set and its `effects`.
    They must match the plan in pull request 1. Anything else, or anything
    destructive: stop. A pinned plan also pins the `.railway/` folder, so nothing
-   that changes it may merge between this step and step 4.
+   that changes it may merge between this step and step 4. If the plan refuses
+   the service because of a config-file path, stop: Railway's documented order
+   then starts with its cutover, and pull request 2 must not merge.
 3. Show Blake that summary and ask him by button, in these words: "this will most
    likely redeploy the API once, with its migration step".
 4. Run `railway config apply --plan <file> --yes`. Never add
    `--confirm-destructive`, so the tool itself refuses anything destructive.
 5. If a deployment starts, watch it to the end: the migration step ran,
-   `/health/ready` passed, it is serving.
+   `/health/ready` passed, it is serving. If it fails, stop, and do not merge
+   pull request 2: the previous deployment keeps serving.
 6. Run `railway config plan --detailed-exit-code`. It must exit 0. If it does not,
    stop: `railway.json` is still there and still read.
-7. Merge pull request 2 at once and watch its deploy. If no deployment starts
+7. Mark pull request 2 (#447) ready for review, then merge it at once, and watch
+   its deploy. Until step 6 exits 0 it stays a draft, so it cannot be merged
+   early. It changes the `Dockerfile` (a comment), a watched path, so the merge
+   should start a deploy by itself. As a backstop: if no deployment starts
    within ten minutes, deploy the latest commit from Railway's dashboard, so the
    first deploy without the file happens while it is watched.
+
+After a stop before 1 December, the merge coordinator releases the hold on
+merges and the slot is rebooked, by 27 November. Pull request 2 stays a draft
+and is brought up to date with master again on the new slot day.
 
 ## The proof
 
@@ -104,6 +125,58 @@ after 1 December such a merge would deploy with Railway's old stored settings.
   step before the start.
 - The production receipt workflow is green on that commit.
 - The release lead has reviewed both pull requests.
+
+## The outcome, 22 November 2026
+
+Done, in one slot. All times are UTC. The merge coordinator held every merge to
+master from the slot-day merge until pull request 2 was in; no Deploy workflow
+run was approved or running.
+
+- 13:48. `railway config plan --json --out <file>` from a clean checkout of
+  master (Railway's command-line tool 5.74.0, kit 3.17.0). The pinned plan held
+  two updates to the one service, carrying the same eight setting changes as
+  every plan since 14 November. It was not destructive, had no diagnostics, and
+  marked both updates as deploying.
+- 13:54. Blake's yes to the apply, by button.
+- 14:09. `railway config apply --plan <file> --yes` exited 0. Railway started a
+  deployment of master's head one second later. Its log shows the migration
+  step, then the server listening, then Railway's health check on
+  `/health/ready`. It was serving at 14:10.
+- 14:10. `railway config plan --detailed-exit-code` exited 0: "already up to
+  date".
+- 14:20. Pull request 2 (#447) merged. Railway started a deployment two seconds
+  later, by itself, so the ten-minute backstop was not needed.
+- 14:23. That deployment, the first without `railway.json`, was serving. Its
+  own record names no config file and maps no setting to a file. It carries the
+  pre-deploy command and its 900 seconds, the start command, `/health/ready` and
+  2700, a drain of 30, the restart policy, one replica in the one region, the
+  Dockerfile builder and the thirteen watch paths. Its log shows the migration
+  step 15 seconds before the server started listening. By contrast, the
+  deployment the apply itself started still named `railway.json` as its config
+  file and mapped each setting to it.
+- 14:26. The production receipt workflow on the merge commit (run 45032786932)
+  passed: the running build is that commit, and `/health/ready` answers 200.
+- The release lead reviewed both pull requests, and passed pull request 2 again
+  after each merge of master into it, the last one on the slot's day.
+
+Two things went differently from the checklist:
+
+- Step 1 asks for a look at Railway's dashboard for pending staged changes.
+  Railway's tool does not show them, so Blake was asked to look as part of his
+  yes.
+- Pull request 2's last check was still running when Blake said yes. The apply
+  waited about fifteen minutes for it to pass, with nothing else changing, and the
+  pre-flight was repeated before it ran.
+
+Left over, none of it urgent:
+
+- The CI step that compared the two watch lists has nothing left to compare.
+  It should go, or grow into a check of the list's shape.
+- Comments at the top of `.railway/railway.ts`, and two lines of
+  `.railway/README.md`, still speak of `railway.json` as present.
+- `/railway.json` is still in the watch list. It is harmless.
+- Nothing yet checks that Railway's stored settings still match the file (see
+  [After the move](#after-the-move)).
 
 ## If the proof deploy fails
 
