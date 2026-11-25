@@ -673,19 +673,19 @@ first.
 
 ## 10. What only Blake decides, and what he decided
 
-Asked by button on 13 November 2026. His answers to 1, 3 and 4 are given word for word; 2 is summarised.
+Asked by button on 13 November 2026. His answers are described here, not quoted.
 
-1. **This design.** "Approve it (Recommended)".
+1. **This design.** Approved.
 2. **The provider.** Resend, which we already use, with more options looked at when needed. The question goes
    back to him, with options, at the first of these:
    - sends and mail in together reach the alert lines of 5.5;
    - before piece F moves production's replies, because mail in counts against the allowance and a message that
      arrives over it cannot be read (5.5);
    - the account needs more sending domains than it allows.
-3. **When a second server is added.** "With the trust pack (Recommended)": production stays on one server until
+3. **When a second server is added.** With the trust pack: production stays on one server until
    the live rooms can be shared between servers, which is a small piece of its own under piece J. This piece is
    proved with two servers in rehearsal from its first merge.
-4. **What we ask the Hall's email administrator for.** "A sub-name, four records (Recommended)" (4.3 A). A
+4. **What we ask the Hall's email administrator for.** A sub-name and four records (4.3 A). A
    one-page note is prepared for Blake to send. It is one of the three things the plan asks of the venue by
    1 December.
 
