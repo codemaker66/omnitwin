@@ -46,8 +46,10 @@ export interface JobOptions {
   readonly signal?: AbortSignal | undefined;
   /**
    * Handles STOP_SIGNALS while the run lasts, as the CLI's `run` does: the
-   * first stops the run as its deadline does; a second, or a SIGHUP at any
-   * point, books it at once and ends the process (see runSandboxJob).
+   * first stops the run as its deadline does, and a repeat of it within
+   * SAME_PRESS_MS is the same press; a second press (that signal again later,
+   * or another one), or a SIGHUP at any point, books it at once and ends the
+   * process (see runSandboxJob).
    */
   readonly stopOnSignals?: StopOnSignals | undefined;
 }
@@ -228,12 +230,21 @@ function fenced(text: string): string[] {
 /** The signals that stop a run (stopOnSignals): Ctrl-C (SIGINT), a kill (SIGTERM), a closed console window (SIGHUP, which Windows follows with a forced end a few seconds later) and Ctrl-Break (SIGBREAK). */
 export const STOP_SIGNALS: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"];
 
+/**
+ * How soon a repeat of the first stop signal counts as the same press. On Linux
+ * and macOS one Ctrl-C reaches the launcher twice: the terminal sends it to the
+ * whole process group, and pnpm passes on the one it gets.
+ */
+export const SAME_PRESS_MS = 2000;
+
 /** What the at-once booking does with the process (stopOnSignals): the CLI takes the defaults; tests pass seams. */
 export interface StopOnSignals {
   /** Ends the process once a second signal, or a SIGHUP, has been handled (default process.exit). */
   readonly exit?: (code: number) => void;
   /** Says what that signal did (default: written to stderr at once, synchronously). */
   readonly print?: (line: string) => void;
+  /** A monotonic clock in milliseconds, read once per signal to tell a repeat within SAME_PRESS_MS (default performance.now). */
+  readonly now?: () => number;
 }
 
 /** The command that books a session the ledger has no line for, as the launcher names it. */
@@ -252,15 +263,26 @@ function printNow(line: string): void {
 
 /**
  * Installs a handler for each of STOP_SIGNALS and returns what removes them
- * all. The first signal goes to `first`, unless it is a SIGHUP; every later
- * one, and a SIGHUP at any point, goes to `atOnce`.
+ * all. The first signal goes to `first`, unless it is a SIGHUP; the same
+ * signal again less than SAME_PRESS_MS after it (by `now`) goes to `repeat`;
+ * every other later one, and a SIGHUP at any point, goes to `atOnce`.
  */
-function handleStopSignals(first: (name: NodeJS.Signals) => void, atOnce: (name: NodeJS.Signals) => void): () => void {
-  let received = 0;
+function handleStopSignals(
+  first: (name: NodeJS.Signals) => void,
+  repeat: (name: NodeJS.Signals) => void,
+  atOnce: (name: NodeJS.Signals) => void,
+  now: () => number,
+): () => void {
+  // An object, so the compiler does not narrow it to its first values inside the handlers.
+  const pressed: { received: number; first: { readonly name: NodeJS.Signals; readonly at: number } | null } = { received: 0, first: null };
   const installed = STOP_SIGNALS.map((name) => {
     const handler = (): void => {
-      received += 1;
-      if (received === 1 && name !== "SIGHUP") first(name);
+      const at = now();
+      pressed.received += 1;
+      if (pressed.received === 1 && name !== "SIGHUP") {
+        pressed.first = { name, at };
+        first(name);
+      } else if (pressed.first !== null && pressed.first.name === name && at - pressed.first.at < SAME_PRESS_MS) repeat(name);
       else atOnce(name);
     };
     process.on(name, handler);
@@ -282,10 +304,12 @@ function handleStopSignals(first: (name: NodeJS.Signals) => void, atOnce: (name:
  * Stopping (`signal`, or with stopOnSignals the first stop signal) takes the
  * deadline's path: runSession interrupts the session, waits for it or archives
  * it, and its cost is booked here as at any other end; the run then fails with
- * a RunStoppedError. Before the create, nothing is created. A second signal,
- * or a SIGHUP, has no time for that: once a create has been sent, the run is
- * booked at once at its whole budget as unknown, unless it is booked already,
- * and the process ends. The handlers are removed when the run ends.
+ * a RunStoppedError. Before the create, nothing is created. A repeat of the
+ * first signal within SAME_PRESS_MS is the same press and changes nothing. A
+ * second press (that signal later, or another one), or a SIGHUP, has no time
+ * for the stop: once a create has been sent, the run is booked at once at its
+ * whole budget as unknown, unless it is booked already, and the process ends.
+ * The handlers are removed when the run ends.
  */
 export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   const { api, config, task } = options;
@@ -372,10 +396,19 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   const removeHandlers =
     seams === undefined
       ? () => undefined
-      : handleStopSignals((name) => {
-          log(`${name}: stopping the run as at its deadline (interrupt, wait, archive if need be, book); a second signal books it at once and exits.`);
-          stop.abort(name);
-        }, bookAtOnce);
+      : handleStopSignals(
+          (name) => {
+            log(
+              `${name}: stopping the run as at its deadline (interrupt, wait, archive if need be, book); a second press (${name} again 2 s or more from now, or another stop signal) books it at once and exits.`,
+            );
+            stop.abort(name);
+          },
+          (name) => {
+            log(`${name} again within 2 s of the first: the same press, so the run goes on stopping; press it again 2 s or more after the first to book the session at once and exit.`);
+          },
+          bookAtOnce,
+          seams.now ?? (() => performance.now()),
+        );
 
   try {
     // Before the sandbox is read or anything created: a session this lane made that no line charges is spend the check below cannot count.

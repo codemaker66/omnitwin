@@ -2271,12 +2271,64 @@ describe("sandbox launcher, when it is stopped by a signal", () => {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as Record<string, unknown>);
-  /** The test seams for the at-once booking: what it printed, and the exit codes it asked for, instead of ending the test's process. */
-  const seams = () => {
+  /**
+   * The test seams for the at-once booking: what it printed, and the exit codes
+   * it asked for, instead of ending the test's process; and the clock the
+   * handlers read once per signal, by default 3 s later at each read, so each
+   * signal comes well after the one before.
+   */
+  const seams = (clock: () => number = steps(3000)) => {
     const exits: number[] = [];
     const printed: string[] = [];
-    return { exits, printed, stopOnSignals: { exit: (code: number) => void exits.push(code), print: (line: string) => void printed.push(line) } };
+    return { exits, printed, stopOnSignals: { exit: (code: number) => void exits.push(code), print: (line: string) => void printed.push(line), now: clock } };
   };
+  /** A clock that moves on by `ms` at each read. */
+  function steps(ms: number): () => number {
+    let time = 0;
+    return () => (time += ms);
+  }
+  /** A clock that reads `times` in turn, then repeats the last. */
+  function readings(...times: number[]): () => number {
+    let read = 0;
+    return () => times[Math.min((read += 1) - 1, times.length - 1)] ?? 0;
+  }
+
+  it("takes a repeat of the first signal within 2 s as the same press (one Ctrl-C reaches it twice on Linux, from the terminal and from pnpm); a repeat 2 s on, another signal or a SIGHUP books at once", async () => {
+    // One press, seen three times: the first stops the run, the repeats change nothing.
+    const config = await workspace();
+    const api = endless();
+    api.statuses = ["running", "idle"];
+    const logged: string[] = [];
+    const { exits, printed, stopOnSignals } = seams(readings(0, 500, 1999));
+    vi.mocked(appendCreditLine).mockClear();
+    const run = job(api, config, happy, { sleep: instant, stopOnSignals, log: (line) => logged.push(line) }).catch((caught: unknown) => caught);
+    await following(api);
+    process.emit("SIGINT");
+    process.emit("SIGINT");
+    process.emit("SIGINT");
+    expect(await run).toBeInstanceOf(RunStoppedError);
+    expect([exits, printed]).toEqual([[], []]);
+    expect(interrupts(api)).toBe(1);
+    expect(await ledgerLines(config.ledgerFile)).toEqual([expect.objectContaining({ batchId: "sesn_1", costUsd: 2.87 })]);
+    expect((await ledgerLines(config.ledgerFile))[0]).not.toHaveProperty("costKnown");
+    expect(logged.filter((line) => line.startsWith("SIGINT again within 2 s of the first: the same press"))).toHaveLength(2);
+
+    // A second press: the same signal 2 s or more after the first, another stop signal, or a SIGHUP.
+    for (const [second, time] of [["SIGINT", 2000], ["SIGTERM", 100], ["SIGBREAK", 100], ["SIGHUP", 100]] as const) {
+      const books = await workspace();
+      const twice = endless();
+      twice.statuses = ["running", "idle"];
+      const pressed = seams(readings(0, time));
+      const stopped = job(twice, books, happy, { sleep: instant, stopOnSignals: pressed.stopOnSignals }).catch((caught: unknown) => caught);
+      await following(twice);
+      process.emit("SIGINT");
+      process.emit(second);
+      expect(await stopped, second).toBeInstanceOf(RunStoppedError);
+      expect(pressed.exits, second).toEqual([1]);
+      expect(pressed.printed, second).toEqual(["session sesn_1 may still be running; booked at its whole budget as unknown; collect it when it has stopped"]);
+      expect(await ledgerLines(books.ledgerFile), second).toEqual([expect.objectContaining({ batchId: "sesn_1", costUsd: 4.5, costKnown: false })]);
+    }
+  });
 
   it("stops on an abort as at the deadline: interrupts, waits, books the platform's figure once it stops or the whole budget once archived, downloads nothing and says why it failed", async () => {
     for (const [statuses, booked] of [
