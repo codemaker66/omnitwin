@@ -699,7 +699,8 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
                 <button type="button" className="gl-button gl-button--quiet" onClick={() => { place(null); }}>Leave without a seat</button>
               )}
             </div>
-            {refusal !== null && <p className="gl-moving__refusal" role="status">{refusal}</p>}
+            {/* Always there while the group is, so a refusal that arrives in it is announced; empty, it takes no space. */}
+            <p className="gl-moving__refusal" role="status">{refusal ?? ""}</p>
           </div>
         )}
 

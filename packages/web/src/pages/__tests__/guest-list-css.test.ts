@@ -112,6 +112,18 @@ describe("GuestListPage.css: the notices region", () => {
     }
     expect(cascaded(TOP, exactly(".gl-notices:empty")).get("margin-top")).toBe("0");
   });
+
+  it("keeps a refused move's status region in the Moving group while empty, out of the group's flow", () => {
+    const refusal = [...TOP, ...narrow()].filter((rule) => rule.selectors.some((selector) => selector.startsWith(".gl-moving__refusal")));
+    for (const rule of refusal) {
+      expect(rule.declarations.get("display") ?? "").not.toMatch(/^none/u);
+      expect(rule.declarations.get("visibility") ?? "").not.toMatch(/^hidden/u);
+    }
+    // Visually hidden and out of the grid, so the group's gap does not open round it; still in the accessibility tree.
+    const empty = cascaded(TOP, exactly(".gl-moving__refusal:empty"));
+    expect([empty.get("position"), empty.get("width"), empty.get("height"), empty.get("overflow"), empty.get("clip-path")])
+      .toEqual(["absolute", "1px", "1px", "hidden", "inset(50%)"]);
+  });
 });
 
 describe("GuestListPage.css: the ledger at a laptop's window", () => {

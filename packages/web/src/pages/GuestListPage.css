@@ -357,6 +357,20 @@
   font-weight: 600;
 }
 
+/* Empty, it stays in the accessibility tree (so a refusal that arrives in it is announced), visually hidden and
+   out of the group's grid, so the group's gap does not open round it. */
+.gl-moving__refusal:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .gl-said {
   margin: 12px 0 0;
   color: var(--reg-text-2);

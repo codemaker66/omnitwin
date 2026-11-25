@@ -15,16 +15,31 @@ import { GuestListPage } from "../GuestListPage.js";
 // ---------------------------------------------------------------------------
 // The planner's guest list page. Only the one network module is stubbed (the
 // read of the plan); the list is kept in a memory store injected as the page's
-// store, so every case runs the real paste reader, seating and page state.
+// store, so every case runs the real paste reader, seating and page state. One
+// case has a move refused once (see `mocks.refuseNextMove`); all others seat for real.
 // ---------------------------------------------------------------------------
 
 const mocks = vi.hoisted(() => ({
   getPublicConfig: vi.fn<(configId: string, signal?: AbortSignal) => Promise<Configuration>>(),
+  /** A move refused once, as no button can now provoke one (a full table offers none). Null: the real seating. */
+  refuseNextMove: { kind: null as null | "seat-taken" | "table-full" | "no-such-table" | "no-such-guest" },
 }));
 vi.mock("../../api/configurations.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../api/configurations.js")>(),
   getPublicConfig: mocks.getPublicConfig,
 }));
+vi.mock("../../lib/guest-list/seating.js", async (importOriginal) => {
+  const seating = await importOriginal<typeof import("../../lib/guest-list/seating.js")>();
+  return {
+    ...seating,
+    moveGuest: (...args: Parameters<typeof seating.moveGuest>): ReturnType<typeof seating.moveGuest> => {
+      const kind = mocks.refuseNextMove.kind;
+      if (kind === null) return seating.moveGuest(...args);
+      mocks.refuseNextMove.kind = null;
+      return { refused: kind };
+    },
+  };
+});
 
 const PLAN_ID = "3f2b8c1e-9d4a-4b6f-8a1c-2e7d5f0a9b34";
 const PAGE = `/plan/${PLAN_ID}/guests?kit=on`;
@@ -255,6 +270,7 @@ let fetchSpy: MockInstance<typeof fetch>;
 beforeEach(() => {
   mocks.getPublicConfig.mockReset();
   mocks.getPublicConfig.mockResolvedValue(room(18));
+  mocks.refuseNextMove.kind = null;
   fetchSpy = vi.spyOn(globalThis, "fetch");
   window.localStorage.clear();
   document.title = "before";
@@ -482,6 +498,25 @@ describe("the guest list page: the desk", () => {
     // The table with room offers its seat; the full one offers none, so nothing there can be refused.
     expect(screen.getByRole("button", { name: "Seat here at table 2" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Seat here at table 1" })).toBeNull();
+    expect(currentList().guests[0]?.tableId).toBeNull();
+  });
+
+  it("says a refused move in a status region that is there before the refusal, and is the same node after it", async () => {
+    const { store } = await storeHolding(listOf({
+      tables: [table(1, 2), table(2, 2)],
+      guests: [guest(1, "Ailsa Fraser"), guest(2, "Chidi Okafor", uuid(1), 1)],
+    }));
+    open(PAGE, store);
+    await desk();
+    fireEvent.click(screen.getByRole("button", { name: "To seat 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fraser, Ailsa" }));
+    const group = screen.getByRole("group", { name: /^Moving / });
+    const status = within(group).getByRole("status");
+    expect(status.textContent).toBe("");
+    mocks.refuseNextMove.kind = "table-full";
+    fireEvent.click(screen.getByRole("button", { name: "Seat here at table 2" }));
+    expect(within(group).getByRole("status")).toBe(status);
+    expect(status.textContent).toBe("That table is full.");
     expect(currentList().guests[0]?.tableId).toBeNull();
   });
 
