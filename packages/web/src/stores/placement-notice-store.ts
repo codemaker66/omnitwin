@@ -17,11 +17,17 @@ export interface PlacementNotice {
   readonly text: string;
   /** A receipt for a change one Undo takes back ("Pasted 3 tables from the Grand Hall"). */
   readonly undo?: true;
+  /**
+   * The line knows a piece only by what it is ("Nothing was removed: a table has a note that
+   * cannot be shown here."), so choosing another piece makes it stale (lib/guest-plan-notes).
+   */
+  readonly namesNoPiece?: true;
 }
 
-/** How a line is posted: `undo` for a receipt one Undo takes back. */
+/** How a line is posted: `undo` for a receipt one Undo takes back; `namesNoPiece` for a line that knows a piece only by what it is. */
 export interface PlacementNoticeOptions {
   readonly undo?: boolean;
+  readonly namesNoPiece?: boolean;
 }
 
 interface PlacementNoticeState {
@@ -55,7 +61,14 @@ export const usePlacementNoticeStore = create<PlacementNoticeState>()((set, get)
       noticeTimer = null;
       if (get().notice?.id === id) set({ notice: null });
     }, PLACEMENT_NOTICE_MS);
-    set({ notice: options.undo === true ? { id, text, undo: true } : { id, text } });
+    set({
+      notice: {
+        id,
+        text,
+        ...(options.undo === true ? { undo: true as const } : {}),
+        ...(options.namesNoPiece === true ? { namesNoPiece: true as const } : {}),
+      },
+    });
   },
   dismiss: (id) => {
     const current = get().notice;
