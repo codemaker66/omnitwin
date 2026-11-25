@@ -29,7 +29,7 @@ export const HEARD_WINDOW_S = 0.045;
 /** A 240 Hz display's frame: the soonest a stepped frame is shown. */
 const SOONEST_PRESENT_S = 1 / 240;
 /** A 30 fps frame: the latest the scheduler waits for one. */
-const LATEST_PRESENT_S = 1 / 30;
+export const LATEST_PRESENT_S = 1 / 30;
 
 /**
  * How long until the frame just stepped is on screen: the last frame's length,

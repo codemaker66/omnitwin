@@ -315,8 +315,23 @@ let renderer: FakeRenderer;
 let mounted: StubRoot | null = null;
 const hiddenState = { hidden: false };
 
+/**
+ * When finite, timers fire at their own times on the page's clock, to within
+ * this many ms; otherwise the clock moves a whole step before the step's
+ * timers run, as most tests need no finer.
+ */
+let timerStepMs = Number.POSITIVE_INFINITY;
+
 /** Time passes: the page's clock and its timers together. */
 function pass(ms: number): void {
+  let left = Number.isFinite(timerStepMs) ? ms : 0;
+  while (left > 0) {
+    const step = Math.min(timerStepMs, left);
+    now += step;
+    vi.advanceTimersByTime(step);
+    left -= step;
+  }
+  if (Number.isFinite(timerStepMs)) return;
   now += ms;
   vi.advanceTimersByTime(ms);
 }
@@ -427,6 +442,7 @@ beforeEach(() => {
   now = 1_000;
   seconds = 100;
   reduced = false;
+  timerStepMs = Number.POSITIVE_INFINITY;
   hiddenState.hidden = false;
   vi.spyOn(performance, "now").mockImplementation(() => now);
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() => (hiddenState.hidden ? "hidden" : "visible"));
@@ -1125,6 +1141,132 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
     expect(registry.drops.map((drop) => drop.drop)).toEqual(["too-late", "too-late"]);
     expect(JSON.parse(localStorage.getItem(RENDER_MODE_STORAGE_KEY) ?? "{}")).toMatchObject({ light: "ahead" });
   });
+
+  describe("a cascade voice's variant, scheduled at its slot (R108)", () => {
+    /** The slot timer is armed this long before the slot: presentDelayFor's ceiling. */
+    const LEAD_MS = 1000 / 30;
+
+    beforeEach(() => {
+      localStorage.setItem(RENDER_MODE_STORAGE_KEY, JSON.stringify({ light: "ahead", table: "ahead" }));
+      // A timer's lateness is what these measure: each fires at its own time, to the millisecond.
+      timerStepMs = 1;
+    });
+
+    /** Takes the set up (the round's and one chair's renders ahead answered and kept), carries it and lets it go. */
+    async function letGoWithVariants(ids: readonly string[]): Promise<void> {
+      act(() => { carryFurniture(ids, 1, 0); });
+      await settle();
+      const aheads = renderer.pending("ahead");
+      expect(aheads.map((job) => job.key.split("|")[1]).sort(), "one render ahead for each class in hand").toEqual(["light", "table"]);
+      for (const job of aheads) job.answer(15);
+      await settle();
+      await frames(3);
+      act(() => { releaseFurniture(ids); });
+      await settle();
+    }
+
+    /** How many voices are due within the lead of the first contact: their variants are scheduled at the contact frame. */
+    function dueAtContact(planned: readonly number[]): number {
+      return planned.filter((start) => start <= (planned[0] ?? Number.NaN) + LEAD_MS / 1000).length;
+    }
+
+    /** Each voice's start after the first contact, from a run with every exact render ready at its contact. */
+    async function plannedStarts(): Promise<readonly number[]> {
+      const ids = setStanding();
+      await mountArmed();
+      const contact = firstContact();
+      await letGoWithVariants(ids);
+      await answerAll();
+      await frames(60);
+      contact.stop();
+      expect(plays().map((played) => played.voice.tap?.played)).toEqual(Array.from({ length: 8 }, () => "exact"));
+      return startsAfter(contact.atMs());
+    }
+
+    /**
+     * The same set and gesture on a new scene, no exact render answered: after
+     * the contacts the page's clock (and so the context's) runs `lateMs` ahead
+     * of the timers, as a busy main thread makes each timer fire late. Returns
+     * the first contact.
+     */
+    async function withLateTimers(lateMs: number): Promise<number> {
+      remount();
+      const ids = setStanding();
+      mounted = mountInStubRoot(<><FurnitureMotion /><SetDownSound /></>);
+      frame();
+      frame();
+      registry.frame = 0;
+      await arm();
+      const contact = firstContact();
+      await letGoWithVariants(ids);
+      expect(renderer.pending("exact")).toHaveLength(8);
+      await framesUntil(() => !Number.isNaN(contact.atMs()));
+      contact.stop();
+      now += lateMs;
+      await frames(60);
+      return contact.atMs();
+    }
+
+    it("starts each variant exactly at its slot when its timer fires up to 30 ms late, still before the slot", async () => {
+      const planned = await plannedStarts();
+      const contactMs = await withLateTimers(30);
+      expect(plays().map((played) => played.voice.tap?.played)).toEqual(Array.from({ length: 8 }, () => "variant"));
+      expect(registry.drops).toEqual([]);
+      const starts = startsAfter(contactMs);
+      for (let k = 0; k < 8; k++) expect(starts[k], `voice ${String(k)}`).toBeCloseTo(planned[k] ?? Number.NaN, 9);
+    });
+
+    it("plays a variant late when its timer fires 20 ms after its slot, within the 45 ms window", async () => {
+      const planned = await plannedStarts();
+      const contactMs = await withLateTimers(LEAD_MS + 20);
+      expect(plays().map((played) => played.voice.tap?.played)).toEqual(Array.from({ length: 8 }, () => "variant"));
+      expect(registry.drops).toEqual([]);
+      const late = startsAfter(contactMs).map((start, k) => start - (planned[k] ?? Number.NaN));
+      // Those due within the lead of their contact were scheduled there; each of the others started late, but well inside the window.
+      expect(late.filter((by) => by > 0.001)).toHaveLength(8 - dueAtContact(planned));
+      for (const by of late) expect(by).toBeLessThan(0.045);
+    });
+
+    it("drops as too late, variant or not, a voice whose timer fires 60 ms after its slot", async () => {
+      const planned = await plannedStarts();
+      const contactMs = await withLateTimers(LEAD_MS + 60);
+      const played = plays().length;
+      expect(played, "only the voices due within the lead of their contact played").toBe(dueAtContact(planned));
+      expect(played).toBeLessThan(8);
+      expect(registry.drops.map((drop) => drop.drop)).toEqual(Array.from({ length: 8 - played }, () => "too-late"));
+      startsAfter(contactMs).forEach((start, k) => { expect(start, `voice ${String(k)} on time`).toBeCloseTo(planned[k] ?? Number.NaN, 9); });
+    });
+
+    it("finishes, as one voice, a voice whose exact render answers after its variant was scheduled but by its slot", async () => {
+      const planned = await plannedStarts();
+      const lastSlotMs = ((planned.at(-1) ?? Number.NaN) - (planned[0] ?? Number.NaN)) * 1000;
+      remount();
+      const ids = setStanding();
+      mounted = mountInStubRoot(<><FurnitureMotion /><SetDownSound /></>);
+      frame();
+      frame();
+      registry.frame = 0;
+      await arm();
+      const contact = firstContact();
+      await letGoWithVariants(ids);
+      const exact = renderer.pending("exact");
+      expect(exact).toHaveLength(8);
+      await framesUntil(() => !Number.isNaN(contact.atMs()));
+      contact.stop();
+      // Past the last voice's early firing, before its slot.
+      const answerAtMs = contact.atMs() + lastSlotMs - 15;
+      while (now < answerAtMs - 20) await frames(1);
+      pass(answerAtMs - now);
+      await settle();
+      exact.at(-1)?.answer(8);
+      await settle();
+      await frames(10);
+      const voices = [...plays()].sort((a, b) => a.voice.startAt - b.voice.startAt);
+      expect(voices, "one voice each").toHaveLength(8);
+      expect(voices.at(-1)?.voice.tap?.played, "the variant scheduled at the early firing").toBe("variant");
+      expect(registry.drops).toEqual([]);
+    });
+  });
 });
 
 // --- A variant heard from where its piece lands (R104) ------------------------------------------
@@ -1219,6 +1361,40 @@ describe("a variant heard from where its piece lands (R104)", () => {
     expect(Math.sign(Math.sin(landing)), "the camera turned round: the other side").toBe(-Math.sign(Math.sin(rendered)));
     expect(plays()[0]?.voice.tap?.played).toBe("variant");
     expect(heardSide(plays()[0]?.voice.render ?? silent)).toBeCloseTo(Math.sin(landing), 6);
+  });
+
+  /** The next contact's landing as heard, changed by `change`: the variant is judged against what the ear hears then. */
+  async function nextContactHeard(change: (heard: VoiceModule.LandingHeard) => VoiceModule.LandingHeard): Promise<void> {
+    const actual = await vi.importActual<typeof VoiceModule>("../../../lib/set-down/voice.js");
+    vi.mocked(landingHeard).mockImplementationOnce((args) => change(actual.landingHeard(args)));
+  }
+
+  it("plays a variant as rendered, byte for byte, where its landing is the mirror of where it was rendered: the same pan (R107)", async () => {
+    await mountArmed();
+    const ghosted = await chairVariantAt([2, 0, 1]);
+    const rendered = ghosted.input?.direct.azimuthRad ?? Number.NaN;
+    await nextContactHeard((heard) => ({ ...heard, direct: { gain: heard.direct.gain, azimuthRad: Math.PI - heard.direct.azimuthRad } }));
+    await place("chiavari-chair", 2, 1);
+    await frames(6);
+    expect(plays()).toHaveLength(1);
+    expect(Math.abs(Math.PI - 2 * rendered), "front and back, far apart by angle").toBeGreaterThan(0.2);
+    expect(plays()[0]?.voice.tap?.played).toBe("variant");
+    expect(renderedBy.get(plays()[0]?.voice.render ?? {})).toBe(ghosted);
+  });
+
+  it("plays a variant as rendered, byte for byte, for a landing 4 dB quieter at the same pan, at the landing's dry gain (R107)", async () => {
+    await mountArmed();
+    const ghosted = await chairVariantAt([2, 0, 1]);
+    let landingGain = Number.NaN;
+    await nextContactHeard((heard) => {
+      landingGain = heard.direct.gain * 10 ** (-4 / 20);
+      return { ...heard, direct: { gain: landingGain, azimuthRad: heard.direct.azimuthRad } };
+    });
+    await place("chiavari-chair", 2, 1);
+    await frames(6);
+    expect(plays()).toHaveLength(1);
+    expect(renderedBy.get(plays()[0]?.voice.render ?? {})).toBe(ghosted);
+    expect(plays()[0]?.voice.directGain).toBe(landingGain);
   });
 
   it("moves each voice of a cascade to its own landing: chairs either side of the room, one variant kept (a batch of six)", async () => {

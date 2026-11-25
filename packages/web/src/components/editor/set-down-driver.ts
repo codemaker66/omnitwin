@@ -15,7 +15,7 @@ import {
   type SetDownRenderer,
 } from "../../lib/set-down/renderer.js";
 import { playsAsRendered, respatializeSetDown, type SetDownDirect } from "../../lib/set-down/respatialize.js";
-import { HEARD_WINDOW_S, presentDelayFor, setDownStartTime, type AudioClock } from "../../lib/set-down/timing.js";
+import { HEARD_WINDOW_S, LATEST_PRESENT_S, presentDelayFor, setDownStartTime, type AudioClock } from "../../lib/set-down/timing.js";
 import {
   beginSetDownBatch,
   getPlannerSoundSettings,
@@ -52,11 +52,13 @@ import { SetDownRoom, spaceKeyOf } from "./set-down-room.js";
 // - A voice is due at its slot: its contact frame, or for a cascade voice its
 //   own place in the cascade after it (R105). It plays the first of: its exact
 //   render, if ready by its slot; a variant rendered ahead for the same piece,
-//   surfaces and room; its exact render, if that arrives within 45 ms after
-//   its slot (R80). Otherwise it is dropped, and the tap logs why. The policy
-//   judges each voice against its slot in the same way. The surfaces under its
-//   feet are read again at contact; a change takes a matching variant or the
-//   drop's render, logged stale (Review Focus 5).
+//   surfaces and room, scheduled 1/30 s before the slot to start exactly at it
+//   (R108); its exact render, if that arrives within 45 ms after its slot
+//   (R80). Nothing starts more than 45 ms after its slot: a voice whose slot
+//   comes and goes by more than that with nothing played is dropped, and the
+//   tap logs why. The policy judges each voice against its slot in the same
+//   way. The surfaces under its feet are read again at contact; a change takes
+//   a matching variant or the drop's render, logged stale (Review Focus 5).
 // - Silence: a landing whose gesture an undo, a redo, a reset or a load left
 //   (R87, the editor's own count of its travels), or whose piece is gone
 //   (R89), is dropped. Nothing is asked for before the first gesture, while
@@ -69,6 +71,12 @@ import { SetDownRoom, spaceKeyOf } from "./set-down-room.js";
 // ---------------------------------------------------------------------------
 
 const HEARD_WINDOW_MS = HEARD_WINDOW_S * 1000;
+/**
+ * A cascade voice's slot is looked at this long before it comes: the longest
+ * a frame waits to be shown (presentDelayFor), so a variant can be scheduled
+ * to start exactly at the slot though the timer fires late (R108).
+ */
+const SLOT_LEAD_MS = LATEST_PRESENT_S * 1000;
 
 /** The driver, as the shell hears the motion and the frame loop for it. */
 export interface SetDownDriver extends FurnitureLandingListener {
@@ -130,9 +138,9 @@ interface Contact {
   readonly cacheKey: string;
   /** The surfaces under the feet changed since the drop started. */
   readonly stale: boolean;
-  /** Its slot has come: a variant played if there was one, and the 45 ms are running. */
-  slotPassed: boolean;
-  /** A variant played at the slot, so the exact render need not. */
+  /** Its slot was looked at (up to 1/30 s before it): a variant scheduled if there was one, the 45 ms running. */
+  dueRan: boolean;
+  /** A variant was scheduled for the slot, so the exact render need not play. */
   covered: boolean;
   timer: ReturnType<typeof setTimeout> | null;
 }
@@ -358,17 +366,17 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     setDownStartTime(clock, contact.presentDelay, render.onsetSeconds) + cascadeWait(flight, nowMs());
 
   /**
-   * A variant rendered ahead for `cacheKey`, heard as this landing is (R104):
-   * as rendered when its direct sound came from within 0.2 rad and 1.5 dB of
-   * the landing's at contact, otherwise a copy moved to the landing's angle.
-   * Its dry gain is the landing's either way (R57); the exact render is never
-   * moved. Null when none is kept.
+   * A variant rendered ahead for `cacheKey`, heard as this landing is (R104,
+   * R107): as rendered when its pan is the landing's at contact, within sin
+   * 0.2, otherwise a copy moved to the landing's angle. Its dry gain is the
+   * landing's either way (R57); the exact render is never moved. Null when
+   * none is kept.
    */
   const variantHeard = (contact: Contact, cacheKey: string): SetDownRendered | null => {
     const kept = ahead.variantFor(cacheKey);
     if (kept === null) return null;
-    if (playsAsRendered(kept.direct, contact.direct)) return kept.render;
-    const moved = respatializeSetDown(kept.render, kept.direct, contact.direct);
+    if (playsAsRendered(kept.azimuthRad, contact.direct.azimuthRad)) return kept.render;
+    const moved = respatializeSetDown(kept.render, kept.azimuthRad, contact.direct.azimuthRad);
     return { ...kept.render, left: moved.left, right: moved.right };
   };
 
@@ -382,15 +390,23 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   };
 
   /**
-   * Its slot came with no exact render: a variant rendered ahead stands in,
-   * and its exact render has 45 ms more (R80); one that failed is dropped
-   * unless a variant played.
+   * Its slot is near (1/30 s ahead, R108) or has come, with no exact render: a
+   * variant rendered ahead stands in, scheduled to start exactly at the slot,
+   * or at once if the slot has passed; its exact render has until 45 ms after
+   * the slot (R80). Looked at more than 45 ms after its slot, it is dropped,
+   * variant or not: nothing starts later than that. One whose render failed is
+   * dropped unless a variant stands in.
    */
   const due = (flight: Flight, contact: Contact, clock: AudioClock): void => {
-    contact.slotPassed = true;
+    const atMs = nowMs();
+    if (atMs > contact.slotMs + HEARD_WINDOW_MS) {
+      missed(flight);
+      return;
+    }
+    contact.dueRan = true;
     const variant = variantHeard(contact, contact.stale ? contact.cacheKey : flight.cacheKey);
     if (variant !== null) {
-      play(flight, variant, "variant", onTimeStart(flight, contact, clock, variant));
+      play(flight, variant, "variant", atMs > contact.slotMs ? clock.currentTime : onTimeStart(flight, contact, clock, variant));
       contact.covered = true;
     }
     if (flight.failed) {
@@ -429,7 +445,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       surface: now.surface,
       cacheKey: now.cacheKey,
       stale: now.surfacesKey !== flight.surfacesKey,
-      slotPassed: false,
+      dueRan: false,
       covered: false,
       timer: null,
     };
@@ -438,8 +454,10 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       playOnTime(flight, contact, clock, flight.exact);
       return;
     }
-    // A cascade voice is due at its own slot: its render may still come by then (R105).
-    if (slotMs <= atMs) {
+    // A cascade voice is due at its own slot (R105), looked at 1/30 s before it, measured from now, so a variant
+    // is scheduled to start exactly at the slot however late the timer fires within that lead (R108).
+    const leadMs = slotMs - SLOT_LEAD_MS - nowMs();
+    if (leadMs <= 0) {
       due(flight, contact, clock);
       return;
     }
@@ -448,7 +466,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       if (flight.done) return;
       const atSlot = stillHeard(flight);
       if (atSlot !== null) due(flight, contact, atSlot.clock);
-    }, slotMs - atMs);
+    }, leadMs);
   };
 
   /** Reduced motion: the piece is down already, so its render plays as it answers (R84). */
@@ -473,7 +491,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       surface: now.surface,
       cacheKey: now.cacheKey,
       stale: false,
-      slotPassed: true,
+      dueRan: true,
       covered: false,
       timer: null,
     };
@@ -496,8 +514,14 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       missed(flight);
       return;
     }
-    // After its contact but by its slot (a cascade voice): on time, as if it had been ready at the contact (R105).
-    if (atMs <= contact.slotMs && !contact.slotPassed) {
+    // After its contact but by its slot (a cascade voice): on time (R105). A variant already scheduled for the slot
+    // plays it, so this render only finishes the voice (R108); otherwise it plays as if ready at the contact.
+    if (atMs <= contact.slotMs) {
+      if (contact.covered) {
+        judge(flight, "on-time", render.workMs);
+        finish(flight);
+        return;
+      }
       const heard = stillHeard(flight);
       if (heard !== null) playOnTime(flight, contact, heard.clock, render);
       return;
@@ -521,8 +545,8 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       finish(flight);
       return;
     }
-    // Before its slot, the slot decides: a variant, or nothing.
-    if ((flight.contact === null || !flight.contact.slotPassed) && !flight.inPlace) return;
+    // Before its slot is looked at, the slot decides: a variant, or nothing.
+    if ((flight.contact === null || !flight.contact.dueRan) && !flight.inPlace) return;
     if (flight.contact?.covered === true) finish(flight);
     else drop(flight, "failed");
   };

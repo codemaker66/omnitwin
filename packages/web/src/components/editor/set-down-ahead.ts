@@ -5,7 +5,6 @@ import { createPlacedItem, type PlacedItem } from "../../lib/placement.js";
 import { reportAsync } from "../../lib/report-async.js";
 import type { SetDownInput } from "../../lib/set-down/render.js";
 import type { SetDownRendered, SetDownRenderer } from "../../lib/set-down/renderer.js";
-import type { SetDownDirect } from "../../lib/set-down/respatialize.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import type { AdaptiveRenderPolicy, RenderClass } from "./set-down-policy.js";
@@ -25,9 +24,10 @@ import type { AdaptiveRenderPolicy, RenderClass } from "./set-down-policy.js";
 //   ones. A piece put back down, or a ghost that leaves with nothing placed,
 //   cancels its class's.
 // - Up to three seeds of each variant (piece, scale, cloth, kind, surfaces,
-//   room, rate) are kept, played in turn, each with the direct sound it was
-//   rendered for (R104: the driver moves one heard from elsewhere to where
-//   its piece lands); renders from a metre or more away replace them.
+//   room, rate) are kept, played in turn, each with the angle its direct
+//   sound was rendered for (R104, R107: the driver moves one whose pan is not
+//   the landing's to where its piece lands); renders from a metre or more
+//   away replace them.
 // ---------------------------------------------------------------------------
 
 /** How often a carried piece, or the ghost, is looked at again. */
@@ -83,14 +83,14 @@ interface Request {
   readonly cacheKey: string;
   readonly input: SetDownInput;
   readonly at: Where;
-  readonly direct: SetDownDirect;
+  readonly azimuthRad: number;
 }
 
 interface Running {
   readonly key: string;
   readonly cacheKey: string;
   readonly at: Where;
-  readonly direct: SetDownDirect;
+  readonly azimuthRad: number;
   readonly spaceKey: string;
 }
 
@@ -105,10 +105,10 @@ interface Slot {
   timer: ReturnType<typeof setTimeout> | null;
 }
 
-/** A render made ahead, with the direct sound it was rendered for: its dry gain and angle as heard then. */
+/** A render made ahead, with the angle its direct sound was heard at then. */
 export interface KeptRender {
   readonly render: SetDownRendered;
-  readonly direct: SetDownDirect;
+  readonly azimuthRad: number;
 }
 
 interface Variant {
@@ -288,7 +288,7 @@ export class AheadRenders {
     const at: Where = { x: toRealWorld(item.x), z: toRealWorld(item.z) };
     const kept = this.variants.get(gathered.cacheKey);
     const seed = kept === undefined || farApart(kept.at, at) ? 1 : kept.renders.length + 1;
-    return { cacheKey: gathered.cacheKey, input: { ...gathered.input, seed }, at, direct: { gain: gathered.directGain, azimuthRad: gathered.input.direct.azimuthRad } };
+    return { cacheKey: gathered.cacheKey, input: { ...gathered.input, seed }, at, azimuthRad: gathered.input.direct.azimuthRad };
   }
 
   private ask(cls: RenderClass, request: Request): void {
@@ -325,7 +325,7 @@ export class AheadRenders {
     const slot = this.slots[cls];
     this.serial += 1;
     const spaceKey = this.host.spaceKey();
-    const running: Running = { key: `ahead|${cls}|${spaceKey}|${String(this.serial)}`, cacheKey: request.cacheKey, at: request.at, direct: request.direct, spaceKey };
+    const running: Running = { key: `ahead|${cls}|${spaceKey}|${String(this.serial)}`, cacheKey: request.cacheKey, at: request.at, azimuthRad: request.azimuthRad, spaceKey };
     slot.running = running;
     slot.askedMs = this.host.now();
     worker.render(request.input, "ahead", running.key).then((render) => {
@@ -356,7 +356,7 @@ export class AheadRenders {
     const fresh = kept === undefined || farApart(kept.at, running.at);
     if (!fresh && kept.renders.length >= VARIANT_SEEDS) return;
     this.variants.delete(running.cacheKey);
-    const made: KeptRender = { render, direct: running.direct };
+    const made: KeptRender = { render, azimuthRad: running.azimuthRad };
     this.variants.set(running.cacheKey, { renders: fresh ? [made] : [...kept.renders, made], at: fresh ? running.at : kept.at });
     if (fresh) this.turns.delete(running.cacheKey);
     let total = 0;
