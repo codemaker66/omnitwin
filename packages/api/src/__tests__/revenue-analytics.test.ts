@@ -116,6 +116,7 @@ describe("revenue analytics services", () => {
       pipelineValueMinor: 600_006,
       enquiryCount: 4,
       proposalStatusCounts: { accepted: 2, draft: 1, sent: 1 },
+      acceptedProposalCount: 2,
     });
     expect(pipeline.pipelineValueMinor).toBe(600_006);
     expect(pipeline.proposalCount).toBe(4);
@@ -131,6 +132,7 @@ describe("revenue analytics services", () => {
       pipelineValueMinor: 250_000_000,
       enquiryCount: 40,
       proposalStatusCounts: { accepted: 10, sent: 30 },
+      acceptedProposalCount: 10,
     });
     expect(pipeline.pipelineValueMinor).toBe(250_000_000);
     const dashboard = buildVenueDashboardAnalytics({
@@ -150,6 +152,7 @@ describe("revenue analytics services", () => {
       pipelineValueMinor: 0,
       enquiryCount: 1,
       proposalStatusCounts: { accepted: 2 },
+      acceptedProposalCount: 2,
     });
     expect(pipeline.conversionPercent).toBe(100);
     expect(pipeline.acceptedProposalCount).toBe(2);
@@ -158,7 +161,7 @@ describe("revenue analytics services", () => {
       generatedAt: NOW, pipeline, roomUtilisation: [], revenueScenarios: [], comfortConstraints: [],
     });
     expect(dashboard.enquiryConversionPercent).toBe(100);
-    expect(buildPipelineSummary({ pipelineValueMinor: 0, enquiryCount: 0, proposalStatusCounts: { accepted: 3 } })
+    expect(buildPipelineSummary({ pipelineValueMinor: 0, enquiryCount: 0, proposalStatusCounts: { accepted: 3 }, acceptedProposalCount: 3 })
       .conversionPercent).toBe(0);
   });
 
@@ -275,6 +278,7 @@ describe("revenue analytics services", () => {
       pipelineValueMinor: 100_000,
       enquiryCount: 1,
       proposalStatusCounts: { sent: 1 },
+      acceptedProposalCount: 0,
     });
     const dashboard = buildVenueDashboardAnalytics({
       generatedAt: NOW,

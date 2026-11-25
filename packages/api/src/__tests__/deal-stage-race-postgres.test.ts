@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { LightMyRequestResponse } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { crmRoutes } from "../routes/crm.js";
 import { opportunityRoutes } from "../routes/opportunities.js";
 import { nextActionForStage } from "../services/deal-next-action.js";
 import { openPeopleFixture, PLATFORM_TARGET, type PeopleFixture, type PeopleFixtureUser } from "./support/people-platform-fixture.js";
@@ -42,6 +43,7 @@ interface Written {
   readonly stage: string;
   readonly closedAt: Date | null;
   readonly nextAction: string | null;
+  readonly nextActionDueAt: Date | null;
   readonly history: readonly { from_stage: string; to_stage: string; note: string | null }[];
   readonly losses: readonly { other_name: string | null }[];
   readonly activities: number;
@@ -53,6 +55,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("deal stage moves on the migrated
   beforeAll(async () => {
     f = await openPeopleFixture(async (server, db) => {
       await server.register(opportunityRoutes, { db, prefix: "/opportunities" });
+      await server.register(crmRoutes, { db, prefix: "/crm" });
     });
   }, 120_000);
 
@@ -75,8 +78,8 @@ describe.skipIf(PLATFORM_TARGET === undefined)("deal stage moves on the migrated
   }
 
   async function written(dealId: string): Promise<Written> {
-    const [row] = (await f.pool.query<{ stage: string; closed_at: Date | null; next_action: string | null }>(
-      "SELECT stage, closed_at, next_action FROM opportunities WHERE id = $1", [dealId],
+    const [row] = (await f.pool.query<{ stage: string; closed_at: Date | null; next_action: string | null; next_action_due_at: Date | null }>(
+      "SELECT stage, closed_at, next_action, next_action_due_at FROM opportunities WHERE id = $1", [dealId],
     )).rows;
     if (row === undefined) throw new Error("No such deal");
     const history = (await f.pool.query<{ from_stage: string; to_stage: string; note: string | null }>(
@@ -88,7 +91,33 @@ describe.skipIf(PLATFORM_TARGET === undefined)("deal stage moves on the migrated
     const activities = (await f.pool.query<{ n: number }>(
       "SELECT count(*)::int AS n FROM activities WHERE opportunity_id = $1", [dealId],
     )).rows[0]?.n ?? -1;
-    return { stage: row.stage, closedAt: row.closed_at, nextAction: row.next_action, history, losses, activities };
+    return {
+      stage: row.stage, closedAt: row.closed_at, nextAction: row.next_action, nextActionDueAt: row.next_action_due_at,
+      history, losses, activities,
+    };
+  }
+
+  /** A deal with its own next step, due when given, and closed when given. */
+  async function dealWithStep(stage: string, nextAction: string, dueAt: Date, closedAt: Date | null = null): Promise<string> {
+    const { rows } = await f.pool.query<{ id: string }>(
+      `INSERT INTO opportunities (venue_id, title, stage, next_action, next_action_due_at, closed_at)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [f.venueId, `TEST ONLY Robertson lunch ${randomUUID().slice(0, 8)}`, stage, nextAction, dueAt, closedAt],
+    );
+    const id = rows[0]?.id;
+    if (id === undefined) throw new Error("Deal fixture not written");
+    return id;
+  }
+
+  function daysFromNow(days: number): Date {
+    return new Date(Date.now() + days * 86_400_000);
+  }
+
+  /** The desk's first sentence: open deals with a step due today or already past. */
+  async function due(): Promise<{ overdue: number; today: number }> {
+    const answer = await f.server.inject({ method: "GET", url: "/crm/pipeline?order=due", headers: f.bearer("staff") });
+    expect(answer.statusCode, answer.body).toBe(200);
+    return answer.json<{ data: { due: { overdue: number; today: number } } }>().data.due;
   }
 
   /** What this fixture's sessions waiting on a lock are running, once `count` of them wait. */
@@ -194,5 +223,61 @@ describe.skipIf(PLATFORM_TARGET === undefined)("deal stage moves on the migrated
     expect(answer.statusCode).toBe(422);
     expect(answer.json()).toMatchObject({ code: "INVALID_TRANSITION" });
     expect(await written(id)).toMatchObject({ stage: "won", history: [], losses: [] });
+  });
+
+  // A move gives the deal its new stage's own step (audit
+  // api-enquiries-people-3). The old step's date went with the old step: kept,
+  // it called a deal that is only waiting on the client overdue.
+  it("gives a moved deal its new stage's step with no date, so a deal only waiting is not overdue", async () => {
+    const id = await dealWithStep("new", "TEST ONLY Call the client back", daysFromNow(-2));
+    // Read beside the venue's other deals, so only this deal's change counts.
+    const overdueBefore = (await due()).overdue;
+    expect(overdueBefore).toBeGreaterThanOrEqual(1);
+
+    const moved = await send(id, "staff", { stage: "qualified" });
+
+    expect(moved.statusCode, moved.body).toBe(200);
+    expect(await written(id)).toMatchObject({
+      stage: "qualified",
+      nextAction: nextActionForStage("qualified"),
+      nextActionDueAt: null,
+      history: [{ from_stage: "new", to_stage: "qualified", note: null }],
+    });
+    expect((await due()).overdue).toBe(overdueBefore - 1);
+  });
+
+  it("keeps the date a move is sent with", async () => {
+    const id = await dealWithStep("qualified", "TEST ONLY Draft the proposal", daysFromNow(-1));
+    const dueAt = daysFromNow(5);
+
+    const moved = await send(id, "staff", { stage: "proposal_drafting", nextActionDueAt: dueAt.toISOString() });
+
+    expect(moved.statusCode, moved.body).toBe(200);
+    expect(await written(id)).toMatchObject({ nextAction: nextActionForStage("proposal_drafting"), nextActionDueAt: dueAt });
+  });
+
+  // A save that names the stage the deal already has moves nothing, so it
+  // writes nothing a move would: not the stage's step over the booker's own,
+  // not a new date, and not a new closing date.
+  it("keeps the step, its date and the closing date of a save that names the stage the deal already has", async () => {
+    const dueAt = daysFromNow(3);
+    const open = await dealWithStep("qualified", "TEST ONLY Send the menus", dueAt);
+
+    const saved = await send(open, "staff", { stage: "qualified", estimatedValueMinor: 250_000 });
+
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(await written(open)).toMatchObject({
+      stage: "qualified", nextAction: "TEST ONLY Send the menus", nextActionDueAt: dueAt, history: [],
+    });
+
+    const closedAt = new Date("2026-10-01T10:00:00.000Z");
+    const won = await dealWithStep("won", "TEST ONLY Book the handoff meeting", dueAt, closedAt);
+
+    const again = await send(won, "staff", { stage: "won" });
+
+    expect(again.statusCode, again.body).toBe(200);
+    expect(await written(won)).toMatchObject({
+      stage: "won", nextAction: "TEST ONLY Book the handoff meeting", nextActionDueAt: dueAt, closedAt, history: [],
+    });
   });
 });

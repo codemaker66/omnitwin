@@ -6,6 +6,9 @@ import {
 import { eventPlanNotifications } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
+/** The pool, or a transaction the notice is written inside. */
+export type NoticeConn = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
+
 // ---------------------------------------------------------------------------
 // Commercial notifications — the ones that fire without an event.
 //
@@ -61,7 +64,7 @@ function bounded(value: string, max: number, fallback: string): string {
  * Returns the number of rows written so callers can log a real count.
  */
 export async function notifyCommercialTeam(
-  db: Database,
+  db: NoticeConn,
   input: CommercialNotificationInput,
 ): Promise<number> {
   return notifyVenueRoles(db, { ...input, audienceRoles: COMMERCIAL_AUDIENCE_ROLES });
@@ -73,7 +76,7 @@ export async function notifyCommercialTeam(
  * (a supplier's response goes to the people running the day).
  */
 export async function notifyVenueRoles(
-  db: Database,
+  db: NoticeConn,
   input: CommercialNotificationInput & { readonly audienceRoles: readonly EventPlanAudienceRole[] },
 ): Promise<number> {
   if (input.audienceRoles.length === 0) return 0;

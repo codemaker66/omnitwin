@@ -29,7 +29,8 @@
 // Planning record: this scanned interior, 21.135 m × 10.59 m (21.14 × 10.59 m
 // when shown) with a clear 6.7 m to the underside of the coffered ceiling, is
 // the Grand Hall's planning record, in place of the venue's published plan of
-// 21 m × 10.5 m. Blake, 11 November 2026: "Use the measurements captured from
+// 21 m × 10.5 m (the venue's rooms page, read 22 November 2026, gives the hall
+// as 21 × 10 m). Blake, 11 November 2026: "Use the measurements captured from
 // the lidar /e57 data". The planner places on it (data/room-geometries.ts) and
 // the public pages state it (TRADES_HALL_ROOM_DIMENSIONS in @omnitwin/types).
 // The dome rises above part of the hall and is never given as its height.
