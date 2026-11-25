@@ -15,6 +15,7 @@ import {
 } from "./table-group.js";
 import { BANQUET_CHAIR_CLEARANCE_M, groupClearOfDoors } from "./auto-fill.js";
 import { rectsOverlap, type LayoutRect } from "./auto-layout.js";
+import { discWithinFloor, floorCentre, rectWithinFloor, type RoomFloor } from "./room-floor.js";
 import { footprintInKeepOut } from "./door-clear-spaces.js";
 import { placedFootprint } from "./keep-doors-clear.js";
 import { countLabel } from "./count-label.js";
@@ -59,6 +60,12 @@ export interface SeatShortfallInput {
   readonly chairSlug?: string;
   /** The room's door clear spaces (lib/door-clear-spaces doorKeepOuts): no new table stands in one. */
   readonly doorSpaces?: readonly LayoutRect[];
+  /**
+   * The room's floor, where its walls are not the rectangle of its size centred on the origin
+   * (lib/room-floor): spots are then sought across the floor's bounds, and a new table stands
+   * only inside the walls with the banquet spacing kept from each.
+   */
+  readonly floor?: RoomFloor;
 }
 
 export interface SeatShortfallFixResult {
@@ -232,9 +239,18 @@ function freeTableSpots(input: SeatShortfallInput, table: CatalogueItem, seats: 
     : groupClearOfDoors(table, seats, { width: 2 * hw, depth: 2 * hd }, doorSpaces, input.chairSlug);
   const inDoorSpace = (spot: Spot): boolean => clearOfDoors !== null && !clearOfDoors({ xM: spot.x, zM: spot.z, rotationY: 0 });
 
+  // On a room's own floor the spots lie across the floor's bounds, and only those inside its walls with the spacing kept.
+  const { floor } = input;
+  const middle = floor === undefined ? null : floorCentre(floor);
+  const onFloor = (spot: Spot): boolean => floor === undefined || (round
+    ? discWithinFloor(floor, toRenderSpace(spot.x), toRenderSpace(spot.z), toRenderSpace(radius + clearance))
+    : rectWithinFloor(floor, toRenderSpace(spot.x), toRenderSpace(spot.z), toRenderSpace(hw + clearance), toRenderSpace(hd + clearance)));
+
   const spots: Spot[] = [];
-  for (const candidate of candidates) {
+  for (const fromMiddle of candidates) {
     if (spots.length >= wanted) break;
+    const candidate = middle === null ? fromMiddle : { x: fromMiddle.x + toRealWorld(middle.x), z: fromMiddle.z + toRealWorld(middle.z) };
+    if (!onFloor(candidate)) continue;
     if (inDoorSpace(candidate)) continue;
     if (obstacles.some((o) => gapTo(candidate.x, candidate.z, o) < clearance - EPS)) continue;
     const spaced = spots.every((spot) => (round
