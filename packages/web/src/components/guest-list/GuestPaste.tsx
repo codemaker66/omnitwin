@@ -165,7 +165,7 @@ export function GuestPaste({ roomLeft, onAdd, onClose, boxRef }: GuestPasteProps
           {parsed.columnCount >= 2 && (firstGuest !== undefined || twoNameColumns) && (
             <div className="gl-paste__first">
               {firstGuest !== undefined && (
-                <p className="gl-paste__words">
+                <p className="gl-paste__words" translate="no">
                   {`The first guest will be added as: ${firstGuest.name}${
                     chosen.partyColumn === null ? "" : `, party: ${firstGuest.party === "" ? "none" : firstGuest.party}`
                   }`}

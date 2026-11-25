@@ -119,7 +119,7 @@ export function GuestPanel(props: GuestPanelProps): ReactElement {
       <div className="gl-panel__body">
         <div className="gl-panel__head">
           <p className="gl-eyebrow">The event</p>
-          <h2 className="gl-panel__title">{title}</h2>
+          <h2 className="gl-panel__title" translate="no">{title}</h2>
         </div>
 
         <div className="gl-facts">

@@ -93,7 +93,7 @@ export function GuestRows({ list, filter, moving, onChoose, onChange, onFocusHea
   };
 
   return (
-    <div className="gl-guests">
+    <div className="gl-guests" translate="no">
       <p className="gl-sr-only" id={`${id}-how`}>Choose a name, then a free seat or a table.</p>
       {groups.map(({ letter, entries }, at) => (
         <section key={letter} className="gl-letter" aria-labelledby={`${id}-letter-${String(at)}`}>

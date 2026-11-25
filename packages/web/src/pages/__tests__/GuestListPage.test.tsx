@@ -501,6 +501,22 @@ describe("the guest list page: the desk", () => {
     expect(currentList().guests[0]?.tableId).toBeNull();
   });
 
+  it("keeps the Moving words, the line that says where a guest went and the event's name from a browser's translation", async () => {
+    const { store } = await storeHolding(listOf({
+      title: "Fraser and Okafor",
+      tables: [table(1, 2), table(2, 2)],
+      guests: [guest(1, "Ailsa Fraser")],
+    }));
+    open(PAGE, store);
+    await desk();
+    expect(screen.getByRole("heading", { name: "Fraser and Okafor" }).getAttribute("translate")).toBe("no");
+    fireEvent.click(screen.getByRole("button", { name: "To seat 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fraser, Ailsa" }));
+    expect(screen.getByText(/^Moving Ailsa Fraser/u).getAttribute("translate")).toBe("no");
+    fireEvent.click(screen.getByRole("button", { name: "Seat here at table 2" }));
+    expect(screen.getByText("Ailsa Fraser is at table 2, seat 1.").getAttribute("translate")).toBe("no");
+  });
+
   it("says a refused move in a status region that is there before the refusal, and is the same node after it", async () => {
     const { store } = await storeHolding(listOf({
       tables: [table(1, 2), table(2, 2)],

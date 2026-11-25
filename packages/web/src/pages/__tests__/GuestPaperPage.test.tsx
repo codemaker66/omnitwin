@@ -1169,6 +1169,15 @@ describe("the guest paper page: mounted again over a list it already holds", () 
 // ---------------------------------------------------------------------------
 
 describe("the guest paper page: names stay on the paper", () => {
+  it("keeps every sheet, and the names on it, from a browser's translation", async () => {
+    open(`${PAPER}?kit=on`, await storeHolding(list180()));
+    await paper("table-plan");
+    for (const [name, sheet] of [...SHEET_LINKS.slice(1), SHEET_LINKS[0]]) {
+      fireEvent.click(within(tools()).getByRole("link", { name }));
+      expect((await paper(sheet)).getAttribute("translate"), sheet).toBe("no");
+    }
+  });
+
   it("makes no request on any sheet, or when printing", async () => {
     const xhr = vi.spyOn(XMLHttpRequest.prototype, "open");
     open(`${PAPER}?kit=on`, await storeHolding(list180()));

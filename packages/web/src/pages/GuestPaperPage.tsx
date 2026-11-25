@@ -430,7 +430,7 @@ function TablePlanSheet({ list }: { readonly list: GuestList }): ReactElement {
   const plan = tablePlanAZ(list);
   const day = eventDay(list);
   return (
-    <article className="gp-leaf gp-leaf--poster" aria-labelledby={titleId} data-testid="guest-paper-sheet" data-sheet="table-plan">
+    <article className="gp-leaf gp-leaf--poster" aria-labelledby={titleId} data-testid="guest-paper-sheet" data-sheet="table-plan" translate="no">
       <PrintFrame list={list}>
         {day !== null && <p className="gp-eyebrow">{day}</p>}
         <h2 className="gp-leaf__title" id={titleId}>{list.title.trim() !== "" ? list.title : "Table plan"}</h2>
@@ -471,7 +471,7 @@ function ByTableSheet({ list }: { readonly list: GuestList }): ReactElement {
   const day = eventDay(list);
   const eyebrow = [list.title.trim(), day ?? ""].filter((part) => part !== "").join(" · ");
   return (
-    <article className="gp-leaf" aria-labelledby={titleId} data-testid="guest-paper-sheet" data-sheet="by-table">
+    <article className="gp-leaf" aria-labelledby={titleId} data-testid="guest-paper-sheet" data-sheet="by-table" translate="no">
       <PrintFrame list={list}>
         {eyebrow !== "" && <p className="gp-eyebrow">{eyebrow}</p>}
         <h2 className="gp-leaf__title" id={titleId}>Guests by table</h2>
@@ -506,7 +506,7 @@ function ByTableSheet({ list }: { readonly list: GuestList }): ReactElement {
 function PlaceCardsSheet({ list }: { readonly list: GuestList }): ReactElement {
   const pages = inPages(placeCards(list), CARDS_A_PAGE);
   return (
-    <article className="gp-cards-sheet" aria-label="Place cards" data-testid="guest-paper-sheet" data-sheet="place-cards">
+    <article className="gp-cards-sheet" aria-label="Place cards" data-testid="guest-paper-sheet" data-sheet="place-cards" translate="no">
       <style>{CARDS_PAGE_STYLE}</style>
       <div className="gp-cards">
         {pages.map((page, number) => (
@@ -534,7 +534,7 @@ function CoversSheet({ list }: { readonly list: GuestList }): ReactElement {
   const counts = covers(list);
   const day = eventDay(list);
   return (
-    <article className="gp-leaf gp-leaf--small" aria-labelledby={titleId} data-testid="guest-paper-sheet" data-sheet="covers">
+    <article className="gp-leaf gp-leaf--small" aria-labelledby={titleId} data-testid="guest-paper-sheet" data-sheet="covers" translate="no">
       <PrintFrame list={list}>
         <p className="gp-eyebrow">{day === null ? "For the caterer · covers by table" : `For the caterer · covers by table · ${day}`}</p>
         <h2 className="gp-leaf__title" id={titleId}>

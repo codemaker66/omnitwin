@@ -55,7 +55,7 @@ export function GuestTables(props: GuestTablesProps): ReactElement {
   const movingGuest = props.moving === null ? undefined : list.guests.find((g) => g.id === props.moving);
 
   return (
-    <ul className="gl-tables">
+    <ul className="gl-tables" translate="no">
       {tables.map((table) => (
         <TableRow
           key={table.id}

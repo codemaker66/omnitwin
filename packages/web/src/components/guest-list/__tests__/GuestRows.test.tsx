@@ -41,6 +41,18 @@ afterEach(() => {
 });
 
 describe("GuestRows", () => {
+  it("keeps every row's name from a browser's translation, with one translate=\"no\" round them all", () => {
+    const list = seatedList(["Ada Lamb", "Per Olsen"]);
+    const { container } = render(
+      <GuestRows list={list} filter="all" moving={null} onChoose={() => undefined} onChange={() => undefined} onFocusHead={() => undefined} />,
+    );
+    const regions = container.querySelectorAll("[translate='no']");
+    expect(regions).toHaveLength(1);
+    const names = [...container.querySelectorAll(".gl-guest__name")];
+    expect(names).toHaveLength(2);
+    for (const name of names) expect(name.closest("[translate='no']")).toBe(regions[0]);
+  });
+
   it("gives each letter one section, the same sections in the same order as the table plan, with no duplicate key", () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const list = seatedList(["Ada Lamb", "Mary Łoś", "Ada Lowe", "Per Olsen", "Kari Øvergaard", "Ola Owen"]);

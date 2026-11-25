@@ -689,7 +689,7 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
 
         {chosen !== undefined && (
           <div className="gl-moving" role="group" aria-labelledby={`${id}-moving`}>
-            <p className="gl-moving__words" id={`${id}-moving`} ref={movingRef} tabIndex={-1}>
+            <p className="gl-moving__words" translate="no" id={`${id}-moving`} ref={movingRef} tabIndex={-1}>
               {`Moving ${chosen.name}${chosenAt?.table === undefined ? "" : ` from table ${String(chosenAt.table)}, seat ${String(chosenAt.seat)}`}. Choose a free seat or a table.`}
             </p>
             <p className="gl-moving__hint">Escape lets go.</p>
@@ -704,7 +704,7 @@ function ReadyDesk({ planId, list, room, onErase, afterErase }: ReadyDeskProps):
           </div>
         )}
 
-        <p className="gl-said" role="status">{said}</p>
+        <p className="gl-said" role="status" translate="no">{said}</p>
 
         {pasteShown && (
           <GuestPaste

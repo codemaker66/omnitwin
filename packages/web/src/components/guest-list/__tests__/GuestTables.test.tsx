@@ -154,6 +154,24 @@ describe("GuestTables", () => {
     expect(within(row(2)).getByRole("button", { name: "Seat here at table 2" })).toBeTruthy();
   });
 
+  it("keeps the tables' names and their seats' names from a browser's translation, with one translate=\"no\"", () => {
+    const list = listOf({
+      tables: [table(1, 4, "Top table"), table(2, 4)],
+      guests: [guest(1, "Ailsa Fraser", uuid(1), 1), guest(2, "Chidi Okafor", uuid(2), 1), guest(3, "Morag Kerr")],
+    });
+    const { container } = render(<Harness initial={list} />);
+    openRow(1);
+    const regions = container.querySelectorAll("[translate='no']");
+    expect(regions).toHaveLength(1);
+    const named = [
+      within(row(1)).getByRole("button", { name: "Ailsa Fraser" }),
+      within(row(1)).getByRole("button", { name: "Morag Kerr" }),
+      within(row(1)).getByText("Top table"),
+      within(row(2)).getByText("Chidi Okafor"),
+    ];
+    for (const element of named) expect(element.closest("[translate='no']")).toBe(regions[0]);
+  });
+
   it("names a table when the field is left, not while it is typed in", () => {
     const onChange = vi.fn<() => void>();
     render(<Harness initial={listOf({ tables: [table(1)] })} onChange={onChange} />);

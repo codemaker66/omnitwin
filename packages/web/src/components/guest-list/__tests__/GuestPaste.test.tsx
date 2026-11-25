@@ -103,6 +103,11 @@ describe("GuestPaste", () => {
     expect(added(onAdd)).toEqual([{ name: "Ailsa", party: "3" }]);
   });
 
+  it("keeps the first guest's name in the preview from a browser's translation", () => {
+    paste("Fraser, Ailsa\nOkafor, Chidi");
+    expect(screen.getByText("The first guest will be added as: Ailsa Fraser").getAttribute("translate")).toBe("no");
+  });
+
   it("adds a list written surname first as whole names with nothing chosen, and shows the first guest before it is added", () => {
     const { onAdd } = paste("Fraser, Ailsa\nOkafor, Chidi\nKerr, Morag");
     expect(screen.getByText("The first guest will be added as: Ailsa Fraser")).toBeTruthy();
