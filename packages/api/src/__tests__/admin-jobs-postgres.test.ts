@@ -570,15 +570,28 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
   describe("the self-test", () => {
     /** The same plugin with short waits, so a job nobody takes costs milliseconds, not five seconds. */
     let shortWait: FastifyInstance;
+    /** One gap of five seconds: a request that waited at all would take that long. */
+    let longWait: FastifyInstance;
+    /** Four short gaps, then a long one: a request that stopped early never reaches the long one. */
+    let stopsEarly: FastifyInstance;
+
+    async function withWaits(selfTestWaitMs: readonly number[]): Promise<FastifyInstance> {
+      const instance = Fastify();
+      await instance.register(adminJobsRoutes, { db, registry, selfTestWaitMs, prefix: "/admin/jobs" });
+      await instance.ready();
+      return instance;
+    }
 
     beforeAll(async () => {
-      shortWait = Fastify();
-      await shortWait.register(adminJobsRoutes, { db, registry, selfTestWaitMs: [10, 10, 10], prefix: "/admin/jobs" });
-      await shortWait.ready();
+      shortWait = await withWaits([10, 10, 10]);
+      longWait = await withWaits([5000]);
+      stopsEarly = await withWaits([200, 200, 200, 200, 5000]);
     });
 
     afterAll(async () => {
       await shortWait.close();
+      await longWait.close();
+      await stopsEarly.close();
     });
 
     afterEach(() => {
@@ -599,8 +612,12 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
       installJobWorker(worker);
       worker.start();
       try {
+        const started = Date.now();
         const response = await asPlatformAdmin("POST", "/admin/jobs/selftest");
+        const took = Date.now() - started;
         expect(response.statusCode).toBe(200);
+        // It stopped at done: waiting out every gap of the default waits would take 5 seconds.
+        expect(took).toBeLessThan(4000);
         expect(response.json()).toEqual({ data: { id: expect.any(String) as string, state: "done" } });
         const result = selfTestResult(response);
         expect(result.id).toMatch(UUID_SHAPE);
@@ -614,19 +631,40 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     it("with no worker installed it writes the job, answers queued at once, and does not wait", async () => {
       installJobWorker(null);
       const started = Date.now();
-      const response = await asPlatformAdmin("POST", "/admin/jobs/selftest");
+      const response = await pressOn(longWait);
       const took = Date.now() - started;
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ data: { id: expect.any(String) as string, state: "queued" } });
       const result = selfTestResult(response);
       expect(result.id).toMatch(UUID_SHAPE);
-      // The default waits add up to 5 seconds and the first gap alone is 100 ms: this did not wait for any of them.
-      expect(took).toBeLessThan(1000);
+      // This instance's one gap is 5 seconds: waiting for it at all would take that long.
+      expect(took).toBeLessThan(2000);
       const rows = (await pool.query<{ id: string; kind: string; state: string }>("SELECT id, kind, state FROM jobs")).rows;
       expect(rows).toEqual([{ id: result.id, kind: "jobs.selftest", state: "queued" }]);
     });
 
-    it("a worker that never takes the job: all the reads are made, the answer is queued, and the request returns", async () => {
+    it("stops at the first read that finds the job finished", async () => {
+      // Installed but never started, so nothing takes the job: the test finishes it by hand.
+      installJobWorker(new JobWorker({ db, registry, serverId: "admin-jobs-test-early", logger: quietLogger, alerts: recordingJobAlerts() }));
+      const started = Date.now();
+      // `inject` sends only when its answer is asked for: `then` sends it now, without waiting for it.
+      const pending = pressOn(stopsEarly).then((response) => response);
+      let jobId: string | undefined;
+      while (jobId === undefined) {
+        if (Date.now() - started > 4000) throw new Error("The self-test job was never written");
+        jobId = (await pool.query<{ id: string }>("SELECT id FROM jobs WHERE kind = 'jobs.selftest'")).rows[0]?.id;
+        if (jobId === undefined) await new Promise((resolve) => { setTimeout(resolve, 5); });
+      }
+      await pool.query("UPDATE jobs SET state = 'done', finished_at = now(), updated_at = now() WHERE id = $1", [jobId]);
+      const response = await pending;
+      const took = Date.now() - started;
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ data: { id: jobId, state: "done" } });
+      // A read after a short gap found it done; the wait never reached the five-second gap.
+      expect(took).toBeLessThan(3000);
+    });
+
+    it("a worker that never takes the job: the request waits out every gap and answers queued", async () => {
       // Installed but never started, so nothing takes the job.
       installJobWorker(new JobWorker({ db, registry, serverId: "admin-jobs-test-idle", logger: quietLogger, alerts: recordingJobAlerts() }));
       const started = Date.now();
@@ -641,7 +679,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
       expect((await rowOf(result.id)).state).toBe("queued");
     });
 
-    it("writes one job and pokes the worker, after the job is committed", async () => {
+    it("writes one job and pokes the worker once for each press", async () => {
       const worker = new JobWorker({ db, registry, serverId: "admin-jobs-test", logger: quietLogger, alerts: recordingJobAlerts() });
       const poke = vi.spyOn(worker, "poke");
       installJobWorker(worker);

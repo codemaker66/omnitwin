@@ -146,7 +146,10 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: two servers on one list", () =
     const deadline = Date.now() + ms;
     while (Date.now() < deadline) {
       if (record.messages.some((message) => isDeepStrictEqual(message, expected))) return;
-      if (!isAlive(child)) {
+      // Gone only when its channel has closed too: every message it sent has then been delivered, and the
+      // look above has seen them. A child that has exited with its channel still open may have its last
+      // message on the way, so the loop looks again.
+      if (!isAlive(child) && !child.connected) {
         throw new Error(`The child ended before sending ${JSON.stringify(expected)}; ${describeChild(record)}`);
       }
       await sleep(20);

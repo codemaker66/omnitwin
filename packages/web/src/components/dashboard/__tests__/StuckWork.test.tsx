@@ -267,6 +267,38 @@ describe("StuckWork", () => {
     expect(screen.getByLabelText<HTMLInputElement>("Note").value).toBe("Sent by hand");
   });
 
+  it("puts focus back in the note when a Close is refused and focus never left the row", async () => {
+    const refused = deferred<undefined>();
+    mocks.getStuckWork.mockResolvedValue(stuck({ jobs: [job(J1)] }));
+    mocks.closeStuckJob.mockReturnValueOnce(refused.promise.then(() => {
+      throw new ApiError(409, "This job is already back on the list.", "JOB_NOT_STUCK");
+    }));
+    render(<StuckWork />);
+    const row = await screen.findByRole("row", { name: /email\.send/ });
+    fireEvent.click(within(row).getByRole("button", { name: "Close with a note" }));
+    const note = screen.getByLabelText<HTMLInputElement>("Note");
+    fireEvent.change(note, { target: { value: "Sent by hand" } });
+    const detail = note.closest("tr");
+    if (detail === null) throw new Error("the note is not in a row");
+    // Focus on the form's own Close button, and pressed from there: focus never goes to the body.
+    const close = within(detail).getByRole<HTMLButtonElement>("button", { name: "Close" });
+    close.focus();
+    fireEvent.click(close);
+    // The check on the test itself: before the refusal lands, focus is still in this job's rows. Were it on
+    // the body, the page would refocus by the "focus is lost" rule, and this test would prove nothing.
+    const pressedFrom = document.activeElement;
+    expect(pressedFrom).not.toBe(document.body);
+    expect(pressedFrom !== null && (row.contains(pressedFrom) || detail.contains(pressedFrom))).toBe(true);
+
+    await act(async () => { refused.resolve(undefined); await refused.promise; });
+    await screen.findByText("This job is already back on the list.");
+    await waitFor(() => {
+      expect(within(screen.getByRole("row", { name: /email\.send/ })).getByRole<HTMLButtonElement>("button", { name: "Close with a note" }).disabled).toBe(false);
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText("Note"));
+    expect(screen.getByLabelText<HTMLInputElement>("Note").value).toBe("Sent by hand");
+  });
+
   it("keeps each row's note to itself while another row's Close is in flight", async () => {
     const closing = deferred<undefined>();
     mocks.getStuckWork
@@ -525,7 +557,10 @@ describe("StuckWork", () => {
 
     await act(async () => { refused.resolve(undefined); await refused.promise; });
     await screen.findByText("This job is already back on the list.");
-    await waitFor(() => { expect(mocks.getStuckWork).toHaveBeenCalledTimes(2); });
+    // Alpha's buttons come back in the same render that hands alpha its refocus request (as in the twin below).
+    await waitFor(() => {
+      expect(within(screen.getByRole("row", { name: /alpha\.send/ })).getByRole<HTMLButtonElement>("button", { name: "Close with a note" }).disabled).toBe(false);
+    });
     expect(document.activeElement).toBe(betaNote);
     expect(betaNote.value).toBe("Beta draft");
     expect(alphaNote.value).toBe("Alpha text");

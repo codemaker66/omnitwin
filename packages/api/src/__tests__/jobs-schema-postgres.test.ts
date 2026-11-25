@@ -135,6 +135,13 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the rules in the database", ()
     await expect(insertSend({ venue_id: null, event_id: eventOfVenueA })).rejects.toThrow(/email_sends_link_needs_venue/);
   });
 
+  it("refuses a send that names another venue's enquiry, or an enquiry with no venue", async () => {
+    await expect(insertSend({ venue_id: venueB, enquiry_id: enquiryOfVenueA })).rejects.toThrow(/email_sends_enquiry_venue_fk/);
+    await expect(insertSend({ venue_id: null, enquiry_id: enquiryOfVenueA })).rejects.toThrow(/email_sends_link_needs_venue/);
+    // The control: the enquiry under its own venue is accepted, so the refusals above are the rule's and not the fixture's.
+    await expect(insertSend({ venue_id: venueId, enquiry_id: enquiryOfVenueA })).resolves.toBeDefined();
+  });
+
   it("the Drizzle tables agree with the migration: every column is written and read back", async () => {
     const everyJobColumn = {
       id: randomUUID(),
