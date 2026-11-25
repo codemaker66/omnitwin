@@ -9,7 +9,7 @@ import {
   LinearFilter,
   SRGBColorSpace,
 } from "three";
-import type { PlannerRoomDimensions } from "../lib/room-floor.js";
+import type { SpaceDimensions } from "@omnitwin/types";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
@@ -174,7 +174,7 @@ export const DIRECT_VIOLATION_SCAN_MAX_CANDIDATES = 2;
 /** O(n) per candidate: the group scan and every other item. */
 function directViolationVerdict(
   allItems: readonly PlacedItem[],
-  roomDims: PlannerRoomDimensions,
+  roomDims: SpaceDimensions,
 ): PlacementViolationVerdict {
   return (placed, item) => getPlacementViolations(
     placed.x,
@@ -195,7 +195,7 @@ function directViolationVerdict(
  */
 function indexedViolationVerdict(
   allItems: readonly PlacedItem[],
-  roomDims: PlannerRoomDimensions,
+  roomDims: SpaceDimensions,
 ): PlacementViolationVerdict {
   const overlapIndex = createPlacementOverlapIndex(allItems);
   const groupMemberIds = createGroupMemberIdsLookup(allItems);
@@ -221,7 +221,7 @@ function indexedViolationVerdict(
 export function placementViolationIds(
   candidates: readonly PlacedItem[],
   allItems: readonly PlacedItem[],
-  roomDims: PlannerRoomDimensions,
+  roomDims: SpaceDimensions,
 ): ReadonlySet<string> {
   const ids = new Set<string>();
   if (candidates.length === 0) return ids;
