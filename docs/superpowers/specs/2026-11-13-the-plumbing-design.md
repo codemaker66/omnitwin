@@ -4,7 +4,7 @@ Design, 13 November 2026. Status: **approved by Blake on 13 November 2026.** His
 10, with what was refined afterwards.
 Piece 0 of the platform plan (`docs/superpowers/specs/2026-11-13-platform-plan-design.md`, pull request #421;
 ledger row T-702). Branch `claude/platform-plumbing-design`. Every code fact below was read on master `85a17749`.
-Prices were read on the providers' own pricing pages on 13 November 2026. Section 13 says how the design itself
+What each provider offers was read on its own pages on 13 November 2026. Section 13 says how the design itself
 was tested.
 
 **Section 1 is the one screen Blake decided from. Sections 2 to 13 are for whoever builds and reviews it.**
@@ -32,16 +32,16 @@ servers run side by side, one reminder arrives once, and a reply sent from your 
 
 | Thing | Cost | When |
 |---|---|---|
-| Email out and in (Resend, which we already use) | Nothing for now. Blake chose to stay on the free plan (3,000 emails a month, 100 a day, three domains, mail in counted) and to look at more options when needed. The Pro plan is $20 a month: 50,000 a month, ten domains, no daily cap | The question comes back when the cap comes near (section 10) |
-| The list of work | Nothing new. It asks the database only when something is due, and once an hour, so it adds at most about $2 to $3 a month of database time | From its first merge |
-| A second server | About $3 a month at today's use (Railway charges $10 a month for each gigabyte of memory; ours uses about a quarter of one) | Your decision; see below |
-| Watching that the list is alive | Nothing, or under $1 a month: Sentry includes one such check on every plan, and a further one is $0.78 a month | From its first merge |
-| Storing mail and attachments | Nothing at this size: R2's first 10 GB a month are free, then $0.015 a gigabyte | When mail comes in |
-| Encrypted keys | Nothing as recommended. A cloud key service would be about $1 a month and a new supplier | When piece E or the accounting push needs a key |
+| Email out and in (Resend, which we already use) | No new cost at today's scale | The question comes back as volume grows (section 10) |
+| The list of work | Small. It asks the database only when something is due, and once an hour, so it adds little database time | From its first merge |
+| A second server | Small at today's scale | Your decision; see below |
+| Watching that the list is alive | Little or nothing: it is one check with Sentry, which we already use | From its first merge |
+| Storing mail and attachments | Nothing to speak of at this size | When mail comes in |
+| Encrypted keys | Nothing as recommended. A cloud key service would cost a little and add a new supplier | When piece E or the accounting push needs a key |
 
-**What only Blake decides, and decided on 13 November** (section 10): this design, approved; the email plan,
-free for now; a second server, with the trust pack; and what we ask the Hall's email administrator for, a
-sub-name and four records.
+**What only Blake decides, and decided on 13 November** (section 10): this design, approved; the email
+provider, Resend, with more options looked at when needed; a second server, with the trust pack; and what we ask
+the Hall's email administrator for, a sub-name and four records.
 
 **The honest limit.** "Exactly once" cannot be promised by any system that talks to another one. What can be built
 is: every piece of work is tried until it succeeds or a person is told, and doing it twice changes nothing.
@@ -160,7 +160,7 @@ same first-reply clock, and #300's control stays for phone calls and outside ema
 
 | | A. Our own small table (chosen) | B. pg-boss | C. graphile-worker | D. A hosted queue |
 |---|---|---|---|---|
-| Licence and upkeep | Ours: a few hundred lines, held by the tests in section 8 | MIT; one maintainer; frequent releases; a new major version does not carry old jobs over | MIT core; one maintainer; still before version 1; faster crash recovery is a paid add-on at $100 a month | Their service, their price: Inngest is free to 50,000 runs a month, then from $99 |
+| Licence and upkeep | Ours: a few hundred lines, held by the tests in section 8 | MIT; one maintainer; frequent releases; a new major version does not carry old jobs over | MIT core; one maintainer; still before version 1; faster crash recovery is a paid add-on | Their service, their price |
 | Fits "one reviewed migration at a time" | Yes: a numbered migration like every other table | It makes and changes its own tables when the server starts. That can be switched off, and then its SQL has to be copied by hand at every upgrade | It makes and changes its own tables as the database's owner | Nothing in our database |
 | Lets the database sleep | Yes: it asks only when something is due | No: it asks every 2 seconds, and tidies every 60 | No: it holds a listening connection, which Neon's pooled address does not support, or else asks every 2 seconds | Yes |
 | Work written in the same transaction as its cause | Yes, a plain insert | Yes, through an adapter | Yes, through a database function | **No**, which rules it out as the outbox |
@@ -171,8 +171,8 @@ same first-reply clock, and #300's control stays for phone calls and outside ema
 
 **Chosen: A.** Four reasons, all from this project. Every database change here is one numbered migration, merged
 alone and applied before the deploy; both libraries change the database by themselves at start-up. Both ask the
-database every two seconds, which is the 18 October outage again, or about $19 a month to keep the smallest
-database awake around the clock. A venue column with a rule behind it is how this project keeps venues apart, and
+database every two seconds, which is the 18 October outage again, or the cost of keeping the database awake
+around the clock. A venue column with a rule behind it is how this project keeps venues apart, and
 a library's table cannot have one. And staff must see "Not sent" on the thing itself, which is simplest when the
 state is in our own table. What we give up is other people's testing: the claim, the retry and the recovery are
 ours to get right. So the tests in section 8 are written first, and if they cannot be made to pass, the fallback
@@ -182,19 +182,17 @@ is pg-boss with its tables mirrored in our migrations.
 
 | | Resend (chosen: we already use it) | Postmark | Amazon SES | Mailgun |
 |---|---|---|---|---|
-| Price for a few venues | $20 a month: 50,000 emails, ten domains | $16.50 a month: 10,000 emails, ten domains | About $1 a month, plus AWS storage and notices | $35 a month (the $15 plan allows one domain) |
-| Mail in | Included on every plan; counted with mail out | Only on the two dearer plans | Yes, through S3 and SNS, which we would have to build | Yes |
+| Mail in | Included; counted with mail out | Yes, at extra cost | Yes, through S3 and SNS, which we would have to build | Yes |
 | Notices signed | Yes, the same scheme the code already checks for Clerk | **No signatures** | Yes, by certificate | Yes |
 | A key that stops a double send | Yes, honoured for 24 hours | **None** | None found | None found |
 | Where the mail is handled | A European region can be chosen for each domain | United States only | London available | A European region |
 
 **Chosen: Resend.** It is already built in and tested; it is the only one with both signed notices and a key that
 stops a double send; one supplier covers out and in; and a venue's domain can be set up in its European region.
-Postmark is ruled out by the two bold cells. SES is the cheapest and has a London region, but mail in would mean
-building on three more AWS services and an approval step, for a saving of about $19 a month; it is worth a second
-look only at a volume we do not have. Ten domains is nine venues and ourselves; the next step is $90 a month for a
-thousand. Blake's decision of 13 November: stay on Resend's free plan for now, and look at more options when
-needed (section 10 says what "needed" is watched by).
+Postmark is ruled out by the two bold cells. SES is the cheapest of the four and has a London region, but mail in
+would mean building on three more AWS services and an approval step, for a small saving; it is worth a second
+look only at a volume we do not have. How large an allowance of emails to take from Resend is a separate
+question, which goes back to Blake as volume grows (section 10 says what is watched).
 
 ### 4.3 The venue's address
 
@@ -213,7 +211,7 @@ no real domain is written in this repository.
 
 | | A. In the server's sealed settings (chosen) | B. A cloud key service | C. Inside the database |
 |---|---|---|---|
-| Cost | Nothing | About $1 a key a month, and a new supplier | Nothing |
+| Cost | Nothing | A small charge for each key, and a new supplier | Nothing |
 | A leaked copy of the database shows | Scrambled text only | Scrambled text only | **The key passes through the database's own logs** |
 | Someone who gets the server's settings | Can read the keys (they also hold the database's address) | Can ask the service to unscramble, until we revoke; every use is logged | The same |
 | If we lose it | Each venue reconnects its accounts | The service keeps it | |
@@ -225,7 +223,7 @@ nothing either way, so it is my call and not a button; say if you would rather h
 
 | | A. Inside each API server (chosen) | B. A small server of its own | C. Railway's own scheduler |
 |---|---|---|---|
-| Cost | Nothing | About $3 a month | Nothing |
+| Cost | Nothing | Small at today's scale | Nothing |
 | A job that goes badly wrong | Shares the API's fate: it could slow or restart the server that also runs the live rooms | Cannot touch the API | Cannot touch the API |
 | Work starts | At once, on the server that wrote it | Within the hour, or by a call between the two | No more often than every five minutes, in UTC only, with no promise of a single run |
 
@@ -353,7 +351,7 @@ For email, the caller writes the `email_sends` row and its job together.
   because the fault is ours to fix and not the message's.
 - **The day's or the month's allowance used up.** Resend says so plainly, and the day's resets at midnight UTC.
   The send waits for the reset and goes then, if its own time limit still allows; otherwise it says Not sent. An
-  alert is raised at once, because the remedy is Blake's: a paid plan takes effect straight away.
+  alert is raised at once, because the remedy is Blake's: a larger allowance takes effect straight away.
 - **One thing Resend's page does not say:** what its key does after a first try that failed. Its wording ("has
   already been sent") suggests a failed try does not use the key up. The rehearsal proves this against Resend
   itself before any caller moves: a send refused for too many requests, then tried again with the same key, must
@@ -470,17 +468,17 @@ data. This piece sends nothing to a model itself.
 
 **Never answering by itself.** Nothing here replies automatically, so two systems cannot get into a loop.
 
-**The free plan and mail in.** Resend counts every message it receives against the allowance, including junk sent
-to an address that does not exist, which we then drop. On the free plan that eats the cap of 100 a day. Worse, a
+**The allowance and mail in.** Resend counts every message it receives against the allowance, including junk sent
+to an address that does not exist, which we then drop. Junk alone can use up a small allowance. Worse, a
 message that arrives after the allowance is used up cannot be fetched at all: Resend's own error list says so. We
-would know only who it was from and its subject. So, with Blake's choice of the free plan for now:
+would know only who it was from and its subject. So, while the allowance is small:
 
 - such a message is listed on Stuck work as arrived and unreadable, with its sender, so a person can ask for it
   again;
-- sends and mail in are counted together against the day and the month, from our own rows, with an alert at 60
-  of the 100 and at 2,000 of the 3,000;
+- sends and mail in are counted together against the day and the month, from our own rows, with an alert at
+  three-fifths of the day's allowance and at two-thirds of the month's;
 - a rehearsal uses a Resend account of its own, so it cannot use up production's allowance;
-- and mail in is not switched on for production until the plan has been put to Blake again (section 10).
+- and mail in is not switched on for production until the allowance has been put to Blake again (section 10).
 
 **Production's replies do not move in this piece.** Today's Reply-To, the inbox the Hall watches, stays on every
 real send until piece F ships the screen that shows replies. Reply addresses are made and proved on test events.
@@ -675,20 +673,18 @@ first.
 
 ## 10. What only Blake decides, and what he decided
 
-Asked by button on 13 November 2026. His answers are given word for word.
+Asked by button on 13 November 2026. His answers to 1, 3 and 4 are given word for word; 2 is summarised.
 
 1. **This design.** "Approve it (Recommended)".
-2. **The provider and its cost.** The recommendation was Resend's Pro plan at $20 a month from the first real
-   booking's emails. His answer: "Stay on free plan for now but look into more options when needed". So we stay
-   with Resend on its free plan, and the question goes back to him, with options and prices, at the first of
-   these:
-   - sends and mail in together pass 60 in a day or 2,000 in a month;
-   - before piece F moves production's replies, because mail in counts against the cap and a message that
+2. **The provider.** Resend, which we already use, with more options looked at when needed. The question goes
+   back to him, with options, at the first of these:
+   - sends and mail in together reach the alert lines of 5.5;
+   - before piece F moves production's replies, because mail in counts against the allowance and a message that
      arrives over it cannot be read (5.5);
-   - a fourth domain is needed, since the free plan allows three.
+   - the account needs more sending domains than it allows.
 3. **When a second server is added.** "With the trust pack (Recommended)": production stays on one server until
    the live rooms can be shared between servers, which is a small piece of its own under piece J. This piece is
-   proved with two servers in rehearsal from its first merge. About $3 a month when it comes.
+   proved with two servers in rehearsal from its first merge.
 4. **What we ask the Hall's email administrator for.** "A sub-name, four records (Recommended)" (4.3 A). A
    one-page note is prepared for Blake to send. It is one of the three things the plan asks of the venue by
    1 December.
@@ -699,7 +695,8 @@ real money moves only on Blake's explicit yes.
 **Refined after his approval.** Each of these follows from his answers or from review, and none widens what he
 approved:
 
-- What his choice of the free email plan means (5.3, 5.5, and item 2 above), written on the day he chose it.
+- What his answer on the email provider means for the allowance (5.3, 5.5, and item 2 above), written on the day
+  he gave it.
 - The fourth record waits until mail in is switched on for the venue (5.4). The note drafted for the Hall's
   administrator, which Blake was sent, says the same.
 - Three corrections from a read of the repository's own conventions: how an error is scrubbed (5.1), and where
@@ -728,8 +725,8 @@ F's first reply use it.
 - The retry times, the two-lost-claims rule, the hourly plan and the 90-day tidy (5.1). A job is closed by a
   person as `abandoned`, never deleted.
 - A send not started within a day is not sent late by itself (5.3).
-- The lines at which the email allowance is put back to Blake: 60 in a day, 2,000 in a month (section 10). A
-  rehearsal uses a Resend account of its own (5.5).
+- The lines at which the email allowance is put back to Blake: three-fifths of the day's, two-thirds of the
+  month's (5.5, section 10). A rehearsal uses a Resend account of its own (5.5).
 - The team invitation's screen gains one phrase, for a send that is still being tried (5.3).
 - No virus scan of attachments in this piece: they are only ever downloaded, never displayed, and the types are
   limited. A scan can be added if the venue's own rules ask for one.
