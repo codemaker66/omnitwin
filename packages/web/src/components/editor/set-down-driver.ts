@@ -47,12 +47,14 @@ import { SetDownRoom, spaceKeyOf } from "./set-down-room.js";
 //   voiced, four or more go through the listening page's cascade (R75).
 // - At drop start each voice's exact render is asked for (R76's kind and
 //   speed, the ear 2-6 m from the landing, R61), and a sleeping context woken.
-// - At its contact frame a voice plays the first of: its exact render, if
-//   ready; a variant rendered ahead for the same piece, surfaces and room; its
-//   exact render, if that arrives within 45 ms (R80). Otherwise it is dropped,
-//   and the tap logs why. The surfaces under its feet are read again at
-//   contact; a change takes a matching variant or the drop's render, logged
-//   stale (Review Focus 5).
+// - A voice is due at its slot: its contact frame, or for a cascade voice its
+//   own place in the cascade after it (R105). It plays the first of: its exact
+//   render, if ready by its slot; a variant rendered ahead for the same piece,
+//   surfaces and room; its exact render, if that arrives within 45 ms after
+//   its slot (R80). Otherwise it is dropped, and the tap logs why. The policy
+//   judges each voice against its slot in the same way. The surfaces under its
+//   feet are read again at contact; a change takes a matching variant or the
+//   drop's render, logged stale (Review Focus 5).
 // - Silence: a landing whose gesture an undo, a redo, a reset or a load left
 //   (R87, the editor's own count of its travels), or whose piece is gone
 //   (R89), is dropped. Nothing is asked for before the first gesture, while
@@ -107,15 +109,27 @@ interface Batch {
 interface Contact {
   /** The page time of the contact frame. */
   readonly atMs: number;
+  /**
+   * When its voice is due, page time: its contact, or for a cascade voice its
+   * own slot after it (R105). Its exact render is on time if ready by then,
+   * late within 45 ms after, and missed past that.
+   */
+  readonly slotMs: number;
   /** When that frame is shown, on the context's clock, ms (for the tap). */
   readonly contactMs: number;
-  /** From the exact render's request to the contact, ms: the time it had. */
+  /** The contact frame's wait until it is shown, s: the lead an on-time voice keeps. */
+  readonly presentDelay: number;
+  /** From the exact render's request to its slot, ms: the time it had. */
   readonly windowMs: number;
   readonly directGain: number;
   readonly surface: string;
+  /** The variant key at the contact: what a variant must match to stand in. */
+  readonly cacheKey: string;
   /** The surfaces under the feet changed since the drop started. */
   readonly stale: boolean;
-  /** A variant played at the contact, so the exact render need not. */
+  /** Its slot has come: a variant played if there was one, and the 45 ms are running. */
+  slotPassed: boolean;
+  /** A variant played at the slot, so the exact render need not. */
   covered: boolean;
   timer: ReturnType<typeof setTimeout> | null;
 }
@@ -300,7 +314,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     flight.batch.admitted?.play(voice);
   };
 
-  /** The contact passed 45 ms ago with no exact render (R80). */
+  /** Its slot passed 45 ms ago with no exact render (R80, R105). */
   const missed = (flight: Flight): void => {
     if (flight.done) return;
     judge(flight, "miss", null);
@@ -308,7 +322,48 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     else drop(flight, "too-late");
   };
 
-  /** A piece seen to land: what plays now, and how the policy hears it. */
+  /**
+   * On the context's clock now, the start of a voice heard at its slot: an
+   * on-time voice's, the contact frame's lead kept, so a cascade voice
+   * answered after its contact but by its slot starts exactly as it would
+   * have at the contact (R105).
+   */
+  const onTimeStart = (flight: Flight, contact: Contact, clock: AudioClock, render: SetDownRendered): number =>
+    setDownStartTime(clock, contact.presentDelay, render.onsetSeconds) + cascadeWait(flight, nowMs());
+
+  /** Its exact render, ready by its slot: played, or a variant for the surfaces it now stands on (Review Focus 5). */
+  const playOnTime = (flight: Flight, contact: Contact, clock: AudioClock, exact: SetDownRendered): void => {
+    judge(flight, "on-time", exact.workMs);
+    const variant = contact.stale ? ahead.variantFor(contact.cacheKey) : null;
+    if (variant !== null) play(flight, variant, "variant", onTimeStart(flight, contact, clock, variant));
+    else play(flight, exact, contact.stale ? "stale" : "exact", onTimeStart(flight, contact, clock, exact));
+    finish(flight);
+  };
+
+  /**
+   * Its slot came with no exact render: a variant rendered ahead stands in,
+   * and its exact render has 45 ms more (R80); one that failed is dropped
+   * unless a variant played.
+   */
+  const due = (flight: Flight, contact: Contact, clock: AudioClock): void => {
+    contact.slotPassed = true;
+    const variant = ahead.variantFor(contact.stale ? contact.cacheKey : flight.cacheKey);
+    if (variant !== null) {
+      play(flight, variant, "variant", onTimeStart(flight, contact, clock, variant));
+      contact.covered = true;
+    }
+    if (flight.failed) {
+      if (contact.covered) finish(flight);
+      else drop(flight, "failed");
+      return;
+    }
+    contact.timer = setTimeout(() => {
+      contact.timer = null;
+      missed(flight);
+    }, Math.max(0, contact.slotMs + HEARD_WINDOW_MS - nowMs()));
+  };
+
+  /** A piece seen to land: what plays now, or at its slot, and how the policy hears it. */
   const land = (flight: Flight, presentDelay: number): void => {
     if (flight.done) return;
     const atMs = flight.contactAtMs ?? nowMs();
@@ -321,40 +376,37 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       return;
     }
     beginBatch(flight, atMs);
+    const slotMs = atMs + cascadeWait(flight, atMs) * 1000;
     const contact: Contact = {
       atMs,
+      slotMs,
       contactMs: (clock.currentTime + presentDelay) * 1000,
-      windowMs: atMs - flight.askedMs,
+      presentDelay,
+      windowMs: slotMs - flight.askedMs,
       directGain: now.directGain,
       surface: now.surface,
+      cacheKey: now.cacheKey,
       stale: now.surfacesKey !== flight.surfacesKey,
+      slotPassed: false,
       covered: false,
       timer: null,
     };
     flight.contact = contact;
-    const startAt = (render: SetDownRendered): number => setDownStartTime(clock, presentDelay, render.onsetSeconds) + cascadeWait(flight, atMs);
     if (flight.exact !== null) {
-      judge(flight, "on-time", flight.exact.workMs);
-      const variant = contact.stale ? ahead.variantFor(now.cacheKey) : null;
-      if (variant !== null) play(flight, variant, "variant", startAt(variant));
-      else play(flight, flight.exact, contact.stale ? "stale" : "exact", startAt(flight.exact));
-      finish(flight);
+      playOnTime(flight, contact, clock, flight.exact);
       return;
     }
-    const variant = ahead.variantFor(contact.stale ? now.cacheKey : flight.cacheKey);
-    if (variant !== null) {
-      play(flight, variant, "variant", startAt(variant));
-      contact.covered = true;
-    }
-    if (flight.failed) {
-      if (contact.covered) finish(flight);
-      else drop(flight, "failed");
+    // A cascade voice is due at its own slot: its render may still come by then (R105).
+    if (slotMs <= atMs) {
+      due(flight, contact, clock);
       return;
     }
     contact.timer = setTimeout(() => {
       contact.timer = null;
-      missed(flight);
-    }, HEARD_WINDOW_MS);
+      if (flight.done) return;
+      const atSlot = stillHeard(flight);
+      if (atSlot !== null) due(flight, contact, atSlot.clock);
+    }, slotMs - atMs);
   };
 
   /** Reduced motion: the piece is down already, so its render plays as it answers (R84). */
@@ -369,7 +421,20 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     }
     const atMs = nowMs();
     beginBatch(flight, atMs);
-    flight.contact = { atMs, contactMs: clock.currentTime * 1000, windowMs: 0, directGain: now.directGain, surface: now.surface, stale: false, covered: false, timer: null };
+    flight.contact = {
+      atMs,
+      slotMs: atMs,
+      contactMs: clock.currentTime * 1000,
+      presentDelay: 0,
+      windowMs: 0,
+      directGain: now.directGain,
+      surface: now.surface,
+      cacheKey: now.cacheKey,
+      stale: false,
+      slotPassed: true,
+      covered: false,
+      timer: null,
+    };
     play(flight, render, "exact", clock.currentTime + cascadeWait(flight, atMs));
     finish(flight);
   };
@@ -385,8 +450,15 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     const contact = flight.contact;
     // Ready before its contact: the contact plays it.
     if (contact === null) return;
-    if (nowMs() - contact.atMs > HEARD_WINDOW_MS) {
+    const atMs = nowMs();
+    if (atMs > contact.slotMs + HEARD_WINDOW_MS) {
       missed(flight);
+      return;
+    }
+    // After its contact but by its slot (a cascade voice): on time, as if it had been ready at the contact (R105).
+    if (atMs <= contact.slotMs && !contact.slotPassed) {
+      const heard = stillHeard(flight);
+      if (heard !== null) playOnTime(flight, contact, heard.clock, render);
       return;
     }
     judge(flight, "late", render.workMs);
@@ -396,7 +468,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     }
     const heard = stillHeard(flight);
     if (heard === null) return;
-    play(flight, render, "late", heard.clock.currentTime + cascadeWait(flight, nowMs()));
+    play(flight, render, "late", heard.clock.currentTime + cascadeWait(flight, atMs));
     finish(flight);
   };
 
@@ -408,8 +480,8 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       finish(flight);
       return;
     }
-    // Before its contact, the contact decides: a variant, or nothing.
-    if (flight.contact === null && !flight.inPlace) return;
+    // Before its slot, the slot decides: a variant, or nothing.
+    if ((flight.contact === null || !flight.contact.slotPassed) && !flight.inPlace) return;
     if (flight.contact?.covered === true) finish(flight);
     else drop(flight, "failed");
   };

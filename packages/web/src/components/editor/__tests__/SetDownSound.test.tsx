@@ -847,6 +847,201 @@ describe("many pieces", () => {
   });
 });
 
+// --- A cascade on a Worker running one job at a time (R105) -----------------------------------
+
+describe("a cascade's voices on a Worker running one job at a time (R105)", () => {
+  /**
+   * Frames, the exact renders answered in the order asked, as the Worker runs
+   * them one at a time: the k-th (from 0) `(k + 1) * workMs` after `fromMs`,
+   * looked at once a frame.
+   */
+  async function framesAnsweringInTurn(fromMs: number, workMs: number, count: number): Promise<void> {
+    for (let i = 0; i < count; i++) {
+      renderer.renders("exact").forEach((job, k) => {
+        if (job.state === "pending" && now - fromMs >= (k + 1) * workMs) job.answer(workMs);
+      });
+      await settle();
+      frame();
+      await settle();
+    }
+  }
+
+  /** A 6 ft round and its ten chairs, standing in the room before the scene mounts (nothing lands). */
+  function setStanding(): readonly string[] {
+    act(() => { usePlacementStore.getState().placeTableGroup(catalogueId("round-table-6ft"), 0, 0, 0, 10); });
+    const ids = usePlacementStore.getState().placedItems.map((item) => item.id);
+    expect(ids).toHaveLength(11);
+    return ids;
+  }
+
+  /** Takes the set up, carries it three frames and lets it go; returns when it was let go. */
+  async function letGo(ids: readonly string[]): Promise<number> {
+    act(() => { carryFurniture(ids, 1, 0); });
+    await frames(3);
+    const at = now;
+    act(() => { releaseFurniture(ids); });
+    await settle();
+    return at;
+  }
+
+  /** The first contact of the next gesture, page time. */
+  function firstContact(): { readonly atMs: () => number; readonly stop: () => void } {
+    let atMs = Number.NaN;
+    const stop = subscribeFurnitureLandings({
+      pickedUp: () => undefined,
+      dropStarted: () => undefined,
+      touchedDown: () => { if (Number.isNaN(atMs)) atMs = performance.now(); },
+      landedInPlace: () => undefined,
+    });
+    return { atMs: () => atMs, stop };
+  }
+
+  /** Each voice's start after its batch's first contact, on the context's clock, earliest first. */
+  function startsAfter(contactMs: number): readonly number[] {
+    const contactClock = 2 + (contactMs - registry.startMs) / 1000;
+    return plays().map((played) => played.voice.startAt - contactClock).sort((a, b) => a - b);
+  }
+
+  /** A new scene on an empty room, as if the planner were opened again: a new driver, a new Worker. */
+  function remount(): void {
+    mounted?.unmount();
+    mounted = null;
+    clearAllFurnitureSettles();
+    usePlacementStore.setState({ placedItems: [] });
+    Object.assign(registry, { batches: [], admitted: [], drops: [], frame: 0 });
+    renderer = new FakeRenderer();
+    __setSetDownRendererFactoryForTests(() => renderer);
+  }
+
+  it.each([25, 60])("plays every voice of a set let go, renders answered one at a time %i ms apart, and the class stays on exact renders", async (workMs) => {
+    const ids = setStanding();
+    await mountArmed();
+    const fromMs = await letGo(ids);
+    expect(renderer.renders("exact")).toHaveLength(8);
+    await framesAnsweringInTurn(fromMs, workMs, 90);
+    expect(plays()).toHaveLength(8);
+    expect(registry.drops).toEqual([]);
+    // The first voice is due at its own contact, which its render may just miss and play late; every later one was ready by its slot.
+    const later = [...plays()].sort((a, b) => a.voice.startAt - b.voice.startAt).slice(1);
+    expect(later.map((played) => played.voice.tap?.played)).toEqual(Array.from({ length: 7 }, () => "exact"));
+    expect(localStorage.getItem(RENDER_MODE_STORAGE_KEY)).toBeNull();
+  });
+
+  it.each([25, 60])("plays every voice of a set placed, renders answered one at a time %i ms apart, and the class stays on exact renders", async (workMs) => {
+    await mountArmed();
+    const fromMs = now;
+    act(() => { usePlacementStore.getState().placeTableGroup(catalogueId("round-table-6ft"), 0, 0, 0, 10); });
+    await settle();
+    expect(renderer.renders("exact")).toHaveLength(8);
+    await framesAnsweringInTurn(fromMs, workMs, 90);
+    expect(plays()).toHaveLength(8);
+    expect(registry.drops).toEqual([]);
+    expect(localStorage.getItem(RENDER_MODE_STORAGE_KEY)).toBeNull();
+  });
+
+  it("starts a voice answered after its contact but before its slot exactly as an on-time voice starts, with the frame's lead", async () => {
+    // Every render ready at once: each voice starts at its slot as planned.
+    let ids = setStanding();
+    await mountArmed();
+    let contact = firstContact();
+    await letGo(ids);
+    await answerAll();
+    await frames(60);
+    contact.stop();
+    const planned = startsAfter(contact.atMs());
+    expect(planned).toHaveLength(8);
+
+    // The same set and gesture on a new scene, its renders answered 60 ms apart: the same starts.
+    remount();
+    ids = setStanding();
+    mounted = mountInStubRoot(<><FurnitureMotion /><SetDownSound /></>);
+    frame();
+    frame();
+    registry.frame = 0;
+    await arm();
+    contact = firstContact();
+    const fromMs = await letGo(ids);
+    await framesAnsweringInTurn(fromMs, 60, 90);
+    contact.stop();
+    const slow = startsAfter(contact.atMs());
+    expect(slow).toHaveLength(8);
+    // The first voice is due at its contact, so its render, answered just after, plays late; the seven after it were
+    // each answered after the contact and before their own slots.
+    for (let k = 1; k < 8; k++) expect(slow[k], `voice ${String(k)}`).toBeCloseTo(planned[k] ?? Number.NaN, 9);
+  });
+
+  it("plays late a cascade voice answered within 45 ms after its own slot, and drops one answered later as a miss", async () => {
+    // The slot of the set's last voice, from a run with every render ready at once.
+    let ids = setStanding();
+    await mountArmed();
+    let contact = firstContact();
+    await letGo(ids);
+    await answerAll();
+    await frames(60);
+    contact.stop();
+    const starts = startsAfter(contact.atMs());
+    const lastSlotMs = ((starts.at(-1) ?? Number.NaN) - (starts[0] ?? Number.NaN)) * 1000;
+    expect(lastSlotMs).toBeGreaterThan(500);
+
+    for (const [afterSlotMs, heard] of [[30, true], [60, false]] as const) {
+      remount();
+      ids = setStanding();
+      mounted = mountInStubRoot(<><FurnitureMotion /><SetDownSound /></>);
+      frame();
+      frame();
+      registry.frame = 0;
+      await arm();
+      contact = firstContact();
+      await letGo(ids);
+      const exact = renderer.renders("exact");
+      expect(exact).toHaveLength(8);
+      for (const job of exact.slice(0, -1)) job.answer(8);
+      await settle();
+      await framesUntil(() => !Number.isNaN(contact.atMs()));
+      contact.stop();
+      const answerAtMs = contact.atMs() + lastSlotMs + afterSlotMs;
+      while (now < answerAtMs - 20) await frames(1);
+      pass(answerAtMs - now);
+      await settle();
+      exact.at(-1)?.answer(30);
+      await settle();
+      await frames(10);
+      const played = plays().map((voice) => voice.voice.tap?.played);
+      if (heard) {
+        expect(played, `${String(afterSlotMs)} ms after its slot`).toHaveLength(8);
+        expect(played.filter((how) => how === "late")).toHaveLength(1);
+        expect(registry.drops).toEqual([]);
+      } else {
+        expect(played, `${String(afterSlotMs)} ms after its slot`).toHaveLength(7);
+        expect(registry.drops).toEqual([expect.objectContaining({ drop: "too-late" })]);
+      }
+    }
+  });
+
+  it("judges a cascade voice answered more than 45 ms after its own slot a miss: two such gestures switch the class", async () => {
+    const ids = setStanding();
+    await mountArmed();
+    for (let gesture = 0; gesture < 2; gesture++) {
+      pass(1_000);
+      const contact = firstContact();
+      await letGo(ids);
+      const exact = renderer.pending("exact");
+      expect(exact).toHaveLength(8);
+      for (const job of exact.slice(0, -1)) job.answer(8);
+      await settle();
+      await framesUntil(() => !Number.isNaN(contact.atMs()));
+      contact.stop();
+      // Past any slot the cascade can give the eighth voice (7 gaps of at most 110 ms), and 45 ms more.
+      while (now < contact.atMs() + 7 * 110 + 60) await frames(1);
+      exact.at(-1)?.answer(30);
+      await settle();
+      await frames(5);
+    }
+    expect(registry.drops.map((drop) => drop.drop)).toEqual(["too-late", "too-late"]);
+    expect(JSON.parse(localStorage.getItem(RENDER_MODE_STORAGE_KEY) ?? "{}")).toMatchObject({ light: "ahead" });
+  });
+});
+
 // --- The room ---------------------------------------------------------------------------------
 
 describe("the room's tail", () => {
