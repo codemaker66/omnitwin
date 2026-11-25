@@ -48,8 +48,8 @@ What the database holds already:
 | Enquiries, deals and proposals (their routes) | the next pull request | each keeps its own link as it is made or moved |
 
 The bind writes an enquiry's link only when nothing else of the enquiry's own (its
-bookings, deals and proposals, or its floor plan) reaches another live event of its
-venue; otherwise the booking joins its event as before and the link is left for the
+bookings, deals and proposals, its floor plan, or what a proposal of it with no event
+reaches, as the join reads it below) reaches another live event of its venue; otherwise the booking joins its event as before and the link is left for the
 list, where the join puts the enquiry for a person. Joining is never a guess, in the
 bind as in the join. (One case is not listed: an enquiry whose link already names a
 deleted event keeps that link, and the join reads only enquiries with no link. The
@@ -71,20 +71,44 @@ join it made (what makes it undoable). Its steps:
 0. An open question whose record has its event by now (a writer gave it one) is
    closed as joined. One a person is answering at that moment is left to them.
 1. **Enquiries** that may become an event, with none: joined to the one live event
-   their bookings, deals and proposals sit in, or listed when they sit in several;
-   an event is made for one only when nothing of its own (held dates, deals,
-   proposals, floor plan) reaches a live event.
-2. **Deals** with no event, oldest first: joined to their enquiry's event; a second
-   open deal on that event is listed (`second_open_deal`), not joined. An open deal
-   that nothing reaches gets an event made, for its enquiry too when the enquiry may
-   become one and has none, so `eventsMade` can come from this step as well as from
-   steps 1 and 3.
-3. **Proposals** with no event: joined through their deal, their enquiry or their
-   floor plan, or listed when the paths disagree or reach several events; an event
-   is made only after every proposal that reaches an existing one has been joined.
-   A deposit request in force with no event takes its proposal's event in the same
-   step.
+   their bookings, deals and proposals sit in, or listed when they sit in several,
+   or when their floor plan, or a proposal of theirs with no event, reaches another.
+   With none, joined to the one live event their floor plan and their proposals with
+   no event reach, or listed when they reach several. An event is made for one only
+   when nothing of its own (held dates, deals, proposals, floor plan, and what its
+   proposals with no event reach) reaches a live event.
+2. **Deals** with no event, oldest first: joined to their enquiry's live event. With
+   none, an open deal waits for its enquiry when the enquiry may become an event,
+   has none, and something of the enquiry's own reaches one; otherwise it joins the
+   one live event its own proposals with no event reach, or is listed when they
+   reach several, and an event is made for it only when they reach none: for its
+   enquiry too when the enquiry may become one and has none, so `eventsMade` can
+   come from this step as well as from steps 1 and 3. An open deal is listed
+   (`second_open_deal`), not joined, where an open deal already is. A closed deal
+   that reaches no event is left.
+3. **Proposals** with no event: joined to their deal's live event, else their
+   enquiry's, else the one their deposit request in force names, and listed when the
+   deposit request names another or a deleted event; one that must have an event is
+   listed, too, when its floor plan is linked to a live event other than that one.
+   With none of these, one that must have an event joins its floor plan's one live
+   event, is listed when the plan reaches several, or has an event made, only after
+   every proposal that reaches an existing event has been joined; one that need not
+   joins its plan's one live event as history when it is over, and is otherwise
+   left. A deposit request in force with no event takes its proposal's event in the
+   same step.
 4. Every event the join made gets the house's default phases, as 0090's did.
+
+**What a proposal with no event reaches** is one rule, written once in the function
+(`proposals_reach`): a live event through its deal's event, through its deposit
+request in force, or through its floor plan when the plan is linked to exactly one;
+a plan linked to several reaches them all, but only for a proposal that must have an
+event. It is read for an enquiry's proposals (by `enquiry_id`) and for a deal's (by
+`opportunity_id`), so nothing is made for either while a proposal of it reaches an
+existing event. A proposal that names only its deal counts for that deal, not for
+the deal's enquiry: when the enquiry is worked and open and nothing of its own
+reaches an event, step 1 still makes its event and the deal joins it; such a
+proposal that must have an event is then listed if its floor plan is linked to
+another.
 
 Steps 1 to 3 repeat while a round joins anything, **in up to four rounds**, so an
 enquiry is settled from all of its deals and proposals together and the result
@@ -112,10 +136,8 @@ and reason (`reaches_many_events`, `paths_disagree`, `second_open_deal`), with
 counts and kinds in its text, never a name. October's two kinds of question
 (`enquiry_events_differ`, `possibly_same_event`) were copied in without their text
 and carry the id of the row they came from. A listed record is never touched by the
-join, and a deal or proposal whose enquiry is listed waits with it. A proposal can
-also wait, unlisted, on a listed sibling: one that would have an event made for it
-and its enquiry together waits while another proposal of the same enquiry, with no
-event, reaches an event or would be listed because its plan reaches several.
+join; a deal or proposal whose enquiry is listed, and a proposal whose open deal has
+no event, wait with it.
 
 ## The count
 
@@ -144,8 +166,8 @@ later piece owns that; until then it is repaired by hand.
 
 A listed record that must have an event is counted; one that need not (an unworked
 enquiry whose floor plan reaches several events, say), and October's copies, are
-not. A proposal waiting, unlisted, on a listed sibling (above) is counted too, while
-it must have an event: it is why a red count can name more records than the list.
+not. A record waiting with a listed one (above) is counted too, while it must have
+an event: it is why a red count can name more records than the list.
 **So the count is expected to be above zero while a question is open on the
 list**; the list is worked in a later stage (October's copies wait for stage 4).
 `spineInvariantHolds` is true when all nine are zero.
