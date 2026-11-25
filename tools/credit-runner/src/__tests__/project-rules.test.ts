@@ -119,7 +119,7 @@ describe("the brief's rule on protected paths", () => {
       expect(rule, entry.label).toContain(`(${entry.label})`);
       expect(rule, entry.label).toContain(entry.paths);
     }
-    for (const name of ["AGENTS.md", "CLAUDE.md", "GOAL.md", "goals/", ".claude/", ".claudeignore", "skills-lock.json", ".railway/", ".railwayignore", "infra/", "patches/", ".pnpmfile.cjs", "pnpm-workspace.yaml", ".vscode/", ".devcontainer/", ".devcontainer.json"]) {
+    for (const name of ["AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "GOAL.md", "goals/", ".claude/", ".claudeignore", "skills-lock.json", ".railway/", ".railwayignore", "infra/", "patches/", ".pnpmfile.cjs", "pnpm-workspace.yaml", ".vscode/", ".devcontainer/", ".devcontainer.json"]) {
       expect(rule, name).toContain(name);
     }
     expect(rule).toContain("any letter case");

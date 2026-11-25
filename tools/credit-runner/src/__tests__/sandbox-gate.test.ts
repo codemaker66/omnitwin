@@ -238,6 +238,7 @@ const NEWLY_PROTECTED: readonly { readonly file: string; readonly label: string;
   { file: "AGENTS.md", label: "agent instructions", atBase: true },
   { file: "CLAUDE.md", label: "agent instructions", atBase: true },
   { file: "packages/web/AGENTS.md", label: "agent instructions", atBase: false },
+  { file: "AGENTS.override.md", label: "agent instructions", atBase: false },
   { file: "packages/web/CLAUDE.md", label: "agent instructions", atBase: false },
   { file: "CLAUDE.local.md", label: "agent instructions", atBase: false },
   { file: "GOAL.md", label: "agent goals", atBase: true },

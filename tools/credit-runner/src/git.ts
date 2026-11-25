@@ -176,7 +176,12 @@ export const PROTECTED_PATHS: readonly ProtectedPath[] = [
   // What later agents read as their instructions: the night run's own system
   // prompt is built from AGENTS.md at master, and interactive sessions follow
   // these files too.
-  { pattern: /(^|\/)(AGENTS|CLAUDE|CLAUDE\.local)\.md$/iu, label: "agent instructions", paths: "AGENTS.md, CLAUDE.md and CLAUDE.local.md in any folder" },
+  // Codex reads AGENTS.override.md in place of AGENTS.md.
+  {
+    pattern: /(^|\/)(AGENTS|AGENTS\.override|CLAUDE|CLAUDE\.local)\.md$/iu,
+    label: "agent instructions",
+    paths: "AGENTS.md, AGENTS.override.md, CLAUDE.md and CLAUDE.local.md in any folder",
+  },
   // GOAL.md sends agents to the goal cards and the execution board under goals/.
   { pattern: /^(GOAL\.md$|goals\/)/iu, label: "agent goals", paths: "GOAL.md and anything under goals/ at the root" },
   // Agents, skills, commands, conventions and gotchas; in any folder, as a .claude folder below the root can hold the same.

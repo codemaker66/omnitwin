@@ -173,6 +173,7 @@ describe("protected paths", () => {
   it("rejects agent instructions, deploy config, install-time code and editor tasks, each under its own label", () => {
     const cases: readonly (readonly [string, string])[] = [
       ["AGENTS.md", "agent instructions"],
+      ["packages/api/AGENTS.override.md", "agent instructions"],
       ["packages/web/AGENTS.md", "agent instructions"],
       ["CLAUDE.md", "agent instructions"],
       ["tools/credit-runner/CLAUDE.md", "agent instructions"],
@@ -253,6 +254,7 @@ describe("protected paths", () => {
     expect(
       protectedPathViolations([
         "claude.md.txt",
+        "AGENTS.override.md.bak",
         "docs/claude.md.txt",
         "docs/agents-guide.md",
         "docs/agents/overview.md",
