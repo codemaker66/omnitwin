@@ -3,6 +3,7 @@ import { isRouteErrorResponse, useRouteError, type RouteObject } from "react-rou
 import { ActivityStatus } from "./components/shared/Activity.js";
 import { classifyError, RecoveryScreen } from "./error-boundary.js";
 import { browserSaysOnline } from "./lib/online-status.js";
+import { reportFailure } from "./observability/failure-reports.js";
 import { captureBoundaryError } from "./observability/sentry.js";
 
 // ---------------------------------------------------------------------------
@@ -91,13 +92,21 @@ export function claimStaleChunkReload(now: number = Date.now()): boolean {
   }
 }
 
-/** Whether the app's own server answers now, past every cache: whether a
- *  reload would be served. */
+/**
+ * Whether the app's own server would serve a reload now: a HEAD of the very
+ * address the reload loads (its path and query; a hash is never sent), past
+ * every cache. It carries the site's cookies on purpose, as the reload would:
+ * a protected preview lets the reload through on its cookie. An error answer
+ * is a fault at the origin rather than the device's network, so Sentry hears
+ * of it once; no answer at all is the network, and stays unreported.
+ */
 async function originAnswers(): Promise<boolean> {
   const question = new AbortController();
   const timer = setTimeout(() => { question.abort(); }, ORIGIN_ANSWER_MS);
   try {
-    const response = await fetch("/", { method: "HEAD", cache: "no-store", signal: question.signal });
+    const address = `${window.location.pathname}${window.location.search}`;
+    const response = await fetch(address, { method: "HEAD", cache: "no-store", credentials: "same-origin", signal: question.signal });
+    if (!response.ok) reportFailure("reload-check-refused", { status: response.status });
     return response.ok;
   } catch {
     return false;

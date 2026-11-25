@@ -7,8 +7,13 @@ const captureBoundaryErrorMock = vi.hoisted(() =>
   vi.fn<(error: Error, info: ErrorInfo) => Promise<void>>(() => Promise.resolve()),
 );
 
+const captureWarningMock = vi.hoisted(() =>
+  vi.fn<(message: string, tags: Readonly<Record<string, string>>) => Promise<void>>(() => Promise.resolve()),
+);
+
 vi.mock("../observability/sentry.js", () => ({
   captureBoundaryError: captureBoundaryErrorMock,
+  captureWarning: captureWarningMock,
 }));
 
 const {
@@ -20,6 +25,7 @@ const {
   stalePage,
   underRouteErrorBoundary,
 } = await import("../route-error-boundary.js");
+const { resetFailureReportsForTests } = await import("../observability/failure-reports.js");
 
 // ---------------------------------------------------------------------------
 // Route render errors and stale chunks (release audit web-auth-routing-1).
@@ -96,6 +102,8 @@ function holdQuestion(): { readonly answer: (response: Response) => void; readon
 
 beforeEach(() => {
   captureBoundaryErrorMock.mockClear();
+  captureWarningMock.mockClear();
+  resetFailureReportsForTests();
   window.sessionStorage.clear();
   reload = vi.spyOn(stalePage, "reload").mockImplementation(() => undefined);
   onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
@@ -239,6 +247,8 @@ describe("Vite's preload failure", () => {
       return Promise.reject(blocked);
     });
     await expect(load).rejects.toBe(blocked);
+    // The listener would ask the server at once, while the event is dispatched.
+    expect(origin).not.toHaveBeenCalled();
     expect(during.defaultPrevented).toBe(false);
     expect(reload).not.toHaveBeenCalled();
 
@@ -294,6 +304,7 @@ describe("a chunk that cannot load for want of a network", () => {
     expect(guard()).toBeNull();
     expect(origin).not.toHaveBeenCalled();
     expect(captureBoundaryErrorMock).not.toHaveBeenCalled();
+    expect(captureWarningMock).not.toHaveBeenCalled();
   });
 
   it("offline, Vite's preload failure lets the import fail on, without a reload, and leaves the guard unspent", async () => {
@@ -328,6 +339,7 @@ describe("a chunk that cannot load for want of a network", () => {
     expect(guard()).toBeNull();
     expect(origin).toHaveBeenCalledTimes(1);
     expect(captureBoundaryErrorMock).not.toHaveBeenCalled();
+    expect(captureWarningMock).not.toHaveBeenCalled();
   });
 
   it("while the server is being asked, says it is checking the connection; then the network screen", async () => {
@@ -345,13 +357,33 @@ describe("a chunk that cannot load for want of a network", () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
-  it("online but the server answers with an error page: no reload, the network recovery screen, the guard unspent", async () => {
+  it("online but the server answers with an error page: no reload, the network recovery screen, the guard unspent, and a warning with the status", async () => {
     origin.mockResolvedValue(new Response(null, { status: 503 }));
     open("/chunk");
 
     expect(await screen.findByTestId("error-boundary-network", undefined, LOAD_WAIT)).toBeTruthy();
     expect(reload).not.toHaveBeenCalled();
     expect(guard()).toBeNull();
+    // A fault at the app's own server, not the device's network: Sentry hears of it once.
+    await vi.waitFor(() => { expect(captureWarningMock).toHaveBeenCalledTimes(1); }, LOAD_WAIT);
+    expect(captureWarningMock).toHaveBeenCalledWith("Venviewer failure: reload-check-refused",
+      { failure: "reload-check-refused", status: "503" });
+    expect(captureBoundaryErrorMock).not.toHaveBeenCalled();
+  });
+
+  it("asks about the page the reload would load: its own path and query, with the site's cookies", async () => {
+    window.history.pushState({}, "", "/plan/0b1c2d3e?space=grand-hall#tables");
+    try {
+      const target = new EventTarget() as Window;
+      installStaleChunkReload(target);
+      target.dispatchEvent(new Event("vite:preloadError", { cancelable: true }));
+
+      await vi.waitFor(() => { expect(reload).toHaveBeenCalledTimes(1); }, LOAD_WAIT);
+      expect(origin).toHaveBeenCalledWith("/plan/0b1c2d3e?space=grand-hall",
+        expect.objectContaining({ method: "HEAD", cache: "no-store", credentials: "same-origin" }));
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
   });
 
   it("online but the server never answers: the question gives up after five seconds, without a reload", async () => {
