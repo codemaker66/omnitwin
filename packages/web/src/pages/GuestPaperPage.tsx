@@ -336,7 +336,7 @@ function ReadyPaper({ planId, list }: { readonly planId: string; readonly list: 
           {unread
             ? <p className="gp-tools__notice" role="alert">{NOT_OPENED}</p>
             : !kept && <p className="gp-tools__notice" role="alert">{NOT_KEPT}</p>}
-          {/* What another tab did to the list. A repair's count is the list page's to say; here the tools' "no seat" line shows it. */}
+          {/* What became of the list outside this page. A repair's count is the list page's to say; here the tools' "no seat" line shows it. */}
           {notice !== null && notice.kind !== "repaired" && (
             <div className="gp-tools__notice" data-notice={notice.kind} data-tone="attention">
               <p>{noticeWords(notice)}</p>
