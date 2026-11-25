@@ -108,10 +108,11 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
     const keepOuts = doorKeepOuts(doorSpaces);
     const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
     if (fillsOver && placedItems !== null && table !== undefined) {
-      const fill = planRoomFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests, roomWidthM: widthM, roomLengthM: lengthM, exits, rule: FILL_AISLE_RULE, doorSpaces: keepOuts }, placedItems, (id) => heldNotes.has(id));
+      const fill = planRoomFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests, roomWidthM: widthM, roomLengthM: lengthM, exits, rule: FILL_AISLE_RULE, doorSpaces: keepOuts, floor: dimensions.floor }, placedItems, (id) => heldNotes.has(id));
       return { plan: fill.plan, fill };
     }
-    return { plan: planAutoFill(style, guests, widthM, lengthM, eventChair, { doorSpaces: keepOuts }), fill: null };
+    // The room's own floor, as the placement store hands it over: what the button says is what lands.
+    return { plan: planAutoFill(style, guests, widthM, lengthM, eventChair, { doorSpaces: keepOuts, floor: dimensions.floor }), fill: null };
   }, [guests, style, dimensions, fillsOver, placedItems, exits, eventChair, doorSpaces, heldNotes]);
   const plan = preview?.plan ?? null;
   // What a fill over a laid floor does to the rounds already there, said before it is pressed (planner-qol C-02).

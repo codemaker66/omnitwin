@@ -1,5 +1,6 @@
 import { toRenderSpace, toRealWorld, GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
-import type { LayoutSnapshotAssetDefinition, SpaceDimensions } from "@omnitwin/types";
+import type { LayoutSnapshotAssetDefinition } from "@omnitwin/types";
+import { rectWithinFloor, snapToFloorWalls, type PlannerRoomDimensions } from "./room-floor.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "./catalogue.js";
 import { plannerChairSlug } from "./furniture-defaults.js";
 import type { CatalogueItem } from "./catalogue.js";
@@ -107,12 +108,14 @@ export function isWithinRoomBounds(
   z: number,
   item: CatalogueItem,
   rotationY: number = 0,
-  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
+  roomDims: PlannerRoomDimensions = GRAND_HALL_RENDER_DIMENSIONS,
   scale?: number,
 ): boolean {
   const halfRoomW = roomDims.width / 2;
   const halfRoomL = roomDims.length / 2;
   const { halfW, halfD } = computeRotatedFootprint(item, rotationY, scale);
+  // A room whose walls are not the centred rectangle of its size is judged by its walls (lib/room-floor).
+  if (roomDims.floor !== undefined) return rectWithinFloor(roomDims.floor, x, z, halfW, halfD);
 
   return (
     x - halfW >= -halfRoomW &&
@@ -233,7 +236,7 @@ export function snapToWallEdge(
   z: number,
   item: CatalogueItem,
   rotationY: number,
-  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
+  roomDims: PlannerRoomDimensions = GRAND_HALL_RENDER_DIMENSIONS,
   scale?: number,
   chairFootprint: Pick<CatalogueItem, "width" | "depth"> | undefined = getCatalogueItemBySlug(plannerChairSlug()),
 ): { readonly x: number; readonly z: number } {
@@ -248,6 +251,9 @@ export function snapToWallEdge(
   const { halfW: rawHalfW, halfD: rawHalfD } = computeRotatedFootprint(item, rotationY, scale);
   const halfW = Math.hypot(rawHalfW + chairExtent, chairHalfWidth);
   const halfD = Math.hypot(rawHalfD + chairExtent, chairHalfWidth);
+
+  // A room whose walls are not the centred rectangle of its size: the walls that are there (lib/room-floor).
+  if (roomDims.floor !== undefined) return snapToFloorWalls(roomDims.floor, x, z, halfW, halfD, WALL_SNAP_THRESHOLD);
 
   let snappedX = x;
   let snappedZ = z;
@@ -484,7 +490,7 @@ export function getPlacementViolations(
   placedItems: readonly PlacedItem[],
   excludeIds: ReadonlySet<string>,
   y: number = 0,
-  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
+  roomDims: PlannerRoomDimensions = GRAND_HALL_RENDER_DIMENSIONS,
   scale?: number,
 ): readonly PlacementViolation[] {
   if (isTableDressingApplicatorSlug(item.slug)) return [];
@@ -528,7 +534,7 @@ export function hasPlacementViolation(
   overlapIndex: PlacementOverlapIndex,
   excludeIds: ReadonlySet<string>,
   y: number = 0,
-  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
+  roomDims: PlannerRoomDimensions = GRAND_HALL_RENDER_DIMENSIONS,
   scale?: number,
 ): boolean {
   if (isTableDressingApplicatorSlug(item.slug)) return false;
