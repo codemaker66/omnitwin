@@ -10,6 +10,7 @@ import {
   type PlannerSoundVariation,
 } from "./planner-sound-recipes.js";
 import { dbToGain, renderHallImpulse, renderPlannerSound } from "./planner-sound-render.js";
+import { reportAsync } from "./report-async.js";
 import { SetDownFatigue } from "./set-down/fatigue.js";
 import type { Stereo } from "./set-down/tail.js";
 import type { AudioClock } from "./set-down/timing.js";
@@ -979,9 +980,7 @@ function tellArmedListener(listener: (sampleRate: number) => void, sampleRate: n
   try {
     listener(sampleRate);
   } catch (error: unknown) {
-    const host: { reportError?: (error: unknown) => void } = globalThis;
-    if (typeof host.reportError === "function") host.reportError(error);
-    else queueMicrotask(() => { throw error; });
+    reportAsync(error);
   }
 }
 

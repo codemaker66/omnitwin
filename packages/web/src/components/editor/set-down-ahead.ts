@@ -131,7 +131,8 @@ function asksAgain(asked: Asked, request: Request): boolean {
   return asked.cacheKey === request.cacheKey && !farApart(asked.at, request.at);
 }
 
-function classOf(catalogueItemId: string): RenderClass {
+/** A catalogue piece's class, as the motion weighs it: what the policy decides by. */
+export function classOf(catalogueItemId: string): RenderClass {
   return massForCategory(getCatalogueItem(catalogueItemId)?.category);
 }
 
@@ -173,8 +174,13 @@ export class AheadRenders {
     }
   }
 
-  /** The scene's frame: the pieces in hand, looked at again at most every 250 ms. */
+  /**
+   * The scene's frame: the pieces in hand, and a still ghost (its supports can
+   * change under it: a deck placed or undone), looked at again at most every
+   * 250 ms. Nothing in hand and no ghost rendered ahead: nothing at all.
+   */
   frame(): void {
+    if (this.ghost !== null && this.ghostTimer === null && this.host.now() - this.ghostCheckedMs >= SUPPORTS_CHECK_MS) this.ghostChanged();
     if (this.carried.size === 0) return;
     const atMs = this.host.now();
     if (atMs - this.carriedCheckedMs < SUPPORTS_CHECK_MS) return;
@@ -323,7 +329,6 @@ export class AheadRenders {
     slot.running = running;
     slot.askedMs = this.host.now();
     worker.render(request.input, "ahead", running.key).then((render) => {
-      this.policy.recordWork(cls, render.workMs);
       if (!this.disposed && running.spaceKey === this.host.spaceKey()) this.keep(running, render);
     }, (error: unknown) => { this.host.failed(error); }).finally(() => {
       if (slot.running !== running) return;

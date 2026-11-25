@@ -63,6 +63,9 @@ export function SetDownSound(): null {
       import("./set-down-driver.js").then((driver) => {
         if (!disposed) driverRef.current = driver.startSetDownDriver(() => cameraRef.current);
       }).catch((error: unknown) => {
+        // A failed import (a deploy's chunks swapped under an open page) is tried again at the next idle while
+        // sound is on, but the armed listeners hear the rate only once: one that fails after arming is not tried
+        // again, and the planner stays silent until it is opened again.
         loading = false;
         reportAsync(new Error("The set-down sound did not load", { cause: error }));
       });

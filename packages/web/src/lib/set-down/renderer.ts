@@ -187,7 +187,7 @@ function named(job: SetDownJob): string {
 }
 
 /** Whether the page is hidden (a locked phone, another app or tab), where the Worker may be frozen with it. */
-function pageHidden(): boolean {
+export function pageHidden(): boolean {
   return typeof document !== "undefined" && document.visibilityState === "hidden";
 }
 

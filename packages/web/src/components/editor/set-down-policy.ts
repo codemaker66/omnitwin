@@ -61,8 +61,6 @@ export const SWITCH_MISSES = 2;
 export const BACK_TO_EXACT_ON_TIME = 10;
 /** "Well inside its window": a Worker time at most this share of the time the render had. */
 export const WELL_INSIDE_SHARE = 0.5;
-/** How many Worker times each class keeps. */
-const WORK_KEPT = 20;
 
 type AdaptiveClass = Exclude<RenderClass, "heavy">;
 const ADAPTIVE: readonly AdaptiveClass[] = ["light", "table"];
@@ -90,7 +88,6 @@ function isRenderMode(value: unknown): value is RenderMode {
 export class AdaptiveRenderPolicy {
   private readonly storage: () => RenderStorage | null;
   private readonly classes: Record<AdaptiveClass, ClassState>;
-  private readonly work: Record<RenderClass, number[]> = { light: [], table: [], heavy: [] };
 
   constructor(storage: () => RenderStorage | null = pageStorage) {
     this.storage = storage;
@@ -104,19 +101,6 @@ export class AdaptiveRenderPolicy {
   /** How this device renders the class's pieces now. */
   mode(cls: RenderClass): RenderMode {
     return isAdaptive(cls) ? this.classes[cls].mode : "ahead";
-  }
-
-  /** One of the Worker's answers for the class, its own time in ms (for the record and the evidence). */
-  recordWork(cls: RenderClass, workMs: number): void {
-    if (!Number.isFinite(workMs)) return;
-    const kept = this.work[cls];
-    kept.push(workMs);
-    if (kept.length > WORK_KEPT) kept.splice(0, kept.length - WORK_KEPT);
-  }
-
-  /** The class's latest Worker times, oldest first. */
-  recentWork(cls: RenderClass): readonly number[] {
-    return [...this.work[cls]];
   }
 
   /** One contact of the class's; returns its mode after it. */

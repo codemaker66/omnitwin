@@ -1,7 +1,7 @@
 import type { Camera } from "three";
 import type { Space } from "../../api/spaces.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
-import { massForCategory, type FurnitureLanding, type FurnitureLandingListener } from "../../lib/furniture-motion.js";
+import type { FurnitureLanding, FurnitureLandingListener } from "../../lib/furniture-motion.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { reportAsync, shielded } from "../../lib/report-async.js";
 import { bodyFor } from "../../lib/set-down/bodies.js";
@@ -10,6 +10,7 @@ import {
   SetDownCancelled,
   SetDownRendererBroken,
   createSetDownRenderer,
+  pageHidden,
   type SetDownRendered,
   type SetDownRenderer,
 } from "../../lib/set-down/renderer.js";
@@ -31,7 +32,7 @@ import {
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { editorHistoryTravels, useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
-import { AheadRenders } from "./set-down-ahead.js";
+import { AheadRenders, classOf } from "./set-down-ahead.js";
 import { AdaptiveRenderPolicy, type ContactTiming, type RenderClass } from "./set-down-policy.js";
 import { SetDownRoom, spaceKeyOf } from "./set-down-room.js";
 
@@ -161,17 +162,9 @@ interface Flight {
   done: boolean;
 }
 
-function pageHidden(): boolean {
-  return typeof document !== "undefined" && document.visibilityState === "hidden";
-}
-
 /** Sound on and the page shown: what every play needs, besides a context. */
 function soundAllowed(): boolean {
   return getPlannerSoundSettings().mode !== "off" && !pageHidden();
-}
-
-function classOf(item: PlacedItem): RenderClass {
-  return massForCategory(getCatalogueItem(item.catalogueItemId)?.category);
 }
 
 /**
@@ -194,6 +187,8 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   let flushQueued = false;
   const flights = new Map<string, Flight>();
   const contacts: Flight[] = [];
+  /** The contacts a frame lands, taken off `contacts` first: kept, so a frame makes no array. */
+  const landing: Flight[] = [];
 
   const nowMs = (): number => performance.now();
 
@@ -395,7 +390,8 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     const heard = stillHeard(flight);
     if (heard === null) return;
     const { clock } = heard;
-    const now = room.voice(heard.item, flight.landing, flight.handSpeed, 1);
+    // Only the supports and the ear can have changed since the drop started: the render input is not built again.
+    const now = room.contact(heard.item, flight.landing, flight.handSpeed);
     if (now === null) {
       finish(flight);
       return;
@@ -408,7 +404,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       contactMs: (clock.currentTime + presentDelay) * 1000,
       presentDelay,
       windowMs: slotMs - flight.askedMs,
-      direct: { gain: now.directGain, azimuthRad: now.input.direct.azimuthRad },
+      direct: now.direct,
       surface: now.surface,
       cacheKey: now.cacheKey,
       stale: now.surfacesKey !== flight.surfacesKey,
@@ -439,7 +435,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     const heard = stillHeard(flight);
     if (heard === null) return;
     const { clock } = heard;
-    const now = room.voice(heard.item, flight.landing, flight.handSpeed, 1);
+    const now = room.contact(heard.item, flight.landing, flight.handSpeed);
     if (now === null) {
       finish(flight);
       return;
@@ -452,7 +448,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       contactMs: clock.currentTime * 1000,
       presentDelay: 0,
       windowMs: 0,
-      direct: { gain: now.directGain, azimuthRad: now.input.direct.azimuthRad },
+      direct: now.direct,
       surface: now.surface,
       cacheKey: now.cacheKey,
       stale: false,
@@ -465,7 +461,6 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   };
 
   const answered = (flight: Flight, render: SetDownRendered): void => {
-    policy.recordWork(flight.cls, render.workMs);
     if (flight.done || disposed) return;
     flight.exact = render;
     if (flight.inPlace) {
@@ -554,7 +549,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
         id: voice.id,
         key: `exact|${room.spaceKey}|${voice.id}|${String(serial)}`,
         batch,
-        cls: classOf(entry.item),
+        cls: classOf(entry.item.catalogueItemId),
         slug: gathered.slug,
         landing: entry.landing.landing,
         handSpeed: entry.landing.handSpeed,
@@ -597,23 +592,31 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     for (const flight of [...flights.values()]) finish(flight);
     gathering.clear();
     contacts.length = 0;
+    takenUpIn.clear();
     ahead.changeRoom();
     room.setSpace(next);
   };
 
+  // Each listener's body is shielded inline: a closure made per notification would be one per drag frame (R86).
+  let space = useEditorStore.getState().space;
   let placedItems = usePlacementStore.getState().placedItems;
   let ghostPosition = usePlacementStore.getState().ghostPosition;
   let ghostRotation = usePlacementStore.getState().ghostRotation;
   let selectedItemId = useCatalogueStore.getState().selectedItemId;
 
+  // Every editor change comes here, each drag frame among them: the room is looked at only when its space changed.
   const stopEditor = useEditorStore.subscribe((state) => {
-    shielded(() => {
+    if (state.space === space) return;
+    space = state.space;
+    try {
       if (spaceKeyOf(state.space) !== room.spaceKey) changeSpace(state.space);
       else room.setSpace(state.space);
-    });
+    } catch (error: unknown) {
+      reportAsync(error);
+    }
   });
   const stopPlacement = usePlacementStore.subscribe((state) => {
-    shielded(() => {
+    try {
       if (state.placedItems !== placedItems) {
         placedItems = state.placedItems;
         room.placementChanged();
@@ -623,22 +626,28 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
         ghostRotation = state.ghostRotation;
         ahead.ghostChanged();
       }
-    });
+    } catch (error: unknown) {
+      reportAsync(error);
+    }
   });
   const stopCatalogue = useCatalogueStore.subscribe((state) => {
-    shielded(() => {
+    try {
       if (state.selectedItemId === selectedItemId) return;
       selectedItemId = state.selectedItemId;
       ahead.ghostChanged();
-    });
+    } catch (error: unknown) {
+      reportAsync(error);
+    }
   });
 
   // Sound Off or the page hidden makes no tail; on again, or shown, asks for it.
   const soundChanged = (): void => {
-    shielded(() => {
+    try {
       if (soundAllowed()) room.askTail();
       else room.quiet();
-    });
+    } catch (error: unknown) {
+      reportAsync(error);
+    }
   };
   const stopSettings = subscribePlannerSound(soundChanged);
   document.addEventListener("visibilitychange", soundChanged);
@@ -684,14 +693,24 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       if (disposed) return;
       if (contacts.length > 0) {
         const presentDelay = presentDelayFor(deltaSeconds);
-        // Taken off the list first: one landing that throws leaves the others, and none is landed twice.
-        for (const flight of contacts.splice(0)) {
+        // Taken off the list first: one landing that throws leaves the others, and none is landed twice. One that
+        // throws is reported and finished, so it holds no place in its batch (Minor 6).
+        for (let i = 0; i < contacts.length; i++) {
+          const flight = contacts[i];
+          if (flight !== undefined) landing.push(flight);
+        }
+        contacts.length = 0;
+        for (let i = 0; i < landing.length; i++) {
+          const flight = landing[i];
+          if (flight === undefined) continue;
           try {
             land(flight, presentDelay);
           } catch (error: unknown) {
             reportAsync(error);
+            finish(flight);
           }
         }
+        landing.length = 0;
       }
       ahead.frame();
     },
@@ -710,6 +729,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       for (const flight of [...flights.values()]) finish(flight);
       gathering.clear();
       contacts.length = 0;
+      landing.length = 0;
       takenUpIn.clear();
       renderer?.dispose();
       renderer = null;

@@ -22,7 +22,7 @@ import { panGains } from "../../../lib/set-down/respatialize.js";
 import { roomState, roomAcousticsFor } from "../../../lib/set-down/room-acoustics.js";
 import { renderRoomTail, tailOnsetSeconds } from "../../../lib/set-down/tail.js";
 import { presentDelayFor, setDownStartTime, type AudioClock } from "../../../lib/set-down/timing.js";
-import { settleSpeedFor, voiceInput } from "../../../lib/set-down/voice.js";
+import { landingHeard, settleSpeedFor, voiceInput } from "../../../lib/set-down/voice.js";
 import {
   SetDownCancelled,
   type SetDownPriority,
@@ -163,7 +163,7 @@ vi.mock("../../../lib/set-down/tail.js", async (importOriginal) => {
 // A render input's builder, watched, so a test can make it fail where the driver calls it.
 vi.mock("../../../lib/set-down/voice.js", async (importOriginal) => {
   const actual = await importOriginal<typeof VoiceModule>();
-  return { ...actual, voiceInput: vi.fn(actual.voiceInput) };
+  return { ...actual, voiceInput: vi.fn(actual.voiceInput), landingHeard: vi.fn(actual.landingHeard) };
 });
 
 // The layout's server, for the tests that record the timeline through the bridge: loads, autosaves.
@@ -469,6 +469,7 @@ afterEach(() => {
   expect(renderRoomTail).not.toHaveBeenCalled();
   // Back to the engine's own builder, with any fault a test queued and did not reach dropped.
   vi.mocked(voiceInput).mockReset();
+  vi.mocked(landingHeard).mockReset();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -823,6 +824,23 @@ describe("a piece set down", () => {
 // --- Many at once -----------------------------------------------------------------------------
 
 describe("many pieces", () => {
+  it("reads only the feet's supports and the direct sound at each contact, never the whole render input again (Minor 3)", async () => {
+    act(() => { usePlacementStore.getState().placeTableGroup(catalogueId("round-table-6ft"), 0, 0, 0, 10); });
+    await mountArmed();
+    const ids = usePlacementStore.getState().placedItems.map((item) => item.id);
+    act(() => { carryFurniture(ids, 1, 0); });
+    await frames(3);
+    act(() => { releaseFurniture(ids); });
+    await settle();
+    expect(renderer.renders("exact")).toHaveLength(8);
+    const built = vi.mocked(voiceInput).mock.calls.length;
+    await answerAll();
+    await frames(60);
+    expect(plays()).toHaveLength(8);
+    expect(vi.mocked(voiceInput).mock.calls.length, "no render input built at the contacts").toBe(built);
+    expect(vi.mocked(landingHeard)).toHaveBeenCalledTimes(8);
+  });
+
   it("voices a Lay out of 80 chairs and 8 rounds with at most 8 renders and one batch, never before a piece's contact, at most 3 in 250 ms", async () => {
     await mountArmed();
     const contacts = new Map<string, number>();
@@ -1793,6 +1811,24 @@ describe("renders ahead as the piece moves (R102)", () => {
     expect(renderer.renders("ahead")[1]?.input?.kind).toBe("drop");
   });
 
+  it("asks a still ghost's again when its supports change under it: a deck placed beneath it (nit)", async () => {
+    await mountArmed();
+    act(() => { useCatalogueStore.getState().selectItem(catalogueId("chiavari-chair")); });
+    act(() => { usePlacementStore.setState({ ghostPosition: [6, 0.4, 0] }); });
+    await settle();
+    const [overFloor] = renderer.pending("ahead", "light");
+    expect(overFloor?.input?.surfaces.some((surface) => surface.kind === "stage-deck")).toBe(false);
+    overFloor?.answer(15);
+    await settle();
+    act(() => { stand("staging-deck-6x4", 6, 0); });
+    pass(300);
+    await frames(2);
+    await settle();
+    const onDeck = renderer.pending("ahead", "light");
+    expect(onDeck, "the ghost never moved").toHaveLength(1);
+    expect(onDeck[0]?.input?.surfaces.every((surface) => surface.kind === "stage-deck")).toBe(true);
+  });
+
   it("forgets an older render ahead waiting behind the running one when the newest asks for what is running (M-3)", async () => {
     await mountArmed();
     stand("staging-deck-6x4", -1.2, 2);
@@ -1866,7 +1902,7 @@ describe("what fails in its listeners and its frame (M-4)", () => {
     await place("chiavari-chair", 2, 1);
     await answerAll();
     const fault = new Error("supports that cannot be read");
-    vi.mocked(voiceInput).mockImplementationOnce(() => { throw fault; });
+    vi.mocked(landingHeard).mockImplementationOnce(() => { throw fault; });
     await frames(6);
     expect(reported).toHaveBeenCalledWith(fault);
     expect(plays()).toHaveLength(1);
@@ -1874,6 +1910,21 @@ describe("what fails in its listeners and its frame (M-4)", () => {
     await answerAll();
     await frames(6);
     expect(plays()).toHaveLength(2);
+  });
+
+  it("finishes a landing whose contact throws, so its batch asks the registry only for the voices left (Minor 6)", async () => {
+    await mountArmed();
+    const chair = catalogueId("chiavari-chair");
+    act(() => { usePlacementStore.getState().placeSetup([createPlacedItem(chair, -2, 1), createPlacedItem(chair, 2, 1)]); });
+    await settle();
+    expect(renderer.renders("exact")).toHaveLength(2);
+    await answerAll();
+    const fault = new Error("supports that cannot be read");
+    vi.mocked(landingHeard).mockImplementationOnce(() => { throw fault; });
+    await frames(40);
+    expect(reported).toHaveBeenCalledWith(fault);
+    expect(plays()).toHaveLength(1);
+    expect(registry.batches.map((batch) => batch.count), "one voice left to play").toEqual([1]);
   });
 
   it("reports what fails as the room changes, and never throws it into the editor store", async () => {

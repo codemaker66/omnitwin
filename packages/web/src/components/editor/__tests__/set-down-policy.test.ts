@@ -137,14 +137,4 @@ describe("the adaptive render policy (R100)", () => {
     const unreachable = new AdaptiveRenderPolicy(() => { throw new Error("SecurityError"); });
     expect(unreachable.mode("table")).toBe("exact");
   });
-
-  it("keeps each class's last 20 Worker times", () => {
-    const policy = new AdaptiveRenderPolicy(() => memoryStorage());
-    for (let i = 1; i <= 25; i++) policy.recordWork("light", i);
-    policy.recordWork("heavy", 40);
-    policy.recordWork("light", Number.NaN);
-    expect(policy.recentWork("light")).toEqual(Array.from({ length: 20 }, (_, i) => i + 6));
-    expect(policy.recentWork("heavy")).toEqual([40]);
-    expect(policy.recentWork("table")).toEqual([]);
-  });
 });

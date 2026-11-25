@@ -17,6 +17,7 @@ import { clampEarToRoom, directPath, type Ear } from "./listener.js";
 import { earlyReflections, reflectionRoomFor, type Vec3 } from "./reflections.js";
 import type { SetDownInput } from "./render.js";
 import type { RoomAcoustics } from "./rooms.js";
+import type { SurfaceResponse } from "./surface-data.js";
 import { surfaceKey, surfaceKindForSupport, surfaceResponse } from "./surfaces.js";
 
 /** A let-go from a still hand settles at half speed, 3 dB under the approved "Move it" (ruling R76). */
@@ -55,7 +56,8 @@ export function landingRender(landing: FurnitureLanding, handSpeed: number): { r
   return { kind: "settle", speed: settleSpeedFor(handSpeed) };
 }
 
-export interface VoiceInputArgs {
+/** What a landing's sound depends on where it stands: the piece, the room and the ear. */
+export interface LandingHeardArgs {
   readonly item: PlacedItem;
   /** Every piece in the room, the landing piece among them or not. */
   readonly placedItems: readonly PlacedItem[];
@@ -63,9 +65,60 @@ export interface VoiceInputArgs {
   readonly roomSlug: string | null;
   /** The drawn room, or null when there is none: then there are no early reflections. */
   readonly geometry: RoomGeometry | null;
-  readonly acoustics: RoomAcoustics;
   /** Where it is heard from (earFor); kept inside the drawn room here. */
   readonly ear: Ear;
+}
+
+/** A landing as heard where it stands, short of its render input: no early reflections, no level or seed. */
+export interface LandingHeard {
+  readonly slug: string;
+  readonly body: SetDownBody;
+  /** The surface under each foot, in the order of the body's feet. */
+  readonly surfaces: readonly SurfaceResponse[];
+  /** Those surfaces, each by surfaceKey (the renderer's own rule), in the feet's order. */
+  readonly surfacesKey: string;
+  /** The piece's position, metres. */
+  readonly source: Vec3;
+  /** The ear, kept inside the drawn room. */
+  readonly ear: Ear;
+  /** The direct sound: its 1/r gain (for the dry gain alone, R57) and its lateral angle. */
+  readonly direct: { readonly gain: number; readonly azimuthRad: number };
+}
+
+/**
+ * What `item` landing where it stands now is heard as: the surfaces under its
+ * feet and its direct sound, gathered as voiceInput gathers them, without the
+ * early reflections or the render input. What the set-down driver reads at a
+ * contact, where only the supports and the ear can have changed since the
+ * drop started (Minor 3).
+ */
+export function landingHeard(args: LandingHeardArgs): LandingHeard {
+  const { item, placedItems, roomSlug, geometry } = args;
+  const entry = getCatalogueItem(item.catalogueItemId);
+  const slug = entry?.slug ?? item.catalogueItemId;
+  const body = bodyFor(slug, item.scale);
+  const itself: ReadonlySet<string> = new Set([item.id]);
+  const surfaces = footPositions(item, body).map((foot) => {
+    const support = entry === undefined ? null : findSupportingItem(foot.x, foot.z, entry, placedItems, itself);
+    const supportSlug = support === null ? null : (getCatalogueItem(support.catalogueItemId)?.slug ?? support.catalogueItemId);
+    return surfaceResponse(surfaceKindForSupport(supportSlug, roomSlug), roomSlug);
+  });
+  const source: Vec3 = { x: toRealWorld(item.x), y: toRealWorld(item.y), z: toRealWorld(item.z) };
+  const ear = clampEarToRoom(args.ear, geometry);
+  const direct = directPath(ear, source);
+  return {
+    slug,
+    body,
+    surfaces,
+    surfacesKey: surfaces.map(surfaceKey).join(","),
+    source,
+    ear,
+    direct: { gain: direct.gain, azimuthRad: direct.azimuthRad },
+  };
+}
+
+export interface VoiceInputArgs extends LandingHeardArgs {
+  readonly acoustics: RoomAcoustics;
   readonly landing: FurnitureLanding;
   readonly handSpeed: number;
   readonly seed: number;
@@ -93,35 +146,24 @@ export function voiceInput(args: VoiceInputArgs): {
   readonly surfacesKey: string;
   readonly slug: string;
 } {
-  const { item, placedItems, roomSlug, geometry } = args;
-  const entry = getCatalogueItem(item.catalogueItemId);
-  const slug = entry?.slug ?? item.catalogueItemId;
-  const body = bodyFor(slug, item.scale);
-  const itself: ReadonlySet<string> = new Set([item.id]);
-  const surfaces = footPositions(item, body).map((foot) => {
-    const support = entry === undefined ? null : findSupportingItem(foot.x, foot.z, entry, placedItems, itself);
-    const supportSlug = support === null ? null : (getCatalogueItem(support.catalogueItemId)?.slug ?? support.catalogueItemId);
-    return surfaceResponse(surfaceKindForSupport(supportSlug, roomSlug), roomSlug);
-  });
-  const source: Vec3 = { x: toRealWorld(item.x), y: toRealWorld(item.y), z: toRealWorld(item.z) };
-  const ear = clampEarToRoom(args.ear, geometry);
-  const direct = directPath(ear, source);
-  const reflections = geometry === null ? [] : earlyReflections(reflectionRoomFor(args.acoustics, geometry), source, ear);
+  const heard = landingHeard(args);
+  const { geometry } = args;
+  const reflections = geometry === null ? [] : earlyReflections(reflectionRoomFor(args.acoustics, geometry), heard.source, heard.ear);
   const { kind, speed } = landingRender(args.landing, args.handSpeed);
   return {
     input: {
-      body,
-      surfaces,
+      body: heard.body,
+      surfaces: heard.surfaces,
       speed,
       kind,
-      clothed: item.clothed,
-      direct: { gain: 1, azimuthRad: direct.azimuthRad },
+      clothed: args.item.clothed,
+      direct: { gain: 1, azimuthRad: heard.direct.azimuthRad },
       reflections,
       seed: args.seed,
       sampleRate: args.sampleRate,
     },
-    directGain: direct.gain,
-    surfacesKey: surfaces.map(surfaceKey).join(","),
-    slug,
+    directGain: heard.direct.gain,
+    surfacesKey: heard.surfacesKey,
+    slug: heard.slug,
   };
 }

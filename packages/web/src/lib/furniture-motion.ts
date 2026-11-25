@@ -34,6 +34,7 @@
 
 import { Matrix4, Quaternion, Vector3 } from "three";
 import type { FurnitureCategory } from "@omnitwin/types";
+import { reportAsync } from "./report-async.js";
 import { SPRING_PRESETS, isSpringSettled, stepSpring, type SpringState } from "./springs.js";
 
 /** How a piece carries its weight: a chair rocks, a table barely leans, staging and AV do neither. */
@@ -179,15 +180,11 @@ export function furnitureLandingListenerCount(): number {
 
 /**
  * A listener that throws is reported, never swallowed, and never stops the
- * motion or a carry, release or gesture's close half way (R86): the error goes
- * to the page's error reporting, or is thrown again on a microtask where there
- * is none. Nothing is made unless something throws.
+ * motion or a carry, release or gesture's close half way (R86): reportAsync
+ * sends it to the page's error reporting, or throws it again on a microtask
+ * where there is none. Nothing is made unless something throws.
  */
-function reportListenerError(error: unknown): void {
-  const host: { reportError?: (error: unknown) => void } = globalThis;
-  if (typeof host.reportError === "function") host.reportError(error);
-  else queueMicrotask(() => { throw error; });
-}
+const reportListenerError = reportAsync;
 
 /**
  * Under reduced motion nothing comes down: the placement and the hand call

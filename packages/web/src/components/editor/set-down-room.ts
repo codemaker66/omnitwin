@@ -5,13 +5,15 @@ import { resolveRoomGeometry, type RoomGeometry } from "../../data/room-geometri
 import type { FurnitureLanding } from "../../lib/furniture-motion.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { reportAsync } from "../../lib/report-async.js";
-import { earFor } from "../../lib/set-down/listener.js";
+import { earFor, type Ear } from "../../lib/set-down/listener.js";
 import type { Vec3 } from "../../lib/set-down/reflections.js";
 import { SetDownCancelled, type SetDownRenderer } from "../../lib/set-down/renderer.js";
 import { roomAcousticsFor, roomState, type RoomState } from "../../lib/set-down/room-acoustics.js";
 import type { RoomAcoustics } from "../../lib/set-down/rooms.js";
 import { tailOnsetSeconds } from "../../lib/set-down/tail.js";
-import { voiceInput } from "../../lib/set-down/voice.js";
+import type { SetDownDirect } from "../../lib/set-down/respatialize.js";
+import type { SurfaceResponse } from "../../lib/set-down/surface-data.js";
+import { landingHeard, landingRender, voiceInput } from "../../lib/set-down/voice.js";
 import { clearPlannerRoomTail, setPlannerRoomTail } from "../../lib/sound-registry.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
@@ -33,7 +35,8 @@ import type { Gathered } from "./set-down-ahead.js";
 // - A render input (`voice`) is built here, for the room it will sound in: the
 //   ear 2-6 m from the landing (R61), the send left to the room (R58), and a
 //   variant key that names everything the render depends on but where it
-//   stands (R81: the cloth included).
+//   stands (R81: the cloth included). A contact reads only its half of that
+//   (`contact`): the surfaces under the feet, the key and the direct sound.
 // ---------------------------------------------------------------------------
 
 /** One tail per room state, as the listening page seeds it. */
@@ -44,6 +47,22 @@ const ROOM_SETTLE_MS = 250;
 /** A room's name in keys: its slug and id, never with a "|". */
 export function spaceKeyOf(space: { readonly slug: string; readonly id: string } | null): string {
   return space === null ? "none" : `${space.slug}:${space.id}`.replace(/\|/gu, "/");
+}
+
+/** A landing as heard at its contact, short of its render input (Minor 3). */
+export interface AtContact {
+  readonly surfacesKey: string;
+  /** The surfaces' kinds, for the tap. */
+  readonly surface: string;
+  /** What a variant must match to stand in: as `Gathered.cacheKey`. */
+  readonly cacheKey: string;
+  /** Its direct sound at the ear: the dry gain and the angle (R57, R104). */
+  readonly direct: SetDownDirect;
+}
+
+/** The surfaces' kinds, as the tap names them: "oak-parquet", "stage-deck+oak-parquet". */
+function kindsOf(surfaces: readonly SurfaceResponse[]): string {
+  return [...new Set(surfaces.map((surface) => surface.kind))].join("+");
 }
 
 /** What the room asks of the driver. */
@@ -88,11 +107,6 @@ export class SetDownRoom {
   /** Its state as the placement last settled, or null with no room. */
   get state(): RoomState | null {
     return this.room;
-  }
-
-  /** The context's rate, once the first gesture has made it. */
-  get rate(): number | null {
-    return this.sampleRate;
   }
 
   /** Whether a render input can be built: a room and a rate. */
@@ -173,27 +187,48 @@ export class SetDownRoom {
   voice(item: PlacedItem, landing: FurnitureLanding, handSpeed: number, seed: number): Gathered | null {
     const { space, acoustics, sampleRate } = this;
     if (space === null || acoustics === null || sampleRate === null) return null;
-    const source: Vec3 = { x: toRealWorld(item.x), y: toRealWorld(item.y), z: toRealWorld(item.z) };
     const voice = voiceInput({
       item,
       placedItems: usePlacementStore.getState().placedItems,
       roomSlug: space.slug,
       geometry: this.geometry,
       acoustics,
-      ear: earFor(this.cameraPose(), source, useCockpitStore.getState().walkMode),
+      ear: this.earFor(item),
       landing,
       handSpeed,
       seed,
       sampleRate,
     });
-    const kinds = [...new Set(voice.input.surfaces.map((surface) => surface.kind))];
     return {
       input: voice.input,
       directGain: voice.directGain,
       surfacesKey: voice.surfacesKey,
       slug: voice.slug,
-      surface: kinds.join("+"),
-      cacheKey: [voice.slug, String(item.scale ?? 1), String(item.clothed), voice.input.kind, voice.surfacesKey, this.key, String(sampleRate)].join("|"),
+      surface: kindsOf(voice.input.surfaces),
+      cacheKey: this.variantKey(voice.slug, item, voice.input.kind, voice.surfacesKey, sampleRate),
+    };
+  }
+
+  /**
+   * What `item` landing where it stands is heard as now, short of its render
+   * input: the surfaces under its feet, its variant key and its direct sound,
+   * which is all a contact reads (Minor 3); null with no room or rate.
+   */
+  contact(item: PlacedItem, landing: FurnitureLanding, handSpeed: number): AtContact | null {
+    const { space, acoustics, sampleRate } = this;
+    if (space === null || acoustics === null || sampleRate === null) return null;
+    const heard = landingHeard({
+      item,
+      placedItems: usePlacementStore.getState().placedItems,
+      roomSlug: space.slug,
+      geometry: this.geometry,
+      ear: this.earFor(item),
+    });
+    return {
+      surfacesKey: heard.surfacesKey,
+      surface: kindsOf(heard.surfaces),
+      cacheKey: this.variantKey(heard.slug, item, landingRender(landing, handSpeed).kind, heard.surfacesKey, sampleRate),
+      direct: heard.direct,
     };
   }
 
@@ -210,6 +245,17 @@ export class SetDownRoom {
   private clearTimer(): void {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+  }
+
+  /** Piece, scale, cloth, kind, surfaces, room and rate: everything a render depends on but where it stands. */
+  private variantKey(slug: string, item: PlacedItem, kind: string, surfacesKey: string, sampleRate: number): string {
+    return [slug, String(item.scale ?? 1), String(item.clothed), kind, surfacesKey, this.key, String(sampleRate)].join("|");
+  }
+
+  /** Where `item` is heard from: the camera, the ear 2-6 m from it (R61). */
+  private earFor(item: PlacedItem): Ear {
+    const source: Vec3 = { x: toRealWorld(item.x), y: toRealWorld(item.y), z: toRealWorld(item.z) };
+    return earFor(this.cameraPose(), source, useCockpitStore.getState().walkMode);
   }
 
   /** Where the camera is, in metres, and its right. */
