@@ -402,7 +402,7 @@ export interface LandingPiece {
 /** How long a whole layout's ripple takes to reach its outermost set, seconds. */
 const RIPPLE = 0.24;
 /** Between one chair of a set and the next, seconds. */
-const SET_STAGGER = 0.012;
+export const SET_STAGGER = 0.012;
 
 /**
  * When each newly placed piece starts down, seconds. A set lands in order:

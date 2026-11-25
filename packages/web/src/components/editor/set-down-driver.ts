@@ -1,11 +1,11 @@
 import type { Camera } from "three";
 import type { Space } from "../../api/spaces.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
-import type { FurnitureLanding, FurnitureLandingListener } from "../../lib/furniture-motion.js";
+import { SET_STAGGER, type FurnitureLanding, type FurnitureLandingListener } from "../../lib/furniture-motion.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { reportAsync, shielded } from "../../lib/report-async.js";
 import { bodyFor } from "../../lib/set-down/bodies.js";
-import { planCascade, type CascadePiece } from "../../lib/set-down/cascade.js";
+import { CASCADE_STEP_DB, planCascade, type CascadePiece } from "../../lib/set-down/cascade.js";
 import {
   SetDownCancelled,
   SetDownRendererBroken,
@@ -49,11 +49,13 @@ import { SetDownRoom, spaceKeyOf } from "./set-down-room.js";
 //   voiced, four or more go through the listening page's cascade (R75).
 // - At drop start each voice's exact render is asked for (R76's kind and
 //   speed, the ear 2-6 m from the landing, R61), and a sleeping context woken.
-// - A voice is due at its slot: its contact frame, or for a cascade voice its
-//   contact or the seeded gap after the slot of the voice that landed before
-//   it, whichever is later (R110, R75). Every voice starts at its slot carried
-//   onto the context's clock through its batch's one anchor, never before now,
-//   with the contact frame's lead (R109). It plays the first of: its exact
+// - A voice is due at its slot. A batch's voices are slotted in the order they
+//   land, ties in one frame in the plan's order: the k-th takes its contact, or
+//   the plan's k-th gap after the slot before it, whichever is later, and plays
+//   at -1 dB x k (R111, R75); a set under four keeps its 12 ms stagger for ties.
+//   Every voice starts at its slot carried onto the context's clock through its
+//   batch's anchor (the clock at its first contact), never before now, with
+//   the contact frame's lead (R109, R112). It plays the first of: its exact
 //   render, if ready by its slot; a variant rendered ahead for the same piece,
 //   surfaces and room, scheduled 1/30 s before the slot to start exactly at it
 //   (R108); its exact render, if that arrives within 45 ms after its slot
@@ -80,6 +82,10 @@ const HEARD_WINDOW_MS = HEARD_WINDOW_S * 1000;
  * to start exactly at the slot though the timer fires late (R108).
  */
 const SLOT_LEAD_MS = LATEST_PRESENT_S * 1000;
+/** Ties in one frame within a set under four are spaced by the set's own stagger, ms (R111). */
+const SET_STAGGER_MS = SET_STAGGER * 1000;
+/** A batch whose audio clock has fallen this far behind its anchor's projection is anchored again, s (R112). */
+const REANCHOR_BEHIND_S = 0.05;
 
 /** The driver, as the shell hears the motion and the frame loop for it. */
 export interface SetDownDriver extends FurnitureLandingListener {
@@ -115,13 +121,18 @@ interface Batch {
   /** Undefined until its first contact (or first play under reduced motion); null if refused. */
   admitted: SetDownBatch | null | undefined;
   /**
-   * The context's clock and the page's, read together at its first contact:
-   * every voice's slot is carried onto the context's clock through this one
-   * pair, so the gaps between its voices are exact however the clock is read
-   * (R109). Null until then.
+   * The context's clock at its first contact, paired with that contact's own
+   * time: every voice's slot is carried onto the context's clock through this
+   * one pair, so the gaps between its voices are exact however the clock is
+   * read (R109, R112). Anchored again when the clock falls behind it. Null
+   * until its first contact.
    */
   anchor: { readonly audio: number; readonly page: number } | null;
-  /** The slot of its voice that landed last, page time: the next is spaced from it (R110). Null until its first. */
+  /** The plan's gaps by position, ms: the k-th voice slotted keeps the k-th after the one before (R111). */
+  readonly gapsMs: readonly number[];
+  /** How many of its voices have been slotted. */
+  slotted: number;
+  /** The slot of its voice slotted last, page time. Null until its first. */
   lastSlotMs: number | null;
 }
 
@@ -165,9 +176,10 @@ interface Flight {
   readonly handSpeed: number;
   readonly cacheKey: string;
   readonly surfacesKey: string;
-  /** The cascade's seeded gap after the voice landing before it, s (R110). */
-  readonly gapSeconds: number;
-  readonly levelDb: number;
+  /** Its place in the plan: ties in one frame are slotted in this order (R111). */
+  readonly planIndex: number;
+  /** -1 dB for each voice of its batch slotted before it (R111, R75); set at its slot. */
+  levelDb: number;
   readonly epoch: number;
   readonly inPlace: boolean;
   readonly askedMs: number;
@@ -178,6 +190,11 @@ interface Flight {
   contactAtMs: number | null;
   contact: Contact | null;
   done: boolean;
+}
+
+/** Ties in one frame, in their plan's order (R111). */
+function byPlan(a: { readonly planIndex: number }, b: { readonly planIndex: number }): number {
+  return a.planIndex - b.planIndex;
 }
 
 /** Sound on and the page shown: what every play needs, besides a context. */
@@ -328,26 +345,40 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   };
 
   /**
-   * A voice's slot, page time, decided at its contact in the order its batch's
-   * pieces land: its contact, or the seeded gap after the slot of the voice
-   * that landed before it, whichever is later (R110, R75). Pieces that touch
-   * down together are spaced, never heard together; landings that follow the
-   * plan keep its spacing. A voice dropped after its contact still spaces the
-   * next from its slot.
+   * A voice's slot, page time, decided at its contact. Its batch's voices are
+   * slotted in the order they land, ties in one frame in the plan's order (the
+   * frame sorts them): the k-th takes its contact, or the plan's k-th gap (by
+   * position, not by which voice it is) after the slot before it, whichever is
+   * later, and plays at -1 dB x k (R111, R75). A set under four has no gaps: a
+   * tie with the slot before it is spaced by the set's 12 ms stagger, and any
+   * other voice keeps its own landing. So no two voices of a batch start
+   * together, and landings that follow the plan keep its spacing. A voice
+   * dropped after its contact still spaces the next from its slot.
    */
   const slotFor = (flight: Flight, atMs: number): number => {
     const { batch } = flight;
-    const slotMs = batch.lastSlotMs === null ? atMs : Math.max(atMs, batch.lastSlotMs + flight.gapSeconds * 1000);
+    const k = batch.slotted;
+    batch.slotted += 1;
+    flight.levelDb = CASCADE_STEP_DB * k;
+    const last = batch.lastSlotMs;
+    const gapMs = batch.gapsMs[k] ?? 0;
+    let slotMs = atMs;
+    if (last !== null) slotMs = gapMs > 0 ? Math.max(atMs, last + gapMs) : atMs > last ? atMs : last + SET_STAGGER_MS;
     batch.lastSlotMs = slotMs;
     return slotMs;
   };
 
-  /** The batch's first contact: the registry admits it, and its anchor is read, the two clocks together (R109). */
-  const beginBatch = (flight: Flight, clock: AudioClock): void => {
+  /**
+   * The batch's first contact: the registry admits it, and its anchor pairs the
+   * context's clock with that contact's own time, `atMs` (R112): the first
+   * voice maps to now, every later one by exact slot differences, the whole
+   * batch the shell's frame (about a millisecond) after the touchdowns'.
+   */
+  const beginBatch = (flight: Flight, clock: AudioClock, atMs: number): void => {
     const { batch } = flight;
     if (batch.admitted !== undefined) return;
     batch.admitted = beginSetDownBatch(batch.live);
-    batch.anchor = { audio: clock.currentTime, page: nowMs() };
+    batch.anchor = { audio: clock.currentTime, page: atMs };
   };
 
   const play = (flight: Flight, render: SetDownRendered, played: SetDownPlayed, startAt: number): void => {
@@ -386,8 +417,17 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
    * now plus the lead, as setDownStartTime gives.
    */
   const startFor = (flight: Flight, contact: Contact, clock: AudioClock, render: SetDownRendered): number => {
-    const anchor = flight.batch.anchor;
-    const atSlot = anchor === null ? clock.currentTime : anchor.audio + (contact.slotMs - anchor.page) / 1000;
+    const { batch } = flight;
+    let anchor = batch.anchor;
+    // A clock that stood still while the page ran on (an interruption, a slow resume) has left the anchor's
+    // projection: the batch is anchored again at now, so later voices start at their slots; those whose slots
+    // passed meanwhile are dropped by their windows, judged on the page's clock (R112).
+    const atMs = nowMs();
+    if (anchor === null || clock.currentTime < anchor.audio + (atMs - anchor.page) / 1000 - REANCHOR_BEHIND_S) {
+      anchor = { audio: clock.currentTime, page: atMs };
+      batch.anchor = anchor;
+    }
+    const atSlot = anchor.audio + (contact.slotMs - anchor.page) / 1000;
     return setDownStartTime(clock, contact.presentDelay, render.onsetSeconds) + Math.max(0, atSlot - clock.currentTime);
   };
 
@@ -460,7 +500,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       finish(flight);
       return;
     }
-    beginBatch(flight, clock);
+    beginBatch(flight, clock, atMs);
     const contact: Contact = {
       atMs,
       slotMs,
@@ -506,7 +546,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       return;
     }
     const atMs = nowMs();
-    beginBatch(flight, clock);
+    beginBatch(flight, clock, atMs);
     const contact: Contact = {
       atMs,
       slotMs: slotFor(flight, atMs),
@@ -609,9 +649,9 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     }));
     seed += 1;
     const voices = planCascade(pieces, seed);
-    const batch: Batch = { live: 0, admitted: undefined, anchor: null, lastSlotMs: null };
+    const batch: Batch = { live: 0, admitted: undefined, anchor: null, gapsMs: voices.map((voice) => voice.gapSeconds * 1000), slotted: 0, lastSlotMs: null };
     const askedMs = nowMs();
-    for (const voice of voices) {
+    for (const [planIndex, voice] of voices.entries()) {
       const entry = byId.get(voice.id);
       seed += 1;
       const gathered = entry === undefined ? null : room.voice(entry.item, entry.landing.landing, entry.landing.handSpeed, seed);
@@ -627,7 +667,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
         handSpeed: entry.landing.handSpeed,
         cacheKey: gathered.cacheKey,
         surfacesKey: gathered.surfacesKey,
-        gapSeconds: voice.gapSeconds,
+        planIndex,
         levelDb: voice.levelDb,
         epoch: entry.landing.epoch,
         inPlace: entry.landing.inPlace,
@@ -771,6 +811,8 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
           if (flight !== undefined) landing.push(flight);
         }
         contacts.length = 0;
+        // Pieces that touched down in this frame are slotted in their plan's order (R111).
+        if (landing.length > 1) landing.sort(byPlan);
         for (let i = 0; i < landing.length; i++) {
           const flight = landing[i];
           if (flight === undefined) continue;
