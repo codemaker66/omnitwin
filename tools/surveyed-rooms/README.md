@@ -926,7 +926,16 @@ T4 builds a small room for each gate that neither the Grand Hall nor T3 opens:
   and two that see past it: without the edit the wall wears the board's picture and a lump; with a
   `behind` edit every row goes back to its own depth (the dado's or the face's), the bands behind
   the board are photographed from the two side stations alone, and the wall beside it is as it
-  was; the checker holds the edit to one of `like` and `depth` and its strip to the wall (B26);
+  was (B26). And the corners step alone, on walls whose positions are written directly (seconds,
+  with no depth maps and no labels): only what stands more than 6 cm before its row's depth moves,
+  and a moulding 4 cm before it stays; each row takes the depth of the 10 cm strip on the named
+  side, or the one depth given, before the face; no other wall moves; of two edits on one wall
+  each reads the wall as scanned; beside an open door, beside a window and beside a leaf's own
+  doorway the rows whose strip lies in the opening take a depth from the nearest rows that have
+  one, down to the floor; and an edit that can move nothing stops the build and says why. The
+  checker holds the edit to one of `like` and `depth`, its strip to the wall, its depth to where
+  the wall can be drawn, its rectangle to a texel at least, and its wall to one the corners step
+  visits (B26);
 - the floor refills' roll along z and along x (B19);
 - the ceiling relief's fallback height, padding and spacing.
 
