@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type KeyboardEvent as KeyEvent, type ReactElement } from "react";
+import { flushSync } from "react-dom";
 import { getPublicConfig } from "../api/configurations.js";
 import { GuestPanel, type RoomState } from "../components/guest-list/GuestPanel.js";
 import { GuestPaste, type PastedGuest } from "../components/guest-list/GuestPaste.js";
@@ -65,23 +66,40 @@ export default GuestListPage;
 // Opening: the list from this device, and the room from the plan
 // ---------------------------------------------------------------------------
 
-/** Removes lists past their day, then opens this plan's list (unless it is open already). */
-function useOpenedList(planId: string, store: GuestListStore): void {
+/**
+ * Reads the device every time the page mounts: removes lists past their day,
+ * then opens this plan's list, or, when the page state already holds it (the
+ * planner went to another page of the app and came back), takes up what
+ * another tab did meanwhile. Answers false until that read has returned: the
+ * page stays in its opening state till then, so nothing can be typed over a
+ * list the page has not yet seen.
+ */
+function useOpenedList(planId: string, store: GuestListStore): boolean {
+  const [read, setRead] = useState(false);
+  /** A sweep of this mount removed this plan's list. Kept through React's second run of the effect in development. */
+  const sweptHere = useRef(false);
   useEffect(() => {
     const left = new AbortController();
+    // Read afresh after each wait: the planner may leave while one runs.
+    const gone = (): boolean => left.signal.aborted;
     void (async () => {
       // The sweep goes first, so a list past its removal day is never shown.
       try {
-        await store.sweep(Date.now());
+        if ((await store.sweep(Date.now())).includes(planId)) sweptHere.current = true;
       } catch {
         // A tidy-up only: the list still opens.
       }
-      if (left.signal.aborted) return;
+      if (gone()) return;
       const page = useGuestListStore.getState();
-      if (page.planId !== planId) await page.open(planId, store);
+      const mount = { sweptHere: sweptHere.current };
+      if (page.planId !== planId) await page.open(planId, store, undefined, mount);
+      else await page.refresh(mount);
+      // In one step with its effects, as when the page state itself changes: the desk is never on the page half set up.
+      if (!gone()) flushSync(() => { setRead(true); });
     })();
     return () => { left.abort(); };
   }, [planId, store]);
+  return read;
 }
 
 /** The one read of the plan, to count its tables. Any failure leaves the list as it is. */
@@ -128,7 +146,7 @@ function GuestDesk({ planId, store }: { readonly planId: string; readonly store:
   const phase = useGuestListStore((s) => s.phase);
   const list = useGuestListStore((s) => s.list);
   const room = useRoom(planId);
-  useOpenedList(planId, store);
+  const read = useOpenedList(planId, store);
   useKeepWhenHidden();
   // Each delete draws the desk afresh, so nothing the planner typed, pasted or was told about a guest stays on the page.
   const [erasures, setErasures] = useState(0);
@@ -138,7 +156,7 @@ function GuestDesk({ planId, store }: { readonly planId: string; readonly store:
   };
 
   let body: ReactElement;
-  if (openPlan !== planId || phase === "opening" || (phase === "ready" && list === null)) {
+  if (!read || openPlan !== planId || phase === "opening" || (phase === "ready" && list === null)) {
     body = (
       <div className="gl-waiting">
         <ActivityStatus variant="panel">Opening your guest list…</ActivityStatus>

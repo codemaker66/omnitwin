@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { ReactElement } from "react";
+import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { ApiError } from "../../api/client.js";
 import type { Configuration, PlacedObject } from "../../api/configurations.js";
@@ -117,7 +118,7 @@ async function otherTabSaves(backend: CacheBackend, change: (kept: GuestList) =>
 
 function refusingBackend(): CacheBackend {
   const refuse = (): Promise<never> => Promise.reject(new Error("storage refused"));
-  return { get: refuse, put: refuse, delete: refuse, list: refuse };
+  return { get: refuse, put: refuse, delete: refuse, deleteIf: refuse, upsert: refuse, list: refuse };
 }
 
 /** The first read refuses, then storage works: a read that failed just now. */
@@ -138,6 +139,7 @@ const NOT_OPENED = "The list kept here for this plan could not be opened just no
 const OTHER_TAB_WORDS = "This list was also changed in another tab. This tab's version was kept.";
 const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
 const ADDED_AFTER_DELETE_WORDS = "Names were added to this list in another tab after it was deleted here.";
+const REMOVED_BY_RULE_WORDS = "This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
 
 function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
   let resolve: (value: T) => void = () => undefined;
@@ -147,13 +149,23 @@ function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value
   return { promise, resolve };
 }
 
+/** Another page of the same app, where the panel's "Open the room" leads, with a way back to the guest list. */
+function Room(): ReactElement {
+  return (
+    <main data-testid="room">
+      <p>room</p>
+      <Link to={PAGE}>Back to the guest list</Link>
+    </main>
+  );
+}
+
 function open(entry: string, store?: GuestListStore): ReturnType<typeof render> {
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/plan/:code/guests" element={<GuestListPage store={store} />} />
         <Route path="/plan/:code/guests/paper" element={<p data-testid="paper">paper</p>} />
-        <Route path="/plan/:code" element={<p data-testid="room">room</p>} />
+        <Route path="/plan/:code" element={<Room />} />
         <Route path="/plan" element={<p data-testid="planner">planner</p>} />
       </Routes>
     </MemoryRouter>,
@@ -162,6 +174,23 @@ function open(entry: string, store?: GuestListStore): ReturnType<typeof render> 
 
 async function desk(): Promise<HTMLElement> {
   return screen.findByTestId("guest-list-desk");
+}
+
+/**
+ * Leaves the guest list for another page of the app by the panel's own link.
+ * The page unmounts; the page state is left exactly as it was.
+ */
+async function leaveForTheRoom(): Promise<void> {
+  fireEvent.click(screen.getByRole("link", { name: "Open the room" }));
+  await screen.findByTestId("room");
+  expect(screen.queryByTestId("guest-list-page")).toBeNull();
+  expect(state().planId).toBe(PLAN_ID);
+}
+
+/** Comes back to the guest list by a link inside the same router: the page mounts again over the same page state. */
+async function comeBackToTheList(): Promise<void> {
+  fireEvent.click(screen.getByRole("link", { name: "Back to the guest list" }));
+  await desk();
 }
 
 function metas(name: string): HTMLMetaElement[] {
@@ -838,12 +867,31 @@ describe("the guest list page: what the device says", () => {
     expect(screen.queryByText(refusal)).toBeNull();
   });
 
-  it("removes a list past its removal day on opening, rather than showing it", async () => {
+  it("removes a list past its removal day on opening, rather than showing it, and says the rule removed it", async () => {
     const { store } = await storeHolding(listOf({ eventDate: "2020-01-01", guests: [guest(1, "Ailsa Fraser")] }));
     open(PAGE, store);
     await desk();
     expect(screen.getByText("There are no guests on this list yet.")).toBeTruthy();
     expect((await store.open(PLAN_ID)).kind).toBe("new");
+    const words = screen.getByText(REMOVED_BY_RULE_WORDS);
+    expect(words.closest("[role='status']")).not.toBeNull();
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("removed-by-rule");
+    expect(screen.queryByText(/Ailsa Fraser|Fraser, Ailsa/)).toBeNull();
+    fireEvent.click(within(words.closest("[data-notice]") ?? document.body).getByRole("button", { name: "Close" }));
+    expect(screen.queryByText(REMOVED_BY_RULE_WORDS)).toBeNull();
+  });
+
+  it("says nothing of the rule on opening a plan that has no list, or a list not yet due", async () => {
+    const view = open(PAGE, memoryStore());
+    await desk();
+    expect(screen.queryByText(REMOVED_BY_RULE_WORDS)).toBeNull();
+    view.unmount();
+    state().reset();
+
+    open(PAGE, (await storeHolding(listOf({ eventDate: "2099-06-12", guests: [guest(1, "Ailsa Fraser")] }))).store);
+    await desk();
+    expect(screen.getByText("0 of 1 guest has a seat.")).toBeTruthy();
+    expect(screen.queryByText(REMOVED_BY_RULE_WORDS)).toBeNull();
   });
 
   it("says where the names are kept and when they are removed", async () => {
@@ -865,11 +913,177 @@ describe("the guest list page: what the device says", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Coming back to the page from another page of the app. The page state lives
+// on while the page is away, so every mount reads the device again: each case
+// here stays inside ONE router, leaves by the panel's own link, comes back by
+// a link, and never resets the page state in between. "Another tab" is a
+// second device store over the same storage.
+// ---------------------------------------------------------------------------
+
+describe("the guest list page: mounted again over a list it already holds", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("takes up what another tab added meanwhile, and a change here keeps it without a word", async () => {
+    const { store, backend } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    expect(screen.getByText("0 of 1 guest has a seat.")).toBeTruthy();
+    await leaveForTheRoom();
+
+    // In another tab the planner adds fifty guests, and they are kept.
+    await otherTabSaves(backend, (kept) => ({
+      ...kept,
+      guests: [...kept.guests, ...Array.from({ length: 50 }, (_, i) => guest(100 + i, `Mary Example${String(i + 1)}`))],
+      updatedAt: new Date(Date.now() + 60_000).toISOString(),
+    }));
+
+    await comeBackToTheList();
+    expect(screen.getByText("0 of 51 guests have a seat.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor" } });
+    await flush();
+    const kept = await store.open(PLAN_ID);
+    if (kept.kind !== "ready") throw new Error("the list was not kept");
+    expect(kept.list.guests).toHaveLength(51);
+    expect(kept.list.title).toBe("Fraser and Okafor");
+    expect(screen.queryByText(OTHER_TAB_WORDS)).toBeNull();
+  });
+
+  it("takes an empty list when another tab deleted it meanwhile, says so, and never stores the deleted name again", async () => {
+    const { store, backend } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    await leaveForTheRoom();
+
+    await memoryStore(backend).erase(PLAN_ID);
+
+    await comeBackToTheList();
+    expect(screen.getByText(REMOVED_ELSEWHERE_WORDS)).toBeTruthy();
+    expect(screen.getByText("There are no guests on this list yet.")).toBeTruthy();
+    expect(screen.queryByText(/Ailsa Fraser|Fraser, Ailsa/)).toBeNull();
+
+    await pasteAndAdd("Chidi Okafor\nMorag Kerr", 2);
+    await flush();
+    const kept = await store.open(PLAN_ID);
+    if (kept.kind !== "ready") throw new Error("the new list was not kept");
+    expect(kept.list.guests.map((g) => g.name)).toEqual(["Chidi Okafor", "Morag Kerr"]);
+    expect(JSON.stringify(kept.list)).not.toContain("Ailsa");
+  });
+
+  it("a list that passed its removal day while the page was away is removed, said to be removed under the rule, and not brought back", async () => {
+    const now = pinnedNow();
+    // The event is five days off: the list's removal day is thirty-five days ahead.
+    const eventDate = new Date(now + 5 * 86_400_000).toISOString().slice(0, 10);
+    const { store } = await storeHolding(listOf({ eventDate, guests: [guest(1, "Ailsa Fraser")] }));
+    open(PAGE, store);
+    await desk();
+    expect(screen.getByText("0 of 1 guest has a seat.")).toBeTruthy();
+    expect(screen.queryByText(REMOVED_BY_RULE_WORDS)).toBeNull();
+    await leaveForTheRoom();
+
+    // Thirty-seven days pass with the app left open on another page.
+    vi.setSystemTime(now + 37 * 86_400_000);
+
+    await comeBackToTheList();
+    const words = screen.getByText(REMOVED_BY_RULE_WORDS);
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("removed-by-rule");
+    expect(screen.queryByText(REMOVED_ELSEWHERE_WORDS)).toBeNull();
+    expect(screen.getByText("There are no guests on this list yet.")).toBeTruthy();
+    expect(screen.queryByText(/Ailsa Fraser|Fraser, Ailsa/)).toBeNull();
+    expect((await store.open(PLAN_ID)).kind).toBe("new");
+
+    // A change then does not bring the old names back.
+    fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "A new start" } });
+    await flush();
+    const kept = await store.open(PLAN_ID);
+    if (kept.kind !== "ready") throw new Error("the new list was not kept");
+    expect(kept.list.title).toBe("A new start");
+    expect(kept.list.guests).toEqual([]);
+    expect(kept.list.eventDate).toBeNull();
+  });
+
+  it("stays in its opening state until this mount's read of the device has returned", async () => {
+    const { store: inner, backend } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    const slow = deferred<undefined>();
+    let slowReads = false;
+    const store: GuestListStore = {
+      ...inner,
+      open: async (planId) => {
+        if (slowReads) await slow.promise;
+        return inner.open(planId);
+      },
+    };
+    open(PAGE, store);
+    await desk();
+    await leaveForTheRoom();
+    await otherTabSaves(backend, (kept) => ({
+      ...kept,
+      guests: [...kept.guests, guest(2, "Chidi Okafor")],
+      updatedAt: new Date(Date.now() + 60_000).toISOString(),
+    }));
+
+    // The next read of the device is slow.
+    slowReads = true;
+    fireEvent.click(screen.getByRole("link", { name: "Back to the guest list" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // The page state still holds the list as it was, but nothing of it is shown or can be typed over yet.
+    expect(state().list?.guests).toHaveLength(1);
+    expect(screen.getByRole("status").textContent).toContain("Opening your guest list…");
+    expect(screen.queryByTestId("guest-list-desk")).toBeNull();
+    expect(screen.queryByLabelText("The event's name")).toBeNull();
+
+    await act(async () => {
+      slow.resolve(undefined);
+      await slow.promise;
+    });
+    await desk();
+    expect(screen.getByText("0 of 2 guests have a seat.")).toBeTruthy();
+  });
+
+  it("keeps a change that was not yet kept when the page was left, and the save says it went over another tab's copy", async () => {
+    const { store: inner, backend } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    // This tab's save is held on its way to the device, so its change is still not kept when the page comes back.
+    const held = deferred<undefined>();
+    const store: GuestListStore = {
+      ...inner,
+      save: async (list, loaded) => {
+        await held.promise;
+        return inner.save(list, loaded);
+      },
+    };
+    open(PAGE, store);
+    await desk();
+    fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor" } });
+    const keeping = state().flush();
+    await leaveForTheRoom();
+    await otherTabSaves(backend, (kept) => ({ ...kept, title: "Another tab", updatedAt: new Date(Date.now() + 60_000).toISOString() }));
+
+    // The mount reads nothing over a change not yet kept: the change is still on the page.
+    await comeBackToTheList();
+    expect(screen.getByLabelText<HTMLInputElement>("The event's name").value).toBe("Fraser and Okafor");
+    expect(screen.queryByText(OTHER_TAB_WORDS)).toBeNull();
+
+    await act(async () => {
+      held.resolve(undefined);
+      await keeping;
+    });
+    expect(await screen.findByText(OTHER_TAB_WORDS)).toBeTruthy();
+    const kept = await inner.open(PLAN_ID);
+    expect(kept.kind === "ready" ? kept.list.title : null).toBe("Fraser and Okafor");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The event's date: kept when the field is left, and never one that would
 // remove the list at once
 // ---------------------------------------------------------------------------
 
-const DATE_REFUSED = "That date would remove this list straight away: a list is removed 30 days after its event. Check the year.";
+const DATE_REFUSED ="That date would remove this list straight away: a list is removed 30 days after its event. Check the year.";
 
 function dateField(): HTMLInputElement {
   return screen.getByLabelText<HTMLInputElement>("Date of the event");

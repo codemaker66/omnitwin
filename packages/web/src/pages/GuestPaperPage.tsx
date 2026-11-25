@@ -117,26 +117,43 @@ function inPages<T>(items: readonly T[], size: number): readonly (readonly T[])[
 // Opening the list from this device
 // ---------------------------------------------------------------------------
 
-/** Removes lists past their day, then opens this plan's list (unless it is open already). */
-function useOpenedList(planId: string, store: GuestListStore): void {
+/**
+ * Reads the device every time the page mounts: removes lists past their day,
+ * then opens this plan's list, or, when the page state already holds it (the
+ * planner came here from the list page, or went elsewhere in the app and came
+ * back), takes up what another tab did meanwhile. Answers false until that
+ * read has returned: the page stays in its opening state till then, so no
+ * print can go before a list the page has not yet seen.
+ */
+function useOpenedList(planId: string, store: GuestListStore): boolean {
+  const [read, setRead] = useState(false);
+  /** A sweep of this mount removed this plan's list. Kept through React's second run of the effect in development. */
+  const sweptHere = useRef(false);
   useEffect(() => {
     const left = new AbortController();
+    // Read afresh after each wait: the planner may leave while one runs.
+    const gone = (): boolean => left.signal.aborted;
     void (async () => {
       // The sweep goes first, so a list past its removal day is never printed.
       try {
-        await store.sweep(Date.now());
+        if ((await store.sweep(Date.now())).includes(planId)) sweptHere.current = true;
       } catch {
         // A tidy-up only: the list still opens.
       }
-      if (left.signal.aborted) return;
+      if (gone()) return;
       const page = useGuestListStore.getState();
-      if (page.planId !== planId) await page.open(planId, store);
+      const mount = { sweptHere: sweptHere.current };
+      if (page.planId !== planId) await page.open(planId, store, undefined, mount);
+      else await page.refresh(mount);
+      // In one step with its effects, as when the page state itself changes: the paper is never on the page half set up.
+      if (!gone()) flushSync(() => { setRead(true); });
     })();
     return () => { left.abort(); };
   }, [planId, store]);
+  return read;
 }
 
-/** When the page is seen again, or its window gains focus, another tab's newer list is taken up. */
+/** When the page is seen again, or its window gains focus, what another tab did to the list is taken up. */
 function useTakeUpOtherTabs(): void {
   useEffect(() => {
     const takeUp = (): void => { void useGuestListStore.getState().refresh(); };
@@ -156,11 +173,11 @@ function GuestPaper({ planId, store }: { readonly planId: string; readonly store
   const openPlan = useGuestListStore((s) => s.planId);
   const phase = useGuestListStore((s) => s.phase);
   const list = useGuestListStore((s) => s.list);
-  useOpenedList(planId, store);
+  const read = useOpenedList(planId, store);
   useTakeUpOtherTabs();
 
   let body: ReactElement;
-  if (openPlan !== planId || phase === "opening" || (phase === "ready" && list === null)) {
+  if (!read || openPlan !== planId || phase === "opening" || (phase === "ready" && list === null)) {
     body = (
       <div className="gp-waiting">
         <ActivityStatus variant="panel">Opening your guest list…</ActivityStatus>
@@ -221,6 +238,10 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
 
   // The browser's own Print command (a menu, a keyboard shortcut) records the
   // version too, so no sheet goes out carrying an earlier version's number.
+  // It makes no read of the device first: the browser lays the sheet out as
+  // this handler returns, so a read awaited here would print the old number.
+  // The reads at each mount, on focus and when the page is seen again are
+  // what keep the list current before it.
   useEffect(() => {
     here.current = true;
     const onBeforePrint = (): void => {

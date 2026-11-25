@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock, type MockInstance } from "vitest";
 import { memoryBackend, withBackend, type CacheBackend } from "../../lib/idb-cache.js";
 import { KIT_STORAGE_KEY } from "../../lib/guest-list/kit-switch.js";
@@ -30,6 +30,7 @@ const TABLE_CANARY = "Morag Quillfeather";
 const TITLE = "Fraser and Okafor";
 const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
 const ADDED_AFTER_DELETE_WORDS = "Names were added to this list in another tab after it was deleted here.";
+const REMOVED_BY_RULE_WORDS = "This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
 const SHEET_LINKS = [
   ["Table plan", "table-plan"],
   ["Guests by table", "by-table"],
@@ -135,17 +136,44 @@ function Where(): ReactElement {
   return <p data-testid="where">{`${location.pathname}${location.search}`}</p>;
 }
 
+/** Another page of the same app, where "Back to the list" leads, with a way back to the paper. */
+function ListStandIn(): ReactElement {
+  return (
+    <main data-testid="list">
+      <p>list</p>
+      <Link to={`${PAPER}?kit=on`}>Back to the paper</Link>
+    </main>
+  );
+}
+
 function open(entry: string, store?: GuestListStore): ReturnType<typeof render> {
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/plan/:code/guests/paper" element={<GuestPaperPage store={store} />} />
-        <Route path="/plan/:code/guests" element={<p data-testid="list">list</p>} />
+        <Route path="/plan/:code/guests" element={<ListStandIn />} />
         <Route path="/plan" element={<p data-testid="planner">planner</p>} />
       </Routes>
       <Where />
     </MemoryRouter>,
   );
+}
+
+/**
+ * Leaves the paper for another page of the app by its own "Back to the list"
+ * link. The page unmounts; the page state is left exactly as it was.
+ */
+async function leaveForTheList(): Promise<void> {
+  fireEvent.click(within(tools()).getByRole("link", { name: "Back to the list" }));
+  await screen.findByTestId("list");
+  expect(screen.queryByTestId("guest-paper-page")).toBeNull();
+  expect(state().planId).toBe(PLAN_ID);
+}
+
+/** Comes back to the paper by a link inside the same router: the page mounts again over the same page state. */
+async function comeBackToThePaper(): Promise<HTMLElement> {
+  fireEvent.click(screen.getByRole("link", { name: "Back to the paper" }));
+  return paper("table-plan");
 }
 
 function metas(name: string): HTMLMetaElement[] {
@@ -291,15 +319,22 @@ describe("the guest paper page: opening the list", () => {
     expect(screen.queryByRole("button", { name: "Print" })).toBeNull();
   });
 
-  it("uses the list already open for this plan without reading the device again", async () => {
+  it("keeps the list already open for this plan, with its undo, and reads the device once as it mounts", async () => {
     const store = await storeHolding(list180());
     await act(async () => {
       await state().open(PLAN_ID, store);
+      state().apply((list) => ({ ...list, title: "Changed on the list page" }));
+      await state().flush();
     });
+    expect(state().canUndo).toBe(true);
     const openSpy = vi.spyOn(store, "open");
     open(`${PAPER}?kit=on`, store);
-    await paper("table-plan");
-    expect(openSpy).not.toHaveBeenCalled();
+    const sheet = await paper("table-plan");
+    // The mount reads the device (once), but opens nothing afresh: the list, and its undo, are the ones held.
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(state().canUndo).toBe(true);
+    expect(state().takeUps).toBe(0);
+    expect(text(sheet.querySelector(".gp-leaf__title"))).toBe("Changed on the list page");
   });
 
   it("never shows a list past its removal day", async () => {
@@ -887,6 +922,134 @@ describe("the guest paper page: printing", () => {
     );
     expect(words.getAttribute("role")).toBe("alert");
     expect(within(tools()).queryByText(/This browser is not keeping the list/)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Coming back to the paper from another page of the app. The page state lives
+// on while the page is away, so every mount reads the device again: each case
+// stays inside ONE router, leaves by the paper's own link, comes back by a
+// link, and never resets the page state in between. "Another tab" is a second
+// device store over the same storage.
+// ---------------------------------------------------------------------------
+
+describe("the guest paper page: mounted again over a list it already holds", () => {
+  it("lists a guest another tab added meanwhile, and the browser's own Print then records its version without losing that guest", async () => {
+    const backend = memoryBackend();
+    const store = await storeHolding(list180(), backend);
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    await leaveForTheList();
+
+    // In another tab the planner seats one more guest at table 18, and it is kept.
+    await otherTabSaves(backend, (kept) => ({
+      ...kept,
+      guests: [...kept.guests, { id: uuid(5000), name: "Morag Example", party: "", tableId: uuid(18), seat: 3 }],
+      changedSincePrint: true,
+      updatedAt: "2026-11-14T10:00:00.000Z",
+    }));
+
+    const sheet = await comeBackToThePaper();
+    expect(text(sheet)).toContain("Example, Morag");
+    expect(text(tools().querySelector(".gp-tools__count"))).toBe("173 names");
+
+    // The browser's own Print command: the version is recorded at once, with no read of its own.
+    act(() => {
+      window.dispatchEvent(new Event("beforeprint"));
+    });
+    expect(text(sheet.querySelector(".gp-running"))).toMatch(/^Version 1 · printed /);
+    await act(async () => {
+      await state().flush();
+    });
+    const kept = await memoryStore(backend).open(PLAN_ID);
+    if (kept.kind !== "ready") throw new Error("the list was not kept");
+    expect(kept.list.guests.map((g) => g.name)).toContain("Morag Example");
+    expect(kept.list.guests).toHaveLength(181);
+    expect(kept.list.paperVersion).toBe(1);
+    expect(within(tools()).queryByText("This list was also changed in another tab. This tab's version was kept.")).toBeNull();
+  });
+
+  it("takes an empty list when another tab deleted it meanwhile, and says so in its tools", async () => {
+    const backend = memoryBackend();
+    const store = await storeHolding(list180(), backend);
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    await leaveForTheList();
+    await memoryStore(backend).erase(PLAN_ID);
+
+    const sheet = await comeBackToThePaper();
+    expect(within(tools()).getByText(REMOVED_ELSEWHERE_WORDS)).toBeTruthy();
+    expect(text(tools().querySelector(".gp-tools__count"))).toBe("0 names");
+    expect(text(sheet)).not.toContain(CANARY);
+  });
+
+  it("a list that passed its removal day while the page was away is not printed, and the tools say the rule removed it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2027-06-13T10:00:00.000Z"));
+    const backend = memoryBackend();
+    // The event was yesterday: the list's removal day is 12 July 2027.
+    const store = await storeHolding(list180({ eventDate: "2027-06-12" }), backend);
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    await leaveForTheList();
+
+    vi.setSystemTime(new Date("2027-07-12T00:00:00.000Z"));
+    const sheet = await comeBackToThePaper();
+    const words = within(tools()).getByText(REMOVED_BY_RULE_WORDS);
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("removed-by-rule");
+    expect(text(sheet)).not.toContain(CANARY);
+    expect(text(tools().querySelector(".gp-tools__count"))).toBe("0 names");
+    expect((await memoryStore(backend).open(PLAN_ID)).kind).toBe("new");
+  });
+
+  it("a fresh open whose own sweep removed the list says the rule removed it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2027-07-12T00:00:00.000Z"));
+    const store = await storeHolding(list180({ eventDate: "2027-06-12" }));
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    expect(within(tools()).getByText(REMOVED_BY_RULE_WORDS)).toBeTruthy();
+    expect(text(tools().querySelector(".gp-tools__count"))).toBe("0 names");
+  });
+
+  it("stays in its opening state until this mount's read of the device has returned, so nothing can be printed before it", async () => {
+    const backend = memoryBackend();
+    const inner = await storeHolding(list180(), backend);
+    const slow = deferred<undefined>();
+    let slowReads = false;
+    const store: GuestListStore = {
+      ...inner,
+      open: async (planId) => {
+        if (slowReads) await slow.promise;
+        return inner.open(planId);
+      },
+    };
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    await leaveForTheList();
+    await otherTabSaves(backend, (kept) => ({ ...kept, title: "Changed meanwhile", updatedAt: "2026-11-14T10:00:00.000Z" }));
+
+    slowReads = true;
+    fireEvent.click(screen.getByRole("link", { name: "Back to the paper" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("status").textContent).toContain("Opening your guest list…");
+    expect(screen.queryByTestId("guest-paper-sheet")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Print" })).toBeNull();
+    // The browser's own Print command now has no paper to record a version on.
+    act(() => {
+      window.dispatchEvent(new Event("beforeprint"));
+    });
+    expect(currentList().paperVersion).toBe(0);
+
+    await act(async () => {
+      slow.resolve(undefined);
+      await slow.promise;
+    });
+    const sheet = await paper("table-plan");
+    expect(text(sheet.querySelector(".gp-leaf__title"))).toBe("Changed meanwhile");
   });
 });
 

@@ -27,6 +27,8 @@ function refusingBackend(): CacheBackend {
     get: refuse,
     put: refuse,
     delete: refuse,
+    deleteIf: refuse,
+    upsert: refuse,
     list: refuse,
   };
 }
@@ -34,7 +36,7 @@ function refusingBackend(): CacheBackend {
 /** Reading works, writing and deleting refuse (a full disk, say). */
 function readOnlyBackend(inner: CacheBackend): CacheBackend {
   const refuse = (): Promise<never> => Promise.reject(new Error(`storage full ${CANARY}`));
-  return { get: (key) => inner.get(key), list: () => inner.list(), put: refuse, delete: refuse };
+  return { get: (key) => inner.get(key), list: () => inner.list(), put: refuse, delete: refuse, deleteIf: refuse, upsert: refuse };
 }
 
 /** A put that resolves and keeps nothing, as a transaction that later aborts does. */

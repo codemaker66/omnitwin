@@ -27,7 +27,17 @@ export type KitNotice =
   /** The list this page held is no longer stored: an empty one was taken, and nothing was written back. */
   | { readonly kind: "removed-elsewhere" }
   /** The list was deleted in this tab, and a list another tab stored since has been taken up. */
-  | { readonly kind: "added-after-delete" };
+  | { readonly kind: "added-after-delete" }
+  /** This page's own sweep removed the list, past its removal day: an empty one was taken. */
+  | { readonly kind: "removed-by-rule" };
+
+/**
+ * What a kit page tells the page state each time it mounts: whether the sweep
+ * that mount ran first removed this plan's list (it was past its removal day).
+ */
+export interface MountRead {
+  readonly sweptHere: boolean;
+}
 
 export interface GuestListState {
   readonly planId: string | null;
@@ -48,7 +58,12 @@ export interface GuestListState {
    * included), so a page can clear what it was saying about the list before.
    */
   readonly takeUps: number;
-  open(planId: string, store: GuestListStore, now?: () => string): Promise<void>;
+  /**
+   * Opens a plan's list from the device. A page passes `mount` when its own
+   * sweep ran first: when that sweep removed this plan's list and nothing is
+   * stored, the empty list comes with a notice that the rule removed it.
+   */
+  open(planId: string, store: GuestListStore, now?: () => string, mount?: MountRead): Promise<void>;
   apply(change: (list: GuestList) => GuestList, opts?: { readonly undo?: boolean }): void;
   undo(): void;
   dismissNotice(): void;
@@ -68,8 +83,13 @@ export interface GuestListState {
    * cleared and the page says so, so the names are not written back. With a
    * change unsaved, nothing is read: the save says if it went over another
    * tab's copy, and writes nothing where the list has been removed.
+   *
+   * A kit page calls it on every mount over a list the page state already
+   * holds, and passes `mount`: when that mount's own sweep removed the list,
+   * the empty list's notice says the rule removed it, whether this read or a
+   * later save is what finds it gone.
    */
-  refresh(): Promise<void>;
+  refresh(mount?: MountRead): Promise<void>;
   reset(): void;
 }
 
@@ -102,6 +122,11 @@ interface Session {
    * another tab after the delete, and the page says so when it takes it up.
    */
   erasedHere: boolean;
+  /**
+   * A mount's own sweep removed this plan's list, and the page has not yet
+   * said so: when the list is next found gone, the rule is the reason given.
+   */
+  sweptHere: boolean;
   /** False once replaced or reset. */
   live: boolean;
   /** For a session replaced with a change unsaved: the list still to be saved. */
@@ -170,10 +195,13 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
 
     /**
      * The page takes an empty list in place of one that is no longer stored,
-     * and says why. Undo goes too: its steps belong to the list that was
+     * and says why: this page's own sweep removed it under the rule, or it was
+     * removed elsewhere. Undo goes too: its steps belong to the list that was
      * removed. Nothing is left to save, so the names are not written back.
      */
-    function takeEmpty(session: Session, notice: KitNotice): void {
+    function takeEmpty(session: Session): void {
+      const notice: KitNotice = session.sweptHere ? { kind: "removed-by-rule" } : { kind: "removed-elsewhere" };
+      session.sweptHere = false;
       clearTimer(session);
       session.unsaved = false;
       session.loaded = null;
@@ -224,13 +252,14 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           }
           if (answer.kind === "removed-elsewhere") {
             // A change made while this save ran belongs to the removed list, and goes with it.
-            if (isCurrent(session)) takeEmpty(session, { kind: "removed-elsewhere" });
+            if (isCurrent(session)) takeEmpty(session);
             else session.unsaved = false;
             return;
           }
           session.loaded = answer.stamp;
-          // This session has stored a list itself since any delete here.
+          // This session has stored a list itself since any delete here, or any sweep.
           session.erasedHere = false;
+          session.sweptHere = false;
           if (isCurrent(session)) {
             set(answer.kind === "saved-over-other" ? { kept: true, notice: { kind: "other-tab" } } : { kept: true });
           }
@@ -274,7 +303,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
     return {
       ...INITIAL,
 
-      async open(planId, store, now = systemNow) {
+      async open(planId, store, now = systemNow, mount) {
         const previous = current;
         const session: Session = {
           planId,
@@ -287,6 +316,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           running: null,
           erasing: false,
           erasedHere: false,
+          sweptHere: false,
           live: true,
           final: null,
           unread: false,
@@ -316,7 +346,13 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             }
             return;
           case "new":
-            set({ phase: "ready", list: emptyGuestList(planId, now()), kept: true });
+            set({
+              phase: "ready",
+              list: emptyGuestList(planId, now()),
+              kept: true,
+              // The page's own sweep removed the list just before this read, and nothing is stored: say why.
+              notice: mount?.sweptHere === true ? { kind: "removed-by-rule" } : null,
+            });
             return;
           case "unreadable":
             set({ phase: "unreadable", list: null });
@@ -424,9 +460,12 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         if (session.unsaved) await saveLoop(session);
       },
 
-      async refresh() {
+      async refresh(mount) {
         const session = current;
-        if (session === null || get().phase !== "ready" || !quiet(session)) return;
+        if (session === null) return;
+        // Remembered even when nothing is read now: a change still unsaved goes first, and its save finds the list gone.
+        if (mount?.sweptHere === true) session.sweptHere = true;
+        if (get().phase !== "ready" || !quiet(session)) return;
         const opened = await openSafely(session.store, session.planId);
         // A change made here while reading goes first; so do a reset and another plan.
         if (!isCurrent(session) || get().phase !== "ready" || !quiet(session)) return;
@@ -436,16 +475,17 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             session.unread = false;
             session.loaded = null;
             set({ unread: false, kept: true });
-          } else if (session.loaded !== null) {
-            // This session opened or saved a list that is no longer stored: it was removed elsewhere.
-            takeEmpty(session, { kind: "removed-elsewhere" });
           }
+          // This session opened or saved a list that is no longer stored, or this page's sweep has just removed one.
+          if (session.loaded !== null || session.sweptHere) takeEmpty(session);
           return;
         }
         if (opened.kind !== "ready") return;
         const stored = stampOf(opened.list);
         // The stored copy is the one this session loaded: there is nothing to take.
         if (session.loaded !== null && sameStamp(stored, session.loaded)) return;
+        // A list is stored after all: whatever the sweep removed, this one was stored since.
+        session.sweptHere = false;
         // Deleted in this tab, and stored again since: another tab added these names.
         const addedAfterDelete = session.erasedHere;
         session.erasedHere = false;

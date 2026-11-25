@@ -100,6 +100,10 @@ export const REMOVED_ELSEWHERE =
 /** The list was deleted in this tab, and a list another tab stored afterwards has been taken up. */
 export const ADDED_AFTER_DELETE = "Names were added to this list in another tab after it was deleted here.";
 
+/** The sweep this page ran as it opened removed the list, which was past its removal day. */
+export const REMOVED_BY_RULE =
+  `This list was removed from this browser: a list is removed ${String(KEEP_DAYS_AFTER_EVENT)} days after its event, or ${String(KEEP_DAYS_AFTER_CHANGE)} days after its last change.`;
+
 /** The words of a notice from the page's state. Each is a fixed sentence, or a count in one. */
 export function noticeWords(notice: Exclude<KitNotice, null>): string {
   switch (notice.kind) {
@@ -111,6 +115,8 @@ export function noticeWords(notice: Exclude<KitNotice, null>): string {
       return REMOVED_ELSEWHERE;
     case "added-after-delete":
       return ADDED_AFTER_DELETE;
+    case "removed-by-rule":
+      return REMOVED_BY_RULE;
   }
 }
 

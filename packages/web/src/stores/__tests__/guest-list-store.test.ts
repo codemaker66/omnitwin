@@ -175,12 +175,8 @@ describe("guest list page state: opening", () => {
   });
 
   it("works in memory when storage refuses, and says the list is not kept", async () => {
-    const refusing: CacheBackend = {
-      get: () => Promise.reject(new Error(`refused ${CANARY}`)),
-      put: () => Promise.reject(new Error(`refused ${CANARY}`)),
-      delete: () => Promise.reject(new Error(`refused ${CANARY}`)),
-      list: () => Promise.reject(new Error(`refused ${CANARY}`)),
-    };
+    const refuse = (): Promise<never> => Promise.reject(new Error(`refused ${CANARY}`));
+    const refusing: CacheBackend = { get: refuse, put: refuse, delete: refuse, deleteIf: refuse, upsert: refuse, list: refuse };
     const store = createGuestListStore(withBackend<unknown>(refusing));
 
     await state().open(PLAN_A, store, clock());
@@ -1174,6 +1170,96 @@ describe("guest list page state: a list that comes back after it was deleted her
     await state().refresh();
     expect(state().list?.title).toBe("Kept dinner");
     expect(state().notice).toBeNull();
+  });
+});
+
+describe("guest list page state: a list this page's own sweep removed is said to be removed under the rule", () => {
+  const SWEPT = { sweptHere: true } as const;
+
+  it("a fresh open after the sweep removed the list shows an empty list and says why", async () => {
+    const { store } = device();
+    await state().open(PLAN_A, store, clock(), SWEPT);
+    expect(state().phase).toBe("ready");
+    expect(state().list?.guests).toEqual([]);
+    expect(state().notice).toEqual({ kind: "removed-by-rule" });
+    expect(state().kept).toBe(true);
+  });
+
+  it("a fresh open says nothing of the rule when the sweep removed nothing, or when a list is stored after all", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock(), { sweptHere: false });
+    expect(state().notice).toBeNull();
+    state().reset();
+
+    // Another tab stored a list between this page's sweep and its read: that list is shown, as it is.
+    await otherTabOn(backend).save({ ...emptyGuestList(PLAN_A, START), title: "Stored since", guests: [guest(1)] }, null);
+    await state().open(PLAN_A, store, clock(), SWEPT);
+    expect(state().list?.title).toBe("Stored since");
+    expect(state().notice).toBeNull();
+  });
+
+  it("a page mounted again over its list takes an empty list and says the rule removed it, not another tab", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, title: "Ours", guests: [guest(1), guest(2)] }));
+    await state().flush();
+    // The mount's sweep removes the list from the device, then the mount reads.
+    await otherTabOn(backend).erase(PLAN_A);
+
+    await state().refresh(SWEPT);
+    expect(state().list?.guests).toEqual([]);
+    expect(state().list?.title).toBe("");
+    expect(state().notice).toEqual({ kind: "removed-by-rule" });
+    expect(state().canUndo).toBe(false);
+    expect(state().takeUps).toBe(1);
+
+    // A change then does not bring the old names back.
+    state().apply(titled("A new start"));
+    await state().flush();
+    const kept = await loadedBy(otherTabOn(backend), PLAN_A);
+    expect([kept.list.title, kept.list.guests]).toEqual(["A new start", []]);
+  });
+
+  it("with a change unsaved, the mount's read takes nothing; the save then writes nothing and says the rule removed the list", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+    state().apply(titled("Typed before leaving"));
+    await otherTabOn(backend).erase(PLAN_A);
+
+    const open = vi.spyOn(store, "open");
+    await state().refresh(SWEPT);
+    expect(open).not.toHaveBeenCalled();
+    expect(state().list?.title).toBe("Typed before leaving");
+    expect(state().notice).toBeNull();
+
+    await state().flush();
+    expect(await backend.get(PLAN_A)).toBeNull();
+    expect(state().list?.guests).toEqual([]);
+    expect(state().list?.title).toBe("");
+    expect(state().notice).toEqual({ kind: "removed-by-rule" });
+  });
+
+  it("says it once: a later removal elsewhere is not laid at the rule's door", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock(), SWEPT);
+    state().apply(titled("A new start"));
+    await state().flush();
+    state().dismissNotice();
+    await otherTabOn(backend).erase(PLAN_A);
+    await state().refresh();
+    expect(state().notice).toEqual({ kind: "removed-elsewhere" });
+  });
+
+  it("a read with no word about the sweep is as before: a list gone is removed elsewhere", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Ours"));
+    await state().flush();
+    await otherTabOn(backend).erase(PLAN_A);
+    await state().refresh({ sweptHere: false });
+    expect(state().notice).toEqual({ kind: "removed-elsewhere" });
   });
 });
 

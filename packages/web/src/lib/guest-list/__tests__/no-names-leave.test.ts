@@ -1075,7 +1075,7 @@ async function noReject<T>(run: () => Promise<T>): Promise<T> {
 /** Storage that refuses every call, with a message that carries the canary: the store must not pass it on. */
 function refusingBackend(): CacheBackend {
   const refuse = (): Promise<never> => Promise.reject(new Error(`storage refused ${CANARY}`));
-  return { get: refuse, put: refuse, delete: refuse, list: refuse };
+  return { get: refuse, put: refuse, delete: refuse, deleteIf: refuse, upsert: refuse, list: refuse };
 }
 
 function pickFrom(parsed: ReturnType<typeof parsePaste>): ColumnPick {
