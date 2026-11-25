@@ -90,6 +90,8 @@ const registry = vi.hoisted(() => ({
   audioStepMs: null as number | null,
   /** The context's clock standing still for `forMs` from page time `atMs` while the page runs on (an interruption); null for none. */
   audioPause: null as { readonly atMs: number; readonly forMs: number } | null,
+  /** The context not running (suspended, or Safari's interrupted), as plannerAudioClock reports it (R117). */
+  suspended: false,
   /** The registry's own policy, for a test that needs its 45 ms gap and burst of three; null for eight a second alone. */
   policy: null as RegistryModule.PlannerSoundPolicy | null,
   wakes: 0,
@@ -154,9 +156,9 @@ vi.mock("../../../lib/sound-registry.js", async (importOriginal) => {
       return true;
     },
     clearPlannerRoomTail: (): void => { registry.cleared += 1; },
-    plannerAudioClock: (): AudioClock | null => registry.rate === null
+    plannerAudioClock: (): RegistryModule.PlannerAudioClock | null => registry.rate === null
       ? null
-      : { currentTime: audioNow(), outputLatency: registry.outputLatency, sampleRate: registry.rate },
+      : { currentTime: audioNow(), outputLatency: registry.outputLatency, sampleRate: registry.rate, running: !registry.suspended },
     wakePlannerSound: (): void => { registry.wakes += 1; },
     subscribePlannerSoundArmed: (listener: (sampleRate: number) => void): (() => void) => {
       registry.armed.add(listener);
@@ -494,7 +496,7 @@ beforeEach(() => {
     dispatchEvent: () => false,
   }));
   Object.assign(registry, {
-    mode: "quiet", rate: null, outputLatency: 0.005, batches: [], admitted: [], tails: [], cleared: 0, audioStepMs: null, audioPause: null, policy: null, wakes: 0, drops: [], clockEpoch: 0, reanchors: [], frame: 0, startMs: 1_000,
+    mode: "quiet", rate: null, outputLatency: 0.005, batches: [], admitted: [], tails: [], cleared: 0, audioStepMs: null, audioPause: null, suspended: false, policy: null, wakes: 0, drops: [], clockEpoch: 0, reanchors: [], frame: 0, startMs: 1_000,
   });
   registry.armed.clear();
   registry.settings.clear();
@@ -1374,6 +1376,52 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
     expect(voices.map((voice) => voice.levelDb)).toEqual([0, 1, 2].map((k) => -k));
   });
 
+  it("keeps the plan's gap after a voice that landed late and was taken up 5 ms after its touchdown: its clamp moves the batch's anchor (R116)", async () => {
+    const round = stand("round-table-6ft", 0, 0);
+    const chairs = [-1.5, -0.5, 0.5, 1.5].map((x) => stand("chiavari-chair", x, 2));
+    await mountArmed();
+    const started: CascadePiece[] = [];
+    const chairIds = new Set(chairs.map((chair) => chair.id));
+    let roundDown = false;
+    let chairsDown = 0;
+    const stop = subscribeFurnitureLandings({
+      pickedUp: () => undefined,
+      dropStarted: (id, _landing, _hand, delaySeconds) => {
+        const item = usePlacementStore.getState().placedItems.find((piece) => piece.id === id);
+        started.push({ id, family: bodyFor(getCatalogueItemById(item?.catalogueItemId ?? "") ?? "", item?.scale).family, landsAfterSeconds: delaySeconds });
+      },
+      // As in the browser's Lay out: the sound's frame takes the chairs up 5 ms after their touchdowns.
+      touchedDown: (id) => {
+        if (!chairIds.has(id)) {
+          roundDown = true;
+          return;
+        }
+        chairsDown += 1;
+        if (chairsDown === chairs.length) now += 5;
+      },
+      landedInPlace: () => undefined,
+    });
+    // The round lands first; its chairs well after the plan had them, all in one frame: the first chair at its own
+    // contact, so its start is clamped to now, the next at the plan's gap after it.
+    act(() => {
+      dropInFurniture(round.id, 0.05, 0);
+      for (const chair of chairs) dropInFurniture(chair.id, 0.05, 0.3);
+    });
+    await settle();
+    await answerAll();
+    await framesUntil(() => roundDown);
+    pass(200);
+    await frames(60);
+    stop();
+    expect(chairsDown).toBe(chairs.length);
+    const least = Math.min(...started.map((piece) => piece.landsAfterSeconds));
+    const plannedGaps = planCascade(started.map((piece) => ({ ...piece, landsAfterSeconds: piece.landsAfterSeconds - least })), 1).map((voice) => voice.gapSeconds);
+    const voices = heard();
+    expect(voices).toHaveLength(5);
+    expect(voices[1]?.gap, "the first chair at its own contact, well after the plan's gap").toBeGreaterThan((plannedGaps[1] ?? Number.NaN) + 0.1);
+    expect(voices[2]?.gap, "the next chair the plan's gap after the one that played").toBeCloseTo(plannedGaps[2] ?? Number.NaN, 9);
+  });
+
   it.each([
     ["stood still while the context ran (a stall)", false, "behind"],
     ["stopped while the context was suspended, and ran again", true, "resumed"],
@@ -1385,12 +1433,17 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
       await framesUntil(() => !Number.isNaN(contact.atMs()));
       contact.stop();
       if (pause) registry.audioPause = { atMs: now, forMs: 300 };
+      // A suspended context is not running meanwhile (R117).
+      if (pause && resumed) registry.suspended = true;
       // To the same instant in both runs: frames, then the rest of the 300 ms exactly.
       const answerAtMs = contact.atMs() + 300;
       while (now < answerAtMs - 20) await frames(1);
       pass(answerAtMs - now);
       // A context that was suspended runs again: the registry's clock epoch moves on.
-      if (pause && resumed) registry.clockEpoch += 1;
+      if (pause && resumed) {
+        registry.suspended = false;
+        registry.clockEpoch += 1;
+      }
       await answerAll();
       await frames(60);
       // How far ahead of the context's clock each voice was started when it played.
@@ -1416,6 +1469,85 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
     expect(paused.ahead).toHaveLength(steady.ahead.length);
     paused.ahead.forEach((by, k) => { expect(by, `voice ${String(k)}`).toBeCloseTo(steady.ahead[k] ?? Number.NaN, 6); });
     expect(registry.reanchors.map((entry) => entry.reanchor), "once, with its reason").toEqual([reason]);
+  });
+
+  it("starts a voice handed over while a resume is pending, more than 45 ms after its batch's first contact, within 45 ms of its slot and at least its gap after the voice before (R117)", async () => {
+    interface Heard {
+      readonly levelDb: number;
+      /** Handed to the registry while its clock was stopped. */
+      readonly waiting: boolean;
+      /** When it was handed over, ms after the batch's first contact. */
+      readonly handedMs: number;
+      /** When it starts, ms after the first contact, through the registry's wait; null if dropped there. */
+      readonly heardMs: number | null;
+    }
+    /**
+     * The set let go, its renders answered 40 ms apart; when `suspended`, its
+     * context stopped from the drop's start until a resume settles 150 ms
+     * after it, past its first contact (the review's probe).
+     */
+    async function run(ids: readonly string[], suspended: boolean): Promise<readonly Heard[]> {
+      const contact = firstContact();
+      const fromMs = await letGo(ids);
+      // When the resume settled; a context never stopped has nothing to wait for.
+      let resumedMs = suspended ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+      if (suspended) {
+        registry.audioPause = { atMs: fromMs, forMs: 150 };
+        registry.suspended = true;
+      }
+      for (let i = 0; i < 90; i++) {
+        // The resume settles: the context runs again and the registry's clock epoch moves on.
+        if (registry.suspended && now >= fromMs + 150 - 1e-6) {
+          registry.suspended = false;
+          registry.clockEpoch += 1;
+          resumedMs = now;
+        }
+        renderer.renders("exact").forEach((job, k) => { if (job.state === "pending" && now - fromMs >= (k + 1) * 40) job.answer(40); });
+        await settle();
+        frame();
+        await settle();
+      }
+      contact.stop();
+      const firstMs = contact.atMs();
+      // The registry's wait (playSetDownVoice): a voice handed over while the clock is stopped keeps what is left of
+      // its lead once the resume settles, and is dropped as a miss if that is more than 45 ms past its aim (R115).
+      return plays().map((played): Heard => {
+        const leadMs = (played.voice.startAt - played.clockAt) * 1000;
+        const handedMs = played.atMs - firstMs;
+        const waiting = played.atMs < resumedMs;
+        if (!waiting) return { levelDb: played.voice.levelDb, waiting, handedMs, heardMs: handedMs + leadMs };
+        const waitedMs = resumedMs - played.atMs;
+        return { levelDb: played.voice.levelDb, waiting, handedMs, heardMs: waitedMs - leadMs > 45 ? null : resumedMs - firstMs + Math.max(0, leadMs - waitedMs) };
+      }).sort((a, b) => b.levelDb - a.levelDb);
+    }
+    const onTimeMs = (voices: readonly Heard[], levelDb: number): number => voices.find((voice) => voice.levelDb === levelDb)?.heardMs ?? Number.NaN;
+    let ids = setStanding();
+    await mountArmed();
+    const steady = await run(ids, false);
+    expect(steady.every((voice) => voice.heardMs !== null)).toBe(true);
+    remount();
+    ids = setStanding();
+    mounted = mountInStubRoot(<><FurnitureMotion /><SetDownSound /></>);
+    frame();
+    frame();
+    registry.frame = 0;
+    await arm();
+    const waited = await run(ids, true);
+    const probed = waited.filter((voice) => voice.waiting && voice.handedMs > 45);
+    expect(probed.length, "a voice handed over while the resume was pending, more than 45 ms after the first contact").toBeGreaterThan(0);
+    for (const voice of probed) {
+      const aimMs = onTimeMs(steady, voice.levelDb);
+      const heardMs = voice.heardMs ?? Number.NaN;
+      expect(heardMs - aimMs, `voice ${String(voice.levelDb)} within 45 ms of its slot`).toBeLessThanOrEqual(45);
+      expect(heardMs - aimMs, "never before it").toBeGreaterThanOrEqual(-1e-6);
+      const before = waited.slice(0, waited.indexOf(voice)).reverse().find((other) => other.heardMs !== null);
+      if (before === undefined) continue;
+      const gapMs = aimMs - onTimeMs(steady, before.levelDb);
+      expect(heardMs - (before.heardMs ?? Number.NaN), "at least its gap after the voice before").toBeGreaterThanOrEqual(gapMs - 1e-6);
+    }
+    const reasons = registry.reanchors.map((entry) => entry.reanchor);
+    expect(reasons, "anchored again at every use while the clock stood still").toContain("suspended");
+    expect(reasons.filter((why) => why === "resumed"), "and once more when it ran again").toHaveLength(1);
   });
 
   describe("an audio clock read in steps of 60 and 100 ms, at every phase (R114)", () => {

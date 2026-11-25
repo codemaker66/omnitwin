@@ -947,6 +947,8 @@ export function armPlannerSound(): boolean {
     if (context === null) return false;
     const graph = buildPlannerGraph(context, level);
     plannerLive = { context, graph };
+    // A new context's clock starts again at 0: a new epoch, so no batch keeps an anchor from an earlier context.
+    plannerEpoch += 1;
     plannerContextRan = context.state === "running";
     context.onstatechange = observePlannerContext;
     askForAmbientAudioSession();
@@ -1224,7 +1226,7 @@ function waitingVoiceMiss(lateMs: number): SetDownMiss | null {
   return null;
 }
 
-/** The context's clock epoch: one more each time it runs again after not running (R114). */
+/** The context's clock epoch: one more for each context made, and each time it runs again after not running (R114). */
 let plannerEpoch = 0;
 /** Whether the context was running when last looked at. */
 let plannerContextRan = false;
@@ -1241,8 +1243,9 @@ function observePlannerContext(): void {
  * The context's clock epoch (R114): one more each time the context runs again
  * after not running (a resume after the silence's suspension, an interruption
  * ending), when its clock, stopped meanwhile, no longer keeps time with the
- * page's. A set-down batch anchored in an earlier epoch is anchored again. 0
- * before the first gesture.
+ * page's; and one more for each context made, whose clock starts again at 0.
+ * A set-down batch anchored in an earlier epoch is anchored again. 0 before
+ * the first gesture.
  */
 export function plannerClockEpoch(): number {
   observePlannerContext();
@@ -1406,11 +1409,22 @@ function releaseRoomWet(graph: PlannerGraph, wet: PlannerRoomWet): void {
   wet.fade.disconnect();
 }
 
+/** The context's clock for timing a set-down to its frame, and whether it runs (R117). */
+export interface PlannerAudioClock extends AudioClock {
+  /** The context is running; while it is not (suspended, or Safari's interrupted), its clock stands still. */
+  readonly running: boolean;
+}
+
 /** The context's clock for timing a set-down to its frame; null before the first gesture. */
-export function plannerAudioClock(): AudioClock | null {
+export function plannerAudioClock(): PlannerAudioClock | null {
   if (plannerLive === null) return null;
   const { context } = plannerLive;
-  return { currentTime: context.currentTime, outputLatency: plannerOutputLatency(context), sampleRate: context.sampleRate };
+  return {
+    currentTime: context.currentTime,
+    outputLatency: plannerOutputLatency(context),
+    sampleRate: context.sampleRate,
+    running: context.state === "running",
+  };
 }
 
 /** The output's latency; else the base latency (a browser without outputLatency); else 0. */
@@ -1442,8 +1456,12 @@ export function wakePlannerSound(): void {
  */
 export type SetDownMiss = "resume-rejected" | "off" | "hidden" | "expired";
 
-/** Why a set-down batch was anchored again (R114): its context ran again after not running, or its clock fell 150 ms behind. */
-export type SetDownReanchor = "resumed" | "behind";
+/**
+ * Why a set-down batch was anchored again: its context ran again after not
+ * running, or its clock fell 150 ms behind (R114); or its context is not
+ * running, so it is anchored at every use (R117).
+ */
+export type SetDownReanchor = "resumed" | "behind" | "suspended";
 
 /** One batch anchored again, as the tap logs it. */
 export interface VenSoundTapReanchor {

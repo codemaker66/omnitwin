@@ -547,12 +547,23 @@ describe("a suspended context", () => {
     expect(plannerClockEpoch()).toBe(armed + 1);
   });
 
+  it("starts a new clock epoch with each context it makes, whose clock starts again at 0", () => {
+    expect(plannerClockEpoch(), "before the first gesture").toBe(0);
+    armPlannerSound();
+    expect(plannerClockEpoch(), "a new context, made running").toBe(1);
+  });
+
   it("logs each batch anchored again on the tap, with its reason, with ?soundtap=1 (R114)", () => {
     window.history.replaceState(null, "", "/plan/stub?soundtap=1");
     armPlannerSound();
     logSetDownReanchor({ reanchor: "resumed", behindMs: 0 });
     logSetDownReanchor({ reanchor: "behind", behindMs: 300 });
-    expect(window.__venSoundTap?.reanchors).toEqual([{ reanchor: "resumed", behindMs: 0 }, { reanchor: "behind", behindMs: 300 }]);
+    logSetDownReanchor({ reanchor: "suspended", behindMs: 12 });
+    expect(window.__venSoundTap?.reanchors).toEqual([
+      { reanchor: "resumed", behindMs: 0 },
+      { reanchor: "behind", behindMs: 300 },
+      { reanchor: "suspended", behindMs: 12 },
+    ]);
   });
 
   it("drops the waiting set-downs when the device refuses to resume, and logs each as a miss", async () => {
@@ -690,13 +701,24 @@ describe("the clock, arming and the tap", () => {
     expect(plannerAudioClock()).toBeNull();
     armPlannerSound();
     context.currentTime = 4.5;
-    expect(plannerAudioClock()).toEqual({ currentTime: 4.5, outputLatency: 0.012, sampleRate: 48000 });
+    expect(plannerAudioClock()).toEqual({ currentTime: 4.5, outputLatency: 0.012, sampleRate: 48000, running: true });
     context.outputLatency = 0;
     expect(plannerAudioClock()?.outputLatency).toBe(0.005);
     context.outputLatency = undefined;
     expect(plannerAudioClock()?.outputLatency, "a browser without outputLatency").toBe(0.005);
     context.baseLatency = Number.NaN;
     expect(plannerAudioClock()?.outputLatency).toBe(0);
+  });
+
+  it("reports whether its context is running, so a set-down is never timed on a stopped clock (R117)", () => {
+    armPlannerSound();
+    expect(plannerAudioClock()?.running).toBe(true);
+    context.state = "suspended";
+    expect(plannerAudioClock()?.running).toBe(false);
+    context.state = "interrupted";
+    expect(plannerAudioClock()?.running, "Safari's interrupted").toBe(false);
+    context.state = "running";
+    expect(plannerAudioClock()?.running).toBe(true);
   });
 
   it("tells its listeners the context's rate once, when the context is made", () => {

@@ -15,7 +15,7 @@ import {
   type SetDownRenderer,
 } from "../../lib/set-down/renderer.js";
 import { playsAsRendered, respatializeSetDown, type SetDownDirect } from "../../lib/set-down/respatialize.js";
-import { HEARD_WINDOW_S, LATEST_PRESENT_S, presentDelayFor, setDownStartTime, type AudioClock } from "../../lib/set-down/timing.js";
+import { HEARD_WINDOW_S, LATEST_PRESENT_S, presentDelayFor, setDownStartTime } from "../../lib/set-down/timing.js";
 import {
   beginSetDownBatch,
   getPlannerSoundSettings,
@@ -26,9 +26,11 @@ import {
   subscribePlannerSoundArmed,
   plannerClockEpoch,
   wakePlannerSound,
+  type PlannerAudioClock,
   type SetDownBatch,
   type SetDownDrop,
   type SetDownPlayed,
+  type SetDownReanchor,
   type SetDownVoice,
 } from "../../lib/sound-registry.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
@@ -93,6 +95,18 @@ const SET_STAGGER_MS = SET_STAGGER * 1000;
  */
 const REANCHOR_BEHIND_S = 0.15;
 
+/**
+ * Why a batch's anchor no longer pairs the context's clock with the page's, if
+ * it does not: the clock is not running, so the registry will hold the voice's
+ * lead from now while it waits (R117); it ran again since the anchor (a new
+ * epoch); or it is far behind the anchor's projection (R114).
+ */
+function reanchorReason(clock: PlannerAudioClock, anchorEpoch: number, epoch: number, behindS: number): SetDownReanchor | null {
+  if (!clock.running) return "suspended";
+  if (anchorEpoch !== epoch) return "resumed";
+  return behindS > REANCHOR_BEHIND_S ? "behind" : null;
+}
+
 /** The driver, as the shell hears the motion and the frame loop for it. */
 export interface SetDownDriver extends FurnitureLandingListener {
   /** The scene's frame, after the motion's: the contacts it heard are played here. */
@@ -130,10 +144,12 @@ interface Batch {
    * The context's clock at its first contact, paired with that contact's own
    * time: every voice's slot is carried onto the context's clock through this
    * one pair, so the gaps between its voices are exact however the clock is
-   * read (R109, R112). Anchored again when the clock falls behind it. Null
-   * until its first contact.
+   * read (R109, R112). Anchored again when its context runs again or is not
+   * running, or its clock falls far behind (R114, R117). `shift` is how much
+   * later than the pair its voices start, s: a voice clamped to now moves every
+   * later one by its lateness (R116). Null until its first contact.
    */
-  anchor: { readonly audio: number; readonly page: number; readonly epoch: number } | null;
+  anchor: { readonly audio: number; readonly page: number; readonly epoch: number; readonly shift: number } | null;
   /** The plan's gaps by position, ms: the k-th voice slotted keeps the k-th after the one before (R111). */
   readonly gapsMs: readonly number[];
   /** How many of its voices have been slotted. */
@@ -319,7 +335,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
    * redo, a reset or a load (R87), its piece still there (R89), a context to
    * play on and sound allowed. A landing that may not is dropped or finished.
    */
-  const stillHeard = (flight: Flight): { readonly item: PlacedItem; readonly clock: AudioClock } | null => {
+  const stillHeard = (flight: Flight): { readonly item: PlacedItem; readonly clock: PlannerAudioClock } | null => {
     if (flight.epoch !== editorHistoryTravels()) {
       drop(flight, "undone");
       return null;
@@ -381,11 +397,11 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
    * voice maps to now, every later one by exact slot differences, the whole
    * batch the shell's frame (about a millisecond) after the touchdowns'.
    */
-  const beginBatch = (flight: Flight, clock: AudioClock, atMs: number): void => {
+  const beginBatch = (flight: Flight, clock: PlannerAudioClock, atMs: number): void => {
     const { batch } = flight;
     if (batch.admitted !== undefined) return;
     batch.admitted = beginSetDownBatch(batch.live);
-    batch.anchor = { audio: clock.currentTime, page: atMs, epoch: plannerClockEpoch() };
+    batch.anchor = { audio: clock.currentTime, page: atMs, epoch: plannerClockEpoch(), shift: 0 };
   };
 
   const play = (flight: Flight, render: SetDownRendered, played: SetDownPlayed, startAt: number): void => {
@@ -420,26 +436,32 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
    * latency - onset), so it is heard as its slot is shown, never before. A
    * voice computed before its slot starts exactly there, so a cascade's gaps
    * are exact however coarsely the clock is read; a later one starts late by
-   * exactly its lateness. A single voice's slot is its contact: it starts at
-   * now plus the lead, as setDownStartTime gives.
+   * exactly its lateness, and the batch's later voices as much later, so each
+   * keeps its exact gap from the voice that actually played (R116); a voice
+   * already scheduled is not moved. A single voice's slot is its contact: it
+   * starts at now plus the lead, as setDownStartTime gives.
    */
-  const startFor = (flight: Flight, contact: Contact, clock: AudioClock, render: SetDownRendered): number => {
+  const startFor = (flight: Flight, contact: Contact, clock: PlannerAudioClock, render: SetDownRendered): number => {
     const { batch } = flight;
     let anchor = batch.anchor;
     // A clock that stopped while the page ran on no longer keeps the anchor's time: the batch is anchored again at
     // now, so later voices start at their slots; those whose slots passed meanwhile are dropped by their windows,
-    // judged on the page's clock (R112). Its context running again after not running says so (a new clock epoch);
-    // short of that, only a clock far behind the anchor's projection does, never one read in coarse steps (R114).
+    // judged on the page's clock (R112). A clock not running is anchored at every use, since the registry holds the
+    // voice's lead from now while it waits for the resume (R117); its context running again after not running (a
+    // new clock epoch) corrects the pair once more; short of those, only a clock far behind the anchor's projection
+    // does, never one read in coarse steps (R114).
     const atMs = nowMs();
     const epoch = plannerClockEpoch();
     const behindS = anchor === null ? 0 : anchor.audio + (atMs - anchor.page) / 1000 - clock.currentTime;
-    if (anchor === null || anchor.epoch !== epoch || behindS > REANCHOR_BEHIND_S) {
-      if (anchor !== null) logSetDownReanchor({ reanchor: anchor.epoch === epoch ? "behind" : "resumed", behindMs: behindS * 1000 });
-      anchor = { audio: clock.currentTime, page: atMs, epoch };
-      batch.anchor = anchor;
-    }
-    const atSlot = anchor.audio + (contact.slotMs - anchor.page) / 1000;
-    return setDownStartTime(clock, contact.presentDelay, render.onsetSeconds) + Math.max(0, atSlot - clock.currentTime);
+    const reason = anchor === null ? null : reanchorReason(clock, anchor.epoch, epoch, behindS);
+    if (reason !== null) logSetDownReanchor({ reanchor: reason, behindMs: behindS * 1000 });
+    if (anchor === null || reason !== null) anchor = { audio: clock.currentTime, page: atMs, epoch, shift: 0 };
+    // A voice computed after its slot's time starts now, late by `lateS`: the batch's later voices start as much
+    // later, so each keeps its exact gap from this one, the voice that actually played (R116).
+    const lateS = clock.currentTime - (anchor.audio + anchor.shift + (contact.slotMs - anchor.page) / 1000);
+    if (lateS > 0) anchor = { ...anchor, shift: anchor.shift + lateS };
+    batch.anchor = anchor;
+    return setDownStartTime(clock, contact.presentDelay, render.onsetSeconds) + Math.max(0, -lateS);
   };
 
   /**
@@ -458,7 +480,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   };
 
   /** Its exact render, ready by its slot: played, or a variant for the surfaces it now stands on (Review Focus 5). */
-  const playOnTime = (flight: Flight, contact: Contact, clock: AudioClock, exact: SetDownRendered): void => {
+  const playOnTime = (flight: Flight, contact: Contact, clock: PlannerAudioClock, exact: SetDownRendered): void => {
     judge(flight, "on-time", exact.workMs);
     const variant = contact.stale ? variantHeard(contact, contact.cacheKey) : null;
     if (variant !== null) play(flight, variant, "variant", startFor(flight, contact, clock, variant));
@@ -474,7 +496,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
    * is dropped, variant or not: nothing starts later than that. One whose
    * render failed is dropped as failed unless a variant stands in.
    */
-  const due = (flight: Flight, contact: Contact, clock: AudioClock): void => {
+  const due = (flight: Flight, contact: Contact, clock: PlannerAudioClock): void => {
     if (nowMs() > contact.slotMs + HEARD_WINDOW_MS) {
       if (flight.failed) drop(flight, "failed");
       else missed(flight);
