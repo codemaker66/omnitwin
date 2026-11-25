@@ -3,7 +3,7 @@ import { advance, useThree } from "@react-three/fiber";
 import type { Camera } from "three";
 import type { Space } from "@omnitwin/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
+import { getCatalogueItem, getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import * as configApi from "../../../api/configurations.js";
 import type { PlacedObject } from "../../../api/configurations.js";
 import {
@@ -19,6 +19,8 @@ import {
 import { createPlacedItem, snapPositionToGrid, type PlacedItem } from "../../../lib/placement.js";
 import { renderSetDown, type SetDownInput } from "../../../lib/set-down/render.js";
 import { panGains } from "../../../lib/set-down/respatialize.js";
+import { bodyFor } from "../../../lib/set-down/bodies.js";
+import { planCascade, type CascadePiece } from "../../../lib/set-down/cascade.js";
 import { roomState, roomAcousticsFor } from "../../../lib/set-down/room-acoustics.js";
 import { renderRoomTail, tailOnsetSeconds } from "../../../lib/set-down/tail.js";
 import { presentDelayFor, setDownStartTime, type AudioClock } from "../../../lib/set-down/timing.js";
@@ -47,7 +49,7 @@ import { EditorBridge, __resetEditorBridgeMountCountForTests, placedItemToEditor
 import { FurnitureMotion } from "../FurnitureMotion.js";
 import { SetDownSound } from "../SetDownSound.js";
 import { __setSetDownRendererFactoryForTests } from "../set-down-driver.js";
-import { RENDER_MODE_STORAGE_KEY } from "../set-down-policy.js";
+import { AdaptiveRenderPolicy, RENDER_MODE_STORAGE_KEY } from "../set-down-policy.js";
 
 // ---------------------------------------------------------------------------
 // The set-down sound in the scene (T-700, Task 14b). A piece starting down
@@ -82,6 +84,8 @@ const registry = vi.hoisted(() => ({
   tails: [] as string[],
   /** Times the room's tail was taken off the bus. */
   cleared: 0,
+  /** The context's clock read in steps of this many ms, as a browser's main thread sees it, apart from the page's; null for smooth. */
+  audioStepMs: null as number | null,
   /** The registry's own policy, for a test that needs its 45 ms gap and burst of three; null for eight a second alone. */
   policy: null as RegistryModule.PlannerSoundPolicy | null,
   wakes: 0,
@@ -133,9 +137,12 @@ vi.mock("../../../lib/sound-registry.js", async (importOriginal) => {
       return true;
     },
     clearPlannerRoomTail: (): void => { registry.cleared += 1; },
-    plannerAudioClock: (): AudioClock | null => registry.rate === null
-      ? null
-      : { currentTime: 2 + (performance.now() - registry.startMs) / 1000, outputLatency: registry.outputLatency, sampleRate: registry.rate },
+    plannerAudioClock: (): AudioClock | null => {
+      if (registry.rate === null) return null;
+      const sinceMs = performance.now() - registry.startMs;
+      const readMs = registry.audioStepMs === null ? sinceMs : Math.floor(sinceMs / registry.audioStepMs) * registry.audioStepMs;
+      return { currentTime: 2 + readMs / 1000, outputLatency: registry.outputLatency, sampleRate: registry.rate };
+    },
     wakePlannerSound: (): void => { registry.wakes += 1; },
     subscribePlannerSoundArmed: (listener: (sampleRate: number) => void): (() => void) => {
       registry.armed.add(listener);
@@ -190,6 +197,8 @@ interface FakeJob {
   state: "pending" | "answered" | "cancelled";
   /** Answers it, with the Worker's time. */
   answer(workMs?: number): void;
+  /** Fails it, as a Worker that refuses the job does. */
+  fail(): void;
 }
 
 /** Which job each render came from, so a played voice can be traced to its piece. */
@@ -211,6 +220,12 @@ class FakeRenderer implements SetDownRenderer {
     return new Promise((resolve, reject) => {
       const job: FakeJob = {
         kind: "render", priority, key, input, rt: null, options: null, state: "pending",
+        fail: () => {
+          if (job.state !== "pending") return;
+          job.state = "answered";
+          this.rejectors.get(job)?.(new Error(`The set-down Worker refused render "${key}"`));
+          this.rejectors.delete(job);
+        },
         answer: (workMs = 8) => {
           if (job.state !== "pending") return;
           job.state = "answered";
@@ -245,6 +260,7 @@ class FakeRenderer implements SetDownRenderer {
     return new Promise((resolve, reject) => {
       const job: FakeJob = {
         kind: "tail", priority: "tail", key, input: null, rt, options, state: "pending",
+        fail: () => undefined,
         answer: (workMs = 40) => {
           if (job.state !== "pending") return;
           job.state = "answered";
@@ -301,6 +317,11 @@ function space(name: string, slug: string, id: string): Space {
 }
 const GRAND_HALL = space("Grand Hall", "grand-hall", "space-grand-hall");
 const SALOON = space("Saloon", "saloon", "space-saloon");
+
+/** A catalogue id's slug, or undefined. */
+function getCatalogueItemById(id: string): string | undefined {
+  return getCatalogueItem(id)?.slug;
+}
 
 function catalogueId(slug: string): string {
   const item = getCatalogueItemBySlug(slug);
@@ -457,7 +478,7 @@ beforeEach(() => {
     dispatchEvent: () => false,
   }));
   Object.assign(registry, {
-    mode: "quiet", rate: null, outputLatency: 0.005, batches: [], admitted: [], tails: [], cleared: 0, policy: null, wakes: 0, drops: [], frame: 0, startMs: 1_000,
+    mode: "quiet", rate: null, outputLatency: 0.005, batches: [], admitted: [], tails: [], cleared: 0, audioStepMs: null, policy: null, wakes: 0, drops: [], frame: 0, startMs: 1_000,
   });
   registry.armed.clear();
   registry.settings.clear();
@@ -724,7 +745,9 @@ describe("a piece set down", () => {
     expect(plays()).toHaveLength(1);
     const voice = plays()[0]?.voice;
     expect(voice?.tap).toMatchObject({ played: "late", workMs: 30 });
-    expect(voice?.startAt).toBeCloseTo(2 + (now - registry.startMs) / 1000, 9);
+    // Heard (start + onset + latency) after the contact frame is shown by exactly its lateness (R109).
+    const heard = (voice?.startAt ?? Number.NaN) + 0.002 + registry.outputLatency;
+    expect(heard - (voice?.tap?.contactMs ?? Number.NaN) / 1000).toBeCloseTo(afterMs / 1000, 9);
   });
 
   it("plays nothing for a chair whose render answers past 45 ms after its contact, and logs the miss (R80)", async () => {
@@ -1142,6 +1165,94 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
     expect(JSON.parse(localStorage.getItem(RENDER_MODE_STORAGE_KEY) ?? "{}")).toMatchObject({ light: "ahead" });
   });
 
+  it("keeps every gap of a set placed exact on an audio clock the page reads in 10 ms steps, renders answered one at a time (R109)", async () => {
+    const gaps = (): readonly number[] => {
+      const starts = plays().map((played) => played.voice.startAt).sort((a, b) => a - b);
+      return starts.slice(1).map((start, k) => start - (starts[k] ?? Number.NaN));
+    };
+    await mountArmed();
+    act(() => { usePlacementStore.getState().placeTableGroup(catalogueId("round-table-6ft"), 0, 0, 0, 10); });
+    await settle();
+    await answerAll();
+    await frames(60);
+    const planned = gaps();
+    expect(planned).toHaveLength(7);
+
+    remount();
+    registry.audioStepMs = 10;
+    mounted = mountInStubRoot(<><FurnitureMotion /><SetDownSound /></>);
+    frame();
+    frame();
+    registry.frame = 0;
+    await arm();
+    const fromMs = now;
+    act(() => { usePlacementStore.getState().placeTableGroup(catalogueId("round-table-6ft"), 0, 0, 0, 10); });
+    await settle();
+    await framesAnsweringInTurn(fromMs, 25, 90);
+    expect(plays()).toHaveLength(8);
+    gaps().forEach((gap, k) => { expect(gap, `gap ${String(k)}`).toBeCloseTo(planned[k] ?? Number.NaN, 6); });
+  });
+
+  it("spaces four chairs that touch down in one frame, late, by their own gaps: none together (R110)", async () => {
+    const round = stand("round-table-6ft", 0, 0);
+    const chairs = [-1.5, -0.5, 0.5, 1.5].map((x) => stand("chiavari-chair", x, 2));
+    await mountArmed();
+    const touchdowns = new Map<string, number>();
+    const stop = subscribeFurnitureLandings({
+      pickedUp: () => undefined,
+      dropStarted: () => undefined,
+      touchedDown: (id) => { touchdowns.set(id, performance.now()); },
+      landedInPlace: () => undefined,
+    });
+    // The round lands first; its chairs, a third of a second later, all at once.
+    act(() => {
+      dropInFurniture(round.id, 0.05, 0);
+      for (const chair of chairs) dropInFurniture(chair.id, 0.05, 0.3);
+    });
+    await settle();
+    expect(renderer.renders("exact")).toHaveLength(5);
+    await answerAll();
+    await framesUntil(() => touchdowns.has(round.id));
+    // The main thread stalls: the chairs touch down well after the plan had them.
+    pass(200);
+    await frames(60);
+    stop();
+    expect(new Set(chairs.map((chair) => touchdowns.get(chair.id))).size, "the four chairs touched down in one frame").toBe(1);
+    const starts = plays().map((played) => played.voice.startAt).sort((a, b) => a - b);
+    expect(starts).toHaveLength(5);
+    const gaps = starts.slice(1).map((start, k) => start - (starts[k] ?? Number.NaN));
+    for (const gap of gaps) expect(gap, "never two together").toBeGreaterThanOrEqual(0.085 - 1e-9);
+    // The chairs, each the plan's 85-110 ms after the one before.
+    for (const gap of gaps.slice(1)) expect(gap).toBeLessThanOrEqual(0.110 + 1e-9);
+  });
+
+  it("gives a set let go on the plan's schedule the plan's own starts, as before (R110)", async () => {
+    const ids = setStanding();
+    await mountArmed();
+    const started: CascadePiece[] = [];
+    const contact = firstContact();
+    const stop = subscribeFurnitureLandings({
+      pickedUp: () => undefined,
+      dropStarted: (id, _landing, _hand, delaySeconds) => {
+        const item = usePlacementStore.getState().placedItems.find((piece) => piece.id === id);
+        const slug = getCatalogueItemById(item?.catalogueItemId ?? "") ?? "";
+        started.push({ id, family: bodyFor(slug, item?.scale).family, landsAfterSeconds: delaySeconds });
+      },
+      touchedDown: () => undefined,
+      landedInPlace: () => undefined,
+    });
+    await letGo(ids);
+    stop();
+    await answerAll();
+    await frames(60);
+    contact.stop();
+    // The driver's first batch draws the cascade's seed 1.
+    const offsets = planCascade(started, 1).map((voice) => voice.offsetSeconds).sort((a, b) => a - b);
+    const starts = startsAfter(contact.atMs());
+    expect(starts).toHaveLength(8);
+    starts.forEach((start, k) => { expect(start - (starts[0] ?? Number.NaN), `voice ${String(k)}`).toBeCloseTo((offsets[k] ?? Number.NaN) - (offsets[0] ?? Number.NaN), 9); });
+  });
+
   describe("a cascade voice's variant, scheduled at its slot (R108)", () => {
     /** The slot timer is armed this long before the slot: presentDelayFor's ceiling. */
     const LEAD_MS = 1000 / 30;
@@ -1237,6 +1348,32 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
       startsAfter(contactMs).forEach((start, k) => { expect(start, `voice ${String(k)} on time`).toBeCloseTo(planned[k] ?? Number.NaN, 9); });
     });
 
+    it("logs as failed, not too late, a voice whose render failed and whose slot passed 45 ms ago (fix-3 nit)", async () => {
+      vi.stubGlobal("reportError", vi.fn());
+      remount();
+      localStorage.setItem(RENDER_MODE_STORAGE_KEY, JSON.stringify({ light: "exact", table: "exact" }));
+      const ids = setStanding();
+      mounted = mountInStubRoot(<><FurnitureMotion /><SetDownSound /></>);
+      frame();
+      frame();
+      registry.frame = 0;
+      await arm();
+      const contact = firstContact();
+      await letGo(ids);
+      const exact = renderer.pending("exact");
+      expect(exact).toHaveLength(8);
+      for (const job of exact.slice(1)) job.fail();
+      exact[0]?.answer(8);
+      await settle();
+      await framesUntil(() => !Number.isNaN(contact.atMs()));
+      contact.stop();
+      now += LEAD_MS + 60;
+      await frames(60);
+      const dropped = registry.drops.map((drop) => drop.drop);
+      expect(dropped.length).toBeGreaterThan(0);
+      expect(dropped.every((why) => why === "failed")).toBe(true);
+    });
+
     it("finishes, as one voice, a voice whose exact render answers after its variant was scheduled but by its slot", async () => {
       const planned = await plannedStarts();
       const lastSlotMs = ((planned.at(-1) ?? Number.NaN) - (planned[0] ?? Number.NaN)) * 1000;
@@ -1258,8 +1395,10 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
       while (now < answerAtMs - 20) await frames(1);
       pass(answerAtMs - now);
       await settle();
+      const judged = vi.spyOn(AdaptiveRenderPolicy.prototype, "recordContact");
       exact.at(-1)?.answer(8);
       await settle();
+      expect(judged.mock.calls.map(([, record]) => record.timing), "its render, answered by its slot, is judged on time").toEqual(["on-time"]);
       await frames(10);
       const voices = [...plays()].sort((a, b) => a.voice.startAt - b.voice.startAt);
       expect(voices, "one voice each").toHaveLength(8);
@@ -1337,6 +1476,27 @@ describe("a variant heard from where its piece lands (R104)", () => {
     expect(plays()).toHaveLength(2);
     expect(plays()[1]?.voice.tap?.played).toBe("exact");
     expect(variant?.directGain).toBeCloseTo(plays()[1]?.voice.directGain ?? Number.NaN, 12);
+  });
+
+  it("starts a single voice's variant with the frame's lead though the page's clock ticked between its touchdown and the sound's frame (I-1)", async () => {
+    await mountArmed();
+    await chairVariantAt([2, 0, 1]);
+    // Heard after the shell's own listener: the clock ticks 0.1 ms in the motion's touchdown, before the shell's frame.
+    const stop = subscribeFurnitureLandings({
+      pickedUp: () => undefined,
+      dropStarted: () => undefined,
+      touchedDown: () => { now += 0.1; },
+      landedInPlace: () => undefined,
+    });
+    await place("chiavari-chair", 2, 1);
+    await frames(6);
+    stop();
+    expect(plays()).toHaveLength(1);
+    const voice = plays()[0]?.voice;
+    expect(voice?.tap?.played).toBe("variant");
+    // Heard (start + onset + latency) as the contact frame is shown, not before it.
+    const heard = (voice?.startAt ?? Number.NaN) + 0.002 + registry.outputLatency;
+    expect(heard - (voice?.tap?.contactMs ?? Number.NaN) / 1000).toBeCloseTo(0, 9);
   });
 
   it("moves a variant to the landing when the camera turned between its render ahead and the landing", async () => {

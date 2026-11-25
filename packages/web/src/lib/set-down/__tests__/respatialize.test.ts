@@ -67,6 +67,13 @@ describe("playsAsRendered (R107): the pan, which is all a move changes", () => {
     expect(playsAsRendered(0.3, heardAzimuthRad)).toBe(asRendered);
   });
 
+  it.each([
+    ["just behind on the left and just behind on the right, round the ear", -Math.PI + 0.05, Math.PI - 0.05],
+    ["hard right, and 0.6 rad in front of it", Math.PI / 2, Math.PI / 2 - 0.6],
+  ])("plays as rendered: %s", (_name, renderedAzimuthRad, heardAzimuthRad) => {
+    expect(playsAsRendered(renderedAzimuthRad, heardAzimuthRad)).toBe(true);
+  });
+
   it("allows a pan within sin 0.2", () => {
     expect(AS_RENDERED_SIDE).toBeCloseTo(Math.sin(0.2), 15);
   });

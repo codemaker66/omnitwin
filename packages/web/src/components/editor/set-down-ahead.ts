@@ -48,7 +48,6 @@ const GHOST_ID = "set-down-ghost";
 /** A render input, with what the driver keys and plays it by. */
 export interface Gathered {
   readonly input: SetDownInput;
-  readonly directGain: number;
   readonly surfacesKey: string;
   readonly slug: string;
   /** The surfaces' kinds, for the tap. */

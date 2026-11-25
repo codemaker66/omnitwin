@@ -50,7 +50,10 @@ import { SetDownRoom, spaceKeyOf } from "./set-down-room.js";
 // - At drop start each voice's exact render is asked for (R76's kind and
 //   speed, the ear 2-6 m from the landing, R61), and a sleeping context woken.
 // - A voice is due at its slot: its contact frame, or for a cascade voice its
-//   own place in the cascade after it (R105). It plays the first of: its exact
+//   contact or the seeded gap after the slot of the voice that landed before
+//   it, whichever is later (R110, R75). Every voice starts at its slot carried
+//   onto the context's clock through its batch's one anchor, never before now,
+//   with the contact frame's lead (R109). It plays the first of: its exact
 //   render, if ready by its slot; a variant rendered ahead for the same piece,
 //   surfaces and room, scheduled 1/30 s before the slot to start exactly at it
 //   (R108); its exact render, if that arrives within 45 ms after its slot
@@ -111,9 +114,15 @@ interface Batch {
   live: number;
   /** Undefined until its first contact (or first play under reduced motion); null if refused. */
   admitted: SetDownBatch | null | undefined;
-  /** The page time of its first contact, and that voice's cascade offset. */
-  firstAtMs: number;
-  firstOffsetSeconds: number;
+  /**
+   * The context's clock and the page's, read together at its first contact:
+   * every voice's slot is carried onto the context's clock through this one
+   * pair, so the gaps between its voices are exact however the clock is read
+   * (R109). Null until then.
+   */
+  anchor: { readonly audio: number; readonly page: number } | null;
+  /** The slot of its voice that landed last, page time: the next is spaced from it (R110). Null until its first. */
+  lastSlotMs: number | null;
 }
 
 interface Contact {
@@ -156,7 +165,8 @@ interface Flight {
   readonly handSpeed: number;
   readonly cacheKey: string;
   readonly surfacesKey: string;
-  readonly offsetSeconds: number;
+  /** The cascade's seeded gap after the voice landing before it, s (R110). */
+  readonly gapSeconds: number;
   readonly levelDb: number;
   readonly epoch: number;
   readonly inPlace: boolean;
@@ -317,18 +327,27 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     if (before === "ahead" && after === "exact") ahead.backToExact(flight.cls);
   };
 
-  /** How much later than its own contact a cascade voice waits, so the voices keep their spacing (R75). */
-  const cascadeWait = (flight: Flight, atMs: number): number => {
+  /**
+   * A voice's slot, page time, decided at its contact in the order its batch's
+   * pieces land: its contact, or the seeded gap after the slot of the voice
+   * that landed before it, whichever is later (R110, R75). Pieces that touch
+   * down together are spaced, never heard together; landings that follow the
+   * plan keep its spacing. A voice dropped after its contact still spaces the
+   * next from its slot.
+   */
+  const slotFor = (flight: Flight, atMs: number): number => {
     const { batch } = flight;
-    return Math.max(0, flight.offsetSeconds - batch.firstOffsetSeconds - (atMs - batch.firstAtMs) / 1000);
+    const slotMs = batch.lastSlotMs === null ? atMs : Math.max(atMs, batch.lastSlotMs + flight.gapSeconds * 1000);
+    batch.lastSlotMs = slotMs;
+    return slotMs;
   };
 
-  const beginBatch = (flight: Flight, atMs: number): void => {
+  /** The batch's first contact: the registry admits it, and its anchor is read, the two clocks together (R109). */
+  const beginBatch = (flight: Flight, clock: AudioClock): void => {
     const { batch } = flight;
     if (batch.admitted !== undefined) return;
     batch.admitted = beginSetDownBatch(batch.live);
-    batch.firstAtMs = atMs;
-    batch.firstOffsetSeconds = flight.offsetSeconds;
+    batch.anchor = { audio: clock.currentTime, page: nowMs() };
   };
 
   const play = (flight: Flight, render: SetDownRendered, played: SetDownPlayed, startAt: number): void => {
@@ -357,13 +376,20 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   };
 
   /**
-   * On the context's clock now, the start of a voice heard at its slot: an
-   * on-time voice's, the contact frame's lead kept, so a cascade voice
-   * answered after its contact but by its slot starts exactly as it would
-   * have at the contact (R105).
+   * When a voice starts on the context's clock, for every play (R109): its
+   * slot carried onto that clock through its batch's anchor, or now if that
+   * has passed, plus the contact frame's lead, max(0, presentDelay - output
+   * latency - onset), so it is heard as its slot is shown, never before. A
+   * voice computed before its slot starts exactly there, so a cascade's gaps
+   * are exact however coarsely the clock is read; a later one starts late by
+   * exactly its lateness. A single voice's slot is its contact: it starts at
+   * now plus the lead, as setDownStartTime gives.
    */
-  const onTimeStart = (flight: Flight, contact: Contact, clock: AudioClock, render: SetDownRendered): number =>
-    setDownStartTime(clock, contact.presentDelay, render.onsetSeconds) + cascadeWait(flight, nowMs());
+  const startFor = (flight: Flight, contact: Contact, clock: AudioClock, render: SetDownRendered): number => {
+    const anchor = flight.batch.anchor;
+    const atSlot = anchor === null ? clock.currentTime : anchor.audio + (contact.slotMs - anchor.page) / 1000;
+    return setDownStartTime(clock, contact.presentDelay, render.onsetSeconds) + Math.max(0, atSlot - clock.currentTime);
+  };
 
   /**
    * A variant rendered ahead for `cacheKey`, heard as this landing is (R104,
@@ -384,29 +410,29 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   const playOnTime = (flight: Flight, contact: Contact, clock: AudioClock, exact: SetDownRendered): void => {
     judge(flight, "on-time", exact.workMs);
     const variant = contact.stale ? variantHeard(contact, contact.cacheKey) : null;
-    if (variant !== null) play(flight, variant, "variant", onTimeStart(flight, contact, clock, variant));
-    else play(flight, exact, contact.stale ? "stale" : "exact", onTimeStart(flight, contact, clock, exact));
+    if (variant !== null) play(flight, variant, "variant", startFor(flight, contact, clock, variant));
+    else play(flight, exact, contact.stale ? "stale" : "exact", startFor(flight, contact, clock, exact));
     finish(flight);
   };
 
   /**
    * Its slot is near (1/30 s ahead, R108) or has come, with no exact render: a
-   * variant rendered ahead stands in, scheduled to start exactly at the slot,
-   * or at once if the slot has passed; its exact render has until 45 ms after
-   * the slot (R80). Looked at more than 45 ms after its slot, it is dropped,
-   * variant or not: nothing starts later than that. One whose render failed is
-   * dropped unless a variant stands in.
+   * variant rendered ahead stands in, started at the slot, or late by exactly
+   * its lateness if the slot has passed (R109); its exact render has until
+   * 45 ms after the slot (R80). Looked at more than 45 ms after its slot, it
+   * is dropped, variant or not: nothing starts later than that. One whose
+   * render failed is dropped as failed unless a variant stands in.
    */
   const due = (flight: Flight, contact: Contact, clock: AudioClock): void => {
-    const atMs = nowMs();
-    if (atMs > contact.slotMs + HEARD_WINDOW_MS) {
-      missed(flight);
+    if (nowMs() > contact.slotMs + HEARD_WINDOW_MS) {
+      if (flight.failed) drop(flight, "failed");
+      else missed(flight);
       return;
     }
     contact.dueRan = true;
     const variant = variantHeard(contact, contact.stale ? contact.cacheKey : flight.cacheKey);
     if (variant !== null) {
-      play(flight, variant, "variant", atMs > contact.slotMs ? clock.currentTime : onTimeStart(flight, contact, clock, variant));
+      play(flight, variant, "variant", startFor(flight, contact, clock, variant));
       contact.covered = true;
     }
     if (flight.failed) {
@@ -424,6 +450,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   const land = (flight: Flight, presentDelay: number): void => {
     if (flight.done) return;
     const atMs = flight.contactAtMs ?? nowMs();
+    const slotMs = slotFor(flight, atMs);
     const heard = stillHeard(flight);
     if (heard === null) return;
     const { clock } = heard;
@@ -433,8 +460,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       finish(flight);
       return;
     }
-    beginBatch(flight, atMs);
-    const slotMs = atMs + cascadeWait(flight, atMs) * 1000;
+    beginBatch(flight, clock);
     const contact: Contact = {
       atMs,
       slotMs,
@@ -480,10 +506,10 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       return;
     }
     const atMs = nowMs();
-    beginBatch(flight, atMs);
-    flight.contact = {
+    beginBatch(flight, clock);
+    const contact: Contact = {
       atMs,
-      slotMs: atMs,
+      slotMs: slotFor(flight, atMs),
       contactMs: clock.currentTime * 1000,
       presentDelay: 0,
       windowMs: 0,
@@ -495,7 +521,8 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       covered: false,
       timer: null,
     };
-    play(flight, render, "exact", clock.currentTime + cascadeWait(flight, atMs));
+    flight.contact = contact;
+    play(flight, render, "exact", startFor(flight, contact, clock, render));
     finish(flight);
   };
 
@@ -533,7 +560,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     }
     const heard = stillHeard(flight);
     if (heard === null) return;
-    play(flight, render, "late", heard.clock.currentTime + cascadeWait(flight, atMs));
+    play(flight, render, "late", startFor(flight, contact, heard.clock, render));
     finish(flight);
   };
 
@@ -582,7 +609,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     }));
     seed += 1;
     const voices = planCascade(pieces, seed);
-    const batch: Batch = { live: 0, admitted: undefined, firstAtMs: 0, firstOffsetSeconds: 0 };
+    const batch: Batch = { live: 0, admitted: undefined, anchor: null, lastSlotMs: null };
     const askedMs = nowMs();
     for (const voice of voices) {
       const entry = byId.get(voice.id);
@@ -600,7 +627,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
         handSpeed: entry.landing.handSpeed,
         cacheKey: gathered.cacheKey,
         surfacesKey: gathered.surfacesKey,
-        offsetSeconds: voice.offsetSeconds,
+        gapSeconds: voice.gapSeconds,
         levelDb: voice.levelDb,
         epoch: entry.landing.epoch,
         inPlace: entry.landing.inPlace,

@@ -201,7 +201,6 @@ export class SetDownRoom {
     });
     return {
       input: voice.input,
-      directGain: voice.directGain,
       surfacesKey: voice.surfacesKey,
       slug: voice.slug,
       surface: kindsOf(voice.input.surfaces),

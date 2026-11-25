@@ -36,6 +36,12 @@ export interface CascadeVoice {
   readonly id: string;
   readonly offsetSeconds: number;
   readonly levelDb: number;
+  /**
+   * The seeded gap this voice keeps after the one before it, s: 85-110 ms in
+   * a cascade, 0 for its first voice and for every voice of a smaller batch.
+   * The scene spaces a voice by it from the one that landed before it (R110).
+   */
+  readonly gapSeconds: number;
 }
 
 /** From this many pieces a batch is a cascade; fewer are each voiced at their own landing. */
@@ -88,12 +94,13 @@ function cascadeSelection(pieces: readonly CascadePiece[]): readonly CascadePiec
  */
 export function planCascade(pieces: readonly CascadePiece[], seed: number): readonly CascadeVoice[] {
   if (pieces.length < CASCADE_FROM) {
-    return byLanding(pieces).map((piece, index) => ({ id: piece.id, offsetSeconds: landsAt(piece), levelDb: CASCADE_STEP_DB * index }));
+    return byLanding(pieces).map((piece, index) => ({ id: piece.id, offsetSeconds: landsAt(piece), levelDb: CASCADE_STEP_DB * index, gapSeconds: 0 }));
   }
   const random = seededRandom(seed);
   let offset = 0;
   return byLanding(cascadeSelection(pieces)).map((piece, index) => {
-    offset = index === 0 ? landsAt(piece) : Math.max(landsAt(piece), offset + (CASCADE_GAP_S + CASCADE_GAP_SPREAD_S * random()));
-    return { id: piece.id, offsetSeconds: offset, levelDb: CASCADE_STEP_DB * index };
+    const gap = index === 0 ? 0 : CASCADE_GAP_S + CASCADE_GAP_SPREAD_S * random();
+    offset = index === 0 ? landsAt(piece) : Math.max(landsAt(piece), offset + gap);
+    return { id: piece.id, offsetSeconds: offset, levelDb: CASCADE_STEP_DB * index, gapSeconds: gap };
   });
 }

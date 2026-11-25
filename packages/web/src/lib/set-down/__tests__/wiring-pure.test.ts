@@ -100,8 +100,9 @@ function approvedCascade(items: readonly PlacedItem[], seed: number): readonly C
   const random = seededRandom(seed);
   let offset = 0;
   return picked.map((item, index) => {
-    if (index > 0) offset += GAP_S + SPREAD_S * random();
-    return { id: item.id, offsetSeconds: offset, levelDb: STEP_DB * index };
+    const gap = index > 0 ? GAP_S + SPREAD_S * random() : 0;
+    if (index > 0) offset += gap;
+    return { id: item.id, offsetSeconds: offset, levelDb: STEP_DB * index, gapSeconds: gap };
   });
 }
 
@@ -160,6 +161,7 @@ describe("the cascade", () => {
     );
     expect(voices.map((voice) => voice.id)).toEqual(["round", "late-chair"]);
     expect(voices.map((voice) => voice.offsetSeconds)).toEqual([0, 0.05]);
+    expect(voices.map((voice) => voice.gapSeconds), "each at its own landing: no gap to keep").toEqual([0, 0]);
     expect(voices[0]!.levelDb).toBeCloseTo(0, 12);
     expect(voices[1]!.levelDb).toBeCloseTo(-1, 12);
   });
