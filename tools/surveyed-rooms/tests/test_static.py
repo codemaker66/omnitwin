@@ -120,12 +120,13 @@ class Plans(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         gates = Counter(re.findall(r"^    (B\d+) ", r.stdout, re.M))
         self.assertEqual(gates, Counter({"B5": 4, "B8": 4, "B6": 8, "B9": 8, "B7": 1, "B10": 3, "B14": 1, "B16": 1, "B17": 1, "B18": 1, "B20": 3,
-                                         "B23": 1, "B24": 1, "B25": 1, "B26": 1}))
+                                         "B23": 1, "B24": 1, "B25": 1, "B26": 2}))
         # The room's movable things and open doors, patched from their twins on other walls.
         for target, source in (("front", "rear"), ("fireplace-rear-end", "fireplace-front-end"), ("window-front-end", "window-rear-end")):
             self.assertRegex(r.stdout, rf"B20 +wall {target} .*from {source}\b")
-        # The first lettered board, behind the lobby door's open leaf.
-        self.assertRegex(r.stdout, r"B26 +wall front .*u 2\.240\.\.2\.680, v 1\.13\.\.2\.47, each row's depth from the wall beyond its right")
+        # The lobby door's open leaf, moved back whole, and behind it the first lettered board, each row at its own depth.
+        self.assertRegex(r.stdout, r"B26 +wall front .*u 1\.940\.\.2\.680, v 0\.0\.\.2\.5, each row's depth from the wall beyond its left")
+        self.assertRegex(r.stdout, r"B26 +wall front .*u 2\.240\.\.2\.680, v 1\.13\.\.2\.5, each row's depth from the wall beyond its right")
         self.assertRegex(r.stdout, r"B23 +wall fireplace .*1556 columns, 1557 rounded")
         self.assertRegex(r.stdout, r"B24 +wall views .*up to 8 a tile")
         self.assertRegex(r.stdout, r"B25 +walls .*\(50 mm\)")
