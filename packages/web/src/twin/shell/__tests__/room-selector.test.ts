@@ -177,17 +177,32 @@ describe("formatRoomComparison", () => {
     expect(line.split(` and${NBSP}`)).toHaveLength(dimensions.extents.length);
   });
 
-  it("can wrap only at a separator or before \"and\", never inside a floor", () => {
+  it("gives a room with no size on record its capacities alone", () => {
+    // The Reception Room's published size is withheld, so its line ends at
+    // the capacities: no figure, no dash and no trailing separator.
+    const nodeId = Object.keys(VERIFIED_ROOM_NODES).find(
+      (id) => VERIFIED_ROOM_NODES[id] === "reception-room",
+    );
+    if (nodeId === undefined) throw new Error("the Reception Room lost its validated viewpoint");
+    expect(TRADES_HALL_ROOM_DIMENSIONS["reception-room"]).toBeUndefined();
+    const capacities = TRADES_HALL_ROOM_CAPACITIES["reception-room"];
+    expect(formatRoomComparison(nodeId)).toBe(
+      `${String(capacities.reception)} standing · ${String(capacities.dinner)} seated`,
+    );
+  });
+
+  it("holds each floor together, so a line break cannot fall inside one", () => {
     // With ordinary spaces the Robert Adam Room's line, the longest on the
     // panel, wrapped inside its last figure and left the unit alone on a second
-    // line. The breakable spaces that remain are the ones around each " · "
-    // and the one before "and".
+    // line. After the last " · " the only breakable space left is the one
+    // before "and". The capacities before it still break as ordinary text.
+    let withFloors = 0;
     for (const [nodeId, slug] of Object.entries(VERIFIED_ROOM_NODES)) {
       const dimensions = TRADES_HALL_ROOM_DIMENSIONS[slug];
       const line = formatRoomComparison(nodeId);
-      if (dimensions === undefined || line === null) {
-        throw new Error(`${slug} lost its dimensions or its comparison line`);
-      }
+      if (line === null) throw new Error(`${slug} lost its comparison line`);
+      if (dimensions === undefined) continue;
+      withFloors += 1;
       const floors = line.slice(line.lastIndexOf(" · ") + 3).split(" ");
       expect(floors, slug).toEqual(
         dimensions.extents.map((extent, index) =>
@@ -195,6 +210,7 @@ describe("formatRoomComparison", () => {
         ),
       );
     }
+    expect(withFloors, "some verified room still shows a floor").toBeGreaterThan(0);
   });
 
   it("says nothing at a viewpoint whose room is not known", () => {
