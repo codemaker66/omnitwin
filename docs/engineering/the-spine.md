@@ -236,6 +236,37 @@ not run after it.
 The `--join` flag goes when the rule is tightened (stage 6); the run then only
 reads.
 
+## Erasing a person, and the 24-month pass
+
+A person's erasure (`services/people-erasure.ts`, `around()`) and the 24-month pass
+(`services/people-retention.ts`, `lapsedPeople`) follow the three links: the events a
+person's enquiries, deals and proposals point at are found whether the join made
+them, a writer linked them, or nothing in `event_link_joins` records it. The join
+names an event it makes, and its client, from the record (an enquiry's name, a deal's
+or a proposal's title); erasure deletes the person's enquiries, rewords their deals and
+proposals, and takes their names out of every event it finds, so a later run of the
+join has no name to copy back.
+
+- An event found through a link is the person's own unless another live person's
+  record points at it too (`tiedToAnotherPerson`: their enquiry, deal or proposal
+  linked to it, a booking of their enquiry in it, or it is their deal's); then it is
+  near them, as the event of a deal another live person leads is. An event the join
+  made for the person's record, with nothing tying it to another live person, is
+  theirs. Own or near, the event is kept and loses only the erased person's names;
+  an own event's confirmed booking or live hold, or a deposit request naming it,
+  refuses the erasure.
+- A record of theirs linked between the erasure's reads and its locks makes it
+  answer RETRY, as a booking written meanwhile does.
+- The pass reads the same links with the same expression, so what it reads as kept
+  or near agrees with what its step finds.
+- **Whoever adds a new way to tie a record to an event** (another column that names
+  an event, or a writer that makes events from a person's record) teaches `around()`
+  and `lapsedPeople` the same day, with a case in
+  `people-erasure-spine-links-postgres.test.ts`. Otherwise a person's name outlives
+  their erasure on an event tied to nobody. When stage 6 retires
+  `events.opportunity_id`, erasure's read of it and the expression's clause for it go
+  in the same change.
+
 ## The lock rules later stages keep
 
 The full order, combined with the Diary's, is kept in section 5.4 of the
@@ -464,6 +495,12 @@ ignore them. (The backup branch remains the last resort.)
   pending tag.
 - `packages/api/src/__tests__/deposits-postgres.test.ts`: a deposit request is for
   its proposal's own event, or none while the proposal has none.
+- `packages/api/src/__tests__/people-erasure-spine-links-postgres.test.ts`: erasure
+  and the 24-month pass follow the links. The join's made events for an enquiry, a
+  deal and a proposal lose the person's name; a link with no record of the join is
+  found the same; an event a second live person is tied to is kept and near; the
+  pass's readings agree with its step; a link written while the erasure waits answers
+  RETRY; the join and the undo run cleanly afterwards.
 
 Each spine suite makes and drops a database of its own on the platform test
 cluster; the platform gate (`test:platform-db`) names them all.
