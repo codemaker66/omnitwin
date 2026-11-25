@@ -1181,6 +1181,22 @@ describe("guest list page state: a list that comes back after it was deleted her
     expect(state().canUndo).toBe(false);
   });
 
+  it("does not say names were added when the device refused the delete here", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+    // The device refuses the delete, so the list is still stored afterwards.
+    vi.spyOn(backend, "delete").mockRejectedValue(new Error("refused"));
+    await state().eraseList();
+    expect(await backend.get(PLAN_A)).not.toBeNull();
+
+    // The list is found again: it is the one that was never removed, and nobody added it.
+    await state().refresh();
+    expect(state().list?.guests).toEqual([guest(1)]);
+    expect(state().notice).toBeNull();
+  });
+
   it("says it once: the mark clears on that take-up", async () => {
     const { backend } = await deletedHereThenAddedElsewhere();
     await anotherTabStoresAList(backend, "Theirs");

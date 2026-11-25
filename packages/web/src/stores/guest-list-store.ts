@@ -537,7 +537,10 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         // A list this session never read is not erased unseen: only the page is cleared.
         if (!session.unread) {
           await eraseSafely(session.store, session.planId);
-          session.erasedHere = true;
+          // Only a delete that took is remembered: a device that refused it still holds the list,
+          // and when that list is found again nobody has added those names.
+          const after = await openSafely(session.store, session.planId);
+          session.erasedHere = after.kind === "new";
         }
         // Anything changed while erasing is dropped with the rest of the list.
         clearTimer(session);
