@@ -26,10 +26,13 @@
 --
 -- Written as 0110 (journal idx 107) on the plumbing branch; the number is
 -- fixed again at merge. Running code reads none of this until the next
--- release. The keys briefly hold writes to venues, events and enquiries; a
--- busy moment waits up to ten seconds a lock, then fails the deploy rather
--- than hold them longer. Nothing here reads production data except the
--- status validation above.
+-- release. The new table's keys briefly hold writes to venues and users, and
+-- the keys on email_sends briefly hold writes to venues, events and
+-- enquiries. email_sends itself is held against reads and writes from its
+-- first ALTER until the migration commits, while its rows are read to check
+-- the keys and the status rule and its index is built. Each wait for a lock
+-- gives up after ten seconds and fails the deploy; with several locks to
+-- take, a stalled deploy can take longer than ten seconds to fail.
 -- ---------------------------------------------------------------------------
 
 SET LOCAL lock_timeout = '10s';

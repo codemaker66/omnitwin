@@ -1501,12 +1501,12 @@ No product code. Each step has a result to record in the pull request.
   the previous entry's and production's newest; run Task 1's suite again; run the whole check again.
 - [ ] **Step 4: Send the tested head** to orchestration and the release lead. Do not push again. Do not merge.
 - [ ] **Step 5: After the deploy, with the switch still off:** `/health/ready` is 200 and `/health/worker` says
-  `{ "worker": "off" }`. Then, with Blake's yes (running a check script against production has needed his
-  approval before), run `check-job-list-invariant.ts` once, read-only, and record its line of JSON.
+  `{ "worker": "off" }`. Then, with the owner's approval (running a check script against production has needed
+  it before), run `check-job-list-invariant.ts` once, read-only, and record its line of JSON.
 - [ ] **Step 6: Switch on,** with the release lead: set `JOBS_WORKER=on` on the API service. After the restart:
   `/health/worker` shows `started: true` and `fault: null`; press Run the self-test and see "The self-test ran.";
   the next morning, the daily job has run once and Sentry shows its check-in.
-- [ ] **Step 7: The rehearsal through Neon's pooled address.** With Blake's yes for a throwaway, free Neon project
+- [ ] **Step 7: The rehearsal through Neon's pooled address.** With the owner's approval, for a throwaway Neon project
   holding no real data: run Task 5's suite against its pooled address, then delete the project. Record the
   result. This is the one thing CI cannot show, because CI's database has no pooler in front of it.
 - [ ] **Step 8: Point one outside check at `/health/worker`** (Sentry's included uptime monitor), so a worker that
@@ -1539,5 +1539,6 @@ is the health route: Task 7 adds `/health/worker` beside its `/health/ready` lin
 - Then the spec's stages 2, 3 and 4, each with its own plan and its own merge slot.
 
 The spec's "done when" has two halves. This plan proves the machinery under the first half: one job, two
-servers, once. Blake's own rehearsal of "a reminder goes out once, even with two servers" comes with plan 2,
-when an email can travel through the list. The second half, a reply landing on its event, comes with stage 3.
+servers, once. The rehearsal of "a reminder goes out once, even with two servers", with the owner's approval,
+comes with plan 2, when an email can travel through the list. The second half, a reply landing on its event,
+comes with stage 3.

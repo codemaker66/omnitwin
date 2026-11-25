@@ -32,7 +32,10 @@ export interface JobContext<P> {
   readonly payload: P;
   /** 1 for the first try. */
   readonly attempt: number;
-  /** Aborted at the kind's time limit and when the server is stopping. Pass it to every outside call. */
+  /**
+   * Aborted when the kind's time limit passes; on a stop, only if the handler is still running when the
+   * stop's grace runs out. Pass it to every outside call.
+   */
   readonly signal: AbortSignal;
   readonly logger: JobLogger;
   /** Marks the job done inside the caller's transaction. Throws ClaimLostError if the claim has gone. */

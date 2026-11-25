@@ -27,7 +27,8 @@ twice when:
 
 A job is `queued`, `running`, `done`, `dead` (out of tries) or `abandoned` (closed by a
 person with a note). The table's check allows no other state. The database's clock
-decides what is due and whose claim has run out; no comparison uses `Date.now()`.
+decides what is due and whose claim has run out: nothing that decides either reads the
+server's clock.
 
 ## Add a kind
 
@@ -109,14 +110,21 @@ not carry the job's version.
 - **Return:** the worker marks the job `done`. A handler whose work only changes our
   own database opens its own transaction and calls `ctx.completeIn(tx)` there, so the
   change and `done` commit together. If the claim has gone, `completeIn` throws
-  `ClaimLostError`, the transaction rolls back and the worker stops quietly.
+  `ClaimLostError`, the transaction rolls back and the worker stops quietly. Call
+  `completeIn` as the transaction's last step, and let any error from it or from the
+  transaction leave the transaction's callback. The worker counts the job done once
+  `completeIn` has answered, so a handler that catches the transaction's failure and
+  returns leaves the job `running` until its claim runs out.
 - **Throw:** a failed try (see Retries). `PermanentJobError` makes the job `dead` at
   once. `RetryJobIn(seconds, message)` asks for its own wait instead of the usual one;
   the worker holds it between 1 second and 7 days, and the try still counts.
 - **Pass `ctx.signal` to every outside call.** It is aborted when the kind's limit
   passes. On a stop it is aborted only if the handler is still running when the stop's
   allowance (18 seconds) runs out, and no limit is over 15 seconds, so a handler cannot
-  rely on the signal to learn that the server is stopping.
+  rely on the signal to learn that the server is stopping. A statement already sent to
+  the database is not cancelled by the signal. A listener on the signal must not throw:
+  the worker aborts the signal from its own timer, where nothing catches what the
+  listener throws.
 
 ## The seven rules
 
@@ -126,7 +134,10 @@ Each rule is for the author of a kind. The reason follows it.
    most 2,048 bytes.** The handler reads the record again and does what is true then,
    so nobody cancels a job when plans change, and no personal data sits in the list.
    The table refuses a larger payload (`jobs_payload_small`).
-2. **Every handler is safe to repeat.** The list promises at least once (above).
+2. **Every handler is safe to repeat.** The list promises at least once (above). A
+   promise a handler starts and does not await needs its own catch: the API has no
+   handler for a stray rejection, so one ends the server, the job comes back as a lost
+   claim, and after two lost claims it is `dead`.
 3. **A handler talks to the database and to a provider, nothing heavier, and its limit
    is 15 seconds or less.** A server works one job at a time, so a slow kind would
    crowd the API; `timeoutMs` above 15,000 throws at definition.
@@ -157,7 +168,9 @@ Each rule is for the author of a kind. The reason follows it.
 - **Lost claims.** A claim lasts the kind's limit, in whole seconds rounded up, plus 15
   seconds. At the start of every pass, each claim that has run out is put back. The
   first time, the job is due again after 5 minutes; the second time, or when it has no
-  tries left, it is `dead`. A claim counts as a try.
+  tries left, it is `dead`. A claim counts as a try. On a slow database a lost claim can
+  be counted although its server lived: the result could not be recorded before the
+  claim ran out, and the pass that puts claims back reached the row first.
 - **A handler that does not answer** is ended by its own limit and recorded as a failed
   try: "The handler passed its time limit of N ms." Its signal is aborted and the worker
   goes on; anything the handler does later is caught and logged.
@@ -175,13 +188,17 @@ Each rule is for the author of a kind. The reason follows it.
 
 A deploy runs the old and the new server side by side for a while. A server takes only
 the (kind, version) pairs its code lists in `reads`, so a job of a version no running
-server reads waits, and a dead one cannot be tried again. Change a payload's shape like
-this:
+server reads waits, and a dead one cannot be tried again. So the code that reads a new
+shape goes out before the code that writes it:
 
-1. **Deploy 1 widens.** Raise `version` to N+1, set `reads: [N, N+1]`, and make the one
-   payload schema accept both shapes (a new optional field, or a union): the handler is
-   not told which version it holds. The code now writes N+1.
-2. **Wait until no job of version N is left** in `queued`, `running` or `dead`:
+1. **Deploy 1 reads both.** Set `reads: [N, N+1]` and make the one payload schema
+   accept both shapes (a new optional field, or a union): the handler is not told which
+   version it holds. Leave `version` at N, so the code still writes N.
+2. **Deploy 2 writes the new shape.** Raise `version` to N+1. Deploy 1's code reads
+   both shapes, so a server still running it takes the new jobs, and rolling deploy 2
+   back is safe.
+3. **Later, a clean-up removes N from `reads`**, and tightens the schema, once no job
+   of version N is left in `queued`, `running` or `dead`:
 
    ```sql
    SELECT state, count(*) FROM jobs
@@ -191,22 +208,28 @@ this:
 
    Try again or close each dead one first. Once no server reads its version, Try again
    answers 409 `JOB_KIND_UNREADABLE` and the job can only be closed with a note.
-3. **Deploy 2 narrows.** Remove N from `reads` and tighten the schema.
 
-Dropping N in one step leaves queued jobs of N that no server takes. The daily check
-counts them as `unreadableJobs` and raises the loop-fault alert. Rolling back to code
-that reads only N after deploy 1 does the same to the jobs written at N+1.
+Raising `version` in the deploy that first reads N+1 leaves the old servers, during the
+deploy or after a roll-back, with jobs they cannot take; removing N while jobs of N are
+left does the same to those. The daily check counts such queued jobs as
+`unreadableJobs` and raises `job.list-stuck` (see The invariant).
 
 ## Work that repeats
 
 A repeating kind is a `RepeatingJob` (`services/jobs/repeating.ts`): its kind and a
 `next(after)` function. Its next run is itself a job, keyed by the ISO instant of that
-run. At the end of every pass the worker calls `ensureNextRuns` with the database's now,
-so the next run is written as soon as the current one is taken, and a run that ends
-`dead` does not end the series. Every server asks for the same run; the (kind, key)
-rule lets one write succeed. To add one, build it as `jobs.daily` is built
-(`dailyJob` returns a `RepeatingJob`) and add it to the `repeating` list in
-`buildJobKinds`.
+run. At the end of every pass the worker calls `ensureNextRuns` (through
+`nextRunsKeeper`) with the database's now, so the next run is written as soon as the
+current one is taken, and a run that ends `dead` does not end the series. Every server
+asks for the same run; the (kind, key) rule lets one write succeed. To add one, build it
+as `jobs.daily` is built (`dailyJob` returns a `RepeatingJob`) and add it to the
+`repeating` list in `buildJobKinds`.
+
+`next` must return an instant after the one it is given. A kind whose `next` throws, or
+returns an instant that is not after it (an invalid date included), is skipped: it gets
+no run, it is logged at error level on every pass, and it raises `job.list-stuck` once
+for each kind in a server's life. The other kinds still get their runs, and the pass
+completes. A failure to write a run is still a database fault.
 
 Repeating kinds belong to the platform, not to a venue, in this stage: a run carries no
 venue id, so `enqueueJob` refuses a venue kind. `jobs.daily` runs at 03:00 UTC
@@ -218,8 +241,9 @@ and checks in to the Sentry monitor `job-list-daily`.
 ## The invariant
 
 `services/jobs/invariant.ts` counts four things; each must be 0. The daily job reads
-them and, when one is not, logs the four counts and raises the loop-fault alert. Run the
-same read by hand against a database after a release that changes a kind:
+them and, when one is not, logs the four counts and raises `job.list-stuck` with them
+(an alert of its own, not a fault of the worker's: the worker's status stays as it is).
+Run the same read by hand against a database after a release that changes a kind:
 
 ```
 pnpm --filter @omnitwin/api exec tsx src/scripts/check-job-list-invariant.ts
@@ -239,17 +263,23 @@ line of JSON and exits 0 (healthy), 1 (not healthy) or 2 (could not run).
 ## How the worker runs
 
 A worker starts only when `JOBS_WORKER=on`. Each API process then starts one, after its
-database connection is made (`startJobs` in `runtime.ts`). A pass puts back expired
-claims, takes and runs one due job at a time until none is due, writes the next run of
-each repeating kind, and sets one timer for the earlier of the next due job (or claim
-about to run out) and the next boundary. The boundary is the next whole multiple of
-`JOBS_MAX_SLEEP_MINUTES` since the epoch: with 60, the top of the hour. The worker does
-not poll. It asks the database when its timer fires, when it starts, and when this
-process pokes it; pokes that arrive during a pass fold into one more pass.
+database client is built (it connects on first use; `startJobs` in `runtime.ts`). A pass
+puts back expired claims, takes and runs one due job at a time until none is due, writes
+the next run of each repeating kind, and sets one timer for the earlier of the next due
+job (or claim about to run out) and the next boundary. The boundary is the next whole
+multiple of `JOBS_MAX_SLEEP_MINUTES` since the epoch: with 60, the top of the hour. The
+worker does not poll. It asks the database when its timer fires, when it starts, and
+when this process pokes it; pokes that arrive during a pass fold into one more pass.
+Every pass begins in the async context the worker was built in, so a poke made inside a
+request lends that request's context to nothing the pass does: not its handlers, its
+alerts or its next timer.
 
-Every wait on the database is bounded (10 seconds by default). A pass that fails sets a
-fault (`database` or `loop`), raises one alert for the outage, and tries again after 60
+Every wait on the database is bounded (10 seconds by default; the worker refuses a limit
+that is not under the claim's 15-second margin). A pass that fails sets a fault
+(`database` or `loop`), raises one alert for the outage, and tries again after 60
 seconds; the first pass that completes clears the fault and raises the recovery alert.
+A pass whose own handling of a failure throws (a logger that throws, say) is a `loop`
+fault, with its alert.
 
 ## Read Stuck work
 
@@ -259,7 +289,15 @@ list when it opens and after each action, never on a timer. It shows one summary
 for example "2 jobs gave up. 1 is waiting. The worker last ran 3 minutes ago.", and a
 table of the newest 200 dead jobs (`STUCK_JOBS_LIMIT` in `@omnitwin/types`): What
 kind, Venue ("The platform" for a platform job), Gave up, Tries and Reason, which is
-the error text the server stored. The counts cover the whole table, not the 200.
+the error text the server stored. The count of jobs that gave up covers the whole
+table, not the 200. "N are waiting" (left out when N is 0) counts the queued jobs that
+are due now, of any kind; a job waiting for a later time, such as the daily job's next
+run or a try waiting out its retry, is not counted.
+
+A queued job of a kind or version no server reads is not on the page, which lists dead
+jobs only, and cannot be closed from it (Close answers 409 `JOB_NOT_STUCK`). Restore a
+reader for it: a release whose kind lists that version in `reads`. The daily check
+counts it as `unreadableJobs`.
 
 The worker sentence is one of "The worker is switched off.", "The worker cannot reach
 the database.", "The worker has stopped after an error.", "The worker has not run yet."
@@ -276,11 +314,13 @@ failed." counts `email_sends` still `pending` after a day.
   they were closed.
 - **Run the self-test** writes one `jobs.selftest` job and says what became of it.
   When a worker runs in the server that took the request, the route waits for the job,
-  at most 5 seconds in all: it reads the job's state after each of six gaps (100, 200,
-  400, 800, 1,500 and 2,000 ms) and stops at the first `done`, `dead` or `abandoned`,
-  or when the caller has gone. With no worker in that server it does not wait: it
-  reads the state once (another server's worker may already have taken the job). The
-  answer is `{ data: { id, state } }`, the job's state when the server stopped waiting.
+  at most 5 seconds of waiting: it reads the job's state after each of six gaps (100,
+  200, 400, 800, 1,500 and 2,000 ms) and stops at the first `done`, `dead` or
+  `abandoned`, or when the caller has gone. With no worker in that server it does not
+  wait: it reads the state once (another server's worker may already have taken the
+  job). The answer is `{ data: { id, state } }`, the job's state when the server
+  stopped waiting. Pressed while every worker is off, the job stays `queued` until a
+  worker runs, and after two hours the hand-run check counts it in `overdueJobs`.
   The page reads the list again, then says one of:
   - `done`: "The self-test ran."
   - `dead` or `abandoned`: "The self-test did not finish. It is on the list above."
@@ -328,11 +368,17 @@ started), `fault` and `passRunning`. The status is 503 when:
 
 The worker raises an alert when a job goes `dead` (`job.dead`), when a claim runs out
 (`job.claim-lost`; a second lost claim is `job.dead`), and when it faults or recovers
-(`job.worker-fault`, `job.worker-recovered`). A job's alert carries the kind, the job's
-id and, for a venue's job, the venue's id; a fault or recovery alert names which part
-failed (`database` or `loop`). Any text passes through `jobErrorText`. With
-`SENTRY_DSN` set they go to Sentry; without it they go to the log. The daily job checks in each day, and Sentry alerts if a day
-passes without one.
+(`job.worker-fault`, `job.worker-recovered`). A job that goes dead raises `job.dead`
+once, even when the answer that recorded it came after the worker had stopped waiting
+for it. Work stuck unseen raises `job.list-stuck`, an error in a Sentry group of its own,
+apart from the worker's faults: the daily check raises it each day it finds some, and a
+repeating kind with no next run raises it once for each kind in a server's life.
+
+A job's alert carries the kind, the job's id and, for a venue's job, the venue's id; a
+fault or recovery alert names which part failed (`database` or `loop`); `job.list-stuck`
+carries no tags, and its text says what is stuck. Any text passes through `jobErrorText`.
+With `SENTRY_DSN` set they go to Sentry; without it they go to the log. The daily job
+checks in each day, and Sentry alerts if a day passes without one.
 
 ## The two switches
 

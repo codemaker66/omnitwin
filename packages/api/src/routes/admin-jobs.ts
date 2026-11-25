@@ -12,7 +12,7 @@ import { installedJobWorker, pokeJobWorker } from "../services/jobs/wake.js";
 // ---------------------------------------------------------------------------
 // Stuck work (T-702): the platform administrator's view of the job list.
 //
-// GET  /admin/jobs/stuck        the newest 200 dead jobs, the counts, the worker
+// GET  /admin/jobs/stuck        the newest dead jobs (at most STUCK_JOBS_LIMIT), the counts, the worker
 // POST /admin/jobs/:id/retry    Try again: a dead job back on the list, due now
 // POST /admin/jobs/:id/close    Close: a dead job put down, with a note
 // POST /admin/jobs/selftest     one harmless job, to see the list carry work;
@@ -30,7 +30,10 @@ import { installedJobWorker, pokeJobWorker } from "../services/jobs/wake.js";
  */
 const SELF_TEST_WAIT_MS: readonly number[] = [100, 200, 400, 800, 1500, 2000];
 
-/** A state the job leaves only by a person's hand: waiting longer would not change the answer. */
+/**
+ * A state that waiting longer will not change: done and abandoned are never left, and dead is left only by a
+ * person's hand.
+ */
 function isFinished(state: JobState): boolean {
   return state === "done" || state === "dead" || state === "abandoned";
 }
