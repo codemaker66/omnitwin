@@ -91,13 +91,34 @@ const origin = vi.fn<typeof fetch>();
  *  question in flight is shared, so one left open would hold the next test. */
 const heldQuestions: (() => void)[] = [];
 
-/** The next questions to the server wait until the test answers them. */
-function holdQuestion(): { readonly answer: (response: Response) => void; readonly fail: (error: Error) => void } {
-  let answer: (response: Response) => void = () => undefined;
-  let fail: (error: Error) => void = () => undefined;
-  origin.mockImplementation(() => new Promise<Response>((resolve, reject) => { answer = resolve; fail = reject; }));
-  heldQuestions.push(() => { fail(new TypeError("Failed to fetch")); });
-  return { answer: (response) => { answer(response); }, fail: (error) => { fail(error); } };
+interface HeldQuestion {
+  /** Resolves once the question has been asked. The route boundary asks it
+   *  from a passive effect, after the screen is drawn, so a test waits here
+   *  before answering instead of trusting what it sees on screen. */
+  readonly asked: () => Promise<void>;
+  readonly answer: (response: Response) => void;
+  readonly fail: (error: Error) => void;
+}
+
+/** The next question to the server waits until the test answers it. Like the
+ *  real request, it gives up when its signal aborts (ORIGIN_ANSWER_MS). An
+ *  answer to a question not yet asked throws, rather than being lost. */
+function holdQuestion(): HeldQuestion {
+  let settle: ((outcome: Response | Error) => void) | null = null;
+  origin.mockImplementation((_input, init) => new Promise<Response>((resolve, reject) => {
+    settle = (outcome) => { if (outcome instanceof Response) resolve(outcome); else reject(outcome); };
+    init?.signal?.addEventListener("abort", () => { reject(new DOMException("The question was abandoned", "AbortError")); });
+  }));
+  const answerWith = (outcome: Response | Error): void => {
+    if (settle === null) throw new Error("The question to the server has not been asked yet: await asked() first");
+    settle(outcome);
+  };
+  heldQuestions.push(() => { settle?.(new TypeError("Failed to fetch")); });
+  return {
+    asked: () => vi.waitFor(() => { expect(origin).toHaveBeenCalledTimes(1); }, LOAD_WAIT),
+    answer: (response) => { answerWith(response); },
+    fail: (error) => { answerWith(error); },
+  };
 }
 
 beforeEach(() => {
@@ -221,6 +242,7 @@ describe("Vite's preload failure", () => {
     await settled();
     expect(screen.queryByRole("alert")).toBeNull();
 
+    await question.asked();
     question.answer(new Response(null, { status: 200 }));
     await vi.waitFor(() => { expect(reload).toHaveBeenCalledTimes(1); }, LOAD_WAIT);
     await settled();
@@ -331,6 +353,7 @@ describe("a chunk that cannot load for want of a network", () => {
     await vi.waitFor(() => { expect(consoleError).toHaveBeenCalled(); }, LOAD_WAIT);
     await settled();
 
+    await question.asked();
     question.fail(new TypeError("Failed to fetch"));
     expect(await screen.findByTestId("error-boundary-network", undefined, LOAD_WAIT)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Couldn't reach the server" })).toBeTruthy();
@@ -351,6 +374,9 @@ describe("a chunk that cannot load for want of a network", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     expect(reload).not.toHaveBeenCalled();
 
+    // The status is drawn before the effect that asks the server has run.
+    await question.asked();
+    expect(screen.getByRole("status").textContent).toContain("Checking the connection");
     question.fail(new TypeError("Failed to fetch"));
     expect(await screen.findByTestId("error-boundary-network", undefined, LOAD_WAIT)).toBeTruthy();
     expect(screen.queryByRole("status")).toBeNull();
