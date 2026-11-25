@@ -44,6 +44,17 @@ function publishedDimensions(slug: PublishedRoomSlug): RoomDimensions {
   return dimensions;
 }
 
+/** The dimensions of a room given as a whole: one extent, with a height.
+ *  Fails loudly if the room is ever published in sections or loses its height,
+ *  so an expectation built from it cannot quietly print "undefined". */
+function wholeRoom(slug: PublishedRoomSlug): RoomDimensions {
+  const dimensions = publishedDimensions(slug);
+  if (dimensions.extents.length !== 1 || dimensions.extents[0].heightM === undefined) {
+    throw new Error(`venue truth no longer gives ${slug} as one extent with a height`);
+  }
+  return dimensions;
+}
+
 describe("VERIFIED_ROOM_NODES — the short map, and why it stays short", () => {
   it("carries exactly the five validated viewpoints and no sixth", () => {
     expect(Object.keys(VERIFIED_ROOM_NODES).sort()).toEqual([...VERIFIED_IDS]);
@@ -148,48 +159,62 @@ describe("lookUpRoom", () => {
 
 describe("formatRoomDimensions", () => {
   it("renders the published extent, joined from venue truth", () => {
-    const truth = publishedDimensions("saloon");
+    const [whole] = wholeRoom("saloon").extents;
     expect(formatRoomDimensions("saloon")).toBe(
-      `${String(truth.lengthM)} × ${String(truth.widthM)} × ${String(truth.heightM)} m`,
+      `${String(whole.lengthM)} × ${String(whole.widthM)} × ${String(whole.heightM)} m`,
     );
   });
 
-  it("keeps fractional metres intact rather than rounding a room away", () => {
+  it("gives a room published in sections each section, named, in the venue's order", () => {
+    // The Robert Adam Room is one room on two levels. Its line never carries
+    // one section's figures as the room's, and never a figure for the two
+    // together, because the venue publishes none.
     const truth = publishedDimensions("robert-adam-room");
-    const line = formatRoomDimensions("robert-adam-room");
-    expect(line).toContain(String(truth.lengthM));
-    expect(line).toContain(String(truth.heightM));
+    expect(truth.extents.length).toBeGreaterThan(1);
+    const expected = truth.extents.map((extent) => {
+      if (extent.section === undefined || extent.heightM === undefined) {
+        throw new Error("a Robert Adam Room section lost its name or its height");
+      }
+      // Fractional metres stay intact: String(), not a rounding of our own.
+      return `${extent.section} section ${String(extent.lengthM)} × ${String(extent.widthM)} × ${String(extent.heightM)} m`;
+    });
+    expect(formatRoomDimensions("robert-adam-room")).toBe(expected.join("; "));
   });
 
   it("renders the note and the remark when a room carries them", () => {
-    const truth = publishedDimensions("grand-hall");
+    const truth = wholeRoom("grand-hall");
+    const [whole] = truth.extents;
     // The Grand Hall is the room carrying a qualifier today: what its height is
     // measured to, then the remark that the dome rises above part of the hall.
-    expect(truth.note).toBeDefined();
+    expect(whole.note).toBeDefined();
     expect(truth.remark).toBeDefined();
-    const note = truth.note ?? "";
+    const note = whole.note ?? "";
     const remark = truth.remark ?? "";
     expect(formatRoomDimensions("grand-hall")).toBe(
-      `${String(truth.lengthM)} × ${String(truth.widthM)} × ${String(truth.heightM)} m — ${note}. ${remark}`,
+      `${String(whole.lengthM)} × ${String(whole.widthM)} × ${String(whole.heightM)} m — ${note}. ${remark}`,
     );
   });
 
   it("appends nothing when there is no published note or remark", () => {
-    const truth = publishedDimensions("reception-room");
-    expect(truth.note).toBeUndefined();
+    const truth = wholeRoom("reception-room");
+    const [whole] = truth.extents;
+    expect(whole.note).toBeUndefined();
     expect(truth.remark).toBeUndefined();
     expect(formatRoomDimensions("reception-room")).toBe(
-      `${String(truth.lengthM)} × ${String(truth.widthM)} × ${String(truth.heightM)} m`,
+      `${String(whole.lengthM)} × ${String(whole.widthM)} × ${String(whole.heightM)} m`,
     );
   });
 
-  it("omits dimensions entirely for rooms the venue publishes none for", () => {
-    // The galleries publish no dimensions. If the venue ever does publish them,
-    // this fails on purpose — someone should look at the new figures.
-    expect(TRADES_HALL_ROOM_DIMENSIONS["north-gallery"]).toBeUndefined();
-    expect(TRADES_HALL_ROOM_DIMENSIONS["south-gallery"]).toBeUndefined();
-    expect(formatRoomDimensions("north-gallery")).toBeNull();
-    expect(formatRoomDimensions("south-gallery")).toBeNull();
+  it("gives a room with no stated height its length and width alone", () => {
+    // The galleries carry the venue's floor size and no height. Their line must
+    // not print a third figure, the word "undefined" or a dangling separator.
+    for (const slug of ["north-gallery", "south-gallery"] as const) {
+      const truth = publishedDimensions(slug);
+      expect(truth.extents).toHaveLength(1);
+      const [floor] = truth.extents;
+      expect(floor.heightM).toBeUndefined();
+      expect(formatRoomDimensions(slug)).toBe(`${String(floor.lengthM)} × ${String(floor.widthM)} m`);
+    }
   });
 
   it("surfaces the same line through lookUpRoom", () => {

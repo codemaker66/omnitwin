@@ -41,8 +41,11 @@ export interface SeededCrowdedDay {
   readonly personId: (name: string) => string;
 }
 
-/** The galleries publish no dimensions; these are fixture values, drawn nowhere. */
-const UNPUBLISHED_ROOM = { lengthM: 12, widthM: 6, heightM: 3.5 } as const;
+/** Fixture values for whatever venue truth does not state for a room: any
+ *  dimension of a room it gives none for, and the height of a room it gives
+ *  only a floor size for (the galleries). Stand-ins for this disposable
+ *  fixture only: nothing here is a venue fact. */
+const UNSTATED_ROOM = { lengthM: 12, widthM: 6, heightM: 3.5 } as const;
 
 const WALL_MINUTES = 60_000;
 
@@ -79,7 +82,18 @@ export async function seedCrowdedDay(
     escalationRoutineSeconds: 900,
   });
   await db.insert(schema.spaces).values(day.rooms.map((room) => {
-    const size = TRADES_HALL_ROOM_DIMENSIONS[room.slug] ?? UNPUBLISHED_ROOM;
+    // A fixture space is one rectangle, so a room published in sections is
+    // written as its first section: for the Robert Adam Room, the lower one.
+    // The production seed (db/seed.ts) stores that room as its upper section,
+    // so this fixture's row and the production row differ. The planner draws
+    // neither: it has its own outline for the room, looked up by name
+    // (packages/web/src/data/room-geometries.ts).
+    const stated = TRADES_HALL_ROOM_DIMENSIONS[room.slug]?.extents[0];
+    const size = {
+      lengthM: stated?.lengthM ?? UNSTATED_ROOM.lengthM,
+      widthM: stated?.widthM ?? UNSTATED_ROOM.widthM,
+      heightM: stated?.heightM ?? UNSTATED_ROOM.heightM,
+    };
     return {
       id: id(room.id),
       venueId,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isCalendarDate } from "./calendar-date.js";
 import { safePlanningLanguage } from "./evidence-runtime.js";
 import {
   EventArchitectAccessibilityRequirementSchema,
@@ -36,7 +37,6 @@ export const EVENT_BRIEF_MIN_GUESTS = 1;
 export const EVENT_BRIEF_MAX_GUESTS = 300;
 
 const BRIEF = EventArchitectBriefSchema.shape;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/u;
 const CLOCK_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 const QUOTE_MAX_LENGTH = 500;
 const NOTE_MAX_LENGTH = 500;
@@ -64,13 +64,11 @@ export const EVENT_BRIEF_DRAFT_FIELDS = [
 export const EventBriefDraftFieldSchema = z.enum(EVENT_BRIEF_DRAFT_FIELDS);
 export type EventBriefDraftField = z.infer<typeof EventBriefDraftFieldSchema>;
 
-/** A real calendar date written YYYY-MM-DD. */
-export function isCalendarDate(text: string): boolean {
-  if (!ISO_DATE.test(text)) return false;
-  const [year, month, day] = text.split("-").map(Number) as [number, number, number];
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-}
+// A real calendar date written YYYY-MM-DD. It lives in calendar-date.ts, which
+// imports nothing, so the public enquiry schema can check a date without
+// bringing this module's schemas into the bundles that carry it. Still offered
+// from here, where its other readers already take it.
+export { isCalendarDate };
 
 /** A 24-hour clock time written HH:MM. */
 export function isClockTime(text: string): boolean {

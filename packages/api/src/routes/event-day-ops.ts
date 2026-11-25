@@ -10,17 +10,20 @@ import {
   EventDayOpsBoardSchema,
   OpsTaskSchema,
   UpdateEventDayIssueInputSchema,
+  UpdateOpsTaskStatusConflictSchema,
   UpdateOpsTaskStatusInputSchema,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { eventPhases, eventPlanChangeAcknowledgements, eventPlanChanges, events, handoffPacks, opsTasks } from "../db/schema.js";
 import { authenticate } from "../middleware/auth.js";
 import { outerColumn } from "../utils/outer-column.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import { canAccessInternalEvent } from "../utils/query.js";
 import {
   EVENT_DAY_ISSUE_AUDIENCE,
   EventDayIssueNotFoundError,
   EventDayTaskNotFoundError,
+  EventDayTaskStatusConflictError,
   createEventDayIssue,
   getEventDayOpsBoard,
   loadEventForOpsBoard,
@@ -243,6 +246,9 @@ export async function eventDayEventRoutes(server: FastifyInstance, opts: { db: D
       if (err instanceof EventDayIssueNotFoundError) {
         return reply.status(404).send({ error: "Issue not found", code: "NOT_FOUND" });
       }
+      // An erasure of a person whose event this is holds the event while it
+      // rewords this row: one of the two is rolled back (people-erasure.ts).
+      if (lockConflictOf(err) !== null) return reply.status(409).send(RETRY_ANSWER);
       throw err;
     }
   });
@@ -301,6 +307,18 @@ export async function eventDayOpsTaskRoutes(server: FastifyInstance, opts: { db:
       if (err instanceof EventDayTaskNotFoundError) {
         return reply.status(404).send({ error: "Task not found", code: "NOT_FOUND" });
       }
+      // A replayed status pressed against one the task has left (#418):
+      // nothing was written, and the board is given the task as it stands.
+      if (err instanceof EventDayTaskStatusConflictError) {
+        return reply.status(409).send({
+          error: "This task moved on before this status arrived.",
+          code: "TASK_STATUS_CONFLICT",
+          details: UpdateOpsTaskStatusConflictSchema.parse({ task: err.task }),
+        });
+      }
+      // An erasure of a person whose event this is holds the event while it
+      // rewords this row: one of the two is rolled back (people-erasure.ts).
+      if (lockConflictOf(err) !== null) return reply.status(409).send(RETRY_ANSWER);
       throw err;
     }
   });

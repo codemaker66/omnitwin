@@ -432,6 +432,18 @@ describe("the open deal", () => {
     expect(await screen.findByText("That move is not open from this stage any more. The deal has been read again.")).toBeDefined();
   });
 
+  it("reads the deal again and says so when a colleague's move landed first", async () => {
+    mocks.updateOpportunity.mockRejectedValue(new ApiError(409, "The deal changed after this screen read it", "OPPORTUNITY_STAGE_CHANGED"));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    const reads = mocks.getOpportunity.mock.calls.length;
+
+    fireEvent.click(panel.getByRole("button", { name: "Mark qualified" }));
+
+    expect(await screen.findByText("That move is not open from this stage any more. The deal has been read again.")).toBeDefined();
+    await waitFor(() => { expect(mocks.getOpportunity.mock.calls.length).toBeGreaterThan(reads); });
+  });
+
   it("drafts a proposal from a qualified deal and moves it on, and never offers a second draft when only the move failed", async () => {
     mocks.getOpportunity.mockResolvedValue(detail({}, { stage: "qualified" }));
     mocks.createProposal.mockResolvedValue(proposal());

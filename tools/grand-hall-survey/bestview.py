@@ -17,6 +17,7 @@ Colours are worked in the panoramas' own sRGB encoding (0-255 floats), each stat
 manifest's gain and white balance) applied in linear light, as project.py applies it.
 """
 import ctypes
+import functools
 import json
 import os
 import sys
@@ -34,6 +35,12 @@ SRC_TOP = 7.0            # v (metres above the floor) at the top edge of the ort
 FLOOR = 0.045            # E57 Z of the hall's floor
 BLOCK = 8                # texels per 40 mm block
 L, W = 21.135, 10.59
+COS_MIN, MAX_DIST = 0.2, 16.0   # visibility(): the least cosine of incidence and the farthest station (project.py's defaults)
+# How far beyond the mesh's outline of an occluder a station's view of what lies behind is not trusted (metres, measured
+# at the occluder). 0.0: no margin, as the Grand Hall is built. tools/surveyed-rooms sets it for a room (its gate B25);
+# label-views.py then counts only the views clear of that margin (occluder_cube, clear_of_occluders below).
+OCCLUDER_MARGIN = 0.0
+MARGIN_TEXELS = 16              # the margin reaches at most this many cubemap texels from a ray (occluder_cube says what that leaves of it)
 PIX_RAD = 2 * np.pi / 8192   # angular size of an 8K equirect pixel (its rows; columns are finer off the horizon)
 LUMA = np.array([0.2126, 0.7152, 0.0722], np.float32)
 # Each wall's frame in the E57 plan (X, Y), as wall-views.py placed the orthographic tiles: u = 0 at
@@ -254,7 +261,7 @@ def visibility(st, depthcube, pts, nrm):
     v = pts - st['t']
     dist = np.linalg.norm(v, axis=1)
     cos = -(v @ nrm) / np.maximum(dist, 1e-6)
-    ok = (cos > 0.2) & (dist < 16.0)
+    ok = (cos > COS_MIN) & (dist < MAX_DIST)
     idx = np.nonzero(ok)[0]
     if len(idx):
         idx = idx[~blocked_by_chandelier(st['t'], pts[idx])]
@@ -265,6 +272,149 @@ def visibility(st, depthcube, pts, nrm):
         tol = 0.035 + 0.008 * d / np.maximum(cos[idx], 0.25)
         vis[idx[stored >= d - tol]] = True
     return vis, dist, cos
+
+
+# ---------------------------------------------------------------- the occluders' margin (OCCLUDER_MARGIN > 0 only)
+#
+# The mesh draws a thing standing proud of a wall (a pediment, a lamp) a little smaller than the panoramas show it, so
+# along the edge of the zone it hides from a station, the station's photograph still shows the thing where the mesh
+# says the wall is in view. A blend of many stations washes those rims out; one station a block prints them, far from
+# the thing itself (the Saloon's pediments, 0.3 m proud: outlines in the plaster half a metre above them). The cure is
+# the depth-border mask of masked photo blending (Callieri, Cignoni, Corsini and Scopigno 2008): a view is not trusted
+# within a margin of an occluder's outline.
+
+def cube_texel(cube, v):
+    """The cubemap's own texel along world directions v (N, 3): project.depth_lookup's indexing without its 3 x 3."""
+    face = np.argmax(v @ P.DIRS.T, axis=1)
+    out = np.full(len(v), 1000.0, np.float32)
+    size = cube.shape[-1]
+    for f, (x, y, z) in enumerate(P.BASES):
+        m = face == f
+        if not m.any():
+            continue
+        vv = v[m]
+        pz = vv @ z
+        col = np.clip((((vv @ x) / -pz + 1) / 2 * size).astype(int), 0, size - 1)
+        row = np.clip((((vv @ y) / -pz + 1) / 2 * size).astype(int), 0, size - 1)
+        out[m] = cube[f][row, col]
+    return out
+
+
+@functools.lru_cache(maxsize=2)
+def texel_angle(size):
+    """The angle (radians) each texel of a cubemap face spans, as the side of a square of its solid angle:
+    2 / size at the face's centre, 0.59 of that at the middle of an edge and 0.44 in a corner. The array is kept between calls: read only."""
+    n = (np.arange(size) + 0.5) / size * 2 - 1
+    angle = ((2.0 / size) * (1.0 + n[:, None] ** 2 + n[None, :] ** 2) ** -0.75).astype(np.float32)
+    angle.setflags(write=False)
+    return angle
+
+
+def padded_cube(cube, pad):
+    """The distance cubemap with `pad` more texels round every face, read from the neighbouring faces along the
+    padding texels' own directions, so a neighbourhood near a face's edge sees what lies across it."""
+    size = cube.shape[-1]
+    n = (np.arange(-pad, size + pad) + 0.5) / size * 2 - 1
+    NY, NX = np.meshgrid(n, n, indexing='ij')
+    edge = np.ones(NX.shape, bool)
+    edge[pad:-pad, pad:-pad] = False
+    out = np.empty((6, size + 2 * pad, size + 2 * pad), np.float32)
+    for f, (x, y, z) in enumerate(P.BASES):
+        out[f, pad:-pad, pad:-pad] = cube[f]
+        out[f][edge] = cube_texel(cube, NX[edge][:, None] * x + NY[edge][:, None] * y - z)
+    return out
+
+
+def _min3(a):
+    """The 3 x 3 minimum over the last two axes (edges repeated)."""
+    b = a.copy()
+    np.minimum(b[..., 1:], a[..., :-1], out=b[..., 1:])
+    np.minimum(b[..., :-1], a[..., 1:], out=b[..., :-1])
+    c = b.copy()
+    np.minimum(c[..., 1:, :], b[..., :-1, :], out=c[..., 1:, :])
+    np.minimum(c[..., :-1, :], b[..., 1:, :], out=c[..., :-1, :])
+    return c
+
+
+def occluder_cube(depthcube):
+    """For every texel of a station's distance cubemap, the nearest surface within OCCLUDER_MARGIN of its ray: the
+    least stored distance s among the texels of the squares round it, m = 1..MARGIN_TEXELS texels to each side, with
+    s x m x the texel's own angle <= OCCLUDER_MARGIN. Infinite where there is none.
+    Two limits. The neighbourhood is a square, measured with the centre texel's angle, so along its diagonals it
+    reaches up to 1.4 times the margin from the ray. And it is never wider than MARGIN_TEXELS texels, so the margin is
+    reached in full only where the surface stands at least OCCLUDER_MARGIN / (MARGIN_TEXELS x the texel's angle) from
+    the station: for 50 mm on 1024-texel faces, 1.6 m at a face's centre, 2.7 m at the middle of an edge and 3.65 m in
+    a corner. Nearer than that the margin is what MARGIN_TEXELS texels span there (at half a metre, 16 mm at a face's
+    centre and 7 mm in a corner): margin_capped() says where."""
+    pad = MARGIN_TEXELS
+    cur = padded_cube(depthcube, pad)
+    angle = texel_angle(depthcube.shape[-1])
+    near = np.full(depthcube.shape, np.inf, np.float32)
+    for m in range(1, pad + 1):
+        cur = _min3(cur)
+        c = cur[:, pad:-pad, pad:-pad]
+        near = np.where((c * (m * angle)[None] <= OCCLUDER_MARGIN) & (c < near), c, near)
+    return near
+
+
+def occluder_limit(dist, cos):
+    """The distance below which a surface beside a ray counts as an occluder of the point the ray ends at (the point's
+    distance and cosine of incidence): nearer than the point by more than visibility()'s tolerance and what the
+    surface's own slope explains over the margin (the wall itself is nearer on one side of the ray, by the margin x
+    the tangent of incidence)."""
+    tol = 0.035 + 0.008 * dist / np.maximum(cos, 0.25)
+    slope = OCCLUDER_MARGIN * np.sqrt(np.maximum(1.0 - cos * cos, 0.0)) / np.maximum(cos, 1e-6)
+    return dist - tol - slope
+
+
+def clear_of_occluders(near, v, dist, cos):
+    """Whether points along v from a station (N, 3; their distances and cosines of incidence) are clear of every
+    occluder's margin: nothing in `near` (occluder_cube) stands nearer than occluder_limit().
+    The allowance is for the wall the point lies on. Another surface that meets it in a concave junction (the floor,
+    the ceiling, a side wall, a pilaster's flank) also stands nearer beside the ray, by what its own slope explains,
+    and counts as an occluder: a station that faces the wall loses its view within about the margin of such a
+    junction, though nothing hides anything there. A known cost of the margin (tools/surveyed-rooms/README.md, B25)."""
+    return cube_texel(near, v) >= occluder_limit(dist, cos)
+
+
+def margin_capped(near, v):
+    """Whether, along directions v (N, 3), the nearest surface within the margin (`near`, occluder_cube) stands so
+    near the station that MARGIN_TEXELS texels there span less than OCCLUDER_MARGIN: the margin applied round that
+    surface was narrower than the one asked for. False where no surface stands within the margin."""
+    span = np.broadcast_to(MARGIN_TEXELS * texel_angle(near.shape[-1]), near.shape)
+    return cube_texel(near, v) * cube_texel(span, v) < OCCLUDER_MARGIN
+
+
+def occluder_clearance(depthcube, v, dist, cos):
+    """How far from each ray its nearest occluder stands (metres), for points along v from a station (N, 3; their
+    distances and cosines of incidence): the least, over the surfaces within MARGIN_TEXELS texels of the ray's own
+    texel that stand nearer than occluder_limit(), of the surface's distance x its texels from the ray (m, as
+    occluder_cube counts them) x the texel's angle. Infinite where there is none.
+    A view is clear of the margin exactly where this exceeds OCCLUDER_MARGIN (clear_of_occluders on occluder_cube says
+    the same of every view). Of two views that are not clear, the one with the greater clearance passes farther from
+    the occluder's outline in the mesh. The mesh draws the occluder a few centimetres smaller than the photograph
+    shows it, whichever station looks, so that view's photograph is the less likely to show the occluder's edge."""
+    pad, size = MARGIN_TEXELS, depthcube.shape[-1]
+    cube = padded_cube(depthcube, pad)
+    angle = texel_angle(size)
+    side = np.arange(2 * pad + 1)
+    m = np.maximum(np.maximum(np.abs(side - pad)[:, None], np.abs(side - pad)[None, :]), 1).astype(np.float32)
+    limit = occluder_limit(dist, cos)
+    face = np.argmax(v @ P.DIRS.T, axis=1)
+    out = np.full(len(v), np.inf, np.float32)
+    for f, (x, y, z) in enumerate(P.BASES):
+        on_face = np.nonzero(face == f)[0]
+        for k in range(0, len(on_face), 2048):              # 2048 neighbourhoods of 33 x 33 texels: 9 MB
+            i = on_face[k:k + 2048]
+            vv = v[i]
+            pz = vv @ z
+            col = np.clip((((vv @ x) / -pz + 1) / 2 * size).astype(int), 0, size - 1)
+            row = np.clip((((vv @ y) / -pz + 1) / 2 * size).astype(int), 0, size - 1)
+            s = cube[f][(row[:, None] + side[None, :])[:, :, None], (col[:, None] + side[None, :])[:, None, :]]
+            away = s * (m[None] * angle[row, col][:, None, None])
+            away[s >= limit[i][:, None, None]] = np.inf
+            out[i] = away.min(axis=(1, 2))
+    return out
 
 
 class Pano:

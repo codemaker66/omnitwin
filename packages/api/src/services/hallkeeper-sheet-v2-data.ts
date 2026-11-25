@@ -1,4 +1,4 @@
-import { eq, ne, and, gte, lte, isNull, isNotNull, inArray, desc, asc } from "drizzle-orm";
+import { eq, ne, and, gte, lte, isNull, isNotNull, inArray, desc, asc, sql } from "drizzle-orm";
 import type {
   EventInstructions,
   HallkeeperSheetV2,
@@ -10,7 +10,7 @@ import { GangwayReviewSchema, hasInstructionContent, type GangwayReview } from "
 import {
   configurations, placedObjects, assetDefinitions, assetAccessories,
   spaces, venues, configurationSheetSnapshots, users,
-  bookings, eventConfigurationLinks, eventPhases, layoutVariants, turnaroundRules,
+  bookings, eventConfigurationLinks, eventPhases, events, layoutVariants, phaseLayoutSnapshots, turnaroundRules,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { REAL_METRE_COORDINATE_SPACE, type LayoutCoordinateSpace } from "../db/coordinate-space.js";
@@ -31,8 +31,10 @@ import type { SheetIssue } from "./sheet-paper-check.js";
 // Timing policy (Ship Friday, gate line 20): times come from the Diary and
 // nowhere else. We resolve which event(s) this configuration belongs to,
 // find the live booking that holds THIS room, and read `eventStart` from
-// that booking's own window. `setupBy` is the earliest scheduled phase in
-// the same room on the same day when one exists, otherwise the venue's own
+// that booking's own window. `setupBy` (a historical name: it is when the
+// setup window OPENS, never when the room must be ready; read the sheet's
+// times through sheetTimes() in @omnitwin/types) is the earliest scheduled
+// phase in the same room on the same day when one exists, otherwise the venue's own
 // turnaround rule for that room and event type — resolved through the same
 // `resolveTurnaroundRule` the calendar conflict rail enforces — and null
 // when the venue has recorded neither. There is no house constant: the
@@ -403,9 +405,16 @@ export function buildSheetApproval(
  * Pure "booked window + room phase + venue turnaround → Timing" step,
  * extracted so the arithmetic is unit-testable without a database.
  *
- * `eventStart` is the Diary booking's own start — never a default hour.
+ * `eventStart` is the Diary booking's own start — never a default hour. It is
+ * when guests come in, as the Day Board (doors) and the Diary read a booking.
  *
- * `setupBy` has two honest sources and no invented third:
+ * `setupBy` is when the setup window OPENS; the name is historical and stays
+ * because approved snapshots are frozen. It was printed as "Ready by" until
+ * 18 November 2026, an hour early on the crowded day's breakfast (Setup from
+ * 07:00, doors 08:00). The sheet's Ready by is `sheetTimes().readyBy`: the
+ * planner's final-touches time, else `eventStart`.
+ *
+ * `setupBy` has two honest sources and no invented third, both window starts:
  *   1. the earliest scheduled phase in the SAME room on the SAME day, when it
  *      is earlier than the booking — the planner said when work begins, and
  *      that is more specific than any rule;
@@ -421,7 +430,7 @@ export function buildSheetApproval(
  * wrong about — and which looked identical on the page to a derived one.
  *
  * `bufferMinutes` always reports the REAL gap, never the rule's nominal value,
- * so a phase-derived deadline cannot claim a buffer it does not have.
+ * so a phase-derived setup start cannot claim a window it does not have.
  *
  * Returns null for an unparseable instant rather than emitting "Invalid
  * Date" into a frozen snapshot.
@@ -454,13 +463,40 @@ export function deriveSheetTiming(
 }
 
 /**
- * Every event this configuration is attached to: explicit event links and
- * non-archived layout variants. Both are event-owned references, so a
- * configuration that was never linked to an event yields no booking and
- * therefore no timing.
+ * Every event this configuration serves: explicit event links, non-archived
+ * layout variants, and events with a phase in this configuration's own room
+ * whose latest recorded layout is a frozen snapshot of this configuration.
+ * Freezing a layout onto a phase writes no link (routes/phase-layout-
+ * snapshots.ts), yet the Day Board offers the layout for that event by the
+ * same rule (web lib/event-linked-layouts.ts candidateConfigurations), so the
+ * sheet's times and its ticks must count that event as the layout's
+ * (T-695 api-eventday-sheet-6). All are event-owned references, so a
+ * configuration that serves no event yields no booking and therefore no
+ * timing.
  */
 export async function linkedEventIds(db: Database, configId: string): Promise<string[]> {
-  const [links, variants] = await Promise.all([
+  // Each phase's latest recorded layout, among the phases this configuration
+  // was ever frozen onto: an older frozen entry must not revive a phase that
+  // has since moved to another layout.
+  const latestPhaseLayout = db.selectDistinctOn([phaseLayoutSnapshots.eventPhaseId], {
+    eventPhaseId: phaseLayoutSnapshots.eventPhaseId,
+    configurationId: phaseLayoutSnapshots.configurationId,
+    status: phaseLayoutSnapshots.status,
+  })
+    .from(phaseLayoutSnapshots)
+    .where(inArray(
+      phaseLayoutSnapshots.eventPhaseId,
+      db.select({ eventPhaseId: phaseLayoutSnapshots.eventPhaseId })
+        .from(phaseLayoutSnapshots)
+        .where(eq(phaseLayoutSnapshots.configurationId, configId)),
+    ))
+    .orderBy(
+      phaseLayoutSnapshots.eventPhaseId,
+      desc(sql`coalesce(${phaseLayoutSnapshots.frozenAt}, ${phaseLayoutSnapshots.createdAt})`),
+      desc(phaseLayoutSnapshots.id),
+    )
+    .as("latest_phase_layout");
+  const [links, variants, frozenPlans] = await Promise.all([
     db.select({ eventId: eventConfigurationLinks.eventId })
       .from(eventConfigurationLinks)
       .where(eq(eventConfigurationLinks.configurationId, configId)),
@@ -470,8 +506,21 @@ export async function linkedEventIds(db: Database, configId: string): Promise<st
         eq(layoutVariants.configurationId, configId),
         ne(layoutVariants.status, "archived"),
       )),
+    db.select({ eventId: eventPhases.eventId })
+      .from(latestPhaseLayout)
+      .innerJoin(eventPhases, eq(eventPhases.id, latestPhaseLayout.eventPhaseId))
+      .innerJoin(configurations, eq(configurations.id, latestPhaseLayout.configurationId))
+      .innerJoin(events, eq(events.id, eventPhases.eventId))
+      .where(and(
+        eq(latestPhaseLayout.configurationId, configId),
+        eq(latestPhaseLayout.status, "frozen"),
+        // The phase's room is the layout's room, and the event its venue's.
+        eq(eventPhases.spaceId, configurations.spaceId),
+        eq(events.venueId, configurations.venueId),
+        isNull(events.deletedAt),
+      )),
   ]);
-  return [...new Set([...links, ...variants].map((row) => row.eventId))];
+  return [...new Set([...links, ...variants, ...frozenPlans].map((row) => row.eventId))];
 }
 
 /**
@@ -527,8 +576,9 @@ export async function resolveTiming(
 
   // Bound the phase search to the booking's own day. Without it the earliest
   // phase of a multi-day event — or of another event sharing the layout —
-  // became this sheet's set-up deadline, and `bufferMinutes` reported
-  // thousands of minutes as though that were a real buffer.
+  // became this sheet's setup start (timing.setupBy, when the setup window
+  // opens), and `bufferMinutes` reported thousands of minutes as though that
+  // were a real buffer.
   const dayStart = new Date(booking.startsAt.getTime() - 24 * 60 * 60_000);
   const [phase] = await db.select({ startsAt: eventPhases.startsAt })
     .from(eventPhases)

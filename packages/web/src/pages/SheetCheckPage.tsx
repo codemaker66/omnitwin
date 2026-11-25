@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   describePaperClaim,
@@ -146,8 +146,11 @@ function SheetCheck({ query, claim }: { readonly query: SheetPaperCheckQuery; re
     return () => { controller.abort(); };
   }, [query, attempt]);
 
-  // When signal returns, ask again without a tap.
-  useEffect(() => {
+  // When signal returns, ask again without a tap. Listen from the commit that
+  // shows "no signal", before anything can see it: a passive effect runs after
+  // the browser gets the event loop back, and a signal returning in between
+  // would be missed for good (T-736).
+  useLayoutEffect(() => {
     if (state.kind !== "offline") return undefined;
     window.addEventListener("online", retry);
     return () => { window.removeEventListener("online", retry); };

@@ -1,10 +1,11 @@
-import { Suspense, lazy, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type Ref } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type Ref } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
 import { Check, ChevronDown } from "lucide-react";
 import type { PublishedRoomSlug } from "@omnitwin/types";
 import { slateAside, slateSaveState, type SlateAside, type SlateSaveMark, type SlateSaveState } from "../../lib/editor-save-status.js";
 import { customerEventPath } from "../../lib/event-access.js";
+import { refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
 import { lastInputWasKeys, letter, usePlannerKeyBindings } from "../../lib/planner-keys.js";
 import { actsInRoom, planeFacts, slateEyebrow, venueDay, type PlaneFacts } from "../../lib/slate-facts.js";
 import { useFreezePhaseLayoutSnapshot } from "../../hooks/use-freeze-phase-layout-snapshot.js";
@@ -15,11 +16,13 @@ import { saveBeforeLayoutChange, useEditorStore } from "../../stores/editor-stor
 import { roomSwitchState } from "../../lib/planner-room-switch.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { usePlannerChromeStore } from "../../stores/planner-chrome-store.js";
 import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.js";
 import { canFreezePhaseLayoutForVenue } from "../editor/cockpit/PhaseLayoutSnapshotAction.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { CreamKey, QuietKey } from "./Keys.js";
 import { usePopoverState } from "./Popover.js";
+import { SlateCrest } from "./SlateCrest.js";
 import { SlateMenu, slateMenuRooms } from "./SlateMenu.js";
 import { useEventHold, useSlateAudience } from "./slate-data.js";
 import { Chip, Notice, StatusDot, type StatusDotTone } from "./Surfaces.js";
@@ -33,19 +36,26 @@ const LazyClerkRouteProvider = lazy(() => import("../auth/ClerkRouteProvider.js"
 // The slate — what this is, and whether it is saved (T-671 slice 7; spec 6.1,
 // frames 01, 17 and 19).
 //
-// A lacquer plate top left: the crest, the eyebrow (the day and the room), the
-// title as the key to the slate's menu, and one line: the hold, the save state
-// in plain words, "Sample" for a sample. Under it the copper plane carries the
+// A lacquer plate top left: the crest (which hides and shows the tools,
+// T-680), the eyebrow (the day and the room), the title as the key to the
+// slate's menu, and one line: the hold, the save state in plain words,
+// "Sample" for a sample. Under it the copper plane carries the
 // figures that decide: guests, seats against the room's published limit, and
 // tables. A notice under the plane says what is safe and the way forward when
 // a save did not arrive, the connection dropped or someone else changed the
 // layout. Status is always words; dots, the tick and colour repeat them.
 // ---------------------------------------------------------------------------
 
-export type SlateActionId = "try-again" | "show-theirs" | "keep-mine" | "sign-in" | "leave-anyway";
+export type SlateActionId = "try-again" | "show-theirs" | "keep-mine" | "sign-in" | "leave-anyway" | "dismiss" | "dismiss-note";
+
+/** A way forward that runs a while (Dismiss is done at once: a refused clear's notice, or the note carrying one here). */
+type SlateBusyId = Exclude<SlateActionId, "dismiss" | "dismiss-note">;
+
+/** The notice under the plane, whose keys a Dismiss takes away with it. */
+const SLATE_NOTICE_CLASS = "pc-slate__notice";
 
 /** What each way forward is doing while it runs: the words the other keys wait on. */
-const BUSY_WORDS: Readonly<Record<SlateActionId, string>> = {
+const BUSY_WORDS: Readonly<Record<SlateBusyId, string>> = {
   "try-again": "Saving",
   "show-theirs": "Opening the other version",
   "keep-mine": "Keeping your version",
@@ -61,7 +71,7 @@ const DOT_TONE: Readonly<Partial<Record<SlateSaveMark, StatusDotTone>>> = {
 };
 
 export interface SlateCardProps {
-  /** The venue's crest, or nothing. */
+  /** The crest: the switch that hides and shows the tools (SlateCrest, T-680), or nothing. */
   readonly crest: ReactNode;
   /** "Sat 28 Nov 2026 · Grand Hall". */
   readonly eyebrow: string;
@@ -78,10 +88,12 @@ export interface SlateCardProps {
   readonly menuOpen: boolean;
   readonly menuId?: string;
   readonly titleRef?: Ref<HTMLButtonElement>;
+  /** The save status: where focus goes when a Dismiss puts its notice away. */
+  readonly statusRef?: Ref<HTMLElement>;
   readonly onMenu: () => void;
   readonly onAction: (id: SlateActionId) => void;
   /** The way forward now running, or null. */
-  readonly busy: SlateActionId | null;
+  readonly busy: SlateBusyId | null;
 }
 
 function SaveMark({ mark }: { readonly mark: SlateSaveMark }): ReactElement | null {
@@ -94,7 +106,7 @@ function ActionKey({ id, label, primary, busy, onAction }: {
   readonly id: SlateActionId;
   readonly label: string;
   readonly primary: boolean;
-  readonly busy: SlateActionId | null;
+  readonly busy: SlateBusyId | null;
   readonly onAction: (id: SlateActionId) => void;
 }): ReactElement {
   const running = busy === id;
@@ -160,20 +172,33 @@ function Plane({ facts }: { readonly facts: PlaneFacts }): ReactElement {
 }
 
 export function SlateCard({
-  crest, eyebrow, title, hold, sample, save, aside = null, plane, menuOpen, menuId, titleRef, onMenu, onAction, busy,
+  crest, eyebrow, title, hold, sample, save, aside = null, plane, menuOpen, menuId, titleRef, statusRef, onMenu, onAction, busy,
 }: SlateCardProps): ReactElement {
   const { lineAction } = save;
   // An urgent aside (a held switch) answers what the person just asked for, so
   // it comes first; a quiet one waits for the save state's own notice to clear.
+  // A guest's draft has a notice only for a save refused over a held note, the
+  // one voice of it on a line that says Draft whatever happens: an alert, as
+  // a signed-in viewer's is (delta review of #388 at 33a8e0ad, U4). So is a
+  // refused clear's sentence carried from a layout left behind, which waits
+  // like any quiet aside (SlateAside.alert; delta review at 7a51b6e4, X2).
   const notice = aside !== null && (aside.urgent || save.notice === null)
-    ? { heading: aside.heading, body: aside.body ?? undefined, actions: aside.actions, urgent: aside.urgent }
+    ? { heading: aside.heading, body: aside.body ?? undefined, actions: aside.actions, urgent: aside.alert }
     : save.notice === null
       ? null
-      : { ...save.notice, urgent: save.kind === "not-saved" || save.kind === "changed-elsewhere" };
+      : { ...save.notice, urgent: save.kind === "not-saved" || save.kind === "changed-elsewhere" || save.kind === "draft" };
   return (
-    <section className="pc-slate" aria-label={title} data-save={save.kind} data-plane={plane === null ? "none" : "joined"} data-pc-popover-anchor>
+    <section
+      className="pc-slate"
+      aria-label={title}
+      data-save={save.kind}
+      data-plane={plane === null ? "none" : "joined"}
+      // With no event the eyebrow is the room, and so is the title: a dress that lays them on one line can say it once.
+      data-eyebrow={eyebrow === title ? "same" : undefined}
+      data-pc-popover-anchor
+    >
       <div className="pc-lacquer pc-slate__plate">
-        {crest !== null ? <span className="pc-slate__crest" aria-hidden="true">{crest}</span> : null}
+        {crest}
         <div className="pc-slate__words">
           <span className="pc-caps pc-slate__eyebrow">{eyebrow}</span>
           <button
@@ -192,7 +217,7 @@ export function SlateCard({
             {hold !== null ? <Chip tone="hold">{hold}</Chip> : null}
             <span className="pc-slate__save" title={save.title ?? undefined}>
               <SaveMark mark={save.mark} />
-              <b className="pc-slate__status">{save.status}</b>
+              <b ref={statusRef} className="pc-slate__status" tabIndex={-1}>{save.status}</b>
               {save.detail !== null ? <span className="pc-slate__detail"> · {save.detail}</span> : null}
             </span>
             {sample ? <Chip tone="sample">Sample</Chip> : null}
@@ -207,7 +232,7 @@ export function SlateCard({
       {plane !== null ? <Plane facts={plane} /> : null}
       {notice !== null ? (
         <Notice
-          className="pc-slate__notice"
+          className={SLATE_NOTICE_CLASS}
           lead={notice.heading}
           body={notice.body}
           urgency={notice.urgent ? "alert" : "status"}
@@ -253,6 +278,8 @@ export function Slate(): ReactElement {
     isOnline: state.isOnline,
     keptOnDevice: state.keptOnDevice,
     saveError: state.saveError,
+    saveErrorCode: state.saveErrorCode,
+    refusedClear: state.noteClearsRefused.length > 0,
     saveConflict: state.saveConflict,
     lockReason: state.lockReason,
     lastSavedAt: state.lastSavedAt,
@@ -268,7 +295,7 @@ export function Slate(): ReactElement {
   const previewing = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const menu = usePopoverState();
   const freeze = useFreezePhaseLayoutSnapshot();
-  const [busy, setBusy] = useState<SlateActionId | null>(null);
+  const [busy, setBusy] = useState<SlateBusyId | null>(null);
   const [signingIn, setSigningIn] = useState(false);
   const [failedLogo, setFailedLogo] = useState<string | null>(null);
   const [actBusy, setActBusy] = useState<string | null>(null);
@@ -279,6 +306,20 @@ export function Slate(): ReactElement {
   // held because its changes could be neither saved nor kept on this device.
   const [leaving, setLeaving] = useState(false);
   const [held, setHeld] = useState<{ readonly destination: string; readonly go: () => void } | null>(null);
+  // A Dismiss takes its own key away with the notice (or with its line of the
+  // notice), and focus on it would fall to the page: it goes to the save
+  // status instead, which says where saving now stands (ruling (1) on #388,
+  // delta review U1 and T2). Only when focus was on that key: a notice put
+  // away while the person is elsewhere takes nothing from them.
+  const statusRef = useRef<HTMLElement>(null);
+  const [focusFrom, setFocusFrom] = useState<Element | null>(null);
+  useLayoutEffect(() => {
+    if (focusFrom === null) return;
+    setFocusFrom(null);
+    const at = document.activeElement;
+    if (focusFrom.isConnected || (at !== null && at !== document.body)) return;
+    statusRef.current?.focus();
+  }, [focusFrom]);
 
   const { saveConflict: conflict } = facts;
   const save = slateSaveState({
@@ -291,6 +332,8 @@ export function Slate(): ReactElement {
     isOnline: facts.isOnline,
     keptOnDevice: facts.keptOnDevice,
     saveError: facts.saveError,
+    refusedForHeldNote: refusedOverHeldNote(facts.saveErrorCode),
+    refusedClear: facts.refusedClear,
     conflict: conflict === null ? null : {
       changedByName: conflict.changedBy?.name ?? null,
       byYou: conflict.byYou,
@@ -318,10 +361,13 @@ export function Slate(): ReactElement {
   const roomName = space?.name ?? "The room";
   const guests = event?.guestCount ?? null;
   const roomSlug = space?.slug ?? null;
-  const plane = useMemo(
-    () => (walk ? null : planeFacts({ items, guests, roomSlug })),
-    [guests, items, roomSlug, walk],
-  );
+  const figures = useMemo(() => planeFacts({ items, guests, roomSlug }), [guests, items, roomSlug]);
+  const plane = walk ? null : figures;
+  // The seats meter on the dock's edge reads the same figures, in Walk too.
+  useEffect(() => {
+    usePlannerChromeStore.getState().setFigures({ guests: figures.guests, seats: figures.seats, limit: figures.limit });
+  }, [figures]);
+  useEffect(() => () => { usePlannerChromeStore.getState().setFigures(null); }, []);
   const acts = useMemo(() => {
     if (graph === null || space === null) return [];
     return actsInRoom(graph, space.id, facts.configId).map((act) => (actsSet[act.id] === true ? { ...act, state: "this" as const } : act));
@@ -343,9 +389,10 @@ export function Slate(): ReactElement {
   /**
    * Open another room or layout in this page once this layout's unsaved work
    * has had up to 2 s to save (QoL D-X3); the line says "Saving" meanwhile.
-   * Work that stays on this device goes with a note the next layout shows.
-   * Work this device cannot keep holds the switch, with the choice to wait
-   * for it or to go without it.
+   * Work that stays on this device goes with a note the next layout shows,
+   * and so does a refused clear's sentence still standing here. Work this
+   * device cannot keep holds the switch, with the choice to wait for it or to
+   * go without it.
    */
   const leaveFor = (destination: string, go: () => void): void => {
     if (leaving) return;
@@ -353,8 +400,20 @@ export function Slate(): ReactElement {
     setLeaving(true);
     void saveBeforeLayoutChange().then((outcome) => {
       setLeaving(false);
-      if (outcome === "not-kept") setHeld({ destination, go });
-      else go();
+      switch (outcome) {
+        case "saved":
+        case "clear-refused":
+        case "kept":
+          go();
+          return;
+        case "not-kept":
+          setHeld({ destination, go });
+          return;
+        default: {
+          const exhausted: never = outcome;
+          throw new Error(`Unhandled layout change outcome ${String(exhausted)}`);
+        }
+      }
     });
   };
 
@@ -367,6 +426,13 @@ export function Slate(): ReactElement {
       const going = held;
       setHeld(null);
       going?.go();
+      return;
+    }
+    if (id === "dismiss" || id === "dismiss-note") {
+      const at = document.activeElement;
+      if (at !== null && at.closest(`.${SLATE_NOTICE_CLASS}`) !== null) setFocusFrom(at);
+      if (id === "dismiss") useEditorStore.getState().dismissRefusedClears();
+      else useEditorStore.setState({ leftBehind: null });
       return;
     }
     const editor = useEditorStore.getState();
@@ -416,15 +482,18 @@ export function Slate(): ReactElement {
     : conflict !== null ? "Choose a version first"
       : facts.isDirty || facts.isSaving ? "Saving this layout first"
         : null;
-  const crest = venue.logoUrl !== null && venue.logoUrl !== failedLogo
-    ? <img src={venue.logoUrl} alt="" onError={() => { setFailedLogo(venue.logoUrl); }} />
-    : null;
+  const crest = (
+    <SlateCrest
+      logoUrl={venue.logoUrl !== null && venue.logoUrl !== failedLogo ? venue.logoUrl : null}
+      onLogoError={() => { setFailedLogo(venue.logoUrl); }}
+    />
+  );
 
   return (
     <>
       <SlateCard
         crest={crest}
-        eyebrow={slateEyebrow({ startsAt: event?.startsAt ?? null, roomName })}
+        eyebrow={slateEyebrow({ startsAt: event?.startsAt ?? null, roomName, timeZone: event?.timeZone ?? null })}
         title={event?.name ?? roomName}
         hold={staff ? hold : null}
         sample={isTemplate}
@@ -434,6 +503,7 @@ export function Slate(): ReactElement {
         menuOpen={menu.open}
         menuId={menu.panelId}
         titleRef={menu.triggerRef}
+        statusRef={statusRef}
         onMenu={menu.toggle}
         onAction={onAction}
         busy={busy}

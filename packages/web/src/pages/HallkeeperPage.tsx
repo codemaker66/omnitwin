@@ -490,6 +490,9 @@ export function HallkeeperPage(): React.ReactElement {
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
         const queued = await queuedTicks();
+        // The token and the queue take a moment. A sheet closed since, or a
+        // newer read begun, would throw the answer away: do not ask for it.
+        if (!isCurrent()) return;
         const loaded = await readProgress(configId, writeEventId, headers);
         if (loaded === null || !isCurrent()) return;
         if (loaded.scope !== null && loaded.scope.eventId !== writeEventId) return;
@@ -927,7 +930,7 @@ export function HallkeeperPage(): React.ReactElement {
       <h1>{data.space.name}</h1><h2>{data.config.name}</h2><p>{data.venue.name} · {formatDims(data.space)} · {data.config.guestCount} guests · {formatLayoutStyle(data.config.layoutStyle)}</p>
       <p className="hk-print-version">{paperCopyLine(data, printedAt)}</p>
       {standing !== null && <SheetStandingMark standing={standing} />}
-      {data.timing !== null && <p>{formatSheetTimes(data.timing, data.venue.timezone)}</p>}
+      <p>{formatSheetTimes({ timing: data.timing, instructions: data.instructions }, data.venue.timezone)}</p>
       <HallkeeperStatusBanner key={data.config.id} configId={data.config.id} timeZone={data.venue.timezone} />
       {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}
       <p>{progressUnavailable ? "Shared checks unavailable" : `${String(counts.checkedRows)} of ${String(counts.totalRows)} setup rows checked`}</p>

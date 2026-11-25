@@ -6,6 +6,9 @@ import {
   isUnownedRequest,
 } from "@omnitwin/types";
 import { deriveDayBoard, type DayBoard, type DayBoardSlot } from "../day-board-state.js";
+import { boardWindow } from "../day-board-layout.js";
+import { boardSummary, planeStages, roomDay, roomInFocus, summaryText } from "../day-board-rooms.js";
+import { boardRange } from "../../../diary/lib/board-time.js";
 
 // ---------------------------------------------------------------------------
 // The Day Board on a crowded Trades Hall day (L9; goal 05 "every slot's
@@ -42,7 +45,8 @@ function expectLegible(slot: DayBoardSlot, when: string): void {
   expect(slot.stateLabel.trim().length, where).toBeGreaterThan(0);
   expect(slot.countdown.trim().length, where).toBeGreaterThan(0);
   expect(slot.icon.length, where).toBeGreaterThan(0);
-  expect(slot.timeRange, where).toMatch(/^\d{2}:\d{2} – \d{2}:\d{2}$/u);
+  // A booking that runs for days names them; the rest read as clock times.
+  expect(slot.timeRange, where).toMatch(/^(?:\d{2}:\d{2} – \d{2}:\d{2}|[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2} – [A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2})$/u);
 }
 
 describe("the Day Board on a crowded day, at its busiest moment (14:20)", () => {
@@ -72,7 +76,8 @@ describe("the Day Board on a crowded day, at its busiest moment (14:20)", () => 
     const prizeGiving = slotTitled(busiest, "Glasgow Schools Prize Giving");
     expect(prizeGiving).toMatchObject({ state: "exception", exception: "turnaround-at-risk", stateLabel: "Changeover at risk" });
     expect(prizeGiving.countdown).toBe("Changeover at risk · Doors · 10 min");
-    expect(prizeGiving.exceptionDetail).toContain("Bridgewrights' Society AGM not yet cleared");
+    // Setup was due at two; the words say so rather than "0 min until setup".
+    expect(prizeGiving.exceptionDetail).toBe("Bridgewrights' Society AGM not yet cleared · setup was due 14:00, doors 14:30");
     expect(prizeGiving.gapBefore).toEqual({ minutes: 30, neededMinutes: 60, short: true });
     // The one tight changeover of the day; every other gap is wide enough.
     expect(slots.filter((slot) => slot.gapBefore?.short === true).map((slot) => slot.title)).toEqual(["Glasgow Schools Prize Giving"]);
@@ -127,5 +132,79 @@ describe("the Day Board on a crowded day, swept from 06:00 to 01:00", () => {
   it("runs the wedding's dinner past midnight and only then lets it go", () => {
     expect(slotTitled(board(at("23:50")), "Morrison–Adeyemi wedding · dinner and ceilidh").state).toBe("live");
     expect(slotTitled(board(at("00:40", 1)), "Morrison–Adeyemi wedding · dinner and ceilidh").state).toBe("clear-down");
+  });
+});
+
+describe("the rooms board on a crowded day, at its busiest moment (14:20)", () => {
+  const busiest = board(day.busiestAtMs);
+  const rooms = busiest.lanes.map(roomDay);
+  const titles = (slots: readonly DayBoardSlot[]): readonly string[] => slots.map((slot) => slot.title);
+  const room = (name: string): ReturnType<typeof roomDay> => {
+    const found = rooms.find((candidate) => candidate.room.name === name);
+    if (found === undefined) throw new Error(`No room ${name}`);
+    return found;
+  };
+
+  it("reads each room as what has finished, what it is doing, what comes next and what comes after", () => {
+    const grandHall = room("Grand Hall");
+    expect(titles(grandHall.earlier)).toEqual(["Merchants' Breakfast Briefing", "Bridgewrights' Society AGM"]);
+    expect(grandHall.lead?.title).toBe("Glasgow Schools Prize Giving");
+    expect(grandHall.next?.title).toBe("Morrison–Adeyemi wedding · dinner and ceilidh");
+    expect(grandHall.later).toEqual([]);
+    expect(grandHall.tone).toBe("red");
+
+    const saloon = room("Saloon");
+    expect(saloon.lead?.title).toBe("Morrison–Adeyemi wedding · ceremony");
+    expect(saloon.next?.title).toBe("Book launch: The Clyde at Night");
+    expect(titles(saloon.later)).toEqual(["Speyside whisky tasting"]);
+    expect(saloon.tone).toBe("live");
+
+    // Every slot of the day is in exactly one of the four.
+    for (const day of rooms) {
+      const read = [...day.earlier, ...(day.lead === null ? [] : [day.lead]), ...(day.next === null ? [] : [day.next]), ...day.later];
+      expect(new Set(read.map((slot) => slot.bookingId))).toEqual(new Set(day.slots.map((slot) => slot.bookingId)));
+      expect(read).toHaveLength(day.slots.length);
+    }
+  });
+
+  it("counts the day on the plane, and each count finds the rooms it names", () => {
+    // Today's board: the requests count is every one nobody has, as the list
+    // beside the rooms counts them; each is on one of today's bookings.
+    const stages = planeStages(busiest.lanes, busiest.unowned.length);
+    expect(stages.map((stage) => [stage.label, stage.count, stage.note])).toEqual([
+      ["At risk", 2, null], ["Requests waiting", busiest.unowned.length, null], ["Live", 3, null], ["Setting up", 1, null], ["Still to come", 7, null], ["Bookings", 21, null],
+    ]);
+    expect(rooms.filter((day) => roomInFocus(day, "risk")).map((day) => day.room.name)).toEqual(["Grand Hall", "South Gallery"]);
+    expect(rooms.filter((day) => roomInFocus(day, "live")).map((day) => day.room.name))
+      .toEqual(["Saloon", "Robert Adam Room", "North Gallery"]);
+    expect(rooms.filter((day) => roomInFocus(day, "all"))).toHaveLength(6);
+  });
+
+  it("says what matters in one sentence: the rooms at risk, the requests nobody has, the functions live", () => {
+    const parts = boardSummary({ lanes: busiest.lanes, unowned: busiest.unowned, today: true, nowMs: day.busiestAtMs });
+    expect(parts).not.toBeNull();
+    expect(summaryText(parts ?? [])).toBe(
+      `Two rooms need you now: Grand Hall and South Gallery. ${String(busiest.unowned.length)} requests have no one on them; the longest has waited 1 h 50. Three functions are live and one is getting ready.`,
+    );
+    expect(parts?.filter((part) => typeof part !== "string" && part.tone === "risk")).toEqual([{ strong: "Two rooms", tone: "risk" }]);
+  });
+
+  it("counts the exhibition in its days, and names them", () => {
+    const exhibition = slotTitled(busiest, "Exhibition: Glasgow Trades in Print");
+    expect(exhibition.countdown).toBe("LIVE · day 3 of 5");
+    expect(exhibition.timeRange).toBe("Thu 12 Nov, 10:00 – Mon 16 Nov, 17:00");
+  });
+
+  it("keeps the night off the board: the exhibition's earlier days do not drag the window to midnight", () => {
+    const window = boardWindow(boardRange(day.busiestAtMs, "day", TIME_ZONE), busiest.lanes, day.busiestAtMs, TIME_ZONE);
+    // Half an hour before the breakfast's seven o'clock setup.
+    expect(window.fromMs).toBe(at("06:30"));
+    // A midnight-to-midnight day: the wedding's dinner runs past its end.
+    expect(window.toMs).toBe(at("00:00", 1));
+    // On the venue's own day, to four in the morning, the dinner ends at half
+    // past midnight and clears down for the Grand Hall's hour (its own rule
+    // is more specific than the ninety minutes after a wedding).
+    const venueDay = { view: "day" as const, fromMs: at("00:00"), toMs: at("04:00", 1) };
+    expect(boardWindow(venueDay, busiest.lanes, day.busiestAtMs, TIME_ZONE)).toEqual({ fromMs: at("06:30"), toMs: at("02:00", 1) });
   });
 });

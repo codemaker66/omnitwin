@@ -12,7 +12,7 @@
     "test": "node scripts/verify-card-review.mjs && node --test server/card-review.test.mjs server/card-review-results.test.mjs && vitest run",
     "test:card-review": "node --test server/card-review.test.mjs server/card-review-results.test.mjs",
     "test:watch": "vitest watch",
-    "lint": "eslint src/ e2e/",
+    "lint": "node --max-old-space-size=8192 ./node_modules/eslint/bin/eslint.js src/ e2e/",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
     "e2e:stage-captures": "node --experimental-strip-types scripts/stage-e2e-captures.mjs",
@@ -38,6 +38,7 @@
     "react-dom": "18.3.1",
     "react-router-dom": "7.18.2",
     "three": "0.186.0",
+    "web-vitals": "6.2.3",
     "zod": "4.6.7",
     "zustand": "5.0.3"
   },

@@ -4,6 +4,7 @@ import { MobilePlannerTopBar } from "../MobilePlannerTopBar.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
+import { openLayoutEventKind, resetEventKindQuestionForTesting, useEventKindQuestion } from "../../../lib/event-kind-record.js";
 
 const mocks = vi.hoisted(() => ({ prepare: vi.fn(), listLinks: vi.fn() }));
 vi.mock("../send-layout-flow.js", () => ({ prepareLayoutForGuestEnquiry: mocks.prepare }));
@@ -50,6 +51,69 @@ describe("MobilePlannerTopBar activity", () => {
     expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
     act(() => { useEditorStore.setState({ isSaving: false, saveError: "Connection lost" }); });
     expect(screen.getByRole("button", { name: "Save failed - retry" }).querySelector("[data-activity-indicator]")).toBeNull();
+  });
+
+  // A save refused over a note this browser is not shown (409 NOTE_HELD): the
+  // same save meets the same refusal, so the phone's bar offers no retry. It
+  // has no room for the API's sentence, which the save notice below it shows.
+  it.each([
+    ["NOTE_HELD", "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece."],
+    ["HELD_PIECE_OMITTED", "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back."],
+  ])("offers no retry for a save refused over a held note (%s)", (code, refusal) => {
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    act(() => {
+      useEditorStore.setState({ isSaving: false, isDirty: true, saveErrorCode: code, saveError: refusal });
+    });
+    expect(screen.queryByRole("button", { name: /retry/iu })).toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("Unsaved changes");
+  });
+
+  // The phone has no room header, and the save notice that shows the reason is inserted already holding it, which
+  // screen readers do not reliably announce. A polite region that stays in the bar carries the sentence the notice
+  // shows (delta review of #388 at 713dc3f1, C5).
+  it.each([
+    ["NOTE_HELD", "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece."],
+    ["HELD_PIECE_OMITTED", "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back."],
+  ])("says the refusal in a polite region that was there before it came (%s)", (code, refusal) => {
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    const region = screen.getByTestId("mobile-planner-save-refusal");
+    expect(region.getAttribute("aria-live")).toBe("polite");
+    expect(region.textContent).toBe("");
+
+    act(() => { useEditorStore.setState({ isSaving: false, isDirty: true, saveErrorCode: code, saveError: refusal }); });
+    expect(screen.getByTestId("mobile-planner-save-refusal")).toBe(region);
+    expect(region.textContent).toBe(refusal);
+
+    // Any other failure has its own control and words; the region says nothing of it.
+    act(() => { useEditorStore.setState({ saveError: "Connection lost", saveErrorCode: "NETWORK_ERROR" }); });
+    expect(region.textContent).toBe("");
+  });
+
+  // A refused clear of a note leaves nothing unsaved while its notice stands,
+  // and the saves made since land (ruling R1(b) on #388): the bar never says
+  // the layout saved until the person dismisses it (delta review at 33a8e0ad, T3).
+  it("never says the layout saved while a refused clear's notice stands, across a save that lands", () => {
+    const refusedClear = "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.";
+    const cleared = useEditorStore.getState().objects[0]?.id ?? "";
+    useEditorStore.setState({
+      isDirty: false, isSaving: false, lastSavedAt: new Date(Date.now() - 60_000),
+      saveError: refusedClear, saveErrorCode: "NOTE_HELD", noteClearsRefused: [cleared],
+    });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    const status = screen.getByRole("status");
+    const seen = [status.textContent ?? ""];
+    const observer = new MutationObserver(() => { seen.push(status.textContent ?? ""); });
+    observer.observe(status, { subtree: true, childList: true, characterData: true });
+
+    // A save of other work goes out and lands; the clear's notice stands, as the store keeps it.
+    act(() => { useEditorStore.setState({ isSaving: true }); });
+    act(() => { useEditorStore.setState({ isSaving: false, lastSavedAt: new Date() }); });
+    observer.disconnect();
+    expect(seen.filter((text) => /saved/iu.test(text) && !/unsaved/iu.test(text))).toEqual([]);
+    expect(status.textContent).toBe("Unsaved changes");
+
+    act(() => { useEditorStore.getState().dismissRefusedClears(); });
+    expect(screen.getByRole("status").textContent).toBe("Layout saved");
   });
 
   it.each(["ready", "blocked", "error"] as const)("stops send activity when preparation is %s", async outcome => {
@@ -163,5 +227,16 @@ describe("MobilePlannerTopBar identity", () => {
     useEditorStore.setState({ space: RECEPTION, configId: null, configName: null });
     render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
     expect(screen.getByTestId("mobile-planner-layout-name").textContent).toBe("Unsaved layout");
+  });
+
+  it("names the event in the 2D plan as in 3D, and the name opens a change there (T-674)", () => {
+    resetEventKindQuestionForTesting();
+    openLayoutEventKind({ configId: "cfg-activity", isPublicPreview: false, search: "", metadata: { eventKind: "wedding" }, floorEmptyAtOpen: false });
+    render(<MobilePlannerTopBar mode="2d" onModeChange={vi.fn()} />);
+    const name = screen.getByRole("button", { name: "The event: Wedding. Change it" });
+    expect(name.classList.contains("is-phone")).toBe(true);
+    fireEvent.click(name);
+    expect(useEventKindQuestion.getState().changing).toBe(true);
+    resetEventKindQuestionForTesting();
   });
 });

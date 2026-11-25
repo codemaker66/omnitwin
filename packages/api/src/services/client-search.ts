@@ -67,6 +67,45 @@ export function matcher(query: string): Matcher {
   };
 }
 
+/** A guest lead's columns as a venue check reads them: the outer query's
+ *  guest_leads row, or a row of it under an alias. */
+export interface GuestLeadColumns {
+  readonly email: SQL;
+  readonly firstEnquiryId: SQL;
+  readonly createdAt: SQL;
+  readonly updatedAt: SQL;
+}
+
+/** The outer query's guest lead, named with its table for the subqueries. */
+export const OUTER_GUEST_LEAD: GuestLeadColumns = {
+  email: outerColumn(guestLeads.email),
+  firstEnquiryId: outerColumn(guestLeads.firstEnquiryId),
+  createdAt: outerColumn(guestLeads.createdAt),
+  updatedAt: outerColumn(guestLeads.updatedAt),
+};
+
+/**
+ * Whether a guest lead's words (its name and phone) were given to this venue,
+ * so the venue's team may read the lead.
+ *
+ * guest_leads names no venue: one row per email, written by the first public
+ * enquiry from it anywhere, and never changed since (T-665). Before that, a
+ * later enquiry at any venue wrote its name and phone over the row and moved
+ * updated_at off created_at. So a row is the venue's when it is unchanged and
+ * its first enquiry is the venue's, or when every enquiry under its email is
+ * the venue's (whichever wrote it, the words are the venue's). Any other row
+ * cannot be tied to one venue without a venue column: no venue's team reads
+ * it, only a platform admin.
+ */
+export function leadGivenToVenue(lead: GuestLeadColumns, venueId: SQL | string): SQL {
+  return sql`(
+    (${lead.updatedAt} = ${lead.createdAt}
+      AND EXISTS (SELECT 1 FROM enquiries origin WHERE origin.id = ${lead.firstEnquiryId} AND origin.venue_id = ${venueId}))
+    OR (EXISTS (SELECT 1 FROM enquiries ours WHERE ours.guest_email = ${lead.email} AND ours.venue_id = ${venueId})
+      AND NOT EXISTS (SELECT 1 FROM enquiries theirs WHERE theirs.guest_email = ${lead.email} AND theirs.venue_id <> ${venueId}))
+  )`;
+}
+
 export interface ClientSearchResults {
   readonly users: readonly {
     id: string; displayName: string | null; organizationName: string | null; email: string; phone: string | null;
@@ -119,11 +158,10 @@ export async function searchClients(db: Database, query: string, scope: ClientSe
     .orderBy(desc(match.rank(userName, users.organizationName, users.email)), users.email)
     .limit(LIMIT);
 
-  // A lead is found through its enquiries here; its guest email is permanent,
-  // so a lead whose layout was later claimed is still found.
-  const venueLeads = venueId === null
-    ? undefined
-    : sql`EXISTS (SELECT 1 FROM enquiries e WHERE e.guest_email = ${outerColumn(guestLeads.email)} AND e.venue_id = ${venueId})`;
+  // A lead is found only by the venue its name and phone were given to (see
+  // leadGivenToVenue); its guest email is permanent, so a lead whose layout
+  // was later claimed is still found.
+  const venueLeads = venueId === null ? undefined : leadGivenToVenue(OUTER_GUEST_LEAD, venueId);
   const leadsQuery = db.select({
     id: guestLeads.id,
     email: guestLeads.email,

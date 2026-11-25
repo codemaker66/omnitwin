@@ -270,6 +270,21 @@ describe("the room dossiers", () => {
     ).toBeTruthy();
     expect(screen.queryByText(/under the dome/)).toBeNull();
   });
+
+  it("gives the Robert Adam Room as its two published sections, a line each", () => {
+    render(<FreshPage />);
+    const index = FRESH_ROOMS.findIndex((room) => room.slug === "robert-adam-room");
+    const open = screen.getAllByRole("button", { name: "Open the room" })[index];
+    if (open === undefined) throw new Error("the Robert Adam Room has no card to open");
+    fireEvent.click(open);
+    // The venue publishes a lower and an upper section. The upper figures alone
+    // used to stand for the whole room.
+    const lines = [...document.querySelectorAll(".fr-dossier-dims p")].map((line) => line.textContent);
+    expect(lines).toEqual([
+      "Lower section 11.2 × 7.6 m · 2.8 m high",
+      "Upper section 9.7 × 5.6 m · 2.18 m high",
+    ]);
+  });
 });
 
 describe("the 3D room — held back, so not mentioned", () => {

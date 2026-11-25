@@ -7,14 +7,24 @@
 #   3. Guests' allergy notes past their retention (30 days after the event),
 #      from layouts and their event sheets, as the privacy policy promises
 #   4. Remembered allergy notes unused for the period the client agreed to
+#   5. People and lone enquiries 24 months after our last contact, as the
+#      privacy page promises (services/people-retention.ts): erased, at most
+#      100 people and 200 enquiries a night, no new step after 150 s; off
+#      until the first day the PEOPLE_RETENTION_STARTS_ON variable names has
+#      come (from 00:00 UTC)
+#   6. Engagement events older than the privacy page keeps an enquiry
+#   7. Field web vitals older than 90 days (goal 07, migration 0109)
 #
-# The log is public with the repository: every line carries counts only, and
-# the note passes' errors carry a SQLSTATE only (packages/api/src/scripts/
+# Every pass runs even when one before it fails; the job then fails. The log
+# is public with the repository: every line carries counts and SQLSTATEs only,
+# never a name, an address or a database message (packages/api/src/scripts/
 # run-cleanup.ts).
 #
 # Can also be triggered manually from the GitHub Actions UI (workflow_dispatch).
 #
-# Requires the DATABASE_URL secret to be set in the repository settings.
+# Requires the DATABASE_URL secret to be set in the repository settings. The
+# optional PEOPLE_RETENTION_STARTS_ON variable (YYYY-MM-DD) starts the 24-month
+# pass; unset, it is off.
 # =============================================================================
 
 name: Scheduled Cleanup
@@ -50,4 +60,8 @@ jobs:
       - name: Run cleanup
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # The 24-month pass erases nothing until this repository variable
+          # holds its first day (YYYY-MM-DD; from 00:00 UTC that day); unset, it
+          # is off.
+          PEOPLE_RETENTION_STARTS_ON: ${{ vars.PEOPLE_RETENTION_STARTS_ON }}
         run: pnpm --filter @omnitwin/api cleanup

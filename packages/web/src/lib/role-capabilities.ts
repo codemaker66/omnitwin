@@ -175,6 +175,18 @@ export function awaitsVenue(user: { readonly role: string; readonly venueId: str
 }
 
 /**
+ * Who opens the Diary page (`/diary`): its readers (DIARY_ROLES) and a
+ * platform admin, whatever its venue role, as `GET /calendar`'s
+ * `canReadDiary` admits them. The staff header's Diary link, Find and the
+ * route's guard all read this one rule, so the Diary is never offered to
+ * someone the page then refuses.
+ */
+export function opensDiary(user: { readonly role: string; readonly platformRole: string } | null | undefined): boolean {
+  if (user === null || user === undefined) return false;
+  return user.platformRole === "admin" || hasRole(DIARY_ROLES, user.role);
+}
+
+/**
  * The venue whose Diary this person reads from the staff desks: their own, for
  * the Diary's readers and a platform admin; null for anyone else. Find's day
  * answer and the Enquiries desk's Diary fact both follow it, so neither asks
@@ -197,6 +209,19 @@ export function diaryVenueOf(user: { readonly role: string; readonly venueId: st
 export function canDraftWithAI(user: { readonly role: string; readonly venueId: string | null; readonly platformRole: string } | null): boolean {
   if (user === null || user.venueId === null) return false;
   return user.platformRole === "admin" || hasRole(VENUE_MEMBER_ROLES, user.role);
+}
+
+/**
+ * The venue whose enquiries this person records replies to and reads the
+ * reply-time alarm for: their own, when they are on its commercial team;
+ * null for anyone else. Mirrors `isVenueCommercialMember` (`utils/query.ts`),
+ * which `POST /enquiries/:id/first-response` and `GET /enquiries/reply-alarm`
+ * both read: the reply time is the team's own measure, so the floor, a
+ * customer and a platform admin acting for no venue are refused.
+ */
+export function replyVenueOf(user: { readonly role: string; readonly venueId: string | null } | null): string | null {
+  if (user === null || user.venueId === null) return null;
+  return hasRole(COMMERCIAL_ROLES, user.role) ? user.venueId : null;
 }
 
 /**

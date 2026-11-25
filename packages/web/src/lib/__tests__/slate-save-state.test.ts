@@ -54,6 +54,21 @@ describe("the slate's save states", () => {
     expect(slateSaveState({ ...steady, isOnline: false })).toMatchObject({ kind: "offline", detail: "everything is saved" });
   });
 
+  // A refused clear of a note leaves nothing unsaved while its notice stands
+  // until it is dismissed (ruling R1(b) on #388). Going offline neither hides
+  // it nor says everything is saved beside it (delta review at 33a8e0ad, T11).
+  it("Offline keeps a standing refused clear's sentence and its Dismiss, and never says everything is saved beside it", () => {
+    const refusedClear = "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.";
+    const offline = slateSaveState({ ...steady, isOnline: false, saveError: refusedClear, refusedForHeldNote: true, refusedClear: true });
+    expect(offline).toMatchObject({ kind: "offline", status: "Offline", detail: null, mark: "offline", sendWaits: true });
+    // The connection's own sentence stays in the body, so its "it" still has something to mean (delta review X7).
+    expect(offline.notice).toEqual({
+      heading: refusedClear,
+      body: "The connection to Venviewer has dropped. You can keep working. Your changes save as soon as it is back; sending waits until then.",
+      actions: [{ id: "dismiss", label: "Dismiss" }],
+    });
+  });
+
   it("Not saved, with what is safe and one way forward", () => {
     const failed = slateSaveState({ ...steady, isDirty: true, pendingChanges: 2, keptOnDevice: true, saveError: "Network request failed" });
     expect(failed).toMatchObject({ kind: "not-saved", status: "Not saved", detail: "kept on this device", mark: "problem" });

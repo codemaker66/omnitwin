@@ -734,7 +734,10 @@ export const CalendarPhaseEntrySchema = z.object({
   id: z.uuid(),
   spaceId: z.uuid(),
   eventId: z.uuid(),
-  eventName: z.string().min(1),
+  // As stored, trimmed, and at most an event's name: GET /calendar names an
+  // event stored without one by eventNameFor, and this read still takes "",
+  // since refusing it failed the venue's whole range once a phase was placed.
+  eventName: z.string().trim().max(200),
   name: z.string().min(1),
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,

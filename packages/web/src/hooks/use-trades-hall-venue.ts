@@ -29,6 +29,14 @@ function readTradesHall(venueId: string): Promise<boolean> {
   return read;
 }
 
+/**
+ * Answers for a venue without reading it: for a fixture with no API behind it
+ * (the planner lab's made-up rooms), whose venue no read could tell.
+ */
+export function rememberTradesHallVenue(venueId: string, tradesHall: boolean): void {
+  reads.set(venueId, Promise.resolve(tradesHall));
+}
+
 /** Forgets every read; for tests. */
 export function resetTradesHallVenueReads(): void {
   reads.clear();

@@ -71,6 +71,18 @@ export const ROOM_BODY_HALF_X = HALL_HALF_LENGTH + HALL_WALL_THICKNESS.end.thick
 /** The skin's back stands this far out from the wall's face, so the two never fight for the same depth. */
 const SKIN_GAP = 0.004;
 
+/**
+ * How far a piece is let into what holds it (a pane into its frame, a frame
+ * into its jambs, sill and head, a pipe into the pavement and the entablature,
+ * a pole into its pedestal), so no face of one solid rests on another's. A face
+ * resting there, seen from inside, ends at the outside on its holder's face,
+ * and the cut pass, drawn up to half this toward the eye
+ * (hall-exterior-material.ts), would show it along their meeting. Let in this
+ * far, it stays behind the holder's face. Pieces whose outer faces are flush
+ * cannot be shielded so, and are built as one solid (FrontBuilder.rowSlab).
+ */
+export const LET_IN = 0.005;
+
 /** How far back from a bay's face shopfronts, doors and their glass stand (I: a reveal of a stone's depth). */
 const FILL_SETBACK = 0.26;
 
@@ -89,6 +101,41 @@ function signedArea(loop: readonly V2[]): number {
 function orient(loop: readonly V2[], ccw: boolean): V2[] {
   const counter = signedArea(loop) > 0;
   return counter === ccw ? [...loop] : [...loop].reverse();
+}
+
+/**
+ * A convex loop grown outward by `by`, each edge moved along its own normal and
+ * neighbours met at a mitre, so every edge keeps exactly `by` from its original
+ * (an arch's chords stay parallel to the stone's, where an arc of a larger
+ * circle would come within a chord's sagitta of it). It takes a strictly convex
+ * loop with no repeated point and no corner sharper than 60° (an opening's
+ * outline), and throws on anything else: a notch, a doubled point or a spike has
+ * no exact outset, and a sharper corner's mitre runs out more than twice `by`.
+ */
+export function outsetLoop(loop: readonly V2[], by: number): V2[] {
+  const ring = orient(loop, true);
+  ring.forEach((point, i) => {
+    const before = ring[(i + ring.length - 1) % ring.length] ?? point;
+    const after = ring[(i + 1) % ring.length] ?? point;
+    const [du0, dz0, du1, dz1] = [point[0] - before[0], point[1] - before[1], after[0] - point[0], after[1] - point[1]];
+    const [l0, l1] = [Math.hypot(du0, dz0), Math.hypot(du1, dz1)];
+    // The turn at the point (left, for a convex loop counter-clockwise), and the angle between the two edges' normals.
+    const turn = l0 < 1e-9 || l1 < 1e-9 ? 0 : (du0 * dz1 - dz0 * du1) / (l0 * l1);
+    const facing = l0 < 1e-9 || l1 < 1e-9 ? -1 : (du0 * du1 + dz0 * dz1) / (l0 * l1);
+    if (!(turn > 1e-9) || facing < -0.5) throw new Error("outsetLoop takes a strictly convex loop with no repeated point and no corner sharper than 60°");
+  });
+  const normal = (a: V2, b: V2): V2 => {
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    return [(b[1] - a[1]) / length, -(b[0] - a[0]) / length];
+  };
+  return ring.map((point, i) => {
+    const before = ring[(i + ring.length - 1) % ring.length] ?? point;
+    const after = ring[(i + 1) % ring.length] ?? point;
+    const [ax, az] = normal(before, point);
+    const [bx, bz] = normal(point, after);
+    const scale = by / (1 + ax * bx + az * bz);
+    return [point[0] + (ax + bx) * scale, point[1] + (az + bz) * scale];
+  });
 }
 
 /** Points along an arc about (cu, cz) from angle a0 to a1 (radians from +u), both ends included. */
@@ -235,6 +282,8 @@ function flatArchHalf(opening: GroundOpening, z: number): number {
 
 class FrontBuilder {
   readonly mesh: MeshBuilder;
+  /** Where pieces are joined as one solid, with no faces between them (HallFrontJoin). */
+  readonly joins: HallFrontJoin[] = [];
   private current: number = FRONT_PART.stone;
 
   constructor() {
@@ -274,12 +323,13 @@ class FrontBuilder {
     }
   }
 
-  /** The sides round a loop in (u, z), from `back` to `front`, each facing out of the solid. */
-  private ring(loop: readonly V2[], back: number, front: number): void {
+  /** The sides round a loop in (u, z), from `back` to `front`, each facing out of the solid; `keep` may leave edges out. */
+  private ring(loop: readonly V2[], back: number, front: number, keep?: (a: V2, b: V2) => boolean): void {
     for (let i = 0; i < loop.length; i++) {
       const a = loop[i];
       const b = loop[(i + 1) % loop.length];
       if (a === undefined || b === undefined) continue;
+      if (keep !== undefined && !keep(a, b)) continue;
       const du = b[0] - a[0];
       const dz = b[1] - a[1];
       const length = Math.hypot(du, dz);
@@ -294,10 +344,10 @@ class FrontBuilder {
 
   /**
    * A slab: an outline in (u, z) with holes, from `back` to `front` (proud).
-   * Closed: both faces, the outline's sides (unless a neighbour meets it there)
-   * and every hole's reveal.
+   * Closed: both faces, the outline's sides (unless a neighbour meets it there:
+   * `sides` false for none, or a test of each edge for some) and every hole's reveal.
    */
-  slab(outline: readonly V2[], holes: readonly (readonly V2[])[], back: number, front: number, sides = true): void {
+  slab(outline: readonly V2[], holes: readonly (readonly V2[])[], back: number, front: number, sides: boolean | ((a: V2, b: V2) => boolean) = true): void {
     if (front - back < 1e-5) return;
     const contour = orient(outline, true);
     const loops = holes.map((hole) => orient(hole, false));
@@ -308,7 +358,7 @@ class FrontBuilder {
     const flat = [...contour, ...loops.flat()];
     this.facet(flat.map(([u, z]) => frontPoint(u, z, front)), triangles, frontDirection(0, 0, 1));
     this.facet(flat.map(([u, z]) => frontPoint(u, z, back)), triangles, frontDirection(0, 0, -1));
-    if (sides) this.ring(contour, back, front);
+    if (sides !== false) this.ring(contour, back, front, sides === true ? undefined : sides);
     for (const loop of loops) this.ring(loop, back, front);
   }
 
@@ -317,17 +367,35 @@ class FrontBuilder {
    * slab per hole, split halfway between neighbouring holes. Holes side by side
    * share their sills and heads exactly, and the triangulator drops points it
    * finds collinear across them, which tears the faces from their reveals.
+   * The pieces are one solid, with no faces where they meet (the doorways' and
+   * shopfronts' white frames, and the pavilion attics' stone rows). Two faces
+   * back to back there would end at the outside between the pieces' flush
+   * fronts, and the cut pass, drawn a hair toward the eye
+   * (hall-exterior-material.ts), would show the one seen from inside along that
+   * seam, across a fraction of a pixel that the camera's least movement deals
+   * again (the pavilion doorways' frames, 14 Nov 2026). `openTop` leaves the
+   * row's top without faces too, for a piece built on it as one solid with it;
+   * the splits returned are where that piece's foot must have vertices too.
    */
-  rowSlab(u0: number, u1: number, z0: number, z1: number, holes: readonly (readonly V2[])[], back: number, front: number): void {
+  rowSlab(u0: number, u1: number, z0: number, z1: number, holes: readonly (readonly V2[])[], back: number, front: number, openTop = false): readonly number[] {
     const spans = holes.map((hole) => ({ hole, from: Math.min(...hole.map(([u]) => u)), to: Math.max(...hole.map(([u]) => u)) })).sort((a, b) => a.from - b.from);
+    // Each piece ends halfway to the next hole: one list gives the pieces their ends and the test its splits.
+    const ends = spans.map((span, i) => {
+      const next = spans[i + 1];
+      return next === undefined ? u1 : (span.to + next.from) / 2;
+    });
+    const splits = new Set(ends.slice(0, -1));
+    for (const at of splits) this.joins.push({ axis: "u", at, from: z0, to: z1, back, front });
+    // The row's own outline keeps its sides, but none along a split between two pieces, nor along an open top.
+    const outer = (a: V2, b: V2): boolean => !(a[0] === b[0] && splits.has(a[0])) && !(openTop && a[1] === z1 && b[1] === z1);
     let start = u0;
     spans.forEach((span, i) => {
-      const next = spans[i + 1];
-      const end = next === undefined ? u1 : (span.to + next.from) / 2;
-      this.slab([[start, z0], [end, z0], [end, z1], [start, z1]], [span.hole], back, front);
+      const end = ends[i] ?? u1;
+      this.slab([[start, z0], [end, z0], [end, z1], [start, z1]], [span.hole], back, front, outer);
       start = end;
     });
-    if (spans.length === 0) this.slab([[u0, z0], [u1, z0], [u1, z1], [u0, z1]], [], back, front);
+    if (spans.length === 0) this.slab([[u0, z0], [u1, z0], [u1, z1], [u0, z1]], [], back, front, outer);
+    return [...splits];
   }
 
   /** A closed profile in (proud, z) run along the front from u0 to u1, capped at both ends. */
@@ -371,7 +439,11 @@ class FrontBuilder {
 
 // ---------------------------------------------------------------- pieces
 
-/** Course bands across [lo, hi] over a bay's face, broken by its openings. */
+/**
+ * Course bands across [lo, hi] over a bay's face, broken by its openings, each let into the wall behind it: the
+ * channels' floor is the wall's face, open between the bands, and a band only resting on it would end its back on
+ * that floor along every channel.
+ */
 function courses(front: FrontBuilder, lo: number, hi: number, face: number, openings: readonly GroundOpening[]): void {
   const { plinthTop, courses: count, courseHeight, channelWidth, channelDepth } = FRONT_LEVELS;
   front.as("stone");
@@ -382,14 +454,14 @@ function courses(front: FrontBuilder, lo: number, hi: number, face: number, open
       const half = Math.max(blockedHalfWidth(opening, z0), blockedHalfWidth(opening, (z0 + z1) / 2), blockedHalfWidth(opening, z1));
       return [opening.u - half, opening.u + half];
     }).filter(([a, b]) => b > a);
-    for (const [a, b] of openIntervals(lo, hi, blocked)) front.box(a, b, z0, z1, face - channelDepth, face);
+    for (const [a, b] of openIntervals(lo, hi, blocked)) front.box(a, b, z0, z1, face - channelDepth - LET_IN, face);
   }
 }
 
-/** The voussoirs round a ground-floor opening, standing in the course bands' plane. */
+/** The voussoirs round a ground-floor opening, standing in the course bands' plane and let into the wall as they are. */
 function voussoirs(front: FrontBuilder, opening: GroundOpening, face: number): void {
   const { channelWidth, channelDepth } = FRONT_LEVELS;
-  const back = face - channelDepth;
+  const back = face - channelDepth - LET_IN;
   const proud = face + 0.012;
   front.as("stone");
   const half = opening.width / 2;
@@ -440,16 +512,18 @@ function shopfront(front: FrontBuilder, opening: GroundOpening, face: number): v
     const l0 = opening.u - half + frame + i * (clear + 0.07);
     lights.push([[l0, bottom + riser], [l0 + clear, bottom + riser], [l0 + clear, top - frame], [l0, top - frame]]);
   }
-  front.as("paint").rowSlab(opening.u - half, opening.u + half, bottom, top, lights, back, frontFace);
-  // The stall riser's panels, a little proud of the frame.
+  // The frame let into the stone round it: its jambs, sill and head stand in front of it.
+  front.as("paint").rowSlab(opening.u - half - LET_IN, opening.u + half + LET_IN, bottom - LET_IN, top + LET_IN, lights, back, frontFace);
+  // The stall riser's panels, a little proud of the frame and let into it, as the front door's are.
   for (let i = 0; i < 3; i++) {
     const l0 = opening.u - half + frame + i * (clear + 0.07);
-    front.box(l0 + 0.05, l0 + clear - 0.05, bottom + 0.09, bottom + riser - 0.08, frontFace, frontFace + 0.015);
+    front.box(l0 + 0.05, l0 + clear - 0.05, bottom + 0.09, bottom + riser - 0.08, frontFace - LET_IN, frontFace + 0.015);
   }
+  // Each pane let into the frame round its light, whose reveals stand 35 mm in front of it.
   front.as("glass");
   for (const light of lights) {
     const [[a, b], , [c, d]] = [light[0] ?? [0, 0], light[1] ?? [0, 0], light[2] ?? [0, 0]];
-    front.box(a, c, b, d, back + 0.02, back + 0.035);
+    front.box(a - LET_IN, c + LET_IN, b - LET_IN, d + LET_IN, back + 0.02, back + 0.035);
   }
   // Anything above a square shopfront's head up to the arch is the lintel's stone.
   if (opening.head === "segmental") {
@@ -457,36 +531,69 @@ function shopfront(front: FrontBuilder, opening: GroundOpening, face: number): v
   }
 }
 
+/** A pavilion doorway's white frame round its lights and fanlight, and its door's half width (P). */
+export const DOORWAY_FILL = { frame: 0.08, doorHalf: 1.014 / 2 } as const;
+
 /** A pavilion's arched doorway: a glazed door between side lights under a fanlight, all in white (P). */
 function doorway(front: FrontBuilder, opening: GroundOpening, face: number): void {
   const half = opening.width / 2;
   const back = face - DOORWAY_SETBACK - 0.07;
   const frontFace = face - DOORWAY_SETBACK;
-  const frame = 0.08;
-  const door = 1.014 / 2;
+  const frame = DOORWAY_FILL.frame;
+  const door = DOORWAY_FILL.doorHalf;
   const transom = opening.top;
   const holes: V2[][] = [];
   // Side lights each side of the door, and the door's own glazed panels.
   holes.push([[opening.u - half + frame, opening.bottom + 0.55], [opening.u - door - frame, opening.bottom + 0.55], [opening.u - door - frame, transom - frame], [opening.u - half + frame, transom - frame]]);
   holes.push([[opening.u + door + frame, opening.bottom + 0.55], [opening.u + half - frame, opening.bottom + 0.55], [opening.u + half - frame, transom - frame], [opening.u + door + frame, transom - frame]]);
   holes.push([[opening.u - door + 0.1, opening.bottom + 1.0], [opening.u + door - 0.1, opening.bottom + 1.0], [opening.u + door - 0.1, transom - 0.2], [opening.u - door + 0.1, transom - 0.2]]);
-  // The door and its side lights below the transom; the fanlight over it, its bars radiating from a hub.
+  // The door and its side lights below the transom, and the fanlight's frame over them, its bars radiating from a hub.
+  // Row and frame are one solid: the row leaves its top open and the frame its foot, so no faces lie between them
+  // where their fronts are flush. The frame's arch springs from the transom, as its glass's and its bars' do. Its foot
+  // takes a vertex at each of the row's splits, so the two share every vertex along the transom and no edge of one
+  // ends partway along an edge of the other; each sits a micrometre low, because the triangulator drops points
+  // exactly in line, and no screen can tell that from the line.
+  // Row and frame are let into the stone round them by the opening's outline grown LET_IN outward, edge by edge
+  // (outsetLoop): its jambs and sill stand in front of the row, its arch's soffit in front of the frame.
+  const grown = outsetLoop(openingOutline(opening.u, half, opening.bottom, transom, opening.rise), LET_IN);
+  const [left, right] = [opening.u - half - LET_IN, opening.u + half + LET_IN];
   const { radius, centreZ } = archCircle(half, opening.rise, transom);
-  front.as("paint").rowSlab(opening.u - half, opening.u + half, opening.bottom, transom, holes, back, frontFace);
-  front.slab(openingOutline(opening.u, half, transom, transom + 1e-3, opening.rise).slice(2), [insetArchOutline(opening.u, half, opening.rise, transom, frame)], back, frontFace);
-  // Radiating bars across the fanlight (P: about 12 round a half-rosette hub).
+  const splits = front.as("paint").rowSlab(left, right, opening.bottom - LET_IN, transom, holes, back, frontFace, true);
+  front.joins.push({ axis: "z", at: transom, from: left, to: right, back, front: frontFace });
+  // The frame's foot overlaps the row's top by a micrometre at each split, never short of it, so no crack can open
+  // along the transom; at the row's two corners the two share their positions exactly.
+  const foot = [...splits].sort((a, b) => a - b).map((u): V2 => [u, transom - 1e-6]);
+  // The frame: the grown outline above the transom (its arch, and each jamb's last 2 mm up to where its mitre meets
+  // the arch's first chord), then its foot along the transom. The foot is every edge with both ends at or below the
+  // transom, so the test needs no tolerance; one of a micrometre misread transom - 1e-6, whose distance from the
+  // transom rounds a hair over 1e-6, and left the foot its faces.
+  const head = grown.filter(([, z]) => z > transom);
+  front.slab([[right, transom], ...head, [left, transom], ...foot], [insetArchOutline(opening.u, half, opening.rise, transom, frame)], back, frontFace,
+    (a, b) => a[1] > transom || b[1] > transom);
+  // Radiating bars across the fanlight (P: about 12 round a half-rosette hub), each along its own ray from the hub
+  // to the frame's inner arc and on into the frame, by LET_IN and the bar's own radius so its end's corners are in
+  // too. Ended on the arch's circle at their own angle about its centre instead, the lowest ran down through the
+  // transom across the side lights.
   const bars = 12;
+  const bar = 0.012;
+  const hubOverCentre = transom - centreZ;
+  const reach = radius - frame + LET_IN + bar;
   for (let i = 1; i < bars; i++) {
     const angle = Math.PI * (i / bars);
-    const r0 = 0.16;
-    const r1 = Math.max(r0 + 0.05, radius - frame - 0.02);
+    // From 15 cm out along the ray, inside the hub's twelve facets (15.5 cm from its centre, 2 cm over the transom).
+    const r0 = 0.15;
     const c = Math.cos(angle);
     const s = Math.sin(angle);
-    front.mesh.tube([frontPoint(opening.u + r0 * c, centreZ + r0 * s + (transom - centreZ), frontFace - 0.03), frontPoint(opening.u + r1 * c, centreZ + r1 * s, frontFace - 0.03)], [0.012, 0.012], 4, true);
+    // Where the ray from the hub (u, transom) meets the circle of radius `reach` about the arch's centre.
+    const h = hubOverCentre;
+    const r1 = -h * s + Math.sqrt(h * h * s * s - h * h + reach * reach);
+    front.mesh.tube([frontPoint(opening.u + r0 * c, transom + r0 * s, frontFace - 0.03), frontPoint(opening.u + r1 * c, transom + r1 * s, frontFace - 0.03)], [bar, bar], 4, true);
   }
-  front.disc(opening.u, transom + 0.02, frontFace - 0.05, frontFace - 0.01, 0.16, 12);
+  // The hub's back let into the glass, and the glass into the frame round it: its top halfway into the frame's band at
+  // the crown, so it never lies within a let-in of the ground floor's wall top, 4 mm over the crown.
+  front.disc(opening.u, transom + 0.02, frontFace - 0.05 + LET_IN, frontFace - 0.01, 0.16, 12);
   front.as("glass");
-  front.box(opening.u - half, opening.u + half, opening.bottom + 0.5, transom + opening.rise, back + 0.02, back + 0.035);
+  front.box(opening.u - half + LET_IN, opening.u + half - LET_IN, opening.bottom + 0.5, transom + opening.rise - frame / 2, back + 0.02, back + 0.035);
 }
 
 /** The front door: a pair of dark panelled leaves under a fanlight, in the podium's moulded arch (P). */
@@ -496,27 +603,36 @@ function frontDoor(front: FrontBuilder, opening: GroundOpening, face: number): v
   const frontFace = face - FILL_SETBACK - 0.02;
   const transom = opening.top;
   front.as("timber");
-  front.box(opening.u - half, opening.u - 0.006, opening.bottom, transom - 0.06, back, frontFace);
-  front.box(opening.u + 0.006, opening.u + half, opening.bottom, transom - 0.06, back, frontFace);
-  // Raised panels on each leaf.
+  // The leaves let into the stone at their jambs and threshold, and up into the transom bar, which stands in front of them.
+  front.box(opening.u - half - LET_IN, opening.u - 0.006, opening.bottom - LET_IN, transom - 0.06 + LET_IN, back, frontFace);
+  front.box(opening.u + 0.006, opening.u + half + LET_IN, opening.bottom - LET_IN, transom - 0.06 + LET_IN, back, frontFace);
+  // Raised panels on each leaf, let into it: a panel only resting on the leaf would leave its back face on the
+  // leaf's, and the cut pass, drawn a hair toward the eye, would show that face round the panel's foot.
   for (const side of [-1, 1] as const) {
     const l0 = side < 0 ? opening.u - half + 0.1 : opening.u + 0.1;
     const l1 = side < 0 ? opening.u - 0.1 : opening.u + half - 0.1;
-    front.box(l0, l1, opening.bottom + 0.2, opening.bottom + 1.0, frontFace, frontFace + 0.018);
-    front.box(l0, l1, opening.bottom + 1.15, transom - 0.25, frontFace, frontFace + 0.018);
+    front.box(l0, l1, opening.bottom + 0.2, opening.bottom + 1.0, frontFace - LET_IN, frontFace + 0.018);
+    front.box(l0, l1, opening.bottom + 1.15, transom - 0.25, frontFace - LET_IN, frontFace + 0.018);
   }
   front.as("paint");
-  front.box(opening.u - half, opening.u + half, transom - 0.06, transom + 0.04, back, frontFace + 0.01);
-  // The fanlight's frame: the head above the transom bar, its glass set in 7 cm on the arch's own circle.
-  front.slab(insetArchOutline(opening.u, half, opening.rise, transom, 0.04, 16), [insetArchOutline(opening.u, half, opening.rise, transom, 0.11, 14)], back, frontFace);
+  // The transom bar let into the jambs, past the fanlight's glass (let in LET_IN) so their ends never share a plane,
+  // and its back LET_IN behind the leaves' and the fanlight frame's, so neither, let into it, lies on its back.
+  front.box(opening.u - half - 2 * LET_IN, opening.u + half + 2 * LET_IN, transom - 0.06, transom + 0.04, back - LET_IN, frontFace + 0.01);
+  // The fanlight's frame: the head above the transom bar, its glass set in 7 cm on the arch's own circle, its foot let
+  // down into the bar, whose face stands 10 mm in front of it.
+  const arch = insetArchOutline(opening.u, half, opening.rise, transom, 0.04, 16);
+  const sunk = (point: V2 | undefined): V2[] => (point === undefined ? [] : [[point[0], point[1] - LET_IN]]);
+  front.slab([...sunk(arch[0]), ...arch, ...sunk(arch[arch.length - 1])], [insetArchOutline(opening.u, half, opening.rise, transom, 0.11, 14)], back, frontFace);
   const { radius, centreZ } = archCircle(half, opening.rise, transom);
   for (let i = 1; i < 10; i++) {
     const angle = Math.PI * (i / 10);
     const r1 = radius - 0.08;
     front.mesh.tube([frontPoint(opening.u + 0.14 * Math.cos(angle), transom + 0.06 + 0.14 * Math.sin(angle), frontFace - 0.02), frontPoint(opening.u + r1 * Math.cos(angle), centreZ + r1 * Math.sin(angle), frontFace - 0.02)], [0.01, 0.01], 4, true);
   }
+  // The glass let into the transom bar under it, below the frame's foot so the two never share a plane, into the stone
+  // each side and over the crown, where the wall stands 42 cm higher.
   front.as("glass");
-  front.box(opening.u - half, opening.u + half, transom + 0.04, transom + opening.rise, back + 0.02, back + 0.035);
+  front.box(opening.u - half - LET_IN, opening.u + half + LET_IN, transom + 0.04 - 2 * LET_IN, transom + opening.rise + LET_IN, back + 0.02, back + 0.035);
   // The moulded arch round the door, its keystone plaque, and the bracket lamps (P).
   front.as("stone");
   const band = FRONT_DOOR.archBand;
@@ -563,24 +679,40 @@ function balustrade(front: FrontBuilder, u0: number, u1: number, bottom: number,
   }
 }
 
-/** A window glazed in the front's own plane (not one of the hall's): a hole's glass and white sash bars, `panes` columns by rows. */
-function glazedWindow(front: FrontBuilder, u: number, halfWidth: number, bottom: number, top: number, face: number, panes: readonly [number, number]): void {
-  const back = face - 0.2;
+/**
+ * A window glazed in the front's own plane (not one of the hall's): a hole's glass and white sash bars, `panes`
+ * columns by rows, in a wall from `wallBack` to `face`. The glass stands 20 cm in, or in a thinner wall (a link's
+ * attic, a 63 mm skin) 2 cm in front of the wall's back, and the sill and head keep 1 cm behind the face.
+ */
+function glazedWindow(front: FrontBuilder, u: number, halfWidth: number, bottom: number, top: number, face: number, wallBack: number, panes: readonly [number, number]): void {
+  const back = Math.max(face - 0.2, wallBack + 0.02);
+  // The pane let into the stone round the opening (the opening is the pane's own outline).
   front.as("glass");
-  front.box(u - halfWidth, u + halfWidth, bottom, top, back, back + 0.012);
+  front.box(u - halfWidth - LET_IN, u + halfWidth + LET_IN, bottom - LET_IN, top + LET_IN, back, back + 0.012);
   front.as("paint");
   const bar = 0.03;
   const [columns, rows] = panes;
+  // The bars, the sill and the head are let into the glass, so none rests its back on the pane's face. The sill, the
+  // head and the cross bars run into the stone past the pane's let-in edge, so none ends on that edge, which would
+  // put paint and glass on one plane where it passes into the pane; the upright bars run into the sill and the head.
+  // Where two cross, one stands proud of the other by LET_IN or more: the sill and head 1 cm before the uprights, the
+  // uprights LET_IN before the cross bars. Flush, each bar's sides would end on their shared front inside the
+  // crossing, as a row's pieces would at a split (FrontBuilder.rowSlab).
+  const seat = back + 0.012 - LET_IN;
+  const [u0, u1, z0, z1] = [u - halfWidth - 2 * LET_IN, u + halfWidth + 2 * LET_IN, bottom - 2 * LET_IN, top + 2 * LET_IN];
+  const frameFront = Math.min(back + 0.06, face - 0.01);
+  const upright = frameFront - 0.01;
+  const across = upright - LET_IN;
   for (let i = 1; i < columns; i++) {
     const bu = u - halfWidth + (2 * halfWidth * i) / columns;
-    front.box(bu - bar / 2, bu + bar / 2, bottom, top, back + 0.012, back + 0.05);
+    front.box(bu - bar / 2, bu + bar / 2, bottom + 0.03, top - 0.025, seat, upright);
   }
   for (let j = 1; j < rows; j++) {
     const bz = bottom + ((top - bottom) * j) / rows;
-    front.box(u - halfWidth, u + halfWidth, bz - bar / 2, bz + bar / 2, back + 0.012, back + 0.05);
+    front.box(u0, u1, bz - bar / 2, bz + bar / 2, seat, across);
   }
-  front.box(u - halfWidth, u + halfWidth, bottom, bottom + 0.06, back + 0.012, back + 0.06);
-  front.box(u - halfWidth, u + halfWidth, top - 0.05, top, back + 0.012, back + 0.06);
+  front.box(u0, u1, z0, bottom + 0.06, seat, frameFront);
+  front.box(u0, u1, top - 0.05, z1, seat, frameFront);
 }
 
 /** One Ionic column on its Attic base, its shaft with entasis, its capital with volutes (P; proportions I). */
@@ -647,18 +779,21 @@ function sculpture(front: FrontBuilder): void {
 function domeGroup(front: FrontBuilder, segments: number): void {
   const d = DOME;
   const proud = -d.behindFace;
+  // Each piece let into the one it stands on or under: the drum up into its cornice (2 cm wider there), the dome down
+  // into the cornice's top (half a metre wider), the lantern down into the dome's crown.
   front.as("lead");
-  front.lathe(d.u, proud, [[0, d.drumBase], [d.drumRadius, d.drumBase], [d.drumRadius, d.drumCorniceBottom], [0, d.drumCorniceBottom]], segments);
+  front.lathe(d.u, proud, [[0, d.drumBase], [d.drumRadius, d.drumBase], [d.drumRadius, d.drumCorniceBottom + LET_IN], [0, d.drumCorniceBottom + LET_IN]], segments);
   front.as("stone");
   front.lathe(d.u, proud, [
     [0, d.drumCorniceBottom], [d.drumRadius + 0.02, d.drumCorniceBottom], [d.drumRadius + 0.08, d.drumCorniceBottom + 0.1],
     [d.drumCorniceRadius, d.drumCorniceBottom + 0.18], [d.drumCorniceRadius, d.drumCorniceTop], [0, d.drumCorniceTop],
   ], segments);
   front.as("copper");
-  const dome: V2[] = [[0, d.drumCorniceTop]];
   const steps = 14;
   const startZ = d.drumCorniceTop;
   const top = d.lanternBase;
+  const footRadius = Math.sqrt(Math.max(0, d.domeRadius * d.domeRadius - (startZ - d.domeSpring) * (startZ - d.domeSpring)));
+  const dome: V2[] = [[0, startZ - LET_IN], [footRadius, startZ - LET_IN]];
   for (let i = 0; i <= steps; i++) {
     const z = startZ + ((top - startZ) * i) / steps;
     const r = Math.sqrt(Math.max(0, d.domeRadius * d.domeRadius - (z - d.domeSpring) * (z - d.domeSpring)));
@@ -666,12 +801,14 @@ function domeGroup(front: FrontBuilder, segments: number): void {
   }
   dome.push([0, top]);
   front.lathe(d.u, proud, dome, segments);
-  // Ribs along the dome's meridians, a little proud of its skin.
+  // Ribs along the dome's meridians, a little proud of its skin, their feet let into the drum's cornice: LET_IN, and the
+  // 7 mm their end caps tilt with the meridian, below its top.
+  const ribFoot = startZ - LET_IN - 0.007;
   for (let k = 0; k < d.ribs; k++) {
     const angle = (2 * Math.PI * k) / d.ribs;
     const path: V3[] = [];
     for (let i = 0; i <= 8; i++) {
-      const z = startZ + ((top - startZ - 0.25) * i) / 8;
+      const z = ribFoot + ((top - 0.25 - ribFoot) * i) / 8;
       const r = Math.sqrt(Math.max(0, d.domeRadius * d.domeRadius - (z - d.domeSpring) * (z - d.domeSpring))) + 0.02;
       const point = frontPoint(d.u + r * Math.cos(angle), z, proud + r * Math.sin(angle));
       path.push(point);
@@ -679,14 +816,16 @@ function domeGroup(front: FrontBuilder, segments: number): void {
     front.mesh.tube(path, path.map(() => 0.035), 4, true);
   }
   front.lathe(d.u, proud, [
-    [0, d.lanternBase], [d.lanternRadius, d.lanternBase], [d.lanternRadius, d.lanternCorniceBottom], [d.lanternCorniceRadius, d.lanternCorniceBottom + 0.12],
+    [0, d.lanternBase - LET_IN], [d.lanternRadius, d.lanternBase - LET_IN], [d.lanternRadius, d.lanternCorniceBottom], [d.lanternCorniceRadius, d.lanternCorniceBottom + 0.12],
     [d.lanternCorniceRadius, d.lanternCorniceTop], [d.lanternRadius * 0.9, d.lanternCorniceTop + 0.12], [d.lanternRadius * 0.55, d.cupolaTop - 0.25],
     [0.12, d.cupolaTop - 0.05], [0.06, d.cupolaTop], [0, d.cupolaTop],
   ], Math.max(12, segments / 2));
   front.lathe(d.u, proud, arcPoints(0, d.finialTip - 0.13, 0.13, -Math.PI / 2, Math.PI / 2, 8).map(([r, z]): V2 => [Math.max(0, r), z]), 10);
   front.as("paint");
   const pole = d.flagpoleDiameter / 2;
-  front.lathe(d.flagpoleU, -d.flagpoleBehindFace, [[0, d.flagpoleBase], [pole, d.flagpoleBase], [pole * 0.6, d.flagpoleTop], [0, d.flagpoleTop]], 8);
+  // Let into the pedestal it stands on.
+  const foot = d.flagpoleBase - LET_IN;
+  front.lathe(d.flagpoleU, -d.flagpoleBehindFace, [[0, foot], [pole, foot], [pole * 0.6, d.flagpoleTop], [0, d.flagpoleTop]], 8);
 }
 
 /** The ground floor of one bay: plinth, wall, courses, openings and their fill. */
@@ -694,14 +833,15 @@ function groundFloor(front: FrontBuilder, bay: FrontBay, face: number, openings:
   const { plinthTop, plinthProud, channelDepth, stringBottom } = FRONT_LEVELS;
   const holes = openings.map((opening) => openingOutline(opening.u, opening.width / 2, opening.bottom, opening.top, opening.head === "flat" ? 0 : opening.rise));
   front.as("stone");
-  // The wall behind the channelled courses: its full depth to the hall's floor (every opening lies below it),
-  // and from there to the string course only as deep as the window wall's body leaves it.
+  // The wall behind the channelled courses: its full depth to the hall's floor (every opening lies below it, the
+  // pavilion doorways' crowns by 4 mm as surveyed: hall-exterior-skin.test.ts), and from there to the string
+  // course only as deep as the window wall's body leaves it.
   const split = Math.min(FLOOR_Z, stringBottom);
   front.slab([[bay.uMin, 0], [bay.uMax, 0], [bay.uMax, split], [bay.uMin, split]], holes, wallBack(bay, 0), face - channelDepth);
   front.slab([[bay.uMin, split], [bay.uMax, split], [bay.uMax, stringBottom], [bay.uMin, stringBottom]], [], wallBack(bay, split), face - channelDepth);
   // The plinth, broken where a door comes down through it.
   const blocked = openings.filter((opening) => opening.bottom < plinthTop).map((opening): [number, number] => [opening.u - opening.width / 2, opening.u + opening.width / 2]);
-  for (const [a, b] of openIntervals(bay.uMin, bay.uMax, blocked)) front.box(a, b, 0, plinthTop, face - channelDepth, face + plinthProud);
+  for (const [a, b] of openIntervals(bay.uMin, bay.uMax, blocked)) front.box(a, b, 0, plinthTop, face - channelDepth - LET_IN, face + plinthProud);
   courses(front, bay.uMin, bay.uMax, face, openings);
   for (const opening of openings) {
     voussoirs(front, opening, face);
@@ -736,10 +876,26 @@ function wallBack(bay: FrontBay, z: number): number {
   return (onTheBody(bay) ? -GROUND_WALL_DEPTH : -FREE_WALL_DEPTH) + SKIN_GAP;
 }
 
-/** What the build makes: the front's geometry and how big it is. */
+/**
+ * Where the build joins pieces as one solid, with no faces between them (a row's pieces at their splits, a doorway's
+ * frame on its row at the transom): the plane where `axis` (u or z) equals `at`, from `from` to `to` along the other
+ * of the two, and from `back` to `front` proud. A face there would end at the outside between flush pieces, where no
+ * let-in can keep it behind a holder's face from the cut's pull (LET_IN).
+ */
+export interface HallFrontJoin {
+  readonly axis: "u" | "z";
+  readonly at: number;
+  readonly from: number;
+  readonly to: number;
+  readonly back: number;
+  readonly front: number;
+}
+
+/** What the build makes: the front's geometry, how big it is, and where it joins pieces as one solid. */
 export interface HallFrontBuild {
   readonly geometry: BufferGeometry;
   readonly triangles: number;
+  readonly joins: readonly HallFrontJoin[];
 }
 
 /** How finely the front's round things are drawn: a phone's finish takes fewer segments. */
@@ -816,7 +972,7 @@ export function* hallFrontSteps(detail: HallFrontDetail = FRONT_DETAIL_FULL): St
         front.box(window.u - ped, window.u + ped, p.consoleTop, p.pedimentBase, bay.proud, bay.proud + 0.2);
         front.slab([[window.u - ped, p.pedimentBase], [window.u + ped, p.pedimentBase], [window.u, p.pedimentApex]], [], bay.proud, bay.proud + 0.18);
         front.as("metal");
-        front.box(window.u - p.panelWidth / 2, window.u + p.panelWidth / 2, p.panelBottom, p.panelTop, bay.proud, bay.proud + 0.025);
+        front.box(window.u - p.panelWidth / 2, window.u + p.panelWidth / 2, p.panelBottom, p.panelTop, bay.proud - LET_IN, bay.proud + 0.025);
       }
     }
     if (bay.kind === "end-bay") {
@@ -829,8 +985,8 @@ export function* hallFrontSteps(detail: HallFrontDetail = FRONT_DETAIL_FULL): St
       for (const s of [-1, 1] as const) front.box(u + s * e.architraveWidth / 2, u + s * (e.architraveWidth / 2 + 0.2), e.consoleBottom, e.consoleTop, bay.proud, bay.proud + 0.15);
       front.run(u - e.corniceWidth / 2, u + e.corniceWidth / 2, corniceProfile(bay.proud, e.corniceBottom, e.corniceTop, 0.18, bay.proud - 0.02));
       front.slab(openingOutline(u, e.mezzanineFrameWidth / 2, e.mezzanineFrameBottom, e.mezzanineFrameTop, 0), [openingOutline(u, e.mezzanineGlassWidth / 2, e.mezzanineGlassBottom, e.mezzanineGlassTop, 0)], bay.proud - 0.02, bay.proud + 0.05);
-      glazedWindow(front, u, e.glassWidth / 2, levels.sill, e.glassTop, bay.proud, [3, 4]);
-      glazedWindow(front, u, e.mezzanineGlassWidth / 2, e.mezzanineGlassBottom, e.mezzanineGlassTop, bay.proud, [3, 2]);
+      glazedWindow(front, u, e.glassWidth / 2, levels.sill, e.glassTop, bay.proud, back, [3, 4]);
+      glazedWindow(front, u, e.mezzanineGlassWidth / 2, e.mezzanineGlassBottom, e.mezzanineGlassTop, bay.proud, back, [3, 2]);
     }
     yield;
 
@@ -854,7 +1010,7 @@ export function* hallFrontSteps(detail: HallFrontDetail = FRONT_DETAIL_FULL): St
       const a = BALUSTRADES.linkAttic;
       const centre = (bay.uMin + bay.uMax) / 2;
       front.as("stone").slab([[bay.uMin, levels.corniceTop], [bay.uMax, levels.corniceTop], [bay.uMax, a.corniceBottom], [bay.uMin, a.corniceBottom]], [openingOutline(centre, a.windowWidth / 2, a.windowBottom, a.windowTop, 0)], back, upperFace);
-      glazedWindow(front, centre, a.windowWidth / 2, a.windowBottom, a.windowTop, upperFace, [3, 2]);
+      glazedWindow(front, centre, a.windowWidth / 2, a.windowBottom, a.windowTop, upperFace, back, [3, 2]);
       front.as("stone").run(bay.uMin, bay.uMax, corniceProfile(upperFace, a.corniceBottom, a.corniceTop, 0.2, back));
       balustrade(front, bay.uMin, bay.uMax, BALUSTRADES.link.bottom, BALUSTRADES.link.top, upperFace - 0.05, BALUSTRADES.link.balusters, detail.balusterSegments);
     } else if (bay.kind === "pavilion") {
@@ -862,9 +1018,9 @@ export function* hallFrontSteps(detail: HallFrontDetail = FRONT_DETAIL_FULL): St
       const centre = (bay.uMin + bay.uMax) / 2;
       const windowsUpper = [openingOutline(centre, a.centreWidth / 2, a.windowBottom, a.windowTop, 0), openingOutline(centre - a.sideU, a.sideWidth / 2, a.windowBottom, a.windowTop, 0), openingOutline(centre + a.sideU, a.sideWidth / 2, a.windowBottom, a.windowTop, 0)];
       front.as("stone").rowSlab(bay.uMin, bay.uMax, levels.corniceTop, a.corniceBottom, windowsUpper, back, upperFace);
-      glazedWindow(front, centre, a.centreWidth / 2, a.windowBottom, a.windowTop, upperFace, [3, 2]);
-      glazedWindow(front, centre - a.sideU, a.sideWidth / 2, a.windowBottom, a.windowTop, upperFace, [1, 2]);
-      glazedWindow(front, centre + a.sideU, a.sideWidth / 2, a.windowBottom, a.windowTop, upperFace, [1, 2]);
+      glazedWindow(front, centre, a.centreWidth / 2, a.windowBottom, a.windowTop, upperFace, back, [3, 2]);
+      glazedWindow(front, centre - a.sideU, a.sideWidth / 2, a.windowBottom, a.windowTop, upperFace, back, [1, 2]);
+      glazedWindow(front, centre + a.sideU, a.sideWidth / 2, a.windowBottom, a.windowTop, upperFace, back, [1, 2]);
       front.as("stone").run(bay.uMin - 0.3, bay.uMax + 0.3, corniceProfile(upperFace, a.corniceBottom, a.corniceTop, 0.3, back));
       // The parapet: solid dies between three groups of balusters, under a coping.
       front.box(bay.uMin, bay.uMax, a.corniceTop, a.parapetPlinthTop, upperFace - 0.36, upperFace - 0.04);
@@ -892,24 +1048,27 @@ export function* hallFrontSteps(detail: HallFrontDetail = FRONT_DETAIL_FULL): St
     const centre = (pair[0] + pair[1]) / 2;
     front.box(centre - t.respondHalfWidth, centre + t.respondHalfWidth, t.podiumTop, t.columnTop, LINK_FACE_PROUD, t.respondProud);
   }
-  // The rainwater pipes down the links' corners, to the pavement.
+  // The rainwater pipes down the links' corners, let into the pavement and up into the entablature over them, whose
+  // soffit covers each pipe's back 20 mm.
   front.as("metal");
   for (const u of DOWNPIPES.u) {
-    front.lathe(u, DOWNPIPES.proud, [[0, 0], [DOWNPIPES.radius, 0], [DOWNPIPES.radius, DOWNPIPES.top], [0, DOWNPIPES.top]], 8);
+    front.lathe(u, DOWNPIPES.proud, [[0, -LET_IN], [DOWNPIPES.radius, -LET_IN], [DOWNPIPES.radius, DOWNPIPES.top + LET_IN], [0, DOWNPIPES.top + LET_IN]], 8);
   }
   yield;
   front.as("stone");
-  front.box(-t.entablatureHalfWidth, t.entablatureHalfWidth, t.entablatureBottom, t.entablatureFriezeTop, 0, t.entablatureProud);
-  front.run(-t.entablatureHalfWidth - 0.05, t.entablatureHalfWidth + 0.05, corniceProfile(t.entablatureProud, t.entablatureFriezeTop, t.entablatureTop, t.pedimentCorniceProud - t.entablatureProud, 0));
+  // The entablature and pediment are a skin on the window wall's body, as every bay is (wallBack): their
+  // back on the wall's own plane fought its outer face where a cut shows the section.
+  front.box(-t.entablatureHalfWidth, t.entablatureHalfWidth, t.entablatureBottom, t.entablatureFriezeTop, SKIN_GAP, t.entablatureProud);
+  front.run(-t.entablatureHalfWidth - 0.05, t.entablatureHalfWidth + 0.05, corniceProfile(t.entablatureProud, t.entablatureFriezeTop, t.entablatureTop, t.pedimentCorniceProud - t.entablatureProud, SKIN_GAP));
   // The frieze's paterae over the outer columns (P).
   for (const u of [-t.columnU[3], t.columnU[3]]) front.disc(u, 10.502, t.entablatureProud, t.entablatureProud + 0.03, 0.18, 12);
   const ph = t.pedimentHalfWidth;
-  front.slab([[-ph + 0.3, t.entablatureTop], [ph - 0.3, t.entablatureTop], [0, t.pedimentApex - t.rakingCorniceDepth]], [], 0, t.entablatureProud - 0.04);
-  front.slab(
-    [[-ph, t.entablatureTop], [ph, t.entablatureTop], [0, t.pedimentApex]],
-    [[[-ph + 0.42, t.entablatureTop + 0.001], [ph - 0.42, t.entablatureTop + 0.001], [0, t.pedimentApex - t.rakingCorniceDepth]]],
-    0, t.pedimentCorniceProud,
-  );
+  front.slab([[-ph + 0.3, t.entablatureTop], [ph - 0.3, t.entablatureTop], [0, t.pedimentApex - t.rakingCorniceDepth]], [], SKIN_GAP, t.entablatureProud - 0.04);
+  // The raking cornices, one up each side to the apex, standing on the entablature's cornice (the pediment's
+  // level member). Cut as one ring round the tympanum, the ring's foot was a millimetre's sliver, thinner than
+  // the cut's pull toward the eye (hall-exterior-material.ts CUT_EYEWARD_MAX): its underside would draw over its top.
+  front.slab([[-ph, t.entablatureTop], [-ph + 0.42, t.entablatureTop], [0, t.pedimentApex - t.rakingCorniceDepth], [0, t.pedimentApex]], [], SKIN_GAP, t.pedimentCorniceProud);
+  front.slab([[ph - 0.42, t.entablatureTop], [ph, t.entablatureTop], [0, t.pedimentApex], [0, t.pedimentApex - t.rakingCorniceDepth]], [], SKIN_GAP, t.pedimentCorniceProud);
   front.box(-t.atticHalfWidth, t.atticHalfWidth, t.atticBottom, t.atticCorniceBottom, -0.2, 0.02);
   front.box(-t.atticHalfWidth - 0.04, t.atticHalfWidth + 0.04, t.atticBottom, t.atticBaseTop, -0.2, 0.08);
   front.run(-t.atticHalfWidth - 0.08, t.atticHalfWidth + 0.08, corniceProfile(0.02, t.atticCorniceBottom, t.atticTop, 0.14, -0.2));
@@ -932,7 +1091,7 @@ export function* hallFrontSteps(detail: HallFrontDetail = FRONT_DETAIL_FULL): St
   domeGroup(front, detail.domeSegments);
   yield;
 
-  return { geometry: front.mesh.build(), triangles: front.mesh.triangles };
+  return { geometry: front.mesh.build(), triangles: front.mesh.triangles, joins: front.joins };
 }
 
 /** Builds the whole front at once (tests, and anything that needs it now). */

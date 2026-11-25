@@ -101,6 +101,8 @@ export const REQUIRED_POSTGRES_TEST_FILES = [
   "src/__tests__/stripe-webhook-postgres.test.ts",
   // VENVIEWER_PRICING_GUARD_TEST_DATABASE_URL (venviewer_pricing_guard_test)
   "src/__tests__/pricing-public-read-postgres.test.ts",
+  // VENVIEWER_WEB_VITALS_TEST_DATABASE_URL (venviewer_web_vitals_test)
+  "src/__tests__/web-vitals-postgres.test.ts",
   // The nineteen that skipped on every CI run before 11 November 2026.
   // VENVIEWER_READINESS_TEST_DATABASE_URL (venviewer_readiness_test)
   "src/__tests__/health-readiness-postgres.test.ts",

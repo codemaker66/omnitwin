@@ -60,6 +60,17 @@ function requestedEventId(query: unknown): string | null {
   const parsed = SheetEventQuery.safeParse(query);
   return parsed.success ? parsed.data.eventId ?? null : null;
 }
+
+/** The Day Board asks for when setup starts with `setupFrom=true` (#454). The
+ *  summary carries it only then: older web code reads the summary with a
+ *  strict schema, and a Day Board left open on it must keep reading its line.
+ *  Anything but "true" leaves it out, as an unparseable eventId is ignored. */
+const SummaryQuery = z.object({ setupFrom: z.enum(["true", "false"]).default("false") });
+
+function asksForSetupFrom(query: unknown): boolean {
+  const parsed = SummaryQuery.safeParse(query);
+  return parsed.success && parsed.data.setupFrom === "true";
+}
 // `checked` present → idempotent set-state (force the row); omitted → legacy
 // toggle (flip). Unknown keys are stripped, so older `{ rowKey }`-only clients
 // keep working and newer set-state clients are accepted by older servers.
@@ -94,32 +105,18 @@ async function loadConfigAuthPivot(
   return row === undefined ? null : row;
 }
 
-/** Whether an event is a live event of the layout's own venue. */
-async function isVenueEvent(db: Database, configId: string, eventId: string): Promise<boolean> {
-  const [row] = await db.select({ id: events.id })
-    .from(events)
-    .innerJoin(configurations, eq(configurations.venueId, events.venueId))
-    .where(and(eq(events.id, eventId), isNull(events.deletedAt), eq(configurations.id, configId)))
-    .limit(1);
-  return row !== undefined;
-}
-
 /** The event this request's ticks belong to (lib/hallkeeper-progress.ts
- *  progressEventFor), and how many events the layout is linked to, so a
- *  sheet keeping eventless ticks on a reused layout can say they count on no
- *  Day Board. */
+ *  progressEventFor), chosen from the events the layout serves exactly as the
+ *  sheet's times are, and how many those are, so a sheet keeping eventless
+ *  ticks on a reused layout can say they count on no Day Board. */
 async function progressEventOf(
   db: Database,
   configId: string,
   query: unknown,
 ): Promise<{ readonly eventId: string | null; readonly linkedEvents: number }> {
-  const requested = requestedEventId(query);
-  const [linked, requestedIsVenueEvent] = await Promise.all([
-    linkedEventIds(db, configId),
-    requested === null ? Promise.resolve(false) : isVenueEvent(db, configId, requested),
-  ]);
+  const linked = await linkedEventIds(db, configId);
   return {
-    eventId: progressEventFor({ linkedEventIds: linked, requestedEventId: requested, requestedIsVenueEvent }),
+    eventId: progressEventFor({ linkedEventIds: linked, requestedEventId: requestedEventId(query) }),
     linkedEvents: linked.length,
   };
 }
@@ -166,6 +163,21 @@ export async function hallkeeperSheetRoutes(
   opts: { db: Database },
 ): Promise<void> {
   const { db } = opts;
+
+  /** A tick's row names its layout and its event, and its foreign keys take
+   *  the layout first. The event is held first (FOR KEY SHARE, which the key
+   *  takes anyway), the house order an erasure and a layout link keep
+   *  (people-erasure.ts, routes/events.ts), so a tick and an erasure never
+   *  wait on each other. */
+  async function withEventFirst(
+    eventId: string | null,
+    write: (tx: Parameters<Parameters<Database["transaction"]>[0]>[0]) => Promise<unknown>,
+  ): Promise<void> {
+    await db.transaction(async (tx) => {
+      if (eventId !== null) await tx.select({ id: events.id }).from(events).where(eq(events.id, eventId)).for("key share");
+      await write(tx);
+    });
+  }
 
   const frontendUrl = process.env["FRONTEND_URL"] ?? null;
 
@@ -300,7 +312,10 @@ export async function hallkeeperSheetRoutes(
       .from(hallkeeperProgress)
       .where(progressScope(params.data.configId, eventId));
 
-    return { data: summarizeSheet(params.data.configId, result.payload, marks.map((mark) => mark.rowKey)) };
+    return {
+      data: summarizeSheet(params.data.configId, result.payload, marks.map((mark) => mark.rowKey),
+        { setupFrom: asksForSetupFrom(request.query) }),
+    };
   });
 
   // -------------------------------------------------------------------------
@@ -378,14 +393,14 @@ export async function hallkeeperSheetRoutes(
     // duplicate-key 500 from the unique (config_id, event_id, row_key) key.
     if (desired !== undefined) {
       if (desired) {
-        await db.insert(hallkeeperProgress).values({
+        await withEventFirst(eventId, (tx) => tx.insert(hallkeeperProgress).values({
           configId,
           eventId,
           rowKey,
           checkedBy: request.user.id,
         }).onConflictDoNothing({
           target: [hallkeeperProgress.configId, hallkeeperProgress.eventId, hallkeeperProgress.rowKey],
-        });
+        }));
       } else {
         await db.delete(hallkeeperProgress)
           .where(and(progressScope(configId, eventId), eq(hallkeeperProgress.rowKey, rowKey)));
@@ -404,12 +419,12 @@ export async function hallkeeperSheetRoutes(
     const mutation = resolveProgressMutation(exists, undefined);
 
     if (mutation === "insert") {
-      await db.insert(hallkeeperProgress).values({
+      await withEventFirst(eventId, (tx) => tx.insert(hallkeeperProgress).values({
         configId,
         eventId,
         rowKey,
         checkedBy: request.user.id,
-      });
+      }));
     } else if (mutation === "delete" && existing !== undefined) {
       await db.delete(hallkeeperProgress)
         .where(eq(hallkeeperProgress.id, existing.id));

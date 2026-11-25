@@ -52,6 +52,15 @@ describe("getRoomDay", () => {
     expect(init?.method).toBe("GET");
   });
 
+  it("reads a day whose own booking was stored with an empty title, so the ribbon still has the room's day (API-9)", async () => {
+    const spans = [
+      { kind: "busy", startsAt: "2030-05-10T08:00:00.000Z", endsAt: "2030-05-10T13:00:00.000Z" },
+      { kind: "yours", bookingId: BOOKING, title: "", startsAt: "2030-05-10T17:00:00.000Z", endsAt: "2030-05-10T22:00:00.000Z" },
+    ];
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: roomDay(spans) })));
+    expect((await getRoomDay(EVENT, { spaceId: ROOM, day: "2030-05-10" })).spans).toEqual(spans);
+  });
+
   it("refuses a day that names who else booked: the privacy pin holds on this side too", async () => {
     const leak = [{ kind: "held", title: "The MacLeod wedding", startsAt: "2030-05-10T14:00:00.000Z", endsAt: "2030-05-10T16:00:00.000Z" }];
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: roomDay(leak) })));
@@ -74,6 +83,15 @@ describe("proposeWindow", () => {
     expect(init?.method).toBe("PUT");
     expect(typeof init?.body === "string" ? JSON.parse(init.body) as unknown : null).toEqual(input);
     expect(new Headers(init?.headers).get("Idempotency-Key")).toBe(KEY);
+  });
+
+  it("reads the moved slot as stored when its booking still has an empty title, rather than failing after the move landed (API-9)", async () => {
+    const slot = {
+      bookingId: BOOKING, kind: "hold", title: "", space: { id: ROOM, name: "Grand Hall" },
+      startsAt: "2030-05-10T18:00:00.000Z", endsAt: "2030-05-10T23:00:00.000Z",
+    };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: slot })));
+    expect(await proposeWindow(EVENT, { spaceId: ROOM, startsAt: slot.startsAt, endsAt: slot.endsAt, idempotencyKey: KEY })).toEqual(slot);
   });
 
   it("surfaces the house's refusal as an error the ribbon can show", async () => {

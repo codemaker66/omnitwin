@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 405 cases. Four hosted CPU shards execute
-400 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 432 cases. Four hosted CPU shards execute
+427 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -182,6 +182,50 @@ goes as the same step under the same key when the connection is back, and when
 someone else took it first the slot says so by name and the press is put away
 (`living-timetable-offline-steps.spec.ts`); this changes the inventory from
 419 to 421 and the CPU partition from 414 to 416.
+On 10 November 2026 Blake chose concept C for the Day Board, the rooms in the
+desks' register, so its phone case is restated one for one: it no longer shows
+one room at a time with the day running down the screen, and now proves every
+room in one column no wider than the phone, the present on the hours above the
+rooms and on every room's bar, and a slot opened under its own room to its sheet
+(`day-board.spec.ts`). The other three Day Board cases keep their identities.
+The totals are unchanged.
+
+After it, a case written on 6 November 2026 adds one ordinary case for the new
+chrome cleared away (T-680 in T-671's chrome, behind `?chrome=v2`): `\` and the slate's crest
+hide every zone but the crest, which stays where it stood; one Esc brings the
+tools back; the room takes the pointer where the chrome has gone; and L and `/`
+open their panels with the tools back (`planner-chrome-v2-clear.spec.ts`); this
+changes the inventory from 421 to 422 and the CPU partition from 416 to 417.
+
+On 13 November 2026 the planner's first-open event question is admitted again,
+with five cases (PR #253, T-674; first admitted on that branch on 26 October,
+against 405, again with three on 12 November, and placed after the clear-all
+case above on 17 November). Five ordinary cases: a new, empty layout on a booted
+planner with the API stubbed asks what the event is, the 2 key answers a
+corporate event and Lay out then starts from theatre rows; a wedding picked with
+a click is kept on the device, so a reload opens the layout without asking and
+names its event; on the Grand Hall the welcome hands the question back with the
+first panel in hand and showing it; an Escape that dismisses that welcome on a
+page nobody has touched leaves the question asking, and Enter answers it; and a
+signed-in planner's own layout writes its answer into the layout's metadata, the
+PATCH body asserted (`plan-event-kind.spec.ts`). The rest of the suite runs on a
+device told not to ask, through the default `storageState` in
+`playwright.config.ts`, so no other identity or status changes; this changes the
+inventory from 422 to 427 and the CPU partition from 417 to 422.
+
+After it, the admission of 12 November 2026, placed after #253's when master was
+merged into #388 on 22 November 2026, adds five ordinary cases for a table
+holding a note this browser is not shown (PR #388, the web half of the guest plan notes),
+against an in-memory layout server given #389's rules for held notes: in
+today's chrome Delete leaves such a table and the notice names it, a save
+refused for leaving one out says the server's sentence with no Retry, and a
+table holding the person's own note goes in two saves; in the new chrome Keep
+mine keeps a table someone has since written a note on, and Undo will not take
+one away (`planner-held-notes.spec.ts`); this changes the inventory from 427
+to 432 and the CPU partition from 422 to 427. On 22 November 2026 the spec reads
+the new chrome's line in its receipt and its Keep mine case goes on to a reload
+that puts a table back; no identity changed, and the admission's source commit
+and hashes were taken again from that spec.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
@@ -226,6 +270,13 @@ On 16 October 2026 Blake approved the same re-pin from 6.18.40.1 to 6.18.54.1
 after WSL updated itself again; the rest of the runtime was unchanged, and the
 five cases passed on the new kernel (CI run 38873316500, attempt 1, PR #88's
 merge ref 1f53ab8f) before publication refused the runtime.
+
+On 14 November 2026 Blake approved the same re-pin from 6.18.54.1 to 6.18.58.1
+after WSL updated itself overnight (the last gate on 6.18.54.1 passed at 01:20 UTC;
+the operator refused PR #388's gate at 16:54 on the new kernel). Node 22.23.2,
+Playwright's Chromium 147.0.7727.15, NVIDIA 616.92 and the renderer were unchanged.
+The five cases passed on the new kernel (CI run 43624511341, attempt 2, PR #411's
+merge ref 235b6843; 5 passed in 55.1 s) before publication refused the runtime.
 
 ## One explicitly admitted local run
 
