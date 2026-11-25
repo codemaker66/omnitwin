@@ -639,7 +639,7 @@ The scan (`gh pr view <n> --json files`) covered all 44 open PRs against the sea
 
 **Superseded on 18 November 2026:** by R94 for Task 14a, and by R100 for Task 14b. The text below is kept as the gate that was planned. Blake's phone timings are now Task 16's evidence.
 
-Tasks 14a and 14b, the render at the drop, do not start until the listening page has timed renders on real phones (ruling R79). Tasks 12 and 13 do not wait. The page keeps each render's time on the device that ran it (`ArtifactData` list, "timings"). The gate needs:
+Tasks 14a and 14b, the render at the drop, do not start until the listening page has timed renders on real phones (ruling R79). Tasks 12 and 13 do not wait. The page keeps each render's time on the device that ran it. The gate needs:
 - the median and worst render times, with the Grand Hall's 18 early reflections, for a Chiavari, a 6 ft round and a staging deck, on the phones Blake uses;
 - each set against its time to contact: 50 ms for a carried heavy piece (frame 3), 66.7 ms for light and table pieces (frame 4) and 83.3 ms for a drop-in (frame 5) at 60 fps. Other display rates move the landings: at 75–165 Hz heavy pieces land at 49–56 ms, light and table pieces at 67–69 ms and drop-ins at 80–89 ms, and at 30 fps carried pieces land at 67 ms and drop-ins at 100 ms (frame by frame on master's spring).
 
@@ -1017,6 +1017,11 @@ export function createSetDownRenderer(options?: { readonly createWorker?: () => 
     2. a heavy piece's cached variant for (slug, scale, surfacesKey, room key, rate);
     3. the exact render, if it arrives within `HEARD_WINDOW_S`.
   - Otherwise the voice is skipped and logged as a miss (Q6, ruling R80).
+  - **Fix round 2 (25 Nov):**
+    - A cascade voice is due at its own slot, its contact plus its cascade wait. Its render is on time if ready by the slot, late within 45 ms after it, and a miss past that, both for what plays and for the policy. A voice answered after its contact but by its slot starts exactly as an on-time voice (R105).
+    - Variants come from any class rendering ahead (R100). Each plays as rendered only near where it was rendered; otherwise a copy moved to the landing plays (R104, in the known limits).
+    - A contact reads only the supports and the direct sound, not the whole render input (whole-branch Minor 3).
+    - A landing the registry refuses is logged on the tap as "refused" (Minor 2).
 - **Supports at contact.** They are re-read at contact for voiced ids. A changed `surfacesKey` takes a matching variant if there is one, or otherwise the drop-start render, logged as stale (Review Focus 5).
 - **Reduced motion.** A `landedInPlace` voice plays when its render answers, at `currentTime` (Q10, ruling R84).
 - **`pickedUp(id, true)`.** The Worker renders "ahead" variants: seeds 1–3, for the surfaces under the piece now and for the room's floor. They are asked again when the carried piece has moved more than 1 m or its supports change, checked at most every 250 ms. The cache is dropped when the room key changes.
@@ -1030,6 +1035,10 @@ export function createSetDownRenderer(options?: { readonly createWorker?: () => 
 - **The adaptive render policy (ruling R100, which replaces the phone-timings gate).** Per class (light, table, heavy), the driver keeps two records:
   - the live `workMs` of the Worker's answers;
   - at each contact, whether the voice was on time, late within R80's 45 ms, or a miss.
+
+  Fix round 2 (25 Nov) changed two things:
+  - The `workMs` record is gone: no decision read it, and the tap logs each voice's `workMs` (whole-branch Minor 5).
+  - A voice whose render was asked for before the Worker said it was ready is not judged. Its wait includes the Worker's one-off start-up (Minor 1).
 - **Render-ahead.** In render-ahead mode a class's pieces are rendered ahead:
   - at pickup, for carried pieces, as heavy pieces already are;
   - while the placement ghost shows, for new pieces.
@@ -1088,6 +1097,7 @@ This task does not wait on the gate.
   - `components/editor/VerticalToolbox.tsx`: in the mobile More sheet, after the Tools grid (:1437), a "Sound" title (`mobileSheetTitleStyle`, :1249) and `<SoundSettings />`;
   - `components/planner-chrome/SlateMenu.tsx`, after :211: a `pc-slate-menu__section` with `role="group"`, `aria-label="Sound"`, a `pc-slate-menu__head` "Sound" and `<SoundSettings />`;
   - if #428 has landed: `components/planner-hud/HudSheets.tsx` ToolsSheet, the row its comment reserves.
+  - **25 Nov:** #428 has landed, so the HUD's More tools sheet now holds the Sound row. Fix round 2's second implementer built it, with tests in `planner-hud/__tests__/hud-sound.test.tsx`.
 - Test: update `cockpit/__tests__/ReferenceSceneSettings.test.tsx`, `editor/__tests__/MobilePlannerChrome.test.tsx` and `planner-chrome/__tests__/slate-menu.test.tsx`; create `components/editor/__tests__/sound-menus.test.tsx`.
 
 **Interfaces:** consumes `SoundSettings` (`SoundControl.tsx:85`). Nothing else is mounted. The speaker stays on the fixture page alone.
@@ -1114,6 +1124,11 @@ This task does not wait on the gate.
   - the sound's lazy load (R103): in a remote-debugging trace from opening the planner to the first set-down, no main-thread task over 50 ms comes from loading the driver's chunk, and the time from arming to the Worker's ready message is recorded.
 
   This holds part 3's release, not 14b's build.
+
+  The tap gives what these need (fix round 2, 25 Nov):
+  - each voice's render onset and the output's latency, for R80's window;
+  - each landing the registry refused, logged as drop "refused", apart from landings that never came;
+  - voices whose render was asked for before the Worker was ready, which the policy does not judge, so read the misses after warm-up.
 - [ ] **Step 1:** Write `sound-live.mjs`, a script kept outside the repo, from the furniture rebuild's batch 4 live script (also kept outside the repo).
   - **Its safety:** every non-GET request is aborted, and the guest draft (POST `/public/configurations`) and its reads are answered locally.
   - **The browser:** Playwright with `channel: "chrome"`, headed. The browser pane draws no frames off screen, and the planner's demand loop needs frames for touchdowns.
@@ -1156,8 +1171,18 @@ This task does not wait on the gate.
 ### Known limits carried into PR 3
 
 - **The first set-down after arming** waits for the limiter's 0.25 s warm-up (R63). A click that arms and places at once may hear its first set-down up to about 0.1 s late. Later plays are on time.
-- **The tail** is made at arming, at the context's rate. On a slow phone the very first set-down may play before its tail is in, and so dry. This is to be measured on the device day.
-- **A heavy piece's variants** carry their reflections and pan from where the piece was picked up, and are refreshed every metre of carry. They are a fallback by design (R48).
+- **The Worker's start-up.** The Worker starts at arming and loads and evaluates its module. A first gesture that is itself a placement (the Lay out button, or a first drag) may find its renders late and its voices dropped.
+  - The policy does not judge those contacts: their renders were asked for before the Worker said it was ready. So a one-off start-up never switches a class to render-ahead on the device.
+  - Task 16 Step 0b records the time from arming to the ready message.
+- **The tail** is made at arming, at the context's rate. On a slow phone the very first set-down may play before its tail is in, and so dry.
+  - Every change of room takes the old room's tail off the bus at once, faded over the 0.1 s cross-fade if it rings. So a set-down in the new room is dry until the new tail answers, never sent into the old room. The same holds when sound comes back on in a room changed while it was off.
+  - This is to be measured on the device day.
+- **A cascade voice's window.** Each voice of a cascade is due at its own slot, up to about 0.7 s after its piece lands. Its render is on time if ready by the slot, and may arrive up to 45 ms after it (R105). The policy judges it the same way, so the cascade's own spacing is never read as a slow device.
+- **Variants rendered ahead.** Heavy pieces render ahead at pickup (R48). Light and table pieces render ahead too once their class has switched (R100), at pickup and from the placement ghost. A variant is refreshed every metre and whenever the surfaces under it change.
+  - A variant's key leaves position out, so the next piece of its kind may land anywhere.
+  - A kept variant plays as rendered only when its direct sound came from within 0.2 rad (measured round the ear) and 1.5 dB of the landing's, as heard at contact.
+  - Otherwise a copy moved to the landing plays (R104): un-panned on the engine's own equal-power law, panned to the landing's angle, at the landing's dry gain. Its early reflections stay those of where it was rendered. The exact render is never moved.
+  - Variants are a fallback by design.
 
 
 ## PR 4: live, checked and written down
