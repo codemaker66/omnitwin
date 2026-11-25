@@ -245,6 +245,17 @@ describe("tablePlanAZ", () => {
     expect(plan.groups.flatMap((g) => g.entries).filter((e) => e.label.endsWith(","))).toEqual([]);
   });
 
+  it("puts the plain letter's group first even when the list's first such name starts with Ł or Ø", () => {
+    const names = ["Mary Łabędź", "Ada Lowe", "Kari Øberg", "Per Olsen"];
+    const plan = tablePlanAZ(listOf(names.map((name, at) => guestAt(at + 1, name, 1, at + 1)), [tableAt(1)]));
+    expect(lettersAndLabels(plan)).toEqual([
+      ["L", ["Lowe, Ada"]],
+      ["Ł", ["Łabędź, Mary"]],
+      ["O", ["Olsen, Per"]],
+      ["Ø", ["Øberg, Kari"]],
+    ]);
+  });
+
   it("keeps one group a letter where the order puts one letter with another (Ł with L, Ø with O)", () => {
     const names = ["Ada Lamb", "Mary Łoś", "Ada Lowe", "Per Olsen", "Kari Øvergaard", "Ola Owen"];
     const plan = tablePlanAZ(listOf(names.map((name, at) => guestAt(at + 1, name, 1, at + 1)), [tableAt(1)]));

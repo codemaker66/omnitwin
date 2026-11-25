@@ -93,7 +93,8 @@ export function letterOf(key: string): string {
 function byLetterOrder([a]: readonly [string, unknown], [b]: readonly [string, unknown]): number {
   if (a === NOT_A_LETTER) return b === NOT_A_LETTER ? 0 : -1;
   if (b === NOT_A_LETTER) return 1;
-  return BASE_ORDER.compare(a, b);
+  // L and L with a stroke are equal in the base order: the full order puts the plain letter first.
+  return BASE_ORDER.compare(a, b) || FULL_ORDER.compare(a, b);
 }
 
 /**
@@ -102,7 +103,8 @@ function byLetterOrder([a]: readonly [string, unknown], [b]: readonly [string, u
  * grouped under the letter of each key, one group a letter. `#` comes first,
  * then the letters in a reader's order. A letter that the order puts with
  * another (L with a stroke beside L, O with a slash beside O) keeps a group of
- * its own, so a letter is never split round another's names.
+ * its own, after the plain letter's, so a letter is never split round
+ * another's names.
  */
 export function groupAZ<T extends { readonly key: string; readonly label: string }>(
   entries: readonly T[],
