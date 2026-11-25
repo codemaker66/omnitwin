@@ -162,25 +162,38 @@ def run(room):
         for edited, u0, u1, v0, v1, like, depth in room.behinds():              # B26
             if edited is not wall:
                 continue
+            where = f"behind edit on wall {wall['id']} (u {u0:.3f}..{u1:.3f}, v {v0}..{v1})"
             rows_v = TOP - (np.arange(H) + 0.5) / PPM
             cols_u = (np.arange(Wd) + 0.5) / PPM
             rsel = np.nonzero((rows_v >= v0) & (rows_v <= v1))[0]
             csel = np.nonzero((cols_u >= u0) & (cols_u <= u1))[0]
+            # An edit that can move nothing says so, rather than leave the thing in the wall unannounced.
+            for count, what, axis in ((len(rsel), 'row', 'v'), (len(csel), 'column', 'u')):
+                if not count:
+                    raise SystemExit(f"{where}: the rectangle holds no texel {what} (its {axis} range lies between two "
+                                     f"texel centres, {1000 / PPM:g} mm apart)")
             borrowed = 0
             if like is None:
                 ref = np.full(len(rsel), depth, np.float64)
             else:
                 strip = (cols_u > u1) & (cols_u <= u1 + roomlib.BEHIND_STRIP) if like == 'right' \
                     else (cols_u < u0) & (cols_u >= u0 - roomlib.BEHIND_STRIP)
+                in_strip = np.ix_(rsel, np.nonzero(strip)[0])
                 with warnings.catch_warnings():
                     warnings.simplefilter('ignore', RuntimeWarning)          # rows with no wall in the strip
-                    ref = np.nanmedian(stats[np.ix_(rsel, np.nonzero(strip)[0])], axis=1)
+                    ref = np.nanmedian(stats[in_strip], axis=1)
                 known = np.isfinite(ref)
                 if not known.any():
-                    raise SystemExit(f"behind edit on wall {wall['id']} (u {u0:.3f}..{u1:.3f}, v {v0}..{v1}): the strip of wall "
-                                     f"beyond its {like} holds no covered texel to take a depth from")
+                    # Two faults the author mends differently: the strip is covered but B7 blanks it (an opening
+                    # beside the rectangle), or the mesh has no surface there at all.
+                    if np.isfinite(D[in_strip]).any():
+                        raise SystemExit(f"{where}: every row of the strip of wall beyond its {like} lies in an opening "
+                                         "(B7), which gives no depth of the wall: give `depth`, or take the other side")
+                    raise SystemExit(f"{where}: the strip of wall beyond its {like} holds no covered texel (a hole in "
+                                     "the mesh) to take a depth from")
                 borrowed = int((~known).sum())
-                # a row with no wall in the strip (an opening beside it, a hole in the mesh) takes the nearest rows' depth
+                # a row with no wall in the strip (an opening beside it, a hole in the mesh) takes a depth
+                # interpolated from the nearest rows that have one (the end rows' depth beyond them)
                 ref = np.interp(np.arange(len(rsel)), np.nonzero(known)[0], ref[known])
             block = D[np.ix_(rsel, csel)]
             with np.errstate(invalid='ignore'):
