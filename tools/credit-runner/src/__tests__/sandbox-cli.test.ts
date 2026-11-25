@@ -75,15 +75,21 @@ describe("the CLI's own words", () => {
     expect(written).toEqual([]);
   });
 
-  it("runs as a command when started through a junction or a symlinked folder", async () => {
+  it("runs as the package's sandbox script runs it, in one node process with tsx's loader, also when started through a junction or a symlinked folder", async () => {
+    // One process: tsx's own CLI would run the launcher as the child of a relay
+    // parent, which Ctrl-Break or a closed window ends at once on Windows, and
+    // the launcher with it, before its handlers have run.
+    const manifest = JSON.parse(await readFile(path.join(PACKAGE_DIR, "package.json"), "utf8")) as { readonly scripts: Readonly<Record<string, string>> };
+    const script = manifest.scripts.sandbox ?? "";
+    expect(script).toBe("node --import tsx src/sandbox/cli-entry.ts");
+    const [command, ...args] = script.split(" ");
+    expect(command).toBe("node");
     const root = await mkdtemp(path.join(tmpdir(), "credit-runner-link-"));
     const link = path.join(root, "package");
     await symlink(PACKAGE_DIR, link, process.platform === "win32" ? "junction" : "dir");
     try {
-      const child = spawnSync(process.execPath, [path.join(PACKAGE_DIR, "node_modules", "tsx", "dist", "cli.mjs"), path.join(link, "src", "sandbox", "cli-entry.ts"), "--help"], {
-        encoding: "utf8",
-        windowsHide: true,
-      });
+      // From the package folder, as pnpm runs a script, here reached through the link: tsx and the entry are found through it.
+      const child = spawnSync(process.execPath, [...args, "--help"], { cwd: link, encoding: "utf8", windowsHide: true });
       expect(child.status).toBe(0);
       expect(child.stdout).toContain(ATTENDED);
     } finally {
