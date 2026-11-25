@@ -476,6 +476,19 @@ describe("the guest paper page: the other sheets", () => {
     expect(sheet.querySelector("table, tfoot")).toBeNull();
   });
 
+  it("marks each card's name with the size step for its length, so a long name is set smaller", async () => {
+    const medium = "Alexander Hamish Lachlan Macdonald-Stewart";
+    const long = "Dame Wilhelmina Christabel Constance Featherstonehaugh Cholmondeley Marjoribanks";
+    const all = list180();
+    const guests = all.guests.map((g, at) => (at === 0 ? { ...g, name: medium } : at === 1 ? { ...g, name: long } : g));
+    open(`${PAPER}?kit=on&sheet=place-cards`, await storeHolding({ ...all, guests }));
+    const sheet = await paper("place-cards");
+    const steps = new Map(Array.from(sheet.querySelectorAll(".gp-card__name")).map((name) => [text(name), name.getAttribute("data-step")]));
+    expect([steps.get(medium), steps.get(long)]).toEqual(["2", "3"]);
+    expect(steps.get(fullName(SEATED[2] ?? expect.unreachable("no third seated guest")))).toBe("1");
+    expect(new Set(steps.values())).toEqual(new Set(["1", "2", "3"]));
+  });
+
   it("gives the place cards' pages their own margins while, and only while, the cards are shown", async () => {
     open(`${PAPER}?kit=on&sheet=place-cards`, await storeHolding(list180()));
     const sheet = await paper("place-cards");

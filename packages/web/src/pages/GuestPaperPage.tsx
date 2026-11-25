@@ -14,7 +14,7 @@ import {
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import { KIT_PARAM } from "../lib/guest-list/kit-switch.js";
 import { printedFromOlderCopy, type GuestList } from "../lib/guest-list/model.js";
-import { byTable, covers, markPrinted, placeCards, tablePlanAZ, type Sheet } from "../lib/guest-list/paper.js";
+import { byTable, cardNameStep, covers, markPrinted, placeCards, tablePlanAZ, type Sheet } from "../lib/guest-list/paper.js";
 import { guestListStore, type GuestListStore } from "../lib/guest-list/store.js";
 import { useGuestListStore } from "../stores/guest-list-store.js";
 import "./GuestPaperPage.css";
@@ -514,7 +514,7 @@ function PlaceCardsSheet({ list }: { readonly list: GuestList }): ReactElement {
             {page.map((card, at) => (
               <div key={at} className="gp-card">
                 <span className="gp-cut" aria-hidden="true" />
-                <span className="gp-card__name">{card.name}</span>
+                <span className="gp-card__name" data-step={cardNameStep(card.name)}>{card.name}</span>
                 <span className="gp-card__table">{`Table ${String(card.table)}`}</span>
               </div>
             ))}

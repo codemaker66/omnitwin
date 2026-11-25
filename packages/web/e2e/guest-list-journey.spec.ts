@@ -1,6 +1,7 @@
 import { createServer, type Socket as NetSocket } from "node:net";
 import { expect, test, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { CANONICAL_ASSETS } from "@omnitwin/types";
+import { planLabel } from "../src/lib/guest-list/paper.js";
 import { readPdfPages, squashed, timesOnEachPage, type PdfPage } from "./support/pdf-text.js";
 import { unreadableOnPaper } from "./support/readability.js";
 
@@ -48,15 +49,18 @@ const WHEEL_TURN = 600;
 const WHEEL_PAUSE_MS = 300;
 const WHEEL_TURNS_MAX = 60;
 
-// 180 names, one of them the canary: no request may ever carry it.
+// 180 names, one of them the canary: no request may ever carry it. One is as long as a name may be, 80
+// characters of long words: at a place card's first size it takes five lines and runs into the card's margin.
+const LONG_NAME = "Dame Wilhelmina Christabel Constance Featherstonehaugh Cholmondeley Marjoribanks";
 const FIRST = ["Ailsa", "Brodie", "Catriona", "Duncan", "Eilidh", "Fergus", "Gregor", "Hamish", "Isla", "Jamie",
   "Kirsty", "Lachlan", "Morag", "Niall", "Orla", "Peigi", "Ruaridh", "Seonaid", "Tormod", "Una"];
 const LAST = ["Anderson", "Baird", "Campbell", "Docherty", "Ewing", "Fraser", "Gillies", "Henderson", "Irvine", "Jardine",
   "Kerr", "Lennox", "MacLeod", "Nicol", "Ogilvie", "Paterson", "Quinn", "Robertson", "Sinclair", "Thomson",
   "Urquhart", "Wallace", "Young", "Allan", "Buchanan", "Cameron", "Dewar", "Erskine", "Forbes", "Graham"];
-const OTHERS = Array.from({ length: GUESTS - 1 }, (_, at) =>
+const OTHERS = Array.from({ length: GUESTS - 2 }, (_, at) =>
   `${FIRST[at % FIRST.length] ?? ""} ${LAST[Math.floor(at / 6) % LAST.length] ?? ""}`);
-const PASTED = [...OTHERS.slice(0, 90), CANARY, ...OTHERS.slice(90)].join("\n");
+const NAMES = [...OTHERS.slice(0, 45), LONG_NAME, ...OTHERS.slice(45, 89), CANARY, ...OTHERS.slice(89)];
+const PASTED = NAMES.join("\n");
 
 // The plan in the room: a Grand Hall dinner of 18 six-foot rounds, ten chairs each, from the real catalogue.
 function assetId(slug: string): string {
@@ -304,6 +308,46 @@ function firstPageOnly(paper: Printed): number[] {
   return paper.pages.map((_, at) => (at === 0 ? 1 : 0));
 }
 
+/** The names a printed sheet lacks, each compared with every space taken out, as a long name wraps. */
+function missingFrom(paper: Printed, names: readonly string[]): string[] {
+  const text = squashed(paper.pages.map((sheet) => sheet.text).join(""));
+  return names.filter((name) => !text.includes(squashed(name)));
+}
+
+/** With print media at A4: how many `entry` boxes there are, the running footer's height, and which entries (by number) overlap it. */
+async function overTheFooter(page: Page, entry: string): Promise<{ readonly entries: number; readonly footerHeight: number; readonly over: readonly number[] }> {
+  return page.evaluate((selector) => {
+    const footer = document.querySelector(".gp-running")?.getBoundingClientRect();
+    const boxes = [...document.querySelectorAll(selector)].map((node) => node.getBoundingClientRect());
+    const over = footer === undefined ? [] : boxes.flatMap((box, at) =>
+      box.bottom > footer.top + 0.5 && box.top < footer.bottom - 0.5 && box.right > footer.left + 0.5 && box.left < footer.right - 0.5 ? [at + 1] : []);
+    return { entries: boxes.length, footerHeight: footer?.height ?? 0, over };
+  }, entry);
+}
+
+/**
+ * With print media at A4: the place cards, by number, whose name's box does not lie inside the card less its
+ * padding (the margin the card keeps clear of its cut marks).
+ * The card less its padding is the stricter box, and the right one: a name in the padding already crowds the cut.
+ */
+async function namesOffTheirCards(page: Page): Promise<{ readonly cards: number; readonly off: readonly number[] }> {
+  return page.evaluate(() => {
+    const cards = [...document.querySelectorAll(".gp-card")];
+    const off = cards.flatMap((card, at) => {
+      const name = card.querySelector(".gp-card__name")?.getBoundingClientRect();
+      const box = card.getBoundingClientRect();
+      const inset = getComputedStyle(card);
+      const inside = name !== undefined
+        && name.top >= box.top + Number.parseFloat(inset.paddingTop) - 0.5
+        && name.bottom <= box.bottom - Number.parseFloat(inset.paddingBottom) + 0.5
+        && name.left >= box.left + Number.parseFloat(inset.paddingLeft) - 0.5
+        && name.right <= box.right - Number.parseFloat(inset.paddingRight) + 0.5;
+      return inside ? [] : [at + 1];
+    });
+    return { cards: cards.length, off };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // The list at a laptop's window, by the wheel
 // ---------------------------------------------------------------------------
@@ -456,6 +500,13 @@ test.describe("the guest list journey", () => {
     await page.setViewportSize(A4_AT_96_DPI);
     await page.emulateMedia({ media: "print" });
     expect(await unreadableOnPaper(page, SHEET, "table plan on paper")).toEqual([]);
+    // One name is as long as a name may be, and the list is still 180.
+    expect(Array.from(LONG_NAME).length).toBe(80);
+    expect(NAMES.length).toBe(GUESTS);
+    // No name's line lies under the version footer.
+    const footer = await overTheFooter(page, ".gp-az__entry");
+    expect([footer.entries, footer.over]).toEqual([GUESTS, []]);
+    expect(footer.footerHeight).toBeGreaterThan(0);
 
     const plan = await printed(page);
     reportPaper("table plan", plan);
@@ -466,6 +517,8 @@ test.describe("the guest list journey", () => {
     // The reader reads a known line on a known page: the sheet's title heads the first page only.
     expect(timesOnEachPage(plan.pages, "Table plan")).toEqual(firstPageOnly(plan));
     expect(pagesWithoutTheLine(plan), pageEnds(plan)).toEqual([]);
+    // Every guest is printed, as the plan files them.
+    expect(missingFrom(plan, NAMES.map((name) => planLabel(name, "last-word")))).toEqual([]);
   });
 
   test("guests by table and covers carry their version on every printed page, and place cards on none", async ({ page, context, baseURL }) => {
@@ -473,6 +526,9 @@ test.describe("the guest list journey", () => {
     await keepToTheDevice(context, app);
     await seatTheList(page, app);
     await printTheTablePlan(page);
+    // The width a printed page lays out at; each sheet is also measured with print media emulated, then the
+    // emulation is dropped (media: null): page.pdf() prints with screen styles while screen is emulated.
+    await page.setViewportSize(A4_AT_96_DPI);
 
     await openSheet(page, "Guests by table", "by-table");
     const byTable = await printed(page);
@@ -481,6 +537,12 @@ test.describe("the guest list journey", () => {
     expect(byTable.pages.length).toBeGreaterThanOrEqual(2);
     expect(timesOnEachPage(byTable.pages, "Guests by table")).toEqual(firstPageOnly(byTable));
     expect(pagesWithoutTheLine(byTable), pageEnds(byTable)).toEqual([]);
+    expect(missingFrom(byTable, NAMES)).toEqual([]);
+    await page.emulateMedia({ media: "print" });
+    const byTableFooter = await overTheFooter(page, ".gp-table__seats li");
+    expect([byTableFooter.entries, byTableFooter.over]).toEqual([GUESTS, []]);
+    expect(byTableFooter.footerHeight).toBeGreaterThan(0);
+    await page.emulateMedia({ media: null });
 
     await openSheet(page, "Covers for the caterer", "covers");
     const covers = await printed(page);
@@ -488,6 +550,11 @@ test.describe("the guest list journey", () => {
     expect(covers.line).toMatch(VERSION_LINE);
     expect(covers.pages.length).toBeGreaterThanOrEqual(1);
     expect(pagesWithoutTheLine(covers), pageEnds(covers)).toEqual([]);
+    await page.emulateMedia({ media: "print" });
+    const coversFooter = await overTheFooter(page, ".gp-covers__line");
+    expect([coversFooter.entries, coversFooter.over]).toEqual([TABLES, []]);
+    expect(coversFooter.footerHeight).toBeGreaterThan(0);
+    await page.emulateMedia({ media: null });
 
     await openSheet(page, "Place cards", "place-cards");
     const cards = await printed(page);
@@ -498,6 +565,11 @@ test.describe("the guest list journey", () => {
     expect(cards.pages.filter((sheet) => !/table/iu.test(sheet.text)).length).toBe(0);
     expect(timesOnEachPage(cards.pages, cards.line)).toEqual(cards.pages.map(() => 0));
     expect(timesOnEachPage(cards.pages, "Version")).toEqual(cards.pages.map(() => 0));
+    expect(missingFrom(cards, NAMES)).toEqual([]);
+    // Every name lies inside its card, clear of the cut: the longest is set smaller (paper.ts, cardNameStep).
+    await page.emulateMedia({ media: "print" });
+    await page.evaluate(async () => { await document.fonts.ready; });
+    expect(await namesOffTheirCards(page)).toEqual({ cards: GUESTS, off: [] });
   });
 
   test("the check notices a footer that does not repeat", async ({ page, context, baseURL }) => {
