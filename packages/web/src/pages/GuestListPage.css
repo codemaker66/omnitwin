@@ -383,14 +383,18 @@
   font-size: 14px;
 }
 
-/* The ledger fills the sheet beside the panel and scrolls inside itself. */
+/* The ledger fills the sheet beside the panel and scrolls inside itself. It is never taller than the window
+   less the page's own margin, so its last row can always be brought into view, and at either end the wheel
+   goes on to the page. It holds the screen-reader text of its rows (position: relative): placed against the
+   page instead, that text stretched the page by the whole height of the rows. */
 .gl-ledger {
+  position: relative;
   flex: 1 1 440px;
-  min-height: 440px;
+  min-height: min(440px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
   margin-right: -12px;
   padding-right: 12px;
   overflow: auto;
-  overscroll-behavior: contain;
 }
 
 .gl-empty {

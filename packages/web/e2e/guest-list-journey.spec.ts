@@ -1,5 +1,5 @@
 import { createServer, type Socket as NetSocket } from "node:net";
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { CANONICAL_ASSETS } from "@omnitwin/types";
 import { readPdfPages, squashed, timesOnEachPage, type PdfPage } from "./support/pdf-text.js";
 import { unreadableOnPaper } from "./support/readability.js";
@@ -37,6 +37,16 @@ const CARDS_A_PAGE = 10;
 const A4_AT_96_DPI = { width: 794, height: 1123 };
 const SHEET = "[data-testid='guest-paper-sheet']";
 const VERSION_LINE = /^Version \d+ · printed \d{1,2} [A-Z][a-z]+ \d{4}$/u;
+/** What a browser leaves a page on a 1366 x 768, a 1536 x 864 and a 1920 x 1080 laptop screen, its own bars taken off. */
+const LAPTOP_WINDOWS = [
+  { width: 1366, height: 641 },
+  { width: 1536, height: 704 },
+  { width: 1920, height: 953 },
+] as const;
+/** One turn of the wheel, in pixels, and the pause before the next: time for the page to finish scrolling. */
+const WHEEL_TURN = 600;
+const WHEEL_PAUSE_MS = 300;
+const WHEEL_TURNS_MAX = 60;
 
 // 180 names, one of them the canary: no request may ever carry it.
 const FIRST = ["Ailsa", "Brodie", "Catriona", "Duncan", "Eilidh", "Fergus", "Gregor", "Hamish", "Isla", "Jamie",
@@ -294,6 +304,51 @@ function firstPageOnly(paper: Printed): number[] {
   return paper.pages.map((_, at) => (at === 0 ? 1 : 0));
 }
 
+// ---------------------------------------------------------------------------
+// The list at a laptop's window, by the wheel
+// ---------------------------------------------------------------------------
+
+/** True when the element lies whole inside the window and, in the ledger, inside what the ledger shows. */
+async function shownWhole(element: Locator): Promise<boolean> {
+  return element.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    const ledger = node.closest(".gl-ledger")?.getBoundingClientRect();
+    const top = Math.max(0, ledger?.top ?? 0);
+    const bottom = Math.min(document.documentElement.clientHeight, ledger?.bottom ?? Number.POSITIVE_INFINITY);
+    return box.height > 0 && box.top >= top - 0.5 && box.bottom <= bottom + 0.5;
+  });
+}
+
+/** True when the page ends where the desk does (with the page's own margin), so the wheel finds no blank beyond it. */
+async function pageEndsWithTheDesk(page: Page): Promise<boolean> {
+  return page.getByTestId("guest-list-desk").evaluate((desk) => {
+    const sheetPage = desk.closest("[data-testid='guest-list-page']") ?? desk;
+    const margin = Number.parseFloat(getComputedStyle(sheetPage).paddingBottom);
+    const end = Math.max(document.documentElement.clientHeight, desk.getBoundingClientRect().bottom + window.scrollY + margin);
+    return document.documentElement.scrollHeight <= Math.ceil(end) + 1;
+  });
+}
+
+/** The middle of the part of the ledger the window shows, or null when none of it shows. */
+async function middleOfWhatShows(ledger: Locator): Promise<{ readonly x: number; readonly y: number } | null> {
+  return ledger.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    const top = Math.max(0, box.top);
+    const bottom = Math.min(document.documentElement.clientHeight, box.bottom);
+    return bottom - top < 4 ? null : { x: box.left + box.width / 2, y: (top + bottom) / 2 };
+  });
+}
+
+/** Turns the wheel under the pointer a turn at a time until `done` holds: the turns it took, or null if it never did. */
+async function wheelUntil(page: Page, deltaY: number, done: () => Promise<boolean>): Promise<number | null> {
+  for (let turn = 1; turn <= WHEEL_TURNS_MAX; turn += 1) {
+    await page.mouse.wheel(0, deltaY);
+    await page.waitForTimeout(WHEEL_PAUSE_MS);
+    if (await done()) return turn;
+  }
+  return null;
+}
+
 test.describe("the guest list journey", () => {
   test.describe.configure({ timeout: 120_000 });
 
@@ -462,5 +517,57 @@ test.describe("the guest list journey", () => {
     expect(missing[0]).toBe(1);
     expect(missing).toEqual(once.pages.slice(0, -1).map((_, at) => at + 1));
     expect(timesOnEachPage(once.pages, once.line).at(-1)).toBe(1);
+  });
+
+  test("the wheel takes the list to its last guest and back to the title, at three laptop windows", async ({ page, context, baseURL }) => {
+    test.setTimeout(300_000);
+    const app = appOrigin(baseURL);
+    await keepToTheDevice(context, app);
+    await seatTheList(page, app);
+    await expect.poll(() => keptOnDevice(page)).toEqual({ guests: GUESTS, seated: GUESTS });
+
+    const found: {
+      readonly window: string;
+      readonly titleOnOpening: boolean;
+      readonly pageEndsWithTheDesk: boolean;
+      readonly lastGuestByWheel: boolean;
+      readonly titleByWheel: boolean;
+    }[] = [];
+    for (const size of LAPTOP_WINDOWS) {
+      const at = `${String(size.width)} x ${String(size.height)}`;
+      await page.setViewportSize(size);
+      await page.reload();
+      await page.getByRole("button", { name: `Guests ${String(GUESTS)}`, exact: true }).click();
+      const ledger = page.getByRole("region", { name: "Guests and tables" });
+      const rows = ledger.locator(".gl-guest");
+      await expect(rows).toHaveCount(GUESTS);
+      const title = page.getByRole("heading", { level: 1, name: "Guest list" });
+      // As on opening: the page and the list at their tops (choosing the view may have moved the focus, and the page with it).
+      await page.evaluate(() => { window.scrollTo(0, 0); });
+      await ledger.evaluate((node) => { node.scrollTop = 0; });
+      const titleOnOpening = await shownWhole(title);
+      const endsWithTheDesk = await pageEndsWithTheDesk(page);
+
+      // The pointer rests on what shows of the list; from here on only the wheel moves anything.
+      const pointer = await middleOfWhatShows(ledger);
+      if (pointer === null) {
+        report(`${at}: none of the list shows on opening`);
+        found.push({ window: at, titleOnOpening, pageEndsWithTheDesk: endsWithTheDesk, lastGuestByWheel: false, titleByWheel: false });
+        continue;
+      }
+      await page.mouse.move(pointer.x, pointer.y);
+      const down = await wheelUntil(page, WHEEL_TURN, () => shownWhole(rows.last()));
+      const up = await wheelUntil(page, -WHEEL_TURN, () => shownWhole(title));
+      report(`${at}: pointer at ${String(Math.round(pointer.x))},${String(Math.round(pointer.y))}; last guest whole after ${String(down ?? "no")} turn(s) down, title whole after ${String(up ?? "no")} turn(s) up; page ends with the desk: ${String(endsWithTheDesk)}`);
+      found.push({ window: at, titleOnOpening, pageEndsWithTheDesk: endsWithTheDesk, lastGuestByWheel: down !== null, titleByWheel: up !== null });
+    }
+
+    expect(found).toEqual(LAPTOP_WINDOWS.map((size) => ({
+      window: `${String(size.width)} x ${String(size.height)}`,
+      titleOnOpening: true,
+      pageEndsWithTheDesk: true,
+      lastGuestByWheel: true,
+      titleByWheel: true,
+    })));
   });
 });

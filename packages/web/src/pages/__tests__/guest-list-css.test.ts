@@ -114,6 +114,25 @@ describe("GuestListPage.css: the notices region", () => {
   });
 });
 
+describe("GuestListPage.css: the ledger at a laptop's window", () => {
+  it("is never taller than the window less a margin, and hands the wheel on to the page at either end", () => {
+    // The journey's wheel case shows it at 1366 x 641, 1536 x 704 and 1920 x 953; this keeps the rule that does it.
+    const ledger = cascaded(TOP, exactly(".gl-ledger"));
+    expect(ledger.get("overflow")).toBe("auto");
+    // Its rows' screen-reader text (position: absolute) is placed against the ledger, not the page.
+    expect(ledger.get("position")).toBe("relative");
+    expect(ledger.get("max-height")).toBe("calc(100dvh - 48px)");
+    expect(ledger.get("min-height")).toBe("min(440px, calc(100dvh - 48px))");
+    const containing = [...TOP, ...narrow()]
+      .filter((rule) => rule.selectors.some((selector) => selector.startsWith(".gl-ledger")))
+      .flatMap((rule) => [...rule.declarations].filter(([property]) => property.startsWith("overscroll-behavior")));
+    expect(containing).toEqual([]);
+    // Under 900px the ledger keeps the bounds it had.
+    const phone = cascaded(narrow(), exactly(".gl-ledger"));
+    expect([phone.get("flex"), phone.get("min-height"), phone.get("max-height")]).toEqual(["none", "0", "70vh"]);
+  });
+});
+
 describe("GuestListPage.css: keyboard focus", () => {
   it("draws the house ring on a focused count button itself, and on nothing else for it", () => {
     const ring = cascaded(TOP, (selector) => selector === SHARED_RING || /\.gl-count__button:focus-visible$/u.test(selector));
