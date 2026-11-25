@@ -58,7 +58,10 @@ const ENQUIRY_CHUNK_BUDGET_GZIP_BYTES = 2_560;
 //   a contact reads only the supports and the ear, one reporter, dead code out, the nits: +123 B;
 //   a piece renamed by a save while it comes down: +117 B;
 //   other commits' shifts in the hashed names of the chunks the driver imports: -19 B.
-// Of the driver's 21,514 B, 1,375 B are Rollup's 81 hoisted bare imports of chunks the planner has loaded
+// The menu's new Full line then shifted a hashed name: 33,298 B. Fix round 3 (R107, a variant moved only
+// when its pan differs; R108, its slot looked at 1/30 s early) measured 33,253 B (Worker 11,773, driver
+// 21,480): -45 B, with 539 B of headroom.
+// Of the driver's 21,480 B, 1,374 B are Rollup's 81 hoisted bare imports of chunks the planner has loaded
 // already (output.hoistTransitiveImports, a global setting left alone here). Growth past 33 KB needs a
 // new ruling.
 const SET_DOWN_WORKER_CHUNK = /^set-down\.worker-[\w-]{8}\.js$/u;

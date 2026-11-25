@@ -49,7 +49,7 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
   | Recomputing reverberation times | ≤ 0.5 ms |
   | The tail | idle slices of ≤ 4 ms each, ≤ 150 ms in total; 1.2 x the longest band's reverberation time in seconds at any rate, its memory per rate stated in `tail.ts` (R46; the plan's first cap was 2 MB) |
   | Voices at once | ≤ 8 |
-  | Engine and data | ≤ 33 KB gzipped for the Worker's and the driver's chunks together, lazy with the planner (R101, R103, R106; the first figure was 25 KB, before the engine's rulings through R102 were built; R103's 32 KB held until fix round 2's fixes measured 33,287 B on 25 Nov 2026) |
+  | Engine and data | ≤ 33 KB gzipped for the Worker's and the driver's chunks together, lazy with the planner (R101, R103, R106; the first figure was 25 KB, before the engine's rulings through R102 were built; R103's 32 KB held until fix round 2's fixes measured 33,287 B on 25 Nov 2026; after fix round 3, 33,253 B) |
 - **This PC is short of memory** (system commit at 92–97 %). Run Vitest on single files (`pnpm --filter @omnitwin/web exec vitest run <file>`). CI runs the full suites. Check free memory before the ray tracer and any browser run (the house's `wait-memory.sh`, kept outside the repo).
 - **No edits** to `components/meshes/crafted/*` or `crafted-furniture.test.ts`: four T-675 PRs are open on them.
 - **Commits.** Commit with explicit pathspecs. Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never commit in the shared checkout that other sessions work in.
@@ -851,6 +851,7 @@ This folds in R57, R58, R62, R63 and R26, and covers D1, the policy, the wake, t
   - add the set-down path below it, and extend `__resetPlannerSoundForTests` (:979).
 - Modify `lib/planner-sound-recipes.ts`: `PLANNER_SOUND_IDS` (:17–31) and the recipes of `planner-set-table`, `planner-set-chair` and `planner-brush` are retired. `PLANNER_TOUCH_DB` (#416) is kept (R3, R4).
 - Modify `components/planner-chrome/SoundControl.tsx`: `SOUND_MODE_LINES.quiet` (:49) becomes "Pieces set down in the room, refusals, the evening, Present and Send."; `usePlannerSoundShortcut(onToggled?)` (:74).
+  - **Superseded on 25 Nov:** the lines now live in `components/shared/SoundSettingsCore.tsx` and name only what plays today (fix rounds 2 and 3). Read them there rather than copying the line above.
 - Modify `tools/set-down-listening/page.ts` (@cdf0734d :136–144): import the warm-up and cross-fade constants from the registry.
 - Test: update `lib/__tests__/planner-sound.test.ts` and `components/planner-chrome/__tests__/sound-control.test.tsx` (its default-dependent cases, as #357 does); create `lib/__tests__/planner-set-down-sound.test.ts`. Its `FakeContext` follows `planner-sound.test.ts` and adds `createConvolver`, a two-channel `createBuffer`, recorded `AudioParam` ramps, `outputLatency` and `baseLatency`, `sampleRate`, and `resume`/`suspend` promises.
 
@@ -1019,9 +1020,14 @@ export function createSetDownRenderer(options?: { readonly createWorker?: () => 
   - Otherwise the voice is skipped and logged as a miss (Q6, ruling R80).
   - **Fix round 2 (25 Nov):**
     - A cascade voice is due at its own slot, its contact plus its cascade wait. Its render is on time if ready by the slot, late within 45 ms after it, and a miss past that, both for what plays and for the policy. A voice answered after its contact but by its slot starts exactly as an on-time voice (R105).
-    - Variants come from any class rendering ahead (R100). Each plays as rendered only near where it was rendered; otherwise a copy moved to the landing plays (R104, in the known limits).
+    - Variants come from any class rendering ahead (R100). Each plays as rendered only where its pan is the landing's; otherwise a copy moved to the landing plays (R104, R107, in the known limits).
     - A contact reads only the supports and the direct sound, not the whole render input (whole-branch Minor 3).
     - A landing the registry refuses is logged on the tap as "refused" (Minor 2).
+  - **Fix round 3 (25 Nov):**
+    - A cascade voice's slot is looked at 1/30 s before it, measured from now (R108). A kept variant is then scheduled to start exactly at the slot, though its timer fires late within that lead.
+    - An exact render answered after that but by the slot is judged on time and only finishes the voice.
+    - One heard window holds for every voice: nothing starts more than 45 ms after its slot. A slot looked at later than that drops its voice as "too-late", variant or not.
+    - A variant plays as rendered when its pan matches the landing's (R107, in the known limits).
 - **Supports at contact.** They are re-read at contact for voiced ids. A changed `surfacesKey` takes a matching variant if there is one, or otherwise the drop-start render, logged as stale (Review Focus 5).
 - **Reduced motion.** A `landedInPlace` voice plays when its render answers, at `currentTime` (Q10, ruling R84).
 - **`pickedUp(id, true)`.** The Worker renders "ahead" variants: seeds 1–3, for the surfaces under the piece now and for the room's floor. They are asked again when the carried piece has moved more than 1 m or its supports change, checked at most every 250 ms. The cache is dropped when the room key changes.
@@ -1178,10 +1184,16 @@ This task does not wait on the gate.
   - Every change of room takes the old room's tail off the bus at once, faded over the 0.1 s cross-fade if it rings. So a set-down in the new room is dry until the new tail answers, never sent into the old room. The same holds when sound comes back on in a room changed while it was off.
   - This is to be measured on the device day.
 - **A cascade voice's window.** Each voice of a cascade is due at its own slot, up to about 0.7 s after its piece lands. Its render is on time if ready by the slot, and may arrive up to 45 ms after it (R105). The policy judges it the same way, so the cascade's own spacing is never read as a slow device.
+  - A kept variant stands in from 1/30 s before the slot, scheduled to start exactly at it (R108).
+  - Nothing starts more than 45 ms after its slot: a voice whose slot is reached later than that, behind a stalled main thread, is dropped and logged on the tap.
 - **Variants rendered ahead.** Heavy pieces render ahead at pickup (R48). Light and table pieces render ahead too once their class has switched (R100), at pickup and from the placement ghost. A variant is refreshed every metre and whenever the surfaces under it change.
   - A variant's key leaves position out, so the next piece of its kind may land anywhere.
-  - A kept variant plays as rendered only when its direct sound came from within 0.2 rad (measured round the ear) and 1.5 dB of the landing's, as heard at contact.
-  - Otherwise a copy moved to the landing plays (R104): un-panned on the engine's own equal-power law, panned to the landing's angle, at the landing's dry gain. Its early reflections stay those of where it was rendered. The exact render is never moved.
+  - Every voice plays at the landing's own dry gain, so a move changes only the pan. A kept variant plays as rendered when its pan is the landing's as heard at contact, its share to the right within sin 0.2 (R107). A front and a back position that mirror each other pan alike.
+  - Otherwise a copy moved to the landing plays (R104): un-panned on the engine's own equal-power law, panned to the landing's angle. The exact render is never moved.
+  - The moved copy's early reflections keep their delays and spectra, those of where it was rendered. But the move folds them into the landing's direction, so they lose their spread.
+    - The re-review measured reflections at −12.5 to +2.1 dB against the direct sound. Their left-right correlation was 0.36–0.89 before the move and 1 after it.
+    - Task 16's listening judges it.
+    - If it is heard, the remedy is a follow-up, not built now: a variant kept in two parts (a mono direct sound and stereo reflections, about 1.5 times the memory), so that only the direct sound moves.
   - Variants are a fallback by design.
 
 
