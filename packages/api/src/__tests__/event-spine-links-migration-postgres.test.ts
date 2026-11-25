@@ -845,6 +845,15 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
         return [["enquiry", "enquiry", enquiryId], ["deal", "opportunity", dealId],
           ["proposal", "proposal", await proposal(p, { dealId, plan: await planTo(p, y) })]];
       }],
+      // A worked open enquiry with nothing of its own reaching an event, its open deal, and a sent
+      // proposal naming only the deal whose plan reaches Y: the proposal is the deal's, not the enquiry's.
+      ["open enquiry, its deal's proposal names only the deal", async (p) => {
+        const y = named("Y", await event(p, "Y"));
+        const enquiryId = await enquiry(p, { replied: true });
+        const dealId = await deal(p, { stage: "qualified", enquiryId });
+        return [["enquiry", "enquiry", enquiryId], ["deal", "opportunity", dealId],
+          ["proposal", "proposal", await proposal(p, { dealId, plan: await planTo(p, y) })]];
+      }],
       // Near neighbours: each a worked open enquiry whose proposal reaches nothing that counts.
       ["a deleted proposal", async (p) => {
         const y = named("Y", await event(p, "Y"));
@@ -932,6 +941,13 @@ describe.skipIf(target === undefined)("the spine: the join of old records", () =
         listed: [["proposal", "paths_disagree", ["X", "Y"]]],
         count: { proposalsWithoutEvent: 1 }, records: {
           enquiry: { event: "X", join: joined("enquiry_bookings") }, deal: { event: "X", join: joined("enquiry") },
+          proposal: { event: null, join: null } } },
+      // Step 1 makes the enquiry's event and the deal joins it; the proposal, whose plan reaches Y, is
+      // listed with both rather than joined to either.
+      "open enquiry, its deal's proposal names only the deal": { made: 1,
+        listed: [["proposal", "paths_disagree", ["Y", "made"]]],
+        count: { proposalsWithoutEvent: 1 }, records: {
+          enquiry: { event: "made", join: ["new_event", true] }, deal: { event: "made", join: joined("enquiry") },
           proposal: { event: null, join: null } } },
       // The neighbours count for nothing: the enquiry gets an event of its own, and a live proposal joins it.
       "a deleted proposal": { made: 1, listed: [], count: {}, records: {
