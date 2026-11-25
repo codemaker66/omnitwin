@@ -27,14 +27,16 @@ export const SOUND_MODE_OPTIONS: readonly SoundModeOption[] = [
 ];
 
 /**
- * What each set plays, in the venue's words (spec 9's palette). Quiet names
- * only what plays today: the set-downs and a placement's refusal. Add the
- * evening, Present and Send to it as their sounds are wired.
+ * What each set plays, in the venue's words (spec 9's palette). Each line
+ * names only what plays today. Quiet plays the set-downs and a placement's
+ * refusal: add the evening, Present and Send to it as their sounds are wired.
+ * Full plays nothing more than Quiet yet: name pieces lifted, snaps,
+ * measurements and each hour in its line as those sounds are wired.
  */
 export const SOUND_MODE_LINES: Readonly<Record<PlannerSoundMode, string>> = {
   off: "Nothing plays.",
   quiet: "Pieces set down in the room, and a placement refused.",
-  full: "Quiet, with pieces lifted, snaps, measurements and each hour.",
+  full: "The same as Quiet, for now.",
 };
 
 /** What a chrome's own control for the three sets is given. */
