@@ -10,6 +10,7 @@ import {
   markPrinted,
   letterOf,
   groupAZ,
+  cardNameStep,
 } from "../paper.js";
 import { parsePaste, takeNames, type ParsedPaste } from "../parse-paste.js";
 
@@ -363,6 +364,23 @@ describe("placeCards", () => {
 
   it("makes 172 cards for the 172 seated guests", () => {
     expect(placeCards(list172of180()).length).toBe(172);
+  });
+});
+
+describe("cardNameStep", () => {
+  it("sets a card's name in three steps by its length in characters: up to 40, 41 to 60, 61 to 80", () => {
+    expect(cardNameStep("Ada Canary")).toBe(1);
+    expect(cardNameStep("x".repeat(40))).toBe(1);
+    expect(cardNameStep("x".repeat(41))).toBe(2);
+    expect(cardNameStep("x".repeat(60))).toBe(2);
+    expect(cardNameStep("x".repeat(61))).toBe(3);
+    expect(cardNameStep("Dame Wilhelmina Christabel Constance Featherstonehaugh Cholmondeley Marjoribanks")).toBe(3);
+  });
+
+  it("counts characters, not UTF-16 units, as the name limit does", () => {
+    // Forty characters of two UTF-16 units each: 80 units, still the first step.
+    expect(cardNameStep("👪".repeat(40))).toBe(1);
+    expect(cardNameStep("👪".repeat(41))).toBe(2);
   });
 });
 

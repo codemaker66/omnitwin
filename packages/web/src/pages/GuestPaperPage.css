@@ -512,6 +512,16 @@
   overflow-wrap: anywhere;
 }
 
+/* A longer name is set smaller, a step at a time by its length (data-step, from paper.ts cardNameStep), so a
+   name as long as a name may be stays inside its card, clear of the cut. */
+.gp-card__name[data-step="2"] {
+  font-size: clamp(15px, 1.5vw, 19px);
+}
+
+.gp-card__name[data-step="3"] {
+  font-size: clamp(14px, 1.3vw, 17px);
+}
+
 .gp-card__table {
   color: var(--reg-text-2);
   font: 600 14px/1 var(--house-sans);
@@ -666,6 +676,8 @@
   .gp-cards-page:not(:last-child) { break-after: page; }
   .gp-card { width: 90mm; height: 55mm; aspect-ratio: auto; gap: 3mm; padding: 6mm; background: none; box-shadow: none; break-inside: avoid; }
   .gp-card__name { font-size: 20pt; }
+  .gp-card__name[data-step="2"] { font-size: 16pt; }
+  .gp-card__name[data-step="3"] { font-size: 14pt; }
   .gp-card__table { font-size: 10.5pt; }
 
   /* Cut marks: a hairline corner at each of a card's four corners, on the cut

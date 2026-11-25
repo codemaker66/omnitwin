@@ -221,6 +221,24 @@ export function placeCards(list: GuestList): readonly { readonly name: string; r
     .map(({ guest, table }) => ({ name: guest.name, table: table.number }));
 }
 
+/** The longest name, in characters, a place card sets at its first size; and at its second. */
+const CARD_FIRST_SIZE_MAX = 40;
+const CARD_SECOND_SIZE_MAX = 60;
+
+/**
+ * The size a place card sets a name at, as a step: 1, 2 or 3, each smaller than the one before, by the
+ * name's length in characters (code points, as the name limit counts them). The page's stylesheet gives
+ * each step its size. Measured in Chromium with the page's own face on a printed A4 card, the card less its
+ * margin: the first size (20 pt) holds every name up to 40 characters, capitals included; the second
+ * (16 pt) up to 60; the third (14 pt) any name up to the 80 a name may have, unbroken capitals included.
+ */
+export function cardNameStep(name: string): 1 | 2 | 3 {
+  const length = Array.from(name).length;
+  if (length <= CARD_FIRST_SIZE_MAX) return 1;
+  if (length <= CARD_SECOND_SIZE_MAX) return 2;
+  return 3;
+}
+
 // ---------------------------------------------------------------------------
 // Printing
 // ---------------------------------------------------------------------------

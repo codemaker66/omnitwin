@@ -217,6 +217,28 @@ describe("the paper page's stylesheet, on paper", () => {
     expect(pt(cascaded(print, ".gp-card__name").get("font-size"))).toBeGreaterThanOrEqual(18);
   });
 
+  it("sets a place card's name smaller in three steps by its length (paper.ts, cardNameStep), on paper and on screen", () => {
+    // Measured in Chromium with Newsreader on a print-emulated A4 card (the card less its 6 mm padding): 20 pt
+    // holds every name up to 40 characters, capitals included; 16 pt up to 60; 14 pt any name up to 80.
+    const steps = [".gp-card__name", ".gp-card__name[data-step=\"2\"]", ".gp-card__name[data-step=\"3\"]"];
+    expect(steps.map((selector) => pt(cascaded(print, selector).get("font-size")))).toEqual([20, 16, 14]);
+    // On screen the same three steps, each smaller than the one before, none under 14 px.
+    const largest = steps.map((selector) => {
+      const declared = cascaded(screen, selector);
+      return Math.max(...pxIn(declared.get("font-size") ?? declared.get("font") ?? ""));
+    });
+    expect(largest[0]).toBeGreaterThan(largest[1] ?? Number.POSITIVE_INFINITY);
+    expect(largest[1]).toBeGreaterThan(largest[2] ?? Number.POSITIVE_INFINITY);
+  });
+
+  it("lets a name with no space in it wrap anywhere, so it cannot run off its card", () => {
+    expect(cascaded(screen, ".gp-card__name").get("overflow-wrap")).toBe("anywhere");
+    for (const rule of print.filter((candidate) => candidate.selectors.some((selector) => selector.startsWith(".gp-card__name")))) {
+      expect(rule.declarations.get("overflow-wrap") ?? "anywhere").toBe("anywhere");
+      expect(rule.declarations.get("white-space") ?? "normal").toBe("normal");
+    }
+  });
+
   it("sets every name and fact at 14 px or more on screen and 10.5 pt or more on paper", () => {
     // The names and facts a reader takes from the page, each with a size of its
     // own. The version is the sheet's foot on screen and the repeated footer on paper.
