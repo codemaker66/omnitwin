@@ -45,10 +45,24 @@ const ENQUIRY_CHUNK = /^enquiry-[\w-]{8}\.js$/u;
 const ENQUIRY_CHUNK_BUDGET_GZIP_BYTES = 2_560;
 // The set-down engine's two chunks (T-700): the Worker (dist/assets/set-down.worker-<hash>.js) and the
 // driver the scene imports lazily (set-down-driver-<hash>.js). The plan's budget for engine and data is
-// one total for both (R101). R103 set it at 32 KB: with nothing duplicated, the engine as ruled through
-// R102 measured 31,827 B on 22 Nov 2026 (Worker 11,759, driver 20,068). The first figure was 25 KB.
+// one total for both (R101). The first figure was 25 KB. R103 set it at 32 KB: with nothing duplicated,
+// the engine as ruled through R102 measured 31,827 B on 22 Nov 2026 (Worker 11,759, driver 20,068).
+// The master merges of 23 and 25 Nov brought master's own engine data (the Robert Adam Room's outline,
+// the tail bins): 32,424 B (Worker 11,768, driver 20,656), 344 B under it.
+// R106 set it at 33 KB (33,792 B) after fix round 2, at 33,287 B (Worker 11,773, driver 21,514), each
+// fix built from its commit's own source (gzip of both chunks, as below):
+//   R105, a cascade voice judged at its own slot: +185 B;
+//   R104, a far variant moved to where its piece lands: +391 B (the driver +386, the Worker +5);
+//   the Worker's readiness, refusals on the tap, the bus cleared at every room change, a ghost changing
+//     class: +66 B;
+//   a contact reads only the supports and the ear, one reporter, dead code out, the nits: +123 B;
+//   a piece renamed by a save while it comes down: +117 B;
+//   other commits' shifts in the hashed names of the chunks the driver imports: -19 B.
+// Of the driver's 21,514 B, 1,375 B are Rollup's 81 hoisted bare imports of chunks the planner has loaded
+// already (output.hoistTransitiveImports, a global setting left alone here). Growth past 33 KB needs a
+// new ruling.
 const SET_DOWN_WORKER_CHUNK = /^set-down\.worker-[\w-]{8}\.js$/u;
-const SET_DOWN_TOTAL_BUDGET_GZIP_BYTES = 32 * 1024;
+const SET_DOWN_TOTAL_BUDGET_GZIP_BYTES = 33 * 1024;
 
 /**
  * The chunks a built chunk imports statically, in every form Rollup writes:
@@ -179,10 +193,10 @@ describe("twin chunk budgets", () => {
 
   // The set-down sound (T-700): the engine and its data load lazily with the
   // planner, in two chunks, which together stay within the plan's budget for
-  // "engine and data", 32 KB gzip (R101, R103). The Worker's chunk renders
+  // "engine and data", 33 KB gzip (R101, R103, R106). The Worker's chunk renders
   // every set-down and tail; the driver's is the scene's half, imported at the
   // planner's first idle (R78). Growth past the budget needs a new ruling.
-  it.skipIf(!hasTwinBuild)("keeps the set-down engine's Worker chunk and its driver's chunk within 32 KB gzip together", async () => {
+  it.skipIf(!hasTwinBuild)("keeps the set-down engine's Worker chunk and its driver's chunk within 33 KB gzip together", async () => {
     const workers = readdirSync(ASSETS_DIR).filter((name) => SET_DOWN_WORKER_CHUNK.test(name));
     const drivers = jsChunks("set-down-driver");
     // Exactly one of each: with none the module has moved, and this would measure nothing.

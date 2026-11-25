@@ -295,7 +295,7 @@ The policy's limits (eight a second, collapse at four within 250 ms) still bound
 | Recomputing reverberation times on a content change | ≤ 0.5 ms |
 | Synthesising the late tail | Off the frame (a worker, or idle chunks of ≤ 4 ms each); ≤ 150 ms in total; long enough for 1.2 × the longest band's reverberation time of any room state, a length in seconds at any sample rate (R46), with its memory per rate stated in `tail.ts` |
 | Voices at once | ≤ 8 (the policy) |
-| Bundle | Lazy-loaded with the planner; no recorded audio; at most 32 KB gzipped for the engine and data, its two lazy chunks together (R103; the first figure, 25 KB, came before the engine's later rulings were built) |
+| Bundle | Lazy-loaded with the planner; no recorded audio; at most 33 KB gzipped for the engine and data, its two lazy chunks together (R106; the first figure, 25 KB, came before the engine's later rulings were built, and R103's 32 KB before part 3's last fixes) |
 
 **Rendering at the drop, in a Worker** (ruling R48, amending R30; replaces the earlier "≤ 2 ms on the main thread"):
 - **When the drop starts, a Worker renders the set-down, then transfers its Float32 channels back.** Nothing renders on the main thread.
