@@ -40,6 +40,12 @@ vi.mock("../hooks/use-media-query.js", () => ({
   useIsCoarsePointer: () => false,
   useIsNarrowViewport: () => media.mobile,
 }));
+// The HUD asks for a room's gangway design in an idle moment (lib/hud/room-seals.ts). The real one, counted, so the
+// tests at the foot of this file can say who asks for it and who never does.
+vi.mock("../lib/hud/room-seals.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../lib/hud/room-seals.js")>();
+  return { ...real, warmGangwayDesignWhenIdle: vi.fn(real.warmGangwayDesignWhenIdle) };
+});
 
 const { EditorPage } = await import("../pages/EditorPage.js");
 const { useEditorStore } = await import("../stores/editor-store.js");
@@ -47,6 +53,8 @@ const { useCockpitStore } = await import("../stores/cockpit-store.js");
 const { usePlannerHudStore } = await import("../stores/planner-hud-store.js");
 const { PLANNER_CHROME_STORAGE_KEY, mountedPlannerChrome } = await import("../lib/planner-chrome-flag.js");
 const { setPlannerChromeFeatures, setPlannerFeaturesForTesting } = await import("../lib/planner-features.js");
+const { warmGangwayDesignWhenIdle } = await import("../lib/hud/room-seals.js");
+const { rememberTradesHallVenue, resetTradesHallVenueReads } = await import("../hooks/use-trades-hall-venue.js");
 const originalLoadConfiguration = useEditorStore.getState().loadConfiguration;
 // The page loads the HUD lazily; having it in the module cache keeps its first transform out of the tests' waits.
 await import("../components/planner-hud/PlannerHud.js");
@@ -206,5 +214,46 @@ describe("the other chromes beside the HUD", () => {
     expect(screen.queryByTestId("mock-hud-room")).toBeNull();
     expect(screen.getAllByTestId("editor-bridge")).toHaveLength(1);
     for (const v1 of V1_SURFACES) expect(screen.queryByTestId(v1), v1).toBeNull();
+  });
+});
+
+// The HUD works a room's gangway design out in an idle moment, before a layout needs it. That is the HUD's own
+// doing: with a room known, it asks; today's planner and the second chrome never do, so nothing of it runs for a
+// planner without the flag.
+describe("the room's gangway design, worked out in an idle moment", () => {
+  const A_ROOM = {
+    id: "space-grand-hall", venueId: "venue-trades-hall", name: "Grand Hall", slug: "grand-hall",
+    widthM: "21", lengthM: "10.5", heightM: "7",
+    floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
+  };
+  const asked = vi.mocked(warmGangwayDesignWhenIdle);
+
+  beforeEach(() => {
+    rememberTradesHallVenue(A_ROOM.venueId, true);
+    useEditorStore.setState({ space: A_ROOM });
+    asked.mockClear();
+  });
+
+  afterEach(() => {
+    useEditorStore.setState({ space: null });
+    resetTradesHallVenueReads();
+  });
+
+  it("is asked for by the HUD, once it knows the room", async () => {
+    openPlanner("?chrome=hud");
+    await hudOnScreen();
+    await waitFor(() => { expect(asked).toHaveBeenCalledWith(expect.anything(), "grand-hall"); });
+  });
+
+  it("is never asked for by today's planner", async () => {
+    openPlanner();
+    await waitFor(() => { expect(screen.getByTestId("planner-cockpit")).toBeTruthy(); });
+    expect(asked).not.toHaveBeenCalled();
+  });
+
+  it("is never asked for by the second chrome", async () => {
+    openPlanner("?chrome=v2");
+    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); }, { timeout: CHUNK_MS });
+    expect(asked).not.toHaveBeenCalled();
   });
 });
