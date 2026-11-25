@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { JobWorkerStatus } from "@omnitwin/types";
 import type { Database } from "../../db/client.js";
 import type { JobAlerts } from "./alerts.js";
@@ -12,6 +13,7 @@ import {
   type JobTransaction,
 } from "./kinds.js";
 import {
+  CLAIM_MARGIN_SECONDS,
   claimNextJob,
   failJob,
   finishJob,
@@ -34,7 +36,10 @@ import {
 // job and the next boundary (with 60 minutes, the top of the hour). It does
 // not poll: between passes it asks the database nothing. It wakes when that
 // timer fires, when it starts, and when poked by work this process has just
-// committed. Pokes that come while a pass runs fold into one more pass.
+// committed. Pokes that come while a pass runs fold into one more pass. Every
+// pass begins in the async context the worker was built in (start-up, with no
+// request), so a poke made inside a request lends that request's context to
+// nothing the pass does: not its handlers, its alerts or its next timer.
 //
 // Node cannot stop a running function, and neither the database driver nor a
 // provider's library times out by itself, so nothing the worker waits for is
@@ -145,6 +150,18 @@ function promiseOf<T>(start: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Runs `act`, which logs or alerts from a callback nobody awaits. A throw
+ * there would be a stray rejection, which ends the server, so it is dropped.
+ */
+function quietly(act: () => void): void {
+  try {
+    act();
+  } catch {
+    // The logger or a reporter itself failed: nothing is left to tell.
+  }
+}
+
+/**
  * Waits for `promise` for at most `ms`. Its handlers are attached before the
  * race begins, so whatever it does after losing goes to `late`, never to an
  * unhandled rejection. The timer is cleared when the promise answers in time,
@@ -161,11 +178,11 @@ function withLimit<T>(
   promise.then(
     (value) => {
       clearTimeout(timer);
-      if (!answer.give({ outcome: "answered", value })) late.value(value);
+      if (!answer.give({ outcome: "answered", value })) quietly(() => { late.value(value); });
     },
     (error: unknown) => {
       clearTimeout(timer);
-      if (!answer.give({ outcome: "failed", error })) late.failure(error);
+      if (!answer.give({ outcome: "failed", error })) quietly(() => { late.failure(error); });
     },
   );
   return answer.promise;
@@ -233,6 +250,11 @@ export class JobWorker {
   readonly #setTimer: (callback: () => void, ms: number) => unknown;
   readonly #clearTimer: (handle: unknown) => void;
   readonly #yieldToLoop: () => Promise<void>;
+  /**
+   * The async context the worker was built in (start-up, with no request).
+   * Every pass begins in it, so nothing a pass does runs in a poker's context.
+   */
+  readonly #inOwnContext = AsyncLocalStorage.snapshot();
 
   #started = false;
   /** stop() was called: take nothing new and set no timer. A stopped worker stays stopped. */
@@ -268,6 +290,14 @@ export class JobWorker {
     this.#alerts = deps.alerts;
     this.#sleepMinutes = sleepMinutes;
     this.#dbCallTimeoutMs = checkedMs(deps.dbCallTimeoutMs ?? DEFAULT_DB_CALL_TIMEOUT_MS, "dbCallTimeoutMs");
+    if (this.#dbCallTimeoutMs >= CLAIM_MARGIN_SECONDS * 1000) {
+      // A claim lasts the kind's limit plus the margin, counted from the claim's own statement. The handler
+      // starts when the claim answers, up to this limit later, and is waited for until the kind's limit. Only
+      // while this limit is under the margin has the worker always stopped waiting before the claim runs out.
+      throw new RangeError(
+        `dbCallTimeoutMs must be under the claim's margin of ${String(CLAIM_MARGIN_SECONDS * 1000)} ms: a claim answered later than that could outlive its own lease`,
+      );
+    }
     this.#faultRetryMs = checkedMs(deps.faultRetryMs ?? DEFAULT_FAULT_RETRY_MS, "faultRetryMs");
     this.#lostClaimPauseSeconds = lostClaimPauseSeconds;
     this.#afterPass = deps.afterPass;
@@ -335,7 +365,9 @@ export class JobWorker {
     }
     if (this.#passQueued) return;
     this.#passQueued = true;
-    queueMicrotask(() => { this.#beginCycle(); });
+    // The microtask would run in the caller's async context (a request's, for a poke), and the pass, its
+    // handlers, alerts and next timer would inherit it. It runs in the worker's own instead.
+    queueMicrotask(() => { this.#inOwnContext(() => { this.#beginCycle(); }); });
   }
 
   #beginCycle(): void {
@@ -357,8 +389,18 @@ export class JobWorker {
       } while (this.#hasPendingPoke() && !this.#isStopping());
     } catch {
       // #onePass answers every failure of a pass itself; this is reached only if
-      // that answer threw (the logger, say). Show a fault and try again later.
-      this.#fault ??= "loop";
+      // that answer threw (the logger, say). Show a fault, tell a person once,
+      // and try again later. Not through #alert, whose catch logs, and the
+      // logger may be what threw: this catch must never throw, because
+      // #cycleDone is awaited only by a stop.
+      if (this.#fault === null) {
+        this.#fault = "loop";
+        try {
+          this.#alerts.workerFault("loop", "The worker's own handling of a failed pass threw.");
+        } catch {
+          // The reporter failed too: the fault shows in the status, and nothing is left to tell.
+        }
+      }
       waitMs = this.#faultRetryMs;
     }
     this.#passRunning = false;
@@ -460,12 +502,19 @@ export class JobWorker {
       promiseOf(() => definition.run(context)).then(
         () => {
           if (!answer.give({ kind: "returned" })) {
-            this.#logger.info(jobFields(job), "an abandoned handler finished after the worker stopped waiting for it");
+            quietly(() => {
+              this.#logger.info(jobFields(job), "an abandoned handler finished after the worker stopped waiting for it");
+            });
           }
         },
         (error: unknown) => {
           if (!answer.give({ kind: "threw", error })) {
-            this.#logger.warn({ ...jobFields(job), error: jobErrorText(error) }, "an abandoned handler failed after the worker stopped waiting for it");
+            quietly(() => {
+              this.#logger.warn(
+                { ...jobFields(job), error: jobErrorText(error) },
+                "an abandoned handler failed after the worker stopped waiting for it",
+              );
+            });
           }
         },
       );
@@ -516,22 +565,39 @@ export class JobWorker {
     }
   }
 
-  /** Records a failed try. If that fails for any reason, once more on the usual wait: no claim is left standing. */
+  /**
+   * Records a failed try. If that fails for any reason, once more on the usual wait: no claim is left standing.
+   * Either call may be the one that recorded it, even one that answered after the worker stopped waiting for
+   * it, so whichever answer brings "dead" or "queued" first is told, once: a job that went dead always raises
+   * its alert.
+   */
   async #fail(job: ClaimedJob, text: string, options: FailOptions): Promise<void> {
+    // An object, not a `let`: the type checker cannot see a closure set it, and would read `told` as always false.
+    const said = { told: false };
+    const tell = (outcome: FailOutcome): void => {
+      if (outcome === "lost" || said.told) return;
+      said.told = true;
+      if (outcome === "dead") {
+        this.#logger.error({ ...jobFields(job), error: text }, "a job is dead");
+        this.#alert(() => { this.#alerts.jobDead({ id: job.id, kind: job.kind, venueId: job.venueId, reason: text }); });
+      } else {
+        this.#logger.warn({ ...jobFields(job), error: text }, "a job failed and will be tried again");
+      }
+    };
     let outcome: FailOutcome;
     try {
-      outcome = await this.#query("failJob", () => failJob(this.#db, job.id, job.claimToken, text, options));
+      outcome = await this.#query("failJob", () => failJob(this.#db, job.id, job.claimToken, text, options), tell);
     } catch (error: unknown) {
       this.#logger.warn({ ...jobFields(job), error: jobErrorText(error) }, "recording a failed try failed; trying once more with the usual wait");
-      outcome = await this.#query("failJob", () => failJob(this.#db, job.id, job.claimToken, text, { permanent: options.permanent }));
+      outcome = await this.#query(
+        "failJob",
+        () => failJob(this.#db, job.id, job.claimToken, text, { permanent: options.permanent }),
+        tell,
+      );
     }
-    if (outcome === "dead") {
-      this.#logger.error({ ...jobFields(job), error: text }, "a job is dead");
-      this.#alert(() => { this.#alerts.jobDead({ id: job.id, kind: job.kind, venueId: job.venueId, reason: text }); });
-    } else if (outcome === "lost") {
-      this.#logger.warn(jobFields(job), "a failed try was not recorded: the claim had gone");
-    } else {
-      this.#logger.warn({ ...jobFields(job), error: text }, "a job failed and will be tried again");
+    tell(outcome);
+    if (outcome === "lost" && !said.told) {
+      this.#logger.warn(jobFields(job), "a failed try was not recorded by this call: the claim had gone, or an earlier call recorded it");
     }
   }
 
@@ -545,13 +611,17 @@ export class JobWorker {
   #handBackLate(job: ClaimedJob): void {
     handBackJob(this.#db, job.id, job.claimToken).then(
       (handedBack) => {
-        this.#logger.warn({ ...jobFields(job), handedBack }, "a claim answered after its limit; its job was handed back");
+        quietly(() => {
+          this.#logger.warn({ ...jobFields(job), handedBack }, "a claim answered after its limit; its job was handed back");
+        });
       },
       (error: unknown) => {
-        this.#logger.warn(
-          { ...jobFields(job), error: jobErrorText(error) },
-          "a claim answered after its limit and its job could not be handed back; the claim will run out",
-        );
+        quietly(() => {
+          this.#logger.warn(
+            { ...jobFields(job), error: jobErrorText(error) },
+            "a claim answered after its limit and its job could not be handed back; the claim will run out",
+          );
+        });
       },
     );
   }

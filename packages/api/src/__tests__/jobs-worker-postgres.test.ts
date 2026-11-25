@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -70,6 +71,9 @@ const FAR_BOUNDARY_MINUTES = 10_000_000;
 
 const never = new Promise<never>(() => undefined);
 
+/** Stands for a request's async context (Sentry's scope lives in one like it). The worker must never run in one. */
+const requestContext = new AsyncLocalStorage<string>();
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
@@ -86,6 +90,8 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the worker", () => {
   const timers: FakeTimer[] = [];
   const logs: LogEntry[] = [];
   const ran: number[] = [];
+  /** Where something ran, and the request context it saw there. */
+  const seen: (readonly [string, string | undefined])[] = [];
   const upcoming: StatementPlan[] = [];
   let broken = false;
   let alerts = recordingJobAlerts();
@@ -266,9 +272,21 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the worker", () => {
       throw notAnError;
     },
   });
+  /** Records the request context its handler runs in. */
+  const context = defineJobKind({
+    kind: "test.context",
+    version: 1,
+    scope: "platform",
+    timeoutMs: 1000,
+    payload: z.object({}).strict(),
+    handler: (): Promise<void> => {
+      seen.push(["handler", requestContext.getStore()]);
+      return Promise.resolve();
+    },
+  });
   const registry = buildJobRegistry([
     effect, hangs, rejectsLate, alwaysThrows, permanent, retryLater, claimLost, commits, loses, shaped,
-    waitsForRelease, pokes, throwsAtOnce, throwsText,
+    waitsForRelease, pokes, throwsAtOnce, throwsText, context,
   ]);
 
   // ---- The doubles -------------------------------------------------------
@@ -324,6 +342,15 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the worker", () => {
     warn: (obj, msg) => { logs.push({ level: "warn", obj, msg }); },
     error: (obj, msg) => { logs.push({ level: "error", obj, msg }); },
   };
+
+  /** The suite's logger, except that `level` throws, after recording, on a message that begins with `prefix`. */
+  function loggerThatThrows(level: LogEntry["level"], prefix: string): JobLogger {
+    const writeAt = (at: LogEntry["level"]) => (obj: Record<string, unknown>, msg?: string): void => {
+      logs.push({ level: at, obj, msg });
+      if (at === level && msg?.startsWith(prefix) === true) throw new Error("The logger itself failed.");
+    };
+    return { info: writeAt("info"), warn: writeAt("warn"), error: writeAt("error") };
+  }
 
   const countPass = (): Promise<void> => {
     passes.count += 1;
@@ -455,6 +482,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the worker", () => {
     timers.length = 0;
     logs.length = 0;
     ran.length = 0;
+    seen.length = 0;
     upcoming.length = 0;
     broken = false;
     alerts = recordingJobAlerts();
@@ -816,7 +844,76 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the worker", () => {
     expect(() => makeWorker({ sleepMinutes: 0 })).toThrow(RangeError);
     expect(() => makeWorker({ sleepMinutes: Number.NaN })).toThrow(RangeError);
     expect(() => makeWorker({ dbCallTimeoutMs: 0 })).toThrow(RangeError);
+    // Its own calls' limit must be under the claim's margin (15 s), or a claim could outlive its lease.
+    expect(() => makeWorker({ dbCallTimeoutMs: 15_000 })).toThrow(RangeError);
     expect(() => makeWorker({ faultRetryMs: Number.POSITIVE_INFINITY })).toThrow(RangeError);
     expect(() => makeWorker({ lostClaimPauseSeconds: -1 })).toThrow(RangeError);
+  });
+
+  // ---- The final review: context, a late dead answer, a logger that throws ----
+
+  it("a poke made inside a request's context lends the worker nothing", async () => {
+    const where = (place: string): void => { seen.push([place, requestContext.getStore()]); };
+    worker = makeWorker({
+      afterPass: () => { where("afterPass"); return Promise.resolve(); },
+      alerts: { ...alerts, jobDead: (job) => { where("jobDead"); alerts.jobDead(job); } },
+    });
+    worker.start(); await idle(worker);
+    await enqueueJob(db, context, { key: "context", payload: {} });
+    await enqueueJob(db, permanent, { key: "dies", payload: {} });
+    requestContext.run("a request", () => { worker.poke(); });
+    await idle(worker);
+    // The suite's timers carry no context, as Node's do: firing one inside `run` stands in for a
+    // timer that was created during a request.
+    requestContext.run("a later request", () => { timers.at(-1)?.fire(); });
+    await idle(worker);
+    expect(await stateOfKey("context")).toBe("done");
+    expect(await stateOfKey("dies")).toBe("dead");
+    // The handler, the alert and afterPass were each reached, and none saw a request's context.
+    expect(new Set(seen.map(([place]) => place))).toEqual(new Set(["handler", "jobDead", "afterPass"]));
+    expect(seen.length).toBeGreaterThanOrEqual(4);
+    expect(seen.filter(([, store]) => store !== undefined)).toEqual([]);
+  });
+
+  it("a job that goes dead on a call the worker had stopped waiting for still raises its alert", async () => {
+    await pool.query("SELECT 1");
+    await enqueueJob(db, permanent, { key: "dies-late", payload: {} });
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { open = () => { resolve(); }; });
+    // Recovery answers at once, the claim runs, and both failJob statements are held past the limit.
+    upcoming.push("nothing", "run", gate, gate);
+    worker = makeWorker({ dbCallTimeoutMs: 500 }); worker.start(); await idle(worker);
+    expect(worker.status().fault).toBe("database");
+    expect(alerts.calls.filter(([name]) => name === "jobDead")).toEqual([]);
+    open();                                           // both statements now reach the database; one wins the row
+    await eventually(() => Promise.resolve(alerts.calls.some(([name]) => name === "jobDead")));
+    await eventually(async () => (await stateOfKey("dies-late")) === "dead");
+    await sleep(200);                                 // the other answer ("lost") has come back too
+    expect(alerts.calls.filter(([name]) => name === "jobDead")).toEqual([
+      ["jobDead", { id: (await rowOfKey("dies-late")).id, kind: "test.permanent", venueId: null, reason: "This can never work." }],
+    ]);
+    expect(logs.filter((entry) => entry.msg === "a job is dead")).toHaveLength(1);
+  });
+
+  it("a logger that throws in a late callback ends nothing", async () => {
+    const stray = vi.fn(); process.on("unhandledRejection", stray);
+    worker = makeWorker({ logger: loggerThatThrows("warn", "an abandoned handler failed") });
+    await enqueueJob(db, rejectsLate, { key: "late-and-loud", payload: {} });
+    worker.start(); await idle(worker); await sleep(250);
+    process.off("unhandledRejection", stray);
+    // The handler did fail late, and the logger did throw on it.
+    expect(logs.some((entry) => entry.msg?.startsWith("an abandoned handler failed") === true)).toBe(true);
+    expect(stray).not.toHaveBeenCalled();
+  });
+
+  it("a pass whose own failure handling throws is a loop fault, with its alert", async () => {
+    worker = makeWorker({ logger: loggerThatThrows("error", "a job worker pass failed") });
+    breakDatabase();
+    worker.start(); await idle(worker);
+    expect(alerts.calls.filter(([name]) => name === "workerFault")).toEqual([
+      ["workerFault", { what: "loop", detail: "The worker's own handling of a failed pass threw." }],
+    ]);
+    expect(worker.status().fault).toBe("loop");
+    expect(timers.at(-1)?.ms).toBe(60_000);
   });
 });
