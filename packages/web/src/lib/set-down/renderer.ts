@@ -95,6 +95,12 @@ export interface SetDownRenderer {
   dispose(): void;
   /** True once a Worker error or a missed answer has stopped it. */
   readonly broken: boolean;
+  /**
+   * True once the Worker has said it is ready: its script loaded and
+   * evaluated. A job asked for before then waited for the Worker's start-up
+   * as well as its own render.
+   */
+  readonly ready: boolean;
 }
 
 export type SetDownCancelReason = "cancelled" | "replaced" | "disposed";
@@ -361,6 +367,10 @@ function rendererOn(worker: WorkerLike): SetDownRenderer {
   return {
     get broken() {
       return brokenBy !== null;
+    },
+
+    get ready() {
+      return ready;
     },
 
     render(input, priority, key) {

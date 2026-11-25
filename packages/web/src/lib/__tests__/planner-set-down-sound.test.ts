@@ -9,6 +9,7 @@ import {
   __resetPlannerSoundForTests,
   armPlannerSound,
   beginSetDownBatch,
+  clearPlannerRoomTail,
   logSetDownDrop,
   plannerAudioClock,
   setPlannerRoomTail,
@@ -604,6 +605,43 @@ describe("the room's tail", () => {
     expect(vi.getTimerCount(), "no release timer").toBe(0);
   });
 
+  it("takes the tail off the bus, fading it out over the cross-fade, so the room is dry until the next tail, which goes in at once", () => {
+    vi.useFakeTimers();
+    expect(() => { clearPlannerRoomTail(); }, "nothing to clear before the first gesture").not.toThrow();
+    armPlannerSound();
+    clearPlannerRoomTail();
+    expect(context.convolvers, "no tail yet: nothing to clear").toHaveLength(1);
+    expect(setPlannerRoomTail(stereo(48000, 5, 128), "grand-hall/empty")).toBe(true);
+    const firstConvolver = context.convolvers[1];
+    const firstFade = fadeAfter(firstConvolver);
+    const roomBus = feeding(firstConvolver);
+    context.currentTime = 4;
+    clearPlannerRoomTail();
+    const ramp = firstFade.gain.events.filter((event) => event.kind === "ramp");
+    expect(ramp.map((event) => event.value)).toEqual([0]);
+    expect(ramp[0]?.at).toBeCloseTo(4 + PLANNER_ROOM_CROSSFADE_SECONDS, 12);
+    vi.advanceTimersByTime(PLANNER_ROOM_RELEASE_SECONDS * 1000);
+    expect(roomBus.disconnections).toEqual([firstConvolver]);
+    expect(firstFade.disconnections).toEqual(["all"]);
+    // The next tail finds the bus dry: in at once, nothing to cross-fade from.
+    expect(setPlannerRoomTail(stereo(48000, 6, 128), "saloon/empty")).toBe(true);
+    const secondFade = fadeAfter(context.convolvers[2]);
+    expect(secondFade.gain.value).toBe(1);
+    expect(secondFade.gain.events).toEqual([]);
+  });
+
+  it("takes the tail off at once while the context is suspended", () => {
+    vi.useFakeTimers();
+    armPlannerSound();
+    expect(setPlannerRoomTail(stereo(48000, 5, 128), "grand-hall/empty")).toBe(true);
+    const firstConvolver = context.convolvers[1];
+    const roomBus = feeding(firstConvolver);
+    context.state = "suspended";
+    clearPlannerRoomTail();
+    expect(roomBus.disconnections).toEqual([firstConvolver]);
+    expect(vi.getTimerCount(), "no release timer on a stopped clock").toBe(0);
+  });
+
   it("refuses a tail at another rate than the context's and keeps the one it has", () => {
     armPlannerSound();
     expect(setPlannerRoomTail(stereo(48000, 5), "grand-hall/empty")).toBe(true);
@@ -779,6 +817,17 @@ describe("the clock, arming and the tap", () => {
     logSetDownDrop({ drop: "too-late", slug: "chiavari-chair", contactMs: 1033.3, workMs: 61 });
     expect(tap?.drops).toEqual([{ drop: "not-loaded" }, { drop: "too-late", slug: "chiavari-chair", contactMs: 1033.3, workMs: 61 }]);
     expect(tap?.log, "a dropped landing is never a played voice").toHaveLength(1);
+  });
+
+  it("logs each voice's render onset and the output's latency, with ?soundtap=1, so R80's window can be checked from the tap", () => {
+    window.history.replaceState(null, "", "/plan/stub?soundtap=1");
+    armPlannerSound();
+    const batch = beginSetDownBatch(2);
+    batch?.play(voice({ render: { ...stereo(48000, 1), onsetSeconds: 0.004 }, tap: { slug: "chiavari-chair", surface: "oak-floor", rtMid: 2.1, contactMs: 83.3 } }));
+    expect(window.__venSoundTap?.log[0]).toMatchObject({ onsetSeconds: 0.004, outputLatency: 0.012 });
+    context.outputLatency = undefined;
+    batch?.play(voice({ render: { ...stereo(48000, 1), onsetSeconds: 0.03 } }));
+    expect(window.__venSoundTap?.log[1], "no output latency: the base latency, as the clock reads it").toMatchObject({ onsetSeconds: 0.03, outputLatency: 0.005 });
   });
 
   it("drops nothing on the floor without the flag: a dropped landing is simply not logged", () => {

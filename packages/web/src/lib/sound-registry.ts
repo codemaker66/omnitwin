@@ -1224,7 +1224,7 @@ function playSetDownVoice(live: PlannerLive, voice: SetDownVoice, warmup: BatchW
   restartPlannerSilenceTimer();
   const { context } = live;
   if (context.state === "running") {
-    startSetDownVoice(live.graph, voice, levelDb, voice.startAt + warmup.shiftAt(context.currentTime, nowMs));
+    startSetDownVoice(live.graph, voice, levelDb, voice.startAt + warmup.shiftAt(context.currentTime, nowMs), plannerOutputLatency(context));
     return;
   }
   // A stopped clock (the 20 s silence rule, or a context made suspended): wait
@@ -1243,7 +1243,7 @@ function playSetDownVoice(live: PlannerLive, voice: SetDownVoice, warmup: BatchW
       logSetDownMiss(voice, levelDb, voice.startAt + shift, miss);
       return;
     }
-    startSetDownVoice(live.graph, voice, levelDb, context.currentTime + Math.max(0, leadSeconds + shift - waitedMs / 1000));
+    startSetDownVoice(live.graph, voice, levelDb, context.currentTime + Math.max(0, leadSeconds + shift - waitedMs / 1000), plannerOutputLatency(context));
   }, () => {
     // The device would not resume, so nothing can play; the miss is logged where the voice was aimed on the stopped clock.
     if (plannerLive === live) logSetDownMiss(voice, levelDb, voice.startAt, "resume-rejected");
@@ -1251,11 +1251,21 @@ function playSetDownVoice(live: PlannerLive, voice: SetDownVoice, warmup: BatchW
 }
 
 function logSetDownMiss(voice: SetDownVoice, levelDb: number, aimedAt: number, miss: SetDownMiss): void {
-  plannerTap?.log.push({ startAt: aimedAt, levelDb, directGain: voice.directGain, send: voice.send, ...voice.tap, miss });
+  const context = plannerLive?.context;
+  plannerTap?.log.push({
+    startAt: aimedAt,
+    levelDb,
+    directGain: voice.directGain,
+    send: voice.send,
+    onsetSeconds: voice.render.onsetSeconds,
+    ...(context === undefined ? {} : { outputLatency: plannerOutputLatency(context) }),
+    ...voice.tap,
+    miss,
+  });
 }
 
-/** One voice: its level, then a dry gain into the master and a send into the room bus. */
-function startSetDownVoice(graph: PlannerGraph, voice: SetDownVoice, levelDb: number, atSeconds: number): void {
+/** One voice: its level, then a dry gain into the master and a send into the room bus; `outputLatency` is for the tap. */
+function startSetDownVoice(graph: PlannerGraph, voice: SetDownVoice, levelDb: number, atSeconds: number, outputLatency: number): void {
   const { context } = graph;
   const { render } = voice;
   const buffer = context.createBuffer(2, render.left.length, render.sampleRate);
@@ -1282,7 +1292,15 @@ function startSetDownVoice(graph: PlannerGraph, voice: SetDownVoice, levelDb: nu
   };
   const startAt = Math.max(atSeconds, PLANNER_LIMITER_WARMUP_SECONDS);
   source.start(startAt);
-  plannerTap?.log.push({ startAt, levelDb, directGain: voice.directGain, send: voice.send, ...voice.tap });
+  plannerTap?.log.push({
+    startAt,
+    levelDb,
+    directGain: voice.directGain,
+    send: voice.send,
+    onsetSeconds: render.onsetSeconds,
+    outputLatency,
+    ...voice.tap,
+  });
 }
 
 /**
@@ -1315,13 +1333,36 @@ export function setPlannerRoomTail(tail: Stereo, key: string): boolean {
   } else {
     fade.gain.setValueAtTime(0, now);
     fade.gain.linearRampToValueAtTime(1, now + PLANNER_ROOM_CROSSFADE_SECONDS);
-    old.fade.gain.cancelScheduledValues(now);
-    old.fade.gain.setValueAtTime(old.fade.gain.value, now);
-    old.fade.gain.linearRampToValueAtTime(0, now + PLANNER_ROOM_CROSSFADE_SECONDS);
-    window.setTimeout(() => { releaseRoomWet(graph, old); }, PLANNER_ROOM_RELEASE_SECONDS * 1000);
+    fadeOutRoomWet(graph, old, now);
   }
   graph.wet = { convolver, fade, key };
   return true;
+}
+
+/**
+ * Takes the room's tail off the room bus, so a set-down sent there is dry
+ * until the next tail is put on: at every change of room, as the set-down
+ * driver asks (fix-1 Minor 4). A tail that may be ringing fades out over the
+ * cross-fade's 0.1 s and is let go after 0.15 s (R62); while the context is
+ * not running it is let go at once. Nothing before the first gesture, or with
+ * no tail on the bus.
+ */
+export function clearPlannerRoomTail(): void {
+  if (plannerLive === null) return;
+  const { context, graph } = plannerLive;
+  const old = graph.wet;
+  if (old === null) return;
+  graph.wet = null;
+  if (context.state === "running") fadeOutRoomWet(graph, old, context.currentTime);
+  else releaseRoomWet(graph, old);
+}
+
+/** Fades a tail out over the cross-fade from `now`, and lets it go once that has passed (R62). */
+function fadeOutRoomWet(graph: PlannerGraph, wet: PlannerRoomWet, now: number): void {
+  wet.fade.gain.cancelScheduledValues(now);
+  wet.fade.gain.setValueAtTime(wet.fade.gain.value, now);
+  wet.fade.gain.linearRampToValueAtTime(0, now + PLANNER_ROOM_CROSSFADE_SECONDS);
+  window.setTimeout(() => { releaseRoomWet(graph, wet); }, PLANNER_ROOM_RELEASE_SECONDS * 1000);
 }
 
 function releaseRoomWet(graph: PlannerGraph, wet: PlannerRoomWet): void {
@@ -1370,6 +1411,13 @@ export interface VenSoundTapEntry {
   readonly levelDb: number;
   readonly directGain: number;
   readonly send: number;
+  /**
+   * Its render's onset, s: from its start to the moment it is heard (Task 16
+   * reads it, with the latency, against R80's window).
+   */
+  readonly onsetSeconds?: number;
+  /** The output's latency when it was started, s, as the clock reads it (plannerAudioClock). */
+  readonly outputLatency?: number;
   readonly slug?: string;
   readonly surface?: string;
   readonly rtMid?: number;
@@ -1381,12 +1429,14 @@ export interface VenSoundTapEntry {
 }
 
 /**
- * Why the scene dropped a landing before it reached a batch (Task 14b): its
- * driver had not loaded by its contact (R78); its render came more than 45 ms
- * after its contact (R80); an undo or redo ended its gesture (R87); its piece
- * was gone (R89); or its render failed.
+ * Why the scene dropped a landing before it played (Task 14b): its driver had
+ * not loaded by its contact (R78); its render came more than 45 ms after its
+ * slot (R80, R105); an undo or redo ended its gesture (R87); its piece was
+ * gone (R89); its render failed; or the policy refused it here, its batch
+ * refused or its count or time used up (Minor 2), so Task 16 can tell "the
+ * policy said no" from a landing that never came.
  */
-export type SetDownDrop = "not-loaded" | "too-late" | "undone" | "gone" | "failed";
+export type SetDownDrop = "not-loaded" | "too-late" | "undone" | "gone" | "failed" | "refused";
 
 /** One landing the scene dropped, as the tap logs it. */
 export interface VenSoundTapDrop {

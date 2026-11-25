@@ -211,14 +211,19 @@ export class AheadRenders {
     this.ghostCheckedMs = this.host.now();
     if (getCatalogueItem(catalogueItemId) === undefined) return;
     const cls = classOf(catalogueItemId);
+    // Another piece in the ghost, of another class: the last one's render ahead goes with it if nothing was placed
+    // from it, whether or not the new class renders ahead, and the ghost names it no more (fix-1 Minor 1).
+    const left = this.ghost;
+    if (left !== null && left.cls !== cls) {
+      if (!left.placed) this.cancel(left.cls);
+      this.ghost = null;
+    }
     if (!this.host.canSound() || this.policy.mode(cls) !== "ahead") return;
     const standIn = createPlacedItem(catalogueItemId, ghostPosition[0], ghostPosition[2], ghostRotation, null, ghostPosition[1], GHOST_ID);
     const request = this.request(standIn, "drop-in");
     if (request === null) return;
     const shown = this.ghost;
     if (shown !== null && shown.catalogueItemId === catalogueItemId && asksAgain(shown.asked, request)) return;
-    // Another piece in the ghost, of another class, left the last one's with nothing placed.
-    if (shown !== null && shown.cls !== cls && !shown.placed) this.cancel(shown.cls);
     this.ghost = { cls, catalogueItemId, asked: request, placed: false };
     this.ask(cls, request);
   }

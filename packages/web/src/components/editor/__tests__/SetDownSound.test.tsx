@@ -37,7 +37,7 @@ import type * as RegistryModule from "../../../lib/sound-registry.js";
 import type * as RenderModule from "../../../lib/set-down/render.js";
 import type * as TailModule from "../../../lib/set-down/tail.js";
 import type * as VoiceModule from "../../../lib/set-down/voice.js";
-import type { SetDownVoice, VenSoundTapDrop } from "../../../lib/sound-registry.js";
+import { PlannerSoundPolicy, type SetDownVoice, type VenSoundTapDrop } from "../../../lib/sound-registry.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
@@ -80,12 +80,21 @@ const registry = vi.hoisted(() => ({
   /** Page times of the plays admitted in the last second, as the registry's eight-a-second rule keeps them. */
   admitted: [] as number[],
   tails: [] as string[],
+  /** Times the room's tail was taken off the bus. */
+  cleared: 0,
+  /** The registry's own policy, for a test that needs its 45 ms gap and burst of three; null for eight a second alone. */
+  policy: null as RegistryModule.PlannerSoundPolicy | null,
   wakes: 0,
   drops: [] as VenSoundTapDrop[],
   frame: 0,
   startMs: 1_000,
 }));
 
+// The registry, as the driver sees it. Its batches admit by eight a second
+// alone: the 45 ms gap and the burst of three between landings are left out,
+// so a scenario of several landings is not refused by them, unless a test sets
+// `registry.policy` to the registry's own PlannerSoundPolicy (Minor 7). Its
+// graph is its own tests' (planner-set-down-sound.test.ts).
 vi.mock("../../../lib/sound-registry.js", async (importOriginal) => {
   const actual = await importOriginal<typeof RegistryModule>();
   const hidden = (): boolean => document.visibilityState === "hidden";
@@ -94,10 +103,19 @@ vi.mock("../../../lib/sound-registry.js", async (importOriginal) => {
     beginSetDownBatch: (count: number): RegistryModule.SetDownBatch | null => {
       const nowMs = performance.now();
       if (registry.rate === null || registry.mode === "off" || hidden()) return null;
-      registry.admitted = registry.admitted.filter((at) => nowMs - at < 1000);
-      const allowed = Math.min(count, 8 - registry.admitted.length);
-      if (allowed < 1) return null;
-      for (let i = 0; i < allowed; i++) registry.admitted.push(nowMs);
+      let allowed: number;
+      const policy = registry.policy;
+      if (policy === null) {
+        registry.admitted = registry.admitted.filter((at) => nowMs - at < 1000);
+        allowed = Math.min(count, 8 - registry.admitted.length);
+        if (allowed < 1) return null;
+        for (let i = 0; i < allowed; i++) registry.admitted.push(nowMs);
+      } else {
+        if (policy.decide("planner-set-down", { mode: registry.mode, armed: true, hidden: false, nowMs }) !== "play") return null;
+        allowed = Math.min(count, policy.playsLeftThisSecond(nowMs));
+        if (allowed < 1) return null;
+        policy.record("planner-set-down", nowMs, allowed);
+      }
       const seen: BatchSeen = { count, plays: [] };
       registry.batches.push(seen);
       let left = allowed;
@@ -114,6 +132,7 @@ vi.mock("../../../lib/sound-registry.js", async (importOriginal) => {
       registry.tails.push(key);
       return true;
     },
+    clearPlannerRoomTail: (): void => { registry.cleared += 1; },
     plannerAudioClock: (): AudioClock | null => registry.rate === null
       ? null
       : { currentTime: 2 + (performance.now() - registry.startMs) / 1000, outputLatency: registry.outputLatency, sampleRate: registry.rate },
@@ -180,6 +199,8 @@ class FakeRenderer implements SetDownRenderer {
   readonly jobs: FakeJob[] = [];
   readonly cancelled: string[] = [];
   disposed = false;
+  /** The Worker has said it is ready; a test may start it not yet ready. */
+  ready = true;
   /** Thrown by the next cancel or tail call, as a client in a bad state might throw. */
   failNext: { cancel?: Error; tail?: Error } = {};
   private readonly rejectors = new Map<FakeJob, (reason: Error) => void>();
@@ -420,7 +441,7 @@ beforeEach(() => {
     dispatchEvent: () => false,
   }));
   Object.assign(registry, {
-    mode: "quiet", rate: null, outputLatency: 0.005, batches: [], admitted: [], tails: [], wakes: 0, drops: [], frame: 0, startMs: 1_000,
+    mode: "quiet", rate: null, outputLatency: 0.005, batches: [], admitted: [], tails: [], cleared: 0, policy: null, wakes: 0, drops: [], frame: 0, startMs: 1_000,
   });
   registry.armed.clear();
   registry.settings.clear();
@@ -836,6 +857,19 @@ describe("many pieces", () => {
     }
   });
 
+  it("logs on the tap a landing the registry's own policy refuses: a second chair landing on the first one's frame (Minors 2 and 7)", async () => {
+    registry.policy = new PlannerSoundPolicy();
+    await mountArmed();
+    await place("chiavari-chair", -2, 1);
+    await place("chiavari-chair", 2, 1);
+    expect(renderer.renders("exact")).toHaveLength(2);
+    await answerAll();
+    await frames(8);
+    expect(plays(), "the 45 ms gap holds the second").toHaveLength(1);
+    expect(registry.drops).toEqual([expect.objectContaining({ drop: "refused", slug: "chiavari-chair" })]);
+    expect(registry.drops[0]?.contactMs).toBeGreaterThan(0);
+  });
+
   it("admits at most 8 plays for ten placements within a second, and never holds more than 8 renders (Review Focus 2)", async () => {
     await mountArmed();
     let mostPending = 0;
@@ -1177,6 +1211,20 @@ describe("the room's tail", () => {
     expect(registry.tails).toEqual([tail?.key]);
   });
 
+  it.each(["quiet", "off"] as const)("takes the old room's tail off the bus at every change of room, sound %s, so a set-down is dry until the new tail answers (fix-1 Minor 4)", async (mode) => {
+    registry.mode = mode;
+    await mountArmed();
+    renderer.tails()[0]?.answer();
+    await settle();
+    expect(registry.cleared).toBe(0);
+    act(() => { useEditorStore.setState({ space: { ...GRAND_HALL } }); });
+    expect(registry.cleared, "the same room under a new object is no change").toBe(0);
+    act(() => { useEditorStore.setState({ space: SALOON }); });
+    expect(registry.cleared).toBe(1);
+    act(() => { useEditorStore.setState({ space: GRAND_HALL }); });
+    expect(registry.cleared).toBe(2);
+  });
+
   it("follows a change of room at once: the next tail is the Saloon's, and the Grand Hall's is cancelled (Review Focus 3)", async () => {
     await mountArmed();
     const [grandHall] = renderer.tails();
@@ -1244,6 +1292,19 @@ describe("the adaptive render policy (R100)", () => {
     expect(renderer.pending("ahead", "light")).toHaveLength(1);
   });
 
+  it("judges no contact whose render was asked for before the Worker said it was ready: its start-up is not the device's speed (Minor 1)", async () => {
+    renderer.ready = false;
+    await mountArmed();
+    await chairLanding(-4, 60, 120);
+    await chairLanding(-2, 70, 130);
+    expect(registry.drops.map((drop) => drop.drop)).toEqual(["too-late", "too-late"]);
+    expect(localStorage.getItem(RENDER_MODE_STORAGE_KEY), "the start-up's misses switch nothing").toBeNull();
+    renderer.ready = true;
+    await chairLanding(0, 60, 120);
+    await chairLanding(2, 70, 130);
+    expect(localStorage.getItem(RENDER_MODE_STORAGE_KEY)).toBe(JSON.stringify({ light: "ahead", table: "exact" }));
+  });
+
   it("switches back to exact renders after 10 on-time contacts well inside their window, and not after 9 and a late one (condition 3)", async () => {
     localStorage.setItem(RENDER_MODE_STORAGE_KEY, JSON.stringify({ light: "ahead", table: "exact" }));
     await mountArmed();
@@ -1285,6 +1346,32 @@ describe("the adaptive render policy (R100)", () => {
     await settle();
     expect(ahead?.state).toBe("cancelled");
     expect(renderer.pending("exact")).toHaveLength(1);
+  });
+
+  it.each([["exact", 0], ["ahead", 1]] as const)("cancels a chair ghost's render ahead when the ghost changes to a round, whose class renders %s, and forgets the chair's ghost (fix-1 Minor 1)", async (tableMode, tableAsks) => {
+    localStorage.setItem(RENDER_MODE_STORAGE_KEY, JSON.stringify({ light: "ahead", table: tableMode }));
+    await mountArmed();
+    act(() => { useCatalogueStore.getState().selectItem(catalogueId("chiavari-chair")); });
+    act(() => { usePlacementStore.setState({ ghostPosition: [-4, 0, -2] }); });
+    await settle();
+    const [chairs] = renderer.pending("ahead", "light");
+    expect(chairs).toBeDefined();
+    pass(300);
+    act(() => { useCatalogueStore.getState().selectItem(catalogueId("round-table-6ft")); });
+    await settle();
+    expect(chairs?.state, "nothing was placed from the chair's ghost").toBe("cancelled");
+    expect(renderer.pending("ahead", "table")).toHaveLength(tableAsks);
+    // The ghost no longer names the chair: a chair taken in hand keeps its render ahead when the ghost leaves.
+    pass(300);
+    const chair = stand("chiavari-chair", 4, 4);
+    act(() => { carryFurniture([chair.id], 1, 0); });
+    await settle();
+    const [carried] = renderer.pending("ahead", "light");
+    expect(carried).toBeDefined();
+    act(() => { useCatalogueStore.getState().clearSelection(); });
+    act(() => { usePlacementStore.setState({ ghostPosition: null }); });
+    await settle();
+    expect(carried?.state).toBe("pending");
   });
 
   it("renders a new piece ahead while its ghost shows, not again as the ghost moves within a metre, again when its supports change, and cancels when the ghost leaves (condition 2)", async () => {

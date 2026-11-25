@@ -514,6 +514,15 @@ describe("the watches: a ready Worker, a visible page (ruling R99)", () => {
     expect(String(job.reason)).toMatch(/did not answer render "chair" within 10 s/);
   });
 
+  it("says it is ready only once the Worker's ready message has come", async () => {
+    const { renderer, worker } = made();
+    track(renderer.render(INPUT, "exact", "chair"));
+    expect(renderer.ready).toBe(false);
+    worker.ready();
+    await flush();
+    expect(renderer.ready).toBe(true);
+  });
+
   it("restarts nothing on a second ready message", async () => {
     vi.useFakeTimers();
     const { renderer, worker } = made();

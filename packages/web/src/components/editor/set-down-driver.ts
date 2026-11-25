@@ -152,6 +152,8 @@ interface Flight {
   readonly epoch: number;
   readonly inPlace: boolean;
   readonly askedMs: number;
+  /** The Worker had said it was ready when its render was asked for: its timing is this device's, not its start-up's. */
+  readonly askedReady: boolean;
   exact: SetDownRendered | null;
   failed: boolean;
   contactAtMs: number | null;
@@ -278,10 +280,14 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     return { item, clock };
   };
 
-  /** Tells the policy how the exact render arrived at this contact; a class back at its drop asks nothing ahead. */
+  /**
+   * Tells the policy how the exact render arrived for this voice; a class back
+   * at its drop asks nothing ahead. A render asked for before the Worker was
+   * ready also waited for its start-up, a one-off cost: it is not judged.
+   */
   const judge = (flight: Flight, timing: ContactTiming, workMs: number | null): void => {
     const contact = flight.contact;
-    if (flight.inPlace || contact === null) return;
+    if (flight.inPlace || contact === null || !flight.askedReady) return;
     const before = policy.mode(flight.cls);
     const after = policy.recordContact(flight.cls, { timing, workMs, windowMs: contact.windowMs });
     if (before === "ahead" && after === "exact") ahead.backToExact(flight.cls);
@@ -313,7 +319,9 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       send: state.send,
       tap: { slug: flight.slug, surface: contact.surface, rtMid: state.rt[3], contactMs: contact.contactMs, played, workMs: render.workMs },
     };
-    flight.batch.admitted?.play(voice);
+    // Refused here (the policy's gap, burst or eight a second, or its batch's count or time used up): on the tap,
+    // so Task 16 can tell it from a landing that never came (Minor 2).
+    if (flight.batch.admitted?.play(voice) !== true) logSetDownDrop({ drop: "refused", slug: flight.slug, contactMs: contact.contactMs });
   };
 
   /** Its slot passed 45 ms ago with no exact render (R80, R105). */
@@ -557,6 +565,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
         epoch: entry.landing.epoch,
         inPlace: entry.landing.inPlace,
         askedMs,
+        askedReady: worker.ready,
         exact: null,
         failed: false,
         contactAtMs: null,

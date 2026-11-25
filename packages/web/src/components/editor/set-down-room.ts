@@ -12,7 +12,7 @@ import { roomAcousticsFor, roomState, type RoomState } from "../../lib/set-down/
 import type { RoomAcoustics } from "../../lib/set-down/rooms.js";
 import { tailOnsetSeconds } from "../../lib/set-down/tail.js";
 import { voiceInput } from "../../lib/set-down/voice.js";
-import { setPlannerRoomTail } from "../../lib/sound-registry.js";
+import { clearPlannerRoomTail, setPlannerRoomTail } from "../../lib/sound-registry.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import type { Gathered } from "./set-down-ahead.js";
@@ -25,6 +25,8 @@ import type { Gathered } from "./set-down-ahead.js";
 //
 // - The state follows the placement 250 ms after its last change; a new
 //   state, room or context rate asks the Worker for a new tail (latest wins).
+// - Another room takes the old room's tail off the bus at once, sound on or
+//   not, so a set-down there is dry until the new room's tail answers.
 // - No tail is made while sound is Off or the page is hidden: one waiting is
 //   cancelled, and the tail is asked for again when sound comes back on or
 //   the page is shown.
@@ -111,6 +113,7 @@ export class SetDownRoom {
     this.tailKey = null;
     this.tailWaiting = null;
     this.clearTimer();
+    clearPlannerRoomTail();
     this.compute();
     return true;
   }
