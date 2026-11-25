@@ -41,7 +41,20 @@ interface AuthActions {
   readonly beginAccessCheck: (email: string, identity?: string | null) => void;
   readonly failAccessCheck: (message: string, pending: boolean) => void;
   readonly retryAccess: () => void;
+  /**
+   * Install the person given, always as the very object given: a new sign-in
+   * is a new user object, which the planner relies on to tell one sign-in from
+   * the next (editor-store.ts, signedOutHere). Null signs out.
+   */
   readonly setUser: (user: AuthUser | null) => void;
+  /**
+   * The API's answer to the bridge's own access check. When it names the
+   * person already held, field for field, the held object stays, so nothing
+   * keyed on it starts again after the check made behind the page on each move
+   * between route groups; that check confirms a sign-in and is not a new one.
+   * Any other answer is installed as setUser installs it.
+   */
+  readonly confirmUser: (user: AuthUser) => void;
   readonly setLoading: (isLoading: boolean) => void;
   readonly logout: () => void;
   readonly clearError: () => void;
@@ -53,6 +66,20 @@ type AuthStore = AuthState & AuthActions;
 function samePerson(held: AuthUser, answer: AuthUser): boolean {
   return held.id === answer.id && held.email === answer.email && held.role === answer.role
     && held.platformRole === answer.platformRole && held.venueId === answer.venueId && held.name === answer.name;
+}
+
+/** The state once the API has confirmed `user`, or once nobody is signed in. */
+function installed(state: AuthState, user: AuthUser | null): Partial<AuthState> {
+  return {
+    user,
+    isAuthenticated: user !== null,
+    isLoading: false,
+    error: null,
+    accessStatus: user === null ? "signed_out" : "ready",
+    accessEmail: user?.email ?? null,
+    // The API's answer for the identity whose check began it.
+    accessIdentity: user === null ? null : state.accessIdentity,
+  };
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
@@ -85,20 +112,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   setUser: (user) => {
-    set((state) => ({
-      // An answer that names the same person, field for field, keeps the
-      // object already held, so whatever is keyed on it (a page's schedule
-      // request, the planner's event bootstrap) is not started again by the
-      // check made behind the page on each move between route groups.
-      user: user !== null && state.user !== null && samePerson(state.user, user) ? state.user : user,
-      isAuthenticated: user !== null,
-      isLoading: false,
-      error: null,
-      accessStatus: user === null ? "signed_out" : "ready",
-      accessEmail: user?.email ?? null,
-      // The API's answer for the identity whose check began it.
-      accessIdentity: user === null ? null : state.accessIdentity,
-    }));
+    set((state) => installed(state, user));
+  },
+
+  confirmUser: (user) => {
+    set((state) => installed(state, state.user !== null && samePerson(state.user, user) ? state.user : user));
   },
 
   setLoading: (isLoading) => { set({ isLoading }); },

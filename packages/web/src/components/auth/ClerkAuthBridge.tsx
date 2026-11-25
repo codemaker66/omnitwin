@@ -36,7 +36,9 @@ export function ClerkAuthBridge(): null {
         ? getToken({ skipCache: true }).then(() => cancelled ? null : getCurrentAuthUser())
         : getCurrentAuthUser();
       void request.then((dbUser) => {
-        if (!cancelled && dbUser !== null) useAuthStore.getState().setUser(dbUser);
+        // A confirmation: the same person, field for field, keeps the object
+        // held (auth-store.ts, confirmUser); a sign-in reached it from nobody.
+        if (!cancelled && dbUser !== null) useAuthStore.getState().confirmUser(dbUser);
       }).catch((error: unknown) => {
         if (cancelled) return;
         const pending = error instanceof ApiError && error.code === "INVITATION_REQUIRED";
