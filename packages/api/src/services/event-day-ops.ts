@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   CreateEventDayIssueInputSchema,
   EventDayChangesSinceLastHandoffSchema,
@@ -69,6 +69,14 @@ export interface UpdateOpsTaskStatusResult {
 
 export class EventDayTaskNotFoundError extends Error {}
 export class EventDayIssueNotFoundError extends Error {}
+
+/** A replayed status pressed against a status the task no longer holds
+ *  (#418): nothing was written, and `task` is the task as it stands. */
+export class EventDayTaskStatusConflictError extends Error {
+  constructor(readonly task: OpsTask) {
+    super(`Task ${task.id} moved on before this status arrived.`);
+  }
+}
 
 function toIso(value: Date): string {
   return value.toISOString();
@@ -352,6 +360,143 @@ async function loadTaskWithEvent(db: Database, opsTaskId: string): Promise<{
   return joined ?? null;
 }
 
+type DatabaseOrTransaction = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/** The answer to a status whose idempotency key is already recorded for the
+ *  task: the task as it stands, and the completion event the key wrote. */
+async function recordedStatusAnswer(
+  db: DatabaseOrTransaction,
+  task: OpsTaskRow,
+  idempotencyKey: string,
+): Promise<UpdateOpsTaskStatusResult | null> {
+  const [existing] = await db.select().from(taskCompletionEvents)
+    .where(and(
+      eq(taskCompletionEvents.opsTaskId, task.id),
+      eq(taskCompletionEvents.idempotencyKey, idempotencyKey),
+    ))
+    .limit(1);
+  if (existing === undefined) return null;
+  const [reloaded] = await db.select().from(opsTasks).where(eq(opsTasks.id, task.id)).limit(1);
+  return {
+    task: serializeOpsTask(reloaded ?? task),
+    completionEvent: serializeCompletionEvent(existing),
+    idempotentReplay: true,
+  };
+}
+
+/** When a status write is made: the database's own clock while the task's
+ *  row is held. Every status write first takes the task's event (FOR KEY
+ *  SHARE, the house order an erasure keeps), then the row (SELECT … FOR NO
+ *  KEY UPDATE, the lock its UPDATE takes anyway), then stamps the task's
+ *  updated_at and inserts its completion event with this, so both follow
+ *  the order the writes were made in. A column default, now(), is the time
+ *  the transaction began, and the API's new Date() is another machine's
+ *  clock read before the lock: either can put two writes that wait on one
+ *  another in the other order (#418, review DQ5). An UPDATE that waits for
+ *  a row another transaction only locked computes its SET before the wait,
+ *  so the row is taken first. */
+const WRITTEN_UNDER_THE_ROW_LOCK = sql`clock_timestamp()`;
+
+/** Whether the task's last write was made under one of these keys: the
+ *  latest completion event of the task, by the database's own order, left
+ *  the status the task holds and carries one of them. Only the latest
+ *  counts: an earlier write under one of the keys, followed by anyone
+ *  else's, does not. Read while the task's row is held. The status check is
+ *  defensive: every status write here inserts its event in the same
+ *  transaction, so it holds today; it refuses the key once anything changes
+ *  the status without an event. */
+async function lastWriteMadeUnder(
+  tx: DatabaseOrTransaction,
+  task: OpsTaskRow,
+  keys: readonly string[],
+): Promise<boolean> {
+  if (keys.length === 0) return false;
+  const [last] = await tx.select({ idempotencyKey: taskCompletionEvents.idempotencyKey, toStatus: taskCompletionEvents.toStatus })
+    .from(taskCompletionEvents)
+    .where(eq(taskCompletionEvents.opsTaskId, task.id))
+    .orderBy(desc(taskCompletionEvents.createdAt), desc(taskCompletionEvents.id))
+    .limit(1);
+  return last !== undefined && last.toStatus === task.status
+    && last.idempotencyKey !== null && keys.includes(last.idempotencyKey);
+}
+
+/**
+ * A status the event-day board queued on the device and replays now, pressed
+ * while the task held `expectedStatus` (#418): written only while the task
+ * still holds it, or while the task's last write was made under one of
+ * `earlierPressKeys`, the device's own earlier presses (round four, ruling
+ * A: a press whose answer was lost, or that landed while this one sat
+ * queued). Otherwise it is refused, so a stale replay never undoes a later
+ * press.
+ *
+ * One decision under the task's row lock. The task's event is taken first
+ * (FOR KEY SHARE), the house order an erasure keeps (people-erasure.ts): it
+ * locks the event, then rewords the task, so a replay holding the task's
+ * row that then reached the event through the completion event's key would
+ * meet it in a deadlock. Then the SELECT … FOR NO KEY UPDATE holds the row
+ * from the comparison, through the look at the task's last write, to the
+ * write and its completion event. A second replay or a live press that
+ * reaches the row meanwhile waits for this transaction to commit, and a
+ * replay that waited reads the row as committed. A key recorded meanwhile
+ * gets its recorded answer; a refusal writes nothing: no completion event,
+ * board line or recorded key.
+ */
+async function updateOpsTaskStatusIfStillHeld(
+  db: Database,
+  joined: { readonly task: OpsTaskRow; readonly event: EventRow },
+  parsed: UpdateOpsTaskStatusInput & { readonly expectedStatus: OpsTaskStatus },
+  actorUserId: string | null,
+): Promise<UpdateOpsTaskStatusResult> {
+  const expected = parsed.expectedStatus;
+  return db.transaction(async (tx) => {
+    await tx.select({ id: events.id }).from(events).where(eq(events.id, joined.event.id)).for("key share");
+    const [current] = await tx.select().from(opsTasks).where(eq(opsTasks.id, joined.task.id)).limit(1).for("no key update");
+    if (current === undefined) throw new EventDayTaskNotFoundError(joined.task.id);
+    const recorded = parsed.idempotencyKey === undefined
+      ? null
+      : await recordedStatusAnswer(tx, current, parsed.idempotencyKey);
+    if (recorded !== null) return recorded;
+    const follows = current.status === expected || await lastWriteMadeUnder(tx, current, parsed.earlierPressKeys ?? []);
+    if (!follows) throw new EventDayTaskStatusConflictError(serializeOpsTask(current));
+    const fromStatus = serializeOpsTask(current).status;
+    if (fromStatus === parsed.status) {
+      return { task: serializeOpsTask(current), completionEvent: null, idempotentReplay: parsed.idempotencyKey !== undefined };
+    }
+
+    const [updatedTask] = await tx.update(opsTasks)
+      .set({ status: parsed.status, updatedAt: WRITTEN_UNDER_THE_ROW_LOCK })
+      .where(eq(opsTasks.id, current.id))
+      .returning();
+    if (updatedTask === undefined) throw new EventDayTaskNotFoundError(joined.task.id);
+
+    const [completion] = await tx.insert(taskCompletionEvents).values({
+      opsTaskId: joined.task.id,
+      eventId: joined.event.id,
+      actorUserId,
+      fromStatus,
+      toStatus: parsed.status,
+      idempotencyKey: parsed.idempotencyKey ?? null,
+      note: parsed.note ?? null,
+      createdAt: WRITTEN_UNDER_THE_ROW_LOCK,
+    }).returning();
+    if (completion === undefined) throw new Error("Task completion event insertion returned no row.");
+
+    await tx.insert(opsStatusUpdates).values({
+      eventId: joined.event.id,
+      phaseId: updatedTask.phaseId,
+      kind: parsed.status === "blocked" ? "escalation" : "setup",
+      message: safeEventDayText(`Task "${updatedTask.title}" moved from ${fromStatus} to ${parsed.status}.`, 500),
+      createdBy: actorUserId,
+    });
+
+    return {
+      task: serializeOpsTask(updatedTask),
+      completionEvent: serializeCompletionEvent(completion),
+      idempotentReplay: false,
+    };
+  });
+}
+
 export async function updateOpsTaskStatus(
   db: Database,
   input: UpdateOpsTaskStatusInput & {
@@ -363,25 +508,19 @@ export async function updateOpsTaskStatus(
     status: input.status,
     idempotencyKey: input.idempotencyKey,
     note: input.note,
+    expectedStatus: input.expectedStatus,
+    earlierPressKeys: input.earlierPressKeys,
   });
   const joined = await loadTaskWithEvent(db, input.opsTaskId);
   if (joined === null) throw new EventDayTaskNotFoundError(input.opsTaskId);
 
   if (parsed.idempotencyKey !== undefined) {
-    const [existing] = await db.select().from(taskCompletionEvents)
-      .where(and(
-        eq(taskCompletionEvents.opsTaskId, joined.task.id),
-        eq(taskCompletionEvents.idempotencyKey, parsed.idempotencyKey),
-      ))
-      .limit(1);
-    if (existing !== undefined) {
-      const reloaded = await loadTaskWithEvent(db, input.opsTaskId);
-      return {
-        task: serializeOpsTask(reloaded?.task ?? joined.task),
-        completionEvent: serializeCompletionEvent(existing),
-        idempotentReplay: true,
-      };
-    }
+    const recorded = await recordedStatusAnswer(db, joined.task, parsed.idempotencyKey);
+    if (recorded !== null) return recorded;
+  }
+
+  if (parsed.expectedStatus !== undefined) {
+    return updateOpsTaskStatusIfStillHeld(db, joined, { ...parsed, expectedStatus: parsed.expectedStatus }, input.actorUserId);
   }
 
   const transition = resolveTaskStatusTransition(serializeOpsTask(joined.task).status, parsed.status);
@@ -398,8 +537,12 @@ export async function updateOpsTaskStatus(
     // keys anyway), the house order an erasure keeps (people-erasure.ts): this
     // waits on an erasure of the event's person rather than meeting it.
     await tx.select({ id: events.id }).from(events).where(eq(events.id, joined.event.id)).for("key share");
+    // Then the task's row, so the stamps below are taken while it is held
+    // (WRITTEN_UNDER_THE_ROW_LOCK). The transition is still decided above,
+    // before the lock, as it always was (review DS9, a follow-up).
+    await tx.select({ id: opsTasks.id }).from(opsTasks).where(eq(opsTasks.id, joined.task.id)).for("no key update");
     const [updatedTask] = await tx.update(opsTasks)
-      .set({ status: transition.toStatus, updatedAt: new Date() })
+      .set({ status: transition.toStatus, updatedAt: WRITTEN_UNDER_THE_ROW_LOCK })
       .where(eq(opsTasks.id, joined.task.id))
       .returning();
     if (updatedTask === undefined) throw new EventDayTaskNotFoundError(input.opsTaskId);
@@ -412,6 +555,7 @@ export async function updateOpsTaskStatus(
       toStatus: transition.toStatus,
       idempotencyKey: parsed.idempotencyKey ?? null,
       note: parsed.note ?? null,
+      createdAt: WRITTEN_UNDER_THE_ROW_LOCK,
     }).returning();
     if (completion === undefined) throw new Error("Task completion event insertion returned no row.");
 

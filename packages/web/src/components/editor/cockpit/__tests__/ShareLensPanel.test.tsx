@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import * as configurationApi from "../../../../api/configurations.js";
 
 // Mock only the proposal API calls; everything else (stores, model) is real so
 // this exercises the genuine layout→draft→chain path.
@@ -58,7 +59,11 @@ beforeEach(() => {
   useAuthStore.getState().logout();
 });
 
-afterEach(() => { cleanup(); });
+afterEach(() => {
+  cleanup();
+  // The batch-save spies; the proposal mocks are reset before each test.
+  vi.restoreAllMocks();
+});
 
 describe("ShareLensPanel", () => {
   it("renders a client-safe preview built from the live layout", () => {
@@ -207,6 +212,51 @@ describe("ShareLensPanel", () => {
     expect(screen.getByTestId("share-result").textContent).toContain("Link ready. Not emailed; copy it into your message.");
     expect(screen.getByTestId("share-result").textContent).not.toMatch(/sent/iu);
     expect(screen.getByTestId("share-another-hint").textContent).toBe("Another link starts a new proposal. This one stays in Proposals.");
+  });
+
+  // web-lib-state-2: the server draws the version's layout from the layout as
+  // saved, and its words come from the live layout, so the changes the 3 s
+  // autosave is still waiting to send go first, as on every other send path.
+  it("saves the layout's waiting changes before the proposal is frozen and sent", async () => {
+    signInStaff();
+    useEditorStore.setState({ configId: CONFIG_ID, configRevision: 1, isPublicPreview: false, isDirty: true });
+    let landSave: ((saved: { objects: []; revision: number }) => void) | undefined;
+    const save = vi.spyOn(configurationApi, "authBatchSave").mockImplementation(
+      () => new Promise((resolve) => { landSave = resolve; }),
+    );
+    mocks.createProposal.mockResolvedValue({ id: "p1", title: "Event plan" });
+    mocks.createProposalVersion.mockResolvedValue({});
+    mocks.transitionProposal.mockResolvedValue({});
+    mocks.createProposalShareToken.mockResolvedValue({ token: "tok", shareUrl: "/proposal-share/tok", tokenPrefix: "tok", proposal: {} });
+
+    render(<ShareLensPanel />);
+    fireEvent.click(screen.getByTestId("share-create"));
+
+    await waitFor(() => { expect(save).toHaveBeenCalledTimes(1); });
+    expect(save).toHaveBeenCalledWith(CONFIG_ID, [], 1);
+    expect(mocks.createProposal).not.toHaveBeenCalled();
+    await act(async () => { landSave?.({ objects: [], revision: 2 }); await Promise.resolve(); });
+
+    await waitFor(() => { expect(screen.getByTestId("share-url")).toBeTruthy(); });
+    expect(mocks.createProposalVersion).toHaveBeenCalledTimes(1);
+    expect(useEditorStore.getState().isDirty).toBe(false);
+  });
+
+  it("freezes and sends nothing when the layout's waiting changes cannot be saved", async () => {
+    signInStaff();
+    useEditorStore.setState({ configId: CONFIG_ID, configRevision: 1, isPublicPreview: false, isDirty: true });
+    const save = vi.spyOn(configurationApi, "authBatchSave").mockRejectedValue(new Error("Save refused"));
+
+    render(<ShareLensPanel />);
+    fireEvent.click(screen.getByTestId("share-create"));
+
+    await waitFor(() => { expect(screen.getByTestId("share-error")).toBeTruthy(); });
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(mocks.createProposal).not.toHaveBeenCalled();
+    expect(mocks.createProposalVersion).not.toHaveBeenCalled();
+    expect(mocks.transitionProposal).not.toHaveBeenCalled();
+    expect(screen.getByTestId("share-error").textContent).toMatch(/couldn't create the share link/i);
+    expect(screen.queryByTestId("share-url")).toBeNull();
   });
 
   it("shows a friendly error and does not break when the API fails", async () => {
