@@ -26,6 +26,7 @@ import type { BodyPart, Foot, PartKind, SetDownBody } from "./bodies.js";
 import { contactSeconds, decaySeconds, knockSeconds, modeEnergy, partModes, surfaceModes } from "./modes.js";
 import { kWeighted, momentaryMaxOfWeighted } from "./analysis.js";
 import type { Reflection } from "./reflections.js";
+import { panGains } from "./respatialize.js";
 import { SURFACES, surfaceKey, type SurfaceKind, type SurfaceResponse } from "./surface-data.js";
 import type { Stereo } from "./tail.js";
 
@@ -847,18 +848,9 @@ function hem(sampleRate: number, random: () => number): Float64Array {
 }
 
 // --- Space ------------------------------------------------------------------------------------
-
-/**
- * Equal-power gains for a lateral angle: the share to the right is sin(az),
- * and the law is normalised to unity in each channel at the centre, so a
- * centred sound at full gain peaks at its level; left squared plus right
- * squared is 2 at every angle.
- */
-function panGains(azimuthRad: number): readonly [number, number] {
-  const side = Number.isFinite(azimuthRad) ? clamp(Math.sin(azimuthRad), -1, 1) : 0;
-  const angle = ((side + 1) * Math.PI) / 4;
-  return [Math.SQRT2 * Math.cos(angle), Math.SQRT2 * Math.sin(angle)];
-}
+//
+// The pan is respatialize.ts's equal-power law (panGains), which the driver
+// also uses to move a variant to where its piece lands (R104).
 
 /** The pole a of the one-pole low-pass y = (1 - a) x + a y[-1] whose 4 kHz gain is `ratio` times its 1 kHz gain. */
 function onePolePole(ratio: number, sampleRate: number): number {

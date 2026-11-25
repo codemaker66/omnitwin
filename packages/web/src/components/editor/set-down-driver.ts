@@ -13,6 +13,7 @@ import {
   type SetDownRendered,
   type SetDownRenderer,
 } from "../../lib/set-down/renderer.js";
+import { playsAsRendered, respatializeSetDown, type SetDownDirect } from "../../lib/set-down/respatialize.js";
 import { HEARD_WINDOW_S, presentDelayFor, setDownStartTime, type AudioClock } from "../../lib/set-down/timing.js";
 import {
   beginSetDownBatch,
@@ -121,7 +122,8 @@ interface Contact {
   readonly presentDelay: number;
   /** From the exact render's request to its slot, ms: the time it had. */
   readonly windowMs: number;
-  readonly directGain: number;
+  /** Its direct sound as the ear hears it at contact: the dry gain every voice of it plays at, and the angle (R104). */
+  readonly direct: SetDownDirect;
   readonly surface: string;
   /** The variant key at the contact: what a variant must match to stand in. */
   readonly cacheKey: string;
@@ -307,7 +309,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       render,
       startAt,
       levelDb: flight.levelDb,
-      directGain: contact.directGain,
+      directGain: contact.direct.gain,
       send: state.send,
       tap: { slug: flight.slug, surface: contact.surface, rtMid: state.rt[3], contactMs: contact.contactMs, played, workMs: render.workMs },
     };
@@ -331,10 +333,25 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   const onTimeStart = (flight: Flight, contact: Contact, clock: AudioClock, render: SetDownRendered): number =>
     setDownStartTime(clock, contact.presentDelay, render.onsetSeconds) + cascadeWait(flight, nowMs());
 
+  /**
+   * A variant rendered ahead for `cacheKey`, heard as this landing is (R104):
+   * as rendered when its direct sound came from within 0.2 rad and 1.5 dB of
+   * the landing's at contact, otherwise a copy moved to the landing's angle.
+   * Its dry gain is the landing's either way (R57); the exact render is never
+   * moved. Null when none is kept.
+   */
+  const variantHeard = (contact: Contact, cacheKey: string): SetDownRendered | null => {
+    const kept = ahead.variantFor(cacheKey);
+    if (kept === null) return null;
+    if (playsAsRendered(kept.direct, contact.direct)) return kept.render;
+    const moved = respatializeSetDown(kept.render, kept.direct, contact.direct);
+    return { ...kept.render, left: moved.left, right: moved.right };
+  };
+
   /** Its exact render, ready by its slot: played, or a variant for the surfaces it now stands on (Review Focus 5). */
   const playOnTime = (flight: Flight, contact: Contact, clock: AudioClock, exact: SetDownRendered): void => {
     judge(flight, "on-time", exact.workMs);
-    const variant = contact.stale ? ahead.variantFor(contact.cacheKey) : null;
+    const variant = contact.stale ? variantHeard(contact, contact.cacheKey) : null;
     if (variant !== null) play(flight, variant, "variant", onTimeStart(flight, contact, clock, variant));
     else play(flight, exact, contact.stale ? "stale" : "exact", onTimeStart(flight, contact, clock, exact));
     finish(flight);
@@ -347,7 +364,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
    */
   const due = (flight: Flight, contact: Contact, clock: AudioClock): void => {
     contact.slotPassed = true;
-    const variant = ahead.variantFor(contact.stale ? contact.cacheKey : flight.cacheKey);
+    const variant = variantHeard(contact, contact.stale ? contact.cacheKey : flight.cacheKey);
     if (variant !== null) {
       play(flight, variant, "variant", onTimeStart(flight, contact, clock, variant));
       contact.covered = true;
@@ -383,7 +400,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       contactMs: (clock.currentTime + presentDelay) * 1000,
       presentDelay,
       windowMs: slotMs - flight.askedMs,
-      directGain: now.directGain,
+      direct: { gain: now.directGain, azimuthRad: now.input.direct.azimuthRad },
       surface: now.surface,
       cacheKey: now.cacheKey,
       stale: now.surfacesKey !== flight.surfacesKey,
@@ -427,7 +444,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
       contactMs: clock.currentTime * 1000,
       presentDelay: 0,
       windowMs: 0,
-      directGain: now.directGain,
+      direct: { gain: now.directGain, azimuthRad: now.input.direct.azimuthRad },
       surface: now.surface,
       cacheKey: now.cacheKey,
       stale: false,

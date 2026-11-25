@@ -1,5 +1,6 @@
 import { act } from "@testing-library/react";
-import { advance } from "@react-three/fiber";
+import { advance, useThree } from "@react-three/fiber";
+import type { Camera } from "three";
 import type { Space } from "@omnitwin/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
@@ -17,6 +18,7 @@ import {
 } from "../../../lib/furniture-motion.js";
 import { createPlacedItem, snapPositionToGrid, type PlacedItem } from "../../../lib/placement.js";
 import { renderSetDown, type SetDownInput } from "../../../lib/set-down/render.js";
+import { panGains } from "../../../lib/set-down/respatialize.js";
 import { roomState, roomAcousticsFor } from "../../../lib/set-down/room-acoustics.js";
 import { renderRoomTail, tailOnsetSeconds } from "../../../lib/set-down/tail.js";
 import { presentDelayFor, setDownStartTime, type AudioClock } from "../../../lib/set-down/timing.js";
@@ -193,9 +195,11 @@ class FakeRenderer implements SetDownRenderer {
           job.state = "answered";
           this.rejectors.delete(job);
           const length = 480;
+          // A direct-only render: a steady source panned on the engine's own law to the angle it was asked for.
+          const [toLeft, toRight] = panGains(input.direct.azimuthRad);
           const rendered: SetDownRendered = {
-            left: new Float32Array(length).fill(0.01),
-            right: new Float32Array(length).fill(0.01),
+            left: new Float32Array(length).fill(0.01 * toLeft),
+            right: new Float32Array(length).fill(0.01 * toRight),
             sampleRate: input.sampleRate,
             peakDb: -20,
             onsetSeconds: 0.002,
@@ -1042,6 +1046,123 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
   });
 });
 
+// --- A variant heard from where its piece lands (R104) ------------------------------------------
+
+describe("a variant heard from where its piece lands (R104)", () => {
+  const view: { camera: Camera | null } = { camera: null };
+  function CameraHandle(): null {
+    view.camera = useThree((state) => state.camera);
+    return null;
+  }
+
+  beforeEach(() => {
+    localStorage.setItem(RENDER_MODE_STORAGE_KEY, JSON.stringify({ light: "ahead", table: "exact" }));
+  });
+
+  /**
+   * The share to the right a played render pans to, -1 to 1, on the engine's
+   * law (the sine of the angle it was panned for): the fake renders are a
+   * steady direct-only source.
+   */
+  function heardSide(render: { readonly left: Float32Array; readonly right: Float32Array }): number {
+    return (Math.atan2(render.right[0] ?? 0, render.left[0] ?? 0) * 4) / Math.PI - 1;
+  }
+
+  const silent = { left: new Float32Array(1), right: new Float32Array(1) };
+
+  /** A chair's ghost shown at `at`, rendered ahead and kept, then the ghost put away; returns its render's job. */
+  async function chairVariantAt(at: readonly [number, number, number]): Promise<FakeJob> {
+    act(() => { useCatalogueStore.getState().selectItem(catalogueId("chiavari-chair")); });
+    act(() => { usePlacementStore.setState({ ghostPosition: at }); });
+    await settle();
+    const [ghosted] = renderer.pending("ahead", "light");
+    if (ghosted === undefined) throw new Error("the ghost was not rendered ahead");
+    ghosted.answer(15);
+    await settle();
+    act(() => { useCatalogueStore.getState().clearSelection(); });
+    act(() => { usePlacementStore.setState({ ghostPosition: null }); });
+    await settle();
+    return ghosted;
+  }
+
+  it("plays a variant kept on the far side on the landing's side, at the landing's level (P4)", async () => {
+    await mountArmed();
+    const ghosted = await chairVariantAt([-6, 0, -3]);
+    const chair = await place("chiavari-chair", 6, 3);
+    const [exact] = renderer.pending("exact");
+    await frames(6);
+    expect(plays()).toHaveLength(1);
+    const variant = plays()[0]?.voice;
+    expect(variant?.tap?.played).toBe("variant");
+    const landing = exact?.input?.direct.azimuthRad ?? Number.NaN;
+    const rendered = ghosted.input?.direct.azimuthRad ?? Number.NaN;
+    expect(Math.abs(landing - rendered), "rendered far from where it lands").toBeGreaterThan(1);
+    expect(Math.sign(Math.sin(landing)), "on the other side").toBe(-Math.sign(Math.sin(rendered)));
+    expect(heardSide(variant?.render ?? silent)).toBeCloseTo(Math.sin(landing), 6);
+    expect(variant?.render.onsetSeconds).toBe(0.002);
+    // Its level: the chair set down again where it stands, its own render ready, plays at the same dry gain.
+    exact?.answer();
+    await settle();
+    await frames(3);
+    expect(plays()).toHaveLength(1);
+    act(() => { carryFurniture([chair.id], 0.5, 0); });
+    await frames(3);
+    act(() => { releaseFurniture([chair.id]); });
+    await settle();
+    await answerAll();
+    await frames(8);
+    expect(plays()).toHaveLength(2);
+    expect(plays()[1]?.voice.tap?.played).toBe("exact");
+    expect(variant?.directGain).toBeCloseTo(plays()[1]?.voice.directGain ?? Number.NaN, 12);
+  });
+
+  it("moves a variant to the landing when the camera turned between its render ahead and the landing", async () => {
+    mounted = mountInStubRoot(<><FurnitureMotion /><SetDownSound /><CameraHandle /></>);
+    frame();
+    frame();
+    registry.frame = 0;
+    await arm();
+    const ghosted = await chairVariantAt([3, 0, 1]);
+    act(() => {
+      const camera = view.camera;
+      if (camera === null) throw new Error("no camera");
+      camera.rotation.y += Math.PI;
+      camera.updateMatrixWorld();
+    });
+    await place("chiavari-chair", 3, 1);
+    const [exact] = renderer.pending("exact");
+    await frames(6);
+    expect(plays()).toHaveLength(1);
+    const landing = exact?.input?.direct.azimuthRad ?? Number.NaN;
+    const rendered = ghosted.input?.direct.azimuthRad ?? Number.NaN;
+    expect(Math.sign(Math.sin(landing)), "the camera turned round: the other side").toBe(-Math.sign(Math.sin(rendered)));
+    expect(plays()[0]?.voice.tap?.played).toBe("variant");
+    expect(heardSide(plays()[0]?.voice.render ?? silent)).toBeCloseTo(Math.sin(landing), 6);
+  });
+
+  it("moves each voice of a cascade to its own landing: chairs either side of the room, one variant kept (a batch of six)", async () => {
+    await mountArmed();
+    const ghosted = await chairVariantAt([-6, 0, 0]);
+    const chair = catalogueId("chiavari-chair");
+    const pieces = [-0.8, 0, 0.8].flatMap((z) => [createPlacedItem(chair, -6, z), createPlacedItem(chair, 6, z)]);
+    act(() => { usePlacementStore.getState().placeSetup(pieces); });
+    await settle();
+    const exact = renderer.pending("exact");
+    expect(exact).toHaveLength(6);
+    await frames(90);
+    expect(plays()).toHaveLength(6);
+    expect(plays().every((played) => played.voice.tap?.played === "variant")).toBe(true);
+    const landings = exact.map((job) => Math.sin(job.input?.direct.azimuthRad ?? Number.NaN));
+    const heard = plays().map((played) => heardSide(played.voice.render));
+    expect(landings.filter((side) => side > 0), "three land on the right").toHaveLength(3);
+    expect(heard.filter((side) => side > 0), "and three voices are heard there").toHaveLength(3);
+    // Each is heard where one of them lands: moved exactly, or as rendered within 0.2 rad (a sine within 0.2).
+    for (const side of heard) expect(landings.some((at) => Math.abs(at - side) <= 0.2 + 1e-9), `heard at ${String(side)}`).toBe(true);
+    // The one landing where the variant was rendered plays it as rendered.
+    expect(plays().some((played) => renderedBy.get(played.voice.render) === ghosted)).toBe(true);
+  });
+});
+
 // --- The room ---------------------------------------------------------------------------------
 
 describe("the room's tail", () => {
@@ -1202,13 +1323,16 @@ describe("the adaptive render policy (R100)", () => {
     act(() => { useCatalogueStore.getState().selectItem(catalogueId("chiavari-chair")); });
     act(() => { usePlacementStore.setState({ ghostPosition: [2, 0, 1] }); });
     await settle();
-    renderer.pending("ahead", "light")[0]?.answer(15);
+    const [ghosted] = renderer.pending("ahead", "light");
+    ghosted?.answer(15);
     await settle();
     await place("chiavari-chair", 2, 1);
     expect(renderer.pending("exact")).toHaveLength(1);
     await frames(5);
     expect(plays()).toHaveLength(1);
     expect(plays()[0]?.voice.tap).toMatchObject({ played: "variant" });
+    // Rendered where it lands, it plays as rendered, byte for byte (R104).
+    expect(renderedBy.get(plays()[0]?.voice.render ?? {})).toBe(ghosted);
     // The exact render then arriving plays nothing more.
     await answerAll();
     await frames(3);
