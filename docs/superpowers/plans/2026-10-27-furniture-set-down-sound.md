@@ -49,7 +49,7 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
   | Recomputing reverberation times | ≤ 0.5 ms |
   | The tail | idle slices of ≤ 4 ms each, ≤ 150 ms in total; 1.2 x the longest band's reverberation time in seconds at any rate, its memory per rate stated in `tail.ts` (R46; the plan's first cap was 2 MB) |
   | Voices at once | ≤ 8 |
-  | Engine and data | ≤ 33 KB gzipped for the Worker's and the driver's chunks together, lazy with the planner (R101, R103, R106; the first figure was 25 KB, before the engine's rulings through R102 were built; R103's 32 KB held until fix round 2's fixes measured 33,287 B on 25 Nov 2026; after fix round 3, 33,253 B; after fix round 4, 33,331 B) |
+  | Engine and data | ≤ 33 KB gzipped for the Worker's and the driver's chunks together, lazy with the planner (R101, R103, R106; the first figure was 25 KB, before the engine's rulings through R102 were built; R103's 32 KB held until fix round 2's fixes measured 33,287 B on 25 Nov 2026; after fix round 3, 33,253 B; after fix round 4, 33,331 B; after fix round 5, 33,487 B) |
 - **This PC is short of memory** (system commit at 92–97 %). Run Vitest on single files (`pnpm --filter @omnitwin/web exec vitest run <file>`). CI runs the full suites. Check free memory before the ray tracer and any browser run (the house's `wait-memory.sh`, kept outside the repo).
 - **No edits** to `components/meshes/crafted/*` or `crafted-furniture.test.ts`: four T-675 PRs are open on them.
 - **Commits.** Commit with explicit pathspecs. Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never commit in the shared checkout that other sessions work in.
@@ -1032,7 +1032,13 @@ export function createSetDownRenderer(options?: { readonly createWorker?: () => 
     - Every play starts from its batch's one anchor, a currentTime and page-time pair read together at the batch's first contact (R109). Its start is its slot carried onto the context's clock, or now if that has passed, plus the contact frame's lead.
     - This replaces each voice reading currentTime afresh, which a browser's main thread sees in audio-buffer steps (the run's gaps of 83.3 ms).
     - It also replaces a variant or late exact render starting at currentTime, which lost the lead and could be heard up to 10 ms before its frame was shown.
-    - A cascade voice's slot is decided at its contact, in landing order: its contact, or the plan's seeded gap after the slot of the voice that landed before it, whichever is later (R110). Touchdowns that lag the plan and bunch into one frame are spaced, never simultaneous (the run's four chairs together).
+    - A cascade voice's slot is decided at its contact, in landing order: its contact, or the plan's seeded gap after the slot of the voice that landed before it, whichever is later (R110). The four chairs that landed together in the run are now spaced.
+  - **Fix round 5 (25 Nov), after the fix-4 re-review and Task 16's second run:**
+    - A batch's voices are slotted in landing order, ties in one frame in the plan's order (R111). The k-th voice slotted takes the plan's k-th gap by position and plays at -1 dB x k, so the levels step down in the order heard.
+    - Round 4 gave each voice its own gap, which left the plan's first voice (gap 0) together with, or one frame after, a piece that landed before it.
+    - A set under four keeps its 12 ms stagger for pieces that touch down together.
+    - The anchor pairs the context's clock with the first contact's own time, not the shell's later frame (R112). The run's first gap was short by that millisecond.
+    - A batch whose clock falls more than 50 ms behind the anchor's projection is anchored again.
 - **Supports at contact.** They are re-read at contact for voiced ids. A changed `surfacesKey` takes a matching variant if there is one, or otherwise the drop-start render, logged as stale (Review Focus 5).
 - **Reduced motion.** A `landedInPlace` voice plays when its render answers, at `currentTime` (Q10, ruling R84).
 - **`pickedUp(id, true)`.** The Worker renders "ahead" variants: seeds 1–3, for the surfaces under the piece now and for the room's floor. They are asked again when the carried piece has moved more than 1 m or its supports change, checked at most every 250 ms. The cache is dropped when the room key changes.
@@ -1189,9 +1195,15 @@ This task does not wait on the gate.
   - Every change of room takes the old room's tail off the bus at once, faded over the 0.1 s cross-fade if it rings. So a set-down in the new room is dry until the new tail answers, never sent into the old room. The same holds when sound comes back on in a room changed while it was off.
   - This is to be measured on the device day.
 - **A cascade voice's window.** Each voice of a cascade is due at its own slot, up to about 0.7 s after its piece lands. Its render is on time if ready by the slot, and may arrive up to 45 ms after it (R105). The policy judges it the same way, so the cascade's own spacing is never read as a slow device.
-  - The slot is decided at the voice's contact: its contact, or the plan's 85-110 ms gap after the slot of the voice that landed before it, whichever is later (R110). Pieces that touch down later than the plan, bunched into one frame, are spaced and never heard together. A cascade can then run longer than planned.
-  - Each voice starts at its slot carried onto the context's clock through its batch's one anchor, read at the first contact, with the frame's lead (R109). The gaps are exact however coarsely the browser reads that clock.
-  - The anchor itself can be one audio buffer off the true time, the same for every voice of the batch. A voice is never started before now.
+  - The slot is decided at the voice's contact, the batch's voices in the order they land, ties in one frame in the plan's order (R110, R111). The k-th voice slotted takes its contact, or the plan's k-th gap after the slot before it, whichever is later, and plays at -1 dB x k.
+    - A cascade's voices are spaced 85-110 ms; a smaller set keeps its 12 ms stagger. No two voices of a batch start together.
+    - Pieces that touch down later than the plan, bunched into one frame, are spaced, so a cascade can then run longer than planned.
+  - Each voice starts at its slot carried onto the context's clock through its batch's anchor, with the frame's lead (R109, R112).
+    - The anchor is the clock as read at the first contact, paired with that contact's own time. The batch starts the shell's frame, about a millisecond, after the touchdowns, and its gaps are exact however coarsely the browser reads the clock.
+    - The anchor can be one audio buffer off the true time, the same for every voice of the batch. A voice is never started before now.
+  - If the clock stands still while the page runs on (an interruption, or a resume slower than the first contact), the batch is anchored again once the clock is 50 ms behind (R112).
+    - Voices whose slots passed in the stall are dropped by their 45 ms windows, judged on the page's clock, and logged.
+    - The rest start at their slots.
   - A kept variant stands in from 1/30 s before the slot, scheduled to start exactly at it (R108).
   - Nothing starts more than 45 ms after its slot: a voice whose slot is reached later than that, behind a stalled main thread, is dropped and logged on the tap.
 - **Variants rendered ahead.** Heavy pieces render ahead at pickup (R48). Light and table pieces render ahead too once their class has switched (R100), at pickup and from the placement ghost. A variant is refreshed every metre and whenever the surfaces under it change.
