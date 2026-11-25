@@ -221,7 +221,7 @@ Three checks hold the rule, each as far as it can see:
 - **From the sources** (`src/__tests__/bundle-splitting.test.ts`). It walks the imports from the app's entry and
   fails if: anything outside the screen imports one of its modules, other than the two imports on demand that
   fetch it; the screen is the only production importer of a name from a module the default planner already holds,
-  or of a package path, unless that name is on the test's short list of seams (one today, with its reason; a
+  or of a package path, unless that name is on the test's short list of seams (two today, each with its reason and its cost: the chrome's own switches, about 70 bytes of the shared runtime file; and the planner's own review of a layout's gangways, which the screen asks before it excuses a tight gap so that the rule about ways to a door has no second copy, 68 bytes of the planner page's file; a
   name that stops being a seam fails the test until it is taken off the list, as the seat line's spring hook did
   when #357's chrome began to import it too); or the screen imports a shared table whose entries the bundler
   keeps one by one (the spring table). It tells a name the rest of production builds anyway from one that only a
@@ -242,7 +242,7 @@ Three checks hold the rule, each as far as it can see:
   once made everyone fetch. It sees one build, so it cannot compare with master.
 - **Two builds from one tree, compared** (by hand; the scripts are outside the repository). This branch, and the
   same tree with the branch's modified files read as on master: every file's bytes, and every module's rendered
-  code. No module the branch did not edit may render differently in a file sent without a flag. This is the
+  code. No module the branch did not edit may render differently in a file sent without a flag, but for a named seam's own (the gangway review's wrapper: one function). Files of one length that still differ are read name by name: every name is resolved to what it stands for in both builds, and one build's file with its renames applied must be the other's byte for byte. This is the
   proof; the 13 November log has its reading.
 
 Which chrome is on screen is asked of the page that mounted it (`mountedPlannerChrome`, `planner-chrome-flag.ts`),
