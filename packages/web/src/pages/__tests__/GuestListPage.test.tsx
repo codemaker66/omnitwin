@@ -915,6 +915,83 @@ describe("the guest list page: what the device says", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Closing the tab inside the autosave's 600 ms. Nothing is written in that
+// window by construction, so the page starts the save as it is hidden or
+// left, and asks the browser to confirm leaving while a change is not yet kept.
+// ---------------------------------------------------------------------------
+
+describe("the guest list page: leaving with a change not yet kept", () => {
+  /** The browser's question on closing or reloading the tab; a page that prevents it is asking to be confirmed. */
+  function askToLeave(): Event {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event;
+  }
+
+  it("asks the browser to confirm leaving only while a change is waiting to be kept or being kept", async () => {
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    const view = open(PAGE, store);
+    await desk();
+    // Nothing changed: leaving is not questioned.
+    expect(askToLeave().defaultPrevented).toBe(false);
+
+    fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor" } });
+    expect(askToLeave().defaultPrevented).toBe(true);
+
+    await flush();
+    expect(askToLeave().defaultPrevented).toBe(false);
+    const kept = await store.open(PLAN_ID);
+    expect(kept.kind === "ready" ? kept.list.title : null).toBe("Fraser and Okafor");
+
+    // Once the page has gone, so has its question.
+    fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor, again" } });
+    view.unmount();
+    expect(askToLeave().defaultPrevented).toBe(false);
+  });
+
+  it("asks while a save is still on its way to the device", async () => {
+    const { store: inner } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    const held = deferred<undefined>();
+    const store: GuestListStore = {
+      ...inner,
+      save: async (list, loaded, opts) => {
+        await held.promise;
+        return inner.save(list, loaded, opts);
+      },
+    };
+    open(PAGE, store);
+    await desk();
+    fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor" } });
+    const keeping = state().flush();
+    expect(askToLeave().defaultPrevented).toBe(true);
+    await act(async () => {
+      held.resolve(undefined);
+      await keeping;
+    });
+    expect(askToLeave().defaultPrevented).toBe(false);
+  });
+
+  it("starts the save as the page is left, without waiting out the 600 ms", async () => {
+    const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
+    const save = vi.spyOn(store, "save");
+    open(PAGE, store);
+    await desk();
+    fireEvent.change(screen.getByLabelText("The event's name"), { target: { value: "Fraser and Okafor" } });
+    expect(save).not.toHaveBeenCalled();
+
+    // The page is being left (a close, a reload, a move to another site): the save is asked for at once.
+    window.dispatchEvent(new Event("pagehide"));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]?.[0].title).toBe("Fraser and Okafor");
+
+    await flush();
+    const kept = await store.open(PLAN_ID);
+    expect(kept.kind === "ready" ? kept.list.title : null).toBe("Fraser and Okafor");
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Coming back to the page from another page of the app. The page state lives
 // on while the page is away, so every mount reads the device again: each case
 // here stays inside ONE router, leaves by the panel's own link, comes back by

@@ -461,6 +461,65 @@ describe("guest list page state: changes and autosave", () => {
   });
 });
 
+describe("guest list page state: whether a change is still waiting to be kept", () => {
+  it("is true from a change until its save has finished, and false before and after", async () => {
+    const { store } = device();
+    const gate = deferred<undefined>();
+    const real = store.save.bind(store);
+    vi.spyOn(store, "save").mockImplementationOnce(async (list, loaded, opts) => {
+      await gate.promise;
+      return real(list, loaded, opts);
+    });
+    expect(state().changeWaiting()).toBe(false);
+    await state().open(PLAN_A, store, clock());
+    expect(state().changeWaiting()).toBe(false);
+
+    // Waiting to be kept: inside the autosave's 600 ms.
+    state().apply(titled("Dinner"));
+    expect(state().changeWaiting()).toBe(true);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS - 1);
+    expect(state().changeWaiting()).toBe(true);
+
+    // Being kept: the save has started and has not answered.
+    await vi.advanceTimersByTimeAsync(1);
+    expect(state().changeWaiting()).toBe(true);
+
+    gate.resolve(undefined);
+    await state().flush();
+    expect(state().changeWaiting()).toBe(false);
+  });
+
+  it("is true while a list left for another plan is still being kept", async () => {
+    const { store } = device();
+    const gate = deferred<undefined>();
+    const real = store.save.bind(store);
+    vi.spyOn(store, "save").mockImplementationOnce(async (list, loaded, opts) => {
+      await gate.promise;
+      return real(list, loaded, opts);
+    });
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Plan A dinner"));
+    const opening = state().open(PLAN_B, store, clock());
+    expect(state().changeWaiting()).toBe(true);
+    gate.resolve(undefined);
+    await opening;
+    await state().flush();
+    expect(state().changeWaiting()).toBe(false);
+  });
+
+  it("stays true while the device is not keeping the change, and is false once the page state is reset", async () => {
+    const { store } = device();
+    vi.spyOn(store, "save").mockResolvedValue({ kind: "not-kept" });
+    await state().open(PLAN_A, store, clock());
+    state().apply(titled("Dinner"));
+    await state().flush();
+    expect(state().kept).toBe(false);
+    expect(state().changeWaiting()).toBe(true);
+    state().reset();
+    expect(state().changeWaiting()).toBe(false);
+  });
+});
+
 describe("guest list page state: undo", () => {
   it("returns to the opened list after thirty changes and thirty-one undos", async () => {
     const { store } = device();

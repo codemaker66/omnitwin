@@ -95,6 +95,12 @@ export interface GuestListState {
   /** Saves now if anything is unsaved; resolves when no save is waiting or running. */
   flush(): Promise<void>;
   /**
+   * Whether a change is still waiting to be kept, or being kept: true from a
+   * change until its save has finished. For the page to ask before the tab is
+   * closed over it.
+   */
+  changeWaiting(): boolean;
+  /**
    * Takes up another tab's changes. When nothing here is unsaved and no save
    * is running, reads the device again and takes the stored list if it is not
    * the copy last opened or saved here, whichever way the two clocks point;
@@ -555,6 +561,13 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         clearTimer(session);
         if (session.running !== null) await session.running;
         if (session.unsaved) await saveLoop(session);
+      },
+
+      changeWaiting() {
+        // A list left for another plan is still being kept.
+        if (retiring !== null) return true;
+        const session = current;
+        return session !== null && (session.unsaved || session.running !== null);
       },
 
       async refresh(mount) {

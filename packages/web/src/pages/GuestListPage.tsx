@@ -121,22 +121,39 @@ function useRoom(planId: string): RoomState {
 }
 
 /**
- * A change waiting to be kept is kept as the tab goes out of sight. When the
- * page is seen again, or its window gains focus, another tab's newer list is
- * taken up, unless a change here is still unsaved.
+ * A change waiting to be kept is kept as the tab goes out of sight, and as the
+ * page is left (a close, a reload, a move to another site): the save starts at
+ * once, without waiting out the autosave. Nothing is written in the first
+ * moments after a change, and a save started as a tab closes may not finish,
+ * so while a change is waiting to be kept, or being kept, the browser is asked
+ * to confirm leaving. When the page is seen again, or its window gains focus,
+ * what another tab did to the list is taken up, unless a change here is still
+ * unsaved.
  */
 function useKeepWhenHidden(): void {
   useEffect(() => {
     const takeUp = (): void => { void useGuestListStore.getState().refresh(); };
+    const keep = (): void => { void useGuestListStore.getState().flush(); };
     const onVisibility = (): void => {
-      if (document.visibilityState === "hidden") void useGuestListStore.getState().flush();
+      if (document.visibilityState === "hidden") keep();
       else takeUp();
+    };
+    const onLeaving = (event: BeforeUnloadEvent): void => {
+      if (!useGuestListStore.getState().changeWaiting()) return;
+      event.preventDefault();
+      // Older engines ask only when a return value is set; current ones go by preventDefault.
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- set for those older engines only
+      event.returnValue = "";
     };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", takeUp);
+    window.addEventListener("pagehide", keep);
+    window.addEventListener("beforeunload", onLeaving);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", takeUp);
+      window.removeEventListener("pagehide", keep);
+      window.removeEventListener("beforeunload", onLeaving);
     };
   }, []);
 }
