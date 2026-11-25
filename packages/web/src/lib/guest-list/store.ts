@@ -196,3 +196,22 @@ export function guestListStore(): GuestListStore {
     : createGuestListStore(openCache<unknown>({ dbName: GUEST_LIST_DB, storeName: GUEST_LIST_STORE }));
   return cachedStore;
 }
+
+/**
+ * Whether this browser may be keeping a guest list. False only when it is
+ * known not to: there is no IndexedDB, or the browser lists its databases and
+ * the kit's is not among them. Asking opens nothing, so it never makes the
+ * database (using `guestListStore()` would). A browser that cannot list its
+ * databases, or refuses to, may be keeping one.
+ */
+export async function guestListDatabaseMayExist(): Promise<boolean> {
+  if (typeof indexedDB === "undefined") return false;
+  // Typed as always present, but an older browser has no `databases`.
+  if (!("databases" in indexedDB)) return true;
+  try {
+    const known = await indexedDB.databases();
+    return known.some((database) => database.name === GUEST_LIST_DB);
+  } catch {
+    return true;
+  }
+}

@@ -120,8 +120,11 @@ registerPushWorker();
 // runs a while after the page has settled, from its own module, so no route's
 // first load carries the planner's draft code (the walkable twin's byte
 // budget, e2e/twin-performance). Reading a draft checks its age too, so a
-// stale one is never restored in the meantime.
+// stale one is never restored in the meantime. Guest lists kept in this
+// browser past their removal day go the same way, from their own module,
+// which makes no database for a visitor who never kept one.
 const PLANNER_DRAFT_SWEEP_DELAY_MS = 30_000;
 window.setTimeout(() => {
   void import("./lib/planner-draft-storage.js").then(({ sweepExpiredPlannerDrafts }) => { sweepExpiredPlannerDrafts(); });
+  void import("./lib/guest-list/boot-sweep.js").then(({ sweepGuestListsAtBoot }) => { void sweepGuestListsAtBoot(); });
 }, PLANNER_DRAFT_SWEEP_DELAY_MS);

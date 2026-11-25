@@ -175,8 +175,9 @@ export function repairGuestList(
 /**
  * The calendar day (UTC, "YYYY-MM-DD") on which the list is removed, and which
  * rule set it: 30 days after the event date, or, with no date, 90 days after
- * the last change. The sweep removes the list from the start of that day
- * (00:00 UTC), so the page says "removed on" that day.
+ * the last change. A sweep removes the list from the start of that day
+ * (00:00 UTC), and a sweep runs when Venviewer opens in the browser, so the
+ * page says "on or after" that day.
  */
 export function deleteAfter(
   list: GuestList,

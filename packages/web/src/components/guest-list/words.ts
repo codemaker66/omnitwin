@@ -62,13 +62,18 @@ export function toSeatSentence(toSeat: number): string {
   return `${String(toSeat)} ${toSeat === 1 ? "is" : "are"} still to seat.`;
 }
 
-/** Where the names are kept, and the day they are removed. */
+/**
+ * Where the names are kept, and when they are removed. Removal is done by
+ * this browser, when Venviewer next opens in it on or after the removal day
+ * (any page of it: the boot sweep, or a guest list page as it opens), so the
+ * line says that, and does not give the day as the moment the names go.
+ */
 export function keepingLine(list: GuestList): string {
   const { dateIso, rule } = deleteAfter(list);
   const why = rule === "event"
     ? `${String(KEEP_DAYS_AFTER_EVENT)} days after the event`
     : `${String(KEEP_DAYS_AFTER_CHANGE)} days after your last change`;
-  return `These names are kept only in this browser, on this device. None of them is sent to Venviewer. They are removed on ${calendarDay(dateIso)}, ${why}.`;
+  return `These names are kept only in this browser, on this device. None of them is sent to Venviewer. They are removed ${why}: on or after ${calendarDay(dateIso)}, the next time Venviewer opens in this browser.`;
 }
 
 /** Beside the date field, when a date is refused because the list would be removed at once. */

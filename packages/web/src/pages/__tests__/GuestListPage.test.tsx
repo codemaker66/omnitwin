@@ -894,12 +894,14 @@ describe("the guest list page: what the device says", () => {
     expect(screen.queryByText(REMOVED_BY_RULE_WORDS)).toBeNull();
   });
 
-  it("says where the names are kept and when they are removed", async () => {
+  it("says where the names are kept, and that they are removed on or after their day, the next time Venviewer opens here", async () => {
     const dated = listOf({ eventDate: "2099-06-12", guests: [guest(1, "Ailsa Fraser")] });
     const { store } = await storeHolding(dated);
     const view = open(PAGE, store);
     await desk();
-    expect(screen.getByText("These names are kept only in this browser, on this device. None of them is sent to Venviewer. They are removed on 12 July 2099, 30 days after the event.")).toBeTruthy();
+    expect(screen.getByText("These names are kept only in this browser, on this device. None of them is sent to Venviewer. They are removed 30 days after the event: on or after 12 July 2099, the next time Venviewer opens in this browser.")).toBeTruthy();
+    // The page no longer states the removal day as a fact about the device.
+    expect(screen.queryByText(/They are removed on /)).toBeNull();
     view.unmount();
     state().reset();
 
@@ -908,7 +910,7 @@ describe("the guest list page: what the device says", () => {
       .format(Date.parse(`${deleteAfter(undated).dateIso}T00:00:00.000Z`));
     open(PAGE, (await storeHolding(undated)).store);
     await desk();
-    expect(screen.getByText(`These names are kept only in this browser, on this device. None of them is sent to Venviewer. They are removed on ${day}, 90 days after your last change.`)).toBeTruthy();
+    expect(screen.getByText(`These names are kept only in this browser, on this device. None of them is sent to Venviewer. They are removed 90 days after your last change: on or after ${day}, the next time Venviewer opens in this browser.`)).toBeTruthy();
   });
 });
 
