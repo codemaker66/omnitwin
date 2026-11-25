@@ -62,10 +62,14 @@ async function gitEntryAbove(folder: string): Promise<boolean> {
  * not safe to schedule until the conveyor's ledger reserves a budget before the
  * session starts.
  */
-export const ATTENDED = `Run it by hand and attended until the night-shift conveyor's ledger v2 lands: the
-ledger line is written only once the launcher has stopped a session and read its cost, and nothing
-locks the check-then-spend step, so a launcher that dies or is started twice at once can
-leave a running session unrecorded. Do not schedule or loop \`sandbox run\`.`;
+export const ATTENDED = `Run it by hand and attended until the night-shift conveyor's ledger v2 lands. A run
+books its session once, after stopping it and reading its cost. Ctrl-C, a kill or Ctrl-Break does
+the same: it interrupts the session, waits for it or archives it, and books it; a second one, or
+closing the window, books the session at once at its whole budget as unknown and exits. A
+launcher that dies without a signal (a crash, a forced kill) leaves its session unbooked: \`run\`
+then refuses, and \`status\` warns, until \`sandbox collect <session-id> --book\` books it. Nothing
+locks the check-then-spend step, so two launchers started at once can both pass the spend check.
+Do not schedule or loop \`sandbox run\`.`;
 
 export const USAGE = `credit-runner sandbox: runs one spec per Claude Managed Agents session in
 Anthropic's cloud sandbox, and brings back a patch for review. No agent code runs

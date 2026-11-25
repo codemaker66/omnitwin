@@ -31,6 +31,12 @@ describe("the CLI's own words", () => {
   it("says in its usage that the launcher is run by hand and attended, with a neutral job label", () => {
     expect(ATTENDED).toContain("Run it by hand and attended until the night-shift conveyor's ledger v2 lands");
     expect(ATTENDED).toContain("Do not schedule or loop `sandbox run`");
+    // What a signal does, and how a session a dead launcher left is found and booked.
+    expect(ATTENDED).toContain("Ctrl-C, a kill or Ctrl-Break does\nthe same: it interrupts the session, waits for it or archives it, and books it");
+    expect(ATTENDED).toContain("books the session at once at its whole budget as unknown and exits");
+    expect(ATTENDED).toContain("`run`\nthen refuses, and `status` warns, until `sandbox collect <session-id> --book` books it");
+    expect(ATTENDED).not.toMatch(/a launcher that dies or is started twice at once can\sleave a running session unrecorded/u);
+    expect(USAGE).toContain("sandbox collect <session-id> --book [--budget <usd>]");
     expect(USAGE).toContain(ATTENDED);
     // No example that reads like a scheduled night.
     expect(USAGE).not.toMatch(/night-\d/u);
