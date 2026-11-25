@@ -1,8 +1,7 @@
 import { useEffect, useMemo } from "react";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../constants/scale.js";
-import { resolveRoomGeometry } from "../data/room-geometries.js";
-import { plannerRoomOf, type PlannerRoomDimensions } from "../lib/room-floor.js";
+import { computeBoundingBox, resolveRoomGeometry } from "../data/room-geometries.js";
 import { useSectionStore } from "../stores/section-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useEditorStore } from "../stores/editor-store.js";
@@ -30,13 +29,18 @@ useBookmarkStore.getState().initialize(GRAND_HALL_RENDER_DIMENSIONS);
  */
 export function usePlannerRoomDimensions(): SpaceDimensions {
   const space = useEditorStore((s) => s.space);
-  const dimensions = useMemo((): PlannerRoomDimensions => {
+  const dimensions = useMemo(() => {
     if (space === null) return GRAND_HALL_RENDER_DIMENSIONS;
 
-    // The size of the walls' bounds and, where the walls are not the rectangle
-    // of that size centred on the origin, the floor inside them (lib/room-floor).
     const geom = resolveRoomGeometry(space);
-    if (geom !== null) return plannerRoomOf(geom.wallPolygon, geom.ceilingHeight);
+    if (geom !== null) {
+      const bbox = computeBoundingBox(geom.wallPolygon);
+      return scaleForRendering({
+        width: bbox.width,
+        length: bbox.depth,
+        height: geom.ceilingHeight,
+      });
+    }
 
     // Defensive: no polygon available (shouldn't happen post Prompt 7,
     // which makes floor-plan outlines required on every space write).
@@ -47,12 +51,12 @@ export function usePlannerRoomDimensions(): SpaceDimensions {
     });
   }, [space]);
 
-  const { width, length, height, floor } = dimensions;
+  const { width, length, height } = dimensions;
   useEffect(() => {
     useSectionStore.getState().setMaxHeight(height);
     useBookmarkStore.getState().initialize({ width, length, height });
-    useRoomDimensionsStore.getState().setDimensions(floor === undefined ? { width, length, height } : { width, length, height, floor });
-  }, [width, length, height, floor]);
+    useRoomDimensionsStore.getState().setDimensions({ width, length, height });
+  }, [width, length, height]);
 
   const grandHall = useModelledGrandHall();
   useEffect(() => {

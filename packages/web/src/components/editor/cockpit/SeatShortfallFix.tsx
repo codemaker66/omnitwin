@@ -66,8 +66,6 @@ export function SeatShortfallFix({ testId, statement = false, published = null, 
       roomLengthM: dimensions.length / RENDER_SCALE,
       chairSlug: eventChair,
       doorSpaces: doorKeepOuts(doorSpaces),
-      // The room's own floor, as the placement store hands it to the fix.
-      floor: dimensions.floor,
     }),
     [placedItems, guests, dimensions, eventChair, doorSpaces],
   );
