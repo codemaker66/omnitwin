@@ -331,13 +331,14 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: Stuck work, the routes", () =>
     expect(response.body).not.toContain("1 Test Street");
   });
 
-  it("counts every queued, running and dead job in the table", async () => {
+  it("counts the queued jobs that are due, and every running and dead job", async () => {
     await seed({ state: "queued" });
-    await seed({ state: "queued" });
+    // Queued, but not due until long after the test: tomorrow's daily run is such a job.
+    await seed({ state: "queued", runAt: "2099-01-01T00:00:00.000Z" });
     await seed({ state: "running" });
     await seed({ state: "dead" });
     const body = stuckBody(await asPlatformAdmin("GET", "/admin/jobs/stuck"));
-    expect(body.data.counts).toEqual({ queued: 2, running: 1, dead: 1, oldPendingSends: 0 });
+    expect(body.data.counts).toEqual({ queued: 1, running: 1, dead: 1, oldPendingSends: 0 });
   });
 
   it("lists at most 200, the newest, while counting them all; two that gave up together come out in a fixed order", async () => {

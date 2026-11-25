@@ -510,9 +510,12 @@ function isoFromMs(ms: number): string {
 }
 
 /**
- * The newest 200 dead jobs, each with its venue's name (a platform job has
- * none), and the whole table's counts. The counts are one statement and the
- * list another, so a job can move between them; the page is a look, not a lock.
+ * The newest dead jobs, at most `STUCK_JOBS_LIMIT`, each with its venue's name
+ * (a platform job has none), and the whole table's counts. The counts are one
+ * statement and the list another, so a job can move between them; the page is
+ * a look, not a lock. `queued` counts jobs that are queued and due now; a job
+ * waiting for a later time (tomorrow's daily run, a try waiting out its retry)
+ * is not counted.
  *
  * Newest first by when the list gave up (`finished_at`), then by `id` so two
  * jobs that gave up at the same instant keep one order from one read to the
@@ -524,7 +527,7 @@ function isoFromMs(ms: number): string {
 export async function listStuckWork(db: Database): Promise<Omit<StuckWork, "worker">> {
   const counts = await db.execute(sql`
     SELECT
-      (SELECT count(*) FROM jobs WHERE state = 'queued')::int AS queued,
+      (SELECT count(*) FROM jobs WHERE state = 'queued' AND run_at <= now())::int AS queued,
       (SELECT count(*) FROM jobs WHERE state = 'running')::int AS running,
       (SELECT count(*) FROM jobs WHERE state = 'dead')::int AS dead,
       (SELECT count(*) FROM email_sends WHERE status = 'pending' AND created_at < now() - interval '1 day')::int AS old_pending_sends`);
@@ -600,10 +603,11 @@ export class JobRetryPreparationError extends Error {
  * preparation throws, the transaction rolls back, the job stays dead and a
  * `JobRetryPreparationError` is thrown.
  *
- * `"not-found"`: no job has this id. `"not-dead"`: the job is not dead (another
- * person got there first). `"unreadable"`: it is dead, but no server of this release reads its
- * kind or version, so putting it back would hide it from Stuck work and no one
- * would ever take it; it stays dead, to be closed with a note.
+ * `"not-found"`: no job has this id. `"not-dead"`: the job is not dead
+ * (another person got there first). `"unreadable"`: it is dead, but no server
+ * of this release reads its kind or version, so putting it back would hide it
+ * from Stuck work and no one would ever take it; it stays dead, to be closed
+ * with a note.
  */
 export async function retryDeadJob(db: Database, registry: JobRegistry, id: string, byUserId: string): Promise<RetryOutcome> {
   return db.transaction(async (tx) => {

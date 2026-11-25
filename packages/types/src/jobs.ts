@@ -49,6 +49,7 @@ export const StuckWorkSchema = z.object({
   /** The newest STUCK_JOBS_LIMIT dead jobs, newest first. */
   jobs: z.array(StuckJobSchema).max(STUCK_JOBS_LIMIT),
   counts: z.object({
+    /** Jobs that are queued and due now; a job waiting for a later time is not counted. */
     queued: z.number().int(),
     running: z.number().int(),
     dead: z.number().int(),
@@ -63,10 +64,10 @@ export const CloseStuckJobSchema = z.object({
   note: z.string().trim().min(1).max(500).refine((note) => !note.includes("\u0000"), "The note holds a character that cannot be stored"),
 });
 
-/** The answer to Try again, Close and the self-test: the job's id. */
+/** The answer to Try again and Close: the job's id. */
 export const StuckJobActionSchema = z.object({ id: z.uuid() });
 
-/** The self-test’s answer: its job’s id, and the state the job had reached when the server stopped waiting. */
+/** The self-test's answer: its job's id, and the state the job had reached when the server stopped waiting. */
 export const SelfTestResultSchema = z.object({ id: z.uuid(), state: JobStateSchema });
 
 export type JobState = z.infer<typeof JobStateSchema>;
