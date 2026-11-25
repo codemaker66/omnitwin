@@ -21,7 +21,8 @@ import { enqueueJob } from "../store.js";
 //      run, so a repeated try asks once. Its payload is this run's own
 //      occurrence, which the kind's schema accepts.
 //   2. Read the invariant (nothing stuck unseen). Unhealthy: log the four
-//      counts, whether or not Sentry is on, and raise `workerFault("loop")`.
+//      counts, whether or not Sentry is on, and raise `listStuck` with them
+//      (its own alert, `job.list-stuck`, not a fault of the worker's).
 //   3. Check in, so Sentry alerts if a day passes without one.
 //
 // Safe to repeat: deleting what is gone deletes nothing, and the read and the
@@ -81,7 +82,7 @@ async function runDaily(
     ctx.logger.info({ ...invariant, deleted }, "the job list's daily check found nothing stuck");
   } else {
     ctx.logger.error({ ...invariant }, "the job list's daily check found work stuck unseen");
-    deps.alerts.workerFault("loop", `The daily check found work stuck unseen: ${describeInvariant(invariant)}`);
+    deps.alerts.listStuck(describeInvariant(invariant));
   }
 
   deps.alerts.checkIn(DAILY_MONITOR);

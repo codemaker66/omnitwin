@@ -186,6 +186,7 @@ async function main(): Promise<void> {
     claimLost: (job) => { tell({ alert: ["claimLost", { ...job }] }); },
     workerFault: (what, detail) => { tell({ alert: ["workerFault", { what, detail }] }); },
     workerRecovered: (what) => { tell({ alert: ["workerRecovered", { what }] }); },
+    listStuck: (detail) => { tell({ alert: ["listStuck", { detail }] }); },
     checkIn: (monitor) => { tell({ alert: ["checkIn", { monitor }] }); },
   };
 

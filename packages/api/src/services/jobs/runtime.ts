@@ -7,7 +7,7 @@ import { buildJobAlerts, logJobAlerts, type JobAlerts } from "./alerts.js";
 import { dailyJob } from "./kinds/daily.js";
 import { selfTestJob } from "./kinds/selftest.js";
 import { buildJobRegistry, jobErrorText, type JobKind, type JobLogger, type JobRegistry } from "./kinds.js";
-import { ensureNextRuns, type RepeatingJob } from "./repeating.js";
+import { nextRunsKeeper, type RepeatingJob } from "./repeating.js";
 import { installedJobWorker, installJobWorker } from "./wake.js";
 import { JobWorker } from "./worker.js";
 
@@ -47,7 +47,7 @@ function serverIdentity(): string {
 
 /**
  * Builds the registry; with JOBS_WORKER on, starts a worker (sleepMinutes from
- * JOBS_MAX_SLEEP_MINUTES, afterPass calling ensureNextRuns) and installs it.
+ * JOBS_MAX_SLEEP_MINUTES, afterPass from nextRunsKeeper) and installs it.
  * With it off, installs nothing.
  *
  * `stop` takes nothing new, waits up to `graceMs` for the running job, hands
@@ -78,7 +78,7 @@ export async function startJobs(deps: { readonly db: Database; readonly env: Env
     alerts,
     // Only when set: unset, the worker's own default (60) is the one default.
     ...(env.JOBS_MAX_SLEEP_MINUTES === undefined ? {} : { sleepMinutes: env.JOBS_MAX_SLEEP_MINUTES }),
-    afterPass: (now) => ensureNextRuns(db, repeating, now),
+    afterPass: nextRunsKeeper(db, repeating, logger, alerts),
   });
   installJobWorker(worker);
   worker.start();

@@ -4,11 +4,14 @@ import { jobErrorText, type JobLogger } from "./kinds.js";
 // ---------------------------------------------------------------------------
 // The job list (T-702): what the worker tells a person about.
 //
-// A job that went dead, a claim whose server never answered, and the worker
-// itself failing and recovering. Every call carries the kind, the job's id and
-// the venue's id only, and any text has been through `jobErrorText`: no name,
-// address or amount reaches an alert. The reporters below run the text through
-// it once more, so a caller that forgot cannot leak one.
+// A job that went dead, a claim whose server never answered, the worker
+// itself failing and recovering, and work stuck unseen on the list
+// (`listStuck`: the daily check, or a repeating kind with no next run; a
+// Sentry group of its own, apart from the worker's faults). Every call
+// carries the kind, the job's id and the venue's id only, and any text has
+// been through `jobErrorText`: no name, address or amount reaches an alert.
+// The reporters below run the text through it once more, so a caller that
+// forgot cannot leak one.
 //
 // Two reporters: to Sentry when SENTRY_DSN is set (`sentryJobAlerts`, the
 // API's capture path for work that has no request; the scrubbing `initSentry`
@@ -23,14 +26,19 @@ export interface JobAlerts {
   /** Raised once when a fault begins, and not again until `workerRecovered` has been raised for it. */
   readonly workerFault: (what: "database" | "loop", detail: string) => void;
   readonly workerRecovered: (what: "database" | "loop") => void;
+  /**
+   * The list holds work stuck unseen: the daily check found some (raised each day it does), or a
+   * repeating kind has no next run (raised once for each kind in a process's life).
+   */
+  readonly listStuck: (detail: string) => void;
   readonly checkIn: (monitor: string) => void;
 }
 
 /**
  * Records every alert as `[name, what it was given]`, in order. A call with
  * one argument records that argument (a copy of a job's fields); `workerFault`
- * and `workerRecovered` record `{ what, detail }` and `{ what }`, and `checkIn`
- * records `{ monitor }`.
+ * and `workerRecovered` record `{ what, detail }` and `{ what }`, `listStuck`
+ * records `{ detail }`, and `checkIn` records `{ monitor }`.
  */
 export function recordingJobAlerts(): JobAlerts & { readonly calls: readonly (readonly [string, unknown])[] } {
   const calls: (readonly [string, unknown])[] = [];
@@ -40,6 +48,7 @@ export function recordingJobAlerts(): JobAlerts & { readonly calls: readonly (re
     claimLost: (job) => { calls.push(["claimLost", { ...job }]); },
     workerFault: (what, detail) => { calls.push(["workerFault", { what, detail }]); },
     workerRecovered: (what) => { calls.push(["workerRecovered", { what }]); },
+    listStuck: (detail) => { calls.push(["listStuck", { detail }]); },
     checkIn: (monitor) => { calls.push(["checkIn", { monitor }]); },
   };
 }
@@ -56,7 +65,10 @@ interface AlertReport {
   readonly name: string;
   readonly level: AlertLevel;
   readonly message: string;
-  /** The kind, the job's id and the venue's id (absent for a platform job), or which part of the worker failed. */
+  /**
+   * The kind, the job's id and the venue's id (absent for a platform job), or which part of the worker
+   * failed; none for work stuck on the list.
+   */
   readonly tags: Record<string, string>;
   /** Sentry groups by this: one job's alerts of one kind together, different jobs apart. */
   readonly fingerprint: string[];
@@ -120,6 +132,20 @@ function recoveredReport(what: WorkerFault): AlertReport {
   };
 }
 
+function stuckReport(detail: string): AlertReport {
+  const text = jobErrorText(detail);
+  return {
+    name: "job.list-stuck",
+    level: "error",
+    message: `The job list has work stuck unseen: ${text}`,
+    // No job's tags: it is about the list, not one job.
+    tags: {},
+    // A group of its own, so muting it never mutes a fault of the worker's.
+    fingerprint: ["job.list-stuck"],
+    extra: { detail: text },
+  };
+}
+
 /** Writes each alert to the log: errors as errors, a lost claim as a warning, a recovery and a check-in as info. */
 export function logJobAlerts(logger: JobLogger): JobAlerts {
   const write = (report: AlertReport): void => {
@@ -133,6 +159,7 @@ export function logJobAlerts(logger: JobLogger): JobAlerts {
     claimLost: (job) => { write(claimLostReport(job)); },
     workerFault: (what, detail) => { write(faultReport(what, detail)); },
     workerRecovered: (what) => { write(recoveredReport(what)); },
+    listStuck: (detail) => { write(stuckReport(detail)); },
     checkIn: (monitor) => { logger.info({ alert: "job.check-in", monitor }, "the job list checked in"); },
   };
 }
@@ -195,6 +222,7 @@ export function sentryJobAlerts(client: JobAlertsSentryClient, logger: JobLogger
     claimLost: (job) => { send(claimLostReport(job)); },
     workerFault: (what, detail) => { send(faultReport(what, detail)); },
     workerRecovered: (what) => { send(recoveredReport(what)); },
+    listStuck: (detail) => { send(stuckReport(detail)); },
     checkIn: (monitor) => {
       try {
         client.captureCheckIn({ monitorSlug: monitor, status: "ok" }, DAILY_MONITOR_CONFIG);

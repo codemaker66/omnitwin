@@ -137,6 +137,25 @@ describe("jobs: the Sentry reporter", () => {
     expect(JSON.stringify(sent)).not.toContain("@");
   });
 
+  it("work stuck on the list is an error in a group of its own, with no job's tags and the text scrubbed", () => {
+    const { client, sent } = captureSentry();
+    const alerts = sentryJobAlerts(client, recordingLogger());
+    const detail = "unreadable jobs 1; seen by ada@example.org?token=abc";
+    alerts.listStuck(detail);
+    alerts.workerFault("loop", "the pass threw");
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toEqual({
+      message: `The job list has work stuck unseen: ${jobErrorText(detail)}`,
+      level: "error",
+      tags: {},
+      fingerprint: ["job.list-stuck"],
+    });
+    // Never the worker's loop fault's group: muting one does not mute the other.
+    expect(sent[0]?.fingerprint).not.toEqual(sent[1]?.fingerprint);
+    expect(JSON.stringify(sent)).not.toContain("@");
+    expect(JSON.stringify(sent)).not.toContain("token=abc");
+  });
+
   it("a check-in tells the monitor it ran, creating it with a daily schedule", () => {
     const { client, sent, checkIns } = captureSentry();
     sentryJobAlerts(client, recordingLogger()).checkIn("job-list-daily");
@@ -189,5 +208,15 @@ describe("jobs: the log reporter", () => {
     expect(logger.entries[1]?.obj).toMatchObject({ "job.worker.fault": "database" });
     expect(logger.entries[3]?.obj).toEqual({ alert: "job.check-in", monitor: "job-list-daily" });
     expect(JSON.stringify(logger.entries)).not.toContain("@");
+  });
+
+  it("logs work stuck on the list as an error of its own, with the scrubbed detail and no job's fields", () => {
+    const logger = recordingLogger();
+    logJobAlerts(logger).listStuck("unreadable jobs 1; seen by ada@example.org");
+    expect(logger.entries).toEqual([{
+      level: "error",
+      obj: { alert: "job.list-stuck", detail: "unreadable jobs 1; seen by [email address]" },
+      msg: "The job list has work stuck unseen: unreadable jobs 1; seen by [email address]",
+    }]);
   });
 });

@@ -315,7 +315,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: inside the API", () => {
       expect(alerts.calls).toEqual([["checkIn", { monitor: DAILY_MONITOR }], ["checkIn", { monitor: DAILY_MONITOR }]]);
     });
 
-    it("the daily job raises a fault with the four counts when something is stuck, and logs it", async () => {
+    it("the daily job raises the list's own stuck alert with the four counts when something is stuck, and logs it", async () => {
       await seedJob({ kind: "test.unknown", key: "alien" });
       await seedSend({ status: "queued", createdAt: sql`now() - interval '2 days'` });
       await seedDailyRun("2020-01-01T03:00:00.000Z");
@@ -324,15 +324,13 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: inside the API", () => {
       worker = startWorker(alerts, logger);
       await idle(worker);
 
-      expect(alerts.calls).toHaveLength(2);
-      expect(alerts.calls[0]?.[0]).toBe("workerFault");
-      const fault = alerts.calls[0]?.[1] as { readonly what: string; readonly detail: string };
-      expect(fault.what).toBe("loop");
-      expect(fault.detail).toContain("overdue jobs 0");
-      expect(fault.detail).toContain("expired claims 0");
-      expect(fault.detail).toContain("stale queued sends 1");
-      expect(fault.detail).toContain("unreadable jobs 1");
-      expect(alerts.calls[1]).toEqual(["checkIn", { monitor: DAILY_MONITOR }]);
+      // Its own alert, not a fault of the worker's: the worker itself is well.
+      expect(alerts.calls).toEqual([
+        ["listStuck", { detail: "overdue jobs 0, expired claims 0, stale queued sends 1, unreadable jobs 1" }],
+        ["checkIn", { monitor: DAILY_MONITOR }],
+      ]);
+      expect(alerts.calls.some(([name]) => name === "workerFault")).toBe(false);
+      expect(worker.status().fault).toBeNull();
       // Written to the log whether or not Sentry is on.
       expect(logger.entries).toContainEqual(expect.objectContaining({
         level: "error",

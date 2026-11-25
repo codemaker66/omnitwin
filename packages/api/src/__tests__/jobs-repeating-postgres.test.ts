@@ -6,7 +6,7 @@ import type { Database } from "../db/client.js";
 import { recordingJobAlerts } from "../services/jobs/alerts.js";
 import { buildJobRegistry, defineJobKind, type JobLogger } from "../services/jobs/kinds.js";
 import { nextLocalTime } from "../services/jobs/local-time.js";
-import { ensureNextRuns, type RepeatingJob } from "../services/jobs/repeating.js";
+import { ensureNextRuns, nextRunsKeeper, type RepeatingJob } from "../services/jobs/repeating.js";
 import { JobWorker } from "../services/jobs/worker.js";
 import { jobsTestUrl, openJobsDatabase, resetJobs } from "./helpers/jobs-db.js";
 
@@ -121,7 +121,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: work that repeats", () => {
       logger: silentLogger,
       alerts: recordingJobAlerts(),
       lostClaimPauseSeconds: 0,
-      afterPass: (now) => ensureNextRuns(db, [daily], now),
+      afterPass: async (now) => { await ensureNextRuns(db, [daily], now); },
     });
     worker.start();
     await idle(worker);
@@ -159,5 +159,51 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: work that repeats", () => {
   it("a list with nothing repeating writes nothing", async () => {
     await ensureNextRuns(db, [], new Date("2027-01-10T12:00:00Z"));
     expect((await pool.query("SELECT 1 FROM jobs")).rowCount).toBe(0);
+  });
+
+  // ---- A faulty `next` (the final review, I3) -------------------------------
+
+  it("a kind whose next throws is skipped and named, and the kind after it still gets its run", async () => {
+    const broken: RepeatingJob = {
+      kind: failingKind,
+      next: () => { throw new Error("No such time zone: Mars/Olympus, said ops@example.org"); },
+    };
+    const daily: RepeatingJob = { kind: occurrenceKind, next: (after) => nextLocalTime(after, "03:00", "UTC") };
+    const skipped = await ensureNextRuns(db, [broken, daily], new Date("2027-01-10T12:00:00Z"));
+    expect(skipped).toEqual([{ kind: failingKind.kind, reason: "No such time zone: Mars/Olympus, said [email address]" }]);
+    expect(await jobsOfKind(failingKind.kind)).toEqual([]);
+    expect((await jobsOfKind(occurrenceKind.kind)).map((row) => row.key)).toEqual(["2027-01-11T03:00:00.000Z"]);
+  });
+
+  it("a next that is not after now (now itself, a past instant, an invalid date) writes nothing and names the kind", async () => {
+    const now = new Date("2027-01-10T12:00:00Z");
+    const atNow: RepeatingJob = { kind: occurrenceKind, next: (after) => new Date(after.getTime()) };
+    const inThePast: RepeatingJob = { kind: failingKind, next: (after) => new Date(after.getTime() - 60_000) };
+    expect(await ensureNextRuns(db, [atNow, inThePast], now)).toEqual([
+      { kind: occurrenceKind.kind, reason: "its next run is not after now" },
+      { kind: failingKind.kind, reason: "its next run is not after now" },
+    ]);
+    const invalid: RepeatingJob = { kind: occurrenceKind, next: () => new Date(Number.NaN) };
+    expect(await ensureNextRuns(db, [invalid], now)).toEqual([{ kind: occurrenceKind.kind, reason: "its next run is not after now" }]);
+    expect((await pool.query("SELECT 1 FROM jobs")).rowCount).toBe(0);
+  });
+
+  it("the worker's keeper logs a faulty kind every time and raises its alert once", async () => {
+    const lines: { readonly obj: Record<string, unknown>; readonly msg: string | undefined }[] = [];
+    const logger: JobLogger = { ...silentLogger, error: (obj, msg) => { lines.push({ obj, msg }); } };
+    const alerts = recordingJobAlerts();
+    const broken: RepeatingJob = { kind: failingKind, next: () => { throw new Error("No such time zone"); } };
+    const daily: RepeatingJob = { kind: occurrenceKind, next: (after) => nextLocalTime(after, "03:00", "UTC") };
+    const keep = nextRunsKeeper(db, [broken, daily], logger, alerts);
+    await keep(new Date("2027-01-10T12:00:00Z"));
+    await keep(new Date("2027-01-10T12:05:00Z"));
+    expect(lines).toEqual([
+      { obj: { kind: failingKind.kind, error: "No such time zone" }, msg: "a repeating kind has no next run" },
+      { obj: { kind: failingKind.kind, error: "No such time zone" }, msg: "a repeating kind has no next run" },
+    ]);
+    expect(alerts.calls).toEqual([
+      ["listStuck", { detail: `The repeating kind ${failingKind.kind} has no next run: No such time zone` }],
+    ]);
+    expect((await jobsOfKind(occurrenceKind.kind)).map((row) => row.key)).toEqual(["2027-01-11T03:00:00.000Z"]);
   });
 });
