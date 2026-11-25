@@ -64,13 +64,19 @@ import { liveContact, type PeopleTx } from "./people-records.js";
 //     their enquiries and no other live person leads it), the proposals of
 //     those deals and enquiries, the events of those deals, of their
 //     enquiries' bookings, of their proposals' layouts, of organisations they
-//     lead and of households they belong to, and the bookings from their
-//     enquiries or on those events.
+//     lead and of households they belong to, the events their enquiries,
+//     deals and proposals point at themselves (the spine's links: one the
+//     join of old records made, or a writer linked) when no other live
+//     person's record points at it too (tiedToAnotherPerson), and the
+//     bookings from their enquiries or on those events.
 // A deal made from their enquiry that another live person leads (a PA
 // enquired, her director became the main contact) is that person's, with its
 // proposals, the events of its deal and of its proposals' layouts (a hold
 // pencilled from her enquiry onto one included), and their bookings: nothing
-// of it is deleted, and only the erased person's names leave its text.
+// of it is deleted, and only the erased person's names leave its text. So is
+// an event one of their records points at that another live person's record
+// points at too (their enquiry, deal or proposal linked to it, a booking of
+// their enquiry in it, or it is their deal's).
 // Those rows are found with plain reads and then locked before anything is
 // changed, in the house order the other writers take the same rows
 // (decisions, bookings, proposals, enquiries, deals, events, layouts, the
@@ -78,8 +84,9 @@ import { liveContact, type PeopleTx } from "./people-records.js";
 // waits for the erasure or is seen by it. Residues the doc names: a decision
 // prepared on one of their bookings in the same moment keeps its reason; an
 // answer on someone else's proposal written after the reads counts as written
-// after the erasure; a booking written between the reads and the locks makes
-// the erasure answer RETRY itself (ErasureMovedOn, not a deadlock); and these
+// after the erasure; a booking written, or one of their records linked to an
+// event, between the reads and the locks makes the erasure answer RETRY
+// itself (ErasureMovedOn, not a deadlock); and these
 // can still meet it in a circle, which PostgreSQL ends by rolling one side
 // back: two erasures of one household's members at once, the demo layout
 // review, and an enquiry the person sends from their own public-preview
@@ -501,14 +508,74 @@ function ownBookings(enquiryIds: readonly string[], eventIds: readonly string[],
   ) ?? sql`false`;
 }
 
-/** A booking was written between the erasure's reads and its locks: it
- *  would be locked out of order, so the erasure is rolled back and answered
- *  RETRY (SQLSTATE 40001, as lockConflictOf reads it), or tried again the next
- *  night. */
+/**
+ * Whether a record of another live person (not deleted, merged away or
+ * erased, and not one of `theirs`, a uuid[]) points at the event: their
+ * enquiry, deal or proposal is linked to it (the spine's links), a booking of
+ * their enquiry sits in it, or it is their deal's (events.opportunity_id). A
+ * deal is its main contact's, an enquiry its person's, a proposal its deal's
+ * or its enquiry's, as the near-deal rule reads them: whatever the record's
+ * stage, only whether its person is live. One expression for an event found
+ * through the links, here (around) and in the 24-month pass's own reading of
+ * a person's records (people-retention.ts, lapsedPeople), so the two cannot
+ * drift apart.
+ */
+export function tiedToAnotherPerson(event: SQL, theirs: SQL): SQL {
+  return sql`exists (
+    select 1 from (
+      select tie_q."contact_id" as "person" from "enquiries" as tie_q where tie_q."event_id" = ${event}
+      union all
+      select tie_o."primary_contact_id" from "opportunities" as tie_o where tie_o."event_id" = ${event}
+      union all
+      select tie_d."primary_contact_id" from "events" as tie_e
+        join "opportunities" as tie_d on tie_d."id" = tie_e."opportunity_id" where tie_e."id" = ${event}
+      union all
+      select tie_pd."primary_contact_id" from "proposals" as tie_p
+        join "opportunities" as tie_pd on tie_pd."id" = tie_p."opportunity_id" where tie_p."event_id" = ${event}
+      union all
+      select tie_pq."contact_id" from "proposals" as tie_p2
+        join "enquiries" as tie_pq on tie_pq."id" = tie_p2."enquiry_id" where tie_p2."event_id" = ${event}
+      union all
+      select tie_bq."contact_id" from "bookings" as tie_b
+        join "enquiries" as tie_bq on tie_bq."id" = tie_b."enquiry_id" where tie_b."event_id" = ${event}
+    ) as tie
+    join "contacts" as tie_person on tie_person."id" = tie."person"
+    where tie_person."deleted_at" is null and tie_person."merged_into_id" is null and tie_person."erased_at" is null
+      and not (tie_person."id" = any(${theirs}))
+  )`;
+}
+
+/** The ids as a uuid[] for SQL ('{}' for none). */
+function uuidArray(ids: readonly string[]): SQL {
+  return ids.length === 0 ? sql`'{}'::uuid[]` : sql`array[${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}]`;
+}
+
+/** The events the enquiries, deals and proposals point at themselves (the
+ *  spine's links: enquiries.event_id, opportunities.event_id,
+ *  proposals.event_id). */
+async function linkedEvents(
+  tx: PeopleTx,
+  enquiryIds: readonly string[],
+  dealIds: readonly string[],
+  proposalIds: readonly string[],
+): Promise<readonly string[]> {
+  const fromEnquiries = enquiryIds.length === 0 ? [] : await tx.select({ id: enquiries.eventId }).from(enquiries)
+    .where(inArray(enquiries.id, [...enquiryIds]));
+  const fromDeals = dealIds.length === 0 ? [] : await tx.select({ id: opportunities.eventId }).from(opportunities)
+    .where(inArray(opportunities.id, [...dealIds]));
+  const fromProposals = proposalIds.length === 0 ? [] : await tx.select({ id: proposals.eventId }).from(proposals)
+    .where(inArray(proposals.id, [...proposalIds]));
+  return idsOf([...fromEnquiries, ...fromDeals, ...fromProposals]);
+}
+
+/** A booking was written, or one of their records was linked to an event,
+ *  between the erasure's reads and its locks: it would be locked out of
+ *  order, so the erasure is rolled back and answered RETRY (SQLSTATE 40001,
+ *  as lockConflictOf reads it), or tried again the next night. */
 export class ErasureMovedOn extends Error {
   readonly code = "40001";
   constructor() {
-    super("A booking of theirs was written while the erasure was finding their records; try again");
+    super("A booking or an event link of theirs was written while the erasure was finding their records; try again");
     this.name = "ErasureMovedOn";
   }
 }
@@ -682,22 +749,37 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
   const accounts = new Set(base.accountIds);
   const ownEvent = (event: { readonly dealId: string | null; readonly accountId: string | null }): boolean =>
     (event.accountId !== null && accounts.has(event.accountId)) || onOwnDeal(event.dealId);
+  // The events their enquiries, deals and proposals point at themselves (the
+  // spine's links), their own records' and the nearby ones': one the join of
+  // old records made and named from the record, or one a writer linked,
+  // whether or not event_link_joins records it. Such an event is another live
+  // person's when a record of theirs points at it too (the nearby deal and its
+  // proposals among them); otherwise it is theirs.
+  const dealsFound = [...dealIds, ...nearDealIds];
+  const proposalsFound = proposalRows.map((row) => row.id);
+  const linked = await linkedEvents(tx, enquiryIds, dealsFound, proposalsFound);
+  const tied = linked.length === 0 ? [] : (await tx.select({ id: events.id }).from(events)
+    .where(allOf(inArray(events.id, [...linked]), tiedToAnotherPerson(outerColumn(events.id), uuidArray([...theirs])))))
+    .map((row) => row.id);
   // The event a hold from their enquiry was pencilled onto is theirs, unless
-  // it is another live person's: their deal's, or laid out from their
-  // proposal and not from one of the person's own.
+  // it is another live person's: their deal's, laid out from their proposal
+  // and not from one of the person's own, or pointed at by a record of theirs.
   const othersEvents = new Set([
     ...evented.filter((event) => !ownEvent(event)).map((event) => event.id),
     ...laidOut.filter((link) => nearLayouts.has(link.layoutId) && !ownLaidOut.has(link.id)).map((link) => link.id),
+    ...tied,
   ]);
   const booked = await tx.selectDistinct({ id: bookings.eventId }).from(bookings)
     .where(allOf(among(bookings.enquiryId, enquiryIds), isNotNull(bookings.eventId)));
+  const linkedRows = linked.map((id) => ({ id }));
   const eventIds = idsOf([
     ...booked.filter((row) => row.id !== null && !othersEvents.has(row.id)),
     ...evented.filter(ownEvent),
     ...laidOut.filter((link) => ownLaidOut.has(link.id)),
+    ...linkedRows.filter((row) => !othersEvents.has(row.id)),
   ]);
   const ownEvents = new Set(eventIds);
-  const nearEventIds = idsOf([...evented, ...laidOut, ...booked]).filter((id) => !ownEvents.has(id));
+  const nearEventIds = idsOf([...evented, ...laidOut, ...booked, ...linkedRows]).filter((id) => !ownEvents.has(id));
   const ownBooking = ownBookings(enquiryIds, eventIds, nearEventIds);
   const nearBooking = among(bookings.eventId, nearEventIds);
   const bookingsFound = (await tx.select({ id: bookings.id }).from(bookings).where(or(ownBooking, nearBooking)))
@@ -744,9 +826,17 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
     // Locked in the other writers' order (see above).
     await lockRows(tx, "decisions", decided);
     await lockRows(tx, "bookings", bookingsFound);
-    await lockRows(tx, "proposals", [...proposalRows.map((row) => row.id), ...elsewhere.proposalIds]);
+    await lockRows(tx, "proposals", [...proposalsFound, ...elsewhere.proposalIds]);
     await lockRows(tx, "enquiries", enquiryIds);
-    await lockRows(tx, "opportunities", [...dealIds, ...nearDealIds]);
+    await lockRows(tx, "opportunities", dealsFound);
+    // Held now, their records cannot be linked anew. One linked between the
+    // reads and these locks (the nightly join holds an enquiry it links until
+    // its run commits) would leave its event unlocked and its name in place:
+    // the erasure is tried again instead (RETRY), as for a booking below.
+    const lockedEvents = new Set([...eventIds, ...nearEventIds]);
+    if ((await linkedEvents(tx, enquiryIds, dealsFound, proposalsFound)).some((id) => !lockedEvents.has(id))) {
+      throw new ErasureMovedOn();
+    }
     await lockRows(tx, "events", [...eventIds, ...nearEventIds]);
     await lockRows(tx, "configurations", layoutIds);
     named = await findNamed();

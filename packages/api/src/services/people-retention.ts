@@ -11,6 +11,7 @@ import {
   keptRecord,
   lastInTouch,
   removeEnquiryRecords,
+  tiedToAnotherPerson,
 } from "./people-erasure.js";
 import type { PeopleTx } from "./people-records.js";
 
@@ -237,7 +238,11 @@ interface LapsedRow extends Record<string, unknown> {
  *   - their accounts, the proposals of their enquiries and deals (one on a
  *     near deal is near), and the events of their deals, accounts and
  *     proposals' layouts and of their enquiries' holds, but never a near
- *     deal's event, nor a booking pencilled from their enquiry onto one.
+ *     deal's event, nor a booking pencilled from their enquiry onto one;
+ *   - the events their enquiries, deals and proposals (near ones included)
+ *     point at themselves (the spine's links): theirs, unless another live
+ *     person's record points at one too (tiedToAnotherPerson, the erasure's
+ *     own expression), which makes it near.
  * The records merged into them are left to the step, which follows the
  * chain: it can only find more of theirs, so nobody this reads as kept or in
  * touch is someone the step would take.
@@ -309,10 +314,24 @@ function lapsedPeople(cutoff: Date): SQL {
     ) as layouts
     cross join lateral (
       select array(
+        select le."event_id" from "enquiries" as le where le."id" = any(linked."ids") and le."event_id" is not null
+        union
+        select lo."event_id" from "opportunities" as lo where lo."id" = any(deals."own" || deals."near") and lo."event_id" is not null
+        union
+        select lp."event_id" from "proposals" as lp where lp."id" = any(props."all") and lp."event_id" is not null
+      ) as "ids"
+    ) as links
+    cross join lateral (
+      select array(
         (select ne."id" from "events" as ne
           where ne."opportunity_id" = any(deals."near") and not coalesce(ne."client_account_id" = any(accounts."ids"), false)
         union
-        select nl."event_id" from "event_configuration_links" as nl where nl."configuration_id" = any(props."near_layouts"))
+        select nl."event_id" from "event_configuration_links" as nl where nl."configuration_id" = any(props."near_layouts")
+        union
+        select te."id" from "events" as te
+          where te."id" = any(links."ids") and ${tiedToAnotherPerson(sql`te."id"`, sql`array[c."id"]`)}
+            and not coalesce(te."opportunity_id" = any(deals."own"), false)
+            and not coalesce(te."client_account_id" = any(accounts."ids"), false))
         except
         select oll."event_id" from "event_configuration_links" as oll where oll."configuration_id" = any(layouts."own")
       ) as "ids"
@@ -327,6 +346,8 @@ function lapsedPeople(cutoff: Date): SQL {
         union
         select bk."event_id" from "bookings" as bk
         where bk."enquiry_id" = any(linked."ids") and bk."event_id" is not null and not (bk."event_id" = any(near_events."ids"))
+        union
+        select lk."id" from unnest(links."ids") as lk("id") where not (lk."id" = any(near_events."ids"))
       ) as "ids"
     ) as own_events
     cross join lateral (
@@ -354,7 +375,10 @@ function lapsedPeople(cutoff: Date): SQL {
         -- keeps the step's records of that enquiry alone (keptRecord): a live
         -- booking pencilled out of it or on its events (those of its bookings, of the
         -- layouts of its proposals and its own, and of deals made out of it), and
-        -- a contract or deposit on its proposals or events.
+        -- a contract or deposit on its proposals or events. The events its own
+        -- records are linked to (the spine's links) are left out: a booking
+        -- there can only make the step keep an enquiry this reads as spare, so
+        -- such a person is looked at, never passed over.
         exists (
           select 1 from unnest(linked."ids") as se("id")
           cross join lateral (

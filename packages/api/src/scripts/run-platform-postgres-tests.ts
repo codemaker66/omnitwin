@@ -94,6 +94,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/people-merge-postgres.test.ts",
   // Erasing a person: every copy at the venue, the merged records, the booking a venue keeps.
   "src/__tests__/people-erasure-postgres.test.ts",
+  // ...and the events the spine's links tie to them, on a database of its own (the join runs there): their own, and near another live person's.
+  "src/__tests__/people-erasure-spine-links-postgres.test.ts",
   // Deal writes during a merge or undo: never to the closed record, no deadlock, RETRY on a lock conflict.
   "src/__tests__/opportunity-merge-race-postgres.test.ts",
   // Two stage moves of one deal at once: one stands, the other writes nothing (audit dash-commercial-6).
