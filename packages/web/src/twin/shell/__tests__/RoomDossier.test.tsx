@@ -44,8 +44,12 @@ const UNVERIFIED_NODE = "scan_003";
 const UNVERIFIED_NEXT = "scan_004";
 const UNVERIFIED_AFTER = "scan_005";
 
+/** The validated viewpoint in the one room the venue publishes in two sections. */
+const ROBERT_ADAM_NODE = "scan_105";
+
 const GRAND_HALL: PublishedRoomSlug = "grand-hall";
 const SALOON: PublishedRoomSlug = "saloon";
+const ROBERT_ADAM: PublishedRoomSlug = "robert-adam-room";
 
 /**
  * Pin the motion preference for the test rather than inheriting happy-dom's
@@ -122,6 +126,13 @@ describe("RoomDossier", () => {
   it("names the Grand Hall and states its published figures", () => {
     const capacities = TRADES_HALL_ROOM_CAPACITIES[GRAND_HALL];
     const dimensions = publishedDimensions(GRAND_HALL);
+    // The Grand Hall is given as a whole: one extent, with a height.
+    expect(dimensions.extents).toHaveLength(1);
+    const [hall] = dimensions.extents;
+    const heightM = hall.heightM;
+    if (heightM === undefined) {
+      throw new Error("venue truth no longer states the Grand Hall's height");
+    }
 
     render(<RoomDossier currentId={GRAND_HALL_NODE} venueName={VENUE} />);
 
@@ -136,7 +147,7 @@ describe("RoomDossier", () => {
     // decimal, at which point the suite would fail at the assertion rather than
     // at the rounding and the tempting repair would be to loosen the test.
     expect(
-      screen.getByText(`${metres(dimensions.lengthM)} × ${metres(dimensions.widthM)} m`),
+      screen.getByText(`${metres(hall.lengthM)} × ${metres(hall.widthM)} m`),
     ).toBeTruthy();
     expect(screen.getByText(`${String(capacities.reception)} standing`)).toBeTruthy();
     expect(screen.getByText(`${String(capacities.dinner)} seated`)).toBeTruthy();
@@ -146,12 +157,14 @@ describe("RoomDossier", () => {
     // happily while the panel butted figure and note together ("7 ma further
     // 7 m under the dome", in the note of the time), because a bare inline span
     // contributes no whitespace of its own.
-    const note = dimensions.note;
+    const note = hall.note;
     if (note === undefined) {
       throw new Error("venue truth no longer carries the Grand Hall's ceiling note");
     }
     const ceiling = screen.getByText(STAT_LABEL_CEILING).nextElementSibling;
-    expect(ceiling?.textContent).toBe(`${metres(dimensions.heightM)} m — ${note}`);
+    expect(ceiling?.textContent).toBe(`${metres(heightM)} m — ${note}`);
+    // A room given as a whole has one line under each stat, with no section name.
+    expect(ceiling?.nextElementSibling).toBeNull();
     // The dome is never the stat: the Ceiling row says only what the height is
     // measured to, short enough not to wrap a narrow column into four lines.
     expect(ceiling?.textContent).not.toMatch(/dome/i);
@@ -173,6 +186,51 @@ describe("RoomDossier", () => {
     const footnote = screen.getByText(TWIN_DOSSIER_FOOTNOTE);
     expect(footnote.textContent).toBe(TWIN_DOSSIER_FOOTNOTE);
     expect(footnote.children).toHaveLength(0);
+  });
+
+  it("gives a room published in sections a named line per section under each stat", () => {
+    const dimensions = publishedDimensions(ROBERT_ADAM);
+    // The premise: venue truth carries the Robert Adam Room as more than one
+    // named section, each with a height.
+    expect(dimensions.extents.length).toBeGreaterThan(1);
+    const sections = dimensions.extents.map((extent) => {
+      if (extent.section === undefined || extent.heightM === undefined) {
+        throw new Error("a Robert Adam Room section lost its name or its height");
+      }
+      return { name: extent.section, heightM: extent.heightM, extent };
+    });
+
+    render(<RoomDossier currentId={ROBERT_ADAM_NODE} venueName={VENUE} />);
+
+    const linesUnder = (label: string): string[] => {
+      const row = screen.getByText(label).parentElement;
+      return [...(row?.querySelectorAll("dd") ?? [])].map((line) => line.textContent ?? "");
+    };
+    // One description per section, in the venue's order. The space between a
+    // section's name and its figure is in the text itself, so it survives a
+    // missing stylesheet and is what a screen reader hears.
+    expect(linesUnder("Dimensions")).toEqual(
+      sections.map(
+        ({ name, extent }) => `${name} ${metres(extent.lengthM)} × ${metres(extent.widthM)} m`,
+      ),
+    );
+    expect(linesUnder(STAT_LABEL_CEILING)).toEqual(
+      sections.map(({ name, heightM }) => `${name} ${metres(heightM)} m`),
+    );
+    // The capacities are the whole room's: one line each, with no section name.
+    const capacities = TRADES_HALL_ROOM_CAPACITIES[ROBERT_ADAM];
+    expect(linesUnder("Reception")).toEqual([`${String(capacities.reception)} standing`]);
+    expect(linesUnder("Dinner")).toEqual([`${String(capacities.dinner)} seated`]);
+
+    // Only the stats with section lines are marked, which is what lets the
+    // stylesheet give them the full row on a phone, where a half-width column
+    // broke a section's line inside its figure.
+    const marked = (label: string): boolean =>
+      screen.getByText(label).parentElement?.classList.contains("vv-twin-dossier-stat--sections") ?? false;
+    expect(marked("Dimensions")).toBe(true);
+    expect(marked(STAT_LABEL_CEILING)).toBe(true);
+    expect(marked("Reception")).toBe(false);
+    expect(marked("Dinner")).toBe(false);
   });
 
   it("says nothing at all at a viewpoint whose room is unverified", () => {

@@ -7,15 +7,38 @@ import type {
 } from "@omnitwin/types";
 import { openCache, type CacheHandle } from "./idb-cache.js";
 
+/** The most earlier-press keys a task's row keeps: the API's bound
+ *  (MAX_EARLIER_PRESS_KEYS in @omnitwin/types), copied here rather than
+ *  imported. The Day Board route loads this queue, and a value import from
+ *  @omnitwin/types brought its event-day schemas into that route: 2.9 kB
+ *  (1.0 kB gzipped), measured by two builds (#418, review DR7). A test pins
+ *  the two equal. */
+export const MAX_EARLIER_PRESS_KEYS = 20;
+
 // ---------------------------------------------------------------------------
 // event-day-offline-queue
 //
 // Mobile ops staff can lose WiFi during setup. This queue mirrors the
 // hallkeeper progress queue: failed status/issue writes are stored in IndexedDB
-// and replayed when the device is online again. Task status is last-write-wins
-// per task; issue creation keeps every queued issue; a step on a floor request
-// keeps every press, in the order pressed, each under its own key.
+// and replayed when the device is online again. Task status keeps one row per
+// task, the latest press, with the status it was pressed against
+// (input.expectedStatus) and the keys of the device's earlier presses for the
+// task (input.earlierPressKeys): the server refuses its replay once the task
+// has moved on, unless its last write was one of those presses (#418). Issue
+// creation keeps every queued issue; a step on a floor request keeps every
+// press, in the order pressed, each under its own key.
 // ---------------------------------------------------------------------------
+
+/** The keys a task's new row carries: those the replaced row carried, the
+ *  replaced press's own, then the ones the page names, each once, never the
+ *  new press's own, the newest MAX_EARLIER_PRESS_KEYS kept. */
+function earlierPressKeysFor(replaced: QueuedEventDayOp | undefined, input: UpdateOpsTaskStatusInput, ownKey: string): readonly string[] {
+  const fromRow = replaced?.kind === "task_status"
+    ? [...(replaced.input.earlierPressKeys ?? []), ...(replaced.input.idempotencyKey === undefined ? [] : [replaced.input.idempotencyKey])]
+    : [];
+  const keys = [...new Set([...fromRow, ...(input.earlierPressKeys ?? [])])].filter((key) => key !== ownKey);
+  return keys.slice(-MAX_EARLIER_PRESS_KEYS);
+}
 
 export type QueuedEventDayOp =
   | {
@@ -127,6 +150,17 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
     await handle.delete(queueKey);
   }
 
+  /** Acks a task status only while its row still holds the press with this
+   *  idempotency key. A task keeps one row, so a later press (on this page or
+   *  another) writes over an earlier one's; that later press stays queued.
+   *  The compare and the delete are one step of the store (one readwrite
+   *  transaction on IndexedDB). Resolves whether the row was deleted; a row
+   *  already gone is no error. */
+  async function ackIf(queueKey: string, idempotencyKey: string): Promise<boolean> {
+    return handle.deleteIf(queueKey, (stored) =>
+      stored.value.kind === "task_status" && stored.value.input.idempotencyKey === idempotencyKey);
+  }
+
   /** A request step replays after every step pressed before it on this
    *  device: its stamp is never behind the latest kept one, even under a
    *  clock that stood still or stepped back between the presses. */
@@ -144,15 +178,23 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
   let requestStepWrites: Promise<void> = Promise.resolve();
 
   return {
+    /** The task's one row, now this press. A press made against a status
+     *  (expectedStatus) keeps the keys of the device's earlier presses for
+     *  the task: the replaced row's, read and written in the same step of
+     *  the store (#418, ruling A). */
     async enqueueTaskStatus(opsTaskId: string, input: UpdateOpsTaskStatusInput): Promise<void> {
       const key = taskKey(opsTaskId);
       const idempotencyKey = input.idempotencyKey ?? makeClientOperationId("task");
-      await handle.put(key, {
-        kind: "task_status",
-        queueKey: key,
-        opsTaskId,
-        input: { ...input, idempotencyKey },
-        queuedAt: new Date().toISOString(),
+      await handle.upsert(key, (replaced): QueuedEventDayOp => {
+        const { earlierPressKeys: _named, ...pressed } = input;
+        const earlierPressKeys = input.expectedStatus === undefined ? [] : earlierPressKeysFor(replaced?.value, input, idempotencyKey);
+        return {
+          kind: "task_status",
+          queueKey: key,
+          opsTaskId,
+          input: { ...pressed, idempotencyKey, ...(earlierPressKeys.length === 0 ? {} : { earlierPressKeys: [...earlierPressKeys] }) },
+          queuedAt: new Date().toISOString(),
+        };
       });
     },
 
@@ -206,6 +248,7 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
 
     list,
     ack,
+    ackIf,
 
     /** Replay in the order the ops were made. An op is acked only once the
      *  server has it, fresh or replayed; the first failure stops the drain so
@@ -261,6 +304,11 @@ export function listPendingEventDayOps(): Promise<readonly QueuedEventDayOp[]> {
 
 export function ackEventDayOp(queueKey: string): Promise<void> {
   return defaultQueue.ack(queueKey);
+}
+
+/** Acks a queued task status only while its row still holds that press. */
+export function ackEventDayOpIf(queueKey: string, idempotencyKey: string): Promise<boolean> {
+  return defaultQueue.ackIf(queueKey, idempotencyKey);
 }
 
 export function drainEventDayOps(
