@@ -4,6 +4,7 @@ import { GuestEnquiryModal } from "../editor/GuestEnquiryModal.js";
 import { AutoFillPrompt } from "../editor/cockpit/AutoFillPrompt.js";
 import { prepareLayoutForGuestEnquiry } from "../editor/send-layout-flow.js";
 import { ActivityIndicator } from "../shared/Activity.js";
+import { SoundSettingsCore, type SoundModesProps, type SoundSettingsClasses } from "../shared/SoundSettingsCore.js";
 import { usePlannerTruth } from "../../hooks/use-planner-truth.js";
 import { AUTO_FILL_STYLES, type AutoFillStyle } from "../../lib/auto-fill.js";
 import { CATALOGUE_CATEGORIES, categoryLabel, getCatalogueByCategory, getCatalogueItem, type CatalogueItem } from "../../lib/catalogue.js";
@@ -401,9 +402,52 @@ function MoreSheet(): ReactElement {
 
 // -- More tools --------------------------------------------------------------
 
-// The planner's sound is not on this screen yet. Its engine's controls live in a module every planner downloads, so
-// wiring them here would grow that download for a screen behind a flag; the sound and its setting (Quiet unless
-// chosen, Blake's D1, kept in this sheet) follow once that engine can be fetched on its own.
+// The planner's sound (T-700) is a setting kept in this sheet, never a key on the screen (D1), and Quiet until chosen.
+// It is the shared setting with no chrome's look (../shared/SoundSettingsCore.tsx), which every planner already holds
+// through the default planner's menus, dressed in this screen's own parts: the sheets' choices, worked by the keys as
+// the event sheet's are, the label style, a hairline for the level and key caps for the keys that mute. The three sets
+// come in through its props, so this screen imports no shared table of them (bundle-splitting.test.ts, T-723).
+
+const HUD_SOUND_CLASSES: SoundSettingsClasses = {
+  root: "hud-sound",
+  section: "hud-sound__section",
+  line: "hud-sound__line",
+  level: "hud-sound__level",
+  levelLabel: "hud-sheet__heading",
+  levelFigure: "hud-sound__figure",
+  range: "hud-sound__range",
+  foot: "hud-sound__foot",
+  keys: "hud-sound__keys",
+};
+
+/** Off, Quiet and Full as the sheets' own choices: one stop in the Tab order, and the arrows choose. */
+function SoundChoices({ label, value, options, onChange }: SoundModesProps): ReactElement {
+  return (
+    <div className="hud-choices" role="radiogroup" aria-label={label} onKeyDown={onRadioGroupKeyDown}>
+      {options.map((option, index) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          className="hud-choice"
+          aria-checked={value === option.value}
+          tabIndex={radioTabIndex(value === option.value, index === 0, true)}
+          onClick={() => { if (option.value !== value) onChange(option.value); }}
+        >
+          <span className="hud-choice__name">{option.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function renderSoundChoices(modes: SoundModesProps): ReactElement {
+  return <SoundChoices {...modes} />;
+}
+
+function renderSoundKey(key: string): ReactElement {
+  return <kbd className="hud-sound__key">{key}</kbd>;
+}
 
 function ToolsSheet(): ReactElement {
   const wallsFull = useVisibilityStore((state) => state.mode === "manual");
@@ -425,6 +469,10 @@ function ToolsSheet(): ReactElement {
           <button type="button" className="hud-key" aria-pressed={wallsFull} onClick={() => { setWallsFull(!wallsFull); }}>{wallsFull ? "Cut the near walls away" : "Show every wall"}</button>
         ) : null}
         <button type="button" className="hud-key" aria-pressed={snap} onClick={() => { usePlacementStore.getState().toggleSnap(); }} title="G">{snap ? "Snapping to the grid" : "Placing freely"}</button>
+      </div>
+      <div className="hud-sheet__section">
+        <h3 className="hud-sheet__heading">Sound</h3>
+        <SoundSettingsCore classes={HUD_SOUND_CLASSES} renderModes={renderSoundChoices} renderKey={renderSoundKey} />
       </div>
     </>
   );
