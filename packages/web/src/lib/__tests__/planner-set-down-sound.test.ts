@@ -11,7 +11,9 @@ import {
   beginSetDownBatch,
   clearPlannerRoomTail,
   logSetDownDrop,
+  logSetDownReanchor,
   plannerAudioClock,
+  plannerClockEpoch,
   setPlannerRoomTail,
   setPlannerSoundMode,
   subscribePlannerSoundArmed,
@@ -310,10 +312,11 @@ describe("a batch of set-downs", () => {
     armPlannerSound();
     context.state = "interrupted";
     const batch = beginSetDownBatch(2);
+    // Each waits less than R80's 45 ms past its aim (R115): 40 and 20 ms against a 4.7 ms lead.
     expect(batch?.play(voice({ startAt: 0.3047 }))).toBe(true);
-    nowMs += 900;
+    nowMs += 20;
     expect(batch?.play(voice({ startAt: 0.3047 }))).toBe(true);
-    nowMs += 100;
+    nowMs += 20;
     context.finishResume();
     await flushPromises();
     expect(context.started.map((source) => source.startedAt)).toEqual([0.3, 0.3]);
@@ -505,22 +508,51 @@ describe("a suspended context", () => {
     expect(window.__venSoundTap?.log).toEqual([expect.objectContaining({ startAt: 1.011, miss: "hidden" })]);
   });
 
-  it("drops a set-down that waited longer than its batch's 1.5 s for the context, and logs it as a miss", async () => {
+  it("drops a set-down whose resume came 200 ms after it was aimed to start, past R80's 45 ms, and logs it as a miss (R115)", async () => {
     window.history.replaceState(null, "", "/plan/stub?soundtap=1");
     armPlannerSound();
     context.state = "suspended";
-    const batch = beginSetDownBatch(2);
-    expect(batch?.play(voice({ startAt: 1.011 }))).toBe(true);
-    nowMs += 1000;
-    expect(batch?.play(voice({ startAt: 1.2 }))).toBe(true);
-    nowMs += 501;
+    expect(beginSetDownBatch(1)?.play(voice({ startAt: 1.011 }))).toBe(true);
+    nowMs += 200;
     context.finishResume();
     await flushPromises();
-    expect(context.started.map((source) => source.startedAt), "the second waited 0.501 s and still plays").toHaveLength(1);
-    expect(window.__venSoundTap?.log).toEqual([
-      expect.objectContaining({ startAt: 1.011, miss: "expired" }),
-      expect.not.objectContaining({ miss: expect.anything() }),
-    ]);
+    expect(context.started, "nothing plays later than 45 ms after its aim").toHaveLength(0);
+    expect(window.__venSoundTap?.log).toEqual([expect.objectContaining({ startAt: 1.011, miss: "expired" })]);
+  });
+
+  it("plays a set-down whose resume came 20 ms after it was aimed to start, within R80's 45 ms (R115)", async () => {
+    window.history.replaceState(null, "", "/plan/stub?soundtap=1");
+    armPlannerSound();
+    context.state = "suspended";
+    // Aimed 11 ms ahead; the resume takes 31 ms, so it can start 20 ms after its aim.
+    expect(beginSetDownBatch(1)?.play(voice({ startAt: 1.011 }))).toBe(true);
+    nowMs += 31;
+    context.finishResume();
+    await flushPromises();
+    expect(context.started.map((source) => source.startedAt)).toEqual([1]);
+    expect(window.__venSoundTap?.log).toEqual([expect.not.objectContaining({ miss: expect.anything() })]);
+  });
+
+  it("counts a clock epoch each time its context runs again after not running, never while it runs on (R114)", async () => {
+    expect(plannerClockEpoch(), "before the first gesture").toBe(0);
+    armPlannerSound();
+    const armed = plannerClockEpoch();
+    expect(plannerClockEpoch(), "running on").toBe(armed);
+    context.state = "suspended";
+    wakePlannerSound();
+    expect(plannerClockEpoch(), "suspended").toBe(armed);
+    context.finishResume(0.004);
+    await flushPromises();
+    expect(plannerClockEpoch(), "running again").toBe(armed + 1);
+    expect(plannerClockEpoch()).toBe(armed + 1);
+  });
+
+  it("logs each batch anchored again on the tap, with its reason, with ?soundtap=1 (R114)", () => {
+    window.history.replaceState(null, "", "/plan/stub?soundtap=1");
+    armPlannerSound();
+    logSetDownReanchor({ reanchor: "resumed", behindMs: 0 });
+    logSetDownReanchor({ reanchor: "behind", behindMs: 300 });
+    expect(window.__venSoundTap?.reanchors).toEqual([{ reanchor: "resumed", behindMs: 0 }, { reanchor: "behind", behindMs: 300 }]);
   });
 
   it("drops the waiting set-downs when the device refuses to resume, and logs each as a miss", async () => {

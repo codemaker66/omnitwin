@@ -947,6 +947,8 @@ export function armPlannerSound(): boolean {
     if (context === null) return false;
     const graph = buildPlannerGraph(context, level);
     plannerLive = { context, graph };
+    plannerContextRan = context.state === "running";
+    context.onstatechange = observePlannerContext;
     askForAmbientAudioSession();
     if (soundTapWanted()) installSoundTap(context, graph.master);
     for (const listener of [...plannerArmedListeners]) tellArmedListener(listener, context.sampleRate);
@@ -1198,6 +1200,7 @@ interface BatchWarmup {
 function resumePlannerContext(context: AudioContext): Promise<void> {
   if (plannerResuming === null) {
     const resuming = context.resume().finally(() => {
+      observePlannerContext();
       if (plannerResuming === resuming) plannerResuming = null;
     });
     plannerResuming = resuming;
@@ -1205,12 +1208,45 @@ function resumePlannerContext(context: AudioContext): Promise<void> {
   return plannerResuming;
 }
 
-/** Why a voice that waited for the context did not play when it answered, if it did not. */
-function waitingVoiceMiss(waitedMs: number): SetDownMiss | null {
+/** R80's heard window, ms (as set-down/timing.ts's HEARD_WINDOW_S): nothing starts later than this after its aim. */
+const SET_DOWN_HEARD_WINDOW_MS = 45;
+
+/**
+ * Why a voice that waited for the context did not play when it answered, if
+ * it did not; `lateMs` is how far past its aimed start it could start now. A
+ * clock that runs again too late for that to be within R80's 45 ms drops it
+ * (R115).
+ */
+function waitingVoiceMiss(lateMs: number): SetDownMiss | null {
   if (getPlannerSoundSettings().mode === "off") return "off";
   if (plannerSoundHidden()) return "hidden";
-  if (waitedMs > SET_DOWN_BATCH_MS) return "expired";
+  if (lateMs > SET_DOWN_HEARD_WINDOW_MS) return "expired";
   return null;
+}
+
+/** The context's clock epoch: one more each time it runs again after not running (R114). */
+let plannerEpoch = 0;
+/** Whether the context was running when last looked at. */
+let plannerContextRan = false;
+
+/** Looks at the context: running again after not running starts a new clock epoch (R114). */
+function observePlannerContext(): void {
+  if (plannerLive === null) return;
+  const running = plannerLive.context.state === "running";
+  if (running && !plannerContextRan) plannerEpoch += 1;
+  plannerContextRan = running;
+}
+
+/**
+ * The context's clock epoch (R114): one more each time the context runs again
+ * after not running (a resume after the silence's suspension, an interruption
+ * ending), when its clock, stopped meanwhile, no longer keeps time with the
+ * page's. A set-down batch anchored in an earlier epoch is anchored again. 0
+ * before the first gesture.
+ */
+export function plannerClockEpoch(): number {
+  observePlannerContext();
+  return plannerEpoch;
 }
 
 /**
@@ -1237,7 +1273,7 @@ function playSetDownVoice(live: PlannerLive, voice: SetDownVoice, warmup: BatchW
     const settledMs = performance.now();
     const shift = warmup.shiftAt(context.currentTime, settledMs);
     const waitedMs = settledMs - nowMs;
-    const miss = waitingVoiceMiss(waitedMs);
+    const miss = waitingVoiceMiss(waitedMs - (leadSeconds + shift) * 1000);
     if (miss !== null) {
       logSetDownMiss(voice, levelDb, voice.startAt + shift, miss);
       return;
@@ -1399,8 +1435,22 @@ export function wakePlannerSound(): void {
 
 // --- The sound tap (?soundtap=1), for the browser evidence ----------------------
 
-/** Why an admitted voice was dropped while it waited for the context to resume. */
+/**
+ * Why an admitted voice was dropped while it waited for the context to resume:
+ * the device refused; sound went Off; the tab hid; or the clock ran again too
+ * late for it to start within R80's 45 ms of its aimed start ("expired", R115).
+ */
 export type SetDownMiss = "resume-rejected" | "off" | "hidden" | "expired";
+
+/** Why a set-down batch was anchored again (R114): its context ran again after not running, or its clock fell 150 ms behind. */
+export type SetDownReanchor = "resumed" | "behind";
+
+/** One batch anchored again, as the tap logs it. */
+export interface VenSoundTapReanchor {
+  readonly reanchor: SetDownReanchor;
+  /** How far the context's clock was behind the old anchor's projection, ms. */
+  readonly behindMs: number;
+}
 
 /** One voice as the tap logs it. */
 export interface VenSoundTapEntry {
@@ -1450,6 +1500,8 @@ export interface VenSoundTap {
   readonly log: VenSoundTapEntry[];
   /** Every landing the scene dropped before it could play (Task 14b). */
   readonly drops: VenSoundTapDrop[];
+  /** Every set-down batch anchored again, with why (R114). */
+  readonly reanchors: VenSoundTapReanchor[];
   /** Records `seconds` of the master into a Blob. */
   record(seconds: number): Promise<Blob>;
 }
@@ -1475,9 +1527,14 @@ function installSoundTap(context: AudioContext, master: GainNode): void {
     return; // No stream destination in this browser: it plays without a tap.
   }
   master.connect(destination);
-  const tap: VenSoundTap = { log: [], drops: [], record: (seconds) => recordStream(destination.stream, seconds) };
+  const tap: VenSoundTap = { log: [], drops: [], reanchors: [], record: (seconds) => recordStream(destination.stream, seconds) };
   plannerTap = tap;
   window.__venSoundTap = tap;
+}
+
+/** Logs a set-down batch anchored again, on the tap; nothing without ?soundtap=1 or before the first gesture. */
+export function logSetDownReanchor(entry: VenSoundTapReanchor): void {
+  plannerTap?.reanchors.push(entry);
 }
 
 /** Logs a landing the scene dropped, on the tap; nothing without ?soundtap=1 or before the first gesture. */
@@ -1538,5 +1595,7 @@ export function __resetPlannerSoundForTests(): void {
   plannerResuming = null;
   plannerArmedListeners.clear();
   plannerTap = null;
+  plannerEpoch = 0;
+  plannerContextRan = false;
   if (typeof window !== "undefined") delete window.__venSoundTap;
 }

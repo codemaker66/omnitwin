@@ -20,9 +20,11 @@ import {
   beginSetDownBatch,
   getPlannerSoundSettings,
   logSetDownDrop,
+  logSetDownReanchor,
   plannerAudioClock,
   subscribePlannerSound,
   subscribePlannerSoundArmed,
+  plannerClockEpoch,
   wakePlannerSound,
   type SetDownBatch,
   type SetDownDrop,
@@ -82,10 +84,14 @@ const HEARD_WINDOW_MS = HEARD_WINDOW_S * 1000;
  * to start exactly at the slot though the timer fires late (R108).
  */
 const SLOT_LEAD_MS = LATEST_PRESENT_S * 1000;
-/** Ties in one frame within a set under four are spaced by the set's own stagger, ms (R111). */
+/** A set under four spaces each later voice at least the set's own stagger after the one before, ms (R113). */
 const SET_STAGGER_MS = SET_STAGGER * 1000;
-/** A batch whose audio clock has fallen this far behind its anchor's projection is anchored again, s (R112). */
-const REANCHOR_BEHIND_S = 0.05;
+/**
+ * Short of a new clock epoch, a batch is anchored again only when its audio
+ * clock is this far behind the anchor's projection, s: above any step a main
+ * thread has been seen to read the clock in (R114).
+ */
+const REANCHOR_BEHIND_S = 0.15;
 
 /** The driver, as the shell hears the motion and the frame loop for it. */
 export interface SetDownDriver extends FurnitureLandingListener {
@@ -127,7 +133,7 @@ interface Batch {
    * read (R109, R112). Anchored again when the clock falls behind it. Null
    * until its first contact.
    */
-  anchor: { readonly audio: number; readonly page: number } | null;
+  anchor: { readonly audio: number; readonly page: number; readonly epoch: number } | null;
   /** The plan's gaps by position, ms: the k-th voice slotted keeps the k-th after the one before (R111). */
   readonly gapsMs: readonly number[];
   /** How many of its voices have been slotted. */
@@ -349,11 +355,12 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
    * slotted in the order they land, ties in one frame in the plan's order (the
    * frame sorts them): the k-th takes its contact, or the plan's k-th gap (by
    * position, not by which voice it is) after the slot before it, whichever is
-   * later, and plays at -1 dB x k (R111, R75). A set under four has no gaps: a
-   * tie with the slot before it is spaced by the set's 12 ms stagger, and any
-   * other voice keeps its own landing. So no two voices of a batch start
-   * together, and landings that follow the plan keep its spacing. A voice
-   * dropped after its contact still spaces the next from its slot.
+   * later, and plays at -1 dB x k (R111, R75). A set under four has no gaps:
+   * each later voice takes its contact, or the set's 12 ms stagger after the
+   * slot before it, whichever is later, however close its touchdown's stamp
+   * (R113). So no two voices of a batch start together, and landings that
+   * follow the plan keep its spacing. A voice dropped after its contact still
+   * spaces the next from its slot.
    */
   const slotFor = (flight: Flight, atMs: number): number => {
     const { batch } = flight;
@@ -363,7 +370,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     const last = batch.lastSlotMs;
     const gapMs = batch.gapsMs[k] ?? 0;
     let slotMs = atMs;
-    if (last !== null) slotMs = gapMs > 0 ? Math.max(atMs, last + gapMs) : atMs > last ? atMs : last + SET_STAGGER_MS;
+    if (last !== null) slotMs = Math.max(atMs, last + (gapMs > 0 ? gapMs : SET_STAGGER_MS));
     batch.lastSlotMs = slotMs;
     return slotMs;
   };
@@ -378,7 +385,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     const { batch } = flight;
     if (batch.admitted !== undefined) return;
     batch.admitted = beginSetDownBatch(batch.live);
-    batch.anchor = { audio: clock.currentTime, page: atMs };
+    batch.anchor = { audio: clock.currentTime, page: atMs, epoch: plannerClockEpoch() };
   };
 
   const play = (flight: Flight, render: SetDownRendered, played: SetDownPlayed, startAt: number): void => {
@@ -419,12 +426,16 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   const startFor = (flight: Flight, contact: Contact, clock: AudioClock, render: SetDownRendered): number => {
     const { batch } = flight;
     let anchor = batch.anchor;
-    // A clock that stood still while the page ran on (an interruption, a slow resume) has left the anchor's
-    // projection: the batch is anchored again at now, so later voices start at their slots; those whose slots
-    // passed meanwhile are dropped by their windows, judged on the page's clock (R112).
+    // A clock that stopped while the page ran on no longer keeps the anchor's time: the batch is anchored again at
+    // now, so later voices start at their slots; those whose slots passed meanwhile are dropped by their windows,
+    // judged on the page's clock (R112). Its context running again after not running says so (a new clock epoch);
+    // short of that, only a clock far behind the anchor's projection does, never one read in coarse steps (R114).
     const atMs = nowMs();
-    if (anchor === null || clock.currentTime < anchor.audio + (atMs - anchor.page) / 1000 - REANCHOR_BEHIND_S) {
-      anchor = { audio: clock.currentTime, page: atMs };
+    const epoch = plannerClockEpoch();
+    const behindS = anchor === null ? 0 : anchor.audio + (atMs - anchor.page) / 1000 - clock.currentTime;
+    if (anchor === null || anchor.epoch !== epoch || behindS > REANCHOR_BEHIND_S) {
+      if (anchor !== null) logSetDownReanchor({ reanchor: anchor.epoch === epoch ? "behind" : "resumed", behindMs: behindS * 1000 });
+      anchor = { audio: clock.currentTime, page: atMs, epoch };
       batch.anchor = anchor;
     }
     const atSlot = anchor.audio + (contact.slotMs - anchor.page) / 1000;

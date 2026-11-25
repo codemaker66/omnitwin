@@ -94,6 +94,10 @@ const registry = vi.hoisted(() => ({
   policy: null as RegistryModule.PlannerSoundPolicy | null,
   wakes: 0,
   drops: [] as VenSoundTapDrop[],
+  /** The registry's clock epoch: one more each time its context runs again after not running (R114). */
+  clockEpoch: 0,
+  /** The batches anchored again, as the tap logs them (R114). */
+  reanchors: [] as RegistryModule.VenSoundTapReanchor[],
   frame: 0,
   startMs: 1_000,
 }));
@@ -165,6 +169,8 @@ vi.mock("../../../lib/sound-registry.js", async (importOriginal) => {
       return () => { registry.settings.delete(listener); };
     },
     logSetDownDrop: (drop: VenSoundTapDrop): void => { registry.drops.push(drop); },
+    plannerClockEpoch: (): number => registry.clockEpoch,
+    logSetDownReanchor: (entry: RegistryModule.VenSoundTapReanchor): void => { registry.reanchors.push(entry); },
   };
 });
 
@@ -488,7 +494,7 @@ beforeEach(() => {
     dispatchEvent: () => false,
   }));
   Object.assign(registry, {
-    mode: "quiet", rate: null, outputLatency: 0.005, batches: [], admitted: [], tails: [], cleared: 0, audioStepMs: null, audioPause: null, policy: null, wakes: 0, drops: [], frame: 0, startMs: 1_000,
+    mode: "quiet", rate: null, outputLatency: 0.005, batches: [], admitted: [], tails: [], cleared: 0, audioStepMs: null, audioPause: null, policy: null, wakes: 0, drops: [], clockEpoch: 0, reanchors: [], frame: 0, startMs: 1_000,
   });
   registry.armed.clear();
   registry.settings.clear();
@@ -1310,6 +1316,49 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
     expect(voices[1]?.gap, "the first gap").toBeCloseTo(plannedGaps[1] ?? Number.NaN, 9);
   });
 
+  it("spaces three pieces of a small set touching down in one frame 12 ms apart though each touchdown is stamped 0.1 ms after the last (R113)", async () => {
+    const chairs = [-1, 0, 1].map((x) => stand("chiavari-chair", x, 2));
+    await mountArmed();
+    // A browser stamps each touchdown with its own performance.now(), a little after the one before.
+    const stop = subscribeFurnitureLandings({
+      pickedUp: () => undefined,
+      dropStarted: () => undefined,
+      touchedDown: () => { now += 0.1; },
+      landedInPlace: () => undefined,
+    });
+    await letGoInOrder(chairs.map((chair) => chair.id));
+    const asked = renderer.renders("exact");
+    await answerAll();
+    await frames(30);
+    stop();
+    const sorted = [...plays()].sort((a, b) => a.voice.startAt - b.voice.startAt);
+    expect(sorted.map((played) => renderedBy.get(played.voice.render)), "in the plan's order").toEqual(asked);
+    expect(heard().slice(1).map((voice) => voice.gap)).toEqual([expect.closeTo(0.012, 9), expect.closeTo(0.012, 9)]);
+  });
+
+  it("leaves a small set's pieces that land 12 ms or more apart each at its own landing (R113)", async () => {
+    const chairs = [-1, 0, 1].map((x) => stand("chiavari-chair", x, 2));
+    await mountArmed();
+    const touchdowns: number[] = [];
+    const stop = subscribeFurnitureLandings({
+      pickedUp: () => undefined,
+      dropStarted: () => undefined,
+      touchedDown: () => { touchdowns.push(performance.now()); },
+      landedInPlace: () => undefined,
+    });
+    act(() => { chairs.forEach((chair, k) => { dropInFurniture(chair.id, 0.05, k * 0.05); }); });
+    await settle();
+    await answerAll();
+    await frames(40);
+    stop();
+    expect(touchdowns).toHaveLength(3);
+    const apart = touchdowns.slice(1).map((at, k) => (at - (touchdowns[k] ?? Number.NaN)) / 1000);
+    for (const gap of apart) expect(gap).toBeGreaterThanOrEqual(0.012);
+    const gaps = heard().slice(1).map((voice) => voice.gap);
+    expect(gaps).toHaveLength(apart.length);
+    gaps.forEach((gap, k) => { expect(gap, `gap ${String(k)}`).toBeCloseTo(apart[k] ?? Number.NaN, 9); });
+  });
+
   it("spaces three pieces of a small set touching down in one frame by the set's 12 ms stagger, in the plan's order (R111)", async () => {
     const chairs = [-1, 0, 1].map((x) => stand("chiavari-chair", x, 2));
     await mountArmed();
@@ -1325,7 +1374,10 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
     expect(voices.map((voice) => voice.levelDb)).toEqual([0, 1, 2].map((k) => -k));
   });
 
-  it("re-anchors a batch whose audio clock stood still 300 ms: voices whose slots passed are dropped and logged, the rest start at their slots (R112)", async () => {
+  it.each([
+    ["stood still while the context ran (a stall)", false, "behind"],
+    ["stopped while the context was suspended, and ran again", true, "resumed"],
+  ] as const)("re-anchors a batch whose audio clock %s for 300 ms: passed slots dropped and logged, the rest at their slots, the re-anchor on the tap (R112, R114)", async (_name, resumed, reason) => {
     /** The set let go, its renders held until 300 ms after its first contact, the clock maybe standing still meanwhile. */
     async function heldRun(ids: readonly string[], pause: boolean): Promise<{ readonly ahead: readonly number[]; readonly drops: readonly string[] }> {
       const contact = firstContact();
@@ -1337,6 +1389,8 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
       const answerAtMs = contact.atMs() + 300;
       while (now < answerAtMs - 20) await frames(1);
       pass(answerAtMs - now);
+      // A context that was suspended runs again: the registry's clock epoch moves on.
+      if (pause && resumed) registry.clockEpoch += 1;
       await answerAll();
       await frames(60);
       // How far ahead of the context's clock each voice was started when it played.
@@ -1348,6 +1402,7 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
     const steady = await heldRun(ids, false);
     expect(steady.drops.length, "some slots passed while the renders were held").toBeGreaterThan(0);
     expect(steady.ahead.length, "and some were still to come").toBeGreaterThan(0);
+    expect(registry.reanchors, "a steady clock is never re-anchored").toEqual([]);
     remount();
     ids = setStanding();
     mounted = mountInStubRoot(<><FurnitureMotion /><SetDownSound /></>);
@@ -1360,6 +1415,42 @@ describe("a cascade's voices on a Worker running one job at a time (R105)", () =
     expect(paused.drops.every((why) => why === "too-late")).toBe(true);
     expect(paused.ahead).toHaveLength(steady.ahead.length);
     paused.ahead.forEach((by, k) => { expect(by, `voice ${String(k)}`).toBeCloseTo(steady.ahead[k] ?? Number.NaN, 6); });
+    expect(registry.reanchors.map((entry) => entry.reanchor), "once, with its reason").toEqual([reason]);
+  });
+
+  describe("an audio clock read in steps of 60 and 100 ms, at every phase (R114)", () => {
+    /** The gaps of a set placed with its renders answered one at a time, the clock smooth: computed once. */
+    let smoothGaps: readonly number[] | null = null;
+
+    async function setPlacedGaps(): Promise<readonly number[]> {
+      const fromMs = now;
+      act(() => { usePlacementStore.getState().placeTableGroup(catalogueId("round-table-6ft"), 0, 0, 0, 10); });
+      await settle();
+      await framesAnsweringInTurn(fromMs, 25, 60);
+      return heard().slice(1).map((voice) => voice.gap);
+    }
+
+    it.each([
+      ...[0, 10, 20, 30, 40, 50].map((phase) => [60, phase] as const),
+      ...[0, 10, 20, 30, 40, 50, 60, 70, 80, 90].map((phase) => [100, phase] as const),
+    ])("never re-anchors on a %i ms step at phase %i ms, and keeps every gap exact", async (stepMs, phaseMs) => {
+      if (smoothGaps === null) {
+        await mountArmed();
+        smoothGaps = await setPlacedGaps();
+        remount();
+      }
+      registry.audioStepMs = stepMs;
+      registry.startMs = 1_000 - phaseMs;
+      mounted = mountInStubRoot(<><FurnitureMotion /><SetDownSound /></>);
+      frame();
+      frame();
+      registry.frame = 0;
+      await arm();
+      const gaps = await setPlacedGaps();
+      expect(gaps).toHaveLength(7);
+      expect(registry.reanchors).toEqual([]);
+      gaps.forEach((gap, k) => { expect(gap, `gap ${String(k)}`).toBeCloseTo(smoothGaps?.[k] ?? Number.NaN, 6); });
+    });
   });
 
   it("gives a set let go on the plan's schedule the plan's own starts, as before (R110)", async () => {
