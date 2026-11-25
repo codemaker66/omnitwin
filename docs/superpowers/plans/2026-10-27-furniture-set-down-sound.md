@@ -49,7 +49,7 @@ Paths below are relative to `packages/web/src/` unless they start with `tools/`,
   | Recomputing reverberation times | ≤ 0.5 ms |
   | The tail | idle slices of ≤ 4 ms each, ≤ 150 ms in total; 1.2 x the longest band's reverberation time in seconds at any rate, its memory per rate stated in `tail.ts` (R46; the plan's first cap was 2 MB) |
   | Voices at once | ≤ 8 |
-  | Engine and data | ≤ 33 KB gzipped for the Worker's and the driver's chunks together, lazy with the planner (R101, R103, R106; the first figure was 25 KB, before the engine's rulings through R102 were built; R103's 32 KB held until fix round 2's fixes measured 33,287 B on 25 Nov 2026; after fix round 3, 33,253 B; after fix round 4, 33,331 B; after fix round 5, 33,487 B; after fix round 6, 33,547 B) |
+  | Engine and data | ≤ 33 KB gzipped for the Worker's and the driver's chunks together, lazy with the planner (R101, R103, R106; the first figure was 25 KB, before the engine's rulings through R102 were built; R103's 32 KB held until fix round 2's fixes measured 33,287 B on 25 Nov 2026; after fix round 3, 33,253 B; after fix round 4, 33,331 B; after fix round 5, 33,487 B; after fix round 6, 33,547 B; after fix round 7, 33,631 B) |
 - **This PC is short of memory** (system commit at 92–97 %). Run Vitest on single files (`pnpm --filter @omnitwin/web exec vitest run <file>`). CI runs the full suites. Check free memory before the ray tracer and any browser run (the house's `wait-memory.sh`, kept outside the repo).
 - **No edits** to `components/meshes/crafted/*` or `crafted-furniture.test.ts`: four T-675 PRs are open on them.
 - **Commits.** Commit with explicit pathspecs. Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never commit in the shared checkout that other sessions work in.
@@ -1043,6 +1043,12 @@ export function createSetDownRenderer(options?: { readonly createWorker?: () => 
     - In a set under four, each later voice starts at its contact or 12 ms after the slot before it, whichever is later (R113). Round 5 spaced only exact ties in one frame, so touchdowns stamped a fraction of a millisecond apart could still start together.
     - A batch is anchored again when its context has run again after not running, which the registry counts as a new clock epoch (R114). Short of that, only a clock more than 150 ms behind the anchor's projection anchors it again. Round 5's 50 ms could fire on a clock read in coarse steps and move a cascade's later voices off their gaps. Each re-anchor is logged on the tap with its reason, "resumed" or "behind".
     - A voice waiting for a stopped clock to run again is dropped as a miss ("expired") if it cannot start within 45 ms of its aimed start (R115), instead of waiting up to about 1.5 s.
+  - **Fix round 7 (25 Nov), the last; the fix-6 re-review approved round 6, and Task 16's run on 565dec7d found one short gap:**
+    - A voice whose start is clamped to now, because it was computed after its slot's time, moves its batch's later voices as much later, so each keeps its exact gap from the voice that actually played (R116). A voice already scheduled is not moved.
+      - In the run's Lay out, a chair that landed late was taken up a few ms after its touchdown. The voice after it kept its anchored time, so their gap was short by that clamp: 81.1 ms, under R75's 85 ms.
+    - The registry's clock says whether its context is running (R117). While it is not, every play anchors its batch again at now, logged on the tap as "suspended", because the registry holds a waiting voice's lead from its play. The epoch's change when the clock runs again corrects the pair once more.
+      - This closes the re-review's M-1: a voice handed over 67 ms after its batch's first contact, with a resume still pending, had started 66.7 ms late. It now starts at its slot.
+    - Each new context starts a new clock epoch, as its clock starts again at 0.
 - **Supports at contact.** They are re-read at contact for voiced ids. A changed `surfacesKey` takes a matching variant if there is one, or otherwise the drop-start render, logged as stale (Review Focus 5).
 - **Reduced motion.** A `landedInPlace` voice plays when its render answers, at `currentTime` (Q10, ruling R84).
 - **`pickedUp(id, true)`.** The Worker renders "ahead" variants: seeds 1–3, for the surfaces under the piece now and for the room's floor. They are asked again when the carried piece has moved more than 1 m or its supports change, checked at most every 250 ms. The cache is dropped when the room key changes.
@@ -1141,7 +1147,7 @@ This task does not wait on the gate.
 - [ ] **Step 0b (ruling R100, condition 4): real-phone evidence before part 3 ships.** On at least one real low-end phone (Blake's, when it comes, or another real device), with `?soundtap=1`, show four things:
   - the adaptive switch engages for the slow class;
   - after warm-up (each class's first 5 contacts), misses are under 5 % of contacts, over at least 40 contacts;
-  - nothing plays later than R80's 45 ms window;
+  - nothing plays later than R80's 45 ms window after its slot, for every voice the scene hands over after warm-up; the known limits name the stall cases this does not cover;
   - the sound's lazy load (R103): in a remote-debugging trace from opening the planner to the first set-down, no main-thread task over 50 ms comes from loading the driver's chunk, and the time from arming to the Worker's ready message is recorded.
 
   This holds part 3's release, not 14b's build.
@@ -1150,7 +1156,7 @@ This task does not wait on the gate.
   - each voice's render onset and the output's latency, for R80's window;
   - each landing the registry refused, logged as drop "refused", apart from landings that never came;
   - voices whose render was asked for before the Worker was ready, which the policy does not judge, so read the misses after warm-up;
-  - each batch anchored again, with its reason ("resumed" or "behind") and how far behind the clock was (R114).
+  - each batch anchored again, with its reason ("resumed", "behind" or "suspended") and how far behind the clock was (R114, R117).
 - [ ] **Step 1:** Write `sound-live.mjs`, a script kept outside the repo, from the furniture rebuild's batch 4 live script (also kept outside the repo).
   - **Its safety:** every non-GET request is aborted, and the guest draft (POST `/public/configurations`) and its reads are answered locally.
   - **The browser:** Playwright with `channel: "chrome"`, headed. The browser pane draws no frames off screen, and the planner's demand loop needs frames for touchdowns.
@@ -1207,12 +1213,18 @@ This task does not wait on the gate.
   - Each voice starts at its slot carried onto the context's clock through its batch's anchor, with the frame's lead (R109, R112).
     - The anchor is the clock as read at the first contact, paired with that contact's own time. The batch starts the shell's frame, about a millisecond, after the touchdowns, and its gaps are exact however coarsely the browser reads the clock.
     - The anchor can be one audio buffer off the true time, the same for every voice of the batch. A voice is never started before now.
-  - A batch is anchored again at now when its context has run again after not running since the anchor: a resume after the silence's suspension, or an interruption ending (R114). The registry counts these as clock epochs.
+    - A voice computed after its slot's time starts now, late by that much, and its batch's later voices start as much later, so each keeps its exact gap from the voice that actually played (R116). A voice already scheduled is not moved. The later voices start no later after their slots than that voice did after its own, which its window holds to 45 ms.
+  - A batch is anchored again at now when its context has run again after not running since the anchor: a resume after the silence's suspension, or an interruption ending (R114). The registry counts these as clock epochs, and each new context starts one.
+    - While the context is not running, every play anchors its batch again at now (R117). The registry holds a waiting voice's lead from its play, so its aim is measured from now, and the epoch's change when the clock runs again corrects the pair once more.
     - Short of a new epoch, only a clock more than 150 ms behind the anchor's projection anchors the batch again (a stall with the context still running). That is above any step a main thread has been seen to read the clock in, so a coarse read never moves a cascade.
-    - Each re-anchor is logged on the tap with its reason, "resumed" or "behind", and how far behind the clock was.
+    - Each re-anchor is logged on the tap with its reason, "resumed", "behind" or "suspended", and how far behind the clock was.
     - Voices whose slots passed meanwhile are dropped by their 45 ms windows, judged on the page's clock, and logged. The rest start at their slots.
     - A voice already scheduled on the context before a stall keeps its scheduled time, so it sounds late by the stall; only voices started after the re-anchor are corrected.
-  - A voice that waits for a stopped clock to run again is dropped as a miss ("expired") if it cannot start within 45 ms of its aimed start (R115). Nothing plays later than R80's window.
+  - A voice that waits for a stopped clock to run again is dropped as a miss ("expired") if it cannot start within 45 ms of its aimed start (R115).
+  - "Nothing plays later than R80's window" covers every voice the scene hands over after warm-up: on a running clock, at its slot or dropped by its window; through a resume, aimed from its own play (R117) and dropped past 45 ms. It does not cover:
+    - the first set-down after arming, which waits out the limiter's warm-up (above);
+    - a voice already scheduled before a stall, which sounds late by the stall;
+    - a voice computed in the first 150 ms of a stall with the context still running, aimed late by the stall so far: the 150 ms fallback's trade-off against false re-anchors (R114).
   - A kept variant stands in from 1/30 s before the slot, scheduled to start exactly at it (R108).
   - Nothing starts more than 45 ms after its slot: a voice whose slot is reached later than that, behind a stalled main thread, is dropped and logged on the tap.
 - **Variants rendered ahead.** Heavy pieces render ahead at pickup (R48). Light and table pieces render ahead too once their class has switched (R100), at pickup and from the placement ghost. A variant is refreshed every metre and whenever the surfaces under it change.

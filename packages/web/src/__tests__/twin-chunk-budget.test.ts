@@ -67,8 +67,10 @@ const ENQUIRY_CHUNK_BUDGET_GZIP_BYTES = 2_560;
 // driver 21,714): +156 B, with 305 B of headroom. Fix round 6 (R113, a small set staggered from its last
 // slot; R114, a batch anchored again on a new clock epoch or 150 ms behind, logged on the tap) measured
 // 33,547 B (Worker 11,773, driver 21,774): +60 B, with 245 B of headroom. R114's epoch and R115's resume
-// wait are in the registry's own chunk, outside this budget.
-// Of the driver's 21,774 B, 1,370 B are Rollup's 81 hoisted bare imports of chunks the planner has loaded
+// wait are in the registry's own chunk, outside this budget. Fix round 7 (R116, a clamped voice moves its
+// batch's later voices; R117, a batch anchored again at every use while the clock is stopped) measured 33,631 B
+// (Worker 11,773, driver 21,858): +84 B, with 161 B of headroom.
+// Of the driver's 21,858 B, 1,377 B are Rollup's 81 hoisted bare imports of chunks the planner has loaded
 // already (output.hoistTransitiveImports, a global setting left alone here). Growth past 33 KB needs a
 // new ruling.
 const SET_DOWN_WORKER_CHUNK = /^set-down\.worker-[\w-]{8}\.js$/u;
