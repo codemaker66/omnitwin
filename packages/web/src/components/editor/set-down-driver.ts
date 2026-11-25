@@ -30,7 +30,7 @@ import {
   type SetDownVoice,
 } from "../../lib/sound-registry.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
-import { editorHistoryTravels, useEditorStore } from "../../stores/editor-store.js";
+import { editorHistoryTravels, editorLastSaveIdMap, useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { AheadRenders, classOf } from "./set-down-ahead.js";
 import { AdaptiveRenderPolicy, type ContactTiming, type RenderClass } from "./set-down-policy.js";
@@ -195,7 +195,28 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
   /** The Worker's client, unless it is not made yet, refused or broken. */
   const working = (): SetDownRenderer | null => (renderer !== null && !renderer.broken ? renderer : null);
 
-  const placedItem = (id: string): PlacedItem | null => usePlacementStore.getState().placedItems.find((item) => item.id === id) ?? null;
+  /** A piece by its id, or by the id the latest save gave it: a save's answer may rename it while it comes down (fix-1 Minor 5). */
+  const placedItem = (id: string): PlacedItem | null => {
+    const { placedItems } = usePlacementStore.getState();
+    const found = placedItems.find((item) => item.id === id);
+    if (found !== undefined) return found;
+    const renamed = editorLastSaveIdMap().get(id);
+    return renamed === undefined ? null : placedItems.find((item) => item.id === renamed) ?? null;
+  };
+
+  /** When a piece starting down was taken up: under its id, or the id it had before the latest save renamed it. */
+  const takenUpEpoch = (id: string): number | undefined => {
+    if (takenUpIn.size === 0) return undefined;
+    let held = id;
+    if (!takenUpIn.has(id)) {
+      for (const [before, after] of editorLastSaveIdMap()) {
+        if (after === id && takenUpIn.has(before)) held = before;
+      }
+    }
+    const epoch = takenUpIn.get(held);
+    takenUpIn.delete(held);
+    return epoch;
+  };
 
   const failed = (error: unknown): void => {
     if (error instanceof SetDownCancelled) return;
@@ -670,8 +691,7 @@ export function startSetDownDriver(camera: () => Camera): SetDownDriver {
     },
 
     dropStarted(id, landing, handSpeed, delaySeconds) {
-      const epoch = takenUpIn.get(id) ?? editorHistoryTravels();
-      takenUpIn.delete(id);
+      const epoch = takenUpEpoch(id) ?? editorHistoryTravels();
       gatherLanding({ id, landing, handSpeed, delaySeconds, inPlace: false, epoch });
     },
 

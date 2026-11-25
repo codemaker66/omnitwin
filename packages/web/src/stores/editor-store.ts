@@ -684,6 +684,23 @@ export function editorHistoryTravels(): number {
   return historyTravels;
 }
 
+/**
+ * The latest save's renames that named any (T-700, fix-1 Minor 5): each new
+ * placement's local id to the id the server gave it, as onSaved hands the
+ * live client. The set-down sound finds a piece renamed while it comes down
+ * through it.
+ */
+let lastSaveIdMap: ReadonlyMap<string, string> = new Map();
+
+/** The latest save's local-to-server ids, from the last save that renamed anything. */
+export function editorLastSaveIdMap(): ReadonlyMap<string, string> {
+  return lastSaveIdMap;
+}
+
+function rememberSaveRenames(idMap: ReadonlyMap<string, string>): void {
+  if (idMap.size > 0) lastSaveIdMap = idMap;
+}
+
 let lastRecordAt = Number.NEGATIVE_INFINITY;
 let autosaveRequester: (() => void) | null = null;
 let activeHistoryGesture: {
@@ -2421,6 +2438,7 @@ async function saveDocument(
     const placedIds = placedIdsOf(objects, saved.objects);
     const aligned = placedIds !== null;
     const idMap = placedIds ?? new Map<string, string>();
+    rememberSaveRenames(idMap);
     // The user may have kept editing while the request was in flight —
     // remap the latest state, not the snapshot captured before the await.
     const latest = get();
@@ -2641,6 +2659,7 @@ function adoptAsSaved(theirs: configApi.Configuration, sent: readonly EditorObje
   const serverObjects = (theirs.objects ?? []).map(placedObjectToEditor);
   const idMap = matchSavedLayout(sent, serverObjects, (id) => EDITOR_HISTORY_IDS.isLocalId(id));
   if (idMap === null || session !== configurationSession) return false;
+  rememberSaveRenames(idMap);
   const latest = useEditorStore.getState();
   const selection = useSelectionStore.getState();
   if ([...selection.selectedIds].some((id) => idMap.has(id))) {

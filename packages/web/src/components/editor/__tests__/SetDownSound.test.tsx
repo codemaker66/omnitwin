@@ -1696,6 +1696,42 @@ describe("with the timeline recording, and snap on (R87)", () => {
     expect(plays()).toHaveLength(1);
   });
 
+  it("voices a chair the autosave's answer renames while it comes down (fix-1 Minor 5, P2)", async () => {
+    openLayout([]);
+    await mountWithBridge();
+    const chair = await place("chiavari-chair", 2, 1);
+    await answerAll();
+    await frames(10);
+    expect(plays()).toHaveLength(1);
+    // The next autosave is answered only when the test says.
+    const answers: (() => void)[] = [];
+    vi.mocked(configApi.publicBatchSave).mockImplementationOnce((_id, batch) => new Promise((resolve) => {
+      answers.push(() => {
+        resolve({
+          revision: 2,
+          objects: batch.map((item, index) => servedObject(item.id ?? `00000000-0000-4000-8000-0000000006${String(index).padStart(2, "0")}`, item.assetDefinitionId, item.positionX, item.positionZ)),
+        });
+      });
+    }));
+    pass(3_500);
+    await settle();
+    expect(answers, "the autosave is out").toHaveLength(1);
+    // While it is out, the chair is taken up and let go where it stands...
+    act(() => { carryFurniture([chair.id], 0.5, 0); });
+    await frames(3);
+    act(() => { releaseFurniture([chair.id]); });
+    await settle();
+    expect(renderer.pending("exact")).toHaveLength(1);
+    // ...and the answer gives it the server's id before it lands.
+    act(() => { answers[0]?.(); });
+    await settle();
+    expect(usePlacementStore.getState().placedItems.map((item) => item.id)).not.toContain(chair.id);
+    await answerAll();
+    await frames(10);
+    expect(registry.drops).toEqual([]);
+    expect(plays()).toHaveLength(2);
+  });
+
   it("posts and plays nothing for an autosave that gives a placed piece the server's id", async () => {
     openLayout([]);
     await mountWithBridge();

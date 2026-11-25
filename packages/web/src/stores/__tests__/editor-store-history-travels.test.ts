@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as configApi from "../../api/configurations.js";
 import type { BatchObjectInput, PlacedObject } from "../../api/configurations.js";
-import { editorHistoryTravels, useEditorStore, type EditorObject } from "../editor-store.js";
+import { editorHistoryTravels, editorLastSaveIdMap, useEditorStore, type EditorObject } from "../editor-store.js";
 
 // ---------------------------------------------------------------------------
 // The timeline's travels (T-700, R87). The set-down sound must never voice a
@@ -120,5 +120,38 @@ describe("the timeline's travels (R87)", () => {
     }));
     expect(await travelsOf(() => useEditorStore.getState().saveToServer(false))).toBe(0);
     expect(vi.mocked(configApi.publicBatchSave)).toHaveBeenCalled();
+  });
+
+  it("does not count another person's change: a revision adopted, then a piece yielded to them", () => {
+    const first = "00000000-0000-4000-8000-000000000001";
+    const objects = [chair(first, 2)];
+    useEditorStore.getState().reset();
+    useEditorStore.setState({ configId: LAYOUT, spaceId: SPACE, venueId: VENUE, configRevision: 1, isPublicPreview: false, objects, baseObjects: objects });
+    const before = editorHistoryTravels();
+    const outcome = useEditorStore.getState().adoptServerConfiguration({
+      id: LAYOUT, spaceId: SPACE, venueId: VENUE, userId: null, name: "Burns supper", isPublicPreview: false,
+      revision: 2, objects: [wire(first, 6), wire("00000000-0000-4000-8000-000000000002", 8)], updatedAt: "2026-11-25T10:00:00.000Z",
+    });
+    expect(outcome.status).toBe("adopted");
+    expect(editorHistoryTravels()).toBe(before);
+    useEditorStore.getState().updateObject(first, { positionX: 4 });
+    useEditorStore.getState().yieldObjectsToRemote([first]);
+    expect(useEditorStore.getState().objects.find((object) => object.id === first)?.positionX, "theirs, yielded to").toBe(6);
+    expect(editorHistoryTravels()).toBe(before);
+  });
+});
+
+describe("a save's renames (T-700, fix-1 Minor 5)", () => {
+  it("publishes the latest save's local-to-server ids, so a piece renamed while it comes down is still found", async () => {
+    useEditorStore.getState().addObject("chiavari-chair", 5, 0, 5);
+    const local = useEditorStore.getState().objects.at(-1)?.id ?? "";
+    vi.mocked(configApi.publicBatchSave).mockImplementation((_id, batch: readonly BatchObjectInput[]) => Promise.resolve({
+      revision: 2,
+      objects: batch.map((item, index) => wire(item.id ?? `00000000-0000-4000-8000-00000000000${String(index + 2)}`, item.positionX)),
+    }));
+    await useEditorStore.getState().saveToServer(false);
+    const served = useEditorStore.getState().objects.at(-1)?.id ?? "";
+    expect(served).not.toBe(local);
+    expect(editorLastSaveIdMap().get(local)).toBe(served);
   });
 });
