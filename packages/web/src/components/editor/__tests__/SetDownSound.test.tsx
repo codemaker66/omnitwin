@@ -888,6 +888,35 @@ describe("many pieces", () => {
     expect(registry.drops[0]?.contactMs).toBeGreaterThan(0);
   });
 
+  it("makes no sound for a seat count changed through the keys: rearrangeGroups moves and adds chairs with no landing", async () => {
+    act(() => { usePlacementStore.getState().placeTableGroup(catalogueId("round-table-6ft"), 0, 0, 0, 8); });
+    await mountArmed();
+    const table = usePlacementStore.getState().placedItems.find((item) => item.groupId !== null && item.catalogueItemId === catalogueId("round-table-6ft"));
+    if (table === undefined) throw new Error("no table in the set");
+    act(() => { usePlacementStore.getState().rearrangeGroups([{ tableId: table.id, seats: 10 }]); });
+    await settle();
+    await frames(30);
+    expect(usePlacementStore.getState().placedItems, "the round and its ten chairs").toHaveLength(11);
+    expect(renderer.renders()).toEqual([]);
+    expect(plays()).toEqual([]);
+  });
+
+  it("voices the chairs a seat shortfall's fill adds: they drop in and sound, as placements do", async () => {
+    act(() => { usePlacementStore.getState().placeTableGroup(catalogueId("round-table-6ft"), 0, 0, 0, 8); });
+    await mountArmed();
+    let added: readonly string[] = [];
+    act(() => { added = usePlacementStore.getState().fillSeatShortfall(10)?.addedIds ?? []; });
+    expect(added.length, "seats added at the table").toBeGreaterThan(0);
+    await settle();
+    const asked = renderer.renders("exact");
+    expect(asked.length).toBe(Math.min(added.length, 8));
+    expect(asked.every((job) => added.some((id) => job.key.includes(`|${id}|`)))).toBe(true);
+    await answerAll();
+    await frames(60);
+    expect(plays()).toHaveLength(asked.length);
+    expect(plays().every((played) => played.voice.render.left.length > 0 && played.voice.tap?.played === "exact")).toBe(true);
+  });
+
   it("admits at most 8 plays for ten placements within a second, and never holds more than 8 renders (Review Focus 2)", async () => {
     await mountArmed();
     let mostPending = 0;

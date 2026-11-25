@@ -488,11 +488,24 @@ describe("the set-down engine stays behind the scene's lazy import (T-700, R78)"
     const fs = await import("node:fs/promises");
     const reached = await staticImportClosure("src/lib/set-down/set-down.worker.ts");
     const files = [...reached].map((file) => path.relative(path.resolve("."), file).split(path.sep).join("/"));
-    expect(files).toContain("src/lib/set-down/render.ts");
-    // The catalogue (and the asset catalogue it loads), the rooms and the Grand Hall's spec are the
-    // main thread's, which resolves a surface for a room; the Worker only renders the input it is sent.
-    expect(files.filter((file) => !file.startsWith("src/lib/"))).toEqual([]);
-    expect(files.filter((file) => ["src/lib/catalogue.ts", "src/lib/set-down/rooms.ts", "src/lib/set-down/surfaces.ts"].includes(file))).toEqual([]);
+    // Exactly the modules it renders from, named one by one, so a module the Worker comes to import fails here by
+    // name, not only through the chunks' total: never the catalogue (and the asset catalogue it loads), the rooms,
+    // the Grand Hall's spec or the surfaces' room rules, which are the main thread's (it resolves a surface for a
+    // room; the Worker only renders the input it is sent), nor any component.
+    expect([...files].sort()).toEqual([
+      "src/lib/planner-sound-recipes.ts",
+      "src/lib/planner-sound-render.ts",
+      "src/lib/set-down/analysis.ts",
+      "src/lib/set-down/bands.ts",
+      "src/lib/set-down/modes.ts",
+      "src/lib/set-down/render.ts",
+      "src/lib/set-down/respatialize.ts",
+      "src/lib/set-down/set-down.worker.ts",
+      "src/lib/set-down/surface-data.ts",
+      "src/lib/set-down/tail.ts",
+      "src/lib/set-down/worker-jobs.ts",
+      "src/lib/set-down/worker-protocol.ts",
+    ]);
     const packageImports: string[] = [];
     for (const file of reached) {
       const code = (await fs.readFile(file, "utf-8")).replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");

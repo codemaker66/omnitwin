@@ -414,7 +414,9 @@ describe("the seam's cost", () => {
       expect(touchdowns).toBe(180);
       const median = ((times[14] ?? Number.NaN) + (times[15] ?? Number.NaN)) / 2;
       console.info(`furniture landing seam: median step ${median.toFixed(4)} ms over 30 frames, 180 pieces`);
-      expect(median).toBeLessThan(0.5);
+      // A wall clock in a unit suite: the median is logged for the record against the 0.5 ms the seam is built to,
+      // and asserted only against ten times that, so a loaded CI runner cannot fail it (Minor 7).
+      expect(median).toBeLessThan(5);
     } finally {
       stop();
     }
