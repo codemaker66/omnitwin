@@ -307,6 +307,71 @@ describe("guest list store: a list removed elsewhere is never written back", () 
   });
 });
 
+describe("guest list store: a save that gives way to another tab's copy", () => {
+  const YIELD = { yieldToOther: true } as const;
+
+  it("writes nothing over another's valid copy, and answers with that copy as open would return it", async () => {
+    const { backend, a, b } = twoTabs();
+    await a.save(listFor(PLAN_A, { title: "First" }), null);
+    const aLoaded = await loadedStamp(a, PLAN_A);
+    // The other tab changes the list: two guests on one seat, so that open must repair it.
+    const table = { id: uuid(1), number: 1, name: "", seats: 4 };
+    const theirs = listFor(PLAN_A, {
+      title: "Theirs",
+      tables: [table],
+      guests: [guestAt(1, table.id, 2), guestAt(2, table.id, 2)],
+      updatedAt: "2026-11-13T10:05:00.000Z",
+    });
+    expect((await b.save(theirs, await loadedStamp(b, PLAN_A))).kind).toBe("saved");
+    const storedBefore = JSON.stringify(await backend.get(PLAN_A));
+
+    const put = vi.spyOn(backend, "put");
+    const mine = listFor(PLAN_A, { title: "Mine, from the older copy", paperVersion: 1, updatedAt: "2026-11-13T10:06:00.000Z" });
+    const answer = await a.save(mine, aLoaded, YIELD);
+
+    expect(put).not.toHaveBeenCalled();
+    expect(JSON.stringify(await backend.get(PLAN_A))).toBe(storedBefore);
+    const opened = await a.open(PLAN_A);
+    if (opened.kind !== "ready") throw new Error("their copy is no longer stored");
+    expect(opened.repaired).toBe(1);
+    expect(answer).toEqual({ kind: "other-kept", list: opened.list });
+  });
+
+  it("gives way to a valid stored copy when the caller had loaded none", async () => {
+    const { a, b } = twoTabs();
+    await b.save(listFor(PLAN_A, { title: "Stored" }), null);
+    const answer = await a.save(listFor(PLAN_A, { title: "Ours" }), null, YIELD);
+    expect(answer.kind).toBe("other-kept");
+    expect(answer.kind === "other-kept" ? answer.list.title : null).toBe("Stored");
+  });
+
+  it("saves as usual when the stored copy is the one the caller loaded", async () => {
+    const { a } = twoTabs();
+    await a.save(listFor(PLAN_A, { title: "First" }), null);
+    const answer = await a.save(listFor(PLAN_A, { title: "Second" }), await loadedStamp(a, PLAN_A), YIELD);
+    expect(answer).toEqual({ kind: "saved", stamp: { revision: 2, updatedAt: NOW } });
+  });
+
+  it("handles a stored value it cannot read, and nothing stored, as it does without the option", async () => {
+    const { raw, a, b } = twoTabs();
+    await raw.put(PLAN_A, { junk: true });
+    expect((await a.save(listFor(PLAN_A), null, YIELD)).kind).toBe("saved-over-other");
+
+    const aLoaded = await loadedStamp(a, PLAN_A);
+    await b.erase(PLAN_A);
+    expect(await a.save(listFor(PLAN_A, { title: "Again" }), aLoaded, YIELD)).toEqual({ kind: "removed-elsewhere" });
+    expect(await a.save(listFor(PLAN_A, { title: "A new start" }), null, YIELD)).toEqual({ kind: "saved", stamp: { revision: 1, updatedAt: NOW } });
+  });
+
+  it("without the option, another's copy is still written over and the answer says so", async () => {
+    const { a, b } = twoTabs();
+    await a.save(listFor(PLAN_A), null);
+    const aLoaded = await loadedStamp(a, PLAN_A);
+    await b.save(listFor(PLAN_A, { title: "Theirs" }), await loadedStamp(b, PLAN_A));
+    expect((await a.save(listFor(PLAN_A, { title: "Ours" }), aLoaded, { yieldToOther: false })).kind).toBe("saved-over-other");
+  });
+});
+
 describe("guest list store: a list is checked before and after it is written", () => {
   it("does not write a list with an extra field, and keeps the earlier copy", async () => {
     const { raw, a } = twoTabs();

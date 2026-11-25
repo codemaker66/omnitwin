@@ -13,7 +13,7 @@ import {
 } from "../components/guest-list/words.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import { KIT_PARAM } from "../lib/guest-list/kit-switch.js";
-import type { GuestList } from "../lib/guest-list/model.js";
+import { printedFromOlderCopy, type GuestList } from "../lib/guest-list/model.js";
 import { byTable, covers, markPrinted, placeCards, tablePlanAZ, type Sheet } from "../lib/guest-list/paper.js";
 import { guestListStore, type GuestListStore } from "../lib/guest-list/store.js";
 import { useGuestListStore } from "../stores/guest-list-store.js";
@@ -221,11 +221,22 @@ async function fontsLoaded(): Promise<void> {
 /**
  * Records a print on the list (its version and day) and puts it on the page at
  * once, so the paper the browser lays out next carries it. Not a change undo
- * steps back through.
+ * steps back through. A print never writes over another tab's list: when its
+ * save finds one, their list is kept, with this print recorded on it as made
+ * from an older copy, and the page says so.
  */
 function recordPrint(): void {
+  const at = new Date().toISOString();
+  let printed = 0;
   flushSync(() => {
-    useGuestListStore.getState().apply((l) => markPrinted(l, new Date().toISOString()), { undo: false });
+    useGuestListStore.getState().apply(
+      (l) => {
+        const next = markPrinted(l, at);
+        printed = next.paperVersion;
+        return next;
+      },
+      { undo: false, ifOtherCopy: (theirs) => printedFromOlderCopy(theirs, printed, at) },
+    );
   });
 }
 

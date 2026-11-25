@@ -30,7 +30,8 @@ const TABLE_CANARY = "Morag Quillfeather";
 const TITLE = "Fraser and Okafor";
 const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
 const ADDED_AFTER_DELETE_WORDS = "Names were added to this list in another tab after it was deleted here.";
-const REMOVED_BY_RULE_WORDS = "This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
+const PRINT_OF_OLDER_COPY_WORDS = "That printout was made from an older copy of this list, which was changed in another tab. Print it again.";
+const REMOVED_BY_RULE_WORDS ="This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
 const SHEET_LINKS = [
   ["Table plan", "table-plan"],
   ["Guests by table", "by-table"],
@@ -922,6 +923,103 @@ describe("the guest paper page: printing", () => {
     );
     expect(words.getAttribute("role")).toBe("alert");
     expect(within(tools()).queryByText(/This browser is not keeping the list/)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A print never writes over another tab's list. The browser's own Print
+// command makes no read of the device, so the sheet it lays out can be of an
+// older copy: the save then gives way to the other tab's list, records the
+// print on it as made from an older copy, and the tools say so.
+// ---------------------------------------------------------------------------
+
+describe("the guest paper page: a print gives way to another tab's list", () => {
+  it("the browser's own Print command, over a list another tab changed unseen, keeps their list and says the printout is of an older copy", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-15T10:00:00.000Z"));
+    const backend = memoryBackend();
+    const store = await storeHolding(list180(), backend);
+    open(`${PAPER}?kit=on`, store);
+    const sheet = await paper("table-plan");
+
+    // Another tab renames the event and seats one more guest; this page gets no focus or visibility event.
+    await otherTabSaves(backend, (kept) => ({
+      ...kept,
+      title: "Changed in the other tab",
+      guests: [...kept.guests, { id: uuid(5000), name: "Morag Example", party: "", tableId: uuid(18), seat: 3 }],
+      changedSincePrint: true,
+      updatedAt: "2026-11-14T10:00:00.000Z",
+    }));
+    expect(text(sheet.querySelector(".gp-leaf__title"))).toBe(TITLE);
+
+    // What the browser lays out as the handler returns: the older copy, numbered version 1.
+    let laidOut = "";
+    let laidOutTitle = "";
+    const read = (): void => {
+      laidOut = text(document.querySelector(".gp-running"));
+      laidOutTitle = text(document.querySelector(".gp-leaf__title"));
+    };
+    window.addEventListener("beforeprint", read);
+    act(() => {
+      window.dispatchEvent(new Event("beforeprint"));
+    });
+    window.removeEventListener("beforeprint", read);
+    expect(laidOut).toBe("Version 1 · printed 15 November 2026");
+    expect(laidOutTitle).toBe(TITLE);
+
+    await act(async () => {
+      await state().flush();
+    });
+
+    // The device holds the other tab's list, and nothing of the older content.
+    const kept = await memoryStore(backend).open(PLAN_ID);
+    if (kept.kind !== "ready") throw new Error("the list was not kept");
+    expect(kept.list.title).toBe("Changed in the other tab");
+    expect(kept.list.guests).toHaveLength(181);
+    expect(kept.list.guests.map((g) => g.name)).toContain("Morag Example");
+    // Its version is the number that was on the sheet, and it is marked changed since that print.
+    expect(kept.list.paperVersion).toBe(1);
+    expect(kept.list.printedAt).toBe("2026-11-15T10:00:00.000Z");
+    expect(kept.list.changedSincePrint).toBe(true);
+
+    // The page says so, and shows the other tab's list.
+    const words = await within(tools()).findByText(PRINT_OF_OLDER_COPY_WORDS);
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("print-of-older-copy");
+    expect(words.closest("[role='status']")).not.toBeNull();
+    const now = await paper("table-plan");
+    expect(text(now)).toContain("Example, Morag");
+    expect(text(now.querySelector(".gp-leaf__title"))).toBe("Changed in the other tab");
+    expect(within(tools()).queryByText("This list was also changed in another tab. This tab's version was kept.")).toBeNull();
+
+    fireEvent.click(within(words.closest("[data-notice]") ?? tools()).getByRole("button", { name: "Close" }));
+    expect(within(tools()).queryByText(PRINT_OF_OLDER_COPY_WORDS)).toBeNull();
+
+    // Printing it again, as the words ask, gives the changed list the next number.
+    fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
+    await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
+    expect(currentList().paperVersion).toBe(2);
+    expect(currentList().changedSincePrint).toBe(false);
+  });
+
+  it("an ordinary change waiting with the browser's own Print keeps this tab's list and says so, as before", async () => {
+    const backend = memoryBackend();
+    const store = await storeHolding(list180(), backend);
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    await otherTabSaves(backend, (kept) => ({ ...kept, title: "Theirs", updatedAt: "2026-11-14T10:00:00.000Z" }));
+
+    act(() => {
+      state().apply((list) => ({ ...list, title: "Ours", changedSincePrint: true }));
+      window.dispatchEvent(new Event("beforeprint"));
+    });
+    await act(async () => {
+      await state().flush();
+    });
+
+    expect(await within(tools()).findByText("This list was also changed in another tab. This tab's version was kept.")).toBeTruthy();
+    expect(within(tools()).queryByText(PRINT_OF_OLDER_COPY_WORDS)).toBeNull();
+    const kept = await memoryStore(backend).open(PLAN_ID);
+    expect(kept.kind === "ready" ? [kept.list.title, kept.list.paperVersion] : null).toEqual(["Ours", 1]);
   });
 });
 

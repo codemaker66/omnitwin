@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { memoryBackend, withBackend, type CacheBackend } from "../../lib/idb-cache.js";
-import { emptyGuestList, type Guest, type GuestList } from "../../lib/guest-list/model.js";
+import { emptyGuestList, printedFromOlderCopy, type Guest, type GuestList } from "../../lib/guest-list/model.js";
 import { markPrinted } from "../../lib/guest-list/paper.js";
 import {
   createGuestListStore,
@@ -1260,6 +1260,170 @@ describe("guest list page state: a list this page's own sweep removed is said to
     await otherTabOn(backend).erase(PLAN_A);
     await state().refresh({ sweptHere: false });
     expect(state().notice).toEqual({ kind: "removed-elsewhere" });
+  });
+});
+
+describe("guest list page state: a print gives way to another tab's list", () => {
+  const PRINTED_AT = "2026-11-15T10:00:00.000Z";
+
+  /** A print, recorded as the paper page records it: it gives way, and says how it stands on their copy. */
+  function recordPrint(): void {
+    let printed = 0;
+    state().apply(
+      (list) => {
+        const next = markPrinted(list, PRINTED_AT);
+        printed = next.paperVersion;
+        return next;
+      },
+      { undo: false, ifOtherCopy: (theirs) => printedFromOlderCopy(theirs, printed, PRINTED_AT) },
+    );
+  }
+
+  /** This tab holds a kept list of one guest; another tab then changes it, and this tab is not told. */
+  async function changedElsewhereUnseen(patch: Partial<GuestList> = {}): Promise<{ readonly backend: CacheBackend; readonly store: GuestListStore }> {
+    const { backend, store } = device();
+    await otherTabOn(backend).save({ ...emptyGuestList(PLAN_A, START), title: "Older", guests: [guest(1)] }, null);
+    await state().open(PLAN_A, store, clock());
+    const tab = otherTabOn(backend);
+    const theirs = await loadedBy(tab, PLAN_A);
+    const answer = await tab.save(
+      { ...theirs.list, title: "Theirs", guests: [guest(1), guest(2)], updatedAt: "2026-11-14T09:00:00.000Z", ...patch },
+      theirs.stamp,
+    );
+    expect(answer.kind).toBe("saved");
+    return { backend, store };
+  }
+
+  it("asks the device to give way only while every change waiting is one that gives way", async () => {
+    const { store } = device();
+    const save = vi.spyOn(store, "save");
+    await state().open(PLAN_A, store, clock());
+
+    recordPrint();
+    await state().flush();
+    expect(save.mock.calls[0]?.[2]).toEqual({ yieldToOther: true });
+
+    state().apply(titled("Ordinary"));
+    await state().flush();
+    expect(save.mock.calls[1]?.[2]).toEqual({ yieldToOther: false });
+
+    // An ordinary change before the print, and one after it, each make the save an ordinary one.
+    state().apply(titled("Before the print"));
+    recordPrint();
+    await state().flush();
+    expect(save.mock.calls[2]?.[2]).toEqual({ yieldToOther: false });
+    state().apply((list) => ({ ...list, changedSincePrint: true }));
+    await state().flush();
+    recordPrint();
+    state().apply(titled("After the print"));
+    await state().flush();
+    expect(save.mock.calls[4]?.[2]).toEqual({ yieldToOther: false });
+    expect(save).toHaveBeenCalledTimes(5);
+  });
+
+  it("a print alone gives way: their list is taken up and kept, with the print recorded as made from an older copy", async () => {
+    const { backend } = await changedElsewhereUnseen();
+    expect(state().list?.title).toBe("Older");
+
+    recordPrint();
+    // The sheet laid out now carries version 1, from the older copy.
+    expect(state().list?.paperVersion).toBe(1);
+    expect(state().list?.title).toBe("Older");
+    await state().flush();
+
+    expect(state().notice).toEqual({ kind: "print-of-older-copy" });
+    expect(state().takeUps).toBe(1);
+    expect(state().canUndo).toBe(false);
+    expect(state().kept).toBe(true);
+    expect(state().list?.title).toBe("Theirs");
+    expect(state().list?.guests).toEqual([guest(1), guest(2)]);
+
+    const kept = await loadedBy(otherTabOn(backend), PLAN_A);
+    expect(kept.list.title).toBe("Theirs");
+    expect(kept.list.guests).toEqual([guest(1), guest(2)]);
+    // The number that was on the stale sheet, this print's moment, and marked changed since.
+    expect(kept.list.paperVersion).toBe(1);
+    expect(kept.list.printedAt).toBe(PRINTED_AT);
+    expect(kept.list.changedSincePrint).toBe(true);
+    // Their copy was revision 2; the print recorded on it is one quiet save more.
+    expect(kept.stamp.revision).toBe(3);
+
+    // Nothing is left waiting, and the next change here is an ordinary, quiet one.
+    state().dismissNotice();
+    state().apply(titled("Ours now"));
+    await state().flush();
+    expect(state().notice).toBeNull();
+  });
+
+  it("never gives the stale sheet's number to a different sheet: the larger of the two versions is kept", async () => {
+    const { backend } = await changedElsewhereUnseen({ paperVersion: 4, printedAt: "2026-11-14T09:00:00.000Z", changedSincePrint: false });
+    recordPrint();
+    expect(state().list?.paperVersion).toBe(1);
+    await state().flush();
+
+    const kept = await loadedBy(otherTabOn(backend), PLAN_A);
+    expect(kept.list.paperVersion).toBe(4);
+    expect(kept.list.printedAt).toBe(PRINTED_AT);
+    expect(kept.list.changedSincePrint).toBe(true);
+    // So the next print of the list as it now stands is version 5, a number no sheet has carried.
+    expect(markPrinted(kept.list, "2026-11-16T10:00:00.000Z").paperVersion).toBe(5);
+  });
+
+  it("an ordinary change waiting with the print keeps this tab's list and says so, as before", async () => {
+    const { backend } = await changedElsewhereUnseen();
+    state().apply(titled("Ours"));
+    recordPrint();
+    await state().flush();
+
+    expect(state().notice).toEqual({ kind: "other-tab" });
+    expect(state().takeUps).toBe(0);
+    const kept = await loadedBy(otherTabOn(backend), PLAN_A);
+    expect([kept.list.title, kept.list.guests, kept.list.paperVersion]).toEqual(["Ours", [guest(1)], 1]);
+  });
+
+  it("an ordinary change made while the print's save is running keeps this tab's list too", async () => {
+    const { backend, store } = await changedElsewhereUnseen();
+    const gate = deferred<undefined>();
+    const real = store.save.bind(store);
+    vi.spyOn(store, "save").mockImplementationOnce(async (list, loaded, opts) => {
+      await gate.promise;
+      return real(list, loaded, opts);
+    });
+    recordPrint();
+    const flushing = state().flush();
+    state().apply(titled("Typed while the print was being kept"));
+    gate.resolve(undefined);
+    await flushing;
+    await state().flush();
+
+    expect(state().notice).toEqual({ kind: "other-tab" });
+    expect(state().list?.title).toBe("Typed while the print was being kept");
+    const kept = await loadedBy(otherTabOn(backend), PLAN_A);
+    expect([kept.list.title, kept.list.guests, kept.list.paperVersion]).toEqual(["Typed while the print was being kept", [guest(1)], 1]);
+  });
+
+  it("a print whose save was not kept still gives way at the next try", async () => {
+    const { store } = device();
+    const save = vi.spyOn(store, "save").mockResolvedValueOnce({ kind: "not-kept" });
+    await state().open(PLAN_A, store, clock());
+    recordPrint();
+    await state().flush();
+    expect(state().kept).toBe(false);
+    await state().flush();
+    expect(save.mock.calls.map((call) => call[2])).toEqual([{ yieldToOther: true }, { yieldToOther: true }]);
+    expect(state().kept).toBe(true);
+  });
+
+  it("a session left with only a print waiting gives way as well, and records the print on their list", async () => {
+    const { backend, store } = await changedElsewhereUnseen();
+    recordPrint();
+    await state().open(PLAN_B, store, clock());
+    await state().flush();
+
+    expect(state().planId).toBe(PLAN_B);
+    expect(state().notice).toBeNull();
+    const kept = await loadedBy(otherTabOn(backend), PLAN_A);
+    expect([kept.list.title, kept.list.guests, kept.list.paperVersion, kept.list.changedSincePrint]).toEqual(["Theirs", [guest(1), guest(2)], 1, true]);
   });
 });
 

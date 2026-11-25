@@ -10,7 +10,15 @@
 
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { emptyGuestList, type GuestList } from "../lib/guest-list/model.js";
-import { sameStamp, stampOf, type GuestListStore, type Opened, type Saved, type Stamp } from "../lib/guest-list/store.js";
+import {
+  sameStamp,
+  stampOf,
+  type GuestListStore,
+  type Opened,
+  type Saved,
+  type SaveOptions,
+  type Stamp,
+} from "../lib/guest-list/store.js";
 
 /** A change is written to the device within this long of being made. */
 export const AUTOSAVE_MS = 600;
@@ -29,7 +37,21 @@ export type KitNotice =
   /** The list was deleted in this tab, and a list another tab stored since has been taken up. */
   | { readonly kind: "added-after-delete" }
   /** This page's own sweep removed the list, past its removal day: an empty one was taken. */
-  | { readonly kind: "removed-by-rule" };
+  | { readonly kind: "removed-by-rule" }
+  /** A print's save gave way to another tab's list: the sheet printed was of an older copy. */
+  | { readonly kind: "print-of-older-copy" };
+
+export interface ApplyOptions {
+  /** False for a change undo does not step back through. */
+  readonly undo?: boolean;
+  /**
+   * For a change that gives way to another tab: while every change waiting is
+   * such a change, the save writes nothing over a copy another tab has kept.
+   * The page takes their list up instead and says so, and what this change
+   * means on their list (this function's answer) is made as an ordinary change.
+   */
+  readonly ifOtherCopy?: (theirs: GuestList) => GuestList;
+}
 
 /**
  * What a kit page tells the page state each time it mounts: whether the sweep
@@ -64,7 +86,7 @@ export interface GuestListState {
    * stored, the empty list comes with a notice that the rule removed it.
    */
   open(planId: string, store: GuestListStore, now?: () => string, mount?: MountRead): Promise<void>;
-  apply(change: (list: GuestList) => GuestList, opts?: { readonly undo?: boolean }): void;
+  apply(change: (list: GuestList) => GuestList, opts?: ApplyOptions): void;
   undo(): void;
   dismissNotice(): void;
   /** For "unreadable": erase what is stored and begin a new list. */
@@ -112,6 +134,10 @@ interface Session {
   loaded: Stamp | null;
   /** A change has been made that the device has not yet been asked to keep. */
   unsaved: boolean;
+  /** An ordinary change is among those waiting: the next save keeps this tab's list over any other. */
+  ordinary: boolean;
+  /** The latest waiting change that gives way to another tab's copy: what it means on their list. */
+  ifOther: ((theirs: GuestList) => GuestList) | null;
   timer: ReturnType<typeof setTimeout> | null;
   running: Promise<void> | null;
   /** While erasing, nothing is saved. */
@@ -164,9 +190,9 @@ async function openSafely(store: GuestListStore, planId: string): Promise<Opened
   }
 }
 
-async function saveSafely(store: GuestListStore, list: GuestList, loaded: Stamp | null): Promise<Saved> {
+async function saveSafely(store: GuestListStore, list: GuestList, loaded: Stamp | null, opts: SaveOptions): Promise<Saved> {
   try {
-    return await store.save(list, loaded);
+    return await store.save(list, loaded, opts);
   } catch {
     return { kind: "not-kept" };
   }
@@ -178,6 +204,13 @@ async function eraseSafely(store: GuestListStore, planId: string): Promise<void>
   } catch {
     // Storage refused; there is nothing more to do here.
   }
+}
+
+/** Drops whatever was waiting to be kept. */
+function nothingWaiting(session: Session): void {
+  session.unsaved = false;
+  session.ordinary = false;
+  session.ifOther = null;
 }
 
 function clearTimer(session: Session): void {
@@ -192,6 +225,8 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
     const isCurrent = (session: Session): boolean => session.live && current === session;
     /** Nothing here is waiting to be kept, being kept or being erased. */
     const quiet = (session: Session): boolean => !session.unsaved && session.running === null && !session.erasing;
+    /** What is waiting now, read afresh after a wait: a change made meanwhile sets these again. */
+    const waitingNow = (session: Session): Pick<Session, "ordinary" | "ifOther"> => ({ ordinary: session.ordinary, ifOther: session.ifOther });
 
     /**
      * The page takes an empty list in place of one that is no longer stored,
@@ -203,7 +238,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
       const notice: KitNotice = session.sweptHere ? { kind: "removed-by-rule" } : { kind: "removed-elsewhere" };
       session.sweptHere = false;
       clearTimer(session);
-      session.unsaved = false;
+      nothingWaiting(session);
       session.loaded = null;
       session.undo = [];
       set({
@@ -242,19 +277,68 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             continue;
           }
           const list = isCurrent(session) ? get().list : session.final;
+          // What is waiting, taken with the list: the save gives way to another tab's copy only
+          // while every change waiting is one that asked to.
+          const waiting = waitingNow(session);
+          const givesWay = waiting.ordinary ? null : waiting.ifOther;
           session.unsaved = false;
+          session.ordinary = false;
+          session.ifOther = null;
           if (list === null) return;
-          const answer = await saveSafely(session.store, list, session.loaded);
+          const answer = await saveSafely(session.store, list, session.loaded, { yieldToOther: givesWay !== null });
+          const since = waitingNow(session);
           if (answer.kind === "not-kept") {
+            // What was waiting is waiting again, with whatever has been changed since.
             session.unsaved = true;
+            session.ordinary = since.ordinary || waiting.ordinary;
+            session.ifOther = since.ifOther ?? waiting.ifOther;
             if (isCurrent(session)) set({ kept: false });
             return;
           }
           if (answer.kind === "removed-elsewhere") {
             // A change made while this save ran belongs to the removed list, and goes with it.
             if (isCurrent(session)) takeEmpty(session);
-            else session.unsaved = false;
+            else nothingWaiting(session);
             return;
+          }
+          if (answer.kind === "other-kept") {
+            const theirs = answer.list;
+            const onTheirs = since.ifOther ?? givesWay;
+            // An ordinary change was made here while this save ran (or the answer was not asked for):
+            // this tab's list is kept after all, by an ordinary save that says so.
+            if (since.ordinary || onTheirs === null) {
+              session.unsaved = true;
+              session.ordinary = true;
+              continue;
+            }
+            // Their list stands. This tab takes it up, and what its change means on their list
+            // is made as an ordinary change, which the next turn of the loop saves.
+            let next: GuestList;
+            try {
+              next = onTheirs(theirs);
+            } catch {
+              next = theirs;
+            }
+            next = { ...next, updatedAt: session.now() };
+            session.loaded = stampOf(theirs);
+            session.undo = [];
+            session.erasedHere = false;
+            session.sweptHere = false;
+            session.unsaved = true;
+            session.ordinary = true;
+            session.ifOther = null;
+            if (isCurrent(session)) {
+              set({
+                list: next,
+                kept: true,
+                canUndo: false,
+                notice: { kind: "print-of-older-copy" },
+                takeUps: get().takeUps + 1,
+              });
+            } else {
+              session.final = next;
+            }
+            continue;
           }
           session.loaded = answer.stamp;
           // This session has stored a list itself since any delete here, or any sweep.
@@ -284,7 +368,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
     function retire(session: Session, saveWhatIsLeft: boolean): void {
       clearTimer(session);
       if (saveWhatIsLeft && session.unsaved) session.final = get().list;
-      else session.unsaved = false;
+      else nothingWaiting(session);
       session.live = false;
       const running = session.unsaved ? saveLoop(session) : session.running;
       if (running === null) return;
@@ -294,10 +378,22 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
       });
     }
 
-    /** Puts the session's list in place, stamped now, and asks for a save. */
-    function setChanged(session: Session, list: GuestList): void {
+    /**
+     * Puts the session's list in place, stamped now, and asks for a save: an
+     * ordinary one, unless the change is one that gives way to another tab.
+     */
+    function setChanged(session: Session, list: GuestList, ifOtherCopy?: (theirs: GuestList) => GuestList): void {
       set({ list: { ...list, updatedAt: session.now() }, canUndo: session.undo.length > 0 });
+      if (ifOtherCopy === undefined) session.ordinary = true;
+      else session.ifOther = ifOtherCopy;
       scheduleSave(session);
+    }
+
+    /** A repair made on reading is kept at once, as an ordinary change. */
+    function saveRepair(session: Session): void {
+      session.unsaved = true;
+      session.ordinary = true;
+      void saveLoop(session);
     }
 
     return {
@@ -312,6 +408,8 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           undo: [],
           loaded: null,
           unsaved: false,
+          ordinary: false,
+          ifOther: null,
           timer: null,
           running: null,
           erasing: false,
@@ -341,8 +439,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
               notice: opened.repaired > 0 ? { kind: "repaired", unseated: opened.repaired } : null,
             });
             if (opened.repaired > 0) {
-              session.unsaved = true;
-              void saveLoop(session);
+              saveRepair(session);
             }
             return;
           case "new":
@@ -383,7 +480,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           session.undo.push(list);
           if (session.undo.length > UNDO_STEPS) session.undo.shift();
         }
-        setChanged(session, next);
+        setChanged(session, next, opts?.ifOtherCopy);
       },
 
       undo() {
@@ -429,7 +526,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         if (session === null || get().phase === "opening") return;
         session.erasing = true;
         clearTimer(session);
-        session.unsaved = false;
+        nothingWaiting(session);
         if (session.running !== null) await session.running;
         // A list this session never read is not erased unseen: only the page is cleared.
         if (!session.unread) {
@@ -438,7 +535,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         }
         // Anything changed while erasing is dropped with the rest of the list.
         clearTimer(session);
-        session.unsaved = false;
+        nothingWaiting(session);
         session.erasing = false;
         if (!isCurrent(session)) return;
         session.undo = [];
@@ -504,8 +601,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           takeUps: get().takeUps + 1,
         });
         if (opened.repaired > 0) {
-          session.unsaved = true;
-          void saveLoop(session);
+          saveRepair(session);
         }
       },
 

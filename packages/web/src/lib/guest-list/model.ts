@@ -110,6 +110,24 @@ export function emptyGuestList(planId: string, nowIso: string): GuestList {
 }
 
 /**
+ * A print that turns out to have been made from an older copy of the list:
+ * another tab had changed it, and that tab's list, `theirs`, is the one kept.
+ * The print is still recorded on it. The version is the larger of theirs and
+ * the number the stale sheet carried, so that number is never given to a
+ * different sheet; the print's moment is this print's; and the list is marked
+ * changed since that print, because what was printed is not this list.
+ * (`markPrinted`, for a print of the list as it stands, is in `paper.ts`.)
+ */
+export function printedFromOlderCopy(theirs: GuestList, printedVersion: number, printedAtIso: string): GuestList {
+  return {
+    ...theirs,
+    paperVersion: Math.max(theirs.paperVersion, printedVersion),
+    printedAt: printedAtIso,
+    changedSincePrint: true,
+  };
+}
+
+/**
  * Put right any guest whose seating cannot stand: the table is gone, the table
  * is held with no seat, the seat is beyond the table's seats, or the seat is
  * already held by an earlier guest in list order. Such a guest goes back to

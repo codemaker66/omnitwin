@@ -54,7 +54,21 @@ export type Saved =
    * Nothing was written, so a removed list is never written back.
    */
   | { readonly kind: "removed-elsewhere" }
+  /**
+   * Asked to give way, and a valid stored copy was not the one the caller had
+   * loaded: nothing was written. `list` is that copy, as `open` would return it.
+   */
+  | { readonly kind: "other-kept"; readonly list: GuestList }
   | { readonly kind: "not-kept" };
+
+export interface SaveOptions {
+  /**
+   * Give way to another tab: when a valid stored copy is not the one the
+   * caller loaded, write nothing and answer with that copy. For a change that
+   * must never cost another tab its list, such as the record of a print.
+   */
+  readonly yieldToOther?: boolean;
+}
 
 export interface GuestListStore {
   open(planId: string): Promise<Opened>;
@@ -63,11 +77,12 @@ export interface GuestListStore {
    * `revision`, which is counted here: one more than the larger of the stored
    * copy's and the loaded copy's. `loaded` is the stamp of the copy the caller
    * last opened or saved, or null if none. A stored copy that is not that copy
-   * is still replaced, and the answer says so, so the page can say so. The
-   * answer carries the stamp written: the caller's next `loaded`. When nothing
-   * is stored and the caller had loaded a copy, nothing is written.
+   * is still replaced, and the answer says so, so the page can say so, unless
+   * the caller asked to give way to it. The answer carries the stamp written:
+   * the caller's next `loaded`. When nothing is stored and the caller had
+   * loaded a copy, nothing is written.
    */
-  save(list: GuestList, loaded: Stamp | null): Promise<Saved>;
+  save(list: GuestList, loaded: Stamp | null, opts?: SaveOptions): Promise<Saved>;
   erase(planId: string): Promise<void>;
   /** Removes lists past their delete-after day; answers the plan ids of the lists it removed. */
   sweep(nowMs: number): Promise<readonly string[]>;
@@ -87,7 +102,7 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
     }
   }
 
-  async function save(list: GuestList, loaded: Stamp | null): Promise<Saved> {
+  async function save(list: GuestList, loaded: Stamp | null, opts?: SaveOptions): Promise<Saved> {
     // A list that open would refuse is never written; the stored copy stays as it was.
     const checked = GuestListSchema.safeParse(list);
     if (!checked.success) return { kind: "not-kept" };
@@ -103,6 +118,10 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
         const parsed = GuestListSchema.safeParse(stored.value);
         if (parsed.success) storedRevision = parsed.data.revision;
         anothers = !(parsed.success && loaded !== null && sameStamp(stampOf(parsed.data), loaded));
+        // Asked to give way: another's valid copy stands, and nothing is written.
+        if (anothers && parsed.success && opts?.yieldToOther === true) {
+          return { kind: "other-kept", list: repairGuestList(parsed.data).list };
+        }
       }
       const toStore: GuestList = { ...checked.data, revision: Math.max(storedRevision, loaded?.revision ?? 0) + 1 };
       const stamp = stampOf(toStore);

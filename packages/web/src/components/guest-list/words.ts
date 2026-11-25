@@ -104,6 +104,10 @@ export const ADDED_AFTER_DELETE = "Names were added to this list in another tab 
 export const REMOVED_BY_RULE =
   `This list was removed from this browser: a list is removed ${String(KEEP_DAYS_AFTER_EVENT)} days after its event, or ${String(KEEP_DAYS_AFTER_CHANGE)} days after its last change.`;
 
+/** A print's save found another tab's list and gave way to it: the sheet printed was of the copy before. */
+export const PRINT_OF_OLDER_COPY =
+  "That printout was made from an older copy of this list, which was changed in another tab. Print it again.";
+
 /** The words of a notice from the page's state. Each is a fixed sentence, or a count in one. */
 export function noticeWords(notice: Exclude<KitNotice, null>): string {
   switch (notice.kind) {
@@ -117,6 +121,8 @@ export function noticeWords(notice: Exclude<KitNotice, null>): string {
       return ADDED_AFTER_DELETE;
     case "removed-by-rule":
       return REMOVED_BY_RULE;
+    case "print-of-older-copy":
+      return PRINT_OF_OLDER_COPY;
   }
 }
 
