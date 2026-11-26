@@ -476,6 +476,23 @@ treats 0 as "not stated", never as a fact. Piece C shows them.
   (`api/src/services/people-merge.ts`). This design adds no table that links a person to an event, so that merge
   needs no change.
 
+> **Amended 26 November 2026, after the release review of stage 1, part one (#436): erasure follows the links.**
+> This amends the bullet above on erasing a person; its words stand as decided, but its last sentence no longer
+> holds for erasure. The join of old records makes events and names them, and their client, from the record they
+> were made for (an enquiry's name, a deal's or a proposal's title), so a person's name could outlive their
+> erasure on an event that nothing else ties to them. #436 therefore changes the People Book's erasure
+> (`around()` in `api/src/services/people-erasure.ts`) and the 24-month pass (`lapsedPeople` in
+> `api/src/services/people-retention.ts`): both follow the three links, `enquiries.event_id`,
+> `opportunities.event_id` and `proposals.event_id`, from the person's own enquiries, deals and proposals (and
+> from a deal near them), whether the join or a writer made the link. A linked event is the person's own unless a
+> record of another live person is tied to it (their enquiry, deal or proposal linked to it, a booking of their
+> enquiry in it, or it is their deal's); then it is treated as an event near them, by the erasure module's own
+> rule for a deal another live person leads. Own or near, the event is kept and loses only the erased person's
+> names. Erasure and the pass read the links with one expression (`tiedToAnotherPerson`), so they agree. Until
+> stage 6 retires `events.opportunity_id`, erasure still reads it too, and that read goes in the same change.
+> Whoever adds a new way to tie a record to an event teaches erasure and the 24-month pass the same day. The
+> note #436 adds, `docs/engineering/the-spine.md`, describes it as built.
+
 ## 6. The rule in the database, and the check that proves it
 
 The definition of which records must have an event is in section 5.1. There is one.

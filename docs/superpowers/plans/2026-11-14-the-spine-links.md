@@ -102,6 +102,17 @@ departs from the tasks below:
 `events.opportunity_id`. Pull request #247 (erase a person) and the People Book's merge, which stay with their
 owners.
 
+**Amended 26 November 2026, after the release review of stage 1, part one (#436).** The sentence above no longer
+holds for erasure; the People Book's merge still stays with its owner. The join of old records (Task 3) makes
+events and names them from the record they were made for, so #436 changes the People Book's erasure (`around()`
+in `packages/api/src/services/people-erasure.ts`) and the 24-month pass (`lapsedPeople` in
+`packages/api/src/services/people-retention.ts`) to follow the three links, `enquiries.event_id`,
+`opportunities.event_id` and `proposals.event_id`, from the person's own records. A linked event is the person's
+own unless a record of another live person is tied to it; then it is treated as an event near them, by the
+erasure module's own rule (`tiedToAnotherPerson`, one expression for both). Whoever adds a new way to tie a record
+to an event teaches erasure and the 24-month pass the same day. The note #436 adds,
+`docs/engineering/the-spine.md`, describes it as built (the design's section 5.8 carries the amendment).
+
 ## Global Constraints
 
 - **One definition of "must have an event"** (Task 1). The writers, the SQL join and the count each follow it,
