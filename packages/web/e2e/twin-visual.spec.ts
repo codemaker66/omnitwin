@@ -4,12 +4,32 @@ import {
   TWIN_FIXTURE_MANIFEST_EQUIRECT,
   TWIN_FIXTURE_TILE_DATA_URI,
 } from "../src/twin/__fixtures__/twin-fixture.js";
-import { ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES } from "../src/twin/shell/twin-rooms.js";
+import { MEASURE_GROUP_LABEL } from "../src/twin/measure/measure-copy.js";
+import { TWIN_QUICK_PLAN_LABEL } from "../src/twin/shell/quick-actions-copy.js";
+import { TWIN_DOSSIER_FOOTNOTE } from "../src/twin/shell/room-dossier-copy.js";
+import { ROOM_SELECTOR_ORDER } from "../src/twin/shell/room-selector.js";
 import {
+  TWIN_ROOMS_FOOTNOTE,
+  TWIN_ROOMS_HEADING,
+  TWIN_ROOMS_HERE,
+  TWIN_ROOMS_LEVEL_HERE,
+  TWIN_ROOMS_TRIGGER,
+  twinRoomsLevelAbove,
+  twinRoomsLevelBelow,
+} from "../src/twin/shell/room-selector-copy.js";
+import { lookUpRoom, ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES } from "../src/twin/shell/twin-rooms.js";
+import {
+  TWIN_DISCLOSURE,
+  TWIN_ENQUIRE_LABEL,
   TWIN_MODE_DOLLHOUSE_LABEL,
   TWIN_MODE_PLAN_LABEL,
+  TWIN_MODE_WALK_LABEL,
+  TWIN_SURFACE_LABEL,
   TWIN_TITLE,
+  TWIN_TOUR_LABEL,
+  twinNodeLabel,
 } from "../src/twin/twin-copy.js";
+import { expectedDossierStats, expectedRoomLine, HudTextLedger } from "./support/twin-hud-text.js";
 
 // ---------------------------------------------------------------------------
 // The Twin — visual regression baselines for /tour (defect C2).
@@ -34,6 +54,16 @@ import {
 // magenta rectangle over the whole page and the HUD — the only thing worth
 // comparing — disappears from the shot. The reproduction is three lines
 // (`page.screenshot({ mask: [page.locator("canvas")] })` on this route).
+//
+// A BASELINE IS NEVER THE ONLY PROOF OF A FIGURE OR A WORD (T-758). These
+// images once passed with a room's size deleted from its line in the rooms
+// panel: one short figure in muted text moved 89 counted pixels against a
+// budget of 648 at desktop and 164 at the phone sizes, and at 844x390 the row
+// sat below the panel's fold and moved none at all. So before any image is
+// compared, every case asserts every word and figure the HUD draws as DOM
+// text, each one built from the module the UI renders it from, and then
+// proves no drawn text escaped an assertion (support/twin-hud-text.ts). The
+// image is the proof of layout; the text is the proof of what it says.
 //
 // DETERMINISM. Everything compared here is DOM. The residual sources of jitter
 // are neutralised at the source rather than absorbed by a loose tolerance: the
@@ -103,6 +133,9 @@ const VALIDATED_IDS: readonly string[] = Object.keys(VERIFIED_ROOM_NODES).sort()
 const ENTRY_ID = VALIDATED_IDS[0] ?? "scan_000";
 const ENTRY_ROOM_SLUG = VERIFIED_ROOM_NODES[ENTRY_ID];
 const ENTRY_ROOM_NAME = ENTRY_ROOM_SLUG === undefined ? null : ROOM_DISPLAY_NAMES[ENTRY_ROOM_SLUG];
+/** The venue as the bundle names it — every HUD line that names the venue
+ *  reads it from the manifest, so this does too. */
+const VENUE_NAME = TWIN_FIXTURE_MANIFEST_EQUIRECT.name;
 
 /**
  * A twin/0 bundle whose nodes ARE the validated viewpoints.
@@ -131,6 +164,29 @@ const TOUR_MANIFEST: TwinManifest = TwinManifestSchema.parse({
   })),
   entryNodeId: ENTRY_ID,
 });
+
+/**
+ * The rooms panel's level headings for this fixture, in the order it shows
+ * them, worked out from the manifest above rather than read back from the
+ * panel's own arithmetic: each validated viewpoint's storey, ranked among the
+ * storeys the bundle holds, as an offset from the entry's — the visitor's own
+ * level first, then the nearest, below before above at equal distance. A panel
+ * with one level shows no heading at all.
+ */
+function expectedLevelHeadings(): readonly string[] {
+  const floors = [...new Set(TOUR_MANIFEST.nodes.map((node) => node.floor))].sort((a, b) => a - b);
+  const rankOf = (id: string): number =>
+    floors.indexOf(TOUR_MANIFEST.nodes.find((node) => node.id === id)?.floor ?? Number.NaN);
+  const entryRank = rankOf(ENTRY_ID);
+  const offsets = [...new Set(VALIDATED_IDS.map((id) => rankOf(id) - entryRank))].sort(
+    (a, b) => Math.abs(a) - Math.abs(b) || a - b,
+  );
+  if (offsets.length < 2) return [];
+  return offsets.map((offset) => {
+    if (offset === 0) return TWIN_ROOMS_LEVEL_HERE;
+    return offset < 0 ? twinRoomsLevelBelow(-offset) : twinRoomsLevelAbove(offset);
+  });
+}
 
 const TILE_BYTES = Buffer.from(
   TWIN_FIXTURE_TILE_DATA_URI.slice(TWIN_FIXTURE_TILE_DATA_URI.indexOf(",") + 1),
@@ -191,28 +247,32 @@ const VIEWPORTS: readonly ViewportSpec[] = [
  * value across its other visual specs, kept so one project has one answer for
  * "how different is a different pixel".
  *
- * `maxDiffPixelRatio` is set from measurement, not from taste. Measured floor:
- * with the canvas out of the layer tree, animations settled and the webfont
- * CDN cut out, three consecutive comparison runs of all twelve baselines
- * produced ZERO differing pixels. There is no noise to absorb, so the budget
- * exists only to tolerate a handful of antialiasing pixels on a re-rasterised
- * glyph edge — 648 pixels at 1440×900, 164 at 390×844 and 844×390.
+ * The budget is an absolute count of differing pixels, and it is ZERO.
  *
- * Measured ceiling: nudging the rooms panel by ONE pixel
- * (`transform: translateY(1px)`) moves 3,498 / 4,679 / 1,750 pixels at
- * desktop / mobile / landscape — 5× to 28× over this budget, so it fails at
- * every viewport. Reproducing the historic defect shape itself,
+ * Measured floor: with the canvas out of the layer tree, animations settled
+ * and the webfonts held back, three consecutive comparison runs of all twelve
+ * baselines produced ZERO differing pixels. There is no noise to absorb.
+ *
+ * Why not the ratio this file used to carry (`maxDiffPixelRatio: 0.0005`, 648
+ * pixels at 1440×900 and 164 at 390×844 and 844×390): it let a changed figure
+ * through (T-758). Measured on the rooms images the CI runner recorded either
+ * side of the Reception Room's size leaving its line: the change moved 237
+ * pixels in a 72×8 box; 163 of them were over the 0.2 threshold, pixelmatch's
+ * anti-alias detection (on in toHaveScreenshot, with no option to turn it off)
+ * set 74 of those aside, and the 89 it counted were under both budgets. The
+ * threshold was not the culprit: at 0 it would still have counted only 103.
+ * One short figure is 89 counted pixels, so any budget above zero is room for
+ * a word to change in. The words are asserted as text as well (expectHudText),
+ * and this budget keeps the image itself from going stale under them.
+ *
+ * Measured ceiling (from when the ratio was set): nudging the rooms panel by
+ * ONE pixel (`transform: translateY(1px)`) moves 3,498 / 4,679 / 1,750 pixels
+ * at desktop / mobile / landscape; the historic off-anchor defect,
  * `transform: translate(-50%, 0)` on that panel, moves 7,847 / 4,484 / 6,707.
- *
- * That second number is why this spec does not use the repo's usual 0.02.
- * Against 0.02, the off-anchor panel is 0.0061 of the desktop frame and 0.0136
- * of the mobile frame: BOTH UNDER BUDGET. The exact defect this file exists to
- * catch would have sailed through the house tolerance at two of three
- * viewports. 0.02 is right for a page whose photography re-encodes; here every
- * compared pixel is DOM, and 0.02 of a 1440×900 frame is 25,920 pixels —
- * enough to hide the entire rooms trigger.
+ * The repo's usual `maxDiffPixelRatio: 0.02` would have passed that defect at
+ * two of three viewports: 0.02 of a 1440×900 frame is 25,920 pixels.
  */
-const MAX_DIFF_PIXEL_RATIO = 0.0005;
+const MAX_DIFF_PIXELS = 0;
 const PIXEL_THRESHOLD = 0.2;
 
 function collectRuntimeErrors(page: Page): string[] {
@@ -331,9 +391,106 @@ async function expectBaseline(page: Page, name: string): Promise<void> {
   await expect(page).toHaveScreenshot(`${name}.png`, {
     animations: "disabled",
     fullPage: false,
-    maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
+    maxDiffPixels: MAX_DIFF_PIXELS,
     threshold: PIXEL_THRESHOLD,
   });
+}
+
+/** The four HUD states the baselines photograph. */
+type HudState = "walk" | "rooms" | "dollhouse" | "plan";
+
+/**
+ * Every word and figure the HUD draws in `state`, asserted as text before the
+ * image is compared — and then nothing else drawn, so a label added to the HUD
+ * later fails here until it is asserted too.
+ *
+ * Each expected string comes from the module the UI renders it from: copy from
+ * twin-copy.ts and the shell's copy modules, figures through lookUpRoom from
+ * venue truth (support/twin-hud-text.ts rebuilds the composed lines without
+ * the formatters the panels use). Nothing here is a pasted copy of the page.
+ */
+async function expectHudText(page: Page, state: HudState): Promise<void> {
+  await settlePaint(page);
+  const text = new HudTextLedger(page);
+
+  await text.expectText(page.locator(".vv-twin-work-in-progress"), TWIN_TOUR_LABEL, "the tour strip");
+  await text.expectText(
+    page.getByTestId("twin-node-label"),
+    twinNodeLabel(ENTRY_ID, VENUE_NAME),
+    "the viewpoint label",
+  );
+  await text.expectText(
+    page.getByTestId("twin-mode-control").getByRole("radio"),
+    [TWIN_MODE_WALK_LABEL, TWIN_MODE_DOLLHOUSE_LABEL, TWIN_MODE_PLAN_LABEL],
+    "the view-mode control",
+  );
+  await text.expectText(page.locator(".vv-twin-enquire"), TWIN_ENQUIRE_LABEL, "the enquire button");
+  await text.expectText(page.locator(".vv-twin-viewer-disclosure"), TWIN_DISCLOSURE, "the disclosure");
+
+  if (state === "dollhouse" || state === "plan") {
+    await text.expectText(page.getByTestId("twin-measure-trigger"), MEASURE_GROUP_LABEL, "the measure trigger");
+  } else {
+    await text.expectText(page.locator(".vv-twin-surface"), TWIN_SURFACE_LABEL, "the surface button");
+    await text.expectText(page.getByTestId("twin-quick-plan"), TWIN_QUICK_PLAN_LABEL, "the plan chip");
+    await text.expectText(page.getByTestId("twin-rooms-trigger"), TWIN_ROOMS_TRIGGER, "the rooms trigger");
+    await expectDossierText(page, text);
+  }
+  if (state === "rooms") {
+    await expectRoomsPanelText(page, text);
+  }
+
+  await text.expectNothingElse();
+}
+
+/** The room dossier at the entry viewpoint: name, venue, every stat in order
+ *  with every line under it, and the footnote (the room's remark, then the
+ *  venue-truth provenance verbatim). */
+async function expectDossierText(page: Page, text: HudTextLedger): Promise<void> {
+  const room = lookUpRoom(ENTRY_ID);
+  if (room === null) throw new Error(`${ENTRY_ID} is not a validated viewpoint; the dossier has nothing to say.`);
+  const dossier = page.getByTestId("twin-room-dossier");
+  await text.expectText(dossier.locator(".vv-twin-dossier-room"), room.name, "the dossier's room");
+  await text.expectText(dossier.locator(".vv-twin-dossier-venue"), VENUE_NAME, "the dossier's venue");
+
+  const stats = expectedDossierStats(room);
+  const rendered = dossier.locator(".vv-twin-dossier-stat");
+  await expect(rendered, "the dossier's stats").toHaveCount(stats.length);
+  for (const [index, stat] of stats.entries()) {
+    const row = rendered.nth(index);
+    await text.expectText(row.locator(".vv-twin-dossier-stat-label"), stat.label, `dossier stat ${String(index + 1)}`);
+    await text.expectText(row.locator(".vv-twin-dossier-stat-value"), stat.lines, `the ${stat.label} stat`);
+  }
+
+  const remark = room.dimensions?.remark;
+  await text.expectText(
+    dossier.locator(".vv-twin-dossier-footnote"),
+    remark === undefined ? TWIN_DOSSIER_FOOTNOTE : `${remark} ${TWIN_DOSSIER_FOOTNOTE}`,
+    "the dossier's footnote",
+  );
+}
+
+/** The open rooms panel: heading, level headings, then every room's name and
+ *  figures line — the room underfoot marked as such — and the footnote. Every
+ *  row is asserted whether or not it is inside the frame: at 844x390 the last
+ *  row is below the panel's fold, where no screenshot can see it. */
+async function expectRoomsPanelText(page: Page, text: HudTextLedger): Promise<void> {
+  const panel = page.getByTestId("twin-rooms-panel");
+  await text.expectText(panel.locator(".vv-twin-rooms-title"), TWIN_ROOMS_HEADING, "the panel heading");
+  await text.expectText(panel.getByTestId("twin-rooms-level"), expectedLevelHeadings(), "the level headings");
+  await expect(panel.locator(".vv-twin-rooms-row"), "one row per validated room").toHaveCount(
+    ROOM_SELECTOR_ORDER.length,
+  );
+  for (const slug of ROOM_SELECTOR_ORDER) {
+    const here = slug === ENTRY_ROOM_SLUG;
+    const row = panel.getByTestId(here ? `twin-rooms-here-${slug}` : `twin-rooms-row-${slug}`);
+    const name = ROOM_DISPLAY_NAMES[slug];
+    await text.expectText(row.locator(".vv-twin-rooms-name"), name, `the ${name} row's name`);
+    await text.expectText(row.locator(".vv-twin-rooms-compare"), expectedRoomLine(slug), `the ${name} row's figures`);
+    if (here) {
+      await text.expectText(row.locator(".vv-twin-rooms-mark"), TWIN_ROOMS_HERE, `the ${name} row's marker`);
+    }
+  }
+  await text.expectText(panel.locator(".vv-twin-rooms-footnote"), TWIN_ROOMS_FOOTNOTE, "the panel footnote");
 }
 
 for (const viewport of VIEWPORTS) {
@@ -353,6 +510,7 @@ for (const viewport of VIEWPORTS) {
         await expect(page.getByTestId("twin-room-dossier")).toContainText(ENTRY_ROOM_NAME);
       }
 
+      await expectHudText(page, "walk");
       await expectBaseline(page, `${viewport.key}-walk`);
       expect(errors, "the walkthrough must reach its HUD with no runtime errors").toEqual([]);
     });
@@ -368,6 +526,7 @@ for (const viewport of VIEWPORTS) {
       // level headings are the surface the "Floor -1" defect lived on.
       await expect(page.getByTestId("twin-rooms-level").first()).toBeVisible();
 
+      await expectHudText(page, "rooms");
       await expectBaseline(page, `${viewport.key}-rooms`);
       expect(errors, "opening the rooms panel must not error").toEqual([]);
     });
@@ -377,6 +536,7 @@ for (const viewport of VIEWPORTS) {
       await openTwinState(page, `/tour?node=${ENTRY_ID}&mode=dollhouse`);
       await expectModeSelected(page, TWIN_MODE_DOLLHOUSE_LABEL);
 
+      await expectHudText(page, "dollhouse");
       await expectBaseline(page, `${viewport.key}-dollhouse`);
       expect(errors, "dollhouse mode must not error").toEqual([]);
     });
@@ -390,6 +550,7 @@ for (const viewport of VIEWPORTS) {
       // state is what says "this is plan mode", not a second overhead map.
       await expectModeSelected(page, TWIN_MODE_PLAN_LABEL);
 
+      await expectHudText(page, "plan");
       await expectBaseline(page, `${viewport.key}-plan`);
       expect(errors, "plan mode must not error").toEqual([]);
     });

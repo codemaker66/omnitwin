@@ -20,12 +20,24 @@ import {
 } from "../src/twin/twin-copy.js";
 import { formatRoomComparison, ROOM_SELECTOR_ORDER } from "../src/twin/shell/room-selector.js";
 import {
+  STAT_LABEL_CEILING,
+  STAT_LABEL_DIMENSIONS,
+  STAT_LABEL_DINNER,
+  STAT_LABEL_RECEPTION,
+} from "../src/twin/shell/room-dossier-copy.js";
+import {
+  TWIN_ROOMS_HERE,
+  TWIN_ROOMS_LEVEL_HERE,
+  twinRoomsLevelBelow,
+  twinRoomsRowLabel,
+} from "../src/twin/shell/room-selector-copy.js";
+import {
   lookUpRoom,
   metres,
   ROOM_DISPLAY_NAMES,
   ROOM_TRUTH_PROVENANCE,
-  VERIFIED_ROOM_NODES,
 } from "../src/twin/shell/twin-rooms.js";
+import { expectedRoomLine } from "./support/twin-hud-text.js";
 
 // ---------------------------------------------------------------------------
 // /tour — the flagship walkthrough, end to end.
@@ -63,58 +75,20 @@ import {
 // software-WebGL notices as warnings. Conventions follow twin-walk.spec.ts and
 // landing-rite-responsive.spec.ts (route mocks, runtime error collection).
 //
-// WHY SOME COPY IS SPELT OUT HERE. Every FIGURE this file asserts is joined at
-// read time through twin/shell/twin-rooms.ts and room-selector.ts, which are
-// plain TypeScript. The four surfaces that own the remaining strings —
-// QuickActions.tsx, RoomSelector.tsx, RoomDossier.tsx — each `import "./*.css"`
-// for its side effect, and Playwright's node-side transform cannot load CSS, so
-// importing them from a spec is a parse error rather than a choice. Wherever a
-// test id or an ARIA property can carry the assertion instead, it does; the
-// handful of strings below are the ones worth pinning anyway, and the handoff
-// names the exact change that would let them be imported.
+// WHERE THE STRINGS COME FROM. Every figure this file asserts is joined at
+// read time through twin/shell/twin-rooms.ts and room-selector.ts, and every
+// word comes from the module its surface renders it from: twin-copy.ts and
+// the shell's copy modules (room-selector-copy.ts, room-dossier-copy.ts).
+// Those hold the panels' words apart from the components because a component
+// imports its stylesheet, and Playwright's node-side transform cannot load
+// CSS. A room's figures line is rebuilt without the panel's formatter
+// (support/twin-hud-text.ts), so the two cannot agree by being the same code.
 // ---------------------------------------------------------------------------
 
-/** RoomSelector.tsx's TWIN_ROOMS_LEVEL_HERE — the visitor's own storey. */
-const ROOMS_LEVEL_HERE = "On this level";
-/** RoomSelector.tsx's twinRoomsLevelBelow(1) — storeys counted, never named. */
-const ROOMS_LEVEL_ONE_BELOW = "One level down";
-/** RoomSelector.tsx's TWIN_ROOMS_HERE — the marker on the room underfoot. */
-const ROOMS_HERE = "You are here";
-/** RoomSelector.tsx's twinRoomsRowLabel: the act, then the row's own figures,
- *  spliced byte for byte so Label in Name (WCAG 2.5.3) holds. */
-function roomsRowLabel(roomName: string, comparison: string): string {
-  return `Walk to ${roomName} — ${comparison}`;
-}
-/** RoomDossier.tsx's four stat labels, in the venue's own vocabulary. */
-const STAT_DIMENSIONS = "Dimensions";
-const STAT_RECEPTION = "Reception";
-const STAT_DINNER = "Dinner";
-const STAT_CEILING = "Ceiling";
 /** The validated viewpoint in the one room the venue publishes in sections. */
 const SECTIONED_NODE = "scan_105";
 /** A validated viewpoint in a room whose published size is not shown. */
 const NO_SIZE_NODE = "scan_126";
-/** U+00A0, written as an escape: the room list holds each floor together with it. */
-const NO_BREAK_SPACE = "\u00a0";
-
-/**
- * A room's line in the Rooms panel, rebuilt from venue truth through
- * lookUpRoom and not through the formatter the panel uses, so the two cannot
- * agree by being the same code: the two capacities, then each floor the room
- * shows a size for. A room with no size on record is its capacities alone.
- */
-function expectedRoomLine(slug: string): string {
-  const nodeId = Object.keys(VERIFIED_ROOM_NODES).find((id) => VERIFIED_ROOM_NODES[id] === slug);
-  const room = nodeId === undefined ? null : lookUpRoom(nodeId);
-  if (room === null) throw new Error(`${slug} has no validated viewpoint to read its figures at.`);
-  const head = `${String(room.capacities.reception)} standing · ${String(room.capacities.dinner)} seated`;
-  const floors = (room.dimensions?.extents ?? []).map((extent) => {
-    const plan = `${metres(extent.lengthM)} × ${metres(extent.widthM)} m`;
-    const named = extent.section === undefined ? plan : `${extent.section} ${plan}`;
-    return named.split(" ").join(NO_BREAK_SPACE);
-  });
-  return floors.length === 0 ? head : `${head} · ${floors.join(` and${NO_BREAK_SPACE}`)}`;
-}
 
 const TOUR_PATH = "/tour";
 const MANIFEST_ROUTE = "**/twin/trades-hall/manifest.json";
@@ -542,7 +516,7 @@ test("the Rooms panel lists the published rooms, marks the one underfoot, and tr
   // with pressable rows for the other three only (plus the close button).
   const here = panel.getByTestId("twin-rooms-here-grand-hall");
   await expect(here).toBeVisible();
-  await expect(here).toContainText(ROOMS_HERE);
+  await expect(here).toContainText(TWIN_ROOMS_HERE);
   await expect(here).toHaveAttribute("aria-current", "location");
   // Three travellable rooms plus the close button — the room underfoot is a
   // statement, so it is not a control at all, not a disabled one.
@@ -551,8 +525,8 @@ test("the Rooms panel lists the published rooms, marks the one underfoot, and tr
 
   // Both storeys are named relationally — never by the scanner's own bucket.
   await expect(panel.getByTestId("twin-rooms-level")).toHaveText([
-    ROOMS_LEVEL_HERE,
-    ROOMS_LEVEL_ONE_BELOW,
+    TWIN_ROOMS_LEVEL_HERE,
+    twinRoomsLevelBelow(1),
   ]);
 
   // Every row's figures line, read as TEXT from the page and compared byte
@@ -584,7 +558,7 @@ test("the Rooms panel lists the published rooms, marks the one underfoot, and tr
   await expect(saloonRow).toContainText(saloonComparison);
   await expect(saloonRow).toHaveAttribute(
     "aria-label",
-    roomsRowLabel(ROOM_DISPLAY_NAMES.saloon, saloonComparison),
+    twinRoomsRowLabel(ROOM_DISPLAY_NAMES.saloon, saloonComparison),
   );
 
   // Pressing it actually moves the visitor: the panel dismisses first, then the
@@ -632,15 +606,15 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
   // nothing here is a literal, which is what keeps the drift gate meaningful.
   // The Grand Hall is given as a whole, so each stat holds exactly one line.
   const stats = await dossierStats(page);
-  expect(stats[STAT_DIMENSIONS]).toEqual([
+  expect(stats[STAT_LABEL_DIMENSIONS]).toEqual([
     `${metres(hall.lengthM)} × ${metres(hall.widthM)} m`,
   ]);
-  expect(stats[STAT_RECEPTION]).toEqual([`${String(room.capacities.reception)} standing`]);
-  expect(stats[STAT_DINNER]).toEqual([`${String(room.capacities.dinner)} seated`]);
+  expect(stats[STAT_LABEL_RECEPTION]).toEqual([`${String(room.capacities.reception)} standing`]);
+  expect(stats[STAT_LABEL_DINNER]).toEqual([`${String(room.capacities.dinner)} seated`]);
   // The ceiling qualifier says what the height is measured to, and its
   // separator is DOM text — "7 ma further…" is the failure this pins shut.
   const note = hall.note;
-  expect(stats[STAT_CEILING]).toEqual([
+  expect(stats[STAT_LABEL_CEILING]).toEqual([
     note === undefined ? `${metres(heightM)} m` : `${metres(heightM)} m — ${note}`,
   ]);
 
@@ -668,13 +642,13 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
   await expect(dossier.getByRole("heading", { name: sectioned.name })).toBeVisible();
 
   const sectionedStats = await dossierStats(page);
-  expect(sectionedStats[STAT_DIMENSIONS]).toEqual(
+  expect(sectionedStats[STAT_LABEL_DIMENSIONS]).toEqual(
     sections.map(
       (extent) =>
         `${extent.section ?? ""} ${metres(extent.lengthM)} × ${metres(extent.widthM)} m`,
     ),
   );
-  expect(sectionedStats[STAT_CEILING]).toEqual(
+  expect(sectionedStats[STAT_LABEL_CEILING]).toEqual(
     sections.flatMap((extent) =>
       extent.heightM === undefined
         ? []
@@ -682,10 +656,10 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
     ),
   );
   // The capacities are the whole room's: one line each, with no section name.
-  expect(sectionedStats[STAT_RECEPTION]).toEqual([
+  expect(sectionedStats[STAT_LABEL_RECEPTION]).toEqual([
     `${String(sectioned.capacities.reception)} standing`,
   ]);
-  expect(sectionedStats[STAT_DINNER]).toEqual([`${String(sectioned.capacities.dinner)} seated`]);
+  expect(sectionedStats[STAT_LABEL_DINNER]).toEqual([`${String(sectioned.capacities.dinner)} seated`]);
   expect(
     await wrappedDossierLines(page),
     "no dossier line may wrap at 375 × 812 in a room published in sections",
@@ -699,8 +673,8 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
   await openTour(page, `?node=${NO_SIZE_NODE}`);
   await expect(dossier.getByRole("heading", { name: noSize.name })).toBeVisible();
   expect(await dossierStats(page)).toEqual({
-    [STAT_RECEPTION]: [`${String(noSize.capacities.reception)} standing`],
-    [STAT_DINNER]: [`${String(noSize.capacities.dinner)} seated`],
+    [STAT_LABEL_RECEPTION]: [`${String(noSize.capacities.reception)} standing`],
+    [STAT_LABEL_DINNER]: [`${String(noSize.capacities.dinner)} seated`],
   });
 
   expect(errors, "the dossier must not log an error").toEqual([]);
@@ -731,7 +705,7 @@ test("the tour says NOTHING about the room at an unvalidated viewpoint", async (
   await page.getByTestId("twin-rooms-trigger").click();
   const panel = page.getByTestId("twin-rooms-panel");
   await expect(panel).toBeVisible();
-  await expect(panel.getByText(ROOMS_HERE)).toHaveCount(0);
+  await expect(panel.getByText(TWIN_ROOMS_HERE)).toHaveCount(0);
   await expect(panel.getByRole("button")).toHaveCount(ROOM_SELECTOR_ORDER.length + 1);
 
   expect(errors, "an unvalidated viewpoint must not log an error").toEqual([]);
