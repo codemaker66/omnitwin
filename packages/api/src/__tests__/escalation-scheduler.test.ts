@@ -2,7 +2,7 @@ import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
 import { inOwnScope } from "../observability/sentry.js";
-import { EscalationScheduler, FAILURE_REPORT_EVERY_MS, MAX_SLEEP_MS, MIN_SLEEP_MS, PASS_RETRY_MS, sleepFor, soonest } from "../services/escalation-scheduler.js";
+import { EscalationScheduler, FAILURE_REPORT_EVERY_MS, MAX_SLEEP_MS, MIN_SLEEP_MS, PASS_RETRY_FIRST_MS, PASS_RETRY_MAX_MS, sleepFor, soonest } from "../services/escalation-scheduler.js";
 
 // Sentry is off here, as with SENTRY_DSN unset: nothing the scheduler does may
 // load the SDK (observability/sentry.ts imports it only inside initSentry).
@@ -183,7 +183,7 @@ describe("the escalation scheduler", () => {
 });
 
 describe("a pass that keeps failing (T-766)", () => {
-  it("waits before trying again, rather than re-waking a beat later on the same overdue request", async () => {
+  it("waits before trying again, from five seconds doubling to a minute, rather than re-waking a beat later", async () => {
     // The pass threw before claiming the request, so the plan after it still
     // finds that request's window, which is already past.
     const h = harness([]);
@@ -193,13 +193,16 @@ describe("a pass that keeps failing (T-766)", () => {
     h.run.mockRejectedValue(new Error("a malformed row stops every pass"));
     h.scheduler.start();
     await settle();
-    h.timers[0]?.callback();
-    await settle();
-    h.timers[1]?.callback();
-    await settle();
-    expect(h.run).toHaveBeenCalledTimes(2);
-    // The first wake is due at once; every wake after a failed pass waits.
-    expect(h.timers.map((timer) => timer.ms)).toEqual([MIN_SLEEP_MS, PASS_RETRY_MS, PASS_RETRY_MS]);
+    for (let failure = 0; failure < 6; failure += 1) {
+      h.timers.at(-1)?.callback();
+      await settle();
+    }
+    expect(h.run).toHaveBeenCalledTimes(6);
+    // The first wake is due at once. After a failed pass a blip costs only the
+    // first wait (an urgent request's window is two minutes by default); a
+    // failure that stays reaches a minute between tries.
+    expect(h.timers.map((timer) => timer.ms)).toEqual([MIN_SLEEP_MS, 5_000, 10_000, 20_000, 40_000, 60_000, 60_000]);
+    expect([PASS_RETRY_FIRST_MS, PASS_RETRY_MAX_MS]).toEqual([5_000, 60_000]);
   });
 
   /** A plan that always finds an overdue window, and a pass with these outcomes. */
@@ -227,7 +230,7 @@ describe("a pass that keeps failing (T-766)", () => {
     h.scheduler.start();
     await settle();
     await wakeAt(h, T0);
-    await wakeAt(h, T0 + PASS_RETRY_MS);
+    await wakeAt(h, T0 + PASS_RETRY_FIRST_MS);
     await wakeAt(h, T0 + FAILURE_REPORT_EVERY_MS - 1);
     await wakeAt(h, T0 + FAILURE_REPORT_EVERY_MS);
     expect(h.run).toHaveBeenCalledTimes(4);
@@ -239,10 +242,22 @@ describe("a pass that keeps failing (T-766)", () => {
     h.scheduler.start();
     await settle();
     await wakeAt(h, T0);
-    await wakeAt(h, T0 + PASS_RETRY_MS);
-    await wakeAt(h, T0 + PASS_RETRY_MS + MIN_SLEEP_MS);
-    expect(h.timers.map((timer) => timer.ms)).toEqual([MIN_SLEEP_MS, PASS_RETRY_MS, MIN_SLEEP_MS, PASS_RETRY_MS]);
-    expect(h.reported).toEqual([["pass", T0], ["pass", T0 + PASS_RETRY_MS + MIN_SLEEP_MS]]);
+    await wakeAt(h, T0 + PASS_RETRY_FIRST_MS);
+    await wakeAt(h, T0 + PASS_RETRY_FIRST_MS + MIN_SLEEP_MS);
+    // A new streak starts its wait from the first step again.
+    expect(h.timers.map((timer) => timer.ms)).toEqual([MIN_SLEEP_MS, PASS_RETRY_FIRST_MS, MIN_SLEEP_MS, PASS_RETRY_FIRST_MS]);
+    expect(h.reported).toEqual([["pass", T0], ["pass", T0 + PASS_RETRY_FIRST_MS + MIN_SLEEP_MS]]);
+  });
+
+  it("a poke during a failing streak keeps the wait: a request raised meanwhile cannot reopen the loop", async () => {
+    const h = overdue(["fails"]);
+    h.scheduler.start();
+    await settle();
+    await wakeAt(h, T0);
+    h.scheduler.poke();
+    await settle();
+    expect(h.run).toHaveBeenCalledTimes(1);
+    expect(h.timers.map((timer) => [timer.ms, timer.cleared])).toEqual([[MIN_SLEEP_MS, false], [PASS_RETRY_FIRST_MS, true], [PASS_RETRY_FIRST_MS, false]]);
   });
 
   it("a plan that fails is reported on a streak of its own and tried again a minute later", async () => {

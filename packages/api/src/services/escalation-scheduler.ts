@@ -34,12 +34,22 @@ export const MIN_SLEEP_MS = 250;
 export const EMAIL_RETRY_MS = 15 * 60_000;
 /** A plan that failed (the database away, say) is tried again after this. */
 export const PLAN_RETRY_MS = 60_000;
-/** While passes keep failing, every wake waits at least this long. A pass
- *  that fails before it claims a request leaves that request's window
+/** While passes keep failing, the next wake waits at least this long after
+ *  the first failure, doubling with each one after, up to PASS_RETRY_MAX_MS.
+ *  A pass that fails before it claims a request leaves that request's window
  *  overdue, so the plan after it would wake a beat later: a failure that
- *  stays (a malformed row, say) would run about four passes a second, each
- *  logged, and keep the database awake (T-766). */
-export const PASS_RETRY_MS = 60_000;
+ *  stays (a malformed row, say) ran about four passes a second, each logged,
+ *  and kept the database awake. The first wait is short because a blip is the
+ *  likelier failure and an urgent request's window is two minutes by default;
+ *  a failure that stays reaches a minute between tries within about a minute
+ *  (T-766). */
+export const PASS_RETRY_FIRST_MS = 5_000;
+export const PASS_RETRY_MAX_MS = 60_000;
+
+/** The least wait before the next pass, after this many failures in a row. */
+export function passRetryAfter(failures: number): number {
+  return Math.min(PASS_RETRY_MAX_MS, PASS_RETRY_FIRST_MS * 2 ** Math.max(0, failures - 1));
+}
 /** While a step keeps failing, Sentry hears of its first failure, then once
  *  an hour: enough to raise an alert, and to reopen one resolved while the
  *  sweep is still failing, without an event at every try. Every failure is
@@ -131,6 +141,11 @@ class FailureStreak {
 
   get failing(): boolean {
     return this.#since !== null;
+  }
+
+  /** How many failures in a row this streak holds; 0 when it is not failing. */
+  get failures(): number {
+    return this.#failures;
   }
 
   /** Counts a failure, and says whether this one is reported. */
@@ -251,7 +266,7 @@ export class EscalationScheduler {
     if (this.#stopped || serial !== this.#planSerial) return;
     this.#clearTimer();
     let sleep = sleepFor(wake, now());
-    if (sleep !== null && this.#failures.pass.failing) sleep = Math.max(sleep, PASS_RETRY_MS);
+    if (sleep !== null && this.#failures.pass.failing) sleep = Math.max(sleep, passRetryAfter(this.#failures.pass.failures));
     this.#deps.logger?.debug({ event: "escalation.scheduled", wakeAt: wake === null ? null : new Date(wake).toISOString(), sleepMs: sleep }, "escalation.scheduled");
     if (sleep === null) return;
     this.#timer = (this.#deps.setTimer ?? defaultSetTimer)(() => { this.#asOwnWork(() => this.#fire()); }, sleep);

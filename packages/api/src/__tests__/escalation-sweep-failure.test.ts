@@ -22,8 +22,24 @@ import { EscalationScheduler } from "../services/escalation-scheduler.js";
 // ---------------------------------------------------------------------------
 
 const GUEST = "Jane Guest";
+const GUEST_EMAIL = "jane.guest@example.com";
 const FAILED_QUERY = `Failed query: insert into "notifications" ("title", "body") values ($1, $2)\nparams: Still waiting: 2 chairs,${GUEST} asked for this and nobody has picked it up yet.`;
-const CAUSE = "duplicate key value violates unique constraint \"notifications_pkey\"";
+const CAUSE = "duplicate key value violates unique constraint \"users_email_key\"";
+/** The database's own error, as node-postgres raises one: its message holds
+ *  no values, but `detail` quotes the row's (and `hint` and `where` can). The
+ *  SDK sends a cause's type and message only; with extraErrorDataIntegration,
+ *  which the API does not use, `detail` would be sent too (seen 26 Nov 2026). */
+const databaseError = (): Error => Object.assign(new Error(CAUSE), {
+  severity: "ERROR",
+  code: "23505",
+  detail: `Key (email)=(${GUEST_EMAIL}) already exists.`,
+  hint: `Choose an address other than ${GUEST_EMAIL}.`,
+  where: `SQL statement for ${GUEST_EMAIL}`,
+  schema: "public",
+  table: "users",
+  column: "email",
+  constraint: "users_email_key",
+});
 
 interface SentEvent {
   readonly transaction?: string;
@@ -32,6 +48,15 @@ interface SentEvent {
   readonly request?: unknown;
   readonly contexts?: { readonly trace?: { readonly trace_id?: string } };
   readonly exception?: { readonly values?: readonly { readonly value?: string }[] };
+}
+
+/** An event as JSON without the SDK's copy of the source lines around each
+ *  stack frame (the ContextLines integration's pre_context, context_line and
+ *  post_context). In production those lines are the API's own code; here they
+ *  are this file's, which spells out the very values the test plants, so
+ *  leaving them in would test this file's text, not what the error carried. */
+function withoutSourceLines(event: unknown): string {
+  return JSON.stringify(event, (key, value: unknown) => (key === "pre_context" || key === "context_line" || key === "post_context" ? undefined : value));
 }
 
 /** The error events in the envelopes received so far. */
@@ -96,7 +121,7 @@ describe("a failed escalation pass reaches Sentry (the real SDK)", () => {
       },
       run: () => {
         passTrace = Sentry.getTraceData()["sentry-trace"]?.split("-")[0];
-        return Promise.reject(new Error(FAILED_QUERY, { cause: new Error(CAUSE) }));
+        return Promise.reject(new Error(FAILED_QUERY, { cause: databaseError() }));
       },
     });
     scheduler.start();
@@ -135,7 +160,15 @@ describe("a failed escalation pass reaches Sentry (the real SDK)", () => {
     const values = (event.exception?.values ?? []).map((value) => value.value ?? "");
     expect(values.some((value) => value.includes("params: [redacted]"))).toBe(true);
     expect(values).toContain(CAUSE);
-    expect(raw).not.toContain(GUEST);
+    expect(withoutSourceLines(JSON.parse(raw))).not.toContain(GUEST);
+  });
+
+  it("sends none of the database error's own fields: the row's values in detail, hint and where stay out", () => {
+    const data = withoutSourceLines(JSON.parse(failure().raw));
+    // Not vacuous: the cause itself is there, by its message.
+    expect(data).toContain(CAUSE.replaceAll("\"", "\\\""));
+    expect(data).not.toContain(GUEST_EMAIL);
+    expect(data).not.toContain("Key (email)");
   });
 
   it("still logs every failure, with its step and the streak's count, and no parameters", () => {
