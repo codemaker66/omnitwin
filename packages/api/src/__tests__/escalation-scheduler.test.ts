@@ -2,7 +2,7 @@ import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
 import { inOwnScope } from "../observability/sentry.js";
-import { EscalationScheduler, MAX_SLEEP_MS, MIN_SLEEP_MS, sleepFor, soonest } from "../services/escalation-scheduler.js";
+import { EscalationScheduler, FAILURE_REPORT_EVERY_MS, MAX_SLEEP_MS, MIN_SLEEP_MS, PASS_RETRY_MS, sleepFor, soonest } from "../services/escalation-scheduler.js";
 
 // Sentry is off here, as with SENTRY_DSN unset: nothing the scheduler does may
 // load the SDK (observability/sentry.ts imports it only inside initSentry).
@@ -30,6 +30,8 @@ interface Harness {
   readonly plan: ReturnType<typeof vi.fn>;
   readonly run: ReturnType<typeof vi.fn>;
   readonly onEscalated: ReturnType<typeof vi.fn>;
+  /** What the scheduler reported to Sentry: each failure's stage, at the clock's time. */
+  readonly reported: (readonly [string, number])[];
   readonly clock: { now: number };
 }
 
@@ -42,6 +44,7 @@ function harness(plans: readonly (number | null)[], runs: readonly unknown[][] =
   for (const outcome of runs) run.mockResolvedValueOnce(outcome);
   run.mockResolvedValue([]);
   const onEscalated = vi.fn();
+  const reported: (readonly [string, number])[] = [];
   const clock = { now: T0 };
   const scheduler = new EscalationScheduler({
     db,
@@ -49,10 +52,11 @@ function harness(plans: readonly (number | null)[], runs: readonly unknown[][] =
     now: () => clock.now,
     plan,
     run,
+    report: (_error, stage) => { reported.push([stage, clock.now]); },
     setTimer: (callback, ms) => { const timer: FakeTimer = { callback, ms, cleared: false }; timers.push(timer); return timer; },
     clearTimer: (handle) => { (handle as FakeTimer).cleared = true; },
   });
-  return { scheduler, timers, plan, run, onEscalated, clock };
+  return { scheduler, timers, plan, run, onEscalated, reported, clock };
 }
 
 const settle = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0); });
@@ -175,6 +179,82 @@ describe("the escalation scheduler", () => {
     expect(h.run).toHaveBeenCalledTimes(1);
     expect(h.onEscalated).not.toHaveBeenCalled();
     expect(h.plan).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("a pass that keeps failing (T-766)", () => {
+  it("waits before trying again, rather than re-waking a beat later on the same overdue request", async () => {
+    // The pass threw before claiming the request, so the plan after it still
+    // finds that request's window, which is already past.
+    const h = harness([]);
+    h.plan.mockReset();
+    h.plan.mockResolvedValue(T0 - 1_000);
+    h.run.mockReset();
+    h.run.mockRejectedValue(new Error("a malformed row stops every pass"));
+    h.scheduler.start();
+    await settle();
+    h.timers[0]?.callback();
+    await settle();
+    h.timers[1]?.callback();
+    await settle();
+    expect(h.run).toHaveBeenCalledTimes(2);
+    // The first wake is due at once; every wake after a failed pass waits.
+    expect(h.timers.map((timer) => timer.ms)).toEqual([MIN_SLEEP_MS, PASS_RETRY_MS, PASS_RETRY_MS]);
+  });
+
+  /** A plan that always finds an overdue window, and a pass with these outcomes. */
+  function overdue(outcomes: readonly ("fails" | "succeeds")[]): Harness {
+    const h = harness([]);
+    h.plan.mockReset();
+    h.plan.mockResolvedValue(T0 - 1_000);
+    h.run.mockReset();
+    for (const outcome of outcomes) {
+      if (outcome === "fails") h.run.mockRejectedValueOnce(new Error("a malformed row stops every pass"));
+      else h.run.mockResolvedValueOnce([]);
+    }
+    return h;
+  }
+
+  /** Fires the newest timer at a time on the clock, and lets the wake finish. */
+  async function wakeAt(h: Harness, at: number): Promise<void> {
+    h.clock.now = at;
+    h.timers.at(-1)?.callback();
+    await settle();
+  }
+
+  it("reports the first failure of a streak to Sentry, then once an hour while it lasts, not at every try", async () => {
+    const h = overdue(["fails", "fails", "fails", "fails"]);
+    h.scheduler.start();
+    await settle();
+    await wakeAt(h, T0);
+    await wakeAt(h, T0 + PASS_RETRY_MS);
+    await wakeAt(h, T0 + FAILURE_REPORT_EVERY_MS - 1);
+    await wakeAt(h, T0 + FAILURE_REPORT_EVERY_MS);
+    expect(h.run).toHaveBeenCalledTimes(4);
+    expect(h.reported).toEqual([["pass", T0], ["pass", T0 + FAILURE_REPORT_EVERY_MS]]);
+  });
+
+  it("a pass that succeeds ends its streak: the wait goes, and the next failure is reported again", async () => {
+    const h = overdue(["fails", "succeeds", "fails"]);
+    h.scheduler.start();
+    await settle();
+    await wakeAt(h, T0);
+    await wakeAt(h, T0 + PASS_RETRY_MS);
+    await wakeAt(h, T0 + PASS_RETRY_MS + MIN_SLEEP_MS);
+    expect(h.timers.map((timer) => timer.ms)).toEqual([MIN_SLEEP_MS, PASS_RETRY_MS, MIN_SLEEP_MS, PASS_RETRY_MS]);
+    expect(h.reported).toEqual([["pass", T0], ["pass", T0 + PASS_RETRY_MS + MIN_SLEEP_MS]]);
+  });
+
+  it("a plan that fails is reported on a streak of its own and tried again a minute later", async () => {
+    const h = harness([]);
+    h.plan.mockReset();
+    h.plan.mockRejectedValue(new Error("the database is away"));
+    h.scheduler.start();
+    await settle();
+    await wakeAt(h, T0 + 60_000);
+    expect(h.run).toHaveBeenCalledTimes(1);
+    expect(h.timers.map((timer) => timer.ms)).toEqual([60_000, 60_000]);
+    expect(h.reported).toEqual([["plan", T0]]);
   });
 });
 
