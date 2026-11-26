@@ -56,9 +56,11 @@ export const frontChunk = {
  * The measured front's code, fetched only when the front is asked for. If it
  * cannot be fetched (a stale deploy, the network), the city takes back its
  * own front rather than the planner losing its scene to the error. A build
- * fetches it through Vite's preload helper, which resolves to nothing instead
- * of rejecting once the page has claimed its one stale-chunk reload
- * (route-error-boundary.tsx): that counts as a failure too.
+ * fetches it through Vite's preload helper, which rejects when the chunk will
+ * not load: the page's listener never prevents its default, and reloads for a
+ * stale deploy only once the app's own server has answered
+ * (route-error-boundary.tsx). An import that resolves with nothing still
+ * counts as a failure.
  */
 const HallExterior = lazy<ComponentType<HallExteriorProps>>(() => frontChunk.load()
   .then((module) => ({ default: module?.HallExterior ?? FrontUnavailable }))
