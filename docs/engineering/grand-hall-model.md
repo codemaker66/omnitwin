@@ -121,6 +121,12 @@ development builds only) shows the room alone, posed through a window bridge for
 - **Floor** (`hall-floor.ts`): drawn oak strips 73 mm wide, the width measured from the survey's
   floor photograph, in staggered lengths with a tiling grain, lit by the same baked channels.
   Board detail fades with distance so it never shimmers; the photograph is no longer fetched.
+  Of the scene's real lights the floor takes every one but the rig's daylight lamp
+  (`hall-floor-lights.ts`, T-744). Its diffuse light is baked, so a real light gives the floor only
+  its mirror image, and the lamp, one point standing for five windows, gave a patch of glare in any
+  low view facing the windows, where the windows' own reflection already stands. The floor's list
+  is the scene's own, taken as each program is built, so the sun under the real sky is in it, with
+  the shadows it casts.
   Each row's stagger and length and each board's tones come from three's `hash()`, which reads its
   seed as an unsigned integer (WGSL `u32()`: a negative seed is 0, a fraction is dropped), so every
   row and column index is raised by `FLOOR_SEED_OFFSET` first. Without it the window half (z < 0)
