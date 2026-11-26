@@ -3,16 +3,34 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { api } from "../../../api/client.js";
+import { rememberTradesHallVenue, resetTradesHallVenueReads } from "../../../hooks/use-trades-hall-venue.js";
+import { grandHallExits } from "../../../lib/auto-fill.js";
+import { GRAND_HALL_RENDER_DIMENSIONS, RENDER_SCALE } from "../../../constants/scale.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../../lib/door-clear-spaces.js";
+import {
+  EVENT_KIND_RETRY_MS,
+  deviceAsksEventKind,
+  deviceEventKind,
+  openLayoutEventKind,
+  rememberDeviceEventKind,
+  resetEventKindQuestionForTesting,
+  useEventKindQuestion,
+  type OpenedLayout,
+} from "../../../lib/event-kind-record.js";
+import { DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "../../../lib/furniture-defaults.js";
+import { LAID_CLEARANCE_M, roomFacts } from "../../../lib/hud/room-seals.js";
 import { doorBlockers } from "../../../lib/keep-doors-clear.js";
-import { resetPlacedIdCounter, type PlacedItem } from "../../../lib/placement.js";
+import { createGroupMemberIdsLookup, resetPlacedIdCounter, type PlacedItem } from "../../../lib/placement.js";
 import { plannerFeatureEnabled, setPlannerChromeFeatures, setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 import { cardParamsFor, pieceCardId, stampSetup, type CardId, type CardParamsRequest } from "../../../lib/setup-cards.js";
+import { useAuthStore } from "../../../stores/auth-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useDoorClearSpaceStore } from "../../../stores/door-clear-space-store.js";
-import { useEditorStore } from "../../../stores/editor-store.js";
+import { useEditorStore, type EditorObject } from "../../../stores/editor-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { useHallViewStore } from "../../../stores/hall-view-store.js";
 import { usePlacementNoticeStore } from "../../../stores/placement-notice-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
@@ -77,6 +95,17 @@ function setGuests(count: number | null): void {
 
 function recordDoors(): void {
   act(() => { useDoorClearSpaceStore.getState().setRoomSpaces(GRAND_HALL_DOOR_CLEAR_SPACES); });
+}
+
+/**
+ * A layout opens, as the editor's load opens it: a guest's new, empty draft. The page always has one open, with its
+ * record read, before it mounts a planner.
+ */
+function openDraft(configId: string): void {
+  act(() => {
+    useEditorStore.setState({ configId });
+    openLayoutEventKind({ configId, isPublicPreview: true, search: "", metadata: null, floorEmptyAtOpen: true });
+  });
 }
 
 function placed(): readonly PlacedItem[] {
@@ -145,6 +174,17 @@ function chosenIds(): readonly string[] {
   return [...useSelectionStore.getState().selectedIds];
 }
 
+/** Where a device keeps its answers to the event's question: lib/event-kind-record's own key, which it does not export. */
+const EVENT_KIND_STORAGE_KEY = "venviewer.planner.eventKind";
+/** The Grand Hall as the editor holds an open room. */
+const GRAND_HALL_SPACE = {
+  id: "space-grand-hall", venueId: "venue-trades-hall", name: "Grand Hall", slug: "grand-hall",
+  widthM: "21", lengthM: "10.5", heightM: "7",
+  floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
+};
+/** A layout's review state as the editor starts with it, put back after a test that locks one. */
+const REVIEW_STATUS_AT_REST = useEditorStore.getState().reviewStatus;
+
 beforeEach(() => {
   sequence = 0;
   resetPlacedIdCounter();
@@ -163,8 +203,15 @@ afterEach(() => {
   usePlacementNoticeStore.getState().dismiss();
   usePlannerHudStore.setState({ sheet: null, sentLayoutIds: [] });
   window.localStorage.removeItem(HUD_SENT_STORAGE_KEY);
-  useEditorStore.setState({ configId: null });
+  useEditorStore.setState({ configId: null, space: null });
+  resetTradesHallVenueReads();
   usePlannerEventStore.getState().setEventKind(null);
+  useEditorStore.setState({ objects: [] });
+  useLayoutTimelinePreviewStore.setState({ mode: "inactive" });
+  resetEventKindQuestionForTesting();
+  window.localStorage.removeItem(EVENT_KIND_STORAGE_KEY);
+  useEditorStore.setState({ reviewStatus: REVIEW_STATUS_AT_REST });
+  useAuthStore.setState({ user: null, isAuthenticated: false });
   setPlannerFeaturesForTesting(null);
   setPlannerChromeFeatures({});
 });
@@ -571,6 +618,98 @@ describe("the one primary key", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open up the narrowest gap" }));
     expect(chosenIds()).toHaveLength(2);
     expect(usePlannerHudStore.getState().sheet).toBeNull();
+  });
+
+  // A wedding's lay-out seats its guests on a chair that leaves more between the tables (about 0.74 m by the
+  // scale's measure). Still tight by the scale, still the planner's own work: nothing is asked.
+  it("asks nothing about the gap in a wedding the planner has laid, whose chairs leave a wider one", () => {
+    rememberTradesHallVenue(GRAND_HALL_SPACE.venueId, true);
+    act(() => { useEditorStore.setState({ space: GRAND_HALL_SPACE }); });
+    renderHud();
+    recordDoors();
+    setGuests(40);
+    act(() => { usePlannerEventStore.getState().setEventKind("wedding"); });
+    const round = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
+    if (round === undefined) throw new Error("the planner's round table is in the catalogue");
+    act(() => { usePlacementStore.getState().autoArrangeBanquet(round.id, 40, 10, grandHallExits()); });
+    const laid = roomFacts({ items: usePlacementStore.getState().placedItems, guests: 40, roomSlug: "grand-hall", doorSpaces: GRAND_HALL_DOOR_CLEAR_SPACES, kind: "wedding", room: GRAND_HALL_RENDER_DIMENSIONS });
+    expect(laid.aisles.band).toBe("tight");
+    expect(laid.aisles.tightestGapM).toBeGreaterThan(0.7);
+    expect(laid.aisles.tightestGapM).toBeLessThan(0.8);
+    expect(laid.aisles.asLaid).toBe(true);
+    act(() => { usePlacementNoticeStore.getState().dismiss(); });
+    expect(statusLine().textContent).toContain("Narrowest aisle 0.7 m");
+    expect(within(statusLine()).queryByRole("button", { name: /Narrowest aisle/u })).toBeNull();
+    expect(primaryKey().textContent).not.toBe("Open up the narrowest gap");
+  });
+
+  // A room's gangway design costs more than the review that reads it, and the first Lay out reads it too. The
+  // screen asks for it in an idle moment as soon as it knows the room, and calls that off as it leaves.
+  it("asks for the room's gangway design in an idle moment once the room is known, and calls it off as it leaves", () => {
+    const idleBefore: unknown = Reflect.get(globalThis, "requestIdleCallback");
+    const callOffBefore: unknown = Reflect.get(globalThis, "cancelIdleCallback");
+    const ask = vi.fn(() => 11);
+    const callOff = vi.fn();
+    vi.stubGlobal("requestIdleCallback", ask);
+    vi.stubGlobal("cancelIdleCallback", callOff);
+    try {
+      // No room yet: there is nothing to work out.
+      renderHud();
+      expect(ask).not.toHaveBeenCalledWith(expect.any(Function), { timeout: 2000 });
+      rememberTradesHallVenue(GRAND_HALL_SPACE.venueId, true);
+      act(() => { useEditorStore.setState({ space: GRAND_HALL_SPACE }); });
+      expect(ask).toHaveBeenCalledWith(expect.any(Function), { timeout: 2000 });
+      expect(callOff).not.toHaveBeenCalledWith(11);
+      cleanup();
+      expect(callOff).toHaveBeenCalledWith(11);
+    } finally {
+      vi.stubGlobal("requestIdleCallback", idleBefore);
+      vi.stubGlobal("cancelIdleCallback", callOffBefore);
+    }
+  });
+
+  // Seen on the live site on 20 November: Lay out for 80 set eight rounds at the planner's own spacing, and the one
+  // key then read "Open up the narrowest gap". What the planner has just laid is ready to send.
+  it("offers Send once the planner has laid the room itself, and says its spacing as a plain figure", async () => {
+    // The Grand Hall, as the planner opens it: the planner's own review of its gangways is read for this room.
+    rememberTradesHallVenue(GRAND_HALL_SPACE.venueId, true);
+    act(() => { useEditorStore.setState({ space: GRAND_HALL_SPACE }); });
+    renderHud();
+    recordDoors();
+    setGuests(80);
+    const round = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
+    if (round === undefined) throw new Error("the planner's round table is in the catalogue");
+    act(() => { usePlacementStore.getState().autoArrangeBanquet(round.id, 80, 10, grandHallExits()); });
+    expect(tables()).toHaveLength(8);
+    // What the planner's own lay-out measures: its narrowest gap is between two dining tables, at its own spacing.
+    const laid = roomFacts({ items: usePlacementStore.getState().placedItems, guests: 80, roomSlug: "grand-hall", doorSpaces: GRAND_HALL_DOOR_CLEAR_SPACES, kind: null, room: GRAND_HALL_RENDER_DIMENSIONS });
+    expect(laid.aisles.asLaid).toBe(true);
+    expect(laid.aisles.band).toBe("tight");
+    // By the circulation scale's own measure the planner's rounds of ten stand about 0.65 m apart: over its spacing.
+    expect(laid.aisles.tightestGapM).toBeGreaterThanOrEqual(LAID_CLEARANCE_M);
+    expect(laid.aisles.tightestGapM).toBeLessThan(0.7);
+    // The receipt for what was laid stands where the status line does, until it has had its moment.
+    act(() => { usePlacementNoticeStore.getState().dismiss(); });
+    expect(statusLine().textContent).toContain("80 of 80 seated");
+    expect(statusLine().textContent).toContain("Doors clear");
+    expect(statusLine().textContent).toContain("Narrowest aisle 0.6 m");
+    expect(within(statusLine()).queryByRole("button", { name: /Narrowest aisle/u })).toBeNull();
+    expect(primaryKey().textContent).toBe("Send to the events team");
+    // One of the two closest tables pushed 0.15 m toward the other leaves less than the planner's spacing: asked
+    // about, as before.
+    const pair = laid.aisles.tightestPair;
+    if (pair === null) throw new Error("the laid room has a narrowest gap");
+    const reach = Math.hypot(pair.pointB.x - pair.pointA.x, pair.pointB.z - pair.pointA.z);
+    const push = { x: ((pair.pointB.x - pair.pointA.x) / reach) * 0.15 * RENDER_SCALE, z: ((pair.pointB.z - pair.pointA.z) / reach) * 0.15 * RENDER_SCALE };
+    const all = usePlacementStore.getState().placedItems;
+    // The table and its chairs, as the circulation scale groups them.
+    const unit = new Set(createGroupMemberIdsLookup(all)(pair.aId));
+    expect(unit.size).toBeGreaterThan(1);
+    setPlaced(all.map((item) => (unit.has(item.id) ? { ...item, x: item.x + push.x, z: item.z + push.z } : item)));
+    const pushed = roomFacts({ items: usePlacementStore.getState().placedItems, guests: 80, roomSlug: "grand-hall", doorSpaces: GRAND_HALL_DOOR_CLEAR_SPACES, kind: null, room: GRAND_HALL_RENDER_DIMENSIONS });
+    expect(pushed.aisles.tightestGapM).toBeCloseTo(0.5, 2);
+    // The screen reads a moved piece once it has come to rest.
+    await waitFor(() => { expect(primaryKey().textContent).toBe("Open up the narrowest gap"); });
   });
 
   it("sends to the events team once every guest has a seat", () => {
@@ -987,7 +1126,12 @@ describe("the piece's verbs", () => {
 });
 
 describe("the first screen", () => {
-  function ask(): void {
+  /**
+   * The first screen can be asked for: nothing answered on this page yet, and a layout open (a new draft, unless the
+   * test opened another). Naming a layout opens that one, new: an answered layout is not asked again.
+   */
+  function ask(layout?: string): void {
+    if (layout !== undefined || useEditorStore.getState().configId === null) openDraft(layout ?? "draft-fresh");
     act(() => { usePlannerHudStore.setState({ firstOpenDone: false }); });
   }
 
@@ -1004,6 +1148,10 @@ describe("the first screen", () => {
     const answers = within(within(first).getByRole("group", { name: "What are you planning?" })).getAllByRole("button");
     expect(answers.map((answer) => answer.querySelector(".hud-first-open__name")?.textContent)).toEqual(["Wedding", "Corporate", "Something else"]);
     expect(answers.every((answer) => answer.querySelector("img") !== null)).toBe(true);
+    // One family: the set-ups' own renders (one camera, one light, one ground), never a single piece's portrait.
+    const photographs = answers.map((answer) => answer.querySelector("img")?.getAttribute("src") ?? "");
+    expect(photographs.every((source) => source.startsWith("/models/furniture/setup-") && source.includes("/setup-v2/"))).toBe(true);
+    expect(new Set(photographs).size).toBe(3);
     expect(within(first).queryAllByRole("radio")).toEqual([]);
     expect(within(first).queryByRole("radiogroup")).toBeNull();
     expect(answers.every((answer) => !answer.hasAttribute("aria-checked"))).toBe(true);
@@ -1094,9 +1242,9 @@ describe("the first screen", () => {
     await waitFor(() => { expect(document.activeElement).toBe(stepKey("event")); });
     expect(stepKey("event").getAttribute("aria-current")).toBe("step");
 
-    // And as a phone's top bar that has folded the step away, too.
+    // And as a phone's top bar that has folded the step away, too. (Another new layout: the first has its answer.)
     cleanup();
-    ask();
+    ask("draft-second");
     renderHud();
     for (const card of document.querySelectorAll<HTMLElement>(".hud-card")) card.hidden = true;
     stepKey("event").hidden = true;
@@ -1122,6 +1270,330 @@ describe("the first screen", () => {
     renderHud({ eventGuests: 80 });
     expect(screen.queryByTestId("hud-first-open")).toBeNull();
   });
+
+  it("shows photographs the site serves", async () => {
+    ask();
+    renderHud();
+    const sources = Array.from(screen.getByTestId("hud-first-open").querySelectorAll("img"), (img) => img.getAttribute("src") ?? "");
+    expect(sources).toHaveLength(3);
+    for (const source of sources) {
+      const file = await readFile(resolve("public", source.slice(1)));
+      expect(file.byteLength).toBeGreaterThan(1024);
+    }
+  });
+
+  // "What are you planning?" has one kept answer for a layout: the record the default planner's own question writes
+  // (lib/event-kind-record). This screen tells the same record, so a reload does not ask again, and neither planner
+  // asks a layout the other has asked.
+  describe("and the layout's kept answer", () => {
+    const NEW_DRAFT = { isPublicPreview: true, search: "", metadata: null, floorEmptyAtOpen: true } as const;
+    const NOT_SAVED = "Not saved yet. Press your answer again to try now.";
+    /** One piece of a layout's own, as the editor holds it. */
+    const A_PIECE: EditorObject = {
+      id: "local-1", assetDefinitionId: "round-table-6ft", positionX: 1, positionY: 0, positionZ: 2, rotationX: 0, rotationY: 0, rotationZ: 0,
+      scale: 1, sortOrder: 0, clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null, groupId: null, notes: "",
+    };
+
+    function signIn(id: string): void {
+      act(() => {
+        useAuthStore.setState({ user: { id, email: `${id}@fixture.test`, name: id, role: "planner", platformRole: "none", venueId: null }, isAuthenticated: true });
+      });
+    }
+
+    /** A layout opens, as the editor's load opens it: a guest's new, empty draft unless said otherwise. */
+    function open(configId: string, layout: Partial<OpenedLayout> = {}): void {
+      act(() => {
+        useEditorStore.setState({ configId });
+        openLayoutEventKind({ configId, ...NEW_DRAFT, ...layout });
+      });
+    }
+
+    it("keeps an answer with the layout: for a guest's draft, on this device", () => {
+      open("draft-1");
+      ask();
+      renderHud();
+      fireEvent.click(screen.getByRole("button", { name: /Wedding/u }));
+      expect(usePlannerEventStore.getState().eventKind).toBe("wedding");
+      expect(useEventKindQuestion.getState().answer).toBe("wedding");
+      expect(deviceEventKind("draft-1")).toBe("wedding");
+      // The default planner's receipt is not this screen's to show, and is not left waiting for that planner.
+      expect(useEventKindQuestion.getState().receipt).toBeNull();
+    });
+
+    // Someone signed in: the answer belongs with the layout, not with the device they happen to be on.
+    it("keeps a signed-in person's answer in the layout itself, and reads it back when the layout next opens", async () => {
+      const patch = vi.spyOn(api, "patch").mockResolvedValue({});
+      const id = "planner-1";
+      act(() => {
+        useAuthStore.setState({ user: { id, email: `${id}@fixture.test`, name: id, role: "planner", platformRole: "none", venueId: null }, isAuthenticated: true });
+      });
+      open("layout-1", { isPublicPreview: false });
+      ask();
+      renderHud();
+      fireEvent.click(screen.getByRole("button", { name: /Wedding/u }));
+      await waitFor(() => {
+        expect(patch).toHaveBeenCalledWith("/configurations/layout-1", { metadata: { eventKind: "wedding" } }, expect.anything());
+      });
+      expect(deviceEventKind("layout-1")).toBeUndefined();
+      // The page opened again: the layout's own copy says what was answered.
+      cleanup();
+      act(() => { resetEventKindQuestionForTesting(); });
+      open("layout-1", { isPublicPreview: false, metadata: { eventKind: "wedding" } });
+      ask();
+      renderHud();
+      expect(usePlannerEventStore.getState().eventKind).toBe("wedding");
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+      patch.mockRestore();
+    });
+
+    it("keeps Start with an empty hall as not sure yet, and does not ask that layout again when it next opens", () => {
+      open("draft-2");
+      ask();
+      renderHud();
+      fireEvent.click(screen.getByRole("button", { name: "Start with an empty hall" }));
+      expect(useEventKindQuestion.getState().answer).toBeNull();
+      expect(deviceEventKind("draft-2")).toBeNull();
+      // The page opened again: the same draft, its answer read from this device.
+      cleanup();
+      act(() => { resetEventKindQuestionForTesting(); });
+      open("draft-2");
+      ask();
+      renderHud();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+      expect(screen.getByTestId("planner-hud").getAttribute("data-first-open")).toBeNull();
+    });
+
+    it("keeps Escape the same way", () => {
+      open("draft-escape");
+      ask();
+      renderHud();
+      press("Escape");
+      expect(deviceEventKind("draft-escape")).toBeNull();
+    });
+
+    it("does not ask a layout the default planner has already asked", () => {
+      rememberDeviceEventKind("draft-3", null);
+      open("draft-3");
+      ask();
+      renderHud();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    });
+
+    it("does not ask a layout that was not new as it opened, however empty its floor is now", () => {
+      open("draft-4", { floorEmptyAtOpen: false });
+      ask();
+      renderHud();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    });
+
+    it("does not ask while the layout cannot be changed", () => {
+      open("draft-locked");
+      // Sent for review: the layout is locked for its planner until the venue answers.
+      act(() => { useEditorStore.setState({ reviewStatus: "submitted" }); });
+      expect(useEditorStore.getState().lockReason).toBe("in-review");
+      ask();
+      renderHud();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    });
+
+    it("does not ask on a device that has been told not to", () => {
+      deviceAsksEventKind("?event-question=off");
+      ask();
+      renderHud();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    });
+
+    // The page mounts a planner only once a layout is open and its record read. Before that there is no layout to
+    // ask, and none to keep an answer with.
+    it("asks nothing where no layout is open", () => {
+      act(() => { usePlannerHudStore.setState({ firstOpenDone: false }); });
+      renderHud();
+      expect(useEditorStore.getState().configId).toBeNull();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    });
+
+    it("does not ask a layout whose address already named the event", () => {
+      open("draft-named", { search: "?event=wedding" });
+      ask();
+      renderHud();
+      expect(usePlannerEventStore.getState().eventKind).toBe("wedding");
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+    });
+
+    it("asks a new, empty layout nothing has answered", () => {
+      open("draft-new");
+      ask();
+      renderHud();
+      expect(screen.getByTestId("hud-first-open")).toBeTruthy();
+    });
+
+    it("takes a change of answer in Your event to the same record", () => {
+      open("draft-7");
+      renderHud();
+      act(() => { usePlannerHudStore.getState().openSheet("event"); });
+      fireEvent.click(screen.getByRole("radio", { name: /Wedding/u }));
+      expect(deviceEventKind("draft-7")).toBe("wedding");
+      fireEvent.click(screen.getByRole("radio", { name: /Something else/u }));
+      expect(usePlannerEventStore.getState().eventKind).toBe("other");
+      expect(deviceEventKind("draft-7")).toBe("other");
+      expect(useEventKindQuestion.getState().receipt).toBeNull();
+    });
+
+    it("marks the layout as no longer new once something stands on its own floor", () => {
+      open("draft-8");
+      renderHud();
+      expect(useEventKindQuestion.getState().askable).toBe(true);
+      act(() => { useEditorStore.setState({ objects: [A_PIECE] }); });
+      expect(useEventKindQuestion.getState().askable).toBe(false);
+    });
+
+    // Seen in review: with a furnished layout open, a switch of room opens a new, empty draft. The page takes the
+    // planner down and mounts it again on the new layout while the floor still holds the last layout's pieces (the
+    // floor is given the new layout's an effect later). Marked from the floor, the new draft was "no longer new"
+    // before anything had stood on it, and was never asked.
+    it("asks a new, empty layout opened after a furnished one, whose pieces are still on the floor as it mounts", () => {
+      open("layout-furnished", { floorEmptyAtOpen: false });
+      act(() => { useEditorStore.setState({ objects: [A_PIECE] }); });
+      setPlaced(rounds(2));
+      ask();
+      renderHud();
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+      // The room is switched.
+      cleanup();
+      act(() => { useEditorStore.setState({ objects: [] }); });
+      open("draft-after");
+      ask();
+      renderHud();
+      expect(placed().length).toBeGreaterThan(0);
+      expect(useEventKindQuestion.getState().askable).toBe(true);
+      expect(screen.queryByTestId("hud-first-open")).toBeNull();
+      // The floor is given the new layout's pieces: none.
+      setPlaced([]);
+      expect(useEventKindQuestion.getState().askable).toBe(true);
+      expect(screen.getByTestId("hud-first-open")).toBeTruthy();
+    });
+
+    // The default planner takes its own control away while a layout is with the events team, and while one phase of
+    // its day is being looked at. Your event stays open to read, and its answer stays as it is.
+    it("holds the answer in Your event while the layout is with the events team, and says why", () => {
+      open("draft-held");
+      renderHud();
+      act(() => { usePlannerHudStore.getState().openSheet("event"); });
+      fireEvent.click(screen.getByRole("radio", { name: /Corporate/u }));
+      expect(deviceEventKind("draft-held")).toBe("corporate");
+      act(() => { useEditorStore.setState({ reviewStatus: "submitted" }); });
+      expect(useEditorStore.getState().lockReason).toBe("in-review");
+      const group = screen.getByRole("radiogroup", { name: "What are you planning?" });
+      expect(within(group).getAllByRole("radio").every((radio) => radio.getAttribute("aria-disabled") === "true")).toBe(true);
+      fireEvent.click(within(group).getByRole("radio", { name: /Wedding/u }));
+      expect(usePlannerEventStore.getState().eventKind).toBe("corporate");
+      expect(deviceEventKind("draft-held")).toBe("corporate");
+      expect(document.getElementById(group.getAttribute("aria-describedby") ?? "")?.textContent).toBe("This layout is with the events team, so its event stays as it is for now.");
+    });
+
+    it("holds it the same way while one phase of the day is being looked at, and frees it after", () => {
+      open("draft-phase");
+      renderHud();
+      act(() => { usePlannerHudStore.getState().openSheet("event"); });
+      act(() => { useLayoutTimelinePreviewStore.setState({ mode: "unavailable" }); });
+      const group = screen.getByRole("radiogroup", { name: "What are you planning?" });
+      fireEvent.click(within(group).getByRole("radio", { name: /Wedding/u }));
+      expect(usePlannerEventStore.getState().eventKind).toBeNull();
+      expect(deviceEventKind("draft-phase")).toBeUndefined();
+      expect(document.getElementById(group.getAttribute("aria-describedby") ?? "")?.textContent).toBe("Leave the preview to change the event.");
+      // Back on the layout itself, the answer is free again and nothing more is said.
+      act(() => { useLayoutTimelinePreviewStore.setState({ mode: "inactive" }); });
+      expect(group.hasAttribute("aria-describedby")).toBe(false);
+      expect(within(group).getAllByRole("radio").some((radio) => radio.hasAttribute("aria-disabled"))).toBe(false);
+      fireEvent.click(within(group).getByRole("radio", { name: /Wedding/u }));
+      expect(deviceEventKind("draft-phase")).toBe("wedding");
+    });
+
+    // The default planner says "Not saved yet." in its receipt, which this screen puts away unseen. So the screen
+    // says it itself, where the answer is shown.
+    it("says in Your event when a signed-in person's answer has not been saved", async () => {
+      const patch = vi.spyOn(api, "patch").mockRejectedValue(new Error("the connection dropped"));
+      signIn("planner-2");
+      open("layout-2", { isPublicPreview: false });
+      renderHud();
+      act(() => { usePlannerHudStore.getState().openSheet("event"); });
+      expect(screen.queryByText(NOT_SAVED)).toBeNull();
+      fireEvent.click(screen.getByRole("radio", { name: /Wedding/u }));
+      const said = await screen.findByText(NOT_SAVED);
+      expect(said.closest('[role="status"]')).not.toBeNull();
+      expect(useEventKindQuestion.getState().save).toBe("retrying");
+      patch.mockRestore();
+    });
+
+    // The record tries a failed save five more times, over about two minutes, and then waits for the connection to
+    // come back or for another answer. The line under the choices promises none of that: it says the answer is not
+    // saved, and that pressing it tries again, which stays true however long the page is open.
+    it("goes on saying an answer is not saved after the record's last try, and a press of it tries again", async () => {
+      vi.useFakeTimers();
+      const patch = vi.spyOn(api, "patch").mockRejectedValue(new Error("the API is answering 503"));
+      try {
+        signIn("planner-4");
+        open("layout-4", { isPublicPreview: false });
+        renderHud();
+        act(() => { usePlannerHudStore.getState().openSheet("event"); });
+        const wedding = screen.getByRole("radio", { name: /Wedding/u });
+        fireEvent.click(wedding);
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        expect(patch).toHaveBeenCalledTimes(1);
+        const everyWait = EVENT_KIND_RETRY_MS.reduce((sum, wait) => sum + wait, 0);
+        await act(async () => { await vi.advanceTimersByTimeAsync(everyWait + 1_000); });
+        expect(patch).toHaveBeenCalledTimes(1 + EVENT_KIND_RETRY_MS.length);
+        // Half an hour on, with the browser online throughout: nothing more has been sent.
+        await act(async () => { await vi.advanceTimersByTimeAsync(30 * 60_000); });
+        expect(patch).toHaveBeenCalledTimes(1 + EVENT_KIND_RETRY_MS.length);
+        expect(useEventKindQuestion.getState().save).toBe("retrying");
+        expect(screen.getByText(NOT_SAVED).closest('[role="status"]')).not.toBeNull();
+        // The chosen answer pressed again is the way to try now.
+        fireEvent.click(wedding);
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        expect(patch).toHaveBeenCalledTimes(2 + EVENT_KIND_RETRY_MS.length);
+        expect(patch).toHaveBeenLastCalledWith("/configurations/layout-4", { metadata: { eventKind: "wedding" } }, expect.anything());
+      } finally {
+        // Put back whatever happens, so a failure here is this test's alone.
+        patch.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it("says when a guest's answer is kept for this visit only", () => {
+      open("draft-visit");
+      renderHud();
+      act(() => { usePlannerHudStore.getState().openSheet("event"); });
+      // A browser that refuses to store anything for the site.
+      const real = Object.getOwnPropertyDescriptor(window, "localStorage");
+      const refusing: Storage = { length: 0, clear: () => undefined, getItem: () => null, key: () => null, removeItem: () => undefined, setItem: () => { throw new Error("quota"); } };
+      Object.defineProperty(window, "localStorage", { configurable: true, value: refusing });
+      try {
+        fireEvent.click(screen.getByRole("radio", { name: /Wedding/u }));
+      } finally {
+        if (real === undefined) Reflect.deleteProperty(window, "localStorage");
+        else Object.defineProperty(window, "localStorage", real);
+      }
+      expect(useEventKindQuestion.getState().save).toBe("this-visit");
+      expect(screen.getByText("Kept for this visit only.").closest('[role="status"]')).not.toBeNull();
+    });
+
+    // An arrow key that comes back to the chosen answer presses it. That is not a new answer.
+    it("writes nothing when the chosen answer is pressed again", async () => {
+      const patch = vi.spyOn(api, "patch").mockResolvedValue({});
+      signIn("planner-3");
+      open("layout-3", { isPublicPreview: false });
+      renderHud();
+      act(() => { usePlannerHudStore.getState().openSheet("event"); });
+      const wedding = screen.getByRole("radio", { name: /Wedding/u });
+      fireEvent.click(wedding);
+      await waitFor(() => { expect(patch).toHaveBeenCalledTimes(1); });
+      fireEvent.click(wedding);
+      await act(async () => { await Promise.resolve(); });
+      expect(patch).toHaveBeenCalledTimes(1);
+      patch.mockRestore();
+    });
+  });
 });
 
 function nth<T>(list: readonly T[], index: number): T {
@@ -1133,6 +1605,9 @@ function nth<T>(list: readonly T[], index: number): T {
 // A group that says it is a radio group works as one: a single stop in the Tab order, and the arrow keys go to the
 // next choice and choose it (radio-keys.ts). The view's three are held to the same in view-station.test.tsx.
 describe("a group of choices and the keyboard", () => {
+  // An answer chosen in Your event goes to the open layout's record.
+  beforeEach(() => { openDraft("draft-choices"); });
+
   function choices(name: string): { readonly radios: readonly HTMLElement[]; readonly stops: () => readonly (string | null)[] } {
     const radios = within(screen.getByRole("radiogroup", { name })).getAllByRole("radio");
     return { radios, stops: () => radios.map((radio) => radio.getAttribute("tabindex")) };

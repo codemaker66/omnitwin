@@ -1,13 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GRAND_HALL_RENDER_DIMENSIONS } from "../../../constants/scale.js";
+import { BANQUET_CHAIR_CLEARANCE_M } from "../../auto-fill.js";
 import { getCatalogueItem } from "../../catalogue.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../door-clear-spaces.js";
+import { layoutGangwayReview } from "../../gangway-review-record.js";
 import type { PlacedItem } from "../../placement.js";
 import { setPlannerFeaturesForTesting } from "../../planner-features.js";
 import { cardParamsFor, pieceCardId, stampSetup, type CardId, type CardParamsRequest } from "../../setup-cards.js";
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { floorCounts, handCardCounting, handCardIds, handCards } from "../hand-cards.js";
 import { journeySteps, nextMove } from "../journey.js";
-import { roomFacts, roomStatus, seatLine, type RoomStatus, type RoomStatusId } from "../room-seals.js";
+import { LAID_CLEARANCE_M, gapToOpenUp, roomFacts, roomStatus, seatLine, warmGangwayDesignWhenIdle, type RoomStatus, type RoomStatusId } from "../room-seals.js";
+
+// The planner's own review, as it is, with its calls counted: one layout is to be asked about once.
+vi.mock("../../gangway-review-record.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../gangway-review-record.js")>();
+  return { ...real, layoutGangwayReview: vi.fn(real.layoutGangwayReview) };
+});
 
 const TURINI = "burgess-turini-18-3";
 
@@ -39,7 +48,7 @@ function rounds(count: number, spacing = 4.5): PlacedItem[] {
 }
 
 function facts(items: readonly PlacedItem[], guests: number | null, kind: "wedding" | "corporate" | null = null): ReturnType<typeof roomFacts> {
-  return roomFacts({ items, guests, roomSlug: "grand-hall", doorSpaces: GRAND_HALL_DOOR_CLEAR_SPACES, kind });
+  return roomFacts({ items, guests, roomSlug: "grand-hall", doorSpaces: GRAND_HALL_DOOR_CLEAR_SPACES, kind, room: GRAND_HALL_RENDER_DIMENSIONS });
 }
 
 function said(facts: ReturnType<typeof roomFacts>, id: RoomStatusId): RoomStatus {
@@ -165,7 +174,7 @@ describe("the status line", () => {
   });
 
   it("says nothing about doors in a room with none recorded", () => {
-    const status = roomStatus(roomFacts({ items: rounds(2), guests: 20, roomSlug: "saloon", doorSpaces: null, kind: null }));
+    const status = roomStatus(roomFacts({ items: rounds(2), guests: 20, roomSlug: "saloon", doorSpaces: null, kind: null, room: null }));
     expect(status.some((entry) => entry.id === "doors")).toBe(false);
   });
 
@@ -222,5 +231,170 @@ describe("the journey", () => {
     expect(nextMove(facts(blocking, 60), false)).toMatchObject({ id: "clear-door", step: "layout" });
     expect(nextMove(facts(blocking, 60), false).text).toMatch(/^Move .+ clear of the door$/u);
     expect(nextMove(facts([...stamp("round", 0, 0), ...stamp("round", 2.3, 0)], 20), false)).toMatchObject({ id: "open-gap", text: "Open up the narrowest gap" });
+  });
+
+  // The planner's own Lay out keeps 0.6 m behind every chair, and the circulation scale calls anything under 0.9 m
+  // tight. Read by the scale alone, every room the planner had just laid was sent straight back to be opened up.
+  // The review measures every piece against every gangway, and its answer is the layout's and the room's alone.
+  it("asks the planner's review once for a layout, and never where it could not change the answer", () => {
+    const asked = vi.mocked(layoutGangwayReview);
+    const ROW_Z = -2.25;
+    const probe = facts([...stamp("round", -4, ROW_Z), ...stamp("round", 4, ROW_Z)], 20).aisles.tightestGapM;
+    if (probe === null) throw new Error("two rounds have a gap between them");
+    const reach = (8 - probe) / 2;
+    const pair = (gapM: number): PlacedItem[] => [...stamp("round", -(reach + gapM / 2), ROW_Z), ...stamp("round", reach + gapM / 2, ROW_Z)];
+
+    // One layout, its other facts worked out three times over (a guest count typed, the kind of day chosen).
+    const layout = pair(LAID_CLEARANCE_M);
+    asked.mockClear();
+    expect(facts(layout, 20).aisles.asLaid).toBe(true);
+    expect(facts(layout, 40).aisles.asLaid).toBe(true);
+    expect(facts(layout, 20, "wedding").aisles.asLaid).toBe(true);
+    expect(asked).toHaveBeenCalledTimes(1);
+    // The same pieces in a new list are a layout that may have changed: asked again.
+    expect(facts([...layout], 20).aisles.asLaid).toBe(true);
+    expect(asked).toHaveBeenCalledTimes(2);
+
+    // Not asked where the answer is settled without it: no tight gap, a gap under the spacing, no way through.
+    asked.mockClear();
+    facts([], 20);
+    facts(pair(1), 20);
+    facts(pair(0.5), 20);
+    facts(pair(0.3), 20);
+    expect(asked).not.toHaveBeenCalled();
+  });
+
+  // The room's gangway design is the dear part of a first Lay out and of a first review, and the planner keeps it by
+  // the room. So the screen has it worked out while the page is idle, by reviewing an empty floor.
+  it("works the room's gangway design out when the page is idle, and answers for no layout by it", () => {
+    const asked = vi.mocked(layoutGangwayReview);
+    const idleBefore: unknown = Reflect.get(globalThis, "requestIdleCallback");
+    const callOffBefore: unknown = Reflect.get(globalThis, "cancelIdleCallback");
+    vi.useFakeTimers();
+    try {
+      // Where the browser has no idle callback to ask, a short timer stands in.
+      vi.stubGlobal("requestIdleCallback", undefined);
+      vi.stubGlobal("cancelIdleCallback", undefined);
+      asked.mockClear();
+      warmGangwayDesignWhenIdle(GRAND_HALL_RENDER_DIMENSIONS, "grand-hall");
+      expect(asked).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1000);
+      expect(asked).toHaveBeenCalledTimes(1);
+      expect(asked).toHaveBeenLastCalledWith([], GRAND_HALL_RENDER_DIMENSIONS, "grand-hall", null);
+      // Called off before its moment (the room changed, or the screen left), it never runs.
+      asked.mockClear();
+      warmGangwayDesignWhenIdle(GRAND_HALL_RENDER_DIMENSIONS, "grand-hall")();
+      vi.advanceTimersByTime(1000);
+      expect(asked).not.toHaveBeenCalled();
+
+      // Where there is one, the browser is asked for an idle moment, with a limit on how long it may be put off.
+      const held: { run: (() => void) | null } = { run: null };
+      const ask = vi.fn((run: () => void): number => {
+        held.run = run;
+        return 7;
+      });
+      const callOff = vi.fn();
+      vi.stubGlobal("requestIdleCallback", ask);
+      vi.stubGlobal("cancelIdleCallback", callOff);
+      const stop = warmGangwayDesignWhenIdle(GRAND_HALL_RENDER_DIMENSIONS, "grand-hall");
+      expect(ask).toHaveBeenCalledWith(expect.any(Function), { timeout: 2000 });
+      vi.advanceTimersByTime(5000);
+      expect(asked).not.toHaveBeenCalled();
+      held.run?.();
+      expect(asked).toHaveBeenCalledTimes(1);
+      expect(asked).toHaveBeenLastCalledWith([], GRAND_HALL_RENDER_DIMENSIONS, "grand-hall", null);
+      stop();
+      expect(callOff).toHaveBeenCalledWith(7);
+    } finally {
+      vi.stubGlobal("requestIdleCallback", idleBefore);
+      vi.stubGlobal("cancelIdleCallback", callOffBefore);
+      vi.useRealTimers();
+    }
+
+    // It answered for no layout: the first real one at the planner's spacing is still put to the review.
+    const ROW_Z = -2.25;
+    const probe = facts([...stamp("round", -4, ROW_Z), ...stamp("round", 4, ROW_Z)], 20).aisles.tightestGapM;
+    if (probe === null) throw new Error("two rounds have a gap between them");
+    const half = (8 - probe) / 2 + LAID_CLEARANCE_M / 2;
+    asked.mockClear();
+    expect(facts([...stamp("round", -half, ROW_Z), ...stamp("round", half, ROW_Z)], 20).aisles.asLaid).toBe(true);
+    expect(asked).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a room at the planner's own spacing ready to send, and says every other tight gap as before", () => {
+    expect(LAID_CLEARANCE_M).toBe(BANQUET_CHAIR_CLEARANCE_M);
+    // Two rounds of ten side by side where one of Lay out's rows stands, clear of the room's gangways: the gap
+    // between their chairs is their distance apart, less a round's reach.
+    const ROW_Z = -2.25;
+    const probe = facts([...stamp("round", -4, ROW_Z), ...stamp("round", 4, ROW_Z)], 20).aisles.tightestGapM;
+    if (probe === null) throw new Error("two rounds have a gap between them");
+    const reach = (8 - probe) / 2;
+    const pair = (gapM: number): PlacedItem[] => [...stamp("round", -(reach + gapM / 2), ROW_Z), ...stamp("round", reach + gapM / 2, ROW_Z)];
+    const apart = (gapM: number): ReturnType<typeof facts> => facts(pair(gapM), 20);
+
+    // The planner's own spacing: said as a figure, and nothing asked.
+    const laid = apart(LAID_CLEARANCE_M);
+    expect(laid.aisles.tightestGapM).toBeCloseTo(LAID_CLEARANCE_M, 3);
+    expect(laid.aisles.band).toBe("tight");
+    expect(laid.aisles.asLaid).toBe(true);
+    expect(gapToOpenUp(laid.aisles)).toBe(false);
+    expect(nextMove(laid, false)).toMatchObject({ id: "send", text: "Send to the events team" });
+    expect(said(laid, "aisles")).toMatchObject({ text: "Narrowest aisle 0.6 m", attention: false });
+
+    // Wider than that is no more to ask about than the planner's own spacing is.
+    for (const wider of [0.62, 0.7, 0.85]) {
+      const room = apart(wider);
+      expect(room.aisles.band, String(wider)).toBe("tight");
+      expect(gapToOpenUp(room.aisles), String(wider)).toBe(false);
+      expect(nextMove(room, false), String(wider)).toMatchObject({ id: "send" });
+    }
+    // Narrower is asked about, as it always was, right up to the spacing itself: a gap set by hand a tenth of a
+    // millimetre under it is under it (and its figure, cut to 0.5 m, is said with the accent it needs).
+    for (const narrower of [0.5, 0.58, 0.596, 0.5999]) {
+      const room = apart(narrower);
+      expect(room.aisles.band, String(narrower)).toBe("tight");
+      expect(room.aisles.asLaid, String(narrower)).toBe(false);
+      expect(gapToOpenUp(room.aisles), String(narrower)).toBe(true);
+      expect(nextMove(room, false), String(narrower)).toMatchObject({ id: "open-gap" });
+      expect(said(room, "aisles"), String(narrower)).toMatchObject({ attention: true });
+    }
+    const shut = apart(0.3);
+    expect(shut.aisles.band).toBe("blocked");
+    expect(nextMove(shut, false)).toMatchObject({ id: "open-gap" });
+    expect(said(shut, "aisles")).toMatchObject({ attention: true });
+
+    // Lay out keeps the same spacing from a piece already on the floor (it lays "round what is already placed"),
+    // so a standing table that far from a round's chairs is the planner's spacing too.
+    const standing = pieceCardId("poseur-table-white");
+    const far = facts([...stamp("round", -3, ROW_Z), ...stamp(standing, 3, ROW_Z)], 10).aisles.tightestGapM;
+    if (far === null) throw new Error("a round and a standing table have a gap between them");
+    const beside = facts([...stamp("round", -3, ROW_Z), ...stamp(standing, 3 - (far - LAID_CLEARANCE_M), ROW_Z)], 10);
+    expect(beside.aisles.tightestGapM).toBeCloseTo(LAID_CLEARANCE_M, 3);
+    expect(gapToOpenUp(beside.aisles)).toBe(false);
+
+    // A way to a door, or along a wall, narrowed under the planner's guidance excuses nothing. The same two rounds
+    // at the planner's spacing, and a third standing where the planner's own review finds a gangway narrowed: the
+    // pair's gap is said again, as it was before this rule.
+    let narrowed: PlacedItem[] | null = null;
+    for (let z = -3.6; z <= 3.6 && narrowed === null; z += 0.2) {
+      const all = [...pair(LAID_CLEARANCE_M), ...stamp("round", 8, z)];
+      if (layoutGangwayReview(all, GRAND_HALL_RENDER_DIMENSIONS, "grand-hall", null).items.length > 0) narrowed = all;
+    }
+    if (narrowed === null) throw new Error("nowhere across the hall narrows one of its gangways");
+    const route = facts(narrowed, 30);
+    expect(route.aisles.tightestGapM).toBeCloseTo(LAID_CLEARANCE_M, 3);
+    expect(route.aisles.asLaid).toBe(false);
+    expect(gapToOpenUp(route.aisles)).toBe(true);
+    expect(said(route, "aisles")).toMatchObject({ attention: true });
+
+    // Where the room's size is not known the review cannot be asked, and nothing is excused.
+    const unsized = roomFacts({ items: pair(LAID_CLEARANCE_M), guests: 20, roomSlug: "grand-hall", doorSpaces: GRAND_HALL_DOOR_CLEAR_SPACES, kind: null, room: null });
+    expect(unsized.aisles.asLaid).toBe(false);
+    expect(gapToOpenUp(unsized.aisles)).toBe(true);
+
+    // Blocked is asked about whatever else is said of it, and a gap that is not tight never was.
+    expect(gapToOpenUp({ band: "blocked", tightestGapM: null, tightestPair: null, asLaid: true })).toBe(true);
+    expect(gapToOpenUp(apart(1).aisles)).toBe(false);
+    expect(gapToOpenUp(facts([], 20).aisles)).toBe(false);
   });
 });
