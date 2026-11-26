@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
 import { initSentry } from "../observability/sentry.js";
 import { buildOwnScope, sentryJobAlerts } from "../services/jobs/alerts.js";
-import { buildJobRegistry, defineJobKind, PermanentJobError, type JobLogger } from "../services/jobs/kinds.js";
+import { buildJobRegistry, defineJobKind, PermanentJobError, RetryJobIn, type JobLogger } from "../services/jobs/kinds.js";
 import { enqueueJob } from "../services/jobs/store.js";
 import { JobWorker } from "../services/jobs/worker.js";
 import { jobsTestUrl, openJobsDatabase } from "./helpers/jobs-db.js";
@@ -126,6 +126,27 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: each job run has its own Sentr
       return Promise.reject(new PermanentJobError(`${ctx.payload.name} cannot work`));
     },
   });
+  /** Each run, in order, as name and try (`P1`, `Q1`, ...): the proof that two jobs' runs interleaved. */
+  const runs: string[] = [];
+  /**
+   * Leaves a breadcrumb, takes 1.5 s, and asks to be tried again in a second. Its second try is its last, so the
+   * job dies then. Two of them in one pass run P, Q, P again (P's alert), Q again (Q's alert): each alert is
+   * captured after both jobs have left breadcrumbs, so the test reads both ways.
+   */
+  const crumbTwice = defineJobKind({
+    kind: "test.crumb-twice",
+    version: 1,
+    scope: "platform",
+    timeoutMs: 5000,
+    maxAttempts: 2,
+    payload,
+    handler: async (ctx): Promise<void> => {
+      runs.push(`${ctx.payload.name}${String(ctx.attempt)}`);
+      Sentry.addBreadcrumb({ category: "job-test", message: `${CRUMB}${ctx.payload.name}` });
+      await sleep(1500);
+      throw new RetryJobIn(1, `${ctx.payload.name} again`);
+    },
+  });
 
   function setTimer(callback: () => void): unknown {
     const timer: FakeTimer = {
@@ -203,7 +224,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: each job run has its own Sentr
     const withOwnScope = await buildOwnScope({ SENTRY_DSN: dsn });
     worker = new JobWorker({
       db,
-      registry: buildJobRegistry([crumb, crumbDies]),
+      registry: buildJobRegistry([crumb, crumbDies, crumbTwice]),
       serverId: "sentry-scope-test",
       logger: quietLogger,
       alerts: sentryJobAlerts(Sentry, quietLogger),
@@ -224,6 +245,12 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: each job run has its own Sentr
     // Pass 2, woken by its timer: another orphan put back, then C (dies).
     await orphan("orphan-2");
     await write(crumbDies, "C", 60);
+    timers.at(-1)?.fire();
+    await idle(worker);
+
+    // Pass 3, woken by its timer: P and Q, whose runs interleave (P, Q, P's last, Q's last).
+    await write(crumbTwice, "P", 120);
+    await write(crumbTwice, "Q", 60);
     timers.at(-1)?.fire();
     await idle(worker);
 
@@ -263,6 +290,12 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: each job run has its own Sentr
       D: crumbsOf(eventFor("D")),
       C: crumbsOf(eventFor("C")),
     }).toEqual({ B: ["B"], D: ["D"], C: ["C"] });
+  });
+
+  it("reads both ways: of two jobs whose runs interleave in one pass, neither's breadcrumb is on the other's alert", () => {
+    // The check on the test itself: P's alert (its second try) came after Q had left a breadcrumb, and Q's after P had.
+    expect(runs).toEqual(["P1", "Q1", "P2", "Q2"]);
+    expect({ P: crumbsOf(eventFor("P")), Q: crumbsOf(eventFor("Q")) }).toEqual({ P: ["P"], Q: ["Q"] });
   });
 
   it("each job run has its own trace, in one pass and across passes", () => {

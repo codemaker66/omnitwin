@@ -268,7 +268,8 @@ export interface OwnScopeSentryClient {
  * integration gives each request one: the scope is forked and then cleared,
  * so its breadcrumbs start empty and no tag, user or context is inherited
  * from whatever ran before. The same behaviour as the escalation scheduler's
- * helper (T-764), so that one can replace the other once both are merged.
+ * helper (T-764), so that one can replace the other once both are merged:
+ * folding the two into one is T-765.
  */
 export function sentryOwnScope(client: OwnScopeSentryClient): WithOwnScope {
   return (run) => client.withIsolationScope((isolationScope) => {
