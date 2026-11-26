@@ -117,6 +117,11 @@ const { useBookmarkStore } = await import("../../../stores/bookmark-store.js");
 const { recordPlannerArrivalChoice } = await import("../../../lib/planner-room-arrival.js");
 const { useLayoutTimelinePreviewStore } = await import("../../../stores/layout-timeline-preview-store.js");
 const { frozenLayoutRoomModel } = await import("../../../lib/frozen-layout-room.js");
+const recall = await import("../../../floor/assembly/recall.js");
+const { currentFurniturePresentation } = await import("../../../floor/presentation-channel.js");
+const { probeGpu } = await import("../../../lib/gpu-class.js");
+const { placedItemToEditor } = await import("../EditorBridge.js");
+const { grandHallDinner180 } = await import("../../../floor/assembly/fixture.js");
 
 function sceneElements(children: ReactNode = canvasChildren.current): ReactElement<Record<string, unknown>>[] {
   return Children.toArray(children).flatMap((child) => {
@@ -735,5 +740,57 @@ describe("PlannerScene interior arrival", () => {
     expect(useCockpitStore.getState().walkMode).toBe(true);
     act(() => { useBookmarkStore.setState({ pendingNavigationId: "regular-bookmark" }); });
     expect(useCockpitStore.getState().walkMode).toBe(false);
+  });
+});
+
+// T-742: a saved Grand Hall layout is held empty until the Grand Assembly takes it over. The Assembly mounts inside
+// the canvas only once the 3D view has built the hall; this harness never mounts the canvas's children, so here the
+// Assembly is never on its stage, as on a device whose first build is still running.
+describe("PlannerScene and the Grand Assembly's hold", () => {
+  beforeEach(async () => {
+    await probeGpu();
+    recall.resetAssemblyRecallForTests();
+    window.history.replaceState(null, "", "/plan/layout?assembly=accio");
+    chooseGrandHall();
+    useEditorStore.setState({
+      objects: grandHallDinner180().slice(0, 11).map((item) => placedItemToEditor(item, undefined)), isLoading: false, error: null,
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    recall.resetAssemblyRecallForTests();
+    useEditorStore.setState({ objects: [] });
+    window.history.replaceState(null, "", "/");
+  });
+
+  /** Renders the planner over the open layout, once the Assembly's code has run. */
+  async function openWithAssemblyCode(): Promise<void> {
+    render(<PlannerScene />);
+    await act(async () => { await import("../../../floor/assembly/GrandAssembly.js"); });
+  }
+
+  it("holds the layout while the 3D view is still building the hall, past the hold's limit, and never for good", async () => {
+    await openWithAssemblyCode();
+    expect(recall.useAssemblyRecallStore.getState().request).toMatchObject({ reason: "open" });
+    expect(currentFurniturePresentation()).toBe(recall.EMPTY_ROOM);
+    act(() => { vi.advanceTimersByTime(recall.HOLD_LIMIT_MS * 3); });
+    expect(recall.useAssemblyRecallStore.getState().request).toMatchObject({ reason: "open" });
+    expect(currentFurniturePresentation()).toBe(recall.EMPTY_ROOM);
+    act(() => { vi.advanceTimersByTime(recall.HOLD_CAP_MS); });
+    expect(currentFurniturePresentation()).toBeNull();
+    expect(recall.useAssemblyRecallStore.getState().request).toBeNull();
+  });
+
+  it("lets the layout go after the hold's limit where the 3D view could not start: there is no stage to wait for", async () => {
+    await openWithAssemblyCode();
+    expect(currentFurniturePresentation()).toBe(recall.EMPTY_ROOM);
+    act(() => { canvasUnavailable.current?.(); });
+    act(() => { vi.advanceTimersByTime(recall.HOLD_LIMIT_MS - 1); });
+    expect(currentFurniturePresentation()).toBe(recall.EMPTY_ROOM);
+    act(() => { vi.advanceTimersByTime(2); });
+    expect(currentFurniturePresentation()).toBeNull();
+    expect(recall.useAssemblyRecallStore.getState().request).toBeNull();
   });
 });
