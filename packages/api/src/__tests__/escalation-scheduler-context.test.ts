@@ -6,7 +6,8 @@ import type * as SentryNode from "@sentry/node";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
-import { initSentry } from "../observability/sentry.js";
+import { registerErrorNormalizer } from "../middleware/error-normalizer.js";
+import { buildSentryCapture, initSentry } from "../observability/sentry.js";
 import { EscalationScheduler } from "../services/escalation-scheduler.js";
 import { installEscalationScheduler, pokeEscalationScheduler } from "../services/escalation-wake.js";
 
@@ -47,6 +48,8 @@ const CONTROL = "poker-6Wq1Zr";
 const requestStore = (marker: string): string => `request ${marker}`;
 const PASS_ERROR = "escalation pass failed (T-764 probe)";
 const STARTUP_ERROR = "start-up error (T-764 probe)";
+/** A later, unrelated request's server error, captured by the API's own 5xx hook. */
+const LATER_REQUEST_ERROR = "a planner request failed after the sweep (T-764 probe)";
 /** A subscriber's endpoint in the URL of the first pass's call to the push service. */
 const PROVIDER_MARKER = "push-endpoint-first-pass-3Tr7";
 /** What the first pass sets on its own scope: a tag, a user and a context. */
@@ -170,7 +173,8 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
     vi.stubEnv("http_proxy", "");
     vi.stubEnv("HTTP_PROXY", "");
     // As index.ts: Sentry before Fastify, so its instrumentation sees the server.
-    await initSentry({ SENTRY_DSN: `${ingestBase.replace("http://", "http://public@")}/1`, NODE_ENV: "production", SENTRY_TRACES_SAMPLE_RATE: 1 });
+    const dsn = `${ingestBase.replace("http://", "http://public@")}/1`;
+    await initSentry({ SENTRY_DSN: dsn, NODE_ENV: "production", SENTRY_TRACES_SAMPLE_RATE: 1 });
     Sentry = await import("@sentry/node");
 
     // Built and started at start-up, outside any request, as diary-live.ts does.
@@ -203,6 +207,12 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
     Sentry.captureException(new Error(STARTUP_ERROR));
 
     server = Fastify({ logger: false });
+    // As index.ts: server errors reach Sentry through the normaliser's 5xx hook.
+    const capture = await buildSentryCapture({ SENTRY_DSN: dsn });
+    expect(capture).toBeTypeOf("function");
+    registerErrorNormalizer(server, { onServerError: capture });
+    // An unrelated request that fails after the sweep has run.
+    server.get("/planner/boom", () => { throw new Error(LATER_REQUEST_ERROR); });
     // A request raised: the service pokes the scheduler once it is stored.
     server.post<{ Params: { id: string } }>("/requests/:id/raise", (request) => {
       requestContext.run(requestStore(request.params.id), () => {
@@ -220,6 +230,11 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
     await until(() => plans() >= 2, "the plan after the first pass");
     await raise(SECOND_MARKER);
     await until(() => plans() >= 4, "the plan after the second pass");
+    // Each request's scope is cloned from start-up's when it arrives
+    // (server-subscription.js), so what a pass left there would ride on it.
+    const failed = await Sentry.withIsolationScope(() => fetch(`${base}/planner/boom`));
+    expect(failed.status).toBe(500);
+    await failed.arrayBuffer();
     expect(await Sentry.flush(5_000)).toBe(true);
   }, 60_000);
 
@@ -285,6 +300,14 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
     const traces = [first, second, startUp].map((event) => event.contexts?.trace?.trace_id);
     expect(traces.every((trace) => typeof trace === "string" && /^[0-9a-f]{32}$/u.test(trace))).toBe(true);
     expect(new Set(traces).size).toBe(3);
+  });
+
+  it("leaves nothing of a pass on a later request: an unrelated request's server error carries none of the pass's calls", () => {
+    const later = sentFor(LATER_REQUEST_ERROR).event;
+    // It is the request's own record (the API's 5xx hook), not the sweep's.
+    expect(later.request?.url).toContain("/planner/boom");
+    expect(crumbsOf(later).filter((url) => url.includes(PROVIDER_MARKER))).toEqual([]);
+    expect(later.contexts?.trace?.trace_id).not.toBe(sentFor(`${PASS_ERROR} 1`).event.contexts?.trace?.trace_id);
   });
 
   it("files an error from a pass on that pass's own trace, the one its calls carry", () => {
