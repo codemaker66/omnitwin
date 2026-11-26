@@ -512,8 +512,9 @@ describe("the planner HUD stays behind its flag (T-723)", () => {
     // planner builds everything it stands on (the record it keeps for a signed-in layout derives the same items) but
     // never asks for it under this name, so its build drops the three-line wrapper. The new screen asks it before
     // it excuses a tight gap, which keeps the wrapper and one more export name in the planner page's file: 68 bytes
-    // before compression, by two builds of one tree (25 Nov 2026), and nothing else a planner without the flag is
-    // sent changes length. Not a copy: a second copy of that rule in the screen's own files would cost nothing there
+    // before compression, by two builds of one tree (25 Nov 2026), and nothing else the default planner is sent
+    // changes length. A planner who asks for the second new chrome (?chrome=v2) is sent one byte more besides, in
+    // that chrome's own file, by a renumbered name one character longer. Not a copy: a second copy of that rule in the screen's own files would cost nothing there
     // and could part from the one the venue reads. Nothing calls the wrapper without the flag
     // (EditorPage.chrome-hud.test.tsx counts who asks).
     ["lib/gangway-review-record.js layoutGangwayReview", "the planner's single review of a layout's gangways (the one source of that rule: a copy in the screen's files could part from it), asked before the new screen excuses a tight gap: its three-line wrapper and one export name, 68 bytes of the planner page's file before compression"],
