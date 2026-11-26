@@ -794,3 +794,22 @@ describe("PlannerScene and the Grand Assembly's hold", () => {
     expect(recall.useAssemblyRecallStore.getState().request).toBeNull();
   });
 });
+
+describe("PlannerScene's camera bounds (T-724)", () => {
+  it("gives the camera the room outline's own box, so an outline drawn off the origin stays within a pan's reach", () => {
+    useEditorStore.setState({ configId: "outline-off-origin", space: SpaceSchema.parse({
+      id: "00000000-0000-4000-8000-000000000724", venueId: "00000000-0000-4000-8000-000000000099",
+      name: "Side Room", slug: "side-room", description: null, widthM: "20", lengthM: "12", heightM: "3",
+      floorPlanOutline: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 12 }, { x: 0, y: 12 }],
+      meshUrl: null, thumbnailUrl: null, sortOrder: 0,
+      createdAt: "2026-11-26T00:00:00.000Z", updatedAt: "2026-11-26T00:00:00.000Z",
+    }) });
+    render(<PlannerScene />);
+    expect(sceneComponent("CameraRig")?.props.footprint).toEqual({ minX: 0, maxX: 20, minZ: 0, maxZ: 12 });
+  });
+
+  it("gives no box when no room is chosen: the camera bounds the hall drawn about its origin", () => {
+    render(<PlannerScene />);
+    expect(sceneComponent("CameraRig")?.props.footprint).toBeNull();
+  });
+});

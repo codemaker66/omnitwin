@@ -118,10 +118,10 @@ export const CUT_EYEWARD = 2.5e-4;
  * its holder from 20 m, and past about 48 m, face-on, the far face of the
  * thinnest glass (12 mm), drawing a solid's inside in front of its own
  * outside. The cap holds from 10 m: about ten depth steps at 20 m, five at
- * 30 m and one at 65 m, about as far as the orbit sees the cut from while
- * its target is held (CameraRig holds it for the keyboard's pan, not the
- * mouse's or two fingers', which reach the far plane, 900 m under the sky;
- * T-724).
+ * 30 m and one at 65 m, beyond the farthest the orbit sees the cut from:
+ * CameraRig holds every pan's target within the room's bounds and the camera
+ * within its distance of it, so in the Grand Hall the camera stays within
+ * about 61 m of the hall's centre (T-724).
  * Past that a tie whose depths round equal is still the cut's: it draws
  * after the outside (HallExterior) and the depth test passes equal depths
  * (three's LessEqualDepth). From about 115-140 m some of the thinnest glass

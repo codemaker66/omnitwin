@@ -10,7 +10,8 @@ import { gpuProbeSettled, probeGpu, subscribeGpuProbe } from "../../lib/gpu-clas
 import { RenderGovernor } from "../scene/RenderGovernor.js";
 import { useRenderGovernorStore } from "../../stores/render-governor-store.js";
 import type { SpaceDimensions } from "@omnitwin/types";
-import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
+import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering, toRenderSpace } from "../../constants/scale.js";
+import type { FloorFootprint } from "../../lib/camera-rig.js";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
 import { CameraRig } from "../CameraRig.js";
 import { InteriorCamera } from "../rooms/InteriorCamera.js";
@@ -271,6 +272,23 @@ function useRoomDimensions(): SpaceDimensions {
   }, [space]);
 }
 
+/**
+ * Where the room's outline lies on the floor (its box, scaled as its
+ * dimensions are): the camera holds every pan within it and its margin, so an
+ * outline drawn off the origin stays within reach (T-724). Null where the room
+ * is drawn about its origin from its width and length.
+ */
+function useRoomFootprint(): FloorFootprint | null {
+  const space = useEditorStore((s) => s.space);
+  return useMemo(() => {
+    if (space === null) return null;
+    const geom = resolveRoomGeometry(space);
+    if (geom === null) return null;
+    const box = computeBoundingBox(geom.wallPolygon);
+    return { minX: toRenderSpace(box.minX), maxX: toRenderSpace(box.maxX), minZ: toRenderSpace(box.minZ), maxZ: toRenderSpace(box.maxZ) };
+  }, [space]);
+}
+
 /** How long after the last wheel tick the camera counts as still driving —
  *  long enough to cover the rig's inertial zoom coast. */
 const WHEEL_INTERACTION_SETTLE_MS = 450;
@@ -297,6 +315,7 @@ export function PlannerScene({ inCanvas }: {
     return frozenRoomRef.current;
   }, [previewRuntime, timelinePreviewActive]);
   const dimensions = useRoomDimensions();
+  const footprint = useRoomFootprint();
   const configId = useEditorStore((s) => s.configId);
   const arrivalKey = plannerArrivalKey(configId, space?.id ?? null);
   // The Grand Assembly plays a saved layout the first time it opens on a device
@@ -766,7 +785,7 @@ export function PlannerScene({ inCanvas }: {
           </group>
           {realHall && !timelinePreviewActive && <HallViewDirector />}
           <CockpitPlanningCamera suspended={timelinePreviewActive || assemblyCamera} />
-          <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive || assemblyCamera}
+          <CameraRig dimensions={dimensions} footprint={footprint} smoothControls={smoothCameraControls} suspended={timelinePreviewActive || assemblyCamera}
             defaultPose={realHall ? HALL_VIEW_POSES.room : surveyedRoom.opening}
             onOpeningPose={realHall ? markHallOpeningPose : undefined}
             captureUnavailableKey={captureFailed && captureInUse ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />

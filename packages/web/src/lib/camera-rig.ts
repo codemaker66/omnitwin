@@ -79,17 +79,86 @@ export function computeDistanceLimits(
   };
 }
 
-export function computePanBounds(
-  dimensions: SpaceDimensions,
-): { readonly minX: number; readonly maxX: number; readonly minZ: number; readonly maxZ: number } {
-  const marginX = dimensions.width * 0.2;
-  const marginZ = dimensions.length * 0.2;
+/** Where a pan may carry the orbit target, in the room's own coordinates (metres). */
+export interface PanBounds {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minY: number;
+  readonly maxY: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+}
+
+/** Where a room's outline lies on the floor: its box, in the room's own coordinates (metres). */
+export interface FloorFootprint {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+}
+
+/**
+ * Where a pan may carry the orbit target. Across the room it is the floor
+ * plan with a fifth of each side as margin: the box of the room's outline
+ * where `footprint` gives it (an outline need not be centred on the room's
+ * origin), else the width and length centred on that origin. Up and down it
+ * runs as far below the floor and above the ceiling as it reaches across the
+ * room from the floor plan's centre. OrbitControls pans in the screen's
+ * plane, so from an ordinary view a drag up or down the screen lowers or
+ * lifts the target as it carries it across the room: a bound near the floor
+ * would stop such a drag following the cursor almost at once, in a low room
+ * at once, where slack as deep as the room is wide keeps it following, and
+ * still ends the escape to the far plane (T-724).
+ */
+export function computePanBounds(dimensions: SpaceDimensions, footprint: FloorFootprint | null = null): PanBounds {
+  const minX = footprint?.minX ?? -dimensions.width / 2;
+  const maxX = footprint?.maxX ?? dimensions.width / 2;
+  const minZ = footprint?.minZ ?? -dimensions.length / 2;
+  const maxZ = footprint?.maxZ ?? dimensions.length / 2;
+  const marginX = (maxX - minX) * 0.2;
+  const marginZ = (maxZ - minZ) * 0.2;
+  const reach = Math.max((maxX - minX) / 2 + marginX, (maxZ - minZ) / 2 + marginZ);
   return {
-    minX: -dimensions.width / 2 - marginX,
-    maxX: dimensions.width / 2 + marginX,
-    minZ: -dimensions.length / 2 - marginZ,
-    maxZ: dimensions.length / 2 + marginZ,
+    minX: minX - marginX,
+    maxX: maxX + marginX,
+    minY: -reach,
+    maxY: dimensions.height + reach,
+    minZ: minZ - marginZ,
+    maxZ: maxZ + marginZ,
   };
+}
+
+interface Point3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/**
+ * Holds the orbit target inside `bounds` after a pan and moves the camera by
+ * the same correction, so the view keeps its offset and angle: at a bound the
+ * view stops, and the rest of the pan slides along it. `from` is where the
+ * target stood before the pan. A target that code placed outside the bounds (a
+ * glide to a far view) is never pulled in: on each axis a pan may bring it
+ * back towards the room but carry it no further out than `from`. Returns
+ * whether anything moved.
+ */
+export function holdOrbitTarget(target: Point3, camera: Point3, bounds: PanBounds, from: Readonly<Point3>): boolean {
+  const x = holdAxis(target.x, from.x, bounds.minX, bounds.maxX);
+  const y = holdAxis(target.y, from.y, bounds.minY, bounds.maxY);
+  const z = holdAxis(target.z, from.z, bounds.minZ, bounds.maxZ);
+  if (x === target.x && y === target.y && z === target.z) return false;
+  camera.x += x - target.x;
+  camera.y += y - target.y;
+  camera.z += z - target.z;
+  target.x = x;
+  target.y = y;
+  target.z = z;
+  return true;
+}
+
+function holdAxis(value: number, from: number, min: number, max: number): number {
+  return Math.min(Math.max(value, Math.min(min, from)), Math.max(max, from));
 }
 
 export const MIN_POLAR_ANGLE = 0.1;
