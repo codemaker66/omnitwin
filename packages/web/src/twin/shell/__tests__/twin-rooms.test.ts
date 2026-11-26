@@ -13,6 +13,7 @@ import {
   VERIFIED_ROOM_NODES,
   formatRoomDimensions,
   lookUpRoom,
+  metres,
 } from "../twin-rooms.js";
 
 // -----------------------------------------------------------------------------
@@ -155,6 +156,24 @@ describe("lookUpRoom", () => {
         expect(typeof room.capacities[format.key]).toBe("number");
       }
     }
+  });
+});
+
+describe("metres", () => {
+  // Literal outputs, not a second formatter: the tour's text checks rebuild
+  // every figure line through metres() (e2e/support/twin-hud-text.ts), so a
+  // change to its rounding has to fail here rather than agree everywhere.
+  it("keeps a published figure as the venue prints it", () => {
+    expect(metres(21)).toBe("21");
+    expect(metres(5.4)).toBe("5.4");
+    expect(metres(2.18)).toBe("2.18");
+    expect(metres(10.59)).toBe("10.59");
+    expect(metres(6.7)).toBe("6.7");
+  });
+
+  it("rounds a finer figure to two decimals, with no trailing zero", () => {
+    expect(metres(21.135)).toBe("21.14");
+    expect(metres(7.6049)).toBe("7.6");
   });
 });
 

@@ -7,16 +7,15 @@ import {
   type RoomDimensions,
 } from "@omnitwin/types";
 import { metres, ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES } from "../twin-rooms.js";
+import { RoomDossier, TWIN_DOSSIER_LEAVE_MS } from "../RoomDossier.js";
 import {
-  RoomDossier,
   STAT_LABEL_CEILING,
   TWIN_DOSSIER_COLLAPSE_LABEL,
   TWIN_DOSSIER_EXPAND_LABEL,
   TWIN_DOSSIER_FOOTNOTE,
-  TWIN_DOSSIER_LEAVE_MS,
   twinDossierActionLabel,
   twinDossierArrival,
-} from "../RoomDossier.js";
+} from "../room-dossier-copy.js";
 
 // -----------------------------------------------------------------------------
 // RoomDossier — the panel that finally names a room.
