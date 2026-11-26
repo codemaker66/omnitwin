@@ -1,6 +1,8 @@
-# TEMPORARY (T-742): repeats grand-assembly.spec.ts on the E2E CPU shards' runner image, display and browser build,
-# with no retries, and keeps every case's opening log. `before` runs the planner's hold as it is at the branch's base
-# (recall.ts and PlannerScene.tsx from it), `after` this branch's. Removed before the T-742 pull request is ready.
+# TEMPORARY (T-742): runs Grand Assembly cases on the E2E CPU shards' runner image, display and browser build, with no
+# retries, and keeps every case's opening log. `before` runs the planner's hold as it is at the branch's base
+# (recall.ts and PlannerScene.tsx from it), `after` this branch's. `escape` repeats the Escape case; `slow-build` holds
+# the page for 12 s just after the Assembly's code has run (.github/t742-probe/slow-build.spec.ts, copied into e2e/
+# only here). Removed before the T-742 pull request is ready.
 name: T-742 probe
 
 on:
@@ -13,14 +15,19 @@ concurrency:
 
 jobs:
   probe:
-    name: Grand Assembly repeats, ${{ matrix.variant }} (${{ matrix.lane }}/4)
+    name: ${{ matrix.kind }}, ${{ matrix.variant }} (${{ matrix.lane }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        variant: [before, after]
-        lane: [1, 2, 3, 4]
+        include:
+          - { kind: escape, variant: after, lane: 1 }
+          - { kind: escape, variant: after, lane: 2 }
+          - { kind: escape, variant: after, lane: 3 }
+          - { kind: escape, variant: after, lane: 4 }
+          - { kind: slow-build, variant: before, lane: 1 }
+          - { kind: slow-build, variant: after, lane: 1 }
     env:
       E2E_CAPTURE_CACHE_DIR: /tmp/venviewer-e2e-captures-v1
     steps:
@@ -69,14 +76,21 @@ jobs:
           sudo pkill -TERM -x dpkg || true
           pnpm --filter @omnitwin/web exec playwright install chromium
 
-      - name: Repeat the Grand Assembly cases
-        run: xvfb-run --auto-servernum pnpm --filter @omnitwin/web exec playwright test e2e/grand-assembly.spec.ts --repeat-each=8 --retries=0 --global-timeout=3300000 --update-snapshots=none
+      - name: Repeat the Escape case
+        if: matrix.kind == 'escape'
+        run: xvfb-run --auto-servernum pnpm --filter @omnitwin/web exec playwright test e2e/grand-assembly.spec.ts -g "Escape snaps" --repeat-each=25 --retries=0 --global-timeout=3300000 --update-snapshots=none
+
+      - name: Hold the page through a slow first build
+        if: matrix.kind == 'slow-build'
+        run: |
+          cp .github/t742-probe/slow-build.spec.ts packages/web/e2e/t742-slow-build.spec.ts
+          xvfb-run --auto-servernum pnpm --filter @omnitwin/web exec playwright test e2e/t742-slow-build.spec.ts --repeat-each=3 --retries=0 --global-timeout=3300000 --update-snapshots=none
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: t742-probe-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.variant }}-lane-${{ matrix.lane }}
+          name: t742-probe-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.kind }}-${{ matrix.variant }}-lane-${{ matrix.lane }}
           path: |
             packages/web/test-results/
             packages/web/playwright-report/
