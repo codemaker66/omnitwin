@@ -1,0 +1,84 @@
+# TEMPORARY (T-742): repeats grand-assembly.spec.ts on the E2E CPU shards' runner image, display and browser build,
+# with no retries, and keeps every case's opening log. `before` runs the planner's hold as it is at the branch's base
+# (recall.ts and PlannerScene.tsx from it), `after` this branch's. Removed before the T-742 pull request is ready.
+name: T-742 probe
+
+on:
+  push:
+    branches: ['claude/t742-assembly-escape-deterministic']
+
+concurrency:
+  group: t742-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: Grand Assembly repeats, ${{ matrix.variant }} (${{ matrix.lane }}/4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [before, after]
+        lane: [1, 2, 3, 4]
+    env:
+      E2E_CAPTURE_CACHE_DIR: /tmp/venviewer-e2e-captures-v1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: The base's hold (before only)
+        if: matrix.variant == 'before'
+        run: |
+          git fetch --depth=1 origin 5ffca953385f03186cfdb7f777aeb85abbd38646
+          git checkout 5ffca953385f03186cfdb7f777aeb85abbd38646 -- packages/web/src/floor/assembly/recall.ts packages/web/src/components/editor/PlannerScene.tsx
+          git status --short
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore staged capture fixtures
+        id: capture-fixtures
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.E2E_CAPTURE_CACHE_DIR }}
+          key: e2e-capture-fixtures-v1-${{ hashFiles('packages/web/src/data/generated/trades-hall-splat-bundles.ts', 'packages/web/e2e/support/capture-fixture-cache.ts', 'packages/web/scripts/stage-e2e-captures.mjs') }}
+
+      - name: Stage capture fixtures (cache miss only)
+        if: steps.capture-fixtures.outputs.cache-hit != 'true'
+        run: pnpm --filter @omnitwin/web e2e:stage-captures
+
+      - name: Build @omnitwin/types
+        run: pnpm --filter @omnitwin/types build
+
+      - name: Install Playwright browsers
+        run: |
+          if timeout --kill-after=10 180 pnpm --filter @omnitwin/web exec playwright install --with-deps chromium; then exit 0; fi
+          sudo pkill -TERM -x apt-get || true
+          sudo pkill -TERM -x dpkg || true
+          pnpm --filter @omnitwin/web exec playwright install chromium
+
+      - name: Repeat the Grand Assembly cases
+        run: xvfb-run --auto-servernum pnpm --filter @omnitwin/web exec playwright test e2e/grand-assembly.spec.ts --repeat-each=8 --retries=0 --global-timeout=3300000 --update-snapshots=none
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t742-probe-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.variant }}-lane-${{ matrix.lane }}
+          path: |
+            packages/web/test-results/
+            packages/web/playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
