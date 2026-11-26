@@ -190,9 +190,17 @@ export async function initSentry(env: SentryOptionsEnv): Promise<void> {
  * shares the start-up scope and its one trace for the life of the process,
  * so without this one pass's breadcrumbs (the URLs of its provider calls)
  * reach a later pass's errors, and every such error is on one trace (#487's
- * review, T-764). The fork keeps what start-up set on the scope and drops its
- * breadcrumbs. With SENTRY_DSN unset the SDK is never imported and the work
- * runs as it is.
+ * review, T-764).
+ *
+ * The fork is of the isolation scope current where this is called: the
+ * escalation scheduler calls it from its start-up snapshot, so each pass
+ * forks start-up's scope, never a request's or the pass before. The fork
+ * keeps what start-up set on that scope (tags, user, context: none today)
+ * and drops its breadcrumbs; what the work sets there (a tag, a user, a
+ * context) stays on the work's own events. Release and environment come
+ * from the client's options and are on every event either way. With
+ * SENTRY_DSN unset the SDK is never imported and the work runs as it is, in
+ * the caller's context.
  */
 export function inOwnScope<T>(work: () => T): T {
   const sdk = started;

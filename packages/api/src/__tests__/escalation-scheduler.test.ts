@@ -1,7 +1,16 @@
 import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
+import { inOwnScope } from "../observability/sentry.js";
 import { EscalationScheduler, MAX_SLEEP_MS, MIN_SLEEP_MS, sleepFor, soonest } from "../services/escalation-scheduler.js";
+
+// Sentry is off here, as with SENTRY_DSN unset: nothing the scheduler does may
+// load the SDK (observability/sentry.ts imports it only inside initSentry).
+const sdk = vi.hoisted(() => ({ loaded: false }));
+vi.mock("@sentry/node", () => {
+  sdk.loaded = true;
+  return {};
+});
 
 // ---------------------------------------------------------------------------
 // The sweep wakes only when something is due (goal 19 S7; the 18 October
@@ -153,6 +162,38 @@ describe("the escalation scheduler", () => {
     h.scheduler.start();
     await settle();
     expect(h.timers.map((timer) => timer.ms)).toEqual([60_000]);
+  });
+
+  it("a pass that throws is caught inside its wake: nothing is announced and the scheduler plans again", async () => {
+    const h = harness([T0 + 1_000, null]);
+    h.run.mockReset();
+    h.run.mockRejectedValueOnce(new Error("the push service is away"));
+    h.scheduler.start();
+    await settle();
+    h.timers[0]?.callback();
+    await settle();
+    expect(h.run).toHaveBeenCalledTimes(1);
+    expect(h.onEscalated).not.toHaveBeenCalled();
+    expect(h.plan).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the escalation scheduler with Sentry off", () => {
+  it("runs a whole wake without loading the SDK, and inOwnScope runs the work as it is", async () => {
+    const store = new AsyncLocalStorage<string>();
+    expect(store.run("the caller", () => inOwnScope(() => store.getStore()))).toBe("the caller");
+    const escalated = [{ request: { id: "r-1" } }];
+    const h = harness([null, T0 + 1_000], [escalated]);
+    h.scheduler.start();
+    await settle();
+    h.scheduler.poke();
+    await settle();
+    expect(h.timers.map((timer) => [timer.ms, timer.cleared])).toEqual([[1_000, false]]);
+    h.timers[0]?.callback();
+    await settle();
+    expect(h.onEscalated).toHaveBeenCalledWith(escalated);
+    expect(h.plan).toHaveBeenCalledTimes(3);
+    expect(sdk.loaded).toBe(false);
   });
 });
 

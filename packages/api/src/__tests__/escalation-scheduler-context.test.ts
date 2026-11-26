@@ -49,6 +49,11 @@ const PASS_ERROR = "escalation pass failed (T-764 probe)";
 const STARTUP_ERROR = "start-up error (T-764 probe)";
 /** A subscriber's endpoint in the URL of the first pass's call to the push service. */
 const PROVIDER_MARKER = "push-endpoint-first-pass-3Tr7";
+/** What the first pass sets on its own scope: a tag, a user and a context. */
+const PASS_TAG = "escalation.probe";
+const PASS_USER = "pass-one-user-5Gh8";
+/** The trace id in a `sentry-trace` value (`<trace>-<span>[-<sampled>]`). */
+const traceIdOf = (sentryTrace: string | undefined): string | undefined => sentryTrace?.split("-")[0];
 
 /** Stands for any per-request context beside Sentry's. */
 const requestContext = new AsyncLocalStorage<string>();
@@ -67,8 +72,11 @@ interface Seen {
 
 interface SentEvent {
   readonly transaction?: string;
+  readonly environment?: string;
+  readonly tags?: Record<string, string>;
+  readonly user?: { readonly id?: string };
   readonly request?: { readonly url?: string; readonly headers?: Record<string, string> };
-  readonly contexts?: { readonly trace?: { readonly trace_id?: string } };
+  readonly contexts?: { readonly trace?: { readonly trace_id?: string }; readonly pass?: unknown };
   readonly exception?: { readonly values?: readonly { readonly value?: string }[] };
   readonly breadcrumbs?: readonly { readonly data?: { readonly url?: string } }[];
 }
@@ -119,6 +127,8 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
   /** Set by the route: the next plan finds something due now. */
   let due = false;
   let passes = 0;
+  /** The trace each pass is on, as its outgoing calls would carry it. */
+  const passTraces: (string | undefined)[] = [];
 
   const look = (stage: Seen["stage"]): Seen => {
     const request = Sentry.getIsolationScope().getScopeData().sdkProcessingMetadata.normalizedRequest;
@@ -176,7 +186,13 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
       run: async () => {
         seen.push(look("pass"));
         passes += 1;
-        if (passes === 1) await (await fetch(`${providerBase}/push/${PROVIDER_MARKER}`, { method: "POST" })).arrayBuffer();
+        passTraces.push(traceIdOf(Sentry.getTraceData()["sentry-trace"]));
+        if (passes === 1) {
+          await (await fetch(`${providerBase}/push/${PROVIDER_MARKER}`, { method: "POST" })).arrayBuffer();
+          Sentry.setTag(PASS_TAG, "first");
+          Sentry.setUser({ id: PASS_USER });
+          Sentry.setContext("pass", { first: true });
+        }
         Sentry.captureException(new Error(`${PASS_ERROR} ${String(passes)}`));
         return [];
       },
@@ -269,5 +285,19 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
     const traces = [first, second, startUp].map((event) => event.contexts?.trace?.trace_id);
     expect(traces.every((trace) => typeof trace === "string" && /^[0-9a-f]{32}$/u.test(trace))).toBe(true);
     expect(new Set(traces).size).toBe(3);
+  });
+
+  it("files an error from a pass on that pass's own trace, the one its calls carry", () => {
+    expect(passTraces).toHaveLength(2);
+    expect(passTraces.every((trace) => trace !== undefined && /^[0-9a-f]{32}$/u.test(trace))).toBe(true);
+    expect([1, 2].map((pass) => sentFor(`${PASS_ERROR} ${String(pass)}`).event.contexts?.trace?.trace_id)).toEqual(passTraces);
+  });
+
+  it("forks each pass's scope from start-up's, not the pass before: what a pass sets stays on its own errors, the client's environment on all", () => {
+    const set = (event: SentEvent): unknown => ({ tag: event.tags?.[PASS_TAG], user: event.user?.id, context: event.contexts?.pass });
+    // Not vacuous: the first pass's own error carries what it set.
+    expect(set(sentFor(`${PASS_ERROR} 1`).event)).toEqual({ tag: "first", user: PASS_USER, context: { first: true } });
+    expect(set(sentFor(`${PASS_ERROR} 2`).event)).toEqual({ tag: undefined, user: undefined, context: undefined });
+    expect([`${PASS_ERROR} 1`, `${PASS_ERROR} 2`, STARTUP_ERROR].map((value) => sentFor(value).event.environment)).toEqual(["production", "production", "production"]);
   });
 });
