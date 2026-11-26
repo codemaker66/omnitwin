@@ -1034,6 +1034,92 @@ describe("the guest paper page: a print gives way to another tab's list", () => 
     const kept = await memoryStore(backend).open(PLAN_ID);
     expect(kept.kind === "ready" ? [kept.list.title, kept.list.paperVersion] : null).toEqual(["Ours", 1]);
   });
+
+  // The Print button reads the device first, so its sheet is of the newest list. Another tab can
+  // still save in the moment between that read and the print's own save. Nothing has been printed
+  // then, so there is no older printout to speak of: the button prints the list now on the page.
+  const otherTabsChange = (kept: GuestList): GuestList => ({
+    ...kept,
+    title: `${kept.title}, changed`,
+    guests: kept.guests.some((g) => g.id === uuid(5000))
+      ? kept.guests
+      : [...kept.guests, { id: uuid(5000), name: "Morag Example", party: "", tableId: uuid(18), seat: 3 }],
+    changedSincePrint: true,
+    updatedAt: "2026-11-14T10:00:00.000Z",
+  });
+
+  it("the Print button, when another tab saves between its read and its save, prints their list under the next number and speaks of no older printout", async () => {
+    const backend = memoryBackend();
+    const real = await storeHolding(list180(), backend);
+    // The other tab saves just after the one read of the device the Print button makes.
+    let armed = false;
+    const store: GuestListStore = {
+      ...real,
+      open: async (planId) => {
+        const opened = await real.open(planId);
+        if (armed) {
+          armed = false;
+          await otherTabSaves(backend, otherTabsChange);
+        }
+        return opened;
+      },
+    };
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+
+    armed = true;
+    fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
+    await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
+
+    // The dialog opened on their list, numbered as a print of it, with no word of an older copy.
+    const sheet = await paper("table-plan");
+    expect(text(sheet.querySelector(".gp-leaf__title"))).toBe(`${TITLE}, changed`);
+    expect(text(sheet)).toContain("Example, Morag");
+    expect(within(tools()).queryByText(PRINT_OF_OLDER_COPY_WORDS)).toBeNull();
+    expect(state().notice).toBeNull();
+    const kept = await memoryStore(backend).open(PLAN_ID);
+    if (kept.kind !== "ready") throw new Error("the list was not kept");
+    expect(kept.list.title).toBe(`${TITLE}, changed`);
+    expect(kept.list.guests).toHaveLength(181);
+    // Number 1 went to no sheet; the sheet in the dialog is number 2, and the list has not changed since.
+    expect(kept.list.paperVersion).toBe(2);
+    expect(kept.list.changedSincePrint).toBe(false);
+  });
+
+  it("the Print button still prints the list on the page, and speaks of no older printout, when another tab saves before every one of its saves", async () => {
+    const backend = memoryBackend();
+    const real = await storeHolding(list180(), backend);
+    let hostile = false;
+    const store: GuestListStore = {
+      ...real,
+      // Each save that would give way finds the other tab has just saved again.
+      save: async (list, loaded, opts) => {
+        if (hostile && opts?.yieldToOther === true) await otherTabSaves(backend, otherTabsChange);
+        return real.save(list, loaded, opts);
+      },
+    };
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+
+    hostile = true;
+    fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
+    await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
+    hostile = false;
+
+    const sheet = await paper("table-plan");
+    expect(text(sheet.querySelector(".gp-leaf__title"))).toBe(`${TITLE}, changed, changed`);
+    expect(within(tools()).queryByText(PRINT_OF_OLDER_COPY_WORDS)).toBeNull();
+    expect(state().notice).toBeNull();
+    // Their newest list stands on the device. The sheet in the dialog is number 2; the record says the
+    // list has changed since a print, so the next print takes the next number and none is shared.
+    const kept = await memoryStore(backend).open(PLAN_ID);
+    if (kept.kind !== "ready") throw new Error("the list was not kept");
+    expect(kept.list.title).toBe(`${TITLE}, changed, changed`);
+    expect(kept.list.guests).toHaveLength(181);
+    expect(kept.list.paperVersion).toBe(2);
+    expect(kept.list.changedSincePrint).toBe(true);
+    expect(text(sheet.querySelector(".gp-running"))).toContain("Version 2");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -269,6 +269,8 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
 
   // Read afresh after each wait: the planner may leave while one runs.
   const stillHere = (): boolean => here.current;
+  /** The print's save found another tab's list and gave way to it: the page state says so in its notice. */
+  const gaveWay = (): boolean => useGuestListStore.getState().notice?.kind === "print-of-older-copy";
 
   const run = async (): Promise<void> => {
     try {
@@ -279,7 +281,20 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
       if (!stillHere()) return;
       recordPrint();
       await useGuestListStore.getState().flush();
-      if (stillHere()) window.print();
+      if (!stillHere()) return;
+      // Another tab saved in the moment between that read and this save, so the save gave way and
+      // the page now shows their list. Nothing has been printed yet: there is no older printout to
+      // speak of. The words are put away and the print is recorded once more, on the list the page
+      // shows. Whatever that second save finds, the dialog opens on the list now on the page, and
+      // no two sheets share a number.
+      if (gaveWay()) {
+        useGuestListStore.getState().dismissNotice();
+        recordPrint();
+        await useGuestListStore.getState().flush();
+        if (!stillHere()) return;
+        if (gaveWay()) useGuestListStore.getState().dismissNotice();
+      }
+      window.print();
     } finally {
       busy.current = false;
       setPrinting(false);
