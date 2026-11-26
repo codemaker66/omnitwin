@@ -21,26 +21,34 @@ import { installEscalationScheduler, pokeEscalationScheduler } from "../services
 // the trace), so a sweep run in a poker's context files its spans and any
 // error under that request, hours later and on someone else's behalf.
 //
+// Nor may one pass's records reach another's: outside a request, all work
+// shares the start-up scope and its one trace, so each pass gets a scope and
+// a trace of its own, as the SDK gives each request (#487's review).
+//
 // The real SDK is started as the API starts it (initSentry, every request
 // traced) against a local stand-in for Sentry's ingest, as
-// sentry-capture-path.test.ts does, and a real request over http pokes a
-// real scheduler that keeps its own setTimeout. A plain AsyncLocalStorage
-// store, set around the poke, stands for any other per-request context. The
-// plan and the pass are stand-ins that record what they see (no database);
-// the pass reports an error to Sentry, and what the SDK sent is read from
-// the stand-in ingest.
+// sentry-capture-path.test.ts does, and real requests over http poke a real
+// scheduler that keeps its own setTimeout. A plain AsyncLocalStorage store,
+// set around the poke, stands for any other per-request context. The plan
+// and the pass are stand-ins that record what they see (no database); the
+// first pass calls a stand-in provider (a push service), each pass reports an
+// error to Sentry, and what the SDK sent is read from the stand-in ingest.
 // ---------------------------------------------------------------------------
 
 /** A request's id in its path, so a record that names the request is found. */
 const MARKER = "req_poker_4Kq9zW";
-const RAISED_PATH = `/requests/${MARKER}/raise`;
+/** The second poke's request. */
+const SECOND_MARKER = "req_second_8Hn2pX";
 /** A header no scrubber drops from an error event (sentry-capture-path.test.ts):
  *  where its value shows up, the poking request's headers went with it. */
 const CONTROL_HEADER = "x-venviewer-control";
 const CONTROL = "poker-6Wq1Zr";
 /** What the stand-in context holds while the route pokes. */
-const REQUEST_STORE = `request ${MARKER}`;
+const requestStore = (marker: string): string => `request ${marker}`;
 const PASS_ERROR = "escalation pass failed (T-764 probe)";
+const STARTUP_ERROR = "start-up error (T-764 probe)";
+/** A subscriber's endpoint in the URL of the first pass's call to the push service. */
+const PROVIDER_MARKER = "push-endpoint-first-pass-3Tr7";
 
 /** Stands for any per-request context beside Sentry's. */
 const requestContext = new AsyncLocalStorage<string>();
@@ -62,6 +70,7 @@ interface SentEvent {
   readonly request?: { readonly url?: string; readonly headers?: Record<string, string> };
   readonly contexts?: { readonly trace?: { readonly trace_id?: string } };
   readonly exception?: { readonly values?: readonly { readonly value?: string }[] };
+  readonly breadcrumbs?: readonly { readonly data?: { readonly url?: string } }[];
 }
 
 /** The error events in the envelopes received so far (newline-delimited
@@ -88,16 +97,28 @@ async function until(ready: () => boolean, what: string, ms = 5_000): Promise<vo
   }
 }
 
+const listen = (server: Server): Promise<string> => new Promise((resolve) => {
+  server.listen(0, "127.0.0.1", () => { resolve(`http://127.0.0.1:${String((server.address() as AddressInfo).port)}`); });
+});
+
+const close = (server: Server | undefined): Promise<void> => new Promise((resolve) => {
+  if (server === undefined) resolve();
+  else server.close(() => { resolve(); });
+});
+
 describe("the escalation sweep keeps its own context (the real SDK and server)", () => {
   const envelopes: string[] = [];
   const seen: Seen[] = [];
   let Sentry: typeof SentryNode;
   let ingest: Server;
+  let provider: Server;
   let server: FastifyInstance;
   let scheduler: EscalationScheduler;
   let base = "";
+  let providerBase = "";
   /** Set by the route: the next plan finds something due now. */
   let due = false;
+  let passes = 0;
 
   const look = (stage: Seen["stage"]): Seen => {
     const request = Sentry.getIsolationScope().getScopeData().sdkProcessingMetadata.normalizedRequest;
@@ -109,6 +130,16 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
       traceId: Sentry.getActiveSpan()?.spanContext().traceId,
     };
   };
+  const plans = (): number => seen.filter((entry) => entry.stage === "plan").length;
+
+  /** The visitor's call, in a scope of its own as a browser's is in its own
+   *  process: the SDK records this process's outgoing calls as breadcrumbs,
+   *  and this one would otherwise sit on the start-up scope. */
+  async function raise(marker: string): Promise<void> {
+    const response = await Sentry.withIsolationScope(() => fetch(`${base}/requests/${marker}/raise`, { method: "POST", headers: { [CONTROL_HEADER]: CONTROL } }));
+    expect(response.status).toBe(200);
+    await response.arrayBuffer();
+  }
 
   beforeAll(async () => {
     ingest = createServer((request, response) => {
@@ -121,14 +152,15 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
         response.end("{}");
       });
     });
-    await new Promise<void>((resolve) => { ingest.listen(0, "127.0.0.1", resolve); });
-    const { port } = ingest.address() as AddressInfo;
+    const ingestBase = await listen(ingest);
+    provider = createServer((_request, response) => { response.writeHead(201); response.end(); });
+    providerBase = await listen(provider);
 
     // The SDK's transport honours http_proxy; the stand-in ingest is local.
     vi.stubEnv("http_proxy", "");
     vi.stubEnv("HTTP_PROXY", "");
     // As index.ts: Sentry before Fastify, so its instrumentation sees the server.
-    await initSentry({ SENTRY_DSN: `http://public@127.0.0.1:${String(port)}/1`, NODE_ENV: "production", SENTRY_TRACES_SAMPLE_RATE: 1 });
+    await initSentry({ SENTRY_DSN: `${ingestBase.replace("http://", "http://public@")}/1`, NODE_ENV: "production", SENTRY_TRACES_SAMPLE_RATE: 1 });
     Sentry = await import("@sentry/node");
 
     // Built and started at start-up, outside any request, as diary-live.ts does.
@@ -141,19 +173,23 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
         due = false;
         return Promise.resolve(wake);
       },
-      run: () => {
+      run: async () => {
         seen.push(look("pass"));
-        Sentry.captureException(new Error(PASS_ERROR));
-        return Promise.resolve([]);
+        passes += 1;
+        if (passes === 1) await (await fetch(`${providerBase}/push/${PROVIDER_MARKER}`, { method: "POST" })).arrayBuffer();
+        Sentry.captureException(new Error(`${PASS_ERROR} ${String(passes)}`));
+        return [];
       },
     });
     scheduler.start();
     installEscalationScheduler(scheduler);
+    // Start-up's own error, outside any request and outside the sweep.
+    Sentry.captureException(new Error(STARTUP_ERROR));
 
     server = Fastify({ logger: false });
     // A request raised: the service pokes the scheduler once it is stored.
-    server.post("/requests/:id/raise", () => {
-      requestContext.run(REQUEST_STORE, () => {
+    server.post<{ Params: { id: string } }>("/requests/:id/raise", (request) => {
+      requestContext.run(requestStore(request.params.id), () => {
         seen.push(look("route"));
         due = true;
         pokeEscalationScheduler();
@@ -163,14 +199,11 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
     await server.listen({ port: 0, host: "127.0.0.1" });
     base = `http://127.0.0.1:${String((server.server.address() as AddressInfo).port)}`;
 
-    // The visitor's call, in a scope of its own as a browser's is in its own
-    // process: the SDK records this process's outgoing calls as breadcrumbs,
-    // and this one would otherwise sit on the start-up scope the sweep uses.
-    const response = await Sentry.withIsolationScope(() => fetch(`${base}${RAISED_PATH}`, { method: "POST", headers: { [CONTROL_HEADER]: CONTROL } }));
-    expect(response.status).toBe(200);
-    await response.arrayBuffer();
-    // The poke's plan, the pass its timer runs a beat later, and the plan after the pass.
-    await until(() => seen.filter((entry) => entry.stage === "plan").length >= 2, "the plan after the pass");
+    // Each poke's plan, the pass its timer runs a beat later, and the plan after the pass.
+    await raise(MARKER);
+    await until(() => plans() >= 2, "the plan after the first pass");
+    await raise(SECOND_MARKER);
+    await until(() => plans() >= 4, "the plan after the second pass");
     expect(await Sentry.flush(5_000)).toBe(true);
   }, 60_000);
 
@@ -179,7 +212,8 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
     installEscalationScheduler(null);
     vi.unstubAllEnvs();
     await server?.close();
-    await new Promise<void>((resolve) => { if (ingest === undefined) resolve(); else ingest.close(() => { resolve(); }); });
+    await close(provider);
+    await close(ingest);
   });
 
   const route = (): Seen => {
@@ -187,32 +221,53 @@ describe("the escalation sweep keeps its own context (the real SDK and server)",
     if (found === undefined) throw new Error("the route never ran");
     return found;
   };
+  const sentFor = (value: string): { event: SentEvent; raw: string } => {
+    const sent = eventsIn(envelopes).filter(({ event }) => event.exception?.values?.[0]?.value === value);
+    expect(sent, value).toHaveLength(1);
+    return sent[0] ?? { event: {}, raw: "" };
+  };
+  const crumbsOf = (event: SentEvent): string[] => (event.breadcrumbs ?? []).map((crumb) => crumb.data?.url ?? "");
 
   it("sees the poking request's context in the route itself, so a leak would show", () => {
-    expect(route()).toMatchObject({ store: REQUEST_STORE, control: CONTROL });
+    expect(route()).toMatchObject({ store: requestStore(MARKER), control: CONTROL });
     expect(route().url).toContain(MARKER);
     expect(route().traceId).toMatch(/^[0-9a-f]{32}$/u);
   });
 
   it("lends the poking request's context to neither the plan, the timer it arms nor the pass", () => {
-    const afterPoke = seen.slice(seen.indexOf(route()) + 1);
+    const afterPoke = seen.slice(seen.indexOf(route()) + 1).filter((entry) => entry.stage !== "route");
     const none = { store: undefined, url: undefined, control: undefined };
     expect(afterPoke.map(({ stage, store, url, control }) => ({ stage, store, url, control }))).toEqual([
       { stage: "plan", ...none },
       { stage: "pass", ...none },
       { stage: "plan", ...none },
+      { stage: "plan", ...none },
+      { stage: "pass", ...none },
+      { stage: "plan", ...none },
     ]);
-    // No span the sweep starts (a database read, a provider's call) joins the request's trace.
-    expect(afterPoke.filter((entry) => entry.traceId !== undefined && entry.traceId === route().traceId).map((entry) => entry.stage)).toEqual([]);
+    // No span the sweep starts (a database read, a provider's call) joins a request's trace.
+    const routeTraces = new Set(seen.filter((entry) => entry.stage === "route").map((entry) => entry.traceId));
+    expect(afterPoke.filter((entry) => entry.traceId !== undefined && routeTraces.has(entry.traceId)).map((entry) => entry.stage)).toEqual([]);
   });
 
-  it("files an error from the pass under no request: not the poker's URL, headers, route or trace", () => {
-    const sent = eventsIn(envelopes).filter(({ event }) => event.exception?.values?.[0]?.value === PASS_ERROR);
-    expect(sent).toHaveLength(1);
-    const [{ event, raw } = { event: {}, raw: "" }] = sent;
-    expect({ request: event.request, transaction: event.transaction }).toEqual({ request: undefined, transaction: undefined });
-    expect(event.contexts?.trace?.trace_id).not.toBe(route().traceId);
-    expect(raw).not.toContain(MARKER);
-    expect(raw).not.toContain(CONTROL);
+  it("files an error from a pass under no request: not the poker's URL, headers, route or trace", () => {
+    for (const pass of [1, 2]) {
+      const { event, raw } = sentFor(`${PASS_ERROR} ${String(pass)}`);
+      expect({ request: event.request, transaction: event.transaction }).toEqual({ request: undefined, transaction: undefined });
+      expect(event.contexts?.trace?.trace_id).not.toBe(route().traceId);
+      for (const marker of [MARKER, SECOND_MARKER, CONTROL]) expect(raw).not.toContain(marker);
+    }
+  });
+
+  it("gives each pass a scope and a trace of its own: nothing of one pass, or of start-up, reaches another's error", () => {
+    const first = sentFor(`${PASS_ERROR} 1`).event;
+    const second = sentFor(`${PASS_ERROR} 2`).event;
+    const startUp = sentFor(STARTUP_ERROR).event;
+    // Not vacuous: a pass's own call is on its own error.
+    expect(crumbsOf(first).filter((url) => url.includes(PROVIDER_MARKER))).toHaveLength(1);
+    expect(crumbsOf(second).filter((url) => url.includes(PROVIDER_MARKER))).toEqual([]);
+    const traces = [first, second, startUp].map((event) => event.contexts?.trace?.trace_id);
+    expect(traces.every((trace) => typeof trace === "string" && /^[0-9a-f]{32}$/u.test(trace))).toBe(true);
+    expect(new Set(traces).size).toBe(3);
   });
 });
