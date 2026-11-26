@@ -47,6 +47,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/event-mutations-postgres.test.ts",
   // The event-day board: a change needing acknowledgement stays listed however many follow it.
   "src/__tests__/event-day-awaiting-acknowledgement-postgres.test.ts",
+  // ...and a queued task status replayed later: written only while the task holds what it was pressed against (#418).
+  "src/__tests__/event-day-task-replay-postgres.test.ts",
   "src/__tests__/db-client-local.test.ts",
   "src/__tests__/sheet-snapshot-retention-postgres.test.ts",
   "src/__tests__/dietary-retention-postgres.test.ts",

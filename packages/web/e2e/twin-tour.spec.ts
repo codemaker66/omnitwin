@@ -24,6 +24,7 @@ import {
   metres,
   ROOM_DISPLAY_NAMES,
   ROOM_TRUTH_PROVENANCE,
+  VERIFIED_ROOM_NODES,
 } from "../src/twin/shell/twin-rooms.js";
 
 // ---------------------------------------------------------------------------
@@ -89,6 +90,31 @@ const STAT_DIMENSIONS = "Dimensions";
 const STAT_RECEPTION = "Reception";
 const STAT_DINNER = "Dinner";
 const STAT_CEILING = "Ceiling";
+/** The validated viewpoint in the one room the venue publishes in sections. */
+const SECTIONED_NODE = "scan_105";
+/** A validated viewpoint in a room whose published size is not shown. */
+const NO_SIZE_NODE = "scan_126";
+/** U+00A0, written as an escape: the room list holds each floor together with it. */
+const NO_BREAK_SPACE = "\u00a0";
+
+/**
+ * A room's line in the Rooms panel, rebuilt from venue truth through
+ * lookUpRoom and not through the formatter the panel uses, so the two cannot
+ * agree by being the same code: the two capacities, then each floor the room
+ * shows a size for. A room with no size on record is its capacities alone.
+ */
+function expectedRoomLine(slug: string): string {
+  const nodeId = Object.keys(VERIFIED_ROOM_NODES).find((id) => VERIFIED_ROOM_NODES[id] === slug);
+  const room = nodeId === undefined ? null : lookUpRoom(nodeId);
+  if (room === null) throw new Error(`${slug} has no validated viewpoint to read its figures at.`);
+  const head = `${String(room.capacities.reception)} standing · ${String(room.capacities.dinner)} seated`;
+  const floors = (room.dimensions?.extents ?? []).map((extent) => {
+    const plan = `${metres(extent.lengthM)} × ${metres(extent.widthM)} m`;
+    const named = extent.section === undefined ? plan : `${extent.section} ${plan}`;
+    return named.split(" ").join(NO_BREAK_SPACE);
+  });
+  return floors.length === 0 ? head : `${head} · ${floors.join(` and${NO_BREAK_SPACE}`)}`;
+}
 
 const TOUR_PATH = "/tour";
 const MANIFEST_ROUTE = "**/twin/trades-hall/manifest.json";
@@ -304,16 +330,48 @@ async function expectLiveStage(page: Page, what: string): Promise<void> {
   expect(state.height, `${what}: the drawing buffer must have height`).toBeGreaterThan(0);
 }
 
-/** The dossier's published figures, read as label → rendered value. */
-async function dossierStats(page: Page): Promise<Record<string, string>> {
+/**
+ * The dossier's figures, read as label → every rendered line under it.
+ *
+ * Every line, not the first: a stat holds one line for a room given as a whole
+ * and one per section for a room published in sections, so a reader that took
+ * the first would pass with a section missing, or with a line too many.
+ */
+async function dossierStats(page: Page): Promise<Record<string, string[]>> {
   return page.evaluate(() => {
-    const stats: Record<string, string> = {};
+    const stats: Record<string, string[]> = {};
     for (const row of document.querySelectorAll(".vv-twin-dossier-stat")) {
       const label = row.querySelector(".vv-twin-dossier-stat-label")?.textContent ?? "";
-      const value = row.querySelector(".vv-twin-dossier-stat-value")?.textContent ?? "";
-      stats[label] = value;
+      stats[label] = [...row.querySelectorAll(".vv-twin-dossier-stat-value")].map(
+        (line) => line.textContent ?? "",
+      );
     }
     return stats;
+  });
+}
+
+/**
+ * The text of every dossier stat line that is drawn on more than one line.
+ *
+ * Counted from the line boxes of the line's CONTENTS. The line's own element is
+ * a block, and a block has one box however many lines it wraps to, so asking it
+ * directly would always answer one. Boxes on one line share a top to within a
+ * fraction of their height; a second line starts a whole line lower.
+ */
+async function wrappedDossierLines(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const wrapped: string[] = [];
+    for (const line of document.querySelectorAll(".vv-twin-dossier-stat-value")) {
+      const range = document.createRange();
+      range.selectNodeContents(line);
+      const boxes = [...range.getClientRects()].filter((box) => box.width > 0 && box.height > 0);
+      const first = boxes[0];
+      if (first === undefined) continue;
+      if (boxes.some((box) => Math.abs(box.top - first.top) > first.height / 2)) {
+        wrapped.push(line.textContent ?? "");
+      }
+    }
+    return wrapped;
   });
 }
 
@@ -497,6 +555,26 @@ test("the Rooms panel lists the published rooms, marks the one underfoot, and tr
     ROOMS_LEVEL_ONE_BELOW,
   ]);
 
+  // Every row's figures line, read as TEXT from the page and compared byte
+  // for byte, no-break spaces included. The screenshot baselines cannot hold
+  // a figure: one short figure in muted text is under their pixel tolerance,
+  // so a line that lost or changed its size would still match the image.
+  const roomLines: Record<string, string | null> = {};
+  for (const slug of ROOM_SELECTOR_ORDER) {
+    roomLines[slug] = await panel
+      .locator(`[data-testid="twin-rooms-row-${slug}"], [data-testid="twin-rooms-here-${slug}"]`)
+      .locator(".vv-twin-rooms-compare")
+      .evaluate((line) => line.textContent);
+  }
+  expect(roomLines).toEqual(
+    Object.fromEntries(ROOM_SELECTOR_ORDER.map((slug) => [slug, expectedRoomLine(slug)])),
+  );
+  // The room whose size is not shown says so by saying nothing: its line is
+  // the two capacities, with no figure and no separator left hanging.
+  const noSizeRoom = lookUpRoom(NO_SIZE_NODE);
+  if (noSizeRoom === null) throw new Error(`${NO_SIZE_NODE} is not a validated viewpoint.`);
+  expect(roomLines[noSizeRoom.slug]).toMatch(/^\d+ standing · \d+ seated$/);
+
   // The Saloon row carries the venue's own figures, joined rather than
   // restated, and its accessible name splices that same string byte for byte.
   const saloonComparison = formatRoomComparison("scan_058");
@@ -539,6 +617,11 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
   const dimensions = room.dimensions;
   expect(dimensions, "the Grand Hall must publish dimensions").not.toBeNull();
   if (dimensions === null) throw new Error("The Grand Hall publishes no dimensions.");
+  // The Grand Hall is given as a whole: one extent, with a height.
+  expect(dimensions.extents, "the Grand Hall is one extent, not sections").toHaveLength(1);
+  const [hall] = dimensions.extents;
+  const heightM = hall.heightM;
+  if (heightM === undefined) throw new Error("The Grand Hall states no height.");
 
   const dossier = page.getByTestId("twin-room-dossier");
   await expect(dossier).toBeVisible();
@@ -547,20 +630,19 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
 
   // Every figure is JOINED from the venue-truth module through twin-rooms —
   // nothing here is a literal, which is what keeps the drift gate meaningful.
+  // The Grand Hall is given as a whole, so each stat holds exactly one line.
   const stats = await dossierStats(page);
-  expect(stats[STAT_DIMENSIONS]).toBe(
-    `${metres(dimensions.lengthM)} × ${metres(dimensions.widthM)} m`,
-  );
-  expect(stats[STAT_RECEPTION]).toBe(`${String(room.capacities.reception)} standing`);
-  expect(stats[STAT_DINNER]).toBe(`${String(room.capacities.dinner)} seated`);
+  expect(stats[STAT_DIMENSIONS]).toEqual([
+    `${metres(hall.lengthM)} × ${metres(hall.widthM)} m`,
+  ]);
+  expect(stats[STAT_RECEPTION]).toEqual([`${String(room.capacities.reception)} standing`]);
+  expect(stats[STAT_DINNER]).toEqual([`${String(room.capacities.dinner)} seated`]);
   // The ceiling qualifier says what the height is measured to, and its
   // separator is DOM text — "7 ma further…" is the failure this pins shut.
-  const note = dimensions.note;
-  expect(stats[STAT_CEILING]).toBe(
-    note === undefined
-      ? `${metres(dimensions.heightM)} m`
-      : `${metres(dimensions.heightM)} m — ${note}`,
-  );
+  const note = hall.note;
+  expect(stats[STAT_CEILING]).toEqual([
+    note === undefined ? `${metres(heightM)} m` : `${metres(heightM)} m — ${note}`,
+  ]);
 
   // Provenance travels with the figures, verbatim — the dossier's footnote ends
   // with this constant, so a reworded claim about someone else's data fails
@@ -571,6 +653,55 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
   if (remark !== undefined) {
     await expect(footnote).toHaveText(`${remark} ${ROOM_TRUTH_PROVENANCE}`);
   }
+
+  // A room published in sections, on a phone. Each section is a line of its own
+  // under Dimensions and under Ceiling, named, in the venue's order — and each
+  // is drawn on ONE line. At this width the stats sit in two half-width columns
+  // too narrow for a section's name and its figure together, where the line
+  // broke inside the figure; room-dossier.css gives such a stat the full row.
+  const sectioned = lookUpRoom(SECTIONED_NODE);
+  if (sectioned === null) throw new Error(`${SECTIONED_NODE} has no validated room to assert.`);
+  const sections = sectioned.dimensions?.extents ?? [];
+  expect(sections.length, "the room at this viewpoint is published in sections").toBeGreaterThan(1);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await openTour(page, `?node=${SECTIONED_NODE}`);
+  await expect(dossier.getByRole("heading", { name: sectioned.name })).toBeVisible();
+
+  const sectionedStats = await dossierStats(page);
+  expect(sectionedStats[STAT_DIMENSIONS]).toEqual(
+    sections.map(
+      (extent) =>
+        `${extent.section ?? ""} ${metres(extent.lengthM)} × ${metres(extent.widthM)} m`,
+    ),
+  );
+  expect(sectionedStats[STAT_CEILING]).toEqual(
+    sections.flatMap((extent) =>
+      extent.heightM === undefined
+        ? []
+        : [`${extent.section ?? ""} ${metres(extent.heightM)} m`],
+    ),
+  );
+  // The capacities are the whole room's: one line each, with no section name.
+  expect(sectionedStats[STAT_RECEPTION]).toEqual([
+    `${String(sectioned.capacities.reception)} standing`,
+  ]);
+  expect(sectionedStats[STAT_DINNER]).toEqual([`${String(sectioned.capacities.dinner)} seated`]);
+  expect(
+    await wrappedDossierLines(page),
+    "no dossier line may wrap at 375 × 812 in a room published in sections",
+  ).toEqual([]);
+
+  // A room with no size on record: its two capacities, and no Dimensions or
+  // Ceiling stat at all (no label, no dash, no empty row).
+  const noSize = lookUpRoom(NO_SIZE_NODE);
+  if (noSize === null) throw new Error(`${NO_SIZE_NODE} has no validated room to assert.`);
+  expect(noSize.dimensions, "the room at this viewpoint shows no size").toBeNull();
+  await openTour(page, `?node=${NO_SIZE_NODE}`);
+  await expect(dossier.getByRole("heading", { name: noSize.name })).toBeVisible();
+  expect(await dossierStats(page)).toEqual({
+    [STAT_RECEPTION]: [`${String(noSize.capacities.reception)} standing`],
+    [STAT_DINNER]: [`${String(noSize.capacities.dinner)} seated`],
+  });
 
   expect(errors, "the dossier must not log an error").toEqual([]);
 });

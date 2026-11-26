@@ -125,7 +125,10 @@ describe("RoomSelector — the rooms it offers", () => {
       const comparison = formatRoomComparison(nodeId);
       expect(comparison).not.toBeNull();
       if (comparison !== null && ROOM_SELECTOR_ORDER.includes(slug)) {
-        expect(screen.getAllByText(comparison).length).toBeGreaterThan(0);
+        // Matched without collapsing whitespace: the line's no-break spaces
+        // must reach the row as written, and the default matcher would turn
+        // the page's into ordinary spaces before comparing.
+        expect(screen.getAllByText(comparison, { collapseWhitespace: false }).length).toBeGreaterThan(0);
       }
     }
   });

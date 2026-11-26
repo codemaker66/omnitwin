@@ -1,6 +1,7 @@
 import { storeShortfall, storeShortfallWords } from "../../lib/card-stock.js";
 import { captionModel } from "../../lib/caption-model.js";
 import { createGhostWorld } from "../../lib/ghost-truth.js";
+import { currentHeldNoteIds } from "../../lib/guest-plan-notes.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { replaceSelection } from "../../lib/planner-edit-commands.js";
 import { planReplace, type ReplaceOptions } from "../../lib/replace.js";
@@ -67,17 +68,22 @@ export function replaceWith(card: CardId, chosen: CardParamsRequest = {}): boole
   return true;
 }
 
-/** What replacing the selection with this card would do, without doing it. */
+/**
+ * What replacing the selection with this card would do, without doing it. It is given the command's
+ * answer on a piece holding a note this browser is not shown (lib/replace holdsUnseenNote), so a card
+ * never offers a swap that pressing it refuses.
+ */
 export function replacePreview(card: CardId, chosen: CardParamsRequest = {}): { readonly ok: boolean; readonly text: string } | null {
   const params = paramsFor(card, chosen);
   if (params === null) return null;
   const placed: readonly PlacedItem[] = usePlacementStore.getState().placedItems;
   const store = storeWord();
+  const held = currentHeldNoteIds();
   const result = planReplace(
     useSelectionStore.getState().selectedIds,
     params,
     createGhostWorld(placed, useRoomDimensionsStore.getState().dimensions),
-    store === undefined ? {} : { store },
+    { ...(store === undefined ? {} : { store }), holdsUnseenNote: (pieceId) => held.has(pieceId) },
   );
   return result.ok ? { ok: true, text: result.plan.sentence } : { ok: false, text: result.reason };
 }
