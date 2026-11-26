@@ -102,9 +102,13 @@ const EVENT_HELD_WORDS: Readonly<Record<EventAnswerHold, string>> = {
   preview: "Leave the preview to change the event.",
 };
 const EVENT_HELD_ID = "hud-event-held";
-/** What became of an answer the layout could not yet keep, said under its choices. */
+/**
+ * What became of an answer the layout could not yet keep, said under its choices. Only what stays true: the record
+ * tries a failed save a few more times and then waits for the connection or another answer
+ * (lib/event-kind-record, EVENT_KIND_RETRY_MS), so no trying is promised. A press of the answer tries now.
+ */
 const EVENT_UNSAVED_WORDS = {
-  retrying: "Not saved yet. It is tried again while this page stays open.",
+  retrying: "Not saved yet. Press your answer again to try now.",
   "this-visit": "Kept for this visit only.",
 } as const;
 
@@ -132,8 +136,10 @@ function EventSheet(): ReactElement {
             tabIndex={radioTabIndex(kind === option.kind, index === 0, kind !== null)}
             onClick={() => {
               // Held while the layout cannot change. And the chosen answer pressed again (an arrow key that comes
-              // back to it presses it) is not a new answer: nothing is written.
-              if (held !== null || option.kind === kind) return;
+              // back to it presses it) is not a new answer, so nothing is written: unless its save is still owed,
+              // when the press is the way to try it again.
+              if (held !== null) return;
+              if (option.kind === kind && unsaved !== "retrying") return;
               tellTheEvent(option.kind);
             }}
           >

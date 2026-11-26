@@ -10,6 +10,7 @@ import { GRAND_HALL_RENDER_DIMENSIONS, RENDER_SCALE } from "../../../constants/s
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../../lib/door-clear-spaces.js";
 import {
+  EVENT_KIND_RETRY_MS,
   deviceAsksEventKind,
   deviceEventKind,
   openLayoutEventKind,
@@ -1286,7 +1287,7 @@ describe("the first screen", () => {
   // asks a layout the other has asked.
   describe("and the layout's kept answer", () => {
     const NEW_DRAFT = { isPublicPreview: true, search: "", metadata: null, floorEmptyAtOpen: true } as const;
-    const NOT_SAVED = "Not saved yet. It is tried again while this page stays open.";
+    const NOT_SAVED = "Not saved yet. Press your answer again to try now.";
     /** One piece of a layout's own, as the editor holds it. */
     const A_PIECE: EditorObject = {
       id: "local-1", assetDefinitionId: "round-table-6ft", positionX: 1, positionY: 0, positionZ: 2, rotationX: 0, rotationY: 0, rotationZ: 0,
@@ -1522,6 +1523,41 @@ describe("the first screen", () => {
       expect(said.closest('[role="status"]')).not.toBeNull();
       expect(useEventKindQuestion.getState().save).toBe("retrying");
       patch.mockRestore();
+    });
+
+    // The record tries a failed save five more times, over about two minutes, and then waits for the connection to
+    // come back or for another answer. The line under the choices promises none of that: it says the answer is not
+    // saved, and that pressing it tries again, which stays true however long the page is open.
+    it("goes on saying an answer is not saved after the record's last try, and a press of it tries again", async () => {
+      vi.useFakeTimers();
+      const patch = vi.spyOn(api, "patch").mockRejectedValue(new Error("the API is answering 503"));
+      try {
+        signIn("planner-4");
+        open("layout-4", { isPublicPreview: false });
+        renderHud();
+        act(() => { usePlannerHudStore.getState().openSheet("event"); });
+        const wedding = screen.getByRole("radio", { name: /Wedding/u });
+        fireEvent.click(wedding);
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        expect(patch).toHaveBeenCalledTimes(1);
+        const everyWait = EVENT_KIND_RETRY_MS.reduce((sum, wait) => sum + wait, 0);
+        await act(async () => { await vi.advanceTimersByTimeAsync(everyWait + 1_000); });
+        expect(patch).toHaveBeenCalledTimes(1 + EVENT_KIND_RETRY_MS.length);
+        // Half an hour on, with the browser online throughout: nothing more has been sent.
+        await act(async () => { await vi.advanceTimersByTimeAsync(30 * 60_000); });
+        expect(patch).toHaveBeenCalledTimes(1 + EVENT_KIND_RETRY_MS.length);
+        expect(useEventKindQuestion.getState().save).toBe("retrying");
+        expect(screen.getByText(NOT_SAVED).closest('[role="status"]')).not.toBeNull();
+        // The chosen answer pressed again is the way to try now.
+        fireEvent.click(wedding);
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        expect(patch).toHaveBeenCalledTimes(2 + EVENT_KIND_RETRY_MS.length);
+        expect(patch).toHaveBeenLastCalledWith("/configurations/layout-4", { metadata: { eventKind: "wedding" } }, expect.anything());
+      } finally {
+        // Put back whatever happens, so a failure here is this test's alone.
+        patch.mockRestore();
+        vi.useRealTimers();
+      }
     });
 
     it("says when a guest's answer is kept for this visit only", () => {
