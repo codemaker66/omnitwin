@@ -355,11 +355,22 @@ describe("placeCards", () => {
       [tableAt(2), tableAt(1)],
     );
     expect(placeCards(list)).toEqual([
-      { name: "Niall O'Neil", table: 1 },
-      { name: "Mr and Mrs Reid", table: 1 },
-      { name: "Callum Macleod", table: 2 },
-      { name: "Ailsa Fraser", table: 2 },
+      { name: "Niall O'Neil", table: 1, step: 1 },
+      { name: "Mr and Mrs Reid", table: 1, step: 1 },
+      { name: "Callum Macleod", table: 2, step: 1 },
+      { name: "Ailsa Fraser", table: 2, step: 1 },
     ]);
+  });
+
+  it("gives each card the size step for its name, worked out here so the page builds no attribute from a name", () => {
+    const medium = "x".repeat(41);
+    const long = "y".repeat(80);
+    const list = listOf(
+      [guestAt(1, "Ada Canary", 1, 1), guestAt(2, medium, 1, 2), guestAt(3, long, 1, 3)],
+      [tableAt(1)],
+    );
+    expect(placeCards(list).map((card) => card.step)).toEqual([1, 2, 3]);
+    for (const card of placeCards(list)) expect(card.step).toBe(cardNameStep(card.name));
   });
 
   it("makes 172 cards for the 172 seated guests", () => {

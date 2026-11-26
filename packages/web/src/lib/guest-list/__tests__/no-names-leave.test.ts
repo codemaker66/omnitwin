@@ -412,6 +412,7 @@ const ALLOWED_IN_ATTRIBUTES: Allowed = new Map<string, Allowance>([
   ["undefined", { why: "leaves the attribute off", files: null }],
   ["count.view", { why: "one of the list page's four fixed view words (all, seated, to-seat, tables), inside an id", files: ["pages/GuestListPage.tsx"] }],
   ["count.tone", { why: "a fixed tone word from the list page's own table (settled, owed) or nothing", files: ["pages/GuestListPage.tsx"] }],
+  ["card.step", { why: "a place card's size step, 1, 2 or 3, worked out in paper.ts from the length of the name: a number, never the name (`card.name` in an attribute still fails)", files: ["pages/GuestPaperPage.tsx"] }],
   ["notice.kind", { why: "the kind of a notice, one of the fixed words of the store's KitNotice type (repaired, other-tab, removed-elsewhere and the like)", files: ["pages/GuestListPage.tsx", "pages/GuestPaperPage.tsx"] }],
 ]);
 

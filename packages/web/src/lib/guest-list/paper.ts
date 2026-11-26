@@ -215,10 +215,15 @@ export function covers(list: GuestList): {
   };
 }
 
-export function placeCards(list: GuestList): readonly { readonly name: string; readonly table: number }[] {
+/**
+ * One card for each seated guest, by table then seat. Each carries the size step its name is set at
+ * (`cardNameStep`), worked out here from the name's length: the page writes the step on the card and never
+ * builds an attribute from a name.
+ */
+export function placeCards(list: GuestList): readonly { readonly name: string; readonly table: number; readonly step: 1 | 2 | 3 }[] {
   return [...seatedGuests(list)]
     .sort((a, b) => a.table.number - b.table.number || a.seat - b.seat)
-    .map(({ guest, table }) => ({ name: guest.name, table: table.number }));
+    .map(({ guest, table }) => ({ name: guest.name, table: table.number, step: cardNameStep(guest.name) }));
 }
 
 /** The longest name, in characters, a place card sets at its first size; and at its second. */
