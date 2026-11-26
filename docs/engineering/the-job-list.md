@@ -380,6 +380,17 @@ carries no tags, and its text says what is stuck. Any text passes through `jobEr
 With `SENTRY_DSN` set they go to Sentry; without it they go to the log. The daily job
 checks in each day, and Sentry alerts if a day passes without one.
 
+With `SENTRY_DSN` set, each job's run, and each pass's own work (putting claims back,
+the claims, `afterPass`, the plan, a fault), runs in a Sentry isolation scope of its own
+on a new trace: `buildOwnScope` in `alerts.ts` builds it, and `startJobs` passes it to
+the worker as `withOwnScope`. The scope is forked and then cleared, so a job's alert
+carries the breadcrumbs its own run left and none from another job, another pass or
+start-up, and each job's alert is on a trace of its own. Without the DSN nothing is
+built and the worker calls each run as it is. Running every pass in the worker's own
+async context keeps a request's scope out; alone, it would leave every pass and job on
+start-up's one scope and trace, as `jobs-sentry-scope-postgres.test.ts` measured with
+the real SDK (the same fault was measured on the escalation scheduler's change, T-764).
+
 ## The two switches
 
 | Variable | Values | Effect |
