@@ -187,11 +187,13 @@ is the side rolled back, it answers `RETRY`. When the other side is, the review 
 person, and the erasure completes. That enquiry was not there when the erasure read theirs, so it keeps their name,
 address, phone and message, and their address's guest lead stays with it: erase both by hand (below).
 
-A hallkeeper's task tick, issue update or acknowledgement, a sheet tick, a handoff compile and the piece-note
-retention take the event or the layout first, so they wait for the erasure instead of meeting it. A tick then writes
-only its status, and an issue update only the fields it names, quoting the title as its update returns it; the
-compile and the retention read only after the lock, so they copy what the erasure left; an acknowledgement reads its
-change again and answers that it is not found if the erasure deleted it. Each waits as long as the erasure, or a
+A hallkeeper's task tick, logged issue, issue update or acknowledgement, a sheet tick, a handoff compile and the
+piece-note retention take the event or the layout first, so they wait for the erasure instead of meeting it. A tick
+then writes only its status, and an issue update only the fields it names, quoting the title as its update returns
+it; a tick and a logged issue write their copy in the change feed, and its notices, in the same transaction, so an
+erasure that comes after them finds the copy with them; the compile and the retention read only after the lock, so
+they copy what the erasure left; an acknowledgement reads its change again and answers that it is not found if the
+erasure deleted it. Each waits as long as the erasure, or a
 people rehearsal (up to its 150-second budget), holds the rows. A request kept waiting past the API's 30-second
 connection timeout loses its connection while its write still commits; trying it again is safe (a tick sent with its
 idempotency key is answered from the first, an acknowledgement returns the one already made, an issue update applies

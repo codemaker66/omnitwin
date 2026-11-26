@@ -20,7 +20,6 @@ import { outerColumn } from "../utils/outer-column.js";
 import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import { canAccessInternalEvent } from "../utils/query.js";
 import {
-  EVENT_DAY_ISSUE_AUDIENCE,
   EventDayIssueNotFoundError,
   EventDayTaskNotFoundError,
   EventDayTaskStatusConflictError,
@@ -30,7 +29,7 @@ import {
   updateEventDayIssue,
   updateOpsTaskStatus,
 } from "../services/event-day-ops.js";
-import { recordEventPlanChange, serializeEventPlanChange } from "../services/event-plan-lifecycle.js";
+import { serializeEventPlanChange } from "../services/event-plan-lifecycle.js";
 
 /** More than a floor ever has waiting. A list cut here is still not empty, so
  *  the board can never be told nothing waits when something does. */
@@ -42,12 +41,6 @@ const OpsTaskIdParam = z.object({ id: z.uuid() });
 
 type FastifyRequestUser = Parameters<typeof canAccessInternalEvent>[0];
 type EventRow = typeof events.$inferSelect;
-
-function boundedLifecycleSummary(summary: string): string {
-  const trimmed = summary.trim();
-  if (trimmed.length === 0) return "Event-day operation changed.";
-  return trimmed.length <= 800 ? trimmed : `${trimmed.slice(0, 797)}...`;
-}
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });
@@ -198,28 +191,21 @@ export async function eventDayEventRoutes(server: FastifyInstance, opts: { db: D
       });
     }
 
+    // The issue and its change-feed copy commit together (the service records
+    // the copy in its transaction), so an erasure of the event's person never
+    // falls between them.
     const issue = await createEventDayIssue(db, {
       ...parsed.data,
       eventId: eventRow.id,
       actorUserId: request.user.id,
+      changeActor: { actorRole: toEventPlanAudienceRole(request.user.role), actorLabel: request.user.email },
+    }).catch((err: unknown) => {
+      if (lockConflictOf(err) !== null) return null;
+      throw err;
     });
-
-    await recordEventPlanChange(db, {
-      eventId: eventRow.id,
-      venueId: eventRow.venueId,
-      actorUserId: request.user.id,
-      actorRole: toEventPlanAudienceRole(request.user.role),
-      actorLabel: request.user.email,
-      sourceKind: "ops_issue",
-      sourceId: issue.id,
-      title: "Event-day issue logged",
-      summary: boundedLifecycleSummary(`${issue.title}: ${issue.detail}`),
-      affectedSurfaces: ["ops_tasks", "service_notes"],
-      audienceRoles: [...EVENT_DAY_ISSUE_AUDIENCE],
-      riskLevel: issue.severity === "urgent" ? "blocker" : issue.severity,
-      requiresHallkeeperAcknowledgement: false,
-      actionPath: `/ops/events/${eventRow.id}`,
-    });
+    // An erasure of the event's person holds the event while it rewords the
+    // event's issues: one of the two is rolled back (people-erasure.ts).
+    if (issue === null) return reply.status(409).send(RETRY_ANSWER);
 
     return reply.status(201).send({ data: EventDayIssueSchema.parse(issue) });
   });
@@ -273,34 +259,15 @@ export async function eventDayOpsTaskRoutes(server: FastifyInstance, opts: { db:
     }
 
     try {
+      // The tick and its change-feed copy commit together (the service records
+      // the copy in its transaction, quoting the title as read after the event
+      // lock), so an erasure of the event's person never falls between them.
       const result = await updateOpsTaskStatus(db, {
         ...parsed.data,
         opsTaskId: params.data.id,
         actorUserId: request.user.id,
+        changeActor: { actorRole: toEventPlanAudienceRole(request.user.role), actorLabel: request.user.email },
       });
-
-      if (result.completionEvent !== null && !result.idempotentReplay) {
-        const eventRow = await loadEventForOpsBoard(db, result.completionEvent.eventId);
-        if (eventRow !== null) {
-          await recordEventPlanChange(db, {
-            eventId: eventRow.id,
-            venueId: eventRow.venueId,
-            handoffPackId: result.task.handoffPackId,
-            actorUserId: request.user.id,
-            actorRole: toEventPlanAudienceRole(request.user.role),
-            actorLabel: request.user.email,
-            sourceKind: "ops_task",
-            sourceId: result.completionEvent.id,
-            title: "Hallkeeper task updated",
-            summary: boundedLifecycleSummary(`Task "${result.task.title}" moved from ${result.completionEvent.fromStatus} to ${result.completionEvent.toStatus}.`),
-            affectedSurfaces: ["ops_tasks"],
-            audienceRoles: ["staff", "hallkeeper"],
-            riskLevel: result.completionEvent.toStatus === "blocked" ? "blocker" : "info",
-            requiresHallkeeperAcknowledgement: false,
-            actionPath: `/ops/events/${eventRow.id}`,
-          });
-        }
-      }
 
       return { data: OpsTaskSchema.parse(result.task) };
     } catch (err) {
