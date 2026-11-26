@@ -11,8 +11,8 @@
 // (packages/web/src/data/room-geometries.ts), which the stored outline below
 // contains. A layout save refuses any piece centred outside the stored outline
 // (lib/placement-validation.ts), so the stored room must contain every centre
-// the planner lets a person place. Blake, 11 November 2026: "Use the
-// measurements captured from the lidar /e57 data".
+// the planner lets a person place. Blake's decision, 11 November 2026: the
+// lidar (E57) measurements.
 //
 // spaces.width_m and spaces.length_m are numeric(6,2) and are the outline's x
 // and y extents (db/schema.ts), so the hall's length is widthM here and its
