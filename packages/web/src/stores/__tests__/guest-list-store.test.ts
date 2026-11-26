@@ -1181,20 +1181,57 @@ describe("guest list page state: a list that comes back after it was deleted her
     expect(state().canUndo).toBe(false);
   });
 
-  it("does not say names were added when the device refused the delete here", async () => {
+  it("a delete the device refuses leaves the list on the page and says it could not be deleted; one that then takes clears both", async () => {
     const { backend, store } = device();
     await state().open(PLAN_A, store, clock());
     state().apply((list) => ({ ...list, guests: [guest(1)] }));
     await state().flush();
     // The device refuses the delete, so the list is still stored afterwards.
-    vi.spyOn(backend, "delete").mockRejectedValue(new Error("refused"));
-    await state().eraseList();
+    const refusal = vi.spyOn(backend, "delete").mockRejectedValue(new Error("refused"));
+    expect(await state().eraseList()).toBe(false);
     expect(await backend.get(PLAN_A)).not.toBeNull();
 
-    // The list is found again: it is the one that was never removed, and nobody added it.
+    // The page does not show an empty list over names that are still kept: it shows them, and says why.
+    expect(state().list?.guests).toEqual([guest(1)]);
+    expect(state().notice).toEqual({ kind: "not-deleted" });
+    expect(state().canUndo).toBe(false);
+
+    // A later read finds the very copy the page shows: nothing to take, and no word of names added elsewhere.
     await state().refresh();
     expect(state().list?.guests).toEqual([guest(1)]);
+    expect(state().notice).toEqual({ kind: "not-deleted" });
+    // A change is kept over that same copy, as an ordinary save.
+    state().apply((list) => ({ ...list, title: "Still here" }));
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "not-deleted" });
+    expect(state().kept).toBe(true);
+
+    // Tried again once the device allows it, the delete takes: an empty list, and the words go.
+    refusal.mockRestore();
+    expect(await state().eraseList()).toBe(true);
+    expect(await backend.get(PLAN_A)).toBeNull();
+    expect(state().list?.guests).toEqual([]);
     expect(state().notice).toBeNull();
+  });
+
+  it("a delete that cannot be seen to have taken, because the device cannot be read afterwards, leaves the page's list and says so", async () => {
+    const { backend, store } = device();
+    await state().open(PLAN_A, store, clock());
+    state().apply((list) => ({ ...list, guests: [guest(1)] }));
+    await state().flush();
+    const refusal = vi.spyOn(backend, "delete").mockRejectedValue(new Error("refused"));
+    const unread = vi.spyOn(backend, "get").mockRejectedValue(new Error("refused"));
+    expect(await state().eraseList()).toBe(false);
+    refusal.mockRestore();
+    unread.mockRestore();
+
+    expect(state().list?.guests).toEqual([guest(1)]);
+    expect(state().notice).toEqual({ kind: "not-deleted" });
+    expect(await backend.get(PLAN_A)).not.toBeNull();
+    // The next read finds the copy this page had loaded: nothing to take, nothing said of another tab.
+    await state().refresh();
+    expect(state().list?.guests).toEqual([guest(1)]);
+    expect(state().notice).toEqual({ kind: "not-deleted" });
   });
 
   it("says it once: the mark clears on that take-up", async () => {
@@ -1640,7 +1677,8 @@ describe("guest list page state: nothing rejects and no name escapes", () => {
     await expect(state().flush()).resolves.toBeUndefined();
     expect(state().kept).toBe(false);
     await expect(state().refresh()).resolves.toBeUndefined();
-    await expect(state().eraseList()).resolves.toBeUndefined();
+    // This session never read the device (its read was refused), so only the page is cleared.
+    await expect(state().eraseList()).resolves.toBe(true);
 
     for (const log of logs) expect(log).not.toHaveBeenCalled();
   });

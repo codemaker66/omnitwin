@@ -39,7 +39,9 @@ export type KitNotice =
   /** This page's own sweep removed the list, past its removal day: an empty one was taken. */
   | { readonly kind: "removed-by-rule" }
   /** A print's save gave way to another tab's list: the sheet printed was of an older copy. */
-  | { readonly kind: "print-of-older-copy" };
+  | { readonly kind: "print-of-older-copy" }
+  /** The device refused a delete asked for here: the list is still kept, and still on the page. */
+  | { readonly kind: "not-deleted" };
 
 export interface ApplyOptions {
   /** False for a change undo does not step back through. */
@@ -91,7 +93,13 @@ export interface GuestListState {
   dismissNotice(): void;
   /** For "unreadable": erase what is stored and begin a new list. */
   startAgain(): Promise<void>;
-  eraseList(): Promise<void>;
+  /**
+   * Deletes the list from the device and answers whether it is gone. Only a
+   * delete that took leaves an empty list on the page. When the device refuses
+   * it, the list is still kept: the page shows what is kept, never an empty
+   * list over it, and says it could not be deleted.
+   */
+  eraseList(): Promise<boolean>;
   /** Saves now if anything is unsaved; resolves when no save is waiting or running. */
   flush(): Promise<void>;
   /**
@@ -529,25 +537,40 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
 
       async eraseList() {
         const session = current;
-        if (session === null || get().phase === "opening") return;
+        if (session === null || get().phase === "opening") return false;
         session.erasing = true;
         clearTimer(session);
         nothingWaiting(session);
         if (session.running !== null) await session.running;
         // A list this session never read is not erased unseen: only the page is cleared.
+        let gone = true;
+        let stillKept: GuestList | null = null;
         if (!session.unread) {
           await eraseSafely(session.store, session.planId);
-          // Only a delete that took is remembered: a device that refused it still holds the list,
-          // and when that list is found again nobody has added those names.
+          // The device is read again: only a delete seen to have taken is remembered, and only that
+          // empties the page. A device that refused it still holds the list.
           const after = await openSafely(session.store, session.planId);
+          gone = after.kind === "new" || after.kind === "no-storage";
           session.erasedHere = after.kind === "new";
+          if (after.kind === "ready") stillKept = after.list;
         }
         // Anything changed while erasing is dropped with the rest of the list.
         clearTimer(session);
         nothingWaiting(session);
         session.erasing = false;
-        if (!isCurrent(session)) return;
+        if (!isCurrent(session)) return gone;
         session.undo = [];
+        if (!gone) {
+          // The delete was refused, or could not be seen to have taken. A list stays on the page
+          // (what the device still holds, when that could be read) and the page says so.
+          if (stillKept !== null) {
+            session.loaded = stampOf(stillKept);
+            set({ phase: "ready", list: stillKept, kept: true, notice: { kind: "not-deleted" }, canUndo: false });
+          } else {
+            set({ notice: { kind: "not-deleted" }, canUndo: false });
+          }
+          return false;
+        }
         session.loaded = null;
         set({
           phase: "ready",
@@ -555,6 +578,7 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           notice: null,
           canUndo: false,
         });
+        return true;
       },
 
       async flush() {

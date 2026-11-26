@@ -168,8 +168,8 @@ function GuestDesk({ planId, store }: { readonly planId: string; readonly store:
   // Each delete draws the desk afresh, so nothing the planner typed, pasted or was told about a guest stays on the page.
   const [erasures, setErasures] = useState(0);
   const erase = async (): Promise<void> => {
-    await useGuestListStore.getState().eraseList();
-    setErasures((n) => n + 1);
+    // Only a delete that took draws the desk afresh. One the browser refused leaves the list on the page, which says so.
+    if (await useGuestListStore.getState().eraseList()) setErasures((n) => n + 1);
   };
 
   let body: ReactElement;

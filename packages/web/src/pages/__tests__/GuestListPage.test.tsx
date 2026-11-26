@@ -687,6 +687,29 @@ describe("the guest list page: the desk", () => {
     expect(confirmSpy).not.toHaveBeenCalled();
   });
 
+  it("a delete the browser refuses is not shown as done: the names stay on the page, and it says they could not be deleted", async () => {
+    const { store: real } = await storeHolding(listOf({
+      guests: [guest(1, "Ailsa Fraser"), guest(2, "Chidi Okafor"), guest(3, "Morag Kerr")],
+    }));
+    // The device refuses the delete: from above, an erase that returns with the list still stored.
+    const store: GuestListStore = { ...real, erase: () => Promise.resolve() };
+    open(PAGE, store);
+    await desk();
+    const panel = screen.getByRole("complementary", { name: "The event" });
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Delete the list from this device" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Delete 3 names for good" }));
+
+    const words = await screen.findByText("This list could not be deleted from this browser just now. Try again.");
+    expect(words.closest("[data-notice]")?.getAttribute("data-notice")).toBe("not-deleted");
+    expect(words.closest("[role='status']")).not.toBeNull();
+    expect(screen.getByText("0 of 3 guests have a seat.")).toBeTruthy();
+    expect(screen.queryByText("There are no guests on this list yet.")).toBeNull();
+    expect((await real.open(PLAN_ID)).kind).toBe("ready");
+    // The question is put away, and the way to try again is back.
+    expect(await within(panel).findByRole("button", { name: "Delete the list from this device" })).toBeTruthy();
+  });
+
   it("asks the plan once, with no body, and asks nothing else", async () => {
     const view = open(PAGE, memoryStore());
     await desk();
@@ -1544,7 +1567,8 @@ describe("the guest list page: deleting the list", () => {
   it("while the erase runs, the delete is busy and inert, and the list cannot be kept", async () => {
     const erased = deferred<undefined>();
     const { store } = await storeHolding(listOf({ guests: [guest(1, "Ailsa Fraser")] }));
-    open(PAGE, { ...store, erase: () => erased.promise });
+    // A slow device: the erase waits, then takes.
+    open(PAGE, { ...store, erase: async (planId) => { await erased.promise; await store.erase(planId); } });
     await desk();
     const panel = screen.getByRole("complementary", { name: "The event" });
 

@@ -113,6 +113,12 @@ export const REMOVED_BY_RULE =
 export const PRINT_OF_OLDER_COPY =
   "That printout was made from an older copy of this list, which was changed in another tab. Print it again.";
 
+/**
+ * A delete asked for in this tab was refused by the device, or could not be seen to have taken.
+ * The page still shows the list, so the words do not say again that it is kept.
+ */
+export const NOT_DELETED = "This list could not be deleted from this browser just now. Try again.";
+
 /** The words of a notice from the page's state. Each is a fixed sentence, or a count in one. */
 export function noticeWords(notice: Exclude<KitNotice, null>): string {
   switch (notice.kind) {
@@ -128,6 +134,8 @@ export function noticeWords(notice: Exclude<KitNotice, null>): string {
       return REMOVED_BY_RULE;
     case "print-of-older-copy":
       return PRINT_OF_OLDER_COPY;
+    case "not-deleted":
+      return NOT_DELETED;
   }
 }
 
