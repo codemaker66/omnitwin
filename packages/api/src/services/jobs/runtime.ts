@@ -3,7 +3,7 @@ import { hostname } from "node:os";
 import type { FastifyBaseLogger } from "fastify";
 import type { Database } from "../../db/client.js";
 import type { Env } from "../../env.js";
-import { buildJobAlerts, logJobAlerts, type JobAlerts } from "./alerts.js";
+import { buildJobAlerts, buildOwnScope, logJobAlerts, type JobAlerts } from "./alerts.js";
 import { dailyJob } from "./kinds/daily.js";
 import { selfTestJob } from "./kinds/selftest.js";
 import { buildJobRegistry, jobErrorText, type JobKind, type JobLogger, type JobRegistry } from "./kinds.js";
@@ -47,7 +47,8 @@ function serverIdentity(): string {
 
 /**
  * Builds the registry; with JOBS_WORKER on, starts a worker (sleepMinutes from
- * JOBS_MAX_SLEEP_MINUTES, afterPass from nextRunsKeeper) and installs it.
+ * JOBS_MAX_SLEEP_MINUTES, afterPass from nextRunsKeeper, and with SENTRY_DSN
+ * set a scope of its own for each pass and job run) and installs it.
  * With it off, installs nothing.
  *
  * `stop` takes nothing new, waits up to `graceMs` for the running job, hands
@@ -68,6 +69,8 @@ export async function startJobs(deps: { readonly db: Database; readonly env: Env
   }
 
   const alerts = await buildJobAlerts(env, logger);
+  // With Sentry on, each pass and each job's run gets a scope and trace of its own; without it, nothing is passed.
+  const withOwnScope = await buildOwnScope(env);
   const { kinds, repeating } = buildJobKinds(alerts);
   const registry = buildJobRegistry(kinds);
   const worker = new JobWorker({
@@ -79,6 +82,7 @@ export async function startJobs(deps: { readonly db: Database; readonly env: Env
     // Only when set: unset, the worker's own default (60) is the one default.
     ...(env.JOBS_MAX_SLEEP_MINUTES === undefined ? {} : { sleepMinutes: env.JOBS_MAX_SLEEP_MINUTES }),
     afterPass: nextRunsKeeper(db, repeating, logger, alerts),
+    ...(withOwnScope === undefined ? {} : { withOwnScope }),
   });
   installJobWorker(worker);
   worker.start();

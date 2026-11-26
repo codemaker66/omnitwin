@@ -243,3 +243,47 @@ export async function buildJobAlerts(env: Pick<Env, "SENTRY_DSN">, logger: JobLo
   const Sentry = await import("@sentry/node");
   return sentryJobAlerts(Sentry, logger);
 }
+
+// ---------------------------------------------------------------------------
+// A Sentry scope and trace for each pass and each job run.
+//
+// The worker runs every pass in the async context it was built in, so no
+// request lends it a scope. Alone, that would put every pass and every job on
+// start-up's one isolation scope and one trace: a breadcrumb one job's handler
+// left would ride on the next job's alert. The worker's `withOwnScope` runs
+// each pass's own work, and each job's run, in a scope of its own.
+// ---------------------------------------------------------------------------
+
+/** Runs `run` in a scope of its own, and answers what `run` answers. The worker's `withOwnScope`. */
+export type WithOwnScope = <T>(run: () => T) => T;
+
+/** The two calls `sentryOwnScope` makes. The `@sentry/node` module itself is one. */
+export interface OwnScopeSentryClient {
+  readonly withIsolationScope: <T>(callback: (isolationScope: { readonly clear: () => unknown }) => T) => T;
+  readonly startNewTrace: <T>(callback: () => T) => T;
+}
+
+/**
+ * Runs `run` in a fresh isolation scope on a new trace, as the SDK's http
+ * integration gives each request one: the scope is forked and then cleared,
+ * so its breadcrumbs start empty and no tag, user or context is inherited
+ * from whatever ran before. The same behaviour as the escalation scheduler's
+ * helper (T-764), so that one can replace the other once both are merged.
+ */
+export function sentryOwnScope(client: OwnScopeSentryClient): WithOwnScope {
+  return (run) => client.withIsolationScope((isolationScope) => {
+    isolationScope.clear();
+    return client.startNewTrace(run);
+  });
+}
+
+/**
+ * `sentryOwnScope` over @sentry/node when SENTRY_DSN is set, the decision
+ * `buildJobAlerts` makes; without it, nothing, and the worker calls each run
+ * as it is.
+ */
+export async function buildOwnScope(env: Pick<Env, "SENTRY_DSN">): Promise<WithOwnScope | undefined> {
+  if (env.SENTRY_DSN === undefined) return undefined;
+  const Sentry = await import("@sentry/node");
+  return sentryOwnScope(Sentry);
+}

@@ -40,6 +40,9 @@ import {
 // pass begins in the async context the worker was built in (start-up, with no
 // request), so a poke made inside a request lends that request's context to
 // nothing the pass does: not its handlers, its alerts or its next timer.
+// Inside it, `withOwnScope` (when given) runs each pass's own work, and each
+// job's run, in a scope of its own: with Sentry on, a fresh isolation scope
+// and a new trace, so nothing one job leaves rides on another job's alert.
 //
 // Node cannot stop a running function, and neither the database driver nor a
 // provider's library times out by itself, so nothing the worker waits for is
@@ -74,6 +77,13 @@ export interface JobWorkerDeps {
   readonly setTimer?: (callback: () => void, ms: number) => unknown;
   readonly clearTimer?: (handle: unknown) => void;
   readonly yieldToLoop?: () => Promise<void>;   // default: setImmediate
+  /**
+   * Runs each pass's own work, and each job's run, in a scope of its own (with
+   * Sentry on, `buildOwnScope` in alerts.ts). Applied inside the worker's own
+   * async context, so all a run creates (its timers, its late callbacks, its
+   * alert) stays in its scope. Default: call the run as it is.
+   */
+  readonly withOwnScope?: <T>(run: () => T) => T;
 }
 
 /** The one definition lives in `@omnitwin/types` (`JobWorkerStatusSchema`), which Stuck work also answers with. */
@@ -159,6 +169,11 @@ function quietly(act: () => void): void {
   } catch {
     // The logger or a reporter itself failed: nothing is left to tell.
   }
+}
+
+/** `withOwnScope` when none is given: the run, as it is. */
+function asItIs<T>(run: () => T): T {
+  return run();
 }
 
 /**
@@ -255,6 +270,8 @@ export class JobWorker {
    * Every pass begins in it, so nothing a pass does runs in a poker's context.
    */
   readonly #inOwnContext = AsyncLocalStorage.snapshot();
+  /** Each pass's own work, and each job's run, in a scope of its own; entered inside `#inOwnContext`. */
+  readonly #withOwnScope: <T>(run: () => T) => T;
 
   #started = false;
   /** stop() was called: take nothing new and set no timer. A stopped worker stays stopped. */
@@ -304,6 +321,7 @@ export class JobWorker {
     this.#setTimer = deps.setTimer ?? defaultSetTimer;
     this.#clearTimer = deps.clearTimer ?? defaultClearTimer;
     this.#yieldToLoop = deps.yieldToLoop ?? defaultYieldToLoop;
+    this.#withOwnScope = deps.withOwnScope ?? asItIs;
   }
 
   /** Plans from the database. Returns at once. */
@@ -385,7 +403,8 @@ export class JobWorker {
     try {
       do {
         this.#pokePending = false;
-        waitMs = await this.#onePass();
+        // Each pass's own work (recovery, the claims, afterPass, the plan, a fault) in a scope of its own.
+        waitMs = await this.#withOwnScope(() => this.#onePass());
       } while (this.#hasPendingPoke() && !this.#isStopping());
     } catch {
       // #onePass answers every failure of a pass itself; this is reached only if
@@ -396,7 +415,7 @@ export class JobWorker {
       if (this.#fault === null) {
         this.#fault = "loop";
         try {
-          this.#alerts.workerFault("loop", "The worker's own handling of a failed pass threw.");
+          this.#withOwnScope(() => { this.#alerts.workerFault("loop", "The worker's own handling of a failed pass threw."); });
         } catch {
           // The reporter failed too: the fault shows in the status, and nothing is left to tell.
         }
@@ -439,7 +458,8 @@ export class JobWorker {
         await this.#handBack(job);
         break;
       }
-      await this.#runJob(job);
+      // The job's run in a scope of its own: its handler, its limit's timer, its late callbacks and its alert.
+      await this.#withOwnScope(() => this.#runJob(job));
       await this.#yieldToLoop();
     }
     if (this.#isStopping()) return null;

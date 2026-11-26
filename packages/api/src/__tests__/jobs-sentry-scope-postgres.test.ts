@@ -1,0 +1,282 @@
+import { randomUUID } from "node:crypto";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { gunzipSync } from "node:zlib";
+import type * as SentryNode from "@sentry/node";
+import type { Pool } from "pg";
+import { z } from "zod";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { Database } from "../db/client.js";
+import { initSentry } from "../observability/sentry.js";
+import { buildOwnScope, sentryJobAlerts } from "../services/jobs/alerts.js";
+import { buildJobRegistry, defineJobKind, PermanentJobError, type JobLogger } from "../services/jobs/kinds.js";
+import { enqueueJob } from "../services/jobs/store.js";
+import { JobWorker } from "../services/jobs/worker.js";
+import { jobsTestUrl, openJobsDatabase } from "./helpers/jobs-db.js";
+
+// ---------------------------------------------------------------------------
+// T-702, after the final wave: what Sentry files a job's alert under. The
+// worker runs every pass in the async context it was built in (start-up), so
+// no request lends it a scope. That alone would put every pass and every job
+// on one Sentry isolation scope and one trace: a breadcrumb one job's handler
+// leaves would ride on the next job's alert, and every alert would share
+// start-up's trace (the same fault was measured on the escalation scheduler's
+// change, T-764). Each job run, and each pass's own work, must have a scope
+// and a trace of its own.
+//
+// The real SDK is started as the API starts it (initSentry, every request
+// traced) against a stand-in for Sentry's ingest on the loopback, as
+// sentry-capture-path.test.ts does; what the SDK sent is read from it. The
+// worker is the real one on the throwaway database, its alerts the Sentry
+// reporter. Two passes run: in each, an orphaned claim is put back (a
+// `claimLost` alert, the pass's own work) and jobs run whose handlers leave a
+// breadcrumb, some then dying (a `jobDead` alert, the job's own). A breadcrumb
+// left at start-up, before the worker is built, must reach none of them. The
+// worker gets its scope from `buildOwnScope`, as runtime.ts gives it.
+//
+// Never loads .env and never falls back to DATABASE_URL: the target is the
+// explicit throwaway database (helpers/jobs-db.ts).
+// ---------------------------------------------------------------------------
+
+interface Breadcrumb {
+  readonly message?: string;
+}
+
+interface SentEvent {
+  readonly tags?: Record<string, string>;
+  readonly contexts?: { readonly trace?: { readonly trace_id?: string } };
+  readonly breadcrumbs?: readonly Breadcrumb[] | { readonly values?: readonly Breadcrumb[] };
+}
+
+interface FakeTimer {
+  readonly fire: () => void;
+  fired: boolean;
+  cleared: boolean;
+}
+
+const CRUMB = "crumb:";
+
+const quietLogger: JobLogger = { info: () => undefined, warn: () => undefined, error: () => undefined };
+
+/** The error and message events in the envelopes received (newline-delimited JSON: header, then item header and payload). */
+function eventsIn(envelopes: readonly string[]): SentEvent[] {
+  const found: SentEvent[] = [];
+  for (const envelope of envelopes) {
+    const lines = envelope.split("\n").filter((line) => line.trim() !== "");
+    for (let index = 1; index + 1 < lines.length; index += 2) {
+      const header = JSON.parse(lines[index] ?? "{}") as { type?: unknown };
+      if (header.type === "event") found.push(JSON.parse(lines[index + 1] ?? "{}") as SentEvent);
+    }
+  }
+  return found;
+}
+
+/** An event's breadcrumbs come as a list, or (in older payloads) under `values`. */
+function isList(raw: NonNullable<SentEvent["breadcrumbs"]>): raw is readonly Breadcrumb[] {
+  return Array.isArray(raw);
+}
+
+/** The breadcrumbs this suite's handlers left, as their names, on an event. */
+function crumbsOf(event: SentEvent): string[] {
+  const raw = event.breadcrumbs;
+  const list: readonly Breadcrumb[] = raw === undefined ? [] : isList(raw) ? raw : raw.values ?? [];
+  return list
+    .map((crumb) => crumb.message ?? "")
+    .filter((message) => message.startsWith(CRUMB))
+    .map((message) => message.slice(CRUMB.length));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+describe.skipIf(jobsTestUrl === undefined)("jobs: each job run has its own Sentry scope and trace (the real SDK)", () => {
+  let pool: Pool;
+  let db: Database;
+  let Sentry: typeof SentryNode;
+  let ingest: Server | undefined;
+  let worker: JobWorker | undefined;
+  const envelopes: string[] = [];
+  const timers: FakeTimer[] = [];
+  /** Each job's and orphan's id, by its name in this suite. */
+  const ids = new Map<string, string>();
+
+  const payload = z.object({ name: z.string() }).strict();
+  /** Leaves a breadcrumb naming itself, and finishes. */
+  const crumb = defineJobKind({
+    kind: "test.crumb",
+    version: 1,
+    scope: "platform",
+    timeoutMs: 5000,
+    payload,
+    handler: (ctx): Promise<void> => {
+      Sentry.addBreadcrumb({ category: "job-test", message: `${CRUMB}${ctx.payload.name}` });
+      return Promise.resolve();
+    },
+  });
+  /** Leaves a breadcrumb naming itself, then dies: its `jobDead` alert is the job's own event. */
+  const crumbDies = defineJobKind({
+    kind: "test.crumb-dies",
+    version: 1,
+    scope: "platform",
+    timeoutMs: 5000,
+    payload,
+    handler: (ctx): Promise<void> => {
+      Sentry.addBreadcrumb({ category: "job-test", message: `${CRUMB}${ctx.payload.name}` });
+      return Promise.reject(new PermanentJobError(`${ctx.payload.name} cannot work`));
+    },
+  });
+
+  function setTimer(callback: () => void): unknown {
+    const timer: FakeTimer = {
+      fired: false,
+      cleared: false,
+      fire: () => {
+        if (timer.fired || timer.cleared) return;
+        timer.fired = true;
+        callback();
+      },
+    };
+    timers.push(timer);
+    return timer;
+  }
+
+  function clearTimer(handle: unknown): void {
+    const timer = timers.find((candidate) => candidate === handle);
+    if (timer !== undefined) timer.cleared = true;
+  }
+
+  async function idle(target: JobWorker): Promise<void> {
+    const deadline = Date.now() + 25_000;
+    while (Date.now() < deadline) {
+      if (!target.status().passRunning) return;
+      await sleep(5);
+    }
+    throw new Error("The worker never went idle");
+  }
+
+  /** A job of `kind`, due `ageSeconds` ago, so the jobs of one pass run in the order they are written. */
+  async function write(kind: typeof crumb, name: string, ageSeconds: number): Promise<void> {
+    const { id } = await enqueueJob(db, kind, { key: name, runAt: new Date(Date.now() - ageSeconds * 1000), payload: { name } });
+    ids.set(name, id);
+  }
+
+  /** A claim another server took and never answered for, of a kind this worker does not run: recovery puts it back. */
+  async function orphan(name: string): Promise<void> {
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO jobs (id, kind, version, key, scope, payload, max_attempts, state, attempts, claim_token, claimed_by, claim_expires_at)
+       VALUES ($1, 'test.elsewhere', 1, $2, 'platform', '{}'::jsonb, 6, 'running', 1, gen_random_uuid(), 'gone', now() - interval '1 second')`,
+      [id, name],
+    );
+    ids.set(name, id);
+  }
+
+  beforeAll(async () => {
+    ingest = createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => { chunks.push(chunk); });
+      request.on("end", () => {
+        const body = Buffer.concat(chunks);
+        envelopes.push((request.headers["content-encoding"] === "gzip" ? gunzipSync(body) : body).toString("utf8"));
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end("{}");
+      });
+    });
+    const listening = ingest;
+    await new Promise<void>((resolve) => { listening.listen(0, "127.0.0.1", resolve); });
+    const { port } = listening.address() as AddressInfo;
+    // The SDK's transport honours http_proxy; the stand-in ingest is local.
+    vi.stubEnv("http_proxy", "");
+    vi.stubEnv("HTTP_PROXY", "");
+    const dsn = `http://public@127.0.0.1:${String(port)}/1`;
+    await initSentry({ SENTRY_DSN: dsn, NODE_ENV: "production", SENTRY_TRACES_SAMPLE_RATE: 1 });
+    Sentry = await import("@sentry/node");
+
+    ({ pool, db } = await openJobsDatabase(`jobs_sentry_scope_${randomUUID()}`));
+    await pool.query("TRUNCATE TABLE jobs");
+
+    // Something start-up left on its own scope: no pass or job run may inherit it.
+    Sentry.addBreadcrumb({ category: "job-test", message: `${CRUMB}start-up` });
+
+    // Built at start-up, outside any request, as runtime.ts builds it, with the scope it builds from the DSN.
+    const withOwnScope = await buildOwnScope({ SENTRY_DSN: dsn });
+    worker = new JobWorker({
+      db,
+      registry: buildJobRegistry([crumb, crumbDies]),
+      serverId: "sentry-scope-test",
+      logger: quietLogger,
+      alerts: sentryJobAlerts(Sentry, quietLogger),
+      lostClaimPauseSeconds: 0,
+      setTimer,
+      clearTimer,
+      ...(withOwnScope === undefined ? {} : { withOwnScope }),
+    });
+
+    // Pass 1: an orphan put back, then A (finishes), B and D (die), in that order.
+    await orphan("orphan-1");
+    await write(crumb, "A", 180);
+    await write(crumbDies, "B", 120);
+    await write(crumbDies, "D", 60);
+    worker.start();
+    await idle(worker);
+
+    // Pass 2, woken by its timer: another orphan put back, then C (dies).
+    await orphan("orphan-2");
+    await write(crumbDies, "C", 60);
+    timers.at(-1)?.fire();
+    await idle(worker);
+
+    expect(await Sentry.flush(5_000)).toBe(true);
+  }, 180_000);
+
+  afterAll(async () => {
+    await worker?.stop(1000);
+    vi.unstubAllEnvs();
+    await pool.query("TRUNCATE TABLE jobs");
+    await pool.end();
+    const closing = ingest;
+    if (closing !== undefined) await new Promise<void>((resolve) => { closing.close(() => { resolve(); }); });
+  });
+
+  /** The one event sent for the job or orphan named `name`. */
+  function eventFor(name: string): SentEvent {
+    const id = ids.get(name);
+    const sent = eventsIn(envelopes).filter((event) => event.tags?.["job.id"] === id);
+    if (sent.length !== 1) throw new Error(`${String(sent.length)} events for ${name}, not 1`);
+    const [event] = sent;
+    if (event === undefined) throw new Error(`no event for ${name}`);
+    return event;
+  }
+
+  const traceOf = (name: string): string | undefined => eventFor(name).contexts?.trace?.trace_id;
+
+  it("the control: a breadcrumb a handler leaves is on its own job's alert", () => {
+    expect(crumbsOf(eventFor("B"))).toContain("B");
+    expect(crumbsOf(eventFor("D"))).toContain("D");
+    expect(crumbsOf(eventFor("C"))).toContain("C");
+  });
+
+  it("no breadcrumb crosses from one job to another, in one pass or the next", () => {
+    expect({
+      B: crumbsOf(eventFor("B")),
+      D: crumbsOf(eventFor("D")),
+      C: crumbsOf(eventFor("C")),
+    }).toEqual({ B: ["B"], D: ["D"], C: ["C"] });
+  });
+
+  it("each job run has its own trace, in one pass and across passes", () => {
+    const traces = { B: traceOf("B"), D: traceOf("D"), C: traceOf("C") };
+    for (const trace of Object.values(traces)) expect(trace).toMatch(/^[0-9a-f]{32}$/u);
+    expect(new Set(Object.values(traces)).size, JSON.stringify(traces)).toBe(3);
+  });
+
+  it("each pass's own work has a scope and trace of its own, apart from its jobs", () => {
+    expect({ "orphan-1": crumbsOf(eventFor("orphan-1")), "orphan-2": crumbsOf(eventFor("orphan-2")) })
+      .toEqual({ "orphan-1": [], "orphan-2": [] });
+    const traces = {
+      "orphan-1": traceOf("orphan-1"), "orphan-2": traceOf("orphan-2"), B: traceOf("B"), D: traceOf("D"), C: traceOf("C"),
+    };
+    expect(new Set(Object.values(traces)).size, JSON.stringify(traces)).toBe(5);
+  });
+});

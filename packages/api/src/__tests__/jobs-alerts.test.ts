@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildJobAlerts,
+  buildOwnScope,
   logJobAlerts,
   sentryJobAlerts,
   type JobAlertsSentryClient,
@@ -218,5 +219,18 @@ describe("jobs: the log reporter", () => {
       obj: { alert: "job.list-stuck", detail: "unreadable jobs 1; seen by [email address]" },
       msg: "The job list has work stuck unseen: unreadable jobs 1; seen by [email address]",
     }]);
+  });
+});
+
+describe("jobs: a scope of its own for each pass and job run", () => {
+  it("without a DSN builds no scope, so the worker calls each run as it is", async () => {
+    expect(await buildOwnScope({ SENTRY_DSN: undefined })).toBeUndefined();
+  });
+
+  it("with a DSN builds one, which answers what the run answers", async () => {
+    // Not initialised here: the SDK's scopes work without a client, and nothing is sent.
+    const withOwnScope = await buildOwnScope({ SENTRY_DSN: "http://public@127.0.0.1:9/1" });
+    expect(withOwnScope).toBeTypeOf("function");
+    expect(withOwnScope?.(() => 42)).toBe(42);
   });
 });
