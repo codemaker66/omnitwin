@@ -53,7 +53,8 @@ class LightNodeStandIn {
  */
 function buildHolding(sceneLights: unknown): NodeBuilder {
   const notes = new Map<object, Record<string, unknown>>();
-  const builder = {
+  // An object of the builder's shape as far as a lights node reads it, and no further.
+  const builder: object = {
     lightsNode: sceneLights,
     context: { materialLightings: [] },
     renderer: { library: { getLightNodeClass: (): typeof LightNodeStandIn => LightNodeStandIn } },
@@ -64,12 +65,18 @@ function buildHolding(sceneLights: unknown): NodeBuilder {
     },
     getNodeProperties: (): Record<string, unknown> => ({}),
   };
-  return builder as unknown as NodeBuilder;
+  return builder as NodeBuilder;
+}
+
+/** The light a stand-in light node was made for. */
+function lightOf(lightNode: object): Light {
+  if (lightNode instanceof LightNodeStandIn) return lightNode.light;
+  throw new Error("a light node that the stand-in library did not make");
 }
 
 /** The lights `floor` builds a program from in this build, by name, in three's own order (by id: as made above). */
 function builtFrom(floor: HallFloorLights, build: NodeBuilder): string[] {
-  return floor.setupLightsNode(build).map((lightNode) => (lightNode as unknown as LightNodeStandIn).light.name);
+  return floor.setupLightsNode(build).map((lightNode) => lightOf(lightNode).name);
 }
 
 describe("the floor's lights", () => {
