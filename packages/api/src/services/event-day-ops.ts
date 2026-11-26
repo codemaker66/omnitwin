@@ -46,6 +46,37 @@ import {
 } from "../db/schema.js";
 import { getOpsHandoffPackBundle } from "./ops-compiler.js";
 import { newestHandoffPack } from "./newest-handoff-pack.js";
+import { recordEventPlanChange } from "./event-plan-lifecycle.js";
+import { clipped } from "./client-answer-notice.js";
+
+/**
+ * Who the event's change feed names for a tick or a logged issue (the signed-in
+ * user). Given, the feed's copy is written in the same transaction as the tick
+ * or the issue, after the event is held: an erasure of the event's person that
+ * comes later finds it and rewords it with the task or the issue, and one that
+ * came first has finished before the copy quotes anything. Written after the
+ * commit, as it once was, an erasure in between would miss it, and the text it
+ * took out of the task or the issue would live on in the feed and its notices
+ * (people-erasure.ts). Absent (a seed, a test), no copy is written.
+ */
+export interface EventDayChangeActor {
+  readonly actorRole: EventPlanAudienceRole;
+  readonly actorLabel: string;
+}
+
+/** The change feed's label for who acted, within its 160 characters
+ *  (RecordEventPlanChangeInputSchema): a longer sign-in email is clipped, so
+ *  the tick or the issue never fails on the copy's label. */
+function feedActorLabel(label: string): string {
+  return clipped(label, 160);
+}
+
+/** A change-feed summary within the feed's 800-character bound. */
+function boundedLifecycleSummary(summary: string): string {
+  const trimmed = summary.trim();
+  if (trimmed.length === 0) return "Event-day operation changed.";
+  return trimmed.length <= 800 ? trimmed : `${trimmed.slice(0, 797)}...`;
+}
 
 type EventRow = typeof events.$inferSelect;
 type EventPhaseRow = typeof eventPhases.$inferSelect;
@@ -420,6 +451,37 @@ async function lastWriteMadeUnder(
     && last.idempotencyKey !== null && keys.includes(last.idempotencyKey);
 }
 
+/** A status write's change-feed copy, in the write's own transaction, quoting
+ *  the title as the write returned it after the event lock (EventDayChangeActor). */
+async function recordTickCopy(
+  tx: DatabaseOrTransaction,
+  event: EventRow,
+  updatedTask: OpsTaskRow,
+  completionId: string,
+  move: { readonly fromStatus: OpsTaskStatus; readonly toStatus: OpsTaskStatus },
+  actorUserId: string | null,
+  changeActor: EventDayChangeActor | undefined,
+): Promise<void> {
+  if (changeActor === undefined) return;
+  await recordEventPlanChange(tx, {
+    eventId: event.id,
+    venueId: event.venueId,
+    handoffPackId: updatedTask.handoffPackId,
+    actorUserId,
+    actorRole: changeActor.actorRole,
+    actorLabel: feedActorLabel(changeActor.actorLabel),
+    sourceKind: "ops_task",
+    sourceId: completionId,
+    title: "Hallkeeper task updated",
+    summary: boundedLifecycleSummary(`Task "${updatedTask.title}" moved from ${move.fromStatus} to ${move.toStatus}.`),
+    affectedSurfaces: ["ops_tasks"],
+    audienceRoles: ["staff", "hallkeeper"],
+    riskLevel: move.toStatus === "blocked" ? "blocker" : "info",
+    requiresHallkeeperAcknowledgement: false,
+    actionPath: `/ops/events/${event.id}`,
+  });
+}
+
 /**
  * A status the event-day board queued on the device and replays now, pressed
  * while the task held `expectedStatus` (#418): written only while the task
@@ -446,6 +508,7 @@ async function updateOpsTaskStatusIfStillHeld(
   joined: { readonly task: OpsTaskRow; readonly event: EventRow },
   parsed: UpdateOpsTaskStatusInput & { readonly expectedStatus: OpsTaskStatus },
   actorUserId: string | null,
+  changeActor: EventDayChangeActor | undefined,
 ): Promise<UpdateOpsTaskStatusResult> {
   const expected = parsed.expectedStatus;
   return db.transaction(async (tx) => {
@@ -488,6 +551,7 @@ async function updateOpsTaskStatusIfStillHeld(
       message: safeEventDayText(`Task "${updatedTask.title}" moved from ${fromStatus} to ${parsed.status}.`, 500),
       createdBy: actorUserId,
     });
+    await recordTickCopy(tx, joined.event, updatedTask, completion.id, { fromStatus, toStatus: parsed.status }, actorUserId, changeActor);
 
     return {
       task: serializeOpsTask(updatedTask),
@@ -502,6 +566,7 @@ export async function updateOpsTaskStatus(
   input: UpdateOpsTaskStatusInput & {
     readonly opsTaskId: string;
     readonly actorUserId: string | null;
+    readonly changeActor?: EventDayChangeActor;
   },
 ): Promise<UpdateOpsTaskStatusResult> {
   const parsed = UpdateOpsTaskStatusInputSchema.parse({
@@ -520,7 +585,7 @@ export async function updateOpsTaskStatus(
   }
 
   if (parsed.expectedStatus !== undefined) {
-    return updateOpsTaskStatusIfStillHeld(db, joined, { ...parsed, expectedStatus: parsed.expectedStatus }, input.actorUserId);
+    return updateOpsTaskStatusIfStillHeld(db, joined, { ...parsed, expectedStatus: parsed.expectedStatus }, input.actorUserId, input.changeActor);
   }
 
   const transition = resolveTaskStatusTransition(serializeOpsTask(joined.task).status, parsed.status);
@@ -567,6 +632,8 @@ export async function updateOpsTaskStatus(
       createdBy: input.actorUserId,
     });
 
+    await recordTickCopy(tx, joined.event, updatedTask, completion.id, transition, input.actorUserId, input.changeActor);
+
     return {
       task: serializeOpsTask(updatedTask),
       completionEvent: serializeCompletionEvent(completion),
@@ -576,8 +643,8 @@ export async function updateOpsTaskStatus(
 }
 
 /**
- * Who a logged issue reaches: the route records it as a plan change addressed
- * to these roles, which raises one notification per role. The event-day board
+ * Who a logged issue reaches: createEventDayIssue records it as a plan change
+ * addressed to these roles, which raises one notification per role. The event-day board
  * tells the person logging it exactly this ("Staff and hallkeepers are
  * notified."), so changing the list means changing that sentence too
  * (web/src/pages/EventDayOpsPage.tsx). Who else should hear about an urgent
@@ -590,6 +657,7 @@ export async function createEventDayIssue(
   input: CreateEventDayIssueInput & {
     readonly eventId: string;
     readonly actorUserId: string | null;
+    readonly changeActor?: EventDayChangeActor;
   },
 ): Promise<EventDayIssue> {
   const parsed = CreateEventDayIssueInputSchema.parse({
@@ -602,6 +670,13 @@ export async function createEventDayIssue(
   });
 
   return db.transaction(async (tx) => {
+    // The event first (FOR KEY SHARE), the house order an erasure keeps
+    // (people-erasure.ts): this waits on an erasure of the event's person
+    // rather than meeting it, and holds the event until the issue and its
+    // change-feed copy commit together.
+    const [event] = await tx.select({ id: events.id, venueId: events.venueId }).from(events)
+      .where(eq(events.id, input.eventId)).for("key share");
+    if (event === undefined) throw new Error("The event-day issue's event no longer exists.");
     const [created] = await tx.insert(eventDayIssues).values({
       eventId: input.eventId,
       phaseId: parsed.phaseId ?? null,
@@ -625,7 +700,27 @@ export async function createEventDayIssue(
       createdBy: input.actorUserId,
     });
 
-    return serializeIssue(created);
+    const issue = serializeIssue(created);
+    if (input.changeActor !== undefined) {
+      await recordEventPlanChange(tx, {
+        eventId: event.id,
+        venueId: event.venueId,
+        actorUserId: input.actorUserId,
+        actorRole: input.changeActor.actorRole,
+        actorLabel: feedActorLabel(input.changeActor.actorLabel),
+        sourceKind: "ops_issue",
+        sourceId: issue.id,
+        title: "Event-day issue logged",
+        summary: boundedLifecycleSummary(`${issue.title}: ${issue.detail}`),
+        affectedSurfaces: ["ops_tasks", "service_notes"],
+        audienceRoles: [...EVENT_DAY_ISSUE_AUDIENCE],
+        riskLevel: issue.severity === "urgent" ? "blocker" : issue.severity,
+        requiresHallkeeperAcknowledgement: false,
+        actionPath: `/ops/events/${event.id}`,
+      });
+    }
+
+    return issue;
   });
 }
 
