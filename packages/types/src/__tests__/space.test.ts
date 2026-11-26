@@ -528,7 +528,7 @@ describe("Trades Hall room constants", () => {
   });
 
   it("Grand Hall has its laser-scanned dimensions and clear height", () => {
-    // Blake, 11 November 2026: "The measured 21.14 x 10.59 m"; the height is
+    // Blake's decision, 11 November 2026: the measured size; the height is
     // the clear 6.7 m to the coffered ceiling, never the dome's.
     expect(TRADES_HALL_GRAND_HALL_DIMENSIONS).toEqual({ width: 21.14, length: 10.59, height: 6.7 });
   });

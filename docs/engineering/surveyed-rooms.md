@@ -171,10 +171,11 @@ drawn, not for one pass.
 - **Failing to fetch the code.** The same failure, with the reason kept as "the room's code
   (import): ...". The lazy component is mounted only after the seam's own request for the code
   has come back with it, so a failed download can neither suspend the scene without end nor throw
-  into it. A failed request is not remembered: the next room asks again. One case comes first:
-  the page takes one reload for a chunk that will not load (`route-error-boundary.tsx`, for a
-  build replaced by a deploy), and Vite's import helper then resolves with nothing. That too is
-  treated as a failure, never as code to mount.
+  into it. A failed request is not remembered: the next room asks again. A chunk that will not
+  load rejects: the page's listener never prevents Vite's default (`route-error-boundary.tsx`),
+  and its one reload, for a build replaced by a deploy, follows only once the app's own server
+  has answered. An import that resolves with nothing is still treated as a failure, never as
+  code to mount.
 - **Surround, fog, camera response.** A surveyed room stands as the Grand Hall does: the dark
   surround (`#120e0b`), no fog, and the Neutral tone curve that leaves photographs as taken
   (`CaptureToneMapping`'s `photographedRoom`; under the planner's default film curve they would be
