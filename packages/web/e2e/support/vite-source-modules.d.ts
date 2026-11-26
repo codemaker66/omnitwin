@@ -9,3 +9,5 @@ declare module "/src/stores/*";
 declare module "/src/components/editor/*";
 // The planner's commands and the lines it reads a held note by (planner-held-notes).
 declare module "/src/lib/*";
+// The Grand Assembly's recall store, for the opening's timeline (grand-assembly).
+declare module "/src/floor/*";
