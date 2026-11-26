@@ -412,8 +412,9 @@ function OnboardRedirect(): ReactElement {
   return <Navigate to={`/register${location.search}`} replace />;
 }
 
-// A stale chunk's preload failing after a deploy reloads the page once
-// (route-error-boundary.tsx); the route boundary below takes the rest.
+// A stale chunk's preload failing after a deploy reloads the page once, after
+// the app's own server has answered (route-error-boundary.tsx). The import
+// itself rejects, and the route boundary below takes the rest.
 if (typeof window !== "undefined") installStaleChunkReload(window);
 
 // Every route under one root whose error boundary shows the recovery screen
