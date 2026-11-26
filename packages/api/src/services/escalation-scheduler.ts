@@ -1,7 +1,9 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import { requests } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { inOwnScope } from "../observability/sentry.js";
 import { quietHoursEndAfter } from "./escalation-clock.js";
 import { readOperatingSettings } from "./venue-operating-settings.js";
 import { UNOWNED_ESCALATING_STATES, runEscalationEmailPass, runRequestEscalationPass, type EscalatedRequest } from "./requests.js";
@@ -110,6 +112,15 @@ function defaultSetTimer(callback: () => void, ms: number): unknown {
 
 export class EscalationScheduler {
   readonly #deps: EscalationSchedulerDeps;
+  /**
+   * The async context the scheduler was built in: start-up, with no request
+   * (diary-live.ts builds it as the server registers). Every wake (start(),
+   * poke(), the timer) enters it, so a poke made inside a request lends that
+   * request's context (where Sentry keeps the request's URL, headers, route
+   * and trace) to neither the plan, its database reads, the timer it arms nor
+   * any pass or plan after (T-764).
+   */
+  readonly #inOwnContext = AsyncLocalStorage.snapshot();
   #timer: unknown = null;
   #running = false;
   #stopped = false;
@@ -122,7 +133,14 @@ export class EscalationScheduler {
   /** Plans from the database and sleeps until the first due instant. */
   start(): void {
     this.#stopped = false;
-    void this.#plan();
+    this.#asOwnWork(() => this.#plan());
+  }
+
+  /** Runs one wake as the sweep's own: in the start-up context, then in a
+   *  Sentry scope and trace of its own, so neither a poker's request nor an
+   *  earlier pass lends it anything (#487's review). */
+  #asOwnWork(work: () => Promise<void>): void {
+    this.#inOwnContext(() => { void inOwnScope(work); });
   }
 
   #isStopped(): boolean {
@@ -138,7 +156,7 @@ export class EscalationScheduler {
    *  During a run the plan that follows the run reads the new state anyway. */
   poke(): void {
     if (this.#stopped || this.#running) return;
-    void this.#plan();
+    this.#asOwnWork(() => this.#plan());
   }
 
   #clearTimer(): void {
@@ -164,7 +182,7 @@ export class EscalationScheduler {
     const sleep = sleepFor(wake, now());
     this.#deps.logger?.debug({ event: "escalation.scheduled", wakeAt: wake === null ? null : new Date(wake).toISOString(), sleepMs: sleep }, "escalation.scheduled");
     if (sleep === null) return;
-    this.#timer = (this.#deps.setTimer ?? defaultSetTimer)(() => { void this.#fire(); }, sleep);
+    this.#timer = (this.#deps.setTimer ?? defaultSetTimer)(() => { this.#asOwnWork(() => this.#fire()); }, sleep);
   }
 
   async #fire(): Promise<void> {

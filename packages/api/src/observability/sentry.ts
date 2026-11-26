@@ -1,5 +1,5 @@
 import type { FastifyRequest } from "fastify";
-import type { NodeOptions, fastifyIntegration } from "@sentry/node";
+import type { NodeOptions, fastifyIntegration, startNewTrace, withIsolationScope } from "@sentry/node";
 import type { Env } from "../env.js";
 import { scrubApiSentryEvent } from "./health-redaction.js";
 import { requestUrlOf, scrubBreadcrumb, scrubErrorEvent, scrubTransaction, type ScrubbableTransaction } from "./redact.js";
@@ -158,6 +158,15 @@ export function withOneCapturePath(
     : integration));
 }
 
+/** The two calls `inOwnScope` makes, on the SDK initSentry started. */
+interface ScopeFork {
+  readonly withIsolationScope: typeof withIsolationScope;
+  readonly startNewTrace: typeof startNewTrace;
+}
+
+/** The SDK once initSentry has started it; undefined while SENTRY_DSN is unset. */
+let started: ScopeFork | undefined;
+
 /**
  * Initialise the Sentry Node SDK if SENTRY_DSN is configured.
  * Safe to call with `env.SENTRY_DSN === undefined` — no-op.
@@ -170,6 +179,36 @@ export async function initSentry(env: SentryOptionsEnv): Promise<void> {
   const Sentry = await import("@sentry/node");
 
   Sentry.init({ ...buildSentryOptions(env), integrations: withOneCapturePath(Sentry.fastifyIntegration) });
+  started = Sentry;
+}
+
+/**
+ * Runs work that belongs to no request (an escalation pass) in a Sentry
+ * scope and a trace of its own, as the SDK gives each request: a fork of the
+ * isolation scope, then a trace (@sentry/core 10.60
+ * integrations/http/server-subscription.js). Outside a request all work
+ * shares the start-up scope and its one trace for the life of the process,
+ * so without this one pass's breadcrumbs (the URLs of its provider calls)
+ * reach a later pass's errors, and every such error is on one trace (#487's
+ * review, T-764).
+ *
+ * The fork is of the isolation scope current where this is called: the
+ * escalation scheduler calls it from its start-up snapshot, so each pass
+ * forks start-up's scope, never a request's or the pass before. The fork
+ * keeps what start-up set on that scope (tags, user, context: none today)
+ * and drops its breadcrumbs; what the work sets there (a tag, a user, a
+ * context) stays on the work's own events. Release and environment come
+ * from the client's options and are on every event either way. With
+ * SENTRY_DSN unset the SDK is never imported and the work runs as it is, in
+ * the caller's context.
+ */
+export function inOwnScope<T>(work: () => T): T {
+  const sdk = started;
+  if (sdk === undefined) return work();
+  return sdk.withIsolationScope((scope) => {
+    scope.clearBreadcrumbs();
+    return sdk.startNewTrace(work);
+  });
 }
 
 /**
