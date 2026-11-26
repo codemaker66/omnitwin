@@ -251,7 +251,11 @@ const VIEWPORTS: readonly ViewportSpec[] = [
  *
  * Measured floor: with the canvas out of the layer tree, animations settled
  * and the webfonts held back, three consecutive comparison runs of all twelve
- * baselines produced ZERO differing pixels. There is no noise to absorb.
+ * baselines produced ZERO differing pixels. On the CI runner (T-758, 26
+ * November 2026), three recorder runs that rewrite any image whose bytes
+ * differ left all twelve untouched, and the rooms images it was made to redraw
+ * that day matched the ones it recorded on 22 November byte for byte. There is
+ * no noise to absorb.
  *
  * Why not the ratio this file used to carry (`maxDiffPixelRatio: 0.0005`, 648
  * pixels at 1440×900 and 164 at 390×844 and 844×390): it let a changed figure
