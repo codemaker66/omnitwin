@@ -4,6 +4,7 @@ import { TRADES_HALL_GRAND_HALL_DIMENSIONS, type Space } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import { PlannerScene } from "../components/editor/PlannerScene.js";
 import { useEditorStore } from "../stores/editor-store.js";
+import { openLayoutEventKind } from "../lib/event-kind-record.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { useHallViewStore } from "../stores/hall-view-store.js";
@@ -321,6 +322,9 @@ export function PlannerLabPage(): ReactElement {
     // The lab answers for its made-up venue, which no API could: its other rooms are Trades Hall's.
     if (otherRoom !== null) rememberTradesHallVenue(otherRoom.venueId, true);
     useEditorStore.setState({ space: otherRoom ?? LAB_SPACE, configId: "planner-lab" });
+    // The first screen asks only a layout whose record has been read, as the page's own load reads it. The lab's
+    // made-up layout is read as a guest's new draft.
+    openLayoutEventKind({ configId: "planner-lab", isPublicPreview: true, search, metadata: null, floorEmptyAtOpen: usePlacementStore.getState().placedItems.length === 0 });
     // The drawn hall, not a capture: production keeps captures off.
     useCockpitStore.setState({ layerMode: "mesh" });
     // The room the planner sizes from the Grand Hall's geometry (pinned equal
