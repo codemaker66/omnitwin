@@ -81,8 +81,8 @@ import { expectedRoomLine } from "./support/twin-hud-text.js";
 // the shell's copy modules (room-selector-copy.ts, room-dossier-copy.ts).
 // Those hold the panels' words apart from the components because a component
 // imports its stylesheet, and Playwright's node-side transform cannot load
-// CSS. A room's figures line is rebuilt without the panel's formatter
-// (support/twin-hud-text.ts), so the two cannot agree by being the same code.
+// CSS. A room's figures line is rebuilt without the panel's formatter,
+// sharing only lookUpRoom and metres() with it (support/twin-hud-text.ts).
 // ---------------------------------------------------------------------------
 
 /** The validated viewpoint in the one room the venue publishes in sections. */

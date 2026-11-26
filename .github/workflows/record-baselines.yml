@@ -112,7 +112,10 @@ jobs:
           # it was to delete the file first. "all" takes each screenshot afresh
           # and rewrites the file whenever its bytes differ from the stored one;
           # an image the runner draws identically is left untouched, so the
-          # commit below still holds only images that really changed.
+          # commit below still holds only images that really changed. It holds
+          # for every case named, in every spec: a spec with a looser tolerance
+          # (the 0.02-ratio visual suites) also gets each image whose bytes
+          # moved within it, and those are reviewed like any other.
           xvfb-run --auto-servernum pnpm exec playwright test "${cases[@]}" --update-snapshots=all --reporter=line
 
       - name: Commit the changed baselines

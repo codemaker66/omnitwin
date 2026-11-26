@@ -25,13 +25,24 @@ import {
 // only proof of a figure or a word. Every figure and word the baselines show is
 // asserted here as DOM text, built from the source the UI renders.
 //
-// WHAT "TEXT" MEANS HERE. The text nodes inside an element that are not under
-// an aria-hidden subtree, joined as textContent joins them, with runs of ASCII
-// whitespace collapsed. aria-hidden is how this HUD marks its decorative glyphs
-// (the Surface arrow, the close cross, the dossier's fold sign), and a glyph is
-// neither a word nor a figure. U+00A0 is NOT collapsed: the room lines hold a
-// figure to its unit with it, and a line that lost it would wrap inside a
+// WHAT "TEXT" MEANS HERE. The text nodes inside an element, joined as
+// textContent joins them, with runs of ASCII whitespace collapsed, leaving out
+// only decorative glyphs: a text node under an aria-hidden subtree that holds
+// no letter and no digit (the Surface arrow, the close cross, the dossier's
+// fold sign). aria-hidden text that holds a letter or a digit is read like any
+// other. aria-hidden says what a screen reader hears, not what is drawn: the
+// measure tool draws its headline figure aria-hidden so that it is not heard
+// twice, and it is still a figure. U+00A0 is NOT collapsed: the room lines hold
+// a figure to its unit with it, and a line that lost it would wrap inside a
 // figure, so it is compared byte for byte.
+//
+// WHAT THE SWEEP BELOW CANNOT READ, and what stands guard instead. Text that is
+// not a text node in the light DOM: CSS generated content (::before and ::after
+// are checked, and any that holds a letter or a digit fails the sweep; ::marker
+// and counters in list markers are not checked), text inside a shadow root or an
+// iframe (the sweep fails if the page holds either), form-control values and
+// placeholders (no control is open in these states), canvas text (every canvas
+// is hidden in twin-visual) and text drawn inside images.
 // ---------------------------------------------------------------------------
 
 /** U+00A0, written as an escape: the room list holds each floor together with it. */
@@ -43,10 +54,14 @@ const TIMES = "\u00d7";
 const EM_DASH = "\u2014";
 
 /**
- * A room's line in the Rooms panel, rebuilt from venue truth through
- * lookUpRoom and not through the formatter the panel uses, so the two cannot
- * agree by being the same code: the two capacities, then each floor the room
- * shows a size for. A room with no size on record is its capacities alone.
+ * A room's line in the Rooms panel, rebuilt from venue truth without the
+ * formatter the panel uses (formatRoomComparison): the two capacities, then
+ * each floor the room shows a size for. A room with no size on record is its
+ * capacities alone. It shares two helpers with the panel, lookUpRoom (the
+ * door to venue truth) and metres() (the rounding), and nothing else, so the
+ * composition (order, separators, no-break spaces, which floors) cannot pass
+ * by being the same code. metres() is pinned by literal outputs in
+ * twin-rooms.test.ts.
  */
 export function expectedRoomLine(slug: string): string {
   const nodeId = Object.keys(VERIFIED_ROOM_NODES).find((id) => VERIFIED_ROOM_NODES[id] === slug);
@@ -113,8 +128,12 @@ function readTextOf(elements: Element[]): string[] {
     let text = "";
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-      if (node.parentElement?.closest('[aria-hidden="true"]') !== null) continue;
-      text += node.nodeValue ?? "";
+      const value = node.nodeValue ?? "";
+      // A decorative glyph: hidden from screen readers AND holding no letter
+      // and no digit. aria-hidden text that holds either is still read.
+      const hidden = (node.parentElement?.closest('[aria-hidden="true"]') ?? null) !== null;
+      if (hidden && !/[\p{L}\p{N}]/u.test(value)) continue;
+      text += value;
     }
     return text.replace(/[ \t\n\r\f]+/gu, " ").trim();
   });
@@ -127,11 +146,14 @@ function readTextOf(elements: Element[]): string[] {
  * complete only on the day it is written: the next label added to the HUD
  * would be pinned by the screenshot alone, which is the exact gap this closes.
  * So after the surfaces are asserted, `expectNothingElse` walks every text node
- * the page draws and fails on any that no assertion covered. Drawn means: not
- * under aria-hidden, rendered (checkVisibility with opacity and visibility),
- * and not clipped to a 1 px box the way `.vv-sr-only` hides screen-reader
- * text. A row scrolled below a panel's fold is still drawn, and still has to
- * be asserted, although no screenshot of the frame can show it.
+ * the page draws and fails on any that no assertion covered. Drawn means:
+ * rendered (checkVisibility with opacity and visibility), not inside
+ * `.vv-sr-only` (global.css's screen-reader-only class, the HUD's only way of
+ * hiding text from sight), and not a decorative glyph as defined at the top of
+ * this file. A row scrolled below a panel's fold is still drawn, and still has
+ * to be asserted, although no screenshot of the frame can show it. The sweep
+ * also fails on generated content that holds a letter or a digit, and on any
+ * shadow root or iframe, whose text it could not read.
  */
 export class HudTextLedger {
   private readonly covered: ElementHandle[] = [];
@@ -150,31 +172,43 @@ export class HudTextLedger {
   async expectNothingElse(): Promise<void> {
     const uncovered = await this.page.evaluate((owners: Node[]) => {
       const asserted = new Set<Node>(owners);
-      // `.vv-sr-only` (global.css) is a 1 px box that hides its overflow; a
-      // drawn label is never that small.
-      const clippedAway = (element: Element): boolean => {
-        for (let at: Element | null = element; at !== null; at = at.parentElement) {
-          const box = at.getBoundingClientRect();
-          const style = getComputedStyle(at);
-          const hides = style.overflowX === "hidden" || style.overflowY === "hidden";
-          if ((box.width <= 1 || box.height <= 1) && hides) return true;
-        }
-        return false;
-      };
+      const meaningful = /[\p{L}\p{N}]/u;
+      const drawn = (element: Element): boolean =>
+        element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+      const name = (element: Element): string =>
+        [element.tagName.toLowerCase(), ...element.classList].join(".");
       const found: string[] = [];
+
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
         const text = (node.nodeValue ?? "").replace(/[ \t\n\r\f]+/gu, " ").trim();
         const parent = node.parentElement;
         if (text === "" || parent === null) continue;
-        if (parent.closest('[aria-hidden="true"], script, style, noscript, template') !== null) continue;
-        if (!parent.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
-        if (clippedAway(parent)) continue;
+        if (parent.closest("script, style, noscript, template") !== null) continue;
+        // Decorative glyphs only; aria-hidden text with a letter or digit counts.
+        if (parent.closest('[aria-hidden="true"]') !== null && !meaningful.test(text)) continue;
+        // Screen-reader text (global.css). The class, not a size heuristic: a
+        // box's clip does not reach a positioned descendant it does not contain.
+        if (parent.closest(".vv-sr-only") !== null) continue;
+        if (!drawn(parent)) continue;
         let owned = false;
         for (let at: Element | null = parent; at !== null && !owned; at = at.parentElement) {
           owned = asserted.has(at);
         }
         if (!owned) found.push(text);
+      }
+
+      // Drawn text that is not a light-DOM text node, which the walk cannot read.
+      for (const element of document.body.querySelectorAll("*")) {
+        if (element.shadowRoot !== null) found.push(`a shadow root on ${name(element)}`);
+        if (element.tagName === "IFRAME") found.push(`an iframe: ${name(element)}`);
+        if (!drawn(element)) continue;
+        for (const pseudo of ["::before", "::after"]) {
+          const content = getComputedStyle(element, pseudo).content.replace(/url\([^)]*\)/gu, "");
+          if (content !== "none" && content !== "normal" && meaningful.test(content)) {
+            found.push(`${pseudo} content on ${name(element)}: ${content}`);
+          }
+        }
       }
       return found;
     }, this.covered);
