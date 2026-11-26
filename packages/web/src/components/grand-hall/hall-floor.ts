@@ -19,6 +19,7 @@ import { Color, DataTexture, LinearFilter, LinearMipmapLinearFilter, RedFormat, 
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { dFdx, dFdy, float, floor, fract, fwidth, hash, mix, positionWorld, smoothstep, texture, vec2, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
+import { HallFloorLights } from "./hall-floor-lights.js";
 
 /** Width of one oak strip, metres (seam spacing measured on the survey's floor image). */
 export const FLOOR_BOARD_WIDTH = 0.073;
@@ -272,13 +273,17 @@ export function oakFloorNodes(): OakFloorNodes {
 /**
  * The floor's material: oak lit by `irradiance` (the hall's baked light for the
  * current mood), glossy enough to reflect the room's environment and the
- * chandeliers' highlights.
+ * chandeliers' highlights. Of the scene's lights it takes all but the rig's
+ * daylight lamp (hall-floor-lights.ts).
  */
 export function createOakFloorMaterial(irradiance: Node<"vec3">, chandeliersAway: Node<"float"> | null = null): MeshStandardNodeMaterial {
   const { albedo, roughness } = oakFloorNodes();
   const material = new MeshStandardNodeMaterial({ metalness: 0, fog: false });
   // Diffuse light is baked: the floor's real-time lights add only reflections.
   material.colorNode = vec3(0);
+  // And not the daylight lamp's: its mirror image in the varnish is a patch of glare where the windows' own
+  // reflection already is. The chandeliers stay, and so does the sun under the real sky, with its shadows.
+  material.lightsNode = new HallFloorLights();
   material.emissiveNode = albedo.mul(irradiance);
   // Where the chandeliers are not drawn (`chandeliersAway` 1: in Plan, and in
   // the overview from high up), their sharp reflections straight below them

@@ -1,11 +1,12 @@
 import { act } from "@testing-library/react";
 import { advance } from "@react-three/fiber";
-import { DirectionalLight, PointLight, type Object3D } from "three";
+import { DirectionalLight, Light, PointLight, type Object3D } from "three";
 import { afterEach, describe, expect, it } from "vitest";
 import { mountInStubRoot, type StubRoot } from "../../__tests__/stub-r3f-root.js";
 import { reflectionsOutdated } from "../GrandHallModel.js";
 import { HallLightRig } from "../HallLightRig.js";
 import { FULL_HALL_FINISH } from "../hall-finish.js";
+import { HALL_DAYLIGHT_LAMP, floorLightsOf } from "../hall-floor-lights.js";
 import { HALL_MOODS } from "../hall-mood.js";
 import { hallSkyAt } from "../hall-sky.js";
 import { clearHallSky, publishHallSky } from "../hall-sky-runtime.js";
@@ -71,6 +72,21 @@ describe("the hall's light rig under the real sky", () => {
     act(() => { publishHallSky(sky, false); });
     frame();
     expect(daylight.intensity).toBeCloseTo(sky.mood.daylightIntensity * 1.4, 6);
+  });
+});
+
+// The oak floor takes every light of the scene but this one, which it knows by its name (hall-floor-lights.ts).
+describe("the rig's daylight lamp", () => {
+  it("carries the name the floor leaves out, and is the only one of the rig's lights that does", () => {
+    mounted = mountInStubRoot(<HallLightRig mood="daylight" finish={FULL_HALL_FINISH} standInEnvironment={false} />);
+    const rig = mounted.scene.getObjectByName("grand-hall-lights");
+    const all = (rig?.children ?? []).filter((child): child is Light => child instanceof Light);
+    const { daylight } = rigLights(mounted.scene);
+    expect(all.length).toBeGreaterThan(1);
+    expect(daylight.name).toBe(HALL_DAYLIGHT_LAMP);
+    const kept = floorLightsOf(all);
+    expect(kept).toHaveLength(all.length - 1);
+    expect(kept.includes(daylight)).toBe(false);
   });
 });
 

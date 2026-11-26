@@ -9,8 +9,9 @@ import {
   floorHash,
   floorSeedInputs,
 } from "../hall-floor.js";
+import { HallFloorLights } from "../hall-floor-lights.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH } from "../hall-spec.js";
-import { vec3 } from "three/tsl";
+import { float, vec3 } from "three/tsl";
 
 describe("the drawn oak floor's distance fades", () => {
   it("lets the seams go before the boards' own tones, so the floor never changes pattern part way across", () => {
@@ -59,6 +60,15 @@ function coincidentJoints(rows: readonly number[]): number {
   }
   return coincident / Math.max(1, joints);
 }
+
+// The rig's daylight lamp stands for five windows. In the floor its mirror image was a patch of glare, and the
+// windows are already in the floor's reflections at their real size (hall-floor-lights.ts, T-744).
+describe("the oak floor's lights", () => {
+  it("are the floor's own: the scene's, without the rig's daylight lamp", () => {
+    expect(createOakFloorMaterial(vec3(1)).lightsNode).toBeInstanceOf(HallFloorLights);
+    expect(createOakFloorMaterial(vec3(1), float(1)).lightsNode).toBeInstanceOf(HallFloorLights);
+  });
+});
 
 describe("the oak floor's hash seeds", () => {
   it("reads a seed as WGSL's u32 does: a negative one as zero and a fraction dropped", () => {

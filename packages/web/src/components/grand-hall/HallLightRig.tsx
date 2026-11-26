@@ -19,6 +19,7 @@ import { HallEnvironment } from "./HallEnvironment.js";
 import { HALL_CHANDELIERS } from "./hall-spec.js";
 import { CHANDELIER_POWER, chandelierScale } from "./hall-lighting-model.js";
 import { useHallFinish, type HallFinish } from "./hall-finish.js";
+import { HALL_DAYLIGHT_LAMP } from "./hall-floor-lights.js";
 import { hallSkyState } from "./hall-sky-runtime.js";
 
 export interface HallLightRigProps {
@@ -125,8 +126,9 @@ export function HallLightRig({ mood, moodSeconds = 1.6, finish, standInEnvironme
           distance={0}
         />
       )) : <hemisphereLight ref={fill} />}
-      {/* Aimed at the centre of the room, where its unadded target stays. */}
-      <directionalLight ref={daylight} position={[1.5, 6, -14]} />
+      {/* Aimed at the centre of the room, where its unadded target stays. Named: the oak floor takes every light
+          but this one (hall-floor-lights.ts). */}
+      <directionalLight ref={daylight} name={HALL_DAYLIGHT_LAMP} position={[1.5, 6, -14]} />
       {liveLight && standInEnvironment && <HallEnvironment mood={mood} />}
     </group>
   );
