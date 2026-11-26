@@ -1,3 +1,4 @@
+import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
 import { EscalationScheduler, MAX_SLEEP_MS, MIN_SLEEP_MS, sleepFor, soonest } from "../services/escalation-scheduler.js";
@@ -152,5 +153,73 @@ describe("the escalation scheduler", () => {
     h.scheduler.start();
     await settle();
     expect(h.timers.map((timer) => timer.ms)).toEqual([60_000]);
+  });
+});
+
+// The sweep works for the venue, not for the request that woke it (T-764):
+// a poke made inside a request must not lend that request's async context
+// (where Sentry keeps the request's scope) to the plan, the timer it arms or
+// the pass. escalation-scheduler-context.test.ts shows it with the real SDK.
+describe("the escalation scheduler's own context", () => {
+  /** Stands for a request's context. */
+  const requestContext = new AsyncLocalStorage<string>();
+
+  function contextHarness(plans: readonly (number | null)[]): { scheduler: EscalationScheduler; seen: (readonly [string, string | undefined])[]; fire: () => void } {
+    const seen: (readonly [string, string | undefined])[] = [];
+    const callbacks: (() => void)[] = [];
+    const queue = [...plans];
+    // A pass that escalated something, so the announcement runs (as the
+    // harness above: only that the list is non-empty matters).
+    const run = vi.fn();
+    run.mockImplementation(() => {
+      seen.push(["pass", requestContext.getStore()]);
+      return Promise.resolve([{ request: { id: "r-1" } }]);
+    });
+    const scheduler = new EscalationScheduler({
+      db,
+      onEscalated: () => { seen.push(["announce", requestContext.getStore()]); },
+      now: () => T0,
+      plan: () => {
+        seen.push(["plan", requestContext.getStore()]);
+        return Promise.resolve(queue.shift() ?? null);
+      },
+      run,
+      // As Node's own setTimeout: the callback runs in the context it was armed in.
+      setTimer: (callback) => {
+        seen.push(["timer armed", requestContext.getStore()]);
+        callbacks.push(AsyncResource.bind(callback));
+        return callbacks.length;
+      },
+      clearTimer: () => undefined,
+    });
+    return { scheduler, seen, fire: () => { callbacks.shift()?.(); } };
+  }
+
+  it("a poke from inside a request lends its context to neither the plan, the timer it arms nor the pass", async () => {
+    const h = contextHarness([null, T0 + 1_000, null]);
+    h.scheduler.start();
+    await settle();
+    requestContext.run("request r-1", () => { h.scheduler.poke(); });
+    await settle();
+    h.fire();
+    await settle();
+    expect(h.seen).toEqual([
+      ["plan", undefined],
+      ["plan", undefined],
+      ["timer armed", undefined],
+      ["pass", undefined],
+      ["announce", undefined],
+      ["plan", undefined],
+    ]);
+  });
+
+  it("a start from inside a request keeps out of its context too", async () => {
+    const h = contextHarness([T0 + 1_000]);
+    requestContext.run("request r-2", () => { h.scheduler.start(); });
+    await settle();
+    h.fire();
+    await settle();
+    expect(h.seen.filter(([, store]) => store !== undefined)).toEqual([]);
+    expect(h.seen.map(([where]) => where)).toEqual(["plan", "timer armed", "pass", "announce", "plan"]);
   });
 });

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import { requests } from "../db/schema.js";
@@ -110,6 +111,15 @@ function defaultSetTimer(callback: () => void, ms: number): unknown {
 
 export class EscalationScheduler {
   readonly #deps: EscalationSchedulerDeps;
+  /**
+   * The async context the scheduler was built in: start-up, with no request
+   * (diary-live.ts builds it as the server registers). start() and poke()
+   * enter it, so a poke made inside a request lends that request's context
+   * (where Sentry keeps the request's URL, headers, route and trace) to
+   * neither the plan, its database reads, the timer it arms nor any pass or
+   * plan after; a timer runs in the context it was armed in (T-764).
+   */
+  readonly #inOwnContext = AsyncLocalStorage.snapshot();
   #timer: unknown = null;
   #running = false;
   #stopped = false;
@@ -122,7 +132,7 @@ export class EscalationScheduler {
   /** Plans from the database and sleeps until the first due instant. */
   start(): void {
     this.#stopped = false;
-    void this.#plan();
+    this.#inOwnContext(() => { void this.#plan(); });
   }
 
   #isStopped(): boolean {
@@ -138,7 +148,7 @@ export class EscalationScheduler {
    *  During a run the plan that follows the run reads the new state anyway. */
   poke(): void {
     if (this.#stopped || this.#running) return;
-    void this.#plan();
+    this.#inOwnContext(() => { void this.#plan(); });
   }
 
   #clearTimer(): void {
