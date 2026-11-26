@@ -14,6 +14,7 @@ import { opsHandoffRoutes } from "../routes/ops-handoff.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 import { guestLeadLockKey } from "../services/guest-lead-lock.js";
 import { removeLapsedPieceNotes } from "../services/piece-note-retention.js";
+import { createEventDayIssue, updateOpsTaskStatus } from "../services/event-day-ops.js";
 import { approveSnapshot, createSnapshot } from "../services/sheet-snapshot.js";
 import { eraseLockedPerson } from "../services/people-erasure.js";
 import { lockPerson } from "../services/people-records.js";
@@ -1434,11 +1435,17 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
         RETURN NEW;
       END
       $fn$`);
-    await f.pool.query(`CREATE TRIGGER ${name} BEFORE INSERT ON event_plan_changes FOR EACH ROW EXECUTE FUNCTION ${name}()`);
-    return async () => {
+    const drop = async (): Promise<void> => {
       await f.pool.query(`DROP TRIGGER IF EXISTS ${name} ON event_plan_changes`);
       await f.pool.query(`DROP FUNCTION IF EXISTS ${name}()`);
     };
+    try {
+      await f.pool.query(`CREATE TRIGGER ${name} BEFORE INSERT ON event_plan_changes FOR EACH ROW EXECUTE FUNCTION ${name}()`);
+    } catch (error) {
+      await drop();
+      throw error;
+    }
+    return drop;
   }
 
   /** Starts the erasure while a writer's change-feed copy is paused, and says
@@ -1497,8 +1504,8 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     } finally {
       await holder.query("ROLLBACK").catch(() => undefined);
       await Promise.allSettled(inFlight);
-      await holder.end();
-      await unpause?.();
+      // The trigger goes before the client, so a failing end() cannot leave it.
+      try { await unpause?.(); } finally { await holder.end(); }
     }
     expect(await value("SELECT summary AS value FROM event_plan_changes WHERE event_id = $1 AND source_kind = 'ops_task'", [hold.eventId]))
       .toBe("Task \"Erased's place cards\" moved from todo to in_progress.");
@@ -1542,14 +1549,86 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     } finally {
       await holder.query("ROLLBACK").catch(() => undefined);
       await Promise.allSettled(inFlight);
-      await holder.end();
-      await unpause?.();
+      // The trigger goes before the client, so a failing end() cannot leave it.
+      try { await unpause?.(); } finally { await holder.end(); }
     }
     expect(await value("SELECT row_to_json(i) AS value FROM (SELECT title, detail FROM event_day_issues WHERE event_id = $1) i", [hold.eventId]))
       .toEqual({ title: "Erased's cake is late", detail: "TEST ONLY Erased is waiting at the door" });
     expect(await value("SELECT summary AS value FROM event_plan_changes WHERE event_id = $1 AND source_kind = 'ops_issue'", [hold.eventId]))
       .toBe("Erased's cake is late: TEST ONLY Erased is waiting at the door");
     expect(await count("event_plan_notifications WHERE event_id = $1 AND body ILIKE '%Isla Logged%'", [hold.eventId])).toBe(0);
+  });
+
+  it("replays a queued tick beside her erasure: it waits on her event, and its copy quotes the task as the erasure left it", async () => {
+    const email = `isla.queued-${randomUUID().slice(0, 8)}@example.test`;
+    const person = await f.addPerson({ name: "Isla Queued", emails: [email] });
+    peopleIds.push(person);
+    leadEmails.push(email);
+    const asked = await enquiry({ email, contactId: person, name: "Isla Queued" });
+    const hold = await bound({ enquiryId: asked, kind: "hold", title: "TEST ONLY Isla's released hold" });
+    await f.pool.query("UPDATE bookings SET status = 'released' WHERE id = $1", [hold.id]);
+    const plan = await approvedPlan("TEST ONLY her plan", "TEST ONLY nothing to note");
+    await laidOutFrom(hold.eventId, plan);
+    const packed = await post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", { eventId: hold.eventId });
+    expect(packed.statusCode, packed.body).toBe(201);
+    const task = only((await f.pool.query<{ id: string }>(`SELECT t.id FROM ops_tasks t JOIN handoff_packs p ON p.id = t.handoff_pack_id
+      WHERE p.config_id = $1 AND t.status = 'todo' LIMIT 1`, [plan])).rows, "task").id;
+    await f.pool.query("UPDATE ops_tasks SET title = 'Isla Queued''s place cards' WHERE id = $1", [task]);
+    // Something holds her layout, so the erasure stops there holding her
+    // event; a tick the board queued while the task was still to do is then
+    // replayed (#418's path) and must wait on the event, so it reads the task,
+    // and quotes it, as the erasure left it.
+    if (PLATFORM_TARGET === undefined) throw new Error("No platform database");
+    const stopper = new Client({ connectionString: PLATFORM_TARGET });
+    await stopper.connect();
+    const inFlight: Promise<unknown>[] = [];
+    try {
+      await stopper.query("BEGIN");
+      await stopper.query("SELECT id FROM configurations WHERE id = $1 FOR SHARE", [plan]);
+      const erasing = kept(inFlight, post(`/people/${person}/erase`, "admin"));
+      await waitForLockWait("configurations");
+      const replaying = kept(inFlight, f.server.inject({ method: "PATCH", url: `/ops-tasks/${task}/status`,
+        headers: f.bearer("admin"), payload: { status: "in_progress", expectedStatus: "todo" } }));
+      await waitForLockWait("events", "for key share");
+      await stopper.query("COMMIT");
+      const erased = await erasing;
+      expect(erased.statusCode, erased.body).toBe(200);
+      const replayed = await replaying;
+      expect(replayed.statusCode, replayed.body).toBe(200);
+    } finally {
+      await stopper.query("ROLLBACK").catch(() => undefined);
+      await Promise.allSettled(inFlight);
+      await stopper.end();
+    }
+    expect(await value("SELECT row_to_json(t) AS value FROM (SELECT title, status FROM ops_tasks WHERE id = $1) t", [task]))
+      .toEqual({ title: "Erased's place cards", status: "in_progress" });
+    expect(await value("SELECT summary AS value FROM event_plan_changes WHERE event_id = $1 AND source_kind = 'ops_task'", [hold.eventId]))
+      .toBe("Task \"Erased's place cards\" moved from todo to in_progress.");
+    expect(await count("event_plan_notifications WHERE event_id = $1 AND body ILIKE '%Isla Queued%'", [hold.eventId])).toBe(0);
+  });
+
+  it("keeps a tick and a logged issue when the signed-in label is longer than the change feed holds: the copy's label is clipped", async () => {
+    const hold = await bound({ kind: "hold", title: "TEST ONLY a long-label event" });
+    const plan = await approvedPlan("TEST ONLY a long-label plan", "TEST ONLY nothing to note");
+    await laidOutFrom(hold.eventId, plan);
+    const packed = await post(`/ops/handoff-packs/from-configuration/${plan}`, "admin", { eventId: hold.eventId });
+    expect(packed.statusCode, packed.body).toBe(201);
+    const task = only((await f.pool.query<{ id: string }>(`SELECT t.id FROM ops_tasks t JOIN handoff_packs p ON p.id = t.handoff_pack_id
+      WHERE p.config_id = $1 AND t.status = 'todo' LIMIT 1`, [plan])).rows, "task").id;
+    // A sign-in email can run to 255 characters; the change feed's label holds 160.
+    const changeActor = { actorRole: "staff" as const, actorLabel: `${"a".repeat(170)}@example.test` };
+    const ticked = await updateOpsTaskStatus(f.db, { opsTaskId: task, status: "in_progress", actorUserId: f.users.admin, changeActor });
+    expect(ticked.completionEvent?.toStatus).toBe("in_progress");
+    const issue = await createEventDayIssue(f.db, { eventId: hold.eventId, title: "TEST ONLY a long-label issue",
+      detail: "TEST ONLY it is still logged", severity: "info", actorUserId: f.users.admin, changeActor });
+    expect(issue.title).toBe("TEST ONLY a long-label issue");
+    const labels = (await f.pool.query<{ kind: string; label: string }>(
+      "SELECT source_kind AS kind, actor_label AS label FROM event_plan_changes WHERE event_id = $1 ORDER BY source_kind", [hold.eventId])).rows;
+    expect(labels.map((row) => row.kind)).toEqual(["ops_issue", "ops_task"]);
+    for (const row of labels) {
+      expect(row.label.length).toBeLessThanOrEqual(160);
+      expect(row.label.startsWith("aaaa")).toBe(true);
+    }
   });
 
   it("acknowledges a change her erasure deletes: the acknowledgement waits on her event, then finds the change gone", async () => {

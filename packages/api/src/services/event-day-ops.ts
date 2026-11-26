@@ -47,6 +47,7 @@ import {
 import { getOpsHandoffPackBundle } from "./ops-compiler.js";
 import { newestHandoffPack } from "./newest-handoff-pack.js";
 import { recordEventPlanChange } from "./event-plan-lifecycle.js";
+import { clipped } from "./client-answer-notice.js";
 
 /**
  * Who the event's change feed names for a tick or a logged issue (the signed-in
@@ -61,6 +62,13 @@ import { recordEventPlanChange } from "./event-plan-lifecycle.js";
 export interface EventDayChangeActor {
   readonly actorRole: EventPlanAudienceRole;
   readonly actorLabel: string;
+}
+
+/** The change feed's label for who acted, within its 160 characters
+ *  (RecordEventPlanChangeInputSchema): a longer sign-in email is clipped, so
+ *  the tick or the issue never fails on the copy's label. */
+function feedActorLabel(label: string): string {
+  return clipped(label, 160);
 }
 
 /** A change-feed summary within the feed's 800-character bound. */
@@ -443,6 +451,37 @@ async function lastWriteMadeUnder(
     && last.idempotencyKey !== null && keys.includes(last.idempotencyKey);
 }
 
+/** A status write's change-feed copy, in the write's own transaction, quoting
+ *  the title as the write returned it after the event lock (EventDayChangeActor). */
+async function recordTickCopy(
+  tx: DatabaseOrTransaction,
+  event: EventRow,
+  updatedTask: OpsTaskRow,
+  completionId: string,
+  move: { readonly fromStatus: OpsTaskStatus; readonly toStatus: OpsTaskStatus },
+  actorUserId: string | null,
+  changeActor: EventDayChangeActor | undefined,
+): Promise<void> {
+  if (changeActor === undefined) return;
+  await recordEventPlanChange(tx, {
+    eventId: event.id,
+    venueId: event.venueId,
+    handoffPackId: updatedTask.handoffPackId,
+    actorUserId,
+    actorRole: changeActor.actorRole,
+    actorLabel: feedActorLabel(changeActor.actorLabel),
+    sourceKind: "ops_task",
+    sourceId: completionId,
+    title: "Hallkeeper task updated",
+    summary: boundedLifecycleSummary(`Task "${updatedTask.title}" moved from ${move.fromStatus} to ${move.toStatus}.`),
+    affectedSurfaces: ["ops_tasks"],
+    audienceRoles: ["staff", "hallkeeper"],
+    riskLevel: move.toStatus === "blocked" ? "blocker" : "info",
+    requiresHallkeeperAcknowledgement: false,
+    actionPath: `/ops/events/${event.id}`,
+  });
+}
+
 /**
  * A status the event-day board queued on the device and replays now, pressed
  * while the task held `expectedStatus` (#418): written only while the task
@@ -464,37 +503,6 @@ async function lastWriteMadeUnder(
  * gets its recorded answer; a refusal writes nothing: no completion event,
  * board line or recorded key.
  */
-/** A status write's change-feed copy, in the write's own transaction, quoting
- *  the title as the write returned it after the event lock (EventDayChangeActor). */
-async function recordTickCopy(
-  tx: DatabaseOrTransaction,
-  event: EventRow,
-  updatedTask: OpsTaskRow,
-  completionId: string,
-  move: { readonly fromStatus: OpsTaskStatus; readonly toStatus: OpsTaskStatus },
-  actorUserId: string | null,
-  changeActor: EventDayChangeActor | undefined,
-): Promise<void> {
-  if (changeActor === undefined) return;
-  await recordEventPlanChange(tx, {
-    eventId: event.id,
-    venueId: event.venueId,
-    handoffPackId: updatedTask.handoffPackId,
-    actorUserId,
-    actorRole: changeActor.actorRole,
-    actorLabel: changeActor.actorLabel,
-    sourceKind: "ops_task",
-    sourceId: completionId,
-    title: "Hallkeeper task updated",
-    summary: boundedLifecycleSummary(`Task "${updatedTask.title}" moved from ${move.fromStatus} to ${move.toStatus}.`),
-    affectedSurfaces: ["ops_tasks"],
-    audienceRoles: ["staff", "hallkeeper"],
-    riskLevel: move.toStatus === "blocked" ? "blocker" : "info",
-    requiresHallkeeperAcknowledgement: false,
-    actionPath: `/ops/events/${event.id}`,
-  });
-}
-
 async function updateOpsTaskStatusIfStillHeld(
   db: Database,
   joined: { readonly task: OpsTaskRow; readonly event: EventRow },
@@ -699,7 +707,7 @@ export async function createEventDayIssue(
         venueId: event.venueId,
         actorUserId: input.actorUserId,
         actorRole: input.changeActor.actorRole,
-        actorLabel: input.changeActor.actorLabel,
+        actorLabel: feedActorLabel(input.changeActor.actorLabel),
         sourceKind: "ops_issue",
         sourceId: issue.id,
         title: "Event-day issue logged",

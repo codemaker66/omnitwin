@@ -197,7 +197,8 @@ erasure deleted it. Each waits as long as the erasure, or a
 people rehearsal (up to its 150-second budget), holds the rows. A request kept waiting past the API's 30-second
 connection timeout loses its connection while its write still commits; trying it again is safe (a tick sent with its
 idempotency key is answered from the first, an acknowledgement returns the one already made, an issue update applies
-the same change again).
+the same change again), except for a logged issue: logging it again makes a second issue, with its own change-feed copy
+and notices, so look at the event's issues before logging it again.
 
 Then erase by hand what the booking or the contract does not need (section 3).
 

@@ -203,8 +203,11 @@ export async function eventDayEventRoutes(server: FastifyInstance, opts: { db: D
       if (lockConflictOf(err) !== null) return null;
       throw err;
     });
-    // An erasure of the event's person holds the event while it rewords the
-    // event's issues: one of the two is rolled back (people-erasure.ts).
+    // An erasure of the event's person does not fail it: the issue takes the
+    // event first, waits for the erasure and then is logged. This only guards a
+    // lock conflict PostgreSQL ends by rolling the issue back (none reaches it
+    // today); the board then keeps it to send again ("will sync when the
+    // connection returns"), as for a tick (#418).
     if (issue === null) return reply.status(409).send(RETRY_ANSWER);
 
     return reply.status(201).send({ data: EventDayIssueSchema.parse(issue) });
