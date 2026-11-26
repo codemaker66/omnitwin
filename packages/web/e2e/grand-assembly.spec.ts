@@ -91,9 +91,11 @@ async function watchOpenings(page: Page): Promise<void> {
     const note = (what: string, value: string | number | boolean | null): void => {
       if (last.has(what) && last.get(what) === value) return;
       last.set(what, value);
-      if (events.length < 400) events.push([Math.round(performance.now()), what, value]);
+      if (events.length < 1000) events.push([Math.round(performance.now()), what, value]);
     };
     window.__assemblyOpening = { events, note };
+    /** Long tasks have their own budget, so a slow renderer's cannot crowd the opening's steps out of the log. */
+    let longTasks = 0;
     let perf: Window["__venPerf"];
     Object.defineProperty(window, "__venPerf", {
       configurable: true,
@@ -115,7 +117,9 @@ async function watchOpenings(page: Page): Promise<void> {
     // The page's main thread held by one task for a quarter of a second or more (a shader compile, a long commit).
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
-        if (entry.duration >= 250 && events.length < 400) events.push([Math.round(entry.startTime), "longtask", Math.round(entry.duration)]);
+        if (entry.duration < 250 || longTasks >= 200) continue;
+        longTasks += 1;
+        events.push([Math.round(entry.startTime), "longtask", Math.round(entry.duration)]);
       }
     }).observe({ type: "longtask", buffered: true });
   });
@@ -284,6 +288,8 @@ test.describe("Grand Assembly behind ?assembly=accio", () => {
       }).observe(document, { childList: true, subtree: true });
     });
     await page.reload({ waitUntil: "domcontentloaded" });
+    // The reloaded page keeps a log of its own opening.
+    await watchAssemblyRecall(page);
     await page.waitForSelector("canvas", { timeout: 30_000 });
     // Present names the replay once the Assembly is on its stage over the layout: the planner is there to watch.
     const present = page.getByRole("button", { name: "Present: watch the room set itself" });
