@@ -381,7 +381,11 @@ DECLARE
   -- and run with EXECUTE ... USING for the proposals of one record, at its
   -- venue ($1): an enquiry's ($2, by enquiry_id) or a deal's ($3, by
   -- opportunity_id), with sent_proposal_statuses as $4. It returns the events
-  -- reached, each once and in order, or '{}'.
+  -- reached, each once and in order, or '{}'. It reads only undeleted
+  -- proposals with no event at that venue, so in steps 1 and 2 a plain
+  -- EXISTS on the same columns comes first, and the EXECUTE, planned afresh
+  -- on every call, runs only when that finds one; with none, nothing is
+  -- reached. (In step 3 the proposal being decided is itself one.)
   proposals_reach CONSTANT text := $reach$
     SELECT coalesce(array_agg(DISTINCT r."event_id" ORDER BY r."event_id"), '{}')
     FROM "proposals" s
@@ -520,7 +524,11 @@ BEGIN
         WHERE k."configuration_id" = this_enquiry."configuration_id"
           AND e."venue_id" = this_enquiry."venue_id" AND e."deleted_at" IS NULL
         ORDER BY e."id");
-      EXECUTE proposals_reach INTO v_p USING this_enquiry."venue_id", this_enquiry."id", NULL::uuid, sent_proposal_statuses;
+      v_p := '{}';
+      IF EXISTS (SELECT 1 FROM "proposals" s WHERE s."enquiry_id" = this_enquiry."id"
+          AND s."venue_id" = this_enquiry."venue_id" AND s."deleted_at" IS NULL AND s."event_id" IS NULL) THEN
+        EXECUTE proposals_reach INTO v_p USING this_enquiry."venue_id", this_enquiry."id", NULL::uuid, sent_proposal_statuses;
+      END IF;
       v_bp := ARRAY(SELECT DISTINCT y FROM unnest(v_b || v_p) AS y ORDER BY y);
 
       v_reason := NULL;
@@ -671,8 +679,11 @@ BEGIN
         -- have at once, or one a writer changed since): the deal waits for it.
         v_for_enquiry := v_q_id IS NOT NULL AND v_q_event IS NULL AND v_q_may_become;
         IF v_for_enquiry AND NOT v_q_reaches THEN
-          EXECUTE proposals_reach INTO v_p USING this_deal."venue_id", v_q_id, NULL::uuid, sent_proposal_statuses;
-          v_q_reaches := cardinality(v_p) > 0;
+          IF EXISTS (SELECT 1 FROM "proposals" s WHERE s."enquiry_id" = v_q_id
+              AND s."venue_id" = this_deal."venue_id" AND s."deleted_at" IS NULL AND s."event_id" IS NULL) THEN
+            EXECUTE proposals_reach INTO v_p USING this_deal."venue_id", v_q_id, NULL::uuid, sent_proposal_statuses;
+            v_q_reaches := cardinality(v_p) > 0;
+          END IF;
         END IF;
         CONTINUE deal_loop WHEN v_for_enquiry AND v_q_reaches;
         -- Otherwise what its own proposals with no event reach decides
@@ -681,7 +692,11 @@ BEGIN
         -- it is listed; none, an event is made, for its enquiry when that may
         -- become one and has none (the deal then joins it through its
         -- enquiry).
-        EXECUTE proposals_reach INTO v_p USING this_deal."venue_id", NULL::uuid, this_deal."id", sent_proposal_statuses;
+        v_p := '{}';
+        IF EXISTS (SELECT 1 FROM "proposals" s WHERE s."opportunity_id" = this_deal."id"
+            AND s."venue_id" = this_deal."venue_id" AND s."deleted_at" IS NULL AND s."event_id" IS NULL) THEN
+          EXECUTE proposals_reach INTO v_p USING this_deal."venue_id", NULL::uuid, this_deal."id", sent_proposal_statuses;
+        END IF;
         IF cardinality(v_p) > 1 THEN
           v_reason := 'reaches_many_events';
           v_candidates := v_p;
