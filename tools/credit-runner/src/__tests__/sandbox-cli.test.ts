@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,12 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { gitEnv } from "../git.js";
 import { withBaseCommit } from "../sandbox/base-repo.js";
 import { ATTENDED, isInsideFolder, main, USAGE } from "../sandbox/cli.js";
+import { runSandboxJob } from "../sandbox/launcher.js";
 import { masterFacts } from "../sandbox/master.js";
 import { boundedNumber, budgetOverride, timeoutOverride } from "../sandbox/overrides.js";
 import { gitVersionProblem } from "../sandbox/patches.js";
 import { sandboxConfigSchema } from "../sandbox/sandbox-config.js";
-import { MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES } from "../task.js";
-import { FakeApi } from "./fake-api.js";
+import { MAX_BUDGET_USD, MAX_TIMEOUT_MINUTES, parseTask } from "../task.js";
+import { FakeApi, PROJECT_RULES } from "./fake-api.js";
 
 const PACKAGE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -174,6 +175,144 @@ describe("status and collect --book, with a session the ledger lacks", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+});
+
+describe("the launcher in a process of its own (launcher-child.ts, started as the sandbox script starts the CLI)", () => {
+  const CHILD = path.join("src", "__tests__", "launcher-child.ts");
+  const task = parseTask(["---", "id: next-task", "title: The next run", "budget_usd: 4.5", "timeout_minutes: 60", 'acceptance: "true"', "---", "Next."].join("\n"), "next-task.md");
+
+  /** A child's output as it arrives, when it has printed a line, and when it has ended. */
+  function watch(child: ChildProcess) {
+    const seen = { stdout: "", stderr: "" };
+    child.stdout?.setEncoding("utf8").on("data", (chunk: string) => {
+      seen.stdout += chunk;
+    });
+    child.stderr?.setEncoding("utf8").on("data", (chunk: string) => {
+      seen.stderr += chunk;
+    });
+    const ended = new Promise<void>((resolve) => {
+      child.on("close", () => {
+        resolve();
+      });
+    });
+    const printed = async (line: string): Promise<void> => {
+      for (const deadline = Date.now() + 240_000; !seen.stdout.includes(line); ) {
+        if (child.exitCode !== null || child.signalCode !== null || Date.now() > deadline) {
+          throw new Error(`the child did not print ${JSON.stringify(line)}: ${seen.stdout}${seen.stderr}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    };
+    return { seen, ended, printed };
+  }
+
+  /** Every ledger line, parsed; none when the file does not exist. */
+  async function ledgerLines(file: string): Promise<Record<string, unknown>[]> {
+    if (!existsSync(file)) return [];
+    return (await readFile(file, "utf8"))
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+
+  it.skipIf(process.platform === "win32")(
+    "takes one Ctrl-C to its process group as one press, though a parent that passes it on as pnpm does delivers it twice: one interrupt, the platform's figure booked",
+    async () => {
+      const folder = await mkdtemp(path.join(tmpdir(), "credit-runner-press-"));
+      // pnpm 9's lifecycle runner on a SIGINT (its procInterupt): send the child a SIGINT, and exit once it has ended. The script's one command is that child (`sh -c` execs it).
+      const pnpmLike = [
+        'const { spawn } = require("node:child_process");',
+        `const child = spawn(process.execPath, ["--import", "tsx", ${JSON.stringify(CHILD)}, ${JSON.stringify(folder)}], { stdio: "inherit" });`,
+        'process.once("SIGINT", () => { child.kill("SIGINT"); child.on("exit", () => process.exit()); });',
+        'child.on("exit", (code) => process.exit(code ?? 1));',
+      ].join("\n");
+      // Detached: the parent leads a process group of its own, which the launcher joins, as a terminal's foreground job.
+      const parent = spawn(process.execPath, ["-e", pnpmLike], { cwd: PACKAGE_DIR, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+      const watched = watch(parent);
+      try {
+        await watched.printed("following\n");
+        const group = parent.pid;
+        if (group === undefined || group <= 1) throw new Error("the parent has no pid of its own");
+        // One Ctrl-C: the terminal sends SIGINT to the whole group, the parent and the launcher alike.
+        process.kill(-group, "SIGINT");
+        await watched.ended;
+        // The first-signal path: the platform's figure once the session stopped, not the whole budget booked at once.
+        const lines = await ledgerLines(path.join(folder, "ledger.jsonl"));
+        expect(lines).toEqual([expect.objectContaining({ batchId: "sesn_1", costUsd: 2.87 })]);
+        expect(lines[0]).not.toHaveProperty("costKnown");
+        // The second delivery did arrive, and was taken as the same press.
+        expect(watched.seen.stderr).toContain("SIGINT again within 2 s of the first: the same press");
+        expect(watched.seen.stdout.trim().split("\n").at(-1)).toBe(
+          JSON.stringify({ outcome: "stopped by SIGINT: session sesn_1 has stopped; its cost was read, and the run stopped before its review; collect it to review what it left", interrupts: 1 }),
+        );
+      } finally {
+        if (parent.exitCode === null && parent.signalCode === null && parent.pid !== undefined) process.kill(-parent.pid, "SIGKILL");
+        await rm(folder, { recursive: true, force: true });
+      }
+    },
+    300_000,
+  );
+
+  const OTHER_SESSION_LINE = `${JSON.stringify({ ts: "2026-11-25T09:00:00.000Z", lane: "sandbox", job: "trial-1:x", model: "m", requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 1, batchId: "sesn_old" })}\n`;
+  for (const [ledgerKind, ledgerText] of [
+    ["a ledger that has a line", OTHER_SESSION_LINE],
+    ["no ledger file", null],
+    ["an empty ledger file", ""],
+  ] as const) {
+    it(`books a session whose launcher was killed outright mid-session at the next start, with ${ledgerKind}: run refuses naming it, status names it, collect --book books it once, then run passes the check`, async () => {
+      const folder = await mkdtemp(path.join(tmpdir(), "credit-runner-killed-"));
+      const ledgerFile = path.join(folder, "ledger.jsonl");
+      if (ledgerText !== null) await writeFile(ledgerFile, ledgerText);
+      const child = spawn(process.execPath, ["--import", "tsx", CHILD, folder], { cwd: PACKAGE_DIR, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      const watched = watch(child);
+      const written: string[] = [];
+      const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+        written.push(String(chunk));
+        return true;
+      });
+      const said = (): string => written.splice(0).join("");
+      try {
+        await watched.printed("following\n");
+        // No handler runs: SIGKILL on Linux and macOS, TerminateProcess on Windows.
+        child.kill("SIGKILL");
+        await watched.ended;
+        expect(existsSync(ledgerFile) ? await readFile(ledgerFile, "utf8") : null).toBe(ledgerText);
+
+        // The platform as the next start finds it: the session the killed launcher made runs on.
+        const api = new FakeApi([]);
+        api.persistFile = path.join(folder, "sessions.jsonl");
+        api.statuses = ["running"];
+        const runId = (JSON.parse((await readFile(api.persistFile, "utf8")).trim()) as { readonly metadata: { readonly run: string } }).metadata.run;
+        const config = { workRoot: path.join(folder, "work"), ledgerFile, lane: "sandbox", laneCapUsd: 110, orgCapUsd: 190 };
+        const next = (signal?: AbortSignal) =>
+          runSandboxJob({ api, config, task, job: "next", budgetUsd: 4.5, timeoutMinutes: 60, baseSha: "b".repeat(40), projectRules: PROJECT_RULES, verifyScript: "// verify", signal });
+        const advice =
+          "session sesn_1 (running) was made by this lane and has no ledger line; if a launcher is still following it, let that launcher finish (it books the session when it stops); otherwise book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_1 --book";
+        expect(await next()).toMatchObject({ kind: "skipped", reason: expect.stringContaining(advice) });
+        expect(api.sessions).toHaveLength(0);
+
+        const configFile = path.join(folder, "sandbox.config.json");
+        await writeFile(configFile, JSON.stringify({ ...config, keyDir: path.join(folder, "keys"), keyFile: "pot-1.key" }));
+        expect(await main(["status", "--config", configFile], { api })).toBe(0);
+        expect(said()).toContain(`Warning: ${advice}; run refuses until it is booked`);
+        expect(await main(["collect", "sesn_1", "--book", "--config", configFile], { api })).toBe(0);
+        expect(said()).toBe("booked session sesn_1 at $4.50 (unknown, as it has not stopped: counted at its whole budget, or the last figure if higher)\n");
+        expect(await main(["collect", "sesn_1", "--book", "--config", configFile], { api })).toBe(0);
+        expect(said()).toBe("the ledger already has a line for session sesn_1; nothing was added\n");
+        const charging = (await ledgerLines(ledgerFile)).filter((line) => line.batchId === "sesn_1" || line.runId === runId);
+        expect(charging).toEqual([expect.objectContaining({ batchId: "sesn_1", runId, costUsd: 4.5, costKnown: false, job: "child:child-task" })]);
+
+        // The check now passes: stopped just after it, before anything is set up or created.
+        await expect(next(AbortSignal.abort("SIGTERM"))).rejects.toThrow("stopped by SIGTERM before a session was created; nothing was spent");
+        expect(await main(["status", "--config", configFile], { api })).toBe(0);
+        expect(said()).toMatch(/^Unbooked sessions: none of lane 'sandbox' since /mu);
+      } finally {
+        spy.mockRestore();
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        await rm(folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      }
+    }, 300_000);
+  }
 });
 
 /** Removes a junction or symlink itself, never what it points at. */

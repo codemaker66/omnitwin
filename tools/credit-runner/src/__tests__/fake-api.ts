@@ -1,3 +1,4 @@
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import type { AgentCreateParams, AgentUpdateParams } from "@anthropic-ai/sdk/resources/beta/agents/agents";
 import type { EnvironmentCreateParams, EnvironmentUpdateParams } from "@anthropic-ai/sdk/resources/beta/environments/environments";
 import type { BetaManagedAgentsEventParams } from "@anthropic-ai/sdk/resources/beta/sessions/events";
@@ -17,7 +18,32 @@ import {
 import { OutputTimeoutError, writeCapped } from "../sandbox/outputs.js";
 import { sandboxSystemPrompt } from "../sandbox/brief.js";
 import { agentParams, environmentParams } from "../sandbox/setup.js";
+import { z } from "zod";
 import { AGENT_EFFORT, AGENT_MODEL } from "../task.js";
+
+/** A session as FakeApi.persistFile holds it, one JSON line each. */
+const persistedSessionSchema = z.strictObject({
+  id: z.string(),
+  status: z.enum(["rescheduling", "running", "idle", "terminated"]),
+  metadata: z.record(z.string(), z.string()),
+  createdAt: z.string(),
+  /** The create's budget in whole cents, USD; null when it set none. */
+  budgetCents: z.string().nullable(),
+});
+
+type PersistedSession = SessionListing & { readonly createdAt: string; readonly budget: SessionTotals["budget"] };
+
+/** The sessions written to `file` (FakeApi.persistFile), none when it does not exist. */
+function persistedSessions(file: string | null): PersistedSession[] {
+  if (file === null || !existsSync(file)) return [];
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => {
+      const { budgetCents, ...session } = persistedSessionSchema.parse(JSON.parse(line));
+      return { ...session, budget: budgetCents === null ? null : { type: "limit", max_list_cost: { amount: budgetCents, currency: "USD" } } };
+    });
+}
 
 /** An environment as the API returns it, from the params it was created or updated with. */
 function liveEnvironmentConfig(config: EnvironmentCreateParams["config"]): EnvironmentRef["config"] {
@@ -149,6 +175,14 @@ export class FakeApi implements SandboxApi {
   readonly createTimes: string[] = [];
   /** Sessions already in the list before this run's create, such as an earlier run of the same task; one with a `createdAt` is listed only from then on. */
   earlierSessions: (SessionListing & { readonly createdAt?: string })[] = [];
+  /**
+   * A file each session this fake creates is written to (persistedSessionSchema),
+   * and that it lists and retrieves sessions from: a FakeApi in another process,
+   * given the same file, sees the sessions this one made after this process has
+   * gone, as the platform keeps a session after the launcher that made it ends.
+   * Its status is this fake's `statuses`, as for any session.
+   */
+  persistFile: string | null = null;
   /** Sizes the Files API lists, by output name, where they differ from the text's own. */
   listedSizes: Record<string, number> = {};
   /** The outputs downloadFile was asked for, by name. */
@@ -223,7 +257,13 @@ export class FakeApi implements SandboxApi {
     this.sessions.push(params);
     const createdAt = new Date().toISOString();
     this.createTimes.push(createdAt);
-    if (this.createError === null || this.createdAnyway) this.created.push({ id: "sesn_1", status: "running", metadata: { ...params.metadata }, createdAt });
+    if (this.createError === null || this.createdAnyway) {
+      this.created.push({ id: "sesn_1", status: "running", metadata: { ...params.metadata }, createdAt });
+      if (this.persistFile !== null) {
+        const persisted = { id: "sesn_1", status: "running", metadata: { ...params.metadata }, createdAt, budgetCents: params.budget?.max_list_cost.amount ?? null };
+        appendFileSync(this.persistFile, `${JSON.stringify(persistedSessionSchema.parse(persisted))}\n`, "utf8");
+      }
+    }
     return this.createError === null ? Promise.resolve({ id: "sesn_1", status: "running" }) : Promise.reject(this.createError);
   };
   /** The session asked for (sesn_1 by default), with the metadata it was created or listed with and its budget. */
@@ -234,12 +274,13 @@ export class FakeApi implements SandboxApi {
     }
     const status = this.statuses[Math.min(this.retrieved, this.statuses.length - 1)] ?? "idle";
     this.retrieved += 1;
-    const known = [...this.created, ...this.earlierSessions].find((session) => session.id === id);
+    const persisted = persistedSessions(this.persistFile).find((session) => session.id === id);
+    const known = [...this.created, ...this.earlierSessions].find((session) => session.id === id) ?? persisted;
     return Promise.resolve({
       id,
       status: status as SessionTotals["status"],
       metadata: { ...(known?.metadata ?? {}) },
-      budget: this.sessionBudget ?? this.sessions.at(-1)?.budget ?? null,
+      budget: this.sessionBudget ?? persisted?.budget ?? this.sessions.at(-1)?.budget ?? null,
       usage: {
         ...(this.listCostCents === null ? {} : { list_cost: { amount: this.listCostCents, currency: this.listCostCurrency as "USD" } }),
         active_seconds: 600,
@@ -256,7 +297,10 @@ export class FakeApi implements SandboxApi {
     this.listedSince.push(createdSince);
     const fail = this.listFailures > 0;
     if (fail) this.listFailures -= 1;
-    const ours = this.created.filter((session) => session.createdAt >= createdSince).map(({ id, status, metadata }) => ({ id, status, metadata }));
+    const made = new Set(this.created.map((session) => session.id));
+    const ours = [...this.created, ...persistedSessions(this.persistFile).filter((session) => !made.has(session.id))]
+      .filter((session) => session.createdAt >= createdSince)
+      .map(({ id, status, metadata }) => ({ id, status, metadata }));
     // The shift's own session is always listed: the launcher's checks must pass it by.
     const earlier = this.earlierSessions.filter((session) => session.createdAt === undefined || session.createdAt >= createdSince).map(({ id, status, metadata }) => ({ id, status, metadata }));
     const sessions: SessionListing[] = [{ id: "sesn_other", status: "running", metadata: { lane: "shift", job: "other" } }, ...earlier, ...ours];
