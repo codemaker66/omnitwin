@@ -554,17 +554,19 @@ export interface UnbookedSession {
 /**
  * The sessions this lane made (metadata `lane` equal to `lane`, so another
  * lane's, such as the shift's, are passed by) that no ledger line charges, by
- * id or by run id (charges). Listed from the ledger's earliest dated line (or
- * now, if that is earlier) less UNBOOKED_LOOKBACK_MS, or from
- * UNBOOKED_CHECK_FROM when the ledger has no dated line (a missing or empty
- * ledger: a launcher killed on the very first run is still found days later),
- * archived sessions included.
+ * id or by run id (charges). Listed from this lane's earliest dated ledger
+ * line (or now, if that is earlier) less UNBOOKED_LOOKBACK_MS, or from
+ * UNBOOKED_CHECK_FROM when this lane has no dated line (a missing or empty
+ * ledger, or one only other lanes wrote: a launcher killed on this lane's very
+ * first run is still found days later, whenever another lane began), archived
+ * sessions included.
  */
 export async function unbookedSessions(api: SandboxApi, ledgerFile: string, lane: string, now: Date): Promise<{ readonly since: string; readonly sessions: readonly UnbookedSession[] }> {
   const { lines } = await readCreditLedger(ledgerFile);
   // A loop, not Math.min(...times): a long ledger spread into one call would overflow the stack.
   let earliest: number | null = null;
   for (const line of lines) {
+    if (line.lane !== lane) continue;
     const at = Date.parse(line.ts);
     if (Number.isFinite(at) && (earliest === null || at < earliest)) earliest = at;
   }

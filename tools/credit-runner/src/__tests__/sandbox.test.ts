@@ -2603,12 +2603,22 @@ describe("sandbox launcher, the sessions the ledger lacks", () => {
       expect(later.listedSince, JSON.stringify(ledger)).toEqual([UNBOOKED_CHECK_FROM]);
     }
 
-    // From the ledger's earliest dated line less a day, whatever the lines' order or other lanes.
+    // From this lane's earliest dated line less a day, whatever the lines' order: another lane's lines do not count.
     const dated = await workspace(`${booking({ ts: "2026-11-22T09:00:00.000Z", batchId: "sesn_a" })}${booking({ ts: "2026-11-20T09:00:00.000Z", lane: "batches", batchId: null })}${booking({ ts: "not a time", batchId: "sesn_b" })}`);
     const listed = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
     listed.earlierSessions = [lost()];
     expect(await job(listed, dated)).toMatchObject({ kind: "skipped" });
-    expect(listed.listedSince).toEqual(["2026-11-19T09:00:00.000Z"]);
+    expect(listed.listedSince).toEqual(["2026-11-21T09:00:00.000Z"]);
+
+    // So a session lost on this lane's first run is still found when another lane wrote the ledger's first line more than a day later.
+    const otherLaneFirst = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+    otherLaneFirst.earlierSessions = [{ ...lost(), createdAt: "2026-11-26T10:00:00.000Z" }];
+    const shiftOnly = await workspace(booking({ ts: "2026-11-30T09:00:00.000Z", lane: "shift", batchId: "sesn_other" }));
+    expect(await job(otherLaneFirst, shiftOnly, happy, { now: () => new Date("2026-12-01T10:00:00.000Z") })).toMatchObject({
+      kind: "skipped",
+      reason: expect.stringContaining("session sesn_lost (running)"),
+    });
+    expect(otherLaneFirst.listedSince).toEqual([UNBOOKED_CHECK_FROM]);
 
     // A listing that fails refuses the run too: the check cannot say the books are whole.
     const failing = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
