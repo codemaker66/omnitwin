@@ -4,6 +4,7 @@ import {
   EVENT_CONFIRMED_STATUSES,
   EVENT_PIPELINE_STATUSES,
   EventStatusSchema,
+  SENT_PROPOSAL_STATUSES,
   bookingKindNeedsEvent,
   defaultEventPhaseInputs,
   deriveEventStatus,
@@ -273,7 +274,8 @@ export async function followBookingToEvent(
  * one its enquiry's bookings already have, or a new one. Bound through an
  * enquiry that may have an event, the enquiry's link is written to it, unless
  * anything else of the enquiry's own (its bookings, deals, proposals or floor
- * plan) reaches a different live event of its venue: then the link is left as
+ * plan, or what a proposal of it with no event reaches) reaches a different
+ * live event of its venue: then the link is left as
  * it is. An empty one is for the join's list; one that names a deleted event
  * stays, and the spine's count shows it. Call inside the booking write's
  * transaction, before the booking is inserted.
@@ -366,18 +368,70 @@ export async function readEnquiryReach(
 }
 
 /**
- * Whether anything of the enquiry's own (readEnquiryReach) reaches a live
- * event of its venue other than `eventId`. When one does, the join would list
+ * Whether anything of the enquiry's own reaches a live event of its venue
+ * other than `eventId`, read as the join of old records reads it (step 1 of
+ * spine_join_old_records, the spine's links migration): (A) an undeleted
+ * booking of the enquiry sits in it; (C) an undeleted deal (source_enquiry_id)
+ * or undeleted proposal (enquiry_id) of the enquiry is joined to it; (B) the
+ * enquiry's floor plan is linked to it (event_configuration_links), or an
+ * undeleted proposal of the enquiry with no event reaches it, as the join's
+ * proposals_reach reads one: through its deal's event, through its deposit
+ * request in force, or through its floor plan when the plan is linked to
+ * exactly one live event; a plan linked to several reaches them all, but only
+ * for a proposal that must have an event. When one does, the join would list
  * the enquiry rather than choose, so the bind does not choose for it either;
  * nor does a deal's edit that names the enquiry (services/event-links.ts).
+ * Plain reads, under the enquiry's lock the caller already holds; no lock is
+ * taken here.
  */
 export async function enquiryReachesAnotherEvent(
   conn: BindConn,
   enquiry: { readonly id: string; readonly venueId: string; readonly configurationId: string | null },
   eventId: string,
 ): Promise<boolean> {
-  const reach = await readEnquiryReach(conn, enquiry);
-  return [...reach.held, ...reach.plan].some((id) => id !== eventId);
+  const result = await conn.execute(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM bookings b JOIN events e ON e.id = b.event_id
+        WHERE b.enquiry_id = ${enquiry.id} AND b.deleted_at IS NULL
+          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
+      UNION ALL
+      SELECT 1 FROM opportunities o JOIN events e ON e.id = o.event_id
+        WHERE o.source_enquiry_id = ${enquiry.id} AND o.deleted_at IS NULL
+          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
+      UNION ALL
+      SELECT 1 FROM proposals p JOIN events e ON e.id = p.event_id
+        WHERE p.enquiry_id = ${enquiry.id} AND p.deleted_at IS NULL
+          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
+      UNION ALL
+      SELECT 1 FROM event_configuration_links k JOIN events e ON e.id = k.event_id
+        WHERE k.configuration_id = ${enquiry.configurationId}
+          AND e.venue_id = ${enquiry.venueId} AND e.deleted_at IS NULL AND e.id <> ${eventId}
+      UNION ALL
+      SELECT 1 FROM proposals s
+        CROSS JOIN LATERAL (
+          SELECT e.id AS event_id FROM opportunities o JOIN events e ON e.id = o.event_id
+            WHERE o.id = s.opportunity_id AND e.venue_id = s.venue_id AND e.deleted_at IS NULL
+          UNION ALL
+          SELECT e.id FROM proposal_deposit_requests d JOIN events e ON e.id = d.event_id
+            WHERE d.proposal_id = s.id AND d.cancelled_at IS NULL AND e.deleted_at IS NULL
+          UNION ALL
+          SELECT pl.id
+          FROM (SELECT y.id, count(*) OVER () AS reached
+            FROM (SELECT DISTINCT e.id FROM event_configuration_links k JOIN events e ON e.id = k.event_id
+              WHERE k.configuration_id = s.configuration_id AND e.venue_id = s.venue_id AND e.deleted_at IS NULL) y) pl
+          WHERE pl.reached = 1
+            OR s.status IN (${sqlList(SENT_PROPOSAL_STATUSES)})
+            OR EXISTS (SELECT 1 FROM proposal_contract_versions a WHERE a.proposal_id = s.id)
+            OR EXISTS (SELECT 1 FROM proposal_deposit_requests d WHERE d.proposal_id = s.id AND d.cancelled_at IS NULL)
+            OR (s.status = 'draft' AND (s.opportunity_id IS NOT NULL OR s.enquiry_id IS NOT NULL))
+        ) r
+        WHERE s.enquiry_id = ${enquiry.id} AND s.venue_id = ${enquiry.venueId}
+          AND s.deleted_at IS NULL AND s.event_id IS NULL AND r.event_id <> ${eventId}
+    ) AS reaches
+  `);
+  const reaches = result.rows[0]?.["reaches"];
+  if (typeof reaches !== "boolean") throw new Error("The enquiry's reach returned no answer");
+  return reaches;
 }
 
 interface SpanBooking {
@@ -408,8 +462,9 @@ export function eventSpanFromBookings(rows: readonly SpanBooking[]): { readonly 
   };
 }
 
-/** A booking's day, as the sheet's set-up deadline reads it (resolveTiming in
- *  hallkeeper-sheet-v2-data.ts): from a day before it starts to its end. */
+/** A booking's day, as the sheet's setup start reads it (resolveTiming in
+ *  hallkeeper-sheet-v2-data.ts: timing.setupBy, when the setup window opens):
+ *  from a day before it starts to its end. */
 const BOOKING_DAY_LEAD_MS = 24 * 60 * 60_000;
 
 export interface BookingMove {
@@ -452,7 +507,7 @@ export function phaseMovesWithBooking(
  * The event's timed phases follow a booking that moves (release audit
  * events-diary-3): every phase of the event in the booking's room on the
  * booking's day shifts by the same amount and goes to its new room, so the
- * Day Board, the sheet's set-up deadline and the conflict engine read where
+ * Day Board, the sheet's setup start and the conflict engine read where
  * and when the work now is. A phase inside another live booking of the same
  * event in that room belongs to that booking and stays. The shift is in
  * absolute time, as the booking's is, so a phase keeps its place relative to

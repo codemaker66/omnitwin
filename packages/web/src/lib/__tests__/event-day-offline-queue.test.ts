@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { memoryBackend, withBackend } from "../idb-cache.js";
-import { createEventDayQueue, type QueuedEventDayOp, type RequestStepInput } from "../event-day-offline-queue.js";
+import { MAX_EARLIER_PRESS_KEYS } from "@omnitwin/types";
+import { memoryBackend, withBackend, type CacheBackend } from "../idb-cache.js";
+import {
+  createEventDayQueue,
+  MAX_EARLIER_PRESS_KEYS as QUEUE_MAX_EARLIER_PRESS_KEYS,
+  type QueuedEventDayOp,
+  type RequestStepInput,
+} from "../event-day-offline-queue.js";
 
 function queue() {
   return createEventDayQueue(withBackend<QueuedEventDayOp>(memoryBackend()));
@@ -189,6 +195,18 @@ describe("event-day offline queue", () => {
     });
   });
 
+  // #418: the row keeps the status its press was made against, for the
+  // replay to carry; a row written before replays carried one has none.
+  it("keeps with a task status the status it was pressed against, and none where none was given", async () => {
+    const q = queue();
+    await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "b", expectedStatus: "in_progress" });
+    await q.enqueueTaskStatus("task-2", { status: "done", idempotencyKey: "c" });
+
+    const [withExpected, without] = await q.list();
+    expect(withExpected).toMatchObject({ opsTaskId: "task-1", input: { status: "done", idempotencyKey: "b", expectedStatus: "in_progress" } });
+    expect(without?.kind === "task_status" ? without.input : null).toEqual({ status: "done", idempotencyKey: "c" });
+  });
+
   it("does not collapse separate issue reports", async () => {
     const q = queue();
     await q.enqueueIssueCreate("event-1", {
@@ -214,5 +232,125 @@ describe("event-day offline queue", () => {
     expect(pending).toBeDefined();
     await q.ack(pending?.queueKey ?? "");
     expect(await q.list()).toEqual([]);
+  });
+
+  // #418 B2 and B1: a task keeps one row, so a later press writes over an
+  // earlier one's row. The earlier press's ack must not take the later one
+  // with it: ackIf deletes the row only while it still holds that press.
+  describe("acking a task status only while its row still holds that press", () => {
+    const statusesQueued = async (q: ReturnType<typeof queue>): Promise<readonly (string | undefined)[]> =>
+      (await q.list()).map((op) => (op.kind === "task_status" ? op.input.idempotencyKey : op.kind));
+
+    it("deletes the row while it still holds that press", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start" });
+      expect(await q.ackIf("task:task-1", "start")).toBe(true);
+      expect(await q.list()).toEqual([]);
+    });
+
+    it("keeps a row a later press has written since", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start" });
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done" });
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      expect(await statusesQueued(q)).toEqual(["done"]);
+    });
+
+    it("is no error when the row is already gone", async () => {
+      const q = queue();
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start" });
+      await q.ack("task:task-1");
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      expect(await q.list()).toEqual([]);
+    });
+
+    it("compares and deletes in the store's one conditional step, never a read and then a delete", async () => {
+      // A read and a delete made apart could let another tab's write fall
+      // between them. With the store's plain read and delete refused, the
+      // compare can only be its conditional delete: one readwrite
+      // transaction on IndexedDB.
+      const inner = memoryBackend();
+      const backend: CacheBackend = {
+        ...inner,
+        get: () => Promise.reject(new Error("a read apart from the delete")),
+        delete: () => Promise.reject(new Error("a delete without the compare")),
+      };
+      const q = createEventDayQueue(withBackend<QueuedEventDayOp>(backend));
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done" });
+      expect(await q.ackIf("task:task-1", "start")).toBe(false);
+      expect(await statusesQueued(q)).toEqual(["done"]);
+      expect(await q.ackIf("task:task-1", "done")).toBe(true);
+      expect(await q.list()).toEqual([]);
+    });
+
+    it("never deletes another kind of op that shares nothing but the call", async () => {
+      const q = queue();
+      await q.enqueueIssueCreate("event-1", { title: "Lift", detail: "Use the stair.", severity: "urgent" }, "issue-a");
+      expect(await q.ackIf("issue:issue-a", "issue-a")).toBe(false);
+      expect(await statusesQueued(q)).toEqual(["issue_create"]);
+    });
+  });
+
+  // #418 round four, ruling A: a later press that replaces the task's row
+  // keeps the replaced press's key, and the keys it carried, so its replay
+  // can follow the device's own earlier write (a lost answer, or a press
+  // that landed while it sat queued), whichever tab or mount wrote the row.
+  describe("keeping the device's earlier presses with the task's row", () => {
+    const earlierKeys = async (q: ReturnType<typeof queue>): Promise<readonly string[] | undefined> => {
+      const [row] = await q.list();
+      return row?.kind === "task_status" ? row.input.earlierPressKeys : undefined;
+    };
+
+    it("keeps the replaced press's key and the keys it carried, with the ones the page names", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start", expectedStatus: "todo" });
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done", expectedStatus: "todo", earlierPressKeys: ["sent-from-this-page"] });
+      expect(await earlierKeys(q)).toEqual(["start", "sent-from-this-page"]);
+
+      await q.enqueueTaskStatus("task-1", { status: "blocked", idempotencyKey: "block", expectedStatus: "todo", earlierPressKeys: ["start"] });
+      expect(await earlierKeys(q)).toEqual(["start", "sent-from-this-page", "done"]);
+    });
+
+    it("keeps the newest twenty, and never the row's own key", async () => {
+      const q = queue();
+      for (let press = 0; press < 25; press += 1) {
+        await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: `press-${String(press)}`, expectedStatus: "todo", earlierPressKeys: [`press-${String(press)}`] });
+      }
+      expect(await earlierKeys(q)).toEqual(Array.from({ length: 20 }, (_, index) => `press-${String(index + 4)}`));
+    });
+
+    // The queue keeps its own copy of the API's bound: a value import from
+    // @omnitwin/types would bring its event-day schemas into the Day Board
+    // route, which loads this queue (review DR7). The two must not part.
+    it("keeps as many earlier keys as the API accepts", () => {
+      expect(QUEUE_MAX_EARLIER_PRESS_KEYS).toBe(MAX_EARLIER_PRESS_KEYS);
+    });
+
+    it("writes a first press's row with no keys, as round three did, and keeps none for a row with no expectedStatus", async () => {
+      const q = queue();
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done", expectedStatus: "todo" });
+      expect(await earlierKeys(q)).toBeUndefined();
+      await q.enqueueTaskStatus("task-1", { status: "blocked", idempotencyKey: "older-page" });
+      expect((await q.list())[0]).toMatchObject({ input: { status: "blocked", idempotencyKey: "older-page" } });
+      expect(await earlierKeys(q)).toBeUndefined();
+    });
+
+    it("reads the replaced row and writes the new one in the store's one step, never a read and then a write", async () => {
+      // Another tab's write must not fall between reading the row it
+      // replaces and writing it: with the plain read and write refused,
+      // only the store's one-step update can do it (one readwrite
+      // transaction on IndexedDB).
+      const inner = memoryBackend();
+      const backend: CacheBackend = {
+        ...inner,
+        get: () => Promise.reject(new Error("a read apart from the write")),
+        put: () => Promise.reject(new Error("a write apart from the read")),
+      };
+      const q = createEventDayQueue(withBackend<QueuedEventDayOp>(backend));
+      await q.enqueueTaskStatus("task-1", { status: "in_progress", idempotencyKey: "start", expectedStatus: "todo" });
+      await q.enqueueTaskStatus("task-1", { status: "done", idempotencyKey: "done", expectedStatus: "todo" });
+      expect(await earlierKeys(q)).toEqual(["start"]);
+    });
   });
 });

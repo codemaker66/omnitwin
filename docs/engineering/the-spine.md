@@ -48,8 +48,8 @@ What the database holds already:
 | Enquiries, deals and proposals (their routes) | the next pull request | each keeps its own link as it is made or moved |
 
 The bind writes an enquiry's link only when nothing else of the enquiry's own (its
-bookings, deals and proposals, or its floor plan) reaches another live event of its
-venue; otherwise the booking joins its event as before and the link is left for the
+bookings, deals and proposals, its floor plan, or what a proposal of it with no event
+reaches, as the join reads it below) reaches another live event of its venue; otherwise the booking joins its event as before and the link is left for the
 list, where the join puts the enquiry for a person. Joining is never a guess, in the
 bind as in the join. (One case is not listed: an enquiry whose link already names a
 deleted event keeps that link, and the join reads only enquiries with no link. The
@@ -71,20 +71,44 @@ join it made (what makes it undoable). Its steps:
 0. An open question whose record has its event by now (a writer gave it one) is
    closed as joined. One a person is answering at that moment is left to them.
 1. **Enquiries** that may become an event, with none: joined to the one live event
-   their bookings, deals and proposals sit in, or listed when they sit in several;
-   an event is made for one only when nothing of its own (held dates, deals,
-   proposals, floor plan) reaches a live event.
-2. **Deals** with no event, oldest first: joined to their enquiry's event; a second
-   open deal on that event is listed (`second_open_deal`), not joined. An open deal
-   that nothing reaches gets an event made, for its enquiry too when the enquiry may
-   become one and has none, so `eventsMade` can come from this step as well as from
-   steps 1 and 3.
-3. **Proposals** with no event: joined through their deal, their enquiry or their
-   floor plan, or listed when the paths disagree or reach several events; an event
-   is made only after every proposal that reaches an existing one has been joined.
-   A deposit request in force with no event takes its proposal's event in the same
-   step.
+   their bookings, deals and proposals sit in, or listed when they sit in several,
+   or when their floor plan, or a proposal of theirs with no event, reaches another.
+   With none, joined to the one live event their floor plan and their proposals with
+   no event reach, or listed when they reach several. An event is made for one only
+   when nothing of its own (held dates, deals, proposals, floor plan, and what its
+   proposals with no event reach) reaches a live event.
+2. **Deals** with no event, oldest first: joined to their enquiry's live event. With
+   none, an open deal waits for its enquiry when the enquiry may become an event,
+   has none, and something of the enquiry's own reaches one; otherwise it joins the
+   one live event its own proposals with no event reach, or is listed when they
+   reach several, and an event is made for it only when they reach none: for its
+   enquiry too when the enquiry may become one and has none, so `eventsMade` can
+   come from this step as well as from steps 1 and 3. An open deal is listed
+   (`second_open_deal`), not joined, where an open deal already is. A closed deal
+   whose enquiry has no live event is left, whatever its proposals reach.
+3. **Proposals** with no event: joined to their deal's live event, else their
+   enquiry's, else the one their deposit request in force names, and listed when the
+   deposit request names another or a deleted event; one that must have an event is
+   listed, too, when its floor plan is linked to a live event other than that one.
+   With none of these, one that must have an event joins its floor plan's one live
+   event, is listed when the plan reaches several, or has an event made, only after
+   every proposal that reaches an existing event has been joined; one that need not
+   joins its plan's one live event as history when it is over, and is otherwise
+   left. A deposit request in force with no event takes its proposal's event in the
+   same step.
 4. Every event the join made gets the house's default phases, as 0090's did.
+
+**What a proposal with no event reaches** is one rule, written once in the function
+(`proposals_reach`): a live event through its deal's event, through its deposit
+request in force, or through its floor plan when the plan is linked to exactly one;
+a plan linked to several reaches them all, but only for a proposal that must have an
+event. It is read for an enquiry's proposals (by `enquiry_id`) and for a deal's (by
+`opportunity_id`), so nothing is made for either while a proposal of it reaches an
+existing event. A proposal that names only its deal counts for that deal, not for
+the deal's enquiry: when the enquiry is worked and open and nothing of its own
+reaches an event, step 1 still makes its event and the deal joins it; such a
+proposal that must have an event is then listed if its floor plan is linked to
+another.
 
 Steps 1 to 3 repeat while a round joins anything, **in up to four rounds**, so an
 enquiry is settled from all of its deals and proposals together and the result
@@ -99,8 +123,15 @@ occasion and turns a blank one into none before cutting it; the bind only cuts i
 never waits for one of those. Each record is decided
 on a plain read, then the rows it will write are locked `FOR NO KEY UPDATE SKIP
 LOCKED` in the writers' order and decided again; an event it joins is taken `FOR KEY
-SHARE SKIP LOCKED`. **A row it cannot have at once, or that changed, is left to the
-next run.** It can wait in two places. A deal's update that meets a writer's
+SHARE SKIP LOCKED`. **Every value an event it makes is given (a name, a title, an
+occasion) is read under a lock the join holds**: a row it writes is re-checked under
+its lock to still hold the title or occasion it read, and a row it only reads one
+from (the enquiry of a deal or a proposal when the event is not made for that
+enquiry, the deal of a proposal) is taken `FOR SHARE SKIP LOCKED`, which a writer
+changing that row conflicts with. So a row being changed (a title an erasure is
+rewording) is skipped, and a change begun after the join took the row waits for its
+run to commit, as a change to a row it writes does. **A row it cannot have at once,
+or that changed, is left to the next run.** It can wait in two places. A deal's update that meets a writer's
 uncommitted open deal on the same event waits at most 100 ms (set and restored
 inside the function), and the deal is then listed or left. And its foreign keys take
 key shares on venue rows: only a venue row held `FOR UPDATE` makes those wait, up to
@@ -112,10 +143,8 @@ and reason (`reaches_many_events`, `paths_disagree`, `second_open_deal`), with
 counts and kinds in its text, never a name. October's two kinds of question
 (`enquiry_events_differ`, `possibly_same_event`) were copied in without their text
 and carry the id of the row they came from. A listed record is never touched by the
-join, and a deal or proposal whose enquiry is listed waits with it. A proposal can
-also wait, unlisted, on a listed sibling: one that would have an event made for it
-and its enquiry together waits while another proposal of the same enquiry, with no
-event, reaches an event or would be listed because its plan reaches several.
+join; a deal or proposal whose enquiry is listed, and a proposal whose open deal has
+no event, wait with it.
 
 ## The count
 
@@ -144,8 +173,8 @@ later piece owns that; until then it is repaired by hand.
 
 A listed record that must have an event is counted; one that need not (an unworked
 enquiry whose floor plan reaches several events, say), and October's copies, are
-not. A proposal waiting, unlisted, on a listed sibling (above) is counted too, while
-it must have an event: it is why a red count can name more records than the list.
+not. A record waiting with a listed one (above) is counted too, while it must have
+an event: it is why a red count can name more records than the list.
 **So the count is expected to be above zero while a question is open on the
 list**; the list is worked in a later stage (October's copies wait for stage 4).
 `spineInvariantHolds` is true when all nine are zero.
@@ -164,20 +193,24 @@ statement limit and a 30 s idle-in-transaction limit (the job stops at five minu
 and every event the join links stays key-share-locked until it commits). A join that
 fails rolls back whole and is reported as `joinRun: { error }`, by its error's name
 and SQLSTATE only; the read still runs. Then one `REPEATABLE READ, READ ONLY`
-transaction reads the bind's two counts, the spine's nine, 0090's list
-(`reviewList`) and the open questions (`joinsToCheck`), and a short read-only
+transaction reads the bind's two counts, the spine's nine, the enquiries apart from
+their bookings (`enquiriesApartFromTheirBookings`, see "Repairs by hand"), 0090's
+list (`reviewList`) and the open questions (`joinsToCheck`), and a short read-only
 transaction reads the migration state: the migrations ledger against the journal
 the code ships (`migrations: { applied, local, pending }`).
 
 It prints one line of JSON: `status` (`holds` when all eleven counts are zero,
-`broken` when one is not), the counts, both lists, `migrations`, and `joinRun`
-(`{ joined, eventsMade, listed }`) with `--join`. The two lists never change the
+`broken` when one is not), the counts, `enquiriesApartFromTheirBookings`, both
+lists, `migrations`, and `joinRun` (`{ joined, eventsMade, listed }`) with
+`--join`. The two lists and `enquiriesApartFromTheirBookings` never change the
 status. When the read fails the line says `status: "unread"` with `readError`,
 and still carries `migrations` and the join's outcome. An undefined function, table
 or column is said in plain words: the spine's migration is not applied to this
 database. Exit 0 when the rules hold; 1 when a count is not zero or the join failed;
-2 for a setup error or a failed read. Neither the connection string nor a database
-error's message is printed: the workflow log is public.
+2 for a setup error, a failed read, or a run stopped by a failure outside any
+statement (a connection lost between two statements; then no line is printed).
+Neither the connection string nor a database error's message is printed: the
+workflow log is public.
 
 **Every night, and by hand.** The Event rules workflow
 ([`event-rules.yml`](../../.github/workflows/event-rules.yml), "Event rules (reports
@@ -210,15 +243,119 @@ not run after it.
 The `--join` flag goes when the rule is tightened (stage 6); the run then only
 reads.
 
+## Erasing a person, and the 24-month pass
+
+A person's erasure (`services/people-erasure.ts`, `around()`) and the 24-month pass
+(`services/people-retention.ts`, `lapsedPeople`) follow the three links: the events a
+person's enquiries, deals and proposals point at are found whether the join made
+them, a writer linked them, or nothing in `event_link_joins` records it. An event the
+join made for one of those records is also found through `event_link_joins` after
+the record's link has moved (a Diary edit that moves an enquiry's last booking, the
+bind, or a repair by hand), so the person's erasure still finds it. The join
+names an event it makes, and its client, from the record (an enquiry's name, a deal's
+or a proposal's title); erasure deletes the person's enquiries, rewords their deals and
+proposals, and takes their names out of every event it finds, so a later run of the
+join has no name to copy back.
+
+- An event found through a link is the person's own unless another live person's
+  record points at it too (`tiedToAnotherPerson`: their enquiry, deal or proposal
+  linked to it, a booking of their enquiry in it, or it is their deal's); then it is
+  near them, as the event of a deal another live person leads is. An event the join
+  made for the person's record, with nothing tying it to another live person, is
+  theirs. Own or near, the event is kept and loses only the erased person's names;
+  an own event's confirmed booking or live hold, or a deposit request naming it,
+  refuses the erasure.
+- A confirmed booking or live hold from the person's own enquiry refuses the erasure
+  in a near event too, as before the links, unless the event is another live
+  person's deal's (its event, or one laid out from its proposal). An event that is
+  near only because another person's record points at it does not take the person's
+  own booking from them; the other person's bookings there never count as theirs.
+- The events of a proposal the person only answered on (someone else's proposal they
+  commented on or accepted for) are near them: their names leave those events as
+  they leave the proposal's title.
+- When the 24-month pass keeps a person for a booking and removes their enquiries
+  that never became one, nothing of theirs is reworded. An event the join made for
+  such an enquiry that nothing points at any more (no row of any table with a key to
+  the event or to one of its phases, its own phases apart, and no deal or client
+  account of its own) is renamed `Event` and its client name cleared; an event
+  something still points at is left alone.
+- A record of theirs linked between the erasure's reads and its locks makes it
+  answer RETRY, as a booking written meanwhile does.
+- The join copies a name only from a row it holds (above). An erasure under way when
+  the join reaches the person's records makes it leave them for its next run, which
+  reads the reworded text; an erasure that meets rows the join holds waits for the
+  join's run to commit (at most the run's 60 s statement limit), then finds the
+  new event through the record's link and answers RETRY, and tried again rewords it.
+- The pass reads the same links with the same expression, so what it reads as kept
+  or near agrees with what its step finds.
+- **Whoever adds a new way to tie a record to an event** (another column that names
+  an event, or a writer that makes events from a person's record) teaches `around()`
+  and `lapsedPeople` the same day, with a case in
+  `people-erasure-spine-links-postgres.test.ts`. Otherwise a person's name outlives
+  their erasure on an event tied to nobody. When stage 6 retires
+  `events.opportunity_id`, erasure's read of it and the expression's clause for it go
+  in the same change.
+
 ## The lock rules later stages keep
 
-- One order: a person, then bookings, the proposal, the enquiry, the deal, the
-  event.
+The full order, combined with the Diary's, is kept in section 5.4 of the
+[spine's design](../superpowers/specs/2026-11-13-the-spine-design.md) ("The stage,
+the status and the dates").
+
+- One order: a person, then a decision, then bookings, the proposal, the enquiry,
+  the deal, the event. A decision (`decideDecision`, `services/decisions.ts`) is
+  taken `FOR UPDATE`, then the one booking it moves `FOR UPDATE`, then
+  `updateBookingCore` takes that booking again and reaches its event. A decision
+  moves only a booking's times, never its event, so its path never reaches an
+  enquiry, a deal or a proposal.
 - An enquiry row is locked `FOR NO KEY UPDATE`, never `FOR UPDATE`, before any row
   that references it is inserted in the same transaction.
 - New code takes an event only `FOR NO KEY UPDATE` (every row written onto an event
-  holds `FOR KEY SHARE` on it, which `FOR UPDATE` would wait for).
-- No table locks.
+  holds `FOR KEY SHARE` on it, which `FOR UPDATE` would wait for). The one exception
+  is the undo (`spine_undo_joins()`): it takes an event it removes, and that event's
+  phases, `FOR UPDATE SKIP LOCKED`, so it never waits; an event it cannot have at
+  once is left to its next run.
+- No table locks in product code. The spine's migration takes its tables first, in
+  two statements right after its 5 s lock limit, before any of its other steps
+  (section 0 of the file; its comment says the same in the same words):
+  - **On tables that existed before this migration, every lock stronger than ROW
+    EXCLUSIVE is taken by these two statements, and no later statement takes a new
+    one**: what a later statement takes on such a table is ROW EXCLUSIVE or weaker,
+    or, on one of these seven, no stronger than what it holds here, so it shuts out
+    nothing these two did not already.
+  - `venues` and `users` first, in SHARE ROW EXCLUSIVE, the mode the keys of the two
+    new tables (step 5) take on them. A writer such as an inventory decision updates
+    its venue's row and then reads events; had the release held the five tables
+    below and then waited for venues, it and such a writer could wait for each
+    other. Taken first, venues makes the release wait for that writer while it holds
+    nothing. Nothing was found that touches any of the five and then writes a row of
+    venues or users, which would meet this order the other way round.
+  - Then the five the steps lock outright (ACCESS EXCLUSIVE), in one statement in
+    the writers' order: a proposal, its enquiry, the deal, the event, then the client
+    account (`proposals`, `enquiries`, `opportunities`, `events`, `client_accounts`).
+    Left to the steps, they would be taken deals first and proposals last, against
+    that order, while a proposal sent during the release holds the proposal and then
+    writes its enquiry: the two could wait for each other. With the lock limit set
+    above, a table that cannot be had within five seconds fails the release cleanly,
+    and nothing changes.
+  - Later statements lock existing tables no more strongly, each to the end of the
+    transaction: the five, the modes their steps' keys, indexes, triggers and writes
+    take (SHARE, SHARE ROW EXCLUSIVE, ROW EXCLUSIVE, ROW SHARE, ACCESS SHARE), and
+    ACCESS EXCLUSIVE again in the statements that add a column or a unique key, drop
+    a key, or drop a trigger that is there, all under the ACCESS EXCLUSIVE held here; `venues`, `users`: SHARE ROW EXCLUSIVE again, and
+    ACCESS SHARE, by step 5 (the new tables' keys to them); `venues`: ROW SHARE by
+    steps 6 and 7 (the key checks of their inserts); `event_binding_reviews`: ACCESS
+    SHARE by step 6 (the copy reads it); `bookings`, `event_configuration_links`,
+    `proposal_contract_versions`, `quotes`: ACCESS SHARE by step 7 (the join reads
+    them); `proposal_deposit_requests`: up to ROW EXCLUSIVE by step 7 (the join reads
+    them, and a request takes its proposal's event); `event_phases`: ROW EXCLUSIVE by
+    step 7 (the phases of the events it makes). Outside the seven, these modes
+    conflict only with DDL and explicit table locks, never with a reader or a writer
+    of rows.
+  - A case pins it (`event-spine-links-migration-postgres.test.ts`, "the
+    migration's locks on the tables it found"): on a database with rows, the
+    strongest mode held on each existing table, read after the two statements and
+    again before the commit, is these seven and nothing else.
 
 ## What a later migration must keep
 
@@ -266,6 +403,33 @@ Each of these runs in production only on the founder's word, in a transaction wi
   event is the occasion has to be decided first.
 - **A request in force on a soft-deleted proposal** (the gap above) is repaired by
   a person deciding whether the request still stands.
+- **An enquiry apart from its bookings** (`enquiriesApartFromTheirBookings` in the
+  line): its link names an event that holds none of its undeleted bookings, while
+  some of those bookings sit in another live event of its venue. No writer of this
+  release makes one and the join never does, so it is expected to read 0 right
+  after a release. An instance still running the previous release during the
+  switch-over can: the migration's join has given a worked enquiry with no held
+  date an event of its own, and the old code, which ignores the link, puts the
+  enquiry's first hold in a new event. Release in a quiet hour and read this number
+  in the after-merge read. A person repairs one, deciding first which event is the
+  occasion. If it is the enquiry's, move the booking into it from the Diary (an
+  edit may move a booking to another event of its venue). If it is the bookings',
+  move the enquiry's link to it, with the links of the enquiry's deals and
+  proposals that name the first event, in one transaction (a link is moved, never
+  emptied). In the same transaction the event left behind, which the join named
+  from the enquiry, is renamed `Event` and its client name cleared. They are found
+  by id alone:
+
+  ```sql
+  SELECT q.id AS enquiry_id, q.venue_id, q.event_id AS linked_event
+  FROM enquiries q
+  WHERE q.event_id IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM bookings b
+      WHERE b.enquiry_id = q.id AND b.deleted_at IS NULL AND b.event_id = q.event_id)
+    AND EXISTS (SELECT 1 FROM bookings b JOIN events e ON e.id = b.event_id
+      WHERE b.enquiry_id = q.id AND b.deleted_at IS NULL
+        AND e.deleted_at IS NULL AND e.venue_id = q.venue_id AND e.id <> q.event_id);
+  ```
 
 ## Rolling back
 
@@ -398,6 +562,16 @@ ignore them. (The backup branch remains the last resort.)
   pending tag.
 - `packages/api/src/__tests__/deposits-postgres.test.ts`: a deposit request is for
   its proposal's own event, or none while the proposal has none.
+- `packages/api/src/__tests__/people-erasure-spine-links-postgres.test.ts`: erasure
+  and the 24-month pass follow the links. The join's made events for an enquiry, a
+  deal and a proposal lose the person's name; a link with no record of the join is
+  found the same; an event a second live person is tied to is kept and near, and the
+  person's own booking there still keeps them; a made event whose record's link has
+  moved is found through the join's record; the event of a proposal they only
+  answered on is near; a kept person's removed enquiry leaves its made event named
+  `Event` once nothing points at it; the pass's readings agree with its step; a link
+  written while the erasure waits answers RETRY; the join and the undo run cleanly
+  afterwards.
 
 Each spine suite makes and drops a database of its own on the platform test
 cluster; the platform gate (`test:platform-db`) names them all.

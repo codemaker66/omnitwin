@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   ComfortConstraintSchema,
@@ -22,12 +22,14 @@ import {
   events,
   pricingAssumptions,
   proposals,
+  proposalStatusHistory,
   quotes,
   revenueScenarios,
   spaces,
   venues,
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { canAccessInternalEvent, canManageCommercial, canWriteEvents } from "../utils/query.js";
 import { loadPipelineValueMinor } from "../services/commercial-pipeline.js";
 import {
@@ -345,17 +347,33 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
 // (services/commercial-pipeline.ts, open opportunities), the same figure the
 // Pipeline tab reads, rather than from quote totals.
 async function loadPipelineSummary(db: Database, venueId: string) {
-  const [pipelineValueMinor, proposalRows, [enquiryTotal]] = await Promise.all([
+  const live = and(eq(proposals.venueId, venueId), isNull(proposals.deletedAt));
+  const [pipelineValueMinor, proposalRows, [enquiryTotal], [acceptedTotal]] = await Promise.all([
     loadPipelineValueMinor(db, venueId),
     db.select({ status: proposals.status, count: sql<number>`count(*)`.mapWith(Number) })
-      .from(proposals).where(and(eq(proposals.venueId, venueId), isNull(proposals.deletedAt)))
+      .from(proposals).where(live)
       .groupBy(proposals.status).orderBy(proposals.status),
     db.select({ count: sql<number>`count(*)`.mapWith(Number) }).from(enquiries).where(eq(enquiries.venueId, venueId)),
+    // Proposals whose answer was acceptance: accepted now, or archived
+    // straight from accepted (the office files a won proposal with Archive).
+    // An archived proposal's answer is read as migration 0083 and a client's
+    // link read it (routes/proposals.ts presentedStatus): the status its
+    // newest move into archived came from. One a platform admin moved out of
+    // accepted (to declined, withdrawn or sent) does not count, archived later
+    // or not. This differs on purpose from everAccepted (routes/proposals.ts),
+    // the delete lock, where any acceptance ever recorded is the safe rule.
+    db.select({ count: sql<number>`count(*)`.mapWith(Number) }).from(proposals).where(and(live, or(
+      eq(proposals.status, "accepted"),
+      and(eq(proposals.status, "archived"), sql`(SELECT ${proposalStatusHistory.fromStatus} FROM ${proposalStatusHistory}
+        WHERE ${proposalStatusHistory.proposalId} = ${outerColumn(proposals.id)} AND ${proposalStatusHistory.toStatus} = 'archived'
+        ORDER BY ${proposalStatusHistory.createdAt} DESC LIMIT 1) = 'accepted'`),
+    ))),
   ]);
   return buildPipelineSummary({
     pipelineValueMinor,
     enquiryCount: enquiryTotal?.count ?? 0,
     proposalStatusCounts: Object.fromEntries(proposalRows.map((row) => [row.status, row.count])),
+    acceptedProposalCount: acceptedTotal?.count ?? 0,
   });
 }
 

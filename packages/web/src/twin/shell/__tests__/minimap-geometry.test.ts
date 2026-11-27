@@ -112,8 +112,9 @@ describe("fitPlanViewBox", () => {
       "TRADES_HALL_ROOM_DIMENSIONS lost its grand-hall entry; this suite joins it rather than restating it",
     );
   }
-  const lengthM = grandHall.lengthM;
-  const widthM = grandHall.widthM;
+  const [hallExtent] = grandHall.extents;
+  const lengthM = hallExtent.lengthM;
+  const widthM = hallExtent.widthM;
   const hall: readonly PlanPoint[] = [
     { x: 0, y: 0 },
     { x: lengthM, y: 0 },

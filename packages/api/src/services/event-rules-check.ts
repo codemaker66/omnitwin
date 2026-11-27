@@ -1,7 +1,12 @@
+import { Pool as NeonPool } from "@neondatabase/serverless";
+import { Pool as PgPool } from "pg";
 import { sql, type SQL } from "drizzle-orm";
+import { drizzle as neonDrizzle } from "drizzle-orm/neon-serverless";
+import { drizzle as pgDrizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
-import type { Database } from "../db/client.js";
+import { NEON_POOL_IDLE_TIMEOUT_MS, isLocalDatabaseUrl, type Database, type DatabaseConnection } from "../db/client.js";
 import { loadBundledJournal, readMigrationReadiness } from "../db/migration-readiness.js";
+import * as schema from "../db/schema.js";
 import { sqlStateOf } from "../utils/sql-state.js";
 import { readBindInvariant, type BindInvariant, type InvariantReader } from "./event-binding.js";
 import { readSpineInvariant, spineInvariantHolds, type SpineInvariant } from "./event-spine-invariant.js";
@@ -22,24 +27,27 @@ import { readSpineInvariant, spineInvariantHolds, type SpineInvariant } from "./
 // its key shares. That join is the check's only write. A join that fails
 // rolls back whole and is reported in joinRun; the read still runs.
 //
-// Then one REPEATABLE READ, READ ONLY transaction reads the counts and the
-// two lists on one snapshot, and a short read-only transaction of its own
-// reads the migration state (the bundled journal against the migrations
-// ledger: how many are applied and which tags are pending), so a stale or
-// half-migrated database announces itself. A read that fails gives an
-// "unread" outcome that still carries the join's outcome and the migration
-// state.
+// Then one REPEATABLE READ, READ ONLY transaction reads the counts, the
+// two lists and the enquiries apart from their bookings (a number of its
+// own, which never changes the status) on one snapshot, and a short
+// read-only transaction of its own reads the migration state (the bundled
+// journal against the migrations ledger: how many are applied and which tags
+// are pending), so a stale or half-migrated database announces itself. A
+// read that fails gives an "unread" outcome that still carries the join's
+// outcome and the migration state.
 //
 // Nothing here returns a database error's message: a failure is named by its
 // error's name and SQLSTATE (or system code), and an undefined function,
 // table or column (42883, 42P01, 42703) is said in plain words to mean that
-// the spine's migration is not applied to the database.
+// the spine's migration is not applied to the database. The command's own
+// connection (openEventRulesConnection) names an idle client's failure the
+// same way.
 // ---------------------------------------------------------------------------
 
 /**
  * The longest the join may run. The workflow job stops at five minutes, of
  * which checkout, install and the types build take one to two; the join's
- * 60 s, the read's four statements at up to 15 s each and the migration
+ * 60 s, the read's five statements at up to 15 s each and the migration
  * state's 10 s then end inside it, with room to print. Every event the join
  * links stays key-share-locked until the join commits, so a short run is a
  * short hold.
@@ -66,6 +74,8 @@ export type MigrationState =
 /** A database that was read. */
 export interface EventRulesReport extends BindInvariant, SpineInvariant {
   readonly status: "holds" | "broken";
+  /** Information, not one of the counts: it never changes the status (readEnquiriesApartFromTheirBookings). */
+  readonly enquiriesApartFromTheirBookings: number;
   readonly reviewList: Readonly<Record<string, number>>;
   readonly joinsToCheck: Readonly<Record<string, number>>;
   readonly migrations: MigrationState;
@@ -92,6 +102,7 @@ export interface EventRulesOptions {
 const count = z.number().int().nonnegative();
 const JoinRowSchema = z.object({ joined: count, events_made: count, listed: count });
 const ReasonRowSchema = z.object({ reason: z.string(), count });
+const ApartRowSchema = z.object({ apart: count });
 
 /** Undefined function, table, column: what a database without the spine's migration answers. */
 const NOT_MIGRATED_STATES: ReadonlySet<string> = new Set(["42883", "42P01", "42703"]);
@@ -106,6 +117,36 @@ export function describeFailure(failure: unknown): string {
   }
   const code = typeof failure === "object" && failure !== null && "code" in failure ? failure.code : undefined;
   return typeof code === "string" && /^E[A-Z]{2,20}$/u.test(code) ? `${name} (${code})` : name;
+}
+
+/**
+ * The command's own connection, for a log that is public: the driver
+ * db/client.ts's createDbConnection chooses (PostgreSQL over TCP for a local
+ * URL, else Neon over a WebSocket, with the same idle limit), but its pool's
+ * error handler gives `report` an idle client's failure as describeFailure
+ * names it, never its message (the shared pool's handler prints the message,
+ * for the API's private log). pg-pool listens only on idle clients: an error
+ * on a client in use between two statements reaches no pool handler, and the
+ * command's process handlers name it (scripts/check-booking-event-bind.ts).
+ */
+export function openEventRulesConnection(databaseUrl: string, report: (line: string) => void): DatabaseConnection {
+  const pool = isLocalDatabaseUrl(databaseUrl)
+    ? new PgPool({ connectionString: databaseUrl })
+    : new NeonPool({ connectionString: databaseUrl, idleTimeoutMillis: NEON_POOL_IDLE_TIMEOUT_MS });
+  pool.on("error", (error) => {
+    report(`an idle connection failed: ${describeFailure(error)}`);
+  });
+  const db: Database = pool instanceof PgPool
+    ? pgDrizzle(pool, { schema })
+    : neonDrizzle(pool, { schema });
+  let closing: Promise<void> | undefined;
+  return {
+    db,
+    close: () => {
+      closing ??= pool.end();
+      return closing;
+    },
+  };
 }
 
 export function isFailedJoin(run: JoinRun | FailedJoinRun | undefined): run is FailedJoinRun {
@@ -131,6 +172,30 @@ async function joinOldRecords(db: Database, statementTimeoutMs: number): Promise
   }
 }
 
+/**
+ * Enquiries apart from their bookings: an enquiry whose link names an event
+ * that holds none of its undeleted bookings, while some of those bookings sit
+ * in another live event of its venue. One number, read only; of one venue, or
+ * of every venue when none is named, as the count's parts are. No writer of
+ * this release makes one, so it is expected to read 0 after a release; an
+ * instance still running the release before the links can make one during
+ * the switch-over, because it ignores an enquiry's link and gives the first
+ * hold a new event (the-spine.md, "Repairs by hand", says how to repair one).
+ * It is not one of the spine's nine: it never changes the status.
+ */
+export async function readEnquiriesApartFromTheirBookings(conn: InvariantReader, venueId: string | null = null): Promise<number> {
+  const inVenue = venueId === null ? sql`true` : sql`q.venue_id = ${venueId}`;
+  const result = await conn.execute(sql`
+    SELECT count(*)::int AS apart FROM enquiries q
+    WHERE q.event_id IS NOT NULL AND ${inVenue}
+      AND NOT EXISTS (SELECT 1 FROM bookings b
+        WHERE b.enquiry_id = q.id AND b.deleted_at IS NULL AND b.event_id = q.event_id)
+      AND EXISTS (SELECT 1 FROM bookings b JOIN events e ON e.id = b.event_id
+        WHERE b.enquiry_id = q.id AND b.deleted_at IS NULL
+          AND e.deleted_at IS NULL AND e.venue_id = q.venue_id AND e.id <> q.event_id)`);
+  return ApartRowSchema.parse(result.rows[0]).apart;
+}
+
 async function countsByReason(tx: InvariantReader, query: SQL): Promise<Record<string, number>> {
   const counts: Record<string, number> = {};
   for (const row of (await tx.execute(query)).rows) {
@@ -146,12 +211,13 @@ async function readCounts(db: Database): Promise<Omit<EventRulesReport, "migrati
     await tx.execute(sql`SET LOCAL statement_timeout = '15s'`);
     const bind = await readBindInvariant(tx);
     const spine = await readSpineInvariant(tx);
+    const apart = await readEnquiriesApartFromTheirBookings(tx);
     const reviewList = await countsByReason(tx, sql`
       SELECT reason, count(*)::int AS count FROM event_binding_reviews GROUP BY reason ORDER BY reason`);
     const joinsToCheck = await countsByReason(tx, sql`
       SELECT reason, count(*)::int AS count FROM event_link_reviews WHERE resolved_at IS NULL
       GROUP BY reason ORDER BY reason`);
-    return { bind, spine, reviewList, joinsToCheck };
+    return { bind, spine, apart, reviewList, joinsToCheck };
   });
   const holds = read.bind.unboundBookings === 0 && read.bind.contradictingEvents === 0 && spineInvariantHolds(read.spine);
   return {
@@ -159,6 +225,7 @@ async function readCounts(db: Database): Promise<Omit<EventRulesReport, "migrati
     unboundBookings: read.bind.unboundBookings,
     contradictingEvents: read.bind.contradictingEvents,
     ...read.spine,
+    enquiriesApartFromTheirBookings: read.apart,
     reviewList: read.reviewList,
     joinsToCheck: read.joinsToCheck,
   };

@@ -129,6 +129,37 @@ describe.skipIf(paymentsTestUrl === undefined)("deposits through the routes on m
       expect(res.status).toBe(201);
       expect(await requestEvent(res.body.data?.id ?? "")).toBeNull();
     });
+
+    it("is the event the proposal holds once its lock is had, not the one read before it", async () => {
+      const f = await accepted();
+      const moved = randomUUID();
+      await pool.query("INSERT INTO events (id, venue_id, name) VALUES ($1, $2, 'Moved to')", [moved, f.venueId]);
+      const holder = await pool.connect();
+      let asking: ReturnType<typeof ask> | undefined;
+      try {
+        const holderPid = (await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid;
+        if (holderPid === undefined) throw new Error("The holder has no backend");
+        await holder.query("BEGIN");
+        await holder.query("SELECT id FROM proposals WHERE id = $1 FOR UPDATE", [f.proposalId]);
+        // The route reads the proposal plainly first (its event is still the old one), then waits here for its lock.
+        asking = ask(f, { basis: "amount", amountMinor: 50_000 });
+        await expect.poll(async () => (await pool.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND application_name LIKE 'deposits_%' AND wait_event_type = 'Lock' AND pid <> $1`,
+          [holderPid],
+        )).rows[0]?.n, { timeout: 10_000 }).toBe(1);
+        // A writer moves the proposal to another event while the route waits.
+        await holder.query("UPDATE proposals SET event_id = $1 WHERE id = $2", [moved, f.proposalId]);
+        await holder.query("COMMIT");
+        const res = await asking;
+        expect(res.status).toBe(201);
+        expect(await requestEvent(res.body.data?.id ?? "")).toBe(moved);
+      } finally {
+        await holder.query("ROLLBACK");
+        holder.release();
+        await asking?.catch(() => undefined);
+      }
+    }, 30_000);
   });
 
   describe("the venue asks", () => {

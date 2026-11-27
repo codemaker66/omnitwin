@@ -1,15 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { QuickActions, type QuickActionDestination } from "../QuickActions.js";
 import {
-  QuickActions,
   TWIN_QUICK_ENQUIRE_LABEL,
   TWIN_QUICK_GROUP_LABEL,
   TWIN_QUICK_PLAN_LABEL,
   TWIN_QUICK_SHARE_LABEL,
   allQuickActionCopy,
   twinQuickWalkLabel,
-  type QuickActionDestination,
-} from "../QuickActions.js";
+} from "../quick-actions-copy.js";
 
 // -----------------------------------------------------------------------------
 // QuickActions — the rail that replaced the mockup's concierge.

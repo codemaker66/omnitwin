@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import type { Pool } from "pg";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { Database } from "../db/client.js";
@@ -12,6 +13,8 @@ import {
   checkEventRules,
   exitCodeOf,
   isFailedJoin,
+  openEventRulesConnection,
+  readEnquiriesApartFromTheirBookings,
   type EventRulesOutcome,
   type EventRulesReport,
 } from "../services/event-rules-check.js";
@@ -21,6 +24,7 @@ import {
   enquiry,
   event,
   insertReview,
+  link,
   openSpineDatabase,
   openSpineDatabaseBefore,
   platformTarget,
@@ -53,6 +57,13 @@ import {
 //      read or written, and otherwise prints one line of JSON, with the
 //      migration state, never the connection string, exiting 0 when the rules
 //      hold.
+//   6. The command's own pool names an idle connection's failure by its
+//      SQLSTATE alone, never by its message.
+//   7. A command whose connection is ended mid-read stops with exit 2, and
+//      both streams hold only its own named lines: no message, no stack, no
+//      connection details.
+//   8. Enquiries apart from their bookings are a number of their own, which
+//      leaves the status and the counts alone.
 //
 // The second block runs the command against a database the spine's migration
 // has not reached: the join and the read fail, it exits 2, and the line says
@@ -123,6 +134,7 @@ const ReadLineSchema = z.object({
   disagreeingLinks: count,
   linksToClosedEvents: count,
   eventDealPointersInUse: count,
+  enquiriesApartFromTheirBookings: count,
   reviewList: z.record(z.string(), count),
   joinsToCheck: z.record(z.string(), count),
   migrations: MigrationsSchema,
@@ -229,11 +241,12 @@ describe.skipIf(target === undefined)("the event rules: the operator's read and 
     expect(report.unboundBookings).toBe(0);
     expect(report.contradictingEvents).toBe(0);
     expect(spineCounts(report)).toEqual(BEFORE_THE_JOIN);
+    expect(report.enquiriesApartFromTheirBookings).toBe(0);
     expect(report.reviewList).toEqual({});
     expect(report.joinsToCheck).toEqual({});
     expect(report.migrations).toEqual({ applied: journalTags.length, local: journalTags.length, pending: [] });
     expect(Object.keys(report)).toEqual(["status", "unboundBookings", "contradictingEvents", ...SPINE_INVARIANT_FIELDS,
-      "reviewList", "joinsToCheck", "migrations"]);
+      "enquiriesApartFromTheirBookings", "reviewList", "joinsToCheck", "migrations"]);
     expect(exitCodeOf(report)).toBe(1);
   });
 
@@ -337,6 +350,7 @@ describe.skipIf(target === undefined)("the event rules: the operator's read and 
       status: "holds",
       unboundBookings: 0,
       contradictingEvents: 0,
+      enquiriesApartFromTheirBookings: 0,
       joinsToCheck: { possibly_same_event: 1, reaches_many_events: 1 },
       reviewList: { event_status_derived: 1 },
       migrations: { applied: journalTags.length, local: journalTags.length, pending: [] },
@@ -344,6 +358,106 @@ describe.skipIf(target === undefined)("the event rules: the operator's read and 
     });
     for (const field of SPINE_INVARIANT_FIELDS) expect(printed[field]).toBe(0);
   }, 120_000);
+
+  it("names an idle connection's failure on the command's own pool by its SQLSTATE alone, never by its message", async () => {
+    const lines: string[] = [];
+    const connection = openEventRulesConnection(spine.url, (line) => { lines.push(line); });
+    try {
+      // One client, back in the pool and idle once the statement is done; its backend is then ended.
+      const pid = z.object({ pid: z.number().int() }).parse((await connection.db.execute(sql`SELECT pg_backend_pid() AS pid`)).rows[0]).pid;
+      expect((await pool.query("SELECT pg_terminate_backend($1) AS ended", [pid])).rows).toEqual([{ ended: true }]);
+      await expect.poll(() => lines.length, { timeout: 10_000 }).toBeGreaterThan(0);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(/^an idle connection failed: \w+ \(SQLSTATE 57P01\)$/u);
+    } finally {
+      await connection.close();
+    }
+  }, 60_000);
+
+  it("stops with 2 when its connection is ended mid-read, printing only its own named lines: no message, no stack, no connection details", async () => {
+    const holder = await pool.connect();
+    let running: Promise<CommandRun> | undefined;
+    try {
+      // The read waits on October's list while the holder has it.
+      await holder.query("BEGIN");
+      await holder.query("LOCK TABLE event_binding_reviews IN ACCESS EXCLUSIVE MODE");
+      const holderPid = z.object({ pid: z.number().int() }).parse((await holder.query("SELECT pg_backend_pid() AS pid")).rows[0]).pid;
+      let finished = false;
+      const isFinished = (): boolean => finished;
+      const started = runCommand(spine.url, []).finally(() => { finished = true; });
+      running = started;
+
+      // The command is seen waiting for the table (its read waits up to its 15 s statement limit), then ended.
+      let pid: number | undefined;
+      while (pid === undefined && !isFinished()) {
+        const [row] = (await pool.query<{ pid: number }>(`SELECT pid FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> $1`, [holderPid])).rows;
+        pid = row?.pid;
+        if (pid === undefined) await new Promise((done) => setTimeout(done, 20));
+      }
+      if (pid === undefined) throw new Error("The command was never seen waiting for the table");
+      expect((await pool.query("SELECT pg_terminate_backend($1) AS ended", [pid])).rows).toEqual([{ ended: true }]);
+      const run = await started;
+
+      expectNoConnectionDetails(run, spine.url);
+      expect(run.code).toBe(2);
+      const lines = run.stderr.split("\n").filter((line) => line !== "");
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) expect(line).toMatch(/^\[event-rules\] [^:]+: \w+( \(SQLSTATE [0-9A-Z]{5}\)| \(E[A-Z]{2,20}\))?$/u);
+      expect(run.stderr).not.toContain(" at ");
+    } finally {
+      await holder.query("ROLLBACK");
+      holder.release();
+      await running?.catch(() => undefined);
+    }
+  }, 120_000);
+
+  it("counts an enquiry apart from its bookings, not its near neighbours, and leaves the status and the counts alone", async () => {
+    const v = await venue(pool, "event rules apart");
+    let day = 0;
+    /** A live hold for the enquiry in the event, each on a day of its own; a deleted one when asked. */
+    const holdIn = async (enquiryId: string, eventId: string, deleted = false): Promise<void> => {
+      day += 1;
+      await pool.query(`INSERT INTO bookings (venue_id, space_id, event_id, enquiry_id, kind, status, title, starts_at, ends_at, deleted_at)
+        VALUES ($1, $2, $3, $4, 'hold', 'active', 'Held date', $5::timestamptz, $5::timestamptz + interval '4 hours',
+          CASE WHEN $6 THEN now() END)`,
+      [v.venueId, v.rooms.hall, eventId, enquiryId, new Date(Date.parse("2032-02-02T18:00:00Z") + day * 86_400_000).toISOString(), deleted]);
+    };
+    /** An enquiry linked to an event of its own name. */
+    const linked = async (name: string): Promise<{ readonly enquiryId: string; readonly linkedTo: string }> => {
+      const enquiryId = await enquiry(pool, v.venueId);
+      const linkedTo = await event(pool, v.venueId, name);
+      await link(pool, "enquiries", enquiryId, linkedTo);
+      return { enquiryId, linkedTo };
+    };
+    const before = readReport(await checkEventRules(db, { join: false }));
+
+    // Apart: linked to one event, its only booking in another live one.
+    const apart = await linked("Apart, linked");
+    await holdIn(apart.enquiryId, await event(pool, v.venueId, "Apart, booked"));
+    // Its near neighbours, none counted:
+    // the linked event holds one of its bookings, another sits elsewhere;
+    const both = await linked("Both, linked");
+    await holdIn(both.enquiryId, both.linkedTo);
+    await holdIn(both.enquiryId, await event(pool, v.venueId, "Both, elsewhere"));
+    // no bookings at all;
+    await linked("None");
+    // its only booking elsewhere is deleted;
+    const deletedBooking = await linked("Deleted booking, linked");
+    await holdIn(deletedBooking.enquiryId, await event(pool, v.venueId, "Deleted booking, elsewhere"), true);
+    // its only booking elsewhere sits in a deleted event.
+    const deletedEvent = await linked("Deleted event, linked");
+    const gone = await event(pool, v.venueId, "Since deleted");
+    await holdIn(deletedEvent.enquiryId, gone);
+    await pool.query("UPDATE events SET deleted_at = now() WHERE id = $1", [gone]);
+
+    expect(await readEnquiriesApartFromTheirBookings(db, v.venueId)).toBe(1);
+    const after = readReport(await checkEventRules(db, { join: false }));
+    expect(after.enquiriesApartFromTheirBookings).toBe(before.enquiriesApartFromTheirBookings + 1);
+    expect(after.status).toBe(before.status);
+    expect([after.unboundBookings, after.contradictingEvents, spineCounts(after)])
+      .toEqual([before.unboundBookings, before.contradictingEvents, spineCounts(before)]);
+  });
 });
 
 describe.skipIf(target === undefined)("the event rules on a database the spine's migration has not reached", () => {

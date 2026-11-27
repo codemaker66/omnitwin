@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CLOSED_ENQUIRY_STATES,
+  CLOSED_OPPORTUNITY_STAGES,
   NON_BOOKING_ENQUIRY_TYPES,
   OPEN_OPPORTUNITY_STAGES,
   SENT_PROPOSAL_STATUSES,
@@ -309,6 +310,30 @@ describe.skipIf(target === undefined)("the spine: the count of records without t
     expect(await readSpineInvariant(db, v.venueId)).toEqual({ ...ALL_ZERO, ...expected });
   });
 
+  // One clause of the must-have rules at a time, with nothing else that would count the record.
+  const CLAUSE_CASES: readonly (readonly [string, Arrange, Partial<SpineInvariant>])[] = [
+    ["a withdrawn proposal with no event whose deposit request is in force", async (v) => {
+      await depositRequestFor(await proposal(v.venueId, "withdrawn"), null);
+    }, { proposalsWithoutEvent: 1, depositRequestsWithoutEvent: 1 }],
+    ["a draft proposal with no event, written for a lost deal", async (v) => {
+      await proposal(v.venueId, "draft", { opportunityId: await deal(v.venueId, "lost") });
+    }, { proposalsWithoutEvent: 1 }],
+    ["a deleted open deal with no event", async (v) => {
+      await pool.query("UPDATE opportunities SET deleted_at = now() WHERE id = $1", [await deal(v.venueId, "qualified")]);
+    }, {}],
+    ["an agreement whose proposal, with no event, was deleted", async (v) => {
+      const proposalId = await proposal(v.venueId, "archived");
+      await agreementFor(proposalId);
+      await deleteProposal(proposalId);
+    }, {}],
+  ];
+
+  it.each(CLAUSE_CASES)("counts %s as the definition says", async (label, arrange, expected) => {
+    const v = await venue(`clause ${label}`);
+    await arrange(v);
+    expect(await readSpineInvariant(db, v.venueId)).toEqual({ ...ALL_ZERO, ...expected });
+  });
+
   // A link to a deleted event, through each kind of record that must have an event; one that need not is not counted.
   const CLOSED_EVENT_CASES: readonly (readonly [string, Arrange, Partial<SpineInvariant>])[] = [
     ["an open deal", async (v) => { await link("opportunities", await deal(v.venueId, "qualified"), await deletedEvent(v)); },
@@ -431,6 +456,24 @@ describe.skipIf(target === undefined)("the spine: the count of records without t
         + "spine_join_old_records() with the new list, in the same change.",
       ).toEqual(asSet(values));
     }
+  });
+
+  it("the one-open-deal index's closed stages, as the database holds them, are the definition's", async () => {
+    // opportunities_one_open_per_event writes the closed stages out by hand
+    // (NOT IN, which PostgreSQL keeps as <> ALL (ARRAY[...])). Read from the
+    // database, so a migration that replaces the index is read too.
+    const [index] = (await pool.query<{ indexdef: string }>(
+      "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'opportunities_one_open_per_event'")).rows;
+    if (index === undefined) throw new Error("opportunities_one_open_per_event is missing from the database");
+    const list = /\(stage\)::text <> ALL \(\(ARRAY\[([^\]]*)\]\)/u.exec(index.indexdef)?.[1]
+      ?? /stage"? NOT IN \(([^)]*)\)/u.exec(index.indexdef)?.[1];
+    const held = [...(list ?? "").matchAll(/'([^']*)'/gu)].map((item) => item[1] ?? "");
+    expect(held.length, `no list of stages could be read from: ${index.indexdef}`).toBeGreaterThan(0);
+    const asSet = (values: readonly string[]): string[] => [...new Set(values)].sort();
+    expect(asSet(held),
+      "opportunities_one_open_per_event's stages differ from CLOSED_OPPORTUNITY_STAGES in @omnitwin/types. "
+      + "A change to the closed stages needs a migration that rebuilds the index with the new list, in the same change.",
+    ).toEqual(asSet(CLOSED_OPPORTUNITY_STAGES));
   });
 
   it("reads every venue when none is named", async () => {
