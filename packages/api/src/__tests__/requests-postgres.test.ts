@@ -833,6 +833,38 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(emailed?.escalationEmailedAt).not.toBeNull();
   });
 
+  it("two replicas sweeping at once escalate a request once: the second's claim waits on the first's transaction, then finds it taken (T-768)", async () => {
+    if (target === undefined) throw new Error("Explicit test database required");
+    const f = await fixture(180);
+    const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
+    if (!("request" in made)) throw new Error("expected a request");
+    const noon = new Date("2026-01-24T12:00:00.000Z");
+    await db.update(schema.requests).set({ escalationDueAt: new Date(noon.getTime() - 1000) }).where(eq(schema.requests.id, made.request.id));
+    // The first replica's transaction is held open at its inbox write, as a slow database would hold it.
+    await pool.query("CREATE OR REPLACE FUNCTION t768_slow_inbox() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(1); RETURN NEW; END $$");
+    await pool.query(`CREATE TRIGGER t768_slow_inbox BEFORE INSERT ON event_plan_notifications FOR EACH ROW WHEN (NEW.venue_id = '${f.venueId}') EXECUTE FUNCTION t768_slow_inbox()`);
+    // The second replica: its own pool, as another process would have.
+    const otherPool = new Pool({ connectionString: target, max: 4, options: "-c statement_timeout=10000 -c lock_timeout=8000" });
+    const other = drizzle(otherPool, { schema });
+    try {
+      const sentTo: string[] = [];
+      const send = (payload: { readonly to: string }): Promise<boolean> => { sentTo.push(payload.to); return Promise.resolve(true); };
+      const first = runRequestEscalationPass(db, { now: noon, send });
+      // The first has claimed it and waits at the inbox write; the second reads it as still due.
+      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      const second = runRequestEscalationPass(other, { now: noon, send });
+      const [a, b] = await Promise.all([first, second]);
+      const escalatedIn = (pass: Awaited<typeof first>): number => pass.escalated.filter((item) => item.request.id === made.request.id).length;
+      expect([escalatedIn(a), escalatedIn(b)]).toEqual([1, 0]);
+      expect([...a.failed, ...b.failed].filter((failure) => failure.requestId === made.request.id)).toEqual([]);
+      expect(await escalationInbox(f.venueId)).toHaveLength(1);
+      expect(sentTo.filter((to) => to === f.adminEmail)).toHaveLength(1);
+    } finally {
+      await pool.query("DROP TRIGGER IF EXISTS t768_slow_inbox ON event_plan_notifications");
+      await otherPool.end();
+    }
+  });
+
   it("plans the next wake from the database: the soonest window, then the end of quiet hours for an email waiting, then nothing (goal 19 S7)", async () => {
     const f = await fixture(180);
     await db.update(schema.requests).set({ state: "resolved", escalationDueAt: null, escalatedAt: new Date(), escalationEmailedAt: new Date() }).where(eq(schema.requests.venueId, f.venueId));

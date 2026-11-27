@@ -85,6 +85,8 @@ describe("a failed escalation pass reaches Sentry (the real SDK)", () => {
   let ingest: Server;
   let logs: FastifyInstance;
   let scheduler: EscalationScheduler;
+  /** The scheduler whose pass fails on two requests at once. */
+  let partial: EscalationScheduler;
   let due = false;
   let plans = 0;
   /** The trace the failing pass was on, as its outgoing calls would carry it. */
@@ -135,11 +137,39 @@ describe("a failed escalation pass reaches Sentry (the real SDK)", () => {
     const deadline = Date.now() + 5_000;
     while (plans < 3 && Date.now() < deadline) await new Promise((resolve) => { setTimeout(resolve, 10); });
     expect(plans).toBe(3);
+
+    // A wake whose pass failed on two requests (T-768): one report, the
+    // failures together, each quoting a guest as the database would.
+    let partialPlans = 0;
+    let partialDue = true;
+    partial = new EscalationScheduler({
+      db: {} as Database,
+      logger: logs.log,
+      onEscalated: () => undefined,
+      plan: () => {
+        partialPlans += 1;
+        const wake = partialDue ? Date.now() : null;
+        partialDue = false;
+        return Promise.resolve(wake);
+      },
+      run: () => Promise.resolve({
+        escalated: [],
+        failures: [
+          new Error(`invalid input syntax for type uuid: "${GUEST_EMAIL}"`),
+          new Error(`Failed query: update "requests" set "escalation_emailed_at" = $1 where "id" = $2\nparams: ${GUEST},${GUEST_EMAIL}`),
+        ],
+      }),
+    });
+    partial.start();
+    const partialDeadline = Date.now() + 5_000;
+    while (partialPlans < 2 && Date.now() < partialDeadline) await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(partialPlans).toBe(2);
     expect(await Sentry.flush(5_000)).toBe(true);
   }, 60_000);
 
   afterAll(async () => {
     scheduler?.stop();
+    partial?.stop();
     vi.unstubAllEnvs();
     await logs?.close();
     await new Promise<void>((resolve) => { if (ingest === undefined) resolve(); else ingest.close(() => { resolve(); }); });
@@ -174,6 +204,18 @@ describe("a failed escalation pass reaches Sentry (the real SDK)", () => {
     expect(data).toContain(SCRUBBED_CAUSE.replaceAll("\"", "\\\""));
     expect(data).not.toContain(GUEST_EMAIL);
     expect(data).not.toContain("Key (email)");
+  });
+
+  it("sends a wake's several failures as one report, each failure's own message through the scrubber: no guest's value in any (T-768)", () => {
+    const sent = eventsIn(envelopes).filter(({ event }) => event.exception?.values?.some((value) => value.value === "2 parts of the escalation sweep failed") === true);
+    expect(sent).toHaveLength(1);
+    const { event, raw } = sent[0] ?? { event: {}, raw: "" };
+    const values = (event.exception?.values ?? []).map((value) => value.value ?? "");
+    expect(values).toEqual(expect.arrayContaining(["invalid input syntax for type uuid: \"[redacted]\"", expect.stringContaining("params: [redacted]")]));
+    const data = withoutSourceLines(JSON.parse(raw));
+    expect(data).not.toContain(GUEST_EMAIL);
+    expect(data).not.toContain(GUEST);
+    expect(event.tags).toMatchObject({ "background.task": "escalation-sweep", "escalation.stage": "pass" });
   });
 
   it("still logs every failure, with its step and the streak's count, and no parameters", () => {
