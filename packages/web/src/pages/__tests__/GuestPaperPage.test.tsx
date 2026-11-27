@@ -29,7 +29,7 @@ const CANARY = "Zanzibar-Q7";
 const TABLE_CANARY = "Morag Quillfeather";
 const TITLE = "Fraser and Okafor";
 const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
-const ADDED_AFTER_DELETE_WORDS = "Names were added to this list in another tab after it was deleted here.";
+const ADDED_AFTER_DELETE_WORDS = "This list was changed in another tab after it was deleted here. It is kept in this browser again.";
 const PRINT_OF_OLDER_COPY_WORDS = "That printout was made from an older copy of this list, which was changed in another tab. Print it again.";
 const REMOVED_BY_RULE_WORDS ="This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
 const SHEET_LINKS = [
@@ -1302,5 +1302,114 @@ describe("the guest paper page: names stay on the paper", () => {
     expect(seen.length).toBeGreaterThan(100);
     const leaks = seen.filter((value) => names.some((name) => value.includes(name)));
     expect(leaks).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Found by a second, independent read of the print path before it was pushed.
+// ---------------------------------------------------------------------------
+
+describe("the guest paper page: what a second read of the print path found", () => {
+  it("the Print button stops when its read of the device finds the list deleted elsewhere: nothing is stored again, and no dialog opens", async () => {
+    const backend = memoryBackend();
+    const store = await storeHolding(list180(), backend);
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    // Another tab deletes the list; this page has had no focus or visibility event.
+    await memoryStore(backend).erase(PLAN_ID);
+
+    fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
+    expect(await within(tools()).findByText(
+      "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.",
+    )).toBeTruthy();
+    await act(async () => {
+      await state().flush();
+    });
+    expect(printSpy).not.toHaveBeenCalled();
+    expect((await memoryStore(backend).open(PLAN_ID)).kind).toBe("new");
+  });
+
+  it("the browser's own Print command, used while the Print button is still waiting for the faces, is recorded as a print", async () => {
+    const faces = deferred<undefined>();
+    fontsReady(faces.promise);
+    const store = await storeHolding(list180({ paperVersion: 3, changedSincePrint: true, printedAt: "2026-11-10T09:00:00.000Z" }));
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    fireEvent.click(within(tools()).getByRole("button", { name: "Print" }));
+
+    // Nothing seems to happen, so the planner uses the browser's own Print: that sheet is version 4 too.
+    act(() => {
+      window.dispatchEvent(new Event("beforeprint"));
+    });
+    expect(currentList().paperVersion).toBe(4);
+    expect(text(document.querySelector(".gp-running"))).toContain("Version 4");
+
+    // The button's own print then follows: the same list, the same number.
+    await act(async () => {
+      faces.resolve(undefined);
+      await faces.promise;
+    });
+    await waitFor(() => { expect(printSpy).toHaveBeenCalledTimes(1); });
+    expect(currentList().paperVersion).toBe(4);
+  });
+
+  it("asks the browser to confirm leaving while a print's record is still on its way to the device, and not once it is kept", async () => {
+    const backend = memoryBackend();
+    const real = await storeHolding(list180(), backend);
+    const held = deferred<undefined>();
+    let hold = false;
+    const store: GuestListStore = {
+      ...real,
+      save: async (list, loaded, opts) => {
+        if (hold) await held.promise;
+        return real.save(list, loaded, opts);
+      },
+    };
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    const asksBeforeLeaving = (): boolean => {
+      const leaving = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(leaving);
+      return leaving.defaultPrevented;
+    };
+    expect(asksBeforeLeaving()).toBe(false);
+
+    hold = true;
+    act(() => {
+      window.dispatchEvent(new Event("beforeprint"));
+    });
+    expect(asksBeforeLeaving()).toBe(true);
+
+    await act(async () => {
+      held.resolve(undefined);
+      await state().flush();
+    });
+    expect(asksBeforeLeaving()).toBe(false);
+  });
+
+  it("starts a save still waiting from the list page as the paper page is left, without waiting out the autosave", async () => {
+    const backend = memoryBackend();
+    const real = await storeHolding(list180(), backend);
+    let saves = 0;
+    const store: GuestListStore = {
+      ...real,
+      save: (list, loaded, opts) => {
+        saves += 1;
+        return real.save(list, loaded, opts);
+      },
+    };
+    open(`${PAPER}?kit=on`, store);
+    await paper("table-plan");
+    // A change made on the list page a moment before the planner came here: its save is still waiting.
+    act(() => {
+      state().apply((list) => ({ ...list, title: "Changed a moment ago", changedSincePrint: true }));
+    });
+    expect(saves).toBe(0);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+    });
+    expect(saves).toBe(1);
   });
 });

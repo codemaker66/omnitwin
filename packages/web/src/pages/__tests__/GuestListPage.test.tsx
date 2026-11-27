@@ -153,7 +153,7 @@ const NOT_KEPT_WORDS = "This browser is not keeping the list. It will be gone wh
 const NOT_OPENED = "The list kept here for this plan could not be opened just now. Reload the page to try again. Anything added here is not being kept.";
 const OTHER_TAB_WORDS = "This list was also changed in another tab. This tab's version was kept.";
 const REMOVED_ELSEWHERE_WORDS = "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
-const ADDED_AFTER_DELETE_WORDS = "Names were added to this list in another tab after it was deleted here.";
+const ADDED_AFTER_DELETE_WORDS = "This list was changed in another tab after it was deleted here. It is kept in this browser again.";
 const REMOVED_BY_RULE_WORDS = "This list was removed from this browser: a list is removed 30 days after its event, or 90 days after its last change.";
 
 function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {

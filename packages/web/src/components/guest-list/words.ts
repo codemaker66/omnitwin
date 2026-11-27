@@ -103,7 +103,7 @@ export const REMOVED_ELSEWHERE =
   "This list is no longer kept in this browser. It was deleted in another tab, or this browser's stored data was cleared.";
 
 /** The list was deleted in this tab, and a list another tab stored afterwards has been taken up. */
-export const ADDED_AFTER_DELETE = "Names were added to this list in another tab after it was deleted here.";
+export const ADDED_AFTER_DELETE = "This list was changed in another tab after it was deleted here. It is kept in this browser again.";
 
 /** The sweep this page ran as it opened removed the list, which was past its removal day. */
 export const REMOVED_BY_RULE =

@@ -153,18 +153,36 @@ function useOpenedList(planId: string, store: GuestListStore): boolean {
   return read;
 }
 
-/** When the page is seen again, or its window gains focus, what another tab did to the list is taken up. */
+/**
+ * When the page is seen again, or its window gains focus, what another tab did
+ * to the list is taken up. And as on the list page: a save still waiting (a
+ * change made there a moment ago, or a print's record) starts as this page is
+ * left, and while one is waiting or being kept the browser is asked to confirm
+ * leaving.
+ */
 function useTakeUpOtherTabs(): void {
   useEffect(() => {
     const takeUp = (): void => { void useGuestListStore.getState().refresh(); };
+    const keep = (): void => { void useGuestListStore.getState().flush(); };
     const onVisibility = (): void => {
       if (document.visibilityState === "visible") takeUp();
     };
+    const onLeaving = (event: BeforeUnloadEvent): void => {
+      if (!useGuestListStore.getState().changeWaiting()) return;
+      event.preventDefault();
+      // Older engines ask only when a return value is set; current ones go by preventDefault.
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- set for those older engines only
+      event.returnValue = "";
+    };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", takeUp);
+    window.addEventListener("pagehide", keep);
+    window.addEventListener("beforeunload", onLeaving);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", takeUp);
+      window.removeEventListener("pagehide", keep);
+      window.removeEventListener("beforeunload", onLeaving);
     };
   }, []);
 }
@@ -243,6 +261,8 @@ function recordPrint(): void {
 /** Print: the fonts, then the version recorded and kept on the device, then the browser's print. */
 function usePrint(): { readonly printing: boolean; readonly print: () => void } {
   const busy = useRef(false);
+  /** True only while the button's own call of the browser's print runs: the print it fires is already recorded. */
+  const ours = useRef(false);
   /** False once the planner has left the paper: what is on screen then is another page. */
   const here = useRef(false);
   const [printing, setPrinting] = useState(false);
@@ -256,7 +276,10 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
   useEffect(() => {
     here.current = true;
     const onBeforePrint = (): void => {
-      if (busy.current) return;
+      // The button records its own print before it opens the dialog. Every other print is recorded
+      // here, one asked of the browser while the button is still waiting included: that sheet goes
+      // out too, and must not carry an earlier sheet's number.
+      if (ours.current) return;
       recordPrint();
       void useGuestListStore.getState().flush();
     };
@@ -271,14 +294,23 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
   const stillHere = (): boolean => here.current;
   /** The print's save found another tab's list and gave way to it: the page state says so in its notice. */
   const gaveWay = (): boolean => useGuestListStore.getState().notice?.kind === "print-of-older-copy";
+  /** The read just made took up an empty list in place of one that is no longer stored. */
+  const foundGone = (takenUpBefore: number): boolean => {
+    const { takeUps, notice } = useGuestListStore.getState();
+    return takeUps !== takenUpBefore && (notice?.kind === "removed-elsewhere" || notice?.kind === "removed-by-rule");
+  };
 
   const run = async (): Promise<void> => {
     try {
       await fontsLoaded();
       if (!stillHere()) return;
       // A print is of the newest list kept on this device: another tab's change is taken up first.
+      const takenUp = useGuestListStore.getState().takeUps;
       await useGuestListStore.getState().refresh();
       if (!stillHere()) return;
+      // That read found the list gone (deleted in another tab, or removed under the rule). There is
+      // nothing to print, and the page says so; recording a print would store an empty list again.
+      if (foundGone(takenUp)) return;
       recordPrint();
       await useGuestListStore.getState().flush();
       if (!stillHere()) return;
@@ -294,7 +326,12 @@ function usePrint(): { readonly printing: boolean; readonly print: () => void } 
         if (!stillHere()) return;
         if (gaveWay()) useGuestListStore.getState().dismissNotice();
       }
-      window.print();
+      ours.current = true;
+      try {
+        window.print();
+      } finally {
+        ours.current = false;
+      }
     } finally {
       busy.current = false;
       setPrinting(false);
