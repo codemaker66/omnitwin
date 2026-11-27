@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "createdOn": "2026-11-22",
+  "purpose": "Day Board room-identity photographs of the empty rooms, so a photograph names the room and never implies an event; no claim about current furniture or booking setup.",
+  "provenance": "Rectilinear views reprojected from the venue's own 8K equirectangular panorama capture (one survey sweep per room, chosen by sight). The galleries keep their supplied Diary photographs (rooms/diary).",
+  "transformation": {
+    "tool": "OpenCV 5.0.0 remap (Lanczos4) for the reprojection; Pillow 12.0.0 for resize and encoding",
+    "framing": "Pinhole projection at the stated yaw, pitch and horizontal field of view; no crop beyond the projection; no generative edit",
+    "resize": "Lanczos, widths 480, 768, 1120 and 1536",
+    "encoding": "Lossy RGB WebP, quality 86, method 6"
+  },
+  "photos": [
+    {
+      "slug": "grand-hall",
+      "source": {
+        "capture": "venue 8K equirectangular panorama, survey sweep 034",
+        "width": 8192,
+        "height": 4096,
+        "bytes": 7120936,
+        "sha256": "dc857fedea96b5e2e1acd9a8da97d96c5512dbfc31acb8c7f4db27fe27a7f3bb"
+      },
+      "view": {
+        "yawDegrees": 180,
+        "pitchDegrees": 9,
+        "horizontalFovDegrees": 80,
+        "width": 1536,
+        "height": 1024
+      },
+      "variants": [
+        {
+          "path": "/images/rooms/day-board/grand-hall-480.webp",
+          "width": 480,
+          "height": 320,
+          "bytes": 33128,
+          "sha256": "d0798f9cd3977c407e7e652a4902cf1135a2f6d63b2381a7e6e888c969c37610"
+        },
+        {
+          "path": "/images/rooms/day-board/grand-hall-768.webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 75330,
+          "sha256": "62197a67ae1fdaae53e3d2912df3e57c383fe63a6f6696ec3214dba3124daa59"
+        },
+        {
+          "path": "/images/rooms/day-board/grand-hall-1120.webp",
+          "width": 1120,
+          "height": 747,
+          "bytes": 142946,
+          "sha256": "4e68d60b61cc3a6d9db9e51ed2a17e6106ec013b7f7d93bfb04da7599be11c88"
+        },
+        {
+          "path": "/images/rooms/day-board/grand-hall-1536.webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 238910,
+          "sha256": "1293e2a5b7f10e08a71e623a1cead6f3ab6419ac4a09bde881316a1f165dac12"
+        }
+      ]
+    },
+    {
+      "slug": "saloon",
+      "source": {
+        "capture": "venue 8K equirectangular panorama, survey sweep 068",
+        "width": 8192,
+        "height": 4096,
+        "bytes": 6642236,
+        "sha256": "3500b952e9f8bf5947bbc326f5ce56a47248b70665fd56c7c24da50f94b3563e"
+      },
+      "view": {
+        "yawDegrees": 95,
+        "pitchDegrees": 7,
+        "horizontalFovDegrees": 76,
+        "width": 1536,
+        "height": 1024
+      },
+      "variants": [
+        {
+          "path": "/images/rooms/day-board/saloon-480.webp",
+          "width": 480,
+          "height": 320,
+          "bytes": 30914,
+          "sha256": "27cf18fc4441c0d32bc47df9b57930e38ed585bc18c4ac9b8815755a8f7bb9c0"
+        },
+        {
+          "path": "/images/rooms/day-board/saloon-768.webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 69192,
+          "sha256": "7d6323774541091551d01ecdd96cd6cb65b076ba3a89f035cf89e139572db620"
+        },
+        {
+          "path": "/images/rooms/day-board/saloon-1120.webp",
+          "width": 1120,
+          "height": 747,
+          "bytes": 132278,
+          "sha256": "fb58ee0591f18b0ba3e3468eaf90842f51dcffbaef18d27a2cd2efc94288614d"
+        },
+        {
+          "path": "/images/rooms/day-board/saloon-1536.webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 222040,
+          "sha256": "e5aa1cc0d11c66a4ffe1ea350f9e120f6d536887eec7250918de6d2dd760c368"
+        }
+      ]
+    },
+    {
+      "slug": "reception-room",
+      "source": {
+        "capture": "venue 8K equirectangular panorama, survey sweep 133",
+        "width": 8192,
+        "height": 4096,
+        "bytes": 4318270,
+        "sha256": "f95c2bb0769317d92beac7b8b169f52af2126a3565d0edb2ba965ce285c83ce8"
+      },
+      "view": {
+        "yawDegrees": 180,
+        "pitchDegrees": 6,
+        "horizontalFovDegrees": 80,
+        "width": 1536,
+        "height": 1024
+      },
+      "variants": [
+        {
+          "path": "/images/rooms/day-board/reception-room-480.webp",
+          "width": 480,
+          "height": 320,
+          "bytes": 16940,
+          "sha256": "7ff52298d70c84ddd4769a7017a4a19b391e497e2ff5e32a43140419c781f580"
+        },
+        {
+          "path": "/images/rooms/day-board/reception-room-768.webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 36578,
+          "sha256": "3d0ab5158cca299db36831e19069630a5904ac48f3aa9140e539d41829456410"
+        },
+        {
+          "path": "/images/rooms/day-board/reception-room-1120.webp",
+          "width": 1120,
+          "height": 747,
+          "bytes": 69712,
+          "sha256": "25efa386008e74780348b8c63d05d9845ddb84f33b7fa9f163112927d60cdc29"
+        },
+        {
+          "path": "/images/rooms/day-board/reception-room-1536.webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 119676,
+          "sha256": "68ac4a1b3057159e448bd5a3b7ec0b3ca7e1cfdb7013ccf6d0af8eae1172b527"
+        }
+      ]
+    },
+    {
+      "slug": "robert-adam-room",
+      "source": {
+        "capture": "venue 8K equirectangular panorama, survey sweep 102",
+        "width": 8192,
+        "height": 4096,
+        "bytes": 4469362,
+        "sha256": "5cfb2fba152e376e7653a1abe49c3dda6250987ef8ab0637f57920248f2f6d3f"
+      },
+      "view": {
+        "yawDegrees": 90,
+        "pitchDegrees": 9,
+        "horizontalFovDegrees": 80,
+        "width": 1536,
+        "height": 1024
+      },
+      "variants": [
+        {
+          "path": "/images/rooms/day-board/robert-adam-room-480.webp",
+          "width": 480,
+          "height": 320,
+          "bytes": 16830,
+          "sha256": "8ddfd6b027da6c68e6c26c6baf2fe852457697647ed3b6a293df50e8475152af"
+        },
+        {
+          "path": "/images/rooms/day-board/robert-adam-room-768.webp",
+          "width": 768,
+          "height": 512,
+          "bytes": 37988,
+          "sha256": "80c69427a7a85b9a1fb9b8e1d0885bceef7a936a5990394e08cca7ef1f7af796"
+        },
+        {
+          "path": "/images/rooms/day-board/robert-adam-room-1120.webp",
+          "width": 1120,
+          "height": 747,
+          "bytes": 72910,
+          "sha256": "1ca084dd16372a18353db8555374fbcf581efbd177281c0d6fa81760b13a0edd"
+        },
+        {
+          "path": "/images/rooms/day-board/robert-adam-room-1536.webp",
+          "width": 1536,
+          "height": 1024,
+          "bytes": 120880,
+          "sha256": "2d57c2131b754a44958b2125e897c006844c199bf1a4a2463ff3b9979a3a278b"
+        }
+      ]
+    }
+  ]
+}

@@ -10,7 +10,7 @@ import { diaryRoomPhoto } from "../../../lib/diary-room-photos.js";
 // "Grand Hall" gets no picture rather than Trades Hall's.
 // ---------------------------------------------------------------------------
 
-const TRADES_HALL_SLUGS: ReadonlySet<string> = new Set([TRADES_HALL_VENUE_SLUG, "trades-hall-glasgow"]);
+export const TRADES_HALL_SLUGS: ReadonlySet<string> = new Set([TRADES_HALL_VENUE_SLUG, "trades-hall-glasgow"]);
 
 export interface RoomPhoto {
   readonly src: string;
