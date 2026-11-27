@@ -20,20 +20,25 @@ A graceful stop is booked before the launcher ends. Ctrl-C or Ctrl-Break (or a
 SIGTERM on Linux and macOS) stops the run as its deadline does: it interrupts the
 session and waits for it, books the platform's figure once it has stopped, or its
 whole budget as unknown if it would not stop, and exits non-zero. One press that
-reaches the launcher twice within 2 s (on Linux the terminal and pnpm both pass
-Ctrl-C on) counts once. A second press, or closing the window, books the session
-at once at its whole budget as unknown, once, and exits: Windows allows about 5
-seconds after a close, and the booking takes milliseconds. `sandbox run` runs the
-launcher in one node process, so nothing between pnpm and the launcher can end it
-first, but pnpm may give the prompt back before the launcher has finished: keep
-the window open until it says the run has stopped. A launcher started from a
+reaches the launcher twice (on Linux and macOS the terminal and pnpm both pass
+Ctrl-C on) counts once; a second Ctrl-C there makes pnpm send the launcher a
+SIGTERM, so a quick double press books at once. A second press, or closing the
+window, books the session at once at its whole budget as unknown, once, then sends
+it one interrupt and exits within 2 s (about 0.3 s in a real console, where
+Windows allows about 5 s after a close); a session the interrupt does not reach
+runs on until it stops or reaches its budget. `sandbox run` runs the launcher in
+one node process, so nothing between pnpm and the launcher can end it first, but
+on Windows pnpm may give the prompt back before the launcher has finished: keep
+the window open until it says the run has stopped, and do not press Ctrl-C at
+that prompt, which still reaches the launcher. A launcher started from a
 process that has Ctrl-C turned off (one started in a new process group, as some
 IDE terminals and schedulers do) never sees Ctrl-C; Ctrl-Break and closing the
 window still work.
 
-A hard kill (`taskkill /F`, SIGKILL, a crash, a power cut) reaches no handler and
-books nothing; Windows has no kill a console program can catch, and `taskkill`
-without `/F` refuses the launcher's process. The next start books it. Before `run`
+A hard kill (`taskkill /F`, SIGKILL, a crash, a power cut, or Windows shutting
+down, restarting or signing out) reaches no handler and books nothing; Windows has
+no kill a console program can catch, and `taskkill` without `/F` refuses the
+launcher's process. The next start finds the session. Before `run`
 reads the sandbox or creates anything, it lists the sessions this lane made, from
 a day before this lane's earliest ledger line, or from 24 November 2026 when the
 lane has none (a missing or empty ledger included), and refuses while any of them
@@ -100,6 +105,11 @@ nothing and never clears it.
   `onlyBuiltDependencies` allow list, so the person reviewing reads the lockfile
   change.
 - Two launchers started at once can both pass the spend check.
+- The caps count every line in the ledger file, and the startup check lists from
+  24 November 2026 when this lane has no line. Start a new credit cycle by
+  raising the caps, not by emptying or replacing the ledger: `run` would then
+  count the last cycle's sessions as unbooked and refuse, and booking them would
+  charge the old spend to the new cycle.
 
 Nothing here is pushed. The launcher never holds a GitHub credential; the patch
 comes back as files and a person (or the conveyor's delivery step) opens the pull
