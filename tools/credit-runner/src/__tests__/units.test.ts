@@ -441,6 +441,30 @@ describe("ledgerHasSession", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("starts a new line when the ledger's last line has no newline (a torn write or a hand edit), so the line it appends is still read", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "ledger-torn-"));
+    try {
+      const file = path.join(root, "ledger.jsonl");
+      const line = (batchId: string) => ({ ts: "2026-11-05T09:00:00.000Z", lane: "sandbox", job: "a4-trial:x", model: "m", requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 4.5, batchId });
+      // A whole line saved without its final newline.
+      await writeFile(file, JSON.stringify(line("sesn_other")));
+      await appendCreditLine(file, line("sesn_1"));
+      expect(await ledgerHasSession(file, "sesn_other")).toBe(true);
+      expect(await ledgerHasSession(file, "sesn_1")).toBe(true);
+      // A line cut off part-way, as a power cut during an append leaves it: the torn bytes stay unreadable, the new line is read.
+      await writeFile(file, '{"ts":"2026-11-05T09:0');
+      await appendCreditLine(file, line("sesn_2"));
+      expect(await ledgerHasSession(file, "sesn_2")).toBe(true);
+      expect((await readFile(file, "utf8")).split("\n")).toHaveLength(3);
+      // An empty ledger gains no blank first line.
+      await writeFile(file, "");
+      await appendCreditLine(file, line("sesn_3"));
+      expect((await readFile(file, "utf8")).startsWith("{")).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("key files", () => {

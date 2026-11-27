@@ -1,4 +1,4 @@
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, closeSync, fstatSync, openSync, readFileSync, readSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 
@@ -68,12 +68,35 @@ export async function readCreditLedger(file: string): Promise<CreditLedger> {
   return { lines, badLines };
 }
 
+/** Whether the file exists, is not empty and does not end in a newline (a line torn by a hard kill, or saved by hand without one). */
+function endsMidLine(file: string): boolean {
+  let fd: number;
+  try {
+    fd = openSync(file, "r");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw error;
+  }
+  try {
+    const { size } = fstatSync(fd);
+    if (size === 0) return false;
+    const last = Buffer.alloc(1);
+    readSync(fd, last, 0, 1, size - 1);
+    return last[0] !== 0x0a;
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /**
  * Appends one line, synchronously: a signal handler (the launcher's at-once
- * booking) then never runs while a line is half written.
+ * booking) then never runs while a line is half written. When the ledger ends
+ * part-way through a line, the new line starts on a line of its own, so it is
+ * read even though the torn one before it is not.
  */
 export function appendCreditLineSync(file: string, line: CreditLine): void {
-  appendFileSync(file, `${JSON.stringify(lineSchema.parse(line))}\n`, "utf8");
+  const text = `${JSON.stringify(lineSchema.parse(line))}\n`;
+  appendFileSync(file, endsMidLine(file) ? `\n${text}` : text, "utf8");
 }
 
 /** appendCreditLineSync behind a promise: the write is done, or has failed, before the call returns. */
