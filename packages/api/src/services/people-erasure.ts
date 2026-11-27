@@ -1163,8 +1163,10 @@ async function rewordVersions(tx: PeopleTx, proposalIds: readonly string[], name
 
 /**
  * Deletes the enquiries and everything that copies what the client wrote,
- * and takes the names out of the rows the venue keeps. The caller has found
- * the records with this transaction and checked keptRecord.
+ * and takes the names out of the rows the venue keeps. For a kept person's
+ * enquiries nothing is reworded, and an event the join made for one of them
+ * that nothing points at any more is named "Event" (unnameLeftEvents). The
+ * caller has found the records with this transaction and checked keptRecord.
  */
 export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords): Promise<RemovedCounts> {
   const { venueId, names, nearby } = records;
@@ -1321,6 +1323,9 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
   const deleted = enquiryIds.length === 0 ? [] : await tx.delete(enquiries)
     .where(inArray(enquiries.id, enquiryIds))
     .returning({ id: enquiries.id });
+  // A kept person's spare enquiries go with nothing reworded; an event the
+  // join made for one of them that nothing points at any more loses the name.
+  const unnamed = ofAKeptPerson(records) ? await unnameLeftEvents(tx, records) : [];
 
   // A lead has no venue. Its address is one of theirs, or one their deleted
   // enquiries were sent from, that no other live person here holds; another
@@ -1351,8 +1356,72 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
     changeCopies: changeCopies.length,
     notices: proposalNotices.length + enquiryNotices,
     proposals: distinct([...accepted.map((row) => row.id), ...retitled, ...reversioned]).length,
-    reworded,
+    reworded: reworded + unnamed.length,
   };
+}
+
+/** Whether the records are only the enquiries, never a booking, of a person
+ *  the venue keeps (findEnquiryRecords with the person as writers): their
+ *  names stay on what is kept, so nothing is reworded. */
+function ofAKeptPerson(records: ErasureRecords): boolean {
+  return records.ids.length === 0 && records.writers.length > 0;
+}
+
+/** The name the join gives an event when its record gives none. */
+const UNNAMED_EVENT = "Event";
+
+/**
+ * A kept person's enquiry that never became a booking is deleted with nothing
+ * reworded. The join of old records named an event it made for one, and its
+ * client, from the enquiry (event_link_joins: made, in force), and once the
+ * enquiry is gone a later erasure of the person can no longer find that
+ * event. So, after the delete, each such event that nothing points at any
+ * more is named "Event" and its client cleared: no row of any table with a
+ * key to the event or to one of its phases (its own phases, made with it,
+ * apart), read from pg_constraint as the undo reads it (spine_undo_joins), so
+ * a table added later counts too; and it names no deal or client account of
+ * its own. An event something still points at is left alone. Only events
+ * among the records', which the person's own erasure attempt locked, are
+ * touched. Returns their ids.
+ */
+async function unnameLeftEvents(tx: PeopleTx, records: ErasureRecords): Promise<readonly string[]> {
+  const enquiryIds = records.enquiries.map((row) => row.id);
+  const found = distinct([...records.eventIds, ...records.nearby.eventIds]);
+  if (enquiryIds.length === 0 || found.length === 0) return [];
+  const made = (await tx.selectDistinct({ id: eventLinkJoins.eventId }).from(eventLinkJoins).where(allOf(
+    eq(eventLinkJoins.venueId, records.venueId),
+    eq(eventLinkJoins.subjectKind, "enquiry"),
+    inArray(eventLinkJoins.subjectId, enquiryIds),
+    eq(eventLinkJoins.eventMade, true),
+    isNull(eventLinkJoins.undoneAt),
+    inArray(eventLinkJoins.eventId, [...found]),
+  ))).map((row) => row.id);
+  if (made.length === 0) return [];
+  const keys = await tx.execute<{ schema: string; table: string; column: string; toEvent: boolean }>(sql`
+    select n."nspname" as "schema", t."relname" as "table", a."attname" as "column",
+      c."confrelid" = '"events"'::regclass as "toEvent"
+    from pg_constraint as c
+    join pg_class as t on t."oid" = c."conrelid"
+    join pg_namespace as n on n."oid" = t."relnamespace"
+    cross join lateral unnest(c."conkey", c."confkey") as k("referencing", "referenced")
+    join pg_attribute as a on a."attrelid" = c."conrelid" and a."attnum" = k."referencing"
+    join pg_attribute as r on r."attrelid" = c."confrelid" and r."attnum" = k."referenced" and r."attname" = 'id'
+    where c."contype" = 'f' and c."confrelid" in ('"events"'::regclass, '"event_phases"'::regclass)
+      and not (c."conrelid" = '"event_phases"'::regclass and c."confrelid" = '"events"'::regclass)`);
+  const pointing = keys.rows.map((key): SQL => {
+    const from = sql`${sql.identifier(key.schema)}.${sql.identifier(key.table)} as "ref"`;
+    const column = sql`"ref".${sql.identifier(key.column)}`;
+    return key.toEvent
+      ? sql`exists (select 1 from ${from} where ${column} = "ev"."id")`
+      : sql`exists (select 1 from ${from} where ${column} in (select ph."id" from "event_phases" as ph where ph."event_id" = "ev"."id"))`;
+  });
+  const left = sql.join(made.map((id) => sql`${id}::uuid`), sql`, `);
+  const unnamed = await tx.execute<{ id: string }>(sql`
+    update "events" as "ev" set "name" = ${UNNAMED_EVENT}, "client_name" = null
+    where "ev"."id" in (${left}) and "ev"."opportunity_id" is null and "ev"."client_account_id" is null
+      and not (${or(...pointing) ?? sql`false`})
+    returning "ev"."id"`);
+  return unnamed.rows.map((row) => row.id);
 }
 
 /** Whether a layout's day-of contact is them: their name (as a field that is
@@ -1468,9 +1537,8 @@ async function withoutAgreements(tx: PeopleTx, proposalIds: readonly string[]): 
  *  when only a kept person's spare enquiries leave. Returns the decisions
  *  whose reason went. */
 async function eraseDecisionReasons(tx: PeopleTx, records: ErasureRecords, names: readonly string[]): Promise<readonly string[]> {
-  const keptPerson = records.ids.length === 0 && records.writers.length > 0;
   const bookingIds = [...records.bookingIds, ...records.nearby.bookingIds];
-  if (keptPerson || bookingIds.length === 0) return [];
+  if (ofAKeptPerson(records) || bookingIds.length === 0) return [];
   const given = await tx.select({ id: decisions.id, reason: decisions.reason, enquiryId: bookings.enquiryId }).from(decisions)
     .innerJoin(bookings, eq(bookings.id, decisions.subjectId))
     .where(allOf(

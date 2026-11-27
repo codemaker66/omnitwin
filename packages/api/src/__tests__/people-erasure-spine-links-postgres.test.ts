@@ -808,6 +808,41 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     expect(await names(madeForDeal)).toEqual({ name: "Dinner for Ruaraidh Dealmoved", client_name: null });
   });
 
+  it("the 24-month pass, removing a kept person's enquiry that never became a booking, takes their name off the event the join made for it once nothing points at it", async () => {
+    const v = await venueIn(pool, "retention, a kept person's made events");
+    // Kept by a confirmed booking pencilled from her first enquiry.
+    const morag = await person(v, "Morag Keptwell", longAgo);
+    const booked = await enquiry(v, { contactId: morag, name: "Morag Keptwell", at: longAgo });
+    const kept = await event(v, "TEST ONLY her booked event", null);
+    await booking(v, { eventId: kept, enquiryId: booked, kind: "ink", at: longAgo });
+    // Two worked enquiries that never became a booking: the join makes an
+    // event for each, named from it. A floor plan is then linked to the second's.
+    const spare = await enquiry(v, { contactId: morag, name: "Morag Keptwell", replied: true, at: longAgo });
+    const planned = await enquiry(v, { contactId: morag, name: "Morag Keptwell", replied: true, at: longAgo });
+    await join();
+    const made = await eventOf("enquiries", spare);
+    const madeAndPlanned = await eventOf("enquiries", planned);
+    expect(await joinOf("enquiry", spare)).toEqual({ event_id: made, event_made: true, path: "new_event" });
+    expect(await joinOf("enquiry", planned)).toEqual({ event_id: madeAndPlanned, event_made: true, path: "new_event" });
+    const plan = await id(`INSERT INTO configurations (space_id, venue_id, name, layout_style)
+      VALUES ($1, $2, 'TEST ONLY plan', 'dinner-rounds') RETURNING id`, [v.rooms.hall, v.venueId]);
+    await pool.query(`INSERT INTO event_configuration_links (event_id, configuration_id, link_type)
+      VALUES ($1, $2, 'source_configuration')`, [madeAndPlanned, plan]);
+
+    const pass = await eraseLapsedPeople(db, { now: passNow, startsOn: new Date("2024-01-01T00:00:00Z") });
+    expect(pass).toMatchObject({ off: false, failed: 0 });
+    expect(pass.kept.filter((row) => row.venueId === v.venueId)).toEqual([{ venueId: v.venueId, personId: morag }]);
+    // She is kept, with her booked enquiry; the two that never became a booking go.
+    expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [morag])).toBe(1);
+    expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[booked, spare, planned]])).toBe(1);
+    // Nothing points at the first's event any more: it loses the name the
+    // join gave it, and its client. The second's is left alone, as anything
+    // something still points at is.
+    expect(await names(made)).toEqual({ name: "Event", client_name: null });
+    expect(await names(madeAndPlanned)).toEqual({ name: "Morag Keptwell", client_name: "Morag Keptwell" });
+    expect(await names(kept)).toEqual({ name: "TEST ONLY her booked event", client_name: null });
+  });
+
   it("the join's own records of an erased enquiry stay as ids: the nightly join and the undo still run cleanly afterwards", async () => {
     const v = await venueIn(pool, "erasure, the join's records");
     const catriona = await person(v, "Catriona Listwell");
