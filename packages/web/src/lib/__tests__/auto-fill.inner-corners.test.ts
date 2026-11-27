@@ -196,9 +196,11 @@ function judgeTheFill(fill: typeof planBanquetFill, corner: number): void {
 
     // Every round keeps the walls' clearances, and the aisle between rings is kept.
     for (const [x, z] of centres) expect(roundKeeps(walls, samples, x, z, toRenderSpace(radius)), `${name}: the round at (${x.toFixed(2)}, ${z.toFixed(2)})`).toBe(true);
-    centres.forEach(([ax, az], i) => centres.slice(i + 1).forEach(([bx, bz]) => {
-      expect(Math.hypot(ax - bx, az - bz), `${name}: rounds at (${ax.toFixed(2)}, ${az.toFixed(2)}) and (${bx.toFixed(2)}, ${bz.toFixed(2)})`).toBeGreaterThanOrEqual(toRenderSpace(spacing) - 1e-6);
-    }));
+    centres.forEach(([ax, az], i) => {
+      for (const [bx, bz] of centres.slice(i + 1)) {
+        expect(Math.hypot(ax - bx, az - bz), `${name}: rounds at (${ax.toFixed(2)}, ${az.toFixed(2)}) and (${bx.toFixed(2)}, ${bz.toFixed(2)})`).toBeGreaterThanOrEqual(toRenderSpace(spacing) - 1e-6);
+      }
+    });
 
     // Every piece set, table and chair, stands wholly inside the walls.
     for (const t of plan.tables) {
