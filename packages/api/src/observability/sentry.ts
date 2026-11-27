@@ -1,5 +1,5 @@
 import type { FastifyRequest } from "fastify";
-import type { NodeOptions, fastifyIntegration, startNewTrace, withIsolationScope } from "@sentry/node";
+import type { NodeOptions, captureException, fastifyIntegration, startNewTrace, withIsolationScope } from "@sentry/node";
 import type { Env } from "../env.js";
 import { scrubApiSentryEvent } from "./health-redaction.js";
 import { requestUrlOf, scrubBreadcrumb, scrubErrorEvent, scrubTransaction, type ScrubbableTransaction } from "./redact.js";
@@ -20,8 +20,10 @@ import { requestUrlOf, scrubBreadcrumb, scrubErrorEvent, scrubTransaction, type 
 //      breadcrumbs, transactions and their spans), because the search
 //      routes carry a name, email or phone in `?q=` and a share link's
 //      token opens what it shares.
-//   4. One capture path: the error normaliser's 5xx hook. The SDK's own
-//      Fastify integration keeps tracing and captures nothing.
+//   4. One capture path for a request's errors: the error normaliser's 5xx
+//      hook. The SDK's own Fastify integration keeps tracing and captures
+//      nothing. Work no request owns (the escalation sweep) reports through
+//      captureBackgroundError, on its own scope and trace.
 // ---------------------------------------------------------------------------
 
 /** The page-speed reports' route: API tracing leaves it out (buildSentryOptions). */
@@ -158,14 +160,15 @@ export function withOneCapturePath(
     : integration));
 }
 
-/** The two calls `inOwnScope` makes, on the SDK initSentry started. */
-interface ScopeFork {
+/** The calls `inOwnScope` and `captureBackgroundError` make, on the SDK initSentry started. */
+interface StartedSdk {
   readonly withIsolationScope: typeof withIsolationScope;
   readonly startNewTrace: typeof startNewTrace;
+  readonly captureException: typeof captureException;
 }
 
 /** The SDK once initSentry has started it; undefined while SENTRY_DSN is unset. */
-let started: ScopeFork | undefined;
+let started: StartedSdk | undefined;
 
 /**
  * Initialise the Sentry Node SDK if SENTRY_DSN is configured.
@@ -209,6 +212,20 @@ export function inOwnScope<T>(work: () => T): T {
     scope.clearBreadcrumbs();
     return sdk.startNewTrace(work);
   });
+}
+
+/**
+ * Reports an error from work that belongs to no request (a failed
+ * escalation pass), tagged with what failed, on the scope current where it
+ * is called: inside `inOwnScope`, the work's own scope and trace. The
+ * request path's one capture stays the error normaliser's 5xx hook; this is
+ * the other, for work no request owns (T-766). It goes through the same
+ * scrubbers as a request's error (beforeSend: query parameters, credentials,
+ * health notes). With SENTRY_DSN unset it does nothing; the caller logs the
+ * error either way.
+ */
+export function captureBackgroundError(error: unknown, tags: Readonly<Record<string, string>>): void {
+  started?.captureException(error, { tags: { ...tags } });
 }
 
 /**

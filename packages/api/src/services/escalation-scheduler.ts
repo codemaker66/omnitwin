@@ -3,7 +3,7 @@ import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import { requests } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { inOwnScope } from "../observability/sentry.js";
+import { captureBackgroundError, inOwnScope } from "../observability/sentry.js";
 import { quietHoursEndAfter } from "./escalation-clock.js";
 import { readOperatingSettings } from "./venue-operating-settings.js";
 import { UNOWNED_ESCALATING_STATES, runEscalationEmailPass, runRequestEscalationPass, type EscalatedRequest } from "./requests.js";
@@ -32,6 +32,37 @@ export const MIN_SLEEP_MS = 250;
  *  refused) is tried again this often, not every beat: the wait keeps the
  *  database asleep between tries and ends when the request is taken. */
 export const EMAIL_RETRY_MS = 15 * 60_000;
+/** A plan that failed (the database away, say) is tried again after this. */
+export const PLAN_RETRY_MS = 60_000;
+/** While passes keep failing, the next pass waits at least this long after
+ *  the first failure, doubling with each one after, up to PASS_RETRY_MAX_MS.
+ *  A pass that fails before it claims a request leaves that request's window
+ *  overdue, so the plan after it would wake a beat later: a failure that
+ *  stays (schema drift, say, where the pass's full-row select fails and the
+ *  plan's narrow selects do not) ran about four passes a second, each logged.
+ *  The first wait is short because a blip is the likelier failure and an
+ *  urgent request's window is two minutes by default. A failure that stays
+ *  reaches a minute between tries within about a minute, and still queries
+ *  once a minute while it lasts, so the database does not scale down then;
+ *  the hourly report is the alarm. The wait is a deadline set at the failure:
+ *  a poke during the streak arms at it, never later (T-766). */
+export const PASS_RETRY_FIRST_MS = 5_000;
+export const PASS_RETRY_MAX_MS = 60_000;
+
+/** The least wait before the next pass, after this many failures in a row. */
+export function passRetryAfter(failures: number): number {
+  return Math.min(PASS_RETRY_MAX_MS, PASS_RETRY_FIRST_MS * 2 ** Math.max(0, failures - 1));
+}
+/** While a step keeps failing, Sentry hears of its first failure, then once
+ *  an hour: enough to raise an alert, and to reopen one resolved while the
+ *  sweep is still failing, without an event at every try. Every failure is
+ *  logged (T-766). */
+export const FAILURE_REPORT_EVERY_MS = 3_600_000;
+
+/** The two steps of a wake that can fail, each on a streak of its own. */
+export type SweepStage = "plan" | "pass";
+/** What a report names: a step, or the announcement after a pass that succeeded. */
+export type ReportedStage = SweepStage | "announce";
 
 export function soonest(instants: readonly (number | null)[]): number | null {
   let best: number | null = null;
@@ -94,8 +125,51 @@ export interface EscalationSchedulerDeps {
   /** Injected in tests; default: the two passes, then the plan. */
   readonly plan?: (db: Database, nowMs: number) => Promise<number | null>;
   readonly run?: (db: Database) => Promise<readonly EscalatedRequest[]>;
+  /** Where a failure goes beyond the log, at the start of its streak and
+   *  hourly after. Injected in tests; default: Sentry, on the wake's own
+   *  scope and trace (`captureBackgroundError`). */
+  readonly report?: (error: unknown, stage: ReportedStage) => void;
   readonly setTimer?: (callback: () => void, ms: number) => unknown;
   readonly clearTimer?: (handle: unknown) => void;
+}
+
+function reportToSentry(error: unknown, stage: ReportedStage): void {
+  captureBackgroundError(error, { "background.task": "escalation-sweep", "escalation.stage": stage });
+}
+
+/** One step's run of failures: when it began, how many, and when it was
+ *  last reported. */
+class FailureStreak {
+  #since: number | null = null;
+  #failures = 0;
+  #reportedAt = 0;
+
+  get failing(): boolean {
+    return this.#since !== null;
+  }
+
+  /** How many failures in a row this streak holds; 0 when it is not failing. */
+  get failures(): number {
+    return this.#failures;
+  }
+
+  /** Counts a failure, and says whether this one is reported. */
+  failed(nowMs: number): { readonly report: boolean; readonly failures: number; readonly failingForMs: number } {
+    this.#failures += 1;
+    const report = this.#since === null || nowMs - this.#reportedAt >= FAILURE_REPORT_EVERY_MS;
+    this.#since ??= nowMs;
+    if (report) this.#reportedAt = nowMs;
+    return { report, failures: this.#failures, failingForMs: nowMs - this.#since };
+  }
+
+  /** Ends the run of failures, and says what it was; null when there was none. */
+  ended(nowMs: number): { readonly failures: number; readonly failedForMs: number } | null {
+    if (this.#since === null) return null;
+    const run = { failures: this.#failures, failedForMs: nowMs - this.#since };
+    this.#since = null;
+    this.#failures = 0;
+    return run;
+  }
 }
 
 async function runBothPasses(db: Database, logger?: FastifyBaseLogger): Promise<readonly EscalatedRequest[]> {
@@ -125,6 +199,12 @@ export class EscalationScheduler {
   #running = false;
   #stopped = false;
   #planSerial = 0;
+  /** Each step keeps its own streak: the plan between two failed passes
+   *  succeeds, and must not end the passes' streak. */
+  readonly #failures: Readonly<Record<SweepStage, FailureStreak>> = { plan: new FailureStreak(), pass: new FailureStreak() };
+  /** While passes keep failing, the instant the next pass may run: set at
+   *  each failure, so a poke during the streak cannot push it later. */
+  #passRetryAt: number | null = null;
 
   constructor(deps: EscalationSchedulerDeps) {
     this.#deps = deps;
@@ -166,20 +246,51 @@ export class EscalationScheduler {
     }
   }
 
+  /** Logs a failed step every time, and reports it at the start of its
+   *  streak and hourly after; inside a wake, on that wake's own scope. */
+  #failed(stage: SweepStage, error: unknown, message: string): void {
+    const nowMs = (this.#deps.now ?? Date.now)();
+    const { report, failures, failingForMs } = this.#failures[stage].failed(nowMs);
+    if (stage === "pass") this.#passRetryAt = nowMs + passRetryAfter(failures);
+    this.#deps.logger?.error({ err: error, stage, failures, failingForMs }, message);
+    if (report) (this.#deps.report ?? reportToSentry)(error, stage);
+  }
+
+  #succeeded(stage: SweepStage): void {
+    if (stage === "pass") this.#passRetryAt = null;
+    const run = this.#failures[stage].ended((this.#deps.now ?? Date.now)());
+    if (run !== null) this.#deps.logger?.info({ event: "escalation.recovered", stage, ...run }, "escalation sweep recovered");
+  }
+
+  /** Announces what a pass escalated. The escalations are already written,
+   *  so an announcement that throws is not a failed pass: it is logged and
+   *  reported on its own, and sets no wait. */
+  #announce(escalated: readonly EscalatedRequest[]): void {
+    try {
+      this.#deps.onEscalated(escalated);
+    } catch (error: unknown) {
+      this.#deps.logger?.error({ err: error, stage: "announce", requests: escalated.length }, "escalation announcement failed");
+      (this.#deps.report ?? reportToSentry)(error, "announce");
+    }
+  }
+
   async #plan(): Promise<void> {
     const serial = ++this.#planSerial;
     const now = this.#deps.now ?? Date.now;
     let wake: number | null;
     try {
       wake = await (this.#deps.plan ?? planNextWake)(this.#deps.db, now());
+      this.#succeeded("plan");
     } catch (error: unknown) {
-      this.#deps.logger?.error({ err: error }, "escalation scheduler could not plan");
-      wake = now() + 60_000;
+      this.#failed("plan", error, "escalation scheduler could not plan");
+      wake = now() + PLAN_RETRY_MS;
     }
     // A newer plan (a poke while this one read) wins; this one stands down.
     if (this.#stopped || serial !== this.#planSerial) return;
     this.#clearTimer();
-    const sleep = sleepFor(wake, now());
+    // While passes keep failing, no pass before the deadline the failure set.
+    const retryAt = this.#failures.pass.failing ? this.#passRetryAt : null;
+    const sleep = sleepFor(wake !== null && retryAt !== null ? Math.max(wake, retryAt) : wake, now());
     this.#deps.logger?.debug({ event: "escalation.scheduled", wakeAt: wake === null ? null : new Date(wake).toISOString(), sleepMs: sleep }, "escalation.scheduled");
     if (sleep === null) return;
     this.#timer = (this.#deps.setTimer ?? defaultSetTimer)(() => { this.#asOwnWork(() => this.#fire()); }, sleep);
@@ -191,9 +302,10 @@ export class EscalationScheduler {
     this.#running = true;
     try {
       const escalated = await (this.#deps.run ?? ((db: Database) => runBothPasses(db, this.#deps.logger)))(this.#deps.db);
-      if (escalated.length > 0) this.#deps.onEscalated(escalated);
+      this.#succeeded("pass");
+      if (escalated.length > 0) this.#announce(escalated);
     } catch (error: unknown) {
-      this.#deps.logger?.error({ err: error }, "request escalation sweep failed");
+      this.#failed("pass", error, "request escalation sweep failed");
     } finally {
       this.#running = false;
     }
