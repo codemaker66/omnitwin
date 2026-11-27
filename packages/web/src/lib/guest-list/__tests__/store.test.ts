@@ -1,7 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { memoryBackend, withBackend, type CacheBackend } from "../../idb-cache.js";
 import { emptyGuestList, type Guest, type GuestList } from "../model.js";
-import { createGuestListStore, GUEST_LIST_DB, GUEST_LIST_STORE, stampOf, type GuestListStore, type Stamp } from "../store.js";
+import { createGuestListStore, GUEST_LIST_DB, GUEST_LIST_STORE, stampOf, type Exclusive, type GuestListStore, type Stamp } from "../store.js";
 
 const PLAN_A = "5b0a6f0e-7f0b-4d7e-9c3a-2f6f6f0a1b11";
 const PLAN_B = "6c1b7a1f-8a1c-4e8f-8d4b-3a7a7a1b2c22";
@@ -660,5 +660,87 @@ describe("guest list store: no name in anything it raises or returns", () => {
 
     expect(collected.length).toBeGreaterThanOrEqual(11);
     for (const text of collected) expect(text).not.toContain(CANARY);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// One at a time: a save's read, write and read-back, a delete and a sweep each
+// run alone, across every tab of the browser.
+// ---------------------------------------------------------------------------
+
+describe("guest list store: a save, a delete and a sweep run one at a time across tabs", () => {
+  /** The browser's lock, as two tabs share it: whoever asks second waits for the first to finish. */
+  function sharedLock(): Exclusive {
+    let last: Promise<unknown> = Promise.resolve();
+    return <T>(work: () => Promise<T>): Promise<T> => {
+      const run = last.then(work, work);
+      last = run.catch(() => undefined);
+      return run;
+    };
+  }
+
+  it("a delete asked for while another tab's save is between its read and its write waits, so the names do not come back", async () => {
+    const backend = memoryBackend();
+    const lock = sharedLock();
+    const a = createGuestListStore(withBackend<unknown>(backend), lock);
+    // Tab B's device holds one read open until told to go on.
+    let hold = false;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const slow: CacheBackend = {
+      ...backend,
+      get: async (key) => {
+        const value = await backend.get(key);
+        if (hold) {
+          hold = false;
+          await held;
+        }
+        return value;
+      },
+    };
+    const b = createGuestListStore(withBackend<unknown>(slow), lock);
+    const first = await b.save(listFor(PLAN_A, { guests: [guestAt(1, null, null, "Ada Canary")] }), null);
+    if (first.kind !== "saved") throw new Error("the first save was not kept");
+
+    // B saves a change; while its read is held open, A deletes the list.
+    hold = true;
+    const saving = b.save(listFor(PLAN_A, { guests: [guestAt(1, null, null, "Ada Canary")], title: "Changed" }), first.stamp);
+    const deleting = a.erase(PLAN_A);
+    release();
+    const saved = await saving;
+    await deleting;
+
+    // The save finished first and the delete then removed what it wrote: nothing is stored.
+    if (saved.kind !== "saved") throw new Error("the save was not kept");
+    expect(await backend.get(PLAN_A)).toBeNull();
+    // B's next save finds the list gone, and writes nothing.
+    expect((await b.save(listFor(PLAN_A, { title: "Again" }), saved.stamp)).kind).toBe("removed-elsewhere");
+    expect(await backend.get(PLAN_A)).toBeNull();
+  });
+
+  it("asks the browser for its lock by one fixed name where it has one, and still does its work where the request is refused", async () => {
+    const names: string[] = [];
+    let refuse = false;
+    const locks = {
+      request: (name: string, work: () => Promise<unknown>): Promise<unknown> => {
+        names.push(name);
+        return refuse ? Promise.reject(new Error("refused")) : work();
+      },
+    };
+    Object.defineProperty(navigator, "locks", { value: locks, configurable: true });
+    try {
+      const s = store();
+      expect((await s.save(listFor(PLAN_A), null)).kind).toBe("saved");
+      await s.sweep(Date.parse(NOW));
+      await s.erase(PLAN_A);
+      expect(names).toEqual(["venviewer-guest-lists", "venviewer-guest-lists", "venviewer-guest-lists"]);
+      expect((await s.open(PLAN_A)).kind).toBe("new");
+
+      refuse = true;
+      expect((await s.save(listFor(PLAN_A), null)).kind).toBe("saved");
+      expect((await s.open(PLAN_A)).kind).toBe("ready");
+    } finally {
+      Reflect.deleteProperty(navigator, "locks");
+    }
   });
 });

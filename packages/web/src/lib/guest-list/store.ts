@@ -106,7 +106,41 @@ export interface GuestListStore {
   sweep(nowMs: number): Promise<readonly string[]>;
 }
 
-export function createGuestListStore(handle: CacheHandle<unknown>): GuestListStore {
+/**
+ * Runs a piece of work alone: nothing else that asks through the same lock
+ * runs until it has finished. A save reads, writes and reads back in three
+ * steps of the store, so without this another tab's delete could land between
+ * them and its names be written back.
+ */
+export type Exclusive = <T>(work: () => Promise<T>) => Promise<T>;
+
+/** The one name every tab asks the browser's lock by. It says nothing of any plan or guest. */
+const LOCK_NAME = "venviewer-guest-lists";
+
+/**
+ * One at a time across every tab of this browser, by the browser's own lock
+ * (the Web Locks API). A browser without it, or one that refuses the request,
+ * still gets the work done, unguarded, as every browser did before.
+ */
+const acrossTabs: Exclusive = async <T>(work: () => Promise<T>): Promise<T> => {
+  // Typed as always present, but an older browser has no `locks`, or has it empty.
+  const locks = typeof navigator === "undefined" ? undefined : (navigator.locks as LockManager | null | undefined);
+  if (locks === undefined || locks === null) return work();
+  const asked: { work: Promise<T> | null } = { work: null };
+  // The lock is held until the work has settled, whichever way it settles.
+  const run = (): Promise<void> => {
+    asked.work = work();
+    return asked.work.then(() => undefined, () => undefined);
+  };
+  try {
+    await locks.request(LOCK_NAME, run);
+  } catch {
+    // The browser refused the lock: the work is still done, unguarded, as every browser did before.
+  }
+  return asked.work ?? work();
+};
+
+export function createGuestListStore(handle: CacheHandle<unknown>, exclusive: Exclusive = acrossTabs): GuestListStore {
   async function open(planId: string): Promise<Opened> {
     try {
       const stored = await handle.get(planId);
@@ -201,7 +235,14 @@ export function createGuestListStore(handle: CacheHandle<unknown>): GuestListSto
     return removed;
   }
 
-  return { open, save, erase, sweep };
+  // A save (its read, its write and its read-back), a delete and a sweep each run alone, across
+  // every tab: a delete cannot land inside another tab's save, nor one save inside another.
+  return {
+    open,
+    save: (list, loaded, opts) => exclusive(() => save(list, loaded, opts)),
+    erase: (planId) => exclusive(() => erase(planId)),
+    sweep: (nowMs) => exclusive(() => sweep(nowMs)),
+  };
 }
 
 /**
