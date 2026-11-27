@@ -145,8 +145,8 @@ export type CreateSpace = z.infer<typeof CreateSpaceSchema>;
  *  packages/api/src/db/grand-hall-e57.ts) and the public pages show them. The
  *  planner draws and places in the unrounded scan instead
  *  (GRAND_HALL_RENDER_DIMENSIONS in packages/web/src/constants/scale.ts, from
- *  hall-spec.ts). Blake, 11 November 2026: "Use the measurements captured from
- *  the lidar /e57 data". */
+ *  hall-spec.ts). Blake's decision, 11 November 2026: the lidar (E57)
+ *  measurements. */
 export const TRADES_HALL_GRAND_HALL_DIMENSIONS: SpaceDimensions = { width: 21.14, length: 10.59, height: 6.7 };
 export const TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS: SpaceDimensions = { width: 9.7, length: 5.6, height: 2.18 };
 export const TRADES_HALL_RECEPTION_ROOM_DIMENSIONS: SpaceDimensions = { width: 13.4, length: 11.2, height: 3.2 };

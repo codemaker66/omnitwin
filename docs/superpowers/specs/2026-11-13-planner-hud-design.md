@@ -198,7 +198,7 @@ That keeps the screen's own code out. It does not keep out what the screen reads
 leaves out of a shared module whatever nothing in production reads (an export, or one entry of a table), and the
 first production reader puts it back, into the file that module is built into, for every page that fetches that
 file. A reader fetched on demand does this as surely as any other. So the rule has a second half: **the screen may
-not be the only production reader of anything in a shared module.** Three things were, and the screen keeps its own
+not be the only production reader of anything in a shared module.** Five things were, and the screen keeps its own
 copy of each, held to the original by a test so the two cannot part:
 
 | What the screen needs | The original | The screen's copy | Held by |
@@ -207,6 +207,7 @@ copy of each, held to the original by a test so the two cannot part:
 | The seat line's spring | `SPRING_PRESETS.dialGlide`, `lib/springs.ts` | `SEAT_LINE_SPRING`, `lib/hud/hud-motion.ts` | the same file |
 | The stage squaring up | `SHEET_SETTLE`, `planner-chrome/sheet-motion.ts` (`SPRING_PRESETS.sheetSettle` until #357) | `STAGE_SQUARING_SPRING`, `grand-hall/hall-stage.ts` | `grand-hall/__tests__/hall-stage.test.ts` |
 | The next light | `HALL_MOOD_NAMES`, `grand-hall/hall-mood.ts` | `NEXT_MOOD`, `planner-hud/ViewStation.tsx` | `planner-hud/__tests__/view-station.test.tsx`, by pressing the key |
+| The spacing Lay out keeps behind every chair | `BANQUET_CHAIR_CLEARANCE_M`, `lib/auto-fill.ts` | `LAID_CLEARANCE_M`, `lib/hud/room-seals.ts` | `lib/hud/__tests__/hud-logic.test.ts`, with the rule that reads it |
 
 The two springs are settings handed to the one shared spring (`stepSpring`, `useSpringCssVariable`); there is no
 second spring. On 16 November the other new chrome (#357) moved two of the originals out of the shared modules
@@ -220,16 +221,19 @@ Three checks hold the rule, each as far as it can see:
 - **From the sources** (`src/__tests__/bundle-splitting.test.ts`). It walks the imports from the app's entry and
   fails if: anything outside the screen imports one of its modules, other than the two imports on demand that
   fetch it; the screen is the only production importer of a name from a module the default planner already holds,
-  or of a package path, unless that name is on the test's short list of seams (one today, with its reason; a
+  or of a package path, unless that name is on the test's short list of seams (two today, each with its reason and its cost: the chrome's own switches, about 70 bytes of the shared runtime file; and the planner's own review of a layout's gangways, which the screen asks before it excuses a tight gap so that the rule about ways to a door has no second copy, 68 bytes of the planner page's file; a
   name that stops being a seam fails the test until it is taken off the list, as the seat line's spring hook did
   when #357's chrome began to import it too); or the screen imports a shared table whose entries the bundler
   keeps one by one (the spring table). It tells a name the rest of production builds anyway from one that only a
   dropped part of its module uses. It sees imports, not what the bundler makes of them, and it is general for
-  imported names only. Three things it would not see: the screen alone reading an entry of some other shared
+  imported names only. Four things it would not see: the screen alone reading an entry of some other shared
   table the bundler keeps entry by entry (it knows the spring table); a name that a production module imports
   and the bundler then drops as unused; and a member read through a module imported whole (`import * as`), which
-  the test counts as reading every name. None exists today. The comparison of two builds, below, is the proof
-  for all three.
+  the test counts as reading every name; and a name the rest of production does import, but only inside the
+  one file it is built into: the screen importing it too adds no code, only that name to the list the file hands
+  to other files, which is a few bytes for everyone who fetches it (found on 22 November by the two builds: nine
+  bytes, from the screen reading the record's own reading of `?event=`, which it no longer reads). None exists today. The comparison of two builds, below, is the proof
+  for all four.
 - **From the build** (`src/__tests__/hud-chunk-isolation.test.ts`, in CI's Build job). It walks the build twice
   from the page's own scripts: through every import except a flag's own three imports on demand, which is what a
   visitor with no flag can be sent; and through every import there is. What only the second walk reaches goes to
@@ -238,7 +242,7 @@ Three checks hold the rule, each as far as it can see:
   once made everyone fetch. It sees one build, so it cannot compare with master.
 - **Two builds from one tree, compared** (by hand; the scripts are outside the repository). This branch, and the
   same tree with the branch's modified files read as on master: every file's bytes, and every module's rendered
-  code. No module the branch did not edit may render differently in a file sent without a flag. This is the
+  code. No module the branch did not edit may render differently in a file sent without a flag, but for a named seam's own (the gangway review's wrapper: one function). Files of one length that still differ are read name by name: every name is resolved to what it stands for in both builds, and one build's file with its renames applied must be the other's byte for byte. This is the
   proof; the 13 November log has its reading.
 
 Which chrome is on screen is asked of the page that mounted it (`mountedPlannerChrome`, `planner-chrome-flag.ts`),
