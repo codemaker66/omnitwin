@@ -121,7 +121,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: work that repeats", () => {
       logger: silentLogger,
       alerts: recordingJobAlerts(),
       lostClaimPauseSeconds: 0,
-      afterPass: async (now) => { await ensureNextRuns(db, [daily], now); },
+      afterPass: async (now, executor) => { await ensureNextRuns(executor, [daily], now); },
     });
     worker.start();
     await idle(worker);
@@ -194,9 +194,9 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: work that repeats", () => {
     const alerts = recordingJobAlerts();
     const broken: RepeatingJob = { kind: failingKind, next: () => { throw new Error("No such time zone"); } };
     const daily: RepeatingJob = { kind: occurrenceKind, next: (after) => nextLocalTime(after, "03:00", "UTC") };
-    const keep = nextRunsKeeper(db, [broken, daily], logger, alerts);
-    await keep(new Date("2027-01-10T12:00:00Z"));
-    await keep(new Date("2027-01-10T12:05:00Z"));
+    const keep = nextRunsKeeper([broken, daily], logger, alerts);
+    await keep(new Date("2027-01-10T12:00:00Z"), db);
+    await keep(new Date("2027-01-10T12:05:00Z"), db);
     expect(lines).toEqual([
       { obj: { kind: failingKind.kind, error: "No such time zone" }, msg: "a repeating kind has no next run" },
       { obj: { kind: failingKind.kind, error: "No such time zone" }, msg: "a repeating kind has no next run" },

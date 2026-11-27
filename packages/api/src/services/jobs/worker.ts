@@ -8,6 +8,7 @@ import {
   PermanentJobError,
   RetryJobIn,
   type JobContext,
+  type JobExecutor,
   type JobLogger,
   type JobRegistry,
   type JobTransaction,
@@ -18,6 +19,7 @@ import {
   failJob,
   finishJob,
   handBackJob,
+  inBoundedTransaction,
   LOST_CLAIM_PAUSE_SECONDS,
   planNextWake,
   recoverLostClaims,
@@ -30,10 +32,13 @@ import {
 // The job list (T-702): the worker that runs inside each API process.
 //
 // One pass: put back every claim that has run out (raising `claimLost`, or
-// `jobDead` when that was its second); take and run one job at a time until
-// none is due, yielding to the event loop after each; call `afterPass` with
-// the database's now; plan; and set one timer for the earlier of the next due
-// job and the next boundary (with 60 minutes, the top of the hour). It does
+// `jobDead` when that was its second), passing over any row another
+// transaction holds; take and run one job at a time until none is due,
+// yielding to the event loop after each; call `afterPass` with the
+// database's now; plan; and set one timer for the earlier of the next due job
+// and the next boundary (with 60 minutes, the top of the hour). A recovery
+// that fails is a fault, but the pass still takes due work, and sleeps no
+// longer than `faultRetryMs` before it tries the recovery again. It does
 // not poll: between passes it asks the database nothing. It wakes when that
 // timer fires, when it starts, and when poked by work this process has just
 // committed. Pokes that come while a pass runs fold into one more pass. Every
@@ -47,13 +52,17 @@ import {
 // Node cannot stop a running function, and neither the database driver nor a
 // provider's library times out by itself, so nothing the worker waits for is
 // unbounded: each handler is raced against its kind's limit, and each of the
-// worker's own database calls against a shorter one. When a limit wins, the
-// worker stops waiting, aborts the handler's signal, records the try as
-// failed and moves on. Whatever the loser does later is caught: the API has no
-// last-resort handler for a stray rejection, so one left loose would end the
-// server. A call of its own that answers after the worker gave up on it is
-// dealt with too: a job it claimed is handed back, and the alerts for jobs it
-// recovered are raised.
+// worker's own database calls against a shorter one. Each of its own calls
+// also runs in a transaction of its own (`inBoundedTransaction`) whose
+// `SET LOCAL` limits let the server end the statement at that same limit (a
+// wait for a lock at half of it), so a call the worker stopped waiting for
+// does not go on waiting on the server, holding a pooled connection that the
+// API's requests share. When a limit wins, the worker stops waiting, aborts
+// the handler's signal, records the try as failed and moves on. Whatever the
+// loser does later is caught: the API has no last-resort handler for a stray
+// rejection, so one left loose would end the server. A call of its own that
+// answers after the worker gave up on it is dealt with too: a job it claimed
+// is handed back, and the alerts for jobs it recovered are raised.
 //
 // A handler runs outside any transaction. One whose work only changes our own
 // database opens its own transaction and calls `ctx.completeIn(tx)` there, so
@@ -72,8 +81,11 @@ export interface JobWorkerDeps {
   readonly dbCallTimeoutMs?: number;         // default 10_000
   readonly faultRetryMs?: number;            // default 60_000
   readonly lostClaimPauseSeconds?: number;   // default LOST_CLAIM_PAUSE_SECONDS; tests pass 0
-  /** Called at the end of every pass with the database's now; Task 6 uses it for work that repeats. */
-  readonly afterPass?: (now: Date) => Promise<void>;
+  /**
+   * Called at the end of every pass with the database's now and the transaction to write through: one of the
+   * worker's own, bounded on the server as its other calls are. `nextRunsKeeper` writes work that repeats.
+   */
+  readonly afterPass?: (now: Date, executor: JobExecutor) => Promise<void>;
   readonly setTimer?: (callback: () => void, ms: number) => unknown;
   readonly clearTimer?: (handle: unknown) => void;
   readonly yieldToLoop?: () => Promise<void>;   // default: setImmediate
@@ -261,7 +273,7 @@ export class JobWorker {
   readonly #dbCallTimeoutMs: number;
   readonly #faultRetryMs: number;
   readonly #lostClaimPauseSeconds: number;
-  readonly #afterPass: ((now: Date) => Promise<void>) | undefined;
+  readonly #afterPass: ((now: Date, executor: JobExecutor) => Promise<void>) | undefined;
   readonly #setTimer: (callback: () => void, ms: number) => unknown;
   readonly #clearTimer: (handle: unknown) => void;
   readonly #yieldToLoop: () => Promise<void>;
@@ -426,30 +438,44 @@ export class JobWorker {
     if (!this.#isStopping() && waitMs !== null) this.#setWakeTimer(waitMs);
   }
 
-  /** Milliseconds to sleep, or null when stopping. A failed pass is a fault, and sleeps `faultRetryMs`. */
+  /**
+   * Milliseconds to sleep, or null when stopping. A failed pass is a fault, and sleeps `faultRetryMs`. A pass
+   * whose recovery failed has the fault too, and is not counted as completed: it sleeps until its plan or for
+   * `faultRetryMs`, whichever is sooner.
+   */
   async #onePass(): Promise<number | null> {
     try {
-      const waitMs = await this.#pass();
-      if (waitMs !== null) this.#passCompleted();
-      return waitMs;
+      const pass = await this.#pass();
+      if (pass === null) return null;
+      if (pass.recoveryFailed) return Math.min(pass.waitMs, this.#faultRetryMs);
+      this.#passCompleted();
+      return pass.waitMs;
     } catch (error: unknown) {
       this.#passFailed(error);
       return this.#isStopping() ? null : this.#faultRetryMs;
     }
   }
 
-  async #pass(): Promise<number | null> {
-    const recovered = await this.#query(
-      "recoverLostClaims",
-      () => recoverLostClaims(this.#db, this.#lostClaimPauseSeconds),
-      (late) => { this.#announceRecovered(late); },
-    );
+  async #pass(): Promise<{ readonly waitMs: number; readonly recoveryFailed: boolean } | null> {
+    // A recovery that fails is the pass's fault, but must not stop the claims: due work of every kind still runs.
+    let recovered: readonly RecoveredJob[] = [];
+    let recoveryFailed = false;
+    try {
+      recovered = await this.#query(
+        "recoverLostClaims",
+        (tx) => recoverLostClaims(tx, this.#lostClaimPauseSeconds),
+        (late) => { this.#announceRecovered(late); },
+      );
+    } catch (error: unknown) {
+      recoveryFailed = true;
+      this.#passFailed(error, "a job worker pass failed to put back lost claims, and goes on to take due jobs");
+    }
     this.#announceRecovered(recovered);
 
     while (!this.#isStopping()) {
       const job = await this.#query(
         "claimNextJob",
-        () => claimNextJob(this.#db, this.#registry, this.#serverId),
+        (tx) => claimNextJob(tx, this.#registry, this.#serverId),
         (late) => { if (late !== null) this.#handBackLate(late); },
       );
       if (job === null) break;
@@ -468,16 +494,16 @@ export class JobWorker {
     // plan that sets the timer comes after it, so it sees what was written.
     const afterPass = this.#afterPass;
     if (afterPass !== undefined) {
-      const { now } = await this.#query("planNextWake", () => this.#plan());
-      await this.#query("afterPass", () => afterPass(now));
+      const { now } = await this.#query("planNextWake", (tx) => this.#plan(tx));
+      await this.#query("afterPass", (tx) => afterPass(now, tx));
     }
-    const plan = await this.#query("planNextWake", () => this.#plan());
+    const plan = await this.#query("planNextWake", (tx) => this.#plan(tx));
     const seconds = plan.dueInSeconds === null ? plan.boundaryInSeconds : Math.min(plan.dueInSeconds, plan.boundaryInSeconds);
-    return seconds * 1000;
+    return { waitMs: seconds * 1000, recoveryFailed };
   }
 
-  #plan(): ReturnType<typeof planNextWake> {
-    return planNextWake(this.#db, this.#registry, this.#sleepMinutes);
+  #plan(executor: JobExecutor): ReturnType<typeof planNextWake> {
+    return planNextWake(executor, this.#registry, this.#sleepMinutes);
   }
 
   async #runJob(job: ClaimedJob): Promise<void> {
@@ -552,7 +578,7 @@ export class JobWorker {
       case "returned": {
         // A handler that called completeIn is done already, in its own transaction.
         if (completed) return;
-        const finished = await this.#query("finishJob", () => finishJob(this.#db, job.id, job.claimToken));
+        const finished = await this.#query("finishJob", (tx) => finishJob(tx, job.id, job.claimToken));
         if (!finished) this.#logger.warn(jobFields(job), "a job finished after its claim had gone");
         return;
       }
@@ -606,12 +632,12 @@ export class JobWorker {
     };
     let outcome: FailOutcome;
     try {
-      outcome = await this.#query("failJob", () => failJob(this.#db, job.id, job.claimToken, text, options), tell);
+      outcome = await this.#query("failJob", (tx) => failJob(tx, job.id, job.claimToken, text, options), tell);
     } catch (error: unknown) {
       this.#logger.warn({ ...jobFields(job), error: jobErrorText(error) }, "recording a failed try failed; trying once more with the usual wait");
       outcome = await this.#query(
         "failJob",
-        () => failJob(this.#db, job.id, job.claimToken, text, { permanent: options.permanent }),
+        (tx) => failJob(tx, job.id, job.claimToken, text, { permanent: options.permanent }),
         tell,
       );
     }
@@ -623,13 +649,16 @@ export class JobWorker {
 
   /** Gives the job back without counting the try. */
   async #handBack(job: ClaimedJob): Promise<void> {
-    const handedBack = await this.#query("handBackJob", () => handBackJob(this.#db, job.id, job.claimToken));
+    const handedBack = await this.#query("handBackJob", (tx) => handBackJob(tx, job.id, job.claimToken));
     this.#logger.info({ ...jobFields(job), handedBack }, "the job worker is stopping and handed a job back");
   }
 
-  /** A claim answered after the worker gave up on it: nobody is running its job, so it goes straight back. */
+  /**
+   * A claim answered after the worker gave up on it: nobody is running its job, so it goes straight back. Not
+   * raced (nothing waits for it), but bounded on the server as every call of the worker's own is.
+   */
   #handBackLate(job: ClaimedJob): void {
-    handBackJob(this.#db, job.id, job.claimToken).then(
+    promiseOf(() => this.#bounded((tx) => handBackJob(tx, job.id, job.claimToken))).then(
       (handedBack) => {
         quietly(() => {
           this.#logger.warn({ ...jobFields(job), handedBack }, "a claim answered after its limit; its job was handed back");
@@ -668,14 +697,20 @@ export class JobWorker {
     }
   }
 
+  /** `call` in a transaction of its own, which the server ends at `dbCallTimeoutMs` (a lock wait at half). */
+  #bounded<T>(call: (tx: JobTransaction) => Promise<T>): Promise<T> {
+    return inBoundedTransaction(this.#db, this.#dbCallTimeoutMs, call);
+  }
+
   /**
-   * One of the worker's own database calls, raced against `dbCallTimeoutMs`.
-   * A rejection or the limit is a `WorkerDatabaseError`, which ends the pass as
+   * One of the worker's own database calls, in a transaction the server bounds
+   * (`#bounded`) and raced against the same limit, `dbCallTimeoutMs`. A
+   * rejection or the limit is a `WorkerDatabaseError`, which ends the pass as
    * a database fault. What the call does after losing is caught: a failure is
    * logged, a value goes to `lateValue`.
    */
-  async #query<T>(what: string, call: () => Promise<T>, lateValue?: (value: T) => void): Promise<T> {
-    const raced = await withLimit(promiseOf(call), this.#dbCallTimeoutMs, {
+  async #query<T>(what: string, call: (tx: JobTransaction) => Promise<T>, lateValue?: (value: T) => void): Promise<T> {
+    const raced = await withLimit(promiseOf(() => this.#bounded(call)), this.#dbCallTimeoutMs, {
       value: (value) => { lateValue?.(value); },
       failure: (error) => {
         this.#logger.warn({ call: what, error: jobErrorText(error) }, "a database call failed after the worker stopped waiting for it");
@@ -696,10 +731,10 @@ export class JobWorker {
   }
 
   /** The fault keeps the kind it began with until a pass completes: one alert for one outage. */
-  #passFailed(error: unknown): void {
+  #passFailed(error: unknown, message = "a job worker pass failed"): void {
     const what: Fault = error instanceof WorkerDatabaseError ? "database" : "loop";
     const detail = jobErrorText(error);
-    this.#logger.error({ fault: what, error: detail }, "a job worker pass failed");
+    this.#logger.error({ fault: what, error: detail }, message);
     if (this.#fault !== null) return;
     this.#fault = what;
     this.#alert(() => { this.#alerts.workerFault(what, detail); });

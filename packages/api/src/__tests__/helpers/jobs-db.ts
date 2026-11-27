@@ -45,6 +45,20 @@ export async function openJobsDatabase(name: string): Promise<{ readonly pool: P
   return { pool, db };
 }
 
+/**
+ * A second pool on the same disposable database (already migrated by
+ * `openJobsDatabase`) with no server-side timeouts, as production's pool
+ * connects (db/client.ts sets none): for the cases that must see what bounds
+ * the worker's own statements when the pool does not. The caller ends it.
+ */
+export function openUnboundedDatabase(name: string): { readonly pool: Pool; readonly db: Database } {
+  if (jobsTestUrl === undefined) throw new Error("VENVIEWER_JOBS_TEST_DATABASE_URL is required");
+  assertJobsTestTarget(jobsTestUrl);
+  const pool = new Pool({ connectionString: jobsTestUrl, application_name: name, max: 4 });
+  const db: Database = drizzle(pool, { schema });
+  return { pool, db };
+}
+
 /** Empties the job list between tests. */
 export async function resetJobs(pool: Pool): Promise<void> {
   await pool.query("TRUNCATE TABLE jobs");

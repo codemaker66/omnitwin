@@ -12,10 +12,12 @@ import {
   failJob,
   finishJob,
   handBackJob,
+  inBoundedTransaction,
   LOST_CLAIM_PAUSE_SECONDS,
   planNextWake,
   recoverLostClaims,
   RETRY_SECONDS,
+  STANDING_CLAIM_RECHECK_SECONDS,
   type ClaimedJob,
 } from "../services/jobs/store.js";
 import { jobsTestUrl, openJobsDatabase, resetJobs } from "./helpers/jobs-db.js";
@@ -295,10 +297,11 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: taking, finishing, failing and
     // A claim finishes once.
     expect(await finishJob(db, job.id, job.claimToken)).toBe(false);
     // Its claim has run out but no recovery has taken it: its own token still finishes it, in the
-    // handler's transaction. A recovery that meets that transaction waits, then finds nothing to put back.
+    // handler's transaction. A recovery that meets that transaction passes over the row without
+    // waiting (with 0 waiters, one that waited fails at the pool's lock timeout), and puts nothing back.
     const late = await takeOne();
     await expireClaim(late.id);
-    const race = await overlap((held) => finishJob(held, late.id, late.claimToken), () => recoverLostClaims(db), 1);
+    const race = await overlap((held) => finishJob(held, late.id, late.claimToken), () => recoverLostClaims(db), 0);
     expect(race).toEqual({ first: true, second: [] });
     expect(await rowOf(late.id)).toMatchObject({ state: "done", lost_claims: 0, claim_token: null });
   });
@@ -387,15 +390,80 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: taking, finishing, failing and
     const both = await Promise.all([recoverLostClaims(db), recoverLostClaims(db)]);
     expect(both.flat()).toHaveLength(1);
     expect((await rowOf(job.id)).lost_claims).toBe(1);
-    // The same race with the overlap made certain: one recovery holds the row, the other waits on
-    // it, then finds the claim already put back and counts nothing.
+    // The same race with the overlap made certain: one recovery holds the row, the other passes over
+    // it without waiting and counts nothing.
     const other = await takeOne();
     expect(other.id).not.toBe(job.id);
     await expireClaim(other.id);
-    const race = await overlap((held) => recoverLostClaims(held), () => recoverLostClaims(db), 1);
+    const race = await overlap((held) => recoverLostClaims(held), () => recoverLostClaims(db), 0);
     expect(race.first).toEqual([expect.objectContaining({ id: other.id, lostClaims: 1 })]);
     expect(race.second).toEqual([]);
     expect((await rowOf(other.id)).lost_claims).toBe(1);
+  });
+
+  it("a recovery passes over a claim another transaction holds, puts back the rest, and takes the held one later", async () => {
+    const held = await takeOne();
+    const free = await takeOne();
+    await expireClaim(held.id);
+    await expireClaim(free.id);
+    // A handler's completeIn transaction stays open on the held row past its claim. The recovery does
+    // not wait for it (with 0 waiters, one that waited fails at the pool's lock timeout).
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT 1 FROM jobs WHERE id = $1 FOR UPDATE", [held.id]);
+      expect(await recoverLostClaims(db)).toEqual([expect.objectContaining({ id: free.id, state: "queued", lostClaims: 1 })]);
+      expect(await rowOf(held.id)).toMatchObject({ state: "running", lost_claims: 0 });
+      // Its transaction rolls back: the claim is still out, and the next recovery puts it back.
+      await client.query("ROLLBACK");
+    } finally {
+      await client.query("ROLLBACK").catch(() => undefined);
+      client.release();
+    }
+    expect(await recoverLostClaims(db)).toEqual([expect.objectContaining({ id: held.id, state: "queued", lostClaims: 1 })]);
+  });
+
+  it("plans a claim that has run out and still stands a minute ahead, not at once", async () => {
+    const standing = await takeOne();
+    await expireClaim(standing.id);
+    const plan = await planNextWake(db, registry, 60);
+    expect(plan.dueInSeconds).toBeGreaterThan(STANDING_CLAIM_RECHECK_SECONDS - 2);
+    expect(plan.dueInSeconds).toBeLessThanOrEqual(STANDING_CLAIM_RECHECK_SECONDS);
+    // A claim still running out, sooner than that, is planned for exactly as before.
+    await takeOne();
+    const sooner = await planNextWake(db, registry, 60);
+    expect(sooner.dueInSeconds).toBeGreaterThan(13);
+    expect(sooner.dueInSeconds).toBeLessThanOrEqual(16);
+  });
+
+  it("a bounded transaction's limits end its statements on the server, and are its own", async () => {
+    const job = await takeOne();
+    const client = await pool.connect();
+    const other = await pool.connect();
+    try {
+      // A row held by another transaction: the wait is refused at half the limit, by the server.
+      await client.query("BEGIN");
+      await client.query("SELECT 1 FROM jobs WHERE id = $1 FOR UPDATE", [job.id]);
+      const started = Date.now();
+      await expect(inBoundedTransaction(drizzle(other, { schema }), 400, (tx) => failJob(tx, job.id, job.claimToken, "no", { permanent: false })))
+        .rejects.toMatchObject({ cause: expect.objectContaining({ code: "55P03" }) });
+      expect(Date.now() - started).toBeLessThan(3000);
+      await client.query("ROLLBACK");
+      // A statement that runs too long is ended at the limit.
+      await expect(inBoundedTransaction(drizzle(other, { schema }), 300, (tx) => tx.execute(sql`SELECT pg_sleep(5)`)))
+        .rejects.toMatchObject({ cause: expect.objectContaining({ code: "57014" }) });
+      // SET LOCAL: the connection keeps its own settings once the transaction is over.
+      const [after] = (await other.query<{ statement_timeout: string; lock_timeout: string }>(
+        "SELECT current_setting('statement_timeout') AS statement_timeout, current_setting('lock_timeout') AS lock_timeout",
+      )).rows;
+      expect(after).toEqual({ statement_timeout: "10s", lock_timeout: "8s" });
+    } finally {
+      await client.query("ROLLBACK").catch(() => undefined);
+      client.release();
+      other.release();
+    }
+    await expect(inBoundedTransaction(db, 0, () => Promise.resolve())).rejects.toThrow(RangeError);
+    expect(await stateOf(job.id)).toBe("running");
   });
 
   it("a claim that has not run out is left alone", async () => {

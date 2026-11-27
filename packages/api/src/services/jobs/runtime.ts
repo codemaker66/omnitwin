@@ -81,7 +81,7 @@ export async function startJobs(deps: { readonly db: Database; readonly env: Env
     alerts,
     // Only when set: unset, the worker's own default (60) is the one default.
     ...(env.JOBS_MAX_SLEEP_MINUTES === undefined ? {} : { sleepMinutes: env.JOBS_MAX_SLEEP_MINUTES }),
-    afterPass: nextRunsKeeper(db, repeating, logger, alerts),
+    afterPass: nextRunsKeeper(repeating, logger, alerts),
     ...(withOwnScope === undefined ? {} : { withOwnScope }),
   });
   installJobWorker(worker);

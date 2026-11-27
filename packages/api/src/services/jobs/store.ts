@@ -3,7 +3,7 @@ import { and, eq, sql, type SQL } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import type { Database } from "../../db/client.js";
 import { jobs } from "../../db/schema.js";
-import { jobErrorText, type JobExecutor, type JobKind, type JobRegistry } from "./kinds.js";
+import { jobErrorText, type JobExecutor, type JobKind, type JobRegistry, type JobTransaction } from "./kinds.js";
 
 // ---------------------------------------------------------------------------
 // The job list (T-702): writing a job.
@@ -199,23 +199,26 @@ export async function enqueueJob<P>(
 // ---------------------------------------------------------------------------
 // Taking, finishing, failing and recovering a job.
 //
-// Each function below is ONE statement: production reaches the database
-// through a transaction-mode pooler, where a statement is its own transaction
-// and no session state survives it, so a row lock taken here is released when
-// the statement ends (or, for `finishJob` given a handler's transaction, when
-// that commits). The database's clock decides what is due and whose claim has
-// run out; nothing here reads the server's clock.
+// Each function below is ONE statement, run through the executor it is given.
+// The worker gives each a transaction of its own from `inBoundedTransaction`,
+// whose `SET LOCAL` limits let the server end the statement; a handler gives
+// `finishJob` its own transaction. Production reaches the database through a
+// transaction-mode pooler, where no session state survives a transaction, so
+// a row lock taken here is released when that transaction ends. The
+// database's clock decides what is due and whose claim has run out; nothing
+// here reads the server's clock.
 //
 // A running row holds a claim (token, server, expiry) and no other row holds
 // one (`jobs_claim`), so every statement that ends a run clears all three in
 // the same statement. Finishing, failing and handing back each name the
 // claim's token and `state = 'running'`: once a recovery has put the claim
 // back (and cleared its token), a late report from the old claim matches no
-// row and says so, and a recovery that meets a report holding the row waits
-// for it and then finds no expired claim to put back. Under READ COMMITTED a
-// statement that waits on a row re-reads it before it writes, and re-checks
-// its whole WHERE clause against what the other one committed, so exactly
-// one of two racing statements changes the row.
+// row and says so. Under READ COMMITTED a statement that waits on a row
+// re-reads it before it writes, and re-checks its whole WHERE clause against
+// what the other one committed, so exactly one of two racing statements
+// changes the row. Recovery never waits: it passes over a row another
+// transaction holds (a report, another recovery, a handler's `completeIn`)
+// and leaves it to a later pass.
 // ---------------------------------------------------------------------------
 
 /** The waits after the 1st to 5th failed try; a later try waits as long as the 5th. */
@@ -224,6 +227,42 @@ export const RETRY_SECONDS = [60, 300, 1800, 7200, 21600] as const;
 export const LOST_CLAIM_PAUSE_SECONDS = 300;
 /** Added to a kind's time limit to make its claim. */
 export const CLAIM_MARGIN_SECONDS = 15;
+/**
+ * How long the wake plan puts off a claim that has run out and is still
+ * standing: one the last recovery passed over because another transaction
+ * held its row, or one that ran out since. Waking for it at once would wake
+ * every server four times a second for as long as the row is held.
+ */
+export const STANDING_CLAIM_RECHECK_SECONDS = 60;
+
+/**
+ * Runs `work` in a transaction of its own that the server bounds: any
+ * statement in it is ended after `limitMs`, and any wait for a lock after
+ * half of that, so a wait on a row another transaction holds comes back as
+ * the server's own refusal while the caller is still waiting. The limits are
+ * `SET LOCAL`, which lasts until the transaction ends: behind a
+ * transaction-mode pooler a session-level `SET` would stay on whichever
+ * connection the pooler lent, for its next client. The worker runs every one
+ * of its own calls through this, so a call it stopped waiting for does not
+ * keep waiting on the server, or keep its pooled connection, past `limitMs`.
+ */
+export async function inBoundedTransaction<T>(
+  db: Database,
+  limitMs: number,
+  work: (tx: JobTransaction) => Promise<T>,
+): Promise<T> {
+  if (!Number.isFinite(limitMs) || limitMs < 1) {
+    throw new RangeError("limitMs must be a finite number of milliseconds from 1");
+  }
+  // Whole milliseconds, built from a checked number: SET takes no bound parameter.
+  const statementMs = String(Math.ceil(limitMs));
+  const lockMs = String(Math.ceil(limitMs / 2));
+  return db.transaction(async (tx) => {
+    await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${statementMs}`));
+    await tx.execute(sql.raw(`SET LOCAL lock_timeout = ${lockMs}`));
+    return work(tx);
+  });
+}
 
 export interface ClaimedJob {
   readonly id: string;
@@ -298,28 +337,38 @@ function knownJobs(registry: JobRegistry): SQL | null {
 }
 
 /**
- * Puts back every claim that has run out. Second lost claim, or no tries left: dead.
+ * Puts back every claim that has run out and no other transaction holds.
+ * Second lost claim, or no tries left: dead.
  *
- * Two servers recovering at once count one lost claim: the statement that
- * reaches a row second waits for the first, re-reads it, finds it no longer
- * `running` with a claim run out, and leaves it.
+ * `FOR UPDATE SKIP LOCKED` passes over a row another transaction holds,
+ * without waiting: a handler's `completeIn` transaction that stays open past
+ * its claim must not stop every server's recovery, and with it the whole
+ * pass. The row is put back by a later pass if its claim is still out then.
+ * Two servers recovering at once count one lost claim: the second passes over
+ * a row the first holds, and a row the first has already put back no longer
+ * matches. `lost` is MATERIALIZED so the locking select runs exactly once.
  */
 export async function recoverLostClaims(
-  db: Database,
+  executor: JobExecutor,
   pauseSeconds: number = LOST_CLAIM_PAUSE_SECONDS,
 ): Promise<readonly RecoveredJob[]> {
   assertSeconds(pauseSeconds, "pauseSeconds");
-  const result = await db.execute(sql`
+  const result = await executor.execute(sql`
+    WITH lost AS MATERIALIZED (
+      SELECT id FROM jobs
+      WHERE state = 'running' AND claim_expires_at < now()
+      FOR UPDATE SKIP LOCKED
+    )
     UPDATE jobs SET
-      lost_claims = lost_claims + 1,
-      state = CASE WHEN lost_claims + 1 >= 2 OR attempts >= max_attempts THEN 'dead' ELSE 'queued' END,
-      run_at = CASE WHEN lost_claims + 1 >= 2 OR attempts >= max_attempts THEN run_at
+      lost_claims = jobs.lost_claims + 1,
+      state = CASE WHEN jobs.lost_claims + 1 >= 2 OR jobs.attempts >= jobs.max_attempts THEN 'dead' ELSE 'queued' END,
+      run_at = CASE WHEN jobs.lost_claims + 1 >= 2 OR jobs.attempts >= jobs.max_attempts THEN jobs.run_at
                     ELSE now() + make_interval(secs => ${pauseSeconds}::double precision) END,
-      finished_at = CASE WHEN lost_claims + 1 >= 2 OR attempts >= max_attempts THEN now() ELSE NULL END,
+      finished_at = CASE WHEN jobs.lost_claims + 1 >= 2 OR jobs.attempts >= jobs.max_attempts THEN now() ELSE NULL END,
       last_error = 'The server that took this job never answered.',
       claim_token = NULL, claimed_by = NULL, claim_expires_at = NULL, updated_at = now()
-    WHERE state = 'running' AND claim_expires_at < now()
-    RETURNING id, kind, venue_id, state, lost_claims`);
+    FROM lost WHERE jobs.id = lost.id
+    RETURNING jobs.id, jobs.kind, jobs.venue_id, jobs.state, jobs.lost_claims`);
   return result.rows.map((raw) => {
     const row = recoveredRow.parse(raw);
     return { id: row.id, kind: row.kind, venueId: row.venue_id, state: row.state, lostClaims: row.lost_claims };
@@ -335,10 +384,10 @@ export async function recoverLostClaims(
  * claim counts the try. `next` is MATERIALIZED so the locking select runs
  * exactly once, whatever plan the update is given.
  */
-export async function claimNextJob(db: Database, registry: JobRegistry, serverId: string): Promise<ClaimedJob | null> {
+export async function claimNextJob(executor: JobExecutor, registry: JobRegistry, serverId: string): Promise<ClaimedJob | null> {
   const known = knownJobs(registry);
   if (known === null) return null;
-  const result = await db.execute(sql`
+  const result = await executor.execute(sql`
     WITH known(kind, version, lease_seconds) AS (VALUES ${known}),
     next AS MATERIALIZED (
       SELECT j.id, k.lease_seconds
@@ -390,7 +439,7 @@ export async function finishJob(executor: JobExecutor, id: string, claimToken: s
  * `jobErrorText` gives it, without U+0000, which `text` cannot hold.
  */
 export async function failJob(
-  db: Database,
+  executor: JobExecutor,
   id: string,
   claimToken: string,
   error: string,
@@ -404,7 +453,7 @@ export async function failJob(
   const wait = retryInSeconds === undefined
     ? sql`(ARRAY[${waits}])[LEAST(GREATEST(attempts, 1), ${RETRY_SECONDS.length}::integer)]`
     : sql`${retryInSeconds}::double precision`;
-  const result = await db.execute(sql`
+  const result = await executor.execute(sql`
     UPDATE jobs SET
       state = CASE WHEN ${dead} THEN 'dead' ELSE 'queued' END,
       run_at = CASE WHEN ${dead} THEN run_at ELSE now() + make_interval(secs => ${wait}) END,
@@ -419,8 +468,8 @@ export async function failJob(
 }
 
 /** Gives the job back without counting the try. */
-export async function handBackJob(db: Database, id: string, claimToken: string): Promise<boolean> {
-  const result = await db.execute(sql`
+export async function handBackJob(executor: JobExecutor, id: string, claimToken: string): Promise<boolean> {
+  const result = await executor.execute(sql`
     UPDATE jobs SET state = 'queued', attempts = GREATEST(attempts - 1, 0),
       claim_token = NULL, claimed_by = NULL, claim_expires_at = NULL, updated_at = now()
     WHERE id = ${id}::uuid AND claim_token = ${claimToken}::uuid AND state = 'running'
@@ -431,16 +480,17 @@ export async function handBackJob(db: Database, id: string, claimToken: string):
 /**
  * Seconds until the next thing this server should wake for, by the database's clock, and that clock's now.
  *
- * `dueInSeconds` is the earlier of the next due job of a kind and version this
- * registry reads and the next claim to run out among all running jobs (any
- * server's, any kind's: recovery puts back every one); 0 when that is already
- * past, `null` when there is neither. `boundaryInSeconds` is the time to the
- * next whole multiple of `sleepMinutes` since the epoch: with 60, the top of
- * the hour. Every server computes the same boundary, so they wake the database
- * together.
+ * `dueInSeconds` is the earliest of the next due job of a kind and version
+ * this registry reads, the next claim to run out among all running jobs (any
+ * server's, any kind's: recovery puts back every one), and, when a claim has
+ * already run out and is still standing, `STANDING_CLAIM_RECHECK_SECONDS`
+ * from now; 0 when a due job is already past, `null` when there is none of
+ * these. `boundaryInSeconds` is the time to the next whole multiple of
+ * `sleepMinutes` since the epoch: with 60, the top of the hour. Every server
+ * computes the same boundary, so they wake the database together.
  */
 export async function planNextWake(
-  db: Database,
+  executor: JobExecutor,
   registry: JobRegistry,
   sleepMinutes: number,
 ): Promise<{ readonly dueInSeconds: number | null; readonly boundaryInSeconds: number; readonly now: Date }> {
@@ -454,7 +504,8 @@ export async function planNextWake(
         FROM jobs j JOIN (VALUES ${known}) AS known(kind, version, lease_seconds)
           ON known.kind = j.kind AND known.version = j.version
         WHERE j.state = 'queued')`;
-  const result = await db.execute(sql`
+  // LEAST passes over a null, so each term counts only when it has a time.
+  const result = await executor.execute(sql`
     SELECT
       CASE WHEN wake.at IS NULL THEN NULL
            ELSE GREATEST(0, extract(epoch from wake.at - now())) END::double precision AS due_in_seconds,
@@ -462,7 +513,9 @@ export async function planNextWake(
         - extract(epoch from now()))::double precision AS boundary_in_seconds,
       (extract(epoch from now()) * 1000)::double precision AS now_ms
     FROM (SELECT LEAST(${nextDue},
-      (SELECT min(claim_expires_at) FROM jobs WHERE state = 'running')) AS at) AS wake`);
+      (SELECT min(claim_expires_at) FROM jobs WHERE state = 'running' AND claim_expires_at >= now()),
+      (SELECT now() + make_interval(secs => ${STANDING_CLAIM_RECHECK_SECONDS}::double precision)
+        WHERE EXISTS (SELECT 1 FROM jobs WHERE state = 'running' AND claim_expires_at < now()))) AS at) AS wake`);
   const [raw] = result.rows;
   if (raw === undefined) throw new Error("The wake plan returned no row");
   const row = planRow.parse(raw);

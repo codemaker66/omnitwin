@@ -1,10 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
+import * as schema from "../db/schema.js";
 import { recordingJobAlerts } from "../services/jobs/alerts.js";
 import {
   buildJobRegistry,
@@ -13,18 +15,23 @@ import {
   PermanentJobError,
   RetryJobIn,
   type JobLogger,
+  type JobTransaction,
 } from "../services/jobs/kinds.js";
-import { enqueueJob, RETRY_SECONDS } from "../services/jobs/store.js";
+import { enqueueJob, finishJob, RETRY_SECONDS, STANDING_CLAIM_RECHECK_SECONDS } from "../services/jobs/store.js";
 import { JobWorker, type JobWorkerDeps } from "../services/jobs/worker.js";
-import { ensureEffectsTable, jobsTestUrl, openJobsDatabase, resetJobs } from "./helpers/jobs-db.js";
+import { ensureEffectsTable, jobsTestUrl, openJobsDatabase, openUnboundedDatabase, resetJobs } from "./helpers/jobs-db.js";
 
 // T-702, the worker: it plans from the database's clock, takes one job at a
-// time, races each handler against its limit and each statement of its own
+// time, races each handler against its limit and each call of its own
 // against a shorter one, and sleeps until the next job is due or the next
 // boundary. Its waits are injected (setTimer, clearTimer, yieldToLoop), so a
 // test reads them and fires them by hand: no assertion here waits on a wall
-// clock to fire anything. Its statements go through a counting double round
-// the real database, which can also fail, hang or hold back a statement.
+// clock to fire anything. Its calls go through a counting double round the
+// real database, which can also fail, hang or hold back a call. Each of the
+// worker's own calls is one transaction (its server-side limits, then its one
+// statement), and the double counts and steers it as one; so it does a
+// handler's own transaction. The last cases run on a pool with no server-side
+// timeouts, as production connects, with a row held in a second real session.
 //
 // Never loads .env and never falls back to DATABASE_URL: the target is the
 // explicit throwaway database (helpers/jobs-db.ts).
@@ -291,25 +298,57 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the worker", () => {
 
   // ---- The doubles -------------------------------------------------------
 
-  /** The real database, with every `execute` counted and steerable. Every store function reaches it through `execute`. */
-  function countedDatabase(real: Database): Database {
-    const execute = (query: Parameters<Database["execute"]>[0]): Promise<unknown> => {
+  /**
+   * The real database, with every call counted and steered by the next plan: an `execute`, or a whole
+   * transaction (each of the worker's own calls is one, and a handler may open one). For "nothing", a
+   * transaction's work is given `emptyTx`, whose every statement answers no rows without the database.
+   */
+  function countedDatabase(real: Database, emptyTx: JobTransaction): Database {
+    function steered<T>(start: () => Promise<T>, nothing: () => Promise<T>): Promise<T> {
       statements.count += 1;
       if (broken) return Promise.reject(new Error("The database is unreachable."));
       const plan = upcoming.shift() ?? "run";
       if (plan === "fail") return Promise.reject(new Error("The statement failed."));
       if (plan === "hang") return never;
-      if (plan === "nothing") return Promise.resolve({ rows: [] });
-      if (plan !== "run") return plan.then(() => real.execute(query));
-      return real.execute(query);
-    };
+      if (plan === "nothing") return nothing();
+      if (plan !== "run") return plan.then(start);
+      return start();
+    }
+    const execute = (query: Parameters<Database["execute"]>[0]): Promise<unknown> =>
+      steered(() => real.execute(query), () => Promise.resolve({ rows: [] }));
+    const transaction = <T>(work: (tx: JobTransaction) => Promise<T>, config?: Parameters<Database["transaction"]>[1]): Promise<T> =>
+      steered(() => real.transaction(work, config), () => work(emptyTx));
     return new Proxy(real, {
       get: (target, property): unknown => {
         if (property === "execute") return execute;
+        if (property === "transaction") return transaction;
         const value: unknown = Reflect.get(target, property, target);
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
+  }
+
+  /**
+   * A transaction-shaped stand-in: the object of a real transaction that has ended, whose `execute` answers
+   * no rows without the database. The worker's store calls use nothing else of it.
+   */
+  async function emptyTransaction(real: Database): Promise<JobTransaction> {
+    const shape: { tx?: JobTransaction } = {};
+    await real.transaction((tx) => { shape.tx = tx; return Promise.resolve(); });
+    if (shape.tx === undefined) throw new Error("No transaction was opened");
+    return new Proxy(shape.tx, {
+      get: (target, property): unknown =>
+        property === "execute" ? () => Promise.resolve({ rows: [] }) : Reflect.get(target, property, target),
+    });
+  }
+
+  /** How many statements of the pool named `applicationName` are waiting on a lock on the server. */
+  async function lockWaitersOf(applicationName: string): Promise<number> {
+    const [row] = (await pool.query<{ waiting: number }>(
+      "SELECT count(*)::integer AS waiting FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+      [applicationName],
+    )).rows;
+    return row?.waiting ?? 0;
   }
 
   const breakDatabase = (): void => { broken = true; };
@@ -471,7 +510,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the worker", () => {
 
   beforeAll(async () => {
     ({ pool, db } = await openJobsDatabase(`jobs_worker_${randomUUID()}`));
-    counted = countedDatabase(db);
+    counted = countedDatabase(db, await emptyTransaction(db));
   }, 180_000);
 
   beforeEach(async () => {
@@ -636,8 +675,9 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the worker", () => {
       ["a handler found its claim had passed to another taker", expect.anything()],
     ]);
     expect(worker.status().abandonedHandlers).toBe(0);
-    // recover, claim A, claim B, claim (none), plan: no second finishJob after completeIn.
-    expect(statements.count).toBe(5);
+    // recover, claim A, A's own transaction, claim B, B's own transaction, claim (none), plan: no second
+    // finishJob after completeIn.
+    expect(statements.count).toBe(7);
     expect(alerts.calls).toEqual([]);
   }, 30_000);
 
@@ -671,10 +711,19 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the worker", () => {
     expect(worker.status().lastPassAt).not.toBeNull();
   });
 
-  it("a database call of its own that never returns does not block it", async () => {
+  it("a database call of its own that never returns blocks neither the pass nor the claims after it", async () => {
+    await enqueueJob(db, effect, { key: "still-taken", payload: { n: 10 } });
+    // The recovery never answers. The limit leaves the real calls after it room to answer on a loaded machine.
     hangNextStatement();
-    worker = makeWorker({ dbCallTimeoutMs: 50 }); worker.start(); await idle(worker);
+    worker = makeWorker({ dbCallTimeoutMs: 2000, sleepMinutes: FAR_BOUNDARY_MINUTES }); worker.start(); await idle(worker);
+    expect(await stateOfKey("still-taken")).toBe("done");
+    expect(ran).toEqual([10]);
     expect(worker.status().fault).toBe("database");
+    expect(alerts.calls.filter(([name]) => name === "workerFault")).toEqual([
+      ["workerFault", { what: "database", detail: "recoverLostClaims passed its time limit of 2000 ms." }],
+    ]);
+    // Not a completed pass: the recovery is tried again within the fault's minute.
+    expect(worker.status().lastPassAt).toBeNull();
     expect(timers.at(-1)?.ms).toBe(60_000);
   });
 
@@ -916,4 +965,86 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: the worker", () => {
     expect(worker.status().fault).toBe("loop");
     expect(timers.at(-1)?.ms).toBe(60_000);
   });
+
+  // ---- A row held past its claim, on a pool with no server-side timeouts ----------
+  // Production's pool sets no statement or lock timeout (db/client.ts), so these cases use one that sets
+  // none either: what bounds the worker's statements here is the worker's own doing.
+
+  it("a claim held past its lease by a handler's open transaction stops neither the other recoveries nor the claims", async () => {
+    const bareName = `jobs_worker_bare_${randomUUID()}`;
+    const bare = openUnboundedDatabase(bareName);
+    const holder = await pool.connect();
+    try {
+      await enqueueJob(db, effect, { key: "held", payload: { n: 11 } });
+      await enqueueJob(db, effect, { key: "orphan", payload: { n: 12 } });
+      await enqueueJob(db, effect, { key: "due", payload: { n: 13 } });
+      // Two claims whose time has run out.
+      await pool.query(
+        `UPDATE jobs SET state = 'running', attempts = 1, claim_token = gen_random_uuid(), claimed_by = 'another',
+           claim_expires_at = now() - interval '1 second' WHERE key IN ('held', 'orphan')`,
+      );
+      const held = await rowOfKey("held");
+      if (held.claim_token === null) throw new Error("The held job has no claim");
+      // What a handler's completeIn does, in a second real session: finish the job inside the handler's
+      // own transaction, which then stays open past the claim.
+      await holder.query("BEGIN");
+      expect(await finishJob(drizzle(holder, { schema }), held.id, held.claim_token)).toBe(true);
+
+      worker = makeWorker({ db: bare.db, dbCallTimeoutMs: 2000, sleepMinutes: FAR_BOUNDARY_MINUTES });
+      worker.start(); await idle(worker);
+      // The other lost claim was put back (and, with this suite's pause of 0, run in the same pass), and the
+      // due job ran.
+      expect(await rowOfKey("orphan")).toMatchObject({ state: "done", lost_claims: 1 });
+      expect(await stateOfKey("due")).toBe("done");
+      expect([...ran].sort((a, b) => a - b)).toEqual([12, 13]);
+      // The held row was passed over, not waited on: nothing failed, and no statement of the worker's
+      // is left waiting on the server.
+      expect(await rowOfKey("held")).toMatchObject({ state: "running", lost_claims: 0 });
+      expect(worker.status().fault).toBeNull();
+      expect(await lockWaitersOf(bareName)).toBe(0);
+      // The claim still standing is looked at again a minute later, not four times a second.
+      expect(timers.at(-1)?.ms).toBeGreaterThan((STANDING_CLAIM_RECHECK_SECONDS - 5) * 1000);
+      expect(timers.at(-1)?.ms).toBeLessThanOrEqual(STANDING_CLAIM_RECHECK_SECONDS * 1000);
+      // The handler's transaction rolls back, and the next pass puts that claim back too (and runs it).
+      await holder.query("ROLLBACK");
+      timers.at(-1)?.fire(); await idle(worker);
+      expect(await rowOfKey("held")).toMatchObject({ state: "done", lost_claims: 1 });
+      expect([...ran].sort((a, b) => a - b)).toEqual([11, 12, 13]);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      holder.release();
+      await worker.stop(100);
+      await bare.pool.end();
+    }
+  }, 30_000);
+
+  it("a statement of its own that waits on a held row is ended by the server, not left holding a connection", async () => {
+    const bareName = `jobs_worker_bare_${randomUUID()}`;
+    const bare = openUnboundedDatabase(bareName);
+    const holder = await pool.connect();
+    try {
+      await enqueueJob(db, waitsForRelease, { key: "blocked", payload: {} });
+      // A wait for a lock is refused at half the limit: 2 s, which leaves the refusal 2 s to come back
+      // before the worker stops waiting at 4 s.
+      worker = makeWorker({ db: bare.db, dbCallTimeoutMs: 4000, sleepMinutes: FAR_BOUNDARY_MINUTES });
+      worker.start(); await started("blocked");
+      // While the handler runs, another transaction takes the job's row, so the worker's finish waits on it.
+      await holder.query("BEGIN");
+      await holder.query("SELECT 1 FROM jobs WHERE key = 'blocked' FOR UPDATE");
+      release(); await idle(worker);
+      // The server refused the wait inside the worker's own limit, and nothing of the worker's is left
+      // waiting on the server, though the row is still held.
+      expect(worker.status().fault).toBe("database");
+      expect(alerts.calls.find(([name]) => name === "workerFault")?.[1]).toMatchObject({
+        what: "database", detail: expect.stringMatching(/^finishJob failed: /u),
+      });
+      expect(await lockWaitersOf(bareName)).toBe(0);
+      expect(await stateOfKey("blocked")).toBe("running");
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      holder.release();
+      await worker.stop(100);
+      await bare.pool.end();
+    }
+  }, 30_000);
 });
