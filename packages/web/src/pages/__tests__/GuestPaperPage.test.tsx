@@ -902,6 +902,7 @@ describe("the guest paper page: printing", () => {
       open: () => Promise.resolve({ kind: "no-storage" }),
       save: () => Promise.resolve({ kind: "not-kept" }),
       erase: () => Promise.resolve(),
+      eraseUnreadable: () => Promise.resolve(),
       sweep: () => Promise.resolve([]),
     };
     open(`${PAPER}?kit=on`, refusing);
@@ -928,6 +929,7 @@ describe("the guest paper page: printing", () => {
       open: () => Promise.resolve({ kind: "not-kept" }),
       save: () => Promise.resolve({ kind: "not-kept" }),
       erase: () => Promise.resolve(),
+      eraseUnreadable: () => Promise.resolve(),
       sweep: () => Promise.resolve([]),
     };
     open(`${PAPER}?kit=on`, unread);

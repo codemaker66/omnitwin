@@ -104,7 +104,18 @@ export interface GuestListStore {
    */
   save(list: GuestList, loaded: Stamp | null, opts?: SaveOptions): Promise<Saved>;
   erase(planId: string): Promise<void>;
-  /** Removes lists past their delete-after day; answers the plan ids of the lists it removed. */
+  /**
+   * Removes what is stored for a plan only while it still cannot be read as a
+   * list, compared and deleted in one step of the store. A list is never
+   * removed by it, so one another tab has stored there since is left alone.
+   */
+  eraseUnreadable(planId: string): Promise<void>;
+  /**
+   * Removes lists past their delete-after day; answers the plan ids of the
+   * lists it removed. Each is removed only while it is still the very copy
+   * this sweep read, compared and deleted in one step of the store: a list
+   * another tab has saved since is left, and is not answered as removed.
+   */
   sweep(nowMs: number): Promise<readonly string[]>;
 }
 
@@ -230,6 +241,14 @@ export function createGuestListStore(handle: CacheHandle<unknown>, exclusive: Ex
     }
   }
 
+  async function eraseUnreadable(planId: string): Promise<void> {
+    try {
+      await handle.deleteIf(planId, (stored) => !GuestListSchema.safeParse(stored.value).success);
+    } catch {
+      // Storage refused: what is stored stays as it was.
+    }
+  }
+
   async function sweep(nowMs: number): Promise<readonly string[]> {
     const removed: string[] = [];
     try {
@@ -244,9 +263,18 @@ export function createGuestListStore(handle: CacheHandle<unknown>, exclusive: Ex
             : removedFromWhenUnreadable(row.stored.storedAt);
           // Fails safe: a removal moment that cannot be read never removes a list.
           if (!(nowMs >= removeFrom)) continue;
-          await handle.delete(row.key);
-          // A list is kept under its plan's id.
-          removed.push(row.key);
+          // Removed only while it is still the very entry read above, compared and deleted in one
+          // step of the store: the same copy of the list, or the same value that cannot be read,
+          // stored at the same time. What another tab has stored since is not past its day on the
+          // strength of this read, and stays.
+          const read = parsed.success ? stampOf(parsed.data) : null;
+          const gone = await handle.deleteIf(row.key, (now) => {
+            const again = GuestListSchema.safeParse(now.value);
+            if (read === null) return !again.success && now.storedAt === row.stored.storedAt;
+            return again.success && sameStamp(stampOf(again.data), read);
+          });
+          // A list is kept under its plan's id. Only one seen to go is answered as removed.
+          if (gone) removed.push(row.key);
         } catch {
           // This one could not be worked out or removed; carry on with the rest.
         }
@@ -260,7 +288,8 @@ export function createGuestListStore(handle: CacheHandle<unknown>, exclusive: Ex
   // A save (its read, its write and its read-back), a delete and a sweep each run alone, across
   // every tab: a delete cannot land inside another tab's save, nor one save inside another.
   // When another tab holds the lock too long, nothing is done: the save answers "busy", the delete
-  // leaves the list (the page reads back and says so), and the sweep removes nothing this time.
+  // leaves the list (the page reads back and says so), a value that cannot be read stays where
+  // it is, and the sweep removes nothing this time.
   return {
     open,
     save: async (list, loaded, opts) => {
@@ -269,6 +298,9 @@ export function createGuestListStore(handle: CacheHandle<unknown>, exclusive: Ex
     },
     erase: async (planId) => {
       await exclusive(() => erase(planId));
+    },
+    eraseUnreadable: async (planId) => {
+      await exclusive(() => eraseUnreadable(planId));
     },
     sweep: async (nowMs) => {
       const alone = await exclusive(() => sweep(nowMs));
@@ -287,6 +319,7 @@ function noStorageStore(): GuestListStore {
     open: () => Promise.resolve({ kind: "no-storage" }),
     save: () => Promise.resolve({ kind: "not-kept" }),
     erase: () => Promise.resolve(),
+    eraseUnreadable: () => Promise.resolve(),
     sweep: () => Promise.resolve([]),
   };
 }

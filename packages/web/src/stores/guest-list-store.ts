@@ -95,7 +95,11 @@ export interface GuestListState {
   apply(change: (list: GuestList) => GuestList, opts?: ApplyOptions): void;
   undo(): void;
   dismissNotice(): void;
-  /** For "unreadable": erase what is stored and begin a new list. */
+  /**
+   * For "unreadable": removes the stored value that cannot be read and begins
+   * a new list. A list another tab has stored there since is never erased: it
+   * is taken up instead.
+   */
   startAgain(): Promise<void>;
   /**
    * Deletes the list from the device and answers whether it is gone. Only a
@@ -251,6 +255,14 @@ async function eraseSafely(store: GuestListStore, planId: string): Promise<void>
     await store.erase(planId);
   } catch {
     // Storage refused; there is nothing more to do here.
+  }
+}
+
+async function eraseUnreadableSafely(store: GuestListStore, planId: string): Promise<void> {
+  try {
+    await store.eraseUnreadable(planId);
+  } catch {
+    // Storage refused; what is stored stays as it was.
   }
 }
 
@@ -597,9 +609,11 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
         if (session === null || get().phase !== "unreadable") return;
         // A session that has not read the device clears the page only.
         if (!session.unread) {
-          // The device is read first: another tab may have started a list here since this page
-          // found a value it could not read. That list is taken up, and nothing is erased; only a
-          // value that still cannot be read is removed.
+          // Only a value that still cannot be read is removed, compared and deleted in one step of
+          // the device: another tab may have started a list here since this page found a value it
+          // could not read, and a list is never erased. The device is read after that, so such a
+          // list is taken up.
+          await eraseUnreadableSafely(session.store, session.planId);
           const now = await openSafely(session.store, session.planId);
           if (!isCurrent(session) || get().phase !== "unreadable") return;
           if (now.kind === "ready") {
@@ -616,7 +630,6 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             if (now.repaired > 0) saveRepair(session);
             return;
           }
-          if (now.kind === "unreadable") await eraseSafely(session.store, session.planId);
         }
         if (!isCurrent(session) || get().phase !== "unreadable") return;
         session.undo = [];

@@ -789,6 +789,7 @@ describe("guest list page state: a list the device could not read is never overw
       open: () => Promise.resolve({ kind: "no-storage" }),
       save: () => Promise.resolve({ kind: "not-kept" }),
       erase: () => Promise.resolve(),
+      eraseUnreadable: () => Promise.resolve(),
       sweep: () => Promise.resolve([]),
     };
     await state().open(PLAN_A, noStorage, clock());
@@ -1660,7 +1661,7 @@ describe("guest list page state: nothing rejects and no name escapes", () => {
   it("resolves every action when every store call rejects, and logs nothing", async () => {
     const reject = (): Promise<never> => Promise.reject(new Error(`refused ${CANARY}`));
     const save = (_list: GuestList, _loaded: Stamp | null): Promise<Saved> => reject();
-    const store: GuestListStore = { open: reject, save, erase: reject, sweep: reject };
+    const store: GuestListStore = { open: reject, save, erase: reject, eraseUnreadable: reject, sweep: reject };
     const logs = [
       vi.spyOn(console, "log"),
       vi.spyOn(console, "warn"),
@@ -1959,5 +1960,75 @@ describe("guest list page state: another tab is busy with the list", () => {
     await state().open(PLAN_A, store, clock());
     expect(state().list?.title).toBe("");
     expect(state().notice).toEqual({ kind: "last-change-not-kept" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Start again removes only a value that still cannot be read, compared and
+// deleted in one step of the device: never a list another tab has stored.
+// ---------------------------------------------------------------------------
+
+describe("guest list page state: start again never erases a list", () => {
+  /** A device on which another tab saves a list, once, just as it is asked to delete: after this tab's read, before its delete. */
+  function savedJustBeforeTheDelete(backend: CacheBackend, theirs: GuestList): { readonly racing: CacheBackend; readonly arm: () => void; readonly saved: string[] } {
+    let armed = false;
+    const saved: string[] = [];
+    const between = async (): Promise<void> => {
+      if (!armed) return;
+      armed = false;
+      saved.push((await otherTabOn(backend).save(theirs, null)).kind);
+    };
+    const racing: CacheBackend = {
+      ...backend,
+      delete: async (key) => {
+        await between();
+        await backend.delete(key);
+      },
+      deleteIf: async (key, matches) => {
+        await between();
+        return backend.deleteIf(key, matches);
+      },
+    };
+    return { racing, arm: () => { armed = true; }, saved };
+  }
+
+  it("a list another tab stores between this tab's read and its delete is kept, and taken up", async () => {
+    const backend = memoryBackend();
+    const theirs = { ...emptyGuestList(PLAN_A, "2026-11-14T09:00:00.000Z"), guests: [guest(7)] };
+    const { racing, arm, saved } = savedJustBeforeTheDelete(backend, theirs);
+    await backend.put(PLAN_A, { storedAt: START, value: { junk: true } });
+    await state().open(PLAN_A, createGuestListStore(withBackend<unknown>(racing)), clock());
+    expect(state().phase).toBe("unreadable");
+
+    arm();
+    await state().startAgain();
+
+    // The other tab's list went over the value that could not be read, and it is still kept.
+    expect(saved).toEqual(["saved-over-other"]);
+    const kept = await reopened(backend, PLAN_A);
+    expect(kept.kind === "ready" ? kept.list.guests : null).toEqual([guest(7)]);
+    // This page shows it, and its next change is an ordinary save over the copy it holds.
+    expect(state().phase).toBe("ready");
+    expect(state().list?.guests).toEqual([guest(7)]);
+    expect(state().notice).toBeNull();
+    state().apply(titled("Kept"));
+    await state().flush();
+    expect(state().notice).toBeNull();
+    const after = await reopened(backend, PLAN_A);
+    expect(after.kind === "ready" ? [after.list.title, after.list.guests] : null).toEqual(["Kept", [guest(7)]]);
+  });
+
+  it("still removes a value that cannot be read, and begins a new list", async () => {
+    const backend = memoryBackend();
+    const { racing } = savedJustBeforeTheDelete(backend, emptyGuestList(PLAN_A, START));
+    await backend.put(PLAN_A, { storedAt: START, value: { junk: true } });
+    await state().open(PLAN_A, createGuestListStore(withBackend<unknown>(racing)), clock());
+
+    // No other tab saves this time.
+    await state().startAgain();
+    expect(await backend.get(PLAN_A)).toBeNull();
+    expect(state().phase).toBe("ready");
+    expect(state().list?.guests).toEqual([]);
+    expect(state().notice).toBeNull();
   });
 });

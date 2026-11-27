@@ -778,3 +778,170 @@ describe("guest list store: a lock that is never let go does not hold the page u
     expect((await s.open(PLAN_A)).kind).toBe("new");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Nothing is removed on the strength of an earlier read. The sweep, and the
+// removal of a value that cannot be read, compare and delete in one step of
+// the store, so a list another tab stored in between stays, lock or no lock.
+// ---------------------------------------------------------------------------
+
+describe("guest list store: nothing is removed on the strength of an earlier read", () => {
+  /** No lock at all, as in a browser without one: the store's own steps must be enough. */
+  const unguarded: Exclusive = async (work) => ({ ran: true, value: await work() });
+
+  /** A device on which `between` runs just after its lists are read: what another tab does between a sweep's read and its delete. */
+  function listThenBetween(inner: CacheBackend, between: () => Promise<void>): CacheBackend {
+    return {
+      ...inner,
+      list: async () => {
+        const rows = await inner.list();
+        await between();
+        return rows;
+      },
+    };
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "locks");
+  });
+
+  it("the sweep leaves a list another tab saved between its read and its delete, and does not answer it as removed", async () => {
+    const backend = memoryBackend();
+    const other = createGuestListStore(withBackend<unknown>(backend), unguarded);
+    // No date, last changed on 1 January 2027: due from 1 April 2027.
+    const first = await other.save(listFor(PLAN_A, { guests: [guestAt(1, null, null, "Ada Canary")], updatedAt: "2027-01-01T10:00:00.000Z" }), null);
+    if (first.kind !== "saved") throw new Error("the first save was not kept");
+    // A second list, due as well, that no tab touches.
+    await other.save(listFor(PLAN_B, { updatedAt: "2027-01-01T10:00:00.000Z" }), null);
+
+    const savedBetween: string[] = [];
+    const sweeper = createGuestListStore(
+      withBackend<unknown>(listThenBetween(backend, async () => {
+        // The other tab keeps a change typed today, so the list is no longer due.
+        const changed = listFor(PLAN_A, {
+          guests: [guestAt(1, null, null, "Ada Canary"), guestAt(2, null, null, "Bea Example")],
+          updatedAt: "2027-04-01T09:00:00.000Z",
+        });
+        savedBetween.push((await other.save(changed, first.stamp)).kind);
+      })),
+      unguarded,
+    );
+
+    expect(await sweeper.sweep(Date.parse("2027-04-01T09:00:01.000Z"))).toEqual([PLAN_B]);
+    expect(savedBetween).toEqual(["saved"]);
+    const kept = await other.open(PLAN_A);
+    expect(kept.kind === "ready" ? kept.list.guests.map((g) => g.name) : null).toEqual(["Ada Canary", "Bea Example"]);
+    expect(await other.open(PLAN_B)).toEqual({ kind: "new" });
+  });
+
+  it("the sweep removes only the very copy it read: a list still past its day, but saved again in between, waits for the next sweep", async () => {
+    const backend = memoryBackend();
+    const other = createGuestListStore(withBackend<unknown>(backend), unguarded);
+    // Dated 13 June 2027: due from 13 July 2027, whatever is changed.
+    const first = await other.save(listFor(PLAN_A, { eventDate: "2027-06-13" }), null);
+    if (first.kind !== "saved") throw new Error("the first save was not kept");
+    let saveBetween = true;
+    const sweeper = createGuestListStore(
+      withBackend<unknown>(listThenBetween(backend, async () => {
+        if (!saveBetween) return;
+        saveBetween = false;
+        await other.save(listFor(PLAN_A, { eventDate: "2027-06-13", title: "Changed", updatedAt: "2027-07-14T09:00:00.000Z" }), first.stamp);
+      })),
+      unguarded,
+    );
+
+    expect(await sweeper.sweep(Date.parse("2027-07-14T09:00:01.000Z"))).toEqual([]);
+    expect((await other.open(PLAN_A)).kind).toBe("ready");
+    expect(await sweeper.sweep(Date.parse("2027-07-14T09:00:02.000Z"))).toEqual([PLAN_A]);
+    expect(await other.open(PLAN_A)).toEqual({ kind: "new" });
+  });
+
+  it("the sweep leaves a list another tab saved over a value it could not read, between its read and its delete", async () => {
+    const backend = memoryBackend();
+    const other = createGuestListStore(withBackend<unknown>(backend), unguarded);
+    // Stored on 1 August 2026 and not a list: due from 30 October 2026.
+    await backend.put(PLAN_A, { storedAt: "2026-08-01T00:00:00.000Z", value: { junk: true } });
+    const savedBetween: string[] = [];
+    const sweeper = createGuestListStore(
+      withBackend<unknown>(listThenBetween(backend, async () => {
+        savedBetween.push((await other.save(listFor(PLAN_A, { guests: [guestAt(1, null, null, "Ada Canary")] }), null)).kind);
+      })),
+      unguarded,
+    );
+
+    expect(await sweeper.sweep(Date.parse("2026-10-30T00:00:00.000Z"))).toEqual([]);
+    expect(savedBetween).toEqual(["saved-over-other"]);
+    const kept = await other.open(PLAN_A);
+    expect(kept.kind === "ready" ? kept.list.guests.map((g) => g.name) : null).toEqual(["Ada Canary"]);
+  });
+
+  it("removes a value it cannot read when asked to, and never a list", async () => {
+    const { backend, raw, a } = twoTabs();
+    await raw.put(PLAN_A, { junk: true });
+    await a.eraseUnreadable(PLAN_A);
+    expect(await backend.get(PLAN_A)).toBeNull();
+
+    // A list is left exactly as it was, however it is asked.
+    await a.save(listFor(PLAN_A, { guests: [guestAt(1, null, null, "Ada Canary")] }), null);
+    const before = JSON.stringify(await backend.get(PLAN_A));
+    await a.eraseUnreadable(PLAN_A);
+    expect(JSON.stringify(await backend.get(PLAN_A))).toBe(before);
+
+    // Nothing stored, and a device that refuses: neither rejects.
+    await expect(a.eraseUnreadable(PLAN_B)).resolves.toBeUndefined();
+    const refusing = createGuestListStore(withBackend<unknown>(refusingBackend()));
+    await expect(refusing.eraseUnreadable(PLAN_A)).resolves.toBeUndefined();
+  });
+
+  it("removes nothing when another tab saves a list over the value just as the device is asked to delete it", async () => {
+    const backend = memoryBackend();
+    const other = createGuestListStore(withBackend<unknown>(backend), unguarded);
+    await backend.put(PLAN_A, { storedAt: NOW, value: { junk: true } });
+    // Whichever way the device is asked to delete, the other tab's save lands first.
+    const between = async (): Promise<void> => {
+      await other.save(listFor(PLAN_A, { guests: [guestAt(1, null, null, "Ada Canary")] }), null);
+    };
+    const racing: CacheBackend = {
+      ...backend,
+      delete: async (key) => {
+        await between();
+        await backend.delete(key);
+      },
+      deleteIf: async (key, matches) => {
+        await between();
+        return backend.deleteIf(key, matches);
+      },
+    };
+    await createGuestListStore(withBackend<unknown>(racing), unguarded).eraseUnreadable(PLAN_A);
+    const kept = await other.open(PLAN_A);
+    expect(kept.kind === "ready" ? kept.list.guests.map((g) => g.name) : null).toEqual(["Ada Canary"]);
+  });
+
+  it("asks for the browser's lock to remove a value it cannot read, as a delete does", async () => {
+    const names: string[] = [];
+    const locks = {
+      request: (name: string, _options: unknown, work: () => Promise<unknown>): Promise<unknown> => {
+        names.push(name);
+        return work();
+      },
+    };
+    Object.defineProperty(navigator, "locks", { value: locks, configurable: true });
+    const { raw, a } = twoTabs();
+    await raw.put(PLAN_A, { junk: true });
+    await a.eraseUnreadable(PLAN_A);
+    expect(names).toEqual(["venviewer-guest-lists"]);
+    expect(await a.open(PLAN_A)).toEqual({ kind: "new" });
+  });
+
+  it("a browser with no storage has nothing to remove", async () => {
+    vi.resetModules();
+    vi.stubGlobal("indexedDB", undefined);
+    try {
+      const { guestListStore } = await import("../store.js");
+      await expect(guestListStore().eraseUnreadable(PLAN_A)).resolves.toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+  });
+});
