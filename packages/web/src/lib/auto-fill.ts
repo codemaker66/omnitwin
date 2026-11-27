@@ -32,7 +32,16 @@ import { chairsInStore, currentStoreStock, type UsableStock } from "./card-stock
 import { footprintInKeepOut } from "./door-clear-spaces.js";
 import { placedFootprint } from "./keep-doors-clear.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
-import { discWithinFloor, floorCentre, rectWithinFloor, type PlannerRoomDimensions, type RoomFloor } from "./room-floor.js";
+import {
+  INNER_CORNER_CLEARANCE_M,
+  discBandSlack,
+  discWithinFloor,
+  floorCentre,
+  rectBandSlack,
+  rectWithinFloor,
+  type PlannerRoomDimensions,
+  type RoomFloor,
+} from "./room-floor.js";
 import { countLabel } from "./count-label.js";
 import { heldNotePieceNamed, stayedForNotesLine } from "./guest-plan-notes.js";
 import type { ChangedPiece } from "./layout-change-summary.js";
@@ -185,20 +194,113 @@ function layoutOrigin(floor: RoomFloor | undefined): { readonly xM: number; read
 }
 
 /**
- * Whether a table group at a spot (metres, in the room) stands inside the
- * floor's walls with `bandM` kept from each of them, as a layout keeps it
- * from a rectangle's: a round's ring of chairs as a disc, a rectangle's
- * bounds as they are.
+ * By how much a table group at a spot (metres, in the room) keeps `bandM`
+ * from the floor's walls, as a layout keeps it from a rectangle's: a round's
+ * ring of chairs as a disc, a rectangle's bounds as they are. At the floor's
+ * inner corners the band gives way to INNER_CORNER_CLEARANCE_M
+ * (lib/room-floor). Render space; at least zero (to a hair) keeps it.
  */
+function groupSlackOnFloor(
+  floor: RoomFloor,
+  bounds: { readonly width: number; readonly depth: number },
+  radiusM: number | undefined,
+  bandM: number,
+): (spot: { readonly xM: number; readonly zM: number }) => number {
+  const band = toRenderSpace(bandM);
+  const corner = toRenderSpace(INNER_CORNER_CLEARANCE_M);
+  return (spot) => (radiusM === undefined
+    ? rectBandSlack(floor, toRenderSpace(spot.xM), toRenderSpace(spot.zM), toRenderSpace(bounds.width / 2), toRenderSpace(bounds.depth / 2), band, corner)
+    : discBandSlack(floor, toRenderSpace(spot.xM), toRenderSpace(spot.zM), toRenderSpace(radiusM), band, corner));
+}
+
+/** Under this a group's slack (render space) is the last bit of a sum, and it keeps the band. */
+const SLACK_FLUSH = 1e-6;
+
+/** Floating-point slack for spacing two groups exactly an aisle apart, metres. */
+const FILL_EPS_M = 1e-9;
+
+/** Whether a table group at a spot (metres, in the room) stands on the floor with the band kept (groupSlackOnFloor). */
 function groupOnFloor(
   floor: RoomFloor,
   bounds: { readonly width: number; readonly depth: number },
   radiusM: number | undefined,
   bandM: number,
 ): (spot: { readonly xM: number; readonly zM: number }) => boolean {
-  return (spot) => (radiusM === undefined
-    ? rectWithinFloor(floor, toRenderSpace(spot.xM), toRenderSpace(spot.zM), toRenderSpace(bounds.width / 2 + bandM), toRenderSpace(bounds.depth / 2 + bandM))
-    : discWithinFloor(floor, toRenderSpace(spot.xM), toRenderSpace(spot.zM), toRenderSpace(radiusM + bandM)));
+  const slack = groupSlackOnFloor(floor, bounds, radiusM, bandM);
+  return (spot) => slack(spot) >= -SLACK_FLUSH;
+}
+
+/** The grid a banquet fill searches a room's floor on for groups its arrangement leaves room for, metres. */
+const FLOOR_FILL_STEP_M = 0.05;
+
+/** A spot on that grid where a group keeps the band, metres in the room, and by how much (render space). */
+interface FloorSpot {
+  readonly xM: number;
+  readonly zM: number;
+  readonly slack: number;
+}
+
+const floorSpotCache = new WeakMap<RoomFloor, Map<string, readonly FloorSpot[]>>();
+
+/** Every spot of the floor's grid (FLOOR_FILL_STEP_M from its bounds' corner) where a group keeps the band, one list per group and band. */
+function floorSpots(floor: RoomFloor, key: string, slackAt: (spot: { readonly xM: number; readonly zM: number }) => number): readonly FloorSpot[] {
+  const known = floorSpotCache.get(floor)?.get(key);
+  if (known !== undefined) return known;
+  const minX = toRealWorld(floor.minX);
+  const maxX = toRealWorld(floor.maxX);
+  const minZ = toRealWorld(floor.minZ);
+  const maxZ = toRealWorld(floor.maxZ);
+  const spots: FloorSpot[] = [];
+  for (let i = 0; minX + i * FLOOR_FILL_STEP_M <= maxX + SLACK_FLUSH; i += 1) {
+    for (let j = 0; minZ + j * FLOOR_FILL_STEP_M <= maxZ + SLACK_FLUSH; j += 1) {
+      const spot = { xM: minX + i * FLOOR_FILL_STEP_M, zM: minZ + j * FLOOR_FILL_STEP_M };
+      const slack = slackAt(spot);
+      if (slack >= -SLACK_FLUSH) spots.push({ ...spot, slack });
+    }
+  }
+  const byKey = floorSpotCache.get(floor) ?? new Map<string, readonly FloorSpot[]>();
+  byKey.set(key, spots);
+  floorSpotCache.set(floor, byKey);
+  return spots;
+}
+
+/** The orders the floor is laid afresh in: along X and along Z, each way, the other axis each way. */
+const FLOOR_SWEEPS: readonly ((a: FloorSpot, b: FloorSpot) => number)[] = [1, -1].flatMap((first) => [1, -1].flatMap((second) => [
+  (a: FloorSpot, b: FloorSpot): number => first * (a.xM - b.xM) || second * (a.zM - b.zM),
+  (a: FloorSpot, b: FloorSpot): number => first * (a.zM - b.zM) || second * (a.xM - b.xM),
+]));
+
+/**
+ * The most groups a room's floor takes, from its arrangement (`start`, in
+ * the room): the arrangement with every spot it leaves room for added,
+ * nearest the walls first; else the floor laid afresh spot by spot, nearest
+ * the walls first and in each sweep along and across it. The arrangement
+ * whenever it already holds `wanted`, and on a tie. Each is complete: no spot
+ * of the grid takes one more group (`spaced` from every group, `admit`ted).
+ */
+function fillTheFloor(
+  start: readonly BanquetTablePlacement[],
+  spots: readonly FloorSpot[],
+  admit: (spot: BanquetTablePlacement) => boolean,
+  spaced: (a: BanquetTablePlacement, b: BanquetTablePlacement) => boolean,
+  wanted: number,
+): readonly BanquetTablePlacement[] {
+  const laid = (order: readonly FloorSpot[], from: readonly BanquetTablePlacement[]): BanquetTablePlacement[] => {
+    const placed = [...from];
+    for (const { xM, zM } of order) {
+      const spot: BanquetTablePlacement = { xM, zM, rotationY: 0 };
+      if (placed.every((other) => spaced(other, spot)) && admit(spot)) placed.push(spot);
+    }
+    return placed;
+  };
+  const wallsFirst = [...spots].sort((a, b) => a.slack - b.slack || a.zM - b.zM || a.xM - b.xM);
+  let best = laid(wallsFirst, start);
+  for (const order of [wallsFirst, ...FLOOR_SWEEPS.map((sweep) => [...spots].sort(sweep))]) {
+    if (best.length >= wanted) break;
+    const afresh = laid(order, []);
+    if (afresh.length > best.length) best = afresh;
+  }
+  return best;
 }
 
 /**
@@ -306,29 +408,53 @@ export function planBanquetFill(
   const { floor } = options;
   const origin = layoutOrigin(floor);
   const inRoom = (spot: BanquetTablePlacement): BanquetTablePlacement => ({ ...spot, xM: spot.xM + origin.xM, zM: spot.zM + origin.zM });
-  const onFloor = floor === undefined ? undefined : groupOnFloor(floor, occupied, radiusM, BANQUET_CHAIR_CLEARANCE_M);
+  const slackOnFloor = floor === undefined ? undefined : groupSlackOnFloor(floor, occupied, radiusM, BANQUET_CHAIR_CLEARANCE_M);
   const admitting = (doorRule: ((spot: BanquetTablePlacement) => boolean) | undefined): ((spot: BanquetTablePlacement) => boolean) | undefined => {
-    if (onFloor === undefined) return doorRule;
+    if (slackOnFloor === undefined) return doorRule;
     return (spot) => {
       const at = inRoom(spot);
-      return onFloor(at) && (doorRule === undefined || doorRule(at));
+      return slackOnFloor(at) >= -SLACK_FLUSH && (doorRule === undefined || doorRule(at));
     };
   };
-  const plan = layout(admitting(clearOfDoors));
-  if (plan.tables.length === 0) return null;
+  const wanted = target === null ? Number.POSITIVE_INFINITY : Math.ceil(target / seats);
+  // Two groups keep the aisle between them: rounds between their rings, rectangles along one axis, as the arrangement's grid does.
+  const spaced = (a: BanquetTablePlacement, b: BanquetTablePlacement): boolean => (radiusM === undefined
+    ? Math.abs(a.xM - b.xM) >= occupied.width + BANQUET_CHAIR_CLEARANCE_M - FILL_EPS_M || Math.abs(a.zM - b.zM) >= occupied.depth + BANQUET_CHAIR_CLEARANCE_M - FILL_EPS_M
+    : Math.hypot(a.xM - b.xM, a.zM - b.zM) >= 2 * radiusM + BANQUET_CHAIR_CLEARANCE_M - FILL_EPS_M);
+  const spotKey = `${radiusM === undefined ? `${String(occupied.width)}x${String(occupied.depth)}` : String(radiusM)}|${String(BANQUET_CHAIR_CLEARANCE_M)}|${String(INNER_CORNER_CLEARANCE_M)}`;
+  /**
+   * The groups laid, in the room, and how many the room takes at this spacing.
+   * On a room's own floor an arrangement that falls short of the guests (or a
+   * fill of the room) is completed on the floor itself (fillTheFloor), so no
+   * spot the walls leave stays empty; the rooms whose walls are the centred
+   * rectangle are laid as they always were.
+   */
+  const laidOut = (doorRule: ((spot: BanquetTablePlacement) => boolean) | undefined): { readonly tables: readonly BanquetTablePlacement[]; readonly capacity: number } => {
+    const laid = layout(admitting(doorRule));
+    const tables = laid.tables.map(inRoom);
+    if (floor === undefined || slackOnFloor === undefined || tables.length >= wanted) return { tables, capacity: laid.capacityTables };
+    const all = fillTheFloor(tables, floorSpots(floor, spotKey, slackOnFloor), doorRule ?? (() => true), spaced, wanted);
+    const kept = all.length <= wanted
+      ? [...all]
+      // Nearest the middle of the floor's bounds first, as the arrangement keeps a partial fill balanced.
+      : [...all].sort((a, b) => Math.hypot(a.xM - origin.xM, a.zM - origin.zM) - Math.hypot(b.xM - origin.xM, b.zM - origin.zM) || a.zM - b.zM || a.xM - b.xM).slice(0, wanted);
+    return { tables: kept.sort((a, b) => a.zM - b.zM || a.xM - b.xM), capacity: Math.max(laid.capacityTables, all.length) };
+  };
+  const { tables, capacity } = laidOut(clearOfDoors);
+  if (tables.length === 0) return null;
   return {
     style: "dinner-rounds",
     tableItemId: table.id,
     round,
-    tables: floor === undefined ? plan.tables : plan.tables.map(inRoom),
+    tables,
     seatsPerTable: seats,
-    tableCount: plan.tableCount,
-    chairs: plan.seatsPlanned,
+    tableCount: tables.length,
+    chairs: tables.length * seats,
     guests: target,
-    roomForSeats: plan.capacityTables * seats,
-    meetsTarget: plan.meetsTarget,
+    roomForSeats: capacity * seats,
+    meetsTarget: target === null || tables.length * seats >= target,
     doorsKeptClear,
-    roomForSeatsIgnoringDoors: (doorsKeptClear ? layout(admitting(undefined)) : plan).capacityTables * seats,
+    roomForSeatsIgnoringDoors: (doorsKeptClear ? laidOut(undefined).capacity : capacity) * seats,
   };
 }
 

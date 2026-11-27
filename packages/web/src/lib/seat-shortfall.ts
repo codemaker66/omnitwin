@@ -15,7 +15,7 @@ import {
 } from "./table-group.js";
 import { BANQUET_CHAIR_CLEARANCE_M, groupClearOfDoors } from "./auto-fill.js";
 import { rectsOverlap, type LayoutRect } from "./auto-layout.js";
-import { discWithinFloor, floorCentre, rectWithinFloor, type RoomFloor } from "./room-floor.js";
+import { INNER_CORNER_CLEARANCE_M, discKeepsBand, floorCentre, rectKeepsBand, type RoomFloor } from "./room-floor.js";
 import { footprintInKeepOut } from "./door-clear-spaces.js";
 import { placedFootprint } from "./keep-doors-clear.js";
 import { countLabel } from "./count-label.js";
@@ -239,12 +239,14 @@ function freeTableSpots(input: SeatShortfallInput, table: CatalogueItem, seats: 
     : groupClearOfDoors(table, seats, { width: 2 * hw, depth: 2 * hd }, doorSpaces, input.chairSlug);
   const inDoorSpace = (spot: Spot): boolean => clearOfDoors !== null && !clearOfDoors({ xM: spot.x, zM: spot.z, rotationY: 0 });
 
-  // On a room's own floor the spots lie across the floor's bounds, and only those inside its walls with the spacing kept.
+  // On a room's own floor the spots lie across the floor's bounds, and only those inside its walls with the spacing kept,
+  // the inner corners' clearance at them, as Fill keeps it (lib/room-floor INNER_CORNER_CLEARANCE_M).
   const { floor } = input;
   const middle = floor === undefined ? null : floorCentre(floor);
+  const corner = toRenderSpace(INNER_CORNER_CLEARANCE_M);
   const onFloor = (spot: Spot): boolean => floor === undefined || (round
-    ? discWithinFloor(floor, toRenderSpace(spot.x), toRenderSpace(spot.z), toRenderSpace(radius + clearance))
-    : rectWithinFloor(floor, toRenderSpace(spot.x), toRenderSpace(spot.z), toRenderSpace(hw + clearance), toRenderSpace(hd + clearance)));
+    ? discKeepsBand(floor, toRenderSpace(spot.x), toRenderSpace(spot.z), toRenderSpace(radius), toRenderSpace(clearance), corner)
+    : rectKeepsBand(floor, toRenderSpace(spot.x), toRenderSpace(spot.z), toRenderSpace(hw), toRenderSpace(hd), toRenderSpace(clearance), corner));
 
   const spots: Spot[] = [];
   for (const fromMiddle of candidates) {

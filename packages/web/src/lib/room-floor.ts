@@ -227,6 +227,176 @@ export function discWithinFloor(floor: RoomFloor, x: number, z: number, radius: 
   return isPointInPolygon(x, z, floor.outline) && distanceToWalls(floor, x, z) >= radius - FLUSH;
 }
 
+/**
+ * The clearance, in metres, a laid-out group keeps from the walls at an
+ * inner corner of a room's drawn floor; everywhere else it keeps the
+ * layout's full band (lib/auto-fill BANQUET_CHAIR_CLEARANCE_M, 0.6 m).
+ * Blake's decision, 26 November 2026: chairs may come within 15 cm of a pier
+ * or step corner; 60 cm along every run of wall.
+ *
+ * Which vertices: an inner corner is a vertex of the drawn floor where the
+ * wall turns back into the room by 45 degrees or more, an interior angle of
+ * 225 degrees or more (innerCornersOf): the corner of a pier, a step, an
+ * alcove's mouth or a recess. The vertices that trace a drawn curve turn by
+ * less (the Robert Adam Room's curved wall by 9 to 28 degrees at each), and
+ * a curve is a run of wall, so it keeps the full band.
+ *
+ * How far: this clearance holds for every point of the walls within one
+ * band's width of an inner corner, measured straight from the corner; every
+ * other point of every wall keeps the full band (bandedWalls). A ring this
+ * near a corner is nearer than the band to every wall point within the band
+ * less this clearance of it, so the stretch can be no shorter than that; one
+ * band's width serves any clearance up to the band and lets the planner's
+ * round reach this clearance across the corner.
+ *
+ * Set to the band itself, every wall keeps the band, as before this rule.
+ */
+export const INNER_CORNER_CLEARANCE_M = 0.15;
+
+/** The least turn back into the room that makes a vertex an inner corner. */
+const INNER_CORNER_TURN_RAD = Math.PI / 4;
+
+/** The inner corners of a floor, render space: the vertices where its wall turns back into the room by 45 degrees or more. */
+export function innerCornersOf(floor: RoomFloor): readonly (readonly [number, number])[] {
+  const { outline } = floor;
+  let twiceArea = 0;
+  outline.forEach(([x, z], i) => {
+    const [nextX, nextZ] = outline[(i + 1) % outline.length] ?? [x, z];
+    twiceArea += x * nextZ - nextX * z;
+  });
+  // Counter-clockwise keeps the room on each wall's left; a turn to the right there turns back into the room.
+  const turn = twiceArea > 0 ? 1 : -1;
+  const corners: (readonly [number, number])[] = [];
+  outline.forEach((corner, i) => {
+    const before = outline[(i - 1 + outline.length) % outline.length] ?? corner;
+    const after = outline[(i + 1) % outline.length] ?? corner;
+    const inX = corner[0] - before[0];
+    const inZ = corner[1] - before[1];
+    const outX = after[0] - corner[0];
+    const outZ = after[1] - corner[1];
+    const cross = inX * outZ - inZ * outX;
+    const angle = Math.atan2(Math.abs(cross), inX * outX + inZ * outZ);
+    if (cross * turn < 0 && angle >= INNER_CORNER_TURN_RAD - STRAIGHT) corners.push(corner);
+  });
+  return corners;
+}
+
+/** A stretch of wall, render space, and the clearance a laid-out group keeps from it. */
+export interface BandedWall {
+  readonly ax: number;
+  readonly az: number;
+  readonly bx: number;
+  readonly bz: number;
+  readonly clearance: number;
+}
+
+const bandedWallCache = new WeakMap<RoomFloor, Map<string, readonly BandedWall[]>>();
+
+/**
+ * The floor's walls cut into stretches, each with the clearance a laid-out
+ * group keeps from it (INNER_CORNER_CLEARANCE_M): `cornerClearance` within
+ * `band` of an inner corner, `band` everywhere else. Render space.
+ */
+export function bandedWalls(floor: RoomFloor, band: number, cornerClearance: number): readonly BandedWall[] {
+  const key = `${String(band)}|${String(cornerClearance)}`;
+  const known = bandedWallCache.get(floor)?.get(key);
+  if (known !== undefined) return known;
+  const corners = band > 0 ? innerCornersOf(floor) : [];
+  const stretches: BandedWall[] = [];
+  for (const { ax, az, bx, bz } of floor.edges) {
+    const dx = bx - ax;
+    const dz = bz - az;
+    const lengthSq = dx * dx + dz * dz;
+    // Where along this wall (0 at a, 1 at b) it lies within `band` of an inner corner.
+    const near: [number, number][] = [];
+    for (const [cx, cz] of corners) {
+      const fx = ax - cx;
+      const fz = az - cz;
+      const b = 2 * (fx * dx + fz * dz);
+      const c = fx * fx + fz * fz - band * band;
+      const disc = b * b - 4 * lengthSq * c;
+      if (disc < 0) continue;
+      const root = Math.sqrt(disc);
+      const from = Math.max(0, (-b - root) / (2 * lengthSq));
+      const to = Math.min(1, (-b + root) / (2 * lengthSq));
+      if (to > from) near.push([from, to]);
+    }
+    near.sort((p, q) => p[0] - q[0]);
+    const merged: [number, number][] = [];
+    for (const span of near) {
+      const last = merged[merged.length - 1];
+      if (last !== undefined && span[0] <= last[1]) last[1] = Math.max(last[1], span[1]);
+      else merged.push([span[0], span[1]]);
+    }
+    const stretch = (from: number, to: number, clearance: number): void => {
+      stretches.push({ ax: ax + from * dx, az: az + from * dz, bx: ax + to * dx, bz: az + to * dz, clearance });
+    };
+    let at = 0;
+    for (const [from, to] of merged) {
+      if (from > at) stretch(at, from, band);
+      stretch(from, to, cornerClearance);
+      at = to;
+    }
+    if (at < 1) stretch(at, 1, band);
+  }
+  const byKey = bandedWallCache.get(floor) ?? new Map<string, readonly BandedWall[]>();
+  byKey.set(key, stretches);
+  bandedWallCache.set(floor, byKey);
+  return stretches;
+}
+
+function pointToStretch(x: number, z: number, wall: BandedWall): number {
+  const dx = wall.bx - wall.ax;
+  const dz = wall.bz - wall.az;
+  const lengthSq = dx * dx + dz * dz;
+  const along = lengthSq === 0 ? 0 : Math.min(1, Math.max(0, ((x - wall.ax) * dx + (z - wall.az) * dz) / lengthSq));
+  return Math.hypot(x - (wall.ax + along * dx), z - (wall.az + along * dz));
+}
+
+/**
+ * By how much a disc keeps the band from the floor's walls (bandedWalls):
+ * the least, over every stretch, of its gap to the stretch less the
+ * clearance the stretch asks. At least zero (to a hair) keeps it; minus
+ * infinity when its centre is outside the walls.
+ */
+export function discBandSlack(floor: RoomFloor, x: number, z: number, radius: number, band: number, cornerClearance: number): number {
+  if (!isPointInPolygon(x, z, floor.outline)) return Number.NEGATIVE_INFINITY;
+  let slack = Number.POSITIVE_INFINITY;
+  for (const wall of bandedWalls(floor, band, cornerClearance)) slack = Math.min(slack, pointToStretch(x, z, wall) - radius - wall.clearance);
+  return slack;
+}
+
+/** Whether a disc stands on the floor with the band kept from its walls, the inner corners' clearance at them. */
+export function discKeepsBand(floor: RoomFloor, x: number, z: number, radius: number, band: number, cornerClearance: number): boolean {
+  return discBandSlack(floor, x, z, radius, band, cornerClearance) >= -FLUSH;
+}
+
+/** The gap from the box x ± halfW, z ± halfD to a stretch of wall: nothing when the stretch reaches it. */
+function boxToStretch(x: number, z: number, halfW: number, halfD: number, wall: BandedWall): number {
+  const edge: FloorEdge = { ax: wall.ax, az: wall.az, bx: wall.bx, bz: wall.bz, nx: 0, nz: 0 };
+  if (edgeCrossesBox(edge, x - halfW, x + halfW, z - halfD, z + halfD)) return 0;
+  // Two convex shapes apart are nearest at a corner of one.
+  const toBox = (px: number, pz: number): number => Math.hypot(Math.max(0, Math.abs(px - x) - halfW), Math.max(0, Math.abs(pz - z) - halfD));
+  let gap = Math.min(toBox(wall.ax, wall.az), toBox(wall.bx, wall.bz));
+  for (const [cx, cz] of [[x - halfW, z - halfD], [x + halfW, z - halfD], [x + halfW, z + halfD], [x - halfW, z + halfD]] as const) {
+    gap = Math.min(gap, pointToStretch(cx, cz, wall));
+  }
+  return gap;
+}
+
+/** By how much a footprint box keeps the band from the floor's walls, as discBandSlack; minus infinity when it is not wholly on the floor. */
+export function rectBandSlack(floor: RoomFloor, x: number, z: number, halfW: number, halfD: number, band: number, cornerClearance: number): number {
+  if (!rectWithinFloor(floor, x, z, halfW, halfD)) return Number.NEGATIVE_INFINITY;
+  let slack = Number.POSITIVE_INFINITY;
+  for (const wall of bandedWalls(floor, band, cornerClearance)) slack = Math.min(slack, boxToStretch(x, z, halfW, halfD, wall) - wall.clearance);
+  return slack;
+}
+
+/** Whether a footprint box stands wholly on the floor with the band kept from its walls, the inner corners' clearance at them. */
+export function rectKeepsBand(floor: RoomFloor, x: number, z: number, halfW: number, halfD: number, band: number, cornerClearance: number): boolean {
+  return rectBandSlack(floor, x, z, halfW, halfD, band, cornerClearance) >= -FLUSH;
+}
+
 /** One way a footprint is through the walls: how far, and the shifts along an axis that would clear that wall. */
 export interface FloorCrossing {
   readonly depth: number;
