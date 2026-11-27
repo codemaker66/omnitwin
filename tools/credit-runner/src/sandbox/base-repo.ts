@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { git } from "../git.js";
+import { describeError } from "../task.js";
 
 /**
  * Runs `use` in a throwaway repository holding one commit of `repoUrl`,
@@ -28,7 +29,7 @@ export async function withBaseCommit<T>(
     return await use(repo, scratch);
   } finally {
     await remove(scratch).catch((error: unknown) => {
-      log(`Could not remove a throwaway repository (${error instanceof Error ? error.message : String(error)}).`);
+      log(`Could not remove a throwaway repository (${describeError(error)}).`);
     });
   }
 }

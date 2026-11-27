@@ -539,7 +539,8 @@ describe("masterFacts", () => {
       (line) => logged.push(line),
       (folder) => {
         folders.push(folder);
-        return Promise.reject(new Error("EBUSY: resource busy or locked"));
+        // A line break and an escape character in the message: the log line keeps neither.
+        return Promise.reject(new Error("EBUSY: resource busy\nor\u001b locked"));
       },
     );
     expect(value).toBe("the result");
