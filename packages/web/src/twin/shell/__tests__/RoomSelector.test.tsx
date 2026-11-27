@@ -5,9 +5,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { findUnsupportedProposalClaim, type TwinScanNode } from "@omnitwin/types";
 import { ROOM_DISPLAY_NAMES, ROOM_TRUTH_PROVENANCE, VERIFIED_ROOM_NODES } from "../twin-rooms.js";
 import { ROOM_SELECTOR_ORDER, formatRoomComparison, pickRoomTarget } from "../room-selector.js";
+import { ROOMS_SLOT, RoomSelector } from "../RoomSelector.js";
 import {
-  ROOMS_SLOT,
-  RoomSelector,
   TWIN_ROOMS_ARIA,
   TWIN_ROOMS_CLOSE,
   TWIN_ROOMS_FOOTNOTE,
@@ -20,7 +19,7 @@ import {
   twinRoomsLevelBelow,
   twinRoomsRowLabel,
   twinRoomsWalkLabel,
-} from "../RoomSelector.js";
+} from "../room-selector-copy.js";
 
 // -----------------------------------------------------------------------------
 // RoomSelector — the panel that replaces 149 identical dots.
@@ -125,7 +124,10 @@ describe("RoomSelector — the rooms it offers", () => {
       const comparison = formatRoomComparison(nodeId);
       expect(comparison).not.toBeNull();
       if (comparison !== null && ROOM_SELECTOR_ORDER.includes(slug)) {
-        expect(screen.getAllByText(comparison).length).toBeGreaterThan(0);
+        // Matched without collapsing whitespace: the line's no-break spaces
+        // must reach the row as written, and the default matcher would turn
+        // the page's into ordinary spaces before comparing.
+        expect(screen.getAllByText(comparison, { collapseWhitespace: false }).length).toBeGreaterThan(0);
       }
     }
   });

@@ -420,6 +420,7 @@ class Room:
             ppm = self.survey["floorPhoto"]["ppm"]
             out += [f"survey.floorPhoto.ppm {ppm:g}: {fault}, and the web's reader would refuse the record. The floor is laid in "
                     f"whole texels of 1 / ppm metres, so it can stop half a texel short of the outline, and half a texel is under "
-                    f"{publish.OVERHEAD_EXTENT_TOLERANCE * 1000:g} mm only at more than 100 texels per metre: give floorPhoto.ppm more than 100"
+                    f"{publish.OVERHEAD_EXTENT_TOLERANCE * 1000:g} mm only above 100 texels per metre (and just above 100 the extent's "
+                    f"rounding to a micrometre can still lose it): give floorPhoto.ppm 101 or more"
                     for fault in publish.overhead_reach_faults("floor", publish.floor_extent(self), self.cfg["walls"]["vertices"])]
         return out
