@@ -251,7 +251,7 @@ person's enquiries, deals and proposals point at are found whether the join made
 them, a writer linked them, or nothing in `event_link_joins` records it. An event the
 join made for one of those records is also found through `event_link_joins` after
 the record's link has moved (a Diary edit that moves an enquiry's last booking, the
-bind, or a repair by hand), so it cannot keep the name it was given. The join
+bind, or a repair by hand), so the person's erasure still finds it. The join
 names an event it makes, and its client, from the record (an enquiry's name, a deal's
 or a proposal's title); erasure deletes the person's enquiries, rewords their deals and
 proposals, and takes their names out of every event it finds, so a later run of the
