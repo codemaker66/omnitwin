@@ -756,7 +756,8 @@ BEGIN
           v_make := true;
         END IF;
       ELSIF v_target IS NULL THEN
-        -- A closed deal that reaches no event is left.
+        -- A closed deal whose enquiry has no live event is left, whatever its
+        -- proposals reach.
         CONTINUE deal_loop;
       END IF;
       IF v_target IS NOT NULL THEN
