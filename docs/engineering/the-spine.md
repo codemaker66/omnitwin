@@ -262,23 +262,29 @@ join has no name to copy back.
   linked to it, a booking of their enquiry in it, or it is their deal's); then it is
   near them, as the event of a deal another live person leads is. An event the join
   made for the person's record, with nothing tying it to another live person, is
-  theirs. Own or near, the event is kept and loses only the erased person's names;
-  an own event's confirmed booking or live hold, or a deposit request naming it,
-  refuses the erasure.
-- A confirmed booking or live hold from the person's own enquiry refuses the erasure
-  in a near event too, as before the links, unless the event is another live
-  person's deal's (its event, or one laid out from its proposal). An event that is
-  near only because another person's record points at it does not take the person's
-  own booking from them; the other person's bookings there never count as theirs.
+  theirs. Own or near, the event is kept and loses only the erased person's names.
+- What refuses the erasure is read apart from own and near, and the links never
+  make it refuse less than before them: a confirmed booking or live hold, or a
+  deposit request naming the event, in an event of theirs (an own event, or any
+  event a booking from their enquiry sits in unless it is another live person's
+  deal's: its event, or one laid out from its proposal), whoever made that booking
+  and whoever else points at the event; and a confirmed booking or live hold from
+  their own enquiry anywhere but in another live person's deal's event. Another
+  person's record pointing at such an event makes it near for what is reworded and
+  kept, never for what keeps the person. The pass reads who is kept the same way
+  (`own_events` and an enquiry's `its_events` leave out only `deal_events`), with
+  erasure's `guardEventIds` as its counterpart.
 - The events of a proposal the person only answered on (someone else's proposal they
-  commented on or accepted for) are near them: their names leave those events as
-  they leave the proposal's title.
+  commented on or accepted for) are near them: their names leave those events, and
+  those events' bookings, as they leave the proposal's title.
 - When the 24-month pass keeps a person for a booking and removes their enquiries
   that never became one, nothing of theirs is reworded. An event the join made for
-  such an enquiry that nothing points at any more (no row of any table with a key to
-  the event or to one of its phases, its own phases apart, and no deal or client
-  account of its own) is renamed `Event` and its client name cleared; an event
-  something still points at is left alone.
+  an enquiry that no longer exists, among the removed enquiry's own and nearby
+  events, loses what it still holds of the name the join copied from an enquiry
+  removed then: its name becomes `Event` while it equals that enquiry's name as the
+  join wrote it (trimmed, cut to 200 characters), and its client name is cleared
+  while it equals it. A name typed since stays; what points at the event does not
+  matter. The names are those the removed rows held, read by the delete itself.
 - A record of theirs linked between the erasure's reads and its locks makes it
   answer RETRY, as a booking written meanwhile does.
 - The join copies a name only from a row it holds (above). An erasure under way when
@@ -565,13 +571,16 @@ ignore them. (The backup branch remains the last resort.)
 - `packages/api/src/__tests__/people-erasure-spine-links-postgres.test.ts`: erasure
   and the 24-month pass follow the links. The join's made events for an enquiry, a
   deal and a proposal lose the person's name; a link with no record of the join is
-  found the same; an event a second live person is tied to is kept and near, and the
-  person's own booking there still keeps them; a made event whose record's link has
-  moved is found through the join's record; the event of a proposal they only
-  answered on is near; a kept person's removed enquiry leaves its made event named
-  `Event` once nothing points at it; the pass's readings agree with its step; a link
-  written while the erasure waits answers RETRY; the join and the undo run cleanly
-  afterwards.
+  found the same; an event a second live person is tied to is kept and near, and
+  any live booking or deposit request there that kept the person before still keeps
+  them, in the erasure and in the pass's reading; a made event whose enquiry's,
+  deal's or proposal's link has moved is found through the join's record; the event
+  of a proposal they only answered on is near, its bookings lose the name, and a link
+  written to it while the erasure waits answers RETRY; a kept person's removed
+  enquiry leaves its made event named `Event` while the event still holds the copied
+  name, whatever points at it, and keeps a name typed since; the pass's readings
+  agree with its step; a link written while the erasure waits answers RETRY; the
+  join and the undo run cleanly afterwards.
 
 Each spine suite makes and drops a database of its own on the platform test
 cluster; the platform gate (`test:platform-db`) names them all.
