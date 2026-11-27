@@ -773,6 +773,41 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     expect(await count("contacts WHERE id = ANY($1::uuid[]) AND erased_at IS NULL", [[kirsty, lachlan]])).toBe(2);
   });
 
+  it("an event the join made for a record whose link has moved since is found through the join's own record, by erasure and by the pass", async () => {
+    const v = await venueIn(pool, "erasure, a made event left behind");
+    // The join makes an event for her worked enquiry, and one for his open deal (no enquiry), each named from it.
+    const isla = await person(v, "Isla Movedwell");
+    const asked = await enquiry(v, { contactId: isla, name: "Isla Movedwell", replied: true });
+    const ruaraidh = await person(v, "Ruaraidh Dealmoved", longAgo);
+    const hisDeal = await deal(v, { title: "Dinner for Ruaraidh Dealmoved", leadId: ruaraidh, at: longAgo });
+    await join();
+    const made = await eventOf("enquiries", asked);
+    const madeForDeal = await eventOf("opportunities", hisDeal);
+    expect(await joinOf("enquiry", asked)).toEqual({ event_id: made, event_made: true, path: "new_event" });
+    expect(await joinOf("opportunity", hisDeal)).toEqual({ event_id: madeForDeal, event_made: true, path: "new_event" });
+    expect(await names(made)).toEqual({ name: "Isla Movedwell", client_name: "Isla Movedwell" });
+    // Then each link is moved to another event (as a Diary edit that moves an
+    // enquiry's last booking moves it, or a repair by hand), and a confirmed
+    // booking is held in the event made for his deal.
+    const movedTo = await event(v, "TEST ONLY where her enquiry went", null);
+    await link(pool, "enquiries", asked, movedTo);
+    await link(pool, "opportunities", hisDeal, await event(v, "TEST ONLY where his deal went", null));
+    await booking(v, { eventId: madeForDeal, kind: "ink", at: longAgo });
+
+    // Both are hers, the one the join made for her enquiry among them, and it loses her name.
+    const found = await classified(v, isla);
+    expect({ own: [...found.own].sort(), near: found.near }).toEqual({ own: [made, movedTo].sort(), near: [] });
+    expect(await erase(v, isla)).toMatchObject({ ok: true, counts: { people: 1, enquiries: 1 } });
+    expect(await names(made)).toEqual({ name: "Erased", client_name: "Erased" });
+    expect(await namedAnywhere(v, "Isla Movedwell")).toBe(0);
+
+    // The event made for his deal is his: its confirmed booking keeps him, in
+    // the pass's reading as in the erasure, and nothing changes.
+    expect(await keptByReading(v)).toEqual([ruaraidh]);
+    expect(await erase(v, ruaraidh)).toEqual({ ok: false, refusal: "has_booking" });
+    expect(await names(madeForDeal)).toEqual({ name: "Dinner for Ruaraidh Dealmoved", client_name: null });
+  });
+
   it("the join's own records of an erased enquiry stay as ids: the nightly join and the undo still run cleanly afterwards", async () => {
     const v = await venueIn(pool, "erasure, the join's records");
     const catriona = await person(v, "Catriona Listwell");

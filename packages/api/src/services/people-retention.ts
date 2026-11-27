@@ -240,7 +240,9 @@ interface LapsedRow extends Record<string, unknown> {
  *     proposals' layouts and of their enquiries' holds, but never a near
  *     deal's event, nor a booking pencilled from their enquiry onto one;
  *   - the events their enquiries, deals and proposals (near ones included)
- *     point at themselves (the spine's links): theirs, unless another live
+ *     point at themselves (the spine's links), and those the join made for
+ *     one of them whose link has moved since (event_link_joins, as erasure's
+ *     linkedEvents reads them): theirs, unless another live
  *     person's record points at one too (tiedToAnotherPerson, the erasure's
  *     own expression), which makes it near. A booking pencilled from their
  *     enquiry onto an event near only for that reason is still theirs: only a
@@ -321,6 +323,12 @@ function lapsedPeople(cutoff: Date): SQL {
         select lo."event_id" from "opportunities" as lo where lo."id" = any(deals."own" || deals."near") and lo."event_id" is not null
         union
         select lp."event_id" from "proposals" as lp where lp."id" = any(props."all") and lp."event_id" is not null
+        union
+        select lj."event_id" from "event_link_joins" as lj join "events" as lje on lje."id" = lj."event_id"
+        where lj."event_made" and lj."undone_at" is null
+          and ((lj."subject_kind" = 'enquiry' and lj."subject_id" = any(linked."ids"))
+            or (lj."subject_kind" = 'opportunity' and lj."subject_id" = any(deals."own" || deals."near"))
+            or (lj."subject_kind" = 'proposal' and lj."subject_id" = any(props."all")))
       ) as "ids"
     ) as links
     cross join lateral (

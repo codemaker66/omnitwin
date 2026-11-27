@@ -15,6 +15,7 @@ import {
   emailSends,
   enquiries,
   eventConfigurationLinks,
+  eventLinkJoins,
   eventPlanChangeAcknowledgements,
   eventPlanChanges,
   eventPlanNotifications,
@@ -563,7 +564,10 @@ function uuidArray(ids: readonly string[]): SQL {
 
 /** The events the enquiries, deals and proposals point at themselves (the
  *  spine's links: enquiries.event_id, opportunities.event_id,
- *  proposals.event_id). */
+ *  proposals.event_id), and those the join of old records made for one of
+ *  them (event_link_joins: made, in force), which the join named from the
+ *  record and which keep that name when a writer or a repair by hand has
+ *  moved the record's link since. */
 async function linkedEvents(
   tx: PeopleTx,
   enquiryIds: readonly string[],
@@ -576,7 +580,17 @@ async function linkedEvents(
     .where(inArray(opportunities.id, [...dealIds]));
   const fromProposals = proposalIds.length === 0 ? [] : await tx.select({ id: proposals.eventId }).from(proposals)
     .where(inArray(proposals.id, [...proposalIds]));
-  return idsOf([...fromEnquiries, ...fromDeals, ...fromProposals]);
+  const madeFor = (kind: "enquiry" | "opportunity" | "proposal", ids: readonly string[]): SQL =>
+    allOf(eq(eventLinkJoins.subjectKind, kind), among(eventLinkJoins.subjectId, ids));
+  const made = enquiryIds.length + dealIds.length + proposalIds.length === 0 ? [] : await tx
+    .select({ id: eventLinkJoins.eventId }).from(eventLinkJoins)
+    .innerJoin(events, eq(events.id, eventLinkJoins.eventId))
+    .where(allOf(
+      eq(eventLinkJoins.eventMade, true),
+      isNull(eventLinkJoins.undoneAt),
+      or(madeFor("enquiry", enquiryIds), madeFor("opportunity", dealIds), madeFor("proposal", proposalIds)) ?? sql`false`,
+    ));
+  return idsOf([...fromEnquiries, ...fromDeals, ...fromProposals, ...made]);
 }
 
 /** A booking was written, or one of their records was linked to an event,
@@ -764,9 +778,10 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
   // The events their enquiries, deals and proposals point at themselves (the
   // spine's links), their own records' and the nearby ones': one the join of
   // old records made and named from the record, or one a writer linked,
-  // whether or not event_link_joins records it. Such an event is another live
-  // person's when a record of theirs points at it too (the nearby deal and its
-  // proposals among them); otherwise it is theirs.
+  // whether or not event_link_joins records it; and one the join made for
+  // such a record whose link has moved since (linkedEvents). Such an event is
+  // another live person's when a record of theirs points at it too (the
+  // nearby deal and its proposals among them); otherwise it is theirs.
   const dealsFound = [...dealIds, ...nearDealIds];
   const proposalsFound = proposalRows.map((row) => row.id);
   const linked = await linkedEvents(tx, enquiryIds, dealsFound, proposalsFound);
