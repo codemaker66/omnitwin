@@ -39,6 +39,7 @@ import {
   collectSandboxJob,
   inlineCode,
   reviewMarkdown,
+  AT_ONCE_INTERRUPT_MS,
   runSandboxJob,
   UNBOOKED_CHECK_FROM,
   UNBOOKED_LOOKBACK_MS,
@@ -2289,6 +2290,24 @@ describe("sandbox launcher, when it is stopped by a signal", () => {
     const printed: string[] = [];
     return { exits, printed, stopOnSignals: { exit: (code: number) => void exits.push(code), print: (line: string) => void printed.push(line), now: clock } };
   };
+  /** What the at-once path prints first once a session exists, and once its one interrupt is answered. */
+  const AT_ONCE = "session sesn_1 may still be running; booked at its whole budget as unknown; sending it one interrupt before exiting (at most 2 s)";
+  const INTERRUPT_SENT = "session sesn_1: the interrupt was sent; collect it when it has stopped";
+  /** Waits, in short steps, until `done` holds. */
+  const until = async (done: () => boolean, ms = 10_000): Promise<void> => {
+    for (const deadline = Date.now() + ms; !done(); ) {
+      if (Date.now() > deadline) throw new Error("timed out waiting");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
+  /** A promise and what settles it. */
+  const gate = () => {
+    let open: () => void = () => undefined;
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    return { opened, open };
+  };
   /** A clock that moves on by `ms` at each read. */
   function steps(ms: number): () => number {
     let time = 0;
@@ -2331,8 +2350,9 @@ describe("sandbox launcher, when it is stopped by a signal", () => {
       process.emit("SIGINT");
       process.emit(second);
       expect(await stopped, second).toBeInstanceOf(RunStoppedError);
+      await until(() => pressed.exits.length > 0);
       expect(pressed.exits, second).toEqual([1]);
-      expect(pressed.printed, second).toEqual(["session sesn_1 may still be running; booked at its whole budget as unknown; collect it when it has stopped"]);
+      expect(pressed.printed, second).toEqual([AT_ONCE, INTERRUPT_SENT]);
       expect(await ledgerLines(books.ledgerFile), second).toEqual([expect.objectContaining({ batchId: "sesn_1", costUsd: 4.5, costKnown: false })]);
     }
   });
@@ -2361,7 +2381,7 @@ describe("sandbox launcher, when it is stopped by a signal", () => {
     }
   });
 
-  it("handles the stop signals only while a run lasts: the first stops it as the deadline does, a second books the whole budget at once, once, and ends the process", async () => {
+  it("handles the stop signals only while a run lasts: the first stops it as the deadline does, a second books the whole budget at once, once, and a third ends the process at once", async () => {
     const before = listeners();
     const config = await workspace();
     const api = endless();
@@ -2398,16 +2418,19 @@ describe("sandbox launcher, when it is stopped by a signal", () => {
     process.emit("SIGINT");
     const runId = String(api.sessions[0]?.metadata?.run);
     expect(await ledgerLines(config.ledgerFile)).toEqual([expect.objectContaining({ batchId: "sesn_1", runId, costUsd: 4.5, costKnown: false, job: "a4-trial:robots-wildcards" })]);
-    expect(printed).toEqual(["session sesn_1 may still be running; booked at its whole budget as unknown; collect it when it has stopped"]);
-    expect(exits).toEqual([1]);
+    expect(printed).toEqual([AT_ONCE]);
+    // Its one interrupt is held too: the process waits for it.
+    await until(() => interrupts(api) === 2);
+    expect(exits).toEqual([]);
 
-    // A third writes nothing more.
+    // A third ends the process at once and writes nothing more.
     process.emit("SIGTERM");
-    expect(exits).toEqual([1, 1]);
-    expect(printed[1]).toMatch(/^session sesn_1 may still be running; it is booked already/u);
+    expect(exits).toEqual([1]);
+    expect(printed).toEqual([AT_ONCE]);
 
     resume();
     expect(await run).toBeInstanceOf(RunStoppedError);
+    expect([exits, printed]).toEqual([[1], [AT_ONCE]]);
     // The run's own booking found the session booked: still one line, and no write of its own.
     expect(await ledgerLines(config.ledgerFile)).toHaveLength(1);
     expect(appendCreditLine).not.toHaveBeenCalled();
@@ -2423,9 +2446,10 @@ describe("sandbox launcher, when it is stopped by a signal", () => {
     const run = job(api, config, happy, { sleep: instant, stopOnSignals }).catch((caught: unknown) => caught);
     await following(api);
     process.emit("SIGHUP");
-    expect(exits).toEqual([1]);
-    expect(printed).toEqual(["session sesn_1 may still be running; booked at its whole budget as unknown; collect it when it has stopped"]);
+    expect(printed).toEqual([AT_ONCE]);
     expect(await ledgerLines(config.ledgerFile)).toEqual([expect.objectContaining({ batchId: "sesn_1", costUsd: 4.5, costKnown: false })]);
+    await until(() => exits.length > 0);
+    expect([exits, printed]).toEqual([[1], [AT_ONCE, INTERRUPT_SENT]]);
     // Here the process goes on (exit is a seam): the run stops, and books nothing more.
     expect(await run).toBeInstanceOf(RunStoppedError);
     expect(await ledgerLines(config.ledgerFile)).toHaveLength(1);
@@ -2504,7 +2528,9 @@ describe("sandbox launcher, when it is stopped by a signal", () => {
     await expect(job(again, twice, happy, { sleep: instant, stopOnSignals: second.stopOnSignals })).rejects.toBeInstanceOf(SessionMayExistError);
     const againRun = String(again.sessions[0]?.metadata?.run);
     expect(second.printed).toEqual([`session with run id ${againRun} may still be running; booked at its whole budget as unknown; collect it when it has stopped`]);
+    // No session id yet: nothing to interrupt, so the process ends at once.
     expect(second.exits).toEqual([1]);
+    expect(interrupts(again)).toBe(0);
     expect(await ledgerLines(twice.ledgerFile)).toEqual([expect.objectContaining({ batchId: null, runId: againRun, costUsd: 4.5, costKnown: false })]);
     expect(appendCreditLine).not.toHaveBeenCalled();
   });
@@ -2530,11 +2556,109 @@ describe("sandbox launcher, when it is stopped by a signal", () => {
     });
     process.emit("SIGINT");
     process.emit("SIGTERM");
+    await until(() => exits.length > 0);
     expect(exits).toEqual([1]);
     expect(printed).toEqual([
       "session sesn_1 may still be running, and booking it failed (disk [31mfull try again); book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_1 --book",
+      INTERRUPT_SENT,
     ]);
     expect(await run).toBeInstanceOf(RunStoppedError);
+  });
+
+  it("after a second press or a closed window, writes the line first, then sends the session one interrupt and ends the process once it is answered", async () => {
+    expect(AT_ONCE_INTERRUPT_MS).toBe(2000);
+    for (const answer of ["sent", "refused"] as const) {
+      const config = await workspace();
+      const api = endless();
+      api.statuses = ["running"];
+      // The run's own stop waits on its first status read, so the only interrupt is the at-once path's.
+      const reads = gate();
+      const retrieve = api.retrieveSession;
+      api.retrieveSession = async (id) => {
+        await reads.opened;
+        return retrieve(id);
+      };
+      const answered = gate();
+      const send = api.sendEvents;
+      const calls = { interrupts: 0 };
+      api.sendEvents = async (id, events) => {
+        if (events[0]?.type === "user.interrupt") {
+          calls.interrupts += 1;
+          await answered.opened;
+          if (answer === "refused") throw new Error("429 \u001b[31mToo Many\nRequests");
+        }
+        await send(id, events);
+      };
+      const { exits, printed, stopOnSignals } = seams();
+      const run = job(api, config, happy, { sleep: instant, stopOnSignals }).catch((caught: unknown) => caught);
+      await following(api);
+      process.emit("SIGHUP");
+      // The line is written before anything is sent, so the booking never waits on the interrupt.
+      expect(await ledgerLines(config.ledgerFile), answer).toEqual([expect.objectContaining({ batchId: "sesn_1", costUsd: 4.5, costKnown: false })]);
+      expect(printed, answer).toEqual([AT_ONCE]);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect([calls.interrupts, exits], answer).toEqual([1, []]);
+      answered.open();
+      await until(() => exits.length > 0);
+      expect(exits, answer).toEqual([1]);
+      expect(printed, answer).toEqual([
+        AT_ONCE,
+        answer === "sent"
+          ? INTERRUPT_SENT
+          : "session sesn_1: the interrupt failed (429 [31mToo Many Requests); it may run on until it stops or reaches its budget; collect it when it has stopped",
+      ]);
+      expect(calls.interrupts, answer).toBe(1);
+      // Here the process goes on (exit is a seam): the run finishes stopping and books nothing more.
+      reads.open();
+      expect(await run, answer).toBeInstanceOf(RunStoppedError);
+      expect(await ledgerLines(config.ledgerFile), answer).toHaveLength(1);
+    }
+  });
+
+  it("ends the process at the 2 s cap when the interrupt has no answer, and at once on a further signal while it waits, writing nothing more", async () => {
+    for (const further of [null, "SIGINT"] as const) {
+      const config = await workspace();
+      const api = endless();
+      api.statuses = ["running"];
+      const reads = gate();
+      const retrieve = api.retrieveSession;
+      api.retrieveSession = async (id) => {
+        await reads.opened;
+        return retrieve(id);
+      };
+      const hanging = gate();
+      const send = api.sendEvents;
+      api.sendEvents = async (id, events) => {
+        if (events[0]?.type === "user.interrupt") await hanging.opened;
+        await send(id, events);
+      };
+      const { exits, printed, stopOnSignals } = seams();
+      const run = job(api, config, happy, { sleep: instant, stopOnSignals }).catch((caught: unknown) => caught);
+      await following(api);
+      const startedAt = Date.now();
+      process.emit("SIGHUP");
+      expect(printed).toEqual([AT_ONCE]);
+      if (further === null) {
+        await until(() => exits.length > 0, 10_000);
+        const waited = Date.now() - startedAt;
+        expect(waited).toBeGreaterThanOrEqual(1900);
+        expect(waited).toBeLessThan(6000);
+        expect(printed).toEqual([AT_ONCE, "session sesn_1: the interrupt had no answer within 2 s; it may run on until it stops or reaches its budget; collect it when it has stopped"]);
+      } else {
+        process.emit(further);
+        expect(exits).toEqual([1]);
+        expect(printed).toEqual([AT_ONCE]);
+      }
+      expect(await ledgerLines(config.ledgerFile)).toEqual([expect.objectContaining({ batchId: "sesn_1", costUsd: 4.5, costKnown: false })]);
+      // Whatever answers later changes nothing: the process has ended.
+      hanging.open();
+      reads.open();
+      expect(await run).toBeInstanceOf(RunStoppedError);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(exits).toEqual([1]);
+      expect(printed).toHaveLength(further === null ? 2 : 1);
+      expect(await ledgerLines(config.ledgerFile)).toHaveLength(1);
+    }
   });
 
   it("leaves no handler behind, whether the run succeeds, fails or is refused, and installs none unless asked", async () => {

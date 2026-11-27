@@ -48,8 +48,8 @@ export interface JobOptions {
    * Handles STOP_SIGNALS while the run lasts, as the CLI's `run` does: the
    * first stops the run as its deadline does, and a repeat of it within
    * SAME_PRESS_MS is the same press; a second press (that signal again later,
-   * or another one), or a SIGHUP at any point, books it at once and ends the
-   * process (see runSandboxJob).
+   * or another one), or a SIGHUP at any point, books it at once, sends the
+   * session one interrupt and ends the process (see runSandboxJob).
    */
   readonly stopOnSignals?: StopOnSignals | undefined;
 }
@@ -245,9 +245,16 @@ export const STOP_SIGNALS: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SI
  */
 export const SAME_PRESS_MS = 2000;
 
+/**
+ * How long the at-once path waits for its one interrupt to be answered before
+ * the process ends: well inside the five seconds or so Windows allows a process
+ * after its console window is closed.
+ */
+export const AT_ONCE_INTERRUPT_MS = 2000;
+
 /** What the at-once booking does with the process (stopOnSignals): the CLI takes the defaults; tests pass seams. */
 export interface StopOnSignals {
-  /** Ends the process once a second signal, or a SIGHUP, has been handled (default process.exit). */
+  /** Ends the process once a second signal, or a SIGHUP, has been handled and its one interrupt answered or given up on (default process.exit). */
   readonly exit?: (code: number) => void;
   /** Says what that signal did (default: written to stderr at once, synchronously). */
   readonly print?: (line: string) => void;
@@ -316,8 +323,10 @@ function handleStopSignals(
  * first signal within SAME_PRESS_MS is the same press and changes nothing. A
  * second press (that signal later, or another one), or a SIGHUP, has no time
  * for the stop: once a create has been sent, the run is booked at once at its
- * whole budget as unknown, unless it is booked already, and the process ends.
- * The handlers are removed when the run ends.
+ * whole budget as unknown, unless it is booked already; then the session, once
+ * its id is known, is sent one interrupt, and the process ends when that is
+ * answered or after AT_ONCE_INTERRUPT_MS (see bookAtOnce). The handlers are
+ * removed when the run ends.
  */
 export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   const { api, config, task } = options;
@@ -369,44 +378,88 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
   const seams = options.stopOnSignals;
   // Read through a function: a signal handler changes it between reads.
   const stopped = (): boolean => signal.aborted;
+  // Set by the at-once path: `begun` once it starts ending the process, `done` once it has called exit.
+  const ending: { begun: boolean; done: boolean } = { begun: false, done: false };
   /**
    * A second stop signal, or a SIGHUP: no time to wait for the session to
    * stop. Once a create has been sent, a run not yet booked is booked now,
    * synchronously, at its whole budget as unknown, unless the ledger already
-   * has a line for its session or run; then the process ends.
+   * has a line for its session or run. Then, once the session's id is known,
+   * it is sent one interrupt (the call the deadline's path makes), and the
+   * process ends when that is answered or after AT_ONCE_INTERRUPT_MS,
+   * whichever is first; the line is written first, so the booking never waits
+   * on the interrupt. With no id yet, or no session, the process ends at once.
+   * A further signal while the interrupt is awaited ends it at once, writing
+   * nothing more.
    */
   const bookAtOnce = (by: NodeJS.Signals): void => {
     const exit = seams?.exit ?? ((code: number) => process.exit(code));
     const print = seams?.print ?? printNow;
+    const leave = (): void => {
+      if (ending.done) return;
+      ending.done = true;
+      exit(1);
+    };
+    if (ending.begun) {
+      leave();
+      return;
+    }
+    ending.begun = true;
     stop.abort(by);
     if (!started.creating) {
       print(`${by}: no session was created, so nothing was spent or booked`);
-      exit(1);
+      leave();
       return;
     }
-    const session = started.sessionId ?? `with run id ${started.runId ?? "unknown"}`;
+    const sessionId = started.sessionId;
+    const session = sessionId ?? `with run id ${started.runId ?? "unknown"}`;
+    const then = sessionId === null ? "collect it when it has stopped" : `sending it one interrupt before exiting (at most ${String(AT_ONCE_INTERRUPT_MS / 1000)} s)`;
     let wrote = false;
+    let failed = false;
     if (!started.booked) {
       started.booked = true;
       try {
-        if (!charges(readLedgerBookingsSync(config.ledgerFile), started.sessionId, started.runId)) {
-          appendCreditLineSync(config.ledgerFile, { ...emptyLine(started.sessionId), ...ledgerCost(bookedCost(false, null, options.budgetUsd)) });
+        if (!charges(readLedgerBookingsSync(config.ledgerFile), sessionId, started.runId)) {
+          appendCreditLineSync(config.ledgerFile, { ...emptyLine(sessionId), ...ledgerCost(bookedCost(false, null, options.budgetUsd)) });
           wrote = true;
         }
       } catch (error) {
         started.booked = false;
-        const how = started.sessionId === null ? "book it with collect --book once its id is known" : `book it with ${bookCommand(started.sessionId)}`;
+        failed = true;
+        const how = sessionId === null ? "book it with collect --book once its id is known" : `book it with ${bookCommand(sessionId)}`;
         print(`session ${session} may still be running, and booking it failed (${describeError(error)}); ${how}`);
-        exit(1);
-        return;
       }
     }
-    print(
-      wrote
-        ? `session ${session} may still be running; booked at its whole budget as unknown; collect it when it has stopped`
-        : `session ${session} may still be running; it is booked already, so nothing more was written; collect it when it has stopped`,
-    );
-    exit(1);
+    if (!failed) {
+      print(
+        wrote
+          ? `session ${session} may still be running; booked at its whole budget as unknown; ${then}`
+          : `session ${session} may still be running; it is booked already, so nothing more was written; ${then}`,
+      );
+    }
+    if (sessionId === null) {
+      leave();
+      return;
+    }
+    const runsOn = "it may run on until it stops or reaches its budget; collect it when it has stopped";
+    const cap = setTimeout(() => {
+      if (!ending.done) print(`session ${sessionId}: the interrupt had no answer within ${String(AT_ONCE_INTERRUPT_MS / 1000)} s; ${runsOn}`);
+      leave();
+    }, AT_ONCE_INTERRUPT_MS);
+    void Promise.resolve()
+      .then(() => api.sendEvents(sessionId, [{ type: "user.interrupt" }]))
+      .then(
+        () => {
+          if (!ending.done) print(`session ${sessionId}: the interrupt was sent; collect it when it has stopped`);
+        },
+        (error: unknown) => {
+          if (!ending.done) print(`session ${sessionId}: the interrupt failed (${describeError(error)}); ${runsOn}`);
+        },
+      )
+      .finally(() => {
+        clearTimeout(cap);
+        leave();
+      });
   };
   const removeHandlers =
     seams === undefined
