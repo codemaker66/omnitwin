@@ -2280,12 +2280,12 @@ async function saveDocument(
   }
 
   // Someone who cannot see a note never destroys it (lib/guest-plan-notes). A
-  // piece left out of a save is removed, and its note with it, and the API
-  // does not refuse that. So no save goes without a piece the confirmed
-  // document says holds a note this browser is not shown, whatever wrote the
-  // working one: this is the one place every path to a save must pass. Such a
-  // piece is put back first and the person is told it stayed; only then is
-  // the document, which now has it, sent.
+  // piece left out of a save is removed, and its note with it; the API refuses
+  // such a save (HELD_PIECE_OMITTED), and none is ever sent. So no save goes
+  // without a piece the confirmed document says holds a note this browser is
+  // not shown, whatever wrote the working one: this is the one place every
+  // path to a save must pass. Such a piece is put back first and the person
+  // is told it stayed; only then is the document, which now has it, sent.
   if (putBackHeldNotePieces()) return saveDocument(isAuthenticated, keeping, transport);
 
   // The save path: the signed-in route for a layout someone owns, and for a
