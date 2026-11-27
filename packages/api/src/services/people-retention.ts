@@ -247,8 +247,10 @@ interface LapsedRow extends Record<string, unknown> {
  *     linkedEvents reads them): theirs, unless another live
  *     person's record points at one too (tiedToAnotherPerson, the erasure's
  *     own expression), which makes it near. A booking pencilled from their
- *     enquiry onto an event near only for that reason is still theirs: only a
- *     near deal's event (deal_events) makes it another person's.
+ *     enquiry onto an event near only for that reason is still theirs, and so
+ *     is that event for what keeps them (own_events, and an enquiry's
+ *     its_events): only a near deal's event (deal_events) makes either another
+ *     person's, as erasure's guardEventIds reads it.
  * The records merged into them are left to the step, which follows the
  * chain: it can only find more of theirs, so nobody this reads as kept or in
  * touch is someone the step would take.
@@ -364,7 +366,7 @@ function lapsedPeople(cutoff: Date): SQL {
         where le."venue_id" = c."venue_id" and ecl."configuration_id" = any(layouts."own")
         union
         select bk."event_id" from "bookings" as bk
-        where bk."enquiry_id" = any(linked."ids") and bk."event_id" is not null and not (bk."event_id" = any(near_events."ids"))
+        where bk."enquiry_id" = any(linked."ids") and bk."event_id" is not null and not (bk."event_id" = any(deal_events."ids"))
         union
         select lk."id" from unnest(links."ids") as lk("id") where not (lk."id" = any(near_events."ids"))
       ) as "ids"
@@ -411,10 +413,10 @@ function lapsedPeople(cutoff: Date): SQL {
           cross join lateral (
             select array(
               select sb0."event_id" from "bookings" as sb0
-              where sb0."enquiry_id" = se."id" and sb0."event_id" is not null and not (sb0."event_id" = any(near_events."ids"))
+              where sb0."enquiry_id" = se."id" and sb0."event_id" is not null and not (sb0."event_id" = any(deal_events."ids"))
               union
               select sl."event_id" from "event_configuration_links" as sl
-              where not (sl."event_id" = any(near_events."ids")) and sl."configuration_id" in (
+              where not (sl."event_id" = any(deal_events."ids")) and sl."configuration_id" in (
                 select spl."configuration_id" from "proposals" as spl where spl."id" = any(its_proposals."ids")
                 union select sel."configuration_id" from "enquiries" as sel where sel."id" = se."id")
               union

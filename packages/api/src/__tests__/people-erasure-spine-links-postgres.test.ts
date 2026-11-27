@@ -773,6 +773,64 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     expect(await count("contacts WHERE id = ANY($1::uuid[]) AND erased_at IS NULL", [[kirsty, lachlan]])).toBe(2);
   });
 
+  interface BookedAndTied {
+    readonly personId: string;
+    readonly enquiryId: string;
+    readonly eventId: string;
+    readonly otherEnquiryId: string;
+  }
+
+  /**
+   * A person last in touch long ago whose enquiry, linked to the event, had a
+   * hold there that was released: the booking makes the event theirs. Another
+   * live person's enquiry is linked to the same event.
+   */
+  async function bookedAndTied(v: SpineVenue, name: string, other: string): Promise<BookedAndTied> {
+    const personId = await person(v, name, longAgo);
+    const enquiryId = await enquiry(v, { contactId: personId, name, replied: true, at: longAgo });
+    const eventId = await event(v, name, name);
+    await link(pool, "enquiries", enquiryId, eventId);
+    await booking(v, { eventId, enquiryId, kind: "hold", status: "released", at: longAgo });
+    const otherEnquiryId = await enquiry(v, { contactId: await person(v, other), name: other });
+    await link(pool, "enquiries", otherEnquiryId, eventId);
+    return { personId, enquiryId, eventId, otherEnquiryId };
+  }
+
+  /** The pass's reading and the erasure agree: the person is kept and the
+   *  erasure refused, changing nothing; the event stays near them. */
+  async function expectKept(v: SpineVenue, held: BookedAndTied, refusal: "has_booking" | "has_contract"): Promise<void> {
+    expect(await keptByReading(v)).toEqual([held.personId]);
+    expect(await classified(v, held.personId)).toEqual({ own: [], near: [held.eventId] });
+    expect(await erase(v, held.personId)).toEqual({ ok: false, refusal });
+    expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [held.personId])).toBe(1);
+    expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[held.enquiryId, held.otherEnquiryId]])).toBe(2);
+    expect(await value("SELECT name AS value FROM events WHERE id = $1", [held.eventId])).not.toBe("Erased");
+  }
+
+  it("a confirmed booking with no enquiry, in an event a booking from their enquiry makes theirs, keeps them though another live person's record points at it too", async () => {
+    const v = await venueIn(pool, "erasure, a booking with no enquiry in their tied event");
+    const held = await bookedAndTied(v, "Innes Heldfast", "Rhuaridh Tiedby");
+    await booking(v, { eventId: held.eventId, kind: "ink", at: longAgo });
+    await expectKept(v, held, "has_booking");
+  });
+
+  it("another live person's live hold, in an event a booking from their enquiry makes theirs, keeps them", async () => {
+    const v = await venueIn(pool, "erasure, another person's hold in their tied event");
+    const held = await bookedAndTied(v, "Johan Heldfast", "Seonag Tiedby");
+    await booking(v, { eventId: held.eventId, enquiryId: held.otherEnquiryId, kind: "hold", at: longAgo });
+    await expectKept(v, held, "has_booking");
+  });
+
+  it("a deposit request naming an event a booking from their enquiry makes theirs keeps them, though the request is on another person's proposal", async () => {
+    const v = await venueIn(pool, "erasure, a deposit request on their tied event");
+    const held = await bookedAndTied(v, "Kenna Heldfast", "Torcuil Tiedby");
+    const hisProposal = await proposal(v, { title: "TEST ONLY his proposal", status: "sent", enquiryId: held.otherEnquiryId });
+    await pool.query(`INSERT INTO proposal_deposit_requests (venue_id, proposal_id, event_id, proposal_version, proposal_version_hash,
+        basis, quote_total_minor, amount_minor, currency)
+      VALUES ($1, $2, $3, 1, $4, 'amount', 100000, 25000, 'GBP')`, [v.venueId, hisProposal, held.eventId, "a".repeat(64)]);
+    await expectKept(v, held, "has_contract");
+  });
+
   it("an event the join made for a record whose link has moved since is found through the join's own record, by erasure and by the pass", async () => {
     const v = await venueIn(pool, "erasure, a made event left behind");
     // The join makes an event for her worked enquiry, and one for his open deal (no enquiry), each named from it.

@@ -252,6 +252,12 @@ export interface ErasureRecords extends WorkRecords {
    *  (tiedToAnotherPerson) is not among them: a booking from their own
    *  enquiry there stays theirs, and a live one keeps them. */
   readonly dealEventIds: readonly string[];
+  /** The events whose live bookings and deposit requests keep them
+   *  (keptRecord): their own events, and every event a booking from their
+   *  enquiries sits in that is not another live person's deal's. Another live
+   *  person's record pointing at such an event too makes it near, for what is
+   *  reworded and kept, and leaves it here. */
+  readonly guardEventIds: readonly string[];
   /** What they answered on proposals that are not theirs, found before the
    *  locks so those proposals are locked in order with the rest. */
   readonly elsewhere: Elsewhere;
@@ -502,8 +508,8 @@ async function ownHouseholds(
   return { householdIds, sharedHouseholdIds, handedOver };
 }
 
-type RecordsBase = Omit<ErasureRecords, keyof WorkRecords | "nearby" | "dealEventIds" | "layoutIds" | "pieceIds" | "revisionIds" | "elsewhere"
-  | "decisionIds">;
+type RecordsBase = Omit<ErasureRecords, keyof WorkRecords | "nearby" | "dealEventIds" | "guardEventIds" | "layoutIds" | "pieceIds"
+  | "revisionIds" | "elsewhere" | "decisionIds">;
 
 function idsOf(rows: readonly { readonly id: string | null }[]): readonly string[] {
   return distinct(rows.flatMap((row) => (row.id === null ? [] : [row.id])));
@@ -817,6 +823,13 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
   // only by a record tied to it; in another live person's deal's event it is
   // that person's.
   const dealEventIds = nearEventIds.filter((id) => othersDealEvents.has(id));
+  // What keeps them: their own events, and an event a booking from their
+  // enquiry sits in unless it is another live person's deal's, whoever else
+  // points at it. Each of these is locked below with the rest.
+  const guardEventIds = distinct([
+    ...eventIds,
+    ...booked.flatMap((row) => (row.id === null || othersDealEvents.has(row.id) ? [] : [row.id])),
+  ]);
   const ownBooking = ownBookings(enquiryIds, eventIds, dealEventIds);
   const nearBooking = among(bookings.eventId, nearEventIds);
   const bookingsFound = (await tx.select({ id: bookings.id }).from(bookings).where(or(ownBooking, nearBooking)))
@@ -908,6 +921,7 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
       bookingIds: nearBookingIds,
     },
     dealEventIds,
+    guardEventIds,
   };
 }
 
@@ -1020,7 +1034,7 @@ export async function findEnquiryRecords(
 export async function keptRecord(tx: PeopleTx, records: ErasureRecords): Promise<ErasureRefusal | null> {
   const enquiryIds = records.enquiries.map((row) => row.id);
   const [booked] = await tx.select({ id: bookings.id }).from(bookings).where(allOf(
-    ownBookings(enquiryIds, records.eventIds, records.dealEventIds),
+    ownBookings(enquiryIds, records.guardEventIds, records.dealEventIds),
     isNull(bookings.deletedAt),
     or(eq(bookings.kind, "ink"), allOf(eq(bookings.kind, "hold"), eq(bookings.status, "active"))) ?? sql`false`,
   )).limit(1);
@@ -1029,7 +1043,7 @@ export async function keptRecord(tx: PeopleTx, records: ErasureRecords): Promise
     .where(among(proposalContractVersions.proposalId, records.proposalIds)).limit(1);
   if (contract !== undefined) return "has_contract";
   const [deposit] = await tx.select({ id: proposalDepositRequests.id }).from(proposalDepositRequests)
-    .where(or(among(proposalDepositRequests.proposalId, records.proposalIds), among(proposalDepositRequests.eventId, records.eventIds)))
+    .where(or(among(proposalDepositRequests.proposalId, records.proposalIds), among(proposalDepositRequests.eventId, records.guardEventIds)))
     .limit(1);
   return deposit === undefined ? null : "has_contract";
 }
