@@ -54,7 +54,8 @@ export interface ApplyOptions {
    * For a change that gives way to another tab: while every change waiting is
    * such a change, the save writes nothing over a copy another tab has kept.
    * The page takes their list up instead and says so, and what this change
-   * means on their list (this function's answer) is made as an ordinary change.
+   * means on their list (this function's answer) is saved in its place: it
+   * gives way in its turn to any copy stored since, until it lands.
    */
   readonly ifOtherCopy?: (theirs: GuestList) => GuestList;
 }
@@ -392,8 +393,11 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
               session.ordinary = true;
               continue;
             }
-            // Their list stands. This tab takes it up, and what its change means on their list
-            // is made as an ordinary change, which the next turn of the loop saves.
+            // Their list stands. This tab takes it up, and what its change means on their list is
+            // saved by the next turn of the loop, still as a change that gives way: a copy a third
+            // tab has stored by then is taken up in its turn, with the same change made on it, and
+            // so on until the save lands. Only an ordinary change made here meanwhile makes that
+            // save an ordinary one.
             let next: GuestList;
             try {
               next = onTheirs(theirs);
@@ -406,8 +410,8 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
             session.erasedHere = false;
             session.sweptHere = false;
             session.unsaved = true;
-            session.ordinary = true;
-            session.ifOther = null;
+            session.ordinary = false;
+            session.ifOther = onTheirs;
             if (isCurrent(session)) {
               set({
                 list: next,
@@ -426,9 +430,15 @@ export const useGuestListStore: UseBoundStore<StoreApi<GuestListState>> = create
           session.erasedHere = false;
           session.sweptHere = false;
           if (isCurrent(session)) {
-            set(answer.kind === "saved-over-other" ? { kept: true, notice: { kind: "other-tab" } } : { kept: true });
+            set({ kept: true });
             // The change that was waiting on another tab is kept now.
             if (get().notice?.kind === "other-tab-busy") set({ notice: null });
+            // This save went over a copy another tab had kept, and the page says so. The word that
+            // a printout was made from an older copy is never put away for it: it still holds, and
+            // it is the one that asks something of the planner.
+            if (answer.kind === "saved-over-other" && get().notice?.kind !== "print-of-older-copy") {
+              set({ notice: { kind: "other-tab" } });
+            }
             // The device kept another tab's larger print number with this list. The page takes it
             // too, so its next print follows on and no two sheets share a number.
             const onPage = get().list;

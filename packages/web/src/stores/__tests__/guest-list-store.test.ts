@@ -1538,6 +1538,99 @@ describe("guest list page state: a print gives way to another tab's list", () =>
     const kept = await loadedBy(otherTabOn(backend), PLAN_A);
     expect([kept.list.title, kept.list.guests, kept.list.paperVersion, kept.list.changedSincePrint]).toEqual(["Theirs", [guest(1), guest(2)], 1, true]);
   });
+
+  // The record of the print on their list gives way too, until it lands: three tabs on one device.
+
+  /** A third tab opens what is kept and saves a change to it. */
+  async function thirdTabSaves(backend: CacheBackend): Promise<string> {
+    const third = otherTabOn(backend);
+    const held = await loadedBy(third, PLAN_A);
+    const answer = await third.save(
+      { ...held.list, title: "Third", guests: [guest(1), guest(2), guest(3)], updatedAt: "2026-11-14T09:30:00.000Z" },
+      held.stamp,
+    );
+    return answer.kind;
+  }
+
+  it("a third tab's copy, stored before the print's record is saved on the second tab's list, is taken up in turn with the print recorded on it", async () => {
+    // This page holds "Older"; a second tab has saved "Theirs", unseen here.
+    const { backend, store } = await changedElsewhereUnseen();
+    const real = store.save.bind(store);
+    const thirdSaved: string[] = [];
+    let saves = 0;
+    // The third tab saves just before this page's second save: the record of the print on the second tab's list.
+    const save = vi.spyOn(store, "save").mockImplementation(async (list, loaded, opts) => {
+      saves += 1;
+      if (saves === 2) thirdSaved.push(await thirdTabSaves(backend));
+      return real(list, loaded, opts);
+    });
+
+    recordPrint();
+    await state().flush();
+
+    expect(thirdSaved).toEqual(["saved"]);
+    // The device holds the third tab's content, with the print recorded on it as made from an older copy.
+    const kept = await loadedBy(otherTabOn(backend), PLAN_A);
+    expect([kept.list.title, kept.list.guests]).toEqual(["Third", [guest(1), guest(2), guest(3)]]);
+    expect([kept.list.paperVersion, kept.list.printedAt, kept.list.changedSincePrint]).toEqual([1, PRINTED_AT, true]);
+    // The page shows that list, and still says the printout was made from an older copy.
+    expect(state().list?.title).toBe("Third");
+    expect(state().notice).toEqual({ kind: "print-of-older-copy" });
+    expect(state().takeUps).toBe(2);
+    expect(state().kept).toBe(true);
+    expect(state().changeWaiting()).toBe(false);
+    // The print, and its record on each list taken up, all asked to give way.
+    expect(save.mock.calls.map((call) => call[2])).toEqual([{ yieldToOther: true }, { yieldToOther: true }, { yieldToOther: true }]);
+  });
+
+  it("an ordinary change made here while the print's record is being saved still makes the next save an ordinary one", async () => {
+    const { backend, store } = await changedElsewhereUnseen();
+    const real = store.save.bind(store);
+    const reached = deferred<undefined>();
+    const gate = deferred<undefined>();
+    let saves = 0;
+    // The second save, the record on their list, is held on its way to the device.
+    const save = vi.spyOn(store, "save").mockImplementation(async (list, loaded, opts) => {
+      saves += 1;
+      if (saves === 2) {
+        reached.resolve(undefined);
+        await gate.promise;
+      }
+      return real(list, loaded, opts);
+    });
+
+    recordPrint();
+    const flushing = state().flush();
+    await reached.promise;
+    state().apply(titled("Typed while the record was being kept"));
+    gate.resolve(undefined);
+    await flushing;
+    await state().flush();
+
+    expect(save.mock.calls.map((call) => call[2])).toEqual([{ yieldToOther: true }, { yieldToOther: true }, { yieldToOther: false }]);
+    const kept = await loadedBy(otherTabOn(backend), PLAN_A);
+    // Their guests, this tab's change on top, and the print recorded on it.
+    expect([kept.list.title, kept.list.guests, kept.list.paperVersion]).toEqual(["Typed while the record was being kept", [guest(1), guest(2)], 1]);
+    expect(state().notice).toEqual({ kind: "print-of-older-copy" });
+  });
+
+  it("the word that a printout was made from an older copy is never replaced by the word that this tab's version was kept", async () => {
+    const { backend } = await changedElsewhereUnseen();
+    recordPrint();
+    await state().flush();
+    expect(state().notice).toEqual({ kind: "print-of-older-copy" });
+
+    // Another tab saves again, unseen here; an ordinary change here is then kept over its copy.
+    const other = otherTabOn(backend);
+    const held = await loadedBy(other, PLAN_A);
+    expect((await other.save({ ...held.list, title: "Theirs again", updatedAt: "2026-11-14T11:00:00.000Z" }, held.stamp)).kind).toBe("saved");
+    state().apply(titled("Ours"));
+    await state().flush();
+
+    expect(storedTitle(await reopened(backend, PLAN_A))).toBe("Ours");
+    // The planner is still told to print again: that word is not put away for the other.
+    expect(state().notice).toEqual({ kind: "print-of-older-copy" });
+  });
 });
 
 describe("guest list page state: tabs are told apart by the copy loaded, never by the clock", () => {

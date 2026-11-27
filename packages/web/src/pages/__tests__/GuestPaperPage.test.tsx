@@ -1089,15 +1089,17 @@ describe("the guest paper page: a print gives way to another tab's list", () => 
     expect(kept.list.changedSincePrint).toBe(false);
   });
 
-  it("the Print button still prints the list on the page, and speaks of no older printout, when another tab saves before every one of its saves", async () => {
+  it("the Print button still prints the list on the page, and speaks of no older printout, when another tab saves before each print it records is saved", async () => {
     const backend = memoryBackend();
     const real = await storeHolding(list180(), backend);
     let hostile = false;
     const store: GuestListStore = {
       ...real,
-      // Each save that would give way finds the other tab has just saved again.
+      // Each save of a print of the list as it stands finds the other tab has just saved again.
+      // The record of that print on their list gives way too, until it lands; the other tab does
+      // not save again before those, or no save here would ever land.
       save: async (list, loaded, opts) => {
-        if (hostile && opts?.yieldToOther === true) await otherTabSaves(backend, otherTabsChange);
+        if (hostile && opts?.yieldToOther === true && !list.changedSincePrint) await otherTabSaves(backend, otherTabsChange);
         return real.save(list, loaded, opts);
       },
     };
