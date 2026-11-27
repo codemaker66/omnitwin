@@ -307,8 +307,11 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: taking, finishing, failing and
   });
 
   it("fails after 1 minute, 5 minutes, 30 minutes, 2 hours and 6 hours, then is dead", async () => {
+    // The stated ladder, written out: the constant the statement is built from must be exactly this.
+    const ladder = [60, 300, 1800, 7200, 21_600];
+    expect(RETRY_SECONDS).toEqual(ladder);
     await seedJob({ key: "a" });
-    for (const seconds of RETRY_SECONDS) {
+    for (const seconds of ladder) {
       const job = await takeOne();
       expect(await failJob(db, job.id, job.claimToken, "no", { permanent: false })).toBe("queued");
       expect(Math.abs(await dueInSeconds("a") - seconds)).toBeLessThan(2);
@@ -320,6 +323,21 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: taking, finishing, failing and
     expect(await failJob(db, last.id, last.claimToken, "no", { permanent: false })).toBe("dead");
     expect(await rowOf(last.id)).toMatchObject({ state: "dead", last_error: "no", claim_token: null, claimed_by: null, claim_expires_at: null });
     expect((await rowOf(last.id)).finished_at).toBeInstanceOf(Date);
+  });
+
+  it("a job allowed eight tries waits 6 hours after its fifth, sixth and seventh, and is dead after its eighth", async () => {
+    await pool.query(
+      "INSERT INTO jobs (kind, version, key, scope, payload, max_attempts) VALUES ('test.effect', 1, 'patient', 'platform', '{\"n\": 1}'::jsonb, 8)",
+    );
+    for (const seconds of [60, 300, 1800, 7200, 21_600, 21_600, 21_600]) {
+      const job = await takeOne();
+      expect(await failJob(db, job.id, job.claimToken, "no", { permanent: false })).toBe("queued");
+      expect(Math.abs(await dueInSeconds("patient") - seconds), `try ${String(job.attempts)}`).toBeLessThan(2);
+      await makeDueNow("patient");
+    }
+    const last = await takeOne();
+    expect(last.attempts).toBe(8);
+    expect(await failJob(db, last.id, last.claimToken, "no", { permanent: false })).toBe("dead");
   });
 
   it("a permanent failure is dead at once; a stated wait is used instead of the usual one", async () => {

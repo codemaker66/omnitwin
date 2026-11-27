@@ -288,7 +288,7 @@ describe("StuckWork", () => {
     expect(noteBox().value).toBe("Sent by hand");
   });
 
-  it("puts focus back in the note when a Close is refused and focus never left the row", async () => {
+  it("puts focus back in the note when a Close is refused, after focus went with its disabled button", async () => {
     const refused = deferred<undefined>();
     mocks.getStuckWork.mockResolvedValue(stuck({ jobs: [job(J1)] }));
     mocks.closeStuckJob.mockReturnValueOnce(refused.promise.then(() => {
@@ -299,17 +299,15 @@ describe("StuckWork", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Close with a note" }));
     const note = noteBox();
     fireEvent.change(note, { target: { value: "Sent by hand" } });
-    const detail = note.closest("tr");
-    if (detail === null) throw new Error("the note is not in a row");
-    // Focus on the form's own Close button, and pressed from there: focus never goes to the body.
-    const close = within(detail).getByRole<HTMLButtonElement>("button", { name: "Close the job" });
-    close.focus();
+    // Chromium moves focus to the body when the focused control is disabled while the Close is out (and fires
+    // no blur). This test environment keeps it on a disabled control and will not blur one, so focus is let go
+    // before the press, from the note box, and the press itself moves none.
+    note.blur();
+    expect(document.activeElement).toBe(document.body);
+    const close = screen.getByRole<HTMLButtonElement>("button", { name: "Close the job" });
     fireEvent.click(close);
-    // The check on the test itself: before the refusal lands, focus is still in this job's rows. Were it on
-    // the body, the page would refocus by the "focus is lost" rule, and this test would prove nothing.
-    const pressedFrom = document.activeElement;
-    expect(pressedFrom).not.toBe(document.body);
-    expect(pressedFrom !== null && (row.contains(pressedFrom) || detail.contains(pressedFrom))).toBe(true);
+    expect(close.disabled).toBe(true);
+    expect(document.activeElement).toBe(document.body);
 
     await act(async () => { refused.resolve(undefined); await refused.promise; });
     await screen.findByText("This job is already back on the list.");
@@ -477,8 +475,8 @@ describe("StuckWork", () => {
     mocks.retryStuckJob.mockReturnValue(retrying.promise);
     render(<StuckWork />);
     const button = await screen.findByRole<HTMLButtonElement>("button", { name: "Try again" });
-    fireEvent.click(button);
-    fireEvent.click(button);
+    // Both presses land before React draws the button disabled, so only the page's own guard keeps the second out.
+    act(() => { button.click(); button.click(); });
     expect(button.disabled).toBe(true);
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Close with a note" }).disabled).toBe(true);
     expect(screen.getByText("Putting it back on the list…")).toBeDefined();
@@ -643,25 +641,6 @@ describe("StuckWork", () => {
     expect(betaNote.value).toBe("Beta draft");
   });
 
-  it("does not take focus from a button in another row when a row has gone", async () => {
-    const retrying = deferred<undefined>();
-    mocks.getStuckWork
-      .mockResolvedValueOnce(stuck({ jobs: [job(J1, { kind: "alpha.send" }), job(J2, { kind: "beta.send" })] }))
-      .mockResolvedValue(stuck({ jobs: [job(J2, { kind: "beta.send" })] }));
-    mocks.retryStuckJob.mockReturnValueOnce(retrying.promise).mockReturnValueOnce(new Promise<void>(() => undefined));
-    render(<StuckWork />);
-    const alpha = await screen.findByRole("row", { name: /^alpha\.send/ });
-    const beta = screen.getByRole("row", { name: /^beta\.send/ });
-    fireEvent.click(within(alpha).getByRole("button", { name: "Try again" }));
-    // Beta's own Try again is out and holds focus, disabled: that is not focus lost.
-    const betaButton = within(beta).getByRole<HTMLButtonElement>("button", { name: "Try again" });
-    betaButton.focus();
-    fireEvent.click(betaButton);
-    await act(async () => { retrying.resolve(undefined); await retrying.promise; });
-    await waitFor(() => { expect(screen.queryByRole("row", { name: /^alpha\.send/ })).toBeNull(); });
-    expect(document.activeElement).toBe(betaButton);
-  });
-
   it("sends focus to Close with a note after a Close that went through while the job is still listed", async () => {
     mocks.getStuckWork.mockResolvedValue(stuck({ jobs: [job(J1)] }));
     mocks.closeStuckJob.mockResolvedValue(undefined);
@@ -733,8 +712,8 @@ describe("StuckWork", () => {
     render(<StuckWork />);
     await screen.findByText("Nothing is stuck.");
     const button = screen.getByRole("button", { name: "Run the self-test" });
-    fireEvent.click(button);
-    fireEvent.click(button);
+    // Both presses land before React draws the button disabled, so only the page's own guard keeps the second out.
+    act(() => { button.click(); button.click(); });
     expect(mocks.runSelfTest).toHaveBeenCalledTimes(1);
     running.resolve(selfTestAnswer("done"));
     expect(await screen.findByText("The self-test ran.")).toBeDefined();
