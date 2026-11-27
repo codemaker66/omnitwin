@@ -242,7 +242,9 @@ interface LapsedRow extends Record<string, unknown> {
  *   - the events their enquiries, deals and proposals (near ones included)
  *     point at themselves (the spine's links): theirs, unless another live
  *     person's record points at one too (tiedToAnotherPerson, the erasure's
- *     own expression), which makes it near.
+ *     own expression), which makes it near. A booking pencilled from their
+ *     enquiry onto an event near only for that reason is still theirs: only a
+ *     near deal's event (deal_events) makes it another person's.
  * The records merged into them are left to the step, which follows the
  * chain: it can only find more of theirs, so nobody this reads as kept or in
  * touch is someone the step would take.
@@ -326,14 +328,21 @@ function lapsedPeople(cutoff: Date): SQL {
         (select ne."id" from "events" as ne
           where ne."opportunity_id" = any(deals."near") and not coalesce(ne."client_account_id" = any(accounts."ids"), false)
         union
-        select nl."event_id" from "event_configuration_links" as nl where nl."configuration_id" = any(props."near_layouts")
-        union
-        select te."id" from "events" as te
-          where te."id" = any(links."ids") and ${tiedToAnotherPerson(sql`te."id"`, sql`array[c."id"]`)}
-            and not coalesce(te."opportunity_id" = any(deals."own"), false)
-            and not coalesce(te."client_account_id" = any(accounts."ids"), false))
+        select nl."event_id" from "event_configuration_links" as nl where nl."configuration_id" = any(props."near_layouts"))
         except
         select oll."event_id" from "event_configuration_links" as oll where oll."configuration_id" = any(layouts."own")
+      ) as "ids"
+    ) as deal_events
+    cross join lateral (
+      select array(
+        select de."id" from unnest(deal_events."ids") as de("id")
+        union
+        (select te."id" from "events" as te
+          where te."id" = any(links."ids") and ${tiedToAnotherPerson(sql`te."id"`, sql`array[c."id"]`)}
+            and not coalesce(te."opportunity_id" = any(deals."own"), false)
+            and not coalesce(te."client_account_id" = any(accounts."ids"), false)
+        except
+        select oll."event_id" from "event_configuration_links" as oll where oll."configuration_id" = any(layouts."own"))
       ) as "ids"
     ) as near_events
     cross join lateral (
@@ -365,7 +374,7 @@ function lapsedPeople(cutoff: Date): SQL {
         (
           exists (select 1 from "bookings" as kb
             where (kb."event_id" = any(own_events."ids")
-                or (kb."enquiry_id" = any(linked."ids") and (kb."event_id" is null or not (kb."event_id" = any(near_events."ids")))))
+                or (kb."enquiry_id" = any(linked."ids") and (kb."event_id" is null or not (kb."event_id" = any(deal_events."ids")))))
               and ${liveBooking("kb")})
           or exists (select 1 from "proposal_contract_versions" as cv where cv."proposal_id" = any(props."own"))
           or exists (select 1 from "proposal_deposit_requests" as dr
@@ -405,7 +414,7 @@ function lapsedPeople(cutoff: Date): SQL {
             ) as "ids"
           ) as its_events
           where not exists (select 1 from "bookings" as sb where sb."enquiry_id" = se."id" and ${liveBooking("sb")}
-              and (sb."event_id" is null or not (sb."event_id" = any(near_events."ids"))))
+              and (sb."event_id" is null or not (sb."event_id" = any(deal_events."ids"))))
             and not exists (select 1 from "bookings" as sb1 where sb1."event_id" = any(its_events."ids") and ${liveBooking("sb1")})
             and not exists (select 1 from "proposal_contract_versions" as scv where scv."proposal_id" = any(its_proposals."ids"))
             and not exists (select 1 from "proposal_deposit_requests" as sdr

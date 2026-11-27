@@ -737,6 +737,42 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     expect(await namedAnywhere(v, "Eilidh")).toBe(0);
   });
 
+  // The cases from here to the undo's run the 24-month pass at 2024-06-01 over
+  // people last in touch in 2020, so they come after the pass's own case,
+  // whose counts are for the whole database.
+  const passNow = new Date("2024-06-01T02:00:00Z");
+  const longAgo = new Date("2020-03-02T10:00:00Z");
+
+  /** Who the pass, before any step, reads as kept with nothing to remove, at the venue. */
+  async function keptByReading(v: SpineVenue): Promise<readonly string[]> {
+    const looked = await eraseLapsedPeople(db, { now: passNow, dryRun: true, limits: { examined: 0 } });
+    return looked.kept.filter((row) => row.venueId === v.venueId).map((row) => row.personId);
+  }
+
+  it("a booking from the person's own enquiry, in an event another live person's record is tied to, keeps them as before the links: the event stays near", async () => {
+    const v = await venueIn(pool, "erasure, own booking in a tied event");
+    // Her enquiry is linked to the event, and her confirmed booking from it sits there.
+    const kirsty = await person(v, "Kirsty Ownbooked", longAgo);
+    const hers = await enquiry(v, { contactId: kirsty, name: "Kirsty Ownbooked", replied: true, at: longAgo });
+    const shared = await event(v, "Kirsty Ownbooked", "Kirsty Ownbooked");
+    await link(pool, "enquiries", hers, shared);
+    const inked = await booking(v, { eventId: shared, enquiryId: hers, kind: "ink", at: longAgo });
+    // Another live person's enquiry is linked to the same event.
+    const lachlan = await person(v, "Lachlan Tiedtoo");
+    const his = await enquiry(v, { contactId: lachlan, name: "Lachlan Tiedtoo" });
+    await link(pool, "enquiries", his, shared);
+
+    // The pass reads her as kept by that booking, with nothing of hers to remove.
+    expect(await keptByReading(v)).toEqual([kirsty]);
+    // Near, as his record makes it, and her own booking there is still hers.
+    expect(await classified(v, kirsty)).toEqual({ own: [], near: [shared] });
+    expect(await erase(v, kirsty)).toEqual({ ok: false, refusal: "has_booking" });
+    expect(await names(shared)).toEqual({ name: "Kirsty Ownbooked", client_name: "Kirsty Ownbooked" });
+    expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[hers, his]])).toBe(2);
+    expect(await count("bookings WHERE id = $1 AND kind = 'ink' AND deleted_at IS NULL", [inked])).toBe(1);
+    expect(await count("contacts WHERE id = ANY($1::uuid[]) AND erased_at IS NULL", [[kirsty, lachlan]])).toBe(2);
+  });
+
   it("the join's own records of an erased enquiry stay as ids: the nightly join and the undo still run cleanly afterwards", async () => {
     const v = await venueIn(pool, "erasure, the join's records");
     const catriona = await person(v, "Catriona Listwell");

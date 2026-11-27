@@ -76,7 +76,9 @@ import { liveContact, type PeopleTx } from "./people-records.js";
 // of it is deleted, and only the erased person's names leave its text. So is
 // an event one of their records points at that another live person's record
 // points at too (their enquiry, deal or proposal linked to it, a booking of
-// their enquiry in it, or it is their deal's).
+// their enquiry in it, or it is their deal's), except that a booking from
+// the erased person's own enquiry there is still theirs: a live one refuses
+// the erasure.
 // Those rows are found with plain reads and then locked before anything is
 // changed, in the house order the other writers take the same rows
 // (decisions, bookings, proposals, enquiries, deals, events, layouts, the
@@ -242,6 +244,13 @@ export interface ErasureRecords extends WorkRecords {
   /** Another live person's deal made from their enquiries, with its
    *  proposals, events and bookings: only their names leave these. */
   readonly nearby: WorkRecords;
+  /** Of the nearby events, those that are another live person's deal's (its
+   *  event, or laid out from its proposal): a booking pencilled from their
+   *  enquiries onto one is that person's (ownBookings). An event near only
+   *  because another live person's record points at it too
+   *  (tiedToAnotherPerson) is not among them: a booking from their own
+   *  enquiry there stays theirs, and a live one keeps them. */
+  readonly dealEventIds: readonly string[];
   /** What they answered on proposals that are not theirs, found before the
    *  locks so those proposals are locked in order with the rest. */
   readonly elsewhere: Elsewhere;
@@ -492,7 +501,8 @@ async function ownHouseholds(
   return { householdIds, sharedHouseholdIds, handedOver };
 }
 
-type RecordsBase = Omit<ErasureRecords, keyof WorkRecords | "nearby" | "layoutIds" | "pieceIds" | "revisionIds" | "elsewhere" | "decisionIds">;
+type RecordsBase = Omit<ErasureRecords, keyof WorkRecords | "nearby" | "dealEventIds" | "layoutIds" | "pieceIds" | "revisionIds" | "elsewhere"
+  | "decisionIds">;
 
 function idsOf(rows: readonly { readonly id: string | null }[]): readonly string[] {
   return distinct(rows.flatMap((row) => (row.id === null ? [] : [row.id])));
@@ -500,11 +510,12 @@ function idsOf(rows: readonly { readonly id: string | null }[]): readonly string
 
 /** Bookings that are theirs: on their events, or pencilled from their
  *  enquiries onto no event or onto an event that is not another live
- *  person's deal's. One rule for finding, locking and the booking guard. */
-function ownBookings(enquiryIds: readonly string[], eventIds: readonly string[], nearEventIds: readonly string[]): SQL {
+ *  person's deal's (dealEventIds). One rule for finding, locking and the
+ *  booking guard. */
+function ownBookings(enquiryIds: readonly string[], eventIds: readonly string[], dealEventIds: readonly string[]): SQL {
   return or(
     among(bookings.eventId, eventIds),
-    allOf(among(bookings.enquiryId, enquiryIds), or(isNull(bookings.eventId), notAmong(bookings.eventId, nearEventIds)) ?? sql`true`),
+    allOf(among(bookings.enquiryId, enquiryIds), or(isNull(bookings.eventId), notAmong(bookings.eventId, dealEventIds)) ?? sql`true`),
   ) ?? sql`false`;
 }
 
@@ -765,11 +776,11 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
   // The event a hold from their enquiry was pencilled onto is theirs, unless
   // it is another live person's: their deal's, laid out from their proposal
   // and not from one of the person's own, or pointed at by a record of theirs.
-  const othersEvents = new Set([
+  const othersDealEvents = new Set([
     ...evented.filter((event) => !ownEvent(event)).map((event) => event.id),
     ...laidOut.filter((link) => nearLayouts.has(link.layoutId) && !ownLaidOut.has(link.id)).map((link) => link.id),
-    ...tied,
   ]);
+  const othersEvents = new Set([...othersDealEvents, ...tied]);
   const booked = await tx.selectDistinct({ id: bookings.eventId }).from(bookings)
     .where(allOf(among(bookings.enquiryId, enquiryIds), isNotNull(bookings.eventId)));
   const linkedRows = linked.map((id) => ({ id }));
@@ -781,7 +792,11 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
   ]);
   const ownEvents = new Set(eventIds);
   const nearEventIds = idsOf([...evented, ...laidOut, ...booked, ...linkedRows]).filter((id) => !ownEvents.has(id));
-  const ownBooking = ownBookings(enquiryIds, eventIds, nearEventIds);
+  // A booking from their own enquiry stays theirs in an event that is near
+  // only by a record tied to it; in another live person's deal's event it is
+  // that person's.
+  const dealEventIds = nearEventIds.filter((id) => othersDealEvents.has(id));
+  const ownBooking = ownBookings(enquiryIds, eventIds, dealEventIds);
   const nearBooking = among(bookings.eventId, nearEventIds);
   const bookingsFound = (await tx.select({ id: bookings.id }).from(bookings).where(or(ownBooking, nearBooking)))
     .map((row) => row.id);
@@ -873,6 +888,7 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
       eventIds: nearEventIds,
       bookingIds: nearBookingIds,
     },
+    dealEventIds,
   };
 }
 
@@ -985,7 +1001,7 @@ export async function findEnquiryRecords(
 export async function keptRecord(tx: PeopleTx, records: ErasureRecords): Promise<ErasureRefusal | null> {
   const enquiryIds = records.enquiries.map((row) => row.id);
   const [booked] = await tx.select({ id: bookings.id }).from(bookings).where(allOf(
-    ownBookings(enquiryIds, records.eventIds, records.nearby.eventIds),
+    ownBookings(enquiryIds, records.eventIds, records.dealEventIds),
     isNull(bookings.deletedAt),
     or(eq(bookings.kind, "ink"), allOf(eq(bookings.kind, "hold"), eq(bookings.status, "active"))) ?? sql`false`,
   )).limit(1);
