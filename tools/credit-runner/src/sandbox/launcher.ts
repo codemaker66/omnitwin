@@ -333,15 +333,22 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
     ...(started.runId === null ? {} : { runId: started.runId }),
   });
   /**
-   * The run's one ledger line. `booked` is set before the write starts and
-   * cleared if it fails, and the write is synchronous (appendCreditLine), so a
-   * signal handler never meets a write under way: it sees the line written, or
-   * no line and no write.
+   * The run's one ledger line, unless the ledger already has a line for its
+   * session or run (collect --book, run in another window while this launcher
+   * followed the session): then nothing is written, so the session is charged
+   * once. `booked` is set before the ledger is read and cleared if the read or
+   * the write fails; both are synchronous (readLedgerBookingsSync,
+   * appendCreditLine), so a signal handler never meets a write under way: it
+   * sees the line written, or no line and no write.
    */
   const bookOnce = async (line: CreditLine): Promise<void> => {
     if (started.booked) return;
     started.booked = true;
     try {
+      if (charges(readLedgerBookingsSync(config.ledgerFile), line.batchId, line.runId)) {
+        log(`The ledger already has a line for ${line.batchId === null ? `run ${line.runId ?? "unknown"}` : `session ${line.batchId}`}; nothing more was written, so it is charged once.`);
+        return;
+      }
       await appendCreditLine(config.ledgerFile, line);
     } catch (error) {
       started.booked = false;
@@ -554,9 +561,19 @@ export async function unbookedSessions(api: SandboxApi, ledgerFile: string, lane
   return { since, sessions };
 }
 
-/** One unbooked session, as the startup check refuses on it and `status` warns of it: the session, its status, and the command that books it. */
+/**
+ * One unbooked session, as the startup check refuses on it and `status` warns
+ * of it: the session, its status, and the command that books it. A session the
+ * platform does not report stopped may still have a launcher following it,
+ * which books it when it stops: the advice says to let that launcher finish
+ * first (booking it meanwhile is still charged once: bookOnce then writes
+ * nothing).
+ */
 export function unbookedText(session: UnbookedSession): string {
-  return `session ${session.id} (${session.status}) was made by this lane and has no ledger line; book it with ${bookCommand(session.id)}`;
+  const how = isStopped(session.status)
+    ? `book it with ${bookCommand(session.id)}`
+    : `if a launcher is still following it, let that launcher finish (it books the session when it stops); otherwise book it with ${bookCommand(session.id)}`;
+  return `session ${session.id} (${session.status}) was made by this lane and has no ledger line; ${how}`;
 }
 
 /** Whether a ledger line charges the session, by its id or by the run id in its metadata (ledgerHasSession). */

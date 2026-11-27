@@ -41,6 +41,8 @@ import {
   reviewMarkdown,
   runSandboxJob,
   UNBOOKED_LOOKBACK_MS,
+  unbookedSessions,
+  unbookedText,
   type JobOptions,
   type JobRecord,
   type LauncherConfig,
@@ -2551,7 +2553,7 @@ describe("sandbox launcher, the sessions the ledger lacks", () => {
       kind: "skipped",
       taskId: task.id,
       reason: expect.stringContaining(
-        "session sesn_lost (running) was made by this lane and has no ledger line; book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_lost --book",
+        "session sesn_lost (running) was made by this lane and has no ledger line; if a launcher is still following it, let that launcher finish (it books the session when it stops); otherwise book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_lost --book",
       ),
     });
     expect([api.environmentCreates, api.agentCreates, api.environmentUpdates.length, api.agentUpdates, api.uploads.length, api.sessions.length]).toEqual([0, 0, 0, 0, 0, 0]);
@@ -2575,6 +2577,36 @@ describe("sandbox launcher, the sessions the ledger lacks", () => {
     failing.listFailures = 1;
     await expect(job(failing, await workspace())).rejects.toThrow(/^could not list this lane's sessions to check that each has a ledger line \(connection reset\); nothing was run$/u);
     expect([failing.environmentCreates, failing.uploads.length, failing.sessions.length]).toEqual([0, 0, 0]);
+  });
+
+  it("charges a session once when collect --book books it while a launcher still follows it, as status's advice in a second window may lead to: the launcher then writes nothing", async () => {
+    const config = await workspace();
+    const api = new FakeApi([{ history: [running("e1")], stream: [running("e1")], hang: true }], outputsOf(happy));
+    // collect --book's read says running; the launcher's stop check and final read then say idle.
+    api.statuses = ["running", "idle"];
+    const stop = new AbortController();
+    const logged: string[] = [];
+    vi.mocked(appendCreditLine).mockClear();
+    const run = job(api, config, happy, { sleep: instant, signal: stop.signal, log: (line) => logged.push(line) }).catch((caught: unknown) => caught);
+    while (api.opened === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+    // status, in another window, while the launcher follows the session: a running session's advice says to let a launcher finish first.
+    const seen = await unbookedSessions(api, config.ledgerFile, "sandbox", new Date());
+    expect(seen.sessions.map(unbookedText)).toEqual([
+      "session sesn_1 (running) was made by this lane and has no ledger line; if a launcher is still following it, let that launcher finish (it books the session when it stops); otherwise book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_1 --book",
+    ]);
+    // Booked all the same, then the launcher is stopped and reaches its own booking.
+    expect((await bookSession({ api, ledgerFile: config.ledgerFile, lane: "sandbox", sessionId: "sesn_1" })).text).toMatch(/^booked session sesn_1 at \$4\.50 /u);
+    stop.abort("SIGINT");
+    expect(await run).toBeInstanceOf(RunStoppedError);
+    const lines = (await readFile(config.ledgerFile, "utf8")).trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? "")).toMatchObject({ batchId: "sesn_1", costUsd: 4.5, costKnown: false });
+    expect(appendCreditLine).toHaveBeenCalledTimes(1);
+    expect(logged).toContain("The ledger already has a line for session sesn_1; nothing more was written, so it is charged once.");
+    // A session the platform reports stopped has no launcher left to wait for: the advice is the command alone.
+    expect(unbookedText({ id: "sesn_2", status: "idle" })).toBe(
+      "session sesn_2 (idle) was made by this lane and has no ledger line; book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_2 --book",
+    );
   });
 
   it("runs once the session is booked by its id or by its run id, and passes by another lane's session", async () => {

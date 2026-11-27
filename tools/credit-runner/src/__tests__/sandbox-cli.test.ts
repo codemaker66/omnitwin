@@ -149,7 +149,7 @@ describe("status and collect --book, with a session the ledger lacks", () => {
       expect(await main(["status", "--config", config], { api })).toBe(0);
       const status = said();
       expect(status).toContain(
-        "Warning: session sesn_lost (running) was made by this lane and has no ledger line; book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_lost --book; run refuses until it is booked",
+        "Warning: session sesn_lost (running) was made by this lane and has no ledger line; if a launcher is still following it, let that launcher finish (it books the session when it stops); otherwise book it with pnpm --filter @omnitwin/credit-runner sandbox collect sesn_lost --book; run refuses until it is booked",
       );
       // The shift's sessions are not this lane's to book.
       expect(status).not.toContain("sesn_night");
