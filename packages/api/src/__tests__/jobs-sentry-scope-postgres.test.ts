@@ -7,9 +7,12 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
+import { validateEnv } from "../env.js";
 import { initSentry } from "../observability/sentry.js";
 import { buildOwnScope, sentryJobAlerts } from "../services/jobs/alerts.js";
 import { buildJobRegistry, defineJobKind, PermanentJobError, RetryJobIn, type JobLogger } from "../services/jobs/kinds.js";
+import { selfTestJob } from "../services/jobs/kinds/selftest.js";
+import { startJobs } from "../services/jobs/runtime.js";
 import { enqueueJob } from "../services/jobs/store.js";
 import { JobWorker } from "../services/jobs/worker.js";
 import { jobsTestUrl, openJobsDatabase } from "./helpers/jobs-db.js";
@@ -32,7 +35,9 @@ import { jobsTestUrl, openJobsDatabase } from "./helpers/jobs-db.js";
 // `claimLost` alert, the pass's own work) and jobs run whose handlers leave a
 // breadcrumb, some then dying (a `jobDead` alert, the job's own). A breadcrumb
 // left at start-up, before the worker is built, must reach none of them. The
-// worker gets its scope from `buildOwnScope`, as runtime.ts gives it.
+// worker gets its scope from `buildOwnScope`, as runtime.ts gives it. The last
+// case starts the server's own worker through `startJobs` with the worker on
+// and the DSN set, so the wiring itself is under test.
 //
 // Never loads .env and never falls back to DATABASE_URL: the target is the
 // explicit throwaway database (helpers/jobs-db.ts).
@@ -98,6 +103,8 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: each job run has its own Sentr
   let worker: JobWorker | undefined;
   const envelopes: string[] = [];
   const timers: FakeTimer[] = [];
+  /** The stand-in ingest's DSN, set once it listens. */
+  let dsn = "";
   /** Each job's and orphan's id, by its name in this suite. */
   const ids = new Map<string, string>();
 
@@ -210,7 +217,7 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: each job run has its own Sentr
     // The SDK's transport honours http_proxy; the stand-in ingest is local.
     vi.stubEnv("http_proxy", "");
     vi.stubEnv("HTTP_PROXY", "");
-    const dsn = `http://public@127.0.0.1:${String(port)}/1`;
+    dsn = `http://public@127.0.0.1:${String(port)}/1`;
     await initSentry({ SENTRY_DSN: dsn, NODE_ENV: "production", SENTRY_TRACES_SAMPLE_RATE: 1 });
     Sentry = await import("@sentry/node");
 
@@ -312,4 +319,57 @@ describe.skipIf(jobsTestUrl === undefined)("jobs: each job run has its own Sentr
     };
     expect(new Set(Object.values(traces)).size, JSON.stringify(traces)).toBe(5);
   });
+
+  it("startJobs, as the server calls it with the worker on and a DSN set, gives each job run its own scope and trace", async () => {
+    // The worker above is done with; this one is the server's own, built by startJobs from the env.
+    await worker?.stop(1000);
+    await pool.query("TRUNCATE TABLE jobs");
+    // Two self-tests on their last try whose stored payload no longer parses: each dies in its own run.
+    for (const [name, ageSeconds] of [["X", 120], ["Y", 60]] as const) {
+      const id = randomUUID();
+      await pool.query(
+        `INSERT INTO jobs (id, kind, version, key, scope, payload, max_attempts, attempts, run_at)
+         VALUES ($1, $2, 1, $3, 'platform', '{}'::jsonb, 6, 5, now() - make_interval(secs => $4))`,
+        [id, selfTestJob.kind, `wiring-${name}`, ageSeconds],
+      );
+      ids.set(name, id);
+    }
+    const nameOf = new Map([...ids].map(([name, id]) => [id, name]));
+    // The server's logger as a trail: each line a job's run logs leaves a breadcrumb on the scope it runs in.
+    const trail = (obj: Record<string, unknown>): void => {
+      const jobId = obj["jobId"];
+      const name = typeof jobId === "string" ? nameOf.get(jobId) : undefined;
+      if (name !== undefined) Sentry.addBreadcrumb({ category: "job-test", message: `${CRUMB}${name}` });
+    };
+    const jobs = await startJobs({
+      db,
+      env: validateEnv({
+        NODE_ENV: "test",
+        DATABASE_URL: jobsTestUrl ?? "",
+        JWT_SECRET: "test-jwt-secret-that-is-at-least-32-characters-long",
+        JOBS_WORKER: "on",
+        SENTRY_DSN: dsn,
+      }),
+      logger: { info: () => undefined, warn: trail, error: trail },
+    });
+    try {
+      expect(jobs.worker).not.toBeNull();
+      const deadline = Date.now() + 30_000;
+      const deadCount = async (): Promise<number> => (await pool.query<{ dead: number }>(
+        "SELECT count(*)::integer AS dead FROM jobs WHERE key LIKE 'wiring-%' AND state = 'dead'",
+      )).rows[0]?.dead ?? 0;
+      while (await deadCount() < 2) {
+        if (Date.now() > deadline) throw new Error("The two jobs never died");
+        await sleep(25);
+      }
+      expect(await Sentry.flush(5_000)).toBe(true);
+    } finally {
+      await jobs.stop(1000);
+    }
+    // Neither alert carries start-up's breadcrumb or the other job's, and each is on a trace of its own.
+    expect({ X: crumbsOf(eventFor("X")), Y: crumbsOf(eventFor("Y")) }).toEqual({ X: ["X"], Y: ["Y"] });
+    const traces = { X: traceOf("X"), Y: traceOf("Y") };
+    for (const trace of Object.values(traces)) expect(trace).toMatch(/^[0-9a-f]{32}$/u);
+    expect(traces.X).not.toBe(traces.Y);
+  }, 60_000);
 });

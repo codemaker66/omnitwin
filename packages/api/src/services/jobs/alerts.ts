@@ -265,11 +265,20 @@ export interface OwnScopeSentryClient {
 
 /**
  * Runs `run` in a fresh isolation scope on a new trace, as the SDK's http
- * integration gives each request one: the scope is forked and then cleared,
- * so its breadcrumbs start empty and no tag, user or context is inherited
- * from whatever ran before. The same behaviour as the escalation scheduler's
- * helper (T-764), so that one can replace the other once both are merged:
- * folding the two into one is T-765.
+ * integration gives each request one. Only the isolation scope is cleared:
+ * it is forked and `clear()` empties the fork's breadcrumbs, tags, user and
+ * contexts. The current scope (forked by the SDK, not cleared) and the global
+ * scope still reach every event, and so does the request data the SDK keeps
+ * on the isolation scope, which `clear()` leaves: entered inside a request,
+ * this would keep that request's URL and headers. What keeps a request out of
+ * the worker's events is the worker's own start-up context (every pass begins
+ * in it, never in a poker's), not this helper. Nothing in the API sets
+ * anything on the current or global scope today.
+ *
+ * Not the same as the escalation scheduler's helper (`inOwnScope` in
+ * observability/sentry.ts, T-764), which keeps the fork's tags, user and
+ * context and clears only its breadcrumbs. Folding the two into one is T-765,
+ * which must choose between them.
  */
 export function sentryOwnScope(client: OwnScopeSentryClient): WithOwnScope {
   return (run) => client.withIsolationScope((isolationScope) => {
