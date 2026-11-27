@@ -975,6 +975,87 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [brodie])).toBe(1);
   });
 
+  it("an event the join made for a proposal whose link has moved since is found through the join's own record, by erasure and by the pass", async () => {
+    const v = await venueIn(pool, "erasure, a proposal's made event left behind");
+    // Each lost deal has no event; the join makes one for its sent proposal, named by the proposal's title.
+    const flora = await person(v, "Flora Proposalmoved");
+    const herDeal = await deal(v, { title: "TEST ONLY her lost deal", leadId: flora, stage: "lost" });
+    const hers = await proposal(v, { title: "Ceilidh for Flora Proposalmoved", status: "sent", dealId: herDeal });
+    const lachie = await person(v, "Lachie Proposalmoved", longAgo);
+    const hisDeal = await deal(v, { title: "TEST ONLY his lost deal", leadId: lachie, stage: "lost", at: longAgo });
+    const his = await proposal(v, { title: "Dinner for Lachie Proposalmoved", status: "sent", dealId: hisDeal, at: longAgo });
+    await join();
+    const made = await eventOf("proposals", hers);
+    const madeForHis = await eventOf("proposals", his);
+    expect(await joinOf("proposal", hers)).toEqual({ event_id: made, event_made: true, path: "new_event" });
+    expect(await joinOf("proposal", his)).toEqual({ event_id: madeForHis, event_made: true, path: "new_event" });
+    // Then each proposal's link is moved, and a confirmed booking is held in the event made for his.
+    await link(pool, "proposals", hers, await event(v, "TEST ONLY where her proposal went", null));
+    await link(pool, "proposals", his, await event(v, "TEST ONLY where his proposal went", null));
+    await booking(v, { eventId: madeForHis, kind: "ink", at: longAgo });
+
+    expect(await erase(v, flora)).toMatchObject({ ok: true, counts: { people: 1 } });
+    expect(await names(made)).toEqual({ name: "Ceilidh for Erased", client_name: null });
+    expect(await namedAnywhere(v, "Flora Proposalmoved")).toBe(0);
+    // The event made for his proposal is his: its confirmed booking keeps him, in the pass's reading and in the erasure.
+    expect(await keptByReading(v)).toEqual([lachie]);
+    expect(await erase(v, lachie)).toEqual({ ok: false, refusal: "has_booking" });
+  });
+
+  it("a link written to the event of a proposal they only answered on, while the erasure waits for that proposal, answers RETRY, and the retry rewords the event", async () => {
+    const v = await venueIn(pool, "erasure, an answered-on proposal linked meanwhile");
+    const ailsa = await person(v, "Ailsa Retrywell");
+    const brodie = await person(v, "Brodie Linkswell");
+    const his = await enquiry(v, { contactId: brodie, name: "Brodie Linkswell", eventType: "venue-enquiry" });
+    const proposalId = await proposal(v, { title: "Reception for Ailsa Retrywell", status: "draft", enquiryId: his });
+    await pool.query(`INSERT INTO proposal_comments (proposal_id, author_type, author_name, body)
+      VALUES ($1, 'client', 'Ailsa Retrywell', 'TEST ONLY a reply')`, [proposalId]);
+    const given = await event(v, "Reception for Ailsa Retrywell", "Brodie Linkswell");
+    const writer = await pool.connect();
+    let committed = false;
+    try {
+      await writer.query("BEGIN");
+      await writer.query("UPDATE proposals SET event_id = $2 WHERE id = $1", [proposalId, given]);
+      const erasing: Promise<Settled> = erase(v, ailsa)
+        .then((outcome): Settled => ({ ok: true, outcome }), (error: unknown): Settled => ({ ok: false, error }));
+      try {
+        await waitForLockWait(`%from "proposals"%for update%`);
+      } finally {
+        await writer.query("COMMIT");
+        committed = true;
+      }
+      const settled = await erasing;
+      expect(settled.ok).toBe(false);
+      if (!settled.ok) expect(settled.error).toBeInstanceOf(ErasureMovedOn);
+    } finally {
+      if (!committed) await writer.query("ROLLBACK");
+      writer.release();
+    }
+    expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [ailsa])).toBe(1);
+    expect(await names(given)).toEqual({ name: "Reception for Ailsa Retrywell", client_name: "Brodie Linkswell" });
+    expect(await erase(v, ailsa)).toMatchObject({ ok: true, counts: { people: 1 } });
+    expect(await names(given)).toEqual({ name: "Reception for Erased", client_name: "Brodie Linkswell" });
+  });
+
+  it("a booking in the event of a proposal they only answered on loses their name too", async () => {
+    const v = await venueIn(pool, "erasure, an answered-on event's booking");
+    const ailsa = await person(v, "Ailsa Heldname");
+    const brodie = await person(v, "Brodie Heldby");
+    const his = await enquiry(v, { contactId: brodie, name: "Brodie Heldby", eventType: "venue-enquiry" });
+    const proposalId = await proposal(v, { title: "TEST ONLY his reception", status: "draft", enquiryId: his });
+    await pool.query(`INSERT INTO proposal_comments (proposal_id, author_type, author_name, body)
+      VALUES ($1, 'client', 'Ailsa Heldname', 'TEST ONLY a reply')`, [proposalId]);
+    const hisEvent = await event(v, "TEST ONLY his reception", "Brodie Heldby");
+    await link(pool, "proposals", proposalId, hisEvent);
+    const held = await booking(v, { eventId: hisEvent, enquiryId: his, kind: "hold", status: "released" });
+    await pool.query("UPDATE bookings SET title = 'Held for Ailsa Heldname' WHERE id = $1", [held]);
+
+    expect(await erase(v, ailsa)).toMatchObject({ ok: true, counts: { people: 1 } });
+    expect(await value("SELECT title AS value FROM bookings WHERE id = $1", [held])).toBe("Held for Erased");
+    expect(await value("SELECT row_to_json(b) AS value FROM (SELECT event_id, enquiry_id, status FROM bookings WHERE id = $1) b", [held]))
+      .toEqual({ event_id: hisEvent, enquiry_id: his, status: "released" });
+  });
+
   it("the join's own records of an erased enquiry stay as ids: the nightly join and the undo still run cleanly afterwards", async () => {
     const v = await venueIn(pool, "erasure, the join's records");
     const catriona = await person(v, "Catriona Listwell");
