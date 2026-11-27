@@ -248,7 +248,10 @@ reads.
 A person's erasure (`services/people-erasure.ts`, `around()`) and the 24-month pass
 (`services/people-retention.ts`, `lapsedPeople`) follow the three links: the events a
 person's enquiries, deals and proposals point at are found whether the join made
-them, a writer linked them, or nothing in `event_link_joins` records it. The join
+them, a writer linked them, or nothing in `event_link_joins` records it. An event the
+join made for one of those records is also found through `event_link_joins` after
+the record's link has moved (a Diary edit that moves an enquiry's last booking, the
+bind, or a repair by hand), so it cannot keep the name it was given. The join
 names an event it makes, and its client, from the record (an enquiry's name, a deal's
 or a proposal's title); erasure deletes the person's enquiries, rewords their deals and
 proposals, and takes their names out of every event it finds, so a later run of the
@@ -262,6 +265,20 @@ join has no name to copy back.
   theirs. Own or near, the event is kept and loses only the erased person's names;
   an own event's confirmed booking or live hold, or a deposit request naming it,
   refuses the erasure.
+- A confirmed booking or live hold from the person's own enquiry refuses the erasure
+  in a near event too, as before the links, unless the event is another live
+  person's deal's (its event, or one laid out from its proposal). An event that is
+  near only because another person's record points at it does not take the person's
+  own booking from them; the other person's bookings there never count as theirs.
+- The events of a proposal the person only answered on (someone else's proposal they
+  commented on or accepted for) are near them: their names leave those events as
+  they leave the proposal's title.
+- When the 24-month pass keeps a person for a booking and removes their enquiries
+  that never became one, nothing of theirs is reworded. An event the join made for
+  such an enquiry that nothing points at any more (no row of any table with a key to
+  the event or to one of its phases, its own phases apart, and no deal or client
+  account of its own) is renamed `Event` and its client name cleared; an event
+  something still points at is left alone.
 - A record of theirs linked between the erasure's reads and its locks makes it
   answer RETRY, as a booking written meanwhile does.
 - The join copies a name only from a row it holds (above). An erasure under way when
@@ -399,7 +416,9 @@ Each of these runs in production only on the founder's word, in a transaction wi
   edit may move a booking to another event of its venue). If it is the bookings',
   move the enquiry's link to it, with the links of the enquiry's deals and
   proposals that name the first event, in one transaction (a link is moved, never
-  emptied). They are found by id alone:
+  emptied). In the same transaction the event left behind, which the join named
+  from the enquiry, is renamed `Event` and its client name cleared. They are found
+  by id alone:
 
   ```sql
   SELECT q.id AS enquiry_id, q.venue_id, q.event_id AS linked_event
@@ -546,9 +565,13 @@ ignore them. (The backup branch remains the last resort.)
 - `packages/api/src/__tests__/people-erasure-spine-links-postgres.test.ts`: erasure
   and the 24-month pass follow the links. The join's made events for an enquiry, a
   deal and a proposal lose the person's name; a link with no record of the join is
-  found the same; an event a second live person is tied to is kept and near; the
-  pass's readings agree with its step; a link written while the erasure waits answers
-  RETRY; the join and the undo run cleanly afterwards.
+  found the same; an event a second live person is tied to is kept and near, and the
+  person's own booking there still keeps them; a made event whose record's link has
+  moved is found through the join's record; the event of a proposal they only
+  answered on is near; a kept person's removed enquiry leaves its made event named
+  `Event` once nothing points at it; the pass's readings agree with its step; a link
+  written while the erasure waits answers RETRY; the join and the undo run cleanly
+  afterwards.
 
 Each spine suite makes and drops a database of its own on the platform test
 cluster; the platform gate (`test:platform-db`) names them all.
