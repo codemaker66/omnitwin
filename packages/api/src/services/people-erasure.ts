@@ -1182,8 +1182,8 @@ async function rewordVersions(tx: PeopleTx, proposalIds: readonly string[], name
 /**
  * Deletes the enquiries and everything that copies what the client wrote,
  * and takes the names out of the rows the venue keeps. For a kept person's
- * enquiries nothing is reworded, and an event the join made for one of them
- * that nothing points at any more is named "Event" (unnameLeftEvents). The
+ * enquiries nothing is reworded, and an event the join made for an enquiry
+ * gone loses the name it copied from one removed here (unnameLeftEvents). The
  * caller has found the records with this transaction and checked keptRecord.
  */
 export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords): Promise<RemovedCounts> {
@@ -1338,12 +1338,14 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
   const retitled = [...changed].flatMap((key) => (key.startsWith("proposals:") ? [key.slice("proposals:".length)] : []));
   const reworded = changed.size;
 
+  // The names as the rows held them when removed (the person's own erasure
+  // attempt holds each of their enquiries FOR UPDATE).
   const deleted = enquiryIds.length === 0 ? [] : await tx.delete(enquiries)
     .where(inArray(enquiries.id, enquiryIds))
-    .returning({ id: enquiries.id });
+    .returning({ id: enquiries.id, name: enquiries.name });
   // A kept person's spare enquiries go with nothing reworded; an event the
-  // join made for one of them that nothing points at any more loses the name.
-  const unnamed = ofAKeptPerson(records) ? await unnameLeftEvents(tx, records) : [];
+  // join made from one loses what it still holds of the name it copied.
+  const unnamed = ofAKeptPerson(records) ? await unnameLeftEvents(tx, records, deleted) : [];
 
   // A lead has no venue. Its address is one of theirs, or one their deleted
   // enquiries were sent from, that no other live person here holds; another
@@ -1388,56 +1390,53 @@ function ofAKeptPerson(records: ErasureRecords): boolean {
 /** The name the join gives an event when its record gives none. */
 const UNNAMED_EVENT = "Event";
 
+/** What the join of old records named an event made for an enquiry, and its
+ *  client, from the enquiry's name: the name trimmed as JavaScript's trim()
+ *  trims (the join's js_whitespace is that set) and cut by the database to
+ *  200 characters (left(), as the join cuts it). None when the name is blank
+ *  or holds an "@": the join then named the event "Event" and gave it no
+ *  client. */
+function joinedNameOf(name: string): readonly SQL[] {
+  const trimmed = name.trim();
+  return trimmed === "" || name.includes("@") ? [] : [sql`left(${trimmed}, 200)`];
+}
+
 /**
  * A kept person's enquiry that never became a booking is deleted with nothing
- * reworded. The join of old records named an event it made for one, and its
- * client, from the enquiry (event_link_joins: made, in force), and once the
- * enquiry is gone a later erasure of the person can no longer find that
- * event. So, after the delete, each such event that nothing points at any
- * more is named "Event" and its client cleared: no row of any table with a
- * key to the event or to one of its phases (its own phases, made with it,
- * apart), read from pg_constraint as the undo reads it (spine_undo_joins), so
- * a table added later counts too; and it names no deal or client account of
- * its own. An event something still points at is left alone. Only events
- * among the records', which the person's own erasure attempt locked, are
- * touched. Returns their ids.
+ * reworded. The join of old records named an event it made for an enquiry,
+ * and the event's client, from the enquiry's name (event_link_joins: made, in
+ * force), and once that enquiry is gone a later erasure of the person may not
+ * find the event. So, after the delete, each event the join made for an
+ * enquiry that no longer exists, among the records' events (all of which the
+ * person's own erasure attempt holds FOR UPDATE), loses what it still holds of
+ * the name of an enquiry removed here, as the join wrote it: its name becomes
+ * "Event" while it equals that name, and its client name is cleared while it
+ * does. A name typed since stays, and what points at the event does not
+ * matter. Returns the events changed.
  */
-async function unnameLeftEvents(tx: PeopleTx, records: ErasureRecords): Promise<readonly string[]> {
-  const enquiryIds = records.enquiries.map((row) => row.id);
-  const found = distinct([...records.eventIds, ...records.nearby.eventIds]);
-  if (enquiryIds.length === 0 || found.length === 0) return [];
-  const made = (await tx.selectDistinct({ id: eventLinkJoins.eventId }).from(eventLinkJoins).where(allOf(
-    eq(eventLinkJoins.venueId, records.venueId),
-    eq(eventLinkJoins.subjectKind, "enquiry"),
-    inArray(eventLinkJoins.subjectId, enquiryIds),
-    eq(eventLinkJoins.eventMade, true),
-    isNull(eventLinkJoins.undoneAt),
-    inArray(eventLinkJoins.eventId, [...found]),
-  ))).map((row) => row.id);
-  if (made.length === 0) return [];
-  const keys = await tx.execute<{ schema: string; table: string; column: string; toEvent: boolean }>(sql`
-    select n."nspname" as "schema", t."relname" as "table", a."attname" as "column",
-      c."confrelid" = '"events"'::regclass as "toEvent"
-    from pg_constraint as c
-    join pg_class as t on t."oid" = c."conrelid"
-    join pg_namespace as n on n."oid" = t."relnamespace"
-    cross join lateral unnest(c."conkey", c."confkey") as k("referencing", "referenced")
-    join pg_attribute as a on a."attrelid" = c."conrelid" and a."attnum" = k."referencing"
-    join pg_attribute as r on r."attrelid" = c."confrelid" and r."attnum" = k."referenced" and r."attname" = 'id'
-    where c."contype" = 'f' and c."confrelid" in ('"events"'::regclass, '"event_phases"'::regclass)
-      and not (c."conrelid" = '"event_phases"'::regclass and c."confrelid" = '"events"'::regclass)`);
-  const pointing = keys.rows.map((key): SQL => {
-    const from = sql`${sql.identifier(key.schema)}.${sql.identifier(key.table)} as "ref"`;
-    const column = sql`"ref".${sql.identifier(key.column)}`;
-    return key.toEvent
-      ? sql`exists (select 1 from ${from} where ${column} = "ev"."id")`
-      : sql`exists (select 1 from ${from} where ${column} in (select ph."id" from "event_phases" as ph where ph."event_id" = "ev"."id"))`;
-  });
-  const left = sql.join(made.map((id) => sql`${id}::uuid`), sql`, `);
+async function unnameLeftEvents(
+  tx: PeopleTx,
+  records: ErasureRecords,
+  removed: readonly { readonly id: string; readonly name: string }[],
+): Promise<readonly string[]> {
+  const reached = distinct([...records.eventIds, ...records.nearby.eventIds]);
+  const copied = removed.flatMap((row) => joinedNameOf(row.name));
+  if (reached.length === 0 || copied.length === 0) return [];
+  const asJoined = sql.join(copied, sql`, `);
+  // Made for an enquiry that no longer exists: one removed here, or one that went before it.
+  const madeForGone = sql`not exists (select 1 from "enquiries" as "gone" where "gone"."id" = "made"."subject_id")`;
   const unnamed = await tx.execute<{ id: string }>(sql`
-    update "events" as "ev" set "name" = ${UNNAMED_EVENT}, "client_name" = null
-    where "ev"."id" in (${left}) and "ev"."opportunity_id" is null and "ev"."client_account_id" is null
-      and not (${or(...pointing) ?? sql`false`})
+    update "events" as "ev" set
+      "name" = case when "ev"."name" in (${asJoined}) then ${UNNAMED_EVENT} else "ev"."name" end,
+      "client_name" = case when "ev"."client_name" in (${asJoined}) then null else "ev"."client_name" end
+    where "ev"."id" in (${sql.join(reached.map((id) => sql`${id}::uuid`), sql`, `)})
+      and ("ev"."name" in (${asJoined}) or "ev"."client_name" in (${asJoined}))
+      and exists (
+        select 1 from "event_link_joins" as "made"
+        where "made"."event_id" = "ev"."id" and "made"."venue_id" = ${records.venueId}
+          and "made"."subject_kind" = 'enquiry' and "made"."event_made" and "made"."undone_at" is null
+          and ${madeForGone}
+      )
     returning "ev"."id"`);
   return unnamed.rows.map((row) => row.id);
 }

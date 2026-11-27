@@ -866,15 +866,29 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     expect(await names(madeForDeal)).toEqual({ name: "Dinner for Ruaraidh Dealmoved", client_name: null });
   });
 
-  it("the 24-month pass, removing a kept person's enquiry that never became a booking, takes their name off the event the join made for it once nothing points at it", async () => {
-    const v = await venueIn(pool, "retention, a kept person's made events");
-    // Kept by a confirmed booking pencilled from her first enquiry.
-    const morag = await person(v, "Morag Keptwell", longAgo);
-    const booked = await enquiry(v, { contactId: morag, name: "Morag Keptwell", at: longAgo });
+  /** A person last in touch long ago, kept by a confirmed booking pencilled from her first enquiry. */
+  async function keptByAnInk(v: SpineVenue, name: string): Promise<{ readonly personId: string; readonly booked: string; readonly kept: string }> {
+    const personId = await person(v, name, longAgo);
+    const booked = await enquiry(v, { contactId: personId, name, at: longAgo });
     const kept = await event(v, "TEST ONLY her booked event", null);
     await booking(v, { eventId: kept, enquiryId: booked, kind: "ink", at: longAgo });
+    return { personId, booked, kept };
+  }
+
+  /** The 24-month pass, run for real; it keeps the person given, at the venue. */
+  async function passKeeps(v: SpineVenue, personId: string): Promise<void> {
+    const pass = await eraseLapsedPeople(db, { now: passNow, startsOn: new Date("2024-01-01T00:00:00Z") });
+    expect(pass).toMatchObject({ off: false, failed: 0 });
+    expect(pass.kept.filter((row) => row.venueId === v.venueId)).toEqual([{ venueId: v.venueId, personId }]);
+    expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [personId])).toBe(1);
+  }
+
+  it("the 24-month pass, removing a kept person's enquiry that never became a booking, renames the event the join made for it while it holds the name the join copied, whatever still points at it", async () => {
+    const v = await venueIn(pool, "retention, a kept person's made events");
+    const { personId: morag, booked, kept } = await keptByAnInk(v, "Morag Keptwell");
     // Two worked enquiries that never became a booking: the join makes an
-    // event for each, named from it. A floor plan is then linked to the second's.
+    // event for each, named from it. A floor plan, and a proposal of the
+    // second enquiry, are then linked to the second's.
     const spare = await enquiry(v, { contactId: morag, name: "Morag Keptwell", replied: true, at: longAgo });
     const planned = await enquiry(v, { contactId: morag, name: "Morag Keptwell", replied: true, at: longAgo });
     await join();
@@ -886,19 +900,53 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
       VALUES ($1, $2, 'TEST ONLY plan', 'dinner-rounds') RETURNING id`, [v.rooms.hall, v.venueId]);
     await pool.query(`INSERT INTO event_configuration_links (event_id, configuration_id, link_type)
       VALUES ($1, $2, 'source_configuration')`, [madeAndPlanned, plan]);
+    const hers = await proposal(v, { title: "TEST ONLY her proposal", status: "draft", enquiryId: planned, at: longAgo });
+    await link(pool, "proposals", hers, madeAndPlanned);
 
-    const pass = await eraseLapsedPeople(db, { now: passNow, startsOn: new Date("2024-01-01T00:00:00Z") });
-    expect(pass).toMatchObject({ off: false, failed: 0 });
-    expect(pass.kept.filter((row) => row.venueId === v.venueId)).toEqual([{ venueId: v.venueId, personId: morag }]);
+    await passKeeps(v, morag);
     // She is kept, with her booked enquiry; the two that never became a booking go.
-    expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [morag])).toBe(1);
     expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[booked, spare, planned]])).toBe(1);
-    // Nothing points at the first's event any more: it loses the name the
-    // join gave it, and its client. The second's is left alone, as anything
-    // something still points at is.
+    // Each made event loses the name the join copied from its enquiry, and its
+    // client, whether or not something still points at it.
     expect(await names(made)).toEqual({ name: "Event", client_name: null });
-    expect(await names(madeAndPlanned)).toEqual({ name: "Morag Keptwell", client_name: "Morag Keptwell" });
+    expect(await names(madeAndPlanned)).toEqual({ name: "Event", client_name: null });
+    expect(await eventOf("proposals", hers)).toBe(madeAndPlanned);
     expect(await names(kept)).toEqual({ name: "TEST ONLY her booked event", client_name: null });
+    expect(await namedAnywhere(v, "Morag Keptwell")).toBe(0);
+  });
+
+  it("the 24-month pass leaves a name staff typed on such an event since, and clears only the client name the join copied", async () => {
+    const v = await venueIn(pool, "retention, a made event renamed by staff");
+    const { personId: elspeth } = await keptByAnInk(v, "Elspeth Keptwell");
+    const spare = await enquiry(v, { contactId: elspeth, name: "Elspeth Keptwell", replied: true, at: longAgo });
+    await join();
+    const made = await eventOf("enquiries", spare);
+    expect(await names(made)).toEqual({ name: "Elspeth Keptwell", client_name: "Elspeth Keptwell" });
+    await pool.query("UPDATE events SET name = 'TEST ONLY summer ball' WHERE id = $1", [made]);
+
+    await passKeeps(v, elspeth);
+    expect(await count("enquiries WHERE id = $1", [spare])).toBe(0);
+    expect(await names(made)).toEqual({ name: "TEST ONLY summer ball", client_name: null });
+  });
+
+  it("the 24-month pass renames an event the join made for an enquiry of theirs that went earlier, when the enquiry it removes now points at it", async () => {
+    const v = await venueIn(pool, "retention, a made event's enquiry gone earlier");
+    const { personId: isobel } = await keptByAnInk(v, "Isobel Keptwell");
+    const first = await enquiry(v, { contactId: isobel, name: "Isobel Keptwell", replied: true, at: longAgo });
+    await join();
+    const made = await eventOf("enquiries", first);
+    expect(await joinOf("enquiry", first)).toEqual({ event_id: made, event_made: true, path: "new_event" });
+    // Her second enquiry points at the same event; the first, the one the
+    // event was made for, went earlier, leaving the event named.
+    const second = await enquiry(v, { contactId: isobel, name: "Isobel Keptwell", at: longAgo });
+    await link(pool, "enquiries", second, made);
+    await pool.query("DELETE FROM enquiries WHERE id = $1", [first]);
+    expect(await names(made)).toEqual({ name: "Isobel Keptwell", client_name: "Isobel Keptwell" });
+
+    await passKeeps(v, isobel);
+    expect(await count("enquiries WHERE id = $1", [second])).toBe(0);
+    expect(await names(made)).toEqual({ name: "Event", client_name: null });
+    expect(await namedAnywhere(v, "Isobel Keptwell")).toBe(0);
   });
 
   it("an event the join made from the title of someone else's proposal they only answered on is near them, and loses their name", async () => {

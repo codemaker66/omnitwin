@@ -29,8 +29,8 @@ import type { PeopleTx } from "./people-records.js";
 //     taken, and a staff edit to their record alone does not hold them;
 //   - keeps a person with a booking or a contract the venue must keep, never
 //     half-erased, but deletes their enquiries that never became one (an
-//     event the join made for one, once nothing points at it, loses the name
-//     it took from the enquiry); the result lists who was kept (ids only),
+//     event the join made from one loses the name and client name it copied
+//     while it still holds them); the result lists who was kept (ids only),
 //     for the six-year rule by hand;
 //   - deletes each enquiry linked to nobody, sent from an address no live
 //     person at its venue holds, last in touch 24 months ago and never
