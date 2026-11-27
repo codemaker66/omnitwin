@@ -3,9 +3,14 @@
 **Status:** the exact tokens for goal 19's D3 table, written at S0 (8 October 2026,
 T-651) and consumed by S3 (the board), S4 (the ring) and S8 (the wall). Every colour
 below was measured with the WCAG relative-luminance formula against the ground it sits
-on; dots, rings and edges clear 3:1, text clears 4.5:1. Blake's spoken palette is kept
-literally for the ramp: green, then orange, then red. Severity rides on cadence and a
-copper ring, never on colour alone; every state pairs an icon, a verb and a colour.
+on; dots, rings and edges clear 3:1, text clears 4.5:1. The ramp runs green as the
+organisers are due, then orange as the guests are; since 22 November 2026 live is calm,
+in the house ink, and red is for trouble only (at risk and the exceptions). Blake chose
+the calm live after blind one-look tests of the board drawn both ways: with live in
+oxblood every reviewer read the live rooms as rooms in trouble, and with the calm live
+none did. This supersedes the 10 November decision that live stays red. Severity rides
+on cadence and a copper halo, never on colour alone; every state pairs an icon, a verb
+and a colour.
 
 Surfaces: since 10 November 2026 the board wears the desks' register, Blake's concept
 C ("the rooms"): the office board and the phone are the desks' ivory sheet on the sage
@@ -31,7 +36,7 @@ Measured 10 November 2026, when the board moved onto the desks' sheet.
 | `--lt-green` | #3f8a57 | 3.60 | 3.96 | organisers due: dot, icon and the room's edge |
 | `--lt-amber` | #a07614 | 3.52 | 3.88 | guests due: dot, icon and edge |
 | `--lt-amber-deep` | #b5581a | 4.10 | 4.52 | imminent: dot, icon and edge |
-| `--lt-live` | `var(--vv-oxblood)` #8E3A2C | 6.42 | 7.08 | live: the breathing dot, the slot's breathing glow and the bar's live part |
+| `--lt-live` | `var(--house-ink-1)` #14302A | 12.07 | 13.30 | live (since 22 November 2026): an ink dot inside a thin ink ring that breathes, the room's edge and the legend's chip; on the forest panel live is `--house-sage-lit` |
 | `--lt-sage` | `var(--hk-sage)` #a9c3a4 | decorative | decorative | clear-down on the bar; its words use `--lt-sage-ink` |
 | `--lt-sage-ink` | `var(--house-sage-text)` #2f5a3a | 6.78 | 7.47 | clear-down's dot and an owned ring's edge |
 | `--lt-faded` | `var(--house-slate-dot)` #8e9992 | edge only | edge only | done: the faded dot and bar; the words stay full ink |
@@ -78,7 +83,7 @@ motion; reduced motion keeps the words and loses only the motion.
 | Organisers due | setup within 60 min | `Wrench` · "Organisers · 48 min" | `--lt-green` | dot breath, `--lt-breath-organisers` | "Organisers · 48 min", steady dot | — |
 | Guests due | doors within 30 min | `Users` · "Guests · 22 min" | `--lt-amber` | dot breath, `--lt-breath-guests` | "Guests · 22 min" | — |
 | Imminent | doors within 10 min | `DoorOpen` · "Doors · 6 min" | `--lt-amber-deep` | dot breath, `--lt-breath-imminent` | "Doors · 6 min" | — |
-| Live | start ≤ now < end | `Radio` · "LIVE · 1 h 12 elapsed"; a booking that runs for days, "LIVE · day 3 of 5" | `--lt-live` | the slot's glow breath at `--lt-live-amplitude`, `--lt-breath-live` | "LIVE · 1 h 12 elapsed" | — |
+| Live | start ≤ now < end | `Radio` · "LIVE · 1 h 12 elapsed"; a booking that runs for days, "LIVE · day 3 of 5" | `--lt-live`, the house ink: a still dot in a thin ring | the ring round the dot breathes, `--lt-breath-live` | "LIVE · 1 h 12 elapsed", steady dot and ring | — |
 | Clear-down | end to the next setup, within the turnaround | `RotateCcw` · "Clear-down · 40 min" | `--lt-sage` hatch, `--lt-sage-ink` label | none | — | — |
 | Done | marked done by a hallkeeper (S5) | `Check` · "Done 17:40" | `--lt-faded` edge | none | — | — |
 | Attention | a request landed and nobody owns it | `Bell` · "1 request · nobody has this" | `--lt-ring` with a count | one `--lt-arrival` stamp, then ring breath `--lt-breath-attention` until acknowledged | steady ring and count | one chime, opt-in |
@@ -90,6 +95,11 @@ Priority when several apply to one slot: offline or stale over everything (the b
 no breath anywhere); then urgent, attention and owned rings sit on top of the timed state,
 which keeps its own colour and words; a slot is never two colours at once, so the ring is
 the second channel and the timed state the first.
+
+Since 22 November 2026 (the sentence-first board, T-753) the room cards draw no ring: the
+requests nobody has are the next action and the panel of unclaimed requests, and the
+attention and urgent cadences above breathe and pulse as a halo round the next action's
+mark, with the arrival stamp on it. The opened slot keeps each request's card.
 
 ### What the room was seen doing (S5)
 
@@ -131,9 +141,10 @@ to them exactly. Nothing observed ever writes a time on the booking.
 4. **A pulse exists only for a state a person can act on,** and it quiets on
    acknowledgement while the unresolved work stays as a steady slab with its ring.
 5. **Nothing strobes.** The fastest cadence is 1.5 s (0.67 Hz), far under the
-   three-flashes-per-second threshold. Amplitudes are small: the live overlay never
-   exceeds `--lt-live-amplitude` (12 %) and a dot never drops under 65 % opacity.
-6. **The live breath is the one ambient motion in the product,** because it doubles as
+   three-flashes-per-second threshold. Amplitudes are small: live's ring never drops
+   under two thirds of its ink, and a dot never drops under 65 % opacity.
+6. **The live breath, the ring round live's ink dot, is the one ambient motion in the
+   product,** because it doubles as
    the liveness signal: every breath stops the instant the socket drops after it has
    been up (`data-frozen` on the board root), and the stale band follows a minute
    later, so a still LIVE slab is itself the warning that the display is not live. A
@@ -143,8 +154,10 @@ to them exactly. Nothing observed ever writes a time on the booking.
    the legend is worded exactly as the slots are.
 8. **Text is never tinted by state.** `--lt-ink` everywhere; tone lives in the dot, the
    edge, the ring and the hatch.
-9. **The single token** that would change Blake's red-for-live is `--lt-live`; the
-   earlier plan's "red only for exceptions" is withdrawn.
+9. **Red is for trouble only** (22 November 2026). Live is `--lt-live`, the house ink,
+   never `--vv-oxblood`, which stays the refusal colour elsewhere in the product; red
+   is for at risk and the exceptions, brick for urgent. This replaces the earlier law
+   that kept red for live.
 10. **The ring's words never breathe.** The copper ring is a static line round full-ink
     words; a second line outside it, the halo, is what breathes or pulses, so the count
     and the words hold their contrast at every point of the cycle (law 8 applied to the

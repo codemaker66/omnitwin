@@ -22,7 +22,7 @@ import {
 import { useAuthStore } from "../../stores/auth-store.js";
 import { SlotConversation } from "../conversations/SlotConversation.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
-import { mintRequestKey, projectRequest, stepWords, useSlotRequests, type WaitingStep } from "./requests-context.js";
+import { mayTakeRequest, mintRequestKey, projectRequest, stepWords, useSlotRequests, type WaitingStep } from "./requests-context.js";
 import "./slot-requests.css";
 
 // ---------------------------------------------------------------------------
@@ -132,8 +132,7 @@ function RequestCard({ request, nowMs }: {
   const canAcknowledge = nextRequestState(next.state, "acknowledged").ok;
   // A handover in flight is for the person it was handed to; the ladder
   // decides the rest here, and the server decides it again.
-  const canAccept = nextRequestState(next.state, "accepted").ok
-    && (next.state !== "handed-over" || handedToMe || me?.platformRole === "admin");
+  const canAccept = mayTakeRequest(request, next.state, meId, me?.platformRole === "admin");
   const canStart = nextRequestState(next.state, "underway").ok && (mine || senior);
   const canHandOver = nextRequestState(next.state, "handed-over").ok && (mine || senior);
   const canFinish = nextRequestState(next.state, "resolved").ok;

@@ -38,11 +38,12 @@ import { bookingStateLabel } from "../../diary/lib/board-overview.js";
 // end plus the venue's turnaround rule, cut short by the next setup in the
 // lane. Nothing here writes a time.
 //
-// The attention system (D3): Blake's palette, literally — green as the
-// organisers are due, amber as the guests are, deep amber at the doors, red
-// while live. Severity rides on cadence and a copper ring, never on colour
-// alone; every state pairs an icon, a verb and a colour. The clock given to
-// deriveDayBoard is the corrected one (D9); this module never reads Date.
+// The attention system (D3): green as the organisers are due, amber as the
+// guests are, deep amber at the doors, and live in the house's calm ink
+// (since 22 November 2026, T-753): red is for trouble only. Severity rides on
+// cadence and a copper halo, never on colour alone; every state pairs an
+// icon, a verb and a colour. The clock given to deriveDayBoard is the
+// corrected one (D9); this module never reads Date.
 // ---------------------------------------------------------------------------
 
 const MIN_MS = 60_000;
@@ -51,7 +52,7 @@ const GUESTS_WINDOW_MIN = 30;
 const IMMINENT_WINDOW_MIN = 10;
 /** How long after a request arrives the slot pulses. ONE pulse, then a steady
  *  dot for as long as the request is open: a room in use is never strobed. */
-const REQUEST_PULSE_WINDOW_MS = 20_000;
+export const REQUEST_PULSE_WINDOW_MS = 20_000;
 
 export type DayBoardState =
   | "scheduled"
@@ -419,6 +420,14 @@ export type NextActionKind = "request" | "slot" | "quiet";
 /** This hallkeeper's next action, one line at the top, always. */
 export interface NextAction {
   readonly kind: NextActionKind;
+  /** Before the words of a request: "URGENT" for an urgent one, "Take now"
+   *  for any other. Null for a slot or a quiet day. */
+  readonly label: string | null;
+  /** What to take or where to look: "Chairs × 10 · Saloon · waiting 3 min". */
+  readonly words: string;
+  /** An urgent request nobody has. */
+  readonly urgent: boolean;
+  /** The label and the words as one line, as the announcer says it. */
   readonly line: string;
   readonly bookingId: string | null;
   readonly requestId: string | null;
@@ -609,7 +618,9 @@ function unownedLine(request: DayBoardSlotRequest, roomName: string | null, nowM
 }
 
 /** This hallkeeper's next action: an urgent request nobody owns first, then
- *  any unowned request, then the slot nearest its next moment, then quiet. */
+ *  any unowned request, then the slot nearest its next moment, then quiet.
+ *  A request carries its label ("URGENT" or "Take now") apart from its
+ *  words, so the board can set the label in capitals of its own. */
 export function deriveNextAction(
   lanes: readonly DayBoardLane[],
   unownedRail: readonly UnownedRequest[],
@@ -618,8 +629,12 @@ export function deriveNextAction(
 ): NextAction {
   const first = unownedRail[0];
   if (first !== undefined) {
-    const verb = first.urgency === "now" ? "Take now" : "Take";
-    return { kind: "request", line: `${verb}: ${first.line}`, bookingId: first.bookingId, requestId: first.id };
+    const urgent = first.urgency === "now";
+    const label = urgent ? "URGENT" : "Take now";
+    return {
+      kind: "request", label, words: first.line, urgent, line: `${label}: ${first.line}`,
+      bookingId: first.bookingId, requestId: first.id,
+    };
   }
   const order: Readonly<Record<DayBoardState, number>> = {
     exception: 0, imminent: 1, "guests-due": 2, "organisers-due": 3, live: 4, "clear-down": 5, scheduled: 6, done: 7,
@@ -632,18 +647,16 @@ export function deriveNextAction(
       return byState !== 0 ? byState : a.slot.setupStartsAtMs - b.slot.setupStartsAtMs;
     });
   const next = ranked[0];
-  if (next === undefined) return { kind: "quiet", line: "Nothing scheduled.", bookingId: null, requestId: null };
+  const quietly = (kind: NextActionKind, words: string, bookingId: string | null): NextAction => ({
+    kind, label: null, words, urgent: false, line: words, bookingId, requestId: null,
+  });
+  if (next === undefined) return quietly("quiet", "Nothing scheduled.", null);
   const { slot, room } = next;
   if (slot.state === "scheduled") {
     const wait = minutesUntil(slot.setupStartsAtMs, nowMs);
-    return {
-      kind: "slot",
-      line: `Next: ${room} · ${slot.title} · setup ${formatWallTime(slot.setupStartsAtMs, timeZone)} (${formatMinutes(wait)})`,
-      bookingId: slot.bookingId,
-      requestId: null,
-    };
+    return quietly("slot", `Next: ${room} · ${slot.title} · setup ${formatWallTime(slot.setupStartsAtMs, timeZone)} (${formatMinutes(wait)})`, slot.bookingId);
   }
-  return { kind: "slot", line: `${room} · ${slot.countdown}`, bookingId: slot.bookingId, requestId: null };
+  return quietly("slot", `${room} · ${slot.countdown}`, slot.bookingId);
 }
 
 export function deriveDayBoard(

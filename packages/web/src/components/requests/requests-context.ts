@@ -79,6 +79,21 @@ export function projectRequest(
   return { state, ownerUserId, mine: ownerUserId !== null && ownerUserId === meId };
 }
 
+/** Whether this person may take a request now ("I’ll do it" on the slot,
+ *  Take it on the Day Board): the ladder allows it from where it stands once
+ *  their waiting steps land, and a handover in flight is for the person it
+ *  was handed to, or an admin. The server decides again. */
+export function mayTakeRequest(
+  request: Pick<VenueRequest, "handoverToUserId">,
+  state: RequestState,
+  meId: string | null,
+  admin: boolean,
+): boolean {
+  if (!nextRequestState(state, "accepted").ok) return false;
+  if (state !== "handed-over") return true;
+  return admin || (request.handoverToUserId !== null && request.handoverToUserId === meId);
+}
+
 const OUTCOME_WORDS: Readonly<Record<RequestOutcome, string>> = {
   done: "Done",
   not_possible: "Could not",

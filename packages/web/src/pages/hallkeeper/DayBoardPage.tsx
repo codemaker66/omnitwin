@@ -1,7 +1,9 @@
 import {
+  Fragment,
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -9,6 +11,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
   type ReactElement,
+  type ReactNode,
   type RefObject,
 } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -23,7 +26,7 @@ import { VenueNotConnected } from "../../components/dashboard/VenueNotConnected.
 import { deskGreeting } from "../../components/dashboard/enquiries/enquiry-desk-format.js";
 import { awaitsVenue } from "../../lib/role-capabilities.js";
 import { clockIsCorrected, correctedNowMs, subscribeClock } from "../../lib/clock-offset.js";
-import { useSlotRequests } from "../../components/requests/requests-context.js";
+import { mayTakeRequest, projectRequest, stepWords, useSlotRequests } from "../../components/requests/requests-context.js";
 import { listensForFloorRequests } from "../../lib/requests-live.js";
 import { useSlotObservations } from "./lib/use-slot-observations.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
@@ -32,28 +35,29 @@ import { PushAlertsToggle } from "../../components/requests/PushAlertsToggle.js"
 import {
   DAY_BOARD_LEGEND,
   DAY_BOARD_RING_LEGEND,
+  REQUEST_PULSE_WINDOW_MS,
   deriveDayBoard,
   type DayBoardLane,
   type NextAction,
   type UnownedRequest,
 } from "./lib/day-board-state.js";
-import { boardWindow, nowPlaque, rulerTicks } from "./lib/day-board-layout.js";
 import {
   boardSummary,
-  planeStages,
+  dayCounts,
   roomDay,
   roomInFocus,
   showingLine,
   type BoardFocus,
+  type DayCount,
   type SummaryPart,
 } from "./lib/day-board-rooms.js";
-import { boardFreshness, useBoardClock, useConnectionState } from "./lib/use-board-clock.js";
+import { boardFreshness, useBoardClock, useBreathPhase, useConnectionState } from "./lib/use-board-clock.js";
 import { useVenueClock } from "./lib/use-venue-timezone.js";
 import { deviceZone, zoneNote } from "../../components/hallkeeper/sheet-facts.js";
 import { boardDayAnchorMs, boardDayRange, useDayBoundaryHour } from "./lib/board-day.js";
 import { useWakeLock } from "./lib/use-wake-lock.js";
 import { driftOffset } from "./lib/burn-in-drift.js";
-import { RoomRow, Scale, StateIcon } from "./DayBoardRooms.js";
+import { RoomCard, StateIcon, roomAnchor } from "./DayBoardRooms.js";
 import { SlotDetail } from "./DayBoardSlotDetail.js";
 import {
   DayBoardSlotRequestsContext,
@@ -80,31 +84,33 @@ interface DriftStyle extends CSSProperties {
 
 // ---------------------------------------------------------------------------
 // The Day Board (goal 19 S3; D1, D3, D9, D10, D11) — the hallkeeper's live
-// view of today, in the desks' register (Blake's concept C, 10 November
-// 2026). A pure projection of GET /calendar and the venue's open requests
+// view of today, the sentence first (direction A, chosen 22 November 2026,
+// T-753). A pure projection of GET /calendar and the venue's open requests
 // through deriveDayBoard, on one corrected clock; live updates arrive over
 // /ws/diary (any committed change refetches: the snapshot doctrine, never
 // trusted deltas).
 //
-// The composition, from the desks: the ivory sheet on the sage ground with
-// the day's greeting, its title and one sentence of what matters; this
-// hallkeeper's next action, always; the copper plane of the day's counts,
-// each a filter on the rooms; then the rooms, one row each with its
-// photograph, its day in words and a bar of the whole day with the present
-// marked. The forest panel beside the sheet holds the requests nobody has,
-// or the slot a tap opened. Narrower screens put the requests above the
-// rooms and unfold an opened slot under its own room. The wall
-// (`?register=wall`) frames the rooms on forest, shows room, title, state,
-// time and next action only, and opens nothing (D11).
+// The composition, in the desks' register: on the ivory sheet an overline
+// with the day and the venue's time, the day controls and how fresh the day
+// is beside it; the day's sentence as the headline; this hallkeeper's next
+// action with Take it when it is a request they may take; one quiet line of
+// counts, each a filter on the rooms; then a card per room, in the venue's
+// order, two to a row, each with the room pictured empty, what it is doing
+// now, the function, why it is at risk, what comes then, and All of today
+// for every other slot. The forest panel beside the sheet holds the requests
+// nobody has, or the slot a tap opened. Narrower screens put the requests
+// above the rooms and unfold an opened slot under its own room. The wall
+// (`?register=wall`) frames the cards on forest, says the counts and the
+// next action in words, and opens nothing (D11).
 //
 // Motion is the attention system (D3): a breath on the dot as the room's
-// moment approaches, the live breath as the room's heartbeat and the proof
-// the display is alive, a copper halo that breathes round a request's ring
-// until somebody owns it. All of it is CSS on opacity and transform. Each
-// breath samples its own epoch phase the moment it begins (useBreathPhase),
-// so every screen breathes on the venue's minute grid, and every breath
-// stops the instant the connection drops. State ticks are boundary-exact
-// (useBoardClock); nothing polls.
+// moment approaches, live's ink ring breathing as the room's heartbeat and
+// the proof the display is alive, and a copper halo round the next action
+// while it is a request nobody owns. All of it is CSS on opacity and
+// transform. Each breath samples its own epoch phase the moment it begins
+// (useBreathPhase), so every screen breathes on the venue's minute grid, and
+// every breath stops the instant the connection drops. State ticks are
+// boundary-exact (useBoardClock); nothing polls.
 // ---------------------------------------------------------------------------
 
 /** Focus a keyboard gave, not the focus a tap or click gives on the way to
@@ -128,7 +134,7 @@ const PHONE_QUERY = "(max-width: 760px)";
 /** Wide enough for the sheet and the forest panel side by side, as the
  *  Enquiries desk decides it. */
 const DESK_QUERY = "(min-width: 1180px)";
-/** How many requests the narrow screens list before "Show all". */
+/** How many requests the panel lists before "Show all". */
 const RAIL_PREVIEW = 4;
 
 /** A calendar day on either side of `date` (YYYY-MM-DD), as the same form. */
@@ -164,10 +170,10 @@ const NEVER_CORRECTED = (): boolean => false;
 const BOOKING_ID = /^[0-9a-f-]+$/iu;
 
 /**
- * A slot that moves between its room's lines (the next function becoming
- * what the room is doing) is drawn afresh in its new place, and a keyboard's
- * place on it would fall to the page. It is put back. A move the person made
- * fires focusout and lets the place go; a slot redrawn fires none.
+ * A slot that moves on its room's card (the next function becoming what the
+ * room is doing) is drawn afresh in its new place, and a keyboard's place on
+ * it would fall to the page. It is put back. A move the person made fires
+ * focusout and lets the place go; a slot redrawn fires none.
  */
 function useKeptSlabFocus(boardRef: RefObject<HTMLDivElement | null>): void {
   const kept = useRef<string | null>(null);
@@ -200,7 +206,7 @@ function useClockCorrected(): boolean {
   return useSyncExternalStore(subscribeClock, clockIsCorrected, NEVER_CORRECTED);
 }
 
-/** A request's line on the rail; an urgent one says so in words, not only
+/** A request's line on the panel; an urgent one says so in words, not only
  *  in its colour. */
 function railWords(item: UnownedRequest): ReactElement {
   return (
@@ -211,27 +217,31 @@ function railWords(item: UnownedRequest): ReactElement {
   );
 }
 
-/** The requests nobody has: urgent first, oldest first within that. Today's,
- *  whichever day is on screen. A narrow screen lists the first few. The wall
- *  shows none of it (concept C): its plane says how many wait, its next
- *  action names the first, and each room's ring breathes until somebody
- *  owns it. */
-function Rail({ unowned, today, onOpen, preview }: {
+/** The requests nobody has, today's whichever day is on screen: urgent
+ *  first, then the longest wait, as the note under the heading says. The one
+ *  the next action already names is not listed again. The first few show,
+ *  then the rest on a press. The wall shows none of it: its band names the
+ *  first. */
+function Rail({ unowned, excludeId, today, onOpen }: {
   readonly unowned: readonly UnownedRequest[];
+  /** The request the next action names, or null. */
+  readonly excludeId: string | null;
   readonly today: boolean;
   readonly onOpen: (bookingId: string | null) => void;
-  readonly preview: boolean;
 }): ReactElement {
   const [all, setAll] = useState(false);
-  const shown = preview && !all ? unowned.slice(0, RAIL_PREVIEW) : unowned;
+  const listed = excludeId === null ? unowned : unowned.filter((item) => item.id !== excludeId);
+  const shown = all ? listed : listed.slice(0, RAIL_PREVIEW);
   const urgent = unowned.filter((item) => item.urgency === "now").length;
+  const urgentListed = listed.some((item) => item.urgency === "now");
   return (
-    <aside className="dayboard-rail" aria-label="Unowned requests" data-count={unowned.length}>
-      <p className="dayboard-rail-eyebrow">Requests nobody has</p>
-      <h2 className="dayboard-rail-title">
-        {unowned.length === 0 ? "Nobody is waiting." : `${String(unowned.length)} waiting`}
+    <aside className="dayboard-rail" aria-label="Unclaimed requests" data-count={unowned.length}>
+      <h2 className="dayboard-rail-title">Unclaimed requests</h2>
+      <p className="dayboard-rail-count">
+        <span>{unowned.length === 0 ? "Nobody is waiting." : `${String(unowned.length)} waiting`}</span>
         {urgent > 0 && <span className="dayboard-rail-urgent">{urgent === 1 ? "1 urgent" : `${String(urgent)} urgent`}</span>}
-      </h2>
+      </p>
+      {listed.length > 0 && <p className="dayboard-rail-note">{urgentListed ? "urgent first, then the longest wait" : "longest wait first"}</p>}
       {!today && <p className="dayboard-rail-note">Today’s requests.</p>}
       {shown.length > 0 && (
         <ul className="dayboard-rail-list">
@@ -251,22 +261,42 @@ function Rail({ unowned, today, onOpen, preview }: {
           ))}
         </ul>
       )}
-      {preview && unowned.length > RAIL_PREVIEW && (
+      {listed.length > RAIL_PREVIEW && (
         <button type="button" className="dayboard-rail-more" aria-expanded={all} onClick={() => { setAll((open) => !open); }}>
-          {all ? "Show fewer" : `Show all ${String(unowned.length)}`}
+          {all ? "Show fewer" : `Show all ${String(listed.length)}`}
         </button>
       )}
     </aside>
   );
 }
 
-/** This hallkeeper's next action, one line at the top, always (D7). The
- *  visible line is not a live region, because its minutes tick; a hidden
- *  region says each NEW action once, assertively only when it is urgent.
- *  On the wall it is words only: nothing opens there. */
-function NextActionLine({ action, urgent, onOpen, wall }: {
+/** What Take it can do for the request the next action names. */
+interface TakeOffer {
+  /** This person may take it now: the ladder allows it, and a handover in
+   *  flight is theirs. The server decides again. */
+  readonly can: boolean;
+  /** The lane is moving it. */
+  readonly busy: boolean;
+  /** This person's press waits in the offline queue. */
+  readonly waiting: boolean;
+  /** Why the last press on it could not be done, or null. */
+  readonly failed: string | null;
+  readonly take: () => void;
+}
+
+/** This hallkeeper's next action, one line at the top, always (D7): a
+ *  label ("URGENT" for an urgent request, "Take now" for any other), the
+ *  words, and Take it when this person may take the request; otherwise the
+ *  words open the slot. The visible line is not a live region, because its
+ *  minutes tick; a hidden region says each NEW action once, assertively only
+ *  when it is urgent. A request nobody has keeps the attention system's
+ *  halo on the line's mark. On the wall it is words only: nothing opens
+ *  there. */
+function NextActionLine({ action, offer, arrived, frozen, onOpen, wall }: {
   readonly action: NextAction;
-  readonly urgent: boolean;
+  readonly offer: TakeOffer | null;
+  readonly arrived: boolean;
+  readonly frozen: boolean;
   readonly onOpen: (bookingId: string | null) => void;
   readonly wall: boolean;
 }): ReactElement {
@@ -275,28 +305,167 @@ function NextActionLine({ action, urgent, onOpen, wall }: {
   lineRef.current = action.line;
   const [spoken, setSpoken] = useState("");
   useEffect(() => { setSpoken(lineRef.current); }, [identity]);
+  const wordsId = useId();
+  const level = action.kind !== "request" ? "none" : action.urgent ? "urgent" : "attention";
+  // The halo's breath samples its phase the moment it begins (D3 law 1).
+  const phase = useBreathPhase(`${level}|${frozen ? "frozen" : "live"}`);
+  const takes = !wall && offer !== null && offer.can && !offer.busy;
+  const busy = !wall && offer !== null && offer.busy;
+  const opens = !wall && action.bookingId !== null && !takes && !busy;
   return (
     <>
-      <p className={`dayboard-next dayboard-next-${action.kind}`} data-urgent={urgent ? "true" : "false"}>
-        {action.kind === "request" ? <Bell size={18} aria-hidden="true" /> : <Clock size={18} aria-hidden="true" />}
-        {action.bookingId === null || wall
-          ? <span className="dayboard-next-line">{action.line}</span>
-          : <button type="button" className="dayboard-next-line" onClick={() => { onOpen(action.bookingId); }}>{action.line}</button>}
-      </p>
-      <span className="dayboard-announcer" role="status" aria-live={urgent ? "assertive" : "polite"}>{spoken}</span>
+      <div className={`dayboard-next dayboard-next-${action.kind}`} data-urgent={action.urgent ? "true" : "false"}>
+        {/* Keyed to the request, so a new one remounts the mark and its one
+            arrival stamp plays once. */}
+        <span
+          key={action.requestId ?? "steady"}
+          className="dayboard-next-mark"
+          data-level={level}
+          data-arrived={arrived ? "true" : "false"}
+          style={{ "--lt-epoch-phase-ms": String(phase) } as CSSProperties}
+        >
+          {action.kind === "request" ? <Bell size={18} aria-hidden="true" /> : <Clock size={18} aria-hidden="true" />}
+        </span>
+        {action.label !== null && <strong className="dayboard-next-label">{action.label}</strong>}
+        {opens
+          ? <button type="button" className="dayboard-next-line" onClick={() => { onOpen(action.bookingId); }}>{action.words}</button>
+          : <span className="dayboard-next-line" id={wordsId}>{action.words}</span>}
+        {takes && (
+          <button type="button" className="dayboard-take" aria-describedby={wordsId} onClick={offer.take}>Take it</button>
+        )}
+        {busy && <ActivityStatus className="dayboard-next-working">Taking it…</ActivityStatus>}
+        {!wall && offer !== null && offer.waiting && !offer.busy && (
+          <span className="dayboard-next-waiting">{`Waiting to send: ${stepWords({ to: "accepted" })}`}</span>
+        )}
+        {!wall && offer !== null && offer.failed !== null && !offer.busy && (
+          <p className="dayboard-next-error" role="alert">{offer.failed}</p>
+        )}
+      </div>
+      <span className="dayboard-announcer" role="status" aria-live={action.urgent ? "assertive" : "polite"}>{spoken}</span>
     </>
   );
 }
 
-/** The sentence under the title, its counts in strong type. */
-function Summary({ parts }: { readonly parts: readonly SummaryPart[] }): ReactElement {
+/** The day's sentence, the headline: its counts in strong type. On a phone
+ *  each room it names takes the reader to that room's card. */
+function Summary({ parts, linkRooms }: { readonly parts: readonly SummaryPart[]; readonly linkRooms: boolean }): ReactElement {
+  const named = (text: string, roomId: string | undefined, key: number): ReactNode => {
+    if (!linkRooms || roomId === undefined) return text;
+    const anchor = roomAnchor(roomId);
+    return (
+      <a
+        key={key}
+        className="dayboard-summary-room"
+        href={`#${anchor}`}
+        onClick={(event) => {
+          event.preventDefault();
+          const card = document.getElementById(anchor);
+          card?.scrollIntoView({ block: "start" });
+          // The reader goes where the link points: the keyboard and a screen
+          // reader land on the room's card, not only the eye.
+          card?.querySelector<HTMLElement>(".dayboard-room")?.focus({ preventScroll: true });
+        }}
+      >
+        {text}
+      </a>
+    );
+  };
   return (
     <p className="dayboard-summary">
       {/* A fixed sentence built afresh each render: its order is its identity. */}
-      {parts.map((part, index) => (typeof part === "string"
-        ? part
-        : <strong key={index} data-tone={part.tone}>{part.strong}</strong>))}
+      {parts.map((part, index) => {
+        if (typeof part === "string") return part;
+        if ("room" in part) return named(part.room, part.roomId, index);
+        return <strong key={index} data-tone={part.tone}>{named(part.strong, part.roomId, index)}</strong>;
+      })}
     </p>
+  );
+}
+
+/** The day in one quiet line of counts: "2 at risk · 3 live · 1 setting up ·
+ *  7 still to come". A count shows when there is something to count, or
+ *  while it narrows the rooms, so it can be let go. On paper each count is a
+ *  filter on the rooms; on the wall nothing is pressed. */
+function Counts({ stages, focus, wall, onChoose }: {
+  readonly stages: readonly DayCount[];
+  readonly focus: BoardFocus;
+  readonly wall: boolean;
+  readonly onChoose: (focus: BoardFocus) => void;
+}): ReactElement | null {
+  const shown = stages.filter((stage) => stage.count > 0 || (!wall && focus === stage.focus));
+  if (shown.length === 0) return null;
+  return (
+    <div className="dayboard-counts" role="group" aria-label="The day in numbers">
+      {shown.map((stage, index) => {
+        const number = String(stage.count);
+        const face = (
+          <>
+            <i className="dayboard-count-dot" data-focus={stage.focus} aria-hidden="true" />
+            <b>{number}</b>{stage.words.slice(number.length)}
+          </>
+        );
+        return (
+          <Fragment key={stage.focus}>
+            {index > 0 && <span className="dayboard-count-sep" aria-hidden="true">·</span>}
+            {wall
+              ? <span className="dayboard-count" data-focus={stage.focus}>{face}</span>
+              : (
+                <button
+                  type="button"
+                  className="dayboard-count"
+                  data-focus={stage.focus}
+                  data-alert={stage.focus === "risk" && stage.count > 0 ? "true" : undefined}
+                  aria-pressed={focus === stage.focus}
+                  onClick={() => { onChoose(stage.focus); }}
+                >
+                  {face}
+                </button>
+              )}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+/** What the colours mean, built from the states the board draws, in the
+ *  words a slot uses; then the second channel, the request and the band. At
+ *  the foot of the office board, folded until asked for; along the wall's
+ *  foot, always shown, since nothing opens there. */
+function Legend({ wall }: { readonly wall: boolean }): ReactElement {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const footer = (
+    <footer className="dayboard-legend" id={id} aria-label="What the colours mean" hidden={!wall && !open}>
+      {DAY_BOARD_LEGEND.map((entry) => (
+        <span key={entry.tone} className={`dayboard-chip dayboard-chip-${entry.tone}`}>
+          <span className="dayboard-chip-dot" aria-hidden="true" />
+          <StateIcon icon={entry.icon} size={12} />
+          {entry.label}
+        </span>
+      ))}
+      {DAY_BOARD_RING_LEGEND.map((entry) => (
+        <span key={entry.key} className={`dayboard-chip dayboard-chip-ring dayboard-chip-ring-${entry.key}`}>
+          <StateIcon icon={entry.icon} size={12} />
+          {entry.label}
+        </span>
+      ))}
+    </footer>
+  );
+  if (wall) return footer;
+  return (
+    <div className="dayboard-legend-fold">
+      <button
+        type="button"
+        className="dayboard-legend-toggle"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => { setOpen((shown) => !shown); }}
+      >
+        What the colours mean
+      </button>
+      {footer}
+    </div>
   );
 }
 
@@ -346,9 +515,9 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // became the wall: it has no day controls to come back with.
   const selectedDate = wall ? null : chosenDate;
   const browsingToday = selectedDate === null;
-  // A count on the plane and a room from the list are two ways to narrow the
-  // rooms; choosing one lets the other go, so the list never comes up empty
-  // for a reason the screen does not show.
+  // A count and a room from the list are two ways to narrow the rooms;
+  // choosing one lets the other go, so the list never comes up empty for a
+  // reason the screen does not show.
   const chooseRoom = useCallback((id: string): void => { setRoomIdState(id); setFocusState("all"); }, []);
   const chooseFocus = useCallback((next: BoardFocus): void => {
     setFocusState((current) => (current === next ? "all" : next));
@@ -360,7 +529,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // 02:00 is still today's, and an always-on wall tablet rolls once, then.
   const selectedMs = selectedDate === null ? boardDayAnchorMs(nowMs, dayBoundaryHour, timeZone) : wallInputToMs(`${selectedDate}T12:00`, timeZone) ?? nowMs;
   // The day runs to the next boundary hour, so the hours after midnight are
-  // drawn and a late bar is on the board it belongs to.
+  // read and a late function is on the board it belongs to.
   const range = useMemo(() => boardDayRange(selectedMs, dayBoundaryHour, timeZone), [selectedMs, dayBoundaryHour, timeZone]);
   // The days either side are read once this one is on screen, but only once
   // someone shows they may step (a mouse over or keyboard focus on the day
@@ -413,9 +582,6 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   useEffect(() => { setBoundaryMs(nextBoundaryMs); }, [nextBoundaryMs]);
 
   const lanes = board?.lanes ?? NO_LANES;
-  const view = useMemo(() => boardWindow(range, lanes, nowMs, timeZone), [range, lanes, nowMs, timeZone]);
-  const ticks = useMemo(() => rulerTicks(view, timeZone, phone ? 4 : 2), [view, timeZone, phone]);
-  const plaque = nowPlaque(nowMs, view);
 
   // Live, offline or stale (D10); and every breath stops the instant the
   // socket drops after it has been up (D3 law 6), a minute before the band.
@@ -477,7 +643,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     if (wall) return;
     setSelectedId((current) => (bookingId === null ? current : bookingId === current ? null : bookingId));
   }, [wall]);
-  // A request on the rail belongs to today: reach it from whichever day is
+  // A request on the panel belongs to today: reach it from whichever day is
   // on screen.
   const openRequest = useCallback((bookingId: string | null): void => {
     if (wall || bookingId === null) return;
@@ -496,11 +662,11 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // wall does not rely on that.)
   const shownRoomId = wall ? "" : roomId;
   const shownFocus: BoardFocus = wall ? "all" : focus;
-  // A room with nothing on is one name in a line, not a row to scroll past;
-  // a room chosen from the list keeps its row either way, and a count on
-  // the plane shows only the rooms it names. The room of an open slot stays
-  // whatever the filter says, so the slot never closes under a hand that is
-  // using it (a Done that takes a function out of "Live").
+  // A room with nothing on is one name in a line, not a card to scroll past;
+  // a room chosen from the list keeps its card either way, and a count shows
+  // only the rooms it names. The room of an open slot stays whatever the
+  // filter says, so the slot never closes under a hand that is using it (a
+  // Done that takes a function out of "live").
   const focusDays = days.filter((day) => (shownRoomId === ""
     ? day.slots.length > 0 && roomInFocus(day, shownFocus)
     : day.room.id === shownRoomId));
@@ -508,9 +674,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const freeRooms = shownRoomId === "" && shownFocus === "all" && busyLanes > 0 ? lanes.filter((lane) => lane.slots.length === 0).map((lane) => lane.room.name) : [];
   const readAt = readAtCorrectedMs === null ? null : formatWallTime(readAtCorrectedMs, timeZone);
   const others = live.presence.filter((person) => person.userId !== user?.id).map((person) => person.name);
-  // Today the plane counts every request nobody has, as the list and the
-  // sentence do; another day, those on its own bookings.
-  const stages = useMemo(() => planeStages(lanes, browsingToday ? board?.unowned.length : undefined), [lanes, browsingToday, board]);
+  const stages = useMemo(() => dayCounts(lanes), [lanes]);
   const summary = useMemo(
     () => (board === null ? null : boardSummary({ lanes: board.lanes, unowned: board.unowned, today: browsingToday, nowMs })),
     [board, browsingToday, nowMs],
@@ -527,11 +691,34 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   }
 
   const nextAction = board !== null && browsingToday && board.nextAction.kind !== "quiet" ? board.nextAction : null;
-  const nextIsUrgent = nextAction?.kind === "request" && board?.unowned[0]?.urgency === "now";
-  // The shown day by name, and the greeting by the clock: "Saturday 14
-  // November · Good afternoon, Elaine".
+  // The request the next action names, from the lane's own snapshot: Take it
+  // moves it there, as "I’ll do it" does on the slot.
+  const nextRequest = nextAction?.kind === "request"
+    ? requestsApi.requests.find((request) => request.id === nextAction.requestId) ?? null
+    : null;
+  const meId = user?.id ?? null;
+  let offer: TakeOffer | null = null;
+  if (nextRequest !== null) {
+    const steps = requestsApi.waitingSteps(nextRequest.id);
+    const projected = projectRequest(nextRequest, steps, meId);
+    const failure = requestsApi.failure;
+    offer = {
+      can: mayTakeRequest(nextRequest, projected.state, meId, user?.platformRole === "admin"),
+      busy: requestsApi.busyId === nextRequest.id,
+      waiting: steps.some((step) => step.authorUserId === meId),
+      failed: failure?.on === "request" && failure.requestId === nextRequest.id ? failure.message : null,
+      take: () => { requestsApi.move(nextRequest, { to: "accepted" }); },
+    };
+  }
+  const nextCreatedAtMs = nextAction?.kind === "request"
+    ? board?.unowned.find((request) => request.id === nextAction.requestId)?.createdAtMs ?? null
+    : null;
+  const nextArrived = nextCreatedAtMs !== null && nowMs - nextCreatedAtMs >= 0 && nowMs - nextCreatedAtMs < REQUEST_PULSE_WINDOW_MS;
+  const nextLine = nextAction === null ? null : (
+    <NextActionLine action={nextAction} offer={offer} arrived={nextArrived} frozen={frozen} onOpen={openSlot} wall={wall} />
+  );
+  // The shown day by name: "Saturday 14 November", the overline's capitals the stylesheet's.
   const dayName = deskGreeting(selectedMs, null, timeZone).date;
-  const greeting = deskGreeting(nowMs, user?.name ?? null, timeZone).greeting;
   const detail = selected === null ? null : (
     <div ref={detailRef} className="dayboard-detail-frame">
       <SlotDetail
@@ -548,7 +735,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     </div>
   );
   const rail = board === null ? null : (
-    <Rail unowned={board.unowned} today={browsingToday} onOpen={openRequest} preview={!beside} />
+    <Rail unowned={board.unowned} excludeId={nextAction?.requestId ?? null} today={browsingToday} onOpen={openRequest} />
   );
 
   // Honest about how fresh the day is: the socket reconnects by itself, and
@@ -580,38 +767,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     </div>
   );
 
-  // The day in counts on the copper plane. On paper each count is a filter
-  // on the rooms; on the wall nothing is pressed.
-  const plane = board === null || busyLanes === 0 ? null : (
-    <div className="dayboard-plane ws-plane" role="group" aria-label="The day in numbers">
-      {stages.map((stage) => {
-        // Said as the desks say their stages: "At risk, 2"; with what the
-        // count covers that its filter cannot show, when there is any.
-        const spoken = `${stage.label}, ${String(stage.count)}${stage.note === null ? "" : `, ${stage.note}`}`;
-        const face = (
-          <>
-            <b data-focus={stage.focus} data-alert={stage.focus === "risk" && stage.count > 0 ? "true" : undefined} aria-hidden="true">{String(stage.count)}</b>
-            <span aria-hidden="true"><i className="dayboard-stage-dot" data-focus={stage.focus} />{stage.label}</span>
-            {stage.note !== null && <small className="dayboard-stage-note" aria-hidden="true">{stage.note}</small>}
-          </>
-        );
-        return wall
-          ? <span key={stage.focus} className="dayboard-stage" data-focus={stage.focus} role="group" aria-label={spoken}>{face}</span>
-          : (
-            <button
-              key={stage.focus}
-              type="button"
-              className="dayboard-stage"
-              data-focus={stage.focus}
-              aria-label={spoken}
-              aria-pressed={stage.focus === "all" ? focus === "all" && roomId === "" : focus === stage.focus}
-              onClick={() => { chooseFocus(stage.focus); }}
-            >
-              {face}
-            </button>
-          );
-      })}
-    </div>
+  const counts = board === null || busyLanes === 0 ? null : (
+    <Counts stages={stages} focus={focus} wall={wall} onChoose={chooseFocus} />
   );
 
   const notices = (
@@ -645,42 +802,22 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const rooms = board === null || shownDays.length === 0 ? null : (
     <ol className="dayboard-rooms" data-count={shownDays.length > 6 ? "many" : "few"}>
       {shownDays.map((day) => (
-        <RoomRow
+        <RoomCard
           key={day.room.id}
           day={day}
-          view={view}
-          plaque={plaque}
           nowMs={nowMs}
+          timeZone={timeZone}
           venueSlug={venue.slug}
+          today={browsingToday}
           selectedId={wall ? null : selectedId}
           onOpen={openSlot}
           wall={wall}
           frozen={frozen}
         >
           {!beside && selected !== null && selected.room.id === day.room.id ? detail : null}
-        </RoomRow>
+        </RoomCard>
       ))}
     </ol>
-  );
-
-  // Built from the states the board draws, in the words a slot uses; then
-  // the ring and the band, the second channel.
-  const legend = (
-    <footer className="dayboard-legend" aria-label="What the colours mean">
-      {DAY_BOARD_LEGEND.map((entry) => (
-        <span key={entry.tone} className={`dayboard-chip dayboard-chip-${entry.tone}`}>
-          <span className="dayboard-chip-dot" aria-hidden="true" />
-          <StateIcon icon={entry.icon} size={12} />
-          {entry.label}
-        </span>
-      ))}
-      {DAY_BOARD_RING_LEGEND.map((entry) => (
-        <span key={entry.key} className={`dayboard-chip dayboard-chip-ring dayboard-chip-ring-${entry.key}`}>
-          <StateIcon icon={entry.icon} size={12} />
-          {entry.label}
-        </span>
-      ))}
-    </footer>
   );
 
   const freeLine = freeRooms.length > 0 ? (
@@ -688,6 +825,20 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
       <span>{selectedDate === null ? "Also free today:" : "Also free this day:"}</span> {freeRooms.join(", ")}.
     </p>
   ) : null;
+
+  // The day and, today, the venue's time: "SATURDAY 14 NOVEMBER · 14:20".
+  const overline = (
+    <p className="dayboard-overline">
+      <span className="dayboard-subtitle">{dayName}</span>
+      {browsingToday && (
+        <>
+          <span aria-hidden="true"> · </span>
+          <span className="dayboard-overline-time">{formatWallTime(nowMs, timeZone)}</span>
+        </>
+      )}
+      {zone !== null && <span className="dayboard-zone"> · {zone}</span>}
+    </p>
+  );
 
   if (wall) {
     // The wall is the whole screen: the shell draws no header, nav or account
@@ -706,9 +857,10 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           >
             {staleBand}
             <header className="dayboard-wall-head">
-              <div>
-                <p className="dayboard-greeting"><span className="dayboard-subtitle">{dayName}{zone === null ? "" : ` · ${zone}`}</span></p>
-                <h1 className="dayboard-title">The Day Board</h1>
+              <div className="dayboard-wall-lead">
+                {overline}
+                <h1 className="dayboard-title dayboard-sr">The Day Board</h1>
+                {summary !== null && <Summary parts={summary} linkRooms={false} />}
               </div>
               <div className="dayboard-wall-clock">
                 <b>{formatWallTime(nowMs, timeZone)}</b>
@@ -720,14 +872,16 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
                 </div>
               </div>
             </header>
-            <div className="dayboard-wall-plane">
-              {plane}
-              {nextAction !== null && <NextActionLine action={nextAction} urgent={nextIsUrgent} onOpen={openSlot} wall />}
-            </div>
+            {(counts !== null || nextLine !== null) && (
+              <div className="dayboard-wall-band">
+                {counts}
+                {nextLine}
+              </div>
+            )}
             {notices}
             {rooms}
             {freeLine}
-            {legend}
+            <Legend wall />
           </div>
         </div>
       </DashboardLayout>
@@ -746,54 +900,46 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
       <div className={`dayboard-desk${beside ? "" : " is-single"}`} data-register="ivory">
         <section className="dayboard-sheet" aria-labelledby="dayboard-title">
           <header className="dayboard-head">
-            <div className="dayboard-headline">
-              <p className="dayboard-greeting">
-                <span className="dayboard-subtitle">{dayName}{zone === null ? "" : ` · ${zone}`}</span>
-                <span aria-hidden="true">·</span>
-                <span>{greeting}</span>
-              </p>
-              {statusLine}
-            </div>
-            <div className="dayboard-titleline">
-              <h1 className="dayboard-title" id="dayboard-title">The Day Board</h1>
-              <div
-                className="dayboard-days"
-                onPointerEnter={(event) => { if (event.pointerType !== "touch") wishToStep(); }}
-                onFocus={(event) => { if (keyboardFocus(event.target)) wishToStep(); }}
-              >
-                <button type="button" aria-label="Previous day" onClick={() => { moveDay(-1); }}><ArrowLeft size={17} aria-hidden="true" /></button>
-                <button type="button" aria-pressed={selectedDate === null} onClick={() => { setSelectedDate(null); }}>Today</button>
-                <button type="button" aria-label="Next day" onClick={() => { moveDay(1); }}><ArrowRight size={17} aria-hidden="true" /></button>
-                <label className="dayboard-day-field">
-                  <span className="dayboard-sr">Day</span>
-                  <input type="date" value={shownDate} onChange={(event) => { if (event.target.value !== "") setSelectedDate(event.target.value === today ? null : event.target.value); }} />
-                </label>
+            <div className="dayboard-overline-row">
+              {overline}
+              <div className="dayboard-head-tools">
+                <div
+                  className="dayboard-days"
+                  onPointerEnter={(event) => { if (event.pointerType !== "touch") wishToStep(); }}
+                  onFocus={(event) => { if (keyboardFocus(event.target)) wishToStep(); }}
+                >
+                  <button type="button" aria-label="Previous day" onClick={() => { moveDay(-1); }}><ArrowLeft size={16} aria-hidden="true" /></button>
+                  <button type="button" aria-pressed={selectedDate === null} onClick={() => { setSelectedDate(null); }}>Today</button>
+                  <button type="button" aria-label="Next day" onClick={() => { moveDay(1); }}><ArrowRight size={16} aria-hidden="true" /></button>
+                  <label className="dayboard-day-field">
+                    <span className="dayboard-sr">Day</span>
+                    <input type="date" value={shownDate} onChange={(event) => { if (event.target.value !== "") setSelectedDate(event.target.value === today ? null : event.target.value); }} />
+                  </label>
+                </div>
+                {statusLine}
               </div>
             </div>
-            {summary !== null && <Summary parts={summary} />}
+            <h1 className="dayboard-title dayboard-sr" id="dayboard-title">The Day Board</h1>
+            {summary !== null && <Summary parts={summary} linkRooms={phone} />}
           </header>
 
-          {nextAction !== null && <NextActionLine action={nextAction} urgent={nextIsUrgent} onOpen={openSlot} wall={false} />}
+          {nextLine}
 
           {/* Shown only on paper (S8 item 13): the printed day names itself. */}
           <p className="dayboard-print-note">{BOARD_PRINT_COPY.note} {formatWallDay(selectedMs, timeZone)}{readAt === null ? "" : ` ${BOARD_PRINT_COPY.readAt(readAt)}`}</p>
 
-          {plane}
+          {counts}
           {!beside && rail}
 
           {notices}
 
-          {/* The rooms, what they show and the hours across them; a room
-              can be chosen on its own from the list beside. */}
-          <div className="dayboard-rooms-head">
-            <div className="dayboard-rooms-line">
-              {board !== null && busyLanes > 0 && (
-                <p className="dayboard-showing" aria-live="polite">{roomId === "" ? showingLine(focusDays.map((day) => day.room.name), focus) : "One room, chosen from the list"}</p>
-              )}
+          {/* The rooms, and which of them the counts or the list beside show. */}
+          {board !== null && busyLanes > 0 && (
+            <div className="dayboard-rooms-head">
+              <p className="dayboard-showing" aria-live="polite">{roomId === "" ? showingLine(focusDays.map((day) => day.room.name), focus) : "One room, chosen from the list"}</p>
               <label className="dayboard-room-field">Room<select value={roomId} onChange={(event) => { chooseRoom(event.target.value); }}><option value="">All rooms</option>{lanes.map((lane) => <option key={lane.room.id} value={lane.room.id}>{lane.room.name}</option>)}</select></label>
             </div>
-            {board !== null && shownDays.length > 0 && <Scale ticks={ticks} plaque={plaque} nowMs={nowMs} timeZone={timeZone} />}
-          </div>
+          )}
           {rooms}
           {freeLine}
 
@@ -809,7 +955,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
             {venueId !== null && <ShiftHandover venueId={venueId} meId={user?.id ?? null} />}
             {venueId !== null && <PushAlertsToggle venueId={venueId} deviceKind={device} />}
           </div>
-          {legend}
+          <Legend wall={false} />
         </section>
 
         {beside && (
