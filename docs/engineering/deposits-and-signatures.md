@@ -4,7 +4,8 @@ What happens after a client accepts a proposal: the venue asks for a deposit, wh
 **test mode only**, and prepares a contract, which the client signs with a simple electronic signature
 (Electronic Communications Act 2000 s.7). Built 27 October 2026 in PRs #269 (schema, gateway, webhook), #273
 (deposit flow), #283 (contract signature) and #284 (acceptance tests), then corrected after an independent
-adversarial review the same day.
+adversarial review the same day. Merged on 29 October through #284 (`6dc3c002`), the migration renumbered 0104
+at the merge slot, and in production since. Deposits stay off there until the Stripe variables are set (below).
 
 ## Where it lives
 
@@ -77,6 +78,11 @@ set. CI creates it in the Test job.
 
 ## Open
 
+- Turning deposits on in production. Blake sets, on Railway only, `STRIPE_SECRET_KEY` (the test key, `sk_test_…`),
+  `STRIPE_WEBHOOK_SECRET` (the `whsec_…` of a test-mode endpoint at `https://api.venviewer.com/webhooks/stripe`, with
+  the events listed in #269) and `STRIPE_DEPOSIT_VENUE_SLUG=trades-hall-glasgow`. Until then the webhook answers its
+  own 404 (checked 27 November) and the desk says deposits are off. The first real test-mode payment and signature on
+  a Trades Hall proposal follow.
 - Retention. The privacy page keeps signed contracts and deposit records for six years after the end of the financial
   year of the event. Nothing deletes them yet, and the immutability trigger means a deletion is a deliberate,
   logged administrative step (disable the trigger inside a transaction). Follow-up with the retention passes.
