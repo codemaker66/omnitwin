@@ -23,6 +23,9 @@ import { EscalationScheduler } from "../services/escalation-scheduler.js";
 
 const GUEST = "Jane Guest";
 const GUEST_EMAIL = "jane.guest@example.com";
+/** Two requests one wake fails on: one at its claim, one at its email. */
+const CLAIM_FAILED = "0b0c2a5e-0000-4000-8000-00000000c1a1";
+const EMAIL_FAILED = "0b0c2a5e-0000-4000-8000-00000000e3a1";
 const FAILED_QUERY = `Failed query: insert into "notifications" ("title", "body") values ($1, $2)\nparams: Still waiting: 2 chairs,${GUEST} asked for this and nobody has picked it up yet.`;
 /** PostgreSQL's own message for a value typed into the wrong field quotes the
  *  value (PostgreSQL 16.6, probed 27 Nov 2026); the scrubber keeps the enum's
@@ -154,10 +157,12 @@ describe("a failed escalation pass reaches Sentry (the real SDK)", () => {
       },
       run: () => Promise.resolve({
         escalated: [],
-        failures: [
-          new Error(`invalid input syntax for type uuid: "${GUEST_EMAIL}"`),
-          new Error(`Failed query: update "requests" set "escalation_emailed_at" = $1 where "id" = $2\nparams: ${GUEST},${GUEST_EMAIL}`),
+        failed: [
+          { requestId: CLAIM_FAILED, step: "claim" as const, error: new Error(`invalid input syntax for type uuid: "${GUEST_EMAIL}"`) },
+          { requestId: EMAIL_FAILED, step: "email" as const, error: new Error(`Failed query: update "requests" set "escalation_emailed_at" = $1 where "id" = $2\nparams: ${GUEST},${GUEST_EMAIL}`) },
         ],
+        emailed: [],
+        passFailures: [],
       }),
     });
     partial.start();
@@ -206,16 +211,23 @@ describe("a failed escalation pass reaches Sentry (the real SDK)", () => {
     expect(data).not.toContain("Key (email)");
   });
 
-  it("sends a wake's several failures as one report, each failure's own message through the scrubber: no guest's value in any (T-768)", () => {
-    const sent = eventsIn(envelopes).filter(({ event }) => event.exception?.values?.some((value) => value.value === "2 parts of the escalation sweep failed") === true);
-    expect(sent).toHaveLength(1);
-    const { event, raw } = sent[0] ?? { event: {}, raw: "" };
-    const values = (event.exception?.values ?? []).map((value) => value.value ?? "");
-    expect(values).toEqual(expect.arrayContaining(["invalid input syntax for type uuid: \"[redacted]\"", expect.stringContaining("params: [redacted]")]));
-    const data = withoutSourceLines(JSON.parse(raw));
-    expect(data).not.toContain(GUEST_EMAIL);
-    expect(data).not.toContain(GUEST);
-    expect(event.tags).toMatchObject({ "background.task": "escalation-sweep", "escalation.stage": "pass" });
+  it("reports each request a wake failed on on its own, naming it, with its message through the scrubber and no guest's value (T-768, LN1 c)", () => {
+    const named = (requestId: string): { event: SentEvent; raw: string }[] => eventsIn(envelopes).filter(({ event }) => event.tags?.["escalation.request"] === requestId);
+    const claim = named(CLAIM_FAILED);
+    const email = named(EMAIL_FAILED);
+    expect([claim.length, email.length]).toEqual([1, 1]);
+    expect(claim[0]?.event.tags).toMatchObject({ "background.task": "escalation-sweep", "escalation.stage": "claim" });
+    expect(email[0]?.event.tags).toMatchObject({ "background.task": "escalation-sweep", "escalation.stage": "email" });
+    expect(claim[0]?.event.exception?.values?.map((value) => value.value)).toEqual(["invalid input syntax for type uuid: \"[redacted]\""]);
+    expect(email[0]?.event.exception?.values?.[0]?.value).toContain("params: [redacted]");
+    // Each inner message travels in exactly one event (LD1).
+    const carrying = (fragment: string): number => eventsIn(envelopes).filter(({ event }) => event.exception?.values?.some((value) => value.value?.includes(fragment) === true) === true).length;
+    expect([carrying("invalid input syntax for type uuid"), carrying("escalation_emailed_at")]).toEqual([1, 1]);
+    for (const { raw } of [...claim, ...email]) {
+      const data = withoutSourceLines(JSON.parse(raw));
+      expect(data).not.toContain(GUEST_EMAIL);
+      expect(data).not.toContain(GUEST);
+    }
   });
 
   it("still logs every failure, with its step and the streak's count, and no parameters", () => {

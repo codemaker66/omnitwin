@@ -13,6 +13,7 @@ import { notificationRoutes } from "../routes/event-plan-lifecycle.js";
 import { pushForRequestEscalated } from "../services/push-triggers.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 import {
+  EscalationEmailPassIncomplete,
   createRequestCore,
   listRequestsForVenue,
   handoverShiftCore,
@@ -863,6 +864,92 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
       await pool.query("DROP TRIGGER IF EXISTS t768_slow_inbox ON event_plan_notifications");
       await otherPool.end();
     }
+  });
+
+  it("a room whose name fills the title raises and escalates all the same, its inbox titles clipped to 180 characters (LN2)", async () => {
+    // 160 characters: the raise's title fits and the escalation's, with
+    // "Still waiting: ", did not; 190: neither did.
+    for (const [length, noon] of [[160, new Date("2026-01-25T12:00:00.000Z")], [190, new Date("2026-01-26T12:00:00.000Z")]] as const) {
+      const f = await fixture(180);
+      await db.update(schema.spaces).set({ name: "R".repeat(length) }).where(eq(schema.spaces.id, f.roomId));
+      const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
+      if (!("request" in made)) throw new Error(`expected a request in a room of ${String(length)} characters`);
+      // Its thread's title, varchar(160), is clipped too: unclipped it refused the raise itself.
+      const [thread] = await db.select({ title: schema.threads.title }).from(schema.threads).where(eq(schema.threads.requestId, made.request.id));
+      expect(Array.from(thread?.title ?? "")).toHaveLength(160);
+      await db.update(schema.requests).set({ escalationDueAt: new Date(noon.getTime() - 1000) }).where(eq(schema.requests.id, made.request.id));
+      const pass = await runRequestEscalationPass(db, { now: noon, send: () => Promise.resolve(true) });
+      expect(pass.failed.filter((failure) => failure.requestId === made.request.id)).toEqual([]);
+      expect(pass.escalated.map((item) => item.request.id)).toContain(made.request.id);
+      const titles = await escalationInbox(f.venueId);
+      expect(titles).toHaveLength(1);
+      expect(titles[0]?.startsWith("Still waiting: ")).toBe(true);
+      expect(Array.from(titles[0] ?? "")).toHaveLength(180);
+    }
+  });
+
+  it("the email pass tries every row: one whose send throws costs the other nothing, and the pass rejects naming that one (LN3)", async () => {
+    const f = await fixture(180);
+    const good = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
+    const bad = await createRequestCore(db, f.hallkeeper, f.venueId, press(f, { kind: "cleaning" }));
+    if (!("request" in good) || !("request" in bad)) throw new Error("expected requests");
+    // Escalated inside quiet hours, so both emails wait for the email pass.
+    const night = new Date("2026-01-27T22:30:00.000Z");
+    const morning = new Date("2026-01-28T07:00:00.000Z");
+    for (const id of [good.request.id, bad.request.id]) {
+      await db.update(schema.requests).set({ escalationDueAt: new Date(night.getTime() - 1000) }).where(eq(schema.requests.id, id));
+    }
+    const escalated = await escalate(db, { now: night, send: () => Promise.resolve(true) });
+    expect(escalated.filter((item) => item.request.id === good.request.id || item.request.id === bad.request.id)).toHaveLength(2);
+
+    let caught: unknown;
+    try {
+      await runEscalationEmailPass(db, {
+        now: morning,
+        send: (_payload, options) => (options.idempotencyKey.includes(bad.request.id) ? Promise.reject(new Error("the provider threw")) : Promise.resolve(true)),
+      });
+    } catch (error: unknown) {
+      caught = error;
+    }
+    if (!(caught instanceof EscalationEmailPassIncomplete)) throw new Error("expected the email pass to reject as incomplete");
+    expect(caught).toBeInstanceOf(AggregateError);
+    expect(caught.errors).toHaveLength(1);
+    expect(caught.failures.map((failure) => failure.requestId)).toEqual([bad.request.id]);
+    expect(caught.sent.map((sent) => sent.requestId)).toContain(good.request.id);
+    const [goodRow] = await db.select().from(schema.requests).where(eq(schema.requests.id, good.request.id));
+    const [badRow] = await db.select().from(schema.requests).where(eq(schema.requests.id, bad.request.id));
+    expect(goodRow?.escalationEmailedAt).not.toBeNull();
+    expect(badRow?.escalationEmailedAt).toBeNull();
+
+    // A later pass sends the one it threw on and marks it; so no email waits
+    // on for the tests that sweep the house after this one.
+    await runEscalationEmailPass(db, { now: morning, send: () => Promise.resolve(true) });
+    const [retried] = await db.select().from(schema.requests).where(eq(schema.requests.id, bad.request.id));
+    expect(retried?.escalationEmailedAt).not.toBeNull();
+  });
+
+  it("takes the longest-waiting first, and leaves a held request out of the pass and out of the plan until its own deadline (LN1)", async () => {
+    const f = await fixture(180);
+    const made = await Promise.all([0, 1, 2].map(() => createRequestCore(db, f.hallkeeper, f.venueId, press(f))));
+    const ids = made.map((one) => { if (!("request" in one)) throw new Error("expected a request"); return one.request.id; });
+    const [first, second, third] = ids;
+    if (first === undefined || second === undefined || third === undefined) throw new Error("expected three requests");
+    const noon = new Date("2026-01-29T12:00:00.000Z");
+    // Raised first, second, third; fallen due first, then third, then second.
+    const dues = new Map([[first, 9_000], [second, 3_000], [third, 6_000]]);
+    for (const [id, before] of dues) {
+      await db.update(schema.requests).set({ escalationDueAt: new Date(noon.getTime() - before) }).where(eq(schema.requests.id, id));
+    }
+    const mine = new Set(ids);
+    const held = await runRequestEscalationPass(db, { now: noon, send: () => Promise.resolve(true), skip: new Set([first]) });
+    expect(held.escalated.map((item) => item.request.id).filter((id) => mine.has(id))).toEqual([third, second]);
+    // The plan reads the held request at its deadline, not at its window.
+    const deadline = noon.getTime() + 60_000;
+    const wake = await planNextWake(db, noon.getTime(), new Map([[first, deadline]]));
+    expect(wake).not.toBeNull();
+    expect(wake ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(deadline);
+    const later = await runRequestEscalationPass(db, { now: noon, send: () => Promise.resolve(true) });
+    expect(later.escalated.map((item) => item.request.id).filter((id) => mine.has(id))).toEqual([first]);
   });
 
   it("plans the next wake from the database: the soonest window, then the end of quiet hours for an email waiting, then nothing (goal 19 S7)", async () => {

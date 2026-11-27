@@ -1,12 +1,21 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, notInArray } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import { requests } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { captureBackgroundError, inOwnScope } from "../observability/sentry.js";
 import { quietHoursEndAfter } from "./escalation-clock.js";
 import { readOperatingSettings } from "./venue-operating-settings.js";
-import { UNOWNED_ESCALATING_STATES, runEscalationEmailPass, runRequestEscalationPass, type EscalatedRequest, type EscalationPassResult } from "./requests.js";
+import {
+  EscalationEmailPassIncomplete,
+  UNOWNED_ESCALATING_STATES,
+  runEscalationEmailPass,
+  runRequestEscalationPass,
+  type EscalatedRequest,
+  type EscalationEmailSent,
+  type EscalationPassFailure,
+  type EscalationPassResult,
+} from "./requests.js";
 
 // ---------------------------------------------------------------------------
 // When the escalation sweep runs (goal 19 S7; the 18 October outage).
@@ -34,8 +43,10 @@ export const MIN_SLEEP_MS = 250;
 export const EMAIL_RETRY_MS = 15 * 60_000;
 /** A plan that failed (the database away, say) is tried again after this. */
 export const PLAN_RETRY_MS = 60_000;
-/** While passes keep failing, the next pass waits at least this long after
- *  the first failure, doubling with each one after, up to PASS_RETRY_MAX_MS.
+/** While the pass keeps failing as a whole (its read of what is due, not one
+ *  request: those take REQUEST_RETRY_*, LN1), the next pass waits at least
+ *  this long after the first failure, doubling with each one after, up to
+ *  PASS_RETRY_MAX_MS.
  *  A pass that fails before it claims a request leaves that request's window
  *  overdue, so the plan after it would wake a beat later: a failure that
  *  stays (schema drift, say, where the pass's full-row select fails and the
@@ -59,10 +70,27 @@ export function passRetryAfter(failures: number): number {
  *  logged (T-766). */
 export const FAILURE_REPORT_EVERY_MS = 3_600_000;
 
-/** The two steps of a wake that can fail, each on a streak of its own. */
+/** A request the escalation pass keeps failing on is held back from the
+ *  candidates and the plan until a deadline of its own: this long after its
+ *  first failure, doubling with each one after, up to REQUEST_RETRY_MAX_MS.
+ *  The rest of the sweep runs as if it were not there, and with nothing else
+ *  due the database sleeps between its tries. Nothing is dropped: once its
+ *  deadline passes it is tried again (#495's review, LN1). */
+export const REQUEST_RETRY_FIRST_MS = 5_000;
+/** An hour, as the alarm's own cadence: well past the database's five idle
+ *  minutes, so a request that always fails costs one try an hour. */
+export const REQUEST_RETRY_MAX_MS = 3_600_000;
+
+/** The deadline's distance after this many failures in a row of one request. */
+export function requestRetryAfter(failures: number): number {
+  return Math.min(REQUEST_RETRY_MAX_MS, REQUEST_RETRY_FIRST_MS * 2 ** Math.max(0, failures - 1));
+}
+
+/** The two steps of a wake that can fail as a whole, each on a streak of its own. */
 export type SweepStage = "plan" | "pass";
-/** What a report names: a step, or the announcement after a pass that succeeded. */
-export type ReportedStage = SweepStage | "announce";
+/** What a report names: a step, the announcement after a pass that
+ *  succeeded, or one request's claim or email (named by its id). */
+export type ReportedStage = SweepStage | "announce" | EscalationPassFailure["step"];
 
 export function soonest(instants: readonly (number | null)[]): number | null {
   let best: number | null = null;
@@ -81,18 +109,21 @@ export function sleepFor(wakeMs: number | null, nowMs: number): number | null {
 
 /** The next instant anything is due, read from the database. Null when
  *  nothing is: no sent or reopened request with a window, no handover with a relief
- *  deadline, no email waiting out quiet hours. */
-export async function planNextWake(db: Database, nowMs: number): Promise<number | null> {
+ *  deadline, no email waiting out quiet hours. A held request (`held`: its
+ *  id and its own deadline, LN1) counts at its deadline, not at its window. */
+export async function planNextWake(db: Database, nowMs: number, held: ReadonlyMap<string, number> = new Map()): Promise<number | null> {
+  const heldIds = [...held.keys()];
+  const notHeld = heldIds.length > 0 ? notInArray(requests.id, heldIds) : undefined;
   const [nextWindow] = await db
     .select({ at: requests.escalationDueAt })
     .from(requests)
-    .where(and(inArray(requests.state, [...UNOWNED_ESCALATING_STATES]), isNull(requests.escalatedAt), isNotNull(requests.escalationDueAt)))
+    .where(and(inArray(requests.state, [...UNOWNED_ESCALATING_STATES]), isNull(requests.escalatedAt), isNotNull(requests.escalationDueAt), notHeld))
     .orderBy(asc(requests.escalationDueAt))
     .limit(1);
   const [nextRelief] = await db
     .select({ at: requests.handoverDueAt })
     .from(requests)
-    .where(and(eq(requests.state, "handed-over"), isNull(requests.escalatedAt), isNotNull(requests.handoverDueAt)))
+    .where(and(eq(requests.state, "handed-over"), isNull(requests.escalatedAt), isNotNull(requests.handoverDueAt), notHeld))
     .orderBy(asc(requests.handoverDueAt))
     .limit(1);
   const waiting = await db
@@ -113,6 +144,7 @@ export async function planNextWake(db: Database, nowMs: number): Promise<number 
     nextWindow?.at?.getTime() ?? null,
     nextRelief?.at?.getTime() ?? null,
     ...emailWakes,
+    ...held.values(),
   ]);
 }
 
@@ -122,19 +154,26 @@ export interface EscalationSchedulerDeps {
   /** What the sweep announces once requests have escalated. */
   readonly onEscalated: (escalated: readonly EscalatedRequest[]) => void;
   readonly now?: () => number;
-  /** Injected in tests; default: the two passes, then the plan. */
-  readonly plan?: (db: Database, nowMs: number) => Promise<number | null>;
-  readonly run?: (db: Database) => Promise<SweepOutcome>;
+  /** Injected in tests; default: the two passes, then the plan. `held` and
+   *  `skip` are the requests held back until their own deadlines (LN1). */
+  readonly plan?: (db: Database, nowMs: number, held: ReadonlyMap<string, number>) => Promise<number | null>;
+  readonly run?: (db: Database, skip: ReadonlySet<string>) => Promise<SweepOutcome>;
   /** Where a failure goes beyond the log, at the start of its streak and
-   *  hourly after. Injected in tests; default: Sentry, on the wake's own
-   *  scope and trace (`captureBackgroundError`). */
-  readonly report?: (error: unknown, stage: ReportedStage) => void;
+   *  hourly after; one request's failure names the request. Injected in
+   *  tests; default: Sentry, on the wake's own scope and trace
+   *  (`captureBackgroundError`). */
+  readonly report?: (error: unknown, stage: ReportedStage, requestId?: string) => void;
   readonly setTimer?: (callback: () => void, ms: number) => unknown;
   readonly clearTimer?: (handle: unknown) => void;
 }
 
-function reportToSentry(error: unknown, stage: ReportedStage): void {
-  captureBackgroundError(error, { "background.task": "escalation-sweep", "escalation.stage": stage });
+function reportToSentry(error: unknown, stage: ReportedStage, requestId?: string): void {
+  captureBackgroundError(error, {
+    "background.task": "escalation-sweep",
+    "escalation.stage": stage,
+    // A request's id is a UUID: it names the request, and no person.
+    ...(requestId === undefined ? {} : { "escalation.request": requestId }),
+  });
 }
 
 /** One step's run of failures: when it began, how many, and when it was
@@ -172,17 +211,22 @@ class FailureStreak {
   }
 }
 
-/** What a wake's passes did: the requests escalated, every one of which is
- *  to be announced, and what failed (T-768). */
+/** What a wake's passes did (T-768): the requests escalated, every one of
+ *  which is to be announced; the requests a pass failed on, each on a floor
+ *  and an alarm of its own (LN1); the requests whose email the email pass
+ *  sent; and a pass that failed as a whole (its read of what is due), which
+ *  alone takes the wake's own back-off (T-766). */
 export interface SweepOutcome {
   readonly escalated: readonly EscalatedRequest[];
-  readonly failures: readonly unknown[];
+  readonly failed: readonly EscalationPassFailure[];
+  readonly emailed: readonly string[];
+  readonly passFailures: readonly unknown[];
 }
 
 /** The two passes a wake runs. Injected in tests. */
 export interface SweepPasses {
-  readonly escalate: (db: Database, deps: { readonly logger?: FastifyBaseLogger }) => Promise<EscalationPassResult>;
-  readonly email: (db: Database, deps: { readonly logger?: FastifyBaseLogger }) => Promise<unknown>;
+  readonly escalate: (db: Database, deps: { readonly logger?: FastifyBaseLogger; readonly skip?: ReadonlySet<string> }) => Promise<EscalationPassResult>;
+  readonly email: (db: Database, deps: { readonly logger?: FastifyBaseLogger }) => Promise<readonly EscalationEmailSent[]>;
 }
 
 const SWEEP_PASSES: SweepPasses = { escalate: runRequestEscalationPass, email: runEscalationEmailPass };
@@ -191,15 +235,35 @@ const SWEEP_PASSES: SweepPasses = { escalate: runRequestEscalationPass, email: r
  *  pass that throws costs the escalation pass's list nothing, and a request
  *  the escalation pass failed on costs the email pass nothing (T-768). A
  *  throw from the escalation pass itself comes before any claim. */
-export async function runSweepPasses(db: Database, logger?: FastifyBaseLogger, passes: SweepPasses = SWEEP_PASSES): Promise<SweepOutcome> {
-  const pass = await passes.escalate(db, { logger });
-  const failures: unknown[] = pass.failed.map((failure) => failure.error);
+export async function runSweepPasses(
+  db: Database,
+  logger?: FastifyBaseLogger,
+  skip: ReadonlySet<string> = new Set(),
+  passes: SweepPasses = SWEEP_PASSES,
+): Promise<SweepOutcome> {
+  const pass = await passes.escalate(db, { logger, skip });
+  const failed: EscalationPassFailure[] = [...pass.failed];
+  const passFailures: unknown[] = [];
+  let emailed: readonly string[] = [];
   try {
-    await passes.email(db, { logger });
+    emailed = (await passes.email(db, { logger })).map((sent) => sent.requestId);
   } catch (error: unknown) {
-    failures.push(error);
+    if (error instanceof EscalationEmailPassIncomplete) {
+      emailed = error.sent.map((sent) => sent.requestId);
+      failed.push(...error.failures.map((failure) => ({ requestId: failure.requestId, step: "email" as const, error: failure })));
+    } else {
+      passFailures.push(error);
+    }
   }
-  return { escalated: pass.escalated, failures };
+  // An email the escalation pass failed on, which this wake's email pass then
+  // sent, is no failure at all (LN5).
+  const sentNow = new Set(emailed);
+  return {
+    escalated: pass.escalated,
+    failed: failed.filter((failure) => failure.step !== "email" || !sentNow.has(failure.requestId)),
+    emailed,
+    passFailures,
+  };
 }
 
 /** One error for a wake's failures: the one itself, or all of them together. */
@@ -234,6 +298,10 @@ export class EscalationScheduler {
   /** While passes keep failing, the instant the next pass may run: set at
    *  each failure, so a poke during the streak cannot push it later. */
   #passRetryAt: number | null = null;
+  /** The requests a pass failed on, each with its own streak, its alarm's
+   *  last report and, for a failed claim, the deadline before which it is
+   *  held back (LN1). Kept in this process only (LN1 e). */
+  readonly #requests = new Map<string, { failures: number; since: number; reportedAt: number; retryAt: number | null; lastFailedAt: number }>();
 
   constructor(deps: EscalationSchedulerDeps) {
     this.#deps = deps;
@@ -291,6 +359,46 @@ export class EscalationScheduler {
     if (run !== null) this.#deps.logger?.info({ event: "escalation.recovered", stage, ...run }, "escalation sweep recovered");
   }
 
+  /** The requests held back now, each with its deadline. A request quiet for
+   *  REQUEST_RETRY_MAX_MS past its last chance was taken, or recovered
+   *  unseen: it is forgotten. */
+  #held(nowMs: number): Map<string, number> {
+    const held = new Map<string, number>();
+    for (const [requestId, state] of this.#requests) {
+      if (Math.max(state.retryAt ?? 0, state.lastFailedAt) < nowMs - REQUEST_RETRY_MAX_MS) {
+        this.#requests.delete(requestId);
+      } else if (state.retryAt !== null && state.retryAt > nowMs) {
+        held.set(requestId, state.retryAt);
+      }
+    }
+    return held;
+  }
+
+  /** One request a pass failed on: its own streak; for a failed claim, its
+   *  own widening deadline; and its alarm, naming it, at the start of its
+   *  streak and at most hourly after (LN1). */
+  #requestFailed(failure: EscalationPassFailure, nowMs: number): void {
+    const state = this.#requests.get(failure.requestId) ?? { failures: 0, since: nowMs, reportedAt: Number.NEGATIVE_INFINITY, retryAt: null, lastFailedAt: nowMs };
+    state.failures += 1;
+    state.lastFailedAt = nowMs;
+    if (failure.step === "claim") state.retryAt = nowMs + requestRetryAfter(state.failures);
+    const report = state.failures === 1 || nowMs - state.reportedAt >= FAILURE_REPORT_EVERY_MS;
+    if (report) state.reportedAt = nowMs;
+    this.#requests.set(failure.requestId, state);
+    this.#deps.logger?.info(
+      { event: "escalation.request_held", requestId: failure.requestId, step: failure.step, failures: state.failures, retryAt: state.retryAt === null ? null : new Date(state.retryAt).toISOString() },
+      "escalation.request_held",
+    );
+    if (report) (this.#deps.report ?? reportToSentry)(failure.error, failure.step, failure.requestId);
+  }
+
+  #requestRecovered(requestId: string, nowMs: number): void {
+    const state = this.#requests.get(requestId);
+    if (state === undefined) return;
+    this.#requests.delete(requestId);
+    this.#deps.logger?.info({ event: "escalation.request_recovered", requestId, failures: state.failures, failedForMs: nowMs - state.since }, "escalation.request_recovered");
+  }
+
   /** Announces what a pass escalated. The escalations are already written,
    *  so an announcement that throws is not a failed pass: it is logged and
    *  reported on its own, and sets no wait. */
@@ -308,7 +416,8 @@ export class EscalationScheduler {
     const now = this.#deps.now ?? Date.now;
     let wake: number | null;
     try {
-      wake = await (this.#deps.plan ?? planNextWake)(this.#deps.db, now());
+      const nowMs = now();
+      wake = await (this.#deps.plan ?? planNextWake)(this.#deps.db, nowMs, this.#held(nowMs));
       this.#succeeded("plan");
     } catch (error: unknown) {
       this.#failed("plan", error, "escalation scheduler could not plan");
@@ -330,12 +439,19 @@ export class EscalationScheduler {
     if (this.#stopped || this.#running) return;
     this.#running = true;
     try {
-      const outcome = await (this.#deps.run ?? ((db: Database) => runSweepPasses(db, this.#deps.logger)))(this.#deps.db);
-      // A request the pass failed on is still due (its claim rolled back), so
-      // the wake counts as failed: the wait and the report apply (T-766). What
-      // did escalate is announced all the same (T-768).
-      if (outcome.failures.length === 0) this.#succeeded("pass");
-      else this.#failed("pass", sweepFailure(outcome.failures), "request escalation sweep failed");
+      const now = this.#deps.now ?? Date.now;
+      const skip: ReadonlySet<string> = new Set(this.#held(now()).keys());
+      const outcome = await (this.#deps.run ?? ((db: Database, held: ReadonlySet<string>) => runSweepPasses(db, this.#deps.logger, held)))(this.#deps.db, skip);
+      const afterMs = now();
+      for (const item of outcome.escalated) this.#requestRecovered(item.request.id, afterMs);
+      for (const requestId of outcome.emailed) this.#requestRecovered(requestId, afterMs);
+      // A request the pass failed on, at its claim or at its email, takes a
+      // floor and an alarm of its own and costs the rest of the sweep nothing
+      // (LN1). Only a pass that failed as a whole takes the wake's own back-off
+      // (T-766). What did escalate is announced all the same (T-768).
+      for (const failure of outcome.failed) this.#requestFailed(failure, afterMs);
+      if (outcome.passFailures.length === 0) this.#succeeded("pass");
+      else this.#failed("pass", sweepFailure(outcome.passFailures), "request escalation sweep failed");
       if (outcome.escalated.length > 0) this.#announce(outcome.escalated);
     } catch (error: unknown) {
       this.#failed("pass", error, "request escalation sweep failed");

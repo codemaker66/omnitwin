@@ -2,7 +2,20 @@ import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
 import { inOwnScope } from "../observability/sentry.js";
-import { EscalationScheduler, FAILURE_REPORT_EVERY_MS, MAX_SLEEP_MS, MIN_SLEEP_MS, PASS_RETRY_FIRST_MS, PASS_RETRY_MAX_MS, runSweepPasses, sleepFor, soonest } from "../services/escalation-scheduler.js";
+import {
+  EscalationScheduler,
+  FAILURE_REPORT_EVERY_MS,
+  MAX_SLEEP_MS,
+  MIN_SLEEP_MS,
+  PASS_RETRY_FIRST_MS,
+  PASS_RETRY_MAX_MS,
+  REQUEST_RETRY_MAX_MS,
+  requestRetryAfter,
+  runSweepPasses,
+  sleepFor,
+  soonest,
+} from "../services/escalation-scheduler.js";
+import { EscalationEmailFailed, EscalationEmailPassIncomplete } from "../services/requests.js";
 
 // Sentry is off here, as with SENTRY_DSN unset: nothing the scheduler does may
 // load the SDK (observability/sentry.ts imports it only inside initSentry).
@@ -36,7 +49,8 @@ interface Harness {
 }
 
 /** A wake's passes that escalated these and failed on nothing. */
-const swept = (escalated: readonly unknown[] = []): { readonly escalated: readonly unknown[]; readonly failures: readonly unknown[] } => ({ escalated, failures: [] });
+const swept = (escalated: readonly unknown[] = []): { readonly escalated: readonly unknown[]; readonly failed: readonly unknown[]; readonly emailed: readonly string[]; readonly passFailures: readonly unknown[] } =>
+  ({ escalated, failed: [], emailed: [], passFailures: [] });
 
 function harness(plans: readonly (number | null)[], runs: readonly unknown[][] = [[]]): Harness {
   const timers: FakeTimer[] = [];
@@ -283,7 +297,7 @@ describe("a pass that keeps failing (T-766)", () => {
         passesAt.push(clock.now);
         if (passesAt.length === 1) return Promise.reject(new Error("the database blipped"));
         escalated = true;
-        return Promise.resolve({ escalated: [], failures: [] });
+        return Promise.resolve({ escalated: [], failed: [], emailed: [], passFailures: [] });
       },
       report: () => undefined,
       setTimer: (callback, ms) => {
@@ -343,34 +357,115 @@ describe("a pass that keeps failing (T-766)", () => {
 describe("a wake's two passes (T-768)", () => {
   const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-  it("an email pass that throws costs nothing the escalation pass escalated, and a request that pass failed on is a failure", async () => {
+  it("an email pass that throws as a whole costs nothing the escalation pass escalated; a request a pass failed on is named, and the held requests are skipped", async () => {
     const escalate = vi.fn();
-    escalate.mockResolvedValue({ escalated: [{ request: { id: "r-1" } }], failed: [{ requestId: "r-2", error: new Error("the inbox refused r-2") }] });
+    escalate.mockResolvedValue({ escalated: [{ request: { id: "r-1" } }], failed: [{ requestId: "r-2", step: "claim", error: new Error("the inbox refused r-2") }] });
     const email = vi.fn();
-    email.mockRejectedValue(new Error("the email pass fell over"));
-    const outcome = await runSweepPasses(db, undefined, { escalate, email });
+    email.mockRejectedValue(new Error("the email pass's select fell over"));
+    const outcome = await runSweepPasses(db, undefined, new Set(["r-9"]), { escalate, email });
+    expect(escalate).toHaveBeenCalledWith(db, { logger: undefined, skip: new Set(["r-9"]) });
     expect(outcome.escalated).toEqual([{ request: { id: "r-1" } }]);
-    expect(outcome.failures.map(message)).toEqual(["the inbox refused r-2", "the email pass fell over"]);
-    expect(email).toHaveBeenCalledTimes(1);
+    expect(outcome.failed.map((failure) => [failure.requestId, failure.step, message(failure.error)])).toEqual([["r-2", "claim", "the inbox refused r-2"]]);
+    expect(outcome.passFailures.map(message)).toEqual(["the email pass's select fell over"]);
   });
 
-  it("a wake whose pass failed on some requests announces the others, reports the failure, and waits before trying again", async () => {
-    const h = harness([]);
-    h.plan.mockReset();
-    h.plan.mockResolvedValueOnce(T0 + 1_000);
-    // The failed request's claim rolled back, so the plan after the pass still finds it due.
-    h.plan.mockResolvedValue(T0 - 1_000);
-    h.run.mockReset();
-    h.run.mockResolvedValueOnce({ escalated: [{ request: { id: "r-1" } }], failures: [new Error("the inbox refused r-2")] });
-    h.run.mockResolvedValue(swept());
-    h.scheduler.start();
+  it("an email pass that failed on some rows names each one, and an email the same wake then sent is no failure (LN5)", async () => {
+    const escalate = vi.fn();
+    escalate.mockResolvedValue({ escalated: [], failed: [{ requestId: "r-3", step: "email", error: new Error("the mark blipped") }] });
+    const email = vi.fn();
+    email.mockRejectedValue(new EscalationEmailPassIncomplete(
+      [new EscalationEmailFailed("r-4", new Error("the provider threw"))],
+      [{ requestId: "r-3", venueId: "v-1", emailedAdmins: 1 }],
+    ));
+    const outcome = await runSweepPasses(db, undefined, new Set(), { escalate, email });
+    expect(outcome.failed.map((failure) => [failure.requestId, failure.step])).toEqual([["r-4", "email"]]);
+    expect(outcome.emailed).toEqual(["r-3"]);
+    expect(outcome.passFailures).toEqual([]);
+  });
+
+  it("a request whose claim always fails is held on a floor of its own: the other escalates on time, its tries widen to the cap, the plan sleeps past five minutes, its alarm names it, and a failed select still backs off (LN1)", async () => {
+    const clock = { now: T0 };
+    /** The one timer armed: firing or clearing it empties the slot. */
+    const slot: { pending: { readonly due: number; readonly callback: () => void } | null } = { pending: null };
+    const armed: number[] = [];
+    // A fake database: A (whose claim always fails) due at once, B half a minute later.
+    const dueAt = new Map([["A", T0], ["B", T0 + 30_000]]);
+    const escalatedAt = new Map<string, number>();
+    const triesOfA: number[] = [];
+    const reports: (readonly [string, string | undefined, number])[] = [];
+    let selectFails = false;
+    const stillDue = (held: { has: (id: string) => boolean }): [string, number][] => [...dueAt].filter(([id]) => !escalatedAt.has(id) && !held.has(id));
+    // As planNextWake: a held request counts at its own deadline.
+    const plan = (_db: Database, _nowMs: number, held: ReadonlyMap<string, number>): Promise<number | null> => Promise.resolve(soonest([...stillDue(held).map(([, at]) => at), ...held.values()]));
+    const run = vi.fn();
+    run.mockImplementation((_db: Database, skip: ReadonlySet<string>) => {
+      if (selectFails) return Promise.reject(new Error("the candidate select failed"));
+      const escalated: { readonly request: { readonly id: string } }[] = [];
+      const failed: { readonly requestId: string; readonly step: "claim"; readonly error: Error }[] = [];
+      for (const [id, at] of stillDue(skip)) {
+        if (at > clock.now) continue;
+        if (id === "A") {
+          triesOfA.push(clock.now);
+          failed.push({ requestId: "A", step: "claim", error: new Error("the inbox refused A") });
+        } else {
+          escalatedAt.set(id, clock.now);
+          escalated.push({ request: { id } });
+        }
+      }
+      return Promise.resolve({ escalated, failed, emailed: [], passFailures: [] });
+    });
+    const scheduler = new EscalationScheduler({
+      db,
+      onEscalated: () => undefined,
+      now: () => clock.now,
+      plan,
+      run,
+      report: (_error, stage, requestId) => { reports.push([stage, requestId, clock.now]); },
+      setTimer: (callback, ms) => {
+        armed.push(ms);
+        const timer = { due: clock.now + ms, callback };
+        slot.pending = timer;
+        return timer;
+      },
+      clearTimer: (handle) => { if (slot.pending === handle) slot.pending = null; },
+    });
+    const fireUntil = async (until: number): Promise<void> => {
+      while (slot.pending !== null && slot.pending.due <= until) {
+        const { due, callback } = slot.pending;
+        slot.pending = null;
+        clock.now = due;
+        callback();
+        await settle();
+      }
+    };
+    scheduler.start();
     await settle();
-    h.clock.now = T0 + 1_000;
-    h.timers[0]?.callback();
+    await fireUntil(T0 + 4 * 3_600_000);
+
+    // The other request escalates on time, as if A were not there.
+    expect(escalatedAt.get("B")).toBe(T0 + 30_000);
+    // A is tried at its own deadlines, each twice as far as the last, up to the cap.
+    const gaps = triesOfA.slice(1).map((at, index) => at - (triesOfA[index] ?? 0));
+    expect(gaps).toEqual(gaps.map((_gap, index) => requestRetryAfter(index + 1)));
+    expect(gaps.at(-1)).toBe(REQUEST_RETRY_MAX_MS);
+    // With nothing else due, the plan sleeps past the database's five idle minutes.
+    expect(Math.max(...armed)).toBeGreaterThan(5 * 60_000);
+    // A's alarm names it, when its streak starts and then at most hourly; the sweep itself never failed.
+    expect(reports.every(([stage, requestId]) => stage === "claim" && requestId === "A")).toBe(true);
+    // Its first try is a beat after it fell due (MIN_SLEEP_MS), and the alarm goes with it.
+    expect(triesOfA[0]).toBe(T0 + MIN_SLEEP_MS);
+    expect(reports[0]?.[2]).toBe(triesOfA[0]);
+    expect(reports.slice(1).every(([, , at], index) => at - (reports[index]?.[2] ?? 0) >= FAILURE_REPORT_EVERY_MS)).toBe(true);
+    expect(reports.length).toBeGreaterThanOrEqual(2);
+
+    // A failed candidate select still takes the sweep's own back-off (T-766).
+    selectFails = true;
+    dueAt.set("C", clock.now);
+    scheduler.poke();
     await settle();
-    expect(h.onEscalated).toHaveBeenCalledWith([{ request: { id: "r-1" } }]);
-    expect(h.reported).toEqual([["pass", T0 + 1_000]]);
-    expect(h.timers.map((timer) => timer.ms)).toEqual([1_000, PASS_RETRY_FIRST_MS]);
+    await fireUntil(clock.now + MIN_SLEEP_MS);
+    expect(reports.at(-1)?.slice(0, 2)).toEqual(["pass", undefined]);
+    expect(armed.at(-1)).toBe(PASS_RETRY_FIRST_MS);
   });
 });
 

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import {
   STAFF_AUDIENCE_ROLES,
@@ -193,6 +193,12 @@ interface NotificationSeed {
   readonly severity: "info" | "attention" | "urgent";
 }
 
+/** event_plan_notifications.title is varchar(180). A request's title holds
+ *  its room's name, which may be 200 characters, and the escalation's adds
+ *  "Still waiting: ": unclipped, a long room refused every escalation there
+ *  (22001), and the request stayed due for ever (#495's review, LN2). */
+export const NOTIFICATION_TITLE_MAX = 180;
+
 async function insertNotifications(
   tx: Pick<Database, "insert">,
   seeds: readonly NotificationSeed[],
@@ -205,7 +211,7 @@ async function insertNotifications(
       venueId: seed.venueId,
       audienceRole: seed.audienceRole,
       recipientUserId: seed.recipientUserId,
-      title: seed.title,
+      title: clipName(seed.title, NOTIFICATION_TITLE_MAX),
       body: seed.body,
       severity: seed.severity,
       actionPath: DAY_BOARD_PATH,
@@ -1034,13 +1040,50 @@ export interface EscalationPassDeps {
   /** Injected for tests; defaults to the house email service. */
   readonly send?: (payload: EmailPayload, options: SendOptions) => Promise<boolean>;
   readonly appUrl?: string;
+  /** Requests held back until their own retry deadline: a request the
+   *  escalation pass keeps failing on is not tried at every wake (#495's
+   *  review, LN1). Nothing is dropped: it is tried again once its deadline
+   *  passes. */
+  readonly skip?: ReadonlySet<string>;
 }
 
-/** A due request the pass could not escalate, or escalated but could not
- *  email, and why. */
+/** The instant a candidate fell due: a handed-over request's relief deadline,
+ *  otherwise its escalation window. */
+const dueInstant = sql`case when ${requests.state} = 'handed-over' then ${requests.handoverDueAt} else ${requests.escalationDueAt} end`;
+
+/** A request a pass failed on, at which step, and why: at the claim (its
+ *  claim rolled back, so it is still due), or at its email (it is escalated
+ *  and announced; only its email waits). */
 export interface EscalationPassFailure {
   readonly requestId: string;
+  readonly step: "claim" | "email";
   readonly error: unknown;
+}
+
+/** One escalation email that threw, naming its request (a UUID, no person
+ *  value); the original error is its cause. */
+export class EscalationEmailFailed extends Error {
+  readonly requestId: string;
+
+  constructor(requestId: string, cause: unknown) {
+    super(`the escalation email of request ${requestId} could not be sent`, { cause });
+    this.name = "EscalationEmailFailed";
+    this.requestId = requestId;
+  }
+}
+
+/** The email pass when some rows threw: every row was tried; these are the
+ *  ones that threw, and `sent` the ones that went (T-768). */
+export class EscalationEmailPassIncomplete extends AggregateError {
+  readonly failures: readonly EscalationEmailFailed[];
+  readonly sent: readonly EscalationEmailSent[];
+
+  constructor(failures: readonly EscalationEmailFailed[], sent: readonly EscalationEmailSent[]) {
+    super(failures, `the email pass failed on ${String(failures.length)} request(s)`);
+    this.name = "EscalationEmailPassIncomplete";
+    this.failures = failures;
+    this.sent = sent;
+  }
 }
 
 /** What one escalation pass did: the requests it escalated, every one of
@@ -1060,6 +1103,7 @@ export async function runRequestEscalationPass(
 
   // A failure here comes before any claim, so the whole pass fails and
   // nothing is lost: every due request is still due.
+  const skip = [...(deps.skip ?? [])];
   const candidates = await db
     .select()
     .from(requests)
@@ -1069,16 +1113,19 @@ export async function runRequestEscalationPass(
         and(inArray(requests.state, [...UNOWNED_ESCALATING_STATES]), isNotNull(requests.escalationDueAt), lte(requests.escalationDueAt, now)),
         and(eq(requests.state, "handed-over"), isNotNull(requests.handoverDueAt), lte(requests.handoverDueAt, now)),
       ),
+      skip.length > 0 ? notInArray(requests.id, skip) : undefined,
     ))
+    // The longest-waiting first: with more than a hundred due, the oldest go out (LN1).
+    .orderBy(asc(dueInstant), asc(requests.id))
     .limit(100);
 
   const due = selectDueRequestEscalations(candidates, now);
   const escalated: EscalatedRequest[] = [];
   const failed: EscalationPassFailure[] = [];
   const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
-  const fail = (requestId: string, error: unknown, step: string): void => {
-    failed.push({ requestId, error });
-    deps.logger?.warn({ err: error, requestId, step }, "request escalation failed");
+  const fail = (requestId: string, error: unknown, step: EscalationPassFailure["step"]): void => {
+    failed.push({ requestId, step, error });
+    deps.logger?.warn({ err: error, requestId, step }, "the escalation pass failed on a request");
   };
 
   for (const candidate of due) {
@@ -1204,7 +1251,7 @@ export async function runEscalationEmailPass(
     .limit(100);
 
   const sent: EscalationEmailSent[] = [];
-  const failures: unknown[] = [];
+  const failures: EscalationEmailFailed[] = [];
   const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
   for (const row of waiting) {
     const escalatedAt = row.escalatedAt;
@@ -1236,11 +1283,11 @@ export async function runEscalationEmailPass(
       );
       sent.push({ requestId: row.id, venueId: row.venueId, emailedAdmins });
     } catch (error: unknown) {
-      failures.push(error);
+      failures.push(new EscalationEmailFailed(row.id, error));
       deps.logger?.warn({ err: error, requestId: row.id }, "request escalation email failed");
     }
   }
   // Every row was tried; the pass fails if any one did, so the sweep reports it.
-  if (failures.length > 0) throw new AggregateError(failures, `${String(failures.length)} escalation email(s) could not be sent`);
+  if (failures.length > 0) throw new EscalationEmailPassIncomplete(failures, sent);
   return sent;
 }

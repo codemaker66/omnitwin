@@ -328,10 +328,15 @@ export async function venueRequestRoutes(
       publishRequestChange(request, "request.escalated", item.request, item.notificationIds);
       tell(pushForRequestEscalated(db, item.request, item.recipientUserIds, { logger: request.log }), request.log, "request.escalated");
     }
-    // Every escalation is announced first. A request the pass failed on makes
-    // the run an error, so the caller (a cron) and Sentry hear of it (T-768).
+    // Every escalation is announced first. A request the pass failed on (at
+    // its claim, or at its email) makes the run an error, so the caller (a
+    // cron) and Sentry hear of it (T-768).
     if (pass.failed.length > 0) {
-      throw new AggregateError(pass.failed.map((failure) => failure.error), `${String(pass.failed.length)} due request(s) could not be escalated`);
+      const claims = pass.failed.filter((failure) => failure.step === "claim").length;
+      throw new AggregateError(
+        pass.failed.map((failure) => failure.error),
+        `the escalation pass failed on ${String(pass.failed.length)} request(s): ${String(claims)} at the claim, ${String(pass.failed.length - claims)} at the email`,
+      );
     }
     const mine = pass.escalated.filter((item) => item.request.venueId === params.data.venueId);
     return { data: { escalated: mine.length } };
