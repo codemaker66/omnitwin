@@ -31,8 +31,8 @@ export interface RoomGeometry {
 // (HALL_LENGTH and HALL_WIDTH in components/grand-hall/hall-spec.ts; the method
 // is in tools/grand-hall-survey/README.md). The planner draws the hall's walls
 // there, so this outline, which places, snaps and bounds every piece, stands
-// on those walls too. Blake, 11 November 2026: "Use the measurements captured
-// from the lidar /e57 data". It was a hand-drawn 21 m × 10.5 m before.
+// on those walls too. Blake's decision, 11 November 2026: the lidar (E57)
+// measurements. It was a hand-drawn 21 m × 10.5 m before.
 //
 // A layout save refuses a piece centred outside the outline the API stores for
 // the room (lib/placement-validation.ts in the API), so that outline must

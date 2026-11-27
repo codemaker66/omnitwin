@@ -16,7 +16,9 @@ vi.mock("../hall-finish.js", async (importOriginal) => {
 /**
  * The front's import as a build runs it once a deploy has replaced its chunk. Vite's preload
  * helper (6.4: `baseModule().catch(handlePreloadError)`) first asks the page with a cancelable
- * `vite:preloadError`, rethrows if the page leaves it, and otherwise resolves to nothing.
+ * `vite:preloadError` and rethrows unless a listener prevents it. The page's listener never does
+ * (route-error-boundary.tsx), so the import rejects, and the page reloads only once its own server
+ * has answered. The resolve-to-nothing branch is Vite's own, kept so this stand-in stays faithful.
  */
 function staleChunkImport(): Promise<undefined> {
   const failure = new TypeError("Failed to fetch dynamically imported module: /assets/HallExterior-old.js");
@@ -79,6 +81,9 @@ afterEach(() => {
 async function cityWithStaleFront(): Promise<readonly string[]> {
   const asked: string[] = [];
   vi.stubGlobal("fetch", vi.fn((url: string) => {
+    // The page's question to its own server before it spends its reload
+    // (route-error-boundary.tsx): answered, as after a deploy. Not the city's.
+    if (url === "/") return Promise.resolve({ ok: true, status: 200 });
     asked.push(url);
     if (url === CONTEXT_MODEL_FRONT_URL || url === CONTEXT_MODEL_URL) {
       return Promise.resolve({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(cityModel()) });
@@ -105,9 +110,9 @@ function expectTheCityTookItsOwnFrontBack(asked: readonly string[]): void {
 }
 
 describe("a measured front whose chunk a deploy has replaced", () => {
-  it("resolves to nothing once the page has claimed its one reload, and the city keeps a front", async () => {
+  it("rejects, the page reloads once its own server has answered, and the city keeps a front", async () => {
     const asked = await cityWithStaleFront();
-    expect(reload).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => { expect(reload).toHaveBeenCalledTimes(1); });
     expectTheCityTookItsOwnFrontBack(asked);
   });
 

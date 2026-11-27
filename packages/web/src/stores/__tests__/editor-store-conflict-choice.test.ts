@@ -438,4 +438,19 @@ describe("tabs share a layout's draft key (finding 6)", () => {
     expect(store().keptOnDevice).toBe(true);
     expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
   });
+
+  it("does not take the access check made behind the page for a new sign-in: still writes nothing back (finding 5)", () => {
+    open(BASE, false);
+    store().updateObject(T1, { positionX: 50 });
+    storageEvent("venviewer:planner-drafts-signed-out", JSON.stringify({ userId: ME.id, atMs: Date.now() }));
+    localStorage.removeItem(DRAFT_KEY);
+    storageEvent(DRAFT_KEY, null);
+
+    // The sign-in bridge's answer on a move between route groups: the same
+    // person, confirmed again. It is not a new sign-in.
+    useAuthStore.getState().confirmUser({ ...ME });
+    store().updateObject(T1, { positionX: 52 });
+    expect(store().keptOnDevice).toBe(false);
+    expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+  });
 });
