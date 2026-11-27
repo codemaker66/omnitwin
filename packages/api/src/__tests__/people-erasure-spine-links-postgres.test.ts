@@ -93,14 +93,16 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     readonly title: string;
     readonly leadId?: string | null;
     readonly enquiryId?: string | null;
+    /** Open (new) unless said. */
+    readonly stage?: "new" | "lost";
     readonly at?: Date;
   }
 
-  /** An open deal (stage new). */
+  /** A deal, open (stage new) unless a stage is given. */
   async function deal(v: SpineVenue, input: DealInput): Promise<string> {
     return id(`INSERT INTO opportunities (venue_id, title, stage, primary_contact_id, source_enquiry_id, created_at, updated_at)
-      VALUES ($1, $2, 'new', $3, $4, coalesce($5::timestamptz, now()), coalesce($5::timestamptz, now())) RETURNING id`,
-    [v.venueId, input.title, input.leadId ?? null, input.enquiryId ?? null, input.at ?? null]);
+      VALUES ($1, $2, $6::text, $3, $4, coalesce($5::timestamptz, now()), coalesce($5::timestamptz, now())) RETURNING id`,
+    [v.venueId, input.title, input.leadId ?? null, input.enquiryId ?? null, input.at ?? null, input.stage ?? "new"]);
   }
 
   interface ProposalInput {
@@ -203,6 +205,48 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
       await new Promise((resolve) => { setTimeout(resolve, 100); });
     }
     throw new Error(`Nothing waited on a lock like ${pattern}`);
+  }
+
+  /**
+   * A run of the join stopped part-way, with its loop's rows already read: a
+   * second connection holds the held venue's row FOR UPDATE, so the join waits
+   * on that row's key share when it first writes a row naming that venue (the
+   * oldest record it reads). `meanwhile` runs then; the venue is let go and
+   * the run finishes and commits.
+   */
+  async function joinWhileVenueHeld(held: SpineVenue, meanwhile: () => Promise<void>): Promise<JoinResult> {
+    const holder = await pool.connect();
+    let holding = false;
+    try {
+      await holder.query("BEGIN");
+      holding = true;
+      await holder.query("SELECT 1 FROM venues WHERE id = $1 FOR UPDATE", [held.venueId]);
+      const joining = pool.query<JoinResult>("SELECT * FROM spine_join_old_records()")
+        .then((result): JoinResult | Error => result.rows[0] ?? new Error("The join returned no row"),
+          (error: unknown): Error => (error instanceof Error ? error : new Error("The join failed")));
+      let failure: Error | null = null;
+      try {
+        await waitForLockWait("%spine_join_old_records%");
+        await meanwhile();
+      } catch (error: unknown) {
+        failure = error instanceof Error ? error : new Error("The step while the join waited failed");
+      }
+      await holder.query("COMMIT");
+      holding = false;
+      const ran = await joining;
+      if (failure !== null) throw failure;
+      if (ran instanceof Error) throw ran;
+      return ran;
+    } finally {
+      if (holding) await holder.query("ROLLBACK");
+      holder.release();
+    }
+  }
+
+  /** Every row of the join's two record tables whose text, any column, holds the given text. */
+  async function recordRowsHolding(text: string): Promise<unknown> {
+    return value(`SELECT (SELECT count(*)::int FROM event_link_joins j WHERE strpos(row_to_json(j)::text, $1) > 0)
+      + (SELECT count(*)::int FROM event_link_reviews r WHERE strpos(row_to_json(r)::text, $1) > 0) AS value`, [text]);
   }
 
   it("the reviewer's scenario: an event the join made for a worked enquiry loses the person's name with them", async () => {
@@ -483,6 +527,214 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     expect(await names(given)).toEqual({ name: "Isla Raceway", client_name: "Isla Raceway" });
     expect(await erase(v, isla)).toMatchObject({ ok: true, counts: { people: 1, enquiries: 1 } });
     expect(await names(given)).toEqual({ name: "Erased", client_name: "Erased" });
+  });
+
+  // The join names an event it makes, and its client, from rows it read; an
+  // erasure can run beside it. Every value it copies into an event it makes is
+  // read from a row it holds locked at that moment: a row it writes is
+  // re-checked under its lock to still hold the text read, and a row it only
+  // reads a name from is taken FOR SHARE, which an erasure's or a writer's
+  // change of that row conflicts with. These cases stop the join part-way.
+
+  it("a deal's title an erasure rewords while the join's run is under way is not copied back onto an event the run makes", async () => {
+    const held = await venueIn(pool, "stale text, a deal: the venue held");
+    const v = await venueIn(pool, "stale text, a deal's title");
+    // An older open deal the join reaches first: making its event waits on its
+    // venue's row, with the deal loop's rows read.
+    await deal(held, { title: "TEST ONLY older deal", at: new Date("2020-01-01T00:00:00Z") });
+    const isla = await person(v, "Isla Stalewell");
+    const dealId = await deal(v, { title: "Dinner for Isla Stalewell", leadId: isla });
+
+    await joinWhileVenueHeld(held, async () => {
+      expect(await erase(v, isla)).toMatchObject({ ok: true });
+      expect(await value(`SELECT row_to_json(d) AS value FROM (SELECT title, event_id FROM opportunities WHERE id = $1) d`,
+        [dealId])).toEqual({ title: "Dinner for Erased", event_id: null });
+    });
+    // Joined with the reworded title, or left for the next run: never the old one.
+    expect(await namedAnywhere(v, "Isla Stalewell")).toBe(0);
+    await join();
+    expect(await names(await eventOf("opportunities", dealId))).toEqual({ name: "Dinner for Erased", client_name: null });
+    expect(await namedAnywhere(v, "Isla Stalewell")).toBe(0);
+  });
+
+  it("a proposal's title an erasure rewords while the join's run is under way is not copied back onto an event the run makes", async () => {
+    const held = await venueIn(pool, "stale text, a proposal: the venue held");
+    const v = await venueIn(pool, "stale text, a proposal's title");
+    // An older sent proposal with nothing to join: the join makes its event
+    // last (step 3, after every proposal that reaches one), and waits there.
+    await proposal(held, { title: "TEST ONLY older proposal", status: "sent", at: new Date("2020-01-01T00:00:00Z") });
+    const isla = await person(v, "Isla Proposalwell");
+    // Her lost deal has no event; its sent proposal must have one, named by itself.
+    const lostDeal = await deal(v, { title: "Wedding for Isla Proposalwell", leadId: isla, stage: "lost" });
+    const proposalId = await proposal(v, { title: "Ceilidh for Isla Proposalwell", status: "sent", dealId: lostDeal });
+
+    await joinWhileVenueHeld(held, async () => {
+      expect(await erase(v, isla)).toMatchObject({ ok: true });
+      expect(await value(`SELECT row_to_json(p) AS value FROM (SELECT title, event_id FROM proposals WHERE id = $1) p`,
+        [proposalId])).toEqual({ title: "Ceilidh for Erased", event_id: null });
+    });
+    expect(await namedAnywhere(v, "Isla Proposalwell")).toBe(0);
+    await join();
+    expect(await names(await eventOf("proposals", proposalId))).toEqual({ name: "Ceilidh for Erased", client_name: null });
+    expect(await namedAnywhere(v, "Isla Proposalwell")).toBe(0);
+  });
+
+  it("an erasure under way while the join runs: the join leaves what the erasure holds, and nothing of the name reaches an event", async () => {
+    const v = await venueIn(pool, "stale text, an erasure under way");
+    const ruaridh = await person(v, "Ruaridh Midway");
+    // An enquiry that asks to book nothing: the deal's event is named by the
+    // deal, its client by the enquiry (step 2).
+    const asked = await enquiry(v, { contactId: ruaridh, name: "Ruaridh Midway", eventType: "venue-enquiry" });
+    const dealId = await deal(v, { title: "Dinner for Ruaridh Midway", enquiryId: asked });
+    const joiner = await pool.connect();
+    let open = false;
+    try {
+      await joiner.query("BEGIN");
+      open = true;
+      // The erasure has rewritten everything and not committed while the join
+      // reads her rows and runs to its end; the erasure commits, then the join.
+      const erased = await db.transaction(async (tx) => {
+        const lock = await lockPerson(tx, v.venueId, ruaridh);
+        if (lock.state !== "live") throw new Error("The person is not live");
+        const outcome = await eraseLockedPerson(tx, lock.row, { actorUserId: v.admin.id, now: new Date() });
+        await joiner.query("SELECT * FROM spine_join_old_records()");
+        return outcome;
+      });
+      expect(erased).toMatchObject({ ok: true });
+      await joiner.query("COMMIT");
+      open = false;
+    } finally {
+      if (open) await joiner.query("ROLLBACK");
+      joiner.release();
+    }
+    expect(await namedAnywhere(v, "Ruaridh Midway")).toBe(0);
+    await join();
+    expect(await names(await eventOf("opportunities", dealId))).toEqual({ name: "Dinner for Erased", client_name: null });
+    expect(await namedAnywhere(v, "Ruaridh Midway")).toBe(0);
+  });
+
+  it("an enquiry's name a writer rewords, uncommitted while the join reads it and committed before the join commits, is not copied as a client's name", async () => {
+    const v = await venueIn(pool, "stale text, a client's name");
+    // Enquiries that ask to book nothing: the events are named by the deal and
+    // by the proposal, their clients by the enquiries (steps 2 and 3), which
+    // the join only reads.
+    const forDeal = await enquiry(v, { name: "Morag Clientwell", eventType: "venue-enquiry" });
+    const dealId = await deal(v, { title: "TEST ONLY dinner", enquiryId: forDeal });
+    const forProposal = await enquiry(v, { name: "Morag Clientwell", eventType: "venue-enquiry" });
+    const proposalId = await proposal(v, { title: "TEST ONLY ceilidh", status: "sent", enquiryId: forProposal });
+    // A sent proposal of a lost deal, with no enquiry: its event's occasion
+    // is the deal's, which the join only reads.
+    const lostDeal = await id(`INSERT INTO opportunities (venue_id, title, stage, event_type)
+      VALUES ($1, 'TEST ONLY lost deal', 'lost', 'Morag Clientwell dinner') RETURNING id`, [v.venueId]);
+    const ofLostDeal = await proposal(v, { title: "TEST ONLY reception", status: "sent", dealId: lostDeal });
+    const writer = await pool.connect();
+    const joiner = await pool.connect();
+    let writing = false;
+    let joining = false;
+    try {
+      // An UPDATE that changes no key column (as a reword is) takes the row
+      // FOR NO KEY UPDATE until it commits.
+      await writer.query("BEGIN");
+      writing = true;
+      await writer.query("UPDATE enquiries SET name = 'Erased' WHERE id = ANY($1::uuid[])", [[forDeal, forProposal]]);
+      await writer.query("UPDATE opportunities SET event_type = 'dinner' WHERE id = $1", [lostDeal]);
+      await joiner.query("BEGIN");
+      joining = true;
+      await joiner.query("SELECT * FROM spine_join_old_records()");
+      await writer.query("COMMIT");
+      writing = false;
+      await joiner.query("COMMIT");
+      joining = false;
+    } finally {
+      if (writing) await writer.query("ROLLBACK");
+      if (joining) await joiner.query("ROLLBACK");
+      writer.release();
+      joiner.release();
+    }
+    // Left for the next run, which names the clients, and the occasion, as the rows now read.
+    const occasionsNaming = `events WHERE venue_id = $1 AND strpos(coalesce(event_type, ''), $2) > 0`;
+    expect(await namedAnywhere(v, "Morag Clientwell")).toBe(0);
+    expect(await count(occasionsNaming, [v.venueId, "Morag Clientwell"])).toBe(0);
+    await join();
+    expect(await names(await eventOf("opportunities", dealId))).toEqual({ name: "TEST ONLY dinner", client_name: "Erased" });
+    expect(await names(await eventOf("proposals", proposalId))).toEqual({ name: "TEST ONLY ceilidh", client_name: "Erased" });
+    expect(await value("SELECT event_type AS value FROM events WHERE id = $1", [await eventOf("proposals", ofLostDeal)])).toBe("dinner");
+    expect(await namedAnywhere(v, "Morag Clientwell")).toBe(0);
+    expect(await count(occasionsNaming, [v.venueId, "Morag Clientwell"])).toBe(0);
+  });
+
+  it("an erasure that meets the join holding the rows a made event was named from waits for its commit, answers RETRY, and the retry rewords the event", async () => {
+    const v = await venueIn(pool, "stale text, the join first");
+    const fiona = await person(v, "Fiona Waitwell");
+    const asked = await enquiry(v, { contactId: fiona, name: "Fiona Waitwell", eventType: "venue-enquiry" });
+    const dealId = await deal(v, { title: "Dinner for Fiona Waitwell", enquiryId: asked });
+    const joiner = await pool.connect();
+    let joining = false;
+    try {
+      // The join has made the deal's event, named from the deal and its client
+      // from the enquiry, and holds both rows until it commits.
+      await joiner.query("BEGIN");
+      joining = true;
+      await joiner.query("SELECT * FROM spine_join_old_records()");
+      const erasing: Promise<Settled> = erase(v, fiona)
+        .then((outcome): Settled => ({ ok: true, outcome }), (error: unknown): Settled => ({ ok: false, error }));
+      try {
+        await waitForLockWait("%for update%");
+      } finally {
+        await joiner.query("COMMIT");
+        joining = false;
+      }
+      const settled = await erasing;
+      expect(settled.ok).toBe(false);
+      if (!settled.ok) expect(settled.error).toBeInstanceOf(ErasureMovedOn);
+    } finally {
+      if (joining) await joiner.query("ROLLBACK");
+      joiner.release();
+    }
+    const made = await eventOf("opportunities", dealId);
+    expect(await names(made)).toEqual({ name: "Dinner for Fiona Waitwell", client_name: "Fiona Waitwell" });
+    // Tried again, the erasure finds the event through the deal's new link.
+    expect(await erase(v, fiona)).toMatchObject({ ok: true, counts: { people: 1, enquiries: 1 } });
+    expect(await names(made)).toEqual({ name: "Dinner for Erased", client_name: "Erased" });
+    expect(await namedAnywhere(v, "Fiona Waitwell")).toBe(0);
+  });
+
+  it("the join's two record tables hold no text from a person's records: an erased person's listed enquiry and deal keep their questions, nameless", async () => {
+    const v = await venueIn(pool, "erasure, the record tables");
+    const eilidh = await person(v, "Eilidh Listholder");
+    // Her enquiry's released holds sit in two events: listed (reaches_many_events).
+    const first = await event(v, "TEST ONLY first of two", null);
+    const second = await event(v, "TEST ONLY second of two", null);
+    const listed = await enquiry(v, { contactId: eilidh, name: "Eilidh Listholder" });
+    await booking(v, { eventId: first, enquiryId: listed, kind: "hold", status: "released" });
+    await booking(v, { eventId: second, enquiryId: listed, kind: "hold", status: "released" });
+    // Her other enquiry is joined to an event with an open deal already: her
+    // deal from it is listed (second_open_deal).
+    const taken = await event(v, "TEST ONLY taken", null);
+    const otherDeal = await deal(v, { title: "TEST ONLY open deal" });
+    await link(pool, "opportunities", otherDeal, taken);
+    const joinedEnquiry = await enquiry(v, { contactId: eilidh, name: "Eilidh Listholder", replied: true });
+    await link(pool, "enquiries", joinedEnquiry, taken);
+    const listedDeal = await deal(v, { title: "Dinner for Eilidh Listholder", leadId: eilidh, enquiryId: joinedEnquiry });
+    // And a worked enquiry of hers the join makes an event for (a join row).
+    const made = await enquiry(v, { contactId: eilidh, name: "Eilidh Listholder", replied: true });
+    await join();
+    const open = `event_link_reviews WHERE subject_kind = $1 AND subject_id = $2 AND resolved_at IS NULL AND binding_review_id IS NULL`;
+    expect(await count(open, ["enquiry", listed])).toBe(1);
+    expect(await count(open, ["opportunity", listedDeal])).toBe(1);
+    const madeEvent = await eventOf("enquiries", made);
+    expect(await joinOf("enquiry", made)).toEqual({ event_id: madeEvent, event_made: true, path: "new_event" });
+    // Before and after the erasure, no column of either table holds a name of hers.
+    for (const text of ["Eilidh", "Listholder"]) expect(await recordRowsHolding(text)).toBe(0);
+
+    expect(await erase(v, eilidh)).toMatchObject({ ok: true });
+    for (const text of ["Eilidh", "Listholder"]) expect(await recordRowsHolding(text)).toBe(0);
+    // The questions stay open, as ids: the erased enquiry's, and her kept deal's.
+    expect(await count(open, ["enquiry", listed])).toBe(1);
+    expect(await count(open, ["opportunity", listedDeal])).toBe(1);
+    await join();
+    for (const text of ["Eilidh", "Listholder"]) expect(await recordRowsHolding(text)).toBe(0);
+    expect(await namedAnywhere(v, "Eilidh")).toBe(0);
   });
 
   it("the join's own records of an erased enquiry stay as ids: the nightly join and the undo still run cleanly afterwards", async () => {

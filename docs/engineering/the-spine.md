@@ -123,8 +123,15 @@ occasion and turns a blank one into none before cutting it; the bind only cuts i
 never waits for one of those. Each record is decided
 on a plain read, then the rows it will write are locked `FOR NO KEY UPDATE SKIP
 LOCKED` in the writers' order and decided again; an event it joins is taken `FOR KEY
-SHARE SKIP LOCKED`. **A row it cannot have at once, or that changed, is left to the
-next run.** It can wait in two places. A deal's update that meets a writer's
+SHARE SKIP LOCKED`. **Every value an event it makes is given (a name, a title, an
+occasion) is read under a lock the join holds**: a row it writes is re-checked under
+its lock to still hold the title or occasion it read, and a row it only reads one
+from (the enquiry of a deal or a proposal when the event is not made for that
+enquiry, the deal of a proposal) is taken `FOR SHARE SKIP LOCKED`, which a writer
+changing that row conflicts with. So a row being changed (a title an erasure is
+rewording) is skipped, and a change begun after the join took the row waits for its
+run to commit, as a change to a row it writes does. **A row it cannot have at once,
+or that changed, is left to the next run.** It can wait in two places. A deal's update that meets a writer's
 uncommitted open deal on the same event waits at most 100 ms (set and restored
 inside the function), and the deal is then listed or left. And its foreign keys take
 key shares on venue rows: only a venue row held `FOR UPDATE` makes those wait, up to
@@ -257,6 +264,11 @@ join has no name to copy back.
   refuses the erasure.
 - A record of theirs linked between the erasure's reads and its locks makes it
   answer RETRY, as a booking written meanwhile does.
+- The join copies a name only from a row it holds (above). An erasure under way when
+  the join reaches the person's records makes it leave them for its next run, which
+  reads the reworded text; an erasure that meets rows the join holds waits for the
+  join's run to commit (at most the run's 60 s statement limit), then finds the
+  new event through the record's link and answers RETRY, and tried again rewords it.
 - The pass reads the same links with the same expression, so what it reads as kept
   or near agrees with what its step finds.
 - **Whoever adds a new way to tie a record to an event** (another column that names

@@ -276,15 +276,23 @@ ON CONFLICT DO NOTHING;
 -- Locks. It takes no table lock, and every row lock it asks for is SKIP
 -- LOCKED, so it never waits for one of those: each record is decided first
 -- on a plain read; nothing is locked for a record
--- that will be neither joined nor listed; for one that will be, the rows the
--- join will write are locked FOR NO KEY UPDATE SKIP LOCKED in the writers'
--- order (a proposal, then its enquiry and its deposit request; a deal's
--- enquiry, then the deal), each re-checked to still hold what was read, and
--- the record is decided again under those locks before it is acted on. An
--- event it joins is taken FOR KEY SHARE SKIP LOCKED and must still be live:
--- the lock every key to an event takes anyway, which no writer's FOR NO KEY
--- UPDATE waits for. A row it cannot have at once, or that changed, is left
--- to the next run. Every lock it takes is held until the run commits.
+-- that will be neither joined nor listed; for one that will be, its rows are
+-- locked in the writers' order (a proposal, then its enquiry, its deal and
+-- its deposit request; a deal's enquiry, then the deal), and the record is
+-- decided again under those locks before it is acted on. A row the join will
+-- write is locked FOR NO KEY UPDATE SKIP LOCKED and re-checked to still hold
+-- what was read. An event it makes is given values copied from rows (a name,
+-- a title, an occasion, a fixture source), each read under a lock the join
+-- holds: one read with the loop's rows is part of its row's re-check; any
+-- other is read again under the locks. A row it only reads such a value from
+-- (the enquiry of a deal or a proposal when the event is not made for that
+-- enquiry, the deal of a proposal) is taken FOR SHARE SKIP LOCKED, which a
+-- writer changing that row conflicts with: a row being changed is skipped,
+-- and a change begun after it waits for the run to commit. An event it joins
+-- is taken FOR KEY SHARE SKIP LOCKED and must still be live: the lock every
+-- key to an event takes anyway, which no writer's FOR NO KEY UPDATE waits
+-- for. A row it cannot have at once, or that changed, is left to the next
+-- run. Every lock it takes is held until the run commits.
 --
 -- It can wait on another transaction in two places. The first is a deal's
 -- update meeting an open deal a writer has put on the same event and not yet
@@ -418,6 +426,8 @@ DECLARE
   v_phase integer;
   v_locked boolean;          -- the record's rows are held: decide again, then act
   v_enquiry_locked uuid;     -- the enquiry this record's locking took, if any
+  v_enquiry_shared uuid;     -- the enquiry it took FOR SHARE to read a made event's values from, if any
+  v_deal_shared uuid;        -- the deal it took FOR SHARE to read a made event's occasion from, if any
   v_request_locked uuid;     -- the deposit request this record's locking took, if any
   v_a uuid[];                -- the live events an enquiry's undeleted bookings sit in
   v_c uuid[];                -- the live events its undeleted deals and proposals are joined to
@@ -641,6 +651,7 @@ BEGIN
   LOOP
     v_locked := false;
     v_enquiry_locked := NULL;
+    v_enquiry_shared := NULL;
     LOOP
       -- A listed deal waits for a person, and so does one whose enquiry is listed.
       CONTINUE deal_loop WHEN EXISTS (SELECT 1 FROM "event_link_reviews" l
@@ -722,23 +733,35 @@ BEGIN
       END IF;
 
       EXIT WHEN v_locked;
-      -- What it will write or list: its enquiry first when the event is made
-      -- for it, then the deal, still with no event and still as read.
+      -- What it will write or list, and what an event made here copies from:
+      -- its enquiry first, FOR NO KEY UPDATE when the event is made for it, or
+      -- FOR SHARE when an event made by the deal takes its client's name (and
+      -- occasion) from it; then the deal, still with no event and still as
+      -- read, its title and occasion with the rest.
       IF v_for_enquiry THEN
         PERFORM 1 FROM "enquiries" q WHERE q."id" = v_q_id AND q."event_id" IS NULL FOR NO KEY UPDATE SKIP LOCKED;
         CONTINUE deal_loop WHEN NOT FOUND;
         v_enquiry_locked := v_q_id;
+      ELSIF v_make AND v_q_id IS NOT NULL THEN
+        PERFORM 1 FROM "enquiries" q WHERE q."id" = v_q_id FOR SHARE SKIP LOCKED;
+        CONTINUE deal_loop WHEN NOT FOUND;
+        v_enquiry_shared := v_q_id;
       END IF;
       PERFORM 1 FROM "opportunities" o
       WHERE o."id" = this_deal."id" AND o."event_id" IS NULL AND o."deleted_at" IS NULL
         AND o."stage" = this_deal."stage"
         AND o."source_enquiry_id" IS NOT DISTINCT FROM this_deal."source_enquiry_id"
+        AND o."title" IS NOT DISTINCT FROM this_deal."title"
+        AND o."event_type" IS NOT DISTINCT FROM this_deal."event_type"
       FOR NO KEY UPDATE SKIP LOCKED;
       CONTINUE deal_loop WHEN NOT FOUND;
       v_locked := true;
     END LOOP;
-    -- Decided again under the locks: an enquiry it will write must be one it holds.
+    -- Decided again under the locks: an enquiry it will write must be one it
+    -- holds, and an event it makes copies only from rows it holds.
     CONTINUE WHEN v_for_enquiry AND v_enquiry_locked IS DISTINCT FROM v_q_id;
+    CONTINUE WHEN v_make AND v_q_id IS NOT NULL
+      AND v_q_id IS DISTINCT FROM v_enquiry_locked AND v_q_id IS DISTINCT FROM v_enquiry_shared;
 
     IF v_reason IS NOT NULL THEN
       INSERT INTO "event_link_reviews" ("venue_id", "subject_kind", "subject_id", "reason", "candidate_event_ids", "detail")
@@ -840,6 +863,8 @@ BEGIN
   LOOP
     v_locked := false;
     v_enquiry_locked := NULL;
+    v_enquiry_shared := NULL;
+    v_deal_shared := NULL;
     v_request_locked := NULL;
     LOOP
       -- A listed proposal waits for a person, and so does one whose enquiry is
@@ -966,21 +991,35 @@ BEGIN
       END IF;
 
       EXIT WHEN v_locked;
-      -- What will be written, in the writers' order: the proposal (still with
-      -- no event and still as read), then its enquiry when the event is made
-      -- for it, then its deposit request when it takes the event.
+      -- What will be written, and what an event made here copies from, in the
+      -- writers' order: the proposal (still with no event and still as read,
+      -- its title with the rest), then its enquiry, FOR NO KEY UPDATE when the
+      -- event is made for it, or FOR SHARE when an event made by the proposal
+      -- takes its client's name (and occasion) from it; then its deal FOR
+      -- SHARE when an event is made (its occasion, when the enquiry gives
+      -- none); then its deposit request when it takes the event.
       PERFORM 1 FROM "proposals" p
       WHERE p."id" = this_proposal."id" AND p."event_id" IS NULL AND p."deleted_at" IS NULL
         AND p."status" = this_proposal."status"
         AND p."opportunity_id" IS NOT DISTINCT FROM this_proposal."opportunity_id"
         AND p."enquiry_id" IS NOT DISTINCT FROM this_proposal."enquiry_id"
         AND p."configuration_id" IS NOT DISTINCT FROM this_proposal."configuration_id"
+        AND p."title" IS NOT DISTINCT FROM this_proposal."title"
       FOR NO KEY UPDATE SKIP LOCKED;
       CONTINUE proposal_loop WHEN NOT FOUND;
       IF v_for_enquiry THEN
         PERFORM 1 FROM "enquiries" q WHERE q."id" = v_q_id AND q."event_id" IS NULL FOR NO KEY UPDATE SKIP LOCKED;
         CONTINUE proposal_loop WHEN NOT FOUND;
         v_enquiry_locked := v_q_id;
+      ELSIF v_make AND v_q_id IS NOT NULL THEN
+        PERFORM 1 FROM "enquiries" q WHERE q."id" = v_q_id FOR SHARE SKIP LOCKED;
+        CONTINUE proposal_loop WHEN NOT FOUND;
+        v_enquiry_shared := v_q_id;
+      END IF;
+      IF v_make AND this_proposal."opportunity_id" IS NOT NULL THEN
+        PERFORM 1 FROM "opportunities" o WHERE o."id" = this_proposal."opportunity_id" FOR SHARE SKIP LOCKED;
+        CONTINUE proposal_loop WHEN NOT FOUND;
+        v_deal_shared := this_proposal."opportunity_id";
       END IF;
       IF v_reason IS NULL AND v_request IS NOT NULL AND v_request_event IS NULL THEN
         PERFORM 1 FROM "proposal_deposit_requests" d
@@ -991,10 +1030,15 @@ BEGIN
       END IF;
       v_locked := true;
     END LOOP;
-    -- Decided again under the locks: what it will write must be what it holds.
+    -- Decided again under the locks: what it will write must be what it
+    -- holds, and an event it makes copies only from rows it holds.
     CONTINUE WHEN v_for_enquiry AND v_enquiry_locked IS DISTINCT FROM v_q_id;
     CONTINUE WHEN v_reason IS NULL AND v_request IS NOT NULL AND v_request_event IS NULL
       AND v_request_locked IS DISTINCT FROM v_request;
+    CONTINUE WHEN v_make AND v_q_id IS NOT NULL
+      AND v_q_id IS DISTINCT FROM v_enquiry_locked AND v_q_id IS DISTINCT FROM v_enquiry_shared;
+    CONTINUE WHEN v_make AND this_proposal."opportunity_id" IS NOT NULL
+      AND v_deal_shared IS DISTINCT FROM this_proposal."opportunity_id";
 
     IF v_reason IS NOT NULL THEN
       INSERT INTO "event_link_reviews" ("venue_id", "subject_kind", "subject_id", "reason", "candidate_event_ids", "detail")
