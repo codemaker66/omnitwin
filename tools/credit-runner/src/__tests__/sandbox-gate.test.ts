@@ -516,6 +516,37 @@ describe("install-time code in a package.json, read by the review from real patc
   }, SLOW);
 });
 
+/**
+ * Characters that show nothing though they are not format characters: the
+ * Hangul fillers and the blank Braille pattern, which are letters and a symbol,
+ * and the combining grapheme joiner, a variation selector (in both its planes),
+ * a Khmer inherent vowel and a Mongolian free variation selector, which are
+ * marks Unicode lists as default-ignorable.
+ */
+const INVISIBLE_LETTERS = [0x3164, 0x115f, 0x1160, 0xffa0, 0x2800, 0x034f, 0xfe0f, 0xe0100, 0x17b4, 0x180b];
+
+/** A code point as the review's reasons show it. */
+function codeOf(code: number): string {
+  return `U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
+}
+
+describe("paths that hold a character which shows nothing, read by the review from real patches", () => {
+  it("rejects each, naming the path with the character written as <U+code> and never the character itself", async () => {
+    // Written on disk under plain names; the patches carry the names as git would write them unquoted.
+    const plain = (index: number): string => `docs/a${String(index)}b.md`;
+    const hidden = (index: number, code: number): string => `docs/a${String.fromCodePoint(code)}${String(index)}b.md`;
+    const result = await review([{ subject: "Add notes", write: Object.fromEntries(INVISIBLE_LETTERS.map((_, index) => [plain(index), "notes\n"])) }], BASE_FILES, (text) =>
+      INVISIBLE_LETTERS.reduce((patched, code, index) => patched.replaceAll(plain(index), hidden(index, code)), text),
+    );
+    expect(result.verdict).toBe("rejected");
+    const reason = result.reasons.find((entry) => entry.startsWith("a path holds a control, invisible or reordering character")) ?? "";
+    for (const [index, code] of INVISIBLE_LETTERS.entries()) {
+      expect(reason, codeOf(code)).toContain(`docs/a<${codeOf(code)}>${String(index)}b.md`);
+      expect(result.reasons.join(" "), codeOf(code)).not.toContain(String.fromCodePoint(code));
+    }
+  }, SLOW);
+});
+
 describe("review.md's words on building the branch", () => {
   const task = parseTask(
     ["---", "id: gate-check", "title: Gate check", "budget_usd: 1", "timeout_minutes: 30", 'acceptance: "pnpm test"', "---", "Check the gate."].join("\n"),

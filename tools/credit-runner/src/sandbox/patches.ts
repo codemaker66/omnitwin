@@ -141,13 +141,18 @@ function stoppedAt(command: string): string {
 
 /**
  * Characters refused in a path, though git takes them: controls (C0, DEL and
- * C1), the line and paragraph separators, and format characters (Unicode
+ * C1), the line and paragraph separators, format characters (Unicode
  * category Cf: the bidirectional marks, embeddings, overrides and isolates,
- * zero-width characters and the tag characters). Each breaks a line, is
- * invisible, or reorders the text around it, so a file list would show the name
- * as something else: a right-to-left override can make a .js file read as .md.
+ * zero-width characters and the tag characters), every other code point
+ * Unicode lists as default-ignorable, which a renderer shows as nothing (the
+ * Hangul fillers, which are letters, the combining grapheme joiner and the
+ * variation selectors), and the blank Braille pattern, a symbol drawn as
+ * empty space. Each breaks a line, is invisible, or reorders the text around
+ * it, so a file list would show the name as something else: a right-to-left
+ * override can make a .js file read as .md. launcher.ts's fenced() makes the
+ * same set a space.
  */
-const HIDDEN_IN_PATH = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+const HIDDEN_IN_PATH = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/u;
 
 /** A path with each HIDDEN_IN_PATH character written as <U+XXXX>, so a reason can name it without carrying it. */
 function shownPath(name: string): string {

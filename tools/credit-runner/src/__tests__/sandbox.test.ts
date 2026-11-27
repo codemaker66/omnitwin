@@ -842,7 +842,11 @@ describe("sandbox launcher", () => {
   });
 
   it("keeps the lines of the verifier's tail and the grader's explanation, but no control, invisible or reordering character, in review.md's fenced blocks", () => {
-    const hidden = [0x85, 0x2028, 0x2029, 0x202e, 0x2066, 0x2069, 0x200e, 0x200f, 0x061c, 0x200b, 0x2060, 0xe0049, 0xfeff, 0x1b, 0x09].map((code) => String.fromCodePoint(code));
+    // Controls, separators and format characters, then characters that show nothing though they are letters, a symbol or marks.
+    const hidden = [
+      0x85, 0x2028, 0x2029, 0x202e, 0x2066, 0x2069, 0x200e, 0x200f, 0x061c, 0x200b, 0x2060, 0xe0049, 0xfeff, 0x1b, 0x09, 0x3164, 0x115f, 0x1160, 0xffa0, 0x2800, 0x034f,
+      0xfe0f, 0xe0100, 0x17b4, 0x180b,
+    ].map((code) => String.fromCodePoint(code));
     const text = `first ${hidden.join("x")} line\r\nsecond${String.fromCodePoint(0x202e)}line\n\n  indented${String.fromCodePoint(0x2069)}\n`;
     const result: SessionRunResult = {
       sessionId: "sesn_1",

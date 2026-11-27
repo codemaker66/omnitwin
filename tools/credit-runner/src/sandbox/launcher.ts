@@ -203,12 +203,15 @@ export function inlineCode(text: string): string {
 }
 
 /**
- * What fenced() makes a space: controls (C0, DEL and C1), the line and
- * paragraph separators, and format characters (Unicode category Cf: the
- * bidirectional marks, embeddings, overrides and isolates, zero-width and tag
- * characters). These are isLineBreaking's characters and the invisible ones.
+ * What fenced() makes a space, the set patches.ts refuses in a path: controls
+ * (C0, DEL and C1), the line and paragraph separators, format characters
+ * (Unicode category Cf: the bidirectional marks, embeddings, overrides and
+ * isolates, zero-width and tag characters), every other default-ignorable code
+ * point (the Hangul fillers, the combining grapheme joiner, the variation
+ * selectors) and the blank Braille pattern. These are isLineBreaking's
+ * characters and the invisible ones.
  */
-const HIDDEN_IN_BLOCK = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
+const HIDDEN_IN_BLOCK = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu;
 
 /**
  * Text that may come from the agent, quoted as a block: line by line, with each
