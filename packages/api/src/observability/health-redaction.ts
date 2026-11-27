@@ -1,6 +1,6 @@
 import type { FastifyServerOptions } from "fastify";
 import { redactHealthFreeText, redactHealthFreeTextInString } from "@omnitwin/types";
-import { errorLogSerializer, requestLogSerializer } from "./redact.js";
+import { dropCredentials, errorLogSerializer, requestLogSerializer } from "./redact.js";
 
 // ---------------------------------------------------------------------------
 // Guests' allergy notes stay out of the server's logs and error reports
@@ -44,8 +44,17 @@ export const API_LOG_SERIALIZERS = {
 
 export type ApiLoggerMode = "development" | "test" | "production";
 
-/** The API's logger options: the same redaction in every mode that logs. */
-export function apiLoggerOptions(mode: ApiLoggerMode): false | ApiLoggerConfig {
+/** Where a test reads the lines a logger writes. */
+export interface LogLineStream {
+  readonly write: (line: string) => void;
+}
+
+/**
+ * The API's logger options: the same redaction in every mode that logs. A
+ * `stream` (tests only) sends the production logger's lines there, so a test
+ * reads exactly what production would write.
+ */
+export function apiLoggerOptions(mode: ApiLoggerMode, stream?: LogLineStream): false | ApiLoggerConfig {
   if (mode === "test") return false;
   if (mode === "development") {
     return {
@@ -55,7 +64,8 @@ export function apiLoggerOptions(mode: ApiLoggerMode): false | ApiLoggerConfig {
       transport: { target: "pino-pretty", options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" } },
     };
   }
-  return { level: "info", hooks: HEALTH_REDACTING_LOG_HOOKS, serializers: API_LOG_SERIALIZERS };
+  const production: ApiLoggerConfig = { level: "info", hooks: HEALTH_REDACTING_LOG_HOOKS, serializers: API_LOG_SERIALIZERS };
+  return stream === undefined ? production : { ...production, stream };
 }
 
 /** The minimum of a Sentry event this boundary touches. */
@@ -64,6 +74,7 @@ interface SentryEventLike {
     data?: unknown;
     query_string?: unknown;
     headers?: Record<string, string>;
+    cookies?: Record<string, string>;
   };
 }
 
@@ -76,10 +87,10 @@ export function scrubApiSentryEvent<T extends SentryEventLike>(event: T): T {
   if (event.request !== undefined) {
     event.request.data = undefined;
     event.request.query_string = undefined;
-    if (event.request.headers !== undefined) {
-      delete event.request.headers["authorization"];
-      delete event.request.headers["cookie"];
-    }
+    // The sign-in headers, a guest plan's claim secret and the cookies the
+    // SDK parsed from the Cookie header: one list, shared with the other
+    // scrubbers (redact.ts).
+    dropCredentials(event.request);
   }
   return redactHealthFreeText(event) as T;
 }

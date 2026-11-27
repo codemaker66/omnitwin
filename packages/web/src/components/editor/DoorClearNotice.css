@@ -1,0 +1,109 @@
+/* A table already in front of a door (DoorClearNotice): the planner's dark
+   register, as the one-line placement notice beneath it, with one quiet
+   action. Information, not a warning: no hue of alarm, the door mark in
+   copper. Only the card takes a pointer; the floor round it stays usable. */
+
+@keyframes doorClearNoticeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.door-clear-notice {
+  position: fixed;
+  left: 50%;
+  /* Under the tool pill at the top of the room, clear of the view and
+     command bars and the placement line at the bottom. */
+  top: 84px;
+  z-index: 40;
+  width: max-content;
+  max-width: min(520px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.door-clear-notice.is-mobile {
+  top: auto;
+  /* Phones: above the bottom toolbar and the placement line's slot. */
+  bottom: calc(var(--toolbox-bottom, 0px) + max(14px, env(safe-area-inset-bottom)) + 64px);
+  max-width: calc(100vw - 32px);
+}
+
+/* The new chrome: in the zone above the dock, which places it on every width. */
+.door-clear-notice.is-zoned {
+  position: static;
+  top: auto;
+  left: auto;
+  max-width: min(520px, 100%);
+  transform: none;
+}
+
+.door-clear-notice__card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 14px;
+  border: 1px solid var(--house-hairline-hover, rgba(245, 240, 232, 0.12));
+  border-radius: 12px;
+  background: var(--house-bg-1, #131110);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.36);
+  color: var(--house-text-1, #f4efe6);
+  pointer-events: auto;
+  animation: doorClearNoticeIn var(--house-motion-deliberate, 240ms) ease-out;
+}
+
+.door-clear-notice__mark {
+  flex: none;
+  color: var(--house-accent-copper, #c98a5b);
+}
+
+.door-clear-notice__words {
+  min-width: 0;
+}
+
+.door-clear-notice__line,
+.door-clear-notice__stuck {
+  margin: 0;
+  font: 500 14px/1.45 var(--house-sans, "Inter", system-ui, sans-serif);
+}
+
+.door-clear-notice__stuck {
+  margin-top: 2px;
+  color: var(--house-text-2, rgba(244, 239, 230, 0.62));
+  font-weight: 400;
+}
+
+.door-clear-notice__move {
+  flex: none;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--house-hairline-hover, rgba(245, 240, 232, 0.12));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--house-text-1, #f4efe6);
+  font: 600 13px/1 var(--house-sans, "Inter", system-ui, sans-serif);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--house-motion-press, 120ms) ease-out, transform var(--house-motion-press, 120ms) ease-out;
+}
+
+.door-clear-notice__move:hover {
+  background: rgba(245, 240, 232, 0.06);
+}
+
+.door-clear-notice__move:active {
+  transform: translateY(1px);
+}
+
+.door-clear-notice__move:focus-visible {
+  outline: 2px solid var(--house-accent-copper, #c98a5b);
+  outline-offset: 2px;
+}
+
+.door-clear-notice.is-mobile .door-clear-notice__move {
+  min-height: 44px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .door-clear-notice__card { animation: none; }
+  .door-clear-notice__move { transition: none; }
+}

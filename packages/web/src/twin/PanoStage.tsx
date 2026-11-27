@@ -10,12 +10,8 @@ import {
   type IUniform,
   type Texture,
 } from "three";
-import {
-  TWIN_EQUIRECT_LODS,
-  TWIN_LODS,
-  type TwinEquirectLod,
-  type TwinImagery,
-} from "@omnitwin/types";
+import type { TwinEquirectLod, TwinImagery } from "@omnitwin/types";
+import { TWIN_EQUIRECT_LODS, TWIN_LODS } from "@omnitwin/types/twin";
 import {
   ensureTextureResident,
   isTextureResident,

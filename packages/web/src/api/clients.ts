@@ -128,6 +128,9 @@ const ContactProfileSchema = z.object({
     status: z.string(),
     currentVersion: z.number(),
     sentAt: z.string().nullable(),
+    /** The version the client was last sent; one saved since has not been.
+     *  Null when not known (an API from before it said). */
+    sentVersion: z.number().nullable().default(null),
   })),
 });
 export type ContactProfile = z.infer<typeof ContactProfileSchema>;

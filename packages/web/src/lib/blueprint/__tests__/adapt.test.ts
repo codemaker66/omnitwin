@@ -172,14 +172,14 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
     expect(table.chairs?.[2]).toEqual({ x: 5, y: 6 });
   });
 
-  it("uses the hand-authored Grand Hall footprint instead of stale API dimensions", () => {
+  it("uses the planner's Grand Hall footprint, its E57 interior, instead of stale API dimensions", () => {
     const scene = adaptEditorStateToBlueprintScene({
       space: { name: "Grand Hall", widthM: "21.00", lengthM: "10.00" },
       objects: [],
       lastSavedAt: null,
     });
 
-    expect(scene.room).toEqual({ widthM: 21, lengthM: 10.5 });
+    expect(scene.room).toEqual({ widthM: 21.135, lengthM: 10.59 });
   });
 
   it("supplies an empty actual-chair list when the table has no group", () => {

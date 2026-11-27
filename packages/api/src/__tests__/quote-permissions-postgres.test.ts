@@ -266,16 +266,21 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     const value = async (id: string) => (await db.select({ minor: schema.opportunities.estimatedValueMinor })
       .from(schema.opportunities).where(eq(schema.opportunities.id, id)))[0]?.minor;
 
-    // Another proposal's quote.
+    // Another proposal's quote: the version is refused (audit
+    // api-proposals-money-1), and the deal is left as it was.
     const own = await deal("GBP");
     const other = await deal("GBP");
     const othersQuote = await quoteFor(other.proposalId);
-    expect((await saveWith(own.proposalId, othersQuote)).statusCode).toBe(201);
+    const foreign = await saveWith(own.proposalId, othersQuote);
+    expect(foreign.statusCode, foreign.body).toBe(422);
+    expect(foreign.json<{ code: string }>().code).toBe("QUOTE_MISMATCH");
     expect(await value(own.dealId)).toBe(0);
-    // A quote since deleted.
+    // A quote since deleted, likewise.
     const deleted = await quoteFor(own.proposalId);
     expect((await server.inject({ method: "DELETE", url: `/quotes/${deleted.id}`, headers: f.headers })).statusCode).toBe(204);
-    expect((await saveWith(own.proposalId, deleted)).statusCode).toBe(201);
+    const gone = await saveWith(own.proposalId, deleted);
+    expect(gone.statusCode, gone.body).toBe(422);
+    expect(gone.json<{ code: string }>().code).toBe("QUOTE_MISMATCH");
     expect(await value(own.dealId)).toBe(0);
     // A value already set is the booker's.
     const valued = await deal("GBP", 900_000);
@@ -284,6 +289,120 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     // And the proposal's own live quote fills an empty deal.
     expect((await saveWith(own.proposalId, await quoteFor(own.proposalId))).statusCode).toBe(201);
     expect(await value(own.dealId)).toBe(440_000);
+  });
+
+  // What the client is shown, accepts, pays a deposit on and signs is the
+  // version's quote, so its figures are never the browser's (audit
+  // api-proposals-money-1; this file's routes/quotes.ts: clients never supply
+  // totals). A quote named by id is written as it is stored; one with no id
+  // (a share, a hand-made fixture) keeps its lines, and its total is theirs.
+  it("writes a version's quote as its own proposal's quote is stored, and refuses a total that is not its lines'", async () => {
+    const f = await fixture("sales");
+    const proposalFor = async (title: string) => {
+      const [row] = await db.insert(schema.proposals).values({ venueId: f.venueId, title }).returning();
+      if (row === undefined) throw new Error("Missing proposal fixture");
+      return row.id;
+    };
+    const proposalId = await proposalFor("TEST ONLY Henderson wedding");
+    const otherProposalId = await proposalFor("TEST ONLY Merchants' dinner");
+    const quoteFor = async (forProposal: string) => {
+      const made = await server.inject({ method: "POST", url: "/quotes", headers: f.headers,
+        payload: { venueId: f.venueId, proposalId: forProposal, name: "TEST ONLY quote", currency: "GBP",
+          lineItems: [{ description: "Dinner", quantity: 120, unitAmountMinor: 9_500 }, { description: "Room hire", quantity: 1, unitAmountMinor: 440_000 }] } });
+      expect(made.statusCode, made.body).toBe(201);
+      const stored = made.json<{ data: { id: string; currency: string; subtotalMinor: number; totalMinor: number;
+        lineItems: { description: string; quantity: number; unitAmountMinor: number; lineTotalMinor: number }[] } }>().data;
+      // As the composer sends it (ProposalsDesk saveVersion).
+      return { quoteId: stored.id, currency: stored.currency,
+        lineItems: stored.lineItems.map(({ description, quantity, unitAmountMinor, lineTotalMinor }) => ({ description, quantity, unitAmountMinor, lineTotalMinor })),
+        subtotalMinor: stored.subtotalMinor, totalMinor: stored.totalMinor };
+    };
+    const save = (quote: unknown) => server.inject({ method: "POST", url: `/proposals/${proposalId}/versions`, headers: f.headers,
+      payload: { schemaVersion: "venviewer.proposal-version.v1", title: "TEST ONLY Henderson wedding", clientMessage: null,
+        configurationId: null, layoutRevision: null, capacityNote: null, quote } });
+    const refused = async (quote: unknown) => {
+      const answer = await save(quote);
+      expect(answer.statusCode, answer.body).toBe(422);
+      expect(answer.json<{ code: string }>().code).toBe("QUOTE_MISMATCH");
+    };
+    const kept = async () => (await db.select({ payload: schema.proposalVersions.payload }).from(schema.proposalVersions)
+      .where(eq(schema.proposalVersions.proposalId, proposalId)).orderBy(schema.proposalVersions.version)).map((row) => row.payload.quote);
+
+    const composed = await quoteFor(proposalId);
+    const hire = [{ description: "Grand Hall hire", quantity: 1, unitAmountMinor: 500_000, lineTotalMinor: 500_000 }];
+    // £5,000 of lines under a £500 total, with and without an id.
+    await refused({ quoteId: null, currency: "GBP", lineItems: hire, subtotalMinor: 500_000, totalMinor: 50_000 });
+    await refused({ ...composed, totalMinor: 50_000 });
+    // Another proposal's quote, a quote since deleted, and an id that is no quote.
+    await refused(await quoteFor(otherProposalId));
+    const deleted = await quoteFor(proposalId);
+    expect((await server.inject({ method: "DELETE", url: `/quotes/${deleted.quoteId}`, headers: f.headers })).statusCode).toBe(204);
+    await refused(deleted);
+    await refused({ ...composed, quoteId: randomUUID() });
+    expect(await kept()).toEqual([]);
+
+    // The proposal's own quote with other figures sent for it: the stored ones are kept.
+    const altered = await save({ ...composed, lineItems: [{ description: "Room hire", quantity: 1, unitAmountMinor: 100, lineTotalMinor: 100 }],
+      subtotalMinor: 100, totalMinor: 100 });
+    expect(altered.statusCode, altered.body).toBe(201);
+    // The composer's own shape, and a quote with no id whose total is its lines'.
+    expect((await save(composed)).statusCode).toBe(201);
+    const plain = { quoteId: null, currency: "GBP", lineItems: hire, subtotalMinor: 500_000, totalMinor: 500_000 };
+    expect((await save(plain)).statusCode).toBe(201);
+    expect(await kept()).toEqual([composed, composed, plain]);
+  });
+
+  // A version carries the proposal's live quote, live as the deal panel reads
+  // it (draft, issued or accepted). A quote superseded by a sibling, declined
+  // or expired is kept on record but its figures were replaced or refused, so
+  // a stale or crafted page naming it is refused the same way.
+  it("refuses a version naming its own proposal's superseded, declined or expired quote", async () => {
+    const f = await fixture("sales");
+    const [proposal] = await db.insert(schema.proposals).values({ venueId: f.venueId, title: "TEST ONLY Henderson wedding" }).returning();
+    if (proposal === undefined) throw new Error("Missing proposal fixture");
+    const quoteFor = async () => {
+      const made = await server.inject({ method: "POST", url: "/quotes", headers: f.headers,
+        payload: { venueId: f.venueId, proposalId: proposal.id, name: "TEST ONLY quote", currency: "GBP",
+          lineItems: [{ description: "Room hire", quantity: 1, unitAmountMinor: 440_000 }] } });
+      expect(made.statusCode, made.body).toBe(201);
+      const stored = made.json<{ data: { id: string; currency: string; subtotalMinor: number; totalMinor: number;
+        lineItems: { description: string; quantity: number; unitAmountMinor: number; lineTotalMinor: number }[] } }>().data;
+      return { quoteId: stored.id, currency: stored.currency,
+        lineItems: stored.lineItems.map(({ description, quantity, unitAmountMinor, lineTotalMinor }) => ({ description, quantity, unitAmountMinor, lineTotalMinor })),
+        subtotalMinor: stored.subtotalMinor, totalMinor: stored.totalMinor };
+    };
+    const transition = async (quoteId: string, payload: Record<string, string>) => {
+      const moved = await server.inject({ method: "POST", url: `/quotes/${quoteId}/transition`, headers: f.headers, payload });
+      expect(moved.statusCode, moved.body).toBe(200);
+    };
+    const save = (quote: unknown) => server.inject({ method: "POST", url: `/proposals/${proposal.id}/versions`, headers: f.headers,
+      payload: { schemaVersion: "venviewer.proposal-version.v1", title: "TEST ONLY Henderson wedding", clientMessage: null,
+        configurationId: null, layoutRevision: null, capacityNote: null, quote } });
+    const kept = async () => (await db.select({ payload: schema.proposalVersions.payload }).from(schema.proposalVersions)
+      .where(eq(schema.proposalVersions.proposalId, proposal.id)).orderBy(schema.proposalVersions.version)).map((row) => row.payload.quote);
+
+    const replaced = await quoteFor();
+    const successor = await quoteFor();
+    await transition(replaced.quoteId, { status: "issued" });
+    await transition(replaced.quoteId, { status: "superseded", supersededByQuoteId: successor.quoteId });
+    const declined = await quoteFor();
+    await transition(declined.quoteId, { status: "issued" });
+    await transition(declined.quoteId, { status: "declined" });
+    const expired = await quoteFor();
+    await transition(expired.quoteId, { status: "issued" });
+    await transition(expired.quoteId, { status: "expired" });
+    for (const quote of [replaced, declined, expired]) {
+      const answer = await save(quote);
+      expect(answer.statusCode, answer.body).toBe(422);
+      expect(answer.json<{ code: string }>().code).toBe("QUOTE_MISMATCH");
+    }
+    expect(await kept()).toEqual([]);
+
+    // The quote that replaced it, a draft, and once issued, is saved.
+    expect((await save(successor)).statusCode).toBe(201);
+    await transition(successor.quoteId, { status: "issued" });
+    expect((await save(successor)).statusCode).toBe(201);
+    expect(await kept()).toEqual([successor, successor]);
   });
 
   it("refuses a quote that names a deal other than its proposal's", async () => {
@@ -392,6 +511,75 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     // The venue's own live entry is still taken on both paths.
     expect((await make(own.id)).statusCode).toBe(201);
     expect((await add(own.id)).statusCode).toBe(201);
+  });
+
+  // A line's total and the quote's are both held to the quote ceiling before
+  // anything is written (audit pricing-money-7). 30,000,000 x 100 is
+  // 3,000,000,000, past what the integer line_total_minor column holds, so a
+  // check after the insert never ran: the database refused the row and the
+  // request ended in a server error.
+  it("refuses a line past the quote ceiling before writing it, and keeps the quote as it was", async () => {
+    const f = await fixture("sales");
+    const add = (quantity: number, unitAmountMinor: number) => server.inject({ method: "POST", url: `/quotes/${f.quote.id}/line-items`,
+      headers: f.headers, payload: { description: "TEST ONLY equipment", quantity, unitAmountMinor } });
+    for (const [quantity, unitAmountMinor] of [[100, 30_000_000], [10_000, 100_000_000], [1, 99_999_001]] as const) {
+      const refused = await add(quantity, unitAmountMinor);
+      expect(refused.statusCode, refused.body).toBe(422);
+      expect(refused.json<{ code: string }>().code).toBe("QUOTE_TOTAL_EXCEEDS_LIMIT");
+    }
+    expect(await stored(f)).toMatchObject({ quote: { subtotalMinor: 1000, totalMinor: 1000 }, lines: [expect.objectContaining({ lineTotalMinor: 1000 })] });
+    expect((await stored(f)).lines).toHaveLength(1);
+    // A line that brings the quote exactly to the ceiling is kept.
+    const atCeiling = await add(1, 99_999_000);
+    expect(atCeiling.statusCode, atCeiling.body).toBe(201);
+    expect((await stored(f)).quote).toMatchObject({ subtotalMinor: 100_000_000, totalMinor: 100_000_000 });
+  });
+
+  // A venue admin's house override on quote moves stops short of undoing a
+  // client's acceptance: back to draft, the quote could be rewritten and
+  // deleted, which the record protection below keeps from a venue admin
+  // (audit pricing-money-5). A move out of superseded keeps the successor
+  // link that quotes_superseded_coherent refuses, so for anyone it is a
+  // refusal, never a server error.
+  function move(f: Fixture, status: string) {
+    return server.inject({ method: "POST", url: `/quotes/${f.quote.id}/transition`, headers: f.headers, payload: { status } });
+  }
+
+  it("keeps an accepted quote from a venue admin's moves, and its record from deletion", async () => {
+    const f = await fixture("admin");
+    await db.update(schema.quotes).set({ status: "accepted" }).where(eq(schema.quotes.id, f.quote.id));
+    for (const status of ["draft", "issued", "declined", "expired"]) {
+      const refused = await move(f, status);
+      expect(refused.statusCode, refused.body).toBe(422);
+      expect(refused.json<{ code: string }>().code).toBe("INVALID_TRANSITION");
+    }
+    expect((await remove(f)).statusCode).toBe(422);
+    expect(await stored(f)).toMatchObject({ quote: { status: "accepted", deletedAt: null, totalMinor: 1000 }, lines: [expect.objectContaining({ lineTotalMinor: 1000 })] });
+  });
+
+  it.each(["venue_admin", "platform_admin"])("refuses %s a move out of superseded without a server error", async (who) => {
+    const platform = who === "platform_admin";
+    const f = await fixture("admin", platform, platform ? "admin" : "none");
+    const [successor] = await db.insert(schema.quotes).values({ venueId: f.venueId, name: "TEST ONLY successor", createdBy: f.actorId,
+      status: "issued", currency: "GBP", subtotalMinor: 0, totalMinor: 0 }).returning();
+    if (successor === undefined) throw new Error("Missing successor fixture");
+    await db.update(schema.quotes).set({ status: "superseded", supersededByQuoteId: successor.id }).where(eq(schema.quotes.id, f.quote.id));
+    for (const status of ["issued", "draft", "accepted", "declined", "expired"]) {
+      const refused = await move(f, status);
+      expect(refused.statusCode, refused.body).toBe(422);
+      expect(refused.json<{ code: string }>().code).toBe("INVALID_TRANSITION");
+    }
+    expect((await stored(f)).quote).toMatchObject({ status: "superseded", supersededByQuoteId: successor.id });
+  });
+
+  // Whether a platform admin keeps this override is Blake's open decision 4
+  // (docs/state/goal-ledger-2026-10-24.md); until then it stands.
+  it("keeps the platform admin's override on an accepted quote while that decision is open", async () => {
+    const f = await fixture("admin", true, "admin");
+    await db.update(schema.quotes).set({ status: "accepted" }).where(eq(schema.quotes.id, f.quote.id));
+    const moved = await move(f, "draft");
+    expect(moved.statusCode, moved.body).toBe(200);
+    expect((await stored(f)).quote?.status).toBe("draft");
   });
 
   it("retains issued-record protection for venue admins and the existing platform override", async () => {

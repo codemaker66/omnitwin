@@ -11,6 +11,7 @@ import {
   rotaLongDay,
   rotaNoticeHours,
   rotaPublishBlocks,
+  rotaRightToWorkRefusal,
   rotaSaveBlocks,
   rotaWeekBounds,
   rotaWeekStartOf,
@@ -665,6 +666,12 @@ export async function updateRotaShift(
   if (refs.problem !== null) return { kind: "reference", problem: refs.problem };
   const blocked = saveBlock(refs.person, next, timeZone);
   if (blocked !== null) return { kind: "blocked", finding: blocked };
+  // Someone new on a shift that is already published is told of it at once,
+  // and the shift never meets the publish block again, so they need their
+  // right-to-work check first. (A draft is only refused when it is published.)
+  const newcomerId = before.status !== "draft" && next.staffMemberId !== before.staffMemberId ? next.staffMemberId : null;
+  const refusal = newcomerId === null || refs.person === null ? null : rotaRightToWorkRefusal(refs.person);
+  if (refusal !== null) return { kind: "blocked", finding: refusal };
 
   const material = MATERIAL_FIELDS.some((field) => {
     const left = before[field];
@@ -674,7 +681,17 @@ export async function updateRotaShift(
   const moved = next.staffMemberId !== before.staffMemberId || next.spaceId !== before.spaceId;
   const now = new Date();
 
-  const updated = await db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx): Promise<ShiftRow | RotaFinding | null> => {
+    if (newcomerId !== null) {
+      // Read again under a share lock: a check cleared since the read above
+      // is seen here, and none can be cleared until this commits.
+      const [person] = await tx.select().from(staffMembers)
+        .where(and(eq(staffMembers.id, newcomerId), eq(staffMembers.venueId, venueId)))
+        .for("share");
+      if (person === undefined) return null;
+      const lateRefusal = rotaRightToWorkRefusal(person);
+      if (lateRefusal !== null) return lateRefusal;
+    }
     const [row] = await tx.update(rotaShifts).set({
       staffMemberId: next.staffMemberId,
       role: next.role,
@@ -738,6 +755,7 @@ export async function updateRotaShift(
     return row;
   });
 
+  if (updated !== null && "code" in updated) return { kind: "blocked", finding: updated };
   const after = await loadShift(db, venueId, shiftId);
   if (after === null) return { kind: "not_found" };
   if (updated === null) {
@@ -913,8 +931,12 @@ export async function publishRotaWeek(
     if (stale.length > 0) return { kind: "stale", shiftIds: stale };
 
     const personIds = [...new Set(rows.flatMap((row) => row.staffMemberId === null ? [] : [row.staffMemberId]))];
+    // FOR SHARE, as a shift edit reads its newcomer: a right-to-work check
+    // cleared while this publishes waits for it, and nobody is published
+    // over a check that has gone (admin-venues-1).
     const people = personIds.length === 0 ? [] : await tx.select().from(staffMembers)
-      .where(and(eq(staffMembers.venueId, venueId), inArray(staffMembers.id, personIds)));
+      .where(and(eq(staffMembers.venueId, venueId), inArray(staffMembers.id, personIds)))
+      .for("share");
     const findings = await findingsFor(tx, venueId, timeZone, people, { fromMs, toMs });
     const blocks = rows.flatMap((row) => rotaPublishBlocks(findings.get(row.id) ?? [])
       .map((finding) => ({ shiftId: row.id, message: finding.message })));

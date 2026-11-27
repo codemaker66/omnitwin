@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { resolve as resolvePath } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
-import { Pool, neonConfig } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-serverless";
+import { Pool as PgPool } from "pg";
+import { drizzle as nodeDrizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { and, eq, sql } from "drizzle-orm";
 import { beforeAll, beforeEach, afterAll, describe, it, expect } from "vitest";
 import {
@@ -11,14 +13,16 @@ import {
   type InventoryAssessment, type InventoryReservationSource,
   type InventoryReservationApprovalInput, type InventoryReservationRelease,
 } from "@omnitwin/types";
-import type { Database } from "../db/client.js";
+import { createDbConnection, type Database, type DatabaseConnection } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { venueInventoryRoutes } from "../routes/venue-inventory.js";
 import { inventoryReservationsRoutes } from "../routes/inventory-reservations.js";
 import { seedInventoryReservationsFixture, type InventoryReservationsFixture } from "../test-support/inventory-reservations-fixture.js";
 
+// A disposable loopback database, which the suite migrates and reaches through
+// the API's own loopback client (db/client.ts). Never DATABASE_URL or .env.
 const databaseUrl = process.env["VENVIEWER_INVENTORY_TEST_DATABASE_URL"];
-let pool: Pool;
+let connection: DatabaseConnection | undefined;
 let db: Database;
 let server: FastifyInstance;
 let fixture: InventoryReservationsFixture;
@@ -100,23 +104,30 @@ describe.skipIf(databaseUrl === undefined)("inventory reservations with real Pos
   beforeAll(async () => {
     if (databaseUrl === undefined) throw new Error("Local fixture database URL required");
     const url = new URL(databaseUrl);
-    if (url.hostname !== "127.0.0.1" || url.port !== "54329" || !url.pathname.startsWith("/venviewer_inventory_")) {
-      throw new Error("Reservation tests require a disposable local venviewer_inventory_ database on port 54329");
+    // Loopback and the dedicated name are the safety; any port (CI serves 55476).
+    // No query string or fragment: a client takes ?host= over the address's own host.
+    if (!["postgres:", "postgresql:"].includes(url.protocol) || url.hostname !== "127.0.0.1"
+      || !url.pathname.startsWith("/venviewer_inventory_") || url.search !== "" || url.hash !== "") {
+      throw new Error("Reservation tests require a disposable local venviewer_inventory_ database on 127.0.0.1");
     }
-    neonConfig.wsProxy = (host) => `${host}:54331/v1`;
-    neonConfig.useSecureWebSocket = false; neonConfig.pipelineTLS = false; neonConfig.pipelineConnect = false;
-    pool = new Pool({ connectionString: databaseUrl });
-    db = drizzle(pool, { schema });
+    const migrationPool = new PgPool({ connectionString: databaseUrl, max: 1 });
+    try {
+      await migrate(nodeDrizzle(migrationPool), { migrationsFolder: resolvePath(import.meta.dirname, "../../drizzle") });
+    } finally {
+      await migrationPool.end();
+    }
+    connection = createDbConnection(databaseUrl);
+    db = connection.db;
     server = Fastify({ logger: false });
     await server.register(venueInventoryRoutes, { db, prefix: "/venues" });
     await server.register(inventoryReservationsRoutes, { db, prefix: "/venues" });
-  }, 30_000);
+  }, 120_000);
   beforeEach(async () => { fixture = await db.transaction((tx) => seedInventoryReservationsFixture(tx)); }, 30_000);
   afterAll(async () => {
     // Frozen evidence is intentionally immutable. Fixtures remain in this
     // disposable database; there is no trigger bypass or destructive cleanup.
     if (server !== undefined) await server.close();
-    if (pool !== undefined) await pool.end();
+    await connection?.close();
   });
 
   it("projects exact catalogue demand and room peaks without treating frozen layouts as approval", async () => {

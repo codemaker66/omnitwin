@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { FrontSide } from "three";
+import { Box3, FrontSide } from "three";
 import {
   computeRoomSurfaces,
   computeWainscotingSurfaces,
@@ -32,10 +32,18 @@ import {
 } from "../GrandHallOrnaments.js";
 import {
   describeGrandHallOrnaments,
+  fitWindowHeight,
+  WINDOW_ARCH_RADIUS,
+  WINDOW_CROWN_CLEARANCE,
   type OrnamentLayer,
   type OrnamentSurface,
 } from "../grand-hall-ornament-parts.js";
-import type { OrnamentMeshNode, OrnamentNode } from "../../lib/ornament-batching.js";
+import {
+  collectOrnamentDraws,
+  createOrnamentGeometry,
+  type OrnamentMeshNode,
+  type OrnamentNode,
+} from "../../lib/ornament-batching.js";
 
 // ---------------------------------------------------------------------------
 // Ornament description helpers — the data both the per-mesh tree and the
@@ -61,6 +69,39 @@ function ornamentNodes(nodes: readonly OrnamentNode[]): OrnamentNode[] {
 
 function ornamentMeshes(surface: OrnamentSurface, name: string): OrnamentMeshNode[] {
   return ornamentNodes(surface.children).filter((node): node is OrnamentMeshNode => node.kind === "mesh" && node.name === name);
+}
+
+interface PartYExtent {
+  readonly min: number;
+  readonly max: number;
+}
+
+/** The world-space height range of every part under `nodes`: each primitive's geometry bounding box, placed. */
+function partYExtents(nodes: readonly OrnamentNode[]): PartYExtent[] {
+  return collectOrnamentDraws(nodes).flatMap((draw) => {
+    const geometry = createOrnamentGeometry(draw.geometry);
+    geometry.computeBoundingBox();
+    const local = geometry.boundingBox ?? new Box3();
+    geometry.dispose();
+    return draw.matrices.map((matrix): PartYExtent => {
+      const placed = local.clone().applyMatrix4(matrix);
+      return { min: placed.min.y, max: placed.max.y };
+    });
+  });
+}
+
+/** The arched windows (not the pilasters) and the crown moulding of the hall on a wall `wallHeight` tall. */
+function windowsAndCrown(wallHeight: number): { readonly windows: OrnamentNode[]; readonly crown: OrnamentNode[] } {
+  const { width, length } = GRAND_HALL_RENDER_DIMENSIONS;
+  const description = describeGrandHallOrnaments(width, length, wallHeight);
+  const surfaces = description.walls.flatMap((layer: OrnamentLayer) => (layer.kind === "surface" ? [layer] : layer.surfaces));
+  const windowWall = surfaces.find((surface) => surface.name === "window-wall-ornament-cluster");
+  if (windowWall === undefined) throw new Error("No window wall");
+  const windows = windowWall.children.filter((node) => node.kind === "group"
+    && ornamentNodes(node.children).some((child) => child.kind === "mesh" && child.name === "arched-window-daylight-pane-rect"));
+  const crownCluster = description.walls.find((layer) => layer.kind === "cluster" && layer.name === "crown-moulding");
+  if (crownCluster?.kind !== "cluster") throw new Error("No crown moulding");
+  return { windows, crown: crownCluster.surfaces.flatMap((surface) => surface.children) };
 }
 
 function allOrnamentNames(): string[] {
@@ -479,6 +520,67 @@ describe("Grand Hall ornaments source", () => {
 
   it("places arched window sills above the dark lower-wall panelling", () => {
     expect(WINDOW_SILL_Y).toBeGreaterThan(WAINSCOT_PANEL_TOP_Y);
+  });
+
+  // The crown moulding follows the wall top; the arches must stand clear of
+  // it, not run behind the cornice (the scanned 6.7 m wall cut 0.28 m off
+  // each arch when the window heights were fixed for a 7 m wall).
+  it.each([6.7, 7])("keeps every arched-window part at least 2 cm under the crown moulding on a %s m wall", (wallHeight) => {
+    const { windows, crown } = windowsAndCrown(wallHeight);
+    expect(windows).toHaveLength(3);
+    const crownBottom = Math.min(...partYExtents(crown).map((part) => part.min));
+    // Geometry is stored as float32, so placed bounds hold to about 1e-7 m.
+    expect(crownBottom).toBeCloseTo(wallHeight - 0.28, 6);
+
+    const parts = partYExtents(windows);
+    expect(parts.length).toBeGreaterThan(60);
+    for (const part of parts) {
+      expect(part.max).toBeLessThan(crownBottom);
+      expect(crownBottom - part.max).toBeGreaterThanOrEqual(WINDOW_CROWN_CLEARANCE - 1e-6);
+    }
+    // The sill does not move: the drapes' hems hang 0.12 m below it at any height.
+    expect(Math.min(...parts.map((part) => part.min))).toBeCloseTo(WINDOW_SILL_Y - 0.12, 6);
+  });
+
+  it("keeps the 7 m hall's windows exactly as drawn and fits only the arch head to a lower wall", () => {
+    expect(fitWindowHeight(7)).toBe(4.55);
+    expect(fitWindowHeight(8)).toBe(4.55);
+    // The apex on the 7 m wall: the sill plus the full window, as before.
+    const sevenMetreTop = Math.max(...partYExtents(windowsAndCrown(7).windows).map((part) => part.max));
+    expect(sevenMetreTop).toBeCloseTo(WINDOW_SILL_Y + 4.55, 6);
+    // The scanned 6.7 m wall: the head comes down 0.3 m, to 2 cm under a moulding at 6.42 m.
+    expect(fitWindowHeight(6.7)).toBeCloseTo(4.25, 9);
+    const scannedTop = Math.max(...partYExtents(windowsAndCrown(6.7).windows).map((part) => part.max));
+    expect(scannedTop).toBeCloseTo(6.4, 6);
+  });
+
+  // Only the straight run under the arch gives way, and below a wall of about
+  // 3.675 m (crown 0.28 + clearance + sill + arch radius) it would go negative
+  // and turn the window's rectangle inside out.
+  it("stops the window at its bare arch head on a wall too low for any straight run", () => {
+    const lowestFitted = 0.28 + WINDOW_CROWN_CLEARANCE + WINDOW_SILL_Y + WINDOW_ARCH_RADIUS;
+    expect(lowestFitted).toBeCloseTo(3.675, 9);
+    // Above it the run is still fitted to the wall, as before.
+    expect(fitWindowHeight(lowestFitted + 0.5)).toBeCloseTo(WINDOW_ARCH_RADIUS + 0.5, 9);
+    expect(fitWindowHeight(lowestFitted)).toBeCloseTo(WINDOW_ARCH_RADIUS, 9);
+    for (const wallHeight of [3.6, 3.2, 2.4, 0]) {
+      expect(fitWindowHeight(wallHeight), `${String(wallHeight)} m wall`).toBe(WINDOW_ARCH_RADIUS);
+    }
+
+    // On a 3.2 m wall no window part is sized negative: the rectangle's pieces
+    // shrink to nothing and the arch head stands on the sill.
+    const { windows } = windowsAndCrown(3.2);
+    expect(windows).toHaveLength(3);
+    const sized = ornamentNodes(windows).filter((node): node is OrnamentMeshNode =>
+      node.kind === "mesh" && (node.geometry.kind === "box" || node.geometry.kind === "plane"));
+    expect(sized.length).toBeGreaterThan(40);
+    for (const node of sized) {
+      for (const size of node.geometry.args) {
+        expect(size, node.name ?? node.geometry.kind).toBeGreaterThanOrEqual(0);
+      }
+    }
+    const top = Math.max(...partYExtents(windows).map((part) => part.max));
+    expect(top).toBeCloseTo(WINDOW_SILL_Y + WINDOW_ARCH_RADIUS, 6);
   });
 
   it("gives the arched windows translucent glass over daylight backing", () => {

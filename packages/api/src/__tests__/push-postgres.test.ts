@@ -32,6 +32,9 @@ const REQUESTER = "79797979-7979-4797-8797-797979797911";
 const ADMIN = "79797979-7979-4797-8797-797979797912";
 const STAFF = "79797979-7979-4797-8797-797979797913";
 const REQUEST = "79797979-7979-4797-8797-797979797921";
+const OTHER_VENUE = "79797979-7979-4797-8797-797979797903";
+/** The request's own staff-private thread, which the replies here are written on. */
+const THREAD = { venueId: VENUE, audience: "staff-private", subject: "request", eventId: null } as const;
 
 interface Call { readonly endpoint: string; readonly payload: Record<string, unknown>; readonly options: PushSendOptions }
 
@@ -71,6 +74,7 @@ describe.skipIf(testUrl === undefined)("web push (0092)", () => {
     await migrate(drizzle(pool), { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
     db = drizzle(pool, { schema });
     await pool.query("INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Push venue', 's7-push', 'nowhere') ON CONFLICT (id) DO NOTHING", [VENUE]);
+    await pool.query("INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Another push venue', 's7-push-other', 'nowhere') ON CONFLICT (id) DO NOTHING", [OTHER_VENUE]);
     await pool.query(
       "INSERT INTO spaces (id, venue_id, name, slug, width_m, length_m, height_m, floor_plan_outline) VALUES ($1, $2, 'Grand Hall', 'grand-hall', 21, 10, 7, '[]'::jsonb) ON CONFLICT (id) DO NOTHING",
       [ROOM, VENUE],
@@ -94,7 +98,9 @@ describe.skipIf(testUrl === undefined)("web push (0092)", () => {
     }
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // The requester is a hallkeeper of the venue again, whatever a case made of them.
+    await pool.query("UPDATE users SET venue_id = $2, role = 'hallkeeper' WHERE id = $1", [REQUESTER, VENUE]);
     delete process.env["VAPID_PUBLIC_KEY"];
     delete process.env["VAPID_PRIVATE_KEY"];
     delete process.env["VAPID_SUBJECT"];
@@ -105,7 +111,7 @@ describe.skipIf(testUrl === undefined)("web push (0092)", () => {
     await pool.query("DELETE FROM requests WHERE venue_id = $1", [VENUE]);
     await pool.query("DELETE FROM users WHERE id IN ($1, $2, $3)", [REQUESTER, ADMIN, STAFF]);
     await pool.query("DELETE FROM spaces WHERE id = $1", [ROOM]);
-    await pool.query("DELETE FROM venues WHERE id = $1", [VENUE]);
+    await pool.query("DELETE FROM venues WHERE id IN ($1, $2)", [VENUE, OTHER_VENUE]);
     await pool.end();
   });
 
@@ -150,18 +156,22 @@ describe.skipIf(testUrl === undefined)("web push (0092)", () => {
     expect(next.map((record) => record.userId)).toEqual([ADMIN]);
   });
 
-  it("a reply tells the person who raised the request, never the author of the reply", async () => {
+  async function raiseRequest(): Promise<void> {
     await pool.query(
       `INSERT INTO requests (id, venue_id, room_id, kind, quantity, urgency, requested_by_user_id, requested_by_name, requested_by_role, audience_roles, state, idempotency_key)
        VALUES ($1, $2, $3, 'refreshments', 6, 'now', $4, 'Elaine', 'hallkeeper', '["admin","staff","hallkeeper"]'::jsonb, 'sent', $5)`,
       [REQUEST, VENUE, ROOM, REQUESTER, randomUUID()],
     );
+  }
+
+  it("a reply tells the person who raised the request, never the author of the reply", async () => {
+    await raiseRequest();
     const sender = fakeSender();
-    const told = await pushForReply(db, { requestId: REQUEST, messageId: "m-1", authorUserId: STAFF, authorName: "Fiona", body: "On its way." }, { send: sender.send });
+    const told = await pushForReply(db, { requestId: REQUEST, messageId: "m-1", authorUserId: STAFF, authorName: "Fiona", body: "On its way.", thread: THREAD }, { send: sender.send });
     expect(told.map((record) => record.userId)).toEqual([REQUESTER]);
     expect(sender.calls[0]?.payload).toEqual({ event: "request.replied", title: "Fiona replied", body: "On its way.", url: "/hallkeeper/today", tag: `request:${REQUEST}:reply` });
 
-    const own = await pushForReply(db, { requestId: REQUEST, messageId: "m-2", authorUserId: REQUESTER, authorName: "Elaine", body: "Thanks." }, { send: sender.send });
+    const own = await pushForReply(db, { requestId: REQUEST, messageId: "m-2", authorUserId: REQUESTER, authorName: "Elaine", body: "Thanks.", thread: THREAD }, { send: sender.send });
     expect(own).toEqual([]);
     expect(sender.calls).toHaveLength(1);
 
@@ -171,8 +181,39 @@ describe.skipIf(testUrl === undefined)("web push (0092)", () => {
       "INSERT INTO push_subscriptions (user_id, venue_id, endpoint, p256dh, auth, device_kind) VALUES ($1, $2, $3, 'k', 'a', 'wall')",
       [REQUESTER, VENUE, "https://push.example.test/corridor-wall"],
     );
-    const again = await pushForReply(db, { requestId: REQUEST, messageId: "m-3", authorUserId: STAFF, authorName: "Fiona", body: "Done." }, { send: sender.send });
+    const again = await pushForReply(db, { requestId: REQUEST, messageId: "m-3", authorUserId: STAFF, authorName: "Fiona", body: "Done.", thread: THREAD }, { send: sender.send });
     expect(again.map((record) => record.userId)).toEqual([REQUESTER]);
     expect(sender.calls.map((call) => call.endpoint)).not.toContain("https://push.example.test/corridor-wall");
+  });
+
+  // Whole-repository audit, api-requests-suppliers-rota-1. A reply was pushed
+  // to whoever raised the request as they were when they raised it. Moved to
+  // another venue, or taken off the floor, their phone still showed
+  // "<name> replied" with the first 140 characters of a staff-private
+  // message, on a thread that would itself refuse them.
+  it.each([
+    ["moved to another venue", OTHER_VENUE, "hallkeeper"],
+    ["made a client", VENUE, "client"],
+  ] as const)("a reply is not pushed to the person who raised the request once they have been %s", async (how, venueNow, roleNow) => {
+    await raiseRequest();
+    await pool.query("UPDATE users SET venue_id = $2, role = $3 WHERE id = $1", [REQUESTER, venueNow, roleNow]);
+    const sender = fakeSender();
+    const told = await pushForReply(db, {
+      requestId: REQUEST, messageId: `m-left-${how}`, authorUserId: STAFF, authorName: "Fiona",
+      body: "Staff only: the client has complained about the last set-up.", thread: THREAD,
+    }, { send: sender.send });
+    expect(told).toEqual([]);
+    expect(sender.calls).toEqual([]);
+    expect(await sends()).toEqual([]);
+  });
+
+  it("a reply on a client-facing request thread still tells the hallkeeper who raised it", async () => {
+    await raiseRequest();
+    const sender = fakeSender();
+    const told = await pushForReply(db, {
+      requestId: REQUEST, messageId: "m-client-facing", authorUserId: STAFF, authorName: "Fiona", body: "The client says yes.",
+      thread: { ...THREAD, audience: "client-facing" },
+    }, { send: sender.send });
+    expect(told.map((record) => record.userId)).toEqual([REQUESTER]);
   });
 });

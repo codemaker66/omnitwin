@@ -58,6 +58,23 @@ export interface UseCalendarResult {
   /** Reads the range again. Anything it prompts can touch any week, so the
    *  other ranges kept for a return are forgotten. */
   readonly refetch: () => void;
+  /** As refetch, and settles once a read set out after it has landed or
+   *  failed (or the board has gone), so the live socket says Live only once
+   *  the board holds what was committed before it subscribed. Never rejects. */
+  readonly refetchAndWait: () => Promise<void>;
+}
+
+/** A refetchAndWait waiting for a read of at least its generation to end. */
+interface Waiter {
+  readonly generation: number;
+  readonly settle: () => void;
+}
+
+function settleWaiters(waiters: { current: readonly Waiter[] }, upTo: number): void {
+  const due = waiters.current.filter((waiter) => waiter.generation <= upTo);
+  if (due.length === 0) return;
+  waiters.current = waiters.current.filter((waiter) => waiter.generation > upTo);
+  for (const waiter of due) waiter.settle();
 }
 
 const NO_READS: ReadonlyMap<string, StoredRead> = new Map();
@@ -104,6 +121,9 @@ export function useCalendar(
   // Counts refetches. A read ahead that set out before one may have read a
   // week the change touched, so it is not kept.
   const generationRef = useRef(0);
+  // refetchAndWait promises, each settled by the first read of the range on
+  // screen set out at or after its refetch that lands or fails.
+  const waitersRef = useRef<readonly Waiter[]>([]);
 
   // When the board came to this range. A read from shortly before then can
   // be shown at once; the decision holds for the whole visit, so a board
@@ -118,7 +138,12 @@ export function useCalendar(
   }
 
   useEffect(() => {
-    if (venueId === null) return;
+    const generation = generationRef.current;
+    if (venueId === null) {
+      // No venue, no read: nothing is left waiting for one.
+      settleWaiters(waitersRef, generation);
+      return;
+    }
     const controller = new AbortController();
     const key = requestKey;
     setFetchingKey(key);
@@ -132,11 +157,13 @@ export function useCalendar(
         setReads((previous) => remember(previous, key, stored));
         setLatest(stored);
         setFetchingKey((current) => (current === key ? null : current));
+        settleWaiters(waitersRef, generation);
       })
       .catch((caught: unknown) => {
         if (controller.signal.aborted) return;
         setFailure({ key, message: caught instanceof ApiError ? caught.message : "Unexpected error", atMs: Date.now() });
         setFetchingKey((current) => (current === key ? null : current));
+        settleWaiters(waitersRef, generation);
       });
     return () => {
       controller.abort();
@@ -193,6 +220,17 @@ export function useCalendar(
     setRevision((value) => value + 1);
   }, []);
 
+  const refetchAndWait = useCallback((): Promise<void> => {
+    refetch();
+    const generation = generationRef.current;
+    return new Promise<void>((resolve) => {
+      waitersRef.current = [...waitersRef.current, { generation, settle: resolve }];
+    });
+  }, [refetch]);
+
+  // A board that has gone settles whatever still waits on it.
+  useEffect(() => () => { settleWaiters(waitersRef, Number.POSITIVE_INFINITY); }, []);
+
   const currentFailure = failure !== null && failure.key === requestKey ? failure : null;
   return {
     data,
@@ -203,5 +241,6 @@ export function useCalendar(
     refreshFailedAtMs: data !== null && currentFailure !== null ? currentFailure.atMs : null,
     isRefreshing: data !== null && fetching,
     refetch,
+    refetchAndWait,
   };
 }

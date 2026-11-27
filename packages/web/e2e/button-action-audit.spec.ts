@@ -23,6 +23,7 @@ import type { PricingRule } from "../src/api/pricing.js";
 import type { PublicProposal, PublicProposalPayload } from "../src/api/proposals.js";
 import type { ProposalCommentRow, ProposalHistoryEntry, StaffProposal, StaffProposalVersion } from "../src/api/proposals.js";
 import type { Space } from "../src/api/spaces.js";
+import { visibleControlsInPage, type VisibleControlSnapshot } from "../src/test/in-page-controls.js";
 
 // Installed into the page by exposeFunction("buttonAuditPrintCalled", …) below;
 // evaluate() closures read it off window.
@@ -58,16 +59,6 @@ const UPLOADED_FILE_ID = "00000000-0000-4000-8000-000000004032";
 const SHARE_CODE = "abcdef";
 const SHARE_TOKEN = "button-audit-share";
 const HASH = "b".repeat(64);
-
-interface VisibleControlSnapshot {
-  readonly tagName: string;
-  readonly role: string | null;
-  readonly label: string;
-  readonly rawHref: string | null;
-  readonly disabled: boolean;
-  readonly width: number;
-  readonly height: number;
-}
 
 interface PageProblems {
   readonly pageErrors: readonly string[];
@@ -108,7 +99,8 @@ interface DashboardMockState {
 interface DashboardMockOptions {
   readonly onboardingPopulated?: boolean;
   readonly failProjectGateOnce?: boolean;
-  readonly failAnalyticsOnce?: boolean;
+  // Every analytics read fails until the test routes a recovered API.
+  readonly failAnalytics?: boolean;
   readonly failPipelineOnce?: boolean;
   readonly failOpportunityDetailOnce?: boolean;
   readonly failProposalHistoryOnce?: boolean;
@@ -1008,7 +1000,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     ? onboardingPopulatedSummaryFixture()
     : onboardingSummaryFixture();
   let failProjectGateOnce = options.failProjectGateOnce === true;
-  let remainingAnalyticsFailures = options.failAnalyticsOnce === true ? 2 : 0;
+  const failAnalytics = options.failAnalytics === true;
   let remainingPipelineFailures = options.failPipelineOnce === true ? 2 : 0;
   let failOpportunityDetailOnce = options.failOpportunityDetailOnce === true;
   // The deal's stage as the API holds it: a move is kept, so a re-read after
@@ -1312,8 +1304,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     void route.fulfill({ json: { data: [notificationFixture()] } });
   });
   await page.route(`${API}/analytics/venue-dashboard**`, (route) => {
-    if (remainingAnalyticsFailures > 0) {
-      remainingAnalyticsFailures -= 1;
+    if (failAnalytics) {
       void route.fulfill({ status: 500, json: { error: "button audit analytics failure" } });
       return;
     }
@@ -1688,6 +1679,10 @@ async function mockEventDayRoutes(page: Page): Promise<{
   await page.route(`${API}/events/${EVENT_ID}/change-feed**`, (route) => {
     void route.fulfill({ json: { data: [changeFeedFixture()] } });
   });
+  // The board asks for the changes still awaiting acknowledgement.
+  await page.route(`${API}/events/${EVENT_ID}/changes-awaiting-acknowledgement`, (route) => {
+    void route.fulfill({ json: { data: [changeFeedFixture()] } });
+  });
   await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements**`, (route) => {
     // The board reads what the room has already acknowledged: the ones this
     // spec has saved, as the API would list them.
@@ -1910,90 +1905,8 @@ async function setupRouteMocks(page: Page, routeName: string): Promise<void> {
 }
 
 async function visibleControls(page: Page): Promise<readonly VisibleControlSnapshot[]> {
-  return page.evaluate((): VisibleControlSnapshot[] => {
-    const selector = [
-      "button",
-      "a[href]",
-      "[role='button']",
-      "[role='tab']",
-      "[role='menuitem']",
-      "[role='menuitemcheckbox']",
-      "[role='checkbox']",
-      "input:not([type='hidden'])",
-      "select",
-      "textarea",
-      "summary",
-    ].join(",");
-
-    function textFromLabelledBy(element: Element): string {
-      const labelledBy = element.getAttribute("aria-labelledby");
-      if (labelledBy === null) return "";
-      return labelledBy
-        .split(/\s+/u)
-        .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
-        .filter((text) => text.length > 0)
-        .join(" ");
-    }
-
-    function textFromAssociatedLabel(element: Element): string {
-      if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
-        return "";
-      }
-      if (element.labels !== null && element.labels.length > 0) {
-        return Array.from(element.labels)
-          .map((label) => label.textContent?.trim() ?? "")
-          .filter((text) => text.length > 0)
-          .join(" ");
-      }
-      return "";
-    }
-
-    function controlLabel(element: Element): string {
-      return [
-        element.getAttribute("aria-label"),
-        textFromLabelledBy(element),
-        textFromAssociatedLabel(element),
-        element.getAttribute("title"),
-        element.getAttribute("placeholder"),
-        element instanceof HTMLInputElement ? element.value : null,
-        element.textContent,
-      ]
-        .map((value) => value?.replace(/\s+/gu, " ").trim() ?? "")
-        .find((value) => value.length > 0) ?? "";
-    }
-
-    function isVisibleControl(element: Element): boolean {
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 &&
-        rect.height > 0 &&
-        style.display !== "none" &&
-        style.visibility !== "hidden" &&
-        Number(style.opacity) !== 0;
-    }
-
-    return Array.from(document.querySelectorAll(selector))
-      .filter(isVisibleControl)
-      .map((element) => {
-        const rect = element.getBoundingClientRect();
-        const disabled = element instanceof HTMLButtonElement ||
-          element instanceof HTMLInputElement ||
-          element instanceof HTMLSelectElement ||
-          element instanceof HTMLTextAreaElement
-          ? element.disabled
-          : element.getAttribute("aria-disabled") === "true";
-        return {
-          tagName: element.tagName.toLowerCase(),
-          role: element.getAttribute("role"),
-          label: controlLabel(element),
-          rawHref: element instanceof HTMLAnchorElement ? element.getAttribute("href") : null,
-          disabled,
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-        };
-      });
-  });
+  // The reader runs in the page and is unit-tested where it lives.
+  return page.evaluate(visibleControlsInPage);
 }
 
 function describeControl(control: VisibleControlSnapshot): string {
@@ -2132,8 +2045,13 @@ test.describe("SS++ button and action inventory", () => {
 
 test.describe("SS++ representative button behavior", () => {
   test("planner cockpit controls update visible state", async ({ page }) => {
+    // The shell alone may take 20 s on a busy CPU runner, so 30 s left the seven
+    // controls after it ~10 s: runs took 14 s on a quiet runner and timed out at 30 s on a busy one.
+    test.setTimeout(45_000);
     await mockPlannerRoutes(page);
-    await page.goto(`/plan/${CONFIG_ID}`, { waitUntil: "domcontentloaded" });
+    // The cockpit's controls are under test, Flow among them, not who may open
+    // which lens: with lensesByRole on, an anonymous visitor sees four lenses.
+    await page.goto(`/plan/${CONFIG_ID}?pf=-lensesByRole`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("[data-testid='cockpit-shell']", { timeout: 20_000 });
 
     // The Grand Hall is drawn as the surveyed room, with its own views and light.
@@ -2285,7 +2203,9 @@ test.describe("SS++ representative button behavior", () => {
   });
 
   test("hallkeeper controls update progress, locate rows, download, and print", async ({ page }) => {
-    await seedAuthenticatedUser(page, "planner");
+    // The venue's hallkeeper: a layout's planner reads the checklist and ticks
+    // nothing (release audit tenancy-f-2, e2e/hallkeeper.spec.ts).
+    await seedAuthenticatedUser(page, "hallkeeper");
     const mock = await mockHallkeeperRoutes(page);
     let printCalled = false;
     await page.addInitScript(() => {
@@ -2441,12 +2361,17 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
   test("executive analytics failure exposes a branded retry path", async ({ page }) => {
     await seedAuthenticatedUser(page, "manager");
-    await mockDashboardRoutes(page, { failAnalyticsOnce: true });
+    await mockDashboardRoutes(page, { failAnalytics: true });
 
     await page.goto("/dashboard?view=analytics");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: "Analytics unavailable" })).toBeVisible();
     await expect(page.getByRole("alert")).toContainText("button audit analytics failure");
+    // The API recovers before the retry, however many reads the first load
+    // sent (StrictMode mounts the view twice, and it cancels the first read).
+    await page.route(`${API}/analytics/venue-dashboard**`, (route) => {
+      void route.fulfill({ json: { data: revenueAnalyticsFixture() } });
+    });
     await page.getByRole("button", { name: "Retry analytics" }).click();
     await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
   });
@@ -2563,6 +2488,9 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
       void route.fulfill({ json: { data: missingHandoffEventDayBoardFixture() } });
     });
     await page.route(`${API}/events/${EVENT_ID}/change-feed**`, (route) => {
+      void route.fulfill({ json: { data: [] } });
+    });
+    await page.route(`${API}/events/${EVENT_ID}/changes-awaiting-acknowledgement`, (route) => {
       void route.fulfill({ json: { data: [] } });
     });
     await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements**`, (route) => {
@@ -3098,15 +3026,15 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.getByLabel("Operator review for Trades Hall deployment").selectOption("approved");
     await page.getByLabel("Current step for Trades Hall deployment").fill("Ready for staff handoff.");
     await page.getByLabel("Evidence note for Trades Hall deployment").fill("Owner accepted and staff invite list reviewed.");
-    await page.getByRole("button", { name: "Save project gate for Trades Hall deployment" }).click();
+    await page.getByRole("button", { name: "Save setup review for Trades Hall deployment" }).click();
     await expect.poll(() => mock.savedProjectGates).toContain("ready|approved|Ready for staff handoff.");
     await expect(page.getByText("Setup review saved.", { exact: true })).toBeVisible();
 
     await page.getByLabel("Billing provider for Trades Hall deployment").selectOption("manual_invoice");
     await page.getByLabel("Provider status for Trades Hall deployment").selectOption("provider_verified");
     await page.getByLabel("Provider evidence reference for Trades Hall deployment").fill("invoice-2026-001");
-    await page.getByLabel("Enforce managed access for Trades Hall deployment").check();
-    await page.getByRole("button", { name: "Save provider gate for Trades Hall deployment" }).click();
+    await page.getByLabel("Managed access agreed for Trades Hall deployment, recorded only").check();
+    await page.getByRole("button", { name: "Save billing verification for Trades Hall deployment" }).click();
     await expect.poll(() => mock.savedProviderGates).toContain("manual_invoice|provider_verified|true");
     await expect(page.getByText("Billing verification saved.", { exact: true })).toBeVisible();
   });
@@ -3122,7 +3050,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await expect(page.getByRole("heading", { name: "People & access" })).toBeVisible();
 
     await page.getByText("Setup review and billing", { exact: true }).click();
-    const saveProjectGate = page.getByRole("button", { name: "Save project gate for Trades Hall deployment" });
+    const saveProjectGate = page.getByRole("button", { name: "Save setup review for Trades Hall deployment" });
     await saveProjectGate.click();
     await expect(page.getByRole("alert")).toContainText("button audit project gate failure");
     await expect(saveProjectGate).toBeEnabled();

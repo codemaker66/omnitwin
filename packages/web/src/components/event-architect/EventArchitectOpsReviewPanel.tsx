@@ -206,7 +206,7 @@ export function EventArchitectOpsReviewPanel(props: {
           <p className="event-architect-ops-immutability"><LockKeyhole aria-hidden="true" /> Reviews cannot be changed or deleted. New decisions replace earlier approvals; expired approvals block Ops.</p>
         </form>
       ) : (
-        <p className="event-architect-ops-readonly"><LockKeyhole aria-hidden="true" /> Only venue staff, hallkeepers or administrators can record a review.</p>
+        <p className="event-architect-ops-readonly"><LockKeyhole aria-hidden="true" /> Only venue managers, staff, hallkeepers or administrators can record a review.</p>
       )}
     </section>
   );

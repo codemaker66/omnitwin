@@ -1,9 +1,11 @@
 // ---------------------------------------------------------------------------
-// Orthographic Capture — renders a top-down PNG of the room from Three.js
+// Orthographic Capture — renders a top-down image of the room from Three.js
 //
 // Creates a temporary orthographic camera directly above the room, renders
-// a single frame to an offscreen native render target, and returns a PNG URL.
-// Used by the hallkeeper sheet to generate the floor plan diagram.
+// a single frame to an offscreen native render target, and returns a PNG or
+// JPEG data URL. Its plan thumbnail (PLAN_THUMBNAIL) is the picture kept with a
+// layout sent to the venue; the hallkeeper sheet prints it only for a layout
+// saved with no plan, and draws the saved plan otherwise (api sheet-pdf/blocks.ts).
 // ---------------------------------------------------------------------------
 
 import {
@@ -28,16 +30,38 @@ export interface CaptureOptions {
   readonly padding?: number;
   /** Background colour (default white). */
   readonly background?: string;
+  /** Image type (default PNG). */
+  readonly type?: "image/png" | "image/jpeg";
+  /** JPEG quality, 0-1 (default 0.85). */
+  readonly quality?: number;
+  /** The longest data URL wanted: JPEG steps down in quality to fit it; otherwise null. */
+  readonly maxLength?: number;
 }
 
+/** The API's cap on a thumbnail data URL (MAX_THUMBNAIL_STRING_LEN, api/src/routes/public-configs.ts). */
+export const THUMBNAIL_MAX_LENGTH = 270_000;
+
 /**
- * Captures a top-down orthographic PNG of the scene.
+ * The plan picture sent with a guest's layout (Send to Events Team). JPEG: the
+ * Grand Hall's 800×533 plan is 685,350 characters as a PNG data URL, which the
+ * API refused, and 96,443 as this JPEG.
+ */
+export const PLAN_THUMBNAIL: CaptureOptions = {
+  width: 800, height: 533, type: "image/jpeg", quality: 0.85, maxLength: THUMBNAIL_MAX_LENGTH,
+};
+
+/** Lower JPEG qualities tried, in turn, for an image over its `maxLength`. */
+const FALLBACK_QUALITIES = [0.75, 0.65, 0.55] as const;
+
+/**
+ * Captures a top-down orthographic image of the scene.
  *
  * @param scene - The Three.js scene to render (from useThree().scene).
  * @param roomWidthRender - Room width in render-space units (X axis).
  * @param roomLengthRender - Room length in render-space units (Z axis).
- * @param options - Capture dimensions and padding.
- * @returns PNG as a data URL (base64), or null if capture fails.
+ * @param options - Capture dimensions, padding and encoding.
+ * @returns The image as a data URL (base64), or null if the capture fails, is
+ *   blank (every pixel the same) or cannot fit `maxLength`.
  */
 export async function captureOrthographic(
   scene: Scene,
@@ -50,6 +74,9 @@ export async function captureOrthographic(
     height = 1600,
     padding = 3,
     background = "#f5f5f0",
+    type = "image/png",
+    quality = 0.85,
+    maxLength,
   } = options;
   const renderer = nativeRendererForScene(scene);
   if (renderer === null || !Number.isInteger(width) || !Number.isInteger(height)
@@ -104,6 +131,7 @@ export async function captureOrthographic(
     const previousTarget = renderer.getRenderTarget();
     const previousFace = renderer.getActiveCubeFace();
     const previousMip = renderer.getActiveMipmapLevel();
+    const previousOutputs = renderer.getMRT();
     const previousBackground = scene.background;
     const previousAutoClear = renderer.autoClear;
     const previousXr = renderer.xr.enabled;
@@ -117,9 +145,14 @@ export async function captureOrthographic(
       renderer.autoClear = true;
       renderer.xr.enabled = false;
       renderer.setRenderTarget(renderTarget);
+      // A precompile job may hold the scene pass's outputs on the renderer
+      // (lib/native-precompile.ts); this target names none of them, and drawn
+      // with them every material would write nothing (WebGPU refuses that).
+      renderer.setMRT(null);
       withNativeSplatCapture(scene, camera, () => { renderer.render(scene, camera); });
     } finally {
       renderer.setRenderTarget(previousTarget, previousFace, previousMip);
+      renderer.setMRT(previousOutputs);
       renderer.autoClear = previousAutoClear;
       renderer.xr.enabled = previousXr;
       scene.background = previousBackground;
@@ -140,13 +173,31 @@ export async function captureOrthographic(
     if (context === null) return null;
     const image = context.createImageData(width, height);
     copyNativeCapturePixels(pixels, image.data, width, height, webgl, rowStride);
+    // A draw that drew nothing (a refused pipeline, a lost device) reads back as
+    // one colour: no plan beats a blank one.
+    if (isUniformImage(image.data)) return null;
     context.putImageData(image, 0, 0);
-    return canvas.toDataURL("image/png");
+    const qualities = type === "image/jpeg" ? [quality, ...FALLBACK_QUALITIES.filter((step) => step < quality)] : [undefined];
+    for (const step of qualities) {
+      const url = step === undefined ? canvas.toDataURL(type) : canvas.toDataURL(type, step);
+      if (maxLength === undefined || url.length <= maxLength) return url;
+    }
+    return null;
   } catch {
     return null;
   } finally {
     renderTarget.dispose();
   }
+}
+
+/** Whether every pixel of an RGBA image is the same: a capture that drew nothing. */
+export function isUniformImage(data: Uint8ClampedArray): boolean {
+  const pixels = new Uint32Array(data.buffer, data.byteOffset, Math.floor(data.byteLength / 4));
+  const first = pixels[0];
+  for (let index = 1; index < pixels.length; index += 1) {
+    if (pixels[index] !== first) return false;
+  }
+  return true;
 }
 
 /** Canvas images are top-down; WebGL readback starts at its lower-left corner. */

@@ -52,7 +52,6 @@ structural, electrical, egress or occupancy question with "within", "fits",
   compulsory charges, so the Costs lens shows none yet.
 - The venue's own provenance calls its capacities a planning guide; the venue
   should re-confirm them.
-- Outside the planner: the dashboard proposal composer's capacity aid still
-  computes "comfortable for around N", the Event Architect page shows "Pass"
-  statuses and a bottleneck percentage, and the Trades Hall visual page shows a
-  bottleneck score.
+- Outside the planner: the Event Architect page shows "Pass" statuses and a
+  bottleneck percentage, and the Trades Hall visual page shows a bottleneck
+  score.

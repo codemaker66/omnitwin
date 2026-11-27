@@ -85,7 +85,7 @@ export function SectionSlider({ embedded = false }: { readonly embedded?: boolea
           letterSpacing: "0.05em",
         }}
       >
-        {maxHeight.toFixed(0)}m
+        {maxHeight.toFixed(1)}m
       </span>
       <input
         type="range"

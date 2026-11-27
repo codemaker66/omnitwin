@@ -25,9 +25,9 @@ export async function getEventRevenueSummary(eventId: string): Promise<RevenueSu
   return api.get<RevenueSummary>(`/events/${eventId}/revenue-summary`, RevenueSummarySchema);
 }
 
-export async function getVenueDashboardAnalytics(venueId?: string): Promise<VenueDashboardAnalytics> {
+export async function getVenueDashboardAnalytics(venueId?: string, signal?: AbortSignal): Promise<VenueDashboardAnalytics> {
   const query = venueId === undefined ? "" : `?venueId=${encodeURIComponent(venueId)}`;
-  return api.get<VenueDashboardAnalytics>(`/analytics/venue-dashboard${query}`, VenueDashboardAnalyticsSchema);
+  return api.get<VenueDashboardAnalytics>(`/analytics/venue-dashboard${query}`, VenueDashboardAnalyticsSchema, signal);
 }
 
 export async function getPipelineSummary(venueId?: string): Promise<PipelineSummary> {

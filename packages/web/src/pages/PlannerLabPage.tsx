@@ -1,23 +1,35 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactElement } from "react";
 import { advance as advanceFrame, invalidate } from "@react-three/fiber";
-import type { Space } from "@omnitwin/types";
+import { TRADES_HALL_GRAND_HALL_DIMENSIONS, type Space } from "@omnitwin/types";
+import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import { PlannerScene } from "../components/editor/PlannerScene.js";
 import { useEditorStore } from "../stores/editor-store.js";
+import { openLayoutEventKind } from "../lib/event-kind-record.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { useHallViewStore } from "../stores/hall-view-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { nativeFrameComposer } from "../lib/native-frame-composer.js";
-import { getNativeRenderer } from "../lib/native-renderer.js";
+import { getNativeRenderer, nativeDrawingBackend, withNativeComposedFrame, type NativeDrawingBackend } from "../lib/native-renderer.js";
+import { nativePrecompileSettled } from "../lib/native-precompile.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../lib/catalogue.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
-import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
+import { plannerChromeRequested, setMountedPlannerChrome } from "../lib/planner-chrome-flag.js";
 import { ChromeShell } from "../components/planner-chrome/ChromeShell.js";
+import { HudFrame } from "../components/planner-hud/HudFrame.js";
+import { HudSheets } from "../components/planner-hud/HudSheets.js";
+import { Slate } from "../components/planner-chrome/Slate.js";
+import { TooltipHost } from "../components/planner-chrome/Tooltip.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { useToolStore } from "../stores/tool-store.js";
 import type { HallMoodName } from "../components/grand-hall/hall-mood.js";
+import { rememberTradesHallVenue } from "../hooks/use-trades-hall-venue.js";
+import { useSurveyedRoomStore } from "../stores/surveyed-room-store.js";
+import type { SurveyedRoomStatus } from "../components/surveyed-room/room-status.js";
+import { plannerSurveyedRoomAsk, plannerSurveyedRoomEntry } from "../components/surveyed-room/use-planner-surveyed-room.js";
+import { plannerLabRoom, plannerLabRoomDimensions } from "./planner-lab-rooms.js";
 import "../App.css";
 
 // ---------------------------------------------------------------------------
@@ -26,6 +38,11 @@ import "../App.css";
 // frames. It answers the keys as the planner does (its tool keys and Escape
 // order), so a keyboard walk can be recorded over the real room. Compiled out
 // of production builds with the other fixtures.
+//
+// `?space=saloon` shows another Trades Hall room instead (planner-lab-rooms.ts),
+// and with `&rooms=surveyed&roomsBase=<public folder>&roomsRev=<n>` that room
+// as surveyed, from a staged folder:
+//   /dev/planner-lab?space=saloon&rooms=surveyed&roomsBase=/rooms/saloon/survey-2026-07-11&roomsRev=1
 // ---------------------------------------------------------------------------
 
 const RAD_TO_DEG = 180 / Math.PI;
@@ -66,22 +83,37 @@ function keyState(): LabKeyState {
   };
 }
 
+/** The Grand Hall's row as production stores it: 21.14 × 10.59 × 6.7 m, centred. */
+const LAB_HALL = TRADES_HALL_GRAND_HALL_DIMENSIONS;
+
 const LAB_SPACE: Space = {
   id: "00000000-0000-4000-8000-00000000a11b",
   venueId: "00000000-0000-4000-8000-00000000a11a",
   name: "Grand Hall",
   slug: "grand-hall",
   description: null,
-  widthM: "21",
-  lengthM: "10.5",
-  heightM: "7",
-  floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
+  widthM: String(LAB_HALL.width),
+  lengthM: String(LAB_HALL.length),
+  heightM: String(LAB_HALL.height),
+  floorPlanOutline: [
+    { x: -LAB_HALL.width / 2, y: -LAB_HALL.length / 2 },
+    { x: LAB_HALL.width / 2, y: -LAB_HALL.length / 2 },
+    { x: LAB_HALL.width / 2, y: LAB_HALL.length / 2 },
+    { x: -LAB_HALL.width / 2, y: LAB_HALL.length / 2 },
+  ],
   meshUrl: null,
   thumbnailUrl: null,
   sortOrder: 0,
   createdAt: "2026-10-10T00:00:00.000Z",
   updatedAt: "2026-10-10T00:00:00.000Z",
 };
+
+/** Whether a surveyed room has finished arriving: drawn with every photograph in or failed, or unusable. */
+function surveySettled(status: SurveyedRoomStatus | null): boolean {
+  if (status === null) return false;
+  if (status.phase === "failed") return true;
+  return status.phase === "ready" && status.photos !== null && status.photos.settled >= status.photos.expected;
+}
 
 interface LabFrameStats {
   readonly frames: number;
@@ -102,11 +134,25 @@ declare global {
       /** Where the camera is and whether a glide is still under way. */
       cameraState: () => { readonly position: readonly number[] | null; readonly gliding: boolean };
       itemCount: () => number;
-      /** True once the hall's surfaces have settled and the layout is placed. */
+      /**
+       * True once the hall's surfaces have settled and the layout is placed.
+       * For a room shown by `?space=`: once its survey, where one is asked
+       * for, is drawn with every photograph in or failed, or has failed (the
+       * plain shell then stands; `surveyedRoom()` says why).
+       */
       ready: () => boolean;
+      /** How the room's survey stands, where the lab shows a room as surveyed; null where it shows none. */
+      surveyedRoom: () => SurveyedRoomStatus | null;
+      /**
+       * What draws the planner's frames, read from the view's own renderer
+       * (lib/native-renderer.ts): its backend and its GPU. Null until that
+       * renderer's backend can draw.
+       */
+      drawnBy: () => NativeDrawingBackend | null;
       /**
        * Steps the planner's frame loop `frames` times at 60 fps, waiting for the
-       * GPU after each: frames advance even while the page is hidden.
+       * GPU after each: frames advance even while the page is hidden. Each waits
+       * first for any precompile hold to lift, as the view's own frames do.
        */
       advance: (frames?: number) => Promise<void>;
       /**
@@ -197,7 +243,11 @@ async function measure(frames = 120, pipeline = true): Promise<LabFrameStats> {
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld();
     const started = performance.now();
-    if (composer !== null) composer();
+    // Declared as the view's own frame, as the frame loop draws it
+    // (NativeCanvas): the pipeline's scene pass is this frame's main draw only
+    // inside withNativeComposedFrame, and the hall's photographs ask which draw
+    // they are in (lib/scene-grade.ts sceneOutput).
+    if (composer !== null) withNativeComposedFrame(gl, scene, camera, composer);
     else gl.render(scene, camera);
     // A frame is not over until the GPU has finished it.
     if (device !== null) await device.queue.onSubmittedWorkDone();
@@ -234,7 +284,7 @@ async function measureGpu(frames = 60): Promise<{ readonly frames: number; reado
   backend.trackTimestamp = true;
   try {
     for (let frame = 0; frame < frames; frame++) {
-      if (composer !== null) composer();
+      if (composer !== null) withNativeComposedFrame(native, perf.scene, perf.camera, composer);
       else native.render(perf.scene, perf.camera);
       const duration = await native.resolveTimestampsAsync("render");
       if (typeof duration === "number" && Number.isFinite(duration)) times.push(duration);
@@ -255,15 +305,34 @@ async function measureGpu(frames = 60): Promise<{ readonly frames: number; reado
 export function PlannerLabPage(): ReactElement {
   const [ready, setReady] = useState(false);
   const [chrome] = useState(() => plannerChromeRequested(window.location.search));
+  // As the planner's own page does: the scene asks which chrome is mounted.
+  useLayoutEffect(() => {
+    setMountedPlannerChrome(chrome);
+    return () => { setMountedPlannerChrome(null); };
+  }, [chrome]);
   usePlannerToolKeys();
 
   useEffect(() => {
-    const requested = Number(new URLSearchParams(window.location.search).get("guests") ?? "160");
+    const search = window.location.search;
+    // Another Trades Hall room by `?space=` (planner-lab-rooms.ts); without one the lab is the Grand Hall, as ever.
+    // Such a room opens empty unless `guests` says otherwise: the hall's dinner would not stand in it.
+    const otherRoom = plannerLabRoom(search);
+    const requested = Number(new URLSearchParams(search).get("guests") ?? (otherRoom === null ? "160" : "0"));
     const guests = Number.isFinite(requested) ? Math.max(0, Math.floor(requested)) : 160;
-    useEditorStore.setState({ space: LAB_SPACE, configId: "planner-lab" });
+    // The lab answers for its made-up venue, which no API could: its other rooms are Trades Hall's.
+    if (otherRoom !== null) rememberTradesHallVenue(otherRoom.venueId, true);
+    useEditorStore.setState({ space: otherRoom ?? LAB_SPACE, configId: "planner-lab" });
+    // The first screen asks only a layout whose record has been read, as the page's own load reads it. The lab's
+    // made-up layout is read as a guest's new draft.
+    openLayoutEventKind({ configId: "planner-lab", isPublicPreview: true, search, metadata: null, floorEmptyAtOpen: usePlacementStore.getState().placedItems.length === 0 });
     // The drawn hall, not a capture: production keeps captures off.
     useCockpitStore.setState({ layerMode: "mesh" });
-    useRoomDimensionsStore.getState().setDimensions({ width: 21, length: 10.5, height: 7 });
+    // The room the planner sizes from the Grand Hall's geometry (pinned equal
+    // to roomGeometries["Grand Hall"] in constants/__tests__/scale.test.ts).
+    useRoomDimensionsStore.getState().setDimensions(otherRoom === null ? GRAND_HALL_RENDER_DIMENSIONS : plannerLabRoomDimensions(otherRoom));
+    // Whether that room is to be drawn as surveyed here: its survey must then have settled before the lab is ready.
+    const surveyAsked = otherRoom !== null
+      && plannerSurveyedRoomEntry(plannerSurveyedRoomAsk(search, import.meta.env.DEV), otherRoom.slug) !== null;
     setReady(true);
     window.__plannerLab = {
       furnish,
@@ -288,15 +357,24 @@ export function PlannerLabPage(): ReactElement {
         };
       },
       itemCount: () => usePlacementStore.getState().placedItems.length,
+      surveyedRoom: () => useSurveyedRoomStore.getState().status,
+      drawnBy: () => nativeDrawingBackend(window.__venPerf?.gl ?? null),
       ready: () => {
         const surfaces = useHallViewStore.getState().surfaces;
-        const settled = surfaces !== null && surfaces.loaded + surfaces.failed >= surfaces.total;
+        const settled = otherRoom === null
+          ? surfaces !== null && surfaces.loaded + surfaces.failed >= surfaces.total
+          : !surveyAsked || surveySettled(useSurveyedRoomStore.getState().status);
         const placed = guests === 0 || usePlacementStore.getState().placedItems.length > 0;
         return settled && placed && window.__venPerf !== undefined;
       },
       advance: async (frames = 30) => {
         const started = performance.now();
         for (let frame = 0; frame < frames; frame++) {
+          // R3F's advance draws through the view's precompile hold, with the
+          // job's target and MRT still set (lib/native-precompile.ts): driven
+          // so, 25 pipelines failed on WebGPU (4 Nov 2026).
+          const native = window.__venPerf === undefined ? null : getNativeRenderer(window.__venPerf.gl);
+          if (native !== null) await nativePrecompileSettled(native);
           // A demand loop draws only what was asked for: ask for every frame.
           invalidate();
           advanceFrame(started + frame * (1000 / 60));
@@ -322,6 +400,30 @@ export function PlannerLabPage(): ReactElement {
 
   // `?chrome=v2`: the scene under the new chrome's zones, as the planner shows it (T-671).
   if (chrome === "v2") return <ChromeShell room={ready ? <PlannerScene /> : null} />;
+
+  // `?chrome=hud`: the scene under the HUD (13 Nov 2026), with a stand-in plaque and no backend.
+  // `&plaque=slate` mounts the planner's own slate instead, to see it dressed for the top bar.
+  if (chrome === "hud") {
+    const slate = new URLSearchParams(window.location.search).get("plaque") === "slate";
+    return (
+      <HudFrame
+        room={ready ? <div className="venviewer-planner-shell hud-lab-room"><PlannerScene /></div> : null}
+        plaque={slate ? (
+          <div className="pc-root hud-plaque">
+            <Slate />
+            <TooltipHost />
+          </div>
+        ) : (
+          <div className="hud-lab-plaque">
+            <span className="hud-lab-plaque__title">The Morrison Wedding</span>
+            <span className="hud-lab-plaque__line"><span>Sat 13 Feb 2027</span><span>Grand Hall</span><span>Sample</span></span>
+          </div>
+        )}
+        eventGuests={null}
+        sheets={<HudSheets />}
+      />
+    );
+  }
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#0d0b09", display: "flex" }}>

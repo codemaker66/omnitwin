@@ -7,11 +7,13 @@ on; dots, rings and edges clear 3:1, text clears 4.5:1. Blake's spoken palette i
 literally for the ramp: green, then orange, then red. Severity rides on cadence and a
 copper ring, never on colour alone; every state pairs an icon, a verb and a colour.
 
-Surfaces: the office board and the phone use the selected ivory register
-(`styles/hallkeeper-register.css`, paper arrangement). The wall display uses the
-register's dark arrangement, pending human input 1 ("wall dark, as decided" or "all
-ivory"); until Blake answers, S3 builds the ivory board and the wall mode is a
-redefinition of the same tokens, not a second stylesheet.
+Surfaces: since 10 November 2026 the board wears the desks' register, Blake's concept
+C ("the rooms"): the office board and the phone are the desks' ivory sheet on the sage
+ground (`--house-sheet`, `styles/house-tokens.css`), read room by room, with the forest
+decision panel beside them. That choice also answered human input 1: the wall frames the
+rooms in forest and sets each room on paper, so the attention system reads every slot on
+ivory there too. The tokens below are measured on the sheet; the wall redeclares the same
+paper values for its rooms rather than a dark set.
 
 ## Tokens
 
@@ -19,41 +21,34 @@ The tokens are custom properties scoped to the board root (`.dayboard`), named `
 The paper values are the defaults; `[data-register="wall"]` on the same root redefines
 them. A component never names a hex; it names a token.
 
-### Paper register — office and phone (ground `--hk-ivory` #f4f1e9, raised #fffdf8)
+### Paper register — office, phone and the wall's rooms (ground `--house-sheet` #f2eddd, raised `--house-paper` #faf8f1)
 
-| Token | Value | On ivory | On raised | Carries |
+Measured 10 November 2026, when the board moved onto the desks' sheet.
+
+| Token | Value | On the sheet | On raised | Carries |
 |---|---|---|---|---|
-| `--lt-hairline` | `var(--hk-forest)` #385542 | 7.31 | 8.11 | the scheduled slot's forest hairline |
-| `--lt-green` | #3f8a57 | 3.73 | 4.14 | organisers due: dot and edge |
-| `--lt-amber` | #a07614 | 3.65 | 4.05 | guests due: dot and edge |
-| `--lt-amber-deep` | #b5581a | 4.25 | 4.72 | imminent: dot and edge |
-| `--lt-live` | `var(--vv-oxblood)` #8E3A2C | 6.66 | 7.40 | live: the LIVE label, the breathing dot and the slab's breath overlay |
-| `--lt-sage` | `var(--hk-sage)` #a9c3a4 | decorative | decorative | clear-down hatching; its label uses `--lt-sage-ink` |
-| `--lt-sage-ink` | `var(--vv-sage-ink)` #4A6650 | 5.40 | 5.97 | clear-down label text |
-| `--lt-faded` | `var(--house-slate-dot)` #8e9992 | edge only | edge only | done: the slate edge; the words stay full ink |
-| `--lt-red` | `var(--hk-alert)` #c2503e | 4.12 | 4.57 | changeover at risk: the slab's edge, the legend's dot and a short gap's rule; the words say why |
-| `--lt-ring` | `var(--hk-copper)` #986246 | 4.46 | 4.95 | attention, urgent and owned: the copper ring and its count (the count sits on a raised fill, 4.95) |
-| `--lt-urgent-label` | `var(--vv-oxblood)` #8E3A2C | 6.66 | 7.40 | the URGENT word inside the ring |
+| `--lt-hairline` | `var(--hk-forest)` #385542 | 7.04 | 7.76 | a scheduled slot's dot, a quiet room's edge |
+| `--lt-green` | #3f8a57 | 3.60 | 3.96 | organisers due: dot, icon and the room's edge |
+| `--lt-amber` | #a07614 | 3.52 | 3.88 | guests due: dot, icon and edge |
+| `--lt-amber-deep` | #b5581a | 4.10 | 4.52 | imminent: dot, icon and edge |
+| `--lt-live` | `var(--vv-oxblood)` #8E3A2C | 6.42 | 7.08 | live: the breathing dot, the slot's breathing glow and the bar's live part |
+| `--lt-sage` | `var(--hk-sage)` #a9c3a4 | decorative | decorative | clear-down on the bar; its words use `--lt-sage-ink` |
+| `--lt-sage-ink` | `var(--house-sage-text)` #2f5a3a | 6.78 | 7.47 | clear-down's dot and an owned ring's edge |
+| `--lt-faded` | `var(--house-slate-dot)` #8e9992 | edge only | edge only | done: the faded dot and bar; the words stay full ink |
+| `--lt-red` | `var(--hk-alert)` #c2503e | 3.98 | 4.38 | changeover at risk: the room's edge, the legend's dot and a short turn-round's rule on the bar; the words say why |
+| `--lt-ring` | `var(--house-copper-text)` #94491f | 5.55 | 6.11 | attention, urgent and owned: the copper ring and its halo |
+| `--lt-urgent-label` | `var(--house-brick-text)` #8a3522 | 6.86 | 7.56 | the URGENT word inside the ring and on the rail |
 | `--lt-stale-band` | `var(--house-slate-wash)` #e3e3db | surface | surface | the offline or stale band across the top |
-| `--lt-stale-text` | `var(--house-slate-text)` #545e59 | 5.96 | 6.62 | the band's words |
-| `--lt-ink` | `var(--hk-ink)` #2e382e | 10.81 | 12.00 | all other text; never tinted by state |
+| `--lt-stale-text` | `var(--house-slate-text)` #545e59 | 5.74 | 6.33 | the band's words (5.21 on the band) |
+| `--lt-ink` | `var(--house-ink-1)` #14302a | 12.07 | 13.30 | all other text; never tinted by state |
 
-### Wall register — `[data-register="wall"]` (ground `--hk-forest-ink` #1e2721, raised #263028)
+### The wall — `[data-register="wall"]`
 
-| Token | Value | On ground | On raised | Note |
-|---|---|---|---|---|
-| `--lt-hairline` | `var(--hk-forest-soft)` #5b7a63 | 3.22 | 2.87 | hairline only; the slot's words carry the state |
-| `--lt-green` | #3f8a57 | 3.65 | 3.25 | one green on both grounds |
-| `--lt-amber` | #a07614 | 3.73 | 3.32 | one amber on both grounds |
-| `--lt-amber-deep` | #b5581a | 3.20 | 2.85 | on a raised slab the wall uses #c9761d (3.97) |
-| `--lt-live` | #d4786a | 4.90 | 4.36 | oxblood lifted for the dark ground; text-safe |
-| `--lt-sage` | `var(--hk-sage)` #a9c3a4 | 8.07 | 7.18 | hatching and label |
-| `--lt-faded` | #8e9992 | 5.21 | 4.64 | |
-| `--lt-red` | `var(--hk-alert-light)` #e0917a | 6.2 | 5.5 | the alert lifted for the dark ground; #c2503e was 2.94 on a raised slab |
-| `--lt-ring` | `var(--house-accent-copper)` #C98A5B | 5.32 | 4.73 | the brass of Blake's reference, as the register's copper |
-| `--lt-urgent-label` | #e08a7c | 5.92 | 5.27 | lifted once more than `--lt-live`: the URGENT word is a label and needs 4.5:1 on the raised ring, which #d4786a (4.36) missed |
-| `--lt-stale-band` | #8e9992 | surface | surface | words in `--hk-forest-ink` (5.21 on the band) |
-| `--lt-ink` | `var(--hk-paper)` #f3efe4 | 13.37 | 11.90 | |
+The wall's rooms are paper (the table above, redeclared on the wall's root), each a card
+in a forest frame (`--house-forest-deep`) that carries the header, the clock and the
+legend in the forest inks. Until 10 November 2026 the wall redefined every token on the
+register's dark arrangement (ground #1e2721); Blake's choice of concept C retired that
+set.
 
 ### Cadence and amplitude
 
@@ -83,7 +78,7 @@ motion; reduced motion keeps the words and loses only the motion.
 | Organisers due | setup within 60 min | `Wrench` · "Organisers · 48 min" | `--lt-green` | dot breath, `--lt-breath-organisers` | "Organisers · 48 min", steady dot | — |
 | Guests due | doors within 30 min | `Users` · "Guests · 22 min" | `--lt-amber` | dot breath, `--lt-breath-guests` | "Guests · 22 min" | — |
 | Imminent | doors within 10 min | `DoorOpen` · "Doors · 6 min" | `--lt-amber-deep` | dot breath, `--lt-breath-imminent` | "Doors · 6 min" | — |
-| Live | start ≤ now < end | `Radio` · "LIVE · 1 h 12 elapsed" | `--lt-live` | slab overlay breath at `--lt-live-amplitude`, `--lt-breath-live` | "LIVE · 1 h 12 elapsed" | — |
+| Live | start ≤ now < end | `Radio` · "LIVE · 1 h 12 elapsed"; a booking that runs for days, "LIVE · day 3 of 5" | `--lt-live` | the slot's glow breath at `--lt-live-amplitude`, `--lt-breath-live` | "LIVE · 1 h 12 elapsed" | — |
 | Clear-down | end to the next setup, within the turnaround | `RotateCcw` · "Clear-down · 40 min" | `--lt-sage` hatch, `--lt-sage-ink` label | none | — | — |
 | Done | marked done by a hallkeeper (S5) | `Check` · "Done 17:40" | `--lt-faded` edge | none | — | — |
 | Attention | a request landed and nobody owns it | `Bell` · "1 request · nobody has this" | `--lt-ring` with a count | one `--lt-arrival` stamp, then ring breath `--lt-breath-attention` until acknowledged | steady ring and count | one chime, opt-in |

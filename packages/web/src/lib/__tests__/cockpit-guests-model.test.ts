@@ -82,7 +82,8 @@ describe("buildGuestsCapacityModel — the published format, and no verdict", ()
   it("carries the generic-spacing arithmetic for staff, with no band, fit or comfort verdict", () => {
     const model = buildGuestsCapacityModel({ roomWidthM: 21, roomLengthM: 10.5, placedItems: withChairs(80), guestCount: 400 });
     const byStyle = new Map(model.estimates.map((row) => [row.style, row.estimate]));
-    // The Grand Hall's 220.5 m² at 0.65, 1.5 and 0.8 m² a guest.
+    // 220.5 m² (the Grand Hall's old hand-drawn 21 × 10.5 m) at 0.65, 1.5 and
+    // 0.8 m² a guest.
     expect(byStyle.get("cocktail")).toBe(339);
     expect(byStyle.get("dinner-rounds")).toBe(147);
     expect(byStyle.get("theatre")).toBe(275);

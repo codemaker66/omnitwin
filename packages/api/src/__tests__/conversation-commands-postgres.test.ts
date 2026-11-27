@@ -4,10 +4,11 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ConversationCommand } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { executeConversationCommand } from "../services/conversation-commands.js";
+import { installEscalationScheduler } from "../services/escalation-wake.js";
 import { openThreadCore, sendMessageCore } from "../services/conversations.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 import type { RequestActor } from "../services/requests.js";
@@ -185,6 +186,43 @@ describe.skipIf(target === undefined)("conversation commands on migrated Postgre
     expect(replayed.ack.outcome).toBe("applied");
     expect(replayed.ack.request?.state).toBe("accepted");
     expect(replayed.changed).toBeNull();
+  });
+
+  it("wakes the escalation scheduler after a reopen commits, so its plan reads the reopened window", async () => {
+    const f = await fixture();
+    const made = await executeConversationCommand(db, f.hallkeeper, f.venueId, {
+      kind: "request.create", commandId: randomUUID(),
+      payload: { roomId: f.roomId, bookingId: f.bookingId, kind: "chairs", quantity: 4, urgency: "soon", idempotencyKey: randomUUID() },
+    });
+    const requestId = made.ack.request?.id ?? "";
+    await executeConversationCommand(db, f.hallkeeper, f.venueId, { kind: "request.accept", commandId: randomUUID(), requestId, payload: {} });
+    await executeConversationCommand(db, f.hallkeeper, f.venueId, {
+      kind: "request.resolve", commandId: randomUUID(), requestId, payload: { outcome: "done" },
+    });
+
+    // The scheduler plans from the database on a connection of its own, so a
+    // wake from inside the step's transaction plans from the state before the
+    // step. Each wake notes whether that transaction had committed by then.
+    let committed = false;
+    const wokeAfterCommit: boolean[] = [];
+    const transaction = db.transaction.bind(db);
+    const watched = vi.spyOn(db, "transaction").mockImplementation(async (work, config) => {
+      const result = await transaction(work, config);
+      committed = true;
+      return result;
+    });
+    installEscalationScheduler({ poke: () => { wokeAfterCommit.push(committed); } });
+    try {
+      const reopened = await executeConversationCommand(db, f.hallkeeper, f.venueId, {
+        kind: "request.reopen", commandId: randomUUID(), requestId, payload: { note: "Two more after all." },
+      });
+      expect(reopened.ack.outcome).toBe("applied");
+      expect(reopened.ack.request?.state).toBe("reopened");
+      expect(wokeAfterCommit.at(-1)).toBe(true);
+    } finally {
+      installEscalationScheduler(null);
+      watched.mockRestore();
+    }
   });
 
   it("records a refused step and replays it as refused, with the owner's name", async () => {

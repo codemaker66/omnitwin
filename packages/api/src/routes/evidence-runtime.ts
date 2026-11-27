@@ -5,9 +5,9 @@ import {
   EvidenceTargetTypeSchema,
   ReviewGateDecisionInputSchema,
 } from "@omnitwin/types";
-import { configurations, reviewGates } from "../db/schema.js";
+import { configurationSheetSnapshots, configurations, reviewGates } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canAccessResource, canManageVenue } from "../utils/query.js";
 import {
   ApprovedSnapshotRequiredError,
@@ -17,6 +17,7 @@ import {
   getEvidencePackBundle,
   getTruthModeSummary,
   listEvidenceItemsForConfig,
+  type TruthModeSummaryScope,
 } from "../services/evidence-runtime.js";
 
 const ConfigParam = z.object({ configId: z.uuid() });
@@ -41,6 +42,22 @@ async function canAccessConfig(db: Database, user: FastifyRequestUser, configId:
 }
 
 type FastifyRequestUser = Parameters<typeof canAccessResource>[0];
+
+/** The layout a sheet snapshot belongs to, or null when no snapshot has the id. */
+async function snapshotLayoutId(db: Database, snapshotId: string): Promise<string | null> {
+  const [snapshot] = await db.select({ configurationId: configurationSheetSnapshots.configurationId })
+    .from(configurationSheetSnapshots)
+    .where(eq(configurationSheetSnapshots.id, snapshotId))
+    .limit(1);
+  return snapshot?.configurationId ?? null;
+}
+
+/** The layouts a summary may count for this person (canAccessResource, across rows). */
+function truthModeScope(user: FastifyRequestUser): TruthModeSummaryScope {
+  if (isPlatformAdmin(user)) return { kind: "every_venue" };
+  const floorVenueId = user.venueId !== null && canManageVenue(user, user.venueId) ? user.venueId : null;
+  return { kind: "own_layouts", userId: user.id, floorVenueId };
+}
 
 async function configAccessResponse(
   db: Database,
@@ -196,11 +213,29 @@ export async function truthModeRoutes(server: FastifyInstance, opts: { db: Datab
       return reply.status(400).send({ error: "Invalid query", code: "VALIDATION_ERROR", details: query.error.issues });
     }
 
+    // A target that names one layout is answered as the sibling routes answer
+    // that layout. Any other target counts only the caller's own layouts.
+    const { targetType, targetId } = query.data;
+    if (targetType === "configuration" || targetType === "layout_snapshot") {
+      const id = z.uuid().safeParse(targetId);
+      if (!id.success) {
+        return reply.status(400).send({ error: "Invalid query", code: "VALIDATION_ERROR", details: id.error.issues });
+      }
+      const configId = targetType === "configuration" ? id.data : await snapshotLayoutId(db, id.data);
+      if (configId === null) {
+        return reply.status(404).send({ error: "Layout snapshot not found", code: "NOT_FOUND" });
+      }
+      const access = await configAccessResponse(db, request.user, configId);
+      if (access === "missing") {
+        return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+      }
+      if (access === "forbidden") {
+        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+      }
+    }
+
     return {
-      data: await getTruthModeSummary(db, {
-        targetType: query.data.targetType,
-        targetId: query.data.targetId,
-      }),
+      data: await getTruthModeSummary(db, { targetType, targetId, scope: truthModeScope(request.user) }),
     };
   });
 }

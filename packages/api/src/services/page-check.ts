@@ -262,7 +262,13 @@ function parseRobots(text: string): RobotsGroup[] {
   let current: RobotsGroup | null = null;
   let sawRule = false;
   for (const raw of text.split(/\r\n|\r|\n/u)) {
-    const line = raw.replace(/#.*$/u, "").trim();
+    // A comment runs from the first # to the end of the line. Found with
+    // indexOf, not /#.*$/: `.` stops at U+2028 and U+2029, `$` then fails, and
+    // the search began again at every later #, quadratic on one long line
+    // (128 KB of # took ninety seconds) from a site the check does not
+    // control. It also left such a comment in place, garbling its rule.
+    const comment = raw.indexOf("#");
+    const line = (comment === -1 ? raw : raw.slice(0, comment)).trim();
     const colon = line.indexOf(":");
     if (colon <= 0) continue;
     const key = line.slice(0, colon).trim().toLowerCase();
@@ -283,11 +289,40 @@ function parseRobots(text: string): RobotsGroup[] {
   return groups;
 }
 
+/**
+ * Whether a robots.txt rule value matches `path`. `*` matches any run of
+ * characters, including none; a `$` at the very end anchors the match to the
+ * end of the path (a `$` anywhere else is literal); every other character is
+ * literal; an unanchored pattern need only match a prefix of the path.
+ *
+ * The value comes from a robots.txt the check does not control, so this never
+ * builds a RegExp: `/************Z` would make a backtracking engine take
+ * exponential time and stall the event loop. Instead the literal pieces
+ * between stars are placed left to right, each at its earliest position after
+ * the previous one. The earliest placement always leaves the most room for
+ * the pieces after it, so a match exists exactly when this finds one; each
+ * search starts where the last piece ended, so the time is bounded by the
+ * pattern length times the path length.
+ */
 function patternMatches(pattern: string, path: string): boolean {
   const anchored = pattern.endsWith("$");
   const body = anchored ? pattern.slice(0, -1) : pattern;
-  const source = body.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/gu, "\\$&")).join(".*");
-  return new RegExp(`^${source}${anchored ? "$" : ""}`, "u").test(path);
+  const pieces = body.split("*");
+  const first = pieces[0] ?? "";
+  if (pieces.length === 1) return anchored ? path === first : path.startsWith(first);
+  if (!path.startsWith(first)) return false;
+  let position = first.length;
+  for (let index = 1; index < pieces.length - 1; index += 1) {
+    const piece = pieces[index] ?? "";
+    const found = path.indexOf(piece, position);
+    if (found === -1) return false;
+    position = found + piece.length;
+  }
+  const last = pieces[pieces.length - 1] ?? "";
+  // Anchored: the last piece must end the path without overlapping the pieces
+  // already placed. Unanchored: it may sit anywhere after them.
+  if (anchored) return path.length - last.length >= position && path.endsWith(last);
+  return path.indexOf(last, position) !== -1;
 }
 
 /**
@@ -322,17 +357,137 @@ function codePoint(code: number): string {
   return Number.isFinite(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : " ";
 }
 
+// The page comes from a site the check does not control and may be 2 MB, so
+// the tags are never stripped by a regular expression that rescans the rest
+// of the page from each opener: a page of nothing but `<`, or of unclosed
+// `<!--` or `<main>`, makes such a pass quadratic (an hour at 2 MB) and stalls
+// the API's event loop for every venue. Each step below moves left to right
+// with indexOf, and a search that reached the end without a closer is never
+// repeated, so each is linear in the page's length. Each keeps the exact
+// meaning of the expression it replaced, so a stored hash still matches:
+//   withoutSpans(text, "<!--", "-->")  /<!--[\s\S]*?-->/gu
+//   withoutSpans(text, "<", ">")       /<[^>]*>/gu
+//   withoutElements(text, names)       /<(names)\b[^>]*>[\s\S]*?<\/\1\s*>/giu
+//   elementContent(text, name)         /<name\b[^>]*>([\s\S]*?)<\/name\s*>/iu, group 1
+
+/** Each `opener` up to the first `closer` after it, replaced by a space. */
+function withoutSpans(text: string, opener: string, closer: string): string {
+  const parts: string[] = [];
+  let from = 0;
+  for (;;) {
+    const start = text.indexOf(opener, from);
+    if (start === -1) break;
+    const end = text.indexOf(closer, start + opener.length);
+    // No closer after this opener means none after any later opener either.
+    if (end === -1) break;
+    parts.push(text.slice(from, start), " ");
+    from = end + closer.length;
+  }
+  parts.push(text.slice(from));
+  return parts.join("");
+}
+
+/** One element name as two sticky expressions, case-insensitive the way the
+ *  replaced expressions were, so `ſcript` and `SCRIPT` count as `script` and
+ *  a name is a whole word by the same rule. */
+interface ElementName {
+  /** `<` and the name as a whole word. */
+  readonly opening: RegExp;
+  /** `</`, the name, any space, `>`. */
+  readonly closing: RegExp;
+}
+
+interface ElementNames {
+  /** Sticky: `<` and any one of the names as a whole word, so most `<` are
+   *  passed over after one test rather than one per name. */
+  readonly anyOpening: RegExp;
+  readonly names: readonly ElementName[];
+}
+
+function elementNames(...names: readonly string[]): ElementNames {
+  return {
+    anyOpening: new RegExp(`<(?:${names.join("|")})\\b`, "iuy"),
+    names: names.map((name) => ({ opening: new RegExp(`<${name}\\b`, "iuy"), closing: new RegExp(`<\\/${name}\\s*>`, "iuy") })),
+  };
+}
+
+/** Whether the character after a `<` can begin a name: an ASCII letter, or
+ *  any character beyond ASCII, which the expressions judge themselves (a
+ *  case-insensitive match folds `ſ` to s). Every other `<` is passed over
+ *  without running an expression, so a page of `<` costs one look at each. */
+function mayBeginName(code: number): boolean {
+  return code >= 0x80 || (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a);
+}
+
+const DROPPED_ELEMENTS = elementNames("script", "style", "noscript", "template", "svg", "iframe", "head");
+const PAGE_CHROME = elementNames("nav", "header", "footer", "form");
+const MAIN_ELEMENT = elementNames("main");
+const BODY_ELEMENT = elementNames("body");
+
+interface ElementFound {
+  readonly start: number;
+  readonly contentStart: number;
+  readonly contentEnd: number;
+  readonly end: number;
+}
+
+/**
+ * The next element at or after `from` named in `elements`: an opening tag
+ * ending at the first `>` after its name, then everything up to the first
+ * closing tag of the same name. `unclosed` holds the names already searched
+ * to the end without finding their closing tag; a later opening tag of such a
+ * name cannot find one either, so it is passed over unsearched.
+ */
+function nextElement(text: string, from: number, elements: ElementNames, unclosed: Set<ElementName>): ElementFound | null {
+  for (let start = text.indexOf("<", from); start !== -1; start = text.indexOf("<", start + 1)) {
+    if (!mayBeginName(text.charCodeAt(start + 1))) continue;
+    elements.anyOpening.lastIndex = start;
+    if (!elements.anyOpening.test(text)) continue;
+    const name = elements.names.find(({ opening }) => {
+      opening.lastIndex = start;
+      return opening.test(text);
+    });
+    if (name === undefined || unclosed.has(name)) continue;
+    const tagEnd = text.indexOf(">", name.opening.lastIndex);
+    // No `>` after this opening tag means none after any later one either.
+    if (tagEnd === -1) return null;
+    for (let close = text.indexOf("</", tagEnd + 1); close !== -1; close = text.indexOf("</", close + 2)) {
+      name.closing.lastIndex = close;
+      if (name.closing.test(text)) return { start, contentStart: tagEnd + 1, contentEnd: close, end: name.closing.lastIndex };
+    }
+    unclosed.add(name);
+  }
+  return null;
+}
+
+/** Each element named in `elements`, its content included, replaced by a space. */
+function withoutElements(text: string, elements: ElementNames): string {
+  const unclosed = new Set<ElementName>();
+  const parts: string[] = [];
+  let from = 0;
+  for (let found = nextElement(text, 0, elements, unclosed); found !== null; found = nextElement(text, from, elements, unclosed)) {
+    parts.push(text.slice(from, found.start), " ");
+    from = found.end;
+  }
+  parts.push(text.slice(from));
+  return parts.join("");
+}
+
+/** The content of the first complete element named in `elements`, or null. */
+function elementContent(text: string, elements: ElementNames): string | null {
+  const found = nextElement(text, 0, elements, new Set());
+  return found === null ? null : text.slice(found.contentStart, found.contentEnd);
+}
+
 /** The page's readable text, the main block where it has one, without its
  *  scripts, styles, navigation, header, footer and forms, so a rotating
  *  banner or a cookie script does not read as a change. */
 export function pageText(html: string): string {
-  let text = html.replace(/<!--[\s\S]*?-->/gu, " ");
-  text = text.replace(/<(script|style|noscript|template|svg|iframe|head)\b[^>]*>[\s\S]*?<\/\1\s*>/giu, " ");
-  const main = /<main\b[^>]*>([\s\S]*?)<\/main\s*>/iu.exec(text);
-  const body = /<body\b[^>]*>([\s\S]*?)<\/body\s*>/iu.exec(text);
-  text = main?.[1] ?? body?.[1] ?? text;
-  text = text.replace(/<(nav|header|footer|form)\b[^>]*>[\s\S]*?<\/\1\s*>/giu, " ");
-  text = text.replace(/<[^>]*>/gu, " ");
+  let text = withoutSpans(html, "<!--", "-->");
+  text = withoutElements(text, DROPPED_ELEMENTS);
+  text = elementContent(text, MAIN_ELEMENT) ?? elementContent(text, BODY_ELEMENT) ?? text;
+  text = withoutElements(text, PAGE_CHROME);
+  text = withoutSpans(text, "<", ">");
   text = text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/giu, (whole, name: string) => {
     if (/^#x/iu.test(name)) return codePoint(Number.parseInt(name.slice(2), 16));
     if (name.startsWith("#")) return codePoint(Number.parseInt(name.slice(1), 10));

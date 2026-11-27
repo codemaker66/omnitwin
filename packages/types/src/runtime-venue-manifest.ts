@@ -209,7 +209,8 @@ export const RuntimeTransformReferenceSchema = z
 export const RuntimeTransformProvenanceSchema = z
   .object({
     state: RuntimeTransformProvenanceStateSchema,
-    refs: z.array(RuntimeTransformReferenceSchema).min(1),
+    // Ceilings far above a real artifact's lists (a request bound, not a rule).
+    refs: z.array(RuntimeTransformReferenceSchema).min(1).max(200),
   })
   .strict();
 
@@ -229,7 +230,7 @@ export const RuntimeTransformLandmarkPairSchema = z
     source: RuntimeVec3Schema,
     target: RuntimeVec3Schema,
     residualM: z.number().nonnegative().nullable().optional(),
-    provenanceRefs: z.array(RuntimeTransformReferenceSchema).default([]),
+    provenanceRefs: z.array(RuntimeTransformReferenceSchema).max(200).default([]),
   })
   .strict();
 
@@ -242,7 +243,7 @@ export const TransformArtifactV0Schema = z
     matrix: RuntimeTransformMatrix4dSchema,
     alignmentMethod: RuntimeTransformAlignmentMethodSchema,
     residualRmseM: z.number().nonnegative().nullable(),
-    landmarks: z.array(RuntimeTransformLandmarkPairSchema).default([]),
+    landmarks: z.array(RuntimeTransformLandmarkPairSchema).max(1000).default([]),
     provenance: RuntimeTransformProvenanceSchema,
     creator: RuntimeTransformActorSchema,
     reviewer: RuntimeTransformActorSchema,

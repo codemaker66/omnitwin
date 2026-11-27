@@ -14,6 +14,7 @@ import { COCKPIT_MODES, type CockpitMode } from "../../../lib/cockpit-modes.js";
 import { isSpringSettled, stepSpring, type SpringState } from "../../../lib/springs.js";
 import { prefersReducedMotion } from "../../../lib/reduced-motion.js";
 import { useEscapeToClose, useFocusTrap } from "../../../lib/use-focus-trap.js";
+import { useShownLens } from "../../../lib/use-lens-rail.js";
 import { panelForMode } from "./CockpitRightDock.js";
 import {
   LENS_SHEET_EXIT_MARGIN_PX,
@@ -53,8 +54,10 @@ const STALE_VELOCITY_MS = 100;
 const SETTLE_EPSILON = 0.5;
 
 function lensSheetWanted(): boolean {
+  const { activeMode, offeredModes } = useCockpitStore.getState();
   return useLayoutTimelinePreviewStore.getState().mode === "inactive"
-    && panelForMode(useCockpitStore.getState().activeMode) !== null;
+    && offeredModes.includes(activeMode)
+    && panelForMode(activeMode) !== null;
 }
 
 function returnToDesign(): void {
@@ -68,7 +71,8 @@ function returnToDesign(): void {
  * dock does, so no lens control can change the plan while history is shown.
  */
 export function LensSheet(): ReactElement | null {
-  const activeMode = useCockpitStore((state) => state.activeMode);
+  // The shown lens: one this viewer is not offered (decision 5) never rises.
+  const activeMode = useShownLens();
   const previewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const open = !previewActive && panelForMode(activeMode) !== null;
   const [shownMode, setShownMode] = useState<CockpitMode | null>(open ? activeMode : null);

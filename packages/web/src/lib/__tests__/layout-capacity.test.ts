@@ -7,7 +7,9 @@ import {
   type ComfortBand,
 } from "../layout-capacity.js";
 
-// Trades Hall Grand Hall — 21m × 10.5m ≈ 220.5 m².
+// The Grand Hall at its old hand-drawn 21 m × 10.5 m = 220.5 m², which the
+// figures below are worked for. The planner now opens it at the scanned
+// 21.135 m × 10.59 m = 223.8 m².
 const GRAND_HALL_M2 = 220.5;
 
 describe("spacePerGuestStandard", () => {

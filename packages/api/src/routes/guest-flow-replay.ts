@@ -90,6 +90,15 @@ function storedNavmesh(row: NavmeshVersionRow): StoredNavmeshVersion {
   });
 }
 
+/** A navmesh is stored once for its room's geometry and shared by every
+ *  scenario that walks the same room, so its links name the scenario that
+ *  first made it: shown to that scenario, and to any other, none at all. */
+function navmeshFor(row: NavmeshVersionRow, scenarioId: string | null): StoredNavmeshVersion {
+  const stored = storedNavmesh(row);
+  if (row.scenarioId !== null && row.scenarioId === scenarioId) return stored;
+  return { ...stored, eventId: null, phaseId: null, configurationId: null, scenarioId: null, createdBy: null };
+}
+
 function storedReplay(row: GuestFlowReplayRow): StoredGuestFlowReplay {
   return StoredGuestFlowReplaySchema.parse({
     id: row.id,
@@ -149,7 +158,7 @@ async function validateLinkedVenue(
     readonly phaseId: string | null;
     readonly configurationId: string | null;
   },
-): Promise<{ ok: true; eventId: string | null } | { ok: false; status: number; error: string; code: string }> {
+): Promise<{ ok: true; eventId: string | null; venueId: string | null } | { ok: false; status: number; error: string; code: string }> {
   if (!canUseGuestFlowReplay(user)) {
     return { ok: false, status: 403, error: "Only venue staff can manage guest-flow replay artifacts", code: "FORBIDDEN" };
   }
@@ -188,6 +197,7 @@ async function validateLinkedVenue(
   if (linkedVenueIds.size > 1) {
     return { ok: false, status: 422, error: "Guest-flow replay links must belong to one venue", code: "VENUE_MISMATCH" };
   }
+  const linkedVenueId = Array.from(linkedVenueIds)[0] ?? null;
 
   if (!isPlatformAdmin(user)) {
     if (linkedVenueIds.size === 0) {
@@ -199,7 +209,15 @@ async function validateLinkedVenue(
     }
   }
 
-  return { ok: true, eventId: resolvedEventId };
+  return { ok: true, eventId: resolvedEventId, venueId: linkedVenueId };
+}
+
+/** The venue a stored replay belongs to, through what it is linked to. */
+async function venueOfReplay(db: Database, replay: GuestFlowReplayRow): Promise<string | null> {
+  if (replay.eventId !== null) return venueForEvent(db, replay.eventId);
+  if (replay.configurationId !== null) return venueForConfiguration(db, replay.configurationId);
+  if (replay.phaseId !== null) return (await eventForPhase(db, replay.phaseId))?.venueId ?? null;
+  return null;
 }
 
 async function assembleStoredReplay(
@@ -282,10 +300,40 @@ async function assembleStoredReplay(
   return GuestFlowReplayPersistenceResultSchema.parse({
     created: false,
     scenario: scenario === undefined ? null : storedScenario(scenario),
-    navmeshVersion: storedNavmesh(navmesh),
+    navmeshVersion: navmeshFor(navmesh, replay.scenarioId),
     replay: storedReplay(replay),
     artifact,
   });
+}
+
+/** Points of geometry one scenario may carry: far above a whole Grand Hall, far below what zod would walk in a 2 MB body. */
+export const GUEST_FLOW_SCENARIO_POINT_BUDGET = 20_000;
+
+/** The 400 reply's issue list stops here; the first issues say what is wrong. */
+const MAX_REPORTED_ISSUES = 20;
+
+function arrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function fieldOf(value: unknown, key: string): unknown {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>)[key] : undefined;
+}
+
+/**
+ * Counts a create body's points before validation. Every list has its own
+ * ceiling, but 500 obstacles of 1,000 points and 100 lanes of 1,000 points
+ * still pass them, and zod then reports an issue per bad point (about
+ * 600,000 for 1.2 MB). Counting first refuses that body with one issue.
+ */
+function scenarioPointCount(body: unknown): number {
+  const input = fieldOf(body, "input");
+  let points = arrayLength(fieldOf(input, "roomPolygon"));
+  const obstacles = fieldOf(input, "obstacles");
+  if (Array.isArray(obstacles)) for (const obstacle of obstacles) points += arrayLength(fieldOf(obstacle, "polygon"));
+  const lanes = fieldOf(input, "staffLanes");
+  if (Array.isArray(lanes)) for (const lane of lanes) points += arrayLength(fieldOf(lane, "line"));
+  return points;
 }
 
 export async function guestFlowReplayRoutes(
@@ -295,9 +343,16 @@ export async function guestFlowReplayRoutes(
   const { db } = opts;
 
   server.post("/scenarios", { preHandler: [authenticate] }, async (request, reply) => {
+    if (scenarioPointCount(request.body) > GUEST_FLOW_SCENARIO_POINT_BUDGET) {
+      return reply.status(400).send({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: [{ code: "too_big", path: ["input"], message: `A scenario carries at most ${GUEST_FLOW_SCENARIO_POINT_BUDGET.toLocaleString("en-GB")} points of geometry` }],
+      });
+    }
     const parsed = CreateGuestFlowReplayScenarioSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues.slice(0, MAX_REPORTED_ISSUES) });
     }
 
     const configurationId = parsed.data.configurationId ?? parsed.data.input.layout.configurationId;
@@ -318,6 +373,14 @@ export async function guestFlowReplayRoutes(
       .where(eq(guestFlowReplays.artifactHash, artifact.artifactHash))
       .limit(1);
     if (existingReplay !== undefined) {
+      // A replay is stored once for its exact inputs, whichever venue asked:
+      // another venue's is not this one's answer, and its words stay its own.
+      if (!isPlatformAdmin(request.user) && await venueOfReplay(db, existingReplay) !== scope.venueId) {
+        return reply.status(409).send({
+          error: "These exact inputs were already replayed elsewhere. Change the seed to replay them here.",
+          code: "REPLAY_INPUTS_TAKEN",
+        });
+      }
       const existing = await assembleStoredReplay(db, existingReplay);
       if (existing !== null) return { data: existing };
     }
@@ -433,7 +496,7 @@ export async function guestFlowReplayRoutes(
       return GuestFlowReplayPersistenceResultSchema.parse({
         created: true,
         scenario: storedScenario(scenario),
-        navmeshVersion: storedNavmesh(navmesh),
+        navmeshVersion: navmeshFor(navmesh, scenario.id),
         replay: storedReplay(replay),
         artifact,
       });

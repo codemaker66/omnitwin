@@ -125,6 +125,75 @@ describe("the floor's notes", () => {
   });
 });
 
+describe("a note sent while the thread is being read", () => {
+  const floor = thread({ id: FLOOR_THREAD, audience: "staff-private", subject: "booking" });
+  const doors = message({ id: "00000000-0000-4000-8000-00000000e010", threadId: FLOOR_THREAD, cursor: 5, authorUserId: FIONA, authorName: "Fiona", authorRole: "staff", body: "Doors at six." });
+  const sent = message({ id: "00000000-0000-4000-8000-00000000e012", threadId: FLOOR_THREAD, cursor: 7, authorUserId: elaine.id, authorName: "Elaine", authorRole: "hallkeeper", body: "Chairs out by five." });
+
+  function nudge(event: RequestsLiveEvent): void {
+    for (const listener of listeners) listener(event);
+  }
+
+  async function send(body: string): Promise<void> {
+    fireEvent.change(screen.getByLabelText("Note to the floor"), { target: { value: body } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => { expect(screen.getByLabelText("Note to the floor")).toHaveProperty("value", ""); });
+  }
+
+  it("keeps the note on screen when a full read asked before it answers after it", async () => {
+    mocks.threads.mockResolvedValue([floor]);
+    let answer: (value: unknown) => void = () => undefined;
+    mocks.messages
+      .mockResolvedValueOnce(page(floor, [doors]))
+      .mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    mocks.sendMessage.mockResolvedValue(sent);
+    renderSlot();
+    await screen.findByText("Doors at six.");
+    // The phone comes back: the server has replayed what it missed, and the
+    // thread is read again whole. The note is sent while that read is out.
+    await act(async () => { nudge({ kind: "caughtUp", cursor: 5 }); await Promise.resolve(); });
+    await waitFor(() => { expect(mocks.messages).toHaveBeenCalledTimes(2); });
+    await send("Chairs out by five.");
+    expect(await screen.findByText("Chairs out by five.")).toBeTruthy();
+    // The read was taken before the note was saved, and answers last.
+    await act(async () => { answer(page(floor, [doors])); await Promise.resolve(); });
+    const list = screen.getByRole("list", { name: "Messages" });
+    expect(within(list).getByText("Doors at six.")).toBeTruthy();
+    expect(within(list).getByText("Chairs out by five.")).toBeTruthy();
+  });
+
+  it("reads on from where reading reached, so a colleague's message just before the note still arrives", async () => {
+    // Fiona posts at cursor 6 while Elaine's note is on its way; the note
+    // saves at 7. A read forward from the note's 7 would never fetch Fiona's.
+    const lights = message({ id: "00000000-0000-4000-8000-00000000e011", threadId: FLOOR_THREAD, cursor: 6, authorUserId: FIONA, authorName: "Fiona", authorRole: "staff", body: "And the lights." });
+    const thread_ = [doors, lights, sent];
+    mocks.threads.mockResolvedValue([floor]);
+    mocks.messages
+      .mockResolvedValueOnce(page(floor, [doors]))
+      .mockImplementation((_threadId: string, query: { after: number }) =>
+        Promise.resolve(page(floor, thread_.filter((row) => row.cursor > query.after))));
+    mocks.sendMessage.mockResolvedValue(sent);
+    renderSlot();
+    await screen.findByText("Doors at six.");
+    await send("Chairs out by five.");
+    await act(async () => {
+      nudge({
+        kind: "conversation", venueId: VENUE,
+        event: {
+          type: "conversation.event", venueId: VENUE, kind: "message.sent", threadId: FLOOR_THREAD, audience: "staff-private", subject: "booking",
+          bookingId: BOOKING, eventId: null, requestId: null, messageId: lights.id, cursor: 6, actorUserId: FIONA, at: "2026-10-10T09:06:00.000Z", serverNowMs: Date.now(),
+        },
+      });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("And the lights.")).toBeTruthy();
+    expect(mocks.messages).toHaveBeenLastCalledWith(FLOOR_THREAD, { after: 5, limit: 200 });
+    const bodies = within(screen.getByRole("list", { name: "Messages" })).getAllByRole("listitem")
+      .map((item) => ["Doors at six.", "And the lights.", "Chairs out by five."].find((body) => (item.textContent ?? "").includes(body)));
+    expect(bodies).toEqual(["Doors at six.", "And the lights.", "Chairs out by five."]);
+  });
+});
+
 describe("audiences", () => {
   it("badges a client-facing request thread, labels its composer for the client, and marks a message read once", async () => {
     const floor = thread({ id: FLOOR_THREAD, audience: "staff-private", subject: "booking" });
@@ -136,12 +205,13 @@ describe("audiences", () => {
 
     const floorTab = await screen.findByRole("tab", { name: "Floor notes" });
     expect(within(floorTab).queryByText("Client can read this")).toBeNull();
-    const requestTab = screen.getByRole("tab", { name: /Chairs × 10/u });
+    // The floor's tab is there before the threads are read; the request's comes with them.
+    const requestTab = await screen.findByRole("tab", { name: /Chairs × 10/u });
     expect(within(requestTab).getByText("Client can read this")).toBeTruthy();
 
     fireEvent.click(requestTab);
     expect(await screen.findByLabelText("Reply to the client")).toBeTruthy();
-    expect(screen.getByText("Could we have ten more chairs?")).toBeTruthy();
+    expect(await screen.findByText("Could we have ten more chairs?")).toBeTruthy();
     await waitFor(() => { expect(mocks.markReceipt).toHaveBeenCalledWith(ask.id, { mark: "read" }); });
     // A client's message is not "noted" from the floor's side: it is answered.
     expect(screen.queryByRole("button", { name: "Noted" })).toBeNull();

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { PHASE_METADATA, formatTableLabels, type HallkeeperSheetV2, type OpsTask } from "@omnitwin/types";
+import { NO_TIME_TO_SET, PHASE_METADATA, PLANNER_TIME_NO_BOOKING, formatTableLabels, readyByWords, sheetClock, sheetTimes, type HallkeeperSheetV2, type OpsTask } from "@omnitwin/types";
 import { ArrowLeft, ArrowRight, Check, ClipboardList, MapPin, Printer, Users, X } from "lucide-react";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { getHallkeeperRoomPlan, HALLKEEPER_PLAN_VENUE_SLUG } from "../../data/hallkeeper-room-plans.js";
@@ -33,6 +33,9 @@ export interface HallkeeperWorkspaceProps {
   readonly highlightedRowKey: string | null;
   readonly onHighlight: (key: string | null) => void;
   readonly disabled: boolean;
+  /** The checklist is the venue crew's record (release audit tenancy-f-2):
+   *  the layout's customer sees what is ticked and ticks nothing. */
+  readonly checksReadOnly?: boolean;
   readonly notices: ReactNode;
   readonly details: ReactNode;
   readonly downloadBusy: boolean;
@@ -41,7 +44,7 @@ export interface HallkeeperWorkspaceProps {
 }
 
 /** View selection is navigation only; operational states always come from their owning API. */
-export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey, onHighlight, disabled, notices, details, downloadBusy, onDownload, onPrint }: HallkeeperWorkspaceProps): React.ReactElement {
+export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey, onHighlight, disabled, checksReadOnly = false, notices, details, downloadBusy, onDownload, onPrint }: HallkeeperWorkspaceProps): React.ReactElement {
   const [params] = useSearchParams();
   const result = useHallkeeperContext(data.config.id, params.get("eventId"));
   const context = result.context;
@@ -82,9 +85,14 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
   // booking says 09:00 — so preferring it here made this card disagree with
   // the PDF printed from the same sheet. Gate line 20 requires them to agree.
   const plannedAt = data.timing?.eventStart ?? context?.graph?.event.startsAt ?? null;
-  const setupByAt = data.timing?.setupBy ?? null;
+  // The printed sheet's rule (sheetTimes): setup from timing.setupBy (when the
+  // window opens), ready by the planner's final time or else guests in.
+  const times = sheetTimes(data);
+  const readyAfterGuests = (times.readyBeforeGuestsMinutes ?? 0) < 0;
   const plannedDate = plannedAt === null ? "Date not supplied" : new Date(plannedAt).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: data.venue.timezone });
   const time = (value: string | null): string => value === null ? "Not provided" : new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: data.venue.timezone });
+  // A setup or ready-by time on another day than guests come in leads with its weekday ("Fri 16:00"), as the PDF prints it.
+  const clock = (value: string): string => sheetClock(value, times.guestsIn, data.venue.timezone);
   // The venue's clock is named only for a reader whose device keeps another.
   const zone = useMemo(() => zoneNote(data.venue.timezone, deviceZone()), [data.venue.timezone]);
   const eventDay = plannedAt === null ? null : venueDay(Date.parse(plannedAt), data.venue.timezone);
@@ -115,17 +123,22 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
       </aside>
       <div className="hkf-main">
         <header className="hkf-heading"><div><span className="hkf-overline">Hallkeeper sheet</span><h1>{data.space.name}</h1><p className="hkf-event-name" title={data.config.name}>{data.config.name}</p>{otherRooms.length > 0 && <details className="hkf-room-switch"><summary>{otherRooms.length === 1 ? "1 other room" : `${String(otherRooms.length)} other rooms`} in this event</summary><ul>{otherRooms.map((layout) => <li key={layout.configurationId}><Link to={roomLink(layout.configurationId)}>{layout.spaceName}<small>{layout.name}</small></Link></li>)}</ul></details>}<div className="hkf-facts">{data.approval !== null && <ApprovalStamp approval={data.approval} timeZone={data.venue.timezone} />}<span><Users size={15} /> {data.config.guestCount} guests</span><span>{data.totals.totalItems} pieces to set</span><button type="button" onClick={() => { setShowDetails(true); }}>Brief & contacts</button></div></div>
-          {/* The hour the room must be ready beside the hour the event starts
-              (roadmap N4): the deadline the whole setup works to. */}
+          {/* When setup starts, when the room must be ready and when guests
+              come in (roadmap N4; Blake, 18 Nov 2026): the window the whole
+              setup works to, as the printed sheet gives it. */}
           <div className="hkf-time-card">
             {data.timing === null
               ? <><span>{plannedAt !== null ? "Planned start" : "Not in the Diary yet"}</span><strong>{time(plannedAt)}</strong></>
               : <dl className="hkf-times">
-                <div><dt>Ready by</dt><dd>{setupByAt === null ? <span className="hkf-time-unset">Not set</span> : time(setupByAt)}</dd></div>
-                <div><dt>Starts</dt><dd>{time(plannedAt)}</dd></div>
+                <div><dt>Setup from</dt><dd className={times.noTimeToSet ? "hkf-time-late" : undefined}>{times.setupFrom === null ? <span className="hkf-time-unset">Not set</span> : clock(times.setupFrom)}</dd></div>
+                <div><dt>Ready by</dt><dd className={readyAfterGuests ? "hkf-time-late" : undefined}>{times.readyBy === null ? "Not provided" : clock(times.readyBy)}</dd></div>
+                <div><dt>Guests in</dt><dd>{time(plannedAt)}</dd></div>
               </dl>}
             <small>{plannedDate}{zone === null ? "" : ` · ${zone}`}</small>
-            {data.timing !== null && setupByAt === null && <small className="hkf-time-note">No changeover time is recorded for this room.</small>}
+            {data.timing !== null && times.setupFrom === null && <small className="hkf-time-note">No changeover time is recorded for this room.</small>}
+            {data.timing !== null && times.noTimeToSet && <small className="hkf-time-note hkf-time-late">{`${NO_TIME_TO_SET}.`}</small>}
+            {data.timing !== null && readyAfterGuests && <small className="hkf-time-note hkf-time-late">{`The planner’s ready time is ${readyByWords(times) ?? ""}.`}</small>}
+            {data.timing === null && times.readyBy !== null && <small className="hkf-time-note hkf-time-late">{`Ready by ${clock(times.readyBy)} · ${PLANNER_TIME_NO_BOOKING}`}</small>}
           </div>
         </header>
         {data.approval === null && <ApprovalBand status={reviewStatus} />}
@@ -149,11 +162,11 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
               <div className="hkf-category"><label>Setup category<select value={category} onChange={(event) => { const selected = data.phases.find((entry) => entry.phase === event.target.value); if (selected !== undefined) setCategory(selected.phase); setStage("setup"); setPage(0); }}>{data.phases.map((entry) => <option key={entry.phase} value={entry.phase}>{PHASE_METADATA[entry.phase].label}</option>)}</select></label><label className="hkf-remaining"><input type="checkbox" checked={remaining} onChange={(event) => { setRemaining(event.target.checked); setPage(0); }} /> Remaining</label></div>
               <input className="hkf-search" type="search" aria-label="Find a setup item" placeholder="Find an item or zone…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} />
               <div className="hkf-task-list">{visibleRows.map((row) => <div key={row.key} className={`hkf-task ${highlightedRowKey === row.key ? "hkf-highlighted" : ""}`}>
-                <button type="button" role="checkbox" aria-checked={checks[row.key] === true} aria-disabled={disabled} disabled={disabled} data-row-key={row.key} className="hkf-check-task" onClick={() => { onToggle(row.key); }}><span className="hkf-checkbox">{checks[row.key] === true && <Check size={15} />}</span><span><strong>{row.name}</strong><small>{row.zone}{(row.labels ?? []).length > 0 ? ` · ${formatTableLabels(row.labels ?? [])}` : ""}{row.afterDepth > 0 ? " · after preceding items" : ""}</small>{row.notes.length > 0 && <small>{row.notes}</small>}</span><b>×{row.qty}</b></button>
+                <button type="button" role="checkbox" aria-checked={checks[row.key] === true} aria-disabled={disabled} aria-readonly={checksReadOnly || undefined} disabled={disabled} data-row-key={row.key} className="hkf-check-task" onClick={() => { if (!checksReadOnly) onToggle(row.key); }}><span className="hkf-checkbox">{checks[row.key] === true && <Check size={15} />}</span><span><strong>{row.name}</strong><small>{row.zone}{(row.labels ?? []).length > 0 ? ` · ${formatTableLabels(row.labels ?? [])}` : ""}{row.afterDepth > 0 ? " · after preceding items" : ""}</small>{row.notes.length > 0 && <small>{row.notes}</small>}</span><b>×{row.qty}</b></button>
                 {(row.positions.length) > 0 && <button className="hkf-locate" type="button" aria-label={`Locate ${row.name} on floor plan`} onClick={() => { showOnPlan(row.key); }}><MapPin size={16} /></button>}
               </div>)}{visibleRows.length === 0 && <div className="hkf-empty"><Check size={24} /><h3>{rows.length === 0 && remaining ? "Nothing remaining in this view" : "No setup items in this view"}</h3><p>{allRows.length === 0 ? "The planner has not placed any items in this layout." : "Choose another category or adjust the filter."}</p></div>}</div>
               <div className="hkf-pagination"><span>{rows.length === 0 ? "0 items" : `${String(currentPage * 5 + 1)}–${String(Math.min((currentPage + 1) * 5, rows.length))} of ${String(rows.length)} checks`}</span><button type="button" aria-label="Previous setup items" disabled={currentPage === 0} onClick={() => { setPage(currentPage - 1); }}><ArrowLeft size={16} /></button><button type="button" aria-label="Next setup items" disabled={(currentPage + 1) * 5 >= rows.length} onClick={() => { setPage(currentPage + 1); }}><ArrowRight size={16} /></button></div>
-              <p className="hkf-footnote">{disabled ? "Shared checks unavailable. Reload checks before making changes." : done === allRows.length && allRows.length > 0 ? "Every setup row is checked. Room release remains a separate decision." : "Checks record setup work. Approval and room release remain separate."}</p>
+              <p className="hkf-footnote">{disabled ? "Shared checks unavailable. Reload checks before making changes." : checksReadOnly ? "The venue's team ticks these as they set the room." : done === allRows.length && allRows.length > 0 ? "Every setup row is checked. Room release remains a separate decision." : "Checks record setup work. Approval and room release remain separate."}</p>
             </> : <><div className="hkf-panel-heading"><div><span className="hkf-overline">{STAGES.find((item) => item.id === stage)?.caption}</span><h2>{STAGES.find((item) => item.id === stage)?.name}</h2></div></div><div className="hkf-stage-content">
               {stage === "prepare" && <>{details}<TaskList context={context} availability={result.status} kinds={["supplier"]} /></>}
               {stage === "checks" && <><p className="hkf-summary"><strong>{disabled ? "—" : done} / {allRows.length}</strong> setup rows checked</p><p>Review the room’s checks before inviting guests in.</p><TaskList context={context} availability={result.status} kinds={["review_gate"]} /></>}

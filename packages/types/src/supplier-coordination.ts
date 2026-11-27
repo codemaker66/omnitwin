@@ -53,8 +53,20 @@ export type SupplierCoordinationItemKind = z.infer<typeof SupplierCoordinationIt
 export const SupplierAcknowledgementStatusSchema = z.enum(SUPPLIER_ACKNOWLEDGEMENT_STATUSES);
 export type SupplierAcknowledgementStatus = z.infer<typeof SupplierAcknowledgementStatusSchema>;
 
+/** Text the venue writes and sends to a supplier: guarded against claim
+ *  phrases a venue must never make (see SafeOpsTextSchema). */
 export const SupplierCoordinationTextSchema = SafeOpsTextSchema;
 export type SupplierCoordinationText = z.infer<typeof SupplierCoordinationTextSchema>;
+
+/**
+ * Text a supplier types into the supplier portal: the note on their reply,
+ * which is also how they ask the venue a question. It carries the same length
+ * limits as venue text but no claim-phrase guard, because it is the supplier
+ * speaking to the venue, not the venue speaking to anyone: "Is the rigging
+ * point certified safe for 300kg?" is exactly what a venue wants to hear.
+ */
+export const SupplierAuthoredTextSchema = z.string().trim().min(1).max(4000);
+export type SupplierAuthoredText = z.infer<typeof SupplierAuthoredTextSchema>;
 
 export const SupplierCoordinationPackSchema = z.object({
   id: SupplierCoordinationPackIdSchema,
@@ -115,7 +127,7 @@ export const SupplierAcknowledgementSchema = z.object({
   status: SupplierAcknowledgementStatusSchema,
   acknowledgedByName: z.string().trim().min(1).max(160).nullable(),
   acknowledgedByEmail: z.email().max(255).nullable(),
-  note: SupplierCoordinationTextSchema.nullable(),
+  note: SupplierAuthoredTextSchema.nullable(),
   createdAt: z.iso.datetime(),
 }).strict();
 export type SupplierAcknowledgement = z.infer<typeof SupplierAcknowledgementSchema>;
@@ -169,7 +181,7 @@ export const CreateSupplierAcknowledgementInputSchema = z.object({
   status: SupplierAcknowledgementStatusSchema.default("acknowledged"),
   acknowledgedByName: z.string().trim().min(1).max(160).nullable().optional(),
   acknowledgedByEmail: z.email().max(255).nullable().optional(),
-  note: SupplierCoordinationTextSchema.nullable().optional(),
+  note: SupplierAuthoredTextSchema.nullable().optional(),
 }).strict().superRefine((input, ctx) => {
   if ((input.acknowledgedByName ?? null) === null && (input.acknowledgedByEmail ?? null) === null) {
     ctx.addIssue({
@@ -194,7 +206,7 @@ export type SupplierSafePackItem = z.infer<typeof SupplierSafePackItemSchema>;
 export const SupplierSafeAcknowledgementSchema = z.object({
   status: SupplierAcknowledgementStatusSchema,
   acknowledgedByName: z.string().trim().min(1).max(160).nullable(),
-  note: SupplierCoordinationTextSchema.nullable(),
+  note: SupplierAuthoredTextSchema.nullable(),
   createdAt: z.iso.datetime(),
 }).strict();
 export type SupplierSafeAcknowledgement = z.infer<typeof SupplierSafeAcknowledgementSchema>;

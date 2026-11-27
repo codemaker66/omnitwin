@@ -153,6 +153,44 @@
   margin: 4px 0 0;
 }
 
+/* L9: a press waiting in the offline queue, in the card's own quiet ink. It
+   is said beside the request, never as a state the request is in. */
+.vv-request-waiting {
+  color: var(--hk-ink-dim, #575a4e);
+  font-size: 12px;
+  font-style: italic;
+  margin: 2px 0 0;
+}
+
+/* L9: what the queue's replay could not do, on a card of its own until it is
+   put away, since the request it was about may have left the slab. */
+.vv-request-notices {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.vv-request-notice {
+  align-items: center;
+  background: var(--hk-ivory-raised, #fffdf8);
+  border: 1px solid var(--hk-line, #e4dcd0);
+  border-left: 3px solid var(--hk-copper, #986246);
+  border-radius: 8px;
+  color: var(--hk-ink, #2e382e);
+  display: flex;
+  font-size: 13px;
+  gap: 12px;
+  justify-content: space-between;
+  line-height: 1.4;
+  padding: 10px 12px;
+}
+
+.vv-request-notice p {
+  margin: 0;
+}
+
 /* --- Actions: one press each, at a size a thumb can hit. ---------------- */
 
 .vv-request-actions {

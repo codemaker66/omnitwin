@@ -34,7 +34,9 @@ export interface DealDetail {
   readonly latestQuote: DealQuote | null;
 }
 
-/** What the panel is saving, so only that control waits. */
+/** What the panel is saving. That control says so; the desk makes one
+ *  change at a time, so every other change waits until it has answered
+ *  rather than taking a press it would drop. */
 export type DealSaving = "step" | "value" | "next" | "task" | "note" | { readonly task: string } | null;
 
 export interface DealNavigation {
@@ -179,6 +181,7 @@ function DealFacts({ detail, nowMs, saving, failure, onSaveValue }: DealPanelPro
     setEditing(true);
   };
   const save = (): void => {
+    if (saving !== null) return;
     const minor = parsePoundsToMinor(pounds);
     if (minor === null) {
       setInvalid(true);
@@ -216,7 +219,7 @@ function DealFacts({ detail, nowMs, saving, failure, onSaveValue }: DealPanelPro
                 onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setEditing(false); } }} />
             </label>
             <div className="enq-actions">
-              <button type="submit" className="enq-cta" disabled={saving === "value"} aria-busy={saving === "value"}>
+              <button type="submit" className="enq-cta" disabled={saving !== null} aria-busy={saving === "value"}>
                 {saving === "value" && <ActivityIndicator size={18} />}
                 {saving === "value" ? "Saving…" : "Save the value"}
               </button>
@@ -236,7 +239,7 @@ function DealFacts({ detail, nowMs, saving, failure, onSaveValue }: DealPanelPro
             ) : (
               <p className="pl-value__quote">
                 <span>The latest quote comes to {quoted}.</span>
-                <button type="button" className="enq-quiet" disabled={saving === "value"} aria-busy={saving === "value"}
+                <button type="button" className="enq-quiet" disabled={saving !== null} aria-busy={saving === "value"}
                   onClick={() => { void onSaveValue(quote.totalMinor); }}>
                   {saving === "value" && <ActivityIndicator size={18} />}
                   {saving === "value" ? "Saving…" : `Use ${quoted}`}
@@ -266,6 +269,7 @@ function NextStep({ detail, nowMs, saving, failure, onMove, onDraftProposal, onS
   const [day, setDay] = useState("");
   const textRef = useRef<HTMLInputElement>(null);
   const busy = saving === "step";
+  const held = saving !== null;
   const closed = deal.stage === "won" || deal.stage === "lost" || deal.stage === "archived";
   const due = dueWords(deal, nowMs);
   const pressing = dueIsPressing(deal, nowMs);
@@ -295,7 +299,7 @@ function NextStep({ detail, nowMs, saving, failure, onMove, onDraftProposal, onS
     setEditing(true);
   };
   const saveNext = (): void => {
-    if (text.trim() === "") return;
+    if (held || text.trim() === "") return;
     void onSaveNext(text.trim(), day === "" ? null : dayToDueAt(day)).then((saved) => { if (saved) setEditing(false); });
   };
 
@@ -315,7 +319,7 @@ function NextStep({ detail, nowMs, saving, failure, onMove, onDraftProposal, onS
               <input type="date" value={day} disabled={saving === "next"} onChange={(event) => { setDay(event.target.value); }} />
             </label>
             <div className="enq-actions">
-              <button type="submit" className="enq-cta" disabled={saving === "next" || text.trim() === ""} aria-busy={saving === "next"}>
+              <button type="submit" className="enq-cta" disabled={held || text.trim() === ""} aria-busy={saving === "next"}>
                 {saving === "next" && <ActivityIndicator size={18} />}
                 {saving === "next" ? "Saving…" : "Save the next step"}
               </button>
@@ -333,7 +337,7 @@ function NextStep({ detail, nowMs, saving, failure, onMove, onDraftProposal, onS
       {failure?.where === "next" && <p className="enq-confirm__error" role="alert">{failure.message}</p>}
 
       {closing !== null ? (
-        <ConfirmClose title={deal.title} venueId={deal.venueId} to={closing} saving={busy}
+        <ConfirmClose title={deal.title} venueId={deal.venueId} to={closing} saving={busy} held={held}
           onConfirm={(reason, lostTo) => {
             const move = lostTo === null ? onMove(closing, reason) : onMove(closing, reason, lostTo);
             void move.then((saved) => { if (saved) setClosing(null); });
@@ -344,13 +348,13 @@ function NextStep({ detail, nowMs, saving, failure, onMove, onDraftProposal, onS
           {(steps.primary !== null || steps.secondary.length > 0) && (
             <div className="enq-actions">
               {steps.primary !== null && (
-                <button type="button" className="enq-cta" disabled={busy} aria-busy={busy} onClick={() => { if (steps.primary !== null) run(steps.primary); }}>
+                <button type="button" className="enq-cta" disabled={held} aria-busy={busy} onClick={() => { if (steps.primary !== null) run(steps.primary); }}>
                   {busy && <ActivityIndicator size={18} />}
                   {steps.primary.label}
                 </button>
               )}
               {steps.secondary.map((secondary) => (
-                <button key={secondary.label} type="button" className="enq-quiet" disabled={busy} onClick={() => { run(secondary); }}>
+                <button key={secondary.label} type="button" className="enq-quiet" disabled={held} onClick={() => { run(secondary); }}>
                   {secondary.label}
                 </button>
               ))}
@@ -379,11 +383,13 @@ type NamesRead =
   | { readonly status: "loading" | "error" }
   | { readonly status: "ready"; readonly names: CompetitorNames };
 
-function ConfirmClose({ title, venueId, to, saving, onConfirm, onCancel }: {
+function ConfirmClose({ title, venueId, to, saving, held, onConfirm, onCancel }: {
   readonly title: string;
   readonly venueId: string;
   readonly to: "won" | "lost";
   readonly saving: boolean;
+  /** A change is saving (this one or another): the confirm waits for it. */
+  readonly held: boolean;
   readonly onConfirm: (reason: string, lostTo: OpportunityLostTo | null) => void;
   readonly onCancel: () => void;
 }): ReactElement {
@@ -396,7 +402,7 @@ function ConfirmClose({ title, venueId, to, saving, onConfirm, onCancel }: {
   const reasonRef = useRef<HTMLTextAreaElement>(null);
   const questionRef = useRef<HTMLParagraphElement>(null);
   const lostTo = to === "lost" ? readLostTo(winner, otherName, figure, basis) : { value: null, problem: null };
-  const ready = !saving && reason.trim() !== "" && lostTo.problem === null;
+  const ready = !held && reason.trim() !== "" && lostTo.problem === null;
 
   // A precise pointer goes straight to the reason; on touch the keyboard would
   // cover the question, so focus lands on it instead.
@@ -552,7 +558,7 @@ function FollowUps({ detail, nowMs, saving, failure, onAddTask, onCompleteTask }
   const done = detail.tasks.filter((task) => task.status === "done").length;
 
   const add = (): void => {
-    if (title.trim() === "") return;
+    if (saving !== null || title.trim() === "") return;
     void onAddTask(title.trim(), day === "" ? null : dayToDueAt(day)).then((saved) => {
       if (saved) { setTitle(""); setDay(""); }
     });
@@ -573,7 +579,7 @@ function FollowUps({ detail, nowMs, saving, failure, onAddTask, onCompleteTask }
               <li key={task.id}>
                 <span className="pl-task__title">{task.title}</span>
                 <span className={`pl-task__due${pressing ? " pl-next__due--pressing" : ""}`}>{due}</span>
-                <button type="button" className="enq-quiet" disabled={completing} aria-busy={completing}
+                <button type="button" className="enq-quiet" disabled={saving !== null} aria-busy={completing}
                   aria-label={`Mark “${task.title}” done`} onClick={() => { onCompleteTask(task); }}>
                   {completing && <ActivityIndicator size={18} />}
                   {completing ? "Saving…" : "Done"}
@@ -593,7 +599,7 @@ function FollowUps({ detail, nowMs, saving, failure, onAddTask, onCompleteTask }
           <span>Due on</span>
           <input type="date" value={day} disabled={saving === "task"} onChange={(event) => { setDay(event.target.value); }} />
         </label>
-        <button type="submit" className="enq-quiet" disabled={saving === "task" || title.trim() === ""} aria-busy={saving === "task"}>
+        <button type="submit" className="enq-quiet" disabled={saving !== null || title.trim() === ""} aria-busy={saving === "task"}>
           {saving === "task" && <ActivityIndicator size={18} />}
           {saving === "task" ? "Adding…" : "Add"}
         </button>
@@ -657,7 +663,7 @@ function Timeline({ detail, saving, failure, onAddNote }: DealPanelProps): React
   const [note, setNote] = useState("");
   const moments = dealTimeline(detail.opportunity, detail.history, detail.activities);
   const add = (): void => {
-    if (note.trim() === "") return;
+    if (saving !== null || note.trim() === "") return;
     void onAddNote(note.trim()).then((saved) => { if (saved) setNote(""); });
   };
   return (
@@ -676,7 +682,7 @@ function Timeline({ detail, saving, failure, onAddNote }: DealPanelProps): React
             }} />
         </label>
         <div className="enq-actions">
-          <button type="submit" className="enq-quiet" disabled={saving === "note" || note.trim() === ""} aria-busy={saving === "note"}>
+          <button type="submit" className="enq-quiet" disabled={saving !== null || note.trim() === ""} aria-busy={saving === "note"}>
             {saving === "note" && <ActivityIndicator size={18} />}
             {saving === "note" ? "Adding…" : "Add the note"}
           </button>

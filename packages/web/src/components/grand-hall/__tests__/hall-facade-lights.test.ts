@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { STREET_NIGHT_LOOKS } from "../../../lib/sky/night-looks.js";
-import { CONTEXT_MODEL_URL, parseContextModel } from "../hall-context.js";
+import { CONTEXT_MODEL_FRONT_URL, CONTEXT_MODEL_URL, parseContextModel } from "../hall-context.js";
 import {
-  FACADE_KINDS, FACADE_LIGHTS_URL, FACADE_LIGHT_CLASSES, FACADE_SURVEYED_WALLS, buildFacadeLightGeometry, lightClassIndex, onSurveyedWall,
-  parseFacadeLights, type FacadeLight,
+  FACADE_KINDS, FACADE_LIGHTS_FRONT_URL, FACADE_LIGHTS_URL, FACADE_LIGHT_CLASSES, FACADE_SURVEYED_WALLS, buildFacadeLightGeometry, lightClassIndex,
+  onSurveyedWall, parseFacadeLights, type FacadeLight,
 } from "../hall-facade-lights.js";
 import { facadesLit } from "../HallFacadeLights.js";
 import { DUSK_SPAN, applyStreetLook, streetLookUniforms } from "../hall-street-light.js";
@@ -68,6 +68,50 @@ function cast(triangles: readonly (readonly [Vec, Vec, Vec])[], origin: Vec, dir
     if (distance > 1e-6 && distance < best) best = distance;
   }
   return best;
+}
+
+/**
+ * Every light on a published city model: a spill just above its pavement, any
+ * other quad a few centimetres in front of its wall with nothing of the model
+ * before it. Returns each light's distances (behind and before it, or below a
+ * spill), so two models can be compared.
+ */
+function expectStandsOnModel(lights: readonly FacadeLight[], modelUrl: string): number[][] {
+  const bytes = readFileSync(publicFile(modelUrl));
+  const model = parseContextModel(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  const position = model.getAttribute("position");
+  const index = model.getIndex();
+  if (index === null) throw new Error("the model is indexed");
+  const vertex = (i: number): Vec => [position.getX(i), position.getY(i), position.getZ(i)];
+  const all: [Vec, Vec, Vec][] = [];
+  for (let t = 0; t < index.count; t += 3) all.push([vertex(index.getX(t)), vertex(index.getX(t + 1)), vertex(index.getX(t + 2))]);
+  const distances: number[][] = [];
+  for (const light of lights) {
+    // The triangles whose extent in plan comes within 3 m of it (a wall's triangles can run 20 m along it).
+    const near = all.filter((triangle) => [0, 2].every((axis) => {
+      const values = triangle.map((vertex) => vertex[axis] ?? 0);
+      const at = light.centre[axis] ?? 0;
+      return at > Math.min(...values) - 3 && at < Math.max(...values) + 3;
+    }));
+    if (light.kind === "spill") {
+      // The pavement just under it.
+      const down = cast(near, [light.centre[0], light.centre[1] + 1, light.centre[2]], [0, -1, 0]) - 1;
+      expect(down, light.id).toBeGreaterThan(0.005);
+      expect(down, light.id).toBeLessThan(0.05);
+      distances.push([down]);
+      continue;
+    }
+    // Its wall behind it, within the bake's spread; nothing of the model in front of it.
+    const length = Math.hypot(light.along[0], light.along[2]);
+    const across: Vec = [-light.along[2] / length, 0, light.along[0] / length];
+    const hits = [cast(near, light.centre, across), cast(near, light.centre, [-across[0], 0, -across[2]])];
+    const behind = Math.min(...hits);
+    expect(behind, light.id).toBeGreaterThan(0.02);
+    expect(behind, light.id).toBeLessThan(0.03 + 0.45 + 0.01);
+    expect(Math.max(...hits), light.id).toBeGreaterThan(0.5);
+    distances.push(hits);
+  }
+  return distances;
 }
 
 describe("parseFacadeLights", () => {
@@ -184,36 +228,26 @@ describe("the published facade lights", () => {
   it("stand on the published city model's walls, a few centimetres proud, and lie on its pavement", () => {
     const bytes = readFileSync(publicFile(CONTEXT_MODEL_URL));
     expect(published.inputs.model.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
-    const model = parseContextModel(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-    const position = model.getAttribute("position");
-    const index = model.getIndex();
-    if (index === null) throw new Error("the model is indexed");
-    const vertex = (i: number): Vec => [position.getX(i), position.getY(i), position.getZ(i)];
-    const all: [Vec, Vec, Vec][] = [];
-    for (let t = 0; t < index.count; t += 3) all.push([vertex(index.getX(t)), vertex(index.getX(t + 1)), vertex(index.getX(t + 2))]);
-    for (const light of lights) {
-      // The triangles whose extent in plan comes within 3 m of it (a wall's triangles can run 20 m along it).
-      const near = all.filter((triangle) => [0, 2].every((axis) => {
-        const values = triangle.map((vertex) => vertex[axis] ?? 0);
-        const at = light.centre[axis] ?? 0;
-        return at > Math.min(...values) - 3 && at < Math.max(...values) + 3;
-      }));
-      if (light.kind === "spill") {
-        // The pavement just under it.
-        const down = cast(near, [light.centre[0], light.centre[1] + 1, light.centre[2]], [0, -1, 0]) - 1;
-        expect(down, light.id).toBeGreaterThan(0.005);
-        expect(down, light.id).toBeLessThan(0.05);
-        continue;
-      }
-      // Its wall behind it, within the bake's spread; nothing of the model in front of it.
-      const length = Math.hypot(light.along[0], light.along[2]);
-      const across: Vec = [-light.along[2] / length, 0, light.along[0] / length];
-      const hits = [cast(near, light.centre, across), cast(near, light.centre, [-across[0], 0, -across[2]])];
-      const behind = Math.min(...hits);
-      expect(behind, light.id).toBeGreaterThan(0.02);
-      expect(behind, light.id).toBeLessThan(0.03 + 0.45 + 0.01);
-      expect(Math.max(...hits), light.id).toBeGreaterThan(0.5);
-    }
+    expectStandsOnModel(lights, CONTEXT_MODEL_URL);
+  });
+
+  it("serve the city drawn round the measured front as they are: every quad stands there exactly as on v2", () => {
+    // v3 (merchant-city-v3) changes the city only round Trades Hall's own front; its walls across Glassford Street
+    // and along Garth Street are v2's, and bake_facade_lights.py --front-cut --same-as facade-lights-v1.json
+    // places every opening on it as v1 does. The file's recorded hash stays v2's (above); here every light's
+    // distances to the model, behind, before and below it, are the same on both models.
+    expect(FACADE_LIGHTS_FRONT_URL).toBe(FACADE_LIGHTS_URL);
+    const onFront = expectStandsOnModel(lights, CONTEXT_MODEL_FRONT_URL);
+    const onV2 = expectStandsOnModel(lights, CONTEXT_MODEL_URL);
+    expect(onFront.map((hits) => hits.length)).toEqual(onV2.map((hits) => hits.length));
+    // The same surfaces, to a nanometre (a pavement triangle there may be cut differently: rounding differs at 1e-16).
+    onFront.forEach((hits, i) => {
+      hits.forEach((distance, k) => {
+        const other = onV2[i]?.[k] ?? Number.NaN;
+        if (Number.isFinite(other)) expect(Math.abs(distance - other), lights[i]?.id).toBeLessThan(1e-9);
+        else expect(distance, lights[i]?.id).toBe(other);
+      });
+    });
   });
 
   it("carry their survey's licence: our own panoramas on the LiDAR model, nothing third-party", () => {

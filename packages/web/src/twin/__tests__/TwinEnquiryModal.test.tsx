@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import {
+  GUEST_ENQUIRY_LATEST_EVENT_DATE,
+  GUEST_ENQUIRY_LIMITS,
+  GuestEnquirySchema,
+  TRADES_HALL_ENQUIRY_VENUE_SLUG,
+} from "@omnitwin/types";
 import { TwinEnquiryModal } from "../TwinEnquiryModal.js";
+import { TWIN_ENQUIRE_EMAIL_INVALID } from "../twin-copy.js";
+import { pressEnterIn } from "../../test/implicit-submit.js";
+import { expectOutOfReach, hiddenTrapIn } from "../../test/enquiry-trap.js";
 
 // -----------------------------------------------------------------------------
 // TwinEnquiryModal — the one-click, stay-in-the-twin enquiry (finding [2]).
@@ -64,6 +72,237 @@ describe("TwinEnquiryModal", () => {
     fireEvent.submit(screen.getByTestId("twin-enquiry-form"));
     expect(submitMock).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  // Review of #405, F1. Enter in the email field sends the form with focus
+  // already there, so only the alert says what Send found. It is a new alert
+  // each Send, so a repeated Enter is heard again, for the email's problem and
+  // the message's alike.
+  it.each([
+    ["an email the API refuses", "jane@gmail.c", "", TWIN_ENQUIRE_EMAIL_INVALID],
+    ["a message over the limit", "guest@example.com", "b".repeat(3214), "Messages can be up to 2,000 characters. Yours is 3,214."],
+  ])("says %s again on each Enter in the email field", (_case, address, brief, problem) => {
+    renderModal();
+    const field = screen.getByLabelText<HTMLInputElement>(/^email/i);
+    fireEvent.change(field, { target: { value: address } });
+    if (brief !== "") fireEvent.change(screen.getByRole("textbox", { name: "Anything else?" }), { target: { value: brief } });
+    pressEnterIn(field);
+    const first = screen.getByRole("alert");
+    expect(first.textContent).toBe(problem);
+    pressEnterIn(field);
+    const again = screen.getByRole("alert");
+    expect(again.textContent).toBe(problem);
+    expect(again, "a new alert, so a screen reader hears it again").not.toBe(first);
+    expect(submitMock).not.toHaveBeenCalled();
+  });
+
+  // enquiries-crm-2: the API refuses a long name, telephone or message, or a
+  // guest count past its limit, as "Validation failed", which this form then
+  // shows with no field named. The fields take no more than the API accepts;
+  // the message is held at Send instead (below).
+  it("takes no more in any field than the API accepts", () => {
+    renderModal();
+    const limits: readonly [string, number][] = [
+      ["Your name", screen.getByRole<HTMLInputElement>("textbox", { name: "Your name" }).maxLength],
+      ["Phone", screen.getByRole<HTMLInputElement>("textbox", { name: "Phone" }).maxLength],
+      ["Guests", Number(screen.getByRole<HTMLInputElement>("spinbutton", { name: "Guests" }).max)],
+    ];
+    expect(limits).toEqual([
+      ["Your name", GUEST_ENQUIRY_LIMITS.nameLength],
+      ["Phone", GUEST_ENQUIRY_LIMITS.phoneLength],
+      ["Guests", GUEST_ENQUIRY_LIMITS.guestCount],
+    ]);
+  });
+
+  // Review of #405, F5. A maxlength message field cut a longer paste at the
+  // API's limit without a word, and the events team got a brief that stopped
+  // mid-sentence. The field keeps everything; Send holds the enquiry, says
+  // why in the alert the email's problem uses, and takes the guest there.
+  it("keeps a long pasted message and holds Send, saying how long it is", () => {
+    renderModal();
+    fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+    const message = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" });
+    expect(message.hasAttribute("maxlength"), "a maxlength field cuts a paste without a word").toBe(false);
+    const brief = "b".repeat(3214);
+    fireEvent.change(message, { target: { value: brief } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to the events team" }));
+    expect(submitMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe("Messages can be up to 2,000 characters. Yours is 3,214.");
+    expect(document.activeElement, "focus after Send").toBe(message);
+    expect(message.value).toBe(brief);
+  });
+
+  // Review of #405, Q1 and Q2. The sentence was said in the alert above the
+  // form while focus went to the message at its foot, out of view on a
+  // phone, and it kept the first count while the guest cut the message. It
+  // is now said beside the message, which names it as its problem, where
+  // focus lands; and it follows the message as the guest cuts it, quietly,
+  // until it fits.
+  it("says the message's length beside it, where focus lands, and follows the guest's cuts until it fits", async () => {
+    renderModal();
+    const form = screen.getByTestId("twin-enquiry-form");
+    fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+    const message = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" });
+    fireEvent.change(message, { target: { value: "b".repeat(3214) } });
+    const send = screen.getByRole("button", { name: "Send to the events team" });
+    fireEvent.click(send);
+
+    const held = "Messages can be up to 2,000 characters. Yours is 3,214.";
+    expect(screen.getByRole("textbox", { name: "Anything else?", description: held })).toBe(message);
+    expect(message.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement, "focus after Send").toBe(message);
+    const sentence = screen.getByRole("alert");
+    expect(sentence.textContent).toBe(held);
+    // Beside the field: inside the form, directly above the message, not in the box above the form.
+    expect(form.contains(sentence)).toBe(true);
+    expect(sentence.nextElementSibling).toBe(message);
+
+    // Cut, and the number follows, without an alert at each keystroke.
+    fireEvent.change(message, { target: { value: "b".repeat(2950) } });
+    expect(screen.queryByRole("alert"), "no alert while the guest edits").toBeNull();
+    expect(screen.getByRole("textbox", {
+      name: "Anything else?", description: "Messages can be up to 2,000 characters. Yours is 2,950.",
+    })).toBe(message);
+
+    // Short enough: the sentence goes, and Send sends.
+    fireEvent.change(message, { target: { value: "b".repeat(1950) } });
+    expect(message.getAttribute("aria-invalid")).toBe("false");
+    expect(message.hasAttribute("aria-describedby")).toBe(false);
+    expect(screen.queryByText(/^Messages can be up to/u)).toBeNull();
+    fireEvent.click(send);
+    await waitFor(() => {
+      expect(submitMock).toHaveBeenCalledWith(expect.objectContaining({ message: "b".repeat(1950) }));
+    });
+  });
+
+  // Counted as the API counts, or a message one past the limit is sent and
+  // refused, or one at it is held for nothing: what is posted (trimmed), in
+  // Unicode code points, as zod 4 reads a string's length. An emoji outside
+  // the basic plane is one, though it is two UTF-16 units.
+  it("holds a message one past the API's limit and sends one at it, counting as the API does", async () => {
+    const limit = GUEST_ENQUIRY_LIMITS.messageLength;
+    const onePast = `${"a".repeat(limit)}🎻`;
+    const atLimit = ` \n${"a".repeat(limit - 1)}🎻\n `;
+    expect(atLimit.trim().length, "UTF-16 units: a count of these would hold it").toBe(limit + 1);
+    const apiTakes = (text: string): boolean => GuestEnquirySchema.safeParse({
+      venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG, email: "guest@example.com", message: text,
+    }).success;
+    renderModal();
+    fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+    const message = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" });
+    const send = screen.getByRole("button", { name: "Send to the events team" });
+
+    fireEvent.change(message, { target: { value: onePast } });
+    fireEvent.click(send);
+    expect(submitMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe("Messages can be up to 2,000 characters. Yours is 2,001.");
+    expect(apiTakes(onePast.trim()), "the API refuses it too").toBe(false);
+
+    fireEvent.change(message, { target: { value: atLimit } });
+    fireEvent.click(send);
+    await waitFor(() => {
+      expect(submitMock).toHaveBeenCalledWith(expect.objectContaining({ message: atLimit.trim() }));
+    });
+    expect(apiTakes(atLimit.trim()), "the API takes it").toBe(true);
+  });
+
+  // Review of #405, F2: a date field with no max takes a year of five digits
+  // (a doubled key), which the API refuses as "Validation failed".
+  it("takes no year in the date field that the API refuses", () => {
+    renderModal();
+    const date = screen.getByLabelText<HTMLInputElement>("Event date");
+    expect(date.type).toBe("date");
+    expect(date.max).toBe(GUEST_ENQUIRY_LATEST_EVENT_DATE);
+  });
+
+  // Blake, 13 November 2026: no event date before today. The walkthrough's
+  // form sets the date field's min to the guest's own today, so the browser
+  // refuses an earlier date in its own words. happy-dom does not run that
+  // check on a date field; a browser does, and min is what it reads.
+  describe("its date field", () => {
+    const zone = process.env["TZ"];
+    beforeEach(() => {
+      // West of Greenwich, where the UTC date is tomorrow by the evening.
+      process.env["TZ"] = "America/Los_Angeles";
+      vi.useFakeTimers({ toFake: ["Date"] });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      if (zone === undefined) Reflect.deleteProperty(process.env, "TZ");
+      else process.env["TZ"] = zone;
+    });
+
+    it("takes no date before the guest's own today, which is not the UTC date", () => {
+      // 22:30 on 30 April in California, 05:30 on 1 May in UTC.
+      vi.setSystemTime(new Date("2027-05-01T05:30:00Z"));
+      renderModal();
+      expect(screen.getByLabelText<HTMLInputElement>("Event date").min).toBe("2027-04-30");
+    });
+
+    it("reads today when Send is pressed, so a form left open past midnight takes the new day", () => {
+      // 23:59:30 on 30 April, local.
+      vi.setSystemTime(new Date("2027-05-01T06:59:30Z"));
+      renderModal();
+      const date = screen.getByLabelText<HTMLInputElement>("Event date");
+      fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+      fireEvent.change(date, { target: { value: "2027-04-30" } });
+      expect(date.min).toBe("2027-04-30");
+      // 00:00:30 on 1 May, local, with nothing touched since.
+      vi.setSystemTime(new Date("2027-05-01T07:00:30Z"));
+      // A browser checks the field against min just before the form's submit
+      // event, before anything the form does on Send can draw it again.
+      let minAsChecked = "";
+      screen.getByTestId("twin-enquiry-form").addEventListener("submit", () => { minAsChecked = date.min; }, { capture: true });
+      fireEvent.click(screen.getByRole("button", { name: "Send to the events team" }));
+      // 30 April is now yesterday and refused; 1 May, today, is taken.
+      expect(minAsChecked).toBe("2027-05-01");
+    });
+  });
+
+  it("does not post a guest count past what the API accepts", () => {
+    renderModal();
+    fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+    const guests = screen.getByRole<HTMLInputElement>("spinbutton", { name: "Guests" });
+    fireEvent.change(guests, { target: { value: String(GUEST_ENQUIRY_LIMITS.guestCount + 1) } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to the events team" }));
+    expect(submitMock).not.toHaveBeenCalled();
+    expect(guests.checkValidity()).toBe(false);
+  });
+
+  // Blake, 12 November 2026: a hidden trap on the public forms. The form
+  // sends what its hidden field holds and how long it was open before Send;
+  // the API judges a hit, keeps the enquiry and emails nobody.
+  describe("its hidden trap", () => {
+    beforeEach(() => { vi.useFakeTimers({ toFake: ["Date", "performance"] }); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("sends an empty hidden field and how long the form was open before Send", async () => {
+      renderModal();
+      act(() => { vi.advanceTimersByTime(4200); });
+      fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+      fireEvent.click(screen.getByRole("button", { name: "Send to the events team" }));
+      await waitFor(() => {
+        expect(submitMock).toHaveBeenCalledWith(expect.objectContaining({ email: "guest@example.com", trap: "", openMs: 4200 }));
+      });
+    });
+
+    it("sends whatever a script put in the hidden field, whether or not it said so", async () => {
+      renderModal();
+      const form = screen.getByTestId("twin-enquiry-form");
+      // Set as a script sets it, with no input event for React to hear.
+      hiddenTrapIn(form).value = "https://example.test/offer";
+      fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+      fireEvent.click(screen.getByRole("button", { name: "Send to the events team" }));
+      await waitFor(() => {
+        expect(submitMock).toHaveBeenCalledWith(expect.objectContaining({ trap: "https://example.test/offer", openMs: 0 }));
+      });
+    });
+
+    it("keeps the hidden field out of a person's reach by eye, keyboard and screen reader, and carries nothing in its attributes that autofill or a password manager reads", () => {
+      renderModal();
+      const form = screen.getByTestId("twin-enquiry-form");
+      expectOutOfReach(hiddenTrapIn(form), form);
+    });
   });
 
   it("shows work during submission and removes it on failure", async () => {

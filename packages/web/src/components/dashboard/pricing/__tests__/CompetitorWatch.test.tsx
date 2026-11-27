@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { MarketContext, PricingAdvice } from "@omnitwin/types";
 import type { PricingDesk as Desk } from "../../../../api/pricing-desk.js";
 import { PricingDesk } from "../PricingDesk.js";
@@ -272,6 +272,44 @@ describe("recording a figure", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     fireEvent.click(await screen.findByRole("button", { name: /^voco Grand Central\./u }));
     expect(await screen.findByText("A screenshot is kept with it; it cannot be opened from here.")).toBeTruthy();
+  });
+
+  // Release audit assets-2: the uploads route signs each link for five
+  // minutes (X-Amz-Expires=300), and the panel read them once, so a panel
+  // left open offered a link that had lapsed.
+  it("reads a kept screenshot's link again before it lapses, and offers none once it has", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    try {
+      const kept = "dddddddd-4444-4444-8444-000000000001";
+      const signed = (signature: string): string =>
+        `https://files.example.test/signed/voco.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=300&X-Amz-Signature=${signature}`;
+      mocks.getCompetitorWatch.mockResolvedValue(watch({ competitors: [competitor({ captures: [capture({ evidenceFileId: kept })] }), ART] }));
+      let answerLate: ((links: ReadonlyMap<string, string | null>) => void) | null = null;
+      mocks.getEvidenceLinks
+        .mockResolvedValueOnce(new Map([[kept, signed("first")]]))
+        .mockResolvedValueOnce(new Map([[kept, signed("second")]]))
+        .mockImplementationOnce(() => new Promise((resolve) => { answerLate = resolve; }));
+      await openWatch(2);
+      fireEvent.click(await screen.findByRole("button", { name: /^voco Grand Central\./u }));
+      const link = (): string | null => screen.queryByRole("link", { name: /^Open the screenshot/u })?.getAttribute("href") ?? null;
+      await waitFor(() => { expect(link()).toBe(signed("first")); });
+
+      // Four and a half minutes on, the panel still open: read again before it lapses.
+      await act(async () => { await vi.advanceTimersByTimeAsync(270_000); });
+      expect(mocks.getEvidenceLinks).toHaveBeenCalledTimes(2);
+      expect(link()).toBe(signed("second"));
+
+      // A laptop asleep past the lapse: no lapsed link is offered while it is read again.
+      vi.setSystemTime(Date.now() + 3_600_000);
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+      expect(mocks.getEvidenceLinks).toHaveBeenCalledTimes(3);
+      expect(link()).toBeNull();
+      expect(screen.getByText("A screenshot is kept with it.")).toBeTruthy();
+      await act(async () => { answerLate?.(new Map([[kept, signed("third")]])); await vi.advanceTimersByTimeAsync(0); });
+      expect(link()).toBe(signed("third"));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

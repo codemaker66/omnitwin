@@ -246,7 +246,9 @@ export function weddingSheet(): HallkeeperSheetV2 {
     config: { id: "6d1f8a52-3c1b-4f6e-9b1a-0a4c2b7e9d10", name: "Mackenzie–Ross wedding breakfast", guestCount: 120, layoutStyle: "dinner-rounds" },
     venue: { name: "Trades Hall Glasgow", address: "85 Glassford Street, Glasgow G1 1UH", logoUrl: null, timezone: "Europe/London" },
     space: { name: "Grand Hall", ...GRAND_HALL },
-    timing: { eventStart: bst(14, 30), setupBy: bst(13, 30), bufferMinutes: 60 },
+    // setupBy is when the setup window opens (its name is historical): the
+    // structure is due by 10:00, so the room opens for the crew at 08:00.
+    timing: { eventStart: bst(14, 30), setupBy: bst(8, 0), bufferMinutes: 390 },
     instructions: WEDDING_INSTRUCTIONS,
     ...build(weddingLayout(), GRAND_HALL),
     diagramUrl: null,
@@ -333,6 +335,17 @@ export function longTextSheet(): HallkeeperSheetV2 {
       dayOfContact: { name: "Alexandria Montgomery-Fitzwilliam", role: "Mother of the bride and principal organiser", phone: "07700 900987", email: "alexandria.montgomery-fitzwilliam@example.co.uk" },
       accessibility: instructions.accessibility === null ? null : { ...instructions.accessibility, notes: fill(1000) },
       dietary: instructions.dietary === null ? null : { ...instructions.dietary, otherAllergies: fill(1000) },
+      phaseDeadlines: instructions.phaseDeadlines.map((deadline, index) => ({ ...deadline, reason: `${fill(196)} [${String(index + 1)}]` })),
+      doorSchedule: instructions.doorSchedule === null ? null : {
+        entries: instructions.doorSchedule.entries.map((entry, index) => ({
+          label: `${fill(95)} [${String(index + 1)}]`,
+          events: entry.events.map((event, at) => ({ ...event, note: `${fill(194)} [${String(index + 1)}.${String(at + 1)}]` })),
+        })),
+      },
+    },
+    floorPlan: base.floorPlan === null || base.floorPlan === undefined ? base.floorPlan : {
+      ...base.floorPlan,
+      objects: base.floorPlan.objects.map((object, index) => object.note === undefined ? object : { ...object, note: `${fill(494)} [${String(index)}]` }),
     },
     phases: base.phases.map((phase) => ({
       ...phase,

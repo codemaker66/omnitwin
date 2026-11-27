@@ -7,6 +7,7 @@ import {
   VenueReplyBodySchema,
   toEventPlanAudienceRole,
   ProposalVersionPayloadSchema,
+  QuoteSnapshotSchema,
   proposalVersionPayloadDigest,
   isProposalEditable,
   ShortCodeSchema,
@@ -20,6 +21,7 @@ import {
   type ProposalNextVersion,
   type ProposalVersionPayload,
   type ProposalStatus,
+  type QuoteSnapshot,
 } from "@omnitwin/types";
 import {
   proposals,
@@ -27,11 +29,11 @@ import {
   proposalShareTokens,
   proposalVersions,
   proposalStatusHistory,
+  quoteLineItems,
   eventConfigurationLinks,
   enquiries,
   configurations,
   events,
-  handoffPacks,
   opportunities,
   contacts,
   quotes,
@@ -39,6 +41,8 @@ import {
   venues,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../utils/outer-column.js";
+import { LIVE_QUOTE_STATUSES } from "../services/commercial-pipeline.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canManageCommercial, isVenueCommercialMember, roleReadsInternalEvents } from "../utils/query.js";
@@ -51,6 +55,7 @@ import { generateUniqueShortCode } from "../services/shortcode.js";
 import { clientEvent, clientFacts, layoutChange, nextVersionBasis, takenAtSave } from "../services/proposal-taken.js";
 import { patchLinkRequest, resolveProposalLinks, type ProposalLinkRefusal } from "../services/proposal-links.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
+import { newestHandoffPack } from "../services/newest-handoff-pack.js";
 import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam, notifyVenueRoles } from "../services/commercial-notifications.js";
 import { clientAnswerNotice, proposalDeskPath } from "../services/client-answer-notice.js";
 import { canRenderPersistedLayout } from "../services/layout-coordinate-space.js";
@@ -62,6 +67,7 @@ import {
   recordProposalEngagement,
   stampFirstResponse,
 } from "../services/enquiry-funnel.js";
+import type { JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
 // Proposal routes — T-427 phase 2.
@@ -135,14 +141,14 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
   const latestQuote = (field: "totalMinor" | "currency") => sql`(
     SELECT ${proposalVersions.payload} -> 'quote' ->> ${field}
     FROM ${proposalVersions}
-    WHERE ${proposalVersions.proposalId} = ${proposals.id}
-      AND ${proposalVersions.version} = CASE WHEN ${proposals.status} IN ('draft', 'changes_requested')
-        THEN ${proposals.currentVersion} ELSE COALESCE(${proposals.sentVersion}, ${proposals.currentVersion}) END)`;
+    WHERE ${proposalVersions.proposalId} = ${outerColumn(proposals.id)}
+      AND ${proposalVersions.version} = CASE WHEN ${outerColumn(proposals.status)} IN ('draft', 'changes_requested')
+        THEN ${outerColumn(proposals.currentVersion)} ELSE COALESCE(${outerColumn(proposals.sentVersion)}, ${outerColumn(proposals.currentVersion)}) END)`;
   // The latest send: its stamp, or a move to "sent" recorded after it (a send
   // before sends were each stamped kept the first one's).
-  const lastSentAt = sql`GREATEST(${proposals.sentAt}, (
+  const lastSentAt = sql`GREATEST(${outerColumn(proposals.sentAt)}, (
     SELECT max(${proposalStatusHistory.createdAt}) FROM ${proposalStatusHistory}
-    WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'sent'))`;
+    WHERE ${proposalStatusHistory.proposalId} = ${outerColumn(proposals.id)} AND ${proposalStatusHistory.toStatus} = 'sent'))`;
   // Whether its links agree as the link planner reads them: no deal, or its
   // deal live here with no enquiry but the deal's own. A layout change the
   // desk offers is then one the planner takes.
@@ -154,9 +160,9 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
     SELECT ${field === "id" ? configurations.id : spaces.name} FROM ${configurations}
     INNER JOIN ${spaces} ON ${spaces.id} = ${configurations.spaceId}
     WHERE ${configurations.id} = ${layoutId}
-      AND ${configurations.venueId} = ${proposals.venueId}
+      AND ${configurations.venueId} = ${outerColumn(proposals.venueId)}
       AND ${configurations.deletedAt} IS NULL
-      AND ${spaces.venueId} = ${proposals.venueId}
+      AND ${spaces.venueId} = ${outerColumn(proposals.venueId)}
       AND ${spaces.deletedAt} IS NULL)`;
   return db.select({
     ...getTableColumns(proposals),
@@ -183,17 +189,17 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
     linkOpenedAt: sql<string | null>`(
       SELECT to_char(max(${proposalShareTokens.lastViewedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
       FROM ${proposalShareTokens}
-      WHERE ${proposalShareTokens.proposalId} = ${proposals.id}
+      WHERE ${proposalShareTokens.proposalId} = ${outerColumn(proposals.id)}
         AND ${proposalShareTokens.lastViewedAt} >= ${lastSentAt})`,
     lastSentAt: sql<string | null>`to_char(${lastSentAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
     // Whether any of its links is the kind that records being opened; one sent
     // only with the older share code has none.
-    hasLink: sql<boolean>`EXISTS (SELECT 1 FROM ${proposalShareTokens} WHERE ${proposalShareTokens.proposalId} = ${proposals.id})`,
+    hasLink: sql<boolean>`EXISTS (SELECT 1 FROM ${proposalShareTokens} WHERE ${proposalShareTokens.proposalId} = ${outerColumn(proposals.id)})`,
     // Whether the client's link still opens, as presentedStatus decides it.
-    linkOpen: sql<boolean>`(${proposals.status} IN ('sent', 'changes_requested', 'accepted', 'declined', 'expired')
-      OR (${proposals.status} = 'archived' AND COALESCE((
+    linkOpen: sql<boolean>`(${outerColumn(proposals.status)} IN ('sent', 'changes_requested', 'accepted', 'declined', 'expired')
+      OR (${outerColumn(proposals.status)} = 'archived' AND COALESCE((
         SELECT ${proposalStatusHistory.fromStatus} FROM ${proposalStatusHistory}
-        WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'archived'
+        WHERE ${proposalStatusHistory.proposalId} = ${outerColumn(proposals.id)} AND ${proposalStatusHistory.toStatus} = 'archived'
         ORDER BY ${proposalStatusHistory.createdAt} DESC LIMIT 1) = 'accepted', false)))`,
   })
     .from(proposals)
@@ -285,7 +291,7 @@ function toStaffCommentView(row: {
 
 type ProposalRow = typeof proposals.$inferSelect;
 
-interface ProposalEventContext {
+export interface ProposalEventContext {
   readonly eventId: string;
   readonly venueId: string;
   readonly handoffPackId: string | null;
@@ -293,7 +299,7 @@ interface ProposalEventContext {
 
 
 
-async function loadProposalEventContext(db: Database, proposal: ProposalRow): Promise<ProposalEventContext | null> {
+export async function loadProposalEventContext(db: Database | ProposalTransaction, proposal: ProposalRow): Promise<ProposalEventContext | null> {
   if (proposal.configurationId === null) return null;
 
   const [linkedEvent] = await db
@@ -309,12 +315,10 @@ async function loadProposalEventContext(db: Database, proposal: ProposalRow): Pr
 
   if (linkedEvent === undefined) return null;
 
-  const [pack] = await db
-    .select({ id: handoffPacks.id })
-    .from(handoffPacks)
-    .where(eq(handoffPacks.eventId, linkedEvent.eventId))
-    .orderBy(desc(handoffPacks.compiledAt))
-    .limit(1);
+  // The pack that stands for the event, as the Event Day board shows it: a
+  // change is recorded against it and the hallkeeper asked to acknowledge
+  // it, never against a deleted layout's pack (T-695 review K1, I5).
+  const pack = await newestHandoffPack(db, { eventId: linkedEvent.eventId, venueId: linkedEvent.venueId });
 
   return {
     eventId: linkedEvent.eventId,
@@ -369,18 +373,81 @@ async function moveDealFor(
 async function recordProposalLifecycleChange(
   db: Database,
   proposal: ProposalRow,
-  input: {
-    readonly actorUserId: string | null;
-    readonly actorRole: EventPlanAudienceRole;
-    readonly actorLabel: string;
-    readonly sourceKind: "proposal" | "proposal_comment" | "proposal_response";
-    readonly sourceId: string;
-    readonly title: string;
-    readonly summary: string;
-    readonly affectedSurfaces: readonly EventPlanChangeSurface[];
-    readonly includeHallkeeperWhenHandoffExists: boolean;
-    readonly logger: FastifyBaseLogger;
-  },
+  input: LifecycleChangeInput,
+): Promise<void> {
+  const act = input.clientAct;
+  // Every announcement is written in one transaction that first holds the
+  // proposal FOR KEY SHARE: the house order, the proposal before the event
+  // and layout that the change's foreign keys take. That waits only on a
+  // writer holding the proposal FOR UPDATE, as an erasure of the person does
+  // from early in its pass until it commits, so the two never wait on each
+  // other. Read again under that lock: a title the erasure has reworded since
+  // is announced as it now reads, and a client's act it has erased (their
+  // link revoked, or what they wrote deleted or without their name) is not
+  // copied at all. A client's answer on someone else's proposal that commits
+  // after an erasure's reads is outside that erasure: it counts as made after
+  // it.
+  try {
+    await db.transaction(async (tx) => {
+      const [held] = await tx.select({ id: proposals.id, title: proposals.title }).from(proposals)
+        .where(eq(proposals.id, proposal.id)).for("key share");
+      if (act !== undefined && (!(await linkStillOpen(tx, act.linkTokenId)) || !(await stillAsWritten(tx, act.written)))) return;
+      const title = held?.title ?? proposal.title;
+      const now = (text: string): string => (title === proposal.title || proposal.title === "" ? text : text.split(proposal.title).join(title));
+      await announceProposalChange(tx, { ...proposal, title }, { ...input, title: now(input.title), summary: now(input.summary) });
+    });
+  } catch (err) {
+    input.logger.error({
+      event: "proposal.lifecycle_announcement_failed",
+      proposalId: proposal.id,
+      venueId: proposal.venueId,
+      configurationId: proposal.configurationId,
+      sourceKind: input.sourceKind,
+      sourceId: input.sourceId,
+      lost: "all of it: the proposal could not be held and read again",
+      err,
+    }, "proposal change committed but its announcement could not be written");
+  }
+}
+
+interface LifecycleChangeInput {
+  readonly actorUserId: string | null;
+  readonly actorRole: EventPlanAudienceRole;
+  readonly actorLabel: string;
+  readonly sourceKind: "proposal" | "proposal_comment" | "proposal_response";
+  readonly sourceId: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly affectedSurfaces: readonly EventPlanChangeSurface[];
+  readonly includeHallkeeperWhenHandoffExists: boolean;
+  readonly logger: FastifyBaseLogger;
+  /** A client's act through their link, read again before it is copied. */
+  readonly clientAct?: ClientAct;
+}
+
+interface ClientAct {
+  readonly linkTokenId: string;
+  /** The comment the act wrote: their words, or an acceptance's note. */
+  readonly written: Pick<typeof proposalComments.$inferSelect, "id" | "authorName" | "authorEmail" | "body">;
+}
+
+/** The comment still reads as the client wrote it. An erasure deletes it on
+ *  their own proposal, and takes their name and address out of it on
+ *  someone else's. */
+async function stillAsWritten(tx: ProposalTransaction, written: ClientAct["written"]): Promise<boolean> {
+  const [row] = await tx.select({ authorName: proposalComments.authorName, authorEmail: proposalComments.authorEmail, body: proposalComments.body })
+    .from(proposalComments).where(eq(proposalComments.id, written.id)).limit(1);
+  return row !== undefined && row.authorName === written.authorName && row.authorEmail === written.authorEmail
+    && row.body === written.body;
+}
+
+/** The copies: the event's change and notices, or the team's notices. Each
+ *  write keeps a transaction (a savepoint inside a client's copy) of its
+ *  own, so one that fails loses only itself. */
+async function announceProposalChange(
+  db: Database | ProposalTransaction,
+  proposal: ProposalRow,
+  input: LifecycleChangeInput,
 ): Promise<void> {
   // What was being written when it failed, so the log says what was lost.
   let writing = "all of it: the proposal's event could not be read";
@@ -397,13 +464,13 @@ async function recordProposalLifecycleChange(
     if (context === null) {
       if (input.sourceKind === "proposal") return;
       writing = "the team's notices";
-      await notifyCommercialTeam(db, {
+      await db.transaction((notices) => notifyCommercialTeam(notices, {
         venueId: proposal.venueId,
         title: input.title,
         body: input.summary,
         severity: input.sourceKind === "proposal_response" ? "attention" : "info",
         actionPath: proposalDeskPath(proposal.id),
-      });
+      }));
       return;
     }
 
@@ -445,14 +512,14 @@ async function recordProposalLifecycleChange(
 
     if (input.sourceKind !== "proposal" && outsideEvents.length > 0) {
       writing = "only the copy for roles that do not read events; the event's change and notices were written";
-      await notifyVenueRoles(db, {
+      await db.transaction((notices) => notifyVenueRoles(notices, {
         venueId: proposal.venueId,
         title: input.title,
         body: input.summary,
         severity: input.sourceKind === "proposal_response" ? "attention" : "info",
         actionPath: proposalDeskPath(proposal.id),
         audienceRoles: outsideEvents,
-      });
+      }));
     }
   } catch (err) {
     // Loud, with the ids needed to find the row that went unannounced, and
@@ -760,22 +827,25 @@ export async function proposalRoutes(
       return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
     }
 
-    const [proposal] = await db.select().from(proposals)
-      .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
-      .limit(1);
-    if (proposal === undefined) {
-      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
-    }
-    if (!canManageCommercial(request.user, proposal.venueId)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-    }
-    if (proposal.status === "accepted" && !isPlatformAdmin(request.user)) {
+    // The lock and the delete are one transaction on the held row (release
+    // audit proposals-2): an accepted proposal archived first is still the
+    // commercial record its acceptance made, and a client accepting while
+    // this runs either lands first (and locks it) or waits for the delete.
+    const outcome = await db.transaction(async (tx) => {
+      const proposal = await holdProposal(tx, params.data.id);
+      if (proposal === undefined) return "not_found" as const;
+      if (!canManageCommercial(request.user, proposal.venueId)) return "forbidden" as const;
+      if (!isPlatformAdmin(request.user) && await everAccepted(tx, proposal)) return "locked" as const;
+      await tx.update(proposals)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(proposals.id, proposal.id), isNull(proposals.deletedAt)));
+      return "deleted" as const;
+    });
+    if (outcome === "not_found") return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    if (outcome === "forbidden") return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    if (outcome === "locked") {
       return reply.status(422).send({ error: "Accepted proposals are a commercial record and cannot be deleted", code: "PROPOSAL_ACCEPTED_LOCKED" });
     }
-
-    await db.update(proposals)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(eq(proposals.id, params.data.id));
 
     return reply.status(204).send();
   });
@@ -869,21 +939,7 @@ export async function proposalRoutes(
         changedBy: request.user.id,
         note: parsed.data.note ?? null,
       });
-      // A proposal sent is a reply Venviewer itself sends: the first reply to
-      // the enquiry it answers, unless an earlier one is recorded (0100).
-      if (parsed.data.status === "sent") {
-        const enquiryId = await enquiryAnsweredByProposal(tx, row);
-        if (enquiryId !== null) {
-          await stampFirstResponse(tx, {
-            enquiryId,
-            venueId: row.venueId,
-            at: "now",
-            // A Venviewer operator who sends it for the venue is not its team.
-            byUserId: isVenueCommercialMember(request.user, row.venueId) ? request.user.id : null,
-            channel: "proposal",
-          });
-        }
-      }
+      if (parsed.data.status === "sent") await stampSendAsFirstReply(tx, row, request.user);
       // Answered as its row on the desk now reads, read with the move: the
       // figure that stands and whether the client's link opens change with it.
       const [withFacts] = await selectDeskProposals(tx).where(eq(proposals.id, params.data.id)).limit(1);
@@ -933,11 +989,12 @@ export async function proposalRoutes(
     return { data: history };
   });
 
-  // GET /proposals/:id/comments — full conversation thread (staff view).
+  // GET /proposals/:id/comments — the conversation thread (staff view).
   //
   // Returns BOTH client posts (made through the share link) and staff
   // replies, in chronological order, so the dashboard timeline shows the
-  // whole conversation, each with the author recorded when it was written.
+  // conversation, each with the author recorded when it was written: the
+  // whole of it, or on a thread past 200 its newest 200.
   server.get("/:id/comments", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) {
@@ -954,7 +1011,9 @@ export async function proposalRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    const rows = await db.select({
+    // The newest two hundred, read in order: on a longer thread the oldest
+    // are the ones left out, never the client's latest words.
+    const newest = await db.select({
       id: proposalComments.id,
       kind: proposalComments.kind,
       authorName: proposalComments.authorName,
@@ -964,10 +1023,10 @@ export async function proposalRoutes(
       createdAt: proposalComments.createdAt,
     }).from(proposalComments)
       .where(eq(proposalComments.proposalId, params.data.id))
-      .orderBy(proposalComments.createdAt)
+      .orderBy(desc(proposalComments.createdAt))
       .limit(200);
 
-    return { data: rows.map(toStaffCommentView) };
+    return { data: newest.reverse().map(toStaffCommentView) };
   });
 
   // POST /proposals/:id/comments — staff reply to the client conversation.
@@ -1129,6 +1188,9 @@ export async function proposalRoutes(
           note: "Client share link generated",
         });
       }
+      // The desk sends by link: a send here is the same reply /transition
+      // records (proposals-1).
+      if (updateData["sentAt"] !== undefined) await stampSendAsFirstReply(tx, updated, request.user);
 
       // Answered as its row on the desk now reads, the send included.
       const [withFacts] = await selectDeskProposals(tx).where(eq(proposals.id, proposal.id)).limit(1);
@@ -1138,6 +1200,19 @@ export async function proposalRoutes(
     if (result === "version") return reply.status(409).send(VERSION_CHANGED);
     if (result.proposal.status !== proposal.status) {
       await moveDealFor(db, result.proposal, result.proposal.status, request.user.id, request.log);
+      // The change feed hears of a send by link as of one by /transition.
+      await recordProposalLifecycleChange(db, result.proposal, {
+        actorUserId: request.user.id,
+        actorRole: toEventPlanAudienceRole(request.user.role),
+        actorLabel: request.user.email,
+        sourceKind: "proposal",
+        sourceId: result.proposal.id,
+        title: "Proposal status changed",
+        summary: `${result.proposal.title} moved from ${proposal.status} to ${result.proposal.status}.`,
+        affectedSurfaces: ["proposal"],
+        includeHallkeeperWhenHandoffExists: false,
+        logger: request.log,
+      });
     }
 
     return reply.status(201).send({
@@ -1179,6 +1254,12 @@ export async function proposalRoutes(
     if (!isPlatformAdmin(request.user) && !isProposalEditable(proposal.status as ProposalStatus)) {
       return reply.status(422).send({ error: "Proposal content is frozen in its current status", code: "NOT_EDITABLE" });
     }
+    // A quote's total is the sum of its lines while the money engine has no
+    // modifiers or discounts (routes/quotes.ts: totalMinor = subtotalMinor),
+    // and the schema already holds the subtotal to the lines.
+    if (parsed.data.quote !== null && parsed.data.quote.totalMinor !== parsed.data.quote.subtotalMinor) {
+      return reply.status(422).send(QUOTE_MISMATCH);
+    }
     // Written from a version already followed by another: said as that, not
     // as a change to what it takes, and before the layout is drawn for it.
     // (Checked again under the lock below.)
@@ -1200,8 +1281,6 @@ export async function proposalRoutes(
     if (checked !== undefined && checked !== nextVersionBasis(proposal.currentVersion, proposal, taken)) {
       return reply.status(409).send(TAKEN_CHANGED);
     }
-
-    const sourceHash = proposalVersionPayloadDigest(payload);
 
     // The head and snapshot commit together. Lock before rechecking editability
     // so a delayed request cannot create content after the proposal is frozen.
@@ -1225,6 +1304,16 @@ export async function proposalRoutes(
       if (basedOn !== undefined && current.currentVersion !== basedOn) return "VERSION_CHANGED" as const;
       if (checked !== undefined && current.currentVersion !== proposal.currentVersion) return "VERSION_CHANGED" as const;
 
+      // A quote named by id is written as this proposal's quote is stored,
+      // never as it was sent, like the layout and the facts beside it: what
+      // the client accepts, pays a deposit on and signs is read from here.
+      // One with no id (a share, a hand-made version) keeps its own lines.
+      const sentQuoteId = payload.quote?.quoteId ?? null;
+      const storedQuote = sentQuoteId === null ? null : await storedQuoteSnapshot(tx, sentQuoteId, current);
+      if (sentQuoteId !== null && storedQuote === null) return "QUOTE_MISMATCH" as const;
+      const saved: ProposalVersionPayload = storedQuote === null ? payload : { ...payload, quote: storedQuote };
+      const sourceHash = proposalVersionPayloadDigest(saved);
+
       const [claimed] = await tx.update(proposals)
         .set({ currentVersion: sql`${proposals.currentVersion} + 1`, updatedAt: new Date() })
         .where(eq(proposals.id, current.id))
@@ -1234,7 +1323,7 @@ export async function proposalRoutes(
       const [version] = await tx.insert(proposalVersions).values({
         proposalId: current.id,
         version: claimed.version,
-        payload,
+        payload: saved,
         sourceHash,
         createdBy: request.user.id,
       }).returning();
@@ -1243,23 +1332,16 @@ export async function proposalRoutes(
       // A deal with no value yet takes the total of the first quote a saved
       // version carries (roadmap X1), as the quote is stored, never the figure
       // sent; a value already set is the booker's and stays.
-      const quoteId = payload.quote?.quoteId ?? null;
-      if (quoteId !== null && current.opportunityId !== null) {
-        const [quote] = await tx.select({ totalMinor: quotes.totalMinor, currency: quotes.currency }).from(quotes)
-          .where(and(eq(quotes.id, quoteId), eq(quotes.proposalId, current.id), eq(quotes.venueId, current.venueId),
-            isNull(quotes.deletedAt)))
-          .limit(1);
-        if (quote !== undefined) {
-          await tx.update(opportunities)
-            .set({ estimatedValueMinor: quote.totalMinor, updatedAt: new Date() })
-            .where(and(
-              eq(opportunities.id, current.opportunityId),
-              eq(opportunities.venueId, current.venueId),
-              isNull(opportunities.deletedAt),
-              eq(opportunities.estimatedValueMinor, 0),
-              eq(opportunities.currency, quote.currency),
-            ));
-        }
+      if (storedQuote !== null && current.opportunityId !== null) {
+        await tx.update(opportunities)
+          .set({ estimatedValueMinor: storedQuote.totalMinor, updatedAt: new Date() })
+          .where(and(
+            eq(opportunities.id, current.opportunityId),
+            eq(opportunities.venueId, current.venueId),
+            isNull(opportunities.deletedAt),
+            eq(opportunities.estimatedValueMinor, 0),
+            eq(opportunities.currency, storedQuote.currency),
+          ));
       }
       return { version };
     });
@@ -1277,6 +1359,7 @@ export async function proposalRoutes(
       return reply.status(409).send({ error: "The proposal's links changed; reload before saving a version", code: "REVISION_CONFLICT" });
     }
     if (result === "VERSION_CHANGED") return reply.status(409).send(VERSION_CHANGED);
+    if (result === "QUOTE_MISMATCH") return reply.status(422).send(QUOTE_MISMATCH);
     const { version } = result;
 
     if (version !== undefined) {
@@ -1505,6 +1588,36 @@ type ProposalRecord = typeof proposals.$inferSelect;
 type ProposalTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /**
+ * A proposal sent is a reply Venviewer itself sends: the first reply to the
+ * enquiry it answers, unless an earlier one is recorded (migration 0100). Run
+ * inside the send's own transaction, by /transition and by a client link that
+ * sends it (release audit proposals-1). Another venue's enquiry is never
+ * stamped (stampFirstResponse keeps to the proposal's venue).
+ */
+async function stampSendAsFirstReply(tx: ProposalTransaction, proposal: ProposalRecord, user: JwtUser): Promise<void> {
+  const enquiryId = await enquiryAnsweredByProposal(tx, proposal);
+  if (enquiryId === null) return;
+  await stampFirstResponse(tx, {
+    enquiryId,
+    venueId: proposal.venueId,
+    at: "now",
+    // A Venviewer operator who sends it for the venue is not its team.
+    byUserId: isVenueCommercialMember(user, proposal.venueId) ? user.id : null,
+    channel: "proposal",
+  });
+}
+
+/** Whether a proposal is, or ever was, accepted: archiving keeps the record
+ *  an acceptance made, so the delete lock follows it (proposals-2). */
+async function everAccepted(tx: ProposalTransaction, proposal: ProposalRecord): Promise<boolean> {
+  if (proposal.status === "accepted") return true;
+  const [accepted] = await tx.select({ id: proposalStatusHistory.id }).from(proposalStatusHistory)
+    .where(and(eq(proposalStatusHistory.proposalId, proposal.id), eq(proposalStatusHistory.toStatus, "accepted")))
+    .limit(1);
+  return accepted !== undefined;
+}
+
+/**
  * The proposal's row, held until the transaction ends. Every move of a
  * proposal's status takes it first and compares it with the status the
  * request read, so an answer or a move that committed in between is never
@@ -1516,6 +1629,17 @@ async function holdProposal(tx: ProposalTransaction, id: string): Promise<Propos
     .where(and(eq(proposals.id, id), isNull(proposals.deletedAt)))
     .for("update");
   return row;
+}
+
+/** Whether the client's link still opens the proposal, read again under the
+ *  proposal's lock. An erasure revokes the person's links in the same
+ *  transaction as it takes their words (services/people-erasure.ts), so an
+ *  answer that waited on it is refused instead of written after it. */
+async function linkStillOpen(tx: ProposalTransaction | Database, tokenId: string): Promise<boolean> {
+  const [token] = await tx.select({ revokedAt: proposalShareTokens.revokedAt }).from(proposalShareTokens)
+    .where(eq(proposalShareTokens.id, tokenId))
+    .limit(1);
+  return token !== undefined && token.revokedAt === null;
 }
 
 const STATUS_CHANGED = {
@@ -1534,6 +1658,40 @@ const TAKEN_CHANGED = {
   error: "The layout or the event changed after this was checked, so the version was not saved. Check it again.",
   code: "REVISION_CONFLICT",
 } as const;
+
+/** A version's quote that is not this proposal's own live quote, or whose
+ *  total is not the sum of its lines (audit api-proposals-money-1). */
+const QUOTE_MISMATCH = {
+  error: "The quote is not this proposal's own, or its total is not the sum of its lines, so the version was not saved.",
+  code: "QUOTE_MISMATCH",
+} as const;
+
+/**
+ * The quote a version names, as stored: this proposal's own, at its venue,
+ * live (not superseded, declined or expired) and not deleted, with its lines
+ * in their order. Its row is held (FOR SHARE) so a line added meanwhile is in
+ * both the lines and the totals or in neither.
+ * Null when there is no such quote, or its rows do not make a valid snapshot.
+ */
+async function storedQuoteSnapshot(tx: ProposalTransaction, quoteId: string, proposal: ProposalRecord): Promise<QuoteSnapshot | null> {
+  const [quote] = await tx.select({
+    id: quotes.id, currency: quotes.currency, subtotalMinor: quotes.subtotalMinor, totalMinor: quotes.totalMinor,
+  }).from(quotes)
+    .where(and(eq(quotes.id, quoteId), eq(quotes.proposalId, proposal.id), eq(quotes.venueId, proposal.venueId),
+      inArray(quotes.status, [...LIVE_QUOTE_STATUSES]), isNull(quotes.deletedAt)))
+    .for("share");
+  if (quote === undefined) return null;
+  const lineItems = await tx.select({
+    description: quoteLineItems.description, quantity: quoteLineItems.quantity,
+    unitAmountMinor: quoteLineItems.unitAmountMinor, lineTotalMinor: quoteLineItems.lineTotalMinor,
+  }).from(quoteLineItems)
+    .where(eq(quoteLineItems.quoteId, quote.id))
+    .orderBy(quoteLineItems.sortOrder, quoteLineItems.id);
+  const snapshot = QuoteSnapshotSchema.safeParse({
+    quoteId: quote.id, currency: quote.currency, lineItems, subtotalMinor: quote.subtotalMinor, totalMinor: quote.totalMinor,
+  });
+  return snapshot.success ? snapshot.data : null;
+}
 
 /** The version a person read when they acted: the booker confirming a send,
  *  the client answering. Optional, so a page from before it still works. */
@@ -1588,7 +1746,7 @@ async function presentedStatus(db: Database, proposal: ProposalRecord): Promise<
   return last?.from === "accepted" ? "accepted" : null;
 }
 
-async function resolveProposalShareToken(
+export async function resolveProposalShareToken(
   db: Database,
   token: string,
 ): Promise<{ shareToken: ShareTokenRecord; proposal: ProposalRecord; presented: string } | null> {
@@ -1611,7 +1769,7 @@ async function resolveProposalShareToken(
 /** The version a client's link shows: the one last sent. A version saved
  *  since is the team's draft until it is sent. A proposal answered before
  *  any version was saved was shown none. */
-function sentVersionOf(proposal: Pick<ProposalRecord, "sentVersion" | "currentVersion" | "status">): number | null {
+export function sentVersionOf(proposal: Pick<ProposalRecord, "sentVersion" | "currentVersion" | "status">): number | null {
   if (proposal.sentVersion !== null) return proposal.sentVersion;
   return proposal.status === "sent" && proposal.currentVersion >= 1 ? proposal.currentVersion : null;
 }
@@ -1952,6 +2110,7 @@ export async function proposalShareRoutes(
       // read. A second request for changes at once is kept as it would have
       // been a moment later, without moving the proposal again.
       const held = await holdProposal(tx, resolved.proposal.id);
+      if (!(await linkStillOpen(tx, resolved.shareToken.id))) return "gone" as const;
       const current = held?.status ?? null;
       if (current !== read && !(kind === "request_changes" && read === "sent" && current === "changes_requested")) {
         return "changed" as const;
@@ -1997,6 +2156,7 @@ export async function proposalShareRoutes(
       const version = kind === "comment" && reading !== undefined && shows !== null && reading <= shows ? reading : shows;
       return { comment, moved: moves, version };
     });
+    if (result === "gone") return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     if (result === "changed") return reply.status(409).send(STATUS_CHANGED);
     if (result === "version") return reply.status(409).send(VERSION_CHANGED);
     const { comment } = result;
@@ -2012,6 +2172,7 @@ export async function proposalShareRoutes(
       words: comment.body,
     });
     await recordProposalLifecycleChange(db, resolved.proposal, {
+      clientAct: { linkTokenId: resolved.shareToken.id, written: comment },
       actorUserId: null,
       actorRole: "client",
       actorLabel: notice.actorLabel,
@@ -2068,6 +2229,7 @@ export async function proposalShareRoutes(
       // once; anything else that landed since the read (a withdrawal) stands.
       const held = await holdProposal(tx, resolved.proposal.id);
       if (held === undefined) return "changed" as const;
+      if (!(await linkStillOpen(tx, resolved.shareToken.id))) return "gone" as const;
       if (read !== undefined && read !== sentVersionOf(held)) return "version" as const;
       if (held.status === "accepted") return "already" as const;
       if (held.status !== resolved.proposal.status) return "changed" as const;
@@ -2082,7 +2244,7 @@ export async function proposalShareRoutes(
         changedBy: null,
         note: parsed.data.body ?? "Client approved via share link",
       });
-      await tx.insert(proposalComments).values({
+      const [note] = await tx.insert(proposalComments).values({
         proposalId: resolved.proposal.id,
         shareTokenId: resolved.shareToken.id,
         kind: "approval_note",
@@ -2091,10 +2253,12 @@ export async function proposalShareRoutes(
         body: parsed.data.body ?? "Client approved the proposal.",
         isClientVisible: true,
         authorType: "client",
-      });
-      return { accepted: sentVersionOf(held) };
+      }).returning();
+      if (note === undefined) throw new Error("proposal comment insert returned no row");
+      return { accepted: sentVersionOf(held), note };
     });
     if (outcome === "already") return { data: { status: "accepted", already: true } };
+    if (outcome === "gone") return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     if (outcome === "changed") return reply.status(409).send(STATUS_CHANGED);
     if (outcome === "version") return reply.status(409).send(VERSION_CHANGED);
     await moveDealFor(db, resolved.proposal, "accepted", null, request.log);
@@ -2108,6 +2272,7 @@ export async function proposalShareRoutes(
       words: parsed.data.body,
     });
     await recordProposalLifecycleChange(db, resolved.proposal, {
+      clientAct: { linkTokenId: resolved.shareToken.id, written: outcome.note },
       actorUserId: null,
       actorRole: "client",
       actorLabel: notice.actorLabel,

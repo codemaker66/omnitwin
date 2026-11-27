@@ -10,13 +10,17 @@ import {
 import type { PricingRule } from "../../../api/pricing.js";
 import { formatMinorAsCurrency, parsePoundsToMinor } from "../../../lib/money-input.js";
 import { venueLongDate } from "../../proposal/proposal-document-format.js";
-import { leftOutWords, priceEntry, priceForEvent, type PriceListEvent, type PriceListOffer, type WhyLeftOut } from "./price-list-format.js";
+import {
+  leftOutWords, priceEntry, priceForEvent, replacementsOn, takesThePlaceWords, type PriceListEvent, type PriceListOffer, type WhyLeftOut,
+} from "./price-list-format.js";
 import { lineHasWords, type ComposerDraft, type QuoteLineDraft } from "./proposals-desk-format.js";
 
 // ---------------------------------------------------------------------------
 // Proposal templates in the composer (roadmap X1; Tier B #16). A template
 // holds no price: each price-list line is priced from the list as it stands,
-// for this event, exactly as Add from price list prices it; a per-head line
+// for this event, exactly as Add from price list prices it: on a date that a
+// rate for particular dates takes the place of the saved entry, by that rate,
+// and said so in the list's words. A per-head line
 // takes this event's guests; a typed line asks for its price. Everything that
 // could not be used as saved is said, first what concerns the whole template
 // (another room, another occasion), then line by line.
@@ -115,10 +119,16 @@ interface LinePlan {
   readonly focus: "quantity" | "pounds" | null;
   /** What a quote line already holding it would be called, trimmed and
    *  lower-cased: a typed line's words, or its entry's name now and as the
-   *  template saved it. */
+   *  template saved it (and, when a dated rate takes its place, that rate's). */
   readonly known: readonly string[];
-  /** Its entry and the list's offer of it for the event; none for a typed line. */
+  /** Its entry (the rate that stands on the event's date) and the list's
+   *  offer of it for the event; none for a typed line. */
   readonly entry?: { readonly rule: PricingRule; readonly offer: PriceListOffer };
+  /** The ids, lower-cased, of the entries a quote line added from the list
+   *  holds it by: the one that stands and the one the template saved. */
+  readonly ruleIds?: readonly string[];
+  /** Whether a dated rate takes the place of the entry the template saved. */
+  readonly replaced?: boolean;
 }
 
 function comparable(words: string): string {
@@ -180,6 +190,11 @@ export function applyTemplate(
   const gone: string[] = [];
   const notOnDate: string[] = [];
   const leftOut = new Map<WhyLeftOut, string[]>();
+  // As Add from price list: on the event's date, a rate for particular dates
+  // takes the place of the everyday one, and the saved entry it replaces is
+  // priced by it. The rates set aside, under the one that stands.
+  const replaced = replacementsOn(rules, event.eventDate);
+  const setAside = new Map<string, string[]>();
 
   function planLine(saved: ProposalTemplateLine): LinePlan | null {
     if (saved.kind === "typed") {
@@ -190,11 +205,14 @@ export function applyTemplate(
         known: [comparable(saved.description)],
       };
     }
-    const rule = byId.get(saved.pricingRuleId);
-    if (rule === undefined || !rule.isActive) {
+    const savedRule = byId.get(saved.pricingRuleId);
+    if (savedRule === undefined || !savedRule.isActive) {
       gone.push(saved.name);
       return null;
     }
+    const standing = replaced.get(savedRule);
+    if (standing !== undefined) setAside.set(standing.name, [...(setAside.get(standing.name) ?? []), savedRule.name]);
+    const rule = standing ?? savedRule;
     const priced = priceForEvent(rule, event);
     if (!priced.offered) {
       if (priced.why === "not_on_date") notOnDate.push(rule.name);
@@ -204,9 +222,10 @@ export function applyTemplate(
     const offer = priced.offer;
     // The offer's line names its entry (listed), so it can be kept as the entry.
     const line = (quantity: string): QuoteLineDraft => ({ ...offer.line, quantity });
-    const known = unique([comparable(rule.name), comparable(saved.name)]);
+    const known = unique([comparable(rule.name), comparable(savedRule.name), comparable(saved.name)]);
+    const ruleIds = unique([rule.id.toLowerCase(), savedRule.id.toLowerCase()]);
     const plan = (quantity: string, say: LinePlan["say"], focus: LinePlan["focus"]): LinePlan => ({
-      line: line(quantity), say, focus, known, entry: { rule, offer },
+      line: line(quantity), say, focus, known, entry: { rule, offer }, ruleIds, replaced: standing !== undefined,
     });
 
     if (rule.type !== saved.ruleType) {
@@ -239,17 +258,27 @@ export function applyTemplate(
   /** The quote line already holding what the plan would add: one carrying its
    *  words, or one added from its entry whose words are unchanged since. */
   function inQuote(plan: LinePlan): QuoteLineDraft | undefined {
-    const ruleId = plan.entry?.rule.id.toLowerCase();
+    const ruleIds = plan.ruleIds ?? [];
     return current.lines.find((line) => plan.known.includes(comparable(line.description))
-      || (ruleId !== undefined && line.listed !== undefined && line.listed.description === line.description
-        && line.listed.pricingRuleId.toLowerCase() === ruleId));
+      || (line.listed !== undefined && line.listed.description === line.description
+        && ruleIds.includes(line.listed.pricingRuleId.toLowerCase())));
   }
 
   const already: string[] = [];
   const plans: LinePlan[] = [];
+  /** Whether each entry planned so far stands in for a saved one, by its id. */
+  const planned = new Map<string, boolean>();
   for (const saved of template.lines) {
     const plan = planLine(saved);
     if (plan === null) continue;
+    // A template holding both the everyday rate and the dated one prices both
+    // by the dated one on its date: it is added once, as the list offers it.
+    const entryId = plan.entry?.rule.id.toLowerCase();
+    if (entryId !== undefined) {
+      const earlier = planned.get(entryId);
+      if (earlier !== undefined && (earlier || plan.replaced === true)) continue;
+      planned.set(entryId, plan.replaced === true);
+    }
     const quoted = mode === "add" ? inQuote(plan) : undefined;
     if (quoted !== undefined) {
       already.push(quoted.description.trim());
@@ -279,6 +308,7 @@ export function applyTemplate(
     ...(gone.length > 0 ? [`No longer on the price list: ${listNames(gone)}.`] : []),
     ...(notOnDate.length > 0 && event.eventDate !== null
       ? [`Not priced for ${venueLongDate(event.eventDate) ?? event.eventDate}: ${listNames(notOnDate)}.`] : []),
+    ...[...setAside].map(([standing, names]) => takesThePlaceWords(event.eventDate, standing, unique(names))),
     ...(["guests", "currency", "no_price", "unreadable"] as const).flatMap((why) => {
       const names = leftOut.get(why);
       return names === undefined ? [] : [leftOutWords(why, unique(names))];

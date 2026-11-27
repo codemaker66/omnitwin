@@ -29,3 +29,6 @@ export function isCraftedFurnitureSlug(slug: string): slug is CraftedFurnitureSl
 export function craftedFurniturePreviewUrl(slug: string): string | null {
   return isCraftedFurnitureSlug(slug) ? `/models/furniture/${slug}/${CRAFTED_PREVIEW_VERSION}/preview.webp` : null;
 }
+
+
+// Each setup card's look and picture, and SETUP_PREVIEW_VERSION, which only the new chrome shows, are in lib/setup-card-previews.ts (T-671).

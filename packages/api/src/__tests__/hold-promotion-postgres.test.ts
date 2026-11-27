@@ -217,6 +217,51 @@ describe.skipIf(target === undefined)("the promoted 2nd option is told, on migra
     expect(drafted.ok && drafted.draft.to).toEqual({ name: "Jane MacLeod", email: "jane.macleod@example.test", source: "enquiry" });
   });
 
+  // notify-jobs-2: the joint flag outlives a joint partner (the resequence
+  // moves ranks only), so the draft must say who shares 1st option now.
+  async function jointSecondPair() {
+    const f = await ladder();
+    const partnerOwner = await person(f.venueId, "sales", "Ailsa Grant");
+    const partner = randomUUID();
+    await db.update(schema.bookings).set({ jointFlag: true }).where(eq(schema.bookings.id, f.second));
+    await insertBoundBookings(db, [
+      { id: partner, venueId: f.venueId, spaceId: f.spaceId, kind: "hold", title: "Grant ceilidh", startsAt: DAY, endsAt: DAY_END, rank: 2,
+        jointFlag: true, ownerUserId: partnerOwner, createdBy: f.office, nextAction: "Call the client",
+        decisionAt: new Date("2030-05-30T16:00:00.000Z"), nextActionDueAt: new Date("2030-05-20T09:00:00.000Z") },
+    ]);
+    const owner: MutationActor = { id: f.secondOwner, venueId: f.venueId, role: "sales", platformRole: "none" };
+    return { ...f, partner, owner };
+  }
+
+  it("drafts '1st option', as the notice says, for a joint 2nd promoted alone after its partner left", async () => {
+    const f = await jointSecondPair();
+    expect((await transitionBookingCore(db, f.actor, f.partner, { toState: "released" })).ok).toBe(true);
+    expect((await transitionBookingCore(db, f.actor, f.first, { toState: "expired" })).ok).toBe(true);
+
+    const [promoted] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, f.second));
+    expect(promoted).toMatchObject({ rank: 1, jointFlag: true });
+    const [notice] = await noticesFor(f.venueId);
+    expect(notice?.title).toBe("Now 1st option: Saturday 15 June 2030, Grand Hall");
+
+    const drafted = await loadPromotionDraft(db, f.owner, f.second, new Date("2030-05-01T09:00:00.000Z"));
+    expect(drafted.ok && drafted.draft.body)
+      .toContain("Your provisional booking of the Grand Hall on Saturday 15 June 2030 is now 1st option.");
+  });
+
+  it("drafts 'joint 1st option' when the joint pair moved up together", async () => {
+    const f = await jointSecondPair();
+    expect((await transitionBookingCore(db, f.actor, f.first, { toState: "released" })).ok).toBe(true);
+    const notices = await noticesFor(f.venueId);
+    expect(notices.map((row) => row.title)).toEqual([
+      "Now joint 1st option: Saturday 15 June 2030, Grand Hall",
+      "Now joint 1st option: Saturday 15 June 2030, Grand Hall",
+    ]);
+
+    const drafted = await loadPromotionDraft(db, f.owner, f.second, new Date("2030-05-01T09:00:00.000Z"));
+    expect(drafted.ok && drafted.draft.body)
+      .toContain("Your provisional booking of the Grand Hall on Saturday 15 June 2030 is now joint 1st option.");
+  });
+
   it("rolls the exit and the new ranks back when the notice cannot be written", async () => {
     const marker = `FAIL-NOTICE-${randomUUID().slice(0, 8)}`;
     const fn = `promotion_notice_fails_${randomUUID().replaceAll("-", "")}`;

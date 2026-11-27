@@ -116,7 +116,8 @@ test.beforeEach(async ({ page }) => {
     error: "Authentication required",
     code: "UNAUTHORIZED",
   };
-  await page.route(`${API}/ai/status`, (route) => {
+  // `*`: the client asks /ai/status?feature=... since #340, and a string route is a glob over the whole URL.
+  await page.route(`${API}/ai/status*`, (route) => {
     void route.fulfill({ status: 401, json: unauthenticated });
   });
   await page.route(`${API}/truth-mode/summary*`, (route) => {
@@ -211,7 +212,7 @@ test.describe("Trades Hall internal visual layer route", () => {
     await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
       void route.fulfill({ json: { data: null } });
     });
-    await page.route(`${API}/ai/status`, (route) => {
+    await page.route(`${API}/ai/status*`, (route) => {
       void route.fulfill({ status: 401, json: { error: "authentication required" } });
     });
     await page.route(`${API}/truth-mode/summary*`, (route) => {

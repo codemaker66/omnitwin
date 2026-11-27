@@ -428,7 +428,6 @@ export function FloatingWidgetFrame({
   const positionRef = useRef<FloatingWidgetPosition>(position);
   const [minimized, setMinimized] = useState(initialStoredState?.minimized ?? defaultMinimized);
   const [dragging, setDragging] = useState(false);
-  const visuallyMinimized = minimized || autoCompact;
   const resolvedPlacementKey = placementKey(defaultPlacement);
   const stableDefaultPlacement = useMemo(() => defaultPlacement, [resolvedPlacementKey]);
 
@@ -610,7 +609,9 @@ export function FloatingWidgetFrame({
   const rootClassName = [
     "vv-floating-widget",
     `vv-floating-widget--${strategy}`,
-    visuallyMinimized ? "is-minimized" : "",
+    minimized ? "is-minimized" : "",
+    // While the camera moves the panel keeps its size and only dims; folding
+    // the body away is left to a real minimise, so nothing pops on settle.
     autoCompact && !minimized ? "is-auto-compact" : "",
     dragging ? "is-dragging" : "",
     className ?? "",
@@ -642,7 +643,7 @@ export function FloatingWidgetFrame({
           <GripHorizontal size={14} aria-hidden="true" />
           <span>{title}</span>
         </button>
-        {visuallyMinimized && compactLabel !== undefined ? (
+        {minimized && compactLabel !== undefined ? (
           <span className="vv-floating-widget__compact-label">{compactLabel}</span>
         ) : null}
         <button
@@ -659,7 +660,7 @@ export function FloatingWidgetFrame({
           onClick={() => { setMinimized((value) => !value); }}
           aria-label={`${minimized ? "Expand" : "Minimize"} ${title}`}
           aria-controls={bodyId}
-          aria-expanded={!visuallyMinimized}
+          aria-expanded={!minimized}
         >
           {minimized ? <Maximize2 size={13} aria-hidden="true" /> : <Minimize2 size={13} aria-hidden="true" />}
         </button>
@@ -667,7 +668,7 @@ export function FloatingWidgetFrame({
       <div
         id={bodyId}
         className={["vv-floating-widget__body", bodyClassName ?? ""].filter(Boolean).join(" ")}
-        hidden={visuallyMinimized}
+        hidden={minimized}
       >
         {children}
       </div>

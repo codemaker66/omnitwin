@@ -1,8 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { eq, sql } from "drizzle-orm";
-import { Client } from "pg";
+import { drizzle as nodeDrizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { Client, Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -47,10 +50,13 @@ function isSafeDisposableDatabaseUrl(databaseUrl: string): boolean {
   try {
     const parsed = new URL(databaseUrl);
     const databaseName = parsed.pathname.slice(1);
-    return (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")
-      && (parsed.port === "54329" || parsed.port === "54339")
+    // Loopback and the dedicated name are the safety; any port (CI serves 55476).
+    // No query string or fragment: a client takes ?host= over the address's own host.
+    return ["postgres:", "postgresql:"].includes(parsed.protocol)
+      && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")
       && databaseName.startsWith(SAFE_DATABASE_PREFIX)
-      && /^[a-z0-9_]+$/u.test(databaseName);
+      && /^[a-z0-9_]+$/u.test(databaseName)
+      && parsed.search === "" && parsed.hash === "";
   } catch {
     return false;
   }
@@ -59,7 +65,7 @@ function isSafeDisposableDatabaseUrl(databaseUrl: string): boolean {
 if (RUN_ENABLED && !isSafeDisposableDatabaseUrl(TEST_DATABASE_URL)) {
   throw new Error(
     "VENVIEWER_PHASE_LAYOUT_TEST_DATABASE_URL must name a disposable local PostgreSQL database "
-      + `(localhost or 127.0.0.1, port 54329 or 54339, named ${SAFE_DATABASE_PREFIX}*).`,
+      + `(localhost or 127.0.0.1, named ${SAFE_DATABASE_PREFIX}*).`,
   );
 }
 
@@ -519,12 +525,20 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     process.env["NODE_ENV"] = "test";
     // The server reads DATABASE_URL when it is built; give it the test URL.
     process.env["DATABASE_URL"] = TEST_DATABASE_URL;
+    // The suite migrates its own fresh database, as its siblings do; the
+    // lineage case below then reads the ledger the real chain wrote.
+    const migrationPool = new Pool({ connectionString: TEST_DATABASE_URL, max: 1 });
+    try {
+      await migrate(nodeDrizzle(migrationPool), { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
+    } finally {
+      await migrationPool.end();
+    }
     database = createDb(TEST_DATABASE_URL);
     await seedFixture(database);
     const { buildServer } = await import("../index.js");
     buildServerForReload = buildServer;
     server = await buildServer();
-  }, 60_000);
+  }, 180_000);
 
   afterAll(async () => {
     if (server !== null) await server.close();
@@ -2237,11 +2251,14 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       const freezePid = await waitForBlocked(/from\s+"configurations"[\s\S]*for share/iu, lockerPid);
       const moving = requiredServer().inject({ method: "PATCH", url: `/event-phases/${plan.phaseId}`, headers: authHeaders(), payload: { spaceId: siblingId } }).then((response) => response);
       pending.push(moving);
+      // The PATCH takes its event's lock before the phase's (T-672: a Diary
+      // move shifts phases under that lock), so it waits behind the freeze at
+      // whichever it reaches first.
       const blockedOrFinished = await Promise.race([
-        waitForBlocked(/update\s+"event_phases"/iu, freezePid).then(() => null),
+        waitForBlocked(/update\s+"event_phases"|from\s+"events"[\s\S]*for no key update/iu, freezePid).then(() => null),
         moving,
       ]);
-      expect(blockedOrFinished, "The real phase PATCH must wait for the freezing transaction's phase read lock").toBeNull();
+      expect(blockedOrFinished, "The real phase PATCH must wait for the freezing transaction's event and phase read locks").toBeNull();
       await locker.query("COMMIT"); released = true;
       const [frozenResponse, movedResponse] = await Promise.all([freezing, moving]);
       expect(frozenResponse.statusCode, frozenResponse.body).toBe(201);

@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from "react";
+import { useId, useState, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Building2, Check, CloudOff, Save } from "lucide-react";
 import { useEditorStore } from "../../../stores/editor-store.js";
@@ -6,28 +6,39 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { ActivityIndicator } from "../../shared/Activity.js";
 import { isLayoutTimelineMutationLocked } from "../../../lib/layout-timeline-preview-lock.js";
+import { refusedOverHeldNote } from "../../../lib/guest-plan-notes.js";
 import { usePlannerVenueIdentity } from "../../../hooks/use-planner-venue-identity.js";
 import { canReadInternalEventData, customerEventPath, isCustomerRole } from "../../../lib/event-access.js";
 import { useOnlineStatus } from "../../../hooks/use-online-status.js";
+import { useChromePresenceStore } from "../../../stores/chrome-presence-store.js";
+import { CrestLabel, useCrestLabel } from "./CrestLabel.js";
+import { EventKindName } from "../event-kind/EventKindPicker.js";
 
 interface HeaderSaveState {
   readonly configId: string | null;
   readonly saving: boolean;
   readonly dirty: boolean;
   readonly saveError: string | null;
+  /** The save was refused because it would change a note this browser is not
+   *  shown (409 NOTE_HELD): `saveError` is then the API's own sentence. */
+  readonly refusedForHeldNote?: boolean;
   readonly conflicted: boolean;
   readonly online: boolean;
 }
 
+const SAVE_LAYOUT = "Save layout";
+
 /** The header's one line about the layout. It never says "saved" while the
- *  browser is offline with changes the server has not had (QoL D-03). */
+ *  browser is offline with changes the server has not had (QoL D-03). A save
+ *  refused over a held note is said in the API's own sentence: the same save
+ *  meets the same refusal, so "Retry save" would be the wrong thing to say. */
 export function headerSaveLabel(state: HeaderSaveState): string {
   if (state.configId === null) return "No saved layout";
   if (state.saving) return "Saving…";
   if (state.conflicted) return "Reload layout";
   if (!state.online && (state.dirty || state.saveError !== null)) return "Offline · not saved yet";
-  if (state.saveError !== null) return "Retry save";
-  return state.dirty ? "Save layout" : "Layout saved";
+  if (state.saveError !== null) return state.refusedForHeldNote === true ? state.saveError : "Retry save";
+  return state.dirty ? SAVE_LAYOUT : "Layout saved";
 }
 
 /** Room identity and the real save state, outside the camera's sightline. */
@@ -39,6 +50,7 @@ export function ReferenceRoomHeader(): ReactElement {
   const saving = useEditorStore((state) => state.isSaving);
   const dirty = useEditorStore((state) => state.isDirty);
   const saveError = useEditorStore((state) => state.saveError);
+  const refusedForHeldNote = useEditorStore((state) => refusedOverHeldNote(state.saveErrorCode));
   const saveConflict = useEditorStore((state) => state.saveConflict);
   const configId = useEditorStore((state) => state.configId);
   const auth = useAuthStore();
@@ -52,20 +64,39 @@ export function ReferenceRoomHeader(): ReactElement {
   const previewLocked = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const online = useOnlineStatus();
   const offlineUnsaved = !online && (dirty || saveError !== null);
-  const saveLabel = headerSaveLabel({ configId, saving, dirty, saveError, conflicted: saveConflict !== null, online });
+  const saveLabel = headerSaveLabel({ configId, saving, dirty, saveError, refusedForHeldNote, conflicted: saveConflict !== null, online });
+  // A refusal over a held note stands in the status line, and describes the
+  // button; the button is named for what it does, which is to save (delta
+  // review of #388 at 713dc3f1, C4). Named by the refusal, which can say
+  // "Reload the page", it was announced as something it does not do.
+  const refusalShown = refusedForHeldNote && saveError !== null && saveLabel === saveError;
+  const statusId = useId();
+  // The crest hides and shows the planner's tools; the name beside it is the
+  // way home (Blake, 28 Oct 2026: "Crest hides; name goes home", T-680).
+  const toolsCleared = useChromePresenceStore((state) => state.cleared);
+  const crestLabel = toolsCleared ? "Show the tools" : "Hide the tools";
+  const crestName = useCrestLabel();
   return (
     <header className="reference-room-header" aria-label="Room and save status">
-      <Link to={homePath} className="reference-wordmark" aria-busy={venue.loading} aria-label={`${venue.name} ${homeLabel}`}>
-        {venue.logoUrl !== null && venue.logoUrl !== failedLogo
-          ? <img src={venue.logoUrl} width="32" height="40" alt="" onError={() => { setFailedLogo(venue.logoUrl); }} />
-          : <Building2 className="reference-venue-icon" size={28} aria-hidden="true" />}
-        <span className="reference-venue-copy">
-          <span className="reference-venue-name">{venue.loading && <ActivityIndicator size={12} />}{venue.name}</span>
-          <small>{spaceName}</small>
-        </span>
-      </Link>
+      <div className="reference-identity">
+        <button type="button" className="reference-crest" data-planner-crest aria-label={crestLabel}
+          aria-keyshortcuts={"\\"} {...crestName.handlers}
+          onClick={() => { useChromePresenceStore.getState().toggleCleared(); }}>
+          {venue.logoUrl !== null && venue.logoUrl !== failedLogo
+            ? <img src={venue.logoUrl} width="32" height="40" alt="" onError={() => { setFailedLogo(venue.logoUrl); }} />
+            : <Building2 className="reference-venue-icon" size={28} aria-hidden="true" />}
+          <CrestLabel text={`${crestLabel} · \\`} shown={crestName.shown} />
+        </button>
+        <Link to={homePath} className="reference-wordmark" aria-busy={venue.loading} aria-label={`${venue.name} ${homeLabel}`}>
+          <span className="reference-venue-copy">
+            <span className="reference-venue-name">{venue.loading && <ActivityIndicator size={12} />}{venue.name}</span>
+            <small>{spaceName}</small>
+          </span>
+        </Link>
+      </div>
       <button type="button" className="reference-save" disabled={saving || previewLocked || configId === null}
-        aria-label={saveLabel} title={previewLocked ? "Return to the saved plan before saving" : offlineUnsaved ? "The connection has dropped. Press to save once it is back." : saveLabel}
+        aria-label={refusalShown ? SAVE_LAYOUT : saveLabel} aria-describedby={refusalShown ? statusId : undefined}
+        title={previewLocked ? "Return to the saved plan before saving" : offlineUnsaved ? "The connection has dropped. Press to save once it is back." : saveLabel}
         aria-busy={saving} onClick={() => {
           if (isLayoutTimelineMutationLocked()) return;
           const editor = useEditorStore.getState();
@@ -74,7 +105,8 @@ export function ReferenceRoomHeader(): ReactElement {
         }}>
         {saving ? <ActivityIndicator size={18} /> : offlineUnsaved ? <CloudOff size={16} aria-hidden /> : !dirty && saveError === null && saveConflict === null ? <Check size={16} aria-hidden /> : <Save size={16} aria-hidden />}
       </button>
-      <span className="reference-save-status" role="status">{saveLabel}</span>
+      <span className="reference-save-status" role="status" id={statusId}>{saveLabel}</span>
+      <EventKindName />
     </header>
   );
 }

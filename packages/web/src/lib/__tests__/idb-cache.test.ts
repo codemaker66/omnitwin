@@ -60,6 +60,23 @@ describe("withBackend", () => {
     const handle = withBackend<string>(backend);
     expect(await handle.get("k")).toBeNull();
   });
+
+  // #418 round four: a row computed from the one it replaces, read and
+  // written as one step of the store (one readwrite transaction on IndexedDB).
+  it("upsert writes the value computed from what the key holds, or from nothing", async () => {
+    const handle = withBackend<readonly string[]>(memoryBackend());
+    await handle.upsert("k", (current) => [...(current?.value ?? []), "first"]);
+    await handle.upsert("k", (current) => [...(current?.value ?? []), "second"]);
+    expect((await handle.get("k"))?.value).toEqual(["first", "second"]);
+  });
+
+  it("upsert hands the compute nothing for a malformed row (no storedAt)", async () => {
+    const backend = memoryBackend();
+    await backend.put("k", { value: "orphan" });
+    const handle = withBackend<string>(backend);
+    await handle.upsert("k", (current) => (current === null ? "fresh" : "kept"));
+    expect((await handle.get("k"))?.value).toBe("fresh");
+  });
 });
 
 describe("isStale", () => {

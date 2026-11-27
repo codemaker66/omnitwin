@@ -58,7 +58,7 @@ function as(who: { readonly id: string; readonly role: string }): { authorizatio
   return { authorization: `Bearer ${JSON.stringify({ id: who.id, email: `${who.role}@example.test`, role: who.role, platformRole: "none", venueId: VENUE })}` };
 }
 
-interface Reply { readonly status?: number; readonly text?: string; readonly stopReason?: string; readonly lost?: boolean }
+interface Reply { readonly status?: number; readonly text?: string; readonly stopReason?: string; readonly lost?: boolean; readonly model?: string }
 
 const sent: Record<string, unknown>[] = [];
 const replies: Reply[] = [];
@@ -72,7 +72,7 @@ const fakeFetch = vi.fn((_input: string | URL | Request, init?: RequestInit): Pr
     }));
   }
   return Promise.resolve(new Response(JSON.stringify({
-    id: "msg_x1", type: "message", role: "assistant", model: "claude-opus-5-5",
+    id: "msg_x1", type: "message", role: "assistant", model: reply.model ?? "claude-opus-5-5",
     content: reply.text === undefined ? [] : [{ type: "text", text: reply.text, citations: null }],
     stop_reason: reply.stopReason ?? "end_turn", stop_sequence: null, stop_details: null,
     usage: { input_tokens: 50, output_tokens: 60 },
@@ -225,6 +225,21 @@ describe.skipIf(testUrl === undefined)("proposal message drafts with the Anthrop
     expect((await pool.query("SELECT count(*)::int AS n FROM ai_usage_reservations")).rows[0]).toEqual({ n: 0 });
   });
 
+  // Plan 19, L6: a proposal's message never states a price, availability or
+  // capacity, whatever Claude wrote; the composer is told what was taken out.
+  it("takes out a sentence that says the date is free, and says so on the draft", async () => {
+    await proposalWithEnquiry("Is 1 June 2027 still free, and how much would it be?");
+    replies.push({ text: "Dear Elaine, thank you for your note. 1 June 2027 is still free in the Grand Hall. The team will confirm the figures with you." });
+    const answer = await ask(STAFF);
+    expect(answer.statusCode).toBe(200);
+    const draft = ProposalMessageDraftSchema.parse(answer.body["data"]);
+    expect(draft.draft.body).toBe("Dear Elaine, thank you for your note. The team will confirm the figures with you.");
+    expect(draft.draft.withheldCommitments).toEqual(["availability"]);
+    expect(JSON.stringify(sent[0]?.["system"])).toContain("Only the venue's events team confirms these.");
+    // The call was made and is recorded as an answer.
+    expect(await ledger()).toEqual([expect.objectContaining({ feature: "proposal_draft", outcome: "ok" })]);
+  });
+
   it("never sends the provider an email address or phone number from the client's words", async () => {
     await proposalWithEnquiry("Call me on 07700 900123 or write to elaine.c@example.org.");
     expect((await ask(STAFF)).statusCode).toBe(200);
@@ -274,6 +289,9 @@ describe.skipIf(testUrl === undefined)("proposal message drafts with the Anthrop
     // Declined after 60 tokens of output: a mid-stream refusal is billed.
     ["a refusal", { stopReason: "refusal" }, { outcome: "refusal", tokens: [50, 60], cost: CALL_COST, requestId: "req_x1" }],
     ["an answer cut off", { text: "Dear Ela", stopReason: "max_tokens" }, { outcome: "max_tokens", tokens: [50, 60], cost: CALL_COST, requestId: "req_x1" }],
+    // Another model wrote it: no draft, recorded as the asked model's refusal, at Opus 4.8's $5 and $25.
+    ["a draft another model wrote", { text: "Dear Elaine, the date is yours.", model: "claude-opus-4-8" },
+      { outcome: "refusal", tokens: [50, 60], cost: 50 * 5 + 60 * 25, requestId: "req_x1" }],
     ["a lost connection", { lost: true }, { outcome: "error", tokens: [0, 0], cost: 0, requestId: null }],
   ] as const)("fails as the gateway fails on %s: 502 AI_DRAFT_GENERATION_FAILED, the call recorded as it ended", async (_, reply, recorded) => {
     await proposalWithEnquiry("Words.");
@@ -281,6 +299,12 @@ describe.skipIf(testUrl === undefined)("proposal message drafts with the Anthrop
     const answer = await ask(STAFF);
     expect(answer.statusCode).toBe(502);
     expect(answer.body).toEqual({ error: "AI draft generation failed", code: "AI_DRAFT_GENERATION_FAILED" });
+    expect(JSON.stringify(answer.body)).not.toContain("Dear");
+    // The draft is the asked model's or none: no refusal fallback is ever asked for.
+    for (const request of sent) {
+      expect(request).not.toHaveProperty("fallbacks");
+      expect(request["model"]).toBe("claude-opus-5-5");
+    }
     expect(await ledger()).toEqual([expect.objectContaining({
       venue_id: VENUE, feature: "proposal_draft", outcome: recorded.outcome,
       input_tokens: recorded.tokens[0], output_tokens: recorded.tokens[1],

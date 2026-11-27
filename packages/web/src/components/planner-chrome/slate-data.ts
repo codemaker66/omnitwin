@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { CalendarBookingEntry, EventPhaseGraph } from "@omnitwin/types";
+import { eventDisplayName, type CalendarBookingEntry, type EventPhaseGraph } from "@omnitwin/types";
 import { getCalendar } from "../../api/diary.js";
 import { useClientEventSchedule } from "../../hooks/use-client-event-schedule.js";
 import { useLinkedEvent } from "../../hooks/use-linked-event.js";
@@ -51,14 +51,19 @@ export function useSlateAudience(): SlateAudience {
   const linked = useLinkedEvent(venueId);
   const schedule = useClientEventSchedule(eventId, { configurationId: configId, expectedVenueId: venueId, enabled: customer });
 
+  // An event stored without a name is called by its occasion and the venue's
+  // day, as everywhere else it is shown (eventDisplayName). The slate's day
+  // and its Diary link read the zone that name was read on (#407 review, B3).
   let event: SlateEvent | null = null;
-  if (staff && linked.graph !== null) {
+  if (staff && linked.graph !== null && linked.eventName !== null) {
     const { event: graphEvent } = linked.graph;
-    event = { id: graphEvent.id, name: graphEvent.name, startsAt: graphEvent.startsAt, guestCount: graphEvent.guestCount, timeZone: null, layouts: [] };
+    event = {
+      id: graphEvent.id, name: linked.eventName, startsAt: graphEvent.startsAt, guestCount: graphEvent.guestCount, timeZone: linked.timeZone, layouts: [],
+    };
   } else if (customer && schedule.data !== null) {
     const { event: own, venue, layouts } = schedule.data;
     event = {
-      id: own.id, name: own.name, startsAt: own.startsAt, guestCount: own.guestCount, timeZone: venue.timezone,
+      id: own.id, name: eventDisplayName(own, venue.timezone), startsAt: own.startsAt, guestCount: own.guestCount, timeZone: venue.timezone,
       layouts: layouts.map((layout) => ({ id: layout.id, name: layout.name, spaceName: layout.space.name })),
     };
   }

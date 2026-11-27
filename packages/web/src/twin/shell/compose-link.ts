@@ -1,8 +1,6 @@
 import type { Venue } from "../../api/spaces.js";
-import {
-  TRADES_HALL_ROOM_CAPACITIES,
-  type PublishedRoomSlug,
-} from "@omnitwin/types";
+import type { PublishedRoomSlug } from "@omnitwin/types";
+import { TRADES_HALL_ROOM_CAPACITIES } from "@omnitwin/types/trades-hall-venue-truth";
 
 // -----------------------------------------------------------------------------
 // compose-link — the door between the showroom and the workshop.

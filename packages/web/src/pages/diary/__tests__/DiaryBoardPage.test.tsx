@@ -83,12 +83,12 @@ vi.mock("../../../api/notifications.js", () => ({
 const { liveState } = vi.hoisted(() => ({
   liveState: {
     presence: [] as readonly { userId: string; name: string; role: string }[],
-    onChange: null as (() => void) | null,
+    onChange: null as ((why: "joined" | "rejoined" | "changed") => void | Promise<void>) | null,
   },
 }));
 
 vi.mock("../hooks/useDiaryLive.js", () => ({
-  useDiaryLive: (_enabled: boolean, onChange: () => void) => {
+  useDiaryLive: (_enabled: boolean, onChange: (why: "joined" | "rejoined" | "changed") => void | Promise<void>) => {
     liveState.onChange = onChange;
     return { connected: true, presence: liveState.presence };
   },
@@ -491,6 +491,33 @@ describe("DiaryBoardPage", () => {
     expect(screen.getByRole("button", { name: "Confirm it" })).toBeDefined();
   });
 
+  it("keeps a booking stored with no title on the board beside the rest, and the drawer puts it right (API-9)", async () => {
+    const UNTITLED = "00000000-0000-4000-8000-0000000000c9";
+    const base = fixture();
+    const first = base.entries[0];
+    if (first?.entryType !== "booking") throw new Error("fixture changed");
+    getCalendarMock.mockResolvedValue({
+      ...base,
+      entries: [...base.entries, {
+        ...first, id: UNTITLED, spaceId: SALOON, kind: "prospect", state: "prospect", title: "", eventType: null,
+        startsAt: "2026-09-16T17:00:00.000Z", endsAt: "2026-09-16T22:00:00.000Z",
+      }],
+    });
+    updateBookingMock.mockResolvedValue({ title: "Fraser enquiry" });
+    renderPage();
+    // The rest of the range is there, and so is the untitled booking, by
+    // what can be read of it.
+    expect(await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ })).toBeDefined();
+    const untitled = await screen.findByRole("button", { name: /^\s*— Interest only, .*Saloon/u });
+    fireEvent.keyDown(untitled, { key: "Enter" });
+    const drawer = await screen.findByRole("dialog", { name: "Booking details" });
+    const title = within(drawer).getByLabelText("Title");
+    expect((title as HTMLInputElement).value).toBe("");
+    fireEvent.change(title, { target: { value: "Fraser enquiry" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => { expect(updateBookingMock.mock.calls[0]?.slice(0, 2)).toEqual([UNTITLED, { title: "Fraser enquiry" }]); });
+  });
+
   it("converts an open enquiry through the drawer (T-496)", async () => {
     convertEnquiryMock.mockResolvedValue({ title: "Fiona MacLeod — Wedding" });
     renderPage();
@@ -666,9 +693,39 @@ describe("DiaryBoardPage — the tray reads once (T-619)", () => {
     const readsOfThisWeek = (): number => getCalendarMock.mock.calls.filter((call) => call[1] === "2026-09-13T23:00:00.000Z").length;
     const before = readsOfThisWeek();
     expect(listEnquiriesMock).toHaveBeenCalledTimes(1);
-    act(() => { liveState.onChange?.(); });
+    act(() => { void liveState.onChange?.("changed"); });
     await waitFor(() => { expect(listEnquiriesMock).toHaveBeenCalledTimes(2); });
     await waitFor(() => { expect(readsOfThisWeek()).toBe(before + 1); });
+  });
+
+  it("reads the board again on the socket's first hello, and the tray stays read once (hallkeeper-web-4)", async () => {
+    getCalendarMock.mockImplementation(() => Promise.resolve(fixture()));
+    renderPage();
+    await screen.findByText("Fiona MacLeod");
+    const readsOfThisWeek = (): number => getCalendarMock.mock.calls.filter((call) => call[1] === "2026-09-13T23:00:00.000Z").length;
+    const before = readsOfThisWeek();
+    act(() => { void liveState.onChange?.("joined"); });
+    await waitFor(() => { expect(readsOfThisWeek()).toBe(before + 1); });
+    expect(listEnquiriesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells the live socket when the board's own read is in, so it says Live only then (hallkeeper-web-4)", async () => {
+    getCalendarMock.mockImplementation(() => Promise.resolve(fixture()));
+    renderPage();
+    await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
+    let answer: (value: CalendarResponse) => void = () => undefined;
+    getCalendarMock.mockImplementation(() => new Promise<CalendarResponse>((resolve) => { answer = resolve; }));
+
+    let pending: unknown = null;
+    act(() => { pending = liveState.onChange?.("joined"); });
+    if (!(pending instanceof Promise)) throw new Error("the page does not say when its read is in");
+    let settled = false;
+    void pending.then(() => { settled = true; });
+    await act(async () => { await Promise.resolve(); });
+    expect(settled).toBe(false);
+
+    await act(async () => { answer(fixture()); await Promise.resolve(); });
+    await waitFor(() => { expect(settled).toBe(true); });
   });
 
   it("reloads the tray after a drawer save", async () => {

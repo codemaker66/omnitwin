@@ -38,6 +38,38 @@ describe("MeshBuilder", () => {
     expect(builder.triangles).toBe(4 * 12 * 2 - 2 * 12);
   });
 
+  it("keeps a lathe's corners sharp past its crease, and its curves smooth", () => {
+    const drum: readonly (readonly [number, number])[] = [[0, 0], [1, 0], [1, 2], [0, 2]];
+    // The normals' heights at the vertices off the axis (the rims' rings).
+    const rimNormalsY = (geometry: BufferGeometry): number[] => {
+      const position = geometry.getAttribute("position");
+      const normal = geometry.getAttribute("normal");
+      const ys: number[] = [];
+      for (let i = 0; i < position.count; i++) {
+        if (Math.hypot(position.getX(i), position.getZ(i)) > 0.5) ys.push(normal.getY(i));
+      }
+      return ys;
+    };
+    const smooth = new MeshBuilder();
+    smooth.lathe([0, 0, 0], drum, 8);
+    const creased = new MeshBuilder();
+    creased.lathe([0, 0, 0], drum, 8, 1, 1, 0, Math.PI / 3);
+    // Smooth throughout (the default), each rim's one ring leans toward its cap and the side shades as a ball's.
+    // (Normals are stored as 32-bit floats.)
+    expect(Math.max(...rimNormalsY(smooth.build()).map(Math.abs))).toBeCloseTo(1 / Math.sqrt(5), 6);
+    // Creased, each rim has a ring facing its cap (straight down or up) and one facing out (level).
+    const ys = rimNormalsY(creased.build());
+    expect(ys.every((y) => Math.abs(y) < 1e-6 || Math.abs(Math.abs(y) - 1) < 1e-6)).toBe(true);
+    expect(ys.filter((y) => Math.abs(y) < 1e-6).length).toBe(2 * 9);
+    // The same faces and volume: only the corners' normals change.
+    expect(creased.triangles).toBe(smooth.triangles);
+    expect(signedVolume(creased.build())).toBeCloseTo(signedVolume(smooth.build()), 9);
+    // A ball's gentler turns (44-46°) stay smooth under the same crease: one ring a point.
+    const ball = new MeshBuilder();
+    ball.lathe([0, 0, 0], BALL, 12, 1, 1, 0, Math.PI / 3);
+    expect(ball.build().getAttribute("position").count).toBe(BALL.length * 13);
+  });
+
   it("merges another builder moved by a translation, with its indices offset", () => {
     const first = new MeshBuilder();
     first.lathe([0, 0, 0], BALL, 6);

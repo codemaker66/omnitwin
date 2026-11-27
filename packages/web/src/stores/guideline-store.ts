@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { GuidelineData, WallHit } from "../lib/guideline.js";
 import { computeGuideline } from "../lib/guideline.js";
+import { useRoomDimensionsStore } from "./room-dimensions-store.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,7 +53,8 @@ export const useGuidelineStore = create<GuidelineState>()((set, get) => ({
     const state = get();
     if (!state.active) return;
 
-    const guideline = computeGuideline(wallHit, state.nextId);
+    // Across the room actually loaded, so the line meets the walls drawn.
+    const guideline = computeGuideline(wallHit, state.nextId, useRoomDimensionsStore.getState().dimensions);
     set({
       guidelines: [...state.guidelines, guideline],
       nextId: state.nextId + 1,

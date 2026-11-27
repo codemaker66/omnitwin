@@ -1,4 +1,6 @@
 import type { Breadcrumb, ErrorEvent, NodeOptions } from "@sentry/node";
+import { templateCapabilityPaths, templateCapabilityPathsDeep } from "@omnitwin/types";
+import { PLAN_CLAIM_SECRET_HEADER } from "../services/configuration-claim-secrets.js";
 
 // ---------------------------------------------------------------------------
 // Redaction — keeps query strings out of request logs and error reports.
@@ -10,9 +12,17 @@ import type { Breadcrumb, ErrorEvent, NodeOptions } from "@sentry/node";
 //
 //   1. Fastify's request log line (pino's `req` serializer writes req.url).
 //   2. Sentry error events (`event.request.url`) and http breadcrumbs.
-//   3. Sentry transactions: `event.request.url`, plus span attributes the
-//      OpenTelemetry HTTP instrumentation records (`url.full`, `http.url`,
-//      `http.target`, `url.query`).
+//   3. Sentry transactions: any string anywhere in one (the request's URL,
+//      span attributes under any key, `url` and `url.full` among them, span
+//      descriptions, the name). scrubTransaction walks them all, and also
+//      replaces each segment that looks like a record's id in them (the
+//      privacy page's "no identifier").
+//
+// The same three places, and anything else an event, breadcrumb or
+// transaction quotes, also lose the segment after a capability path
+// (/proposal-share/<token>, /public/configurations/<guest layout id> and the
+// rest in @omnitwin/types capability-paths): whoever reads a log or an event
+// could otherwise open the proposal, approve it or overwrite the layout.
 //
 // Everything here is pure and has no runtime dependency on @sentry/node
 // (type imports only), so it can be imported without initialising the SDK.
@@ -66,12 +76,13 @@ function headerValue(value: string | string[] | undefined): string | undefined {
 /**
  * Drop-in replacement for Fastify's default `req` log serializer
  * (fastify@5 lib/logger-pino.js `asReqValue`): the same six fields, with
- * only `url` changed so the query string never reaches the log.
+ * only `url` changed so the query string and a capability path's token never
+ * reach the log.
  */
 export function requestLogSerializer(request: LoggableRequest): SerializedRequest {
   return {
     method: request.method,
-    url: withoutQuery(request.url),
+    url: templateCapabilityPaths(withoutQuery(request.url)),
     version: headerValue(request.headers?.["accept-version"]),
     host: request.host,
     remoteAddress: request.ip,
@@ -95,12 +106,40 @@ export const REDACTED_PARAMS_MARKER = "params: [redacted]";
 // of a line so "route params: id" in prose is left alone.
 const PARAMS_BLOCK = /(^|\n)params:[\s\S]*?(?=\n[ \t]+at |\ncaused by: |$)/g;
 
+// PostgreSQL's own messages that quote the value they refused, as
+// PostgreSQL 16.6 words them (probed 27 Nov 2026): a guest's name or email
+// typed into the wrong field would otherwise ride the pg error's message,
+// which Sentry sends as a linked error and the log writes as `cause`. Each
+// rule keeps what the value was refused for (the type, the enum, the field)
+// and drops only the value. The messages that quote only the schema (a
+// unique, not-null or check constraint, a column, a relation) are left whole.
+const QUOTED_VALUE_RULES: readonly (readonly [RegExp, string])[] = [
+  // invalid input syntax for type uuid: "<value>" (and integer, timestamp with time zone, ...)
+  [/(invalid input syntax for type [^:\n]+: )"[^\n]*"/g, "$1\"[redacted]\""],
+  // invalid input value for enum request_state: "<value>"
+  [/(invalid input value for enum [^:\n]+: )"[^\n]*"/g, "$1\"[redacted]\""],
+  // date/time field value out of range, malformed array/range/record literal, invalid hexadecimal digit
+  [/((?:date\/time field value out of range|malformed (?:array|range|record) literal|invalid hexadecimal digit): )"[^\n]*"/g, "$1\"[redacted]\""],
+  // value "<value>" is out of range for type integer
+  [/(\bvalue )"[^\n]*?"( is out of range for type )/g, "$1\"[redacted]\"$2"],
+  // invalid value "<value>" for "YYYY"
+  [/(\binvalid value )"[^\n]*?"( for ")/g, "$1\"[redacted]\"$2"],
+  // time zone "<value>" not recognized
+  [/(\btime zone )"[^\n]*?"( not recognized)/g, "$1\"[redacted]\"$2"],
+  // invalid byte sequence for encoding "UTF8": 0xc3 0x28 (the value's own bytes)
+  [/(invalid byte sequence for encoding "[^"\n]+": )0x[0-9a-f]{2}(?: 0x[0-9a-f]{2})*/g, "$1[redacted]"],
+];
+
 /**
- * Replace a query-parameters block with a marker and keep the rest, including
- * the SQL text. A message with no `params:` line is returned unchanged.
+ * Replace a query-parameters block with a marker and drop the value
+ * PostgreSQL quotes in its own refusals; keep the rest, including the SQL
+ * text and the names of the types, constraints, columns and relations. A
+ * message with neither is returned unchanged.
  */
 export function scrubErrorMessage(message: string): string {
-  return message.replace(PARAMS_BLOCK, `$1${REDACTED_PARAMS_MARKER}`);
+  let scrubbed = message.replace(PARAMS_BLOCK, `$1${REDACTED_PARAMS_MARKER}`);
+  for (const [pattern, replacement] of QUOTED_VALUE_RULES) scrubbed = scrubbed.replace(pattern, replacement);
+  return scrubbed;
 }
 
 /** Error properties that help diagnosis and carry schema names, never row values. */
@@ -196,17 +235,116 @@ export function errorLogSerializer(err: unknown): SerializedError {
  */
 export type ScrubbableTransaction = Parameters<NonNullable<NodeOptions["beforeSendTransaction"]>>[0];
 
-/** Span / trace attribute keys whose value is, or contains, a URL. */
-const URL_ATTRIBUTE_KEYS: readonly string[] = ["url.full", "http.url", "http.target"];
+/** Span / trace attribute keys whose value is, or contains, a URL, whose
+ *  query is cut first. The Fastify span writes the request url, query
+ *  included, to `url.path`. A transaction's URLs under any key (the SDK's
+ *  plain `url` among them) then go through scrubTransaction's walk. */
+const URL_ATTRIBUTE_KEYS: readonly string[] = ["url.full", "http.url", "http.target", "url.path"];
 
-/** Span / trace attribute keys that hold a bare query string. */
-const QUERY_ATTRIBUTE_KEYS: readonly string[] = ["url.query", "http.query"];
+/**
+ * Headers that carry a credential, or something a reader of a report could
+ * use as one:
+ *   - `authorization`: the sign-in token, and the workflow and metrics tokens;
+ *   - `cookie`: the sign-in provider's `__session` cookie, and any other;
+ *   - the claim-secret header: a guest plan's claim secret, whose holder can
+ *     claim the plan and read its notes;
+ *   - `stripe-signature` (routes/stripe-webhook.ts) and `svix-signature`
+ *     (routes/webhooks.ts): a webhook's signature, which with the body would
+ *     replay the call; `webhook-signature` is the Standard Webhooks name for
+ *     the same, read by no route today;
+ *   - `mcp-session-id` (routes/public-mcp.ts, which also sends one back): its
+ *     holder spends that session's budget;
+ *   - `set-cookie`: a response header, listed so that its attribute is
+ *     dropped should the API ever set a cookie.
+ * A header that comes to carry a credential is added here, and every scrubber
+ * drops it: from an event's and a transaction's request headers, and the
+ * attributes the SDK writes for it on the request's span. A route reads its
+ * headers from the live request, never from an event, so none of this
+ * changes what a route sees.
+ */
+export const CREDENTIAL_REQUEST_HEADERS: readonly string[] = [
+  "authorization", "cookie", PLAN_CLAIM_SECRET_HEADER,
+  "stripe-signature", "svix-signature", "webhook-signature",
+  "mcp-session-id", "set-cookie",
+];
+
+/** Request headers that carry a credential or the caller's address. */
+const DROPPED_REQUEST_HEADERS: readonly string[] = [
+  ...CREDENTIAL_REQUEST_HEADERS,
+  "x-forwarded-for", "x-real-ip", "forwarded", "cf-connecting-ip", "true-client-ip",
+];
+
+/** The span attributes the SDK can write for a header (@sentry/core 10.60
+ *  utils/request.js httpHeadersToSpanAttributes): `http.request.header.`, or
+ *  `http.response.header.` for a response header, then the name in lower
+ *  case with dashes as underscores. */
+function headerAttributes(header: string): readonly string[] {
+  const name = header.toLowerCase().replaceAll("-", "_");
+  return [`http.request.header.${name}`, `http.response.header.${name}`];
+}
+
+/** The attributes of every dropped header. */
+const DROPPED_HEADER_ATTRIBUTES: readonly string[] = DROPPED_REQUEST_HEADERS.flatMap(headerAttributes);
+
+/**
+ * Whether a span attribute belongs to a dropped header: the header's own
+ * attribute, or one under it. The SDK writes a Cookie or Set-Cookie header
+ * as one attribute per cookie, `http.request.header.cookie.<cookie name>`,
+ * and masks a value only when the name is on its word list (`__session` is;
+ * most names are not). It masks the sign-in token, the claim secret, the MCP
+ * session id and the address headers only because their names contain
+ * "auth", "secret", "session", "forwarded" or "-ip", and the webhook
+ * signatures not at all. All are dropped here, in any casing, so none of it
+ * rests on the SDK's word list.
+ */
+function isDroppedHeaderAttribute(key: string): boolean {
+  const lower = key.toLowerCase();
+  return DROPPED_HEADER_ATTRIBUTES.some((attribute) => lower === attribute || lower.startsWith(`${attribute}.`));
+}
+
+/** Span / trace attribute keys that hold a bare query string or fragment, or
+ *  the caller's address: node-core records the first X-Forwarded-For entry
+ *  (behind Railway, the visitor's IP) as `http.client_ip` whatever
+ *  `sendDefaultPii` says. */
+const DROPPED_ATTRIBUTE_KEYS: readonly string[] = [
+  "url.query", "http.query", "url.fragment", "http.fragment",
+  "http.client_ip", "client.address", "net.peer.ip", "network.peer.address", "net.sock.peer.addr",
+];
+
+/** The parts of an event's or a transaction's `request` that can hold a credential. */
+export interface RequestCredentialFields {
+  headers?: Record<string, string>;
+  cookies?: Record<string, string>;
+}
+
+/**
+ * Removes the given headers from a `request`, however each is cased, and
+ * always its `cookies`: the SDK's RequestData integration parses the Cookie
+ * header into names and values there, on error events and transactions alike
+ * (@sentry/core 10.60 integrations/requestdata.js), so dropping the header
+ * alone would leave the sign-in provider's `__session` cookie in the event.
+ */
+function dropRequestCredentials(request: RequestCredentialFields, droppedHeaders: readonly string[]): void {
+  delete request.cookies;
+  const headers = request.headers;
+  if (headers === undefined) return;
+  for (const key of Object.keys(headers)) {
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- header bags are open-ended records
+    if (droppedHeaders.includes(key.toLowerCase())) delete headers[key];
+  }
+}
+
+/** Removes every credential from a request: the credential headers, however
+ *  each is cased, and the cookies the SDK parsed from the Cookie header. */
+export function dropCredentials(request: RequestCredentialFields): void {
+  dropRequestCredentials(request, CREDENTIAL_REQUEST_HEADERS);
+}
 
 function scrubAttributes(data: Record<string, unknown> | undefined): void {
   if (data === undefined) return;
-  for (const key of QUERY_ATTRIBUTE_KEYS) {
+  for (const key of Object.keys(data)) {
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- attribute bags are open-ended records
-    delete data[key];
+    if (DROPPED_ATTRIBUTE_KEYS.includes(key) || isDroppedHeaderAttribute(key)) delete data[key];
   }
   for (const key of URL_ATTRIBUTE_KEYS) {
     const value = data[key];
@@ -215,9 +353,10 @@ function scrubAttributes(data: Record<string, unknown> | undefined): void {
 }
 
 /**
- * `beforeSend`: strips request bodies, the query string, the authorization
- * and cookie headers, and the query from `request.url`; redacts query
- * parameters from every exception value (the error and its linked causes).
+ * `beforeSend`: strips request bodies, the query string, the cookies, the
+ * credential and address headers, and the query from `request.url`; redacts
+ * query parameters from every exception value (the error and its linked
+ * causes).
  */
 export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
   for (const exception of event.exception?.values ?? []) {
@@ -231,12 +370,9 @@ export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
     if (event.request.url !== undefined) {
       event.request.url = withoutQuery(event.request.url);
     }
-    if (event.request.headers !== undefined) {
-      delete event.request.headers["authorization"];
-      delete event.request.headers["cookie"];
-    }
+    dropRequestCredentials(event.request, DROPPED_REQUEST_HEADERS);
   }
-  return event;
+  return templateCapabilityPathsDeep(event);
 }
 
 /** Breadcrumb categories the SDK uses for outgoing http calls. */
@@ -263,24 +399,172 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
   if (isHttp && breadcrumb.message !== undefined) {
     breadcrumb.message = withoutQuery(breadcrumb.message);
   }
-  return breadcrumb;
+  return templateCapabilityPathsDeep(breadcrumb);
 }
 
 /**
- * `beforeSendTransaction`: strips the query from `request.url`, removes
- * `request.query_string`, and cleans the URL-bearing attributes on every
- * span and on the trace context.
+ * Whether a span attribute describes the visitor's browser: any request
+ * header's attribute (`http.request.header.<name>`, the user agent's and the
+ * language's among them), and the user agent as the OpenTelemetry HTTP
+ * instrumentation records it (`user_agent.original`, and `http.user_agent` in
+ * its older conventions).
+ */
+function isBrowserDetailAttribute(key: string): boolean {
+  const lower = key.toLowerCase();
+  return lower.startsWith("http.request.header.") || lower.startsWith("user_agent.") || lower === "http.user_agent";
+}
+
+function dropBrowserDetails(data: Record<string, unknown> | undefined): void {
+  if (data === undefined) return;
+  for (const key of Object.keys(data)) {
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- attribute bags are open-ended records
+    if (isBrowserDetailAttribute(key)) delete data[key];
+  }
+}
+
+/** A URL or path, split into its origin (scheme and host, if any), its path,
+ *  and the rest (a query or fragment, or the marker left for one). */
+const URL_PARTS = /^([a-z][a-z\d+.-]*:\/\/[^/?#]*)?([^?#]*)([\s\S]*)$/iu;
+
+/**
+ * A path segment that names one record rather than a kind of thing: a UUID;
+ * a token of six or more characters with a digit in it (a share code, a
+ * provider's id such as Stripe's `cs_live_…`, a date); or one of twenty or
+ * more letters, digits, dashes and underscores in both cases (an id such as
+ * Clerk's `user_…`, digit or not). Colons count in both, as in the device
+ * token of a push endpoint at FCM (Chrome's `fcm/send/<token>`), which a
+ * push that ends before its route's reply puts in that request's record
+ * (found while checking #355's verification at 48004a5b, 14 November 2026),
+ * but not at a segment's start: that is a route's placeholder, however long
+ * (":id", ":runtimePackageVersionId", ":slot1Id"), and the transaction's
+ * name and `http.route` keep it. The words of a route or an API ("venues",
+ * "changes-since-last-handoff", "v1", "messages:send") stay too.
+ */
+const RECORD_SEGMENT = /^(?:[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}|(?!:)(?=[^/]*\d)[\w.~%:-]{6,}|(?!:)(?=[^/]*[A-Z])(?=[^/]*[a-z])[\w:-]{20,})$/u;
+
+/** Replaces each path segment that names one record with `:id`, keeping the
+ *  origin, the route's words, and anything after the path. */
+export function withoutIdentifiers(url: string): string {
+  const parts = URL_PARTS.exec(url);
+  if (parts === null) return url;
+  const [, origin = "", path = "", rest = ""] = parts;
+  return `${origin}${path.split("/").map((segment) => (RECORD_SEGMENT.test(segment) ? ":id" : segment)).join("/")}${rest}`;
+}
+
+/** The path of a URL or path, without its origin, query or fragment. */
+function pathOf(url: string): string | undefined {
+  return URL_PARTS.exec(withoutQuery(url))?.[2];
+}
+
+/** The URL or path with its path replaced by the route's pattern. */
+function onRoute(url: string, route: string): string {
+  const parts = URL_PARTS.exec(url);
+  if (parts === null) return url;
+  const [, origin = "", , rest = ""] = parts;
+  return `${origin}${route}${rest}`;
+}
+
+/** A URL ("…://…") or a path (at the start or after a space, from "/") in text. */
+const URL_TOKEN = /[a-z][a-z\d+.-]*:\/\/\S+|(?<=^|\s)\/\S*/giu;
+
+/**
+ * A copy of plain data with every URL and path in every string, at any depth
+ * and under any key, put through `template`. Class instances (the SDK's
+ * scopes in its processing metadata) are left as they are; cycles are safe;
+ * the input is not changed (as templateCapabilityPathsDeep).
+ */
+function templateUrlsDeep<T>(value: T, template: (url: string) => string): T {
+  const seen = new WeakMap<object, unknown>();
+  const visit = (item: unknown): unknown => {
+    if (typeof item === "string") return item.replace(URL_TOKEN, (url) => template(url));
+    if (typeof item !== "object" || item === null) return item;
+    const known = seen.get(item);
+    if (known !== undefined) return known;
+    if (Array.isArray(item)) {
+      const copy: unknown[] = [];
+      seen.set(item, copy);
+      for (const child of item) copy.push(visit(child));
+      return copy;
+    }
+    const proto: unknown = Object.getPrototypeOf(item);
+    if (proto !== Object.prototype && proto !== null) return item;
+    const copy: Record<string, unknown> = {};
+    seen.set(item, copy);
+    for (const [key, child] of Object.entries(item)) copy[key] = visit(child);
+    return copy;
+  };
+  return visit(value) as T;
+}
+
+/**
+ * The request's own URL as a timing record carries it: the SDK's request
+ * data, or an attribute of the span the record was built from (`url.path` on
+ * Fastify's own request span, which roots the record of a GET whose path
+ * looks like a static file, or of a WebSocket upgrade). None for a record of
+ * work outside any request; the late part of a request repeats its URL, but
+ * has a parent and is never sent (`hasParentSpan`, sentry.ts).
+ */
+export function requestUrlOf(event: ScrubbableTransaction): string | undefined {
+  const traceData = event.contexts?.trace?.data;
+  return [event.request?.url, traceData?.["url.full"], traceData?.["http.target"], traceData?.["url.path"]]
+    .find((value): value is string => typeof value === "string");
+}
+
+/**
+ * `beforeSendTransaction`: removes `request.query_string`, the body, the
+ * cookies, every request header, the user, the tags, the extra data and the
+ * breadcrumbs, drops the address, credential and browser attributes from the
+ * trace context and every span (the server's own host name and a body's
+ * length stay), and then puts every URL and path left anywhere in the record,
+ * whatever its key, through one rule: the request's own path (a string whose
+ * path is the request's, as `url`, `url.path` on Fastify's own span and the
+ * rest carry it) on its route's pattern (`http.route`, as Fastify matched it),
+ * and every other with its query, fragment and any user[:password]@ cut and
+ * each segment that looks like a record's id replaced. A record that carries
+ * a request's URL (`requestUrlOf`) but no route is never sent
+ * (`isUnroutedRequest`, sentry.ts), nor is a 404's (the SDK drops records of
+ * 401 to 404); the record of other work, with no request URL of its own, has
+ * the segment rules alone for any URL in it.
+ * A transaction is the timing record the API sends for a sample of requests
+ * whether or not anything failed, and the privacy page says it carries no
+ * address, identifier or browser details (Blake, 13 November 2026: "Strip
+ * browser details, say so"); its breadcrumbs, which hold the URLs of
+ * outgoing calls, it does not need.
  */
 export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransaction {
+  const traceData = event.contexts?.trace?.data;
+  // Sentry types a trace context's attribute bag as `{ [key: string]: any }`: read as unknown, then narrowed.
+  const routeAttribute: unknown = traceData?.["http.route"];
+  const route = typeof routeAttribute === "string" && routeAttribute.startsWith("/") ? routeAttribute : undefined;
+  const requestUrl = requestUrlOf(event);
+  const requestPath = requestUrl === undefined ? undefined : pathOf(requestUrl);
   if (event.request !== undefined) {
-    if (event.request.url !== undefined) {
-      event.request.url = withoutQuery(event.request.url);
-    }
     delete event.request.query_string;
+    // The SDK keeps an incoming request's body on its transaction (the
+    // http integration's maxIncomingRequestBodySize, "medium" by default):
+    // an enquiry's name, email, phone and allergy note.
+    event.request.data = undefined;
+    dropRequestCredentials(event.request, DROPPED_REQUEST_HEADERS);
+    delete event.request.headers;
   }
-  scrubAttributes(event.contexts?.trace?.data);
-  for (const span of event.spans ?? []) {
-    scrubAttributes(span.data);
+  delete event.breadcrumbs;
+  // Fail closed: a timing record needs no user, tags or extra data. The SDK
+  // fills the user's address from X-Forwarded-For once `dataCollection` is
+  // set at all (@sentry/core 10.60), and tags or extra set on a request's
+  // scope would ride along (#355's review, WX3, 18 November 2026).
+  delete event.user;
+  delete event.tags;
+  delete event.extra;
+  for (const data of [traceData, ...(event.spans ?? []).map((span) => span.data)]) {
+    scrubAttributes(data);
+    dropBrowserDetails(data);
   }
-  return event;
+  const template = (url: string): string => {
+    // The query (its marker left) and any fragment go, and so does any
+    // user[:password]@ in an origin: none is sent today (#355's review, WX4).
+    const cut = withoutQuery(url).replace(/#[\s\S]*$/u, "").replace(/^([a-z][a-z\d+.-]*:\/\/)[^/?#@]*@/iu, "$1");
+    if (route !== undefined && requestPath !== undefined && pathOf(cut) === requestPath) return onRoute(cut, route);
+    return withoutIdentifiers(cut);
+  };
+  return templateCapabilityPathsDeep(templateUrlsDeep(event, template));
 }

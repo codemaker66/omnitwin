@@ -1,11 +1,16 @@
 import { DoubleSide, MeshStandardMaterial } from "three";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { setSurfaceOpacity } from "../SurfaceVisibilityGroup.js";
+import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
 import {
   stepWallAssemblyOpacity,
   wallAssemblyTargetFromBaseOpacity,
   wallKeyFromSurfaceKey,
 } from "../../lib/surface-visibility-group.js";
+
+afterEach(() => {
+  setPlannerFeaturesForTesting(null);
+});
 
 describe("SurfaceVisibilityGroup wall assembly helpers", () => {
   it("detects wall surface keys and ignores ceiling/dome surfaces", () => {
@@ -21,6 +26,8 @@ describe("SurfaceVisibilityGroup wall assembly helpers", () => {
   });
 
   it("steps locked ornament opacity instead of snapping to the hidden state", () => {
+    // The slow step is today's; #329 turns wallsQuick on by default.
+    setPlannerFeaturesForTesting({ wallsQuick: false });
     const next = stepWallAssemblyOpacity(1, 0, 0.1);
 
     expect(next).toBeGreaterThan(0.95);

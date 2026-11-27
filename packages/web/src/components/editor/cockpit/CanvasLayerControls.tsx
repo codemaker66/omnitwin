@@ -10,8 +10,10 @@ import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../../shared/
 import "./CanvasLayerControls.css";
 import { recordPlannerArrivalChoice } from "../../../lib/planner-room-arrival.js";
 import { gaussianSplatsAvailable } from "../../../lib/splat-access.js";
+import { currentSearch, deviceDayBundleForRoom } from "../../../data/device-day-splat-bundles.js";
 import { useModelledGrandHall } from "../../grand-hall/hall-space.js";
 import { HallViewControls } from "./HallViewControls.js";
+import { HallPresent } from "./HallPresent.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { canReadInternalEventData } from "../../../lib/event-access.js";
 
@@ -32,6 +34,15 @@ const LAYER_CONTROLS_DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
   offsetX: 456,
   offsetY: 82,
 };
+
+/**
+ * Whether the captured layer may be chosen: wherever Gaussian splats may run,
+ * and past the hold for an allowlisted device-day timing cut of this room
+ * (data/device-day-splat-bundles.ts), which the planner then draws.
+ */
+function captureSelectable(spaceSlug: string | null): boolean {
+  return gaussianSplatsAvailable() || deviceDayBundleForRoom(currentSearch(), spaceSlug) !== null;
+}
 
 const LAYER_CONTROLS_AVOID_SELECTORS = [
   "[data-testid='cockpit-topbar']",
@@ -74,8 +85,8 @@ function walkAvailableForSlug(spaceSlug: string | null): boolean {
  * choosing a light leaves it open, to compare one light with the next.
  */
 export function HallViewSheetControls({ onViewChosen }: { readonly onViewChosen: () => void }): ReactElement | null {
-  const splatsAvailable = gaussianSplatsAvailable();
   const spaceSlug = useEditorStore((s) => s.space?.slug ?? null);
+  const splatsAvailable = captureSelectable(spaceSlug);
   const povActive = useBookmarkStore((s) => s.activeReferenceId !== null);
   const walkAvailable = useMemo(() => walkAvailableForSlug(spaceSlug), [spaceSlug]);
   const modelledHall = useModelledGrandHall();
@@ -83,6 +94,7 @@ export function HallViewSheetControls({ onViewChosen }: { readonly onViewChosen:
   return (
     <div className="hall-view-sheet" data-testid="hall-view-sheet">
       <HallViewControls captureAvailable={splatsAvailable && walkAvailable} povActive={povActive} moodLabels onViewChosen={onViewChosen} />
+      <HallPresent onPresented={onViewChosen} />
     </div>
   );
 }
@@ -90,11 +102,11 @@ export function HallViewSheetControls({ onViewChosen }: { readonly onViewChosen:
 export function CanvasLayerControls({ embedded = false }: { readonly embedded?: boolean }): ReactElement | null {
   const staff = useAuthStore((state) => canReadInternalEventData(state));
   const layerMode = useCockpitStore((s) => s.layerMode);
-  const splatsAvailable = gaussianSplatsAvailable();
+  const spaceSlug = useEditorStore((s) => s.space?.slug ?? null);
+  const splatsAvailable = captureSelectable(spaceSlug);
   const visibleLayerMode = splatsAvailable ? layerMode : "mesh";
   const cameraInteractionActive = useCockpitStore((s) => s.cameraInteractionActive);
   const walkMode = useCockpitStore((s) => s.walkMode);
-  const spaceSlug = useEditorStore((s) => s.space?.slug ?? null);
   const povActive = useBookmarkStore((s) => s.activeReferenceId !== null);
   const walkAvailable = useMemo(() => walkAvailableForSlug(spaceSlug), [spaceSlug]);
   const walkDisabled = !splatsAvailable || !walkAvailable || povActive;

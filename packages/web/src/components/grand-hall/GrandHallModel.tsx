@@ -25,7 +25,7 @@
 // detail fade in, or a detail tile waits to be copied to the GPU.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Color, Vector3, type BufferGeometry, type Intersection, type Material, type Mesh, type Raycaster, type Texture } from "three";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
@@ -52,10 +52,15 @@ import { buildGlazingPanes, createGlassMaterial, GLASS_PRESETS, parseGlassPreset
 import { HALL_MOODS, HallMoodUniforms, hallFrameStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVATION, type HallWall } from "./hall-spec.js";
 import { resetSceneGrade, setSceneGrade } from "../../lib/scene-grade.js";
+import { photographToeFor, setFilmToe } from "../../lib/film-toe.js";
 import { setCandleLight } from "../../lib/event-light.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
+import { nativeFramePrecompile } from "../../lib/native-frame-composer.js";
+import { requestNativePrecompile } from "../../lib/native-precompile.js";
 import { HALL_CAPTURE_POINT, HallEnvironmentCapture } from "./hall-capture.js";
+import { STAGE_CHANDELIER_CEILING_M, STAGE_NEAR_CUT_M } from "./hall-stage-cuts.js";
 import { createHallSection, parseSectionPreset, SECTION_PRESETS, sectionRoomLine, type HallSection, type SectionPreset } from "./hall-section.js";
+import { hallFrontCut } from "./hall-exterior-cut.js";
 import { sectionCapGeometry } from "./hall-relief-section.js";
 import { SlicedBuildCancelled } from "./hall-slices.js";
 import { WALL_BODY_TOP } from "./hall-wall-body.js";
@@ -112,6 +117,12 @@ export interface GrandHallModelProps {
    * coverage.
    */
   readonly multisampled?: boolean;
+  /**
+   * The hall is shown as a stage (hall-stage.ts): the walls the camera stands
+   * behind are lowered to the floor, the missing fourth wall, and the
+   * chandeliers hang in the picture from the stage's height.
+   */
+  readonly stage?: boolean;
 }
 
 /** Heights the cutaway uses. */
@@ -138,22 +149,24 @@ const EYE_CLEARANCE = 0.6;
 
 /**
  * The cut height for one wall seen from `camera` in `view`. In the overview,
- * walls the camera stands behind drop to the dado rail and the far walls keep
+ * walls the camera stands behind drop to `near` (the dado rail, or the floor
+ * where the hall is shown as a stage) and the far walls keep
  * their full height, so the room reads tall while the floor stays open. A wall
  * the camera stands behind also stays below its eye: a phone orbiting at eye
  * height crosses the long walls a metre or two out, where the eased cut alone
  * still stood above the camera and its dark body filled the view.
  */
-export function wallCutHeight(view: Exclude<HallView, "auto">, wall: HallWall, camera: readonly [number, number, number]): number {
+export function wallCutHeight(view: Exclude<HallView, "auto">, wall: HallWall, camera: readonly [number, number, number], near: number = HALL_CUTS.near): number {
   if (view === "walk") return HALL_CUTS.none;
   if (view === "plan") return HALL_CUTS.plan;
   // Distance of the camera behind the wall's plane (positive outside the room).
   const behind = -((camera[0] - wall.origin[0]) * wall.normal[0] + (camera[2] - wall.origin[2]) * wall.normal[2]);
   const t = Math.max(0, Math.min(1, (behind + 1.5) / 4));
   const eased = t * t * (3 - 2 * t);
-  const cut = HALL_HEIGHT + 0.2 + (HALL_CUTS.near - HALL_HEIGHT - 0.2) * eased;
+  const cut = HALL_HEIGHT + 0.2 + (near - HALL_HEIGHT - 0.2) * eased;
   if (behind <= 0) return cut;
-  return Math.max(0.05, Math.min(cut, camera[1] - EYE_CLEARANCE));
+  // Never lower than a kerb, unless `near` itself asks for the wall to be gone.
+  return Math.max(Math.min(0.05, near), Math.min(cut, camera[1] - EYE_CLEARANCE));
 }
 
 /**
@@ -289,6 +302,10 @@ function createResources(quality: number, initialMood: HallMoodSpec, sun: HallSu
   const glazing = new HallGlazingUniforms();
   // Without slots (a software rasteriser) the walls' shaders leave the detail out entirely.
   const fine = detail.enabled ? detail : null;
+  // The photographs give back what the curve's toe takes (lib/film-toe.ts):
+  // all of it by default, so they are on the screen as scanned, or as much as
+  // the view's address asks for (`?toe=0.04` is the hall under Neutral alone).
+  setFilmToe(photographToeFor(window.location.search));
   const materials = createHallMaterials(textures, photos, mood, section, sun, {
     glazing, alphaToCoverage: multisampled, detail: fine,
     // A near wall's slivers of moulding past its cut take the section's room line (hall-materials.ts outsideSliver).
@@ -362,7 +379,7 @@ function glazingPanes(): ReturnType<typeof buildGlazingPanes> {
   return paneGeometry;
 }
 
-export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6, sunlit = false, multisampled = false }: GrandHallModelProps): ReactElement {
+export function GrandHallModel({ mood, view, finish: finishOverride, overviewChandeliers = true, moodSeconds = 1.6, sunlit = false, multisampled = false, stage = false }: GrandHallModelProps): ReactElement {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const invalidate = useThree((state) => state.invalidate);
@@ -427,6 +444,13 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     raycastDoorLeaves(this, raycaster, intersects, (door) => doorSwing.current.angle(door), (wall) => cutState.current[wall] ?? HALL_CUTS.none);
   }, []);
   const cutsEasing = useRef(false);
+  // The cuts ease in the frame loop, which draws on demand: the stage coming or going asks for a frame. Where no
+  // screen shows the hall as a stage, this asks for none.
+  useEffect(() => {
+    if (!stage) return undefined;
+    invalidate();
+    return () => { invalidate(); };
+  }, [invalidate, stage]);
   const resolvedView = useRef<Exclude<HallView, "auto">>(view === "auto" ? "overview" : view);
   const chandelierGroup = useRef<import("three").Group | null>(null);
   const chandeliersShown = useRef(false);
@@ -477,7 +501,9 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
   }, [invalidate, resources, sunlit]);
   useEffect(() => { setReflection(null); }, [environment]);
 
-  useEffect(() => {
+  // A layout effect, before the precompile job's below: the job installs the
+  // capture's texture as it starts, and what was there before is kept first.
+  useLayoutEffect(() => {
     if (environment === null) return undefined;
     const previous = scene.environment;
     const previousIntensity = scene.environmentIntensity;
@@ -489,6 +515,69 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       environment.dispose();
     };
   }, [environment, invalidate, scene]);
+
+  // The room's pipelines, for its reflection capture and the planner's scene
+  // pass, compiled before either first draws them (F-01): drawn first, each
+  // compiled synchronously on the GPU process's frame thread, and the screen
+  // presented nothing for 2.6-3.7 s on arrival. The view holds its frames
+  // while this runs (lib/native-precompile.ts).
+  useLayoutEffect(() => {
+    const renderer = getNativeRenderer(gl);
+    const roomGroup = room.current;
+    if (renderer === null || roomGroup === null) return undefined;
+    let live = true;
+    // Read after each await: the effect may have been torn down meanwhile.
+    const stillMounted = (): boolean => live;
+    void requestNativePrecompile(renderer, async (signal) => {
+      if (!stillMounted()) return;
+      // What the job shows and hides goes back as it ends, or the moment it is
+      // aborted at its limit (a compile stuck there may never settle).
+      const fittings = chandelierGroup.current;
+      const fittingsShown = fittings?.visible ?? false;
+      const paneMesh = panes.current;
+      const panesShown = paneMesh?.visible ?? false;
+      let restored = false;
+      const wasRestored = (): boolean => restored;
+      const restore = (): void => {
+        if (restored) return;
+        restored = true;
+        if (fittings !== null) fittings.visible = fittingsShown;
+        if (paneMesh !== null) paneMesh.visible = panesShown;
+      };
+      signal.addEventListener("abort", restore, { once: true });
+      // The chandeliers compile for both passes: the capture always draws
+      // them, and the view does on a walk, in the overview once the camera
+      // comes down, and in its first frames (their warm frames, below).
+      if (fittings !== null) fittings.visible = true;
+      try {
+        if (environment !== null) {
+          // Installed as the first frame would (the frame loop below): the
+          // scene's materials are built against the texture they keep.
+          if (prepared.current !== environment) {
+            prepared.current = environment;
+            scene.environment = environment.prepare();
+            scene.environmentIntensity = resources.mood.reflections;
+          }
+          // The capture draws the room with the panes away (the capture below).
+          if (paneMesh !== null) paneMesh.visible = false;
+          try {
+            await environment.compile(roomGroup, signal);
+          } finally {
+            if (paneMesh !== null && !wasRestored()) paneMesh.visible = panesShown;
+          }
+        }
+        const scenePass = nativeFramePrecompile(renderer);
+        if (stillMounted() && !signal.aborted && scenePass !== null) await scenePass(signal);
+      } finally {
+        signal.removeEventListener("abort", restore);
+        restore();
+      }
+    });
+    return () => { live = false; };
+    // The section's cap arrives with the walls' relief, often after the first
+    // job has run, and the captures after it draw the cap: a second job then
+    // compiles it (all else is built by then, so it holds the frames briefly).
+  }, [environment, gl, resources, scene, sectionCap]);
 
   // Without the reflection map the chandeliers' metal leans on its own light.
   useEffect(() => {
@@ -640,15 +729,16 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     state.camera.getWorldDirection(lookDirection);
     const effective = view === "auto" ? resolveHallView(camera, -lookDirection.y, resolvedView.current) : view;
     resolvedView.current = effective;
-    const targets = HALL_WALLS.map((wall) => wallCutHeight(effective, wall, camera));
+    const targets = HALL_WALLS.map((wall) => wallCutHeight(effective, wall, camera, stage ? STAGE_NEAR_CUT_M : HALL_CUTS.near));
     targets.push(effective === "walk" ? HALL_CUTS.none : HALL_CUTS.hidden);
     // Chandeliers: always on a walk, never in plan, and in the overview only
     // once the camera comes down toward the room (with hysteresis).
     const group = chandelierGroup.current;
     if (group !== null) {
       const shown = chandeliersShown.current;
+      const chandelierCeiling = stage ? STAGE_CHANDELIER_CEILING_M : 10.5;
       const show = effective === "walk" || (effective === "overview" && overviewChandeliers
-        && (shown ? camera[1] < 11.5 : camera[1] < 10.5));
+        && (shown ? camera[1] < chandelierCeiling + 1 : camera[1] < chandelierCeiling));
       if (shown !== show) { chandeliersShown.current = show; moving = true; }
       const warming = !show && chandelierWarmFrames.current > 0;
       if (warming) { chandelierWarmFrames.current -= 1; moving = true; }
@@ -665,6 +755,8 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       if (Math.abs(next - target) >= 0.002) easing = true;
       cutState.current[index] = next;
       resources.section.set(index, next);
+      // The front outside the window wall (HALL_WALLS[0]) is cut with it (hall-exterior-cut.ts).
+      if (index === 0) hallFrontCut.value = next;
     });
     // The floor's reflections of the chandeliers soften while they are put
     // away (Plan, the overview from high up), easing as the cuts do.
@@ -726,7 +818,7 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       {resources.casters !== null && (
         <group name="grand-hall-sun-casters">
           {hallSunCasterParts({
-            room: geometry.geometries, walls: walls.geometries, doors: doors.geometries, body: resources.cutaway.body,
+            room: geometry.geometries, walls: walls.geometries, doors: doors.geometries, body: resources.cutaway.bodyCasters,
           }).map(({ key, geometry: part, glazed }, index) => (
             <mesh
               key={`caster-${String(index)}-${key}`}

@@ -39,6 +39,14 @@ export function retireTurnaroundRule(venueId: string, id: string): Promise<void>
   return api.delete(`${rulesPath(venueId)}/${encodeURIComponent(id)}`);
 }
 
+/** Who sets the changeover times, said when the API refuses someone else. */
+export const CHANGEOVER_SETTERS = "The venue's administrators, managers and office staff set changeover times.";
+
+/** True for the API's refusal of someone who may not change the times. */
+export function isPermissionRefusal(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 403;
+}
+
 /** The rule as it stands, from a refusal that carries it: a stale edit
  *  (RULE_CHANGED) or a scope that already has a rule (RULE_EXISTS). */
 export function ruleFromRefusal(error: unknown): TurnaroundRuleSetting | null {

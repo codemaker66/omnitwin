@@ -444,6 +444,9 @@ const placedObjectsTest = test.extend({ launchOptions: captureLaunchOptions });
 
 placedObjectsTest.describe("Editor with placed objects", () => {
   placedObjectsTest.beforeEach(async ({ page }) => {
+    // The planner at rest: the Grand Assembly, which plays a furnished Grand Hall layout the first time it opens
+    // on a device with the chrome stepped back (grand-assembly.spec.ts), is turned off on this one (flag.ts).
+    await page.addInitScript(() => { window.localStorage.setItem("venviewer.assembly", "off"); });
     await mockConfigLoad(page, MOCK_CONFIG_WITH_OBJECTS);
   });
 
@@ -455,10 +458,10 @@ placedObjectsTest.describe("Editor with placed objects", () => {
   // close only by the Escape under test; then fail them, as before.
   const grandHallTile = (url: URL): boolean => url.pathname.startsWith("/splats/trades-hall/grand-hall/");
 
-  async function openPlacedLayout(page: Page): Promise<void> {
+  async function openPlacedLayout(page: Page, search = ""): Promise<void> {
     const heldTiles: Route[] = [];
     await page.route(grandHallTile, (route) => { heldTiles.push(route); });
-    await page.goto(`/plan/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}${search}`);
     await waitForPlannerReady(page);
     // The welcome explicitly supports native Escape to enter while the room loads.
     const welcome = page.getByRole("dialog", { name: "Opening the Grand Hall", exact: true });
@@ -494,7 +497,9 @@ placedObjectsTest.describe("Editor with placed objects", () => {
   placedObjectsTest("Layout evidence keeps long recommendation copy inside the panel", async ({ page }) => {
     await page.setViewportSize({ width: 1493, height: 1053 });
     await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockSeatedRoundTables(18, 8) });
-    await openPlacedLayout(page);
+    // The Evidence panel's layout is under test, not who may open it: with
+    // lensesByRole on, an anonymous visitor sees four lenses, Evidence not one.
+    await openPlacedLayout(page, "?pf=-lensesByRole");
     await page.getByRole("navigation", { name: "Planner lenses" })
       .getByRole("button", { name: "Evidence", exact: true }).click();
     const panel = page.getByTestId("evidence-lens-panel");

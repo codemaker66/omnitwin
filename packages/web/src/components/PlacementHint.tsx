@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getCatalogueItem } from "../lib/catalogue.js";
+import { ghostSetInHand, judgesCard } from "../lib/setup-cards.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
@@ -166,6 +167,11 @@ const dismissButtonStyle: React.CSSProperties = {
 export function PlacementHint(): React.ReactElement | null {
   const selectedItemId = useCatalogueStore((state) => state.selectedItemId);
   const ghostInvalidReason = usePlacementStore((state) => state.ghostInvalidReason);
+  // The truthful ghost judges the set in hand and says why beside it (GhostSet's chip): the coach does not repeat it.
+  const ghostSaysWhy = useCatalogueStore((state) => {
+    const set = state.cardParams === null ? null : ghostSetInHand(state.cardParams);
+    return set !== null && judgesCard(set);
+  });
   const snapEnabled = usePlacementStore((state) => state.snapEnabled);
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   const isTouch = useIsCoarsePointer();
@@ -188,7 +194,7 @@ export function PlacementHint(): React.ReactElement | null {
       reasonTimerRef.current = null;
     }
 
-    if (suppressedForViewport || !isActive || ghostInvalidReason === null) {
+    if (suppressedForViewport || !isActive || ghostInvalidReason === null || ghostSaysWhy) {
       setShownReason(null);
       return undefined;
     }
@@ -205,7 +211,7 @@ export function PlacementHint(): React.ReactElement | null {
         reasonTimerRef.current = null;
       }
     };
-  }, [ghostInvalidReason, isActive, suppressedForViewport]);
+  }, [ghostInvalidReason, ghostSaysWhy, isActive, suppressedForViewport]);
 
   if (suppressedForViewport || !isActive) return null;
 

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ConfigurationIdSchema, LayoutStyleSchema } from "./configuration.js";
 import { SetupPhaseSchema } from "./hallkeeper-accessories.js";
 import { EventInstructionsSchema } from "./hallkeeper-instructions.js";
+import { GangwayReviewSchema } from "./gangway-review.js";
 import { TimezoneSchema, DEFAULT_VENUE_TIMEZONE } from "./venue.js";
 import { ZONES, ZoneSchema, type Zone } from "./zone.js";
 import { SheetPaperCheckSchema } from "./sheet-paper-check.js";
@@ -84,10 +85,17 @@ export const ManifestRowV2Schema = z.object({
   isAccessory: z.boolean(),
   /**
    * Planner-authored notes from the union of placed-object `notes`
-   * fields that aggregate into this row. Empty string when no source
-   * placement carried a note.
+   * fields that aggregate into this row, joined with " · ". Empty string
+   * when no source placement carried a note.
+   *
+   * No length cap of its own: a row gathers every distinct note of its
+   * pieces (eight tables' notes, and the linen each table takes), so its
+   * length grows with the room. The bound is each piece's note (500, the
+   * planner's limit); the phone shows the row's notes in full and the paper
+   * carries them across pages. A fixed cap here made one detailed wedding
+   * fail the whole sheet and every submit (audit hallkeeper-ops-5).
    */
-  notes: z.string().max(2000).default(""),
+  notes: z.string().default(""),
   /**
    * Floor-plan coordinates for every placement that aggregates into
    * this row. Empty for accessory rows — accessories don't have their
@@ -122,22 +130,30 @@ export const PhaseSchema = z.object({
 export type Phase = z.infer<typeof PhaseSchema>;
 
 // ---------------------------------------------------------------------------
-// Timing — "setup must be complete by X, event starts Y"
+// Timing — "setup from X, guests in at Y". Read it through sheetTimes()
+// (sheet-brief.ts), which also gives Ready by: the planner's final-touches
+// time, else guests in (Blake, 18 November 2026).
 // ---------------------------------------------------------------------------
 
 export const TimingSchema = z.object({
-  /** ISO-8601 datetime the event is scheduled to begin. */
+  /** ISO-8601 datetime of the Diary booking's start: when guests come in, as the Day Board and the Diary read it. */
   eventStart: z.iso.datetime(),
   /**
-   * ISO-8601 datetime setup must be complete, or null when the venue has not
-   * recorded a turnaround rule for this room and the planner has scheduled no
-   * earlier phase. Null is the honest absence: a set-up deadline invented from
-   * a constant is an hour a hallkeeper can act on and be wrong about.
-   * Widening from required to nullable is backward compatible — every stored
-   * snapshot still validates.
+   * ISO-8601 datetime the setup window OPENS. The name is historical and stays
+   * because approved snapshots are frozen: this was printed as the finish line
+   * until 18 November 2026, but both of its sources start a window — the
+   * earliest room phase before the booking (the Day Board's setup start), or
+   * the booking start less the room's changeover time. It is never the time
+   * the room must be ready; that is sheetTimes().readyBy.
+   *
+   * Null when the venue has not recorded a changeover time for this room and
+   * the planner has scheduled no earlier phase. Null is the honest absence: a
+   * setup time invented from a constant is an hour a hallkeeper can act on and
+   * be wrong about. Widening from required to nullable is backward compatible;
+   * every stored snapshot still validates.
    */
   setupBy: z.iso.datetime().nullable(),
-  /** Real minutes between setupBy and eventStart; null whenever setupBy is. */
+  /** Real minutes between setupBy (setup opens) and eventStart (guests in); null whenever setupBy is. */
   bufferMinutes: z.number().int().nonnegative().nullable(),
 });
 export type Timing = z.infer<typeof TimingSchema>;
@@ -232,6 +248,14 @@ export const HallkeeperSheetV2Schema = z.object({
    * stub.
    */
   instructions: EventInstructionsSchema.nullable(),
+  /**
+   * The layout's gangway review as it stood when the sheet was assembled
+   * (configurations.metadata.gangwayReview, written by the planner): every
+   * pinch under the guidance, with the venue's decisions. Frozen with a
+   * submitted or approved snapshot, so the venue reviews what was sent.
+   * Null when the layout has none; absent from older snapshots.
+   */
+  gangwayReview: GangwayReviewSchema.nullable().optional(),
   phases: z.array(PhaseSchema),
   totals: z.object({
     /** One entry per distinct item name, summed across phases + zones. */
@@ -279,10 +303,19 @@ export type HallkeeperSheetV2 = z.infer<typeof HallkeeperSheetV2Schema>;
 
 export const HallkeeperSheetSummarySchema = z.object({
   configId: z.uuid(),
-  /** When setup must be complete, or null when no changeover rule sets it. */
+  /** When the room must be ready (sheetTimes().readyBy: the planner's final-touches time, else guests in), or null when neither is known. */
   readyBy: z.iso.datetime().nullable(),
-  /** When the event begins, or null when the sheet has no timing. */
+  /** When guests come in (the booking's start), or null when the sheet has no timing. */
   eventStart: z.iso.datetime().nullable(),
+  /**
+   * When the setup window opens (sheetTimes().setupFrom), or null when no room
+   * phase or changeover time sets it. With Ready by, it tells the board when
+   * the window leaves no time to set the room (sheetIntervals). Sent only to a
+   * request that asks with `setupFrom=true`: older web code reads this schema
+   * strictly, so it must never meet the key. Absent from servers older than
+   * #454's first review round, too.
+   */
+  setupFrom: z.iso.datetime().nullable().optional(),
   /** The sheet's rows. */
   total: z.number().int().nonnegative(),
   /** Of those rows, how many are checked. */

@@ -14,6 +14,7 @@ import { HALL_LIT_YEARS } from "../../landing/rite-copy.js";
 import {
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_WEDDING_PRICING,
+  TRADES_HALL_WITHHELD_ROOM_DIMENSIONS,
 } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
@@ -188,6 +189,12 @@ describe("the enquiry composer", () => {
     // UK GDPR transparency: the privacy notice is reachable from the form.
     const privacy = document.querySelector('.fr-enq-privacy a[href="/privacy"]');
     expect(privacy).toBeTruthy();
+    // And the note agrees with it: an enquiry is kept as a record (the
+    // policy's "Keeping a record of enquiries and contacts"), so the note
+    // must not say the details are used for nothing else.
+    const note = document.querySelector(".fr-enq-privacy")?.textContent ?? "";
+    expect(note).toContain("so they can answer this enquiry, and are kept as a record of it.");
+    expect(note).not.toContain("not used for anything else");
   });
 
   it("links the legal pages from the footer", () => {
@@ -249,14 +256,52 @@ describe("the room dossiers", () => {
     );
   });
 
-  it("states the published dimensions for rooms that publish them", () => {
+  it("states the dimensions for rooms that have them, the Grand Hall's as measured", () => {
     render(<FreshPage />);
     const buttons = screen.getAllByRole("button", { name: "Open the room" });
     const first = buttons[0];
-    if (first === undefined) return;
+    if (first === undefined) throw new Error("no room to open");
     fireEvent.click(first);
-    expect(screen.getByText(/21 × 10 m · 7 m high/)).toBeTruthy();
-    expect(screen.getByText(/a further 7 m under the dome/)).toBeTruthy();
+    // The height says what it is measured to; the dome follows as a sentence of
+    // its own and is never given as the room's height.
+    expect(
+      screen.getByText(
+        "21.14 × 10.59 m · 6.7 m high (to the coffered ceiling). The dome rises above part of the hall.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/under the dome/)).toBeNull();
+  });
+
+  it("gives the Robert Adam Room as its two published sections, a line each", () => {
+    render(<FreshPage />);
+    const index = FRESH_ROOMS.findIndex((room) => room.slug === "robert-adam-room");
+    const open = screen.getAllByRole("button", { name: "Open the room" })[index];
+    if (open === undefined) throw new Error("the Robert Adam Room has no card to open");
+    fireEvent.click(open);
+    // The venue publishes a lower and an upper section. The upper figures alone
+    // used to stand for the whole room.
+    const lines = [...document.querySelectorAll(".fr-dossier-dims p")].map((line) => line.textContent);
+    expect(lines).toEqual([
+      "Lower section 11.2 × 7.6 m · 2.8 m high",
+      "Upper section 9.7 × 5.6 m · 2.18 m high",
+    ]);
+  });
+
+  it("shows the Reception Room with no dimensions at all", () => {
+    render(<FreshPage />);
+    const index = FRESH_ROOMS.findIndex((room) => room.slug === "reception-room");
+    const open = screen.getAllByRole("button", { name: "Open the room" })[index];
+    if (open === undefined) throw new Error("the Reception Room has no card to open");
+    fireEvent.click(open);
+    // Its published size is withheld until the venue confirms one, so the
+    // card has no dimensions block, and the page states that size nowhere.
+    expect(document.querySelector("dialog.fr-dossier")?.hasAttribute("open")).toBe(true);
+    expect(document.querySelector(".fr-dossier-dims")).toBeNull();
+    const [withheld] = TRADES_HALL_WITHHELD_ROOM_DIMENSIONS["reception-room"]?.extents ?? [];
+    if (withheld === undefined) throw new Error("the Reception Room's size is no longer on record");
+    expect(document.body.textContent).not.toContain(
+      `${String(withheld.lengthM)} × ${String(withheld.widthM)}`,
+    );
   });
 });
 

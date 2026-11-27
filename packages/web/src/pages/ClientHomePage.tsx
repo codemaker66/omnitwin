@@ -1,7 +1,7 @@
 import { useState, type ReactElement } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useClerk } from "@clerk/react";
-import type { ClientHomeEvent, ClientHomePlan } from "@omnitwin/types";
+import { eventDisplayName, type ClientHomeEvent, type ClientHomePlan } from "@omnitwin/types";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import { useClientHome, type ClientHomeResult } from "../hooks/use-client-home.js";
 import { useAuthStore } from "../stores/auth-store.js";
@@ -68,6 +68,11 @@ export function planHref(plan: Pick<ClientHomePlan, "id" | "eventId">): string {
   return plan.eventId === null ? base : `${base}?eventId=${encodeURIComponent(plan.eventId)}`;
 }
 
+/** The event's name, or, for one stored without a name, its occasion and the venue's day. */
+function shownName(event: ClientHomeEvent): string {
+  return eventDisplayName(event, event.venue.timezone);
+}
+
 function eventFacts(event: ClientHomeEvent, when: EventWhen | null): string {
   return [
     when === null ? null : `${when.weekday}, ${when.time}`,
@@ -89,7 +94,7 @@ function NextEvent({ event }: { readonly event: ClientHomeEvent }): ReactElement
       <div className="client-home__next-body">
         <DateBlock when={when} />
         <div className="client-home__next-copy">
-          <h2 id="client-home-next-title">{event.name}</h2>
+          <h2 id="client-home-next-title">{shownName(event)}</h2>
           <p>{eventFacts(event, when)}</p>
           <p>{event.layoutCount === 1 ? "1 of your layouts is linked to it." : `${event.layoutCount.toLocaleString("en-GB")} of your layouts are linked to it.`}</p>
         </div>
@@ -117,7 +122,7 @@ function EventRows({ id, title, events, quiet = false }: {
               <Link className="client-home__row" to={`/events/${encodeURIComponent(event.id)}`}>
                 <DateBlock when={when} />
                 <span className="client-home__row-copy">
-                  <strong>{event.name}</strong>
+                  <strong>{shownName(event)}</strong>
                   <span>{eventFacts(event, when)}</span>
                 </span>
                 <span className="client-home__row-go" aria-hidden="true">Open</span>
@@ -135,7 +140,7 @@ function PlanRows({ plans, planTotal, events }: {
   readonly planTotal: number;
   readonly events: readonly ClientHomeEvent[];
 }): ReactElement {
-  const eventNames = new Map(events.map((event) => [event.id, event.name]));
+  const eventNames = new Map(events.map((event) => [event.id, shownName(event)]));
   return (
     <section className="client-home__section" aria-labelledby="client-home-plans">
       <div className="client-home__section-head">

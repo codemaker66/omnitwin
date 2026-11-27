@@ -4,6 +4,7 @@ import * as clientsApi from "../../api/clients.js";
 import type { RecentEnquiry, SearchResults } from "../../api/clients.js";
 import { useMediaQuery } from "../../hooks/use-media-query.js";
 import { useAuthStore } from "../../stores/auth-store.js";
+import { useBoardClock } from "../../pages/hallkeeper/lib/use-board-clock.js";
 import { ActivityStatus } from "../shared/Activity.js";
 import { deskGreeting, eventDateParts, eventLead, venueYear } from "./enquiries/enquiry-desk-format.js";
 import { ClientPanel } from "./clients/ClientPanel.js";
@@ -82,7 +83,9 @@ export function ClientsDesk(props: ClientsDeskProps): ReactElement {
   const [search, setSearch] = useState<SearchState>({ status: "idle" });
   const [attempt, setAttempt] = useState(0);
   const [start, setStart] = useState<StartState>({ status: "loading" });
-  const [nowMs] = useState(() => Date.now());
+  // The product's one clock, redrawn each whole minute, so a date that has
+  // passed reads so on a desk left open overnight.
+  const nowMs = useBoardClock(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);

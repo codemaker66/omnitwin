@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EventIdSchema, EventPhaseIdSchema, EventPhaseSchema, EventSchema } from "./event-phase-graph.js";
-import { HandoffPackIdSchema, OpsHandoffPackBundleSchema, OpsTaskIdSchema, OpsTaskStatusSchema, SafeOpsTextSchema, SupplierInstructionIdSchema } from "./ops-compiler.js";
+import { HandoffPackIdSchema, OpsHandoffPackBundleSchema, OpsTaskIdSchema, OpsTaskSchema, OpsTaskStatusSchema, SafeOpsTextSchema, SupplierInstructionIdSchema } from "./ops-compiler.js";
 import { UserIdSchema } from "./user.js";
 
 // ---------------------------------------------------------------------------
@@ -144,12 +144,48 @@ export const EventDayOpsBoardSchema = z.object({
 }).strict();
 export type EventDayOpsBoard = z.infer<typeof EventDayOpsBoardSchema>;
 
+/** The most earlier-press keys a replayed status carries. A queued row keeps
+ *  the keys of the board's earlier presses on one task that the server did
+ *  not refuse (on their way, failed or landed), and of the rows it
+ *  replaced: on the floor that is a handful (Start, Done, Block, a
+ *  correction), so twenty is several times the most a day needs, while the
+ *  body stays a few kilobytes and the server's check a short list. A row
+ *  past it keeps the newest twenty: the press most likely to be the task's
+ *  last write is the latest one sent. */
+export const MAX_EARLIER_PRESS_KEYS = 20;
+
+const IdempotencyKeySchema = z.string().trim().min(1).max(160);
+
 export const UpdateOpsTaskStatusInputSchema = z.object({
   status: OpsTaskStatusSchema,
-  idempotencyKey: z.string().trim().min(1).max(160).optional(),
+  idempotencyKey: IdempotencyKeySchema.optional(),
   note: EventDaySafeTextSchema.nullable().optional(),
+  /** The status the server last held, as the event-day board knew it, when
+   *  this status was pressed: moved on only by the board's own earlier
+   *  presses that have landed, never the board's drawn, unconfirmed status
+   *  for a press of its own (#418, ruling B). A status queued on the device
+   *  and replayed later carries it; the replay is refused (409, with the
+   *  task as it stands) once the task has moved on, so a stale replay never
+   *  undoes a later press. A live press, and a row queued before replays
+   *  carried it, send none and are applied as pressed. */
+  expectedStatus: OpsTaskStatusSchema.optional(),
+  /** Meaningful only with expectedStatus: the idempotency keys of the
+   *  board's earlier presses for the task, and of the presses whose queued
+   *  rows this one replaced, kept in the queued row (#418, ruling A). The
+   *  replay is also written when the task's last write was made under one
+   *  of them: a press whose answer was lost, or that landed while this one
+   *  sat queued. Absent or empty, only
+   *  expectedStatus decides. */
+  earlierPressKeys: z.array(IdempotencyKeySchema).max(MAX_EARLIER_PRESS_KEYS).optional(),
 }).strict();
 export type UpdateOpsTaskStatusInput = z.infer<typeof UpdateOpsTaskStatusInputSchema>;
+
+/** The details of that 409 (code TASK_STATUS_CONFLICT): the task as it
+ *  stands, for the board to show. */
+export const UpdateOpsTaskStatusConflictSchema = z.object({
+  task: OpsTaskSchema,
+}).strict();
+export type UpdateOpsTaskStatusConflict = z.infer<typeof UpdateOpsTaskStatusConflictSchema>;
 
 export const CreateEventDayIssueInputSchema = z.object({
   phaseId: EventPhaseIdSchema.nullable().optional(),

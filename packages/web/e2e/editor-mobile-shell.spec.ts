@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { Camera, Mesh, Scene, WebGLRenderer } from "three";
 import type { BatchObjectInput } from "../src/api/configurations.js";
 
@@ -110,6 +110,60 @@ function expectWithinViewport(box: Box | null, viewport: ViewportCase): void {
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
 }
 
+/** Presses Tab until `target` has focus, the way a keyboard user reaches it. */
+async function tabTo(page: Page, target: Locator, maxPresses = 80): Promise<void> {
+  for (let press = 0; press < maxPresses; press += 1) {
+    if (await target.evaluate((element) => element === document.activeElement)) return;
+    await page.keyboard.press("Tab");
+  }
+  await expect(target).toBeFocused();
+}
+
+/**
+ * One tool's card shows, placed on the side its toolbar's layout opens toward, wholly on
+ * screen, covering none of the toolbar's tools, and it stays.
+ */
+async function expectCardBesideToolbar(card: Locator, toolbar: Locator, side: "left" | "right"): Promise<void> {
+  // Tab ran through other tools on its way; their cards are gone, not stacked with this
+  // one (that they go at once is the unit test's: "shows one card at a time").
+  await expect(card).toHaveCount(1);
+  // Placed (an unplaced card waits with visibility: hidden), on its layout's side: the More
+  // panel's `--tool-cards: left` (ReferenceViewer.css), over the room, not the dock.
+  await expect(card).toBeVisible();
+  await expect(card).toHaveAttribute("data-side", side);
+  await expect(card).toBeInViewport({ ratio: 1 });
+  const cardBox = await card.boundingBox();
+  const barBox = await toolbar.boundingBox();
+  expect(cardBox).not.toBeNull();
+  expect(barBox).not.toBeNull();
+  if (cardBox === null || barBox === null) return;
+  const clear = cardBox.x >= barBox.x + barBox.width || cardBox.x + cardBox.width <= barBox.x;
+  expect(clear, `card ${JSON.stringify(cardBox)} overlaps toolbar ${JSON.stringify(barBox)}`).toBe(true);
+  // And it stays: past a card's 250 ms exit it is still there, still shown.
+  await card.page().waitForTimeout(400);
+  await expect(card).toHaveCount(1);
+  await expect(card).toBeVisible();
+}
+
+/**
+ * A button's description in Chromium's own accessibility tree, the one a screen reader is
+ * given. Searched within one test id's element: the tool pill has a Rotate button too.
+ */
+async function chromiumDescription(page: Page, withinTestId: string, name: string): Promise<string | null> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: 0 });
+    const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: `[data-testid="${withinTestId}"]` });
+    const { nodes } = await cdp.send("Accessibility.queryAXTree", { nodeId, accessibleName: name, role: "button" });
+    const exposed = nodes.filter((node) => !node.ignored);
+    expect(exposed, `exposed buttons named ${name}`).toHaveLength(1);
+    const value: unknown = exposed[0]?.description?.value;
+    return typeof value === "string" ? value : null;
+  } finally {
+    await cdp.detach();
+  }
+}
+
 function expectOutsideSceneCenter(box: Box | null, viewport: ViewportCase): void {
   expect(box).not.toBeNull();
   if (box === null) return;
@@ -182,6 +236,13 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   ));
   expect(hasOverflow).toBe(false);
 }
+
+// These cases open a furnished Grand Hall layout to test the shell at rest. The Grand Assembly plays a layout the
+// first time it opens on a device, with the chrome stepped back (grand-assembly.spec.ts); it is turned off on this
+// one (flag.ts).
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => { window.localStorage.setItem("venviewer.assembly", "off"); });
+});
 
 test.describe("3D planner mobile shell", () => {
   for (const viewport of PHONE_VIEWPORTS) {
@@ -299,10 +360,68 @@ test.describe("3D planner mobile shell", () => {
     const consoleErrors = await openPlanner(page, desktop);
 
     await expectNoHorizontalOverflow(page);
-    await page.getByRole("button", { name: "More planner tools", exact: true }).click();
-    await page.getByTestId("planner-toolbar").getByRole("button", { name: "Rotate", exact: true }).hover();
-    await expect(page.getByText("SHORTCUT")).toBeVisible();
-    await expect(page.getByText("Q / E")).toBeVisible();
+    const more = page.getByRole("button", { name: "More planner tools", exact: true });
+    await more.click();
+    const toolbar = page.getByTestId("planner-toolbar");
+    const rotate = toolbar.getByRole("button", { name: "Rotate", exact: true });
+    const spoken = "Rotate selected furniture in 15° steps. Shortcut: Q / E.";
+    await rotate.hover();
+    // The card, not each tool's hidden description, which says "Shortcut: Q / E." for a screen reader.
+    const card = page.getByTestId("toolbox-tooltip");
+    await expect(card.getByText("SHORTCUT", { exact: true })).toBeVisible();
+    // Visible is not readable: in the scrolling panel the card was cut off at its edge. An
+    // IntersectionObserver counts an ancestor's clip, so the whole badge must be on screen.
+    await expect(card.getByText("Q / E", { exact: true })).toBeInViewport({ ratio: 1 });
+    await expectCardBesideToolbar(card, toolbar, "left");
+    // Playwright's own accessible-description computation, run in Chromium...
+    await expect(rotate).toHaveAccessibleDescription(spoken);
+    // ...and Chromium's accessibility tree, which is what a screen reader is given.
+    expect(await chromiumDescription(page, "planner-toolbar", "Rotate")).toBe(spoken);
+
+    // A keyboard user, with a piece selected: the selection is a lower layer of the one Escape order.
+    await page.mouse.move(640, 760);
+    await expect(card).toHaveCount(0);
+    const tableRow = page.getByTestId("reference-scene-outliner").getByRole("button", { name: /Table 1/u });
+    await tableRow.click();
+    await expect(tableRow).toHaveAttribute("aria-pressed", "true");
+    // Tab onto Rotate and its whole card shows at once.
+    await tabTo(page, rotate);
+    await expect(card.getByText("Q / E", { exact: true })).toBeInViewport({ ratio: 1 });
+    await expectCardBesideToolbar(card, toolbar, "left");
+    // Escape takes the card down and nothing else: the piece stays selected, Rotate keeps focus...
+    await page.keyboard.press("Escape");
+    await expect(card).toHaveCount(0);
+    await expect(rotate).toBeFocused();
+    await expect(tableRow).toHaveAttribute("aria-pressed", "true");
+    // ...and the next Escape reaches the selection, so the first one stopped at the card.
+    await page.keyboard.press("Escape");
+    await expect(tableRow).toHaveAttribute("aria-pressed", "false");
+
+    // A click's focus shows no card.
+    const snap = toolbar.getByRole("button", { name: "Grid Snap", exact: true });
+    const snapWas = await snap.getAttribute("aria-pressed");
+    await snap.click();
+    await expect(snap).not.toHaveAttribute("aria-pressed", snapWas ?? "");
+    await page.waitForTimeout(600);
+    await expect(card).toHaveCount(0);
+
+    // A narrow window: 683 x 320 is a 1366 x 641 laptop window at 200 % zoom (WCAG 1.4.4). The
+    // panel scrolls, and the room beside it, 190 px, is narrower than a card.
+    await page.setViewportSize({ width: 683, height: 320 });
+    await expect(toolbar).toBeVisible();
+    const select = toolbar.getByRole("button", { name: "Select & Move", exact: true });
+    await toolbar.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    await expect(select).not.toBeInViewport();
+    // Tab from More onto Select & Move, out of view until focus brings it in: its card shows, whole.
+    await more.focus();
+    await page.keyboard.press("Tab");
+    await expect(select).toBeFocused();
+    await expect(card).toContainText("Select & Move");
+    await expectCardBesideToolbar(card, toolbar, "left");
+    // Rotate's card narrows to the room beside the panel, rather than lie over the panel and Rotate.
+    await tabTo(page, rotate);
+    await expect(card.getByText("Q / E", { exact: true })).toBeInViewport({ ratio: 1 });
+    await expectCardBesideToolbar(card, toolbar, "left");
     expect(consoleErrors).toEqual([]);
   });
 });
@@ -413,8 +532,8 @@ test.describe("Small phone canvas placement", () => {
     await testInfo.attach("small-phone-before-touch", { body: await page.screenshot(), contentType: "image/png" });
     await page.touchscreen.tap(point.x, point.y);
     const chairs = page.getByRole("dialog");
-    await expect(chairs.getByRole("button", { name: "Table Only", exact: true })).toBeVisible();
-    await chairs.getByRole("button", { name: "Table Only", exact: true }).tap();
+    await expect(chairs.getByRole("button", { name: "Table only", exact: true })).toBeVisible();
+    await chairs.getByRole("button", { name: "Table only", exact: true }).tap();
     await expect(chairs).toBeHidden();
     await page.getByRole("button", { name: "Send to Events Team" }).tap();
     await expect.poll(() => savedObjects.length).toBe(2);

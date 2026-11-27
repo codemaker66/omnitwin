@@ -46,7 +46,10 @@ export const GuestFlowTimedPointSchema = GuestFlowPointSchema.extend({
 }).strict();
 export type GuestFlowTimedPoint = z.infer<typeof GuestFlowTimedPointSchema>;
 
-export const GuestFlowPolygonSchema = z.array(GuestFlowPointSchema).min(3);
+// Request ceilings for a scenario's geometry and lists: far above any room's,
+// they refuse a body built to make the parser work (one issue per element).
+export const GUEST_FLOW_MAX_POINTS = 1000;
+export const GuestFlowPolygonSchema = z.array(GuestFlowPointSchema).min(3).max(GUEST_FLOW_MAX_POINTS);
 export type GuestFlowPolygon = z.infer<typeof GuestFlowPolygonSchema>;
 
 export const GuestFlowObstacleSchema = z.object({
@@ -75,7 +78,7 @@ export type GuestFlowDestination = z.infer<typeof GuestFlowDestinationSchema>;
 export const GuestFlowStaffLaneInputSchema = z.object({
   id: z.string().trim().min(1).max(120),
   label: z.string().trim().min(1).max(160),
-  line: z.array(GuestFlowPointSchema).min(2),
+  line: z.array(GuestFlowPointSchema).min(2).max(GUEST_FLOW_MAX_POINTS),
 }).strict();
 export type GuestFlowStaffLaneInput = z.infer<typeof GuestFlowStaffLaneInputSchema>;
 
@@ -105,13 +108,13 @@ export const GuestFlowReplayInputSchema = z.object({
   scenarioType: CrowdFlowScenarioTypeSchema,
   layout: GuestFlowLayoutInputSchema,
   roomPolygon: GuestFlowPolygonSchema,
-  obstacles: z.array(GuestFlowObstacleSchema),
-  entrances: z.array(GuestFlowEntranceExitSchema).min(1),
-  exits: z.array(GuestFlowEntranceExitSchema).min(1),
-  destinations: z.array(GuestFlowDestinationSchema).min(1),
-  staffLanes: z.array(GuestFlowStaffLaneInputSchema).default([]),
+  obstacles: z.array(GuestFlowObstacleSchema).max(500),
+  entrances: z.array(GuestFlowEntranceExitSchema).min(1).max(100),
+  exits: z.array(GuestFlowEntranceExitSchema).min(1).max(100),
+  destinations: z.array(GuestFlowDestinationSchema).min(1).max(200),
+  staffLanes: z.array(GuestFlowStaffLaneInputSchema).max(100).default([]),
   phase: GuestFlowPhaseInputSchema,
-  assumptions: z.array(GuestFlowAssumptionSchema),
+  assumptions: z.array(GuestFlowAssumptionSchema).max(100),
   agentCount: z.number().int().positive().max(500),
   seed: z.number().int().nonnegative(),
 }).strict();

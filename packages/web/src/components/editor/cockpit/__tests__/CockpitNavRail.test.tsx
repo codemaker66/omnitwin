@@ -1,9 +1,19 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useAuthStore } from "../../../../stores/auth-store.js";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { CockpitNavRail } from "../CockpitNavRail.js";
 
-afterEach(() => { cleanup(); useCockpitStore.getState().reset(); });
+// The venue team's rail: every lens (Blake's decision 5). Each role's own
+// rail is CockpitNavRail.lenses.test.tsx's.
+const STAFF = { id: "staff-1", email: "floor@example.com", name: "Floor Staff", role: "staff", platformRole: "none", venueId: "venue-1" } as const;
+
+beforeEach(() => { useAuthStore.setState({ user: STAFF, isAuthenticated: true, isLoading: false }); });
+afterEach(() => {
+  cleanup();
+  useCockpitStore.getState().reset();
+  useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: true });
+});
 
 describe("CockpitNavRail", () => {
   it("renders eleven lens buttons with Design pressed by default", () => {

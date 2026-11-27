@@ -152,6 +152,58 @@ describe("Clerk webhook runtime contract", () => {
     });
   });
 
+  // Whole-repository audit, api-platform-4. A person who signs up with an email
+  // and a code has no first or last name at Clerk. Their local account is made
+  // with a usable name (the part of their email before the @), and the webhook
+  // then replaced it with the placeholder "User": several such people were
+  // indistinguishable on the Team tab and in the invitations they sent.
+  async function profileWrittenFor(names: { readonly first: string | null; readonly last: string | null }): Promise<ClerkUserUpdate> {
+    const { parseClerkWebhookPayload, processClerkWebhookEvent } = await import("../routes/webhooks.js");
+    const parsed = parseClerkWebhookPayload({
+      type: "user.created",
+      data: {
+        id: "clerk_user_names",
+        email_addresses: [{ id: "email_1", email_address: "jane.smith@example.com", verification: { status: "verified" } }],
+        primary_email_address_id: "email_1",
+        first_name: names.first,
+        last_name: names.last,
+        phone_numbers: [],
+        public_metadata: {},
+      },
+    });
+    if (parsed.kind !== "supported") throw new Error("The payload was expected to be a supported event");
+
+    const written: ClerkUserUpdate[] = [];
+    const persistence = {
+      resolveCreatedUser: (): Promise<{ readonly id: string } | null> => Promise.resolve({ id: "local-user" }),
+      updateUserById: (_userId: string, values: ClerkUserUpdate): Promise<void> => {
+        written.push(values);
+        return Promise.resolve();
+      },
+      updateUserByClerkId: (): Promise<void> => { throw new Error("Profile sync must resolve the local account first"); },
+      unlinkUser: (): Promise<void> => Promise.resolve(),
+    } satisfies ClerkWebhookPersistence;
+    await processClerkWebhookEvent(parsed.event, persistence, new Date("2026-11-11T00:00:00.000Z"));
+
+    const [values] = written;
+    if (written.length !== 1 || values === undefined) throw new Error("One profile write was expected");
+    return values;
+  }
+
+  it("leaves a person's name alone when Clerk holds no first or last name", async () => {
+    const values = await profileWrittenFor({ first: null, last: null });
+    expect(values).not.toHaveProperty("name");
+    expect(values).not.toHaveProperty("displayName");
+    // The rest of the profile is still synced.
+    expect(values).toMatchObject({ email: "jane.smith@example.com", username: null });
+  });
+
+  it("treats a blank name part as no name, and still writes the part Clerk does hold", async () => {
+    expect(await profileWrittenFor({ first: "  ", last: "" })).not.toHaveProperty("name");
+    expect(await profileWrittenFor({ first: " Jane ", last: "  " })).toMatchObject({ name: "Jane", displayName: "Jane" });
+    expect(await profileWrittenFor({ first: "Jane", last: "Smith" })).toMatchObject({ name: "Jane Smith", displayName: "Jane Smith" });
+  });
+
   it("keeps processing failures retryable at the HTTP boundary", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");

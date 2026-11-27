@@ -27,6 +27,17 @@ describe("canTransition — planner path", () => {
     expect(canTransition("rejected", "draft", "planner")).toBe(true);
   });
 
+  it.each(["changes_requested", "rejected", "withdrawn"])("planner and client can submit again from %s", (from) => {
+    expect(canTransition(from, "submitted", "planner")).toBe(true);
+    expect(canTransition(from, "submitted", "client")).toBe(true);
+  });
+
+  it("hallkeeper cannot submit again from any returned state", () => {
+    for (const from of ["changes_requested", "rejected", "withdrawn"]) {
+      expect(canTransition(from, "submitted", "hallkeeper")).toBe(false);
+    }
+  });
+
   it("planner CANNOT approve their own submission", () => {
     expect(canTransition("under_review", "approved", "planner")).toBe(false);
   });
@@ -114,8 +125,9 @@ describe("canTransition — admin override", () => {
     expect(canTransition("approved", "draft", "admin")).toBe(false);
   });
 
-  it("admin CANNOT transition from terminal states", () => {
+  it("admin CANNOT transition from archived, nor from withdrawn but by submitting", () => {
     expect(canTransition("withdrawn", "draft", "admin")).toBe(false);
+    expect(canTransition("withdrawn", "submitted", "admin")).toBe(true);
     expect(canTransition("archived", "draft", "admin")).toBe(false);
   });
 
@@ -161,10 +173,14 @@ describe("getAvailableTransitions", () => {
     expect(getAvailableTransitions("under_review", "planner")).toEqual(["withdrawn"]);
   });
 
-  it("returns planner's options from changes_requested (draft + withdraw)", () => {
+  it("returns planner's options from changes_requested (submit again, draft, withdraw)", () => {
     const result = getAvailableTransitions("changes_requested", "planner");
-    expect(result).toEqual(expect.arrayContaining(["draft", "withdrawn"]));
-    expect(result).toHaveLength(2);
+    expect(result).toEqual(expect.arrayContaining(["submitted", "draft", "withdrawn"]));
+    expect(result).toHaveLength(3);
+  });
+
+  it("returns planner's only option from withdrawn: submit again", () => {
+    expect(getAvailableTransitions("withdrawn", "planner")).toEqual(["submitted"]);
   });
 
   it("returns staff's full review options from under_review", () => {
@@ -185,9 +201,8 @@ describe("getAvailableTransitions", () => {
     }
   });
 
-  it("returns no options for terminal states, any role", () => {
+  it("returns no options for archived, any role", () => {
     for (const role of ["planner", "staff", "admin", "hallkeeper"]) {
-      expect(getAvailableTransitions("withdrawn", role)).toEqual([]);
       expect(getAvailableTransitions("archived", role)).toEqual([]);
     }
   });

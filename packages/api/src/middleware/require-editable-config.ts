@@ -1,11 +1,17 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, inArray, isNull, type SQL } from "drizzle-orm";
 import {
+  CONFIGURATION_REVIEW_STATUSES,
+  ConfigurationReviewStatusSchema,
   isPlannerEditable,
   type ConfigurationReviewStatus,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
+
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 import { configurations } from "../db/schema.js";
+import { canAccessResource } from "../utils/query.js";
+import { isPlatformAdmin, type JwtUser } from "./auth.js";
 
 // ---------------------------------------------------------------------------
 // require-editable-config — preHandler that blocks mutations to
@@ -18,11 +24,63 @@ import { configurations } from "../db/schema.js";
 // back would make the hallkeeper's sheet silently stale — the entire
 // approval contract would be meaningless.
 //
-// Admins can always bypass (audit-logged at the route layer when that
-// path lands in Phase 5). Everyone else gets a 409 CONFIG_LOCKED with
-// the current review status embedded so the client can render a
-// "withdraw to edit" UX.
+// The layout's own venue admin and platform admins can always bypass
+// (audit-logged at the route layer when that path lands in Phase 5).
+// Everyone else gets a 409 CONFIG_LOCKED with the current review status
+// embedded so the client can render a "withdraw to edit" UX.
 // ---------------------------------------------------------------------------
+
+/** Who may make the emergency fix the lock otherwise refuses: the admin of the
+ *  layout's own venue, or a platform admin. Another venue's admin who owns a
+ *  layout there is its planner, and waits for its review like one. */
+export function canOverrideReviewLock(user: Pick<JwtUser, "role" | "venueId" | "platformRole">, venueId: string): boolean {
+  return isPlatformAdmin(user) || (user.role === "admin" && user.venueId === venueId);
+}
+
+/** What the lock answers whoever it holds back. */
+export function configLockedBody<Status extends string>(status: Status): { error: string; code: "CONFIG_LOCKED"; reviewStatus: Status } {
+  return {
+    error: `Configuration is locked for editing in state '${status}'. Withdraw the submission to edit, or request an admin override.`,
+    code: "CONFIG_LOCKED",
+    reviewStatus: status,
+  };
+}
+
+/** Whether the lock holds this user back from a layout of this venue in this state. */
+export function lockHolds(user: Pick<JwtUser, "role" | "venueId" | "platformRole">, venueId: string, reviewStatus: string): boolean {
+  if (canOverrideReviewLock(user, venueId)) return false;
+  const status = ConfigurationReviewStatusSchema.safeParse(reviewStatus);
+  return !status.success || !isPlannerEditable(status.data);
+}
+
+const EDITABLE_STATUSES = CONFIGURATION_REVIEW_STATUSES.filter(isPlannerEditable);
+
+/** The lock as a condition on a write to the layout's own row. The preHandler
+ *  checks before the route runs, and a submit can commit between that check
+ *  and the write, so the write itself also names an editable state: a review
+ *  begun meanwhile still holds the layout. None for whoever may override. */
+export function editableAtWrite(user: Pick<JwtUser, "role" | "venueId" | "platformRole">, venueId: string): SQL | undefined {
+  return canOverrideReviewLock(user, venueId) ? undefined : inArray(configurations.reviewStatus, EDITABLE_STATUSES);
+}
+
+/** The lock for a write that leaves the layout's own row alone (one placed
+ *  object): holds the layout's state to the end of the caller's transaction
+ *  (FOR SHARE, so a submit waits for this write, and this write for a submit
+ *  under way) and says whether the user may write now. A transaction, never
+ *  the pool: on the pool the hold would end before the write. */
+export async function holdEditable(
+  tx: Transaction,
+  configId: string,
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+): Promise<{ readonly status: "editable" } | { readonly status: "not_found" } | { readonly status: "locked"; readonly reviewStatus: string }> {
+  const [row] = await tx.select({ reviewStatus: configurations.reviewStatus, venueId: configurations.venueId })
+    .from(configurations)
+    .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
+    .limit(1)
+    .for("share");
+  if (row === undefined) return { status: "not_found" };
+  return lockHolds(user, row.venueId, row.reviewStatus) ? { status: "locked", reviewStatus: row.reviewStatus } : { status: "editable" };
+}
 
 interface RequireEditableConfigOptions {
   /**
@@ -43,7 +101,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 /**
  * Build a Fastify preHandler that gates mutations on a configuration's
  * review status. When the configuration is NOT planner-editable and
- * the acting user isn't admin, the preHandler sends a 409 and returns
+ * the acting user may not override the lock, the preHandler sends a 409 and returns
  * — the route handler never runs.
  *
  * If the configuration can't be resolved (param missing / row not
@@ -86,10 +144,12 @@ export function requireEditableConfig(
     //
     // True fail-closed stays on the deferred list until the route
     // preHandler refactor lands.
-    let row: { reviewStatus: string } | undefined;
+    let row: { reviewStatus: string; venueId: string; userId: string | null } | undefined;
     try {
       const rows = await db.select({
         reviewStatus: configurations.reviewStatus,
+        venueId: configurations.venueId,
+        userId: configurations.userId,
       })
         .from(configurations)
         .where(and(eq(configurations.id, id), isNull(configurations.deletedAt)))
@@ -104,20 +164,20 @@ export function requireEditableConfig(
     }
 
     if (row === undefined) return;
+    // Someone the route refuses hears only that, from the route: the lock
+    // does not tell them what state another's layout is in.
+    if (!canAccessResource(request.user, row.userId, row.venueId)) return;
 
     const status = row.reviewStatus as ConfigurationReviewStatus;
 
-    // Admins always bypass the lock — emergency-fix path. The route
-    // layer is responsible for audit-logging admin overrides (Phase 5).
-    if (request.user.role === "admin") return;
+    // The layout's venue admin, or a platform admin, bypasses the lock —
+    // the emergency-fix path. The route layer is responsible for
+    // audit-logging admin overrides (Phase 5).
+    if (canOverrideReviewLock(request.user, row.venueId)) return;
 
     if (isPlannerEditable(status)) return;
 
-    return reply.status(409).send({
-      error: `Configuration is locked for editing in state '${status}'. Withdraw the submission to edit, or request an admin override.`,
-      code: "CONFIG_LOCKED",
-      reviewStatus: status,
-    });
+    return reply.status(409).send(configLockedBody(status));
   };
 }
 
@@ -136,7 +196,7 @@ export function requireEditableConfig(
 //                       fail-closed: we REFUSE to proceed when the
 //                       lock state is unknown).
 //   - Config locked   → returns 409 CONFIG_LOCKED.
-//   - Admin / editable → returns { ok: true }; route proceeds.
+//   - Override / editable → returns { ok: true }; route proceeds.
 //
 // Routes migrate from preHandler to this helper one at a time. Both
 // forms can coexist: routes that still use the preHandler continue to
@@ -155,7 +215,7 @@ export type EditableConfigGate =
     };
 
 interface ReviewStatusLimitQuery {
-  readonly limit: (limit: number) => Promise<readonly { readonly reviewStatus: string }[]>;
+  readonly limit: (limit: number) => Promise<readonly { readonly reviewStatus: string; readonly venueId: string }[]>;
 }
 
 interface ReviewStatusWhereQuery {
@@ -167,13 +227,17 @@ interface ReviewStatusFromQuery {
 }
 
 export interface ConfigReviewStatusReader {
-  readonly select: (fields: { readonly reviewStatus: typeof configurations.reviewStatus }) => ReviewStatusFromQuery;
+  readonly select: (fields: {
+    readonly reviewStatus: typeof configurations.reviewStatus;
+    readonly venueId: typeof configurations.venueId;
+  }) => ReviewStatusFromQuery;
 }
 
 /**
  * Verify a configuration is in a planner-editable state (or the
- * acting user is admin). Returns a discriminated result instead of
- * sending a reply — the caller maps it to HTTP.
+ * acting user may override the lock: its venue's admin or a platform
+ * admin). Returns a discriminated result instead of sending a reply —
+ * the caller maps it to HTTP.
  *
  * On DB error we return 503 `CONFIG_LOCK_UNAVAILABLE` rather than
  * swallowing — this is the fail-closed posture that preHandler form
@@ -185,16 +249,18 @@ export interface ConfigReviewStatusReader {
 export async function checkConfigEditable(
   db: ConfigReviewStatusReader,
   configId: string,
-  userRole: string,
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
 ): Promise<EditableConfigGate> {
-  // Admin always bypasses — cheap short-circuit before DB work. The
-  // route layer is responsible for audit-logging admin overrides.
-  if (userRole === "admin") return { ok: true };
+  // A platform admin always bypasses — cheap short-circuit before DB work;
+  // a venue admin needs the layout's venue. The route layer is responsible
+  // for audit-logging admin overrides.
+  if (isPlatformAdmin(user)) return { ok: true };
 
-  let row: { reviewStatus: string } | undefined;
+  let row: { reviewStatus: string; venueId: string } | undefined;
   try {
     const rows = await db.select({
       reviewStatus: configurations.reviewStatus,
+      venueId: configurations.venueId,
     })
       .from(configurations)
       .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
@@ -213,15 +279,10 @@ export async function checkConfigEditable(
   // gate has no opinion here: a row that doesn't exist can't be
   // "locked", and the mutation will fail cleanly at its own step.
   if (row === undefined) return { ok: true };
+  if (canOverrideReviewLock(user, row.venueId)) return { ok: true };
 
   const status = row.reviewStatus as ConfigurationReviewStatus;
   if (isPlannerEditable(status)) return { ok: true };
 
-  return {
-    ok: false,
-    status: 409,
-    error: `Configuration is locked for editing in state '${status}'. Withdraw the submission to edit, or request an admin override.`,
-    code: "CONFIG_LOCKED",
-    reviewStatus: status,
-  };
+  return { ok: false, status: 409, ...configLockedBody(status) };
 }

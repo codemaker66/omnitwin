@@ -1,5 +1,5 @@
 import { roomPosterSources } from "../lib/room-posters.js";
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import {
   roomCardFacts,
@@ -10,6 +10,7 @@ import { isRoomWalkable } from "../data/room-walk-exposure.js";
 import { footprint, stateLine } from "../lib/room-card-copy.js";
 import { gaussianSplatsAvailable } from "../lib/splat-access.js";
 import { useHashTarget } from "../lib/use-hash-target.js";
+import { usePlannerIntent } from "../lib/planner-intent.js";
 import {
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_WEDDING_PRICING,
@@ -91,6 +92,8 @@ function displayName(slug: string): string {
 interface CardProps {
   readonly slug: string;
   readonly bundle: RoomCardFacts;
+  /** The hero photograph is still loading: the plate waits, on its own ground. */
+  readonly posterDeferred: boolean;
 }
 
 /**
@@ -102,7 +105,7 @@ interface CardProps {
  * which looks deliberate and needs no per-room bookkeeping: if the poster file
  * is missing the image simply fails and the type takes over.
  */
-function RoomCard({ slug, bundle }: CardProps): ReactElement {
+function RoomCard({ slug, bundle, posterDeferred }: CardProps): ReactElement {
   const still = roomPosterSources(slug);
   const [posterFailed, setPosterFailed] = useState(false);
   const onPosterError = useCallback(() => { setPosterFailed(true); }, []);
@@ -123,7 +126,7 @@ function RoomCard({ slug, bundle }: CardProps): ReactElement {
               </span>
             </span>
           )
-          : (
+          : posterDeferred ? null : (
             <img
               className="rooms__poster"
               src={still.src}
@@ -219,6 +222,20 @@ export function RoomsHomePage(): ReactElement {
   const rest = useMemo(() => slugs.filter((slug) => slug !== HERO_ROOM), [slugs]);
   const heroWalkable = isRoomWalkable(HERO_ROOM);
 
+  // The hero photograph is the page's largest paint, and on a phone's link
+  // every byte in flight shares the line with it (X Engineering found the same
+  // of scripts racing their stylesheet; T-685). The rail's posters are
+  // off-screen on a phone, so they wait until the hero has loaded or failed.
+  const heroImage = useRef<HTMLImageElement>(null);
+  const [heroSettled, setHeroSettled] = useState(false);
+  const settleHero = useCallback(() => { setHeroSettled(true); }, []);
+  // Reaching for a Plan link fetches the planner's code for the next page.
+  const plannerIntent = usePlannerIntent();
+  useEffect(() => {
+    // A cached hero can finish before React listens for its load.
+    if (heroImage.current?.complete === true) setHeroSettled(true);
+  }, []);
+
   // #enquire arrives from the room walk, the not-found page, the legal pages
   // and the craft quiz. The browser gave up on it before this chunk existed,
   // so the page looks again.
@@ -263,7 +280,7 @@ export function RoomsHomePage(): ReactElement {
             three doors its readers cannot open. Log in takes staff to their
             workspace. */}
         <nav className="rooms__primaryNav" aria-label="Primary">
-          <a className="rooms__navPlan" href="/plan?space=grand-hall">{HOME_NAV_PLAN}</a>
+          <a className="rooms__navPlan" href="/plan?space=grand-hall" {...plannerIntent}>{HOME_NAV_PLAN}</a>
           <a href="#enquire">{HOME_NAV_ENQUIRE}</a>
           <Link className="rooms__navLogin" to="/login">{HOME_NAV_LOGIN}</Link>
         </nav>
@@ -275,7 +292,10 @@ export function RoomsHomePage(): ReactElement {
         <div className="rooms__stage">
           <section className="rooms__hero" aria-labelledby="rooms-hero-name">
             <img
+              ref={heroImage}
               className="rooms__heroPoster"
+              onLoad={settleHero}
+              onError={settleHero}
               src={heroStill.src}
               srcSet={heroStill.srcSet}
               sizes="100vw"
@@ -294,7 +314,7 @@ export function RoomsHomePage(): ReactElement {
                 && <p className="rooms__measure rooms__measure--hero">{footprint(heroBundle)}</p>}
               <p className="rooms__heroLede">{HOME_HERO_LEDE}</p>
               <div className="rooms__heroActions">
-                <a className="rooms__enter rooms__enter--plan" href="/plan?space=grand-hall">{HOME_HERO_PLAN}</a>
+                <a className="rooms__enter rooms__enter--plan" href="/plan?space=grand-hall" {...plannerIntent}>{HOME_HERO_PLAN}</a>
                 {heroWalkable
                   && <Link className="rooms__enter" to={`/room/${HERO_ROOM}`}>{HOME_HERO_WALK}</Link>}
                 {!gaussianSplatsAvailable() && <Link className="rooms__enter" to="/tour">{HOME_HERO_TOUR}</Link>}
@@ -309,7 +329,7 @@ export function RoomsHomePage(): ReactElement {
             <div className="rooms__track">
               {rest.map((slug) => {
                 const bundle = roomCardFacts(slug);
-                return bundle === null ? null : <RoomCard key={slug} slug={slug} bundle={bundle} />;
+                return bundle === null ? null : <RoomCard key={slug} slug={slug} bundle={bundle} posterDeferred={!heroSettled} />;
               })}
             </div>
           </section>

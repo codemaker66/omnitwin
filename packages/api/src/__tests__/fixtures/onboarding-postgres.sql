@@ -31,3 +31,19 @@ CREATE TABLE users (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- As migration 0028 declares it. Every sign-in reads it: a Clerk account the
+-- user.deleted webhook recorded here never links a row again (middleware/auth.ts,
+-- clerkAccountDeleted).
+CREATE TABLE general_audit_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_user_id uuid REFERENCES users(id),
+  action varchar(120) NOT NULL,
+  target_type varchar(80) NOT NULL,
+  target_id varchar(160) NOT NULL,
+  summary text NOT NULL,
+  metadata jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT general_audit_log_action_nonempty CHECK (length(trim(action)) > 0),
+  CONSTRAINT general_audit_log_summary_nonempty CHECK (length(trim(summary)) > 0)
+);

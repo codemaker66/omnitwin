@@ -15,7 +15,7 @@ import { craftedDetail } from "./crafted-detail.js";
 import { cornerCascades, swag } from "./crafted-drapes.js";
 import type { CraftedMaterialId } from "./crafted-materials.js";
 import type { CraftedPart } from "./crafted-model.js";
-import { poseurCover } from "./crafted-poseur.js";
+import { poseurCover, poseurFeet } from "./crafted-poseur.js";
 import { casterGeometry, contactSpots, insetSheet } from "./crafted-shadow.js";
 
 // ---------------------------------------------------------------------------
@@ -542,5 +542,7 @@ export function poseurParts(size: TableSize, colour: ClothColour): CraftedPart[]
   return [
     { material: colour === "black" ? "spandex-black" : "spandex-white", geometry: cover },
     { material: "shadow-caster", geometry: caster },
+    // Each pocket stands on the floor over its foot.
+    { material: "contact", geometry: contactSpots(poseurFeet(size).map(([x, z]) => ({ x, z, radius: 0.06 }))) },
   ];
 }

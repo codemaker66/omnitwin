@@ -251,9 +251,11 @@ async function loadExtractionInputs(
 // Public API — createSnapshot
 //
 // Idempotent semantics: if the latest snapshot's sourceHash equals the
-// just-computed hash, we return that row with `created: false`. The
-// route handler uses the flag to decide whether to write a history
-// row + send a "submitted" email (it should NOT for a no-op re-submit).
+// just-computed hash, and the sheet's heading (the layout's name, guest
+// count and style) is the one it froze, we return that row with
+// `created: false`. The route handler uses the flag to decide whether to
+// write a history row + send a "submitted" email (it should NOT for a
+// no-op re-submit from a draft).
 //
 // Race-condition window: between the latest-read and the insert, a
 // concurrent submit could land. The UNIQUE(configuration_id, version)
@@ -270,6 +272,15 @@ export interface CreateSnapshotInput {
 export interface CreateSnapshotResult {
   readonly snapshot: ConfigurationSheetSnapshot;
   readonly created: boolean;
+}
+
+/** The sheet's heading the snapshot freezes and the source hash leaves out:
+ *  the hash is the room as set, so a renamed layout, or one for more guests,
+ *  would otherwise keep the version that carries the old words. */
+type SheetHeading = Pick<ConfigurationSheetSnapshot["payload"]["config"], "name" | "guestCount" | "layoutStyle">;
+
+function sameHeading(frozen: SheetHeading, live: SheetHeading): boolean {
+  return frozen.name === live.name && frozen.guestCount === live.guestCount && frozen.layoutStyle === live.layoutStyle;
 }
 
 export async function createSnapshot(
@@ -296,7 +307,8 @@ export async function createSnapshot(
     .limit(1);
 
   if (latest !== undefined && latest.sourceHash === extraction.sourceHash) {
-    return { snapshot: hydrateSnapshotRow(latest), created: false };
+    const previous = hydrateSnapshotRow(latest);
+    if (sameHeading(previous.payload.config, payloadResult.payload.config)) return { snapshot: previous, created: false };
   }
 
   const nextVersion = (latest?.version ?? 0) + 1;
@@ -608,7 +620,8 @@ export async function approveSnapshot(
 
 // ---------------------------------------------------------------------------
 // History — append a row to configuration_review_history. Called by
-// the route layer after every successful state transition.
+// the route layer after every successful state transition. Returns the
+// row's id, which names that one move (a decision's email is keyed by it).
 // ---------------------------------------------------------------------------
 
 export interface AppendHistoryInput {
@@ -622,12 +635,14 @@ export interface AppendHistoryInput {
 export async function appendReviewHistory(
   db: Database,
   input: AppendHistoryInput,
-): Promise<void> {
-  await db.insert(configurationReviewHistory).values({
+): Promise<string> {
+  const [row] = await db.insert(configurationReviewHistory).values({
     configurationId: input.configurationId,
     fromStatus: input.fromStatus,
     toStatus: input.toStatus,
     changedBy: input.changedBy,
     note: input.note,
-  });
+  }).returning({ id: configurationReviewHistory.id });
+  if (row === undefined) throw new Error("Review history insertion returned no row");
+  return row.id;
 }

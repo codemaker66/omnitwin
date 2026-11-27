@@ -33,6 +33,7 @@ import {
   emptyEventInstructions,
   isClientSideRole,
   normalizeProtectedPremises,
+  redactAllergyNote,
 } from "@omnitwin/types";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
@@ -285,8 +286,10 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
           logPlannerAction({
             intent: "event.details.update",
             tool: "event-details",
-            payload: { instructions: payload },
-            inverse: { instructions: before },
+            // The guests' allergy note is never logged, only that the
+            // details changed (people-privacy-3). The PATCH above carried it.
+            payload: redactAllergyNote({ instructions: payload }),
+            inverse: redactAllergyNote({ instructions: before }),
           });
         }
         serverStateRef.current = payload;

@@ -1,10 +1,7 @@
 import type { TwinScanNode } from "@omnitwin/types";
-import {
-  TRADES_HALL_ROOM_CAPACITIES,
-  TRADES_HALL_ROOM_DIMENSIONS,
-  type PublishedRoomSlug,
-} from "@omnitwin/types";
-import { ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES, lookUpRoom, metres } from "./twin-rooms.js";
+import type { PublishedRoomSlug } from "@omnitwin/types";
+import { TRADES_HALL_ROOM_CAPACITIES, TRADES_HALL_ROOM_DIMENSIONS } from "@omnitwin/types/trades-hall-venue-truth";
+import { ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES, formatExtentPlan, lookUpRoom } from "./twin-rooms.js";
 
 // -----------------------------------------------------------------------------
 // room-selector — the arithmetic behind the Rooms panel, with no React in it.
@@ -28,8 +25,8 @@ import { ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES, lookUpRoom, metres } from "./t
 //
 // EVERY FIGURE JOINS AT READ TIME. formatRoomComparison composes its line out of
 // TRADES_HALL_ROOM_CAPACITIES and TRADES_HALL_ROOM_DIMENSIONS through twin-rooms
-// (and through its exported metres(), so the dossier and this panel cannot drift
-// even in their rounding). No capacity or dimension is written here, not even in
+// (and through its exported formatExtentPlan(), so the dossier and this panel
+// cannot drift even in their rounding). No capacity or dimension is written here, not even in
 // a comment: a figure in prose is the one a future reader trusts, and the drift
 // gate cannot see it.
 //
@@ -124,6 +121,10 @@ export function pickRoomTarget(
   return best;
 }
 
+/** U+00A0. Written as an escape so it cannot be mistaken for, or silently
+ *  retyped as, an ordinary space. */
+const NO_BREAK_SPACE = "\u00a0";
+
 /**
  * The one-line comparison beneath a room's name — capacities and published
  * extent, joined — or null at a viewpoint whose room is not known.
@@ -138,8 +139,20 @@ export function pickRoomTarget(
  * accessible name reuses this exact string, so Label in Name (WCAG 2.5.3) holds
  * by construction rather than by a second formatter agreeing with this one.
  *
- * Rooms the venue publishes no dimensions for render their capacities alone,
- * rather than an em dash where a measurement should be.
+ * A room with no stated dimensions renders its capacities alone, rather than an
+ * em dash where a measurement should be. A room published in sections gives
+ * each section's floor, named as the venue names it and in the venue's order,
+ * joined by "and", so two sizes are never read as a choice between two rooms.
+ * The capacities before them are the whole room's.
+ *
+ * WHERE THE LINE MAY WRAP. A floor (its section's name, where it has one, and
+ * its figure) is held together with no-break spaces, and "and" is tied to the
+ * floor after it, so a line break cannot fall inside a floor. The capacities
+ * and the separators before the floors are ordinary text and break as such.
+ * A sectioned room's line is the longest on the panel and takes two lines
+ * there, breaking before "and"; with ordinary spaces it broke inside a figure
+ * and left the unit alone on the second. A no-break space is as wide as a
+ * space, so a line that fits is drawn exactly as before.
  */
 export function formatRoomComparison(nodeId: string): string | null {
   const room = lookUpRoom(nodeId);
@@ -152,7 +165,12 @@ export function formatRoomComparison(nodeId: string): string | null {
   if (dimensions === undefined) {
     return head;
   }
-  return `${head} · ${metres(dimensions.lengthM)} × ${metres(dimensions.widthM)} m`;
+  const floors = dimensions.extents.map((extent) => {
+    const plan = formatExtentPlan(extent);
+    const named = extent.section === undefined ? plan : `${extent.section} ${plan}`;
+    return named.split(" ").join(NO_BREAK_SPACE);
+  });
+  return `${head} · ${floors.join(` and${NO_BREAK_SPACE}`)}`;
 }
 
 /** One offered room, ready to render. */

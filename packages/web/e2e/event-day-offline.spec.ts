@@ -94,6 +94,7 @@ async function openBoard(page: Page): Promise<Network> {
   });
   await page.route(`${API}/events/${EVENT}/ops-board`, (route) => { json(route, boardWith(taskStatus, issues)); });
   await page.route(`${API}/events/${EVENT}/change-feed**`, (route) => { json(route, []); });
+  await page.route(`${API}/events/${EVENT}/changes-awaiting-acknowledgement`, (route) => { json(route, []); });
   await page.route(`${API}/events/${EVENT}/change-acknowledgements**`, (route) => { json(route, []); });
   await page.route(`${API}/events/${EVENT}/mission`, (route) => { void route.fulfill({ status: 404, json: { error: "No mission", code: "NOT_FOUND" } }); });
   await page.route(`${API}/ops-tasks/${TASK}/status`, (route) => {

@@ -17,10 +17,11 @@ function databaseError(code?: string): Error {
   return code === undefined ? error : Object.assign(error, { code, detail: `Failing row contains (${NOTE})` });
 }
 
-/** A query chain that resolves to `rows` however it is finished. */
+/** A query chain that resolves to `rows` however it is finished, row lock
+ *  (`.for(…)`) included: the piece-note pass holds each layout first. */
 function chain(rows: readonly unknown[]): unknown {
   const link: Record<string, unknown> = {};
-  for (const step of ["from", "where", "set", "returning"]) link[step] = (): unknown => link;
+  for (const step of ["from", "where", "for", "set", "returning"]) link[step] = (): unknown => link;
   link["then"] = (resolve: (value: readonly unknown[]) => unknown): unknown => resolve(rows);
   return link;
 }
@@ -30,11 +31,14 @@ function readFails(error: Error): Database {
   return Object.assign(drizzle.mock({ schema }), { select: (): never => { throw error; } });
 }
 
-/** A database that finds one lapsed layout, then fails to clear its note. */
+/** A database that finds one lapsed layout, then fails to clear its note.
+ *  Its pieces hold no notes, so the piece-note pass (one transaction per
+ *  layout) finds nothing and the allergy note's write is the one that fails. */
 function writeFails(error: Error): Database {
   return Object.assign(drizzle.mock({ schema }), {
     select: () => chain([{ id: "00000000-0000-4000-8000-000000000001" }]),
     update: (): never => { throw error; },
+    transaction: (run: (tx: { select: () => unknown }) => unknown) => Promise.resolve(run({ select: () => chain([]) })),
   });
 }
 

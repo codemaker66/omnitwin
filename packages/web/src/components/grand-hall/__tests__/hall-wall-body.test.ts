@@ -5,10 +5,16 @@ import type { BufferGeometry } from "three";
 import { HALL_CUTS } from "../GrandHallModel.js";
 import { buildHallGeometry, buildHallThresholdGeometry, buildHallWallGeometry } from "../hall-geometry.js";
 import { parseWallRelief, type WallRelief } from "../hall-relief.js";
-import { buildPlinthRing } from "../hall-section.js";
+import { SECTION_PRESETS, buildPlinthRing, elevationFinish } from "../hall-section.js";
 import { REVEAL_SIDE_DEPTH, drawnRelief, sharedNeighbour } from "../hall-walls.js";
 import { DOOR_WALLS, buildHallDoorGeometry, doorTarget, leafVertex, swingDirection } from "../hall-doors.js";
+import { sashExtent, type SashExtent } from "../hall-glazing.js";
 import {
+  BAY_BOARDS,
+  BAY_BOARD_CLEARANCE,
+  BAY_FRONT,
+  BAY_LINING_SET,
+  BAY_SLOTS,
   BODY_FINISH,
   BODY_ROLE,
   DOOR_SLOTS,
@@ -16,13 +22,18 @@ import {
   OPENING_RELIEF,
   THRESHOLD_HEIGHT,
   WALL_BODY_TOP,
+  bayClearFrom,
   bodyOpenings,
   bodyThicknessAt,
   bodyVertexHeight,
   buildWallBody,
   chainAt,
+  inClearedBay,
   insideHole,
+  isBayRole,
   reliefVisible,
+  type BaySlot,
+  type BodyOpening,
   type BodyRole,
 } from "../hall-wall-body.js";
 import {
@@ -32,9 +43,11 @@ import {
   HALL_WALL_STRETCHES,
   HALL_WALL_THICKNESS,
   hallDoor,
+  hallGlazing,
   hallWall,
   wallPoint,
   wallThicknessAt,
+  type HallGlazing,
   type HallWall,
 } from "../hall-spec.js";
 
@@ -72,8 +85,12 @@ function trianglesOf(geometry: BufferGeometry, source: string, keep: (uv: readon
   return out;
 }
 
-/** The body's triangles as the shader shows them for each wall's cut (HALL_WALLS order). */
-function shownBody(geometry: BufferGeometry, cuts: readonly number[]): Tri[] {
+/**
+ * The body's triangles as the shader shows them for each wall's cut
+ * (HALL_WALLS order), without the real sky unless `sky`; `roles` keeps only
+ * the triangles of the roles it accepts.
+ */
+function shownBody(geometry: BufferGeometry, cuts: readonly number[], options: { readonly sky?: boolean; readonly roles?: (role: BodyRole) => boolean } = {}): Tri[] {
   const position = geometry.getAttribute("position");
   const normal = geometry.getAttribute("normal");
   const tag = geometry.getAttribute("aSection");
@@ -81,14 +98,16 @@ function shownBody(geometry: BufferGeometry, cuts: readonly number[]): Tri[] {
   const index = geometry.getIndex();
   if (index === null) throw new Error("the body is indexed");
   const cutOf = (wall: number): number => (wall < -0.5 ? 1000 : cuts[Math.round(wall)] ?? 1000);
+  const roleOf = (i: number): BodyRole => Math.round(tag.getZ(i)) as BodyRole;
   const moved = (i: number): Vec3 | null => {
     const cut = Math.min(cutOf(tag.getX(i)), cutOf(tag.getY(i)));
-    const y = bodyVertexHeight(position.getY(i), shape.getX(i), Math.round(tag.getZ(i)) as BodyRole, cut);
+    const y = bodyVertexHeight(position.getY(i), shape.getX(i), roleOf(i), cut, shape.getY(i), options.sky ?? false);
     return y === null ? null : [position.getX(i), y, position.getZ(i)];
   };
   const out: Tri[] = [];
   for (let k = 0; k < index.count; k += 3) {
     const ids = [index.getX(k), index.getX(k + 1), index.getX(k + 2)];
+    if (options.roles !== undefined && !options.roles(roleOf(ids[0] ?? 0))) continue;
     const [a, b, c] = ids.map(moved);
     if (a === null || b === null || c === null || a === undefined || b === undefined || c === undefined) continue;
     const i0 = ids[0] ?? 0;
@@ -139,6 +158,10 @@ const ALL_PLAN = [HALL_CUTS.plan, HALL_CUTS.plan, HALL_CUTS.plan, HALL_CUTS.plan
 /** The opening view: the door wall cut at the dado, the end wall part-way, the far walls whole. */
 const OPENING_VIEW = [NONE, 5.96, HALL_CUTS.near, NONE];
 const wallIndex = (id: HallWall["id"]): number => HALL_WALLS.findIndex((wall) => wall.id === id);
+/** Each wall's cut with the window wall at `cut` and the rest whole. */
+const windowWallAt = (cut: number): number[] => ALL_NONE.map((none, index) => (index === wallIndex("window") ? cut : none));
+/** The overview from Glassford Street: the window wall cut at the dado, the end wall part-way. */
+const GLASSFORD_STREET = ALL_NONE.map((none, index) => (index === wallIndex("window") ? HALL_CUTS.near : index === wallIndex("end") ? 5.96 : none));
 
 /** Wall-local (u, d) of a world point. */
 function local(wall: HallWall, p: Vec3): { u: number; d: number } {
@@ -333,17 +356,88 @@ describe("the walls' bodies", () => {
   });
 
   it("keeps the lintels whole above the release, and drops them with every lower cut", () => {
-    expect(bodyVertexHeight(6.7, 2.35, BODY_ROLE.lintel, HALL_CUTS.plan)).toBeNull();
-    expect(bodyVertexHeight(6.7, 2.35, BODY_ROLE.lintel, HALL_CUTS.near)).toBeNull();
-    expect(bodyVertexHeight(6.7, 2.35, BODY_ROLE.lintel, 5)).toBe(5);
-    expect(bodyVertexHeight(2.35, 2.35, BODY_ROLE.lintel, 2)).toBeNull();
-    expect(bodyVertexHeight(6.7, 0, BODY_ROLE.lintelJamb, 5)).toBeNull();
-    expect(bodyVertexHeight(6.7, 0, BODY_ROLE.lintelJamb, HALL_CUTS.plan)).toBe(HALL_CUTS.plan);
+    // `reveal` (aShape.y) means nothing for these roles: their distance from the room's plane.
+    const fromRoom = 0.4;
+    expect(bodyVertexHeight(6.7, 2.35, BODY_ROLE.lintel, HALL_CUTS.plan, fromRoom)).toBeNull();
+    expect(bodyVertexHeight(6.7, 2.35, BODY_ROLE.lintel, HALL_CUTS.near, fromRoom)).toBeNull();
+    expect(bodyVertexHeight(6.7, 2.35, BODY_ROLE.lintel, 5, fromRoom)).toBe(5);
+    expect(bodyVertexHeight(2.35, 2.35, BODY_ROLE.lintel, 2, fromRoom)).toBeNull();
+    expect(bodyVertexHeight(6.7, 0, BODY_ROLE.lintelJamb, 5, fromRoom)).toBeNull();
+    expect(bodyVertexHeight(6.7, 0, BODY_ROLE.lintelJamb, HALL_CUTS.plan, fromRoom)).toBe(HALL_CUTS.plan);
     // A sill's top shows only while the cut lies below it.
-    expect(bodyVertexHeight(0.935, 0, BODY_ROLE.capOnly, NONE)).toBeNull();
-    expect(bodyVertexHeight(0.935, 0, BODY_ROLE.capOnly, 0.5)).toBe(0.5);
+    expect(bodyVertexHeight(0.935, 0, BODY_ROLE.capOnly, NONE, fromRoom)).toBeNull();
+    expect(bodyVertexHeight(0.935, 0, BODY_ROLE.capOnly, 0.5, fromRoom)).toBe(0.5);
     // A piece wholly above the cut collapses onto its floor (and the mask discards it).
-    expect(bodyVertexHeight(6.7, 3.3, BODY_ROLE.body, 1.96)).toBe(3.3);
+    expect(bodyVertexHeight(6.7, 3.3, BODY_ROLE.body, 1.96, fromRoom)).toBe(3.3);
+    expect(bodyVertexHeight(6.7, 3.3, BODY_ROLE.body, 1.96, 0)).toBe(3.3);
+  });
+
+  it("shows a cleared bay's faces only while the cut lies below the height they carry, and its back only without the real sky", () => {
+    // A board laid at 0.96 m over a footprint's sill at 0.89 m, in a bay whose window's head is 3.305 m.
+    const [board, sill, head] = [0.96, 0.89, 3.305];
+    expect(bodyVertexHeight(board, sill, BODY_ROLE.bay, NONE, head)).toBeNull();
+    expect(bodyVertexHeight(board, sill, BODY_ROLE.bay, head, head)).toBeNull();
+    expect(bodyVertexHeight(board, sill, BODY_ROLE.bay, head - 0.01, head)).toBe(board);
+    expect(bodyVertexHeight(board, sill, BODY_ROLE.bay, HALL_CUTS.near, head)).toBe(board);
+    // Between the sill and the board, the board lies at the cut; under the sill, on the sill (above the cut, discarded).
+    expect(bodyVertexHeight(board, sill, BODY_ROLE.bay, 0.93, head)).toBe(0.93);
+    expect(bodyVertexHeight(board, sill, BODY_ROLE.bay, 0.5, head)).toBe(sill);
+    // The daylit back: the same rule without the real sky, never with it.
+    expect(bodyVertexHeight(2.5, sill, BODY_ROLE.bayBacking, HALL_CUTS.plan, head)).toBe(2.5);
+    expect(bodyVertexHeight(2.5, sill, BODY_ROLE.bayBacking, HALL_CUTS.plan, head, true)).toBeNull();
+    expect(bodyVertexHeight(2.5, sill, BODY_ROLE.bayBacking, NONE, head)).toBeNull();
+    // The sky changes nothing else.
+    expect(bodyVertexHeight(board, sill, BODY_ROLE.bay, HALL_CUTS.plan, head, true)).toBe(board);
+    expect(bodyVertexHeight(6.7, 0, BODY_ROLE.body, HALL_CUTS.plan, 0.3, true)).toBe(HALL_CUTS.plan);
+  });
+
+  it("finishes as the section only faces that stand upright, square to their wall, which Ashlar alone draws as masonry in elevation", () => {
+    expect(elevationFinish(SECTION_PRESETS.ashlar)).toBe(BODY_FINISH.section);
+    expect(elevationFinish(SECTION_PRESETS.atelier)).toBeNull();
+    expect(elevationFinish(SECTION_PRESETS.nocturne)).toBeNull();
+    const tag = body.geometry.getAttribute("aSection");
+    const normal = body.geometry.getAttribute("normal");
+    let faces = 0;
+    for (let i = 0; i < tag.count; i++) {
+      if (Math.round(tag.getW(i)) !== BODY_FINISH.section) continue;
+      faces += 1;
+      expect(Math.abs(normal.getY(i))).toBeLessThan(1e-6);
+      // A wall's end, a step in its outer face, a pier's side: u never changes across it (masonrySection's `endOn`).
+      const wall = HALL_WALLS[Math.round(tag.getX(i))];
+      if (wall === undefined) throw new Error("a section face without its wall");
+      expect(Math.abs(normal.getX(i) * wall.tangent[0] + normal.getZ(i) * wall.tangent[2])).toBeGreaterThan(0.999);
+    }
+    expect(faces).toBeGreaterThan(0);
+  });
+
+  it("shows the end wall's end above the window wall's dado cut as the section, from its room edge to its outer face", () => {
+    const end = hallWall("end");
+    const e = wallIndex("end");
+    const cut = 5.96;
+    const position = body.geometry.getAttribute("position");
+    const normal = body.geometry.getAttribute("normal");
+    const tag = body.geometry.getAttribute("aSection");
+    const shape = body.geometry.getAttribute("aShape");
+    const back: Vec3 = [-end.tangent[0], 0, -end.tangent[2]];
+    let top = 0;
+    let room = Infinity;
+    let deepest = 0;
+    let outer = Infinity;
+    for (let i = 0; i < tag.count; i++) {
+      if (Math.round(tag.getX(i)) !== e || tag.getY(i) >= 0) continue;
+      if (Math.abs(local(end, [position.getX(i), 0, position.getZ(i)]).u) > 1e-5) continue;
+      if (dot([normal.getX(i), normal.getY(i), normal.getZ(i)], back) < 0.999) continue;
+      expect(Math.round(tag.getW(i))).toBe(BODY_FINISH.section);
+      const y = bodyVertexHeight(position.getY(i), shape.getX(i), Math.round(tag.getZ(i)) as BodyRole, cut, shape.getY(i));
+      if (y !== null) top = Math.max(top, y);
+      room = Math.min(room, shape.getY(i));
+      deepest = Math.max(deepest, shape.getY(i));
+      outer = Math.min(outer, shape.getZ(i));
+    }
+    expect(top).toBeCloseTo(cut, 5);
+    expect(room).toBeCloseTo(0, 5);
+    expect(deepest).toBeCloseTo(wallThicknessAt("end", 0), 5);
+    expect(outer).toBeCloseTo(0, 5);
   });
 
   it("stands each corner block no higher than the lower of its two walls' cuts", () => {
@@ -589,14 +683,23 @@ describe("the walls' bodies against the scanned relief", () => {
     // The windows' outer reveals: the "paint" faces outside the glass (uv.x 1; the glazing bars are 0).
     const fixed: Tri[] = [...trianglesOf(floor, "floor"), ...trianglesOf(buildPlinthRing(), "ring"), ...trianglesOf(sills, "thresholds"), ...trianglesOf(paint, "reveals", (uv) => uv[0] > 0.5)];
     for (const [key, geometry] of walls.geometries) fixed.push(...trianglesOf(geometry, `relief-${key}`));
+    // The glazing bars, which a cleared bay's board and sill meet. (Against the scanned relief, one bar face in
+    // arch-fireplace, at x -9.212, y 3.286, lies within a millimetre of a scanned face over 2.4 cm2, the bars having been
+    // measured on the scan: the bars are checked against everything but the relief.)
+    const bars = trianglesOf(paint, "bars", (uv) => uv[0] < 0.5);
+    const unscanned = fixed.filter((t) => !t.source.startsWith("relief-"));
     // The doors' leaves, shut on a walk and swung open wherever their wall is cut.
     const doors = buildHallDoorGeometry();
-    for (const cuts of [ALL_NONE, ALL_PLAN, OPENING_VIEW]) {
+    // Every bay cleared: Plan, the overview from Glassford Street, and cuts between the bays' sills and their boards.
+    for (const cuts of [ALL_NONE, ALL_PLAN, OPENING_VIEW, GLASSFORD_STREET, windowWallAt(0.95), windowWallAt(0.92)]) {
       const leaves = [...doors.geometries.values()].flatMap((geometry) => shownLeaves(geometry, cuts));
       expect(leaves.length).toBeGreaterThan(500);
-      expect(coplanarOverlaps([...fixed, ...shownBody(body.geometry, cuts), ...leaves]).slice(0, 5)).toEqual([]);
+      const shown = shownBody(body.geometry, cuts);
+      expect(coplanarOverlaps([...fixed, ...shown, ...leaves]).slice(0, 5)).toEqual([]);
+      expect(coplanarOverlaps([...unscanned, ...bars, ...shown]).slice(0, 5)).toEqual([]);
     }
-  });
+    // Six cuts over the whole relief: 34 s on CI's runner, where the 20 s default timed out.
+  }, 120_000);
 
   it("sets the thresholds above the floor's level, through each doorway's depth", () => {
     const sills = buildHallThresholdGeometry().geometries.get("floor");
@@ -801,3 +904,414 @@ function signedArea(poly: readonly [number, number][]): number {
   }
   return area / 2;
 }
+
+/** The part of a triangle at or under a height (what the section's mask keeps of it). */
+function clipBelow(t: Tri, cut: number): Tri[] {
+  const points = [t.a, t.b, t.c];
+  const kept: Vec3[] = [];
+  for (let i = 0; i < 3; i++) {
+    const p = points[i];
+    const q = points[(i + 1) % 3];
+    if (p === undefined || q === undefined) continue;
+    const pIn = p[1] <= cut;
+    if (pIn) kept.push(p);
+    if (pIn !== q[1] <= cut) {
+      const s = (cut - p[1]) / (q[1] - p[1]);
+      kept.push([p[0] + (q[0] - p[0]) * s, cut, p[2] + (q[2] - p[2]) * s]);
+    }
+  }
+  const out: Tri[] = [];
+  const first = kept[0];
+  for (let k = 1; first !== undefined && k + 1 < kept.length; k++) {
+    const b = kept[k];
+    const c = kept[k + 1];
+    if (b !== undefined && c !== undefined) out.push({ a: first, b, c, n: t.n, source: t.source });
+  }
+  return out;
+}
+
+describe("a window's bay, as the cut clears it", () => {
+  const body = buildWallBody();
+  const windowWall = wallIndex("window");
+  const wall = hallWall("window");
+  const inward: Vec3 = [wall.normal[0], 0, wall.normal[2]];
+  const along: Vec3 = [wall.tangent[0], 0, wall.tangent[2]];
+  const windows = bodyOpenings(wall).filter((entry) => entry.door === null);
+  /**
+   * A cut between every bay's footprint sill (0.857-0.929 m) and its board
+   * (0.935-0.995 m): the overview's, from a camera about 1.55 m high outside
+   * the window wall.
+   */
+  const LOW = 0.95;
+  const tag = body.geometry.getAttribute("aSection");
+  const shape = body.geometry.getAttribute("aShape");
+  const position = body.geometry.getAttribute("position");
+  const normal = body.geometry.getAttribute("normal");
+  const glazingTriangles = (() => {
+    const paint = buildHallGeometry().geometries.get("paint");
+    if (paint === undefined) throw new Error("no glazing");
+    return trianglesOf(paint, "glazing");
+  })();
+
+  /** Window `id`'s bay: how the body cuts it, its slot, its glazing and its sash. */
+  function bay(id: string): { entry: BodyOpening; slot: BaySlot; glazing: HallGlazing; sash: SashExtent } {
+    const entry = windows.find((item) => item.opening.id === id);
+    const slot = BAY_SLOTS.find((item) => item.opening === id);
+    const glazing = hallGlazing(id);
+    if (entry === undefined || slot === undefined || glazing === undefined) throw new Error(id);
+    return { entry, slot, glazing, sash: sashExtent(glazing) };
+  }
+
+  interface BayVertex { readonly u: number; readonly d: number; readonly y: number; readonly base: number; readonly reveal: number; readonly role: number; readonly finish: number; readonly n: Vec3 }
+
+  /** The body's vertices of a cleared bay's faces in window `id`'s bay, wall-local. */
+  function bayVertices(id: string): BayVertex[] {
+    const { slot } = bay(id);
+    const out: BayVertex[] = [];
+    for (let i = 0; i < tag.count; i++) {
+      const role = Math.round(tag.getZ(i));
+      if (!isBayRole(role) || Math.round(tag.getX(i)) !== windowWall) continue;
+      const q = local(wall, [position.getX(i), 0, position.getZ(i)]);
+      if (q.u < slot.u0 - 1e-5 || q.u > slot.u1 + 1e-5) continue;
+      out.push({ u: q.u, d: q.d, y: position.getY(i), base: shape.getX(i), reveal: shape.getY(i), role, finish: Math.round(tag.getW(i)), n: [normal.getX(i), normal.getY(i), normal.getZ(i)] });
+    }
+    return out;
+  }
+
+  /** Whether every corner of a triangle lies in window `id`'s bay along the wall. */
+  const inBay = (id: string) => (t: Tri): boolean => {
+    const { slot } = bay(id);
+    return [t.a, t.b, t.c].every((p) => { const u = local(wall, p).u; return u > slot.u0 - 1e-5 && u < slot.u1 + 1e-5; });
+  };
+
+  it("keeps a bay for each of the five windows, out to its linings beyond the relief's footprint", () => {
+    expect(BAY_SLOTS.map((slot) => slot.opening).sort()).toEqual(["arch-centre", "arch-end", "arch-fireplace", "window-end", "window-fireplace"]);
+    for (const slot of BAY_SLOTS) {
+      const { entry, glazing } = bay(slot.opening);
+      const { opening } = entry;
+      expect(slot.wall).toBe(windowWall);
+      expect(slot.u0).toBeCloseTo(entry.front.u0 - BAY_LINING_SET, 9);
+      expect(slot.u1).toBeCloseTo(entry.front.u1 + BAY_LINING_SET, 9);
+      expect(slot.u0).toBeLessThan(opening.centre - opening.width / 2);
+      expect(slot.u1).toBeGreaterThan(opening.centre + opening.width / 2);
+      expect(slot.clearFrom).toBe(bayClearFrom(opening));
+      expect(slot.clearFrom).toBeCloseTo(Math.max(opening.sill, BAY_BOARDS[opening.id] ?? Number.NaN) + BAY_BOARD_CLEARANCE, 9);
+      expect(slot.head).toBe(opening.head);
+      // The glass plane the scan saw stays: from at least 2 cm in front of the modelled glass.
+      expect(slot.glass).toBeLessThan(-glazing.glassDepth - 0.02);
+      expect(slot.glass).toBeGreaterThan(-glazing.glassDepth - 0.1);
+    }
+  });
+
+  it("gives the shader each bay's frame: u along the window wall, depth behind its plane", () => {
+    for (const slot of BAY_SLOTS) {
+      for (const [u, behind] of [[slot.u0 + 0.1, 0.3], [slot.u1 - 0.1, -0.01]] as const) {
+        const p = wallPoint(wall, u, 1.5, -behind);
+        const dx = p[0] - slot.origin[0];
+        const dz = p[2] - slot.origin[1];
+        expect(dx * slot.tangent[0] + dz * slot.tangent[1]).toBeCloseTo(u, 9);
+        expect(-(dx * slot.normal[0] + dz * slot.normal[1])).toBeCloseTo(behind, 9);
+      }
+    }
+  });
+
+  it("clears the curtains above the board once the wall is cut through the window, and keeps the board, the glass and the wall round it", () => {
+    for (const cut of [HALL_CUTS.near, HALL_CUTS.plan]) {
+      const cuts = windowWallAt(cut);
+      for (const slot of BAY_SLOTS) {
+        const mid = (slot.u0 + slot.u1) / 2;
+        const curtain = Math.min(cut - 0.05, slot.clearFrom + 0.4);
+        expect(reliefVisible(windowWall, -1, mid, curtain, cuts, 0.3)).toBe(false);
+        // At the bay's mouth, where the curtains come forward to the plane.
+        expect(reliefVisible(windowWall, -1, mid, curtain, cuts, BAY_FRONT + 0.005)).toBe(false);
+        // Out to the linings.
+        expect(reliefVisible(windowWall, -1, slot.u0 + 0.005, curtain, cuts, 0.3)).toBe(false);
+        // The board, the glass the scan saw, the architrave in front of the plane and the wall beyond the linings stay.
+        expect(reliefVisible(windowWall, -1, mid, slot.clearFrom - 0.03, cuts, 0.3)).toBe(true);
+        expect(reliefVisible(windowWall, -1, mid, curtain, cuts, slot.glass + 0.01)).toBe(true);
+        expect(reliefVisible(windowWall, -1, mid, curtain, cuts, BAY_FRONT - 0.03)).toBe(true);
+        expect(reliefVisible(windowWall, -1, slot.u0 - 0.005, curtain, cuts, 0.3)).toBe(true);
+        expect(reliefVisible(windowWall, -1, slot.u0 - 0.05, curtain, cuts, 0.3)).toBe(true);
+      }
+    }
+  });
+
+  it("leaves every bay whole on a walk and while its wall stands above the window's head", () => {
+    for (const slot of BAY_SLOTS) {
+      const mid = (slot.u0 + slot.u1) / 2;
+      expect(reliefVisible(windowWall, -1, mid, 1.5, ALL_NONE, 0.3)).toBe(true);
+      expect(inClearedBay(windowWall, mid, slot.head - 0.1, 0.3, slot.head)).toBe(false);
+      expect(inClearedBay(windowWall, mid, slot.head - 0.1, 0.3, slot.head + 0.2)).toBe(false);
+      expect(inClearedBay(windowWall, mid, slot.head - 0.1, 0.3, slot.head - 0.01)).toBe(true);
+      // Another wall's relief at the same place along its wall is never a bay's.
+      expect(inClearedBay(wallIndex("door"), mid, 1.5, 0.3, HALL_CUTS.near)).toBe(false);
+    }
+  });
+
+  it("finds each window's board where the scanned relief's up-facing faces gather, within 5 mm, under the height the clearing starts at", () => {
+    const mesh = shippedRelief().get("window");
+    if (mesh === undefined) throw new Error("no relief for the window wall");
+    const { positions: p, indices } = mesh;
+    for (const opening of HALL_OPENINGS.filter((item) => item.wall === "window")) {
+      const half = opening.width / 2;
+      const from = opening.sill - 0.25;
+      const bins = new Array<number>(60).fill(0);
+      for (let t = 0; t < indices.length; t += 3) {
+        const [a, b, c] = [indices[t] ?? 0, indices[t + 1] ?? 0, indices[t + 2] ?? 0].map((i): Vec3 => [p[i * 3] ?? 0, p[i * 3 + 1] ?? 0, p[i * 3 + 2] ?? 0]);
+        if (a === undefined || b === undefined || c === undefined) continue;
+        const n = cross(sub(b, a), sub(c, a));
+        const area = len(n) / 2;
+        // Up-facing, in the bay behind the plane, across the window's width.
+        if (area < 1e-12 || n[1] / (2 * area) < 0.85) continue;
+        if (Math.abs((a[0] + b[0] + c[0]) / 3 - opening.centre) >= half - 0.04 || (a[2] + b[2] + c[2]) / 3 >= -0.1) continue;
+        const bin = Math.floor(((a[1] + b[1] + c[1]) / 3 - from) / 0.01);
+        if (bin >= 0 && bin < bins.length) bins[bin] = (bins[bin] ?? 0) + area;
+      }
+      const largest = Math.max(...bins);
+      let top = -1;
+      bins.forEach((value, bin) => { if (value >= largest * 0.25) top = bin; });
+      const measured = from + (top + 1) * 0.01;
+      expect(Math.abs(measured - (BAY_BOARDS[opening.id] ?? Number.NaN)), opening.id).toBeLessThanOrEqual(0.005);
+      // The clearing keeps the scanned board whole.
+      expect(measured, opening.id).toBeLessThan(bay(opening.id).slot.clearFrom - 0.005);
+    }
+  });
+
+  it("builds none of a bay's faces on a walk, nor while its wall stands above the window's head, and every bay's once cut below it", () => {
+    const bayFaces = (cuts: readonly number[], sky = false): Tri[] => shownBody(body.geometry, cuts, { sky, roles: isBayRole });
+    expect(bayFaces(ALL_NONE)).toEqual([]);
+    expect(bayFaces(ALL_NONE, true)).toEqual([]);
+    expect(bayFaces(OPENING_VIEW)).toEqual([]);
+    // Cut between the sashes' heads (3.305 m) and the arches' springing (3.76 m): the arches' bays alone.
+    const between = bayFaces(windowWallAt(3.5));
+    const cuts = [0.92, LOW, HALL_CUTS.near, HALL_CUTS.plan];
+    const cleared = cuts.map((cut) => bayFaces(windowWallAt(cut)));
+    for (const slot of BAY_SLOTS) {
+      const mine = inBay(slot.opening);
+      const { front } = bay(slot.opening).entry;
+      expect(between.some(mine)).toBe(slot.head > 3.5);
+      // Under its footprint's sill (window-end's 0.929 m, at 0.92) a bay lies wholly above the cut.
+      cleared.forEach((shown, k) => {
+        const cut = cuts[k] ?? 0;
+        const count = shown.filter(mine).length;
+        if (cut > chainAt(front.lower, slot.u0)) expect(count, `${slot.opening} at ${String(cut)}`).toBeGreaterThan(10);
+        else expect(count, `${slot.opening} at ${String(cut)}`).toBe(0);
+      });
+    }
+    // Every bay face lies in a bay.
+    for (const t of cleared.flat()) expect(BAY_SLOTS.some((slot) => inBay(slot.opening)(t))).toBe(true);
+  });
+
+  it("lines each cleared bay in mahogany either side, set into the wall beyond its relief's footprint, from its sill to its head", () => {
+    for (const entry of windows) {
+      const { front, frontDepth, opening } = entry;
+      for (const [u, facing] of [[front.u0 - BAY_LINING_SET, 1], [front.u1 + BAY_LINING_SET, -1]] as const) {
+        const lining = bayVertices(opening.id).filter((v) => Math.abs(v.u - u) < 1e-5 && Math.abs(dot(v.n, along)) > 0.999);
+        expect(lining, `${opening.id} at ${u.toFixed(3)}`).toHaveLength(4);
+        for (const v of lining) {
+          expect(v.role).toBe(BODY_ROLE.bay);
+          expect(v.finish).toBe(BODY_FINISH.bayLining);
+          // Facing into the bay, along the wall toward the window.
+          expect(dot(v.n, along)).toBeCloseTo(facing, 6);
+          expect(v.reveal).toBeCloseTo(opening.head, 5);
+          expect(v.base).toBeCloseTo(chainAt(front.lower, u), 5);
+        }
+        expect(Math.min(...lining.map((v) => v.y))).toBeCloseTo(chainAt(front.lower, u), 5);
+        expect(Math.max(...lining.map((v) => v.y))).toBeCloseTo(chainAt(front.upper, u), 5);
+        expect(Math.max(...lining.map((v) => v.d))).toBeCloseTo(0, 5);
+        expect(Math.min(...lining.map((v) => v.d))).toBeCloseTo(frontDepth, 5);
+      }
+    }
+  });
+
+  it("closes each bay's back corners, from its linings to the walling round its masonry opening", () => {
+    for (const entry of windows) {
+      const { front, frontDepth, opening } = entry;
+      const back = bayVertices(opening.id).filter((v) => v.role === BODY_ROLE.bay && dot(v.n, inward) > 0.999);
+      for (const [ua, ub] of [[front.u0 - BAY_LINING_SET, front.u0], [front.u1, front.u1 + BAY_LINING_SET]] as const) {
+        const strip = back.filter((v) => v.u > ua - 1e-5 && v.u < ub + 1e-5);
+        expect(strip, `${opening.id} ${ua.toFixed(3)}-${ub.toFixed(3)}`).toHaveLength(4);
+        for (const v of strip) {
+          expect(v.finish).toBe(BODY_FINISH.bayLining);
+          expect(v.d).toBeCloseTo(frontDepth, 5);
+          expect(v.reveal).toBeCloseTo(opening.head, 5);
+        }
+        expect(Math.min(...strip.map((v) => v.u))).toBeCloseTo(ua, 5);
+        expect(Math.max(...strip.map((v) => v.u))).toBeCloseTo(ub, 5);
+      }
+      // The walling's own face at the bay's back begins at the footprint's jambs, in the same mahogany.
+      let walling = 0;
+      for (let i = 0; i < tag.count; i++) {
+        if (Math.round(tag.getX(i)) !== windowWall || Math.round(tag.getZ(i)) !== BODY_ROLE.body || Math.round(tag.getW(i)) !== BODY_FINISH.bayLining) continue;
+        const q = local(wall, [position.getX(i), 0, position.getZ(i)]);
+        if (Math.abs(q.d - frontDepth) > 1e-5 || q.u < front.u0 - 1e-5 || q.u > front.u1 + 1e-5) continue;
+        expect(dot([normal.getX(i), normal.getY(i), normal.getZ(i)], inward)).toBeGreaterThan(0.999);
+        if (Math.abs(q.u - front.u0) < 1e-5 || Math.abs(q.u - front.u1) < 1e-5) walling += 1;
+      }
+      expect(walling, opening.id).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it("lines the back of every bay round its masonry opening in mahogany, and nowhere else", () => {
+    let faces = 0;
+    for (let i = 0; i < tag.count; i++) {
+      if (Math.round(tag.getZ(i)) !== BODY_ROLE.body || Math.round(tag.getW(i)) !== BODY_FINISH.bayLining) continue;
+      faces += 1;
+      expect(Math.round(tag.getX(i))).toBe(windowWall);
+      const q = local(wall, [position.getX(i), 0, position.getZ(i)]);
+      const entry = windows.find((item) => q.u > item.front.u0 - 1e-5 && q.u < item.front.u1 + 1e-5);
+      expect(entry).toBeDefined();
+      if (entry === undefined) continue;
+      expect(q.d).toBeCloseTo(entry.frontDepth, 5);
+      expect(dot([normal.getX(i), normal.getY(i), normal.getZ(i)], inward)).toBeGreaterThan(0.999);
+    }
+    expect(faces).toBeGreaterThan(0);
+  });
+
+  it("lays each board at the cut while the cut lies between its footprint's sill and the board, at the board above it, and leaves no hole in the bay's floor", () => {
+    const holes: string[] = [];
+    for (const cut of [0.92, LOW, HALL_CUTS.near, HALL_CUTS.plan]) {
+      const ups = [...shownBody(body.geometry, windowWallAt(cut)), ...glazingTriangles.flatMap((t) => clipBelow(t, cut))]
+        .filter((t) => t.n[1] > 0.99 && Math.max(t.a[1], t.b[1], t.c[1]) <= cut + 0.002);
+      for (const entry of windows) {
+        const { front, frontDepth, opening } = entry;
+        const { slot, glazing, sash } = bay(opening.id);
+        const near = ups.filter((t) => [t.a, t.b, t.c].some((p) => { const q = local(wall, p); return q.u > slot.u0 - 0.3 && q.u < slot.u1 + 0.3 && q.d > frontDepth - 0.3; }));
+        const boardAt = Math.min(cut, slot.clearFrom);
+        for (let u = slot.u0 + 0.004; u < slot.u1; u += 0.02) {
+          for (let d = -0.004; d > frontDepth; d -= 0.02) {
+            const p = wallPoint(wall, u, 0, d);
+            const under = near.filter((t) => contains2(t, [0, 2], p[0], p[2]));
+            const highest = (list: readonly Tri[]): number => Math.max(-Infinity, ...list.map((t) => (t.a[1] + t.b[1] + t.c[1]) / 3));
+            const floor = highest(under);
+            // Nothing under the cut is ever lower than the glazing's sill (or the cut, under it): no hole into the body.
+            if (floor < Math.min(cut, glazing.sill) - 1e-5) holes.push(`${opening.id} cut ${String(cut)} u ${u.toFixed(3)} d ${d.toFixed(3)}: ${floor.toFixed(3)}`);
+            // The board itself, inside the footprint: in front of the sash across the masonry opening, to the bay's back beside it.
+            const inOpening = u > entry.back.u0 + 1e-5 && u < entry.back.u1 - 1e-5;
+            const onBoard = u > front.u0 + 1e-5 && u < front.u1 - 1e-5 && (!inOpening || d > sash.roomFace + 1e-5);
+            if (onBoard && Math.abs(floor - boardAt) > 1e-5) holes.push(`${opening.id} cut ${String(cut)} u ${u.toFixed(3)} d ${d.toFixed(3)}: board at ${floor.toFixed(3)}, not ${boardAt.toFixed(3)}`);
+            // Behind the sash's room face, across the opening, the body's floor: the glazing's sill (or the cut, under it), under the
+            // sash's members, and behind the glass the outer reveal's sill (or, while the cut lies under it, the body's).
+            const sill = Math.min(cut, glazing.sill);
+            const own = highest(under.filter((t) => t.source === (d > glazing.glassDepth || cut < glazing.sill ? "body" : "glazing")));
+            if (inOpening && d < sash.roomFace - 1e-5 && Math.abs(own - sill) > 1e-5) {
+              holes.push(`${opening.id} cut ${String(cut)} u ${u.toFixed(3)} d ${d.toFixed(3)}: behind the sash's face at ${own.toFixed(3)}, not ${sill.toFixed(3)}`);
+            }
+          }
+        }
+      }
+    }
+    expect(holes.slice(0, 8)).toEqual([]);
+  });
+
+  it("ends each board at the sash's room face across the masonry opening, so it never meets the glass or a rail's top, and at the bay's back beside it", () => {
+    for (const entry of windows) {
+      const { back, frontDepth, opening } = entry;
+      const { slot, glazing, sash } = bay(opening.id);
+      const level = bayVertices(opening.id).filter((v) => v.n[1] > 0.999);
+      const board = level.filter((v) => Math.abs(v.y - slot.clearFrom) < 1e-5);
+      for (const v of board) expect(v.reveal).toBeCloseTo(slot.head, 5);
+      expect(Math.min(...board.map((v) => v.u))).toBeCloseTo(slot.u0, 5);
+      expect(Math.max(...board.map((v) => v.u))).toBeCloseTo(slot.u1, 5);
+      expect(Math.max(...board.map((v) => v.d))).toBeCloseTo(0, 5);
+      // In Plan, the board's triangles across the masonry opening stop at the sash's room face; beside it, at the bay's back.
+      const planks = shownBody(body.geometry, windowWallAt(HALL_CUTS.plan), { roles: isBayRole })
+        .filter((t) => inBay(opening.id)(t) && t.n[1] > 0.999 && Math.abs(t.a[1] - slot.clearFrom) < 1e-5)
+        .map((t) => { const qs = [t.a, t.b, t.c].map((p) => local(wall, p)); return { u: (qs[0]?.u ?? 0) / 3 + (qs[1]?.u ?? 0) / 3 + (qs[2]?.u ?? 0) / 3, d: Math.min(...qs.map((q) => q.d)) }; });
+      const across = planks.filter((t) => t.u > back.u0 && t.u < back.u1);
+      const beside = planks.filter((t) => (t.u > entry.front.u0 && t.u < back.u0) || (t.u > back.u1 && t.u < entry.front.u1));
+      expect(across.length).toBeGreaterThan(0);
+      expect(beside.length).toBeGreaterThan(0);
+      expect(Math.min(...across.map((t) => t.d))).toBeCloseTo(sash.roomFace, 5);
+      expect(Math.min(...beside.map((t) => t.d))).toBeCloseTo(frontDepth, 5);
+      // Behind the sash's face the floor lies at the glazing's sill, under the bottom rail and on to the glass
+      // (always, while the bay is cleared), and behind the glass only while the cut lies under that sill.
+      const sill = level.filter((v) => Math.abs(v.y - glazing.sill) < 1e-5);
+      const underSash = sill.filter((v) => Math.abs(v.reveal - slot.head) < 1e-5);
+      const behindGlass = sill.filter((v) => Math.abs(v.reveal - glazing.sill) < 1e-5);
+      expect(underSash).toHaveLength(4);
+      expect(behindGlass).toHaveLength(4);
+      expect(sill).toHaveLength(8);
+      for (const v of underSash) expect(v.d > glazing.glassDepth - 1e-5 && v.d < sash.roomFace + 1e-5).toBe(true);
+      for (const v of behindGlass) expect(v.d > frontDepth - 1e-5 && v.d < glazing.glassDepth + 1e-5).toBe(true);
+      for (const v of sill) expect(v.u > back.u0 - 1e-5 && v.u < back.u1 + 1e-5).toBe(true);
+      // No board lies in the plane of a rail's top: it stops in front of the sash.
+      expect(sash.roomFace).toBeGreaterThan(glazing.glassDepth);
+      expect(sash.roomFace).toBeLessThan(0);
+      expect(sash.u0).toBeGreaterThan(back.u0);
+      expect(sash.u1).toBeLessThan(back.u1);
+      // The step down at the sash's room face, closed along it and at either end.
+      const risers = bayVertices(opening.id).filter((v) => Math.abs(v.n[1]) < 1e-5 && v.y > glazing.sill - 1e-5 && v.y < slot.clearFrom + 1e-5
+        && (Math.abs(v.d - sash.roomFace) < 1e-5 || Math.abs(v.u - back.u0) < 1e-5 || Math.abs(v.u - back.u1) < 1e-5) && v.d < sash.roomFace + 1e-5 && v.d > glazing.glassDepth - 1e-5);
+      expect(risers.length).toBe(12);
+      for (const v of risers) expect(v.finish).toBe(BODY_FINISH.bayLining);
+    }
+  });
+
+  it("draws a cleared bay's back, the daylit window over its masonry opening, only without the real sky", () => {
+    const backs = (sky: boolean): Tri[] => shownBody(body.geometry, windowWallAt(HALL_CUTS.plan), { sky, roles: (role) => role === BODY_ROLE.bayBacking });
+    expect(backs(true)).toEqual([]);
+    const shown = backs(false);
+    for (const entry of windows) {
+      const { back, frontDepth, opening } = entry;
+      const { glazing } = bay(opening.id);
+      const mine = shown.filter(inBay(opening.id));
+      let area = 0;
+      for (const t of mine) {
+        for (const p of [t.a, t.b, t.c]) expect(local(wall, p).d).toBeCloseTo(frontDepth, 5);
+        expect(dot(t.n, inward)).toBeGreaterThan(0.999);
+        area += len(cross(sub(t.b, t.a), sub(t.c, t.a))) / 2;
+      }
+      // The masonry opening, from the glazing's sill up to the cut (under every head and springing).
+      expect(area, opening.id).toBeCloseTo((back.u1 - back.u0) * (HALL_CUTS.plan - glazing.sill), 5);
+    }
+    for (let i = 0; i < tag.count; i++) {
+      if (Math.round(tag.getZ(i)) === BODY_ROLE.bayBacking) expect(Math.round(tag.getW(i))).toBe(BODY_FINISH.bayBacking);
+      if (Math.round(tag.getW(i)) === BODY_FINISH.bayBacking) expect(Math.round(tag.getZ(i))).toBe(BODY_ROLE.bayBacking);
+    }
+  });
+
+  /**
+   * Rays from Plan's eye (HallViewDirector) and from two overviews high over
+   * the room, along the window wall either way, through a 2.5 cm grid over
+   * each cleared bay's open top at the cut, without the real sky and with
+   * none of the scanned relief (as if the clearing took all of it): each must
+   * meet a surface facing it (every hall material culls back faces) before it
+   * passes the bay's back. A ray that gets past it looks into the wall or out
+   * at the void beyond.
+   */
+  it("never lets a ray through a cleared bay into the wall or out past its back, the relief all gone", () => {
+    const eyes: readonly Vec3[] = [[0, 21.5, 2.3], [-7, 8, 3], [7, 8, 3]];
+    const escapes: string[] = [];
+    for (const cut of [0.92, LOW, HALL_CUTS.near, HALL_CUTS.plan]) {
+      const shown = [...shownBody(body.geometry, windowWallAt(cut)), ...glazingTriangles.flatMap((t) => clipBelow(t, cut))];
+      for (const entry of windows) {
+        const { frontDepth, opening } = entry;
+        const { slot } = bay(opening.id);
+        const near = shown.filter((t) => {
+          const qs = [t.a, t.b, t.c].map((p) => local(wall, p));
+          return Math.max(...qs.map((q) => q.u)) > slot.u0 - 0.1 && Math.min(...qs.map((q) => q.u)) < slot.u1 + 0.1
+            && Math.max(...qs.map((q) => q.d)) > frontDepth - 0.1 && Math.min(...qs.map((q) => q.d)) < 0.1;
+        });
+        for (const eye of eyes) {
+          let lost = 0;
+          let worst = "";
+          for (let u = slot.u0 + 0.004; u < slot.u1; u += 0.025) {
+            for (let d = -0.004; d > frontDepth; d -= 0.025) {
+              const aim = wallPoint(wall, u, cut, d);
+              const dir = unit(sub(aim, eye));
+              const hit = firstFrontHit(eye, dir, near);
+              const at = hit === null ? null : local(wall, [eye[0] + dir[0] * hit, 0, eye[2] + dir[2] * hit]);
+              if (at === null || at.d < frontDepth - 0.002) {
+                lost += 1;
+                worst = `u ${u.toFixed(3)} d ${d.toFixed(3)}${at === null ? ", nothing met" : `, met at d ${at.d.toFixed(3)}`}`;
+              }
+            }
+          }
+          if (lost > 0) escapes.push(`${opening.id} cut ${String(cut)} from ${eye.join(",")}: ${String(lost)} rays, e.g. ${worst}`);
+        }
+      }
+    }
+    expect(escapes).toEqual([]);
+  });
+});

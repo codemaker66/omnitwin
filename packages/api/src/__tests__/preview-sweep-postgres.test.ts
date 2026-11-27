@@ -5,7 +5,7 @@ import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
-import { cleanupPreviewConfigurations } from "../services/cleanup.js";
+import { cleanupPreviewConfigurations, PLAN_KEPT_BY } from "../services/cleanup.js";
 
 // ---------------------------------------------------------------------------
 // The preview sweep judges inactivity, not age (release audit, batch C).
@@ -39,9 +39,12 @@ describe.skipIf(testUrl === undefined)("the preview sweep on isolated PostgreSQL
   let pool: Pool;
   let db: Database;
   const fixtureSchema = `preview_sweep_${randomUUID().replaceAll("-", "")}`;
-  const tables: PgTable[] = [
-    schema.configurations, schema.configurationViewTokens, schema.placedObjects, schema.enquiries, schema.handoffPacks,
-  ];
+  // Every table the sweep reads: the plan, its links and pieces, and each
+  // table whose rows keep a plan (enquiries and handoff_packs among them).
+  const tables: PgTable[] = [...new Set<PgTable>([
+    schema.configurations, schema.configurationViewTokens, schema.placedObjects,
+    ...PLAN_KEPT_BY.map((key) => key.table),
+  ])];
   const venueId = randomUUID();
   const spaceId = randomUUID();
 

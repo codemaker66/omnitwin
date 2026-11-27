@@ -27,6 +27,11 @@ interface ImportMetaEnv {
   readonly VITE_SENTRY_RELEASE?: string;
   /** Optional browser traces sample rate in the inclusive range 0..1. */
   readonly VITE_SENTRY_TRACES_SAMPLE_RATE?: string;
+  /** Share of page loads that report field web vitals: a decimal below 1,
+   *  such as 0.5. Unset is off and keeps the code out of the build; 1 or more,
+   *  or anything not written as a decimal, is off (web-vitals-rate.ts,
+   *  docs/engineering/web-vitals.md). */
+  readonly VITE_WEB_VITALS_SAMPLE_RATE?: string;
 }
 
 interface ImportMeta {
@@ -34,3 +39,9 @@ interface ImportMeta {
 }
 
 declare const __VENVIEWER_CLERK_PUBLISHABLE_KEY__: string | undefined;
+
+interface Window {
+  /** index.html's planner script (home-route-preload-plugin.ts): fetches the
+   *  planner's code for the next page. Absent in development. */
+  readonly __vvPlannerPrefetch?: () => void;
+}

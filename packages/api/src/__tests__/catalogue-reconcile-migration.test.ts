@@ -1,6 +1,6 @@
 import { CANONICAL_ASSETS } from "@omnitwin/types";
 import { describe, expect, it } from "vitest";
-import { migrationText as migration } from "./migration-text.js";
+import { migrationText as migration, sqlWithoutComments } from "./migration-text.js";
 
 // The catalogue migration carries the catalogue as a literal VALUES list,
 // because a migration must describe the state it migrates to and cannot import
@@ -73,9 +73,40 @@ function parseCatalogue(sql: string): CatalogueRow[] {
   });
 }
 
+interface SizeCorrection {
+  /** The size the reconcile registered, which the correction starts from. */
+  readonly was: readonly number[];
+  readonly size: { readonly widthM: number; readonly depthM: number; readonly heightM: number };
+}
+
+/** The researched chair sizes migration's rows, by id: the size it starts from and the size it ends at. */
+function parseSizeCorrections(sql: string): ReadonlyMap<string, SizeCorrection> {
+  const start = sql.indexOf("SELECT * FROM (VALUES");
+  const end = sql.indexOf(") AS sizes(", start);
+  expect(start, "the chair sizes migration must declare its sizes as a VALUES list").toBeGreaterThan(-1);
+  expect(end, "the VALUES list must close into the sizes alias").toBeGreaterThan(start);
+  return new Map([...sql.slice(start, end).matchAll(/^\s+\((.+?)\),?\s*$/gmu)].map((match): [string, SizeCorrection] => {
+    const [id = "", ...metres] = splitTuple(match[1] ?? "");
+    expect(metres, `each size carries an id and six measures: ${match[1] ?? ""}`).toHaveLength(6);
+    const [wasWidth, wasDepth, wasHeight, widthM, depthM, heightM] = metres.map(Number);
+    return [id, {
+      was: [wasWidth ?? Number.NaN, wasDepth ?? Number.NaN, wasHeight ?? Number.NaN],
+      size: { widthM: widthM ?? Number.NaN, depthM: depthM ?? Number.NaN, heightM: heightM ?? Number.NaN },
+    }];
+  }));
+}
+
 describe("the catalogue reconcile migration", () => {
-  it("carries exactly the canonical catalogue, field for field", async () => {
-    const rows = parseCatalogue(await migration("_catalogue_reconcile"));
+  it("carries exactly the canonical catalogue, field for field, once the researched chair sizes are applied after it", async () => {
+    const corrections = parseSizeCorrections(await migration("_researched_chair_sizes"));
+    const rows = parseCatalogue(await migration("_catalogue_reconcile")).map((row) => {
+      const correction = corrections.get(row.id);
+      if (correction === undefined) return row;
+      // A correction starts from the size registered here, or it stops with CHAIR_SIZES_CONFLICT.
+      expect([row.widthM, row.depthM, row.heightM], `${row.name} is corrected from the size the reconcile registers`).toEqual(correction.was);
+      return { ...row, ...correction.size };
+    });
+    for (const id of corrections.keys()) expect(rows.some((row) => row.id === id), `${id} is a catalogue identity`).toBe(true);
     expect(rows).toHaveLength(CANONICAL_ASSETS.length);
     const byId = new Map(rows.map((row) => [row.id, row]));
     for (const asset of CANONICAL_ASSETS) {
@@ -99,6 +130,28 @@ describe("the catalogue reconcile migration", () => {
     expect(sql).toContain("' (retired)'");
     expect(sql).not.toMatch(/\bDELETE\s+FROM\b/iu);
     expect(sql).not.toMatch(/\bDROP\s+TABLE\b/iu);
+    expect(sql).not.toMatch(/\bTRUNCATE\b/iu);
+  });
+});
+
+describe("the researched chair sizes migration", () => {
+  it("rewrites three chairs' sizes and nothing else, only from the size registered, and stops on any other", async () => {
+    const sql = sqlWithoutComments(await migration("_researched_chair_sizes"));
+    const corrections = parseSizeCorrections(sql);
+    const chairs = new Set(CANONICAL_ASSETS.filter((asset) => asset.category === "chair").map((asset) => asset.id));
+    expect(corrections.size).toBe(3);
+    for (const id of corrections.keys()) expect(chairs.has(id), `${id} is a chair`).toBe(true);
+    // The lock an UPDATE of non-key columns takes, in id order, with a bounded wait: a layout save's
+    // foreign key (FOR KEY SHARE) is never blocked behind the migrator's transaction.
+    expect(sql).toContain("FOR NO KEY UPDATE");
+    expect(sql).not.toMatch(/\bFOR UPDATE\b/u);
+    expect(sql).toMatch(/\) AS sizes\([^)]*\)\s+ORDER BY id\s+LOOP/u);
+    expect(sql).toMatch(/SET LOCAL lock_timeout = '\d+s';/u);
+    expect(sql).toContain("CHAIR_SIZES_CONFLICT");
+    expect(sql).toMatch(/SET width_m = chair\.width_m, depth_m = chair\.depth_m, height_m = chair\.height_m\s+WHERE id = chair\.id::uuid/u);
+    expect(sql).not.toMatch(/\bDELETE\s+FROM\b/iu);
+    expect(sql).not.toMatch(/\bINSERT\s+INTO\b/iu);
+    expect(sql).not.toMatch(/\bDROP\b/iu);
     expect(sql).not.toMatch(/\bTRUNCATE\b/iu);
   });
 });

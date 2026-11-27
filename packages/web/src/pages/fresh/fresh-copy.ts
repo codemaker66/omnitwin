@@ -65,7 +65,9 @@ export const FRESH_KICKER_ENQUIRE = "The first word";
 export const FRESH_KICKER_HERITAGE = "The story";
 export const FRESH_KICKER_CONTACT = "The people";
 
-export const FRESH_ROOMS_TITLE = "Six rooms, one house";
+// The rooms with published capacities, not every room in the house (the front
+// door shows eight): the title names no count it cannot stand behind.
+export const FRESH_ROOMS_TITLE = "Rooms of one house";
 export const FRESH_ROOMS_LEDE =
   "Venue-published capacities.";
 
@@ -216,6 +218,19 @@ export const FRESH_ENQUIRY_SUBMIT = "Send enquiry";
 export const FRESH_ENQUIRY_SENDING = "Sending…";
 export const FRESH_ENQUIRY_EMAIL_REQUIRED = "Enter your email address.";
 export const FRESH_ENQUIRY_EMAIL_INVALID = "Enter a valid email address.";
+
+/**
+ * Why Send holds the date, in the owner's words (FreshEnquiry's
+ * eventDateRefusal names which). Blake chose on 13 November 2026 that the
+ * forms refuse a date before today, and on 14 November these three
+ * sentences, word for word: a date before the guest's own today; a year
+ * past the last the API takes (a doubled key gives 20277), "Four digits";
+ * and a day the calendar does not have (30 February), "From the calendar".
+ */
+export const FRESH_ENQUIRY_DATE_BEFORE_TODAY = "Choose a date from today onwards.";
+export const FRESH_ENQUIRY_DATE_AFTER_LAST = "Choose a year with four digits.";
+export const FRESH_ENQUIRY_DATE_NOT_A_DATE = "Choose a date from the calendar.";
+
 export const FRESH_ENQUIRY_SENT_TITLE = "Enquiry sent";
 export const FRESH_ENQUIRY_SENT_LINE =
   "The events team will reply by email.";
@@ -233,7 +248,7 @@ export const FRESH_ENQUIRY_CRAFT_PREFIX = "From the Discover Your Craft quiz, my
 
 /** Shown at the point of collection, as UK GDPR transparency requires. */
 export const FRESH_ENQUIRY_PRIVACY_NOTE =
-  "Your details go to Trades Hall so they can answer this enquiry, and are not used for anything else.";
+  "Your details go to Trades Hall so they can answer this enquiry, and are kept as a record of it.";
 export const FRESH_ENQUIRY_PRIVACY_LINK = "How we handle your data";
 export const FRESH_ENQUIRY_PRIVACY_HREF = "/privacy";
 
@@ -253,7 +268,7 @@ export const FRESH_DOSSIER_DRAWN_NOTE = "drawn to count";
 
 export const FRESH_HERITAGE_TITLE = "The house of the trades";
 export const FRESH_HERITAGE_BODY =
-  "Designed by Robert Adam, Trades Hall has been home to Glasgow's fourteen incorporated crafts since 1791.";
+  "Designed by Robert Adam in 1791, Trades Hall has been home to Glasgow's fourteen incorporated crafts since it opened in 1794.";
 
 export const FRESH_CONTACT_TITLE = "Speak with the events team";
 export const FRESH_CONTACT_TEL_LABEL = "Telephone";
@@ -340,6 +355,9 @@ export function allFreshCopy(): readonly string[] {
     FRESH_ENQUIRY_SENDING,
     FRESH_ENQUIRY_EMAIL_REQUIRED,
     FRESH_ENQUIRY_EMAIL_INVALID,
+    FRESH_ENQUIRY_DATE_BEFORE_TODAY,
+    FRESH_ENQUIRY_DATE_AFTER_LAST,
+    FRESH_ENQUIRY_DATE_NOT_A_DATE,
     FRESH_ENQUIRY_SENT_TITLE,
     FRESH_ENQUIRY_SENT_LINE,
     FRESH_ENQUIRY_ERROR,

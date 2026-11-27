@@ -73,6 +73,14 @@ describe("ManifestRowV2Schema", () => {
     if (parsed.success) expect(parsed.data.notes).toBe("");
   });
 
+  it("keeps a row's notes whole however many pieces' notes it gathers (audit hallkeeper-ops-5)", () => {
+    // Eight tables' 500-character notes, as one row carries them: over 4,000 characters.
+    const notes = Array.from({ length: 8 }, (_, index) => `Table ${String(index + 1)} `.padEnd(500, "n")).join(" · ");
+    const parsed = ManifestRowV2Schema.safeParse({ ...SAMPLE_ROW, notes });
+    expect(parsed.error?.issues ?? []).toEqual([]);
+    expect(parsed.data?.notes).toBe(notes);
+  });
+
   it("rejects negative qty", () => {
     expect(ManifestRowV2Schema.safeParse({ ...SAMPLE_ROW, qty: -1 }).success).toBe(false);
   });

@@ -18,6 +18,7 @@ import { createPlacedItem, type PlacedItem } from "../../../lib/placement.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { normalizedFurniturePresentationScale } from "../../FurnitureProxy.js";
 import { mountInStubRoot, type StubRoot } from "../../__tests__/stub-r3f-root.js";
+import { craftedTurn, drawnRotationY } from "../../meshes/crafted/crafted-turn.js";
 import { disposeVariant, harvestVariant, InstancedFurnitureLayer } from "../InstancedFurnitureLayer.js";
 
 function catalogueId(slug: string): string {
@@ -81,10 +82,11 @@ function uploaded(values: ArrayLike<number>): number[] {
   return Array.from(new Float32Array(Array.from(values)), (value) => value + 0);
 }
 
+/** An item as drawn: placed, a round in a group at its own turn as well (crafted-turn). */
 function expectedMatrix(item: PlacedItem): number[] {
   const transform = new Object3D();
   transform.position.set(item.x, item.y, item.z);
-  transform.rotation.set(0, item.rotationY, 0);
+  transform.rotation.set(0, drawnRotationY(item), 0);
   transform.scale.setScalar(normalizedFurniturePresentationScale(item.scale));
   transform.updateMatrix();
   return uploaded(transform.matrix.elements);
@@ -219,6 +221,53 @@ describe("InstancedFurnitureLayer editable batches", () => {
     setItems(chairs.slice(0, 5));
     expectSameMeshes(batches(scene), grown);
     for (const mesh of grown) expectDraws(mesh, chairs.slice(0, 5));
+  });
+
+  it("draws each round in a group at its own turn and its chairs as placed, and redraws a round whose group changes", () => {
+    const groups = ["local-group-a", "local-group-b", "local-group-c"];
+    const tables = groups.map((groupId, index) => createPlacedItem(TABLE, index * 3 - 3, 6, 0.4, groupId));
+    const chairs = groups.flatMap((groupId, index) => [
+      createPlacedItem(CHAIR, index * 3 - 3.6, 7, 0.4, groupId),
+      createPlacedItem(CHAIR, index * 3 - 2.4, 7, 0.4, groupId),
+    ]);
+    // Each turn is the table's own: none is the planner's, no two alike.
+    const turns = tables.map((table) => craftedTurn(table));
+    expect(turns.every((turn) => turn > 0)).toBe(true);
+    expect(new Set(turns).size).toBe(groups.length);
+    expect(chairs.every((seat) => craftedTurn(seat) === 0)).toBe(true);
+
+    const { scene } = mountLayer([...tables, ...chairs]);
+    const meshes = batches(scene);
+    const tableMeshes = meshes.filter((mesh) => mesh.count === tables.length);
+    const chairMeshes = meshes.filter((mesh) => mesh.count === chairs.length);
+    expect(tableMeshes.length).toBeGreaterThan(0);
+    expect(chairMeshes.length + tableMeshes.length).toBe(meshes.length);
+    for (const mesh of tableMeshes) expectDraws(mesh, tables);
+    for (const mesh of chairMeshes) expectDraws(mesh, chairs);
+
+    // A new group, the table unmoved: its slot alone is redrawn, at the new group's turn.
+    for (const mesh of meshes) mesh.instanceMatrix.clearUpdateRanges();
+    const regrouped = tables.map((table, index) => (index === 1 ? { ...table, groupId: "local-group-d" } : table));
+    setItems([...regrouped, ...chairs]);
+    expectSameMeshes(batches(scene), meshes);
+    for (const mesh of tableMeshes) {
+      expectDraws(mesh, regrouped);
+      expect(mesh.instanceMatrix.updateRanges).toEqual([{ start: 16, count: 16 }]);
+    }
+    for (const mesh of chairMeshes) expect(mesh.instanceMatrix.updateRanges).toEqual([]);
+  });
+
+  it("draws a timeline preview's rounds at the turns the plan draws them", () => {
+    const tables = ["local-group-e", "local-group-f"].map((groupId, index) => createPlacedItem(TABLE, index * 3, -6, 1.2, groupId));
+    const seats = [createPlacedItem(CHAIR, 0, -5, 1.2, "local-group-e")];
+    mounted = mountInStubRoot(<InstancedFurnitureLayer items={[...tables, ...seats]} directInstances />);
+    frame();
+    const meshes = batches(mounted.scene);
+    const tableMeshes = meshes.filter((mesh) => mesh.count === tables.length);
+    expect(tableMeshes.length).toBeGreaterThan(0);
+    for (const mesh of tableMeshes) expectDraws(mesh, tables);
+    for (const mesh of meshes.filter((candidate) => candidate.count === seats.length)) expectDraws(mesh, seats);
+    expect(tables.every((table) => drawnRotationY(table) !== table.rotationY)).toBe(true);
   });
 
   it("does no instance work on frames where nothing changed", () => {

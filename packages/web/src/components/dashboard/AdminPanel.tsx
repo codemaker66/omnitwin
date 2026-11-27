@@ -256,6 +256,11 @@ export function AdminPanel(): ReactElement {
   const [editSpaceOutline, setEditSpaceOutline] = useState<readonly FloorPlanPoint[]>([]);
   const [deletingSpaceId, setDeletingSpaceId] = useState<string | null>(null);
   const [deletingSpace, setDeletingSpace] = useState(false);
+  // A deleted room that can be brought back: the one just deleted, or the
+  // one whose address a new room asked for.
+  const [deletedSpace, setDeletedSpace] = useState<{ readonly id: string; readonly name: string; readonly venueId: string } | null>(null);
+  const [slugHolder, setSlugHolder] = useState<{ readonly id: string; readonly name: string } | null>(null);
+  const [restoringSpace, setRestoringSpace] = useState(false);
 
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [pricingRequests, setPricingRequests] = useState(0);
@@ -303,7 +308,7 @@ export function AdminPanel(): ReactElement {
   // can keep it or move the rule, instead of reading as venue-wide.
   const ruleRoomMissing = ruleForm?.mode === "edit" && ruleFormOpened.spaceId !== ""
     && selectedVenue?.spaces.every((space) => space.id !== ruleFormOpened.spaceId) === true;
-  const venueMutationPending = creatingSpace || updatingSpace || deletingSpace
+  const venueMutationPending = creatingSpace || updatingSpace || deletingSpace || restoringSpace
     || deletingVenue || savingRule || deletingRuleId !== null || restoringRule;
 
   const loadVenues = useCallback((): void => {
@@ -413,9 +418,32 @@ export function AdminPanel(): ReactElement {
       setSpaceOutline([]);
       handleSelectVenue(selectedVenue.id);
     } catch (error: unknown) {
+      setSlugHolder(spacesApi.deletedRoomHoldingSlug(error));
       addToast(actionError(error, "Failed to create space"), "error");
     } finally {
       setCreatingSpace(false);
+    }
+  };
+
+  const handleRestoreSpace = async (room: { readonly id: string; readonly name: string }): Promise<void> => {
+    if (selectedVenue === null || restoringSpace) return;
+    setRestoringSpace(true);
+    try {
+      await spacesApi.restoreSpace(selectedVenue.id, room.id);
+      addToast(`"${room.name}" is back`, "success");
+      setDeletedSpace(null);
+      if (slugHolder?.id === room.id) {
+        setSlugHolder(null);
+        setShowCreateSpace(false);
+        setSpaceName("");
+        setSpaceHeight("");
+        setSpaceOutline([]);
+      }
+      handleSelectVenue(selectedVenue.id);
+    } catch (error: unknown) {
+      addToast(actionError(error, "Could not bring the space back. It is still deleted."), "error");
+    } finally {
+      setRestoringSpace(false);
     }
   };
 
@@ -479,6 +507,7 @@ export function AdminPanel(): ReactElement {
     try {
       await spacesApi.deleteSpace(selectedVenue.id, spaceId);
       addToast("Space deleted", "success");
+      setDeletedSpace({ id: spaceId, name: selectedVenue.spaces.find((space) => space.id === spaceId)?.name ?? "the space", venueId: selectedVenue.id });
       setDeletingSpaceId(null);
       handleSelectVenue(selectedVenue.id);
     } catch (error: unknown) {
@@ -673,6 +702,24 @@ export function AdminPanel(): ReactElement {
             </button>
           </div>
 
+          {deletedSpace !== null && deletedSpace.venueId === selectedVenue.id && (
+            <div className="admin-panel-undo" role="status">
+              <span>Deleted &ldquo;{deletedSpace.name}&rdquo;.</span>
+              <button
+                type="button"
+                className="admin-panel-button admin-panel-button--secondary"
+                disabled={restoringSpace}
+                aria-busy={restoringSpace}
+                aria-label={`Undo: bring back ${deletedSpace.name}`}
+                onClick={() => {
+                  void handleRestoreSpace(deletedSpace);
+                }}
+              >
+                {restoringSpace && <ActivityIndicator size={16} />} Undo
+              </button>
+            </div>
+          )}
+
           {selectedVenue.spaces.length === 0 ? (
             <div className="admin-panel-empty">No spaces yet. Create one before layout planning, pricing, or loadout work can be trusted.</div>
           ) : (
@@ -831,6 +878,7 @@ export function AdminPanel(): ReactElement {
               if (creatingSpace) return;
               setShowCreateSpace(false);
               setSpaceOutline([]);
+              setSlugHolder(null);
             }}
             footer={(
               <>
@@ -841,6 +889,7 @@ export function AdminPanel(): ReactElement {
                   onClick={() => {
                     setShowCreateSpace(false);
                     setSpaceOutline([]);
+                    setSlugHolder(null);
                   }}
                 >
                   Cancel
@@ -858,7 +907,24 @@ export function AdminPanel(): ReactElement {
               </>
             )}
           >
-            <TextField label="Space Name" value={spaceName} onChange={setSpaceName} placeholder="Grand Hall" />
+            <TextField label="Space Name" value={spaceName} onChange={(name) => { setSpaceName(name); setSlugHolder(null); }} placeholder="Grand Hall" />
+            {slugHolder !== null && (
+              <div className="admin-panel-undo" role="status">
+                <span>&ldquo;{slugHolder.name}&rdquo; was deleted and still has this name. Bring it back as it was, or choose another name.</span>
+                <button
+                  type="button"
+                  className="admin-panel-button admin-panel-button--secondary"
+                  disabled={restoringSpace}
+                  aria-busy={restoringSpace}
+                  aria-label={`Bring back ${slugHolder.name}`}
+                  onClick={() => {
+                    void handleRestoreSpace(slugHolder);
+                  }}
+                >
+                  {restoringSpace && <ActivityIndicator size={16} />} Bring it back
+                </button>
+              </div>
+            )}
             <div className="admin-panel-field admin-panel-field--wide">
               <span>Floor plan</span>
               <PolygonEditor value={spaceOutline} onChange={setSpaceOutline} disabled={creatingSpace} />
@@ -975,7 +1041,7 @@ export function AdminPanel(): ReactElement {
         {deletingSpaceId !== null ? (
           <ConfirmModal
             title="Delete Space"
-            message={`Delete "${selectedVenue.spaces.find((space) => space.id === deletingSpaceId)?.name ?? "this space"}"? It stops showing in Venviewer. Its saved layouts and loadouts are kept, not erased.`}
+            message={`Delete "${selectedVenue.spaces.find((space) => space.id === deletingSpaceId)?.name ?? "this space"}"? It stops showing in Venviewer, and its past bookings leave the Diary with it. Its saved layouts and loadouts are kept, not erased, and it can be brought back. A space with bookings still to come cannot be deleted.`}
             confirmLabel={deletingSpace ? "Deleting" : "Delete"}
             inFlight={deletingSpace}
             onConfirm={() => {
