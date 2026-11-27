@@ -255,10 +255,18 @@ function refuseMalformedKey(apiKey: string): void {
  * no limit, into the error's message, which the CLI prints. The body is
  * cancelled, not awaited (a cancel need not settle), and no header is kept, so
  * the SDK decides any retry by the status alone, as an APIError without a body.
+ * A status the Response constructor cannot take (it accepts 200 to 599, and
+ * undici passes a server's 600 to 999 on) is refused, naming the status: its
+ * RangeError would otherwise reach the SDK as a connection failure, and be
+ * retried.
  */
 function statusOnly(response: Response): Response {
   void response.body?.cancel().catch(() => undefined);
-  return new Response(null, { status: response.status });
+  const { status } = response;
+  if (status < 200 || status > 599) {
+    throw new KeyGuardRefusal(`refusing a download whose last answer from another host has status ${String(status)}, which is not an HTTP status the launcher can pass on`);
+  }
+  return new Response(null, { status });
 }
 
 function urlOf(input: string | URL | Request): string {

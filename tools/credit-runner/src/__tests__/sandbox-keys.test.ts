@@ -311,6 +311,28 @@ describe("redirects off api.anthropic.com", () => {
     expect(wire.seen.map((request) => request.url.origin)).toEqual([ANTHROPIC_API_URL, new URL(STORAGE).origin]);
     expect(await readdir(dir)).toEqual([]);
   });
+
+  it("refuse a last answer whose status no Response can carry (undici passes a server's 600 to 999 on), naming the status, never retried as a connection error", async () => {
+    const dir = await tempDir("credit-runner-redirect-");
+    for (const status of [600, 799, 999]) {
+      const wire = seam((url) => {
+        if (url.origin === ANTHROPIC_API_URL) return redirect(302, STORAGE);
+        // As undici hands one over: the Response constructor itself takes 200 to 599 only.
+        const odd = new Response("from storage", { status: 500 });
+        Object.defineProperty(odd, "status", { value: status });
+        return odd;
+      });
+      const error: unknown = await sdkSandboxApi(KEY, wire.fetch, {})
+        .downloadFile("file_1", path.join(dir, "patch-0001.patch"), 1000)
+        .catch((caught: unknown) => caught);
+      expect(error, String(status)).toBeInstanceOf(Error);
+      expect(error, String(status)).not.toBeInstanceOf(Anthropic.APIConnectionError);
+      expect(describeError(error), String(status)).toBe(`refusing a download whose last answer from another host has status ${String(status)}, which is not an HTTP status the launcher can pass on`);
+      // Refused once: not retried.
+      expect(wire.seen.map((request) => request.url.origin), String(status)).toEqual([ANTHROPIC_API_URL, new URL(STORAGE).origin]);
+    }
+    expect(await readdir(dir)).toEqual([]);
+  });
 });
 
 describe("a refused request", () => {
