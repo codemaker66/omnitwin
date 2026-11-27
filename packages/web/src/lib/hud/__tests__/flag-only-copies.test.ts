@@ -22,6 +22,11 @@ import { SEAT_LINE_SPRING } from "../hud-motion.js";
 // Two are held here. The stage's spring is held beside the stage
 // (grand-hall/__tests__/hall-stage.test.ts) and the light's order through its
 // own key (planner-hud/__tests__/view-station.test.tsx).
+//
+// The whole list, with where each copy and its test are, is the register in
+// docs/superpowers/specs/2026-11-13-planner-hud-design.md ("the screen keeps
+// its own copy of each"). A copy added later goes into that table too: the
+// spacing Lay out keeps (LAID_CLEARANCE_M) is held in hud-logic.test.ts.
 // ---------------------------------------------------------------------------
 
 /** The two chairs the setup cards were drawn with. */

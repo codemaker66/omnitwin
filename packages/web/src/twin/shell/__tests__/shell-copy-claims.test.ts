@@ -1,7 +1,7 @@
 import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import { describe, expect, it } from "vitest";
-import { allQuickActionCopy } from "../QuickActions.js";
-import { allRoomDossierCopy } from "../RoomDossier.js";
+import { allQuickActionCopy } from "../quick-actions-copy.js";
+import { allRoomDossierCopy } from "../room-dossier-copy.js";
 import { lookUpRoom, ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES } from "../twin-rooms.js";
 
 // -----------------------------------------------------------------------------

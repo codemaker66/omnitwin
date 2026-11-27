@@ -1,5 +1,5 @@
 import { countLabel, countNoun } from "../count-label.js";
-import type { RoomFacts } from "./room-seals.js";
+import { gapToOpenUp, type RoomFacts } from "./room-seals.js";
 
 // ---------------------------------------------------------------------------
 // The journey: four steps across the top of the planner, and the one primary
@@ -89,7 +89,8 @@ export function nextMove(facts: RoomFacts, sent: boolean): NextMove {
   if (plane.short > 0) {
     return { id: "seat-more", text: `Seat ${String(plane.short)} more ${countNoun(plane.short, "guest")}`, step: "layout" };
   }
-  if (facts.aisles.band === "tight" || facts.aisles.band === "blocked") {
+  // Every tight or blocked gap but the planner's own spacing (room-seals.ts): a room it has just laid is ready to send.
+  if (gapToOpenUp(facts.aisles)) {
     return { id: "open-gap", text: "Open up the narrowest gap", step: "layout" };
   }
   return { id: "send", text: "Send to the events team", step: "send" };
