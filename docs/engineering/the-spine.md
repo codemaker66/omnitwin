@@ -85,7 +85,7 @@ join it made (what makes it undoable). Its steps:
    enquiry too when the enquiry may become one and has none, so `eventsMade` can
    come from this step as well as from steps 1 and 3. An open deal is listed
    (`second_open_deal`), not joined, where an open deal already is. A closed deal
-   that reaches no event is left.
+   whose enquiry has no live event is left, whatever its proposals reach.
 3. **Proposals** with no event: joined to their deal's live event, else their
    enquiry's, else the one their deposit request in force names, and listed when the
    deposit request names another or a deleted event; one that must have an event is
@@ -322,9 +322,10 @@ the status and the dates").
     above, a table that cannot be had within five seconds fails the release cleanly,
     and nothing changes.
   - Later statements lock existing tables no more strongly, each to the end of the
-    transaction: the five, the modes their steps' keys, indexes and writes take
-    (SHARE, SHARE ROW EXCLUSIVE, ROW EXCLUSIVE, ROW SHARE, ACCESS SHARE), under the
-    ACCESS EXCLUSIVE held here; `venues`, `users`: SHARE ROW EXCLUSIVE again, and
+    transaction: the five, the modes their steps' keys, indexes, triggers and writes
+    take (SHARE, SHARE ROW EXCLUSIVE, ROW EXCLUSIVE, ROW SHARE, ACCESS SHARE), and
+    ACCESS EXCLUSIVE again in the statements that add a column or a unique key, drop
+    a key, or drop a trigger that is there, all under the ACCESS EXCLUSIVE held here; `venues`, `users`: SHARE ROW EXCLUSIVE again, and
     ACCESS SHARE, by step 5 (the new tables' keys to them); `venues`: ROW SHARE by
     steps 6 and 7 (the key checks of their inserts); `event_binding_reviews`: ACCESS
     SHARE by step 6 (the copy reads it); `bookings`, `event_configuration_links`,

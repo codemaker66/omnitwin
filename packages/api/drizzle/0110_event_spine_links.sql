@@ -80,8 +80,10 @@ SET LOCAL lock_timeout = '5s';
 --
 -- Later statements lock existing tables no more strongly, each to the end of
 -- the transaction:
---   the five: the modes their steps' keys, indexes and writes take (SHARE,
---     SHARE ROW EXCLUSIVE, ROW EXCLUSIVE, ROW SHARE, ACCESS SHARE), under the
+--   the five: the modes their steps' keys, indexes, triggers and writes take
+--     (SHARE, SHARE ROW EXCLUSIVE, ROW EXCLUSIVE, ROW SHARE, ACCESS SHARE),
+--     and ACCESS EXCLUSIVE again in the statements that add a column or a
+--     unique key, drop a key, or drop a trigger that is there, all under the
 --     ACCESS EXCLUSIVE held here;
 --   venues, users: SHARE ROW EXCLUSIVE again, and ACCESS SHARE, by step 5
 --     (the new tables' keys to them);
@@ -375,7 +377,7 @@ ON CONFLICT DO NOTHING;
 -- live event its own proposals with no event reach, or is listed when they
 -- reach several, and an event is made for it only when they reach none. An
 -- open deal is listed, not joined, where an open deal already is. A closed
--- deal that reaches no event is left.
+-- deal whose enquiry has no live event is left, whatever its proposals reach.
 --
 -- Proposals. Step 3 joins a proposal to its deal's live event, else its
 -- enquiry's, else the one its deposit request in force names, and lists it
