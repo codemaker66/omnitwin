@@ -785,6 +785,12 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
   const dealsFound = [...dealIds, ...nearDealIds];
   const proposalsFound = proposalRows.map((row) => row.id);
   const linked = await linkedEvents(tx, enquiryIds, dealsFound, proposalsFound);
+  // What they answered on proposals not theirs, locked with the proposals.
+  // Those proposals' events (their links, and one the join made from such a
+  // proposal's title, which their names are taken out of) are near them,
+  // unless theirs by another path.
+  const elsewhere = await findAnswersElsewhere(tx, base, proposalIds);
+  const answeredOn = (await linkedEvents(tx, [], [], elsewhere.proposalIds)).map((id) => ({ id }));
   const tied = linked.length === 0 ? [] : (await tx.select({ id: events.id }).from(events)
     .where(allOf(inArray(events.id, [...linked]), tiedToAnotherPerson(outerColumn(events.id), uuidArray([...theirs])))))
     .map((row) => row.id);
@@ -806,7 +812,7 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
     ...linkedRows.filter((row) => !othersEvents.has(row.id)),
   ]);
   const ownEvents = new Set(eventIds);
-  const nearEventIds = idsOf([...evented, ...laidOut, ...booked, ...linkedRows]).filter((id) => !ownEvents.has(id));
+  const nearEventIds = idsOf([...evented, ...laidOut, ...booked, ...linkedRows, ...answeredOn]).filter((id) => !ownEvents.has(id));
   // A booking from their own enquiry stays theirs in an event that is near
   // only by a record tied to it; in another live person's deal's event it is
   // that person's.
@@ -817,8 +823,6 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
     .map((row) => row.id);
   const decided = bookingsFound.length === 0 ? [] : (await tx.select({ id: decisions.id }).from(decisions)
     .where(allOf(eq(decisions.subjectKind, "booking"), inArray(decisions.subjectId, bookingsFound)))).map((row) => row.id);
-  // What they answered on proposals not theirs, locked with the proposals.
-  const elsewhere = await findAnswersElsewhere(tx, base, proposalIds);
   // The layouts their events and the nearby ones were made from (a staff
   // link, a layout variant), beside those of their enquiries and proposals:
   // a day-of contact and notes there can name them. Their sheets with them.
@@ -865,7 +869,7 @@ async function around(tx: PeopleTx, base: RecordsBase, options: { readonly lock:
     // its run commits) would leave its event unlocked and its name in place:
     // the erasure is tried again instead (RETRY), as for a booking below.
     const lockedEvents = new Set([...eventIds, ...nearEventIds]);
-    if ((await linkedEvents(tx, enquiryIds, dealsFound, proposalsFound)).some((id) => !lockedEvents.has(id))) {
+    if ((await linkedEvents(tx, enquiryIds, dealsFound, [...proposalsFound, ...elsewhere.proposalIds])).some((id) => !lockedEvents.has(id))) {
       throw new ErasureMovedOn();
     }
     await lockRows(tx, "events", [...eventIds, ...nearEventIds]);

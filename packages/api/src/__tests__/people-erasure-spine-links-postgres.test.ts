@@ -843,6 +843,32 @@ describe.skipIf(target === undefined)("erasure and the 24-month pass follow the 
     expect(await names(kept)).toEqual({ name: "TEST ONLY her booked event", client_name: null });
   });
 
+  it("an event the join made from the title of someone else's proposal they only answered on is near them, and loses their name", async () => {
+    const v = await venueIn(pool, "erasure, a proposal answered on");
+    const ailsa = await person(v, "Ailsa Answerwell");
+    // His enquiry asks to book nothing, so the join names the proposal's
+    // event by the proposal's title, which names her, and its client by him.
+    const brodie = await person(v, "Brodie Proposer");
+    const his = await enquiry(v, { contactId: brodie, name: "Brodie Proposer", eventType: "venue-enquiry" });
+    const proposalId = await proposal(v, { title: "Reception for Ailsa Answerwell", status: "sent", enquiryId: his });
+    // She answered on it, signing with her name.
+    await pool.query(`INSERT INTO proposal_comments (proposal_id, author_type, author_name, body)
+      VALUES ($1, 'client', 'Ailsa Answerwell', 'TEST ONLY a reply')`, [proposalId]);
+    await join();
+    const made = await eventOf("proposals", proposalId);
+    expect(await joinOf("proposal", proposalId)).toEqual({ event_id: made, event_made: true, path: "new_event" });
+    expect(await names(made)).toEqual({ name: "Reception for Ailsa Answerwell", client_name: "Brodie Proposer" });
+
+    expect(await classified(v, ailsa)).toEqual({ own: [], near: [made] });
+    expect(await erase(v, ailsa)).toMatchObject({ ok: true, counts: { people: 1, enquiries: 0 } });
+    // His proposal and its event are kept, linked, without her name.
+    expect(await value("SELECT row_to_json(p) AS value FROM (SELECT title, event_id FROM proposals WHERE id = $1) p", [proposalId]))
+      .toEqual({ title: "Reception for Erased", event_id: made });
+    expect(await names(made)).toEqual({ name: "Reception for Erased", client_name: "Brodie Proposer" });
+    expect(await namedAnywhere(v, "Answerwell")).toBe(0);
+    expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [brodie])).toBe(1);
+  });
+
   it("the join's own records of an erased enquiry stay as ids: the nightly join and the undo still run cleanly afterwards", async () => {
     const v = await venueIn(pool, "erasure, the join's records");
     const catriona = await person(v, "Catriona Listwell");
