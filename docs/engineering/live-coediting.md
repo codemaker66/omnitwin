@@ -110,7 +110,9 @@ Code: `packages/web/src/lib/layout-live/` (pure core and the socket client),
   are held to their row's role and venue alone. A Clerk account deleted by the
   `user.deleted` webhook is recorded in `general_audit_log` and never links a row
   again, so a screen reconnecting with a token issued before the deletion is
-  refused.
+  refused. The row also loses its venue and platform access (`client`, no venue,
+  platform role `none`) and its active workspace memberships, so only a new
+  invitation brings a venue role back.
 - **Public-preview guests** keep single-person planning; the client never opens
   the live room for a public draft.
 - The hub drops a client frame silently when it is malformed, over 128 KB or over

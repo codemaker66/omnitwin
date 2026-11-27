@@ -223,10 +223,11 @@ async function findLinkedUserWithoutPendingInvitation(
 /**
  * The audit record of a Clerk account's deletion. Clerk never gives a
  * deleted account's id to another, so the deletion is final: the user.deleted
- * webhook unlinks the local row and writes this, and a token that account
- * was issued before it was deleted never links a row again (release audit
- * events-diary-5: a Diary screen reconnecting with such a token would
- * otherwise re-link its row by email and stay open for hours).
+ * webhook unlinks the local row, takes its venue and platform access away and
+ * writes this, and a token that account was issued before it was deleted
+ * never links a row again (release audit events-diary-5: a Diary screen
+ * reconnecting with such a token would otherwise re-link its row by email and
+ * stay open for hours).
  */
 export const CLERK_ACCOUNT_DELETED = { action: "clerk.user_deleted", targetType: "clerk_user" } as const;
 

@@ -376,6 +376,45 @@ describe.skipIf(target === undefined)("open sockets act with their person's curr
     expect(records).toHaveLength(1);
   });
 
+  it("the deleted account's person leaves the venue, and only a new invitation brings a venue role back", async () => {
+    const f = await venueWithLayout();
+    const manager = await person(f.venueId, "manager");
+    await db.update(schema.users).set({ platformRole: "operator" }).where(eq(schema.users.id, manager.id));
+    const [organisation] = await db.insert(schema.organisations).values({ name: `TEST ONLY offboarding ${manager.id}` })
+      .returning({ id: schema.organisations.id });
+    if (organisation === undefined) throw new Error("The organisation was not written");
+    const [workspace] = await db.insert(schema.workspaces).values({ organisationId: organisation.id, primaryVenueId: f.venueId,
+      name: "TEST ONLY offboarding workspace", status: "active" }).returning({ id: schema.workspaces.id });
+    if (workspace === undefined) throw new Error("The workspace was not written");
+    await db.insert(schema.workspaceMemberships).values({ workspaceId: workspace.id, userId: manager.id, email: manager.email,
+      role: "manager", venueRole: "manager", status: "active" });
+    const access = async () => (await db.select({ clerkId: schema.users.clerkId, role: schema.users.role, venueId: schema.users.venueId,
+      platformRole: schema.users.platformRole }).from(schema.users).where(eq(schema.users.id, manager.id)))[0];
+
+    await processClerkWebhookEvent({ type: "user.deleted", data: { id: manager.clerkId } }, databasePersistence(db));
+
+    // Off the venue's team and its emails (both read role and venue), and out of the workspace.
+    expect(await access()).toEqual({ clerkId: null, role: "client", venueId: null, platformRole: "none" });
+    const memberships = await db.select({ status: schema.workspaceMemberships.status }).from(schema.workspaceMemberships)
+      .where(eq(schema.workspaceMemberships.userId, manager.id));
+    expect(memberships).toEqual([{ status: "removed" }]);
+    // The record says what was taken away, for whoever brings the person back.
+    const [record] = await db.select({ metadata: schema.generalAuditLog.metadata }).from(schema.generalAuditLog)
+      .where(eq(schema.generalAuditLog.targetId, manager.clerkId));
+    expect(record?.metadata).toEqual({ userId: manager.id, role: "manager", venueId: f.venueId, platformRole: "operator" });
+
+    // A new Clerk account with the same verified email signs in with no venue.
+    const returning = `user_${randomUUID()}`;
+    expect(await getUserByClerkId(db, returning, manager.email))
+      .toMatchObject({ id: manager.id, role: "client", venueId: null, platformRole: "none" });
+
+    // A new invitation from the venue brings the role it names back, on that account.
+    await db.insert(schema.userInvitations).values({ email: manager.email, role: "staff", venueId: f.venueId, status: "pending",
+      expiresAt: new Date(Date.now() + 86_400_000) });
+    expect(await getUserByClerkId(db, returning, manager.email))
+      .toMatchObject({ id: manager.id, role: "staff", venueId: f.venueId, platformRole: "none" });
+  });
+
   /** Waits until this many sessions of this pool wait on a lock, or `done` says to stop. */
   async function lockWaiters(count: number, done: () => boolean = () => false): Promise<void> {
     for (let attempt = 0; !done(); attempt += 1) {

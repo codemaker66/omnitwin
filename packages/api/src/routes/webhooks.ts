@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Webhook } from "svix";
 import { z } from "zod";
-import { generalAuditLog, users } from "../db/schema.js";
+import { generalAuditLog, users, workspaceMemberships } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { CLERK_ACCOUNT_DELETED, clerkAccountDeleted, getUserByClerkId, lockClerkAccount, normalizeAuthEmail } from "../middleware/auth.js";
 import { evictClerkEmailCacheEntry } from "../middleware/clerk-email.js";
@@ -167,6 +167,10 @@ export async function processClerkWebhookEvent(
   return { status: "processed", clerkId: event.data.id };
 }
 
+/** What a users row keeps once its Clerk account is deleted: a customer's
+ *  role with no venue and no platform role. */
+const OFFBOARDED_ACCESS = { role: "client", venueId: null, platformRole: "none" } as const;
+
 export function databasePersistence(db: Database): ClerkWebhookPersistence {
   return {
     resolveCreatedUser: async (clerkId, email) => {
@@ -181,13 +185,28 @@ export function databasePersistence(db: Database): ClerkWebhookPersistence {
     },
     unlinkUser: async (clerkId, updatedAt) => {
       // One transaction: the row is never unlinked without the record that
-      // keeps the deleted account from linking it again (auth.ts).
+      // keeps the deleted account from linking it again (auth.ts), and never
+      // keeps the access it held. A person offboarded by deleting their Clerk
+      // account leaves the venue's team, its emails and its workspace; a new
+      // account with the same email signs in with no venue, and only a new
+      // invitation brings a venue role back.
       await db.transaction(async (tx) => {
         await lockClerkAccount(tx, clerkId);
-        await tx.update(users).set({ clerkId: null, updatedAt }).where(eq(users.clerkId, clerkId));
+        const [linked] = await tx.select({ id: users.id, role: users.role, venueId: users.venueId, platformRole: users.platformRole })
+          .from(users).where(eq(users.clerkId, clerkId)).limit(1).for("update");
+        if (linked !== undefined) {
+          await tx.update(users).set({ clerkId: null, ...OFFBOARDED_ACCESS, updatedAt }).where(eq(users.id, linked.id));
+          await tx.update(workspaceMemberships).set({ status: "removed", updatedAt })
+            .where(and(eq(workspaceMemberships.userId, linked.id), eq(workspaceMemberships.status, "active")));
+        }
         if (await clerkAccountDeleted(tx, clerkId)) return;
         await tx.insert(generalAuditLog).values({ ...CLERK_ACCOUNT_DELETED, actorUserId: null, targetId: clerkId,
-          summary: "Clerk deleted this account; its user was unlinked and cannot be linked to it again.", metadata: null });
+          summary: linked === undefined
+            ? "Clerk deleted this account; no user was linked to it, and none can be."
+            : "Clerk deleted this account; its user was unlinked, lost its venue access and cannot be linked to it again.",
+          // What was taken away, so whoever brings the person back knows what to invite them to.
+          metadata: linked === undefined ? null
+            : { userId: linked.id, role: linked.role, venueId: linked.venueId, platformRole: linked.platformRole } });
       });
     },
   };
