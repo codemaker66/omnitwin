@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { git, GIT_TIMEOUT_MS, gitResult, isTestFile } from "../git.js";
+import { git, GIT_TIMEOUT_MS, gitResult, INSTALL_FIELDS, INSTALL_SCRIPTS, isPackageManifest, isTestFile } from "../git.js";
 import { withBaseCommit } from "./base-repo.js";
 import { REPO_URL } from "./brief.js";
 
@@ -16,7 +16,9 @@ import { REPO_URL } from "./brief.js";
  * deleted and mode-changed files) read them, and `git ls-tree` reads the
  * base's own entry for every path they name. To classify binary files as git
  * does, a series that passes `--check` is then applied to the throwaway
- * index one patch at a time, and nowhere else (filesGitCallsBinary).
+ * index one patch at a time, and nowhere else (filesGitCallsBinary). Every
+ * package.json the series changes is then read from that index and from the
+ * base, and parsed as pnpm parses it (installTimeProblems).
  */
 export interface PatchInspection {
   /** The `From <sha>` of each format-patch file, in file order (null: none). */
@@ -239,7 +241,8 @@ async function binaryInStep(repo: string, scratch: string, baseSha: string, befo
  * step, not one the series edits (`--attr-source`, git 2.41 or newer), a
  * global attributes file is left out, and patterns match names by case, as on
  * Linux and GitHub, though a Windows clone would otherwise ignore case. Text
- * conversion and external diff drivers are off.
+ * conversion and external diff drivers are off. The index is left holding the
+ * whole series applied, which installTimeProblems then reads.
  */
 async function filesGitCallsBinary(repo: string, scratch: string, baseSha: string, steps: readonly string[]): Promise<string[]> {
   const found = new Set<string>();
@@ -250,6 +253,94 @@ async function filesGitCallsBinary(repo: string, scratch: string, baseSha: strin
     if (index < steps.length - 1) before = await git(repo, ["write-tree", "--missing-ok"]);
   }
   return [...found];
+}
+
+/** A JSON value as text, for an exact comparison in which key order counts; undefined for a key that is absent. */
+function ownJson(holder: object | null, key: string): string | undefined {
+  if (holder === null) return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(holder, key);
+  if (descriptor === undefined) return undefined;
+  const value: unknown = descriptor.value;
+  return JSON.stringify(value);
+}
+
+/** A manifest's `scripts`, when it is an object (pnpm finds no script in anything else). */
+function scriptsOf(manifest: object): object | null {
+  const value: unknown = Object.getOwnPropertyDescriptor(manifest, "scripts")?.value;
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
+}
+
+/** A package.json's text as pnpm reads a workspace manifest: a leading byte-order mark dropped, then JSON.parse. A missing file is {}. */
+function parseManifest(text: string | null): object | "not JSON" | "not an object" {
+  if (text === null) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
+  } catch {
+    return "not JSON";
+  }
+  return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : "not an object";
+}
+
+function changeVerb(before: string | undefined, after: string | undefined): string | null {
+  if (before === after) return null;
+  if (before === undefined) return "adds";
+  return after === undefined ? "removes" : "changes";
+}
+
+/**
+ * Why one package.json's change would put code in an install, from its text at
+ * the base and after the series (null where the file is absent): a script in
+ * INSTALL_SCRIPTS added, changed or removed, a field in INSTALL_FIELDS changed
+ * in any way (key order included), or a result that pnpm cannot read as a
+ * manifest. Judged from what JSON.parse makes of each side, as pnpm judges it,
+ * so a key spelled with a `\u` escape, or split across lines, counts as the
+ * key it spells. A base that does not parse counts as {}: every install-time
+ * key the series leaves in the file is then new.
+ */
+function manifestProblems(file: string, baseText: string | null, finalText: string | null): string[] {
+  const after = parseManifest(finalText);
+  if (after === "not JSON") return [`${file}: is not valid JSON after the patches, so neither pnpm nor this review can read it`];
+  if (after === "not an object") return [`${file}: is not a JSON object after the patches, so pnpm cannot read it as a manifest`];
+  const parsedBase = parseManifest(baseText);
+  const before = typeof parsedBase === "string" ? {} : parsedBase;
+  const problems: string[] = [];
+  for (const name of INSTALL_SCRIPTS) {
+    const verb = changeVerb(ownJson(scriptsOf(before), name), ownJson(scriptsOf(after), name));
+    if (verb !== null) problems.push(`${file}: ${verb} scripts.${name}, which pnpm runs on install`);
+  }
+  for (const { name, why } of INSTALL_FIELDS) {
+    const verb = changeVerb(ownJson(before, name), ownJson(after, name));
+    if (verb !== null) problems.push(`${file}: ${verb} the ${name} field (${why})`);
+  }
+  return problems;
+}
+
+/**
+ * The install-time changes in every package.json among `touched` (any folder,
+ * any letter case), each read at the base and in the throwaway index once the
+ * whole series is applied to it. Blobs are read by id with `git cat-file`, in
+ * the throwaway repository only: the series' own blobs were written there by
+ * `git apply`, and a base blob not yet fetched (a pure rename, say, never
+ * reads it) is fetched from the base's remote on demand, as for every other
+ * read in the trees-only clone. Manifests the series leaves alone are not read.
+ */
+async function installTimeProblems(repo: string, touched: readonly string[], baseBlobs: ReadonlyMap<string, string>): Promise<string[]> {
+  const manifests = touched.filter(isPackageManifest);
+  const finalBlobs = new Map<string, string>();
+  for (let start = 0; start < manifests.length; start += 200) {
+    const listing = await git(repo, ["--literal-pathspecs", "ls-files", "--stage", "-z", "--", ...manifests.slice(start, start + 200)]);
+    for (const entry of listing.split("\0")) {
+      const match = /^[0-7]{6} ([0-9a-f]+) 0\t([\s\S]+)$/u.exec(entry);
+      if (match !== null) finalBlobs.set(match[2] ?? "", match[1] ?? "");
+    }
+  }
+  const read = async (blob: string | undefined): Promise<string | null> => (blob === undefined ? null : git(repo, ["cat-file", "blob", blob]));
+  const problems: string[] = [];
+  for (const file of manifests) {
+    for (const problem of manifestProblems(file, await read(baseBlobs.get(file)), await read(finalBlobs.get(file)))) problems.push(problem);
+  }
+  return problems;
 }
 
 function emptyInspection(commits: readonly (string | null)[], problems: readonly string[], texts: readonly string[]): PatchInspection {
@@ -365,13 +456,15 @@ export async function inspectPatches(
         // the base's (a modified symlink or submodule link shows no mode line),
         // and a new name the base lacks is a new file or a rename's target.
         const atBase = new Set<string>();
+        const baseBlobs = new Map<string, string>();
         for (let start = 0; start < touched.length; start += 200) {
           const listing = await git(repo, ["--literal-pathspecs", "ls-tree", "-r", "-z", options.baseSha, "--", ...touched.slice(start, start + 200)]);
           for (const entry of listing.split("\0")) {
-            const match = /^([0-7]{6}) \S+ [0-9a-f]+\t([\s\S]+)$/u.exec(entry);
+            const match = /^([0-7]{6}) (\S+) ([0-9a-f]+)\t([\s\S]+)$/u.exec(entry);
             if (match === null) continue;
-            const [, mode = "", file = ""] = match;
+            const [, mode = "", type = "", object = "", file = ""] = match;
             atBase.add(file);
+            if (type === "blob") baseBlobs.set(file, object);
             if (!REGULAR_MODES.has(mode)) problems.push(`${file}: is a ${modeName(mode)} at the base`);
           }
         }
@@ -381,12 +474,15 @@ export async function inspectPatches(
         // A binary patch section hides its content from the scan whatever it
         // holds; git's diff of each applied commit classifies everything else.
         // A series that does not apply is rejected already and is not applied.
+        const applies = check.code === 0;
         const binary = [
           ...new Set([
             ...forward.filter((entry) => entry.added === null).map((entry) => entry.name),
-            ...(check.code === 0 ? await filesGitCallsBinary(repo, scratch, options.baseSha, bodyFiles) : []),
+            ...(applies ? await filesGitCallsBinary(repo, scratch, options.baseSha, bodyFiles) : []),
           ]),
         ];
+        // Read from the index the series was just applied to.
+        if (applies) for (const problem of await installTimeProblems(repo, touched, baseBlobs)) problems.push(problem);
         const isCreated = new Set(created);
         // Each code file's lines over the whole series, so one that only gains
         // lines is found whatever the other files lose (new files are flagged apart).

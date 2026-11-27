@@ -200,6 +200,28 @@ export const PROTECTED_PATHS: readonly ProtectedPath[] = [
   { pattern: /(^|\/)(\.devcontainer\/|\.devcontainer\.json$)/iu, label: "dev container config", paths: "anything under a .devcontainer/ folder, and .devcontainer.json" },
 ];
 
+/** A package.json in any folder, matched as the protected paths are (pathForMatching, ignoring case, as NTFS does). */
+export function isPackageManifest(file: string): boolean {
+  return /(^|\/)package\.json$/iu.test(pathForMatching(file));
+}
+
+/**
+ * The scripts in a package.json that pnpm 9.15.4 runs when the branch is
+ * installed, read from its own source: preinstall, install, postinstall and
+ * prepare for every workspace package (and `node-gyp rebuild` as install when
+ * a binding.gyp sits beside a manifest with neither install nor preinstall),
+ * prepublish as well on `pnpm rebuild`, prepublishOnly as well for an injected
+ * workspace dependency, and the root's pnpm:devPreinstall before anything is
+ * resolved. The review rejects a patch that adds, changes or removes one in any
+ * package.json (patches.ts reads each changed manifest as pnpm parses it).
+ */
+export const INSTALL_SCRIPTS: readonly string[] = ["pnpm:devPreinstall", "preinstall", "install", "postinstall", "prepare", "prepublish", "prepublishOnly"];
+
+/** The package.json fields whose change the review rejects in any package.json, with what each decides at install, as a rejection names it. */
+export const INSTALL_FIELDS: readonly { readonly name: string; readonly why: string }[] = [
+  { name: "pnpm", why: "pnpm's own settings, such as patched dependencies, overrides and which dependencies may run build scripts, applied on install" },
+];
+
 /**
  * A segment in NTFS 8.3 short-name form (`CLAUDE~1`, `SETTIN~1.JSO`): Windows
  * can resolve it to a long name such as `.claude`, so no pattern above can be

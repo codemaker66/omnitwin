@@ -288,6 +288,167 @@ describe("the protected paths, read by the review from real patches", () => {
   }, SLOW);
 });
 
+/** A package.json as the repository writes them: two-space indents and a final newline. */
+function manifest(value: Readonly<Record<string, unknown>>): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+/** Shaped like the repository's root manifest: an install script, the pnpm field with a dependency patch, a pinned package manager. */
+const ROOT_MANIFEST = manifest({
+  name: "fixture",
+  private: true,
+  packageManager: "pnpm@9.15.4",
+  scripts: { test: "pnpm -r run test", postinstall: "node ./packages/types/build.mjs" },
+  pnpm: { patchedDependencies: { "three@0.186.0": "patches/three@0.186.0.patch" } },
+  devDependencies: { typescript: "5.7.3" },
+});
+const WEB_MANIFEST = manifest({ name: "@fixture/web", version: "0.0.0", scripts: { test: "vitest run", build: "vite build" }, dependencies: { three: "0.186.0" } });
+const API_MANIFEST = manifest({ name: "@fixture/api", version: "0.0.0", scripts: { test: "vitest run" }, dependencies: { fastify: "5.2.0" } });
+const HOOKS_MANIFEST = manifest({ name: "@fixture/hooks", version: "0.0.0", scripts: { prepare: "tsc -p ." } });
+const MANIFEST_BASE: Readonly<Record<string, string>> = {
+  ...BASE_FILES,
+  "package.json": ROOT_MANIFEST,
+  "packages/web/package.json": WEB_MANIFEST,
+  "packages/api/package.json": API_MANIFEST,
+  "tools/hooks/package.json": HOOKS_MANIFEST,
+};
+
+/** `text` with `from` replaced once by `to`, failing the test if `from` is not there (constant strings only: no `$` patterns). */
+function edited(text: string, from: string, to: string): string {
+  expect(text).toContain(from);
+  return text.replace(from, to);
+}
+
+const INSTALL_SCRIPT = "which pnpm runs on install";
+
+describe("install-time code in a package.json, read by the review from real patches as pnpm parses them", () => {
+  it("rejects a script pnpm runs on install added, changed or removed in a package.json in any folder, naming the file and the key", async () => {
+    // Each written as JSON allows and pnpm reads it: an escape in a key, a colon on the next line.
+    const web = edited(WEB_MANIFEST, '"build": "vite build"', '"build": "vite build",\n    "post\\u0069nstall": "node ./evil.mjs"');
+    expect(web).not.toContain('"postinstall"');
+    const api = edited(API_MANIFEST, '"test": "vitest run"', '"test": "vitest run",\n    "prepare"\n      : "node ./build.mjs"');
+    const root = edited(
+      ROOT_MANIFEST,
+      '"postinstall": "node ./packages/types/build.mjs"',
+      '"postinstall": "node ./packages/types/build.mjs && node ./tools/x.mjs",\n    "pnpm:devPreinstall": "node ./tools/x.mjs"',
+    );
+    const result = await review(
+      [
+        {
+          subject: "Change the manifests",
+          write: {
+            "package.json": root,
+            "packages/web/package.json": web,
+            "packages/api/package.json": api,
+            // A new package in a new folder below a workspace package.
+            "packages/web/e2e/app/package.json": manifest({ name: "e2e-app", private: true, scripts: { install: "node ./setup.mjs" } }),
+          },
+        },
+        // A pure rename: git apply moves the entry, and the review reads the base side from the base itself.
+        { subject: "Move the hooks manifest", rename: { "tools/hooks/package.json": "tools/hooks/package.json.bak" } },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual(
+      [
+        `package.json: adds scripts.pnpm:devPreinstall, ${INSTALL_SCRIPT}`,
+        `package.json: changes scripts.postinstall, ${INSTALL_SCRIPT}`,
+        `packages/api/package.json: adds scripts.prepare, ${INSTALL_SCRIPT}`,
+        `packages/web/e2e/app/package.json: adds scripts.install, ${INSTALL_SCRIPT}`,
+        `packages/web/package.json: adds scripts.postinstall, ${INSTALL_SCRIPT}`,
+        `tools/hooks/package.json: removes scripts.prepare, ${INSTALL_SCRIPT}`,
+      ].sort(),
+    );
+  }, SLOW);
+
+  it("rejects a pnpm.patchedDependencies entry that points at a patch outside patches/, as a change to the pnpm field", async () => {
+    const root = edited(
+      ROOT_MANIFEST,
+      '"three@0.186.0": "patches/three@0.186.0.patch"',
+      '"three@0.186.0": "patches/three@0.186.0.patch",\n      "fastify@5.2.0": "src/patches/x.patch"',
+    );
+    const result = await review(
+      [{ subject: "Patch a dependency", write: { "package.json": root, "src/patches/x.patch": "diff --git a/package.json b/package.json\n" } }],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect(result.reasons).toEqual([
+      "package.json: changes the pnpm field (pnpm's own settings, such as patched dependencies, overrides and which dependencies may run build scripts, applied on install)",
+    ]);
+  }, SLOW);
+
+  it("rejects a package.json that is not valid JSON, or not a JSON object, once the patches are applied", async () => {
+    const result = await review(
+      [
+        {
+          subject: "Break the manifests",
+          write: {
+            "packages/web/package.json": edited(WEB_MANIFEST, '"build": "vite build"', '"build": "vite build",'),
+            "packages/api/package.json": '[\n  "postinstall"\n]\n',
+          },
+        },
+      ],
+      MANIFEST_BASE,
+    );
+    expect(result.verdict).toBe("rejected");
+    expect([...result.reasons].sort()).toEqual([
+      "packages/api/package.json: is not a JSON object after the patches, so pnpm cannot read it as a manifest",
+      "packages/web/package.json: is not valid JSON after the patches, so neither pnpm nor this review can read it",
+    ]);
+  }, SLOW);
+
+  it("passes a dependency version and an ordinary script, reading only the manifests the patches touch", async () => {
+    const seen: { readonly blobs: ReadonlyMap<string, string>; readonly missing: ReadonlySet<string> }[] = [];
+    throwaway.look = (repo, baseSha) => {
+      const read = (args: readonly string[]): string =>
+        execFileSync("git", ["-C", repo, "-c", "core.quotePath=false", ...args], { encoding: "utf8", env: gitEnv() });
+      const blobs = new Map<string, string>();
+      for (const entry of read(["ls-tree", "-r", "-z", baseSha]).split("\0")) {
+        const match = /^[0-7]{6} blob ([0-9a-f]+)\t([\s\S]+)$/u.exec(entry);
+        if (match !== null) blobs.set(match[2] ?? "", match[1] ?? "");
+      }
+      const missing = new Set(
+        read(["rev-list", "--objects", "--missing=print", baseSha])
+          .split("\n")
+          .filter((line) => line.startsWith("?"))
+          .map((line) => line.slice(1)),
+      );
+      seen.push({ blobs, missing });
+    };
+    let result: Review;
+    try {
+      result = await review(
+        [
+          {
+            subject: "Bump the versions and the test script",
+            write: {
+              "package.json": edited(ROOT_MANIFEST, '"typescript": "5.7.3"', '"typescript": "5.7.4"'),
+              // A byte-order mark, which pnpm drops before it parses; a script whose name only contains an install script's.
+              "packages/web/package.json": `${String.fromCharCode(0xfeff)}${edited(
+                edited(WEB_MANIFEST, '"three": "0.186.0"', '"three": "0.186.1"'),
+                '"test": "vitest run"',
+                '"test": "vitest run --reporter=dot",\n    "postinstall-check": "node ./check.mjs"',
+              )}`,
+            },
+          },
+        ],
+        MANIFEST_BASE,
+      );
+    } finally {
+      throwaway.look = undefined;
+    }
+    expect(result.reasons).toEqual([]);
+    expect(result.verdict).toBe("ready-for-review");
+    expect(result.flags).toEqual(expect.arrayContaining(["package.json (package manifest)", "packages/web/package.json (package manifest)"]));
+    // The manifests the patches leave alone are never read, so their blobs stay unfetched in the throwaway repository.
+    expect(seen).toHaveLength(1);
+    const blobs = seen[0]?.blobs ?? new Map<string, string>();
+    const missing = seen[0]?.missing ?? new Set<string>();
+    expect(["packages/api/package.json", "tools/hooks/package.json"].filter((file) => !missing.has(blobs.get(file) ?? ""))).toEqual([]);
+  }, SLOW);
+});
+
 describe("review.md's words on building the branch", () => {
   const task = parseTask(
     ["---", "id: gate-check", "title: Gate check", "budget_usd: 1", "timeout_minutes: 30", 'acceptance: "pnpm test"', "---", "Check the gate."].join("\n"),
