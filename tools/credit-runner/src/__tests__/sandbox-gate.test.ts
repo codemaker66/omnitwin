@@ -214,8 +214,12 @@ function sessionResult(outputs: readonly string[], head: string, commits: readon
   };
 }
 
-/** Makes the commits on `baseFiles`, saves their format-patch files and diff.patch under the launcher's names, and reviews them as the launcher does. */
-async function review(commits: readonly Commit[], baseFiles: Readonly<Record<string, string>>): Promise<Review> {
+/**
+ * Makes the commits on `baseFiles`, saves their format-patch files and
+ * diff.patch under the launcher's names, and reviews them as the launcher does.
+ * `rewrite` edits the saved texts first: a path the fixture cannot make on disk.
+ */
+async function review(commits: readonly Commit[], baseFiles: Readonly<Record<string, string>>, rewrite: (text: string) => string = (text) => text): Promise<Review> {
   count += 1;
   const dir = path.join(root, String(count));
   const made = await patchFixture(dir, commits, { baseFiles });
@@ -224,11 +228,11 @@ async function review(commits: readonly Commit[], baseFiles: Readonly<Record<str
   const outputs: string[] = [];
   for (const [index, text] of Object.values(made.patches).entries()) {
     const file = path.join(saved, `patch-${String(index + 1).padStart(4, "0")}.patch`);
-    await writeFile(file, text);
+    await writeFile(file, rewrite(text));
     outputs.push(file);
   }
   const diffFile = path.join(saved, "diff.patch");
-  await writeFile(diffFile, made.diff);
+  await writeFile(diffFile, rewrite(made.diff));
   outputs.push(diffFile);
   return reviewRun(sessionResult(outputs, made.head, made.commits), { baseSha: made.base, repoUrl: made.url });
 }
@@ -305,11 +309,24 @@ const INSTALL_CONFIG: readonly { readonly file: string; readonly text: string; r
     text: "{\n  name: '@fixture/web',\n  scripts: { postinstall: 'node ./evil.mjs' },\n}\n",
     label: "package manifest that pnpm reads in place of package.json",
   },
+  // gyp runs a `<!(...)` command while it configures the build.
+  {
+    file: "packages/api/binding.gyp",
+    text: '{ "variables": { "x": "<!(node ./tools/x.mjs)" }, "targets": [] }\n',
+    label: "native addon build file, which pnpm builds with node-gyp on install",
+  },
+  // A lifecycle hook pnpm runs beside the root's postinstall, and a stand-in for the compiler that postinstall runs.
+  { file: "node_modules/.hooks/postinstall", text: "#!/bin/sh\nnode ./tools/x.mjs\n", label: "installed packages folder" },
+  { file: "packages/types/node_modules/typescript/bin/tsc", text: "require('../../../../../tools/x.cjs');\n", label: "installed packages folder" },
 ];
+
+/** What the fixture writes in place of node_modules, which a global ignore file could keep out of a commit; the patches name node_modules. */
+const NODE_MODULES_STAND_IN = "nm-stand-in";
 
 describe("install-time config files, read by the review from real patches", () => {
   it("rejects each at the root and in a workspace package under its label", async () => {
-    const result = await review([{ subject: "Change the install config", write: Object.fromEntries(INSTALL_CONFIG.map(({ file, text }) => [file, text])) }], BASE_FILES);
+    const write = Object.fromEntries(INSTALL_CONFIG.map(({ file, text }) => [file.replaceAll("node_modules", NODE_MODULES_STAND_IN), text]));
+    const result = await review([{ subject: "Change the install config", write }], BASE_FILES, (text) => text.replaceAll(NODE_MODULES_STAND_IN, "node_modules"));
     expect(result.verdict).toBe("rejected");
     expect([...result.reasons].sort()).toEqual(INSTALL_CONFIG.map(({ file, label }) => `protected path changed: ${file} (${label})`).sort());
   }, SLOW);

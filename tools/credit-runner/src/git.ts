@@ -201,6 +201,10 @@ export const PROTECTED_PATHS: readonly ProtectedPath[] = [
     label: "package manifest that pnpm reads in place of package.json",
     paths: "package.json5 and package.yaml",
   },
+  // pnpm runs `node-gyp rebuild` as the install script of a folder holding one, and gyp runs `<!(...)` commands as it configures.
+  { pattern: /(^|\/)binding\.gyp$/iu, label: "native addon build file, which pnpm builds with node-gyp on install", paths: "binding.gyp" },
+  // A tracked file there stands in for installed code (the root's postinstall runs a compiler from one), or is a lifecycle hook (node_modules/.hooks/).
+  { pattern: /(^|\/)node_modules\//iu, label: "installed packages folder", paths: "anything under a node_modules/ folder" },
   // Editors and dev containers can run tasks when a folder is opened.
   { pattern: /(^|\/)\.vscode\//iu, label: "VS Code config", paths: "anything under a .vscode/ folder" },
   { pattern: /(^|\/)(\.devcontainer\/|\.devcontainer\.json$)/iu, label: "dev container config", paths: "anything under a .devcontainer/ folder, and .devcontainer.json" },

@@ -263,6 +263,21 @@ describe("protected paths", () => {
     expect(protectedPathViolations(["package.yml", "docs/package.yaml.md", "src/package.json5.ts", "package.json", "packages/web/package.json"])).toEqual([]);
   });
 
+  it("rejects a binding.gyp and anything under a node_modules/ folder, in any folder and letter case, and lets their neighbours through", () => {
+    const gyp = "native addon build file, which pnpm builds with node-gyp on install";
+    const installed = "installed packages folder";
+    expect(
+      protectedPathViolations(["binding.gyp", "packages/api/Binding.GYP", "node_modules/.hooks/postinstall", "packages/types/node_modules/typescript/bin/tsc", "Node_Modules./x.js"]),
+    ).toEqual([
+      `binding.gyp (${gyp})`,
+      `packages/api/Binding.GYP (${gyp})`,
+      `node_modules/.hooks/postinstall (${installed})`,
+      `packages/types/node_modules/typescript/bin/tsc (${installed})`,
+      `Node_Modules./x.js (${installed})`,
+    ]);
+    expect(protectedPathViolations(["docs/binding.gyp.md", "src/binding.gypi", "docs/node_modules.md", "src/node_modules_list.ts", "packages/web/src/my_node_modules/x.ts"])).toEqual([]);
+  });
+
   it("lets through nearby paths that are not those files", () => {
     expect(
       protectedPathViolations([
