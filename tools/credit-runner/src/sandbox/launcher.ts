@@ -532,6 +532,12 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
  */
 export const UNBOOKED_LOOKBACK_MS = 24 * 60 * 60_000;
 
+/**
+ * Where the startup check lists from when the ledger has no dated line: the day
+ * the check landed, before which no launcher that runs it made a session.
+ */
+export const UNBOOKED_CHECK_FROM = "2026-11-24T00:00:00.000Z";
+
 export interface UnbookedSession {
   readonly id: string;
   readonly status: string;
@@ -540,19 +546,21 @@ export interface UnbookedSession {
 /**
  * The sessions this lane made (metadata `lane` equal to `lane`, so another
  * lane's, such as the shift's, are passed by) that no ledger line charges, by
- * id or by run id (charges). Listed from the ledger's earliest dated line less
- * UNBOOKED_LOOKBACK_MS, or from now less that when the ledger has none,
+ * id or by run id (charges). Listed from the ledger's earliest dated line (or
+ * now, if that is earlier) less UNBOOKED_LOOKBACK_MS, or from
+ * UNBOOKED_CHECK_FROM when the ledger has no dated line (a missing or empty
+ * ledger: a launcher killed on the very first run is still found days later),
  * archived sessions included.
  */
 export async function unbookedSessions(api: SandboxApi, ledgerFile: string, lane: string, now: Date): Promise<{ readonly since: string; readonly sessions: readonly UnbookedSession[] }> {
   const { lines } = await readCreditLedger(ledgerFile);
   // A loop, not Math.min(...times): a long ledger spread into one call would overflow the stack.
-  let earliest = now.getTime();
+  let earliest: number | null = null;
   for (const line of lines) {
     const at = Date.parse(line.ts);
-    if (Number.isFinite(at) && at < earliest) earliest = at;
+    if (Number.isFinite(at) && (earliest === null || at < earliest)) earliest = at;
   }
-  const since = new Date(earliest - UNBOOKED_LOOKBACK_MS).toISOString();
+  const since = earliest === null ? UNBOOKED_CHECK_FROM : new Date(Math.min(earliest, now.getTime()) - UNBOOKED_LOOKBACK_MS).toISOString();
   const bookings = await readLedgerBookings(ledgerFile);
   const sessions: UnbookedSession[] = [];
   for await (const session of api.listSessions(since)) {

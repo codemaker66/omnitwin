@@ -147,8 +147,8 @@ export class FakeApi implements SandboxApi {
   /** The `createdSince` of each listSessions call, and the time of each createSession call, as ISO times. */
   readonly listedSince: string[] = [];
   readonly createTimes: string[] = [];
-  /** Sessions already in the list before this run's create, such as an earlier run of the same task. */
-  earlierSessions: SessionListing[] = [];
+  /** Sessions already in the list before this run's create, such as an earlier run of the same task; one with a `createdAt` is listed only from then on. */
+  earlierSessions: (SessionListing & { readonly createdAt?: string })[] = [];
   /** Sizes the Files API lists, by output name, where they differ from the text's own. */
   listedSizes: Record<string, number> = {};
   /** The outputs downloadFile was asked for, by name. */
@@ -258,7 +258,8 @@ export class FakeApi implements SandboxApi {
     if (fail) this.listFailures -= 1;
     const ours = this.created.filter((session) => session.createdAt >= createdSince).map(({ id, status, metadata }) => ({ id, status, metadata }));
     // The shift's own session is always listed: the launcher's checks must pass it by.
-    const sessions: SessionListing[] = [{ id: "sesn_other", status: "running", metadata: { lane: "shift", job: "other" } }, ...this.earlierSessions, ...ours];
+    const earlier = this.earlierSessions.filter((session) => session.createdAt === undefined || session.createdAt >= createdSince).map(({ id, status, metadata }) => ({ id, status, metadata }));
+    const sessions: SessionListing[] = [{ id: "sesn_other", status: "running", metadata: { lane: "shift", job: "other" } }, ...earlier, ...ours];
     return (async function* () {
       await Promise.resolve();
       if (fail) throw new Error("connection reset");

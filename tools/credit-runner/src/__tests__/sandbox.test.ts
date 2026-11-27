@@ -40,6 +40,7 @@ import {
   inlineCode,
   reviewMarkdown,
   runSandboxJob,
+  UNBOOKED_CHECK_FROM,
   UNBOOKED_LOOKBACK_MS,
   unbookedSessions,
   unbookedText,
@@ -2546,9 +2547,7 @@ describe("sandbox launcher, the sessions the ledger lacks", () => {
     const config = await workspace();
     const api = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
     api.earlierSessions = [lost()];
-    const before = Date.now();
     const record = await job(api, config);
-    const after = Date.now();
     expect(record).toEqual({
       kind: "skipped",
       taskId: task.id,
@@ -2558,12 +2557,19 @@ describe("sandbox launcher, the sessions the ledger lacks", () => {
     });
     expect([api.environmentCreates, api.agentCreates, api.environmentUpdates.length, api.agentUpdates, api.uploads.length, api.sessions.length]).toEqual([0, 0, 0, 0, 0, 0]);
     await expect(readdir(config.workRoot)).rejects.toMatchObject({ code: "ENOENT" });
-    // With no ledger line yet, the listing reaches back a day from now, archived sessions included (the API seam lists them).
-    expect(api.listedSince).toHaveLength(1);
-    const since = Date.parse(api.listedSince[0] ?? "");
-    expect(since).toBeGreaterThanOrEqual(before - DAY_MS);
-    expect(since).toBeLessThanOrEqual(after - DAY_MS);
+    // With no dated ledger line, the listing starts from the day the check landed, archived sessions included (the API seam lists them).
+    expect(api.listedSince).toEqual([UNBOOKED_CHECK_FROM]);
+    expect(UNBOOKED_CHECK_FROM).toBe("2026-11-24T00:00:00.000Z");
     expect(UNBOOKED_LOOKBACK_MS).toBe(DAY_MS);
+
+    // So a session whose launcher was killed on the first run against an empty ledger is found days later, not only within a day.
+    for (const ledger of ["", booking({ ts: "not a time", batchId: "sesn_b" })]) {
+      const later = new FakeApi([{ history: [], stream: happyEvents(happy) }], outputsOf(happy));
+      later.earlierSessions = [{ ...lost(), createdAt: "2026-11-26T10:00:00.000Z" }];
+      const days = await job(later, await workspace(ledger), happy, { now: () => new Date("2026-12-01T10:00:00.000Z") });
+      expect(days, JSON.stringify(ledger)).toMatchObject({ kind: "skipped", reason: expect.stringContaining("session sesn_lost (running)") });
+      expect(later.listedSince, JSON.stringify(ledger)).toEqual([UNBOOKED_CHECK_FROM]);
+    }
 
     // From the ledger's earliest dated line less a day, whatever the lines' order or other lanes.
     const dated = await workspace(`${booking({ ts: "2026-11-22T09:00:00.000Z", batchId: "sesn_a" })}${booking({ ts: "2026-11-20T09:00:00.000Z", lane: "batches", batchId: null })}${booking({ ts: "not a time", batchId: "sesn_b" })}`);
