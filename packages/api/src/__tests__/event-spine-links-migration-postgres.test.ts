@@ -14,6 +14,7 @@ import {
   openSpineDatabase,
   openSpineDatabaseBefore,
   platformTarget,
+  proposal as proposalIn,
   venue as venueIn,
   type SpineDatabase,
   type SpineDatabaseBefore,
@@ -84,7 +85,8 @@ import {
 // the event is held only as a key share, so a writer taking it FOR NO KEY
 // UPDATE never waits and one taking it FOR UPDATE is never half of a
 // deadlock; and while a writer holds the event an enquiry's held dates sit in,
-// nothing is made for the enquiry or its deal. A third runs the undo beside a
+// or the event its sent proposal's floor plan reaches, nothing is made for the
+// enquiry or its deal. A third runs the undo beside a
 // writer: a record or an event the writer holds is left to the undo's next
 // run, never waited for; and a made event a person renamed, or one of whose
 // phases was edited or given a time, stays with its record's link. A fourth runs the migration while another
@@ -1302,6 +1304,38 @@ describe.skipIf(target === undefined)("the spine: the join beside a live writer"
       join.release();
     }
     expect([await linkOf("enquiries", enquiryId), await linkOf("opportunities", mine)]).toEqual([z, z]);
+  }, 60_000);
+
+  it("invents nothing for an open deal whose enquiry's sent proposal reaches, by its floor plan, an event a writer holds, and joins all three there after", async () => {
+    const v = await venueIn(pool, "a proposal's plan reaches a held event");
+    const y = await eventIn(pool, v.venueId, "Y");
+    const [plan] = (await pool.query<{ id: string }>(
+      "INSERT INTO configurations (space_id, venue_id, name, layout_style) VALUES ($1, $2, 'Fixture plan', 'dinner-rounds') RETURNING id",
+      [v.rooms.hall, v.venueId])).rows;
+    if (plan === undefined) throw new Error("Plan fixture missing");
+    await pool.query("INSERT INTO event_configuration_links (event_id, configuration_id, link_type) VALUES ($1, $2, 'source_configuration')",
+      [y, plan.id]);
+    // The enquiry has nothing of its own in an event; only its sent proposal's plan reaches Y.
+    const enquiryId = await enquiryIn(pool, v.venueId, "under_review");
+    const sent = await proposalIn(pool, v.venueId, "sent", { enquiryId, configurationId: plan.id });
+    const mine = await dealIn(pool, v.venueId, "new", enquiryId);
+    const writer = await connection(), join = await connection();
+    try {
+      await writer.query("BEGIN");
+      await writer.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [y]);
+      // Step 1 cannot take Y; the deal then waits for its enquiry (the reach
+      // read on the enquiry's proposals), and makes no event for it.
+      expect(await runOn(join)).toEqual({ joined: 0, events_made: 0, listed: 0 });
+      expect([await linkOf("enquiries", enquiryId), await linkOf("opportunities", mine), await linkOf("proposals", sent),
+        await reviewsOf(enquiryId), await reviewsOf(mine), await reviewsOf(sent)]).toEqual([null, null, null, [], [], []]);
+      await writer.query("COMMIT");
+      expect(await runOn(join)).toEqual({ joined: 3, events_made: 0, listed: 0 });
+    } finally {
+      await writer.query("ROLLBACK");
+      writer.release();
+      join.release();
+    }
+    expect([await linkOf("enquiries", enquiryId), await linkOf("opportunities", mine), await linkOf("proposals", sent)]).toEqual([y, y, y]);
   }, 60_000);
 });
 
