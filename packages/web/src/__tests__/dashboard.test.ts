@@ -735,21 +735,25 @@ describe("LoadoutDetail photo improvements (#37, #38) — source-grep", () => {
     return { raw, codeOnly };
   }
 
-  it("imports R2_PUBLIC_URL for constructing image URLs", async () => {
+  // Loadout photos are private uploads in a bucket with no public URL, so a
+  // preview can only come from the signed URL the API returns.
+  it("never builds a photo URL from a file key or a public bucket base", async () => {
     const { codeOnly } = await readSource("src/components/dashboard/LoadoutDetail.tsx");
-    expect(codeOnly).toContain("R2_PUBLIC_URL");
-    expect(codeOnly).toMatch(/import[\s\S]*?R2_PUBLIC_URL[\s\S]*?from[\s\S]*?env/);
+    expect(codeOnly).not.toContain("R2_PUBLIC_URL");
+    expect(codeOnly).not.toContain("p.fileKey");
+    const { codeOnly: envSource } = await readSource("src/config/env.ts");
+    expect(envSource).not.toContain("VITE_R2_PUBLIC_URL");
   });
 
-  it("renders <img> tags for photo previews when R2 is configured", async () => {
+  it("renders <img> previews from the API's signed readUrl", async () => {
     const { codeOnly } = await readSource("src/components/dashboard/LoadoutDetail.tsx");
     expect(codeOnly).toContain("<img");
-    expect(codeOnly).toContain("p.fileKey");
+    expect(codeOnly).toMatch(/src=\{p\.readUrl\}/);
   });
 
-  it("falls back to filename text when R2 is not configured", async () => {
+  it("falls back to filename text when no signed URL is available", async () => {
     const { codeOnly } = await readSource("src/components/dashboard/LoadoutDetail.tsx");
-    expect(codeOnly).toMatch(/R2_PUBLIC_URL\s*!==\s*null\s*\?/);
+    expect(codeOnly).toMatch(/p\.readUrl\s*!==\s*null\s*\?/);
     expect(codeOnly).toContain("p.filename");
   });
 

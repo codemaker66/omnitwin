@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { Loadout, LoadoutDetail as LoadoutDetailData, LoadoutPhoto } from "../../../api/loadouts.js";
+import type { Loadout, LoadoutDetail as LoadoutDetailData, LoadoutDetailPhoto, LoadoutPhoto } from "../../../api/loadouts.js";
 import type { Space } from "../../../api/spaces.js";
 import { LoadoutDetail } from "../LoadoutDetail.js";
 import { LoadoutsView } from "../LoadoutsView.js";
@@ -113,11 +113,18 @@ function photoFixture(overrides: Partial<LoadoutPhoto> = {}): LoadoutPhoto {
     fileId: "00000000-0000-4000-8000-000000008005",
     caption: "Main entrance",
     sortOrder: 0,
-    fileKey: "loadouts/main.jpg",
+    fileKey: "private/venues/v/loadouts/l/main.jpg",
     filename: "main.jpg",
     contentType: "image/jpeg",
     ...overrides,
   };
+}
+
+const SIGNED_READ_URL =
+  "https://account.r2.cloudflarestorage.com/private-uploads/private/venues/v/loadouts/l/main.jpg?X-Amz-Signature=test";
+
+function detailPhotoFixture(overrides: Partial<LoadoutDetailPhoto> = {}): LoadoutDetailPhoto {
+  return { ...photoFixture(), readUrl: SIGNED_READ_URL, ...overrides };
 }
 
 function detailFixture(overrides: Partial<LoadoutDetailData> = {}): LoadoutDetailData {
@@ -129,7 +136,7 @@ function detailFixture(overrides: Partial<LoadoutDetailData> = {}): LoadoutDetai
     description: "Reference pack",
     createdAt: NOW,
     updatedAt: NOW,
-    photos: [photoFixture()],
+    photos: [detailPhotoFixture()],
     ...overrides,
   };
 }
@@ -367,12 +374,26 @@ describe("LoadoutDetail keeps what is typed and says what a delete does", () => 
     await waitFor(() => { expect(mocks.updatePhoto).toHaveBeenCalledTimes(1); });
   });
 
+  it("previews a photo through the API's signed URL", async () => {
+    renderDetail();
+    const preview = await screen.findByRole("img", { name: "Main entrance" });
+    expect(preview.getAttribute("src")).toBe(SIGNED_READ_URL);
+  });
+
+  it("shows the filename when the API gives no signed URL", async () => {
+    mocks.getLoadout.mockResolvedValue(detailFixture({ photos: [detailPhotoFixture({ readUrl: null })] }));
+    renderDetail();
+    await screen.findByRole("button", { name: "Main entrance" });
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.getAllByText("main.jpg").length).toBeGreaterThan(0);
+  });
+
   // Master CI 43218818843 (12 Nov 2026): a photo's Remove stayed live while
   // a reorder was saving, so its confirm was dropped by the busy guard and the
   // dialog sat open with nothing sent. Remove now waits like Move Up and Down.
   it("holds a photo's Remove while another change to the loadout is saving", async () => {
-    const second = photoFixture({ id: "00000000-0000-4000-8000-000000008006", filename: "side.jpg", caption: null, sortOrder: 1 });
-    mocks.getLoadout.mockResolvedValue(detailFixture({ photos: [photoFixture(), second] }));
+    const second = detailPhotoFixture({ id: "00000000-0000-4000-8000-000000008006", filename: "side.jpg", caption: null, sortOrder: 1 });
+    mocks.getLoadout.mockResolvedValue(detailFixture({ photos: [detailPhotoFixture(), second] }));
     let finishReorder: (photos: LoadoutPhoto[]) => void = () => undefined;
     mocks.reorderPhotos.mockReturnValueOnce(new Promise<LoadoutPhoto[]>((resolve) => { finishReorder = resolve; }));
     renderDetail();

@@ -7,8 +7,6 @@ interface ImportMetaEnv {
   readonly VITE_CLERK_GOOGLE_SIGN_IN_ENABLED?: string;
   /** Backend API URL. Defaults to http://localhost:3001. */
   readonly VITE_API_URL?: string;
-  /** Cloudflare R2 public URL for file previews. Optional. */
-  readonly VITE_R2_PUBLIC_URL?: string;
   /**
    * Origin serving captured splat tiles. Optional.
    *

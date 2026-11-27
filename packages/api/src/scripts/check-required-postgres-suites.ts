@@ -93,6 +93,8 @@ export const REQUIRED_POSTGRES_TEST_FILES = [
   "src/__tests__/hallkeeper-progress-postgres.test.ts",
   // VENVIEWER_VENUE_TEAM_TEST_DATABASE_URL (venviewer_venue_team_test)
   "src/__tests__/venue-team-postgres.test.ts",
+  // VENVIEWER_REFERENCE_LOADOUTS_TEST_DATABASE_URL (venviewer_reference_loadouts_test)
+  "src/__tests__/reference-loadouts-private-postgres.test.ts",
   // VENVIEWER_PAYMENTS_TEST_DATABASE_URL (venviewer_payments_test, via helpers/payments-db.ts)
   "src/__tests__/contract-signatures-postgres.test.ts",
   "src/__tests__/deposits-postgres.test.ts",

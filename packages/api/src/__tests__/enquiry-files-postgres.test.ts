@@ -47,11 +47,16 @@ const STAFF: JwtUser = { id: randomUUID(), email: "staff@enquiry-files.invalid",
 const MANAGER: JwtUser = { id: randomUUID(), email: "manager@enquiry-files.invalid", name: "Fixture manager", role: "manager", platformRole: "none", venueId: VENUE };
 const OTHER_STAFF: JwtUser = { id: randomUUID(), email: "elsewhere@enquiry-files.invalid", name: "Other venue staff", role: "staff", platformRole: "none", venueId: OTHER_VENUE };
 
+// Enquiry files are private uploads, signed against the private bucket (T-668).
 const FAKE_R2 = {
   R2_ACCOUNT_ID: "fixture-account",
   R2_ACCESS_KEY_ID: "fixture-access-key",
   R2_SECRET_ACCESS_KEY: "fixture-secret-key",
   R2_BUCKET_NAME: "fixture-bucket",
+  PRIVATE_UPLOADS_R2_ACCOUNT_ID: "fixture-private-account",
+  PRIVATE_UPLOADS_R2_ACCESS_KEY_ID: "fixture-private-access-key",
+  PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY: "fixture-private-secret-key",
+  PRIVATE_UPLOADS_R2_BUCKET: "fixture-private-bucket",
 } as Env;
 
 interface ListedFile {
@@ -151,9 +156,9 @@ describe.skipIf(testUrl === undefined)("an enquiry's files on isolated PostgreSQ
     expect(asClient.body).not.toContain(String(staffPaper.fileId));
     expect(asClient.body).not.toContain("costing-with-margin");
     expect(asClient.body).not.toContain(staffRow?.file_key ?? "missing");
-    // The client still gets a signed read link, to their own file.
+    // The client still gets a signed read link, to their own file in the private bucket.
     const own = asClient.files[0];
-    expect(own?.readUrl).toContain(`/${String(own?.fileKey)}?`);
+    expect(own?.readUrl).toContain(`/fixture-private-bucket/${String(own?.fileKey)}?`);
     expect(own?.readUrl).toContain("X-Amz-Signature=");
   });
 

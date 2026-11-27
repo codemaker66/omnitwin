@@ -35,14 +35,29 @@ const BASE_URL = `/venues/${VENUE_ID}/spaces/${SPACE_ID}/loadouts`;
 // GET /venues/:venueId/spaces/:spaceId/loadouts
 // ---------------------------------------------------------------------------
 
+// Loadout photos are private venue uploads, so reads are for venue staff.
 describe("GET loadouts list", () => {
-  it("is public (no auth required)", async () => {
+  it("returns 401 without auth", async () => {
     const res = await server.inject({ method: "GET", url: BASE_URL });
-    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for staff of a different venue", async () => {
+    const res = await server.inject({ method: "GET", url: BASE_URL, headers: { authorization: `Bearer ${otherStaff()}` } });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("returns 403 for a client", async () => {
+    const res = await server.inject({ method: "GET", url: BASE_URL, headers: { authorization: `Bearer ${clientToken()}` } });
+    expect(res.statusCode).toBe(403);
   });
 
   it("returns 400 for invalid venueId", async () => {
-    const res = await server.inject({ method: "GET", url: "/venues/bad/spaces/bad/loadouts" });
+    const res = await server.inject({
+      method: "GET",
+      url: "/venues/bad/spaces/bad/loadouts",
+      headers: { authorization: `Bearer ${staffToken()}` },
+    });
     expect(res.statusCode).toBe(400);
   });
 });
@@ -52,14 +67,26 @@ describe("GET loadouts list", () => {
 // ---------------------------------------------------------------------------
 
 describe("GET single loadout", () => {
-  it("is public", async () => {
+  it("returns 401 without auth", async () => {
     const res = await server.inject({ method: "GET", url: `${BASE_URL}/${LOADOUT_ID}` });
-    // Not 401 — public. Will be 500 (mock DB) or 404
-    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for staff of a different venue", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `${BASE_URL}/${LOADOUT_ID}`,
+      headers: { authorization: `Bearer ${otherStaff()}` },
+    });
+    expect(res.statusCode).toBe(403);
   });
 
   it("returns 400 for invalid params", async () => {
-    const res = await server.inject({ method: "GET", url: `${BASE_URL}/bad-id` });
+    const res = await server.inject({
+      method: "GET",
+      url: `${BASE_URL}/bad-id`,
+      headers: { authorization: `Bearer ${staffToken()}` },
+    });
     expect(res.statusCode).toBe(400);
   });
 });

@@ -106,6 +106,10 @@ describe("production environment validation", () => {
     RUNTIME_PROFILE_R2_ACCESS_KEY_ID: "runtime-access-key",
     RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY: "runtime-secret-key",
     RUNTIME_PROFILE_R2_PRIVATE_BUCKET: "runtime-profiles-private",
+    PRIVATE_UPLOADS_R2_ACCOUNT_ID: "private-uploads-account",
+    PRIVATE_UPLOADS_R2_ACCESS_KEY_ID: "private-uploads-access-key",
+    PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY: "private-uploads-secret-key",
+    PRIVATE_UPLOADS_R2_BUCKET: "private-uploads",
   };
 
   it("accepts a fully-configured production environment", () => {
@@ -224,6 +228,84 @@ describe("production environment validation", () => {
         ...validProdBase,
         ...collision,
       }))).toThrow("dedicated private bucket distinct from the legacy upload and Foundry buckets");
+    }
+  });
+
+  it("REJECTS production without the private-upload R2 connection", () => {
+    const {
+      PRIVATE_UPLOADS_R2_ACCOUNT_ID: _account,
+      PRIVATE_UPLOADS_R2_ACCESS_KEY_ID: _accessKey,
+      PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY: _secretKey,
+      PRIVATE_UPLOADS_R2_BUCKET: _bucket,
+      ...withoutPrivateUploads
+    } = validProdBase;
+
+    expect(() => withoutVitest(() => validateEnv(withoutPrivateUploads)))
+      .toThrow("PRIVATE_UPLOADS_R2_BUCKET is required in production (private uploads must never share the publicly served bucket)");
+  });
+
+  it("REJECTS partial private-upload R2 configuration", () => {
+    expect(() => validateEnv({
+      NODE_ENV: "development",
+      DATABASE_URL: "postgresql://user:pass@host/db",
+      PRIVATE_UPLOADS_R2_ACCOUNT_ID: "private-uploads-account",
+      PRIVATE_UPLOADS_R2_BUCKET: "private-uploads",
+    })).toThrow("Private-upload R2 configuration is incomplete");
+  });
+
+  it("REJECTS a private-upload bucket shared with any other bucket", () => {
+    const publicUploads = {
+      R2_ACCOUNT_ID: "upload-account",
+      R2_ACCESS_KEY_ID: "upload-key",
+      R2_SECRET_ACCESS_KEY: "upload-secret",
+      R2_BUCKET_NAME: "public-uploads",
+      R2_PUBLIC_URL: "https://pub-uploads.r2.dev",
+    };
+    const foundry = {
+      FOUNDRY_R2_ACCOUNT_ID: "foundry-account",
+      FOUNDRY_R2_ACCESS_KEY_ID: "foundry-key",
+      FOUNDRY_R2_SECRET_ACCESS_KEY: "foundry-secret",
+      FOUNDRY_R2_CANDIDATE_BUCKET: "foundry-private-candidates",
+      FOUNDRY_R2_RELEASE_BUCKET: "foundry-public-releases",
+      FOUNDRY_R2_PUBLIC_URL: "https://releases.example.com",
+    };
+    for (const collision of [
+      { ...publicUploads, PRIVATE_UPLOADS_R2_BUCKET: "public-uploads" },
+      { PRIVATE_UPLOADS_R2_BUCKET: "runtime-profiles-private" },
+      { ...foundry, PRIVATE_UPLOADS_R2_BUCKET: "foundry-private-candidates" },
+      { ...foundry, PRIVATE_UPLOADS_R2_BUCKET: "foundry-public-releases" },
+    ]) {
+      expect(() => withoutVitest(() => validateEnv({
+        ...validProdBase,
+        ...collision,
+      }))).toThrow("Private uploads require a dedicated private bucket");
+    }
+  });
+
+  it("REJECTS a private-upload connection that reuses another bucket's token", () => {
+    for (const reuse of [
+      {
+        R2_ACCOUNT_ID: "upload-account",
+        R2_ACCESS_KEY_ID: "shared-key",
+        R2_SECRET_ACCESS_KEY: "upload-secret",
+        R2_BUCKET_NAME: "public-uploads",
+        R2_PUBLIC_URL: "https://pub-uploads.r2.dev",
+      },
+      { RUNTIME_PROFILE_R2_ACCESS_KEY_ID: "shared-key" },
+      {
+        FOUNDRY_R2_ACCOUNT_ID: "foundry-account",
+        FOUNDRY_R2_ACCESS_KEY_ID: "shared-key",
+        FOUNDRY_R2_SECRET_ACCESS_KEY: "foundry-secret",
+        FOUNDRY_R2_CANDIDATE_BUCKET: "foundry-private-candidates",
+        FOUNDRY_R2_RELEASE_BUCKET: "foundry-public-releases",
+        FOUNDRY_R2_PUBLIC_URL: "https://releases.example.com",
+      },
+    ]) {
+      expect(() => withoutVitest(() => validateEnv({
+        ...validProdBase,
+        ...reuse,
+        PRIVATE_UPLOADS_R2_ACCESS_KEY_ID: "shared-key",
+      }))).toThrow("Private uploads require their own R2 token");
     }
   });
 
