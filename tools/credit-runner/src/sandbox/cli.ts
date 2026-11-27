@@ -75,8 +75,8 @@ Windows pnpm may give the prompt back before the launcher has finished: keep the
 it says the run has stopped, and do not press Ctrl-C at that prompt, which still reaches the
 launcher. Windows has no kill the launcher can catch: taskkill without /F refuses the launcher's
 process (aimed at the program that owns the window, it closes the window, as above), and /F ends
-it outright. A launcher ended outright (a crash, taskkill /F, SIGKILL)
-books nothing: its session runs on until it stops or reaches its budget, \`run\` refuses, and
+it outright. A launcher ended outright (a crash, taskkill /F, SIGKILL, or Windows shutting
+down, restarting or signing out) books nothing: its session runs on until it stops or reaches its budget, \`run\` refuses, and
 \`status\` warns, until \`sandbox collect <session-id> --book\` books it. Nothing locks the
 check-then-spend step, so two launchers started at once can both pass the spend check. Do not
 schedule or loop \`sandbox run\`.`;

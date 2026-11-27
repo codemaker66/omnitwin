@@ -65,7 +65,7 @@ describe("the CLI's own words", () => {
     );
     // How a session a dead launcher left is found and booked, and what bounds it meanwhile.
     expect(said).toContain(
-      "A launcher ended outright (a crash, taskkill /F, SIGKILL) books nothing: its session runs on until it stops or reaches its budget, `run` refuses, and `status` warns, until `sandbox collect <session-id> --book` books it.",
+      "A launcher ended outright (a crash, taskkill /F, SIGKILL, or Windows shutting down, restarting or signing out) books nothing: its session runs on until it stops or reaches its budget, `run` refuses, and `status` warns, until `sandbox collect <session-id> --book` books it.",
     );
     expect(said).not.toMatch(/a kill or Ctrl-Break does the same|waits for it or archives it, and books it/u);
     expect(USAGE).toContain("sandbox collect <session-id> --book [--budget <usd>]");
